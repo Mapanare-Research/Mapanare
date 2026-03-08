@@ -253,9 +253,11 @@ def cmd_build(args: argparse.Namespace) -> None:
 
     # Try common linkers
     linked = False
-    for linker_cmd in (["clang", obj_path, "-o", exe_path],
-                       ["gcc", obj_path, "-o", exe_path],
-                       ["link.exe", f"/OUT:{exe_path}", obj_path, "msvcrt.lib", "legacy_stdio_definitions.lib"]):
+    for linker_cmd in (
+        ["clang", obj_path, "-o", exe_path],
+        ["gcc", obj_path, "-o", exe_path],
+        ["link.exe", f"/OUT:{exe_path}", obj_path, "msvcrt.lib", "legacy_stdio_definitions.lib"],
+    ):
         import shutil
 
         if shutil.which(linker_cmd[0]):
@@ -269,7 +271,9 @@ def cmd_build(args: argparse.Namespace) -> None:
 
     if not linked:
         print(f"compiled {args.source} -> {obj_path} (object file)")
-        print("note: no linker found (install clang, gcc, or MSVC build tools to produce executables)")
+        print(
+            "note: no linker found (install clang, gcc, or MSVC build tools to produce executables)"
+        )
 
 
 def cmd_emit_llvm(args: argparse.Namespace) -> None:
@@ -454,7 +458,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument("source", help="Path to .mn source file")
     p_build.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
     p_build.add_argument(
-        "--target", metavar="TARGET",
+        "--target",
+        metavar="TARGET",
         help="Target triple (e.g. x86_64-linux-gnu, x86_64-windows-msvc)",
         default=None,
     )

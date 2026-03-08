@@ -8,7 +8,6 @@ c.config(title="Mapanare — AI-Native Programming Language", theme="dark")
 # HOME PAGE
 # ──────────────────────────────────────────────
 with c.page("/"):
-
     # Hero
     with c.hero(
         title="The AI-Native Programming Language",
@@ -21,7 +20,12 @@ with c.page("/"):
     ):
         with c.row(gap=3, justify="center"):
             c.button("Get Started", on_click="nav:/docs", variant="primary", icon="rocket")
-            c.button("GitHub", on_click="open:https://github.com/Mapanare-Research/mapanare", variant="secondary", icon="github")
+            c.button(
+                "GitHub",
+                on_click="open:https://github.com/Mapanare-Research/mapanare",
+                variant="secondary",
+                icon="github",
+            )
 
     c.spacer(2)
 
@@ -29,7 +33,7 @@ with c.page("/"):
     with c.container(size="lg"):
         with c.card("Hello, Mapanare"):
             c.code(
-                '''agent Greeter {
+                """agent Greeter {
     input name: String
     output greeting: String
 
@@ -43,7 +47,7 @@ fn main() {
     greeter.name <- "World"
     let result = sync greeter.greeting
     print(result)  // "Hello, World!"
-}''',
+}""",
                 language="rust",
                 line_numbers=True,
             )
@@ -53,44 +57,65 @@ fn main() {
     # Features
     with c.container(size="lg"):
         c.title("Everything AI needs, built in", level=2)
-        c.text("No frameworks, no glue code. Mapanare compiles agents, signals, and tensors directly to native machine code.", color="muted")
+        c.text(
+            "No frameworks, no glue code. Mapanare compiles agents, signals, and tensors directly to native machine code.",
+            color="muted",
+        )
         c.spacer(2)
 
         with c.grid(cols=3, gap=4):
             with c.card("Agents"):
                 c.badge("concurrency", color="primary")
                 c.spacer(1)
-                c.text("Concurrent actors with typed message channels. Spawn, supervise, and scale — no raw threads.", size="sm")
+                c.text(
+                    "Concurrent actors with typed message channels. Spawn, supervise, and scale — no raw threads.",
+                    size="sm",
+                )
                 c.code("spawn Agent()  // <- sync", language="rust")
 
             with c.card("Signals"):
                 c.badge("reactive", color="primary")
                 c.spacer(1)
-                c.text("Reactive state that propagates changes automatically. Computed values recompute when dependencies change.", size="sm")
-                c.code('let total = signal { price.value * 1.08 }', language="rust")
+                c.text(
+                    "Reactive state that propagates changes automatically. Computed values recompute when dependencies change.",
+                    size="sm",
+                )
+                c.code("let total = signal { price.value * 1.08 }", language="rust")
 
             with c.card("Streams"):
                 c.badge("async", color="primary")
                 c.spacer(1)
-                c.text("Async data pipelines with backpressure, fusion, and hot/cold semantics.", size="sm")
+                c.text(
+                    "Async data pipelines with backpressure, fusion, and hot/cold semantics.",
+                    size="sm",
+                )
                 c.code("data |> filter(fn(x) => x > 0) |> map(fn(x) => x * x)", language="rust")
 
             with c.card("Tensors"):
                 c.badge("@gpu", color="success")
                 c.spacer(1)
-                c.text("N-dimensional arrays with compile-time shape validation. GPU-accelerated via CUDA, Metal, or Vulkan.", size="sm")
+                c.text(
+                    "N-dimensional arrays with compile-time shape validation. GPU-accelerated via CUDA, Metal, or Vulkan.",
+                    size="sm",
+                )
                 c.code("Tensor<Float>[M, N]  // shape-checked at compile time", language="rust")
 
             with c.card("Pipes"):
                 c.badge("|> operator", color="primary")
                 c.spacer(1)
-                c.text("Compose agents and functions with the pipe operator. Build data-processing graphs declaratively.", size="sm")
+                c.text(
+                    "Compose agents and functions with the pipe operator. Build data-processing graphs declaratively.",
+                    size="sm",
+                )
                 c.code("pipe NLP { Tokenizer |> Embedder |> Classifier }", language="rust")
 
             with c.card("Native Compilation"):
                 c.badge("LLVM", color="warning")
                 c.spacer(1)
-                c.text("LLVM backend compiles to native x86_64 and ARM. No Python at runtime. 10x faster than asyncio.", size="sm")
+                c.text(
+                    "LLVM backend compiles to native x86_64 and ARM. No Python at runtime. 10x faster than asyncio.",
+                    size="sm",
+                )
                 c.code("mapa compile app.mn -o app --target native", language="bash")
 
     c.spacer(4)
@@ -98,13 +123,16 @@ fn main() {
     # Code Examples
     with c.container(size="lg"):
         c.title("See it in action", level=2)
-        c.text("Familiar syntax drawn from Rust, TypeScript, and Python — with AI primitives you won't find anywhere else.", color="muted")
+        c.text(
+            "Familiar syntax drawn from Rust, TypeScript, and Python — with AI primitives you won't find anywhere else.",
+            color="muted",
+        )
         c.spacer(2)
 
         with c.tabs():
             with c.tab("pipeline", "AI Pipeline", icon="robot"):
                 c.code(
-                    '''pipe SentimentPipeline {
+                    """pipe SentimentPipeline {
     Tokenizer |> Embedder |> Classifier
 }
 
@@ -113,14 +141,14 @@ fn main() {
     pipeline.input <- "Mapanare is amazing!"
     let result = sync pipeline.output
     print(result)  // { label: "positive", score: 0.97 }
-}''',
+}""",
                     language="rust",
                     line_numbers=True,
                 )
 
             with c.tab("gpu", "GPU Tensors", icon="cpu"):
                 c.code(
-                    '''@gpu
+                    """@gpu
 fn matrix_multiply(
     a: Tensor<Float>[M, K],
     b: Tensor<Float>[K, N]
@@ -133,14 +161,14 @@ fn main() {
     let input = Tensor.zeros([128, 768])
     let output = matrix_multiply(input, weights)
     print(output.shape)  // [128, 512]
-}''',
+}""",
                     language="rust",
                     line_numbers=True,
                 )
 
             with c.tab("reactive", "Reactive Signals", icon="zap"):
                 c.code(
-                    '''fn main() {
+                    """fn main() {
     let temperature = signal(72.0)
     let celsius = signal { (temperature.value - 32.0) * 5.0 / 9.0 }
 
@@ -153,7 +181,7 @@ fn main() {
         temperature.set(mean(batch))
         print("Celsius: " + str(celsius.value))  // auto-recomputed
     }
-}''',
+}""",
                     language="rust",
                     line_numbers=True,
                 )
@@ -163,17 +191,55 @@ fn main() {
     # Roadmap
     with c.container(size="lg"):
         c.title("Roadmap", level=2)
-        c.text("Mapanare is built in the open. Phases 2–5 complete, self-hosting compiler underway.", color="muted")
+        c.text(
+            "Mapanare is built in the open. Phases 2–5 complete, self-hosting compiler underway.",
+            color="muted",
+        )
         c.spacer(2)
 
         with c.steps(direction="vertical"):
-            c.step("Foundation", description="Repository, CI/CD, spec, community", status="active", icon="folder")
-            c.step("Transpiler", description="Mapanare → Python. Lexer, parser, AST, semantic checker, emitter", status="complete", icon="code")
-            c.step("Runtime", description="Agent scheduler, signal graph, stream engine, stdlib", status="complete", icon="play")
-            c.step("LLVM Backend", description="Native compilation, optimization passes, cross-compilation", status="complete", icon="cpu")
-            c.step("Tensor & GPU", description="CUDA, Metal, Vulkan. Model loading, compile-time shapes", status="complete", icon="box")
-            c.step("Self-Hosting", description="Compiler rewritten in Mapanare. Bootstrap complete.", status="active", icon="repeat")
-            c.step("Ecosystem", description="LSP, VSCode extension, package registry, playground", status="pending", icon="package")
+            c.step(
+                "Foundation",
+                description="Repository, CI/CD, spec, community",
+                status="active",
+                icon="folder",
+            )
+            c.step(
+                "Transpiler",
+                description="Mapanare → Python. Lexer, parser, AST, semantic checker, emitter",
+                status="complete",
+                icon="code",
+            )
+            c.step(
+                "Runtime",
+                description="Agent scheduler, signal graph, stream engine, stdlib",
+                status="complete",
+                icon="play",
+            )
+            c.step(
+                "LLVM Backend",
+                description="Native compilation, optimization passes, cross-compilation",
+                status="complete",
+                icon="cpu",
+            )
+            c.step(
+                "Tensor & GPU",
+                description="CUDA, Metal, Vulkan. Model loading, compile-time shapes",
+                status="complete",
+                icon="box",
+            )
+            c.step(
+                "Self-Hosting",
+                description="Compiler rewritten in Mapanare. Bootstrap complete.",
+                status="active",
+                icon="repeat",
+            )
+            c.step(
+                "Ecosystem",
+                description="LSP, VSCode extension, package registry, playground",
+                status="pending",
+                icon="package",
+            )
 
     c.spacer(4)
 
@@ -185,7 +251,7 @@ fn main() {
         with c.row(gap=4):
             with c.col(span=6):
                 c.code(
-                    '''# Clone the repository
+                    """# Clone the repository
 git clone https://github.com/Mapanare-Research/mapanare.git
 cd mapanare
 
@@ -193,13 +259,13 @@ cd mapanare
 make install
 
 # Run your first program
-mapa run examples/hello.mn''',
+mapa run examples/hello.mn""",
                     language="bash",
                 )
 
             with c.col(span=6):
                 c.code(
-                    '''$ mapa run hello.mn
+                    """$ mapa run hello.mn
 Hello, World!
 
 $ mapa compile app.mn -o app
@@ -208,7 +274,7 @@ $ mapa compile app.mn -o app
   Built: ./app (x86_64-linux-gnu)
 
 $ mapa check pipeline.mn
-  No errors found.''',
+  No errors found.""",
                     language="bash",
                 )
 
@@ -219,12 +285,24 @@ $ mapa check pipeline.mn
         c.divider()
         c.spacer(2)
         c.title("Ready to build with Mapanare?", level=2)
-        c.text("Join a growing community of developers building AI-native applications.", color="muted")
+        c.text(
+            "Join a growing community of developers building AI-native applications.", color="muted"
+        )
         c.spacer(1)
         with c.row(gap=2, justify="center"):
-            c.button("View on GitHub", on_click="open:https://github.com/Mapanare-Research/mapanare", variant="primary", icon="github")
+            c.button(
+                "View on GitHub",
+                on_click="open:https://github.com/Mapanare-Research/mapanare",
+                variant="primary",
+                icon="github",
+            )
             c.button("Read the Docs", on_click="nav:/docs", variant="secondary", icon="book")
-            c.button("Join Discord", on_click="open:https://discord.gg/mapanare", variant="secondary", icon="message-circle")
+            c.button(
+                "Join Discord",
+                on_click="open:https://discord.gg/mapanare",
+                variant="secondary",
+                icon="message-circle",
+            )
 
 
 # ──────────────────────────────────────────────
@@ -233,7 +311,10 @@ $ mapa check pipeline.mn
 with c.page("/docs"):
     with c.container(size="lg"):
         c.title("Documentation", level=1)
-        c.text("Learn how to build AI-native applications with first-class agents, signals, streams, and tensors.", color="muted")
+        c.text(
+            "Learn how to build AI-native applications with first-class agents, signals, streams, and tensors.",
+            color="muted",
+        )
         c.spacer(2)
 
         with c.grid(cols=2, gap=3):
@@ -284,16 +365,37 @@ with c.page("/docs"):
 
         c.table(
             [
-                {"Primitive": "agent", "Description": "Concurrent actor with typed input/output channels and lifecycle hooks"},
-                {"Primitive": "signal(value)", "Description": "Reactive container — dependents recompute automatically on change"},
-                {"Primitive": "stream", "Description": "Async iterable with backpressure, fusion, and hot/cold semantics"},
-                {"Primitive": "pipe", "Description": "Named composition of agents into a data-processing pipeline"},
-                {"Primitive": "Tensor<T>[shape]", "Description": "N-dimensional array with compile-time shape validation"},
+                {
+                    "Primitive": "agent",
+                    "Description": "Concurrent actor with typed input/output channels and lifecycle hooks",
+                },
+                {
+                    "Primitive": "signal(value)",
+                    "Description": "Reactive container — dependents recompute automatically on change",
+                },
+                {
+                    "Primitive": "stream",
+                    "Description": "Async iterable with backpressure, fusion, and hot/cold semantics",
+                },
+                {
+                    "Primitive": "pipe",
+                    "Description": "Named composition of agents into a data-processing pipeline",
+                },
+                {
+                    "Primitive": "Tensor<T>[shape]",
+                    "Description": "N-dimensional array with compile-time shape validation",
+                },
                 {"Primitive": "spawn", "Description": "Launch an agent as a concurrent task"},
                 {"Primitive": "sync", "Description": "Await a value from an agent output channel"},
-                {"Primitive": "|>", "Description": "Pipe operator — chain function and agent transformations"},
+                {
+                    "Primitive": "|>",
+                    "Description": "Pipe operator — chain function and agent transformations",
+                },
                 {"Primitive": "<-", "Description": "Send a message to an agent's input channel"},
-                {"Primitive": "@gpu / @cpu", "Description": "Target a function to GPU or CPU execution"},
+                {
+                    "Primitive": "@gpu / @cpu",
+                    "Description": "Target a function to GPU or CPU execution",
+                },
             ],
             columns=["Primitive", "Description"],
             sortable=False,
@@ -306,23 +408,30 @@ with c.page("/docs"):
 # ──────────────────────────────────────────────
 with c.page("/getting-started"):
     with c.container(size="lg"):
-        c.breadcrumb([
-            {"label": "Docs", "href": "#/docs"},
-            {"label": "Getting Started"},
-        ])
+        c.breadcrumb(
+            [
+                {"label": "Docs", "href": "#/docs"},
+                {"label": "Getting Started"},
+            ]
+        )
         c.spacer(1)
 
         c.title("Getting Started", level=1)
-        c.text("Install Mapanare, write your first program, and learn the core concepts.", color="muted")
+        c.text(
+            "Install Mapanare, write your first program, and learn the core concepts.",
+            color="muted",
+        )
         c.spacer(2)
 
         # Installation
         c.title("Installation", level=2)
-        c.text("Mapanare requires Python 3.11+ for the bootstrap compiler. The native LLVM backend requires LLVM 15+.")
+        c.text(
+            "Mapanare requires Python 3.11+ for the bootstrap compiler. The native LLVM backend requires LLVM 15+."
+        )
         c.spacer(1)
 
         c.code(
-            '''# Clone the repository
+            """# Clone the repository
 git clone https://github.com/Mapanare-Research/mapanare.git
 cd mapanare
 
@@ -330,13 +439,13 @@ cd mapanare
 make install
 
 # Verify installation
-mapa --version''',
+mapa --version""",
             language="bash",
         )
 
         c.alert(
             "On macOS/Linux, `make install` creates a virtual environment and installs Mapanare as an editable package. "
-            "On Windows, use `pip install -e \".[dev]\"` directly.",
+            'On Windows, use `pip install -e ".[dev]"` directly.',
             type="info",
             title="Platform Note",
         )
@@ -349,15 +458,15 @@ mapa --version''',
         c.spacer(1)
 
         c.code(
-            '''fn main() {
+            """fn main() {
     print("Hello, Mapanare!")
-}''',
+}""",
             language="rust",
             line_numbers=True,
         )
 
         c.text("Run it:")
-        c.code('$ mapa run hello.mn\nHello, Mapanare!', language="bash")
+        c.code("$ mapa run hello.mn\nHello, Mapanare!", language="bash")
 
         c.spacer(2)
 
@@ -370,7 +479,7 @@ mapa --version''',
         c.spacer(1)
 
         c.code(
-            '''agent Echo {
+            """agent Echo {
     input message: String
     output reply: String
 
@@ -384,7 +493,7 @@ fn main() {
     echo.message <- "hello"       // send a message
     let result = sync echo.reply  // await the response
     print(result)                 // "Echo: hello"
-}''',
+}""",
             language="rust",
             line_numbers=True,
         )
@@ -393,11 +502,13 @@ fn main() {
 
         # Signals
         c.title("Signals", level=2)
-        c.text("Signals are reactive state containers. When a signal's value changes, all dependent computations are automatically re-evaluated.")
+        c.text(
+            "Signals are reactive state containers. When a signal's value changes, all dependent computations are automatically re-evaluated."
+        )
         c.spacer(1)
 
         c.code(
-            '''fn main() {
+            """fn main() {
     let price = signal(100.0)
     let tax_rate = signal(0.08)
 
@@ -408,7 +519,7 @@ fn main() {
 
     price.set(200.0)
     print(total.value)   // 216.0 (auto-recomputed)
-}''',
+}""",
             language="rust",
             line_numbers=True,
         )
@@ -421,7 +532,7 @@ fn main() {
         c.spacer(1)
 
         c.code(
-            '''fn main() {
+            """fn main() {
     let data = Stream.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
     let result = data
@@ -431,7 +542,7 @@ fn main() {
         |> collect()                      // [4, 16, 36]
 
     print(result)
-}''',
+}""",
             language="rust",
             line_numbers=True,
         )
@@ -440,17 +551,19 @@ fn main() {
 
         # Tensors
         c.title("Tensors & GPU", level=2)
-        c.text("Tensors are N-dimensional arrays with compile-time shape validation. Use @gpu to dispatch to CUDA, Metal, or Vulkan.")
+        c.text(
+            "Tensors are N-dimensional arrays with compile-time shape validation. Use @gpu to dispatch to CUDA, Metal, or Vulkan."
+        )
         c.spacer(1)
 
         c.code(
-            '''@gpu
+            """@gpu
 fn forward(
     input: Tensor<Float>[128, 768],
     weights: Tensor<Float>[768, 512]
 ) -> Tensor<Float>[128, 512] {
     return input @ weights  // matrix multiply on GPU
-}''',
+}""",
             language="rust",
             line_numbers=True,
         )
@@ -470,7 +583,10 @@ fn forward(
         c.table(
             [
                 {"Command": "mapa run <file>", "Description": "Compile and run a .mn file"},
-                {"Command": "mapa compile <file>", "Description": "Compile to Python or native binary"},
+                {
+                    "Command": "mapa compile <file>",
+                    "Description": "Compile to Python or native binary",
+                },
                 {"Command": "mapa check <file>", "Description": "Type-check without compiling"},
                 {"Command": "mapa fmt <file|dir>", "Description": "Format source code"},
                 {"Command": "mapa init", "Description": "Create a new Mapanare project"},
@@ -500,7 +616,9 @@ fn forward(
 
         # Type System
         c.title("Type System", level=2)
-        c.text("Mapanare has a static type system with inference. You write types where they clarify; the compiler infers the rest.")
+        c.text(
+            "Mapanare has a static type system with inference. You write types where they clarify; the compiler infers the rest."
+        )
         c.spacer(1)
 
         c.table(
@@ -510,10 +628,16 @@ fn forward(
                 {"Type": "Bool", "Description": "true or false"},
                 {"Type": "String", "Description": "Immutable UTF-8 encoded string"},
                 {"Type": "Option<T>", "Description": "Some(value) or None — no null pointers"},
-                {"Type": "Result<T, E>", "Description": "Ok(value) or Err(error) — recoverable errors"},
+                {
+                    "Type": "Result<T, E>",
+                    "Description": "Ok(value) or Err(error) — recoverable errors",
+                },
                 {"Type": "List<T>", "Description": "Dynamic ordered collection"},
                 {"Type": "Map<K, V>", "Description": "Hash map"},
-                {"Type": "Tensor<T>[shape]", "Description": "N-dimensional array with shape validation"},
+                {
+                    "Type": "Tensor<T>[shape]",
+                    "Description": "N-dimensional array with shape validation",
+                },
                 {"Type": "Signal<T>", "Description": "Reactive state container"},
                 {"Type": "Stream<T>", "Description": "Async iterable with backpressure"},
                 {"Type": "Channel<T>", "Description": "Typed inter-agent message channel"},

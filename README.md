@@ -1,10 +1,48 @@
+<div align="center">
+
 # Mapanare
 
-A compiled programming language where agents, signals, streams, and tensors are first-class primitives — not libraries.
+**The AI-native programming language.**
+
+*Agents. Signals. Streams. Tensors. First-class, not frameworks.*
 
 Mapanare compiles to Python (transpiler) and native binaries (LLVM), with a self-hosted compiler in progress.
 
-## Installation
+<br>
+
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![LLVM](https://img.shields.io/badge/LLVM-Native_Backend-262D3A?style=for-the-badge&logo=llvm&logoColor=white)
+![Platform](https://img.shields.io/badge/Linux%20%7C%20macOS%20%7C%20Windows-grey?style=for-the-badge)
+
+[![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-~60_files-brightgreen.svg?style=flat-square)]()
+
+<br>
+
+[Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Contributing](#contributing)
+
+</div>
+
+---
+
+## Why Mapanare?
+
+Every mainstream language treats agents, signals, streams, and tensors as library constructs — one abstraction layer away from the compiler. That means no compile-time data-flow verification, no static tensor shape checking, and no language-level guarantees about message passing.
+
+Mapanare makes these primitives **part of the language**:
+
+- **Agents** are as natural as functions — declare, spawn, send, receive, all with dedicated syntax checked by the compiler
+- **Signals** replace callback hell with automatic dependency tracking
+- **Streams** compose with `|>` the way you think about data, with operator fusion built in
+- **Tensors** get compile-time shape validation — shape errors caught before runtime
+- **No OOP** — structs, enums, and pattern matching instead of class hierarchies
+
+Read the full [manifesto](docs/manifesto.md).
+
+---
+
+## Install
 
 ### Linux / macOS
 
@@ -20,7 +58,7 @@ irm https://raw.githubusercontent.com/Mapanare-Research/Mapanare/main/install.ps
 
 ### Manual Download
 
-Download the latest binary from the [Releases page](https://github.com/Mapanare-Research/Mapanare/releases).
+Download the latest binary from [Releases](https://github.com/Mapanare-Research/Mapanare/releases).
 
 | Platform | Archive |
 |----------|---------|
@@ -28,11 +66,13 @@ Download the latest binary from the [Releases page](https://github.com/Mapanare-
 | macOS (Apple Silicon) | `mapa-mac-arm64.tar.gz` |
 | Windows (x64) | `mapa-win-x64.zip` |
 
-Extract and add the `mapa` binary to your PATH.
+Extract and add `mapa` to your PATH, then verify:
 
 ```bash
 mapa --version
 ```
+
+---
 
 ## The Language
 
@@ -142,6 +182,39 @@ fn area(s: Shape) -> Float {
 }
 ```
 
+---
+
+## Benchmarks
+
+All benchmarks run on the Mapanare runtime (Python backend). Numbers from a single machine; run `make benchmark` to reproduce.
+
+### Stream Pipelines (1M items)
+
+| Pipeline | Throughput | Avg Latency |
+|----------|-----------|-------------|
+| `fold_sum` | **10.3M items/sec** | 0.10 us |
+| `take(1000)` | **6.3M items/sec** | 0.16 us |
+| `filter` | **4.2M items/sec** | 0.24 us |
+| `map` | **4.2M items/sec** | 0.24 us |
+| `map \| filter` | **2.6M items/sec** | 0.39 us |
+| `chained_maps(5)` | **1.7M items/sec** | 0.60 us |
+| `chained_maps(10)` | **1.2M items/sec** | 0.80 us |
+
+### Multi-Agent Message Passing
+
+Benchmarks cover single-agent relay, 3- and 5-agent chains, and fan-out topologies. Run `python benchmarks/bench_agents.py` for full results.
+
+### Comparison Suite
+
+The comparison benchmark (`benchmarks/bench_compare.py`) runs identical workloads on the Mapanare runtime vs. pure Python asyncio vs. Rust baselines (when available), producing relative speedup factors.
+
+```bash
+make benchmark           # run all benchmarks
+python benchmarks/run_all.py   # full suite with JSON output
+```
+
+---
+
 ## CLI
 
 ```
@@ -159,6 +232,8 @@ mapa targets              List supported compilation targets
 
 Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target <triple>` cross-compilation target.
 
+---
+
 ## Compiler Architecture
 
 ```
@@ -169,22 +244,28 @@ Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target 
                                                        Interpreter | Native Binary
 ```
 
-- **Lexer**: Lark-based tokenizer (18 keywords, 29 operators)
-- **Parser**: LALR with precedence climbing
-- **Semantic**: Type checking, scope analysis, builtins registry
-- **Optimizer**: Constant folding, dead code elimination, agent inlining, stream fusion (`-O0` to `-O3`)
-- **Emit Python**: Agents map to asyncio, signals to reactive containers, streams to async generators
-- **Emit LLVM**: Full IR generation via llvmlite with cross-compilation targets
+| Stage | Details |
+|-------|---------|
+| **Lexer** | Lark-based tokenizer (18 keywords, 29 operators) |
+| **Parser** | LALR with precedence climbing |
+| **Semantic** | Type checking, scope analysis, builtins registry |
+| **Optimizer** | Constant folding, dead code elimination, agent inlining, stream fusion (`-O0` to `-O3`) |
+| **Emit Python** | Agents map to asyncio, signals to reactive containers, streams to async generators |
+| **Emit LLVM** | Full IR generation via llvmlite with cross-compilation targets |
+
+---
 
 ## Runtime
 
-The runtime provides native implementations of the language primitives:
+| Primitive | Capabilities |
+|-----------|-------------|
+| **Agents** | Lifecycle management, typed channels, supervision (restart/stop), backpressure, metrics |
+| **Signals** | Dependency graph with automatic recomputation, batched updates, change streams |
+| **Streams** | Async iterables with fusion, hot/cold semantics, backpressure strategies (buffer, drop, error) |
+| **Result/Option** | `Ok`/`Err`/`Some`/`None` with `?` operator support |
+| **Native C** | Lock-free SPSC ring buffers, per-core thread pool, atomic backpressure counters |
 
-- **Agents**: Lifecycle management, typed channels, supervision (restart/stop policies), backpressure, metrics
-- **Signals**: Dependency graph with automatic recomputation, batched updates, change streams
-- **Streams**: Async iterables with fusion, hot/cold semantics, backpressure strategies (buffer, drop, error)
-- **Result/Option**: `Ok`/`Err`/`Some`/`None` with `?` operator support
-- **Native C Runtime**: Lock-free SPSC ring buffers, per-core thread pool, atomic backpressure counters
+---
 
 ## Standard Library
 
@@ -198,11 +279,15 @@ The runtime provides native implementations of the language primitives:
 | `log` | Structured logging with agent context, JSON/text output |
 | `pkg` | Project manifests, git-based package install, lock files |
 
+---
+
 ## GPU & Tensors
 
 - Device detection: CUDA, Metal, Vulkan
 - `@gpu` / `@cpu` annotations for kernel dispatch
 - Model loading: `.mnw` (native format), ONNX, safetensors, HuggingFace
+
+---
 
 ## Editor Support
 
@@ -216,6 +301,8 @@ Extension in `editors/vscode/` with:
 
 Install the LSP server: `mapanare-lsp`
 
+---
+
 ## Self-Hosted Compiler
 
 The compiler is being rewritten in Mapanare itself (`mapa/self/`):
@@ -227,6 +314,8 @@ The compiler is being rewritten in Mapanare itself (`mapa/self/`):
 - `emit_llvm.mn` — LLVM IR emitter
 
 Bootstrap strategy: Python compiler (Stage 0) compiles self-hosted `.mn` sources (Stage 1), which must reproduce identical output (Stage 2 fixed-point verification).
+
+---
 
 ## Project Structure
 
@@ -251,6 +340,8 @@ mapanare/
 └── mapa.spec              PyInstaller spec for binary builds
 ```
 
+---
+
 ## Development
 
 ```bash
@@ -265,10 +356,26 @@ make benchmark      # run benchmarks
 
 Requires Python 3.11+.
 
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Language changes require an [RFC](rfcs/).
 
+---
+
 ## License
 
-MIT
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+
+**Mapanare** — The language AI deserves.
+
+[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues) · [Spec](SPEC.md) · [Roadmap](ROADMAP.md)
+
+Made with care by [Juan Denis](https://juandenis.com)
+
+</div>

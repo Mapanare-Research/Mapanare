@@ -78,24 +78,39 @@ def _count_lines(path: Path) -> int:
         if skip_block:
             if stripped.startswith("#[global_allocator]") or stripped.startswith("static A:"):
                 continue
-            if stripped == "}" and not any(kw in stripped for kw in ["fn main", "fn fib", "fn mat"]):
+            if stripped == "}" and not any(
+                kw in stripped for kw in ["fn main", "fn fib", "fn mat"]
+            ):
                 skip_block = False
                 continue
             continue
         # Skip Go/Rust memory stats boilerplate
-        if any(kw in stripped for kw in [
-            "runtime.ReadMemStats", "runtime.MemStats", "runtime.GC",
-            "memBefore", "memAfter",
-            "__BENCH_METRICS__", "wall_time_s=", "peak_memory_kb=", "cpu_time_s=",
-            "PEAK.store", "PEAK.load", "ALLOCATED.store",
-        ]):
+        if any(
+            kw in stripped
+            for kw in [
+                "runtime.ReadMemStats",
+                "runtime.MemStats",
+                "runtime.GC",
+                "memBefore",
+                "memAfter",
+                "__BENCH_METRICS__",
+                "wall_time_s=",
+                "peak_memory_kb=",
+                "cpu_time_s=",
+                "PEAK.store",
+                "PEAK.load",
+                "ALLOCATED.store",
+            ]
+        ):
             continue
         # Skip benchmark metric print lines
         if "Println" in stripped and "METRICS" in stripped:
             continue
         if "Printf" in stripped and ("wall_time_s" in stripped or "peak_memory_kb" in stripped):
             continue
-        if "println!" in stripped and ("METRICS" in stripped or "wall_time_s" in stripped or "peak_memory_kb" in stripped):
+        if "println!" in stripped and (
+            "METRICS" in stripped or "wall_time_s" in stripped or "peak_memory_kb" in stripped
+        ):
             continue
         if stripped and not stripped.startswith("//") and not stripped.startswith("#"):
             count += 1
@@ -130,9 +145,7 @@ def _make_measured_script(bench_code: str) -> str:
         "tracemalloc.start()\n"
         "_cpu0 = time.process_time()\n"
         "_wall0 = time.perf_counter()\n"
-        "\n"
-        + bench_code
-        + "\n\n"
+        "\n" + bench_code + "\n\n"
         "_wall1 = time.perf_counter() - _wall0\n"
         "_cpu1 = time.process_time() - _cpu0\n"
         "_mem = tracemalloc.get_traced_memory()[1]\n"
@@ -155,16 +168,22 @@ def _run_script(script: str, cwd: str = str(_ROOT)) -> SingleRun:
     try:
         result = subprocess.run(
             [sys.executable, tmp_path],
-            capture_output=True, text=True, timeout=120, cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=cwd,
         )
         if result.returncode != 0:
             return SingleRun(
-                wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0,
-                output=f"ERROR: {result.stderr[:500]}"
+                wall_time_s=-1,
+                cpu_time_s=-1,
+                peak_memory_kb=0,
+                output=f"ERROR: {result.stderr[:500]}",
             )
         metrics = _parse_metrics(result.stdout)
         clean = "\n".join(
-            l for l in result.stdout.splitlines()
+            l
+            for l in result.stdout.splitlines()
             if l.strip() != "__BENCH_METRICS__" and "=" not in l
         ).strip()
         return SingleRun(
@@ -202,15 +221,15 @@ def run_mapanare(mn_file: Path, n_runs: int) -> BenchResult:
         'if __name__ == "__main__":\n    import asyncio\n\n    asyncio.run(main())',
         (
             'if __name__ == "__main__":\n'
-            '    import asyncio, time, tracemalloc\n'
-            '    tracemalloc.start()\n'
-            '    _cpu0 = time.process_time()\n'
-            '    _wall0 = time.perf_counter()\n'
-            '    asyncio.run(main())\n'
-            '    _wall1 = time.perf_counter() - _wall0\n'
-            '    _cpu1 = time.process_time() - _cpu0\n'
-            '    _mem = tracemalloc.get_traced_memory()[1]\n'
-            '    tracemalloc.stop()\n'
+            "    import asyncio, time, tracemalloc\n"
+            "    tracemalloc.start()\n"
+            "    _cpu0 = time.process_time()\n"
+            "    _wall0 = time.perf_counter()\n"
+            "    asyncio.run(main())\n"
+            "    _wall1 = time.perf_counter() - _wall0\n"
+            "    _cpu1 = time.process_time() - _cpu0\n"
+            "    _mem = tracemalloc.get_traced_memory()[1]\n"
+            "    tracemalloc.stop()\n"
             '    print("__BENCH_METRICS__")\n'
             '    print("wall_time_s=" + str(round(_wall1, 6)))\n'
             '    print("cpu_time_s=" + str(round(_cpu1, 6)))\n'
@@ -219,7 +238,8 @@ def run_mapanare(mn_file: Path, n_runs: int) -> BenchResult:
     )
 
     result = BenchResult(
-        benchmark=mn_file.stem, language="Mapanare",
+        benchmark=mn_file.stem,
+        language="Mapanare",
         lines_of_code=_count_lines(mn_file),
     )
     for _ in range(n_runs):
@@ -232,7 +252,8 @@ def run_mapanare(mn_file: Path, n_runs: int) -> BenchResult:
 def run_mapanare_native(mn_file: Path, n_runs: int) -> BenchResult:
     """Compile .mn to LLVM IR, JIT-compile via MCJIT, run natively."""
     result = BenchResult(
-        benchmark=mn_file.stem, language="Mapanare (native)",
+        benchmark=mn_file.stem,
+        language="Mapanare (native)",
         lines_of_code=_count_lines(mn_file),
     )
 
@@ -240,28 +261,37 @@ def run_mapanare_native(mn_file: Path, n_runs: int) -> BenchResult:
     for _ in range(n_runs):
         try:
             proc = subprocess.run(
-                [sys.executable, "-c",
-                 f"import sys; sys.path.insert(0, r'{_ROOT}'); "
-                 f"from mapa.cli import _compile_to_llvm_ir; "
-                 f"from mapa.jit import jit_compile_and_run; "
-                 f"import time; "
-                 f"source = open(r'{mn_file}', encoding='utf-8').read(); "
-                 f"ir_code = _compile_to_llvm_ir(source, '{mn_file.name}'); "
-                 f"t0 = time.perf_counter(); c0 = time.process_time(); "
-                 f"jit_compile_and_run(ir_code); "
-                 f"w = time.perf_counter() - t0; c = time.process_time() - c0; "
-                 f"print('__BENCH_METRICS__'); "
-                 f"print('wall_time_s=' + str(round(w, 6))); "
-                 f"print('cpu_time_s=' + str(round(c, 6))); "
-                 f"print('peak_memory_kb=0')"],
-                capture_output=True, text=True, timeout=120,
+                [
+                    sys.executable,
+                    "-c",
+                    f"import sys; sys.path.insert(0, r'{_ROOT}'); "
+                    f"from mapa.cli import _compile_to_llvm_ir; "
+                    f"from mapa.jit import jit_compile_and_run; "
+                    f"import time; "
+                    f"source = open(r'{mn_file}', encoding='utf-8').read(); "
+                    f"ir_code = _compile_to_llvm_ir(source, '{mn_file.name}'); "
+                    f"t0 = time.perf_counter(); c0 = time.process_time(); "
+                    f"jit_compile_and_run(ir_code); "
+                    f"w = time.perf_counter() - t0; c = time.process_time() - c0; "
+                    f"print('__BENCH_METRICS__'); "
+                    f"print('wall_time_s=' + str(round(w, 6))); "
+                    f"print('cpu_time_s=' + str(round(c, 6))); "
+                    f"print('peak_memory_kb=0')",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             run = _parse_native_run(proc.stdout)
             result.runs.append(run)
         except subprocess.TimeoutExpired:
-            result.runs.append(SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output="TIMEOUT"))
+            result.runs.append(
+                SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output="TIMEOUT")
+            )
         except Exception as e:
-            result.runs.append(SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output=str(e)))
+            result.runs.append(
+                SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output=str(e))
+            )
 
     result.aggregate()
     return result
@@ -280,7 +310,7 @@ def run_python(py_file: Path, n_runs: int) -> BenchResult:
         # Skip time import and timing code
         if line.strip().startswith("import time"):
             continue
-        if line.strip().startswith('if __name__'):
+        if line.strip().startswith("if __name__"):
             in_main = True
             continue
         if in_main:
@@ -302,7 +332,8 @@ def run_python(py_file: Path, n_runs: int) -> BenchResult:
     script = _make_measured_script(bench_code)
 
     result = BenchResult(
-        benchmark=py_file.stem, language="Python",
+        benchmark=py_file.stem,
+        language="Python",
         lines_of_code=_count_lines(py_file),
     )
     for _ in range(n_runs):
@@ -316,7 +347,8 @@ def _parse_native_run(output: str) -> SingleRun:
     """Parse __BENCH_METRICS__ from Go/Rust output."""
     metrics = _parse_metrics(output)
     clean = "\n".join(
-        l for l in output.splitlines()
+        l
+        for l in output.splitlines()
         if l.strip() != "__BENCH_METRICS__"
         and not l.strip().startswith("wall_time_s=")
         and not l.strip().startswith("cpu_time_s=")
@@ -335,19 +367,24 @@ def run_go(go_file: Path, n_runs: int) -> BenchResult | None:
     if not _has_tool("go"):
         return None
     result = BenchResult(
-        benchmark=go_file.stem, language="Go",
+        benchmark=go_file.stem,
+        language="Go",
         lines_of_code=_count_lines(go_file),
     )
     for _ in range(n_runs):
         try:
             proc = subprocess.run(
                 ["go", "run", str(go_file)],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             run = _parse_native_run(proc.stdout)
             result.runs.append(run)
         except subprocess.TimeoutExpired:
-            result.runs.append(SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output="TIMEOUT"))
+            result.runs.append(
+                SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output="TIMEOUT")
+            )
     result.aggregate()
     return result
 
@@ -356,14 +393,17 @@ def run_rust(rs_file: Path, n_runs: int) -> BenchResult | None:
     if not _has_tool("rustc"):
         return None
     result = BenchResult(
-        benchmark=rs_file.stem, language="Rust",
+        benchmark=rs_file.stem,
+        language="Rust",
         lines_of_code=_count_lines(rs_file),
     )
     with tempfile.TemporaryDirectory() as tmpdir:
         binary = os.path.join(tmpdir, "bench.exe" if os.name == "nt" else "bench")
         comp = subprocess.run(
             ["rustc", "-O", str(rs_file), "-o", binary],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         if comp.returncode != 0:
             result.error = f"COMPILE ERROR: {comp.stderr[:300]}"
@@ -372,12 +412,17 @@ def run_rust(rs_file: Path, n_runs: int) -> BenchResult | None:
         for _ in range(n_runs):
             try:
                 proc = subprocess.run(
-                    [binary], capture_output=True, text=True, timeout=120,
+                    [binary],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
                 )
                 run = _parse_native_run(proc.stdout)
                 result.runs.append(run)
             except subprocess.TimeoutExpired:
-                result.runs.append(SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output="TIMEOUT"))
+                result.runs.append(
+                    SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output="TIMEOUT")
+                )
     result.aggregate()
     return result
 
@@ -406,10 +451,7 @@ def run_all(only: str | None = None, n_runs: int = 3) -> list[BenchComparison]:
         tools.append("Go")
     if _has_tool("rustc"):
         tools.append("Rust")
-    print(
-        f"\n  Toolchains: Python, Mapanare"
-        + (f", {', '.join(tools)}" if tools else "")
-    )
+    print(f"\n  Toolchains: Python, Mapanare" + (f", {', '.join(tools)}" if tools else ""))
     print(f"  Runs per benchmark: {n_runs} (median reported)")
     print(f"  Metrics: wall time, CPU time, peak memory")
     print()
@@ -552,8 +594,10 @@ def _print_summary(comparisons: list[BenchComparison]) -> None:
     print("  " + "-" * 68)
 
     for comp in comparisons:
+
         def _loc(lang: str) -> str:
             return next((str(r.lines_of_code) for r in comp.results if r.language == lang), "-")
+
         mn_loc = _loc("Mapanare") if _loc("Mapanare") != "-" else _loc("Mapanare (native)")
         print(
             f"  {comp.benchmark:<28s} "

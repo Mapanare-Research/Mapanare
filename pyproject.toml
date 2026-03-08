@@ -23,6 +23,7 @@ dev = [
     "black",
     "ruff",
     "pyinstaller",
+    "pyyaml",
 ]
 
 [tool.setuptools.packages.find]
