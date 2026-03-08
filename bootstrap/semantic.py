@@ -488,9 +488,7 @@ class SemanticChecker:
                 elem_type = (
                     left.args[0]
                     if left.name == "Tensor" and left.args
-                    else right.args[0]
-                    if right.name == "Tensor" and right.args
-                    else UNKNOWN_TYPE
+                    else right.args[0] if right.name == "Tensor" and right.args else UNKNOWN_TYPE
                 )
                 return TypeInfo(name="Tensor", args=[elem_type], tensor_shape=result_shape)
             if left.name not in ("<unknown>", "Int", "Float", "String") or right.name not in (

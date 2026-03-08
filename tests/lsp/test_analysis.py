@@ -1,6 +1,5 @@
 """Tests for mapa.lsp.analysis — symbol extraction, hover, go-to-def, find-refs, completion."""
 
-
 from mapa.lsp.analysis import (
     DocumentAnalysis,
     analyze_document,

@@ -1,4 +1,5 @@
 """Mapanare Language Website — Built with Cacao"""
+
 import cacao as c
 
 c.config(title="Mapanare — AI-Native Programming Language", theme="dark")

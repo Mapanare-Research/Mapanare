@@ -55,60 +55,51 @@ class TestHelloWorld:
     """E2E: hello world"""
 
     def test_hello_world_print(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 print("Hello, World!")
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0
         assert "Hello, World!" in result.stdout
 
     def test_hello_world_println(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 println("Hello from Mapanare!")
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0
         assert "Hello from Mapanare!" in result.stdout
 
     def test_arithmetic_output(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let x: Int = 10
                 let y: Int = 20
                 let z: Int = x + y
                 print(z)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0
         assert "30" in result.stdout
 
     def test_string_concatenation(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let greeting: String = "Hello" + ", " + "Mapanare!"
                 print(greeting)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0
         assert "Hello, Mapanare!" in result.stdout
 
     def test_bool_and_comparison(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let a: Int = 5
                 let b: Int = 10
@@ -118,8 +109,7 @@ class TestHelloWorld:
                     print("not less")
                 }
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0
         assert "less" in result.stdout
@@ -133,8 +123,7 @@ class TestAgentSpawn:
 
     def test_agent_echo(self) -> None:
         """Agent receives a message, transforms it, sends it back."""
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             agent Echo {
                 input msg: String
                 output reply: String
@@ -151,16 +140,14 @@ class TestAgentSpawn:
                 print(r)
                 sync e.stop()
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "Echo: hello" in result.stdout
 
     def test_agent_numeric_transform(self) -> None:
         """Agent doubles an integer value."""
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             agent Doubler {
                 input val: Int
                 output result: Int
@@ -177,16 +164,14 @@ class TestAgentSpawn:
                 print(r)
                 sync d.stop()
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "42" in result.stdout
 
     def test_agent_multiple_messages(self) -> None:
         """Agent processes multiple messages sequentially."""
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             agent Adder {
                 input x: Int
                 output y: Int
@@ -206,8 +191,7 @@ class TestAgentSpawn:
                 print(r2)
                 sync a.stop()
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
@@ -222,16 +206,14 @@ class TestSignalReactivity:
     """E2E: signal reactivity"""
 
     def test_signal_basic_value(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let count = signal(0)
                 print(count.value)
                 count.value = 10
                 print(count.value)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
@@ -239,8 +221,7 @@ class TestSignalReactivity:
         assert "10" in lines[1]
 
     def test_signal_computed(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let base = signal(5)
                 let doubled = signal { base.value * 2 }
@@ -248,8 +229,7 @@ class TestSignalReactivity:
                 base.value = 10
                 print(doubled.value)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
@@ -258,8 +238,7 @@ class TestSignalReactivity:
 
     def test_signal_subscriber_notification(self) -> None:
         """Computed signals recompute when dependencies change."""
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let x = signal(3)
                 let y = signal { x.value + 1 }
@@ -269,8 +248,7 @@ class TestSignalReactivity:
                 x.value = 0
                 print(y.value)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
@@ -286,75 +264,65 @@ class TestStreamMapFilter:
     """E2E: stream with map and filter"""
 
     def test_stream_collect(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let s = stream([1, 2, 3, 4, 5])
                 let result = sync s.collect()
                 print(result)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "[1, 2, 3, 4, 5]" in result.stdout
 
     def test_stream_map(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let s = stream([1, 2, 3])
                 let doubled = s.map((x) => x * 2)
                 let result = sync doubled.collect()
                 print(result)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "[2, 4, 6]" in result.stdout
 
     def test_stream_filter(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let s = stream([1, 2, 3, 4, 5, 6])
                 let evens = s.filter((x) => x % 2 == 0)
                 let result = sync evens.collect()
                 print(result)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "[2, 4, 6]" in result.stdout
 
     def test_stream_map_then_filter(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let s = stream([1, 2, 3, 4, 5])
                 let processed = s.map((x) => x * 3).filter((x) => x > 6)
                 let result = sync processed.collect()
                 print(result)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "[9, 12, 15]" in result.stdout
 
     def test_stream_take(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let s = stream([10, 20, 30, 40, 50])
                 let first3 = s.take(3)
                 let result = sync first3.collect()
                 print(result)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "[10, 20, 30]" in result.stdout
@@ -368,8 +336,7 @@ class TestMultiAgentPipeline:
 
     def test_two_agent_chain(self) -> None:
         """First agent adds 10, second agent multiplies by 2."""
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             agent Add10 {
                 input val: Int
                 output result: Int
@@ -399,8 +366,7 @@ class TestMultiAgentPipeline:
                 sync a.stop()
                 sync d.stop()
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         # (5 + 10) * 2 = 30
@@ -408,8 +374,7 @@ class TestMultiAgentPipeline:
 
     def test_pipe_definition(self) -> None:
         """Pipe definition chains agents together."""
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             agent Increment {
                 input n: Int
                 output n: Int
@@ -436,8 +401,7 @@ class TestMultiAgentPipeline:
                 let result = sync Transform(10)
                 print(result)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         # (10 + 1) * 3 = 33
@@ -445,8 +409,7 @@ class TestMultiAgentPipeline:
 
     def test_three_agent_chain(self) -> None:
         """Three agents chained manually."""
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             agent A {
                 input x: Int
                 output y: Int
@@ -489,8 +452,7 @@ class TestMultiAgentPipeline:
                 sync b.stop()
                 sync c.stop()
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         # (10 + 1) * 2 - 3 = 19
@@ -504,34 +466,29 @@ class TestOptionResult:
     """E2E: Option and Result types"""
 
     def test_ok_result(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let r = Ok(42)
                 print(r)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "Ok(42)" in result.stdout
 
     def test_err_result(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let r = Err("not found")
                 print(r)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "Err('not found')" in result.stdout
 
     def test_result_match(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn try_divide(a: Int, b: Int) -> Result<Int, String> {
                 if b == 0 {
                     return Err("division by zero")
@@ -551,8 +508,7 @@ class TestOptionResult:
                     Err(e) => { print(e) }
                 }
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
@@ -560,8 +516,7 @@ class TestOptionResult:
         assert "division by zero" in lines[1]
 
     def test_some_and_none(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn find_item(items: List<Int>, target: Int) -> Option<Int> {
                 for i in 0..len(items) {
                     if items[i] == target {
@@ -583,8 +538,7 @@ class TestOptionResult:
                     _ => { print("not found") }
                 }
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
@@ -592,8 +546,7 @@ class TestOptionResult:
         assert "not found" in lines[1]
 
     def test_error_propagation(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn might_fail(ok: Bool) -> Result<Int, String> {
                 if ok {
                     return Ok(42)
@@ -617,8 +570,7 @@ class TestOptionResult:
                 let r2 = do_work_fail()
                 print(r2)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
@@ -633,8 +585,7 @@ class TestForLoopMatch:
     """E2E: for loop and match"""
 
     def test_for_loop_range(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let mut sum: Int = 0
                 for i in 1..=5 {
@@ -642,16 +593,14 @@ class TestForLoopMatch:
                 }
                 print(sum)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         # 1+2+3+4+5 = 15
         assert "15" in result.stdout
 
     def test_for_loop_list(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let items = [10, 20, 30]
                 let mut total: Int = 0
@@ -660,15 +609,13 @@ class TestForLoopMatch:
                 }
                 print(total)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "60" in result.stdout
 
     def test_match_int_literal(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn describe(n: Int) -> String {
                 match n {
                     1 => { return "one" },
@@ -684,8 +631,7 @@ class TestForLoopMatch:
                 print(describe(2))
                 print(describe(99))
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
@@ -694,8 +640,7 @@ class TestForLoopMatch:
         assert "other" in lines[2]
 
     def test_match_with_enum(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             enum Color {
                 Red,
                 Green,
@@ -718,8 +663,7 @@ class TestForLoopMatch:
                 let g = Color_Green()
                 print(name_color(g))
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
@@ -727,8 +671,7 @@ class TestForLoopMatch:
         assert "green" in lines[1]
 
     def test_nested_for_loops(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn main() {
                 let mut count: Int = 0
                 for i in 0..3 {
@@ -738,15 +681,13 @@ class TestForLoopMatch:
                 }
                 print(count)
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         assert "9" in result.stdout
 
     def test_if_else_chain(self) -> None:
-        source = textwrap.dedent(
-            """\
+        source = textwrap.dedent("""\
             fn classify(n: Int) -> String {
                 if n < 0 {
                     return "negative"
@@ -762,8 +703,7 @@ class TestForLoopMatch:
                 print(classify(0))
                 print(classify(42))
             }
-        """
-        )
+        """)
         result = _run_mapanare(source)
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
@@ -784,26 +724,22 @@ class TestImportBetweenFiles:
 
     def test_import_function(self) -> None:
         """Import a function from another Mapanare file."""
-        lib_source = textwrap.dedent(
-            """\
+        lib_source = textwrap.dedent("""\
             export fn greet(name: String) -> String {
                 return "Hello, " + name
             }
 
             fn main() {}
-        """
-        )
+        """)
 
-        main_source = textwrap.dedent(
-            """\
+        main_source = textwrap.dedent("""\
             import mathlib {greet}
 
             fn main() {
                 let msg = greet("Mapanare")
                 print(msg)
             }
-        """
-        )
+        """)
 
         # Compile both files
         lib_code = _compile_source(lib_source, "mathlib.mn")
@@ -834,8 +770,7 @@ class TestImportBetweenFiles:
 
     def test_import_agent(self) -> None:
         """Import an agent definition from another Mapanare file."""
-        lib_source = textwrap.dedent(
-            """\
+        lib_source = textwrap.dedent("""\
             export agent Greeter {
                 input name: String
                 output greeting: String
@@ -846,11 +781,9 @@ class TestImportBetweenFiles:
             }
 
             fn main() {}
-        """
-        )
+        """)
 
-        main_source = textwrap.dedent(
-            """\
+        main_source = textwrap.dedent("""\
             import agents {Greeter}
 
             fn main() {
@@ -860,8 +793,7 @@ class TestImportBetweenFiles:
                 print(msg)
                 sync g.stop()
             }
-        """
-        )
+        """)
 
         lib_code = _compile_source(lib_source, "agents.mn")
         main_code = _compile_source(main_source, "main.mn")

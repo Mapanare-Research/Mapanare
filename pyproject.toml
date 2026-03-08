@@ -20,7 +20,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "mypy",
-    "black",
+    "black>=26.3",
     "ruff",
     "pyinstaller",
     "pyyaml",

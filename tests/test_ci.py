@@ -82,7 +82,16 @@ class TestCISteps:
 class TestCIConfig:
     def test_uses_python_311(self) -> None:
         data = _load_ci()
-        steps = data["jobs"]["ci"]["steps"]
+        job = data["jobs"]["ci"]
+        # Accept either hardcoded 3.11 in a step or a matrix that includes 3.11
+        matrix_versions = []
+        strategy = job.get("strategy", {})
+        if "matrix" in strategy:
+            matrix_versions = strategy["matrix"].get("python-version", [])
+        if matrix_versions:
+            assert "3.11" in matrix_versions, "CI matrix must include Python 3.11"
+            return
+        steps = job["steps"]
         for step in steps:
             if "with" in step and "python-version" in step.get("with", {}):
                 assert step["with"]["python-version"] == "3.11"

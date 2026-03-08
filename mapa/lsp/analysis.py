@@ -363,9 +363,9 @@ class DocumentAnalysis:
                     name=stmt.name,
                     kind="variable",
                     type_display=type_str,
-                    detail=f"let {mut}{stmt.name}: {type_str}"
-                    if type_str
-                    else f"let {mut}{stmt.name}",
+                    detail=(
+                        f"let {mut}{stmt.name}: {type_str}" if type_str else f"let {mut}{stmt.name}"
+                    ),
                     definition=loc,
                 )
             )

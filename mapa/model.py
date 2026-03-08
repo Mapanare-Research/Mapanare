@@ -1076,7 +1076,7 @@ class MapanareModel(ModelInterface):
         self._weights = dict(weights)
         self._predict_fn: Callable[[Tensor, dict[str, Tensor]], Tensor] | None = None
         self._encode_fn: Callable[[Tensor, dict[str, Tensor]], Tensor] | None = None
-        self._generate_fn: (Callable[[Tensor, dict[str, Tensor], int, float], Tensor] | None) = None
+        self._generate_fn: Callable[[Tensor, dict[str, Tensor], int, float], Tensor] | None = None
 
     @property
     def name(self) -> str:
