@@ -149,7 +149,7 @@ jobs:
           - os: windows-latest
             artifact: mapa-win-x64
             archive_name: mapa-win-x64.zip
-            archive_cmd: zip -r
+            archive_cmd: 7z a
 
     runs-on: ${{ matrix.os }}
 
