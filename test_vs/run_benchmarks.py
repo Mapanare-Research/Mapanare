@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import statistics
 import subprocess
@@ -451,9 +450,9 @@ def run_all(only: str | None = None, n_runs: int = 3) -> list[BenchComparison]:
         tools.append("Go")
     if _has_tool("rustc"):
         tools.append("Rust")
-    print(f"\n  Toolchains: Python, Mapanare" + (f", {', '.join(tools)}" if tools else ""))
+    print("\n  Toolchains: Python, Mapanare" + (f", {', '.join(tools)}" if tools else ""))
     print(f"  Runs per benchmark: {n_runs} (median reported)")
-    print(f"  Metrics: wall time, CPU time, peak memory")
+    print("  Metrics: wall time, CPU time, peak memory")
     print()
 
     for bench_id, bench_name in BENCHMARKS:
@@ -468,7 +467,7 @@ def run_all(only: str | None = None, n_runs: int = 3) -> list[BenchComparison]:
         # Mapanare (interpreted via Python transpiler)
         mn_file = _VS_DIR / f"{bench_id}.mn"
         if mn_file.exists():
-            print(f"    Mapanare  ... ", end="", flush=True)
+            print("    Mapanare  ... ", end="", flush=True)
             try:
                 r = run_mapanare(mn_file, n_runs)
                 comp.results.append(r)
@@ -486,7 +485,7 @@ def run_all(only: str | None = None, n_runs: int = 3) -> list[BenchComparison]:
 
         # Mapanare Native (LLVM JIT)
         if mn_file.exists() and bench_id != "02_concurrency":
-            print(f"    MN Native ... ", end="", flush=True)
+            print("    MN Native ... ", end="", flush=True)
             try:
                 r = run_mapanare_native(mn_file, n_runs)
                 comp.results.append(r)
@@ -504,7 +503,7 @@ def run_all(only: str | None = None, n_runs: int = 3) -> list[BenchComparison]:
         # Python
         py_file = _VS_DIR / f"{bench_id}.py"
         if py_file.exists():
-            print(f"    Python    ... ", end="", flush=True)
+            print("    Python    ... ", end="", flush=True)
             r = run_python(py_file, n_runs)
             comp.results.append(r)
             print(
@@ -523,7 +522,7 @@ def run_all(only: str | None = None, n_runs: int = 3) -> list[BenchComparison]:
                 mem_s = f"Mem:{r.mem_peak_kb:.0f}KB  " if r.mem_peak_kb > 0 else ""
                 print(f"    Go        ... {r.wall_median:.4f}s  {mem_s}({r.lines_of_code} LOC)")
             else:
-                print(f"    Go        ... skipped")
+                print("    Go        ... skipped")
 
         # Rust
         rs_file = _VS_DIR / f"{bench_id}.rs"
@@ -534,7 +533,7 @@ def run_all(only: str | None = None, n_runs: int = 3) -> list[BenchComparison]:
                 mem_s = f"Mem:{r.mem_peak_kb:.0f}KB  " if r.mem_peak_kb > 0 else ""
                 print(f"    Rust      ... {r.wall_median:.4f}s  {mem_s}({r.lines_of_code} LOC)")
             else:
-                print(f"    Rust      ... skipped")
+                print("    Rust      ... skipped")
 
         comparisons.append(comp)
         print()

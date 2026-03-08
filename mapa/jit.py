@@ -75,4 +75,4 @@ def jit_compile_to_object(llvm_ir: str, opt_level: int = 2) -> bytes:
     pmb.populate(pm)
     pm.run(mod)
 
-    return target_machine.emit_object(mod)
+    return bytes(target_machine.emit_object(mod))

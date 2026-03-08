@@ -42,6 +42,10 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 
+[tool.ruff.lint.per-file-ignores]
+"site_app.py" = ["E501"]
+"test_vs/run_benchmarks.py" = ["E741"]
+
 [tool.mypy]
 strict = true
 ignore_missing_imports = true

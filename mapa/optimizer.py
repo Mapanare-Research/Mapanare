@@ -19,6 +19,7 @@ from mapa.ast_nodes import (
     CallExpr,
     Definition,
     ErrExpr,
+    ErrorPropExpr,
     Expr,
     ExprStmt,
     FieldAccessExpr,
@@ -625,6 +626,8 @@ class DeadCodeEliminator:
             self._collect_used_names_expr(expr.value, names)
         elif isinstance(expr, ErrExpr):
             self._collect_used_names_expr(expr.value, names)
+        elif isinstance(expr, ErrorPropExpr):
+            self._collect_used_names_expr(expr.expr, names)
 
     def _remove_dead_fns(self, program: Program) -> Program:
         """Remove private functions that are never referenced."""

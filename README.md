@@ -17,6 +17,7 @@ Mapanare compiles to Python (transpiler) and native binaries (LLVM), with a self
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-~60_files-brightgreen.svg?style=flat-square)]()
+[![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml)
 
 <br>
 
@@ -355,6 +356,22 @@ make benchmark      # run benchmarks
 ```
 
 Requires Python 3.11+.
+
+---
+
+## Roadmap
+
+| Phase | Name | Status |
+|-------|------|--------|
+| 1 | Foundation | In Progress |
+| 2 | Transpiler | Planned |
+| 3 | Runtime | Planned |
+| 4 | LLVM | Planned |
+| 5 | Tensor | Planned |
+| 6 | Self-Hosting | Planned |
+| 7 | Ecosystem | Planned |
+
+See [ROADMAP.md](ROADMAP.md) for the full breakdown.
 
 ---
 

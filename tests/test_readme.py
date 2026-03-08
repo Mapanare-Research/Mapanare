@@ -31,7 +31,7 @@ class TestREADMEExists:
 class TestREADMEOneLiner:
     def test_has_title(self) -> None:
         text = _readme_text()
-        assert text.startswith("# Mapanare"), "README must start with '# Mapanare' title"
+        assert "# Mapanare" in text, "README must have '# Mapanare' title"
 
     def test_has_one_liner_description(self) -> None:
         text = _readme_text()

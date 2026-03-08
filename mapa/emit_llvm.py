@@ -575,7 +575,7 @@ class LLVMEmitter:
         """Emit a function call instruction."""
         # Built-in: print()
         if isinstance(node.callee, Identifier) and node.callee.name == "print":
-            return self._emit_print(node.args)
+            return self._emit_print(list(node.args))
 
         # Resolve the callee
         if isinstance(node.callee, Identifier):

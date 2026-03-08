@@ -211,7 +211,7 @@ def cmd_jit(args: argparse.Namespace) -> None:
         print("__BENCH_METRICS__")
         print(f"wall_time_s={round(wall1, 6)}")
         print(f"cpu_time_s={round(cpu1, 6)}")
-        print(f"peak_memory_kb=0")
+        print("peak_memory_kb=0")
     else:
         jit_compile_and_run(llvm_ir, opt_level=opt_level.value)
 
