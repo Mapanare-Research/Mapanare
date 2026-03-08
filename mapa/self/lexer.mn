@@ -1,0 +1,169 @@
+// lexer.mn — Mapanare lexer, self-hosted port of mapa/lexer.py.
+// Tokenizes .mn source files into a token stream.
+
+import self::ast
+
+// ---------------------------------------------------------------------------
+// Token
+// ---------------------------------------------------------------------------
+
+struct Token {
+    tok_type: String,
+    value: String,
+    line: Int,
+    column: Int,
+    end_line: Int,
+    end_column: Int
+}
+
+// ---------------------------------------------------------------------------
+// LexError
+// ---------------------------------------------------------------------------
+
+struct LexError {
+    message: String,
+    line: Int,
+    column: Int,
+    filename: String
+}
+
+// ---------------------------------------------------------------------------
+// Keywords (28 total)
+// ---------------------------------------------------------------------------
+
+fn is_keyword(name: String) -> Bool {
+    if name == "let" { return true }
+    if name == "mut" { return true }
+    if name == "fn" { return true }
+    if name == "return" { return true }
+    if name == "pub" { return true }
+    if name == "self" { return true }
+    if name == "agent" { return true }
+    if name == "spawn" { return true }
+    if name == "sync" { return true }
+    if name == "signal" { return true }
+    if name == "stream" { return true }
+    if name == "pipe" { return true }
+    if name == "if" { return true }
+    if name == "else" { return true }
+    if name == "match" { return true }
+    if name == "for" { return true }
+    if name == "in" { return true }
+    if name == "type" { return true }
+    if name == "struct" { return true }
+    if name == "enum" { return true }
+    if name == "impl" { return true }
+    if name == "import" { return true }
+    if name == "export" { return true }
+    if name == "true" { return true }
+    if name == "false" { return true }
+    if name == "none" { return true }
+    if name == "input" { return true }
+    if name == "output" { return true }
+    return false
+}
+
+fn keyword_token_type(name: String) -> String {
+    if name == "let" { return "KW_LET" }
+    if name == "mut" { return "KW_MUT" }
+    if name == "fn" { return "KW_FN" }
+    if name == "return" { return "KW_RETURN" }
+    if name == "pub" { return "KW_PUB" }
+    if name == "self" { return "KW_SELF" }
+    if name == "agent" { return "KW_AGENT" }
+    if name == "spawn" { return "KW_SPAWN" }
+    if name == "sync" { return "KW_SYNC" }
+    if name == "signal" { return "KW_SIGNAL" }
+    if name == "stream" { return "KW_STREAM" }
+    if name == "pipe" { return "KW_PIPE" }
+    if name == "if" { return "KW_IF" }
+    if name == "else" { return "KW_ELSE" }
+    if name == "match" { return "KW_MATCH" }
+    if name == "for" { return "KW_FOR" }
+    if name == "in" { return "KW_IN" }
+    if name == "type" { return "KW_TYPE" }
+    if name == "struct" { return "KW_STRUCT" }
+    if name == "enum" { return "KW_ENUM" }
+    if name == "impl" { return "KW_IMPL" }
+    if name == "import" { return "KW_IMPORT" }
+    if name == "export" { return "KW_EXPORT" }
+    if name == "true" { return "KW_TRUE" }
+    if name == "false" { return "KW_FALSE" }
+    if name == "none" { return "KW_NONE" }
+    if name == "input" { return "KW_INPUT" }
+    if name == "output" { return "KW_OUTPUT" }
+    return "NAME"
+}
+
+// ---------------------------------------------------------------------------
+// Character classification helpers
+// ---------------------------------------------------------------------------
+
+fn is_alpha(ch: String) -> Bool {
+    if ch == "_" { return true }
+    // a-z
+    if ch >= "a" { if ch <= "z" { return true } }
+    // A-Z
+    if ch >= "A" { if ch <= "Z" { return true } }
+    return false
+}
+
+fn is_digit(ch: String) -> Bool {
+    if ch >= "0" { if ch <= "9" { return true } }
+    return false
+}
+
+fn is_alnum(ch: String) -> Bool {
+    if is_alpha(ch) { return true }
+    if is_digit(ch) { return true }
+    return false
+}
+
+fn is_whitespace(ch: String) -> Bool {
+    if ch == " " { return true }
+    if ch == "\t" { return true }
+    if ch == "\r" { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Tokenizer state
+// ---------------------------------------------------------------------------
+
+struct Lexer {
+    source: String,
+    pos: Int,
+    line: Int,
+    column: Int,
+    filename: String
+}
+
+// ---------------------------------------------------------------------------
+// Token constructors — simple helpers since struct construction is
+// not yet supported as an expression in the grammar.
+// ---------------------------------------------------------------------------
+
+fn make_token(tok_type: String, value: String, line: Int, col: Int, end_line: Int, end_col: Int) -> Token {
+    // Placeholder — in production, this returns a Token struct.
+    // For the bootstrap, the Python lexer handles actual tokenization;
+    // this file defines the interface that the self-hosted compiler
+    // will implement.
+    return Token::NAME(value)
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+fn tokenize(source: String, filename: String) -> List<Token> {
+    // Bootstrap stub: the self-hosted lexer will implement a full
+    // character-by-character scanner here. For now, the Python
+    // Lark-based lexer is canonical.
+    let tokens: List<Token> = []
+    return tokens
+}
+
+fn tokenize_with_newlines(source: String, filename: String) -> List<Token> {
+    let tokens: List<Token> = []
+    return tokens
+}

@@ -1,0 +1,51 @@
+[
+  {
+    "name": "map_pipeline",
+    "items": 1000000,
+    "elapsed_s": 0.2396073000272736,
+    "items_per_sec": 4173495.548283269,
+    "avg_latency_us": 0.23960730002727357
+  },
+  {
+    "name": "filter_pipeline",
+    "items": 1000000,
+    "elapsed_s": 0.2358373999595642,
+    "items_per_sec": 4240209.568844705,
+    "avg_latency_us": 0.2358373999595642
+  },
+  {
+    "name": "map_filter_pipeline",
+    "items": 1000000,
+    "elapsed_s": 0.3855740000726655,
+    "items_per_sec": 2593535.870705855,
+    "avg_latency_us": 0.3855740000726655
+  },
+  {
+    "name": "chained_maps_5",
+    "items": 1000000,
+    "elapsed_s": 0.5996705999132246,
+    "items_per_sec": 1667582.1695189078,
+    "avg_latency_us": 0.5996705999132246
+  },
+  {
+    "name": "chained_maps_10",
+    "items": 1000000,
+    "elapsed_s": 0.8033145000226796,
+    "items_per_sec": 1244842.4620391733,
+    "avg_latency_us": 0.8033145000226796
+  },
+  {
+    "name": "take_1000_from_1000000",
+    "items": 1000000,
+    "elapsed_s": 0.0001599000534042716,
+    "items_per_sec": 6253906.604219344,
+    "avg_latency_us": 0.1599000534042716
+  },
+  {
+    "name": "fold_sum",
+    "items": 1000000,
+    "elapsed_s": 0.09657449997030199,
+    "items_per_sec": 10354700.260498516,
+    "avg_latency_us": 0.09657449997030199
+  }
+]

@@ -1,0 +1,592 @@
+[
+  {
+    "benchmark": "Fibonacci (recursive, n=35)",
+    "results": [
+      {
+        "benchmark": "01_fibonacci",
+        "language": "Mapanare",
+        "lines_of_code": 10,
+        "runs": [
+          {
+            "wall_time_s": 1.791226,
+            "cpu_time_s": 1.21875,
+            "peak_memory_kb": 14.3,
+            "output": "9227465"
+          },
+          {
+            "wall_time_s": 1.337331,
+            "cpu_time_s": 1.265625,
+            "peak_memory_kb": 14.3,
+            "output": "9227465"
+          },
+          {
+            "wall_time_s": 1.989044,
+            "cpu_time_s": 1.40625,
+            "peak_memory_kb": 14.3,
+            "output": "9227465"
+          }
+        ],
+        "wall_median": 1.791226,
+        "wall_min": 1.337331,
+        "cpu_median": 1.265625,
+        "mem_peak_kb": 14.3,
+        "error": ""
+      },
+      {
+        "benchmark": "01_fibonacci",
+        "language": "Mapanare (native)",
+        "lines_of_code": 10,
+        "runs": [
+          {
+            "wall_time_s": 0.037308,
+            "cpu_time_s": 0.046875,
+            "peak_memory_kb": 0.0,
+            "output": "9227465"
+          },
+          {
+            "wall_time_s": 0.038785,
+            "cpu_time_s": 0.03125,
+            "peak_memory_kb": 0.0,
+            "output": "9227465"
+          },
+          {
+            "wall_time_s": 0.051075,
+            "cpu_time_s": 0.0625,
+            "peak_memory_kb": 0.0,
+            "output": "9227465"
+          }
+        ],
+        "wall_median": 0.038785,
+        "wall_min": 0.037308,
+        "cpu_median": 0.046875,
+        "mem_peak_kb": 0.0,
+        "error": ""
+      },
+      {
+        "benchmark": "01_fibonacci",
+        "language": "Python",
+        "lines_of_code": 12,
+        "runs": [
+          {
+            "wall_time_s": 1.464151,
+            "cpu_time_s": 1.25,
+            "peak_memory_kb": 0.5,
+            "output": ""
+          },
+          {
+            "wall_time_s": 2.126632,
+            "cpu_time_s": 1.5625,
+            "peak_memory_kb": 0.5,
+            "output": ""
+          },
+          {
+            "wall_time_s": 1.711374,
+            "cpu_time_s": 1.453125,
+            "peak_memory_kb": 0.5,
+            "output": ""
+          }
+        ],
+        "wall_median": 1.711374,
+        "wall_min": 1.464151,
+        "cpu_median": 1.453125,
+        "mem_peak_kb": 0.5,
+        "error": ""
+      },
+      {
+        "benchmark": "01_fibonacci",
+        "language": "Go",
+        "lines_of_code": 18,
+        "runs": [
+          {
+            "wall_time_s": 0.034313,
+            "cpu_time_s": 0.034313,
+            "peak_memory_kb": 0.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.038582,
+            "cpu_time_s": 0.038582,
+            "peak_memory_kb": 0.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.036535,
+            "cpu_time_s": 0.036535,
+            "peak_memory_kb": 0.0,
+            "output": "fib(35) = 9227465"
+          }
+        ],
+        "wall_median": 0.036535,
+        "wall_min": 0.034313,
+        "cpu_median": 0.036535,
+        "mem_peak_kb": 0.0,
+        "error": ""
+      },
+      {
+        "benchmark": "01_fibonacci",
+        "language": "Rust",
+        "lines_of_code": 23,
+        "runs": [
+          {
+            "wall_time_s": 0.023228,
+            "cpu_time_s": 0.023228,
+            "peak_memory_kb": 0.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.021387,
+            "cpu_time_s": 0.021387,
+            "peak_memory_kb": 0.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.062046,
+            "cpu_time_s": 0.062046,
+            "peak_memory_kb": 0.0,
+            "output": "fib(35) = 9227465"
+          }
+        ],
+        "wall_median": 0.023228,
+        "wall_min": 0.021387,
+        "cpu_median": 0.023228,
+        "mem_peak_kb": 0.0,
+        "error": ""
+      }
+    ]
+  },
+  {
+    "benchmark": "Message Passing (10K msgs)",
+    "results": [
+      {
+        "benchmark": "02_concurrency",
+        "language": "Mapanare",
+        "lines_of_code": 18,
+        "runs": [
+          {
+            "wall_time_s": 1.653635,
+            "cpu_time_s": 1.34375,
+            "peak_memory_kb": 32.6,
+            "output": "100000000"
+          },
+          {
+            "wall_time_s": 1.896429,
+            "cpu_time_s": 1.34375,
+            "peak_memory_kb": 32.6,
+            "output": "100000000"
+          },
+          {
+            "wall_time_s": 1.327935,
+            "cpu_time_s": 1.25,
+            "peak_memory_kb": 32.6,
+            "output": "100000000"
+          }
+        ],
+        "wall_median": 1.653635,
+        "wall_min": 1.327935,
+        "cpu_median": 1.34375,
+        "mem_peak_kb": 32.6,
+        "error": ""
+      },
+      {
+        "benchmark": "02_concurrency",
+        "language": "Python",
+        "lines_of_code": 28,
+        "runs": [
+          {
+            "wall_time_s": 2.138997,
+            "cpu_time_s": 1.296875,
+            "peak_memory_kb": 5419.1,
+            "output": "Time: 1.7070s"
+          },
+          {
+            "wall_time_s": 1.532455,
+            "cpu_time_s": 1.328125,
+            "peak_memory_kb": 5419.1,
+            "output": "Time: 1.1451s"
+          },
+          {
+            "wall_time_s": 2.540673,
+            "cpu_time_s": 1.390625,
+            "peak_memory_kb": 5419.1,
+            "output": "Time: 1.8678s"
+          }
+        ],
+        "wall_median": 2.138997,
+        "wall_min": 1.532455,
+        "cpu_median": 1.328125,
+        "mem_peak_kb": 5419.1,
+        "error": ""
+      },
+      {
+        "benchmark": "02_concurrency",
+        "language": "Go",
+        "lines_of_code": 27,
+        "runs": [
+          {
+            "wall_time_s": 0.004,
+            "cpu_time_s": 0.004,
+            "peak_memory_kb": 0.6,
+            "output": "sum = 100000000"
+          },
+          {
+            "wall_time_s": 0.003,
+            "cpu_time_s": 0.003,
+            "peak_memory_kb": 0.6,
+            "output": "sum = 100000000"
+          },
+          {
+            "wall_time_s": 0.003501,
+            "cpu_time_s": 0.003501,
+            "peak_memory_kb": 0.6,
+            "output": "sum = 100000000"
+          }
+        ],
+        "wall_median": 0.003501,
+        "wall_min": 0.003,
+        "cpu_median": 0.003501,
+        "mem_peak_kb": 0.6,
+        "error": ""
+      },
+      {
+        "benchmark": "02_concurrency",
+        "language": "Rust",
+        "lines_of_code": 32,
+        "runs": [
+          {
+            "wall_time_s": 0.01918,
+            "cpu_time_s": 0.01918,
+            "peak_memory_kb": 0.6,
+            "output": "sum = 100000000"
+          },
+          {
+            "wall_time_s": 0.008884,
+            "cpu_time_s": 0.008884,
+            "peak_memory_kb": 0.6,
+            "output": "sum = 100000000"
+          },
+          {
+            "wall_time_s": 0.007358,
+            "cpu_time_s": 0.007358,
+            "peak_memory_kb": 0.6,
+            "output": "sum = 100000000"
+          }
+        ],
+        "wall_median": 0.008884,
+        "wall_min": 0.007358,
+        "cpu_median": 0.008884,
+        "mem_peak_kb": 0.6,
+        "error": ""
+      }
+    ]
+  },
+  {
+    "benchmark": "Stream Pipeline (1M items)",
+    "results": [
+      {
+        "benchmark": "03_stream_pipeline",
+        "language": "Mapanare",
+        "lines_of_code": 10,
+        "runs": [
+          {
+            "wall_time_s": 1.930708,
+            "cpu_time_s": 1.203125,
+            "peak_memory_kb": 14.3,
+            "output": "749998500000"
+          },
+          {
+            "wall_time_s": 1.333677,
+            "cpu_time_s": 1.109375,
+            "peak_memory_kb": 14.3,
+            "output": "749998500000"
+          },
+          {
+            "wall_time_s": 1.670101,
+            "cpu_time_s": 1.15625,
+            "peak_memory_kb": 14.3,
+            "output": "749998500000"
+          }
+        ],
+        "wall_median": 1.670101,
+        "wall_min": 1.333677,
+        "cpu_median": 1.15625,
+        "mem_peak_kb": 14.3,
+        "error": ""
+      },
+      {
+        "benchmark": "03_stream_pipeline",
+        "language": "Mapanare (native)",
+        "lines_of_code": 10,
+        "runs": [
+          {
+            "wall_time_s": 0.016504,
+            "cpu_time_s": 0.015625,
+            "peak_memory_kb": 0.0,
+            "output": "749998500000"
+          },
+          {
+            "wall_time_s": 0.019579,
+            "cpu_time_s": 0.015625,
+            "peak_memory_kb": 0.0,
+            "output": "749998500000"
+          },
+          {
+            "wall_time_s": 0.01748,
+            "cpu_time_s": 0.015625,
+            "peak_memory_kb": 0.0,
+            "output": "749998500000"
+          }
+        ],
+        "wall_median": 0.01748,
+        "wall_min": 0.016504,
+        "cpu_median": 0.015625,
+        "mem_peak_kb": 0.0,
+        "error": ""
+      },
+      {
+        "benchmark": "03_stream_pipeline",
+        "language": "Python",
+        "lines_of_code": 17,
+        "runs": [
+          {
+            "wall_time_s": 1.193651,
+            "cpu_time_s": 1.09375,
+            "peak_memory_kb": 39498.6,
+            "output": ""
+          },
+          {
+            "wall_time_s": 2.118042,
+            "cpu_time_s": 1.21875,
+            "peak_memory_kb": 39498.6,
+            "output": ""
+          },
+          {
+            "wall_time_s": 1.320017,
+            "cpu_time_s": 1.1875,
+            "peak_memory_kb": 39498.6,
+            "output": ""
+          }
+        ],
+        "wall_median": 1.320017,
+        "wall_min": 1.193651,
+        "cpu_median": 1.1875,
+        "mem_peak_kb": 39498.6,
+        "error": ""
+      },
+      {
+        "benchmark": "03_stream_pipeline",
+        "language": "Go",
+        "lines_of_code": 18,
+        "runs": [
+          {
+            "wall_time_s": 0.000999,
+            "cpu_time_s": 0.000999,
+            "peak_memory_kb": 0.0,
+            "output": "result = 749998500000"
+          },
+          {
+            "wall_time_s": 0.0005,
+            "cpu_time_s": 0.0005,
+            "peak_memory_kb": 0.0,
+            "output": "result = 749998500000"
+          },
+          {
+            "wall_time_s": 0.000505,
+            "cpu_time_s": 0.000505,
+            "peak_memory_kb": 0.0,
+            "output": "result = 749998500000"
+          }
+        ],
+        "wall_median": 0.000505,
+        "wall_min": 0.0005,
+        "cpu_median": 0.000505,
+        "mem_peak_kb": 0.0,
+        "error": ""
+      },
+      {
+        "benchmark": "03_stream_pipeline",
+        "language": "Rust",
+        "lines_of_code": 20,
+        "runs": [
+          {
+            "wall_time_s": 0.000154,
+            "cpu_time_s": 0.000154,
+            "peak_memory_kb": 0.0,
+            "output": "result = 749998500000"
+          },
+          {
+            "wall_time_s": 0.000148,
+            "cpu_time_s": 0.000148,
+            "peak_memory_kb": 0.0,
+            "output": "result = 749998500000"
+          },
+          {
+            "wall_time_s": 0.000158,
+            "cpu_time_s": 0.000158,
+            "peak_memory_kb": 0.0,
+            "output": "result = 749998500000"
+          }
+        ],
+        "wall_median": 0.000154,
+        "wall_min": 0.000148,
+        "cpu_median": 0.000154,
+        "mem_peak_kb": 0.0,
+        "error": ""
+      }
+    ]
+  },
+  {
+    "benchmark": "Matrix Multiply (100x100)",
+    "results": [
+      {
+        "benchmark": "04_matrix_mul",
+        "language": "Mapanare",
+        "lines_of_code": 14,
+        "runs": [
+          {
+            "wall_time_s": 0.383257,
+            "cpu_time_s": 0.265625,
+            "peak_memory_kb": 14.4,
+            "output": "2000000.0"
+          },
+          {
+            "wall_time_s": 0.448114,
+            "cpu_time_s": 0.28125,
+            "peak_memory_kb": 14.4,
+            "output": "2000000.0"
+          },
+          {
+            "wall_time_s": 0.231432,
+            "cpu_time_s": 0.203125,
+            "peak_memory_kb": 14.4,
+            "output": "2000000.0"
+          }
+        ],
+        "wall_median": 0.383257,
+        "wall_min": 0.231432,
+        "cpu_median": 0.265625,
+        "mem_peak_kb": 14.4,
+        "error": ""
+      },
+      {
+        "benchmark": "04_matrix_mul",
+        "language": "Mapanare (native)",
+        "lines_of_code": 14,
+        "runs": [
+          {
+            "wall_time_s": 0.019513,
+            "cpu_time_s": 0.015625,
+            "peak_memory_kb": 0.0,
+            "output": "2e+006"
+          },
+          {
+            "wall_time_s": 0.021988,
+            "cpu_time_s": 0.015625,
+            "peak_memory_kb": 0.0,
+            "output": "2e+006"
+          },
+          {
+            "wall_time_s": 0.018881,
+            "cpu_time_s": 0.015625,
+            "peak_memory_kb": 0.0,
+            "output": "2e+006"
+          }
+        ],
+        "wall_median": 0.019513,
+        "wall_min": 0.018881,
+        "cpu_median": 0.015625,
+        "mem_peak_kb": 0.0,
+        "error": ""
+      },
+      {
+        "benchmark": "04_matrix_mul",
+        "language": "Python",
+        "lines_of_code": 21,
+        "runs": [
+          {
+            "wall_time_s": 0.638113,
+            "cpu_time_s": 0.546875,
+            "peak_memory_kb": 488.4,
+            "output": ""
+          },
+          {
+            "wall_time_s": 0.822956,
+            "cpu_time_s": 0.640625,
+            "peak_memory_kb": 488.4,
+            "output": ""
+          },
+          {
+            "wall_time_s": 1.045432,
+            "cpu_time_s": 0.59375,
+            "peak_memory_kb": 488.4,
+            "output": ""
+          }
+        ],
+        "wall_median": 0.822956,
+        "wall_min": 0.638113,
+        "cpu_median": 0.59375,
+        "mem_peak_kb": 488.4,
+        "error": ""
+      },
+      {
+        "benchmark": "04_matrix_mul",
+        "language": "Go",
+        "lines_of_code": 37,
+        "runs": [
+          {
+            "wall_time_s": 0.001001,
+            "cpu_time_s": 0.001001,
+            "peak_memory_kb": 87.5,
+            "output": "c[0][0] = 200.0"
+          },
+          {
+            "wall_time_s": 0.001,
+            "cpu_time_s": 0.001,
+            "peak_memory_kb": 87.5,
+            "output": "c[0][0] = 200.0"
+          },
+          {
+            "wall_time_s": 0.001561,
+            "cpu_time_s": 0.001561,
+            "peak_memory_kb": 87.5,
+            "output": "c[0][0] = 200.0"
+          }
+        ],
+        "wall_median": 0.001001,
+        "wall_min": 0.001,
+        "cpu_median": 0.001001,
+        "mem_peak_kb": 87.5,
+        "error": ""
+      },
+      {
+        "benchmark": "04_matrix_mul",
+        "language": "Rust",
+        "lines_of_code": 33,
+        "runs": [
+          {
+            "wall_time_s": 0.000926,
+            "cpu_time_s": 0.000926,
+            "peak_memory_kb": 80.5,
+            "output": "c[0][0] = 200.0"
+          },
+          {
+            "wall_time_s": 0.000918,
+            "cpu_time_s": 0.000918,
+            "peak_memory_kb": 80.5,
+            "output": "c[0][0] = 200.0"
+          },
+          {
+            "wall_time_s": 0.000841,
+            "cpu_time_s": 0.000841,
+            "peak_memory_kb": 80.5,
+            "output": "c[0][0] = 200.0"
+          }
+        ],
+        "wall_median": 0.000918,
+        "wall_min": 0.000841,
+        "cpu_median": 0.000918,
+        "mem_peak_kb": 80.5,
+        "error": ""
+      }
+    ]
+  }
+]

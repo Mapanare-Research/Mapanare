@@ -1,0 +1,261 @@
+name: Release — Binary Distribution
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  ci-gate:
+    uses: ./.github/workflows/ci.yml
+
+  # =========================================================================
+  # 1. Tag, create GitHub Release
+  # =========================================================================
+  release:
+    needs: ci-gate
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump_version.outputs.new_version }}
+      new_tag: ${{ steps.bump_version.outputs.new_tag }}
+      release_id: ${{ steps.create_release.outputs.id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Bump version and push tag
+        id: bump_version
+        uses: mathieudutour/github-tag-action@v6.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          release_branches: main
+          default_bump: patch
+          tag_prefix: 'v'
+
+      - name: Update VERSION file
+        run: |
+          echo "${{ steps.bump_version.outputs.new_version }}" > VERSION
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f VERSION
+          git commit -m "v${{ steps.bump_version.outputs.new_version }} [skip ci]" || true
+          git push origin main || true
+
+      - name: Fetch latest PR info
+        id: fetch_pr
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'closed', base: 'main',
+              sort: 'updated', direction: 'desc', per_page: 1,
+            });
+            if (prs.data.length > 0) {
+              const pr = prs.data[0];
+              return {
+                title: pr.title,
+                body: (pr.body || 'No description provided').replace(/\r\n/g, '\n'),
+                number: pr.number,
+                url: pr.html_url,
+                author: pr.user.login,
+              };
+            }
+            return null;
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.bump_version.outputs.new_version }}
+          name: v${{ steps.bump_version.outputs.new_version }}
+          body: |
+            ## Installation
+
+            ### Quick Install
+
+            **Linux / macOS:**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+            ```
+
+            **Windows (PowerShell):**
+            ```powershell
+            irm https://raw.githubusercontent.com/${{ github.repository }}/main/install.ps1 | iex
+            ```
+
+            ### Manual Download
+
+            | Platform | Download | Size |
+            |----------|----------|------|
+            | **Linux** (x64) | [`mapa-linux-x64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapa-linux-x64.tar.gz) | — |
+            | **macOS** (Apple Silicon) | [`mapa-mac-arm64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapa-mac-arm64.tar.gz) | — |
+            | **Windows** (x64) | [`mapa-win-x64.zip`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapa-win-x64.zip) | — |
+
+            > Downloads become available once the build pipeline completes (~10 min after release).
+
+            ### Verify Installation
+            ```bash
+            mapa --version
+            mapa run hello.mn
+            ```
+
+            ---
+
+            ## Changes
+            ${{ steps.fetch_pr.outputs.result != 'null' && fromJSON(steps.fetch_pr.outputs.result).body || 'Version update' }}
+
+            ## Details
+            - Version: `v${{ steps.bump_version.outputs.new_version }}`
+            ${{ steps.fetch_pr.outputs.result != 'null' && format('- PR: #{0} by @{1}', fromJSON(steps.fetch_pr.outputs.result).number, fromJSON(steps.fetch_pr.outputs.result).author) || '' }}
+            ${{ steps.fetch_pr.outputs.result != 'null' && format('- PR URL: {0}', fromJSON(steps.fetch_pr.outputs.result).url) || '' }}
+          draft: false
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+
+  # =========================================================================
+  # 2. Build CLI binary with PyInstaller (3 platforms)
+  # =========================================================================
+  build-cli:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: mapa-linux-x64
+            archive_name: mapa-linux-x64.tar.gz
+            archive_cmd: tar -czf
+          - os: macos-latest
+            artifact: mapa-mac-arm64
+            archive_name: mapa-mac-arm64.tar.gz
+            archive_cmd: tar -czf
+          - os: windows-latest
+            artifact: mapa-win-x64
+            archive_name: mapa-win-x64.zip
+            archive_cmd: zip -r
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.new_version }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install Mapanare + PyInstaller
+        shell: bash
+        run: |
+          echo "${{ needs.release.outputs.new_version }}" > VERSION
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Clean __pycache__
+        shell: bash
+        run: find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Build native runtime
+        shell: bash
+        run: python runtime/native/build_native.py || echo "Native runtime build skipped (optional)"
+
+      - name: Build CLI binary
+        run: pyinstaller mapa.spec --clean
+
+      - name: Smoke test CLI binary
+        shell: bash
+        run: |
+          BINARY="./dist/mapa/mapa"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            BINARY="./dist/mapa/mapa.exe"
+          fi
+          "$BINARY" --version
+          "$BINARY" --help
+          echo "CLI smoke test passed"
+
+      - name: Archive CLI binary
+        shell: bash
+        run: |
+          cd dist
+          ${{ matrix.archive_cmd }} "${{ matrix.archive_name }}" mapa/
+
+      - name: Upload CLI archive to GitHub Release
+        shell: bash
+        run: |
+          gh release upload "v${{ needs.release.outputs.new_version }}" \
+            "dist/${{ matrix.archive_name }}" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =========================================================================
+  # 3. Update release body with actual asset sizes
+  # =========================================================================
+  update-release:
+    needs: [release, build-cli]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Update release body with asset sizes
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const version = '${{ needs.release.outputs.new_version }}';
+            const releaseId = ${{ needs.release.outputs.release_id }};
+
+            const release = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+            });
+
+            const sizeMap = {};
+            for (const asset of release.data.assets) {
+              const bytes = asset.size;
+              let size;
+              if (bytes >= 1024 * 1024 * 1024) {
+                size = (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+              } else if (bytes >= 1024 * 1024) {
+                size = (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+              } else if (bytes >= 1024) {
+                size = (bytes / 1024).toFixed(1) + ' KB';
+              } else {
+                size = bytes + ' B';
+              }
+              sizeMap[asset.name] = size;
+            }
+
+            let body = release.data.body;
+            for (const [name, size] of Object.entries(sizeMap)) {
+              const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const pattern = new RegExp(`(\\[` + '`' + escaped + '`' + `\\][^|]+\\|)\\s*—\\s*\\|`);
+              body = body.replace(pattern, `$1 ${size} |`);
+            }
+
+            body = body.replace(/\n> Downloads become available[^\n]*\n?/, '\n');
+
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+              body: body,
+            });

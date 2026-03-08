@@ -1,0 +1,256 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Mapanare",
+  "scopeName": "source.mapanare",
+  "fileTypes": ["mn"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#characters" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#operators" },
+    { "include": "#decorators" },
+    { "include": "#function-definition" },
+    { "include": "#agent-definition" },
+    { "include": "#struct-definition" },
+    { "include": "#enum-definition" },
+    { "include": "#pipe-definition" },
+    { "include": "#function-call" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.mapanare",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.mapanare",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.mapanare",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.mapanare",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "characters": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.mapanare",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.mapanare",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.mapanare",
+          "match": "\\b0[xX][0-9a-fA-F_]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.mapanare",
+          "match": "\\b0[bB][01_]+\\b"
+        },
+        {
+          "name": "constant.numeric.octal.mapanare",
+          "match": "\\b0[oO][0-7_]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.mapanare",
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*\\b"
+        },
+        {
+          "name": "constant.numeric.integer.mapanare",
+          "match": "\\b[0-9][0-9_]*\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.mapanare",
+          "match": "\\b(if|else|match|for|in|return|spawn|sync)\\b"
+        },
+        {
+          "name": "keyword.declaration.mapanare",
+          "match": "\\b(let|mut|fn|pub|agent|pipe|struct|enum|type|impl|import|export|input|output)\\b"
+        },
+        {
+          "name": "keyword.other.mapanare",
+          "match": "\\b(signal|stream|self)\\b"
+        },
+        {
+          "name": "constant.language.mapanare",
+          "match": "\\b(true|false|none)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.mapanare",
+          "match": "\\b(Int|Float|Bool|String|Char|Void)\\b"
+        },
+        {
+          "name": "support.type.generic.mapanare",
+          "match": "\\b(Option|Result|List|Map|Signal|Stream|Channel|Tensor)\\b"
+        },
+        {
+          "name": "entity.name.type.mapanare",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.pipe.mapanare",
+          "match": "\\|>"
+        },
+        {
+          "name": "keyword.operator.arrow.mapanare",
+          "match": "->|=>"
+        },
+        {
+          "name": "keyword.operator.send.mapanare",
+          "match": "<-"
+        },
+        {
+          "name": "keyword.operator.namespace.mapanare",
+          "match": "::"
+        },
+        {
+          "name": "keyword.operator.range.mapanare",
+          "match": "\\.\\.(=)?"
+        },
+        {
+          "name": "keyword.operator.error-prop.mapanare",
+          "match": "\\?"
+        },
+        {
+          "name": "keyword.operator.comparison.mapanare",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.logical.mapanare",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.assignment.mapanare",
+          "match": "\\+=|-=|\\*=|/=|="
+        },
+        {
+          "name": "keyword.operator.arithmetic.mapanare",
+          "match": "\\+|-|\\*|/|%|@"
+        }
+      ]
+    },
+    "decorators": {
+      "patterns": [
+        {
+          "name": "meta.decorator.mapanare",
+          "match": "@[a-zA-Z_][a-zA-Z0-9_]*",
+          "captures": {
+            "0": { "name": "entity.name.function.decorator.mapanare" }
+          }
+        }
+      ]
+    },
+    "function-definition": {
+      "patterns": [
+        {
+          "match": "\\b(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.mapanare" },
+            "2": { "name": "entity.name.function.mapanare" }
+          }
+        }
+      ]
+    },
+    "agent-definition": {
+      "patterns": [
+        {
+          "match": "\\b(agent)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.mapanare" },
+            "2": { "name": "entity.name.type.agent.mapanare" }
+          }
+        }
+      ]
+    },
+    "struct-definition": {
+      "patterns": [
+        {
+          "match": "\\b(struct)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.mapanare" },
+            "2": { "name": "entity.name.type.struct.mapanare" }
+          }
+        }
+      ]
+    },
+    "enum-definition": {
+      "patterns": [
+        {
+          "match": "\\b(enum)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.mapanare" },
+            "2": { "name": "entity.name.type.enum.mapanare" }
+          }
+        }
+      ]
+    },
+    "pipe-definition": {
+      "patterns": [
+        {
+          "match": "\\b(pipe)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.mapanare" },
+            "2": { "name": "entity.name.type.pipe.mapanare" }
+          }
+        }
+      ]
+    },
+    "function-call": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.call.mapanare" }
+          }
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.mapanare",
+          "match": "\\b[a-z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}

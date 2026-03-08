@@ -1,0 +1,233 @@
+// parser.mn — Mapanare parser, self-hosted port of mapa/parser.py.
+// Builds AST from token stream using recursive descent.
+
+import self::ast
+import self::lexer
+
+// ---------------------------------------------------------------------------
+// ParseError
+// ---------------------------------------------------------------------------
+
+struct ParseError {
+    message: String,
+    line: Int,
+    column: Int,
+    filename: String
+}
+
+// ---------------------------------------------------------------------------
+// Parser state
+// ---------------------------------------------------------------------------
+
+struct Parser {
+    tokens: List<Token>,
+    pos: Int,
+    filename: String
+}
+
+// ---------------------------------------------------------------------------
+// Token classification helpers
+// ---------------------------------------------------------------------------
+
+fn is_skip_token(tok_type: String) -> Bool {
+    if tok_type == "KW_FN" { return true }
+    if tok_type == "KW_LET" { return true }
+    if tok_type == "KW_AGENT" { return true }
+    if tok_type == "KW_PIPE" { return true }
+    if tok_type == "KW_STRUCT" { return true }
+    if tok_type == "KW_ENUM" { return true }
+    if tok_type == "KW_TYPE" { return true }
+    if tok_type == "KW_IMPL" { return true }
+    if tok_type == "KW_IF" { return true }
+    if tok_type == "KW_ELSE" { return true }
+    if tok_type == "KW_MATCH" { return true }
+    if tok_type == "KW_FOR" { return true }
+    if tok_type == "KW_IN" { return true }
+    if tok_type == "KW_RETURN" { return true }
+    if tok_type == "KW_IMPORT" { return true }
+    if tok_type == "KW_EXPORT" { return true }
+    if tok_type == "KW_SPAWN" { return true }
+    if tok_type == "KW_SYNC" { return true }
+    if tok_type == "KW_SIGNAL" { return true }
+    if tok_type == "KW_STREAM" { return true }
+    if tok_type == "KW_INPUT" { return true }
+    if tok_type == "KW_OUTPUT" { return true }
+    if tok_type == "KW_TENSOR" { return true }
+    if tok_type == "KW_WILDCARD" { return true }
+    if tok_type == "KW_TRUE" { return true }
+    if tok_type == "KW_FALSE" { return true }
+    if tok_type == "KW_NONE" { return true }
+    if tok_type == "LPAREN" { return true }
+    if tok_type == "RPAREN" { return true }
+    if tok_type == "LBRACE" { return true }
+    if tok_type == "RBRACE" { return true }
+    if tok_type == "LBRACKET" { return true }
+    if tok_type == "RBRACKET" { return true }
+    if tok_type == "COMMA" { return true }
+    if tok_type == "COLON" { return true }
+    if tok_type == "SEMICOLON" { return true }
+    if tok_type == "ASSIGN" { return true }
+    if tok_type == "ARROW" { return true }
+    if tok_type == "FAT_ARROW" { return true }
+    if tok_type == "PIPE_OP" { return true }
+    if tok_type == "DOUBLE_COLON" { return true }
+    if tok_type == "DOT" { return true }
+    if tok_type == "QUESTION" { return true }
+    if tok_type == "SEND" { return true }
+    return false
+}
+
+fn is_keep_token(tok_type: String) -> Bool {
+    if tok_type == "KW_PUB" { return true }
+    if tok_type == "KW_MUT" { return true }
+    if tok_type == "KW_SELF" { return true }
+    if tok_type == "NAME" { return true }
+    if tok_type == "DEC_INT" { return true }
+    if tok_type == "HEX_INT" { return true }
+    if tok_type == "BIN_INT" { return true }
+    if tok_type == "OCT_INT" { return true }
+    if tok_type == "FLOAT_LIT" { return true }
+    if tok_type == "STRING_LIT" { return true }
+    if tok_type == "CHAR_LIT" { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Integer parsing helpers
+// ---------------------------------------------------------------------------
+
+fn parse_int_token(tok_type: String, value: String) -> Int {
+    // Remove underscores from numeric literals
+    // In the bootstrap, the Python parser handles this via Lark.
+    // The self-hosted version will implement character-level parsing.
+    return 0
+}
+
+// ---------------------------------------------------------------------------
+// Binary operator helpers
+// ---------------------------------------------------------------------------
+
+fn is_arithmetic_op(op: String) -> Bool {
+    if op == "+" { return true }
+    if op == "-" { return true }
+    if op == "*" { return true }
+    if op == "/" { return true }
+    if op == "%" { return true }
+    if op == "@" { return true }
+    return false
+}
+
+fn is_comparison_op(op: String) -> Bool {
+    if op == "<" { return true }
+    if op == ">" { return true }
+    if op == "<=" { return true }
+    if op == ">=" { return true }
+    if op == "==" { return true }
+    if op == "!=" { return true }
+    return false
+}
+
+fn is_logical_op(op: String) -> Bool {
+    if op == "&&" { return true }
+    if op == "||" { return true }
+    return false
+}
+
+fn is_assign_op(op: String) -> Bool {
+    if op == "=" { return true }
+    if op == "+=" { return true }
+    if op == "-=" { return true }
+    if op == "*=" { return true }
+    if op == "/=" { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Precedence levels (higher = binds tighter)
+// ---------------------------------------------------------------------------
+
+fn op_precedence(op: String) -> Int {
+    if op == "||" { return 1 }
+    if op == "&&" { return 2 }
+    if op == "==" { return 3 }
+    if op == "!=" { return 3 }
+    if op == "<" { return 4 }
+    if op == ">" { return 4 }
+    if op == "<=" { return 4 }
+    if op == ">=" { return 4 }
+    if op == "|>" { return 5 }
+    if op == ".." { return 6 }
+    if op == "..=" { return 6 }
+    if op == "+" { return 7 }
+    if op == "-" { return 7 }
+    if op == "*" { return 8 }
+    if op == "/" { return 8 }
+    if op == "%" { return 8 }
+    if op == "@" { return 8 }
+    return 0
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+fn parse(source: String, filename: String) -> Program {
+    // Bootstrap stub: the self-hosted parser will implement a full
+    // recursive-descent parser here. For now, the Python Lark-based
+    // parser is canonical.
+    //
+    // The recursive-descent approach replaces Lark with:
+    //   1. Tokenize via lexer.mn
+    //   2. Parse tokens using precedence climbing for expressions
+    //   3. Build AST nodes directly
+    let defs: List<Definition> = []
+    return Program::start(defs)
+}
+
+fn parse_definition(parser: Parser) -> Definition {
+    // Dispatches to parse_fn_def, parse_agent_def, etc.
+    // based on the current token.
+    return Definition::FnDef(FnDefData::empty())
+}
+
+fn parse_fn_def(parser: Parser) -> FnDefData {
+    // Parse: [pub] fn NAME [<T>] (params) [-> type] { body }
+    let name: String = ""
+    let public: Bool = false
+    let params: List<Param> = []
+    let type_params: List<String> = []
+    return FnDefData::make(name, public, type_params, params)
+}
+
+fn parse_expr(parser: Parser, min_prec: Int) -> Expr {
+    // Precedence climbing expression parser.
+    // Starts with atom/unary, then loops over binary ops
+    // at or above min_prec.
+    return Expr::IntLit(0)
+}
+
+fn parse_atom(parser: Parser) -> Expr {
+    // Parse: literal | ident | paren_expr | list | if | match | spawn | sync
+    return Expr::IntLit(0)
+}
+
+fn parse_block(parser: Parser) -> Block {
+    // Parse: { stmt* }
+    let stmts: List<Stmt> = []
+    return Block::make(stmts)
+}
+
+fn parse_stmt(parser: Parser) -> Stmt {
+    // Parse: let_stmt | return_stmt | for_stmt | expr_stmt
+    return Stmt::ExprStmt(Expr::IntLit(0))
+}
+
+fn parse_type_expr(parser: Parser) -> TypeExpr {
+    // Parse: named_type | generic_type | tensor_type | fn_type
+    return TypeExpr::Named("Void")
+}
+
+fn parse_pattern(parser: Parser) -> Pattern {
+    // Parse: wildcard | ident | literal | constructor
+    return Pattern::Wildcard()
+}

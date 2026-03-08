@@ -1,0 +1,286 @@
+// emit_llvm.mn — LLVM IR emitter for the Mapanare self-hosted compiler.
+// Port of mapa/emit_llvm.py to native Mapanare.
+// Compiles validated AST to LLVM IR text.
+
+import self::ast
+
+// ---------------------------------------------------------------------------
+// LLVM type constants (as string representations)
+// ---------------------------------------------------------------------------
+
+fn llvm_int() -> String {
+    return "i64"
+}
+
+fn llvm_float() -> String {
+    return "double"
+}
+
+fn llvm_bool() -> String {
+    return "i1"
+}
+
+fn llvm_char() -> String {
+    return "i8"
+}
+
+fn llvm_void() -> String {
+    return "void"
+}
+
+fn llvm_string() -> String {
+    return "{ i8*, i64 }"
+}
+
+// ---------------------------------------------------------------------------
+// Composite type builders
+// ---------------------------------------------------------------------------
+
+fn llvm_option_type(inner: String) -> String {
+    return "{ i1, " + inner + " }"
+}
+
+fn llvm_result_type(ok_ty: String, err_ty: String) -> String {
+    return "{ i1, { " + ok_ty + ", " + err_ty + " } }"
+}
+
+fn llvm_tensor_type(elem_ty: String) -> String {
+    return "{ " + elem_ty + "*, i64, i64*, i64 }"
+}
+
+fn llvm_list_type(elem_ty: String) -> String {
+    return "{ " + elem_ty + "*, i64, i64 }"
+}
+
+fn llvm_map_type() -> String {
+    return "{ i8*, i64 }"
+}
+
+// ---------------------------------------------------------------------------
+// Type resolver: Mapanare type name → LLVM IR type string
+// ---------------------------------------------------------------------------
+
+fn resolve_type(name: String) -> String {
+    if name == "Int" { return llvm_int() }
+    if name == "Float" { return llvm_float() }
+    if name == "Bool" { return llvm_bool() }
+    if name == "Char" { return llvm_char() }
+    if name == "String" { return llvm_string() }
+    if name == "Void" { return llvm_void() }
+    return "i64"
+}
+
+fn resolve_generic_type(name: String, arg: String) -> String {
+    if name == "Option" { return llvm_option_type(resolve_type(arg)) }
+    if name == "List" { return llvm_list_type(resolve_type(arg)) }
+    if name == "Tensor" { return llvm_tensor_type(resolve_type(arg)) }
+    return "i64"
+}
+
+// ---------------------------------------------------------------------------
+// LLVM IR instruction builders (string-based)
+// ---------------------------------------------------------------------------
+
+fn emit_alloca(name: String, ty: String) -> String {
+    return "  %" + name + " = alloca " + ty
+}
+
+fn emit_store(ty: String, value: String, ptr: String) -> String {
+    return "  store " + ty + " " + value + ", " + ty + "* " + ptr
+}
+
+fn emit_load(name: String, ty: String, ptr: String) -> String {
+    return "  %" + name + " = load " + ty + ", " + ty + "* " + ptr
+}
+
+fn emit_add(name: String, ty: String, left: String, right: String) -> String {
+    return "  %" + name + " = add " + ty + " " + left + ", " + right
+}
+
+fn emit_sub(name: String, ty: String, left: String, right: String) -> String {
+    return "  %" + name + " = sub " + ty + " " + left + ", " + right
+}
+
+fn emit_mul(name: String, ty: String, left: String, right: String) -> String {
+    return "  %" + name + " = mul " + ty + " " + left + ", " + right
+}
+
+fn emit_sdiv(name: String, ty: String, left: String, right: String) -> String {
+    return "  %" + name + " = sdiv " + ty + " " + left + ", " + right
+}
+
+fn emit_srem(name: String, ty: String, left: String, right: String) -> String {
+    return "  %" + name + " = srem " + ty + " " + left + ", " + right
+}
+
+fn emit_fadd(name: String, left: String, right: String) -> String {
+    return "  %" + name + " = fadd double " + left + ", " + right
+}
+
+fn emit_fsub(name: String, left: String, right: String) -> String {
+    return "  %" + name + " = fsub double " + left + ", " + right
+}
+
+fn emit_fmul(name: String, left: String, right: String) -> String {
+    return "  %" + name + " = fmul double " + left + ", " + right
+}
+
+fn emit_fdiv(name: String, left: String, right: String) -> String {
+    return "  %" + name + " = fdiv double " + left + ", " + right
+}
+
+fn emit_frem(name: String, left: String, right: String) -> String {
+    return "  %" + name + " = frem double " + left + ", " + right
+}
+
+fn emit_fneg(name: String, operand: String) -> String {
+    return "  %" + name + " = fneg double " + operand
+}
+
+fn emit_neg(name: String, ty: String, operand: String) -> String {
+    return "  %" + name + " = sub " + ty + " 0, " + operand
+}
+
+fn emit_not(name: String, operand: String) -> String {
+    return "  %" + name + " = xor i1 " + operand + ", true"
+}
+
+// ---------------------------------------------------------------------------
+// Comparison instruction builders
+// ---------------------------------------------------------------------------
+
+fn emit_icmp(name: String, cmp: String, ty: String, left: String, right: String) -> String {
+    return "  %" + name + " = icmp " + cmp + " " + ty + " " + left + ", " + right
+}
+
+fn emit_fcmp(name: String, cmp: String, left: String, right: String) -> String {
+    return "  %" + name + " = fcmp o" + cmp + " double " + left + ", " + right
+}
+
+// ---------------------------------------------------------------------------
+// Logical operators
+// ---------------------------------------------------------------------------
+
+fn emit_and(name: String, left: String, right: String) -> String {
+    return "  %" + name + " = and i1 " + left + ", " + right
+}
+
+fn emit_or(name: String, left: String, right: String) -> String {
+    return "  %" + name + " = or i1 " + left + ", " + right
+}
+
+// ---------------------------------------------------------------------------
+// Control flow
+// ---------------------------------------------------------------------------
+
+fn emit_br(label: String) -> String {
+    return "  br label %" + label
+}
+
+fn emit_cbranch(cond: String, true_label: String, false_label: String) -> String {
+    return "  br i1 " + cond + ", label %" + true_label + ", label %" + false_label
+}
+
+fn emit_phi(name: String, ty: String, val1: String, bb1: String, val2: String, bb2: String) -> String {
+    return "  %" + name + " = phi " + ty + " [ " + val1 + ", %" + bb1 + " ], [ " + val2 + ", %" + bb2 + " ]"
+}
+
+fn emit_switch(subject: String, default_label: String) -> String {
+    return "  switch i64 " + subject + ", label %" + default_label + " ["
+}
+
+fn emit_switch_case(value: String, label: String) -> String {
+    return "    i64 " + value + ", label %" + label
+}
+
+// ---------------------------------------------------------------------------
+// Function / call builders
+// ---------------------------------------------------------------------------
+
+fn emit_call(name: String, ret_ty: String, callee: String, args: String) -> String {
+    return "  %" + name + " = call " + ret_ty + " @" + callee + "(" + args + ")"
+}
+
+fn emit_call_void(callee: String, args: String) -> String {
+    return "  call void @" + callee + "(" + args + ")"
+}
+
+fn emit_ret(ty: String, value: String) -> String {
+    return "  ret " + ty + " " + value
+}
+
+fn emit_ret_void() -> String {
+    return "  ret void"
+}
+
+// ---------------------------------------------------------------------------
+// Tensor runtime declarations
+// ---------------------------------------------------------------------------
+
+fn tensor_runtime_names() -> List<String> {
+    let names: List<String> = []
+    // Tensor element-wise ops
+    // __mapanare_tensor_add, __mapanare_tensor_sub,
+    // __mapanare_tensor_mul, __mapanare_tensor_div,
+    // __mapanare_matmul
+    // Tensor alloc/free
+    // __mapanare_tensor_alloc, __mapanare_tensor_free
+    // Shape check
+    // __mapanare_tensor_shape_eq
+    // GPU detection
+    // __mapanare_detect_gpus
+    return names
+}
+
+fn is_tensor_runtime_fn(name: String) -> Bool {
+    if name == "__mapanare_tensor_add" { return true }
+    if name == "__mapanare_tensor_sub" { return true }
+    if name == "__mapanare_tensor_mul" { return true }
+    if name == "__mapanare_tensor_div" { return true }
+    if name == "__mapanare_matmul" { return true }
+    if name == "__mapanare_tensor_alloc" { return true }
+    if name == "__mapanare_tensor_free" { return true }
+    if name == "__mapanare_tensor_shape_eq" { return true }
+    if name == "__mapanare_detect_gpus" { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Emitter state
+// ---------------------------------------------------------------------------
+
+struct LLVMEmitter {
+    module_name: String,
+    target_triple: String,
+    data_layout: String,
+    lines: List<String>,
+    local_counter: Int
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+fn emit_program(emitter: LLVMEmitter, source: String) -> String {
+    // Bootstrap stub: the self-hosted emitter will walk the AST
+    // and produce LLVM IR text. For now, the Python llvmlite-based
+    // emitter is canonical.
+    return ""
+}
+
+fn emit_fn(emitter: LLVMEmitter, name: String) -> String {
+    return ""
+}
+
+fn emit_module_header(name: String, triple: String, layout: String) -> String {
+    let mut header: String = ""
+    header = "; ModuleID = '" + name + "'\n"
+    header = header + "source_filename = \"" + name + "\"\n"
+    if triple != "" {
+        header = header + "target triple = \"" + triple + "\"\n"
+    }
+    if layout != "" {
+        header = header + "target datalayout = \"" + layout + "\"\n"
+    }
+    return header
+}

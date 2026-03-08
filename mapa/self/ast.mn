@@ -1,0 +1,255 @@
+// ast.mn — AST node definitions for the Mapanare self-hosted compiler.
+// Port of mapa/ast_nodes.py to native Mapanare.
+
+// ---------------------------------------------------------------------------
+// Base
+// ---------------------------------------------------------------------------
+
+struct Span {
+    line: Int,
+    column: Int,
+    end_line: Int,
+    end_column: Int
+}
+
+struct ASTNode {
+    span: Span
+}
+
+// ---------------------------------------------------------------------------
+// Program (root)
+// ---------------------------------------------------------------------------
+
+struct Program {
+    span: Span,
+    definitions: List<Definition>
+}
+
+// ---------------------------------------------------------------------------
+// Type annotations
+// ---------------------------------------------------------------------------
+
+enum TypeExpr {
+    Named(String),
+    Generic(String, List<TypeExpr>),
+    TensorTy(TypeExpr, List<Expr>),
+    FnTy(List<TypeExpr>, TypeExpr)
+}
+
+// ---------------------------------------------------------------------------
+// Expressions
+// ---------------------------------------------------------------------------
+
+enum LambdaBody {
+    ExprBody(Expr),
+    BlockBody(Block)
+}
+
+enum ElseClause {
+    ElseBlock(Block),
+    ElseIf(Expr, Block, Option<ElseClause>)
+}
+
+enum Expr {
+    IntLit(Int),
+    FloatLit(Float),
+    StringLit(String),
+    CharLit(String),
+    BoolLit(Bool),
+    NoneLit,
+    Ident(String),
+    Binary(Expr, String, Expr),
+    Unary(String, Expr),
+    Call(Expr, List<Expr>),
+    MethodCall(Expr, String, List<Expr>),
+    FieldAccess(Expr, String),
+    NamespaceAccess(String, String),
+    Index(Expr, Expr),
+    Pipe(Expr, Expr),
+    Range(Expr, Expr, Bool),
+    Lambda(List<Param>, LambdaBody),
+    Spawn(Expr, List<Expr>),
+    Sync(Expr),
+    Send(Expr, Expr),
+    ErrorProp(Expr),
+    ListLit(List<Expr>),
+    Construct(String, List<FieldInit>),
+    SomeWrap(Expr),
+    OkWrap(Expr),
+    ErrWrap(Expr),
+    SignalVal(Expr, Bool),
+    Assign(Expr, String, Expr),
+    If(Expr, Block, Option<ElseClause>),
+    Match(Expr, List<MatchArm>)
+}
+
+// ---------------------------------------------------------------------------
+// Statements
+// ---------------------------------------------------------------------------
+
+enum Stmt {
+    Let(String, Bool, Option<TypeExpr>, Expr),
+    ExprStmt(Expr),
+    Return(Option<Expr>),
+    For(String, Expr, Block),
+    SignalDecl(String, Bool, Option<TypeExpr>, Expr, Bool),
+    StreamDecl(String, Option<TypeExpr>, Expr)
+}
+
+struct Block {
+    span: Span,
+    stmts: List<Stmt>
+}
+
+// ---------------------------------------------------------------------------
+// Patterns (for match)
+// ---------------------------------------------------------------------------
+
+enum Pattern {
+    Wildcard,
+    IdentPat(String),
+    LiteralPat(Expr),
+    ConstructorPat(String, List<Pattern>)
+}
+
+struct MatchArm {
+    span: Span,
+    pattern: Pattern,
+    body: MatchArmBody
+}
+
+enum MatchArmBody {
+    ExprBody(Expr),
+    BlockBody(Block)
+}
+
+// ---------------------------------------------------------------------------
+// Definitions
+// ---------------------------------------------------------------------------
+
+struct Decorator {
+    span: Span,
+    name: String,
+    args: List<Expr>
+}
+
+struct Param {
+    span: Span,
+    name: String,
+    type_annotation: Option<TypeExpr>
+}
+
+struct FieldInit {
+    span: Span,
+    name: String,
+    value: Expr
+}
+
+struct FnDefData {
+    span: Span,
+    name: String,
+    public: Bool,
+    type_params: List<String>,
+    params: List<Param>,
+    return_type: Option<TypeExpr>,
+    body: Block,
+    decorators: List<Decorator>
+}
+
+struct AgentInput {
+    span: Span,
+    name: String,
+    type_annotation: TypeExpr
+}
+
+struct AgentOutput {
+    span: Span,
+    name: String,
+    type_annotation: TypeExpr
+}
+
+struct AgentDefData {
+    span: Span,
+    name: String,
+    public: Bool,
+    inputs: List<AgentInput>,
+    outputs: List<AgentOutput>,
+    state: List<Stmt>,
+    methods: List<FnDefData>,
+    decorators: List<Decorator>
+}
+
+struct PipeDefData {
+    span: Span,
+    name: String,
+    public: Bool,
+    stages: List<Expr>
+}
+
+struct StructField {
+    span: Span,
+    name: String,
+    type_annotation: TypeExpr
+}
+
+struct StructDefData {
+    span: Span,
+    name: String,
+    public: Bool,
+    type_params: List<String>,
+    fields: List<StructField>
+}
+
+struct EnumVariant {
+    span: Span,
+    name: String,
+    fields: List<TypeExpr>
+}
+
+struct EnumDefData {
+    span: Span,
+    name: String,
+    public: Bool,
+    type_params: List<String>,
+    variants: List<EnumVariant>
+}
+
+enum Definition {
+    FnDef(FnDefData),
+    AgentDef(AgentDefData),
+    PipeDef(PipeDefData),
+    StructDef(StructDefData),
+    EnumDef(EnumDefData),
+    TypeAlias(String, TypeExpr),
+    ImplDef(String, List<FnDefData>),
+    ImportDef(List<String>, List<String>),
+    ExportDef(Option<Definition>, List<String>)
+}
+
+// ---------------------------------------------------------------------------
+// Helper constructors
+// ---------------------------------------------------------------------------
+
+fn make_named_type(name: String) -> TypeExpr {
+    return TypeExpr::Named(name)
+}
+
+fn make_void_type() -> TypeExpr {
+    return TypeExpr::Named("Void")
+}
+
+fn make_int_type() -> TypeExpr {
+    return TypeExpr::Named("Int")
+}
+
+fn make_float_type() -> TypeExpr {
+    return TypeExpr::Named("Float")
+}
+
+fn make_bool_type() -> TypeExpr {
+    return TypeExpr::Named("Bool")
+}
+
+fn make_string_type() -> TypeExpr {
+    return TypeExpr::Named("String")
+}

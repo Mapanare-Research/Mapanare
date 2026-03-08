@@ -1,0 +1,233 @@
+// semantic.mn — Semantic analysis for the Mapanare self-hosted compiler.
+// Port of mapa/semantic.py to native Mapanare.
+// Performs type checking and scope resolution.
+
+import self::ast
+
+// ---------------------------------------------------------------------------
+// SemanticError
+// ---------------------------------------------------------------------------
+
+struct SemanticError {
+    message: String,
+    line: Int,
+    column: Int,
+    filename: String
+}
+
+// ---------------------------------------------------------------------------
+// Type representation
+// ---------------------------------------------------------------------------
+
+struct TypeInfo {
+    name: String,
+    args: List<TypeInfo>,
+    is_function: Bool,
+    param_types: List<TypeInfo>,
+    return_type: Option<TypeInfo>,
+    tensor_shape: Option<List<Int>>
+}
+
+// Singleton type constants
+fn unknown_type() -> TypeInfo {
+    return make_type("<unknown>")
+}
+
+fn int_type() -> TypeInfo {
+    return make_type("Int")
+}
+
+fn float_type() -> TypeInfo {
+    return make_type("Float")
+}
+
+fn bool_type() -> TypeInfo {
+    return make_type("Bool")
+}
+
+fn string_type() -> TypeInfo {
+    return make_type("String")
+}
+
+fn char_type() -> TypeInfo {
+    return make_type("Char")
+}
+
+fn void_type() -> TypeInfo {
+    return make_type("Void")
+}
+
+fn make_type(name: String) -> TypeInfo {
+    let args: List<TypeInfo> = []
+    let params: List<TypeInfo> = []
+    return make_type_full(name, args, false, params)
+}
+
+fn make_type_full(name: String, args: List<TypeInfo>, is_fn: Bool, params: List<TypeInfo>) -> TypeInfo {
+    return make_type_full(name, args, is_fn, params)
+}
+
+// ---------------------------------------------------------------------------
+// Primitive and builtin type sets
+// ---------------------------------------------------------------------------
+
+fn is_primitive_type(name: String) -> Bool {
+    if name == "Int" { return true }
+    if name == "Float" { return true }
+    if name == "Bool" { return true }
+    if name == "String" { return true }
+    if name == "Char" { return true }
+    if name == "Void" { return true }
+    return false
+}
+
+fn is_builtin_generic(name: String) -> Bool {
+    if name == "Option" { return true }
+    if name == "Result" { return true }
+    if name == "List" { return true }
+    if name == "Map" { return true }
+    if name == "Signal" { return true }
+    if name == "Stream" { return true }
+    if name == "Channel" { return true }
+    if name == "Tensor" { return true }
+    return false
+}
+
+fn is_builtin_function(name: String) -> Bool {
+    if name == "print" { return true }
+    if name == "println" { return true }
+    if name == "len" { return true }
+    if name == "toString" { return true }
+    if name == "Some" { return true }
+    if name == "Ok" { return true }
+    if name == "Err" { return true }
+    if name == "signal" { return true }
+    if name == "stream" { return true }
+    return false
+}
+
+fn builtin_return_type(name: String) -> String {
+    if name == "print" { return "Void" }
+    if name == "println" { return "Void" }
+    if name == "len" { return "Int" }
+    if name == "toString" { return "String" }
+    if name == "Some" { return "Option" }
+    if name == "Ok" { return "Result" }
+    if name == "Err" { return "Result" }
+    if name == "signal" { return "Signal" }
+    if name == "stream" { return "Stream" }
+    return "Void"
+}
+
+// ---------------------------------------------------------------------------
+// Symbol table
+// ---------------------------------------------------------------------------
+
+struct Symbol {
+    name: String,
+    kind: String,
+    type_info: TypeInfo,
+    mutable: Bool
+}
+
+struct Scope {
+    parent: Option<Scope>,
+    symbols: List<Symbol>
+}
+
+fn scope_define(scope: Scope, name: String, sym: Symbol) -> Scope {
+    // In the self-hosted version, this mutates the scope's symbol list.
+    // For now this is a structural placeholder.
+    return scope
+}
+
+fn scope_lookup(scope: Scope, name: String) -> Option<Symbol> {
+    // Walk up the scope chain to find a symbol.
+    return none
+}
+
+fn scope_lookup_local(scope: Scope, name: String) -> Option<Symbol> {
+    // Only look in the current scope (no parent walk).
+    return none
+}
+
+// ---------------------------------------------------------------------------
+// Semantic checker
+// ---------------------------------------------------------------------------
+
+struct SemanticChecker {
+    filename: String,
+    errors: List<SemanticError>,
+    global_scope: Scope,
+    current_scope: Scope
+}
+
+// ---------------------------------------------------------------------------
+// Type compatibility checking
+// ---------------------------------------------------------------------------
+
+fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool {
+    if a.name == "<unknown>" { return true }
+    if b.name == "<unknown>" { return true }
+    if a.name != b.name { return false }
+    return true
+}
+
+fn is_numeric_type(name: String) -> Bool {
+    if name == "Int" { return true }
+    if name == "Float" { return true }
+    if name == "<unknown>" { return true }
+    return false
+}
+
+fn is_arithmetic_operand(name: String) -> Bool {
+    if name == "Int" { return true }
+    if name == "Float" { return true }
+    if name == "String" { return true }
+    if name == "Tensor" { return true }
+    if name == "<unknown>" { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Binary operator type rules
+// ---------------------------------------------------------------------------
+
+fn check_arithmetic_result(left: String, right: String, op: String) -> String {
+    if left == "Tensor" { return "Tensor" }
+    if right == "Tensor" { return "Tensor" }
+    if op == "+" {
+        if left == "String" { return "String" }
+        if right == "String" { return "String" }
+    }
+    if left == "Float" { return "Float" }
+    if right == "Float" { return "Float" }
+    if left == "Int" {
+        if right == "Int" { return "Int" }
+    }
+    return "<unknown>"
+}
+
+fn check_comparison_result(left: String, right: String) -> String {
+    return "Bool"
+}
+
+fn check_logical_result(left: String, right: String) -> String {
+    return "Bool"
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+fn check(source: String, filename: String) -> List<SemanticError> {
+    // Bootstrap stub: the self-hosted semantic checker will implement
+    // full two-pass analysis (register definitions, then check bodies).
+    let errors: List<SemanticError> = []
+    return errors
+}
+
+fn check_or_raise(source: String, filename: String) -> List<SemanticError> {
+    let errors: List<SemanticError> = check(source, filename)
+    return errors
+}

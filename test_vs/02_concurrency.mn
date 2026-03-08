@@ -1,0 +1,23 @@
+// Benchmark: Concurrent Message Passing
+// Mapanare — built-in agents, zero library imports
+
+agent Worker {
+    input val: Int
+    output result: Int
+
+    fn handle(val: Int) -> Int {
+        return val * 2 + 1
+    }
+}
+
+fn main() {
+    let w = spawn Worker()
+    let mut sum: Int = 0
+    for i in 0..10000 {
+        w.val <- i
+        let r = sync w.result
+        sum += r
+    }
+    print(sum)
+    sync w.stop()
+}

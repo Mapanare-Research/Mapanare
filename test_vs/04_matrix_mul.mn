@@ -1,0 +1,18 @@
+// Benchmark: Matrix Multiplication (computation only)
+// Mapanare -- triple nested loop, pure arithmetic
+
+fn main() {
+    let size: Int = 100
+    let mut total: Float = 0.0
+
+    for i in 0..size {
+        for j in 0..size {
+            let mut sum: Float = 0.0
+            for k in 0..size {
+                sum += 1.0 * 2.0
+            }
+            total += sum
+        }
+    }
+    print(total)
+}

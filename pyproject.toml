@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mapanare"
+version = "0.1.0"
+description = "Mapanare -- an AI-native compiled programming language"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "lark",
+    "llvmlite",
+    "pygls>=1.0",
+    "lsprotocol",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "mypy",
+    "black",
+    "ruff",
+    "pyinstaller",
+]
+
+[tool.setuptools.packages.find]
+include = ["mapa*", "runtime*", "stdlib*", "editors*"]
+
+[project.scripts]
+mapa = "mapa.cli:main"
+mapanare-lsp = "mapa.lsp.server:main"
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
