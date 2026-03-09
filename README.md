@@ -1,4 +1,6 @@
 <div align="center">
+    
+<img width="3200" height="1344" alt="MapanareDevTo" src="https://github.com/user-attachments/assets/99b80387-afd9-4b07-beb8-59a8f63f7ac7" />
 
 # Mapanare
 
