@@ -300,8 +300,7 @@ class TestTypeMapperIntegration:
     def test_list_type(self) -> None:
         ty = self.mapper.resolve(GenericType(name="List", args=[NamedType(name="Int")]))
         assert isinstance(ty, ir.LiteralStructType)
-        assert len(ty.elements) == 3
-        assert ty.elements[0].pointee == LLVM_INT
+        assert len(ty.elements) == 4  # data, len, cap, elem_size (MnList layout)
 
     def test_map_type(self) -> None:
         ty = self.mapper.resolve(

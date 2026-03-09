@@ -1,5 +1,6 @@
-// lexer.mn — Mapanare lexer, self-hosted port of mapa/lexer.py.
+// lexer.mn — Mapanare lexer, self-hosted.
 // Tokenizes .mn source files into a token stream.
+// Character-by-character scanner replacing the Lark-based Python lexer.
 
 import self::ast
 
@@ -25,6 +26,32 @@ struct LexError {
     line: Int,
     column: Int,
     filename: String
+}
+
+// ---------------------------------------------------------------------------
+// Lexer state
+// ---------------------------------------------------------------------------
+
+struct Lexer {
+    source: String,
+    pos: Int,
+    line: Int,
+    column: Int,
+    filename: String
+}
+
+// ---------------------------------------------------------------------------
+// Constructor functions (struct literals not yet in grammar)
+// ---------------------------------------------------------------------------
+
+fn new_token(tok_type: String, value: String, line: Int, col: Int, end_line: Int, end_col: Int) -> Token {
+    let t: Token = tok_type
+    return t
+}
+
+fn new_lexer(source: String, pos: Int, line: Int, column: Int, filename: String) -> Lexer {
+    let l: Lexer = source
+    return l
 }
 
 // ---------------------------------------------------------------------------
@@ -101,9 +128,7 @@ fn keyword_token_type(name: String) -> String {
 
 fn is_alpha(ch: String) -> Bool {
     if ch == "_" { return true }
-    // a-z
     if ch >= "a" { if ch <= "z" { return true } }
-    // A-Z
     if ch >= "A" { if ch <= "Z" { return true } }
     return false
 }
@@ -126,29 +151,265 @@ fn is_whitespace(ch: String) -> Bool {
     return false
 }
 
-// ---------------------------------------------------------------------------
-// Tokenizer state
-// ---------------------------------------------------------------------------
-
-struct Lexer {
-    source: String,
-    pos: Int,
-    line: Int,
-    column: Int,
-    filename: String
+fn is_hex_digit(ch: String) -> Bool {
+    if is_digit(ch) { return true }
+    if ch >= "a" { if ch <= "f" { return true } }
+    if ch >= "A" { if ch <= "F" { return true } }
+    return false
 }
 
 // ---------------------------------------------------------------------------
-// Token constructors — simple helpers since struct construction is
-// not yet supported as an expression in the grammar.
+// Lexer helpers — use positional args, no struct literals
 // ---------------------------------------------------------------------------
 
-fn make_token(tok_type: String, value: String, line: Int, col: Int, end_line: Int, end_col: Int) -> Token {
-    // Placeholder — in production, this returns a Token struct.
-    // For the bootstrap, the Python lexer handles actual tokenization;
-    // this file defines the interface that the self-hosted compiler
-    // will implement.
-    return Token::NAME(value)
+fn lexer_at_end(source: String, pos: Int) -> Bool {
+    return pos >= len(source)
+}
+
+fn lexer_peek(source: String, pos: Int) -> String {
+    if pos >= len(source) { return "" }
+    return source.char_at(pos)
+}
+
+fn lexer_peek_at(source: String, pos: Int, offset: Int) -> String {
+    let idx: Int = pos + offset
+    if idx >= len(source) { return "" }
+    return source.char_at(idx)
+}
+
+// ---------------------------------------------------------------------------
+// Scan identifier / keyword
+// ---------------------------------------------------------------------------
+
+fn scan_ident(source: String, pos: Int, line: Int, col: Int) -> Token {
+    let mut p: Int = pos
+    let mut value: String = ""
+    for _ in 0..10000 {
+        if p >= len(source) { return new_token(keyword_token_type(value), value, line, col, line, col + len(value)) }
+        let ch: String = source.char_at(p)
+        if is_alnum(ch) {
+            value = value + ch
+            p = p + 1
+        } else {
+            return new_token(keyword_token_type(value), value, line, col, line, col + len(value))
+        }
+    }
+    return new_token(keyword_token_type(value), value, line, col, line, col + len(value))
+}
+
+// ---------------------------------------------------------------------------
+// Scan number literal
+// ---------------------------------------------------------------------------
+
+fn scan_number(source: String, pos: Int, line: Int, col: Int) -> Token {
+    let mut p: Int = pos
+    let mut value: String = ""
+    let mut is_float: Bool = false
+    let ch0: String = source.char_at(p)
+
+    // Check 0x, 0b, 0o prefixes
+    if ch0 == "0" {
+        let ch1: String = lexer_peek(source, p + 1)
+        if ch1 == "x" {
+            value = "0x"
+            p = p + 2
+            for _ in 0..100 {
+                if p >= len(source) { return new_token("HEX_INT", value, line, col, line, col + p - pos) }
+                let hc: String = source.char_at(p)
+                if is_hex_digit(hc) { value = value + hc } else { if hc != "_" { return new_token("HEX_INT", value, line, col, line, col + p - pos) } }
+                p = p + 1
+            }
+            return new_token("HEX_INT", value, line, col, line, col + p - pos)
+        }
+        if ch1 == "b" {
+            value = "0b"
+            p = p + 2
+            for _ in 0..100 {
+                if p >= len(source) { return new_token("BIN_INT", value, line, col, line, col + p - pos) }
+                let bc: String = source.char_at(p)
+                if bc == "0" { value = value + bc } else { if bc == "1" { value = value + bc } else { if bc != "_" { return new_token("BIN_INT", value, line, col, line, col + p - pos) } } }
+                p = p + 1
+            }
+            return new_token("BIN_INT", value, line, col, line, col + p - pos)
+        }
+        if ch1 == "o" {
+            value = "0o"
+            p = p + 2
+            for _ in 0..100 {
+                if p >= len(source) { return new_token("OCT_INT", value, line, col, line, col + p - pos) }
+                let oc: String = source.char_at(p)
+                if oc >= "0" { if oc <= "7" { value = value + oc } else { if oc != "_" { return new_token("OCT_INT", value, line, col, line, col + p - pos) } } } else { return new_token("OCT_INT", value, line, col, line, col + p - pos) }
+                p = p + 1
+            }
+            return new_token("OCT_INT", value, line, col, line, col + p - pos)
+        }
+    }
+
+    // Decimal / float
+    for _ in 0..100 {
+        if p >= len(source) {
+            if is_float { return new_token("FLOAT_LIT", value, line, col, line, col + p - pos) }
+            return new_token("DEC_INT", value, line, col, line, col + p - pos)
+        }
+        let dc: String = source.char_at(p)
+        if is_digit(dc) {
+            value = value + dc
+            p = p + 1
+        } else {
+            if dc == "_" {
+                p = p + 1
+            } else {
+                if dc == "." {
+                    if lexer_peek(source, p + 1) == "." {
+                        if is_float { return new_token("FLOAT_LIT", value, line, col, line, col + p - pos) }
+                        return new_token("DEC_INT", value, line, col, line, col + p - pos)
+                    }
+                    is_float = true
+                    value = value + "."
+                    p = p + 1
+                } else {
+                    if is_float { return new_token("FLOAT_LIT", value, line, col, line, col + p - pos) }
+                    return new_token("DEC_INT", value, line, col, line, col + p - pos)
+                }
+            }
+        }
+    }
+    if is_float { return new_token("FLOAT_LIT", value, line, col, line, col + p - pos) }
+    return new_token("DEC_INT", value, line, col, line, col + p - pos)
+}
+
+// ---------------------------------------------------------------------------
+// Scan string literal
+// ---------------------------------------------------------------------------
+
+fn scan_string(source: String, pos: Int, line: Int, col: Int) -> Token {
+    let mut p: Int = pos + 1
+    let mut value: String = ""
+    let mut cur_line: Int = line
+    for _ in 0..100000 {
+        if p >= len(source) { return new_token("STRING_LIT", value, line, col, cur_line, col + p - pos) }
+        let ch: String = source.char_at(p)
+        if ch == "\"" {
+            p = p + 1
+            return new_token("STRING_LIT", value, line, col, cur_line, col + p - pos)
+        }
+        if ch == "\\" {
+            p = p + 1
+            if p >= len(source) { return new_token("STRING_LIT", value, line, col, cur_line, col + p - pos) }
+            let esc: String = source.char_at(p)
+            if esc == "n" { value = value + "\n" }
+            if esc == "t" { value = value + "\t" }
+            if esc == "r" { value = value + "\r" }
+            if esc == "\\" { value = value + "\\" }
+            if esc == "\"" { value = value + "\"" }
+            if esc == "0" { value = value + "\0" }
+            p = p + 1
+        } else {
+            if ch == "\n" { cur_line = cur_line + 1 }
+            value = value + ch
+            p = p + 1
+        }
+    }
+    return new_token("STRING_LIT", value, line, col, cur_line, col + p - pos)
+}
+
+// ---------------------------------------------------------------------------
+// Scan char literal
+// ---------------------------------------------------------------------------
+
+fn scan_char(source: String, pos: Int, line: Int, col: Int) -> Token {
+    let mut p: Int = pos + 1
+    let mut value: String = ""
+    if p >= len(source) { return new_token("CHAR_LIT", "", line, col, line, col + 2) }
+    let ch: String = source.char_at(p)
+    if ch == "\\" {
+        p = p + 1
+        let esc: String = source.char_at(p)
+        if esc == "n" { value = "\n" }
+        if esc == "t" { value = "\t" }
+        if esc == "\\" { value = "\\" }
+        if esc == "'" { value = "'" }
+        p = p + 1
+    } else {
+        value = ch
+        p = p + 1
+    }
+    if p < len(source) { if source.char_at(p) == "'" { p = p + 1 } }
+    return new_token("CHAR_LIT", value, line, col, line, col + p - pos)
+}
+
+// ---------------------------------------------------------------------------
+// Scan operator / punctuation — returns token + its width
+// ---------------------------------------------------------------------------
+
+fn scan_op(source: String, pos: Int, line: Int, col: Int) -> Token {
+    let ch: String = source.char_at(pos)
+    let ch1: String = lexer_peek(source, pos + 1)
+
+    if ch == "|" {
+        if ch1 == ">" { return new_token("PIPE_OP", "|>", line, col, line, col + 2) }
+        if ch1 == "|" { return new_token("OR", "||", line, col, line, col + 2) }
+    }
+    if ch == "&" { if ch1 == "&" { return new_token("AND", "&&", line, col, line, col + 2) } }
+    if ch == "=" {
+        if ch1 == "=" { return new_token("EQEQ", "==", line, col, line, col + 2) }
+        if ch1 == ">" { return new_token("FAT_ARROW", "=>", line, col, line, col + 2) }
+        return new_token("ASSIGN", "=", line, col, line, col + 1)
+    }
+    if ch == "!" {
+        if ch1 == "=" { return new_token("NEQ", "!=", line, col, line, col + 2) }
+        return new_token("BANG", "!", line, col, line, col + 1)
+    }
+    if ch == "<" {
+        if ch1 == "=" { return new_token("LTE", "<=", line, col, line, col + 2) }
+        if ch1 == "-" { return new_token("SEND", "<-", line, col, line, col + 2) }
+        return new_token("LT", "<", line, col, line, col + 1)
+    }
+    if ch == ">" {
+        if ch1 == "=" { return new_token("GTE", ">=", line, col, line, col + 2) }
+        return new_token("GT", ">", line, col, line, col + 1)
+    }
+    if ch == "-" {
+        if ch1 == ">" { return new_token("ARROW", "->", line, col, line, col + 2) }
+        if ch1 == "=" { return new_token("MINUS_EQ", "-=", line, col, line, col + 2) }
+        return new_token("MINUS", "-", line, col, line, col + 1)
+    }
+    if ch == "+" {
+        if ch1 == "=" { return new_token("PLUS_EQ", "+=", line, col, line, col + 2) }
+        return new_token("PLUS", "+", line, col, line, col + 1)
+    }
+    if ch == "*" {
+        if ch1 == "=" { return new_token("STAR_EQ", "*=", line, col, line, col + 2) }
+        return new_token("STAR", "*", line, col, line, col + 1)
+    }
+    if ch == "/" {
+        if ch1 == "=" { return new_token("SLASH_EQ", "/=", line, col, line, col + 2) }
+        return new_token("SLASH", "/", line, col, line, col + 1)
+    }
+    if ch == ":" {
+        if ch1 == ":" { return new_token("DOUBLE_COLON", "::", line, col, line, col + 2) }
+        return new_token("COLON", ":", line, col, line, col + 1)
+    }
+    if ch == "." {
+        if ch1 == "." {
+            if lexer_peek(source, pos + 2) == "=" { return new_token("RANGE_INCL", "..=", line, col, line, col + 3) }
+            return new_token("RANGE", "..", line, col, line, col + 2)
+        }
+        return new_token("DOT", ".", line, col, line, col + 1)
+    }
+    if ch == "(" { return new_token("LPAREN", "(", line, col, line, col + 1) }
+    if ch == ")" { return new_token("RPAREN", ")", line, col, line, col + 1) }
+    if ch == "{" { return new_token("LBRACE", "{", line, col, line, col + 1) }
+    if ch == "}" { return new_token("RBRACE", "}", line, col, line, col + 1) }
+    if ch == "[" { return new_token("LBRACKET", "[", line, col, line, col + 1) }
+    if ch == "]" { return new_token("RBRACKET", "]", line, col, line, col + 1) }
+    if ch == "," { return new_token("COMMA", ",", line, col, line, col + 1) }
+    if ch == ";" { return new_token("SEMICOLON", ";", line, col, line, col + 1) }
+    if ch == "?" { return new_token("QUESTION", "?", line, col, line, col + 1) }
+    if ch == "@" { return new_token("AT", "@", line, col, line, col + 1) }
+    if ch == "%" { return new_token("PERCENT", "%", line, col, line, col + 1) }
+
+    return new_token("UNKNOWN", ch, line, col, line, col + 1)
 }
 
 // ---------------------------------------------------------------------------
@@ -156,14 +417,82 @@ fn make_token(tok_type: String, value: String, line: Int, col: Int, end_line: In
 // ---------------------------------------------------------------------------
 
 fn tokenize(source: String, filename: String) -> List<Token> {
-    // Bootstrap stub: the self-hosted lexer will implement a full
-    // character-by-character scanner here. For now, the Python
-    // Lark-based lexer is canonical.
-    let tokens: List<Token> = []
+    let mut tokens: List<Token> = []
+    let mut pos: Int = 0
+    let mut line: Int = 1
+    let mut col: Int = 1
+    let slen: Int = len(source)
+
+    for _ in 0..1000000 {
+        if pos >= slen { return tokens }
+
+        let ch: String = source.char_at(pos)
+
+        // Skip whitespace
+        if ch == " " { pos = pos + 1 }
+        if ch == "\t" { pos = pos + 1 }
+        if ch == "\r" { pos = pos + 1 }
+        if ch == "\n" { pos = pos + 1 }
+
+        // Skip line comments
+        if ch == "/" {
+            if lexer_peek(source, pos + 1) == "/" {
+                pos = pos + 2
+                for _ in 0..100000 {
+                    if pos >= slen { return tokens }
+                    if source.char_at(pos) == "\n" {
+                        pos = pos + 1
+                        line = line + 1
+                        col = 1
+                        return tokens
+                    }
+                    pos = pos + 1
+                }
+            }
+        }
+
+        if pos >= slen { return tokens }
+
+        // Rescan after skipping
+        let c: String = source.char_at(pos)
+
+        if is_alpha(c) {
+            let tok: Token = scan_ident(source, pos, line, col)
+            pos = pos + len(tok.value)
+            col = col + len(tok.value)
+        } else {
+            if is_digit(c) {
+                let tok: Token = scan_number(source, pos, line, col)
+                let width: Int = tok.end_column - tok.column
+                pos = pos + width
+                col = col + width
+            } else {
+                if c == "\"" {
+                    let tok: Token = scan_string(source, pos, line, col)
+                    let width: Int = tok.end_column - tok.column
+                    pos = pos + width
+                    col = col + width
+                    line = tok.end_line
+                } else {
+                    if c == "'" {
+                        let tok: Token = scan_char(source, pos, line, col)
+                        let width: Int = tok.end_column - tok.column
+                        pos = pos + width
+                        col = col + width
+                    } else {
+                        let tok: Token = scan_op(source, pos, line, col)
+                        let width: Int = len(tok.value)
+                        pos = pos + width
+                        col = col + width
+                    }
+                }
+            }
+        }
+    }
+
     return tokens
 }
 
 fn tokenize_with_newlines(source: String, filename: String) -> List<Token> {
-    let tokens: List<Token> = []
-    return tokens
+    return tokenize(source, filename)
 }
