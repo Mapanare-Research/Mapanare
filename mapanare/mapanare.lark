@@ -216,6 +216,10 @@ arg_list: expr (COMMA expr)* COMMA?
           | paren_expr
           | tuple_expr
 
+// Struct construction: Name { field: value, ... }
+// Struct construction is handled via constructor functions until
+// the self-hosted parser implements a disambiguation strategy.
+
 int_lit: DEC_INT | HEX_INT | BIN_INT | OCT_INT
 float_lit: FLOAT_LIT
 string_lit: STRING_LIT

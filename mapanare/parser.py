@@ -18,6 +18,7 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     CallExpr,
     CharLiteral,
+    ConstructExpr,
     ConstructorPattern,
     Decorator,
     Definition,
@@ -28,6 +29,7 @@ from mapanare.ast_nodes import (
     Expr,
     ExprStmt,
     FieldAccessExpr,
+    FieldInit,
     FloatLiteral,
     FnDef,
     FnType,
@@ -486,6 +488,18 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def list_lit(self, children: list[Any]) -> ListLiteral:
         return ListLiteral(elements=[c for c in children if isinstance(c, Expr)])
+
+    def construct_expr(self, children: list[Any]) -> ConstructExpr:
+        items = _filter(children)
+        name = str(items[0])
+        fields = [c for c in items[1:] if isinstance(c, FieldInit)]
+        return ConstructExpr(name=name, fields=fields)
+
+    def field_init(self, children: list[Any]) -> FieldInit:
+        items = _filter(children)
+        name = str(items[0])
+        value = items[1] if len(items) > 1 else Identifier(name=name)
+        return FieldInit(name=name, value=value)
 
     def paren_expr(self, children: list[Any]) -> Expr:
         items = _filter(children)

@@ -3,6 +3,7 @@
 Phase 4.1: Type mapping from Mapanare types to LLVM IR types via llvmlite.
 Phase 4.2: IR emitter — AST nodes to LLVM instructions.
 Phase 5.1: Tensor operations — element-wise SIMD, matmul runtime calls.
+Phase 6.1: Core runtime integration — string ops, list ops, struct/enum codegen.
 """
 
 from __future__ import annotations
@@ -15,23 +16,32 @@ from mapanare.ast_nodes import (
     Block,
     BoolLiteral,
     CallExpr,
+    CharLiteral,
+    ConstructExpr,
     ExprStmt,
+    FieldAccessExpr,
     FloatLiteral,
     FnDef,
     ForLoop,
     GenericType,
     Identifier,
     IfExpr,
+    IndexExpr,
     IntLiteral,
+    LambdaExpr,
     LetBinding,
+    ListLiteral,
     LiteralPattern,
     MatchArm,
     MatchExpr,
+    MethodCallExpr,
     NamedType,
+    NoneLiteral,
     PipeExpr,
     Program,
     ReturnStmt,
     StringLiteral,
+    StructDef,
     TensorType,
     TypeExpr,
     UnaryExpr,
@@ -49,8 +59,11 @@ LLVM_BOOL = ir.IntType(1)  # Bool → i1
 LLVM_CHAR = ir.IntType(8)  # Char → i8
 LLVM_VOID = ir.VoidType()  # Void
 
-# String: { i8*, i64 } — pointer to data + length
+# String: { i8*, i64 } — pointer to data + length (matches MnString in C runtime)
 LLVM_STRING = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
+
+# List: { i8*, i64, i64, i64 } — data, len, cap, elem_size (matches MnList in C runtime)
+LLVM_LIST = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT])
 
 
 def option_type(inner: ir.Type) -> ir.LiteralStructType:
@@ -82,8 +95,12 @@ def tensor_type(element_ty: ir.Type) -> ir.LiteralStructType:
 
 
 def list_type(element_ty: ir.Type) -> ir.LiteralStructType:
-    """List<T> → { T*, i64, i64 } — data pointer, length, capacity."""
-    return ir.LiteralStructType([element_ty.as_pointer(), LLVM_INT, LLVM_INT])
+    """List<T> → { i8*, i64, i64, i64 } — data, len, cap, elem_size.
+
+    Matches the MnList layout in the C runtime. Data pointer is i8*
+    (type-erased) and elem_size tracks element size for push/get.
+    """
+    return LLVM_LIST
 
 
 def map_type(key_ty: ir.Type, val_ty: ir.Type) -> ir.LiteralStructType:
@@ -208,6 +225,10 @@ class LLVMEmitter:
         # Printf support
         self._printf_fn: ir.Function | None = None
         self._fmt_strings: dict[str, ir.GlobalVariable] = {}
+        # Core runtime function cache
+        self._runtime_fns: dict[str, ir.Function] = {}
+        # Struct type registry: struct name → (LLVM type, field names list)
+        self._struct_defs: dict[str, tuple[ir.LiteralStructType, list[str]]] = {}
 
     @property
     def builder(self) -> ir.IRBuilder:
@@ -215,15 +236,133 @@ class LLVMEmitter:
         return self._builder
 
     # -----------------------------------------------------------------------
+    # Core runtime declarations (Phase 6.1)
+    # -----------------------------------------------------------------------
+
+    def _declare_runtime_fn(
+        self, name: str, ret_ty: ir.Type, param_types: list[ir.Type]
+    ) -> ir.Function:
+        """Declare an external C runtime function if not already declared."""
+        if name in self._runtime_fns:
+            return self._runtime_fns[name]
+        fn_ty = ir.FunctionType(ret_ty, param_types)
+        func = ir.Function(self.module, fn_ty, name=name)
+        self._runtime_fns[name] = func
+        return func
+
+    def _rt_str_concat(self) -> ir.Function:
+        """Declare __mn_str_concat(MnString, MnString) -> MnString."""
+        return self._declare_runtime_fn("__mn_str_concat", LLVM_STRING, [LLVM_STRING, LLVM_STRING])
+
+    def _rt_str_eq(self) -> ir.Function:
+        """Declare __mn_str_eq(MnString, MnString) -> i64."""
+        return self._declare_runtime_fn("__mn_str_eq", LLVM_INT, [LLVM_STRING, LLVM_STRING])
+
+    def _rt_str_cmp(self) -> ir.Function:
+        """Declare __mn_str_cmp(MnString, MnString) -> i64."""
+        return self._declare_runtime_fn("__mn_str_cmp", LLVM_INT, [LLVM_STRING, LLVM_STRING])
+
+    def _rt_str_len(self) -> ir.Function:
+        """Declare __mn_str_len(MnString) -> i64."""
+        return self._declare_runtime_fn("__mn_str_len", LLVM_INT, [LLVM_STRING])
+
+    def _rt_str_char_at(self) -> ir.Function:
+        """Declare __mn_str_char_at(MnString, i64) -> MnString."""
+        return self._declare_runtime_fn("__mn_str_char_at", LLVM_STRING, [LLVM_STRING, LLVM_INT])
+
+    def _rt_str_byte_at(self) -> ir.Function:
+        """Declare __mn_str_byte_at(MnString, i64) -> i64."""
+        return self._declare_runtime_fn("__mn_str_byte_at", LLVM_INT, [LLVM_STRING, LLVM_INT])
+
+    def _rt_str_substr(self) -> ir.Function:
+        """Declare __mn_str_substr(MnString, i64, i64) -> MnString."""
+        return self._declare_runtime_fn(
+            "__mn_str_substr", LLVM_STRING, [LLVM_STRING, LLVM_INT, LLVM_INT]
+        )
+
+    def _rt_str_from_int(self) -> ir.Function:
+        """Declare __mn_str_from_int(i64) -> MnString."""
+        return self._declare_runtime_fn("__mn_str_from_int", LLVM_STRING, [LLVM_INT])
+
+    def _rt_str_println(self) -> ir.Function:
+        """Declare __mn_str_println(MnString) -> void."""
+        return self._declare_runtime_fn("__mn_str_println", LLVM_VOID, [LLVM_STRING])
+
+    def _rt_str_print(self) -> ir.Function:
+        """Declare __mn_str_print(MnString) -> void."""
+        return self._declare_runtime_fn("__mn_str_print", LLVM_VOID, [LLVM_STRING])
+
+    def _rt_str_eprintln(self) -> ir.Function:
+        """Declare __mn_str_eprintln(MnString) -> void."""
+        return self._declare_runtime_fn("__mn_str_eprintln", LLVM_VOID, [LLVM_STRING])
+
+    def _rt_str_starts_with(self) -> ir.Function:
+        return self._declare_runtime_fn(
+            "__mn_str_starts_with", LLVM_INT, [LLVM_STRING, LLVM_STRING]
+        )
+
+    def _rt_str_ends_with(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_ends_with", LLVM_INT, [LLVM_STRING, LLVM_STRING])
+
+    def _rt_str_find(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_find", LLVM_INT, [LLVM_STRING, LLVM_STRING])
+
+    def _rt_list_new(self) -> ir.Function:
+        """Declare __mn_list_new(i64 elem_size) -> MnList."""
+        return self._declare_runtime_fn("__mn_list_new", LLVM_LIST, [LLVM_INT])
+
+    def _rt_list_push(self) -> ir.Function:
+        """Declare __mn_list_push(MnList*, void*) -> void."""
+        return self._declare_runtime_fn(
+            "__mn_list_push", LLVM_VOID, [LLVM_LIST.as_pointer(), ir.IntType(8).as_pointer()]
+        )
+
+    def _rt_list_get(self) -> ir.Function:
+        """Declare __mn_list_get(MnList*, i64) -> i8*."""
+        return self._declare_runtime_fn(
+            "__mn_list_get", ir.IntType(8).as_pointer(), [LLVM_LIST.as_pointer(), LLVM_INT]
+        )
+
+    def _rt_list_len(self) -> ir.Function:
+        """Declare __mn_list_len(MnList*) -> i64."""
+        return self._declare_runtime_fn("__mn_list_len", LLVM_INT, [LLVM_LIST.as_pointer()])
+
+    def _rt_panic(self) -> ir.Function:
+        """Declare __mn_panic(MnString) -> void."""
+        return self._declare_runtime_fn("__mn_panic", LLVM_VOID, [LLVM_STRING])
+
+    def _rt_file_read(self) -> ir.Function:
+        """Declare __mn_file_read(MnString, i64*) -> MnString."""
+        return self._declare_runtime_fn(
+            "__mn_file_read", LLVM_STRING, [LLVM_STRING, LLVM_INT.as_pointer()]
+        )
+
+    # -----------------------------------------------------------------------
     # Public entry point
     # -----------------------------------------------------------------------
 
     def emit_program(self, program: Program) -> ir.Module:
         """Emit an entire Mapanare program to an LLVM module."""
+        # First pass: register struct definitions
+        for defn in program.definitions:
+            if isinstance(defn, StructDef):
+                self._register_struct(defn)
+        # Second pass: emit functions
         for defn in program.definitions:
             if isinstance(defn, FnDef):
                 self.emit_fn(defn)
         return self.module
+
+    def _register_struct(self, node: StructDef) -> None:
+        """Register a struct definition so it can be used as a type."""
+        field_types: list[ir.Type] = []
+        field_names: list[str] = []
+        for f in node.fields:
+            field_types.append(self.type_mapper.resolve(f.type_annotation))
+            field_names.append(f.name)
+        llvm_ty = ir.LiteralStructType(field_types)
+        self._struct_defs[node.name] = (llvm_ty, field_names)
+        self.type_mapper.register_struct(node.name, llvm_ty)
 
     # -----------------------------------------------------------------------
     # Task 1: fn → LLVM function declarations
@@ -378,6 +517,30 @@ class LLVMEmitter:
         if isinstance(expr, AssignExpr):
             return self._emit_assign(expr)
 
+        if isinstance(expr, CharLiteral):
+            return self._emit_string_literal(StringLiteral(value=expr.value))
+
+        if isinstance(expr, NoneLiteral):
+            return ir.Constant(LLVM_INT, 0)
+
+        if isinstance(expr, ConstructExpr):
+            return self._emit_construct(expr)
+
+        if isinstance(expr, FieldAccessExpr):
+            return self._emit_field_access(expr)
+
+        if isinstance(expr, MethodCallExpr):
+            return self._emit_method_call(expr)
+
+        if isinstance(expr, ListLiteral):
+            return self._emit_list_literal(expr)
+
+        if isinstance(expr, IndexExpr):
+            return self._emit_index(expr)
+
+        if isinstance(expr, LambdaExpr):
+            return self._emit_lambda(expr)
+
         raise NotImplementedError(f"Cannot emit expression: {type(expr).__name__}")
 
     # -----------------------------------------------------------------------
@@ -418,6 +581,16 @@ class LLVMEmitter:
     # Task 2: Arithmetic expressions → LLVM arithmetic instructions
     # -----------------------------------------------------------------------
 
+    def _is_string_type(self, val: ir.Value) -> bool:
+        """Check if an LLVM value has the MnString struct type."""
+        return (
+            isinstance(val.type, ir.LiteralStructType)
+            and len(val.type.elements) == 2
+            and isinstance(val.type.elements[0], ir.PointerType)
+            and isinstance(val.type.elements[1], ir.IntType)
+            and val.type.elements[1].width == 64
+        )
+
     def _emit_binary(self, node: BinaryExpr) -> ir.Value:
         """Emit a binary expression."""
         left = self._emit_expr(node.left)
@@ -425,6 +598,24 @@ class LLVMEmitter:
 
         # Determine if we're working with ints or floats
         is_float = isinstance(left.type, ir.DoubleType) or isinstance(right.type, ir.DoubleType)
+        is_string = self._is_string_type(left) or self._is_string_type(right)
+
+        # String operations via core runtime
+        if is_string:
+            if node.op == "+":
+                return self.builder.call(self._rt_str_concat(), [left, right], name="str_concat")
+            if node.op == "==":
+                eq_i64 = self.builder.call(self._rt_str_eq(), [left, right], name="str_eq_i64")
+                return self.builder.trunc(eq_i64, LLVM_BOOL, name="str_eq")
+            if node.op == "!=":
+                eq_i64 = self.builder.call(self._rt_str_eq(), [left, right], name="str_eq_i64")
+                eq_bool = self.builder.trunc(eq_i64, LLVM_BOOL, name="str_eq")
+                return self.builder.not_(eq_bool, name="str_ne")
+            if node.op in ("<", "<=", ">", ">="):
+                cmp_i64 = self.builder.call(self._rt_str_cmp(), [left, right], name="str_cmp")
+                zero = ir.Constant(LLVM_INT, 0)
+                return self.builder.icmp_signed(node.op, cmp_i64, zero, name="str_ord")
+            raise NotImplementedError(f"String operator not supported: {node.op}")
 
         # Arithmetic
         if node.op == "+":
@@ -552,12 +743,16 @@ class LLVMEmitter:
         return self.builder.gep(gv, [zero, zero], inbounds=True, name="fmt_ptr")
 
     def _emit_print(self, args: list[object]) -> ir.Value:
-        """Emit a print() call as printf."""
-        printf = self._ensure_printf()
+        """Emit a print() call — dispatches to core runtime for strings."""
         if len(args) == 0:
+            printf = self._ensure_printf()
             fmt_ptr = self._get_fmt_string("\\n")
             return self.builder.call(printf, [fmt_ptr], name="printf_call")
         val = self._emit_expr(args[0])
+        # String: use __mn_str_println
+        if self._is_string_type(val):
+            return self.builder.call(self._rt_str_println(), [val], name="print_str")
+        printf = self._ensure_printf()
         if isinstance(val.type, ir.DoubleType):
             fmt_ptr = self._get_fmt_string("%g\\n")
         elif isinstance(val.type, ir.IntType) and val.type.width == 1:
@@ -573,9 +768,31 @@ class LLVMEmitter:
 
     def _emit_call(self, node: CallExpr) -> ir.Value:
         """Emit a function call instruction."""
-        # Built-in: print()
-        if isinstance(node.callee, Identifier) and node.callee.name == "print":
+        # Built-in: print() / println()
+        if isinstance(node.callee, Identifier) and node.callee.name in ("print", "println"):
             return self._emit_print(list(node.args))
+
+        # Built-in: len()
+        if isinstance(node.callee, Identifier) and node.callee.name == "len":
+            if node.args:
+                val = self._emit_expr(node.args[0])
+                if self._is_string_type(val):
+                    return self.builder.call(self._rt_str_len(), [val], name="len")
+                if val.type == LLVM_LIST:
+                    list_alloca = self.builder.alloca(LLVM_LIST, name="len_tmp")
+                    self.builder.store(val, list_alloca)
+                    return self.builder.call(self._rt_list_len(), [list_alloca], name="len")
+            return ir.Constant(LLVM_INT, 0)
+
+        # Built-in: toString()
+        if isinstance(node.callee, Identifier) and node.callee.name == "toString":
+            if node.args:
+                val = self._emit_expr(node.args[0])
+                if isinstance(val.type, ir.IntType) and val.type.width == 64:
+                    return self.builder.call(self._rt_str_from_int(), [val], name="to_str")
+                if self._is_string_type(val):
+                    return val
+            return self._emit_string_literal(StringLiteral(value=""))
 
         # Resolve the callee
         if isinstance(node.callee, Identifier):
@@ -915,8 +1132,11 @@ class LLVMEmitter:
         # Compound assignment: +=, -=, *=, /=
         current = self.builder.load(self._locals[name], name=f"{name}.cur")
         is_float = isinstance(current.type, ir.DoubleType)
+        is_string = self._is_string_type(current)
         if node.op == "+=":
-            if is_float:
+            if is_string:
+                result = self.builder.call(self._rt_str_concat(), [current, val], name="str_append")
+            elif is_float:
                 result = self.builder.fadd(current, val, name="fadd_assign")
             else:
                 result = self.builder.add(current, val, name="add_assign")
@@ -940,3 +1160,219 @@ class LLVMEmitter:
 
         self.builder.store(result, self._locals[name])
         return result
+
+    # -----------------------------------------------------------------------
+    # Phase 6.1: Struct construction and field access
+    # -----------------------------------------------------------------------
+
+    def _emit_construct(self, node: ConstructExpr) -> ir.Value:
+        """Emit struct construction: `Token { tok_type: x, value: y, ... }`."""
+        if node.name not in self._struct_defs:
+            raise NameError(f"Unknown struct type: {node.name}")
+        llvm_ty, field_names = self._struct_defs[node.name]
+
+        # Build field value map from the ConstructExpr
+        field_vals: dict[str, ir.Value] = {}
+        for fi in node.fields:
+            field_vals[fi.name] = self._emit_expr(fi.value)
+
+        # Construct the struct value using insertvalue
+        struct_val = ir.Constant(llvm_ty, ir.Undefined)
+        for i, fname in enumerate(field_names):
+            if fname in field_vals:
+                struct_val = self.builder.insert_value(
+                    struct_val, field_vals[fname], i, name=f"{node.name}.{fname}"
+                )
+            else:
+                # Default: zero-initialize missing fields
+                field_ty = llvm_ty.elements[i]
+                is_struct = isinstance(field_ty, ir.LiteralStructType)
+                default = ir.Undefined if is_struct else 0
+                struct_val = self.builder.insert_value(
+                    struct_val, ir.Constant(field_ty, default), i, name=f"{node.name}.{fname}"
+                )
+        return struct_val
+
+    def _emit_field_access(self, node: FieldAccessExpr) -> ir.Value:
+        """Emit field access: `token.value`, `lexer.pos`."""
+        obj = self._emit_expr(node.object)
+
+        # Try to find the struct type in our registry
+        for sname, (stype, field_names) in self._struct_defs.items():
+            if obj.type == stype:
+                if node.field_name in field_names:
+                    idx = field_names.index(node.field_name)
+                    return self.builder.extract_value(obj, idx, name=f"{sname}.{node.field_name}")
+
+        # For MnString, .len is at index 1
+        if self._is_string_type(obj):
+            if node.field_name == "len":
+                return self.builder.extract_value(obj, 1, name="str_len")
+
+        raise NameError(f"Unknown field: {node.field_name}")
+
+    # -----------------------------------------------------------------------
+    # Phase 6.1: Method calls
+    # -----------------------------------------------------------------------
+
+    def _emit_method_call(self, node: MethodCallExpr) -> ir.Value:
+        """Emit method calls, dispatching to runtime for built-in types."""
+        obj = self._emit_expr(node.object)
+        args = [self._emit_expr(a) for a in node.args]
+
+        # String methods
+        if self._is_string_type(obj):
+            if node.method == "len":
+                return self.builder.call(self._rt_str_len(), [obj], name="str_len")
+            if node.method == "char_at" and len(args) == 1:
+                return self.builder.call(self._rt_str_char_at(), [obj, args[0]], name="str_char_at")
+            if node.method == "byte_at" and len(args) == 1:
+                return self.builder.call(self._rt_str_byte_at(), [obj, args[0]], name="str_byte_at")
+            if node.method == "substr" and len(args) == 2:
+                return self.builder.call(
+                    self._rt_str_substr(), [obj, args[0], args[1]], name="str_substr"
+                )
+            if node.method == "starts_with" and len(args) == 1:
+                return self.builder.call(self._rt_str_starts_with(), [obj, args[0]], name="str_sw")
+            if node.method == "ends_with" and len(args) == 1:
+                return self.builder.call(self._rt_str_ends_with(), [obj, args[0]], name="str_ew")
+            if node.method == "find" and len(args) == 1:
+                return self.builder.call(self._rt_str_find(), [obj, args[0]], name="str_find")
+
+        raise NotImplementedError(f"Method call not supported: .{node.method}()")
+
+    # -----------------------------------------------------------------------
+    # Phase 6.1: List operations
+    # -----------------------------------------------------------------------
+
+    def _emit_list_literal(self, node: ListLiteral) -> ir.Value:
+        """Emit a list literal: `[a, b, c]` or `[]`."""
+        if not node.elements:
+            # Empty list — default to i64-sized elements
+            return self.builder.call(
+                self._rt_list_new(), [ir.Constant(LLVM_INT, 8)], name="empty_list"
+            )
+
+        # Evaluate all elements to determine the element type
+        vals = [self._emit_expr(e) for e in node.elements]
+        elem_ty = vals[0].type
+
+        # Determine element size
+        if isinstance(elem_ty, ir.IntType):
+            elem_size = elem_ty.width // 8
+        elif isinstance(elem_ty, ir.DoubleType):
+            elem_size = 8
+        elif isinstance(elem_ty, ir.LiteralStructType):
+            # Approximate: sum of element sizes
+            # For MnString { i8*, i64 } = 16 bytes on 64-bit
+            elem_size = sum(
+                8 if isinstance(e, (ir.PointerType, ir.IntType, ir.DoubleType)) else 8
+                for e in elem_ty.elements
+            )
+        else:
+            elem_size = 8
+
+        # Create list
+        list_val = self.builder.call(
+            self._rt_list_new(), [ir.Constant(LLVM_INT, elem_size)], name="list"
+        )
+
+        # Alloca the list so we can pass &list to push
+        list_alloca = self.builder.alloca(LLVM_LIST, name="list_alloca")
+        self.builder.store(list_val, list_alloca)
+
+        # Push each element
+        for val in vals:
+            # Alloca the element to get a pointer
+            elem_alloca = self.builder.alloca(val.type, name="elem_tmp")
+            self.builder.store(val, elem_alloca)
+            elem_ptr = self.builder.bitcast(
+                elem_alloca, ir.IntType(8).as_pointer(), name="elem_ptr"
+            )
+            self.builder.call(self._rt_list_push(), [list_alloca, elem_ptr])
+
+        return self.builder.load(list_alloca, name="list_result")
+
+    def _emit_index(self, node: IndexExpr) -> ir.Value:
+        """Emit index expression: `list[i]` or `str[i]`."""
+        obj = self._emit_expr(node.object)
+        idx = self._emit_expr(node.index)
+
+        # String indexing → char_at
+        if self._is_string_type(obj):
+            return self.builder.call(self._rt_str_char_at(), [obj, idx], name="str_idx")
+
+        # List indexing — returns raw pointer, needs cast
+        if obj.type == LLVM_LIST:
+            list_alloca = self.builder.alloca(LLVM_LIST, name="list_tmp")
+            self.builder.store(obj, list_alloca)
+            raw_ptr = self.builder.call(
+                self._rt_list_get(), [list_alloca, idx], name="list_elem_ptr"
+            )
+            # Default: load as i64
+            typed_ptr = self.builder.bitcast(raw_ptr, LLVM_INT.as_pointer(), name="typed_ptr")
+            return self.builder.load(typed_ptr, name="list_elem")
+
+        raise NotImplementedError(f"Index not supported on type: {obj.type}")
+
+    # -----------------------------------------------------------------------
+    # Phase 6.1: Lambda (closure-less function pointer)
+    # -----------------------------------------------------------------------
+
+    def _emit_lambda(self, node: LambdaExpr) -> ir.Value:
+        """Emit a lambda as an anonymous function. Returns function pointer."""
+        # Generate unique name
+        lambda_name = self.module.get_unique_name("lambda")
+
+        # Build parameter types (default to i64 if no annotation)
+        param_types: list[ir.Type] = []
+        for p in node.params:
+            if p.type_annotation is not None:
+                param_types.append(self.type_mapper.resolve(p.type_annotation))
+            else:
+                param_types.append(LLVM_INT)
+
+        # Infer return type from body — default to i64
+        ret_type = LLVM_INT
+
+        fn_type = ir.FunctionType(ret_type, param_types)
+        func = ir.Function(self.module, fn_type, name=lambda_name)
+        for i, p in enumerate(node.params):
+            func.args[i].name = p.name
+        self._functions[lambda_name] = func
+
+        # Save state
+        old_builder = self._builder
+        old_locals = self._locals.copy()
+        old_mutables = self._mutables.copy()
+
+        # Build lambda body
+        block = func.append_basic_block(name="entry")
+        self._builder = ir.IRBuilder(block)
+        self._locals = {}
+        self._mutables = set()
+
+        for i, p in enumerate(node.params):
+            alloca = self.builder.alloca(param_types[i], name=p.name)
+            self.builder.store(func.args[i], alloca)
+            self._locals[p.name] = alloca
+
+        if isinstance(node.body, Block):
+            self._emit_block(node.body)
+        else:
+            val = self._emit_expr(node.body)
+            self.builder.ret(val)
+
+        if not self.builder.block.is_terminated:
+            self.builder.ret(ir.Constant(ret_type, 0))
+
+        # Restore state
+        self._builder = old_builder
+        self._locals = old_locals
+        self._mutables = old_mutables
+
+        return func
+
+    # -----------------------------------------------------------------------
+    # Phase 6.1: Extended print support (string-aware)
+    # -----------------------------------------------------------------------
