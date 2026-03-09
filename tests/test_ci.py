@@ -32,13 +32,13 @@ class TestCIWorkflowExists:
 
 
 class TestCITriggers:
-    def test_triggers_on_push_to_main(self) -> None:
+    def test_triggers_on_push_to_dev(self) -> None:
         data = _load_ci()
-        assert "main" in data["on"]["push"]["branches"]
+        assert "dev" in data["on"]["push"]["branches"]
 
-    def test_triggers_on_pr_to_main(self) -> None:
+    def test_triggers_on_pr_to_dev(self) -> None:
         data = _load_ci()
-        assert "main" in data["on"]["pull_request"]["branches"]
+        assert "dev" in data["on"]["pull_request"]["branches"]
 
 
 class TestCISteps:
