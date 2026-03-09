@@ -10,7 +10,7 @@ import copy
 from dataclasses import dataclass
 from enum import IntEnum
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     AgentDef,
     AssignExpr,
     BinaryExpr,
@@ -930,7 +930,7 @@ class StreamFuser:
                 # Create composed lambda: (x) => g(f(x))
                 if isinstance(f_arg, LambdaExpr) and isinstance(g_arg, LambdaExpr):
                     param_name = f_arg.params[0].name if f_arg.params else "_x"
-                    from mapa.ast_nodes import Param
+                    from mapanare.ast_nodes import Param
 
                     inner_call = CallExpr(
                         callee=Identifier(name="__fused_f"),
@@ -1023,7 +1023,7 @@ class StreamFuser:
 
                 if isinstance(f_arg, LambdaExpr) and isinstance(g_arg, LambdaExpr):
                     param_name = f_arg.params[0].name if f_arg.params else "_x"
-                    from mapa.ast_nodes import Param
+                    from mapanare.ast_nodes import Param
 
                     composed = LambdaExpr(
                         params=[Param(name=param_name)],

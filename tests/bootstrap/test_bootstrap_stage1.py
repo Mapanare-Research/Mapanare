@@ -15,12 +15,12 @@ from pathlib import Path
 
 import pytest
 
-from mapa.ast_nodes import FnDef, NamedType, Program
-from mapa.emit_llvm import LLVMEmitter
-from mapa.parser import parse
-from mapa.semantic import check
+from mapanare.ast_nodes import FnDef, NamedType, Program
+from mapanare.emit_llvm import LLVMEmitter
+from mapanare.parser import parse
+from mapanare.semantic import check
 
-SELF_DIR = Path(__file__).resolve().parents[2] / "mapa" / "self"
+SELF_DIR = Path(__file__).resolve().parents[2] / "mapanare" / "self"
 MN_FILES = sorted(SELF_DIR.glob("*.mn"))
 
 # Primitive types the LLVM emitter can resolve

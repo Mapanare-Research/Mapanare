@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from mapa.cli import __version__, _format_mapanare, build_parser
+from mapanare.cli import __version__, _format_mapanare, build_parser
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -20,7 +20,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 def _run_cli(*args: str, cwd: str | None = None) -> subprocess.CompletedProcess[str]:
     """Run mapa CLI as a subprocess."""
     return subprocess.run(
-        [sys.executable, "-m", "mapa.cli", *args],
+        [sys.executable, "-m", "mapanare.cli", *args],
         capture_output=True,
         text=True,
         cwd=cwd or str(_PROJECT_ROOT),
@@ -77,7 +77,7 @@ class TestVersionAndHelp:
     def test_help_flag(self) -> None:
         result = _run_cli("--help")
         assert result.returncode == 0
-        assert "mapa" in result.stdout
+        assert "mapanare" in result.stdout
         assert "compile" in result.stdout
         assert "check" in result.stdout
         assert "run" in result.stdout
@@ -86,7 +86,7 @@ class TestVersionAndHelp:
     def test_no_args_shows_help(self) -> None:
         result = _run_cli()
         assert result.returncode == 1
-        assert "mapa" in result.stdout or "mapa" in result.stderr
+        assert "mapanare" in result.stdout or "mapanare" in result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +285,7 @@ class TestFmt:
 class TestArgparse:
     def test_build_parser_returns_parser(self) -> None:
         parser = build_parser()
-        assert parser.prog == "mapa"
+        assert parser.prog == "mapanare"
 
     def test_compile_subcommand_parsed(self) -> None:
         parser = build_parser()

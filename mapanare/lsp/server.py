@@ -9,7 +9,7 @@ from typing import Optional
 from lsprotocol import types as lsp
 from pygls.lsp.server import LanguageServer
 
-from mapa.lsp.analysis import DocumentAnalysis, analyze_document
+from mapanare.lsp.analysis import DocumentAnalysis, analyze_document
 
 logger = logging.getLogger("mapanare-lsp")
 

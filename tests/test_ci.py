@@ -137,7 +137,7 @@ class TestToolsRunLocally:
 
     def test_mypy_passes(self) -> None:
         result = subprocess.run(
-            ["mypy", "mapa/", "runtime/"],
+            ["mypy", "mapanare/", "runtime/"],
             capture_output=True,
             text=True,
             cwd=ROOT,

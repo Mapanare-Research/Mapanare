@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     AgentDef,
     BinaryExpr,
     Block,
@@ -46,7 +46,7 @@ from mapa.ast_nodes import (
     TypeExpr,
     UnaryExpr,
 )
-from mapa.semantic import (
+from mapanare.semantic import (
     BUILTIN_FUNCTIONS,
     BUILTIN_GENERIC_TYPES,
     PRIMITIVE_TYPES,
@@ -638,8 +638,8 @@ def analyze_document(uri: str, source: str) -> tuple[DocumentAnalysis | None, li
     Returns (analysis, errors). Analysis may be None if parsing fails.
     Errors are always returned for diagnostics.
     """
-    from mapa.parser import ParseError, parse
-    from mapa.semantic import check
+    from mapanare.parser import ParseError, parse
+    from mapanare.semantic import check
 
     errors: list[SemanticError] = []
 

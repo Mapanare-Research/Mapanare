@@ -93,28 +93,28 @@ jobs:
 
             **Linux / macOS:**
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/packaging/install.sh | bash
             ```
 
             **Windows (PowerShell):**
             ```powershell
-            irm https://raw.githubusercontent.com/${{ github.repository }}/main/install.ps1 | iex
+            irm https://raw.githubusercontent.com/${{ github.repository }}/main/packaging/install.ps1 | iex
             ```
 
             ### Manual Download
 
             | Platform | Download | Size |
             |----------|----------|------|
-            | **Linux** (x64) | [`mapa-linux-x64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapa-linux-x64.tar.gz) | — |
-            | **macOS** (Apple Silicon) | [`mapa-mac-arm64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapa-mac-arm64.tar.gz) | — |
-            | **Windows** (x64) | [`mapa-win-x64.zip`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapa-win-x64.zip) | — |
+            | **Linux** (x64) | [`mapanare-linux-x64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-linux-x64.tar.gz) | — |
+            | **macOS** (Apple Silicon) | [`mapanare-mac-arm64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | — |
+            | **Windows** (x64) | [`mapanare-win-x64.zip`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | — |
 
             > Downloads become available once the build pipeline completes (~10 min after release).
 
             ### Verify Installation
             ```bash
-            mapa --version
-            mapa run hello.mn
+            mapanare --version
+            mapanare run hello.mn
             ```
 
             ---
@@ -139,16 +139,16 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact: mapa-linux-x64
-            archive_name: mapa-linux-x64.tar.gz
+            artifact: mapanare-linux-x64
+            archive_name: mapanare-linux-x64.tar.gz
             archive_cmd: tar -czf
           - os: macos-latest
-            artifact: mapa-mac-arm64
-            archive_name: mapa-mac-arm64.tar.gz
+            artifact: mapanare-mac-arm64
+            archive_name: mapanare-mac-arm64.tar.gz
             archive_cmd: tar -czf
           - os: windows-latest
-            artifact: mapa-win-x64
-            archive_name: mapa-win-x64.zip
+            artifact: mapanare-win-x64
+            archive_name: mapanare-win-x64.zip
             archive_cmd: 7z a
 
     runs-on: ${{ matrix.os }}
@@ -179,14 +179,14 @@ jobs:
         run: python runtime/native/build_native.py || echo "Native runtime build skipped (optional)"
 
       - name: Build CLI binary
-        run: pyinstaller mapa.spec --clean
+        run: pyinstaller packaging/mapanare.spec --clean
 
       - name: Smoke test CLI binary
         shell: bash
         run: |
-          BINARY="./dist/mapa/mapa"
+          BINARY="./dist/mapanare/mapanare"
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            BINARY="./dist/mapa/mapa.exe"
+            BINARY="./dist/mapanare/mapanare.exe"
           fi
           "$BINARY" --version
           "$BINARY" --help
@@ -196,7 +196,7 @@ jobs:
         shell: bash
         run: |
           cd dist
-          ${{ matrix.archive_cmd }} "${{ matrix.archive_name }}" mapa/
+          ${{ matrix.archive_cmd }} "${{ matrix.archive_name }}" mapanare/
 
       - name: Upload CLI archive to GitHub Release
         shell: bash

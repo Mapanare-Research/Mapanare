@@ -377,7 +377,7 @@ def get_device_annotations(decorators: list[object]) -> list[DeviceKind]:
     Returns:
         List of DeviceKind values found in the decorators.
     """
-    from mapa.ast_nodes import Decorator
+    from mapanare.ast_nodes import Decorator
 
     result: list[DeviceKind] = []
     for dec in decorators:

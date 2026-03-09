@@ -8,13 +8,13 @@ from __future__ import annotations
 import pytest
 from llvmlite import ir
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     GenericType,
     IntLiteral,
     NamedType,
     TensorType,
 )
-from mapa.emit_llvm import (
+from mapanare.emit_llvm import (
     LLVM_BOOL,
     LLVM_FLOAT,
     LLVM_INT,
@@ -311,7 +311,7 @@ class TestTypeMapperIntegration:
         assert len(ty.elements) == 2
 
     def test_unsupported_type_expr(self) -> None:
-        from mapa.ast_nodes import FnType
+        from mapanare.ast_nodes import FnType
 
         with pytest.raises(TypeError, match="Unsupported Mapanare type expression"):
             self.mapper.resolve(FnType())

@@ -8,11 +8,11 @@ import subprocess
 import sys
 import tempfile
 
-from mapa.emit_python import PythonEmitter
-from mapa.optimizer import OptLevel, optimize
-from mapa.parser import ParseError, parse
-from mapa.semantic import SemanticErrors, check_or_raise
-from mapa.targets import get_target, list_targets
+from mapanare.emit_python import PythonEmitter
+from mapanare.optimizer import OptLevel, optimize
+from mapanare.parser import ParseError, parse
+from mapanare.semantic import SemanticErrors, check_or_raise
+from mapanare.targets import get_target, list_targets
 
 __version__ = "0.1.0"
 
@@ -44,7 +44,7 @@ def _compile_to_llvm_ir(
     source: str, filename: str, opt_level: OptLevel = OptLevel.O2, target_name: str | None = None
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source."""
-    from mapa.emit_llvm import LLVMEmitter
+    from mapanare.emit_llvm import LLVMEmitter
 
     ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename)
@@ -216,7 +216,7 @@ def cmd_targets(args: argparse.Namespace) -> None:
     for name, desc in list_targets():
         print(f"  {name:<30s} {desc}")
     print()
-    from mapa.targets import host_target_name
+    from mapanare.targets import host_target_name
 
     print(f"Host target: {host_target_name()}")
 

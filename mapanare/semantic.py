@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     AgentDef,
     AssignExpr,
     ASTNode,
@@ -321,7 +321,7 @@ class SemanticChecker:
         if isinstance(te, TensorType):
             elem = self._resolve_type_expr(te.element_type)
             # Phase 5.1: Try to resolve compile-time shape from literals
-            from mapa.tensor import resolve_shape_from_type
+            from mapanare.tensor import resolve_shape_from_type
 
             shape = resolve_shape_from_type(list(te.shape))
             return TypeInfo(name="Tensor", args=[elem], tensor_shape=shape)
@@ -543,7 +543,7 @@ class SemanticChecker:
             # Compile-time shape validation for matmul
             matmul_shape: tuple[int, ...] | None = None
             if left.tensor_shape is not None and right.tensor_shape is not None:
-                from mapa.tensor import validate_matmul_shapes
+                from mapanare.tensor import validate_matmul_shapes
 
                 matmul_shape = validate_matmul_shapes(left.tensor_shape, right.tensor_shape)
                 if matmul_shape is None:
@@ -693,7 +693,7 @@ class SemanticChecker:
 
     def _bind_pattern(self, pattern: object) -> None:
         """Bind names introduced by a pattern into the current scope."""
-        from mapa.ast_nodes import (
+        from mapanare.ast_nodes import (
             ConstructorPattern,
             IdentPattern,
         )
@@ -1121,7 +1121,7 @@ class SemanticChecker:
 
     def _check_decorators(self, defn: ASTNode) -> None:
         """Validate decorator annotations on a definition (Phase 5.2)."""
-        from mapa.gpu import DEVICE_ANNOTATIONS
+        from mapanare.gpu import DEVICE_ANNOTATIONS
 
         decorators: list[object] = getattr(defn, "decorators", [])
         if not decorators:

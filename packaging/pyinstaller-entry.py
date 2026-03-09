@@ -1,12 +1,12 @@
 """
 Standalone entry point for PyInstaller-bundled Mapanare CLI.
 
-Produces the `mapa` binary — compile, run, check, build, and format .mn files.
+Produces the `mapanare` binary — compile, run, check, build, and format .mn files.
 """
 
 
 def main():
-    from mapa.cli import main as cli_main
+    from mapanare.cli import main as cli_main
 
     cli_main()
 

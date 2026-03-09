@@ -10,7 +10,7 @@ test:
 	pytest tests/ -v
 
 lint:
-	ruff check . && black --check . && mypy mapa/ runtime/
+	ruff check . && black --check . && mypy mapanare/ runtime/
 
 fmt:
 	black . && ruff check --fix .

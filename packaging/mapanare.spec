@@ -12,31 +12,31 @@ do_strip = not is_windows
 # Disable UPX on Windows (causes antivirus false positives)
 do_upx = not is_windows
 
-# Collect all mapa submodules (parser, semantic, emit, jit, lsp, etc.)
-mapa_submodules = collect_submodules('mapa')
+# Collect all mapanare submodules (parser, semantic, emit, jit, lsp, etc.)
+mapanare_submodules = collect_submodules('mapanare')
 runtime_submodules = collect_submodules('runtime')
 stdlib_submodules = collect_submodules('stdlib')
 
 # Copy metadata so importlib.metadata works
-mapa_metadata = copy_metadata('mapanare')
+mapanare_metadata = copy_metadata('mapanare')
 
 sep = os.sep
 
 a = Analysis(
-    [f'pyinstaller-entry.py'],
+    [os.path.join('packaging', 'pyinstaller-entry.py')],
     pathex=[],
     binaries=[],
     datas=[
-        ('mapa', 'mapa'),
+        ('mapanare', 'mapanare'),
         ('runtime', 'runtime'),
         ('stdlib', 'stdlib'),
         ('VERSION', '.'),
-    ] + mapa_metadata,
+    ] + mapanare_metadata,
     hiddenimports=[
         'lark',
         'llvmlite',
         'llvmlite.binding',
-    ] + mapa_submodules + runtime_submodules + stdlib_submodules,
+    ] + mapanare_submodules + runtime_submodules + stdlib_submodules,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -65,7 +65,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='mapa',
+    name='mapanare',
     debug=False,
     bootloader_ignore_signals=False,
     strip=do_strip,
@@ -86,5 +86,5 @@ coll = COLLECT(
     strip=do_strip,
     upx=do_upx,
     upx_exclude=[],
-    name='mapa',
+    name='mapanare',
 )

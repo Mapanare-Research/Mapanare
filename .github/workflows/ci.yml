@@ -36,7 +36,7 @@ jobs:
         run: ruff check .
 
       - name: Type check (mypy)
-        run: mypy mapa/ runtime/
+        run: mypy mapanare/ runtime/
 
       - name: Run tests
         run: pytest tests/ -v

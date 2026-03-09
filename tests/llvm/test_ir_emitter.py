@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from llvmlite import ir
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     AssignExpr,
     BinaryExpr,
     Block,
@@ -36,7 +36,7 @@ from mapa.ast_nodes import (
     UnaryExpr,
     WildcardPattern,
 )
-from mapa.emit_llvm import LLVM_FLOAT, LLVM_INT, LLVMEmitter
+from mapanare.emit_llvm import LLVM_FLOAT, LLVM_INT, LLVMEmitter
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1268,7 +1268,7 @@ class TestTensorOpsIR:
 
     def test_matmul_declares_runtime_fn(self) -> None:
         """@ operator declares __mapanare_matmul in the module."""
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         emitter._declare_tensor_runtime("__mapanare_matmul")
@@ -1278,7 +1278,7 @@ class TestTensorOpsIR:
 
     def test_tensor_runtime_declarations(self) -> None:
         """Tensor runtime functions are correctly declared."""
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         # Manually declare some tensor runtime functions
@@ -1290,7 +1290,7 @@ class TestTensorOpsIR:
 
     def test_tensor_alloc_declaration(self) -> None:
         """__mapanare_tensor_alloc is declared with correct signature."""
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         fn = emitter._declare_tensor_runtime("__mapanare_tensor_alloc")
@@ -1299,7 +1299,7 @@ class TestTensorOpsIR:
 
     def test_tensor_free_declaration(self) -> None:
         """__mapanare_tensor_free is declared with void return."""
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         fn = emitter._declare_tensor_runtime("__mapanare_tensor_free")
@@ -1308,7 +1308,7 @@ class TestTensorOpsIR:
 
     def test_tensor_shape_eq_declaration(self) -> None:
         """__mapanare_tensor_shape_eq returns i1."""
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         fn = emitter._declare_tensor_runtime("__mapanare_tensor_shape_eq")

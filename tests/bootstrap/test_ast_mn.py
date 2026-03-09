@@ -1,4 +1,4 @@
-"""Tests for mapa/self/ast.mn — verifies the self-hosted AST definitions
+"""Tests for mapanare/self/ast.mn — verifies the self-hosted AST definitions
 can be parsed and type-checked by the Python compiler.
 
 The self-hosted AST must be valid Mapanare that the existing compiler accepts.
@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from mapa.lexer import tokenize
-from mapa.parser import parse
-from mapa.semantic import check
+from mapanare.lexer import tokenize
+from mapanare.parser import parse
+from mapanare.semantic import check
 
-AST_MN = Path(__file__).resolve().parents[2] / "mapa" / "self" / "ast.mn"
+AST_MN = Path(__file__).resolve().parents[2] / "mapanare" / "self" / "ast.mn"
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ class TestAstMnParsing:
 
     def test_struct_definitions(self, ast_source: str) -> None:
         program = parse(ast_source, filename="ast.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         struct_names = {s.name for s in structs}
@@ -64,7 +64,7 @@ class TestAstMnParsing:
 
     def test_enum_definitions(self, ast_source: str) -> None:
         program = parse(ast_source, filename="ast.mn")
-        from mapa.ast_nodes import EnumDef
+        from mapanare.ast_nodes import EnumDef
 
         enums = [d for d in program.definitions if isinstance(d, EnumDef)]
         enum_names = {e.name for e in enums}
@@ -79,7 +79,7 @@ class TestAstMnParsing:
 
     def test_fn_definitions(self, ast_source: str) -> None:
         program = parse(ast_source, filename="ast.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}

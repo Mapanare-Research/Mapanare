@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     AgentDef,
     AssignExpr,
     BinaryExpr,
@@ -673,7 +673,7 @@ class PythonEmitter:
         self._indent -= 1
 
     def _emit_match_arm(self, arm: MatchArm) -> None:
-        from mapa.ast_nodes import (
+        from mapanare.ast_nodes import (
             ConstructorPattern,
             IdentPattern,
             LiteralPattern,
@@ -704,7 +704,7 @@ class PythonEmitter:
         self._indent -= 1
 
     def _emit_pattern(self, pat: Pattern) -> str:
-        from mapa.ast_nodes import (
+        from mapanare.ast_nodes import (
             ConstructorPattern,
             IdentPattern,
             LiteralPattern,

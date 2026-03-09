@@ -1,4 +1,4 @@
-"""Tests for mapa/self/semantic.mn — verifies the self-hosted semantic checker
+"""Tests for mapanare/self/semantic.mn — verifies the self-hosted semantic checker
 definitions can be parsed and type-checked by the Python compiler."""
 
 from __future__ import annotations
@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from mapa.lexer import tokenize
-from mapa.parser import parse
-from mapa.semantic import BUILTIN_FUNCTIONS, BUILTIN_GENERIC_TYPES, PRIMITIVE_TYPES, check
+from mapanare.lexer import tokenize
+from mapanare.parser import parse
+from mapanare.semantic import BUILTIN_FUNCTIONS, BUILTIN_GENERIC_TYPES, PRIMITIVE_TYPES, check
 
-SEMANTIC_MN = Path(__file__).resolve().parents[2] / "mapa" / "self" / "semantic.mn"
+SEMANTIC_MN = Path(__file__).resolve().parents[2] / "mapanare" / "self" / "semantic.mn"
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ class TestSemanticMnParsing:
 
     def test_has_structs(self, semantic_source: str) -> None:
         program = parse(semantic_source, filename="semantic.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         struct_names = {s.name for s in structs}
@@ -45,7 +45,7 @@ class TestSemanticMnParsing:
 
     def test_has_type_helper_functions(self, semantic_source: str) -> None:
         program = parse(semantic_source, filename="semantic.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -60,7 +60,7 @@ class TestSemanticMnParsing:
 
     def test_has_classification_functions(self, semantic_source: str) -> None:
         program = parse(semantic_source, filename="semantic.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -71,7 +71,7 @@ class TestSemanticMnParsing:
 
     def test_has_scope_functions(self, semantic_source: str) -> None:
         program = parse(semantic_source, filename="semantic.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -81,7 +81,7 @@ class TestSemanticMnParsing:
 
     def test_has_type_checking_functions(self, semantic_source: str) -> None:
         program = parse(semantic_source, filename="semantic.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -94,7 +94,7 @@ class TestSemanticMnParsing:
 
     def test_has_public_api(self, semantic_source: str) -> None:
         program = parse(semantic_source, filename="semantic.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -124,7 +124,7 @@ class TestSemanticMnCoverage:
 
     def test_semantic_error_has_fields(self, semantic_source: str) -> None:
         program = parse(semantic_source, filename="semantic.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         se = next(s for s in structs if s.name == "SemanticError")
@@ -136,7 +136,7 @@ class TestSemanticMnCoverage:
 
     def test_type_info_has_fields(self, semantic_source: str) -> None:
         program = parse(semantic_source, filename="semantic.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         ti = next(s for s in structs if s.name == "TypeInfo")
@@ -150,7 +150,7 @@ class TestSemanticMnCoverage:
 
     def test_symbol_has_fields(self, semantic_source: str) -> None:
         program = parse(semantic_source, filename="semantic.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         sym = next(s for s in structs if s.name == "Symbol")

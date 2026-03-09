@@ -2,7 +2,7 @@
 
 import pytest
 
-from mapa.tensor import (
+from mapanare.tensor import (
     ShapeError,
     Tensor,
     _shape_size,
@@ -346,14 +346,14 @@ class TestCompileTimeShapeValidation:
         assert validate_elementwise_shapes((2, 3), (3, 2)) is False
 
     def test_resolve_shape_from_int_literals(self) -> None:
-        from mapa.ast_nodes import IntLiteral
+        from mapanare.ast_nodes import IntLiteral
 
         exprs = [IntLiteral(value=3), IntLiteral(value=3)]
         result = resolve_shape_from_type(exprs)
         assert result == (3, 3)
 
     def test_resolve_shape_dynamic(self) -> None:
-        from mapa.ast_nodes import Identifier
+        from mapanare.ast_nodes import Identifier
 
         exprs = [Identifier(name="n")]
         result = resolve_shape_from_type(exprs)

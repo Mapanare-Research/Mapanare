@@ -63,14 +63,14 @@ Download the latest binary from [Releases](https://github.com/Mapanare-Research/
 
 | Platform | Archive |
 |----------|---------|
-| Linux (x64) | `mapa-linux-x64.tar.gz` |
-| macOS (Apple Silicon) | `mapa-mac-arm64.tar.gz` |
-| Windows (x64) | `mapa-win-x64.zip` |
+| Linux (x64) | `mapanare-linux-x64.tar.gz` |
+| macOS (Apple Silicon) | `mapanare-mac-arm64.tar.gz` |
+| Windows (x64) | `mapanare-win-x64.zip` |
 
-Extract and add `mapa` to your PATH, then verify:
+Extract and add `mapanare` to your PATH, then verify:
 
 ```bash
-mapa --version
+mapanare --version
 ```
 
 ---
@@ -187,9 +187,29 @@ fn area(s: Shape) -> Float {
 
 ## Benchmarks
 
-All benchmarks run on the Mapanare runtime (Python backend). Numbers from a single machine; run `make benchmark` to reproduce.
+Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each benchmark runs 3 times; median wall time reported. Run `python -m test_vs.run_benchmarks` to reproduce.
 
-### Stream Pipelines (1M items)
+### Performance (wall time, lower is better)
+
+| Benchmark | Mapanare | MN Native (LLVM) | Python | Go | Rust | vs Python |
+|-----------|----------|-------------------|--------|----|------|-----------|
+| Fibonacci (recursive, n=35) | 1.2104s | **0.0448s** | 1.1885s | 0.0341s | 0.0211s | 26.5x (native) |
+| Message Passing (10K msgs) | 0.9989s | — | 1.0978s | 0.0025s | 0.0203s | 1.1x |
+| Stream Pipeline (1M items) | 1.1141s | **0.0165s** | 1.0342s | 0.0005s | 0.0001s | 62.8x (native) |
+| Matrix Multiply (100x100) | 0.1769s | **0.0199s** | 0.4556s | 0.0005s | 0.0009s | 22.9x (native) |
+
+### Expressiveness (lines of code, lower is better)
+
+| Benchmark | Mapanare | Python | Go | Rust |
+|-----------|----------|--------|----|------|
+| Fibonacci (recursive, n=35) | **10** | 12 | 18 | 23 |
+| Message Passing (10K msgs) | **18** | 28 | 27 | 32 |
+| Stream Pipeline (1M items) | **10** | 17 | 18 | 20 |
+| Matrix Multiply (100x100) | **14** | 21 | 37 | 33 |
+
+> **Key takeaway:** Mapanare's interpreted backend matches Python speed (it transpiles to Python), but the LLVM native backend delivers **22–63x** speedups over Python. Mapanare programs are consistently the shortest across all benchmarks.
+
+### Stream Pipelines (1M items, runtime microbenchmarks)
 
 | Pipeline | Throughput | Avg Latency |
 |----------|-----------|-------------|
@@ -201,17 +221,9 @@ All benchmarks run on the Mapanare runtime (Python backend). Numbers from a sing
 | `chained_maps(5)` | **1.7M items/sec** | 0.60 us |
 | `chained_maps(10)` | **1.2M items/sec** | 0.80 us |
 
-### Multi-Agent Message Passing
-
-Benchmarks cover single-agent relay, 3- and 5-agent chains, and fan-out topologies. Run `python benchmarks/bench_agents.py` for full results.
-
-### Comparison Suite
-
-The comparison benchmark (`benchmarks/bench_compare.py`) runs identical workloads on the Mapanare runtime vs. pure Python asyncio vs. Rust baselines (when available), producing relative speedup factors.
-
 ```bash
-make benchmark           # run all benchmarks
-python benchmarks/run_all.py   # full suite with JSON output
+make benchmark                       # run all benchmarks
+python -m test_vs.run_benchmarks     # cross-language comparison suite
 ```
 
 ---
@@ -219,16 +231,16 @@ python benchmarks/run_all.py   # full suite with JSON output
 ## CLI
 
 ```
-mapa run <file>           Compile and run
-mapa build <file>         Compile to native binary via LLVM
-mapa jit <file>           JIT-compile and run natively
-mapa check <file>         Type-check only
-mapa compile <file>       Transpile to Python
-mapa emit-llvm <file>     Emit LLVM IR
-mapa fmt <file>           Format source code
-mapa init [path]          Initialize a new project
-mapa install <pkg>        Install a package (git-based)
-mapa targets              List supported compilation targets
+mapanare run <file>           Compile and run
+mapanare build <file>         Compile to native binary via LLVM
+mapanare jit <file>           JIT-compile and run natively
+mapanare check <file>         Type-check only
+mapanare compile <file>       Transpile to Python
+mapanare emit-llvm <file>     Emit LLVM IR
+mapanare fmt <file>           Format source code
+mapanare init [path]          Initialize a new project
+mapanare install <pkg>        Install a package (git-based)
+mapanare targets              List supported compilation targets
 ```
 
 Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target <triple>` cross-compilation target.
@@ -306,7 +318,7 @@ Install the LSP server: `mapanare-lsp`
 
 ## Self-Hosted Compiler
 
-The compiler is being rewritten in Mapanare itself (`mapa/self/`):
+The compiler is being rewritten in Mapanare itself (`mapanare/self/`):
 
 - `lexer.mn` — Tokenizer
 - `parser.mn` — Recursive descent parser
@@ -322,7 +334,7 @@ Bootstrap strategy: Python compiler (Stage 0) compiles self-hosted `.mn` sources
 
 ```
 mapanare/
-├── mapa/                  Compiler (lexer, parser, semantic, emit, optimizer, jit)
+├── mapanare/              Compiler (lexer, parser, semantic, emit, optimizer, jit)
 │   ├── self/              Self-hosted .mn compiler sources
 │   └── lsp/               Language Server Protocol
 ├── runtime/               Runtime (agents, signals, streams, result types)
@@ -333,12 +345,14 @@ mapanare/
 ├── tests/                 Test suite (~60 test files)
 ├── benchmarks/            Performance benchmarks
 ├── docs/                  Documentation
-├── rfcs/                  Language change proposals
-├── SPEC.md                Language specification
-├── ROADMAP.md             Development roadmap
-├── install.sh             Linux/macOS installer
-├── install.ps1            Windows installer
-└── mapa.spec              PyInstaller spec for binary builds
+│   ├── rfcs/              Language change proposals
+│   ├── SPEC.md            Language specification
+│   └── ROADMAP.md         Development roadmap
+├── packaging/             Installers and build specs
+│   ├── install.sh         Linux/macOS installer
+│   ├── install.ps1        Windows installer
+│   └── mapanare.spec      PyInstaller spec for binary builds
+
 ```
 
 ---
@@ -371,13 +385,13 @@ Requires Python 3.11+.
 | 6 | Self-Hosting | Planned |
 | 7 | Ecosystem | Planned |
 
-See [ROADMAP.md](ROADMAP.md) for the full breakdown.
+See [ROADMAP.md](docs/ROADMAP.md) for the full breakdown.
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Language changes require an [RFC](rfcs/).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Language changes require an [RFC](docs/rfcs/).
 
 ---
 
@@ -391,7 +405,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 **Mapanare** — The language AI deserves.
 
-[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues) · [Spec](SPEC.md) · [Roadmap](ROADMAP.md)
+[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues) · [Spec](docs/SPEC.md) · [Roadmap](docs/ROADMAP.md)
 
 Made with care by [Juan Denis](https://juandenis.com)
 

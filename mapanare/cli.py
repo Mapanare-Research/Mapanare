@@ -1,4 +1,4 @@
-"""Mapanare compiler CLI -- entry point for the mapa command."""
+"""Mapanare compiler CLI -- entry point for the mapanare command."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ import subprocess
 import sys
 import tempfile
 
-from mapa.emit_python import PythonEmitter
-from mapa.optimizer import OptLevel, optimize
-from mapa.parser import ParseError, parse
-from mapa.semantic import SemanticErrors, check_or_raise
-from mapa.targets import get_target, list_targets
+from mapanare.emit_python import PythonEmitter
+from mapanare.optimizer import OptLevel, optimize
+from mapanare.parser import ParseError, parse
+from mapanare.semantic import SemanticErrors, check_or_raise
+from mapanare.targets import get_target, list_targets
 
 __version__ = "0.1.0"
 
@@ -44,7 +44,7 @@ def _compile_to_llvm_ir(
     source: str, filename: str, opt_level: OptLevel = OptLevel.O2, target_name: str | None = None
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source."""
-    from mapa.emit_llvm import LLVMEmitter
+    from mapanare.emit_llvm import LLVMEmitter
 
     ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename)
@@ -197,7 +197,7 @@ def cmd_jit(args: argparse.Namespace) -> None:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    from mapa.jit import jit_compile_and_run
+    from mapanare.jit import jit_compile_and_run
 
     bench = getattr(args, "bench", False)
     if bench:
@@ -236,7 +236,7 @@ def cmd_build(args: argparse.Namespace) -> None:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    from mapa.jit import jit_compile_to_object
+    from mapanare.jit import jit_compile_to_object
 
     obj_bytes = jit_compile_to_object(llvm_ir, opt_level=opt_level.value)
 
@@ -312,7 +312,7 @@ def cmd_targets(args: argparse.Namespace) -> None:
     for name, desc in list_targets():
         print(f"  {name:<30s} {desc}")
     print()
-    from mapa.targets import host_target_name
+    from mapanare.targets import host_target_name
 
     print(f"Host target: {host_target_name()}")
 
@@ -393,15 +393,15 @@ def _add_opt_level_args(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser for mapa."""
+    """Build the argument parser for mapanare."""
     parser = argparse.ArgumentParser(
-        prog="mapa",
+        prog="mapanare",
         description="Mapanare compiler -- compile, check, run, and format .mn source files.",
     )
     parser.add_argument(
         "--version",
         action="version",
-        version=f"mapa {__version__}",
+        version=f"mapanare {__version__}",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")

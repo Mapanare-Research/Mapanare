@@ -19,7 +19,7 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Callable
 
-from mapa.tensor import Numeric, Tensor
+from mapanare.tensor import Numeric, Tensor
 
 # ---------------------------------------------------------------------------
 # Tensor data types for serialization

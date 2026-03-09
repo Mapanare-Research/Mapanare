@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     AgentDef,
     AgentInput,
     AgentOutput,
@@ -38,7 +38,7 @@ from mapa.ast_nodes import (
     StringLiteral,
     UnaryExpr,
 )
-from mapa.optimizer import (
+from mapanare.optimizer import (
     AgentInliner,
     ConstantFolder,
     DeadCodeEliminator,

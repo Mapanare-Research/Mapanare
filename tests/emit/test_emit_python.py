@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     AgentDef,
     AgentInput,
     AgentOutput,
@@ -66,7 +66,7 @@ from mapa.ast_nodes import (
     UnaryExpr,
     WildcardPattern,
 )
-from mapa.emit_python import PythonEmitter
+from mapanare.emit_python import PythonEmitter
 
 # ---------------------------------------------------------------------------
 # Helpers

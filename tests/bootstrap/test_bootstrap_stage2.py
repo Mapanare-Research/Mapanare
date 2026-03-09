@@ -11,11 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from mapa.ast_nodes import FnDef, NamedType, Program
-from mapa.emit_llvm import LLVMEmitter
-from mapa.parser import parse
+from mapanare.ast_nodes import FnDef, NamedType, Program
+from mapanare.emit_llvm import LLVMEmitter
+from mapanare.parser import parse
 
-SELF_DIR = Path(__file__).resolve().parents[2] / "mapa" / "self"
+SELF_DIR = Path(__file__).resolve().parents[2] / "mapanare" / "self"
 MN_FILES = sorted(SELF_DIR.glob("*.mn"))
 _PRIMITIVE_NAMES = {"Int", "Float", "Bool", "Char", "String", "Void"}
 

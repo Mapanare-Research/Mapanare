@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REPO="Mapanare-Research/Mapanare"
-INSTALL_DIR="${MAPA_INSTALL_DIR:-/usr/local/bin}"
+INSTALL_DIR="${MAPANARE_INSTALL_DIR:-/usr/local/bin}"
 TMP_DIR="$(mktemp -d)"
 
 cleanup() { rm -rf "$TMP_DIR"; }
@@ -26,10 +26,10 @@ case "$ARCH" in
   *)               echo "Error: Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-ARTIFACT="mapa-${PLATFORM}-${ARCH_TAG}.tar.gz"
+ARTIFACT="mapanare-${PLATFORM}-${ARCH_TAG}.tar.gz"
 
 # ---------- Resolve version ----------
-VERSION="${MAPA_VERSION:-latest}"
+VERSION="${MAPANARE_VERSION:-latest}"
 if [ "$VERSION" = "latest" ]; then
   echo "Fetching latest release..."
   VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')"
@@ -37,7 +37,7 @@ fi
 
 if [ -z "$VERSION" ]; then
   echo "Error: Could not determine latest version."
-  echo "Set MAPA_VERSION=vX.Y.Z to install a specific version."
+  echo "Set MAPANARE_VERSION=vX.Y.Z to install a specific version."
   exit 1
 fi
 
@@ -75,38 +75,38 @@ fi
 
 echo "Installing to ${INSTALL_DIR}..."
 if [ "$NEEDS_SUDO" = true ]; then
-  sudo cp -f "${TMP_DIR}/mapa/mapa" "${INSTALL_DIR}/mapa"
-  sudo chmod +x "${INSTALL_DIR}/mapa"
+  sudo cp -f "${TMP_DIR}/mapanare/mapanare" "${INSTALL_DIR}/mapanare"
+  sudo chmod +x "${INSTALL_DIR}/mapanare"
 else
-  cp -f "${TMP_DIR}/mapa/mapa" "${INSTALL_DIR}/mapa"
-  chmod +x "${INSTALL_DIR}/mapa"
+  cp -f "${TMP_DIR}/mapanare/mapanare" "${INSTALL_DIR}/mapanare"
+  chmod +x "${INSTALL_DIR}/mapanare"
 fi
 
 # Copy supporting files (shared libs, etc.) if the dist has them
-if [ -d "${TMP_DIR}/mapa/_internal" ]; then
-  MAPA_LIB_DIR="${INSTALL_DIR}/../lib/mapa"
+if [ -d "${TMP_DIR}/mapanare/_internal" ]; then
+  MAPANARE_LIB_DIR="${INSTALL_DIR}/../lib/mapanare"
   if [ "$NEEDS_SUDO" = true ]; then
-    sudo mkdir -p "$MAPA_LIB_DIR"
-    sudo cp -rf "${TMP_DIR}/mapa/_internal" "$MAPA_LIB_DIR/"
+    sudo mkdir -p "$MAPANARE_LIB_DIR"
+    sudo cp -rf "${TMP_DIR}/mapanare/_internal" "$MAPANARE_LIB_DIR/"
   else
-    mkdir -p "$MAPA_LIB_DIR"
-    cp -rf "${TMP_DIR}/mapa/_internal" "$MAPA_LIB_DIR/"
+    mkdir -p "$MAPANARE_LIB_DIR"
+    cp -rf "${TMP_DIR}/mapanare/_internal" "$MAPANARE_LIB_DIR/"
   fi
 fi
 
 # ---------- Verify ----------
 echo ""
-if command -v mapa &>/dev/null; then
+if command -v mapanare &>/dev/null; then
   echo "Installed successfully!"
   echo ""
-  mapa --version
+  mapanare --version
   echo ""
   echo "Get started:"
-  echo "  mapa init myproject"
+  echo "  mapanare init myproject"
   echo "  cd myproject"
-  echo "  mapa run main.mn"
+  echo "  mapanare run main.mn"
 else
-  echo "Installed to ${INSTALL_DIR}/mapa"
+  echo "Installed to ${INSTALL_DIR}/mapanare"
   echo ""
   echo "Make sure ${INSTALL_DIR} is in your PATH:"
   echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""

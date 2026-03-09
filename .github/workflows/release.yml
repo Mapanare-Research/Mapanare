@@ -12,13 +12,13 @@ jobs:
         include:
           - target: x86_64-linux-gnu
             os: ubuntu-latest
-            artifact: mapa-linux-x64
+            artifact: mapanare-linux-x64
           - target: aarch64-apple-macos
             os: macos-latest
-            artifact: mapa-mac-arm64
+            artifact: mapanare-mac-arm64
           - target: x86_64-windows-msvc
             os: windows-latest
-            artifact: mapa-win-x64
+            artifact: mapanare-win-x64
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +34,7 @@ jobs:
         run: pytest tests/ -v
 
       - name: Build binary
-        run: pyinstaller mapa.spec
+        run: pyinstaller packaging/mapanare.spec
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

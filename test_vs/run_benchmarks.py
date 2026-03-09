@@ -204,7 +204,7 @@ def _run_script(script: str, cwd: str = str(_ROOT)) -> SingleRun:
 
 def run_mapanare(mn_file: Path, n_runs: int) -> BenchResult:
     """Compile .mn to Python, wrap with measurement, run isolated."""
-    from mapa.cli import _compile_source
+    from mapanare.cli import _compile_source
 
     source = mn_file.read_text(encoding="utf-8")
     compiled = _compile_source(source, str(mn_file))
@@ -264,8 +264,8 @@ def run_mapanare_native(mn_file: Path, n_runs: int) -> BenchResult:
                     sys.executable,
                     "-c",
                     f"import sys; sys.path.insert(0, r'{_ROOT}'); "
-                    f"from mapa.cli import _compile_to_llvm_ir; "
-                    f"from mapa.jit import jit_compile_and_run; "
+                    f"from mapanare.cli import _compile_to_llvm_ir; "
+                    f"from mapanare.jit import jit_compile_and_run; "
                     f"import time; "
                     f"source = open(r'{mn_file}', encoding='utf-8').read(); "
                     f"ir_code = _compile_to_llvm_ir(source, '{mn_file.name}'); "

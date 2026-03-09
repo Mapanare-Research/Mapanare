@@ -126,7 +126,7 @@ Run <code>python benchmarks/run_all.py</code> to regenerate.</p>
 
 def _mapanare_version() -> str:
     try:
-        from mapa.cli import __version__
+        from mapanare.cli import __version__
 
         return __version__
     except ImportError:

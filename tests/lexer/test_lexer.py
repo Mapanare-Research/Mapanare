@@ -2,7 +2,7 @@
 
 import pytest
 
-from mapa.lexer import LexError, Token, tokenize, tokenize_with_newlines
+from mapanare.lexer import LexError, Token, tokenize, tokenize_with_newlines
 
 # ── Helpers ──────────────────────────────────────────────────
 

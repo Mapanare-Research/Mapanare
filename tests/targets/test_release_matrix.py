@@ -70,7 +70,7 @@ class TestReleaseWorkflowStructure:
         matrix = wf["jobs"]["build"]["strategy"]["matrix"]["include"]
         for entry in matrix:
             assert "artifact" in entry
-            assert entry["artifact"].startswith("mapa-")
+            assert entry["artifact"].startswith("mapanare-")
 
     def test_build_job_runs_tests(self) -> None:
         wf = _load_workflow()

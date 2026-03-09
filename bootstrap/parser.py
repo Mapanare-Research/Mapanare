@@ -8,7 +8,7 @@ from typing import Any
 from lark import Lark, Token, Transformer
 from lark.exceptions import UnexpectedCharacters, UnexpectedToken
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     AgentDef,
     AgentInput,
     AgentOutput,

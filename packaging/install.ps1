@@ -3,11 +3,11 @@
 $ErrorActionPreference = "Stop"
 
 $Repo = "Mapanare-Research/Mapanare"
-$InstallDir = if ($env:MAPA_INSTALL_DIR) { $env:MAPA_INSTALL_DIR } else { "$env:LOCALAPPDATA\Mapanare\bin" }
-$Artifact = "mapa-win-x64.zip"
+$InstallDir = if ($env:MAPANARE_INSTALL_DIR) { $env:MAPANARE_INSTALL_DIR } else { "$env:LOCALAPPDATA\Mapanare\bin" }
+$Artifact = "mapanare-win-x64.zip"
 
 # ---------- Resolve version ----------
-$Version = if ($env:MAPA_VERSION) { $env:MAPA_VERSION } else { "latest" }
+$Version = if ($env:MAPANARE_VERSION) { $env:MAPANARE_VERSION } else { "latest" }
 
 if ($Version -eq "latest") {
     Write-Host "Fetching latest release..."
@@ -16,7 +16,7 @@ if ($Version -eq "latest") {
         $Version = $Release.tag_name
     } catch {
         Write-Host "Error: Could not determine latest version." -ForegroundColor Red
-        Write-Host "Set `$env:MAPA_VERSION = 'vX.Y.Z'` to install a specific version."
+        Write-Host "Set `$env:MAPANARE_VERSION = 'vX.Y.Z'` to install a specific version."
         exit 1
     }
 }
@@ -31,7 +31,7 @@ Write-Host "  Platform: windows-x64"
 Write-Host "  Target:   $InstallDir"
 Write-Host ""
 
-$TmpDir = Join-Path $env:TEMP "mapa-install-$(Get-Random)"
+$TmpDir = Join-Path $env:TEMP "mapanare-install-$(Get-Random)"
 New-Item -ItemType Directory -Path $TmpDir -Force | Out-Null
 $ZipPath = Join-Path $TmpDir $Artifact
 
@@ -58,7 +58,7 @@ if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 }
 
-Copy-Item -Path "$TmpDir\mapa\*" -Destination $InstallDir -Recurse -Force
+Copy-Item -Path "$TmpDir\mapanare\*" -Destination $InstallDir -Recurse -Force
 
 # ---------- Add to PATH ----------
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -70,20 +70,20 @@ if ($UserPath -notlike "*$InstallDir*") {
 
 # ---------- Verify ----------
 Write-Host ""
-$MapaBin = Join-Path $InstallDir "mapa.exe"
-if (Test-Path $MapaBin) {
+$MapanareBin = Join-Path $InstallDir "mapanare.exe"
+if (Test-Path $MapanareBin) {
     Write-Host "Installed successfully!" -ForegroundColor Green
     Write-Host ""
-    & $MapaBin --version
+    & $MapanareBin --version
     Write-Host ""
     Write-Host "Get started:"
-    Write-Host "  mapa init myproject"
+    Write-Host "  mapanare init myproject"
     Write-Host "  cd myproject"
-    Write-Host "  mapa run main.mn"
+    Write-Host "  mapanare run main.mn"
     Write-Host ""
     Write-Host "You may need to restart your terminal for PATH changes to take effect."
 } else {
-    Write-Host "Error: Installation failed - binary not found at $MapaBin" -ForegroundColor Red
+    Write-Host "Error: Installation failed - binary not found at $MapanareBin" -ForegroundColor Red
     exit 1
 }
 

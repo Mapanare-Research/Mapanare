@@ -1,4 +1,4 @@
-"""Tests for mapa/self/lexer.mn — verifies the self-hosted lexer definitions
+"""Tests for mapanare/self/lexer.mn — verifies the self-hosted lexer definitions
 can be parsed and type-checked by the Python compiler."""
 
 from __future__ import annotations
@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from mapa.lexer import KEYWORDS, tokenize
-from mapa.parser import parse
-from mapa.semantic import check
+from mapanare.lexer import KEYWORDS, tokenize
+from mapanare.parser import parse
+from mapanare.semantic import check
 
-LEXER_MN = Path(__file__).resolve().parents[2] / "mapa" / "self" / "lexer.mn"
+LEXER_MN = Path(__file__).resolve().parents[2] / "mapanare" / "self" / "lexer.mn"
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ class TestLexerMnParsing:
 
     def test_has_token_struct(self, lexer_source: str) -> None:
         program = parse(lexer_source, filename="lexer.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         struct_names = {s.name for s in structs}
@@ -43,7 +43,7 @@ class TestLexerMnParsing:
 
     def test_has_keyword_functions(self, lexer_source: str) -> None:
         program = parse(lexer_source, filename="lexer.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -54,7 +54,7 @@ class TestLexerMnParsing:
 
     def test_has_char_helpers(self, lexer_source: str) -> None:
         program = parse(lexer_source, filename="lexer.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -88,7 +88,7 @@ class TestLexerMnCoverage:
 
     def test_token_struct_has_required_fields(self, lexer_source: str) -> None:
         program = parse(lexer_source, filename="lexer.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         token_struct = next(s for s in structs if s.name == "Token")
@@ -102,7 +102,7 @@ class TestLexerMnCoverage:
 
     def test_lex_error_struct_has_required_fields(self, lexer_source: str) -> None:
         program = parse(lexer_source, filename="lexer.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         err_struct = next(s for s in structs if s.name == "LexError")

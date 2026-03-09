@@ -1,4 +1,4 @@
-"""Tests for mapa/self/emit_llvm.mn — verifies the self-hosted LLVM emitter
+"""Tests for mapanare/self/emit_llvm.mn — verifies the self-hosted LLVM emitter
 definitions can be parsed and type-checked by the Python compiler."""
 
 from __future__ import annotations
@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from mapa.lexer import tokenize
-from mapa.parser import parse
-from mapa.semantic import check
+from mapanare.lexer import tokenize
+from mapanare.parser import parse
+from mapanare.semantic import check
 
-EMIT_LLVM_MN = Path(__file__).resolve().parents[2] / "mapa" / "self" / "emit_llvm.mn"
+EMIT_LLVM_MN = Path(__file__).resolve().parents[2] / "mapanare" / "self" / "emit_llvm.mn"
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_emitter_struct(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         struct_names = {s.name for s in structs}
@@ -41,7 +41,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_type_functions(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -54,7 +54,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_composite_type_functions(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -66,7 +66,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_type_resolver(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -75,7 +75,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_arithmetic_instructions(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -92,7 +92,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_unary_instructions(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -102,7 +102,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_comparison_instructions(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -113,7 +113,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_control_flow(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -125,7 +125,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_memory_instructions(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -135,7 +135,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_call_instructions(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -146,7 +146,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_tensor_runtime(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -155,7 +155,7 @@ class TestEmitLlvmMnParsing:
 
     def test_has_public_api(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -197,7 +197,7 @@ class TestEmitLlvmMnCoverage:
 
     def test_emitter_struct_has_fields(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         emitter = next(s for s in structs if s.name == "LLVMEmitter")

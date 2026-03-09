@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from llvmlite import ir
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     AssignExpr,
     BinaryExpr,
     Block,
@@ -625,7 +625,7 @@ class LLVMEmitter:
           - body: emit body, increment counter
           - exit: continue after loop
         """
-        from mapa.ast_nodes import RangeExpr
+        from mapanare.ast_nodes import RangeExpr
 
         func = self.builder.function
 

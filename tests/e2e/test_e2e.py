@@ -12,7 +12,7 @@ import sys
 import tempfile
 import textwrap
 
-from mapa.cli import _compile_source
+from mapanare.cli import _compile_source
 
 # Root of the repo so `from runtime.…` imports resolve when we execute emitted code.
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

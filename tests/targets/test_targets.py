@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from mapa.targets import (
+from mapanare.targets import (
     TARGET_AARCH64_APPLE_MACOS,
     TARGET_X86_64_LINUX_GNU,
     TARGET_X86_64_WINDOWS_MSVC,
@@ -27,7 +27,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 def _run_cli(*args: str, cwd: str | None = None) -> subprocess.CompletedProcess[str]:
     """Run mapa CLI as a subprocess."""
     return subprocess.run(
-        [sys.executable, "-m", "mapa.cli", *args],
+        [sys.executable, "-m", "mapanare.cli", *args],
         capture_output=True,
         text=True,
         cwd=cwd or str(_PROJECT_ROOT),
@@ -142,7 +142,7 @@ class TestListTargets:
 
 class TestLLVMEmitterTarget:
     def test_emit_llvm_sets_target_triple(self) -> None:
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter(
             target_triple="x86_64-unknown-linux-gnu",
@@ -152,15 +152,15 @@ class TestLLVMEmitterTarget:
         assert emitter.module.data_layout == "e-m:e-p270:32:32"
 
     def test_emit_llvm_no_target_no_crash(self) -> None:
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         assert emitter.module is not None
 
     def test_emit_llvm_ir_for_each_target(self) -> None:
-        from mapa.emit_llvm import LLVMEmitter
-        from mapa.parser import parse
-        from mapa.semantic import check_or_raise
+        from mapanare.emit_llvm import LLVMEmitter
+        from mapanare.parser import parse
+        from mapanare.semantic import check_or_raise
 
         ast = parse(SIMPLE_FN, filename="test.mn")
         check_or_raise(ast, filename="test.mn")

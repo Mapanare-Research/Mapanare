@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     AgentDef,
     AssignExpr,
     BinaryExpr,
@@ -56,7 +56,7 @@ from mapa.ast_nodes import (
     UnaryExpr,
     WildcardPattern,
 )
-from mapa.parser import ParseError, parse
+from mapanare.parser import ParseError, parse
 
 # ===================================================================
 # Helpers

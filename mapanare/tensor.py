@@ -463,7 +463,7 @@ def resolve_shape_from_type(
     Returns the shape if all dimensions are integer literals, None if
     any dimension is dynamic (non-literal).
     """
-    from mapa.ast_nodes import IntLiteral
+    from mapanare.ast_nodes import IntLiteral
 
     dims: list[int] = []
     for expr in shape_exprs:

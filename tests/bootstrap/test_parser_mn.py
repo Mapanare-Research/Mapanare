@@ -1,4 +1,4 @@
-"""Tests for mapa/self/parser.mn — verifies the self-hosted parser definitions
+"""Tests for mapanare/self/parser.mn — verifies the self-hosted parser definitions
 can be parsed and type-checked by the Python compiler."""
 
 from __future__ import annotations
@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from mapa.lexer import tokenize
-from mapa.parser import parse
-from mapa.semantic import check
+from mapanare.lexer import tokenize
+from mapanare.parser import parse
+from mapanare.semantic import check
 
-PARSER_MN = Path(__file__).resolve().parents[2] / "mapa" / "self" / "parser.mn"
+PARSER_MN = Path(__file__).resolve().parents[2] / "mapanare" / "self" / "parser.mn"
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ class TestParserMnParsing:
 
     def test_has_parse_error_struct(self, parser_source: str) -> None:
         program = parse(parser_source, filename="parser.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         struct_names = {s.name for s in structs}
@@ -42,7 +42,7 @@ class TestParserMnParsing:
 
     def test_has_core_parse_functions(self, parser_source: str) -> None:
         program = parse(parser_source, filename="parser.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -58,7 +58,7 @@ class TestParserMnParsing:
 
     def test_has_helper_functions(self, parser_source: str) -> None:
         program = parse(parser_source, filename="parser.mn")
-        from mapa.ast_nodes import FnDef
+        from mapanare.ast_nodes import FnDef
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
@@ -175,7 +175,7 @@ class TestParserMnCoverage:
 
     def test_parse_error_has_fields(self, parser_source: str) -> None:
         program = parse(parser_source, filename="parser.mn")
-        from mapa.ast_nodes import StructDef
+        from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         pe = next(s for s in structs if s.name == "ParseError")

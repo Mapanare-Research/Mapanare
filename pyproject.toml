@@ -27,11 +27,12 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["mapa*", "runtime*", "stdlib*", "editors*"]
+include = ["mapanare*", "runtime*", "stdlib*", "editors*"]
 
 [project.scripts]
-mapa = "mapa.cli:main"
-mapanare-lsp = "mapa.lsp.server:main"
+mapanare = "mapanare.cli:main"
+mapa = "mapanare.cli:main"
+mapanare-lsp = "mapanare.lsp.server:main"
 
 [tool.black]
 line-length = 100

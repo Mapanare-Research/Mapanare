@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from mapa.ast_nodes import (
+from mapanare.ast_nodes import (
     AgentDef,
     Block,
     Decorator,
@@ -27,7 +27,7 @@ from mapa.ast_nodes import (
     Program,
     ReturnStmt,
 )
-from mapa.gpu import (
+from mapanare.gpu import (
     CUDA_KERNELS,
     DEVICE_ANNOTATIONS,
     METAL_SHADERS,
@@ -47,8 +47,8 @@ from mapa.gpu import (
     get_gpu_manager,
     resolve_device_from_annotation,
 )
-from mapa.parser import parse
-from mapa.semantic import SemanticChecker
+from mapanare.parser import parse
+from mapanare.semantic import SemanticChecker
 
 # =========================================================================
 # Task 5 & 6: @gpu and @cpu annotations
@@ -698,7 +698,7 @@ class TestLLVMGPUDispatch:
     """Test LLVM emitter declares GPU dispatch runtime functions."""
 
     def test_declare_tensor_add_dispatch(self) -> None:
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         fn = emitter._declare_tensor_runtime("__mapanare_tensor_add_dispatch")
@@ -708,7 +708,7 @@ class TestLLVMGPUDispatch:
         assert len(fn.args) == 3
 
     def test_declare_tensor_sub_dispatch(self) -> None:
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         fn = emitter._declare_tensor_runtime("__mapanare_tensor_sub_dispatch")
@@ -716,21 +716,21 @@ class TestLLVMGPUDispatch:
         assert len(fn.args) == 3
 
     def test_declare_tensor_mul_dispatch(self) -> None:
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         fn = emitter._declare_tensor_runtime("__mapanare_tensor_mul_dispatch")
         assert fn is not None
 
     def test_declare_tensor_div_dispatch(self) -> None:
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         fn = emitter._declare_tensor_runtime("__mapanare_tensor_div_dispatch")
         assert fn is not None
 
     def test_declare_matmul_dispatch(self) -> None:
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         fn = emitter._declare_tensor_runtime("__mapanare_tensor_matmul_dispatch")
@@ -738,7 +738,7 @@ class TestLLVMGPUDispatch:
         assert len(fn.args) == 3
 
     def test_declare_detect_gpus(self) -> None:
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         fn = emitter._declare_tensor_runtime("__mapanare_detect_gpus")
@@ -746,7 +746,7 @@ class TestLLVMGPUDispatch:
         assert len(fn.args) == 0
 
     def test_cached_declaration(self) -> None:
-        from mapa.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm import LLVMEmitter
 
         emitter = LLVMEmitter()
         fn1 = emitter._declare_tensor_runtime("__mapanare_tensor_add_dispatch")

@@ -68,7 +68,7 @@ function Invoke-AllChecks {
     # --- mypy ---
     Write-Host "  mypy            " -ForegroundColor Cyan -NoNewline
     $savedEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    $out = & mypy mapa/ runtime/ 2>&1
+    $out = & mypy mapanare/ runtime/ 2>&1
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = $savedEAP
     if ($exitCode -eq 0) {
@@ -151,7 +151,7 @@ if ($Mode -eq "lint") {
 
 # --- validate mode (watch + lint) ---
 if ($Mode -eq "validate") {
-    $mapaPath = "$Root\mapa"
+    $mapaPath = "$Root\mapanare"
     $runtimePath = "$Root\runtime"
     $testsPath = "$Root\tests"
     $stdlibPath = "$Root\stdlib"

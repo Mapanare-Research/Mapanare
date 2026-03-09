@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from mapa.parser import parse
-from mapa.semantic import (
+from mapanare.parser import parse
+from mapanare.semantic import (
     SemanticError,
     SemanticErrors,
     check,

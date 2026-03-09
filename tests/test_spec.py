@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = ROOT / "SPEC.md"
+SPEC = ROOT / "docs" / "SPEC.md"
 
 
 def _spec_text() -> str:
@@ -292,7 +292,7 @@ class TestTypeSystem:
 
 
 class TestRFC0001:
-    RFC_PATH = ROOT / "rfcs" / "0001-agent-syntax.md"
+    RFC_PATH = ROOT / "docs" / "rfcs" / "0001-agent-syntax.md"
 
     def test_rfc_file_exists(self) -> None:
         assert self.RFC_PATH.exists(), "rfcs/0001-agent-syntax.md must exist"

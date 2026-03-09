@@ -1,6 +1,6 @@
 """Tests for mapa.lsp.analysis — symbol extraction, hover, go-to-def, find-refs, completion."""
 
-from mapa.lsp.analysis import (
+from mapanare.lsp.analysis import (
     DocumentAnalysis,
     analyze_document,
 )
@@ -375,7 +375,7 @@ class TestLSPServer:
     """Basic smoke tests for the LSP server module."""
 
     def test_server_importable(self) -> None:
-        from mapa.lsp.server import server
+        from mapanare.lsp.server import server
 
         assert server is not None
         assert server.name == "mapanare-lsp"
@@ -383,7 +383,7 @@ class TestLSPServer:
     def test_completion_kind_mapping(self) -> None:
         from lsprotocol import types as lsp
 
-        from mapa.lsp.server import _map_completion_kind
+        from mapanare.lsp.server import _map_completion_kind
 
         assert _map_completion_kind("function") == lsp.CompletionItemKind.Function
         assert _map_completion_kind("variable") == lsp.CompletionItemKind.Variable
