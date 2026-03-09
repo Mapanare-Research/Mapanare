@@ -1,0 +1,77 @@
+// main.mn — Compiler driver for the Mapanare self-hosted compiler.
+// Wires the pipeline: source -> parse -> check -> emit_llvm -> LLVM IR.
+
+import self::ast
+import self::parser
+import self::semantic
+import self::emit_llvm
+
+// ---------------------------------------------------------------------------
+// Compilation result
+// ---------------------------------------------------------------------------
+
+struct CompileResult {
+    success: Bool,
+    ir_text: String,
+    errors: List<SemanticError>
+}
+
+fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError>) -> CompileResult {
+    let r: CompileResult = success
+    return r
+}
+
+// ---------------------------------------------------------------------------
+// version — return the compiler version string
+// ---------------------------------------------------------------------------
+
+fn version() -> String {
+    return "mapanare 0.1.0"
+}
+
+// ---------------------------------------------------------------------------
+// compile — run the full pipeline on a source string
+// ---------------------------------------------------------------------------
+
+fn compile(source: String, filename: String) -> CompileResult {
+    // Stage 1: parse (lexer is called internally by parser)
+    let program: Program = parse(source, filename)
+
+    // Stage 2: semantic analysis
+    let errors: List<SemanticError> = check(program, filename)
+
+    if len(errors) > 0 {
+        return new_compile_result(false, "", errors)
+    }
+
+    // Stage 3: emit LLVM IR
+    let ir_text: String = emit_program(program, filename)
+    let no_errors: List<SemanticError> = []
+    return new_compile_result(true, ir_text, no_errors)
+}
+
+// ---------------------------------------------------------------------------
+// format_error — format a SemanticError for display
+// ---------------------------------------------------------------------------
+
+fn format_error(err: SemanticError) -> String {
+    return err.filename + ":" + toString(err.line) + ":" + toString(err.column) + ": error: " + err.message
+}
+
+// ---------------------------------------------------------------------------
+// compile_and_print — compile and print result or errors to stdout
+// ---------------------------------------------------------------------------
+
+fn compile_and_print(source: String, filename: String) -> CompileResult {
+    let cr: CompileResult = compile(source, filename)
+
+    if cr.success {
+        println(cr.ir_text)
+    } else {
+        for i in 0..len(cr.errors) {
+            let err: SemanticError = cr.errors[i]
+            println(format_error(err))
+        }
+    }
+    return cr
+}
