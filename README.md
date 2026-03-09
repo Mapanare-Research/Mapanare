@@ -1,4 +1,6 @@
 <div align="center">
+    
+<img width="3200" height="1344" alt="MapanareDevTo" src="https://github.com/user-attachments/assets/99b80387-afd9-4b07-beb8-59a8f63f7ac7" />
 
 # Mapanare
 
@@ -386,6 +388,18 @@ Requires Python 3.11+.
 | 7 | Ecosystem | Planned |
 
 See [ROADMAP.md](docs/ROADMAP.md) for the full breakdown.
+
+---
+
+## The Story Behind Mapanare
+
+Mapanare wasn't born from a weekend tutorial or a trending tweet. It comes from 15 years of writing code across more languages and paradigms than most developers will ever touch.
+
+It started at 14, self-taught, building a calculator in ActionScript 2 for math class in Venezuela — no formal training, no English, no Stack Overflow in Spanish. From Flash games inspired by the Flappy Bird era, to ColdFusion, PHP, and eventually Python — each language taught something, and each one eventually showed its limits.
+
+Python was the one that stuck the longest. But after years of building with it, the cracks became impossible to ignore — especially for the kind of AI-native, concurrent, data-heavy work that defines modern software. Mapanare is the answer to a question that's been forming for over a decade: *what would a language look like if it was designed for how we actually build software today?*
+
+This is not another language from someone who learned to code yesterday. It's the product of real experience, real frustration, and a genuine vision for what programming languages should be in the age of AI.
 
 ---
 
