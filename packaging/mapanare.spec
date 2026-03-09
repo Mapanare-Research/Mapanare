@@ -22,15 +22,18 @@ mapanare_metadata = copy_metadata('mapanare')
 
 sep = os.sep
 
+# Paths are relative to this spec file; go up one level to reach repo root
+root = os.path.normpath(os.path.join(SPECPATH, '..'))
+
 a = Analysis(
-    [os.path.join('packaging', 'pyinstaller-entry.py')],
-    pathex=[],
+    [os.path.join(root, 'packaging', 'pyinstaller-entry.py')],
+    pathex=[root],
     binaries=[],
     datas=[
-        ('mapanare', 'mapanare'),
-        ('runtime', 'runtime'),
-        ('stdlib', 'stdlib'),
-        ('VERSION', '.'),
+        (os.path.join(root, 'mapanare'), 'mapanare'),
+        (os.path.join(root, 'runtime'), 'runtime'),
+        (os.path.join(root, 'stdlib'), 'stdlib'),
+        (os.path.join(root, 'VERSION'), '.'),
     ] + mapanare_metadata,
     hiddenimports=[
         'lark',

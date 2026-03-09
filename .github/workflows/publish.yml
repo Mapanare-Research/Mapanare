@@ -101,6 +101,11 @@ jobs:
             irm https://raw.githubusercontent.com/${{ github.repository }}/main/packaging/install.ps1 | iex
             ```
 
+            **pip (Python 3.11+):**
+            ```bash
+            pip install mapanare
+            ```
+
             ### Manual Download
 
             | Platform | Download | Size |
@@ -130,8 +135,36 @@ jobs:
           prerelease: ${{ github.event.inputs.prerelease == 'true' }}
 
   # =========================================================================
-  # 2. Build CLI binary with PyInstaller (3 platforms)
+  # 2. Publish to PyPI
   # =========================================================================
+  publish-pypi:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.new_version }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set version and build
+        run: |
+          echo "${{ needs.release.outputs.new_version }}" > VERSION
+          pip install build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+  # =========================================================================
+  # 3. Build CLI binary with PyInstaller (3 platforms)
+  # =========================================================================
+
   build-cli:
     needs: release
     strategy:
@@ -208,7 +241,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # =========================================================================
-  # 3. Update release body with actual asset sizes
+  # 4. Update release body with actual asset sizes
   # =========================================================================
   update-release:
     needs: [release, build-cli]
