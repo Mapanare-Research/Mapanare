@@ -4,6 +4,8 @@
 
 # Mapanare
 
+**/mah-pah-NAH-reh/**
+
 **The AI-native programming language.**
 
 *Agents. Signals. Streams. Tensors. First-class, not frameworks.*
@@ -23,7 +25,7 @@ Mapanare compiles to Python (transpiler) and native binaries (LLVM), with a self
 
 <br>
 
-[Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
+[**Getting Started**](docs/getting-started.md) · [Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
 
 </div>
 
