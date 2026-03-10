@@ -438,7 +438,10 @@ This is not another language from someone who learned to code yesterday. It's th
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Language changes require an [RFC](docs/rfcs/).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Community standards and project
+processes live in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
+[GOVERNANCE.md](GOVERNANCE.md), and [SECURITY.md](SECURITY.md). Language
+changes require an [RFC](docs/rfcs/).
 
 ---
 
@@ -452,7 +455,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 **Mapanare** — The language AI deserves.
 
-[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues) · [Spec](docs/SPEC.md) · [Roadmap](docs/PLAN-v0.3.0.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
+[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues/new?template=bug_report.yml) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues/new?template=feature_request.yml) · [Spec](docs/SPEC.md) · [Roadmap](docs/PLAN-v0.3.0.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
 
 Made with care by [Juan Denis](https://juandenis.com)
 

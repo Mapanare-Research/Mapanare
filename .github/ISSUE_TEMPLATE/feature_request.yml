@@ -1,0 +1,68 @@
+name: Feature request
+description: Propose a product, compiler, tooling, docs, or language improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to propose an improvement.
+
+        If this changes language syntax or semantics, expect to follow the RFC process described in `GOVERNANCE.md`.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Language design
+        - Compiler
+        - Runtime / stdlib
+        - CLI / package tooling
+        - Docs / examples
+        - Website / developer experience
+        - Community process
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What pain point, gap, or opportunity does this address?
+      placeholder: "It is hard to..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the change as concretely as possible
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, rejected designs, or comparable approaches
+  - type: textarea
+    id: impact
+    attributes:
+      label: Expected impact
+      description: Who benefits, what gets easier, and what tradeoffs appear?
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Are you interested in contributing this?
+      options:
+        - Yes, I can work on it
+        - Maybe, with guidance
+        - No, I am only proposing it
+    validations:
+      required: true
+  - type: input
+    id: rfc
+    attributes:
+      label: RFC or related discussion
+      description: Link an RFC, issue, or design note if one already exists

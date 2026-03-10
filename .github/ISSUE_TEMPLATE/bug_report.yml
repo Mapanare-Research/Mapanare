@@ -1,0 +1,87 @@
+name: Bug report
+description: Report a reproducible defect in the compiler, runtime, CLI, docs, or tooling.
+title: "[Bug]: "
+labels:
+  - bug
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug report.
+
+        Please keep reports focused and reproducible. For security vulnerabilities, do not use this form. Follow the private reporting instructions in `SECURITY.md`.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release number, branch, or commit SHA
+      placeholder: "0.2.0, main, or abc1234"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - Parser / lexer
+        - Type checker / semantics
+        - Python backend
+        - LLVM backend
+        - Runtime / stdlib
+        - CLI / packaging
+        - Docs / website
+        - Editor tooling / LSP
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, LLVM version, shell, or anything else relevant
+      placeholder: "Windows 11, Python 3.12.2, llvmlite 0.44.0"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug clearly and keep it specific
+      placeholder: "The compiler crashes when..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal numbered steps or a minimal code sample
+      placeholder: |
+        1. Run `mapanare build examples/foo.mn`
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or traceback
+      description: Paste the relevant output if available
+      render: shell
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Links, screenshots, related issues, or suspected cause

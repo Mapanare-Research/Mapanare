@@ -34,3 +34,4 @@ error.log
 .sprint/
 docs/PLAN-v0.3.0.md
 sprint_runner.py
+docs/discord-seeding.md
