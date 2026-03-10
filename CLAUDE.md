@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language (v0.2.0) with first-class agents, signals, streams, and tensors. It compiles to Python (transpiler) and LLVM IR (native backend via llvmlite). A self-hosted compiler is in progress under `mapanare/self/`.
+Mapanare is an AI-native compiled programming language (v0.3.0) with first-class agents, signals, streams, and tensors. It compiles to Python (transpiler) and LLVM IR (native backend via llvmlite). A self-hosted compiler is in progress under `mapanare/self/`.
 
 ## Commands
 
