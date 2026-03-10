@@ -43,7 +43,7 @@ jobs:
       - name: Read version from source
         id: bump_version
         run: |
-          VERSION=$(python -c "import re; print(re.search(r'__version__\s*=\s*\"(.+?)\"', open('mapanare/cli.py').read()).group(1))")
+          VERSION=$(cat VERSION | tr -d '[:space:]')
           echo "new_version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "new_tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Detected version: $VERSION"

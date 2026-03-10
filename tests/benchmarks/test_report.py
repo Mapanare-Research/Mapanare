@@ -28,8 +28,11 @@ class TestReportGeneration:
         assert "No data" in html or "<td>" in html
 
     def test_contains_mapanare_version(self) -> None:
+        from pathlib import Path
+
+        version = (Path(__file__).resolve().parents[2] / "VERSION").read_text().strip()
         html = generate_html()
-        assert "0.2.0" in html
+        assert version in html
 
     def test_contains_run_instructions(self) -> None:
         html = generate_html()

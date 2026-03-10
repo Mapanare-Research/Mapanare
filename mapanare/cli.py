@@ -15,7 +15,12 @@ from mapanare.parser import ParseError, parse
 from mapanare.semantic import SemanticErrors, check_or_raise
 from mapanare.targets import get_target, list_targets
 
-__version__ = "0.2.0"
+try:
+    from importlib.metadata import version as _pkg_version
+
+    __version__ = _pkg_version("mapanare")
+except Exception:
+    __version__ = "0.0.0"
 
 
 def _read_source(path: str) -> str:
