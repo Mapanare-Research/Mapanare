@@ -435,6 +435,7 @@ BENCHMARKS = [
     ("02_concurrency", "Message Passing (10K msgs)"),
     ("03_stream_pipeline", "Stream Pipeline (1M items)"),
     ("04_matrix_mul", "Matrix Multiply (100x100)"),
+    ("05_agent_pipeline", "Agent Pipeline (1K msgs)"),
 ]
 
 
@@ -484,7 +485,7 @@ def run_all(only: str | None = None, n_runs: int = 3) -> list[BenchComparison]:
                 print(f"ERROR: {e}")
 
         # Mapanare Native (LLVM JIT)
-        if mn_file.exists() and bench_id != "02_concurrency":
+        if mn_file.exists() and bench_id not in ("02_concurrency", "05_agent_pipeline"):
             print("    MN Native ... ", end="", flush=True)
             try:
                 r = run_mapanare_native(mn_file, n_runs)

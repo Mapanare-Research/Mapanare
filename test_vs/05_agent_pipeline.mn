@@ -1,0 +1,54 @@
+// Benchmark: Agent Pipeline Processing Messages
+// Mapanare — real-world pattern: multi-stage agent pipeline
+// Workload: Parse -> Validate -> Transform -> Aggregate
+// Simulates JSON message processing with string operations
+
+agent Parser {
+    input raw: String
+    output parsed: Int
+
+    fn handle(raw: String) -> Int {
+        return len(raw)
+    }
+}
+
+agent Validator {
+    input value: Int
+    output valid: Int
+
+    fn handle(value: Int) -> Int {
+        if value > 0 {
+            return value
+        }
+        return 0
+    }
+}
+
+agent Transformer {
+    input value: Int
+    output result: Int
+
+    fn handle(value: Int) -> Int {
+        return value * 3 + 7
+    }
+}
+
+let parser = spawn Parser()
+let validator = spawn Validator()
+let transformer = spawn Transformer()
+
+let mut total: Int = 0
+for i in 0..1000 {
+    let msg: String = "message_payload_data_" + str(i)
+    parser.raw <- msg
+    let parsed = sync parser.parsed
+    validator.value <- parsed
+    let valid = sync validator.valid
+    transformer.value <- valid
+    let result = sync transformer.result
+    total += result
+}
+print(total)
+sync parser.stop()
+sync validator.stop()
+sync transformer.stop()

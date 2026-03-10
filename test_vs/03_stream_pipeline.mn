@@ -1,12 +1,10 @@
 // Benchmark: Stream Pipeline Processing (1M items)
-// Mapanare -- built-in streams with fusion (single-pass)
-// Workload: generate -> map(*3) -> filter(even) -> sum
+// Mapanare -- uses built-in stream primitives with map/filter/fold
+// Workload: stream -> map(*3) -> filter(even) -> fold(sum)
 
-let mut total: Int = 0
-for x in 0..1000000 {
-    let v: Int = x * 3
-    if v % 2 == 0 {
-        total += v
-    }
+fn main() {
+    let s = stream(0..1000000)
+    let pipeline = s.map((x) => x * 3).filter((x) => x % 2 == 0)
+    let total = sync pipeline.fold(0, (acc, x) => acc + x)
+    print(total)
 }
-print(total)

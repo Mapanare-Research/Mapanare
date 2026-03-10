@@ -5,27 +5,22 @@ Verifies TypeKind enum, TypeInfo equality, display names, and builtin registries
 
 from __future__ import annotations
 
-import pytest
-
 from mapanare.types import (
     BOOL_TYPE,
     BUILTIN_CALL_MAP,
     BUILTIN_FUNCTIONS,
     BUILTIN_GENERIC_KINDS,
     BUILTIN_GENERIC_TYPES,
-    CHAR_TYPE,
     FLOAT_TYPE,
     INT_TYPE,
     PRIMITIVE_KINDS,
     PRIMITIVE_TYPES,
     PYTHON_TYPE_MAP,
-    RANGE_TYPE,
     STRING_TYPE,
-    TypeInfo,
-    TypeKind,
     UNKNOWN_TYPE,
     VOID_TYPE,
-    _type_display,
+    TypeInfo,
+    TypeKind,
     kind_from_name,
     make_type,
 )
@@ -313,9 +308,7 @@ class TestSemanticIntegration:
     def test_reimports(self) -> None:
         from mapanare.semantic import (
             BUILTIN_FUNCTIONS,
-            BUILTIN_GENERIC_TYPES,
             PRIMITIVE_TYPES,
-            TypeInfo,
             TypeKind,
         )
 

@@ -218,23 +218,32 @@ Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each 
 
 ### Performance (wall time, lower is better)
 
-| Benchmark | Mapanare | MN Native (LLVM) | Python | Go | Rust | vs Python |
-|-----------|----------|-------------------|--------|----|------|-----------|
-| Fibonacci (recursive, n=35) | 1.2104s | **0.0448s** | 1.1885s | 0.0341s | 0.0211s | 26.5x (native) |
-| Message Passing (10K msgs) | 0.9989s | — | 1.0978s | 0.0025s | 0.0203s | 1.1x |
-| Stream Pipeline (1M items) | 1.1141s | **0.0165s** | 1.0342s | 0.0005s | 0.0001s | 62.8x (native) |
-| Matrix Multiply (100x100) | 0.1769s | **0.0199s** | 0.4556s | 0.0005s | 0.0009s | 22.9x (native) |
+| Benchmark | Features Tested | Mapanare | MN Native (LLVM) | Python | Go | Rust | vs Python |
+|-----------|-----------------|----------|-------------------|--------|----|------|-----------|
+| Fibonacci (recursive, n=35) | Functions, recursion, arithmetic | 1.2104s | **0.0448s** | 1.1885s | 0.0341s | 0.0211s | 26.5x (native) |
+| Message Passing (10K msgs) | Agents, spawn, send (`<-`), sync, concurrency | 0.9989s | — | 1.0978s | 0.0025s | 0.0203s | 1.1x |
+| Stream Pipeline (1M items) | Streams, `stream()`, `.map()`, `.filter()`, `.fold()` | 1.1141s | **0.0165s** | 1.0342s | 0.0005s | 0.0001s | 62.8x (native) |
+| Matrix Multiply (100x100) | Nested loops, arithmetic, variables | 0.1769s | **0.0199s** | 0.4556s | 0.0005s | 0.0009s | 22.9x (native) |
+| Agent Pipeline (1K msgs) | Agents, spawn, send, sync, string ops, multi-stage | — | — | — | — | — | — |
 
 ### Expressiveness (lines of code, lower is better)
 
-| Benchmark | Mapanare | Python | Go | Rust |
-|-----------|----------|--------|----|------|
-| Fibonacci (recursive, n=35) | **8** | 12 | 18 | 23 |
-| Message Passing (10K msgs) | **16** | 28 | 27 | 32 |
-| Stream Pipeline (1M items) | **8** | 17 | 18 | 20 |
-| Matrix Multiply (100x100) | **12** | 21 | 37 | 33 |
+| Benchmark | Features Tested | Mapanare | Python | Go | Rust |
+|-----------|-----------------|----------|--------|----|------|
+| Fibonacci (recursive, n=35) | Functions, recursion | **8** | 12 | 18 | 23 |
+| Message Passing (10K msgs) | Agents, channels | **16** | 28 | 27 | 32 |
+| Stream Pipeline (1M items) | Stream primitives | **8** | 17 | 18 | 20 |
+| Matrix Multiply (100x100) | Nested loops, math | **12** | 21 | 37 | 33 |
+| Agent Pipeline (1K msgs) | Multi-stage agents, strings | **18** | 32 | 33 | 28 |
 
 > **Key takeaway:** Mapanare's interpreted backend matches Python speed (it transpiles to Python), but the LLVM native backend delivers **22–63x** speedups over Python. Mapanare programs are consistently the shortest across all benchmarks.
+
+**Benchmark notes:**
+- **Fibonacci:** Tests pure computation speed. No I/O, no concurrency. Interpreted backend runs as Python; native backend compiles to LLVM IR.
+- **Message Passing:** Tests agent spawn/send/sync with 4 concurrent workers. Interpreted backend uses asyncio (single-threaded cooperative concurrency); native backend not yet wired (Phase 2.1).
+- **Stream Pipeline:** Tests `stream()`, `.map()`, `.filter()`, `.fold()` primitives with stream fusion. Does NOT test backpressure or hot streams.
+- **Matrix Multiply:** Tests nested loops and arithmetic. Uses constant initialization (`1.0 * 2.0`), not realistic matrix data — measures loop/arithmetic throughput only.
+- **Agent Pipeline:** Tests real-world pattern: 3-stage pipeline (parse → validate → transform) processing string messages. Measures agent communication overhead across pipeline stages.
 
 ### Stream Pipelines (1M items, runtime microbenchmarks)
 

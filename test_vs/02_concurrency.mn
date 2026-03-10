@@ -1,5 +1,6 @@
-// Benchmark: Concurrent Message Passing
-// Mapanare — built-in agents, zero library imports
+// Benchmark: Concurrent Message Passing (10K msgs)
+// Mapanare — multiple agents processing messages concurrently
+// Workload: 4 workers receive messages, process in parallel, results collected
 
 agent Worker {
     input val: Int
@@ -10,12 +11,24 @@ agent Worker {
     }
 }
 
-let w = spawn Worker()
+let w1 = spawn Worker()
+let w2 = spawn Worker()
+let w3 = spawn Worker()
+let w4 = spawn Worker()
+
 let mut sum: Int = 0
-for i in 0..10000 {
-    w.val <- i
-    let r = sync w.result
-    sum += r
+for i in 0..2500 {
+    w1.val <- i
+    w2.val <- i + 2500
+    w3.val <- i + 5000
+    w4.val <- i + 7500
+    sum += sync w1.result
+    sum += sync w2.result
+    sum += sync w3.result
+    sum += sync w4.result
 }
 print(sum)
-sync w.stop()
+sync w1.stop()
+sync w2.stop()
+sync w3.stop()
+sync w4.stop()
