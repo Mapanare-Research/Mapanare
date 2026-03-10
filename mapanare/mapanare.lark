@@ -122,6 +122,7 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
 
 ?stmt: let_stmt
      | for_stmt
+     | while_stmt
      | return_stmt
      | expr_stmt
 
@@ -129,6 +130,7 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
 let_stmt: KW_LET KW_MUT? NAME (COLON type_expr)? ASSIGN expr
 return_stmt: KW_RETURN expr?
 for_stmt: KW_FOR NAME KW_IN expr block
+while_stmt: KW_WHILE expr block
 expr_stmt: expr
 
 // ------------------------------------------------------------
@@ -213,6 +215,7 @@ arg_list: expr (COMMA expr)* COMMA?
           | self_expr
           | ident
           | list_lit
+          | map_lit
           | paren_expr
           | tuple_expr
 
@@ -258,6 +261,10 @@ ident_pattern: NAME
 
 list_lit: LBRACKET (expr (COMMA expr)* COMMA?)? RBRACKET
 
+// Map literal: #{ key: value, ... }
+map_lit: MAP_OPEN (map_entry (COMMA map_entry)* COMMA?)? RBRACE
+map_entry: expr COLON expr
+
 // Parenthesized expr: single expr in parens
 paren_expr: LPAREN expr RPAREN
 
@@ -284,6 +291,7 @@ KW_IF: "if"
 KW_ELSE: "else"
 KW_MATCH: "match"
 KW_FOR: "for"
+KW_WHILE: "while"
 KW_IN: "in"
 KW_TYPE: "type"
 KW_STRUCT: "struct"
@@ -340,6 +348,7 @@ QUESTION: "?"
 // Delimiters
 // ============================================================
 
+MAP_OPEN: "#{"
 LPAREN: "("
 RPAREN: ")"
 LBRACE: "{"

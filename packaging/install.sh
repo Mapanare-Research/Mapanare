@@ -104,7 +104,9 @@ if command -v mapanare &>/dev/null; then
   echo "Get started:"
   echo "  mapanare init myproject"
   echo "  cd myproject"
-  echo "  mapanare run main.mn"
+  echo "  mapanare run main.mn       # compile & run"
+  echo "  mapanare check main.mn     # type-check only"
+  echo "  mapanare build main.mn     # native binary (requires LLVM)"
 else
   echo "Installed to ${INSTALL_DIR}/mapanare"
   echo ""

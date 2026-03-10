@@ -257,6 +257,21 @@ class ListLiteral(Expr):
 
 
 @dataclass
+class MapEntry(ASTNode):
+    """A single key-value pair in a map literal."""
+
+    key: Expr = field(default_factory=Expr)
+    value: Expr = field(default_factory=Expr)
+
+
+@dataclass
+class MapLiteral(Expr):
+    """Map literal: `{key: value, ...}`."""
+
+    entries: list[MapEntry] = field(default_factory=list)
+
+
+@dataclass
 class ConstructExpr(Expr):
     """Struct construction: `Point { x: 1.0, y: 2.0 }`."""
 
@@ -350,6 +365,14 @@ class ForLoop(Stmt):
 
     var_name: str = ""
     iterable: Expr = field(default_factory=Expr)
+    body: Block = field(default_factory=lambda: Block())
+
+
+@dataclass
+class WhileLoop(Stmt):
+    """While loop: `while cond { ... }`."""
+
+    condition: Expr = field(default_factory=Expr)
     body: Block = field(default_factory=lambda: Block())
 
 

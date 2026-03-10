@@ -46,6 +46,8 @@ from mapanare.ast_nodes import (
     LetBinding,
     ListLiteral,
     LiteralPattern,
+    MapEntry,
+    MapLiteral,
     MatchArm,
     MatchExpr,
     MethodCallExpr,
@@ -71,6 +73,7 @@ from mapanare.ast_nodes import (
     TypeAlias,
     TypeExpr,
     UnaryExpr,
+    WhileLoop,
     WildcardPattern,
 )
 
@@ -127,6 +130,7 @@ _SKIP = frozenset(
         "KW_ELSE",
         "KW_MATCH",
         "KW_FOR",
+        "KW_WHILE",
         "KW_IN",
         "KW_RETURN",
         "KW_IMPORT",
@@ -358,6 +362,12 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         body = items[2]
         return ForLoop(var_name=name, iterable=iterable, body=body)
 
+    def while_stmt(self, children: list[Any]) -> WhileLoop:
+        items = _filter(children)
+        condition = items[0]
+        body = items[1]
+        return WhileLoop(condition=condition, body=body)
+
     def expr_stmt(self, children: list[Any]) -> ExprStmt:
         return ExprStmt(expr=children[0])
 
@@ -515,6 +525,13 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def list_lit(self, children: list[Any]) -> ListLiteral:
         return ListLiteral(elements=[c for c in children if isinstance(c, Expr)])
+
+    def map_lit(self, children: list[Any]) -> MapLiteral:
+        return MapLiteral(entries=[c for c in children if isinstance(c, MapEntry)])
+
+    def map_entry(self, children: list[Any]) -> MapEntry:
+        exprs = [c for c in children if isinstance(c, Expr)]
+        return MapEntry(key=exprs[0], value=exprs[1])
 
     def construct_expr(self, children: list[Any]) -> ConstructExpr:
         items = _filter(children)
@@ -975,9 +992,86 @@ def parse(source: str, *, filename: str = "<input>") -> Program:
     except UnexpectedToken as exc:
         line = getattr(exc, "line", 0)
         column = getattr(exc, "column", 0)
+        msg = _friendly_token_error(exc)
         raise ParseError(
-            f"Unexpected token: {exc.token!r}",
+            msg,
             line=line,
             column=column,
             filename=filename,
         ) from None
+
+
+# Map raw Lark token types to user-friendly names
+_TOKEN_NAMES: dict[str, str] = {
+    "MAP_OPEN": "'#{'",
+    "LBRACE": "'{'",
+    "RBRACE": "'}'",
+    "LPAREN": "'('",
+    "RPAREN": "')'",
+    "LBRACKET": "'['",
+    "RBRACKET": "']'",
+    "COMMA": "','",
+    "COLON": "':'",
+    "SEMICOLON": "';'",
+    "ASSIGN": "'='",
+    "ARROW": "'->'",
+    "FAT_ARROW": "'=>'",
+    "PIPE_OP": "'|>'",
+    "NEWLINE": "newline",
+    "NAME": "identifier",
+    "DEC_INT": "integer",
+    "FLOAT_LIT": "float",
+    "STRING_LIT": "string",
+    "KW_FN": "'fn'",
+    "KW_LET": "'let'",
+    "KW_IF": "'if'",
+    "KW_ELSE": "'else'",
+    "KW_FOR": "'for'",
+    "KW_WHILE": "'while'",
+    "KW_IN": "'in'",
+    "KW_RETURN": "'return'",
+    "KW_MATCH": "'match'",
+    "KW_STRUCT": "'struct'",
+    "KW_ENUM": "'enum'",
+    "KW_IMPORT": "'import'",
+    "KW_EXPORT": "'export'",
+    "KW_AGENT": "'agent'",
+    "KW_SPAWN": "'spawn'",
+    "KW_SIGNAL": "'signal'",
+    "KW_STREAM": "'stream'",
+    "KW_TRUE": "'true'",
+    "KW_FALSE": "'false'",
+    "KW_NONE": "'none'",
+    "$END": "end of file",
+}
+
+
+def _friendly_token_name(tok_type: str) -> str:
+    """Convert a Lark token type to a user-friendly name."""
+    return _TOKEN_NAMES.get(tok_type, tok_type.lower().replace("_", " "))
+
+
+def _friendly_token_error(exc: UnexpectedToken) -> str:
+    """Build a user-friendly parse error message from a Lark UnexpectedToken."""
+    token = exc.token
+    token_val = str(token).strip()
+
+    # Describe what was found
+    if hasattr(token, "type"):
+        found = _friendly_token_name(token.type)
+        if token_val and found != f"'{token_val}'":
+            found = f"{found} ({token_val!r})"
+    else:
+        found = repr(token_val)
+
+    # Describe what was expected (limit to avoid huge messages)
+    expected_set: set[str] = getattr(exc, "expected", set())
+    if expected_set:
+        friendly = sorted({_friendly_token_name(e) for e in expected_set})
+        if len(friendly) <= 5:
+            expected_str = ", ".join(friendly)
+        else:
+            expected_str = ", ".join(friendly[:5]) + ", ..."
+        return f"Unexpected {found} — expected {expected_str}"
+
+    return f"Unexpected {found}"

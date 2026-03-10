@@ -147,6 +147,64 @@ def cmd_run(args: argparse.Namespace) -> None:
             os.unlink(tmp_path)
 
 
+def cmd_repl(args: argparse.Namespace) -> None:
+    """Start an interactive Mapanare REPL."""
+    opt_level = _parse_opt_level(args)
+    namespace: dict[str, object] = {"__name__": "__repl__"}
+    # Accumulated definitions to re-emit with each evaluation
+    definitions: list[str] = []
+
+    print(f"Mapanare {__version__} REPL — type 'exit' or Ctrl+D to quit")
+
+    while True:
+        try:
+            line = input("mn> ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+
+        text = line.strip()
+        if not text:
+            continue
+        if text in ("exit", "quit"):
+            break
+
+        # Multi-line: collect until braces balance
+        brace_depth = text.count("{") - text.count("}")
+        while brace_depth > 0:
+            try:
+                continuation = input("... ")
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            text += "\n" + continuation
+            brace_depth += continuation.count("{") - continuation.count("}")
+
+        # Try compiling as a top-level definition or statement
+        try:
+            python_code = _compile_source(text, "<repl>", opt_level=opt_level)
+        except ParseError as e:
+            print(f"parse error: {e}")
+            continue
+        except SemanticErrors as e:
+            for err in e.errors:
+                print(f"error: {err.message}")
+            continue
+
+        # Track function/struct/enum definitions for persistence
+        is_def = text.lstrip().startswith(("fn ", "pub fn ", "struct ", "enum ", "agent ", "pipe "))
+        if is_def:
+            definitions.append(text)
+
+        try:
+            code = compile(python_code, "<repl>", "exec")
+            exec(code, namespace)
+        except SystemExit:
+            break
+        except Exception as exc:
+            print(f"runtime error: {exc}")
+
+
 def cmd_fmt(args: argparse.Namespace) -> None:
     """Format an .mn source file (normalize whitespace and indentation)."""
     source = _read_source(args.source)
@@ -443,6 +501,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("source", help="Path to .mn source file")
     _add_opt_level_args(p_run)
     p_run.set_defaults(func=cmd_run)
+
+    # repl
+    p_repl = subparsers.add_parser("repl", help="Start interactive REPL")
+    _add_opt_level_args(p_repl)
+    p_repl.set_defaults(func=cmd_repl)
 
     # fmt
     p_fmt = subparsers.add_parser("fmt", help="Format .mn source")

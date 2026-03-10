@@ -34,6 +34,7 @@ from mapanare.ast_nodes import (
     LambdaExpr,
     LetBinding,
     ListLiteral,
+    MapLiteral,
     MatchArm,
     MatchExpr,
     MethodCallExpr,
@@ -61,6 +62,7 @@ from mapanare.ast_nodes import (
     TypeAlias,
     TypeExpr,
     UnaryExpr,
+    WhileLoop,
 )
 
 
@@ -138,6 +140,9 @@ class PythonEmitter:
             elif isinstance(stmt, ForLoop):
                 self._scan_expr(stmt.iterable)
                 self._scan_block(stmt.body)
+            elif isinstance(stmt, WhileLoop):
+                self._scan_expr(stmt.condition)
+                self._scan_block(stmt.body)
             elif isinstance(stmt, SignalDecl):
                 self._has_signal = True
                 self._scan_expr(stmt.value)
@@ -200,6 +205,10 @@ class PythonEmitter:
         elif isinstance(expr, ListLiteral):
             for e in expr.elements:
                 self._scan_expr(e)
+        elif isinstance(expr, MapLiteral):
+            for entry in expr.entries:
+                self._scan_expr(entry.key)
+                self._scan_expr(entry.value)
         elif isinstance(expr, IndexExpr):
             self._scan_expr(expr.object)
             self._scan_expr(expr.index)
@@ -365,6 +374,11 @@ class PythonEmitter:
                 return True
             if isinstance(stmt, ForLoop):
                 if self._expr_needs_async(stmt.iterable):
+                    return True
+                if self._block_needs_async(stmt.body):
+                    return True
+            if isinstance(stmt, WhileLoop):
+                if self._expr_needs_async(stmt.condition):
                     return True
                 if self._block_needs_async(stmt.body):
                     return True
@@ -580,6 +594,8 @@ class PythonEmitter:
             self._emit_return(stmt)
         elif isinstance(stmt, ForLoop):
             self._emit_for(stmt)
+        elif isinstance(stmt, WhileLoop):
+            self._emit_while(stmt)
         elif isinstance(stmt, SignalDecl):
             self._emit_signal_decl(stmt)
         elif isinstance(stmt, StreamDecl):
@@ -622,6 +638,13 @@ class PythonEmitter:
     def _emit_for(self, loop: ForLoop) -> None:
         iterable = self._emit_expr(loop.iterable)
         self._emit_line(f"for {loop.var_name} in {iterable}:")
+        self._indent += 1
+        self._emit_block_body(loop.body)
+        self._indent -= 1
+
+    def _emit_while(self, loop: WhileLoop) -> None:
+        cond = self._emit_expr(loop.condition)
+        self._emit_line(f"while {cond}:")
         self._indent += 1
         self._emit_block_body(loop.body)
         self._indent -= 1
@@ -796,6 +819,13 @@ class PythonEmitter:
         elif isinstance(expr, ListLiteral):
             elems = ", ".join(self._emit_expr(e) for e in expr.elements)
             return f"[{elems}]"
+        elif isinstance(expr, MapLiteral):
+            if not expr.entries:
+                return "{}"
+            pairs = ", ".join(
+                f"{self._emit_expr(e.key)}: {self._emit_expr(e.value)}" for e in expr.entries
+            )
+            return f"{{{pairs}}}"
         elif isinstance(expr, ConstructExpr):
             return self._emit_construct(expr)
         elif isinstance(expr, SomeExpr):
@@ -867,10 +897,82 @@ class PythonEmitter:
         args = ", ".join(self._emit_expr(a) for a in expr.args)
         return f"{mapped}({args})"
 
+    # Mapanare method → Python equivalent for lists and strings
+    _LIST_METHOD_MAP: dict[str, str] = {
+        "push": "append",
+        "pop": "pop",
+        "clear": "clear",
+        "length": "__len__",
+    }
+
+    _STRING_METHOD_MAP: dict[str, str] = {
+        "length": "__len__",
+        "find": "find",
+        "starts_with": "startswith",
+        "ends_with": "endswith",
+        "char_at": "__getitem__",
+        "to_upper": "upper",
+        "to_lower": "lower",
+        "trim": "strip",
+        "split": "split",
+        "contains": "__contains__",
+        "replace": "replace",
+    }
+
+    _MAP_METHOD_MAP: dict[str, str] = {
+        "get": "get",
+        "insert": "__setitem__",
+        "delete": "pop",
+        "contains": "__contains__",
+        "keys": "keys",
+        "values": "values",
+        "length": "__len__",
+        "clear": "clear",
+    }
+
     def _emit_method_call(self, expr: MethodCallExpr) -> str:
         obj = self._emit_expr(expr.object)
         args = ", ".join(self._emit_expr(a) for a in expr.args)
-        return f"{obj}.{expr.method}({args})"
+        method = expr.method
+
+        # List methods
+        if method in self._LIST_METHOD_MAP:
+            mapped = self._LIST_METHOD_MAP[method]
+            if mapped == "__len__":
+                return f"len({obj})"
+            return f"{obj}.{mapped}({args})"
+
+        # String methods
+        if method in self._STRING_METHOD_MAP:
+            mapped = self._STRING_METHOD_MAP[method]
+            if mapped == "__len__":
+                return f"len({obj})"
+            if mapped == "__getitem__":
+                return f"{obj}[{args}]"
+            if mapped == "__contains__":
+                return f"({args} in {obj})"
+            return f"{obj}.{mapped}({args})"
+
+        # Map methods
+        if method in self._MAP_METHOD_MAP:
+            mapped = self._MAP_METHOD_MAP[method]
+            if mapped == "__len__":
+                return f"len({obj})"
+            if mapped == "__contains__":
+                return f"({args} in {obj})"
+            if mapped == "__setitem__":
+                arg_list = [self._emit_expr(a) for a in expr.args]
+                return f"{obj}.__setitem__({', '.join(arg_list)})"
+            return f"{obj}.{mapped}({args})"
+
+        # substring(start, end) → Python slicing
+        if method == "substring":
+            arg_list = [self._emit_expr(a) for a in expr.args]
+            if len(arg_list) == 2:
+                return f"{obj}[{arg_list[0]}:{arg_list[1]}]"
+            return f"{obj}[{args}]"
+
+        return f"{obj}.{method}({args})"
 
     def _emit_sync(self, expr: SyncExpr) -> str:
         """Emit sync (await).  When the inner expression is a field access on

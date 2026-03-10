@@ -32,6 +32,7 @@ from mapanare.ast_nodes import (
     LetBinding,
     ListLiteral,
     LiteralPattern,
+    MapLiteral,
     MatchArm,
     MatchExpr,
     MethodCallExpr,
@@ -45,6 +46,7 @@ from mapanare.ast_nodes import (
     TensorType,
     TypeExpr,
     UnaryExpr,
+    WhileLoop,
     WildcardPattern,
 )
 
@@ -446,6 +448,8 @@ class LLVMEmitter:
             return self._emit_expr(stmt.expr)
         if isinstance(stmt, ForLoop):
             return self._emit_for(stmt)
+        if isinstance(stmt, WhileLoop):
+            return self._emit_while(stmt)
         return None
 
     # -----------------------------------------------------------------------
@@ -534,6 +538,9 @@ class LLVMEmitter:
 
         if isinstance(expr, ListLiteral):
             return self._emit_list_literal(expr)
+
+        if isinstance(expr, MapLiteral):
+            raise NotImplementedError("Map literals are not yet supported in the LLVM backend")
 
         if isinstance(expr, IndexExpr):
             return self._emit_index(expr)
@@ -971,6 +978,48 @@ class LLVMEmitter:
             self._locals[node.var_name] = old_var
         else:
             del self._locals[node.var_name]
+        self._builder = ir.IRBuilder(exit_bb)
+
+        return ir.Constant(LLVM_INT, 0)
+
+    # -----------------------------------------------------------------------
+    # While loop → LLVM conditional loop
+    # -----------------------------------------------------------------------
+
+    def _emit_while(self, node: WhileLoop) -> ir.Value:
+        """Emit a while loop as LLVM conditional branch loop.
+
+        Compiles `while cond { body }` to:
+          - header: evaluate condition, branch to body or exit
+          - body: emit body, branch back to header
+          - exit: continue after loop
+        """
+        func = self.builder.function
+
+        header_bb = func.append_basic_block(name="while.header")
+        body_bb = func.append_basic_block(name="while.body")
+        exit_bb = func.append_basic_block(name="while.exit")
+
+        # Branch from current block to header
+        self.builder.branch(header_bb)
+
+        # Header: evaluate condition
+        self._builder = ir.IRBuilder(header_bb)
+        cond_val = self._emit_expr(node.condition)
+        # Ensure condition is i1 (bool)
+        if cond_val.type != ir.IntType(1):
+            cond_val = self.builder.icmp_signed(
+                "!=", cond_val, ir.Constant(cond_val.type, 0), name="while.cond"
+            )
+        self.builder.cbranch(cond_val, body_bb, exit_bb)
+
+        # Body
+        self._builder = ir.IRBuilder(body_bb)
+        self._emit_block(node.body)
+        if not self.builder.block.is_terminated:
+            self.builder.branch(header_bb)
+
+        # Continue at exit
         self._builder = ir.IRBuilder(exit_bb)
 
         return ir.Constant(LLVM_INT, 0)

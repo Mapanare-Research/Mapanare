@@ -77,11 +77,102 @@ mapanare --version
 
 ---
 
+## Feature Status
+
+What works today vs. what's planned.
+
+| Feature | Python Backend | LLVM Backend | Status |
+|---------|:-:|:-:|--------|
+| Functions, closures, lambdas | Yes | Yes | Stable |
+| Structs, enums, pattern matching | Yes | Yes | Stable |
+| `if`/`else`, `for..in`, `while` | Yes | Yes | Stable |
+| Type inference, generics | Yes | Yes | Stable |
+| `Result`/`Option` + `?` operator | Yes | Partial | Stable |
+| `print`/`println`, `str`/`int`/`float`/`len` | Yes | Partial | Stable |
+| Lists: literals, indexing, `push`/`pop`/`length` | Yes | Partial | Stable |
+| String methods: `length`/`find`/`substring`/... | Yes | Partial | Stable |
+| Agents (spawn, channels, sync) | Yes | No | Experimental |
+| Signals (reactive state) | Yes | No | Experimental |
+| Streams + `\|>` pipe operator | Partial | No | Experimental |
+| Pipes (multi-agent composition) | Partial | No | Experimental |
+| Tensors (shape validation, `@` matmul) | No | Partial | Experimental |
+| GPU dispatch (`@gpu`/`@cpu`) | No | No | Planned |
+| Standard library modules | Partial | No | In Progress |
+| Dictionaries/Maps | No | No | Planned |
+| REPL / interactive mode | No | No | Planned |
+
+---
+
 ## The Language
 
-### Agents
+### Basics
 
-Concurrent actors with typed channels, lifecycle management, and supervision.
+```mn
+fn main() {
+    let name = "World"
+    println("Hello, " + name + "!")
+
+    let mut count = 0
+    while count < 5 {
+        println(str(count))
+        count += 1
+    }
+
+    for i in 0..5 {
+        println(str(i))
+    }
+}
+```
+
+### Structs, Enums & Pattern Matching
+
+No classes, no inheritance. Structs, enums, and pattern matching instead.
+
+```mn
+enum Shape {
+    Circle(Float),
+    Rect(Float, Float),
+}
+
+fn area(s: Shape) -> Float {
+    match s {
+        Circle(r) => 3.14159 * r * r,
+        Rect(w, h) => w * h,
+    }
+}
+```
+
+### Error Handling
+
+```mn
+fn divide(a: Float, b: Float) -> Result<Float, String> {
+    if b == 0.0 {
+        return Err("division by zero")
+    }
+    return Ok(a / b)
+}
+
+let value = divide(10.0, 3.0)?
+```
+
+### Lists & Strings
+
+```mn
+let mut items: List<Int> = []
+items.push(1)
+items.push(2)
+items.push(3)
+println(str(items.length()))    // 3
+println(str(items[0]))         // 1
+
+let s = "hello world"
+println(str(s.length()))       // 11
+println(s.substring(0, 5))    // hello
+```
+
+### Agents (Experimental)
+
+Concurrent actors with typed channels.
 
 ```mn
 agent Greeter {
@@ -99,88 +190,24 @@ let result = sync greeter.greeting
 print(result)
 ```
 
-### Signals
+### Signals (Experimental)
 
-Reactive state with automatic dependency tracking and change propagation.
+Reactive state with automatic dependency tracking.
 
 ```mn
 let mut count = signal(0)
-let doubled = computed { count * 2 }
-
-count.set(5)
-print(doubled)  // 10
-
-batch {
-    count.set(10)
-    // notifications coalesced until batch ends
-}
+let doubled = signal { count * 2 }
 ```
 
-### Streams
+### Streams (Experimental)
 
-Async pipelines with backpressure, fusion, and composable operators.
+Async pipelines with the `|>` operator.
 
 ```mn
 let data = stream([1, 2, 3, 4, 5])
 let result = data
     |> filter(fn(x) { x > 2 })
     |> map(fn(x) { x * 10 })
-    |> fold(0, fn(acc, x) { acc + x })
-```
-
-Adjacent `map`/`filter` operators fuse into a single pass automatically.
-
-### Pipes
-
-Declarative multi-agent composition with type-checked data flow.
-
-```mn
-pipe ClassifyText {
-    Tokenizer |> Classifier
-}
-```
-
-### Tensors
-
-N-dimensional arrays with compile-time shape validation.
-
-```mn
-let a: Tensor<Float>[3, 3] = identity(3)
-let b: Tensor<Float>[3, 4] = zeros(3, 4)
-let c = a @ b  // shape [3, 4] — inner dimensions checked at compile time
-```
-
-### Type System
-
-Static typing with inference, generics, pattern matching, and error propagation.
-
-```mn
-fn divide(a: Float, b: Float) -> Result<Float, String> {
-    if b == 0.0 {
-        return Err("division by zero")
-    }
-    return Ok(a / b)
-}
-
-let value = divide(10.0, 3.0)?
-```
-
-### No OOP
-
-No classes, no inheritance, no virtual methods. Structs, enums, and pattern matching instead.
-
-```mn
-enum Shape {
-    Circle(Float),
-    Rect(Float, Float),
-}
-
-fn area(s: Shape) -> Float {
-    match s {
-        Circle(r) => 3.14159 * r * r,
-        Rect(w, h) => w * h,
-    }
-}
 ```
 
 ---
