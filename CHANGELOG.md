@@ -7,37 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-10
+
 ### Added
 
-- Memory management RFC (`docs/rfcs/0002-memory-management.md`) — arena + RC hybrid strategy
-- Arena allocator in C runtime (`mn_arena_create`, `mn_arena_alloc`, `mn_arena_destroy`)
-- Proper `__mn_str_free` with heap/constant tagging via LSB tag bit
-- `__mn_list_free_strings` for freeing list-contained elements
-- Scope-based arena insertion in LLVM emitter — arenas created at function entry, destroyed at exit
-- Agent-scoped arena API stubs (wiring deferred to Phase 2.1)
-- Memory stress tests (`tests/native/test_memory_stress.py`)
-- `TypeKind` enum with 25 type kinds and `TypeInfo` dataclass in `mapanare/types.py`
-- Canonical builtin registries (`BUILTIN_FUNCTIONS`, `BUILTIN_CALL_MAP`, `PYTHON_TYPE_MAP`) in `types.py`
-- Type system tests (`tests/semantic/test_types.py`)
-- LLVM memory management tests (`tests/llvm/test_memory.py`)
-- Agent-pipeline benchmark (`test_vs/05_agent_pipeline`) with .mn/.py/.go/.rs versions
-- Benchmark integrity tests (`tests/benchmarks/test_benchmark_integrity.py`)
+- **Traits system**: `trait` and `impl Trait for Type` syntax, trait bounds on generics, builtin traits (`Display`, `Eq`, `Ord`, `Hash`), monomorphization for LLVM backend, Protocol emission for Python backend
+- **Module resolution**: file-based imports with `pub` visibility, circular dependency detection, transitive imports, stdlib module wiring, multi-file compilation on both backends
+- **LLVM native agents**: `spawn`, `send` (`<-`), `sync` codegen targeting C runtime with OS threads, agent handler dispatch, supervision policy codegen (`@restart`)
+- **Semaphore-based agent scheduling**: replaced 1ms polling sleep with `inbox_ready`/`outbox_ready` semaphores in C runtime
+- **Arena-based memory management**: arena allocator in C runtime, scope-based arena insertion in LLVM emitter, heap/constant string tagging via LSB tag bit, `__mn_str_free` and `__mn_list_free_strings`
+- **Formal type representation**: `TypeKind` enum (25 kinds), `TypeInfo` dataclass, canonical builtin registries in `mapanare/types.py`
+- **Getting Started tutorial** (`docs/getting-started.md`) — 12 sections from install to streams
+- **Community governance**: `CODE_OF_CONDUCT.md`, `SECURITY.md`, `GOVERNANCE.md`, issue/PR templates
+- **110+ end-to-end tests**: correctness, cross-backend consistency, tutorial verification
+- **Memory stress tests** (`tests/native/test_memory_stress.py`)
+- **Agent-pipeline benchmark** (`test_vs/05_agent_pipeline`) with .mn/.py/.go/.rs versions
+- **RFCs**: memory management (0002), module resolution (0003), traits (0004)
 - `CLAUDE.md` with repo guidance for AI-assisted development
+- 1968 total tests (up from ~1400 in v0.2.0)
 
 ### Changed
 
 - Semantic checker refactored to use `TypeKind` enum instead of string-based type comparisons
-- All emitters now import builtin registries from `types.py` (single source of truth)
-- Stream benchmark (`03_stream_pipeline.mn`) rewritten to use actual stream primitives
-- Concurrency benchmark (`02_concurrency.mn`) rewritten with real parallel message passing
-- Benchmark README updated with "Features Tested" column and honest notes
-- `docs/SPEC.md` updated to say "arena-based" instead of "ownership-based" memory management
-- C runtime expanded with arena allocator, improved string/list memory management
+- All emitters import builtin registries from `types.py` (single source of truth)
+- Stream benchmark rewritten to use actual stream primitives
+- Concurrency benchmark rewritten with real parallel message passing
+- Benchmark tables updated with "Features Tested" column and honest notes
+- `docs/SPEC.md` updated: arena-based memory, grammar summary with traits/imports, accurate appendices
+- C runtime expanded with arena allocator, semaphore-based scheduling, improved memory management
+- README feature status table audited and corrected against actual implementation
+- CONTRIBUTING.md expanded with non-code contribution paths
 
 ### Fixed
 
 - All type error messages now use `TypeInfo.display_name` for consistent formatting
 - LLVM emitter syncs builtin assertions with canonical type registries
+- REPL status corrected from "Planned" to "Experimental" in README
+- Map/Dict status corrected from "Planned" to "Stable" in README
+- 7 stale feature status entries corrected
 
 ## [0.2.0] - 2026-03-08
 
@@ -91,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Mapanare-Research/Mapanare/releases/tag/v0.1.0

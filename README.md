@@ -19,7 +19,7 @@ Mapanare compiles to Python (transpiler) and native binaries (LLVM), with a self
 ![Platform](https://img.shields.io/badge/Linux%20%7C%20macOS%20%7C%20Windows-grey?style=for-the-badge)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-~60_files-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml)
 
@@ -93,15 +93,17 @@ What works today vs. what's planned.
 | `print`/`println`, `str`/`int`/`float`/`len` | Yes | Partial | Stable |
 | Lists: literals, indexing, `push`/`pop`/`length` | Yes | Partial | Stable |
 | String methods: `length`/`find`/`substring`/... | Yes | Partial | Stable |
-| Agents (spawn, channels, sync) | Yes | No | Experimental |
+| Dictionaries/Maps | Yes | Partial | Stable |
+| Traits (`trait`, `impl Trait for Type`) | Yes | Yes | Stable |
+| Module imports (`import`, `pub`, multi-file) | Yes | Yes | Stable |
+| Agents (spawn, channels, sync) | Yes | Codegen | Experimental |
 | Signals (reactive state) | Yes | No | Experimental |
 | Streams + `\|>` pipe operator | Partial | No | Experimental |
 | Pipes (multi-agent composition) | Partial | No | Experimental |
 | Tensors (shape validation, `@` matmul) | No | Partial | Experimental |
-| GPU dispatch (`@gpu`/`@cpu`) | No | No | Planned |
+| REPL / interactive mode | Yes | — | Experimental |
 | Standard library modules | Partial | No | In Progress |
-| Dictionaries/Maps | No | No | Planned |
-| REPL / interactive mode | No | No | Planned |
+| GPU dispatch (`@gpu`/`@cpu`) | No | No | Planned |
 
 ---
 
@@ -275,6 +277,7 @@ mapanare jit <file>           JIT-compile and run natively
 mapanare check <file>         Type-check only
 mapanare compile <file>       Transpile to Python
 mapanare emit-llvm <file>     Emit LLVM IR
+mapanare repl                 Start interactive REPL
 mapanare fmt <file>           Format source code
 mapanare init [path]          Initialize a new project
 mapanare install <pkg>        Install a package (git-based)
@@ -332,11 +335,13 @@ Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target 
 
 ---
 
-## GPU & Tensors
+## GPU & Tensors (Planned — v0.5.0+)
 
-- Device detection: CUDA, Metal, Vulkan
-- `@gpu` / `@cpu` annotations for kernel dispatch
-- Model loading: `.mnw` (native format), ONNX, safetensors, HuggingFace
+Tensor types with compile-time shape validation exist in the LLVM backend. GPU dispatch and model loading are deferred to v0.5.0+.
+
+- `Tensor<T>[shape]` type with shape checking (LLVM backend)
+- `@` matmul operator with dimensional compatibility verification (LLVM backend)
+- GPU dispatch (`@gpu`/`@cpu`), model loading (ONNX, safetensors): **not yet implemented**
 
 ---
 
@@ -384,8 +389,7 @@ mapanare/
 ├── benchmarks/            Performance benchmarks
 ├── docs/                  Documentation
 │   ├── rfcs/              Language change proposals
-│   ├── SPEC.md            Language specification
-│   └── PLAN-v0.3.0.md     Development plan (v0.3.0)
+│   └── SPEC.md            Language specification
 ├── packaging/             Installers and build specs
 │   ├── install.sh         Linux/macOS installer
 │   ├── install.ps1        Windows installer
@@ -411,16 +415,13 @@ Requires Python 3.11+.
 
 ---
 
-## Roadmap (v0.3.0)
+## Roadmap
 
-| Phase | Name | Status |
-|-------|------|--------|
-| 1 | Foundation Fixes (memory, types, benchmarks, changelog) | In Progress |
-| 2 | The Three Pillars (native agents, modules, traits) | Not Started |
-| 3 | Community & Trust (tutorial, governance, e2e tests) | Not Started |
-| 4 | Polish & Ship (scope reduction, C hardening, FFI) | Not Started |
+**v0.3.0** — "Depth Over Breadth" — **Released 2026-03-10**
 
-See [PLAN-v0.3.0.md](docs/PLAN-v0.3.0.md) for the full breakdown.
+Memory management, native agents, modules, traits, type formalization, 110+ e2e tests, getting started tutorial, community governance. See [CHANGELOG](CHANGELOG.md) for details.
+
+**v0.4.0** — Next milestone — In Planning
 
 ---
 
@@ -455,7 +456,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 **Mapanare** — The language AI deserves.
 
-[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues/new?template=bug_report.yml) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues/new?template=feature_request.yml) · [Spec](docs/SPEC.md) · [Roadmap](docs/PLAN-v0.3.0.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
+[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues/new?template=bug_report.yml) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues/new?template=feature_request.yml) · [Spec](docs/SPEC.md) · [Changelog](CHANGELOG.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
 
 Made with care by [Juan Denis](https://juandenis.com)
 
