@@ -1,6 +1,6 @@
 # Mapanare Language Specification
 
-**Version:** 0.1.0-draft
+**Version:** 0.2.0
 **Status:** Skeleton / Working Draft
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. It compiles via Python transpilation first, then LLVM native.
