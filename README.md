@@ -19,7 +19,7 @@ Mapanare compiles to Python (transpiler) and native binaries (LLVM), with a self
 ![Platform](https://img.shields.io/badge/Linux%20%7C%20macOS%20%7C%20Windows-grey?style=for-the-badge)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-~60_files-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml)
 
