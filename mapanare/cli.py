@@ -14,7 +14,7 @@ from mapanare.parser import ParseError, parse
 from mapanare.semantic import SemanticErrors, check_or_raise
 from mapanare.targets import get_target, list_targets
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def _read_source(path: str) -> str:
@@ -112,19 +112,97 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"error: {err.filename}:{err.line}:{err.column}: {err.message}", file=sys.stderr)
         sys.exit(1)
 
-    # Write to a temp file and run it
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as tmp:
-        tmp.write(python_code)
-        tmp_path = tmp.name
+    # When frozen (PyInstaller), sys.executable points to the mapanare binary,
+    # not a Python interpreter.  Fall back to exec() in that case.
+    if getattr(sys, "frozen", False):
 
-    try:
-        result = subprocess.run(
-            [sys.executable, tmp_path],
-            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        )
-        sys.exit(result.returncode)
-    finally:
-        os.unlink(tmp_path)
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(python_code)
+            tmp_path = tmp.name
+        try:
+            code = compile(python_code, tmp_path, "exec")
+            exec(code, {"__name__": "__main__", "__file__": tmp_path})
+        except SystemExit as exc:
+            sys.exit(exc.code)
+        except Exception as exc:
+            print(f"runtime error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        finally:
+            os.unlink(tmp_path)
+    else:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(python_code)
+            tmp_path = tmp.name
+        try:
+            result = subprocess.run(
+                [sys.executable, tmp_path],
+                cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            )
+            sys.exit(result.returncode)
+        finally:
+            os.unlink(tmp_path)
+
+
+def cmd_repl(args: argparse.Namespace) -> None:
+    """Start an interactive Mapanare REPL."""
+    opt_level = _parse_opt_level(args)
+    namespace: dict[str, object] = {"__name__": "__repl__"}
+    # Accumulated definitions to re-emit with each evaluation
+    definitions: list[str] = []
+
+    print(f"Mapanare {__version__} REPL — type 'exit' or Ctrl+D to quit")
+
+    while True:
+        try:
+            line = input("mn> ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+
+        text = line.strip()
+        if not text:
+            continue
+        if text in ("exit", "quit"):
+            break
+
+        # Multi-line: collect until braces balance
+        brace_depth = text.count("{") - text.count("}")
+        while brace_depth > 0:
+            try:
+                continuation = input("... ")
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            text += "\n" + continuation
+            brace_depth += continuation.count("{") - continuation.count("}")
+
+        # Try compiling as a top-level definition or statement
+        try:
+            python_code = _compile_source(text, "<repl>", opt_level=opt_level)
+        except ParseError as e:
+            print(f"parse error: {e}")
+            continue
+        except SemanticErrors as e:
+            for err in e.errors:
+                print(f"error: {err.message}")
+            continue
+
+        # Track function/struct/enum definitions for persistence
+        is_def = text.lstrip().startswith(("fn ", "pub fn ", "struct ", "enum ", "agent ", "pipe "))
+        if is_def:
+            definitions.append(text)
+
+        try:
+            code = compile(python_code, "<repl>", "exec")
+            exec(code, namespace)
+        except SystemExit:
+            break
+        except Exception as exc:
+            print(f"runtime error: {exc}")
 
 
 def cmd_fmt(args: argparse.Namespace) -> None:
@@ -423,6 +501,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("source", help="Path to .mn source file")
     _add_opt_level_args(p_run)
     p_run.set_defaults(func=cmd_run)
+
+    # repl
+    p_repl = subparsers.add_parser("repl", help="Start interactive REPL")
+    _add_opt_level_args(p_repl)
+    p_repl.set_defaults(func=cmd_repl)
 
     # fmt
     p_fmt = subparsers.add_parser("fmt", help="Format .mn source")

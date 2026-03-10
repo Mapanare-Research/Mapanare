@@ -130,7 +130,7 @@ def _mapanare_version() -> str:
 
         return __version__
     except ImportError:
-        return "0.1.0"
+        return "0.2.0"
 
 
 def main() -> None:

@@ -45,6 +45,7 @@ from mapanare.ast_nodes import (
     TypeAlias,
     TypeExpr,
     UnaryExpr,
+    WhileLoop,
 )
 from mapanare.semantic import (
     BUILTIN_FUNCTIONS,
@@ -377,6 +378,9 @@ class DocumentAnalysis:
                 self._visit_expr(stmt.value)
         elif isinstance(stmt, ForLoop):
             self._visit_expr(stmt.iterable)
+            self._visit_block(stmt.body)
+        elif isinstance(stmt, WhileLoop):
+            self._visit_expr(stmt.condition)
             self._visit_block(stmt.body)
         elif isinstance(stmt, SignalDecl):
             loc = _span_to_location(stmt.span, self.uri)

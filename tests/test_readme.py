@@ -54,9 +54,9 @@ class TestREADMECodeSample:
         text = _readme_text()
         assert "spawn" in text, "Code sample should show spawning an agent"
 
-    def test_code_sample_shows_main(self) -> None:
+    def test_code_sample_shows_top_level_statements(self) -> None:
         text = _readme_text()
-        assert "fn main()" in text, "Code sample should have a main function"
+        assert "spawn" in text and "print" in text, "Code sample should show top-level statements"
 
 
 class TestREADMEInstallInstructions:

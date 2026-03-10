@@ -37,6 +37,7 @@ from mapanare.ast_nodes import (
     LambdaExpr,
     LetBinding,
     ListLiteral,
+    MapLiteral,
     MatchExpr,
     MethodCallExpr,
     NamedType,
@@ -61,6 +62,7 @@ from mapanare.ast_nodes import (
     TypeAlias,
     TypeExpr,
     UnaryExpr,
+    WhileLoop,
 )
 
 # ---------------------------------------------------------------------------
@@ -127,6 +129,9 @@ BUILTIN_FUNCTIONS: dict[str, str] = {
     "println": "Void",
     "len": "Int",
     "toString": "String",
+    "str": "String",  # Alias for toString — widely expected by users
+    "int": "Int",  # Type conversion: Float/String → Int
+    "float": "Float",  # Type conversion: Int/String → Float
     "Some": "Option",
     "Ok": "Result",
     "Err": "Result",
@@ -389,6 +394,8 @@ class SemanticChecker:
             self._infer_expr(expr.index)
             if obj_type.name == "List" and obj_type.args:
                 return obj_type.args[0]
+            if obj_type.name == "Map" and len(obj_type.args) >= 2:
+                return obj_type.args[1]
             return UNKNOWN_TYPE
         if isinstance(expr, PipeExpr):
             return self._check_pipe_expr(expr)
@@ -416,6 +423,15 @@ class SemanticChecker:
                     self._infer_expr(e)
                 return TypeInfo(name="List", args=[elem_type])
             return TypeInfo(name="List", args=[UNKNOWN_TYPE])
+        if isinstance(expr, MapLiteral):
+            if expr.entries:
+                key_type = self._infer_expr(expr.entries[0].key)
+                val_type = self._infer_expr(expr.entries[0].value)
+                for entry in expr.entries[1:]:
+                    self._infer_expr(entry.key)
+                    self._infer_expr(entry.value)
+                return TypeInfo(name="Map", args=[key_type, val_type])
+            return TypeInfo(name="Map", args=[UNKNOWN_TYPE, UNKNOWN_TYPE])
         if isinstance(expr, ConstructExpr):
             for fi in expr.fields:
                 self._infer_expr(fi.value)
@@ -911,6 +927,8 @@ class SemanticChecker:
                 self._infer_expr(stmt.value)
         elif isinstance(stmt, ForLoop):
             self._check_for(stmt)
+        elif isinstance(stmt, WhileLoop):
+            self._check_while(stmt)
         elif isinstance(stmt, SignalDecl):
             self._check_signal_decl(stmt)
         elif isinstance(stmt, StreamDecl):
@@ -952,6 +970,12 @@ class SemanticChecker:
             loop.var_name,
             Symbol(name=loop.var_name, kind="variable", type_info=UNKNOWN_TYPE),
         )
+        self._check_block(loop.body)
+        self._pop_scope()
+
+    def _check_while(self, loop: WhileLoop) -> None:
+        self._infer_expr(loop.condition)
+        self._push_scope()
         self._check_block(loop.body)
         self._pop_scope()
 

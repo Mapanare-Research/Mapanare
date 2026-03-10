@@ -32,6 +32,7 @@ from mapanare.ast_nodes import (
     LetBinding,
     ListLiteral,
     LiteralPattern,
+    MapLiteral,
     MatchArm,
     MatchExpr,
     MethodCallExpr,
@@ -45,6 +46,7 @@ from mapanare.ast_nodes import (
     TensorType,
     TypeExpr,
     UnaryExpr,
+    WhileLoop,
     WildcardPattern,
 )
 
@@ -446,6 +448,8 @@ class LLVMEmitter:
             return self._emit_expr(stmt.expr)
         if isinstance(stmt, ForLoop):
             return self._emit_for(stmt)
+        if isinstance(stmt, WhileLoop):
+            return self._emit_while(stmt)
         return None
 
     # -----------------------------------------------------------------------
@@ -534,6 +538,9 @@ class LLVMEmitter:
 
         if isinstance(expr, ListLiteral):
             return self._emit_list_literal(expr)
+
+        if isinstance(expr, MapLiteral):
+            raise NotImplementedError("Map literals are not yet supported in the LLVM backend")
 
         if isinstance(expr, IndexExpr):
             return self._emit_index(expr)
@@ -784,8 +791,8 @@ class LLVMEmitter:
                     return self.builder.call(self._rt_list_len(), [list_alloca], name="len")
             return ir.Constant(LLVM_INT, 0)
 
-        # Built-in: toString()
-        if isinstance(node.callee, Identifier) and node.callee.name == "toString":
+        # Built-in: toString() / str()
+        if isinstance(node.callee, Identifier) and node.callee.name in ("toString", "str"):
             if node.args:
                 val = self._emit_expr(node.args[0])
                 if isinstance(val.type, ir.IntType) and val.type.width == 64:
@@ -793,6 +800,26 @@ class LLVMEmitter:
                 if self._is_string_type(val):
                     return val
             return self._emit_string_literal(StringLiteral(value=""))
+
+        # Built-in: int() — Float→Int truncation
+        if isinstance(node.callee, Identifier) and node.callee.name == "int":
+            if node.args:
+                val = self._emit_expr(node.args[0])
+                if isinstance(val.type, ir.DoubleType):
+                    return self.builder.fptosi(val, LLVM_INT, name="to_int")
+                if isinstance(val.type, ir.IntType):
+                    return val
+            return ir.Constant(LLVM_INT, 0)
+
+        # Built-in: float() — Int→Float conversion
+        if isinstance(node.callee, Identifier) and node.callee.name == "float":
+            if node.args:
+                val = self._emit_expr(node.args[0])
+                if isinstance(val.type, ir.IntType) and val.type.width == 64:
+                    return self.builder.sitofp(val, ir.DoubleType(), name="to_float")
+                if isinstance(val.type, ir.DoubleType):
+                    return val
+            return ir.Constant(ir.DoubleType(), 0.0)
 
         # Resolve the callee
         if isinstance(node.callee, Identifier):
@@ -951,6 +978,48 @@ class LLVMEmitter:
             self._locals[node.var_name] = old_var
         else:
             del self._locals[node.var_name]
+        self._builder = ir.IRBuilder(exit_bb)
+
+        return ir.Constant(LLVM_INT, 0)
+
+    # -----------------------------------------------------------------------
+    # While loop → LLVM conditional loop
+    # -----------------------------------------------------------------------
+
+    def _emit_while(self, node: WhileLoop) -> ir.Value:
+        """Emit a while loop as LLVM conditional branch loop.
+
+        Compiles `while cond { body }` to:
+          - header: evaluate condition, branch to body or exit
+          - body: emit body, branch back to header
+          - exit: continue after loop
+        """
+        func = self.builder.function
+
+        header_bb = func.append_basic_block(name="while.header")
+        body_bb = func.append_basic_block(name="while.body")
+        exit_bb = func.append_basic_block(name="while.exit")
+
+        # Branch from current block to header
+        self.builder.branch(header_bb)
+
+        # Header: evaluate condition
+        self._builder = ir.IRBuilder(header_bb)
+        cond_val = self._emit_expr(node.condition)
+        # Ensure condition is i1 (bool)
+        if cond_val.type != ir.IntType(1):
+            cond_val = self.builder.icmp_signed(
+                "!=", cond_val, ir.Constant(cond_val.type, 0), name="while.cond"
+            )
+        self.builder.cbranch(cond_val, body_bb, exit_bb)
+
+        # Body
+        self._builder = ir.IRBuilder(body_bb)
+        self._emit_block(node.body)
+        if not self.builder.block.is_terminated:
+            self.builder.branch(header_bb)
+
+        # Continue at exit
         self._builder = ir.IRBuilder(exit_bb)
 
         return ir.Constant(LLVM_INT, 0)

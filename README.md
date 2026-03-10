@@ -17,13 +17,13 @@ Mapanare compiles to Python (transpiler) and native binaries (LLVM), with a self
 ![Platform](https://img.shields.io/badge/Linux%20%7C%20macOS%20%7C%20Windows-grey?style=for-the-badge)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-~60_files-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml)
 
 <br>
 
-[Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Contributing](#contributing)
+[Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
 
 </div>
 
@@ -50,13 +50,13 @@ Read the full [manifesto](docs/manifesto.md).
 ### Linux / macOS
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Mapanare-Research/Mapanare/main/install.sh | bash
+curl -fsSL https://mapanare.dev/install | bash
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/Mapanare-Research/Mapanare/main/install.ps1 | iex
+irm https://mapanare.dev/install.ps1 | iex
 ```
 
 ### Manual Download
@@ -77,99 +77,56 @@ mapanare --version
 
 ---
 
+## Feature Status
+
+What works today vs. what's planned.
+
+| Feature | Python Backend | LLVM Backend | Status |
+|---------|:-:|:-:|--------|
+| Functions, closures, lambdas | Yes | Yes | Stable |
+| Structs, enums, pattern matching | Yes | Yes | Stable |
+| `if`/`else`, `for..in`, `while` | Yes | Yes | Stable |
+| Type inference, generics | Yes | Yes | Stable |
+| `Result`/`Option` + `?` operator | Yes | Partial | Stable |
+| `print`/`println`, `str`/`int`/`float`/`len` | Yes | Partial | Stable |
+| Lists: literals, indexing, `push`/`pop`/`length` | Yes | Partial | Stable |
+| String methods: `length`/`find`/`substring`/... | Yes | Partial | Stable |
+| Agents (spawn, channels, sync) | Yes | No | Experimental |
+| Signals (reactive state) | Yes | No | Experimental |
+| Streams + `\|>` pipe operator | Partial | No | Experimental |
+| Pipes (multi-agent composition) | Partial | No | Experimental |
+| Tensors (shape validation, `@` matmul) | No | Partial | Experimental |
+| GPU dispatch (`@gpu`/`@cpu`) | No | No | Planned |
+| Standard library modules | Partial | No | In Progress |
+| Dictionaries/Maps | No | No | Planned |
+| REPL / interactive mode | No | No | Planned |
+
+---
+
 ## The Language
 
-### Agents
-
-Concurrent actors with typed channels, lifecycle management, and supervision.
+### Basics
 
 ```mn
-agent Greeter {
-    input name: String
-    output greeting: String
-
-    fn handle(name: String) -> String {
-        return "Hello, " + name + "!"
-    }
-}
-
 fn main() {
-    let greeter = spawn Greeter()
-    greeter.name <- "World"
-    let result = sync greeter.greeting
-    print(result)
-}
-```
+    let name = "World"
+    println("Hello, " + name + "!")
 
-### Signals
-
-Reactive state with automatic dependency tracking and change propagation.
-
-```mn
-let mut count = signal(0)
-let doubled = computed { count * 2 }
-
-count.set(5)
-print(doubled)  // 10
-
-batch {
-    count.set(10)
-    // notifications coalesced until batch ends
-}
-```
-
-### Streams
-
-Async pipelines with backpressure, fusion, and composable operators.
-
-```mn
-let data = stream([1, 2, 3, 4, 5])
-let result = data
-    |> filter(fn(x) { x > 2 })
-    |> map(fn(x) { x * 10 })
-    |> fold(0, fn(acc, x) { acc + x })
-```
-
-Adjacent `map`/`filter` operators fuse into a single pass automatically.
-
-### Pipes
-
-Declarative multi-agent composition with type-checked data flow.
-
-```mn
-pipe ClassifyText {
-    Tokenizer |> Classifier
-}
-```
-
-### Tensors
-
-N-dimensional arrays with compile-time shape validation.
-
-```mn
-let a: Tensor<Float>[3, 3] = identity(3)
-let b: Tensor<Float>[3, 4] = zeros(3, 4)
-let c = a @ b  // shape [3, 4] — inner dimensions checked at compile time
-```
-
-### Type System
-
-Static typing with inference, generics, pattern matching, and error propagation.
-
-```mn
-fn divide(a: Float, b: Float) -> Result<Float, String> {
-    if b == 0.0 {
-        return Err("division by zero")
+    let mut count = 0
+    while count < 5 {
+        println(str(count))
+        count += 1
     }
-    return Ok(a / b)
-}
 
-let value = divide(10.0, 3.0)?
+    for i in 0..5 {
+        println(str(i))
+    }
+}
 ```
 
-### No OOP
+### Structs, Enums & Pattern Matching
 
-No classes, no inheritance, no virtual methods. Structs, enums, and pattern matching instead.
+No classes, no inheritance. Structs, enums, and pattern matching instead.
 
 ```mn
 enum Shape {
@@ -183,6 +140,74 @@ fn area(s: Shape) -> Float {
         Rect(w, h) => w * h,
     }
 }
+```
+
+### Error Handling
+
+```mn
+fn divide(a: Float, b: Float) -> Result<Float, String> {
+    if b == 0.0 {
+        return Err("division by zero")
+    }
+    return Ok(a / b)
+}
+
+let value = divide(10.0, 3.0)?
+```
+
+### Lists & Strings
+
+```mn
+let mut items: List<Int> = []
+items.push(1)
+items.push(2)
+items.push(3)
+println(str(items.length()))    // 3
+println(str(items[0]))         // 1
+
+let s = "hello world"
+println(str(s.length()))       // 11
+println(s.substring(0, 5))    // hello
+```
+
+### Agents (Experimental)
+
+Concurrent actors with typed channels.
+
+```mn
+agent Greeter {
+    input name: String
+    output greeting: String
+
+    fn handle(name: String) -> String {
+        return "Hello, " + name + "!"
+    }
+}
+
+let greeter = spawn Greeter()
+greeter.name <- "World"
+let result = sync greeter.greeting
+print(result)
+```
+
+### Signals (Experimental)
+
+Reactive state with automatic dependency tracking.
+
+```mn
+let mut count = signal(0)
+let doubled = signal { count * 2 }
+```
+
+### Streams (Experimental)
+
+Async pipelines with the `|>` operator.
+
+```mn
+let data = stream([1, 2, 3, 4, 5])
+let result = data
+    |> filter(fn(x) { x > 2 })
+    |> map(fn(x) { x * 10 })
 ```
 
 ---
@@ -204,10 +229,10 @@ Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each 
 
 | Benchmark | Mapanare | Python | Go | Rust |
 |-----------|----------|--------|----|------|
-| Fibonacci (recursive, n=35) | **10** | 12 | 18 | 23 |
-| Message Passing (10K msgs) | **18** | 28 | 27 | 32 |
-| Stream Pipeline (1M items) | **10** | 17 | 18 | 20 |
-| Matrix Multiply (100x100) | **14** | 21 | 37 | 33 |
+| Fibonacci (recursive, n=35) | **8** | 12 | 18 | 23 |
+| Message Passing (10K msgs) | **16** | 28 | 27 | 32 |
+| Stream Pipeline (1M items) | **8** | 17 | 18 | 20 |
+| Matrix Multiply (100x100) | **12** | 21 | 37 | 33 |
 
 > **Key takeaway:** Mapanare's interpreted backend matches Python speed (it transpiles to Python), but the LLVM native backend delivers **22–63x** speedups over Python. Mapanare programs are consistently the shortest across all benchmarks.
 
@@ -419,7 +444,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 **Mapanare** — The language AI deserves.
 
-[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues) · [Spec](docs/SPEC.md) · [Roadmap](docs/ROADMAP.md)
+[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues) · [Spec](docs/SPEC.md) · [Roadmap](docs/ROADMAP.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
 
 Made with care by [Juan Denis](https://juandenis.com)
 

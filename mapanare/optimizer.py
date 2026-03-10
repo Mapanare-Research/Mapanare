@@ -33,6 +33,7 @@ from mapanare.ast_nodes import (
     LambdaExpr,
     LetBinding,
     ListLiteral,
+    MapLiteral,
     MatchExpr,
     MethodCallExpr,
     OkExpr,
@@ -49,6 +50,7 @@ from mapanare.ast_nodes import (
     StringLiteral,
     SyncExpr,
     UnaryExpr,
+    WhileLoop,
 )
 
 # ---------------------------------------------------------------------------
@@ -260,6 +262,8 @@ class ConstantFolder:
             elif isinstance(stmt, ForLoop):
                 self._reassigned.add(stmt.var_name)
                 self._collect_reassigned(stmt.body)
+            elif isinstance(stmt, WhileLoop):
+                self._collect_reassigned(stmt.body)
 
     def _fold_block(self, block: Block) -> Block:
         """Fold constants in a block."""
@@ -289,6 +293,11 @@ class ConstantFolder:
 
         if isinstance(stmt, ForLoop):
             stmt.iterable = self._fold_expr(stmt.iterable)
+            stmt.body = self._fold_block(stmt.body)
+            return stmt
+
+        if isinstance(stmt, WhileLoop):
+            stmt.condition = self._fold_expr(stmt.condition)
             stmt.body = self._fold_block(stmt.body)
             return stmt
 
@@ -361,6 +370,12 @@ class ConstantFolder:
 
         if isinstance(expr, ListLiteral):
             expr.elements = [self._fold_expr(e) for e in expr.elements]
+            return expr
+
+        if isinstance(expr, MapLiteral):
+            for entry in expr.entries:
+                entry.key = self._fold_expr(entry.key)
+                entry.value = self._fold_expr(entry.value)
             return expr
 
         if isinstance(expr, LambdaExpr):
@@ -482,6 +497,11 @@ class DeadCodeEliminator:
             stmt.body = self._dce_block(stmt.body)
             return stmt
 
+        if isinstance(stmt, WhileLoop):
+            stmt.condition = self._dce_expr(stmt.condition)
+            stmt.body = self._dce_block(stmt.body)
+            return stmt
+
         return stmt
 
     def _dce_expr(self, expr: Expr) -> Expr:
@@ -562,6 +582,10 @@ class DeadCodeEliminator:
             self._collect_used_names_expr(stmt.iterable, names)
             for s in stmt.body.stmts:
                 self._collect_used_names_stmt(s, names)
+        elif isinstance(stmt, WhileLoop):
+            self._collect_used_names_expr(stmt.condition, names)
+            for s in stmt.body.stmts:
+                self._collect_used_names_stmt(s, names)
 
     def _collect_used_names_expr(self, expr: Expr, names: set[str]) -> None:
         """Collect all identifier names referenced in an expression."""
@@ -611,6 +635,10 @@ class DeadCodeEliminator:
         elif isinstance(expr, ListLiteral):
             for e in expr.elements:
                 self._collect_used_names_expr(e, names)
+        elif isinstance(expr, MapLiteral):
+            for entry in expr.entries:
+                self._collect_used_names_expr(entry.key, names)
+                self._collect_used_names_expr(entry.value, names)
         elif isinstance(expr, LambdaExpr):
             if isinstance(expr.body, Block):
                 for s in expr.body.stmts:
@@ -735,7 +763,7 @@ class AgentInliner:
             return self._expr_has_effects(stmt.value)
         if isinstance(stmt, ReturnStmt):
             return stmt.value is not None and self._expr_has_effects(stmt.value)
-        if isinstance(stmt, ForLoop):
+        if isinstance(stmt, (ForLoop, WhileLoop)):
             return True  # loops are potentially effectful
         return False
 
@@ -852,6 +880,9 @@ class StreamFuser:
                 stmt.value = self._fuse_expr(stmt.value)
             elif isinstance(stmt, ForLoop):
                 stmt.iterable = self._fuse_expr(stmt.iterable)
+                stmt.body = self._fuse_block(stmt.body)
+            elif isinstance(stmt, WhileLoop):
+                stmt.condition = self._fuse_expr(stmt.condition)
                 stmt.body = self._fuse_block(stmt.body)
             new_stmts.append(stmt)
         block.stmts = new_stmts

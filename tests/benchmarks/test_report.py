@@ -29,7 +29,7 @@ class TestReportGeneration:
 
     def test_contains_mapanare_version(self) -> None:
         html = generate_html()
-        assert "0.1.0" in html
+        assert "0.2.0" in html
 
     def test_contains_run_instructions(self) -> None:
         html = generate_html()

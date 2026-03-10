@@ -79,7 +79,9 @@ if (Test-Path $MapanareBin) {
     Write-Host "Get started:"
     Write-Host "  mapanare init myproject"
     Write-Host "  cd myproject"
-    Write-Host "  mapanare run main.mn"
+    Write-Host "  mapanare run main.mn       # compile & run"
+    Write-Host "  mapanare check main.mn     # type-check only"
+    Write-Host "  mapanare build main.mn     # native binary (requires LLVM)"
     Write-Host ""
     Write-Host "You may need to restart your terminal for PATH changes to take effect."
 } else {

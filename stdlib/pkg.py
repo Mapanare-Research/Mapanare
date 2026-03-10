@@ -56,7 +56,7 @@ class MapanareManifest:
     description: str = ""
     authors: list[str] = field(default_factory=list)
     license: str = ""
-    mapanare_version: str = ">=0.1.0"
+    mapanare_version: str = ">=0.2.0"
     dependencies: dict[str, Dependency] = field(default_factory=dict)
     dev_dependencies: dict[str, Dependency] = field(default_factory=dict)
     entry: str = "main.mn"
@@ -231,7 +231,7 @@ def parse_manifest(content: str) -> MapanareManifest:
         description=pkg.get("description", ""),
         authors=authors_raw,
         license=pkg.get("license", ""),
-        mapanare_version=pkg.get("mapanare_version", ">=0.1.0"),
+        mapanare_version=pkg.get("mapanare_version", ">=0.2.0"),
         dependencies=deps,
         dev_dependencies=dev_deps,
         entry=pkg.get("entry", "main.mn"),

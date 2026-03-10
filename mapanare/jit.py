@@ -14,7 +14,10 @@ def _init_llvm() -> None:
     global _initialized
     if _initialized:
         return
-    llvm.initialize()
+    try:
+        llvm.initialize()
+    except RuntimeError:
+        pass  # Newer llvmlite auto-initializes; the call is deprecated
     llvm.initialize_native_target()
     llvm.initialize_native_asmprinter()
     _initialized = True

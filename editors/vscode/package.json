@@ -2,7 +2,7 @@
   "name": "mapanare",
   "displayName": "Mapanare",
   "description": "Mapanare language support — syntax highlighting, LSP integration, snippets, and commands",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "mapanare-research",
   "license": "MIT",
   "repository": {
