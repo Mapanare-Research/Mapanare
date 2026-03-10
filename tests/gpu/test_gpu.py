@@ -15,19 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from mapanare.ast_nodes import (
-    AgentDef,
-    Block,
-    Decorator,
-    FnDef,
-    Identifier,
-    IntLiteral,
-    NamedType,
-    Param,
-    Program,
-    ReturnStmt,
-)
-from mapanare.gpu import (
+from experimental.gpu import (
     CUDA_KERNELS,
     DEVICE_ANNOTATIONS,
     METAL_SHADERS,
@@ -46,6 +34,18 @@ from mapanare.gpu import (
     get_device_annotations,
     get_gpu_manager,
     resolve_device_from_annotation,
+)
+from mapanare.ast_nodes import (
+    AgentDef,
+    Block,
+    Decorator,
+    FnDef,
+    Identifier,
+    IntLiteral,
+    NamedType,
+    Param,
+    Program,
+    ReturnStmt,
 )
 from mapanare.parser import parse
 from mapanare.semantic import SemanticChecker

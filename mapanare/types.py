@@ -273,6 +273,63 @@ def _type_display(t: TypeInfo) -> str:
     return repr(t)
 
 
+# ---------------------------------------------------------------------------
+# Device annotations (used by semantic checker for @gpu/@cpu validation)
+# ---------------------------------------------------------------------------
+
+DEVICE_ANNOTATIONS = frozenset({"gpu", "cpu", "cuda", "metal", "vulkan"})
+
+
+# ---------------------------------------------------------------------------
+# Tensor shape validation (used by semantic checker at compile time)
+# ---------------------------------------------------------------------------
+
+
+def resolve_shape_from_type(
+    shape_exprs: list[object],
+) -> tuple[int, ...] | None:
+    """Try to resolve a shape tuple from AST shape expressions.
+
+    Returns the shape if all dimensions are integer literals, None if
+    any dimension is dynamic (non-literal).
+    """
+    from mapanare.ast_nodes import IntLiteral
+
+    dims: list[int] = []
+    for expr in shape_exprs:
+        if isinstance(expr, IntLiteral):
+            dims.append(expr.value)
+        else:
+            return None  # Dynamic dimension
+    return tuple(dims)
+
+
+def validate_matmul_shapes(
+    a_shape: tuple[int, ...], b_shape: tuple[int, ...]
+) -> tuple[int, ...] | None:
+    """Validate shapes for matmul and return result shape, or None if invalid."""
+    a_ndim = len(a_shape)
+    b_ndim = len(b_shape)
+
+    if a_ndim == 1 and b_ndim == 1:
+        if a_shape[0] == b_shape[0]:
+            return (1,)
+        return None
+    if a_ndim == 2 and b_ndim == 2:
+        if a_shape[1] == b_shape[0]:
+            return (a_shape[0], b_shape[1])
+        return None
+    if a_ndim == 2 and b_ndim == 1:
+        if a_shape[1] == b_shape[0]:
+            return (a_shape[0],)
+        return None
+    if a_ndim == 1 and b_ndim == 2:
+        if a_shape[0] == b_shape[0]:
+            return (b_shape[1],)
+        return None
+    return None
+
+
 def make_type(name: str, **kwargs: object) -> TypeInfo:
     """Create a TypeInfo from a type name string. Convenience factory."""
     k = _NAME_TO_KIND.get(name, TypeKind.UNKNOWN)

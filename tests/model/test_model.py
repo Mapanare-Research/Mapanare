@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from mapanare.model import (
+from experimental.model import (
     DType,
     MapanareModel,
     MNWHeader,
@@ -44,7 +44,7 @@ from mapanare.model import (
     save_onnx_simple,
     save_safetensors,
 )
-from mapanare.tensor import Tensor
+from experimental.tensor import Tensor
 
 # ===================================================================
 # Task 1: Native .mnw model format and loader

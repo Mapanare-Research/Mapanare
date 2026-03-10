@@ -322,7 +322,7 @@ class SemanticChecker:
             return TypeInfo(kind=TypeKind.STRUCT, name=te.name, args=args)
         if isinstance(te, TensorType):
             elem = self._resolve_type_expr(te.element_type)
-            from mapanare.tensor import resolve_shape_from_type
+            from mapanare.types import resolve_shape_from_type
 
             shape = resolve_shape_from_type(list(te.shape))
             return TypeInfo(kind=TypeKind.TENSOR, args=[elem], tensor_shape=shape)
@@ -562,7 +562,7 @@ class SemanticChecker:
             # Compile-time shape validation for matmul
             matmul_shape: tuple[int, ...] | None = None
             if left.tensor_shape is not None and right.tensor_shape is not None:
-                from mapanare.tensor import validate_matmul_shapes
+                from mapanare.types import validate_matmul_shapes
 
                 matmul_shape = validate_matmul_shapes(left.tensor_shape, right.tensor_shape)
                 if matmul_shape is None:
@@ -1339,7 +1339,7 @@ class SemanticChecker:
 
     def _check_decorators(self, defn: ASTNode) -> None:
         """Validate decorator annotations on a definition (Phase 5.2)."""
-        from mapanare.gpu import DEVICE_ANNOTATIONS
+        from mapanare.types import DEVICE_ANNOTATIONS
 
         decorators: list[object] = getattr(defn, "decorators", [])
         if not decorators:

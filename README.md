@@ -25,7 +25,7 @@ Mapanare compiles to Python (transpiler) and native binaries (LLVM), with a self
 
 <br>
 
-[**Getting Started**](docs/getting-started.md) · [Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
+[**Getting Started**](docs/getting-started.md) · [Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Roadmap](docs/ROADMAP.md) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
 
 </div>
 
@@ -100,10 +100,10 @@ What works today vs. what's planned.
 | Signals (reactive state) | Yes | No | Experimental |
 | Streams + `\|>` pipe operator | Partial | No | Experimental |
 | Pipes (multi-agent composition) | Partial | No | Experimental |
-| Tensors (shape validation, `@` matmul) | No | Partial | Experimental |
+| Tensors (shape validation, `@` matmul) | No | Partial | Experimental (`experimental/`) |
 | REPL / interactive mode | Yes | — | Experimental |
 | Standard library modules | Partial | No | In Progress |
-| GPU dispatch (`@gpu`/`@cpu`) | No | No | Planned |
+| GPU dispatch (`@gpu`/`@cpu`) | No | No | Planned (`experimental/`) |
 
 ---
 
@@ -335,13 +335,14 @@ Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target 
 
 ---
 
-## GPU & Tensors (Planned — v0.5.0+)
+## GPU & Tensors (Experimental — v0.5.0+)
 
-Tensor types with compile-time shape validation exist in the LLVM backend. GPU dispatch and model loading are deferred to v0.5.0+.
+Tensor types with compile-time shape validation exist in the LLVM backend. GPU dispatch and model loading are deferred to v0.5.0+. These modules live in `experimental/` and are **not** part of the default build.
 
 - `Tensor<T>[shape]` type with shape checking (LLVM backend)
 - `@` matmul operator with dimensional compatibility verification (LLVM backend)
 - GPU dispatch (`@gpu`/`@cpu`), model loading (ONNX, safetensors): **not yet implemented**
+- Runtime code: `experimental/tensor.py`, `experimental/gpu.py`, `experimental/model.py`
 
 ---
 
@@ -417,11 +418,18 @@ Requires Python 3.11+.
 
 ## Roadmap
 
-**v0.3.0** — "Depth Over Breadth" — **Released 2026-03-10**
+| Version | Theme | Status |
+|---------|-------|--------|
+| **v0.1.0** | Foundation — bootstrap compiler, dual backends, runtime, LSP, stdlib | ✅ Released |
+| **v0.2.0** | Self-Hosting — LLVM codegen, C runtime, self-hosted compiler (5,800 lines .mn) | ✅ Released |
+| **v0.3.0** | Depth Over Breadth — traits, modules, agent codegen, arena memory, 1,960+ tests | ✅ Released |
+| **v0.4.0** | Ready for the World — FFI, C runtime hardening, diagnostics, scope cleanup | 🔶 Next |
+| **v0.5.0** | The Ecosystem — package registry, WASM playground, linter | Planned |
+| **v0.6.0** | Compiler Infrastructure — MIR, freeze Python bootstrap | Planned |
+| **v0.7.0** | Production Ready — observability, tracing, deployment, test runner | Planned |
+| **v1.0.0** | Stable — language spec frozen, backwards compatibility guarantees | Planned |
 
-Memory management, native agents, modules, traits, type formalization, 110+ e2e tests, getting started tutorial, community governance. See [CHANGELOG](CHANGELOG.md) for details.
-
-**v0.4.0** — Next milestone — In Planning
+See the full [ROADMAP](docs/ROADMAP.md) for details.
 
 ---
 

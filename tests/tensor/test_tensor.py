@@ -2,7 +2,7 @@
 
 import pytest
 
-from mapanare.tensor import (
+from experimental.tensor import (
     ShapeError,
     Tensor,
     _shape_size,
