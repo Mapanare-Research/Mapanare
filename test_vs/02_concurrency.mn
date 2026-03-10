@@ -10,14 +10,12 @@ agent Worker {
     }
 }
 
-fn main() {
-    let w = spawn Worker()
-    let mut sum: Int = 0
-    for i in 0..10000 {
-        w.val <- i
-        let r = sync w.result
-        sum += r
-    }
-    print(sum)
-    sync w.stop()
+let w = spawn Worker()
+let mut sum: Int = 0
+for i in 0..10000 {
+    w.val <- i
+    let r = sync w.result
+    sum += r
 }
+print(sum)
+sync w.stop()

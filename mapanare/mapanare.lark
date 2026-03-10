@@ -9,7 +9,7 @@
 // Program (root)
 // ------------------------------------------------------------
 
-start: (_nl* definition)* _nl*
+start: (_nl* (definition | stmt))* _nl*
 
 ?definition: import_def
            | export_def

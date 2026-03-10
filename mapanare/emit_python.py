@@ -86,14 +86,16 @@ class PythonEmitter:
         # Emit definitions
         for defn in program.definitions:
             self._emit_definition(defn)
-        # Emit main guard
-        self._emit_line("")
-        self._emit_line('if __name__ == "__main__":')
-        self._indent += 1
-        self._emit_line("import asyncio")
-        self._emit_line("")
-        self._emit_line("asyncio.run(main())")
-        self._indent -= 1
+        # Emit main guard (only if a main function exists)
+        has_main = any(isinstance(d, FnDef) and d.name == "main" for d in program.definitions)
+        if has_main:
+            self._emit_line("")
+            self._emit_line('if __name__ == "__main__":')
+            self._indent += 1
+            self._emit_line("import asyncio")
+            self._emit_line("")
+            self._emit_line("asyncio.run(main())")
+            self._indent -= 1
         return "\n".join(self._lines) + "\n"
 
     # ------------------------------------------------------------------

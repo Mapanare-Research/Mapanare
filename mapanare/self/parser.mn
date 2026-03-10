@@ -391,20 +391,75 @@ fn is_right_assoc(op: String) -> Bool {
 // Public API
 // ---------------------------------------------------------------------------
 
+fn is_definition_start(tt: String) -> Bool {
+    if tt == "KW_IMPORT" { return true }
+    if tt == "KW_EXPORT" { return true }
+    if tt == "KW_PUB" { return true }
+    if tt == "KW_FN" { return true }
+    if tt == "KW_STRUCT" { return true }
+    if tt == "KW_ENUM" { return true }
+    if tt == "KW_AGENT" { return true }
+    if tt == "KW_PIPE" { return true }
+    if tt == "KW_TYPE" { return true }
+    if tt == "KW_IMPL" { return true }
+    if tt == "AT" { return true }
+    return false
+}
+
+fn has_explicit_main(defs: List<Definition>) -> Bool {
+    for i in 0..len(defs) {
+        let d: Definition = defs[i]
+        match d {
+            FnDef(fd) => {
+                if fd.name == "main" {
+                    return true
+                }
+            },
+            _ => {}
+        }
+    }
+    return false
+}
+
 fn parse(source: String, filename: String) -> Program {
     let tokens: List<Token> = tokenize(source, filename)
     let mut pos: Int = 0
     let mut defs: List<Definition> = []
+    let mut top_stmts: List<Stmt> = []
 
     for _ in 0..100000 {
         pos = skip_semis(tokens, pos)
         if pos >= len(tokens) {
+            if len(top_stmts) > 0 {
+                if has_explicit_main(defs) {
+                    print("error: cannot mix top-level statements with explicit fn main()")
+                }
+                let body: Block = new_block(top_stmts)
+                let main_fn: FnDefData = new_fn_def_data("main", false, [], [], none, body, [])
+                defs = defs + [Definition::FnDef(main_fn)]
+            }
             return Program::start(defs)
         }
 
-        let r: DefResult = parse_definition(tokens, pos, filename)
-        defs = defs + [r.def_node]
-        pos = r.pos
+        let tt: String = peek_type(tokens, pos)
+        if is_definition_start(tt) {
+            let r: DefResult = parse_definition(tokens, pos, filename)
+            defs = defs + [r.def_node]
+            pos = r.pos
+        } else {
+            let sr: StmtResult = parse_stmt(tokens, pos, filename)
+            top_stmts = top_stmts + [sr.stmt]
+            pos = sr.pos
+        }
+    }
+
+    if len(top_stmts) > 0 {
+        if has_explicit_main(defs) {
+            print("error: cannot mix top-level statements with explicit fn main()")
+        }
+        let body: Block = new_block(top_stmts)
+        let main_fn: FnDefData = new_fn_def_data("main", false, [], [], none, body, [])
+        defs = defs + [Definition::FnDef(main_fn)]
     }
 
     return Program::start(defs)

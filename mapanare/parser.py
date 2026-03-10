@@ -214,8 +214,35 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
     # ------------------------------------------------------------------
 
     def start(self, children: list[Any]) -> Program:
-        defs = [d for d in children if isinstance(d, Definition)]
-        return Program(definitions=defs)
+        definitions: list[Definition] = []
+        top_level_stmts: list[Stmt] = []
+
+        for child in children:
+            if isinstance(child, Definition):
+                definitions.append(child)
+            elif isinstance(child, Stmt):
+                top_level_stmts.append(child)
+            elif isinstance(child, Expr):
+                top_level_stmts.append(ExprStmt(expr=child))
+
+        has_main = any(isinstance(d, FnDef) and d.name == "main" for d in definitions)
+
+        if top_level_stmts and has_main:
+            raise ParseError("cannot mix top-level statements with explicit fn main()")
+
+        if top_level_stmts and not has_main:
+            synthetic_main = FnDef(
+                name="main",
+                public=False,
+                type_params=[],
+                params=[],
+                return_type=None,
+                body=Block(stmts=top_level_stmts),
+                decorators=[],
+            )
+            definitions.append(synthetic_main)
+
+        return Program(definitions=definitions)
 
     # ------------------------------------------------------------------
     # Literals

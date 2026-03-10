@@ -2,13 +2,11 @@
 // Mapanare -- built-in streams with fusion (single-pass)
 // Workload: generate -> map(*3) -> filter(even) -> sum
 
-fn main() {
-    let mut total: Int = 0
-    for x in 0..1000000 {
-        let v: Int = x * 3
-        if v % 2 == 0 {
-            total += v
-        }
+let mut total: Int = 0
+for x in 0..1000000 {
+    let v: Int = x * 3
+    if v % 2 == 0 {
+        total += v
     }
-    print(total)
 }
+print(total)

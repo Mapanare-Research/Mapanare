@@ -23,7 +23,7 @@ Mapanare compiles to Python (transpiler) and native binaries (LLVM), with a self
 
 <br>
 
-[Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Contributing](#contributing)
+[Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
 
 </div>
 
@@ -50,13 +50,13 @@ Read the full [manifesto](docs/manifesto.md).
 ### Linux / macOS
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Mapanare-Research/Mapanare/main/install.sh | bash
+curl -fsSL https://mapanare.dev/install | bash
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/Mapanare-Research/Mapanare/main/install.ps1 | iex
+irm https://mapanare.dev/install.ps1 | iex
 ```
 
 ### Manual Download
@@ -93,12 +93,10 @@ agent Greeter {
     }
 }
 
-fn main() {
-    let greeter = spawn Greeter()
-    greeter.name <- "World"
-    let result = sync greeter.greeting
-    print(result)
-}
+let greeter = spawn Greeter()
+greeter.name <- "World"
+let result = sync greeter.greeting
+print(result)
 ```
 
 ### Signals
@@ -204,10 +202,10 @@ Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each 
 
 | Benchmark | Mapanare | Python | Go | Rust |
 |-----------|----------|--------|----|------|
-| Fibonacci (recursive, n=35) | **10** | 12 | 18 | 23 |
-| Message Passing (10K msgs) | **18** | 28 | 27 | 32 |
-| Stream Pipeline (1M items) | **10** | 17 | 18 | 20 |
-| Matrix Multiply (100x100) | **14** | 21 | 37 | 33 |
+| Fibonacci (recursive, n=35) | **8** | 12 | 18 | 23 |
+| Message Passing (10K msgs) | **16** | 28 | 27 | 32 |
+| Stream Pipeline (1M items) | **8** | 17 | 18 | 20 |
+| Matrix Multiply (100x100) | **12** | 21 | 37 | 33 |
 
 > **Key takeaway:** Mapanare's interpreted backend matches Python speed (it transpiles to Python), but the LLVM native backend delivers **22–63x** speedups over Python. Mapanare programs are consistently the shortest across all benchmarks.
 
@@ -419,7 +417,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 **Mapanare** — The language AI deserves.
 
-[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues) · [Spec](docs/SPEC.md) · [Roadmap](docs/ROADMAP.md)
+[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues) · [Spec](docs/SPEC.md) · [Roadmap](docs/ROADMAP.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
 
 Made with care by [Juan Denis](https://juandenis.com)
 

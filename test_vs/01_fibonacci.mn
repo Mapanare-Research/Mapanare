@@ -8,7 +8,5 @@ fn fib(n: Int) -> Int {
     return fib(n - 1) + fib(n - 2)
 }
 
-fn main() {
-    let result = fib(35)
-    print(result)
-}
+let result = fib(35)
+print(result)

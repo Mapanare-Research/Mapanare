@@ -236,12 +236,10 @@ let result = data |> tokenize |> classify |> format
 
 ### Example 1: Hello World
 
-The minimal Mapanare program. Every Mapanare program begins execution at `main`.
+The minimal Mapanare program. Top-level statements are automatically wrapped in `main`.
 
 ```mn
-fn main() {
-    print("Hello, Mapanare!")
-}
+print("Hello, Mapanare!")
 ```
 
 **Behavior:** Prints `Hello, Mapanare!` to standard output and exits.
@@ -260,12 +258,10 @@ agent Greeter {
     }
 }
 
-fn main() {
-    let greeter = spawn Greeter()
-    greeter.name <- "World"
-    let result = sync greeter.greeting
-    print(result)
-}
+let greeter = spawn Greeter()
+greeter.name <- "World"
+let result = sync greeter.greeting
+print(result)
 ```
 
 **Behavior:** Spawns a `Greeter` agent, sends `"World"` to its `name` input channel, waits for the `greeting` output, and prints `Hello, World!`.
@@ -276,6 +272,7 @@ fn main() {
 - `spawn` creates a running agent instance.
 - `<-` sends a value into a channel.
 - `sync` blocks until the output is available.
+- Top-level statements are automatically wrapped in `fn main()` by the compiler.
 
 ### Example 3: Multi-Agent Pipeline
 
@@ -307,12 +304,10 @@ pipe ClassifyText {
     Tokenizer |> Classifier
 }
 
-fn main() {
-    let pipeline = spawn ClassifyText()
-    pipeline.text <- "Mapanare is an AI-native programming language"
-    let label = sync pipeline.label
-    print(label)
-}
+let pipeline = spawn ClassifyText()
+pipeline.text <- "Mapanare is an AI-native programming language"
+let label = sync pipeline.label
+print(label)
 ```
 
 **Behavior:** Defines two agents (`Tokenizer` and `Classifier`), composes them into a pipeline called `ClassifyText`, feeds in a sentence, and prints the classification label `short`.
@@ -391,12 +386,10 @@ fn parse_int(s: String) -> Result<Int, String> {
     // ...
 }
 
-fn main() {
-    let result = parse_int("42")
-    match result {
-        Ok(n)  => print("Parsed: ${n}"),
-        Err(e) => print("Error: ${e}"),
-    }
+let result = parse_int("42")
+match result {
+    Ok(n)  => print("Parsed: ${n}"),
+    Err(e) => print("Error: ${e}"),
 }
 ```
 
@@ -787,7 +780,7 @@ sensor.readings
 This is an informal sketch, not the complete formal grammar.
 
 ```ebnf
-program        = { import_decl | definition } ;
+program        = { import_decl | definition | statement } ;
 definition     = fn_def | agent_def | struct_def | enum_def
                | type_alias | pipe_def | impl_def ;
 
