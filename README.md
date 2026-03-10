@@ -343,6 +343,31 @@ Install the LSP server: `mapanare-lsp`
 
 ---
 
+## AI Agent Skill
+
+Give your AI coding agent full fluency in Mapanare. One command — your agent knows every keyword, type, pattern, and CLI command.
+
+```bash
+npx skills add Mapanare-Research/skills
+```
+
+Works with **Claude Code**, **Cursor**, **Windsurf**, and any agent that supports the [skills](https://skills.sh) ecosystem.
+
+After installing, just ask your agent naturally:
+
+| Prompt | What your agent does |
+|--------|---------------------|
+| *"Create an agent that monitors sensor data"* | Writes an agent with typed channels, signals, and anomaly detection |
+| *"Build a data pipeline for sentiment analysis"* | Composes a multi-stage pipe with Fetcher |> Extractor |> Classifier |
+| *"Track metrics with reactive state"* | Uses `signal()`, `computed {}`, and `batch {}` for automatic propagation |
+| *"Matrix multiply with shape checking"* | Generates `Tensor<Float>[M, N]` with `@` operator — shapes verified at compile time |
+| *"Process logs in real time"* | Builds a stream pipeline with `filter`, `throttle`, and `for_each` |
+| *"Scaffold a new project"* | Runs `mapanare init`, knows all CLI flags and optimization levels |
+
+See [Mapanare-Research/skills](https://github.com/Mapanare-Research/skills) for full examples and manual install instructions.
+
+---
+
 ## Self-Hosted Compiler
 
 The compiler is being rewritten in Mapanare itself (`mapanare/self/`):
