@@ -306,3 +306,11 @@ def cpu_count() -> int:
         return os.cpu_count() or 1
     _lib.mapanare_cpu_count.restype = ctypes.c_uint32
     return int(_lib.mapanare_cpu_count())
+
+
+def shutdown_requested() -> bool:
+    """Check if a shutdown signal has been received."""
+    if not NATIVE_AVAILABLE:
+        return False
+    _lib.mapanare_shutdown_requested.restype = ctypes.c_int
+    return bool(_lib.mapanare_shutdown_requested())

@@ -40,3 +40,37 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v
+
+  native:
+    name: C Runtime Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Compile C runtime (plain)
+        run: |
+          gcc -O2 -g -pthread \
+            tests/native/test_c_runtime.c \
+            runtime/native/mapanare_core.c \
+            runtime/native/mapanare_runtime.c \
+            -o test_c_runtime
+          ./test_c_runtime
+
+      - name: Compile and run with AddressSanitizer
+        run: |
+          gcc -fsanitize=address -fno-omit-frame-pointer -g -pthread \
+            tests/native/test_c_runtime.c \
+            runtime/native/mapanare_core.c \
+            runtime/native/mapanare_runtime.c \
+            -o test_c_runtime_asan
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 ./test_c_runtime_asan
+
+      - name: Compile and run with ThreadSanitizer
+        run: |
+          gcc -fsanitize=thread -g -pthread \
+            tests/native/test_c_runtime.c \
+            runtime/native/mapanare_core.c \
+            runtime/native/mapanare_runtime.c \
+            -o test_c_runtime_tsan
+          TSAN_OPTIONS=halt_on_error=1 ./test_c_runtime_tsan

@@ -350,7 +350,7 @@ Tensor types with compile-time shape validation exist in the LLVM backend. GPU d
 
 ### VS Code
 
-Extension in `editors/vscode/` with:
+The VS Code extension lives in its own repository: [mapanare-vscode](https://github.com/Mapanare-Research/mapanare-vscode)
 
 - Syntax highlighting for `.mn` files
 - Code snippets (agent, pipe, fn, signal, stream)
@@ -385,7 +385,6 @@ mapanare/
 │   └── native/            Native C runtime (thread pool, ring buffers)
 ├── stdlib/                Standard library (io, http, time, math, text, log, pkg)
 ├── bootstrap/             Frozen Python compiler for bootstrapping
-├── editors/vscode/        VS Code extension
 ├── tests/                 Test suite (~60 test files)
 ├── benchmarks/            Performance benchmarks
 ├── docs/                  Documentation

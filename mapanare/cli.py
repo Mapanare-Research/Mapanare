@@ -8,10 +8,17 @@ import subprocess
 import sys
 import tempfile
 
+from mapanare.diagnostics import (
+    Diagnostic,
+    Label,
+    Severity,
+    format_diagnostic,
+    format_summary,
+)
 from mapanare.emit_python import PythonEmitter
 from mapanare.modules import ModuleResolver
 from mapanare.optimizer import OptLevel, optimize
-from mapanare.parser import ParseError, parse
+from mapanare.parser import ParseError, parse, parse_recovering
 from mapanare.semantic import SemanticErrors, check_or_raise
 from mapanare.targets import get_target, list_targets
 
@@ -30,6 +37,42 @@ def _read_source(path: str) -> str:
         sys.exit(1)
     with open(path, encoding="utf-8") as f:
         return f.read()
+
+
+def _emit_parse_error(e: ParseError, source: str, filename: str) -> None:
+    """Print a single ParseError as a colorized diagnostic."""
+    from mapanare.ast_nodes import Span
+
+    span = Span(line=e.line, column=e.column, end_line=e.line, end_column=e.column + 1)
+    diag = Diagnostic(
+        severity=Severity.ERROR,
+        message=e.message,
+        filename=filename,
+        labels=[Label(span=span, primary=True)],
+    )
+    print(format_diagnostic(diag, source), file=sys.stderr)
+
+
+def _emit_semantic_errors(e: SemanticErrors, source: str) -> None:
+    """Print semantic errors as colorized diagnostics."""
+    from mapanare.ast_nodes import Span
+
+    diagnostics: list[Diagnostic] = []
+    for err in e.errors:
+        span = Span(line=err.line, column=err.column, end_line=err.line, end_column=err.column + 1)
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                message=err.message,
+                filename=err.filename,
+                labels=[Label(span=span, primary=True)],
+            )
+        )
+    for diag in diagnostics:
+        print(format_diagnostic(diag, source), file=sys.stderr)
+    summary = format_summary(diagnostics)
+    if summary:
+        print(summary, file=sys.stderr)
 
 
 def _parse_opt_level(args: argparse.Namespace) -> OptLevel:
@@ -82,11 +125,10 @@ def cmd_compile(args: argparse.Namespace) -> None:
     try:
         python_code = _compile_source(source, args.source, opt_level=opt_level, resolver=resolver)
     except ParseError as e:
-        print(f"error: {e}", file=sys.stderr)
+        _emit_parse_error(e, source, args.source)
         sys.exit(1)
     except SemanticErrors as e:
-        for err in e.errors:
-            print(f"error: {err.filename}:{err.line}:{err.column}: {err.message}", file=sys.stderr)
+        _emit_semantic_errors(e, source)
         sys.exit(1)
 
     out_path = args.o or args.source.replace(".mn", ".py")
@@ -116,20 +158,55 @@ def _compile_resolved_modules(resolver: ModuleResolver, opt_level: OptLevel, out
 
 
 def cmd_check(args: argparse.Namespace) -> None:
-    """Type-check an .mn source file."""
+    """Type-check an .mn source file with error recovery."""
     source = _read_source(args.source)
     resolver = ModuleResolver()
-    try:
-        ast = parse(source, filename=args.source)
-    except ParseError as e:
-        print(f"error: {e}", file=sys.stderr)
-        sys.exit(1)
 
-    try:
-        check_or_raise(ast, filename=args.source, resolver=resolver)
-    except SemanticErrors as e:
-        for err in e.errors:
-            print(f"error: {err.filename}:{err.line}:{err.column}: {err.message}", file=sys.stderr)
+    # Parse with recovery to collect multiple parse errors
+    ast, parse_errors = parse_recovering(source, filename=args.source)
+
+    all_diagnostics: list[Diagnostic] = []
+
+    # Convert parse errors to diagnostics
+    for pe in parse_errors:
+        from mapanare.ast_nodes import Span
+
+        span = Span(line=pe.line, column=pe.column, end_line=pe.line, end_column=pe.column + 1)
+        all_diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                message=pe.message,
+                filename=pe.filename,
+                labels=[Label(span=span, primary=True)],
+            )
+        )
+
+    # Run semantic analysis even if there were parse errors (on partial AST)
+    if ast.definitions:
+        from mapanare.semantic import check
+
+        sem_errors = check(ast, filename=args.source, resolver=resolver)
+        for err in sem_errors:
+            from mapanare.ast_nodes import Span
+
+            span = Span(
+                line=err.line, column=err.column, end_line=err.line, end_column=err.column + 1
+            )
+            all_diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    message=err.message,
+                    filename=err.filename,
+                    labels=[Label(span=span, primary=True)],
+                )
+            )
+
+    if all_diagnostics:
+        for diag in all_diagnostics:
+            print(format_diagnostic(diag, source), file=sys.stderr)
+        summary = format_summary(all_diagnostics)
+        if summary:
+            print(summary, file=sys.stderr)
         sys.exit(1)
 
     print(f"check: {args.source} OK")
@@ -143,11 +220,10 @@ def cmd_run(args: argparse.Namespace) -> None:
     try:
         python_code = _compile_source(source, args.source, opt_level=opt_level, resolver=resolver)
     except ParseError as e:
-        print(f"error: {e}", file=sys.stderr)
+        _emit_parse_error(e, source, args.source)
         sys.exit(1)
     except SemanticErrors as e:
-        for err in e.errors:
-            print(f"error: {err.filename}:{err.line}:{err.column}: {err.message}", file=sys.stderr)
+        _emit_semantic_errors(e, source)
         sys.exit(1)
 
     # When frozen (PyInstaller), sys.executable points to the mapanare binary,
@@ -251,7 +327,7 @@ def cmd_fmt(args: argparse.Namespace) -> None:
     try:
         parse(source, filename=args.source)
     except ParseError as e:
-        print(f"error: {e}", file=sys.stderr)
+        _emit_parse_error(e, source, args.source)
         sys.exit(1)
 
     formatted = _format_mapanare(source)
@@ -304,11 +380,10 @@ def cmd_jit(args: argparse.Namespace) -> None:
     try:
         llvm_ir = _compile_to_llvm_ir(source, args.source, opt_level=opt_level, resolver=resolver)
     except ParseError as e:
-        print(f"error: {e}", file=sys.stderr)
+        _emit_parse_error(e, source, args.source)
         sys.exit(1)
     except SemanticErrors as e:
-        for err in e.errors:
-            print(f"error: {err.filename}:{err.line}:{err.column}: {err.message}", file=sys.stderr)
+        _emit_semantic_errors(e, source)
         sys.exit(1)
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -344,11 +419,10 @@ def cmd_build(args: argparse.Namespace) -> None:
             source, args.source, opt_level=opt_level, target_name=target_name, resolver=resolver
         )
     except ParseError as e:
-        print(f"error: {e}", file=sys.stderr)
+        _emit_parse_error(e, source, args.source)
         sys.exit(1)
     except SemanticErrors as e:
-        for err in e.errors:
-            print(f"error: {err.filename}:{err.line}:{err.column}: {err.message}", file=sys.stderr)
+        _emit_semantic_errors(e, source)
         sys.exit(1)
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -405,14 +479,10 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
             source, args.source, opt_level=opt_level, target_name=target_name, resolver=resolver
         )
     except ParseError as e:
-        print(f"error: {e}", file=sys.stderr)
+        _emit_parse_error(e, source, args.source)
         sys.exit(1)
     except SemanticErrors as e:
-        for err in e.errors:
-            print(
-                f"error: {err.filename}:{err.line}:{err.column}: {err.message}",
-                file=sys.stderr,
-            )
+        _emit_semantic_errors(e, source)
         sys.exit(1)
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)

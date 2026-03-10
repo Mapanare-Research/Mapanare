@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <signal.h>
 
 /* -----------------------------------------------------------------------
  * Platform atomic helpers
@@ -984,4 +985,64 @@ MAPANARE_EXPORT mapanare_tensor_t *mapanare_tensor_matmul_dispatch(
     mapanare_device_kind_t device) {
     (void)device;
     return mapanare_tensor_matmul_f64(a, b);
+}
+
+/* =======================================================================
+ * 7. Graceful Shutdown — SIGTERM/SIGINT handling
+ * ======================================================================= */
+
+static mapanare_agent_registry_t *s_shutdown_registry = NULL;
+static volatile int s_shutdown_requested = 0;
+
+#ifdef _WIN32
+static BOOL WINAPI mapanare_console_handler(DWORD sig) {
+    if (sig == CTRL_C_EVENT || sig == CTRL_BREAK_EVENT || sig == CTRL_CLOSE_EVENT) {
+        s_shutdown_requested = 1;
+        if (s_shutdown_registry) {
+            mapanare_registry_stop_all(s_shutdown_registry);
+        }
+        return TRUE;
+    }
+    return FALSE;
+}
+#else
+static void mapanare_signal_handler(int sig) {
+    s_shutdown_requested = 1;
+    if (s_shutdown_registry) {
+        /*
+         * Note: mapanare_registry_stop_all acquires a mutex, which is not
+         * strictly async-signal-safe. However, in practice the only signals
+         * we handle (SIGTERM, SIGINT) arrive from the terminal or process
+         * manager, and the program is about to exit. We accept this trade-off
+         * to ensure agents shut down cleanly (flush outbox, call on_stop).
+         *
+         * After stopping agents, re-raise with default disposition so the
+         * process exits with the correct signal status.
+         */
+        mapanare_registry_stop_all(s_shutdown_registry);
+    }
+    /* Re-raise with default handler so the exit code reflects the signal */
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+#endif
+
+MAPANARE_EXPORT void mapanare_shutdown_init(mapanare_agent_registry_t *reg) {
+    s_shutdown_registry = reg;
+    s_shutdown_requested = 0;
+#ifdef _WIN32
+    SetConsoleCtrlHandler(mapanare_console_handler, TRUE);
+#else
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = mapanare_signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
+#endif
+}
+
+MAPANARE_EXPORT int mapanare_shutdown_requested(void) {
+    return s_shutdown_requested;
 }
