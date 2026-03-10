@@ -898,7 +898,12 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def type_alias(self, children: list[Any]) -> TypeAlias:
         items = _filter(children)
-        return TypeAlias(name=str(items[0]), type_expr=items[1])
+        public = False
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
+            public = True
+            idx += 1
+        return TypeAlias(name=str(items[idx]), public=public, type_expr=items[idx + 1])
 
     # ------------------------------------------------------------------
     # Impl block

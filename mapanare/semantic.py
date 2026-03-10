@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mapanare.modules import ModuleExport, ModuleResolver
 
 from mapanare.ast_nodes import (
     AgentDef,
@@ -201,11 +205,18 @@ class SemanticChecker:
     - Error messages with file, line, column
     """
 
-    def __init__(self, filename: str = "<input>") -> None:
+    def __init__(
+        self,
+        filename: str = "<input>",
+        resolver: ModuleResolver | None = None,
+    ) -> None:
         self.filename = filename
         self.errors: list[SemanticError] = []
         self.global_scope = Scope()
         self.current_scope = self.global_scope
+        self.resolver = resolver
+        # Track resolved modules for this checker (module name -> exports)
+        self._resolved_modules: dict[str, dict[str, ModuleExport]] = {}
 
         # Register built-in functions from canonical registry
         for name, ret_type in BUILTIN_FUNCTIONS.items():
@@ -421,7 +432,7 @@ class SemanticChecker:
         if isinstance(expr, MatchExpr):
             return self._check_match(expr)
         if isinstance(expr, NamespaceAccessExpr):
-            return UNKNOWN_TYPE
+            return self._check_namespace_access(expr)
         # Fallback
         return UNKNOWN_TYPE
 
@@ -688,6 +699,46 @@ class SemanticChecker:
         elif isinstance(pattern, ConstructorPattern):
             for arg in pattern.args:
                 self._bind_pattern(arg)
+
+    # -- Namespace access -----------------------------------------------
+
+    def _check_namespace_access(self, expr: NamespaceAccessExpr) -> TypeInfo:
+        """Check `Module::member` access against resolved module exports."""
+        ns = expr.namespace
+        member = expr.member
+
+        # Check if the namespace is a resolved module
+        mod_exports = self._resolved_modules.get(ns)
+        if mod_exports is not None:
+            export = mod_exports.get(member)
+            if export is None:
+                self._error(f"'{member}' not found in module '{ns}'", expr)
+                return UNKNOWN_TYPE
+            # Return the type of the export
+            defn = export.definition
+            if isinstance(defn, FnDef):
+                param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
+                ret = self._resolve_type_expr(defn.return_type)
+                return TypeInfo(
+                    kind=TypeKind.FN,
+                    is_function=True,
+                    param_types=param_types,
+                    return_type=ret,
+                )
+            elif isinstance(defn, StructDef):
+                return TypeInfo(kind=TypeKind.STRUCT, name=member)
+            elif isinstance(defn, EnumDef):
+                return TypeInfo(kind=TypeKind.ENUM, name=member)
+            elif isinstance(defn, AgentDef):
+                return TypeInfo(kind=TypeKind.AGENT, name=member)
+            return UNKNOWN_TYPE
+
+        # Check if it's an enum variant access (EnumName::VariantName)
+        sym = self.current_scope.lookup(ns)
+        if sym is not None and sym.kind == "enum":
+            return TypeInfo(kind=TypeKind.ENUM, name=ns)
+
+        return UNKNOWN_TYPE
 
     # -- Lambda ---------------------------------------------------------
 
@@ -1055,7 +1106,20 @@ class SemanticChecker:
                 Symbol(name=defn.name, kind="type_alias", type_info=resolved, node=defn),
             )
         elif isinstance(defn, ImportDef):
-            # Register imported names
+            self._resolve_import(defn)
+        elif isinstance(defn, ExportDef):
+            if defn.definition:
+                self._register_def(defn.definition)
+        elif isinstance(defn, ImplDef):
+            pass  # methods handled in second pass
+
+    # -- Import resolution -----------------------------------------------
+
+    def _resolve_import(self, defn: ImportDef) -> None:
+        """Resolve an import, registering symbols from the imported module."""
+        if self.resolver is None:
+            # No resolver — fall back to registering names with UNKNOWN_TYPE
+            # (for backward compatibility with single-file checks)
             if defn.items:
                 for item in defn.items:
                     self.global_scope.define(
@@ -1063,18 +1127,144 @@ class SemanticChecker:
                         Symbol(name=item, kind="variable", type_info=UNKNOWN_TYPE),
                     )
             else:
-                # Import the module name itself
                 mod_name = defn.path[-1] if defn.path else ""
                 if mod_name:
                     self.global_scope.define(
                         mod_name,
-                        Symbol(name=mod_name, kind="variable", type_info=UNKNOWN_TYPE),
+                        Symbol(
+                            name=mod_name,
+                            kind="module",
+                            type_info=UNKNOWN_TYPE,
+                        ),
                     )
-        elif isinstance(defn, ExportDef):
-            if defn.definition:
-                self._register_def(defn.definition)
-        elif isinstance(defn, ImplDef):
-            pass  # methods handled in second pass
+            return
+
+        from mapanare.modules import ModuleResolutionError
+
+        try:
+            resolved = self.resolver.resolve_module(defn.path, self.filename)
+        except ModuleResolutionError as e:
+            self._error(str(e), defn)
+            return
+
+        # Recursively type-check the imported module
+        sub_checker = SemanticChecker(filename=resolved.filepath, resolver=self.resolver)
+        sub_errors = sub_checker.check(resolved.program)
+        self.errors.extend(sub_errors)
+        if sub_errors:
+            return
+
+        mod_name = defn.path[-1] if defn.path else ""
+
+        if defn.items:
+            # Selective import: `import foo { bar, baz }`
+            for item in defn.items:
+                export = resolved.exports.get(item)
+                if export is None:
+                    self._error(
+                        f"'{item}' not found in module '{mod_name}'",
+                        defn,
+                    )
+                    continue
+                if not export.public:
+                    self._error(
+                        f"'{item}' is not public in module '{mod_name}'",
+                        defn,
+                    )
+                    continue
+                # Register the imported definition in the current scope
+                self._register_imported_def(item, export)
+        else:
+            # Full module import: `import foo` — register as module
+            self._resolved_modules[mod_name] = {
+                name: exp for name, exp in resolved.exports.items() if exp.public
+            }
+            self.global_scope.define(
+                mod_name,
+                Symbol(
+                    name=mod_name,
+                    kind="module",
+                    type_info=TypeInfo(kind=TypeKind.STRUCT, name=mod_name),
+                ),
+            )
+
+    def _register_imported_def(self, name: str, export: ModuleExport) -> None:
+        """Register an imported symbol from a resolved module export."""
+        defn = export.definition
+        if isinstance(defn, FnDef):
+            param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
+            ret = self._resolve_type_expr(defn.return_type)
+            fn_type = TypeInfo(
+                kind=TypeKind.FN,
+                is_function=True,
+                param_types=param_types,
+                return_type=ret,
+            )
+            self.global_scope.define(
+                name,
+                Symbol(name=name, kind="function", type_info=fn_type, node=defn),
+            )
+        elif isinstance(defn, AgentDef):
+            self.global_scope.define(
+                name,
+                Symbol(
+                    name=name,
+                    kind="agent",
+                    type_info=TypeInfo(kind=TypeKind.AGENT, name=name),
+                    node=defn,
+                ),
+            )
+        elif isinstance(defn, StructDef):
+            self.global_scope.define(
+                name,
+                Symbol(
+                    name=name,
+                    kind="struct",
+                    type_info=TypeInfo(kind=TypeKind.STRUCT, name=name),
+                    node=defn,
+                ),
+            )
+        elif isinstance(defn, EnumDef):
+            self.global_scope.define(
+                name,
+                Symbol(
+                    name=name,
+                    kind="enum",
+                    type_info=TypeInfo(kind=TypeKind.ENUM, name=name),
+                    node=defn,
+                ),
+            )
+            # Also register enum variants
+            for variant in defn.variants:
+                self.global_scope.define(
+                    variant.name,
+                    Symbol(
+                        name=variant.name,
+                        kind="function",
+                        type_info=TypeInfo(
+                            kind=TypeKind.FN,
+                            is_function=True,
+                            return_type=TypeInfo(kind=TypeKind.ENUM, name=name),
+                        ),
+                    ),
+                )
+        elif isinstance(defn, PipeDef):
+            self.global_scope.define(
+                name,
+                Symbol(name=name, kind="pipe", type_info=UNKNOWN_TYPE, node=defn),
+            )
+        elif isinstance(defn, TypeAlias):
+            resolved_type = self._resolve_type_expr(defn.type_expr)
+            self.global_scope.define(
+                name,
+                Symbol(name=name, kind="type_alias", type_info=resolved_type, node=defn),
+            )
+        else:
+            # Fallback — register as unknown
+            self.global_scope.define(
+                name,
+                Symbol(name=name, kind="variable", type_info=UNKNOWN_TYPE),
+            )
 
     # -- Definition checking (second pass) ------------------------------
 
@@ -1208,33 +1398,42 @@ class SemanticChecker:
 # ---------------------------------------------------------------------------
 
 
-def check(program: Program, *, filename: str = "<input>") -> list[SemanticError]:
+def check(
+    program: Program,
+    *,
+    filename: str = "<input>",
+    resolver: ModuleResolver | None = None,
+) -> list[SemanticError]:
     """Run semantic analysis on a program.
 
     Args:
         program: The AST Program node to check.
         filename: Filename used in error messages.
+        resolver: Optional module resolver for multi-file compilation.
 
     Returns:
         A list of SemanticError objects. Empty list means no errors.
-
-    Raises:
-        SemanticErrors: If raise_on_error is needed, wrap this call.
     """
-    checker = SemanticChecker(filename=filename)
+    checker = SemanticChecker(filename=filename, resolver=resolver)
     return checker.check(program)
 
 
-def check_or_raise(program: Program, *, filename: str = "<input>") -> None:
+def check_or_raise(
+    program: Program,
+    *,
+    filename: str = "<input>",
+    resolver: ModuleResolver | None = None,
+) -> None:
     """Run semantic analysis and raise if there are errors.
 
     Args:
         program: The AST Program node to check.
         filename: Filename used in error messages.
+        resolver: Optional module resolver for multi-file compilation.
 
     Raises:
         SemanticErrors: If any semantic errors are found.
     """
-    errors = check(program, filename=filename)
+    errors = check(program, filename=filename, resolver=resolver)
     if errors:
         raise SemanticErrors(errors)

@@ -11,6 +11,7 @@ from __future__ import annotations
 from llvmlite import ir
 
 from mapanare.ast_nodes import (
+    AgentDef,
     AssignExpr,
     BinaryExpr,
     Block,
@@ -18,6 +19,7 @@ from mapanare.ast_nodes import (
     CallExpr,
     CharLiteral,
     ConstructExpr,
+    EnumDef,
     ExprStmt,
     FieldAccessExpr,
     FloatLiteral,
@@ -26,6 +28,7 @@ from mapanare.ast_nodes import (
     GenericType,
     Identifier,
     IfExpr,
+    ImportDef,
     IndexExpr,
     IntLiteral,
     LambdaExpr,
@@ -41,8 +44,11 @@ from mapanare.ast_nodes import (
     PipeExpr,
     Program,
     ReturnStmt,
+    SendExpr,
+    SpawnExpr,
     StringLiteral,
     StructDef,
+    SyncExpr,
     TensorType,
     TypeExpr,
     UnaryExpr,
@@ -61,6 +67,8 @@ LLVM_FLOAT = ir.DoubleType()  # Float → double
 LLVM_BOOL = ir.IntType(1)  # Bool → i1
 LLVM_CHAR = ir.IntType(8)  # Char → i8
 LLVM_VOID = ir.VoidType()  # Void
+LLVM_PTR = ir.IntType(8).as_pointer()  # void* / opaque pointer
+LLVM_I32 = ir.IntType(32)  # i32 for C int
 
 # String: { i8*, i64 } — pointer to data + length (matches MnString in C runtime)
 LLVM_STRING = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
@@ -241,6 +249,9 @@ class LLVMEmitter:
         self._arena_ptr: ir.AllocaInstr | None = None
         # Track string temporaries for cleanup at function exit
         self._string_temps: list[ir.AllocaInstr] = []
+        # Agent support: agent definitions and variable→agent-type tracking
+        self._agent_defs: dict[str, AgentDef] = {}
+        self._agent_types: dict[str, str] = {}  # var_name → agent_type_name
 
     @property
     def builder(self) -> ir.IRBuilder:
@@ -371,21 +382,128 @@ class LLVMEmitter:
         """Declare mn_arena_destroy(i8*) -> void."""
         return self._declare_runtime_fn("mn_arena_destroy", LLVM_VOID, [ir.IntType(8).as_pointer()])
 
+    def _rt_alloc(self) -> ir.Function:
+        """Declare __mn_alloc(i64) -> i8*."""
+        return self._declare_runtime_fn("__mn_alloc", LLVM_PTR, [LLVM_INT])
+
+    def _rt_free(self) -> ir.Function:
+        """Declare __mn_free(i8*) -> void."""
+        return self._declare_runtime_fn("__mn_free", LLVM_VOID, [LLVM_PTR])
+
+    # -- Agent runtime declarations (Phase 2.1) --
+
+    def _rt_agent_new(self) -> ir.Function:
+        """Declare mapanare_agent_new(name, handler, data, inbox_cap, outbox_cap) -> agent*."""
+        return self._declare_runtime_fn(
+            "mapanare_agent_new", LLVM_PTR, [LLVM_PTR, LLVM_PTR, LLVM_PTR, LLVM_I32, LLVM_I32]
+        )
+
+    def _rt_agent_spawn(self) -> ir.Function:
+        """Declare mapanare_agent_spawn(agent*) -> i32."""
+        return self._declare_runtime_fn("mapanare_agent_spawn", LLVM_I32, [LLVM_PTR])
+
+    def _rt_agent_send(self) -> ir.Function:
+        """Declare mapanare_agent_send(agent*, msg*) -> i32."""
+        return self._declare_runtime_fn("mapanare_agent_send", LLVM_I32, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_agent_recv_blocking(self) -> ir.Function:
+        """Declare mapanare_agent_recv_blocking(agent*, out**) -> i32."""
+        return self._declare_runtime_fn(
+            "mapanare_agent_recv_blocking", LLVM_I32, [LLVM_PTR, LLVM_PTR.as_pointer()]
+        )
+
+    def _rt_agent_stop(self) -> ir.Function:
+        """Declare mapanare_agent_stop(agent*) -> void."""
+        return self._declare_runtime_fn("mapanare_agent_stop", LLVM_VOID, [LLVM_PTR])
+
+    def _rt_agent_destroy(self) -> ir.Function:
+        """Declare mapanare_agent_destroy(agent*) -> void."""
+        return self._declare_runtime_fn("mapanare_agent_destroy", LLVM_VOID, [LLVM_PTR])
+
+    def _rt_agent_set_restart_policy(self) -> ir.Function:
+        """Declare mapanare_agent_set_restart_policy(agent*, policy, max_restarts) -> void."""
+        return self._declare_runtime_fn(
+            "mapanare_agent_set_restart_policy", LLVM_VOID, [LLVM_PTR, LLVM_I32, LLVM_I32]
+        )
+
     # -----------------------------------------------------------------------
     # Public entry point
     # -----------------------------------------------------------------------
 
-    def emit_program(self, program: Program) -> ir.Module:
+    def emit_program(self, program: Program, resolver: object | None = None) -> ir.Module:
         """Emit an entire Mapanare program to an LLVM module."""
+        # Pass 0: declare imported symbols as external
+        for defn in program.definitions:
+            if isinstance(defn, ImportDef):
+                self._emit_import(defn, resolver)
         # First pass: register struct definitions
         for defn in program.definitions:
             if isinstance(defn, StructDef):
                 self._register_struct(defn)
-        # Second pass: emit functions
+        # Second pass: emit agent definitions (handler methods + wrappers)
+        for defn in program.definitions:
+            if isinstance(defn, AgentDef):
+                self._emit_agent(defn)
+        # Third pass: emit functions
         for defn in program.definitions:
             if isinstance(defn, FnDef):
                 self.emit_fn(defn)
         return self.module
+
+    def _emit_import(self, imp: ImportDef, resolver: object | None) -> None:
+        """Declare imported symbols as external functions/globals in the LLVM module."""
+        if resolver is None:
+            return
+
+        from mapanare.modules import ModuleResolver
+
+        if not isinstance(resolver, ModuleResolver):
+            return
+
+        mod_name = imp.path[-1] if imp.path else ""
+        # Try to get the resolved module from cache
+        cached = None
+        for _fp, mod in resolver.all_modules():
+            import os
+
+            if os.path.splitext(os.path.basename(_fp))[0] == mod_name:
+                cached = mod
+                break
+
+        if cached is None:
+            return
+
+        # Determine which symbols to import
+        names_to_import: list[str] = []
+        if imp.items:
+            names_to_import = imp.items
+        else:
+            names_to_import = [name for name, exp in cached.exports.items() if exp.public]
+
+        # Declare each imported function as external
+        for name in names_to_import:
+            export = cached.exports.get(name)
+            if export is None:
+                continue
+            defn = export.definition
+            if isinstance(defn, FnDef):
+                # Declare as external function
+                param_types = [
+                    self.type_mapper.resolve(p.type_annotation) if p.type_annotation else LLVM_INT
+                    for p in defn.params
+                ]
+                ret_type = (
+                    self.type_mapper.resolve(defn.return_type) if defn.return_type else LLVM_VOID
+                )
+                fn_ty = ir.FunctionType(ret_type, param_types)
+                try:
+                    self.module.get_global(name)
+                except KeyError:
+                    ir.Function(self.module, fn_ty, name=name)
+            elif isinstance(defn, StructDef):
+                self._register_struct(defn)
+            elif isinstance(defn, EnumDef):
+                pass  # enums are value types, no external declaration needed
 
     def _register_struct(self, node: StructDef) -> None:
         """Register a struct definition so it can be used as a type."""
@@ -524,6 +642,9 @@ class LLVMEmitter:
         self._locals[node.name] = alloca
         if node.mutable:
             self._mutables.add(node.name)
+        # Track agent type for spawn expressions
+        if isinstance(node.value, SpawnExpr) and isinstance(node.value.callee, Identifier):
+            self._agent_types[node.name] = node.value.callee.name
         return val
 
     # -----------------------------------------------------------------------
@@ -625,6 +746,15 @@ class LLVMEmitter:
 
         if isinstance(expr, LambdaExpr):
             return self._emit_lambda(expr)
+
+        if isinstance(expr, SpawnExpr):
+            return self._emit_spawn(expr)
+
+        if isinstance(expr, SendExpr):
+            return self._emit_send(expr)
+
+        if isinstance(expr, SyncExpr):
+            return self._emit_sync_expr(expr)
 
         raise NotImplementedError(f"Cannot emit expression: {type(expr).__name__}")
 
@@ -1187,6 +1317,237 @@ class LLVMEmitter:
         return ir.Constant(LLVM_INT, 0)
 
     # -----------------------------------------------------------------------
+    # Phase 2.1: Agent codegen — native agents via C runtime
+    # -----------------------------------------------------------------------
+
+    def _sizeof_type(self, ty: ir.Type) -> int:
+        """Return the size in bytes of an LLVM type (for boxing/unboxing)."""
+        if isinstance(ty, ir.IntType):
+            return int(max(1, ty.width // 8))
+        if isinstance(ty, ir.DoubleType):
+            return 8
+        if isinstance(ty, ir.LiteralStructType):
+            return sum(self._sizeof_type(e) for e in ty.elements)
+        if isinstance(ty, ir.PointerType):
+            return 8
+        return 8
+
+    def _emit_agent(self, agent: AgentDef) -> None:
+        """Emit agent definition: handler method as function + C-compatible wrapper."""
+        self._agent_defs[agent.name] = agent
+
+        # Emit handler methods as standalone LLVM functions
+        for method in agent.methods:
+            method_fn = FnDef(
+                name=f"{agent.name}_{method.name}",
+                params=method.params,
+                return_type=method.return_type,
+                body=method.body,
+            )
+            self.emit_fn(method_fn)
+
+        # Emit C-compatible handler wrapper
+        self._emit_agent_handler(agent)
+
+    def _emit_agent_handler(self, agent: AgentDef) -> ir.Function:
+        """Emit C-compatible handler wrapper: unbox msg, call method, box output."""
+        handler_name = f"__mn_handler_{agent.name}"
+        fn_ty = ir.FunctionType(LLVM_I32, [LLVM_PTR, LLVM_PTR, LLVM_PTR.as_pointer()])
+        func = ir.Function(self.module, fn_ty, name=handler_name)
+        func.args[0].name = "agent_data"
+        func.args[1].name = "msg"
+        func.args[2].name = "out_msg"
+
+        block = func.append_basic_block("entry")
+        old_builder = self._builder
+        self._builder = ir.IRBuilder(block)
+
+        # Find handler method (first method or one named "handle")
+        handler_method = None
+        for m in agent.methods:
+            if m.name == "handle" or handler_method is None:
+                handler_method = m
+
+        has_input = len(agent.inputs) > 0
+        has_output = len(agent.outputs) > 0
+
+        if handler_method and has_input:
+            # Determine input LLVM type
+            input_type = self.type_mapper.resolve(agent.inputs[0].type_annotation)
+
+            # Unbox: cast void* to typed pointer, load value
+            msg_typed = self.builder.bitcast(
+                func.args[1], input_type.as_pointer(), name="msg_typed"
+            )
+            msg_val = self.builder.load(msg_typed, name="msg_val")
+
+            # Free the message box
+            self.builder.call(self._rt_free(), [func.args[1]])
+
+            # Call the handler method function
+            method_fn = self._functions[f"{agent.name}_{handler_method.name}"]
+            result = self.builder.call(method_fn, [msg_val], name="result")
+
+            if has_output and not isinstance(result.type, ir.VoidType):
+                # Box the result
+                type_size = self._sizeof_type(result.type)
+                out_box = self.builder.call(
+                    self._rt_alloc(), [ir.Constant(LLVM_INT, type_size)], name="out_box"
+                )
+                out_typed = self.builder.bitcast(
+                    out_box, result.type.as_pointer(), name="out_typed"
+                )
+                self.builder.store(result, out_typed)
+                self.builder.store(out_box, func.args[2])
+            else:
+                self.builder.store(ir.Constant(LLVM_PTR, None), func.args[2])
+        else:
+            self.builder.store(ir.Constant(LLVM_PTR, None), func.args[2])
+
+        self.builder.ret(ir.Constant(LLVM_I32, 0))
+
+        self._builder = old_builder
+        self._functions[handler_name] = func
+        return func
+
+    def _emit_spawn(self, expr: SpawnExpr) -> ir.Value:
+        """Emit spawn: allocate agent, init with handler, start thread."""
+        agent_name = expr.callee.name if isinstance(expr.callee, Identifier) else "Agent"
+
+        # Get handler function pointer
+        handler_name = f"__mn_handler_{agent_name}"
+        handler_fn = self._functions.get(handler_name)
+        if handler_fn is None:
+            raise NameError(f"Unknown agent: {agent_name}")
+
+        # Create C string for agent name
+        name_bytes = agent_name.encode("utf-8") + b"\x00"
+        arr_ty = ir.ArrayType(ir.IntType(8), len(name_bytes))
+        name_const = ir.Constant(arr_ty, bytearray(name_bytes))
+        gname = self.module.get_unique_name("agent_name")
+        global_name = ir.GlobalVariable(self.module, name_const.type, name=gname)
+        global_name.global_constant = True
+        global_name.initializer = name_const
+        global_name.linkage = "private"
+        zero = ir.Constant(LLVM_INT, 0)
+        name_ptr = self.builder.gep(global_name, [zero, zero], inbounds=True, name="name_ptr")
+
+        # Bitcast handler function to void* for FFI
+        handler_ptr = self.builder.bitcast(handler_fn, LLVM_PTR, name="handler")
+
+        # Call mapanare_agent_new(name, handler, data, inbox_cap, outbox_cap)
+        agent_ptr = self.builder.call(
+            self._rt_agent_new(),
+            [
+                name_ptr,
+                handler_ptr,
+                ir.Constant(LLVM_PTR, None),  # agent_data (NULL for stateless)
+                ir.Constant(LLVM_I32, 256),
+                ir.Constant(LLVM_I32, 256),
+            ],
+            name="agent",
+        )
+
+        # Apply supervision policy from decorators
+        agent_def = self._agent_defs.get(agent_name)
+        if agent_def:
+            self._apply_supervision(agent_ptr, agent_def)
+
+        # Spawn (start thread)
+        self.builder.call(self._rt_agent_spawn(), [agent_ptr])
+
+        return agent_ptr
+
+    def _apply_supervision(self, agent_ptr: ir.Value, agent_def: AgentDef) -> None:
+        """Set supervision policy based on agent decorators."""
+        restart_policy = 0  # MAPANARE_RESTART_STOP
+        max_restarts = 0
+
+        for dec in agent_def.decorators:
+            if dec.name == "restart":
+                restart_policy = 1  # MAPANARE_RESTART_RESTART
+                if dec.args and isinstance(dec.args[0], IntLiteral):
+                    max_restarts = dec.args[0].value
+                else:
+                    max_restarts = 3  # default
+
+        if restart_policy != 0:
+            self.builder.call(
+                self._rt_agent_set_restart_policy(),
+                [
+                    agent_ptr,
+                    ir.Constant(LLVM_I32, restart_policy),
+                    ir.Constant(LLVM_I32, max_restarts),
+                ],
+            )
+
+    def _emit_send(self, expr: SendExpr) -> ir.Value:
+        """Emit send: box value and push to agent's inbox."""
+        # Get agent pointer from target (agent.channel field access)
+        if isinstance(expr.target, FieldAccessExpr):
+            agent_ptr = self._emit_expr(expr.target.object)
+        else:
+            agent_ptr = self._emit_expr(expr.target)
+
+        # Emit value
+        value = self._emit_expr(expr.value)
+
+        # Box the value: allocate + store
+        type_size = self._sizeof_type(value.type)
+        box_ptr = self.builder.call(
+            self._rt_alloc(), [ir.Constant(LLVM_INT, type_size)], name="msg_box"
+        )
+        typed_ptr = self.builder.bitcast(box_ptr, value.type.as_pointer(), name="msg_typed")
+        self.builder.store(value, typed_ptr)
+
+        # Send to agent inbox
+        result = self.builder.call(self._rt_agent_send(), [agent_ptr, box_ptr], name="send_rc")
+        return result
+
+    def _emit_sync_expr(self, expr: SyncExpr) -> ir.Value:
+        """Emit sync: blocking receive from agent's outbox, unbox result."""
+        inner = expr.expr
+
+        # Get agent pointer
+        if isinstance(inner, FieldAccessExpr):
+            agent_ptr = self._emit_expr(inner.object)
+        else:
+            agent_ptr = self._emit_expr(inner)
+
+        # Allocate space for the output pointer
+        out_alloca = self.builder.alloca(LLVM_PTR, name="recv_out")
+
+        # Call recv_blocking
+        self.builder.call(self._rt_agent_recv_blocking(), [agent_ptr, out_alloca], name="recv_rc")
+
+        # Load the output pointer
+        out_ptr = self.builder.load(out_alloca, name="out_ptr")
+
+        # Determine output type from agent definition
+        output_type = LLVM_INT  # default
+        if isinstance(inner, FieldAccessExpr) and isinstance(inner.object, Identifier):
+            agent_type_name = self._agent_types.get(inner.object.name)
+            if agent_type_name and agent_type_name in self._agent_defs:
+                agent_def = self._agent_defs[agent_type_name]
+                for output in agent_def.outputs:
+                    if output.name == inner.field_name:
+                        output_type = self.type_mapper.resolve(output.type_annotation)
+                        break
+                else:
+                    # If field name doesn't match, use first output type
+                    if agent_def.outputs:
+                        output_type = self.type_mapper.resolve(agent_def.outputs[0].type_annotation)
+
+        # Unbox: cast void* to typed pointer, load value
+        typed_ptr = self.builder.bitcast(out_ptr, output_type.as_pointer(), name="out_typed")
+        result = self.builder.load(typed_ptr, name="result")
+
+        # Free the box
+        self.builder.call(self._rt_free(), [out_ptr])
+
+        return result
+
+    # -----------------------------------------------------------------------
     # Tensor runtime helpers (Phase 5.1)
     # -----------------------------------------------------------------------
 
@@ -1348,6 +1709,10 @@ class LLVMEmitter:
 
     def _emit_field_access(self, node: FieldAccessExpr) -> ir.Value:
         """Emit field access: `token.value`, `lexer.pos`."""
+        # Agent field access (e.g., agent.input, agent.output) — return agent pointer
+        if isinstance(node.object, Identifier) and node.object.name in self._agent_types:
+            return self._emit_expr(node.object)
+
         obj = self._emit_expr(node.object)
 
         # Try to find the struct type in our registry

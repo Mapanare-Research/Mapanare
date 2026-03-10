@@ -186,6 +186,8 @@ typedef struct mapanare_agent {
     mapanare_ring_buffer_t   inbox;            /* incoming messages   */
     mapanare_ring_buffer_t   outbox;           /* outgoing messages   */
     mapanare_backpressure_t  bp;               /* backpressure for inbox */
+    mapanare_semaphore_t     inbox_ready;      /* signalled on inbox push  */
+    mapanare_semaphore_t     outbox_ready;     /* signalled on outbox push */
 
     /* Handler */
     mapanare_handler_fn      handler;          /* user message handler   */
@@ -245,6 +247,22 @@ MAPANARE_EXPORT double mapanare_agent_avg_latency_us(mapanare_agent_t *agent);
 
 /** Clean up agent resources (call after stop). */
 MAPANARE_EXPORT void mapanare_agent_destroy(mapanare_agent_t *agent);
+
+/** Allocate, init and return a new heap-allocated agent. Returns NULL on failure. */
+MAPANARE_EXPORT mapanare_agent_t *mapanare_agent_new(const char *name,
+                                                      mapanare_handler_fn handler,
+                                                      void *agent_data,
+                                                      uint32_t inbox_cap,
+                                                      uint32_t outbox_cap);
+
+/** Blocking receive from agent's outbox. Waits until message available or agent stopped.
+ *  Returns 0 on success, -1 if agent stopped with no more messages. */
+MAPANARE_EXPORT int mapanare_agent_recv_blocking(mapanare_agent_t *agent, void **out);
+
+/** Set the restart policy for an agent. Must be called before spawn. */
+MAPANARE_EXPORT void mapanare_agent_set_restart_policy(mapanare_agent_t *agent,
+                                                        mapanare_restart_policy_t policy,
+                                                        int32_t max_restarts);
 
 /* -----------------------------------------------------------------------
  * Agent registry — track agents by name

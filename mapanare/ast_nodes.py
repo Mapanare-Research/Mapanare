@@ -563,6 +563,7 @@ class TypeAlias(Definition):
     """Type alias: `type Name = Type`."""
 
     name: str = ""
+    public: bool = False
     type_expr: TypeExpr = field(default_factory=lambda: NamedType())
 
 
