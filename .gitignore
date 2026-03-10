@@ -30,3 +30,7 @@ prompt.md
 error.log
 .pr/
 .marketing/
+.reviews/
+.sprint/
+docs/PLAN-v0.3.0.md
+sprint_runner.py

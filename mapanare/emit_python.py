@@ -64,6 +64,7 @@ from mapanare.ast_nodes import (
     UnaryExpr,
     WhileLoop,
 )
+from mapanare.types import BUILTIN_CALL_MAP, PYTHON_TYPE_MAP
 
 
 class PythonEmitter:
@@ -882,13 +883,8 @@ class PythonEmitter:
             return f"(not {operand})"
         return f"({expr.op}{operand})"
 
-    # Mapanare builtins that map directly to Python builtins
-    _BUILTIN_CALL_MAP: dict[str, str] = {
-        "str": "str",
-        "toString": "str",
-        "int": "int",
-        "float": "float",
-    }
+    # Mapanare builtins that map directly to Python builtins (from types.py)
+    _BUILTIN_CALL_MAP: dict[str, str] = BUILTIN_CALL_MAP
 
     def _emit_call(self, expr: CallExpr) -> str:
         callee = self._emit_expr(expr.callee)
@@ -1029,15 +1025,7 @@ class PythonEmitter:
 
 # -- Mappings -----------------------------------------------------------
 
-_TYPE_MAP: dict[str, str] = {
-    "Int": "int",
-    "Float": "float",
-    "Bool": "bool",
-    "String": "str",
-    "Char": "str",
-    "Void": "None",
-    "Any": "Any",
-}
+_TYPE_MAP: dict[str, str] = PYTHON_TYPE_MAP
 
 _OP_MAP: dict[str, str] = {
     "&&": "and",

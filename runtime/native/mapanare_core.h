@@ -84,7 +84,8 @@ MN_EXPORT MnString __mn_str_from_int(int64_t value);
 /** Convert a double to its string representation. */
 MN_EXPORT MnString __mn_str_from_float(double value);
 
-/** Free a heap-allocated string. No-op for constant strings. */
+/** Free a heap-allocated string. No-op for constant strings.
+ *  Uses tag bit (LSB of data pointer) to distinguish heap from constant. */
 MN_EXPORT void __mn_str_free(MnString s);
 
 /** Print a string to stdout (no newline). */
@@ -138,8 +139,11 @@ MN_EXPORT int64_t __mn_list_pop(MnList *list, void *out_ptr);
 /** Clear the list (set len to 0, keep capacity). */
 MN_EXPORT void __mn_list_clear(MnList *list);
 
-/** Free the list's data buffer. */
+/** Free the list's data buffer (does NOT free contained elements). */
 MN_EXPORT void __mn_list_free(MnList *list);
+
+/** Free a list of strings: frees each contained string, then the buffer. */
+MN_EXPORT void __mn_list_free_strings(MnList *list);
 
 /* -----------------------------------------------------------------------
  * Convenience: MnList of MnString
@@ -177,6 +181,50 @@ MN_EXPORT void *__mn_realloc(void *ptr, int64_t new_size);
 
 /** Free memory. */
 MN_EXPORT void __mn_free(void *ptr);
+
+/* -----------------------------------------------------------------------
+ * Arena Allocator
+ *
+ * Bump allocator for scope-local temporaries. All allocations are freed
+ * in one shot when the arena is destroyed. Blocks are linked together
+ * and grow as needed.
+ * ----------------------------------------------------------------------- */
+
+typedef struct MnArenaBlock {
+    struct MnArenaBlock *next;
+    int64_t size;
+    int64_t used;
+    /* Flexible array member: data follows the header. */
+    char data[];
+} MnArenaBlock;
+
+typedef struct {
+    MnArenaBlock *head;
+    int64_t default_block_size;
+} MnArena;
+
+/** Create a new arena with the given default block size. */
+MN_EXPORT MnArena *mn_arena_create(int64_t block_size);
+
+/** Allocate `size` bytes from the arena (zero-initialized). */
+MN_EXPORT void *mn_arena_alloc(MnArena *arena, int64_t size);
+
+/** Destroy the arena, freeing all blocks. */
+MN_EXPORT void mn_arena_destroy(MnArena *arena);
+
+/* -----------------------------------------------------------------------
+ * Agent-Scoped Arenas (Phase 2.1 integration point)
+ *
+ * Each agent owns an arena tied to its lifetime. When the agent is
+ * stopped or destroyed, its arena is freed in one shot. The actual
+ * wiring happens in Phase 2.1 (Native Agents).
+ * ----------------------------------------------------------------------- */
+
+/** Create an arena for an agent's lifetime. */
+MN_EXPORT MnArena *mn_agent_arena_create(void);
+
+/** Destroy an agent's arena (called on agent stop/destroy). */
+MN_EXPORT void mn_agent_arena_destroy(MnArena *arena);
 
 /* -----------------------------------------------------------------------
  * Process

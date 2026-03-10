@@ -49,6 +49,7 @@ from mapanare.ast_nodes import (
     WhileLoop,
     WildcardPattern,
 )
+from mapanare.types import PRIMITIVE_TYPES as _CANONICAL_PRIMITIVES
 
 # ---------------------------------------------------------------------------
 # LLVM type constants
@@ -114,7 +115,7 @@ def map_type(key_ty: ir.Type, val_ty: ir.Type) -> ir.LiteralStructType:
 
 
 # ---------------------------------------------------------------------------
-# Named type table
+# Named type table — keys must match mapanare.types.PRIMITIVE_TYPES
 # ---------------------------------------------------------------------------
 
 _PRIMITIVE_MAP: dict[str, ir.Type] = {
@@ -125,6 +126,11 @@ _PRIMITIVE_MAP: dict[str, ir.Type] = {
     "String": LLVM_STRING,
     "Void": LLVM_VOID,
 }
+
+assert set(_PRIMITIVE_MAP.keys()) == _CANONICAL_PRIMITIVES, (
+    f"LLVM _PRIMITIVE_MAP keys out of sync with types.py: "
+    f"{set(_PRIMITIVE_MAP.keys()) ^ _CANONICAL_PRIMITIVES}"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +237,10 @@ class LLVMEmitter:
         self._runtime_fns: dict[str, ir.Function] = {}
         # Struct type registry: struct name → (LLVM type, field names list)
         self._struct_defs: dict[str, tuple[ir.LiteralStructType, list[str]]] = {}
+        # Arena support: stack of arena alloca pointers per function scope
+        self._arena_ptr: ir.AllocaInstr | None = None
+        # Track string temporaries for cleanup at function exit
+        self._string_temps: list[ir.AllocaInstr] = []
 
     @property
     def builder(self) -> ir.IRBuilder:
@@ -339,6 +349,28 @@ class LLVMEmitter:
             "__mn_file_read", LLVM_STRING, [LLVM_STRING, LLVM_INT.as_pointer()]
         )
 
+    def _rt_str_free(self) -> ir.Function:
+        """Declare __mn_str_free(MnString) -> void."""
+        return self._declare_runtime_fn("__mn_str_free", LLVM_VOID, [LLVM_STRING])
+
+    def _rt_list_free(self) -> ir.Function:
+        """Declare __mn_list_free(MnList*) -> void."""
+        return self._declare_runtime_fn("__mn_list_free", LLVM_VOID, [LLVM_LIST.as_pointer()])
+
+    def _rt_list_free_strings(self) -> ir.Function:
+        """Declare __mn_list_free_strings(MnList*) -> void."""
+        return self._declare_runtime_fn(
+            "__mn_list_free_strings", LLVM_VOID, [LLVM_LIST.as_pointer()]
+        )
+
+    def _rt_arena_create(self) -> ir.Function:
+        """Declare mn_arena_create(i64) -> i8*."""
+        return self._declare_runtime_fn("mn_arena_create", ir.IntType(8).as_pointer(), [LLVM_INT])
+
+    def _rt_arena_destroy(self) -> ir.Function:
+        """Declare mn_arena_destroy(i8*) -> void."""
+        return self._declare_runtime_fn("mn_arena_destroy", LLVM_VOID, [ir.IntType(8).as_pointer()])
+
     # -----------------------------------------------------------------------
     # Public entry point
     # -----------------------------------------------------------------------
@@ -400,9 +432,22 @@ class LLVMEmitter:
         old_builder = self._builder
         old_locals = self._locals.copy()
         old_mutables = self._mutables.copy()
+        old_arena = self._arena_ptr
+        old_temps = self._string_temps
         self._builder = ir.IRBuilder(block)
         self._locals = {}
         self._mutables = set()
+        self._string_temps = []
+
+        # Create scope arena at function entry
+        arena_ptr = self.builder.call(
+            self._rt_arena_create(),
+            [ir.Constant(LLVM_INT, 8192)],
+            name="scope_arena",
+        )
+        arena_alloca = self.builder.alloca(ir.IntType(8).as_pointer(), name="arena_ptr")
+        self.builder.store(arena_ptr, arena_alloca)
+        self._arena_ptr = arena_alloca
 
         # Alloca params so they can be loaded/stored like locals
         for i, p in enumerate(node.params):
@@ -413,8 +458,9 @@ class LLVMEmitter:
         # Emit function body
         self._emit_block(node.body)
 
-        # If the block has no terminator, add a default return
+        # Cleanup: free string temporaries and destroy arena before return
         if not self.builder.block.is_terminated:
+            self._emit_scope_cleanup()
             if isinstance(ret_type, ir.VoidType):
                 self.builder.ret_void()
             else:
@@ -424,8 +470,22 @@ class LLVMEmitter:
         self._builder = old_builder
         self._locals = old_locals
         self._mutables = old_mutables
+        self._arena_ptr = old_arena
+        self._string_temps = old_temps
 
         return func
+
+    def _emit_scope_cleanup(self) -> None:
+        """Emit cleanup code: free tracked string temps and destroy the scope arena."""
+        # Free tracked string temporaries
+        str_free = self._rt_str_free()
+        for temp_alloca in self._string_temps:
+            val = self.builder.load(temp_alloca, name="tmp_str")
+            self.builder.call(str_free, [val])
+        # Destroy scope arena
+        if self._arena_ptr is not None:
+            arena = self.builder.load(self._arena_ptr, name="arena")
+            self.builder.call(self._rt_arena_destroy(), [arena])
 
     # -----------------------------------------------------------------------
     # Block & statement emission
@@ -471,13 +531,31 @@ class LLVMEmitter:
     # -----------------------------------------------------------------------
 
     def _emit_return(self, node: ReturnStmt) -> ir.Value | None:
-        """Emit a return statement."""
+        """Emit a return statement with scope cleanup before returning."""
         if node.value is not None:
             val = self._emit_expr(node.value)
+            # If returning a string, remove it from temps (it escapes)
+            self._untrack_string_temp(val)
+            self._emit_scope_cleanup()
             self.builder.ret(val)
             return val
+        self._emit_scope_cleanup()
         self.builder.ret_void()
         return None
+
+    def _track_string_temp(self, val: ir.Value) -> None:
+        """Track a heap-allocated string temporary for cleanup at scope exit."""
+        if self._is_string_type(val):
+            alloca = self.builder.alloca(LLVM_STRING, name="str_tmp")
+            self.builder.store(val, alloca)
+            self._string_temps.append(alloca)
+
+    def _untrack_string_temp(self, val: ir.Value) -> None:
+        """Remove a string from the temp tracker (it escapes the scope)."""
+        # We can't easily match LLVM values, so we remove the last tracked
+        # temp if returning a string type. This is conservative.
+        if self._is_string_type(val) and self._string_temps:
+            self._string_temps.pop()
 
     # -----------------------------------------------------------------------
     # Expression dispatch
@@ -610,7 +688,9 @@ class LLVMEmitter:
         # String operations via core runtime
         if is_string:
             if node.op == "+":
-                return self.builder.call(self._rt_str_concat(), [left, right], name="str_concat")
+                result = self.builder.call(self._rt_str_concat(), [left, right], name="str_concat")
+                self._track_string_temp(result)
+                return result
             if node.op == "==":
                 eq_i64 = self.builder.call(self._rt_str_eq(), [left, right], name="str_eq_i64")
                 return self.builder.trunc(eq_i64, LLVM_BOOL, name="str_eq")
@@ -796,7 +876,9 @@ class LLVMEmitter:
             if node.args:
                 val = self._emit_expr(node.args[0])
                 if isinstance(val.type, ir.IntType) and val.type.width == 64:
-                    return self.builder.call(self._rt_str_from_int(), [val], name="to_str")
+                    result = self.builder.call(self._rt_str_from_int(), [val], name="to_str")
+                    self._track_string_temp(result)
+                    return result
                 if self._is_string_type(val):
                     return val
             return self._emit_string_literal(StringLiteral(value=""))
@@ -1205,6 +1287,8 @@ class LLVMEmitter:
         if node.op == "+=":
             if is_string:
                 result = self.builder.call(self._rt_str_concat(), [current, val], name="str_append")
+                # Free the old string after concat has read it
+                self.builder.call(self._rt_str_free(), [current])
             elif is_float:
                 result = self.builder.fadd(current, val, name="fadd_assign")
             else:

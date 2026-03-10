@@ -13,7 +13,7 @@ Mapanare is an AI-native compiled programming language where agents, signals, st
 
 - **AI-native primitives.** Agents, signals, streams, and tensors are built into the language, not imported from libraries. AI workflows are expressible without external frameworks.
 - **Compiled.** Mapanare is always compiled. The initial backend transpiles to Python for rapid iteration; the production backend targets LLVM for native machine code.
-- **Simple, familiar syntax.** The syntax draws from Rust (ownership, enums, pattern matching), TypeScript (type annotations, generics), and Python (readability, minimal ceremony).
+- **Simple, familiar syntax.** The syntax draws from Rust (enums, pattern matching), TypeScript (type annotations, generics), and Python (readability, minimal ceremony).
 - **Type-safe with inference.** Static types catch errors at compile time. Type inference reduces annotation burden -- you write types where they clarify, the compiler infers the rest.
 - **Concurrency via agents and message passing.** No raw threads, no shared mutable state. Agents are concurrent actors that communicate through typed channels.
 - **Reactive via signals.** Signals propagate changes automatically. Computed values recompute when their dependencies change, enabling declarative reactive dataflow.
@@ -24,7 +24,7 @@ Mapanare is an AI-native compiled programming language where agents, signals, st
 
 - **Not a general-purpose systems language.** Mapanare does not aim to replace C or Rust for kernel development, device drivers, or bare-metal programming.
 - **Not interpreted.** There is no REPL-only mode or script runner. All Mapanare code is compiled before execution.
-- **No garbage collector in native mode.** The LLVM backend uses ownership-based memory management. The Python transpiler backend inherits Python's GC, but that is a transitional implementation detail.
+- **No garbage collector in native mode.** The LLVM backend uses arena-based memory management with scope-level cleanup and tag-bit freeing for heap-allocated strings. The Python transpiler backend inherits Python's GC, but that is a transitional implementation detail.
 - **No OOP class hierarchies.** There are no classes, no inheritance, no `extends`. Use agents for concurrent behavior and structs for data.
 - **Not backwards-compatible with Python syntax.** Although Mapanare transpiles to Python, its syntax is its own. Valid Python is not valid Mapanare and vice versa.
 
@@ -826,7 +826,7 @@ The production compiler generates LLVM IR, producing native machine code. This e
 
 - Zero-overhead abstractions for agents and signals.
 - Compile-time tensor shape verification with no runtime cost.
-- Ownership-based memory management (no garbage collector).
+- Arena-based memory management with tag-bit string freeing (no garbage collector).
 - Ahead-of-time compilation for deployment.
 
 ---
@@ -838,7 +838,7 @@ The following sections are planned but not yet specified:
 - **Module System:** File-based modules, visibility rules, import resolution.
 - **Standard Library:** Built-in functions, collections API, I/O primitives.
 - **Error Model:** Error types, panic vs recoverable errors, stack traces.
-- **Memory Model:** Ownership rules, borrowing, lifetimes (for LLVM backend).
+- **Memory Model:** Arena allocation, scope-based cleanup, tag-bit freeing (for LLVM backend).
 - **Concurrency Guarantees:** Ordering, fairness, deadlock prevention.
 - **Tensor Operations:** Full operator set, broadcasting rules, autodiff.
 - **Decorator System:** Built-in decorators, custom decorator definitions.
