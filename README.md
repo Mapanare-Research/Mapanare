@@ -383,7 +383,7 @@ mapanare/
 ├── docs/                  Documentation
 │   ├── rfcs/              Language change proposals
 │   ├── SPEC.md            Language specification
-│   └── ROADMAP.md         Development roadmap
+│   └── PLAN-v0.3.0.md     Development plan (v0.3.0)
 ├── packaging/             Installers and build specs
 │   ├── install.sh         Linux/macOS installer
 │   ├── install.ps1        Windows installer
@@ -409,19 +409,16 @@ Requires Python 3.11+.
 
 ---
 
-## Roadmap
+## Roadmap (v0.3.0)
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 1 | Foundation | In Progress |
-| 2 | Transpiler | Planned |
-| 3 | Runtime | Planned |
-| 4 | LLVM | Planned |
-| 5 | Tensor | Planned |
-| 6 | Self-Hosting | Planned |
-| 7 | Ecosystem | Planned |
+| 1 | Foundation Fixes (memory, types, benchmarks, changelog) | In Progress |
+| 2 | The Three Pillars (native agents, modules, traits) | Not Started |
+| 3 | Community & Trust (tutorial, governance, e2e tests) | Not Started |
+| 4 | Polish & Ship (scope reduction, C hardening, FFI) | Not Started |
 
-See [ROADMAP.md](docs/ROADMAP.md) for the full breakdown.
+See [PLAN-v0.3.0.md](docs/PLAN-v0.3.0.md) for the full breakdown.
 
 ---
 
@@ -453,7 +450,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 **Mapanare** — The language AI deserves.
 
-[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues) · [Spec](docs/SPEC.md) · [Roadmap](docs/ROADMAP.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
+[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues) · [Spec](docs/SPEC.md) · [Roadmap](docs/PLAN-v0.3.0.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
 
 Made with care by [Juan Denis](https://juandenis.com)
 
