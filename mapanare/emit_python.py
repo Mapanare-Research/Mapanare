@@ -233,6 +233,16 @@ class PythonEmitter:
         self._emit_line("")
         self._emit_line("println = print")
         self._emit_line("")
+        # Division helper: truncate toward zero for ints, real division for floats
+        self._emit_line("def _mn_div(a, b):")
+        self._indent += 1
+        self._emit_line("if isinstance(a, float) or isinstance(b, float):")
+        self._indent += 1
+        self._emit_line("return a / b")
+        self._indent -= 1
+        self._emit_line("return int(a / b)")
+        self._indent -= 1
+        self._emit_line("")
 
     # ------------------------------------------------------------------
     # Helpers
@@ -828,6 +838,11 @@ class PythonEmitter:
     def _emit_binary(self, expr: BinaryExpr) -> str:
         left = self._emit_expr(expr.left)
         right = self._emit_expr(expr.right)
+        if expr.op == "/":
+            # Mapanare integer division truncates toward zero (matches LLVM sdiv).
+            # Python's / always returns float, so we use int(a/b) for int operands
+            # while preserving real division for floats.
+            return f"_mn_div({left}, {right})"
         op = _OP_MAP.get(expr.op, expr.op)
         return f"({left} {op} {right})"
 
@@ -837,10 +852,20 @@ class PythonEmitter:
             return f"(not {operand})"
         return f"({expr.op}{operand})"
 
+    # Mapanare builtins that map directly to Python builtins
+    _BUILTIN_CALL_MAP: dict[str, str] = {
+        "str": "str",
+        "toString": "str",
+        "int": "int",
+        "float": "float",
+    }
+
     def _emit_call(self, expr: CallExpr) -> str:
         callee = self._emit_expr(expr.callee)
+        # Map Mapanare builtins to Python equivalents
+        mapped = self._BUILTIN_CALL_MAP.get(callee, callee)
         args = ", ".join(self._emit_expr(a) for a in expr.args)
-        return f"{callee}({args})"
+        return f"{mapped}({args})"
 
     def _emit_method_call(self, expr: MethodCallExpr) -> str:
         obj = self._emit_expr(expr.object)

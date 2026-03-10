@@ -784,8 +784,8 @@ class LLVMEmitter:
                     return self.builder.call(self._rt_list_len(), [list_alloca], name="len")
             return ir.Constant(LLVM_INT, 0)
 
-        # Built-in: toString()
-        if isinstance(node.callee, Identifier) and node.callee.name == "toString":
+        # Built-in: toString() / str()
+        if isinstance(node.callee, Identifier) and node.callee.name in ("toString", "str"):
             if node.args:
                 val = self._emit_expr(node.args[0])
                 if isinstance(val.type, ir.IntType) and val.type.width == 64:
@@ -793,6 +793,26 @@ class LLVMEmitter:
                 if self._is_string_type(val):
                     return val
             return self._emit_string_literal(StringLiteral(value=""))
+
+        # Built-in: int() — Float→Int truncation
+        if isinstance(node.callee, Identifier) and node.callee.name == "int":
+            if node.args:
+                val = self._emit_expr(node.args[0])
+                if isinstance(val.type, ir.DoubleType):
+                    return self.builder.fptosi(val, LLVM_INT, name="to_int")
+                if isinstance(val.type, ir.IntType):
+                    return val
+            return ir.Constant(LLVM_INT, 0)
+
+        # Built-in: float() — Int→Float conversion
+        if isinstance(node.callee, Identifier) and node.callee.name == "float":
+            if node.args:
+                val = self._emit_expr(node.args[0])
+                if isinstance(val.type, ir.IntType) and val.type.width == 64:
+                    return self.builder.sitofp(val, ir.DoubleType(), name="to_float")
+                if isinstance(val.type, ir.DoubleType):
+                    return val
+            return ir.Constant(ir.DoubleType(), 0.0)
 
         # Resolve the callee
         if isinstance(node.callee, Identifier):

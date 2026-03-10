@@ -122,6 +122,9 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "println" { return true }
     if name == "len" { return true }
     if name == "toString" { return true }
+    if name == "str" { return true }
+    if name == "int" { return true }
+    if name == "float" { return true }
     if name == "Some" { return true }
     if name == "Ok" { return true }
     if name == "Err" { return true }
@@ -135,6 +138,9 @@ fn builtin_return_type(name: String) -> String {
     if name == "println" { return "Void" }
     if name == "len" { return "Int" }
     if name == "toString" { return "String" }
+    if name == "str" { return "String" }
+    if name == "int" { return "Int" }
+    if name == "float" { return "Float" }
     if name == "Some" { return "Option" }
     if name == "Ok" { return "Result" }
     if name == "Err" { return "Result" }
@@ -1545,6 +1551,16 @@ fn register_builtins(st: SemState) -> SemState {
     // toString -> String
     let tostr_sym: Symbol = new_symbol("toString", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "toString", tostr_sym)
+
+    // str -> String (alias for toString)
+    let str_sym: Symbol = new_symbol("str", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "str", str_sym)
+
+    // int -> Int, float -> Float (type conversions)
+    let int_sym: Symbol = new_symbol("int", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "int", int_sym)
+    let float_sym: Symbol = new_symbol("float", "function", make_builtin_fn_type(make_type("Float")), false)
+    st2 = define_in_scope(st2, "float", float_sym)
 
     // Some -> Option
     let some_sym: Symbol = new_symbol("Some", "function", make_builtin_fn_type(make_type("Option")), false)

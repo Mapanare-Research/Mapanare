@@ -127,6 +127,9 @@ BUILTIN_FUNCTIONS: dict[str, str] = {
     "println": "Void",
     "len": "Int",
     "toString": "String",
+    "str": "String",  # Alias for toString — widely expected by users
+    "int": "Int",  # Type conversion: Float/String → Int
+    "float": "Float",  # Type conversion: Int/String → Float
     "Some": "Option",
     "Ok": "Result",
     "Err": "Result",

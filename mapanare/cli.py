@@ -112,19 +112,39 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"error: {err.filename}:{err.line}:{err.column}: {err.message}", file=sys.stderr)
         sys.exit(1)
 
-    # Write to a temp file and run it
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as tmp:
-        tmp.write(python_code)
-        tmp_path = tmp.name
+    # When frozen (PyInstaller), sys.executable points to the mapanare binary,
+    # not a Python interpreter.  Fall back to exec() in that case.
+    if getattr(sys, "frozen", False):
 
-    try:
-        result = subprocess.run(
-            [sys.executable, tmp_path],
-            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        )
-        sys.exit(result.returncode)
-    finally:
-        os.unlink(tmp_path)
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(python_code)
+            tmp_path = tmp.name
+        try:
+            code = compile(python_code, tmp_path, "exec")
+            exec(code, {"__name__": "__main__", "__file__": tmp_path})
+        except SystemExit as exc:
+            sys.exit(exc.code)
+        except Exception as exc:
+            print(f"runtime error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        finally:
+            os.unlink(tmp_path)
+    else:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(python_code)
+            tmp_path = tmp.name
+        try:
+            result = subprocess.run(
+                [sys.executable, tmp_path],
+                cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            )
+            sys.exit(result.returncode)
+        finally:
+            os.unlink(tmp_path)
 
 
 def cmd_fmt(args: argparse.Namespace) -> None:
