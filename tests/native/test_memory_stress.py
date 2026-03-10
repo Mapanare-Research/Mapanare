@@ -51,8 +51,11 @@ class TestMemoryStressNative:
 
         self._lib = ctypes.CDLL(self._lib_path)
 
-    def test_1m_string_alloc_free(self) -> None:
-        """Allocate and free 1M strings — RSS should stay bounded."""
+    @staticmethod
+    def _setup_str_funcs(
+        lib: ctypes.CDLL,
+    ) -> tuple[ctypes.CDLL, type[ctypes.Structure]]:
+        """Configure ctypes bindings for __mn_str_* functions."""
 
         class MnString(ctypes.Structure):
             _fields_ = [
@@ -60,16 +63,30 @@ class TestMemoryStressNative:
                 ("len", ctypes.c_int64),
             ]
 
-        lib = self._lib
-        lib.__mn_str_from_cstr.restype = MnString
-        lib.__mn_str_from_cstr.argtypes = [ctypes.c_char_p]
-        lib.__mn_str_free.restype = None
-        lib.__mn_str_free.argtypes = [MnString]
+        str_from_cstr = getattr(lib, "__mn_str_from_cstr")
+        str_from_cstr.restype = MnString
+        str_from_cstr.argtypes = [ctypes.c_char_p]
+
+        str_free = getattr(lib, "__mn_str_free")
+        str_free.restype = None
+        str_free.argtypes = [MnString]
+
+        str_concat = getattr(lib, "__mn_str_concat")
+        str_concat.restype = MnString
+        str_concat.argtypes = [MnString, MnString]
+
+        return lib, MnString
+
+    def test_1m_string_alloc_free(self) -> None:
+        """Allocate and free 1M strings — RSS should stay bounded."""
+        lib, _MnString = self._setup_str_funcs(self._lib)
+        str_from_cstr = getattr(lib, "__mn_str_from_cstr")
+        str_free = getattr(lib, "__mn_str_free")
 
         # Allocate and immediately free 1M strings
         for i in range(1_000_000):
-            s = lib.__mn_str_from_cstr(b"hello world test string")
-            lib.__mn_str_free(s)
+            s = str_from_cstr(b"hello world test string")
+            str_free(s)
 
         # If we get here without OOM, the test passes.
         # A proper RSS check would use /proc/self/status or similar.
@@ -95,30 +112,20 @@ class TestMemoryStressNative:
 
     def test_str_concat_in_loop_with_free(self) -> None:
         """Concat strings in a loop with proper free — no leak."""
+        lib, _MnString = self._setup_str_funcs(self._lib)
+        str_from_cstr = getattr(lib, "__mn_str_from_cstr")
+        str_concat = getattr(lib, "__mn_str_concat")
+        str_free = getattr(lib, "__mn_str_free")
 
-        class MnString(ctypes.Structure):
-            _fields_ = [
-                ("data", ctypes.c_char_p),
-                ("len", ctypes.c_int64),
-            ]
-
-        lib = self._lib
-        lib.__mn_str_from_cstr.restype = MnString
-        lib.__mn_str_from_cstr.argtypes = [ctypes.c_char_p]
-        lib.__mn_str_concat.restype = MnString
-        lib.__mn_str_concat.argtypes = [MnString, MnString]
-        lib.__mn_str_free.restype = None
-        lib.__mn_str_free.argtypes = [MnString]
-
-        a = lib.__mn_str_from_cstr(b"hello")
-        b = lib.__mn_str_from_cstr(b" world")
+        a = str_from_cstr(b"hello")
+        b = str_from_cstr(b" world")
 
         for _ in range(100_000):
-            c = lib.__mn_str_concat(a, b)
-            lib.__mn_str_free(c)
+            c = str_concat(a, b)
+            str_free(c)
 
-        lib.__mn_str_free(a)
-        lib.__mn_str_free(b)
+        str_free(a)
+        str_free(b)
 
 
 class TestMemoryStressPython:
