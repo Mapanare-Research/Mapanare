@@ -443,12 +443,24 @@ def cmd_build(args: argparse.Namespace) -> None:
     exe_ext = ".exe" if os.name == "nt" else ""
     exe_path = base + exe_ext
 
+    # Collect --link-lib flags as -l<lib> / <lib>.lib for linker
+    link_libs: list[str] = getattr(args, "link_lib", None) or []
+
     # Try common linkers
     linked = False
+    link_flags_unix = [f"-l{lib}" for lib in link_libs]
+    link_flags_msvc = [f"{lib}.lib" for lib in link_libs]
     for linker_cmd in (
-        ["clang", obj_path, "-o", exe_path],
-        ["gcc", obj_path, "-o", exe_path],
-        ["link.exe", f"/OUT:{exe_path}", obj_path, "msvcrt.lib", "legacy_stdio_definitions.lib"],
+        ["clang", obj_path, "-o", exe_path] + link_flags_unix,
+        ["gcc", obj_path, "-o", exe_path] + link_flags_unix,
+        [
+            "link.exe",
+            f"/OUT:{exe_path}",
+            obj_path,
+            "msvcrt.lib",
+            "legacy_stdio_definitions.lib",
+        ]
+        + link_flags_msvc,
     ):
         import shutil
 
@@ -656,6 +668,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="TARGET",
         help="Target triple (e.g. x86_64-linux-gnu, x86_64-windows-msvc)",
         default=None,
+    )
+    p_build.add_argument(
+        "--link-lib",
+        metavar="LIB",
+        action="append",
+        help="Link against a C library (e.g. --link-lib m for libm)",
     )
     _add_opt_level_args(p_build)
     p_build.set_defaults(func=cmd_build)

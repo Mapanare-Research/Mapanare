@@ -29,6 +29,7 @@ from mapanare.ast_nodes import (
     ExportDef,
     Expr,
     ExprStmt,
+    ExternFnDef,
     FieldAccessExpr,
     FieldInit,
     FloatLiteral,
@@ -891,6 +892,42 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             return_type=return_type,
             body=body,
             trait_bounds=trait_bounds,
+            span=_span_from_children(children),
+        )
+
+    # ------------------------------------------------------------------
+    # Extern function declaration (FFI)
+    # ------------------------------------------------------------------
+
+    def extern_fn_def(self, children: list[Any]) -> ExternFnDef:
+        items = _filter(children)
+        idx = 0
+        # ABI string (e.g. "C")
+        abi_raw = str(items[idx])
+        abi = abi_raw.strip('"')
+        idx += 1
+        # Function name
+        name = str(items[idx])
+        idx += 1
+        # Optional parameter list
+        params: list[Param] = []
+        if (
+            idx < len(items)
+            and isinstance(items[idx], list)
+            and (not items[idx] or isinstance(items[idx][0], Param))
+        ):
+            params = items[idx]
+            idx += 1
+        # Optional return type
+        return_type: TypeExpr | None = None
+        if idx < len(items) and isinstance(items[idx], TypeExpr):
+            return_type = items[idx]
+            idx += 1
+        return ExternFnDef(
+            name=name,
+            abi=abi,
+            params=params,
+            return_type=return_type,
             span=_span_from_children(children),
         )
 

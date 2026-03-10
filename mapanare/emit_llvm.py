@@ -21,6 +21,7 @@ from mapanare.ast_nodes import (
     ConstructExpr,
     EnumDef,
     ExprStmt,
+    ExternFnDef,
     FieldAccessExpr,
     FloatLiteral,
     FnDef,
@@ -438,6 +439,10 @@ class LLVMEmitter:
         for defn in program.definitions:
             if isinstance(defn, ImportDef):
                 self._emit_import(defn, resolver)
+        # Pass 0.5: declare extern "C" functions as external
+        for defn in program.definitions:
+            if isinstance(defn, ExternFnDef):
+                self._emit_extern_fn(defn)
         # First pass: register struct definitions (traits are type-level, skip)
         for defn in program.definitions:
             if isinstance(defn, StructDef):
@@ -510,6 +515,34 @@ class LLVMEmitter:
                 self._register_struct(defn)
             elif isinstance(defn, EnumDef):
                 pass  # enums are value types, no external declaration needed
+
+    def _emit_extern_fn(self, node: ExternFnDef) -> ir.Function:
+        """Declare an external C function in the LLVM module."""
+        param_types: list[ir.Type] = []
+        for p in node.params:
+            if p.type_annotation is not None:
+                resolved = self.type_mapper.resolve(p.type_annotation)
+                # For FFI: map Mapanare String to i8* (C char*)
+                if resolved == LLVM_STRING:
+                    param_types.append(ir.IntType(8).as_pointer())
+                else:
+                    param_types.append(resolved)
+            else:
+                param_types.append(LLVM_INT)
+
+        if node.return_type is not None:
+            ret_type = self.type_mapper.resolve(node.return_type)
+        else:
+            ret_type = LLVM_VOID
+
+        # Map Mapanare Int (i64) to C int (i32) for standard C functions
+        fn_type = ir.FunctionType(ret_type, param_types)
+        try:
+            func = self.module.get_global(node.name)
+        except KeyError:
+            func = ir.Function(self.module, fn_type, name=node.name)
+        self._functions[node.name] = func
+        return func
 
     def _emit_impl_methods(self, impl: ImplDef) -> None:
         """Emit impl methods as standalone LLVM functions (monomorphization)."""
@@ -1064,6 +1097,15 @@ class LLVMEmitter:
             func = self._emit_expr(node.callee)
 
         args = [self._emit_expr(a) for a in node.args]
+
+        # FFI coercion: adapt argument types to match function signature
+        if hasattr(func, "function_type"):
+            fn_ty = func.function_type
+            for i, (arg, expected_ty) in enumerate(zip(args, fn_ty.args)):
+                # MnString → i8*: extract the data pointer for C FFI
+                if self._is_string_type(arg) and isinstance(expected_ty, ir.PointerType):
+                    args[i] = self.builder.extract_value(arg, 0, name="str_to_cptr")
+
         return self.builder.call(func, args, name="call")
 
     # -----------------------------------------------------------------------
