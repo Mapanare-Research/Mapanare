@@ -28,6 +28,7 @@ from mapanare.ast_nodes import (
     GenericType,
     Identifier,
     IfExpr,
+    ImplDef,
     ImportDef,
     IndexExpr,
     IntLiteral,
@@ -50,6 +51,7 @@ from mapanare.ast_nodes import (
     StructDef,
     SyncExpr,
     TensorType,
+    TraitDef,
     TypeExpr,
     UnaryExpr,
     WhileLoop,
@@ -436,7 +438,7 @@ class LLVMEmitter:
         for defn in program.definitions:
             if isinstance(defn, ImportDef):
                 self._emit_import(defn, resolver)
-        # First pass: register struct definitions
+        # First pass: register struct definitions (traits are type-level, skip)
         for defn in program.definitions:
             if isinstance(defn, StructDef):
                 self._register_struct(defn)
@@ -444,10 +446,14 @@ class LLVMEmitter:
         for defn in program.definitions:
             if isinstance(defn, AgentDef):
                 self._emit_agent(defn)
-        # Third pass: emit functions
+        # Third pass: emit functions (including trait impl methods)
         for defn in program.definitions:
             if isinstance(defn, FnDef):
                 self.emit_fn(defn)
+            elif isinstance(defn, ImplDef):
+                self._emit_impl_methods(defn)
+            elif isinstance(defn, TraitDef):
+                pass  # Traits are type-level only; no LLVM codegen needed
         return self.module
 
     def _emit_import(self, imp: ImportDef, resolver: object | None) -> None:
@@ -504,6 +510,22 @@ class LLVMEmitter:
                 self._register_struct(defn)
             elif isinstance(defn, EnumDef):
                 pass  # enums are value types, no external declaration needed
+
+    def _emit_impl_methods(self, impl: ImplDef) -> None:
+        """Emit impl methods as standalone LLVM functions (monomorphization)."""
+        for method in impl.methods:
+            # Skip 'self' parameter for now — methods are emitted as free functions
+            # with mangled name: TargetType_methodName
+            mangled = FnDef(
+                name=f"{impl.target}_{method.name}",
+                public=method.public,
+                type_params=method.type_params,
+                params=[p for p in method.params if p.name != "self"],
+                return_type=method.return_type,
+                body=method.body,
+                decorators=method.decorators,
+            )
+            self.emit_fn(mangled)
 
     def _register_struct(self, node: StructDef) -> None:
         """Register a struct definition so it can be used as a type."""

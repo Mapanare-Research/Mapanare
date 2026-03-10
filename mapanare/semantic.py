@@ -62,6 +62,7 @@ from mapanare.ast_nodes import (
     StructDef,
     SyncExpr,
     TensorType,
+    TraitDef,
     TypeAlias,
     TypeExpr,
     UnaryExpr,
@@ -72,6 +73,7 @@ from mapanare.types import (
     BUILTIN_FUNCTIONS,
     BUILTIN_GENERIC_KINDS,
     BUILTIN_GENERIC_TYPES,
+    BUILTIN_TRAITS,
     CHAR_TYPE,
     FLOAT_TYPE,
     INT_TYPE,
@@ -145,7 +147,8 @@ class Symbol:
     """A declared symbol (variable, function, type, agent, etc.)."""
 
     name: str
-    kind: str  # "variable", "function", "agent", "struct", "enum", "type_alias", "pipe", "param"
+    kind: str  # "variable", "function", "agent", "struct", "enum",
+    # "type_alias", "pipe", "param", "trait"
     type_info: TypeInfo = field(default_factory=lambda: UNKNOWN_TYPE)
     mutable: bool = False
     node: ASTNode | None = None
@@ -217,6 +220,29 @@ class SemanticChecker:
         self.resolver = resolver
         # Track resolved modules for this checker (module name -> exports)
         self._resolved_modules: dict[str, dict[str, ModuleExport]] = {}
+        # Track trait implementations: (trait_name, type_name) pairs
+        self._trait_impls: set[tuple[str, str]] = set()
+
+        # Register built-in traits
+        for trait_name, methods in BUILTIN_TRAITS.items():
+            trait_methods = []
+            for m_name, has_self, _params, ret_name in methods:
+                from mapanare.ast_nodes import TraitMethod as _TM
+
+                ret_te = None
+                if ret_name and ret_name != "Self":
+                    ret_te = NamedType(name=ret_name)
+                trait_methods.append(_TM(name=m_name, has_self=has_self, return_type=ret_te))
+            builtin_trait_node = TraitDef(name=trait_name, public=True, methods=trait_methods)
+            self.global_scope.define(
+                trait_name,
+                Symbol(
+                    name=trait_name,
+                    kind="trait",
+                    type_info=TypeInfo(kind=TypeKind.TRAIT, name=trait_name),
+                    node=builtin_trait_node,
+                ),
+            )
 
         # Register built-in functions from canonical registry
         for name, ret_type in BUILTIN_FUNCTIONS.items():
@@ -1105,6 +1131,16 @@ class SemanticChecker:
                 defn.name,
                 Symbol(name=defn.name, kind="type_alias", type_info=resolved, node=defn),
             )
+        elif isinstance(defn, TraitDef):
+            self.global_scope.define(
+                defn.name,
+                Symbol(
+                    name=defn.name,
+                    kind="trait",
+                    type_info=TypeInfo(kind=TypeKind.TRAIT, name=defn.name),
+                    node=defn,
+                ),
+            )
         elif isinstance(defn, ImportDef):
             self._resolve_import(defn)
         elif isinstance(defn, ExportDef):
@@ -1280,6 +1316,8 @@ class SemanticChecker:
             self._check_agent(defn)
         elif isinstance(defn, PipeDef):
             self._check_pipe_def(defn)
+        elif isinstance(defn, TraitDef):
+            self._check_trait(defn)
         elif isinstance(defn, ImplDef):
             self._check_impl(defn)
         elif isinstance(defn, ExportDef):
@@ -1368,20 +1406,83 @@ class SemanticChecker:
 
         self._pop_scope()
 
+    def _check_trait(self, trait: TraitDef) -> None:
+        """Check trait method signatures for valid types."""
+        for method in trait.methods:
+            for param in method.params:
+                if param.type_annotation is not None:
+                    self._resolve_type_expr(param.type_annotation)
+            if method.return_type is not None:
+                self._resolve_type_expr(method.return_type)
+
     def _check_impl(self, impl: ImplDef) -> None:
         sym = self.current_scope.lookup(impl.target)
         if sym is None:
             self._error_at(f"Undefined type '{impl.target}' in impl block", 0, 0)
+
+        # If this is a trait impl, verify all trait methods are implemented
+        if impl.trait_name is not None:
+            trait_sym = self.current_scope.lookup(impl.trait_name)
+            if trait_sym is None or trait_sym.kind != "trait":
+                self._error_at(f"Undefined trait '{impl.trait_name}' in impl block", 0, 0)
+            elif trait_sym.node is not None and isinstance(trait_sym.node, TraitDef):
+                trait_def = trait_sym.node
+                impl_method_names = {m.name for m in impl.methods}
+                trait_method_names = {m.name for m in trait_def.methods}
+
+                # Check for missing methods
+                for tm in trait_def.methods:
+                    if tm.name not in impl_method_names:
+                        self._error_at(
+                            f"Missing implementation of '{tm.name}' "
+                            f"from trait '{impl.trait_name}' for type '{impl.target}'",
+                            0,
+                            0,
+                        )
+
+                # Check for extra methods not in trait
+                has_errors = False
+                for m in impl.methods:
+                    if m.name not in trait_method_names:
+                        self._error_at(
+                            f"Method '{m.name}' is not defined in trait '{impl.trait_name}'",
+                            0,
+                            0,
+                        )
+                        has_errors = True
+
+                # Register successful trait impl
+                if not has_errors and not any(
+                    tm.name not in impl_method_names for tm in trait_def.methods
+                ):
+                    self._trait_impls.add((impl.trait_name, impl.target))
+
         for method in impl.methods:
             self._check_fn(method)
+
+    def _type_implements_trait(self, type_name: str, trait_name: str) -> bool:
+        """Check if a type has an impl for the given trait."""
+        return (trait_name, type_name) in self._trait_impls
 
     def _type_exists(self, t: TypeInfo) -> bool:
         """Check if a type is known (primitive, builtin generic, or user-defined)."""
         if t.kind in PRIMITIVE_KINDS or t.kind in BUILTIN_GENERIC_KINDS:
             return True
-        if t.kind in (TypeKind.STRUCT, TypeKind.ENUM, TypeKind.AGENT, TypeKind.TYPE_ALIAS):
+        if t.kind in (
+            TypeKind.STRUCT,
+            TypeKind.ENUM,
+            TypeKind.AGENT,
+            TypeKind.TYPE_ALIAS,
+            TypeKind.TRAIT,
+        ):
             sym = self.global_scope.lookup(t.name)
-            return sym is not None and sym.kind in ("struct", "enum", "agent", "type_alias")
+            return sym is not None and sym.kind in (
+                "struct",
+                "enum",
+                "agent",
+                "type_alias",
+                "trait",
+            )
         return False
 
     # -- Public API -----------------------------------------------------

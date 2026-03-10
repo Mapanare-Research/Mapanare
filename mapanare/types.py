@@ -45,6 +45,7 @@ class TypeKind(Enum):
     AGENT = auto()
     PIPE = auto()
     TYPE_ALIAS = auto()
+    TRAIT = auto()
 
     # Special
     TYPE_VAR = auto()
@@ -86,6 +87,7 @@ _KIND_TO_NAME[TypeKind.ENUM] = "enum"
 _KIND_TO_NAME[TypeKind.AGENT] = "agent"
 _KIND_TO_NAME[TypeKind.PIPE] = "pipe"
 _KIND_TO_NAME[TypeKind.TYPE_ALIAS] = "type"
+_KIND_TO_NAME[TypeKind.TRAIT] = "trait"
 _KIND_TO_NAME[TypeKind.TYPE_VAR] = "TypeVar"
 
 
@@ -168,7 +170,14 @@ class TypeInfo:
 
 # Kinds that carry a user-defined name
 _USER_DEFINED_KINDS = frozenset(
-    {TypeKind.STRUCT, TypeKind.ENUM, TypeKind.AGENT, TypeKind.PIPE, TypeKind.TYPE_ALIAS}
+    {
+        TypeKind.STRUCT,
+        TypeKind.ENUM,
+        TypeKind.AGENT,
+        TypeKind.PIPE,
+        TypeKind.TYPE_ALIAS,
+        TypeKind.TRAIT,
+    }
 )
 
 
@@ -246,6 +255,16 @@ PYTHON_TYPE_MAP: dict[str, str] = {
     "Char": "str",
     "Void": "None",
     "Any": "Any",
+}
+
+
+# Builtin trait names and their method signatures:
+# Each entry is (trait_name, [(method_name, has_self, param_names, return_type_name)])
+BUILTIN_TRAITS: dict[str, list[tuple[str, bool, list[tuple[str, str]], str | None]]] = {
+    "Display": [("to_string", True, [], "String")],
+    "Eq": [("eq", True, [("other", "Self")], "Bool")],
+    "Ord": [("cmp", True, [("other", "Self")], "Int")],
+    "Hash": [("hash", True, [], "Int")],
 }
 
 
