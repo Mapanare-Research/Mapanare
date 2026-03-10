@@ -468,10 +468,11 @@ static void *agent_thread_fn(void *arg) {
             /* Send output if handler produced one */
             if (out_msg != NULL) {
                 mapanare_ring_push(&agent->outbox, out_msg);
+                mapanare_sem_post(&agent->outbox_ready);
             }
         } else {
-            /* No message — yield briefly */
-            mapanare_sleep_ms(1);
+            /* No message — wait on semaphore instead of polling */
+            mapanare_sem_wait(&agent->inbox_ready);
         }
     }
 
@@ -518,6 +519,9 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
     }
 
     mapanare_bp_init(&agent->bp, (int64_t)agent->inbox.capacity);
+
+    mapanare_sem_init(&agent->inbox_ready, 0);
+    mapanare_sem_init(&agent->outbox_ready, 0);
     return 0;
 }
 
@@ -530,6 +534,7 @@ MAPANARE_EXPORT int mapanare_agent_send(mapanare_agent_t *agent, void *msg) {
     int rc = mapanare_ring_push(&agent->inbox, msg);
     if (rc == 0) {
         mapanare_bp_increment(&agent->bp);
+        mapanare_sem_post(&agent->inbox_ready);
     }
     return rc;
 }
@@ -557,6 +562,8 @@ MAPANARE_EXPORT void mapanare_agent_resume(mapanare_agent_t *agent) {
 MAPANARE_EXPORT void mapanare_agent_stop(mapanare_agent_t *agent) {
     atomic_store_i32(&agent->running, 0);
     atomic_store_i32(&agent->paused, 0);  /* unblock if paused */
+    mapanare_sem_post(&agent->inbox_ready);   /* wake agent thread */
+    mapanare_sem_post(&agent->outbox_ready);  /* wake any blocking recv */
     mapanare_thread_join(agent->thread);
 }
 
@@ -578,6 +585,47 @@ MAPANARE_EXPORT double mapanare_agent_avg_latency_us(mapanare_agent_t *agent) {
 MAPANARE_EXPORT void mapanare_agent_destroy(mapanare_agent_t *agent) {
     mapanare_ring_destroy(&agent->inbox);
     mapanare_ring_destroy(&agent->outbox);
+    mapanare_sem_destroy(&agent->inbox_ready);
+    mapanare_sem_destroy(&agent->outbox_ready);
+}
+
+MAPANARE_EXPORT mapanare_agent_t *mapanare_agent_new(const char *name,
+                                                      mapanare_handler_fn handler,
+                                                      void *agent_data,
+                                                      uint32_t inbox_cap,
+                                                      uint32_t outbox_cap) {
+    mapanare_agent_t *agent = (mapanare_agent_t *)calloc(1, sizeof(mapanare_agent_t));
+    if (!agent) return NULL;
+    if (mapanare_agent_init(agent, name, handler, agent_data, inbox_cap, outbox_cap) != 0) {
+        free(agent);
+        return NULL;
+    }
+    return agent;
+}
+
+MAPANARE_EXPORT int mapanare_agent_recv_blocking(mapanare_agent_t *agent, void **out) {
+    while (1) {
+        /* Try non-blocking first */
+        if (mapanare_ring_pop(&agent->outbox, out) == 0) {
+            return 0;
+        }
+        /* If agent is done, drain remaining and fail */
+        if (!atomic_load_i32(&agent->running)) {
+            if (mapanare_ring_pop(&agent->outbox, out) == 0) {
+                return 0;
+            }
+            return -1;
+        }
+        /* Wait for signal */
+        mapanare_sem_wait(&agent->outbox_ready);
+    }
+}
+
+MAPANARE_EXPORT void mapanare_agent_set_restart_policy(mapanare_agent_t *agent,
+                                                        mapanare_restart_policy_t policy,
+                                                        int32_t max_restarts) {
+    agent->restart_policy = policy;
+    agent->max_restarts = max_restarts;
 }
 
 /* =======================================================================

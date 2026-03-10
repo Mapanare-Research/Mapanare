@@ -464,6 +464,14 @@ class Definition(ASTNode):
 
 
 @dataclass
+class TypeParam(ASTNode):
+    """Type parameter with optional trait bound: `T` or `T: Ord`."""
+
+    name: str = ""
+    bound: str | None = None
+
+
+@dataclass
 class Param(ASTNode):
     """Function parameter: `name: Type`."""
 
@@ -482,6 +490,7 @@ class FnDef(Definition):
     return_type: TypeExpr | None = None
     body: Block = field(default_factory=lambda: Block())
     decorators: list[Decorator] = field(default_factory=list)
+    trait_bounds: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -563,14 +572,35 @@ class TypeAlias(Definition):
     """Type alias: `type Name = Type`."""
 
     name: str = ""
+    public: bool = False
     type_expr: TypeExpr = field(default_factory=lambda: NamedType())
 
 
 @dataclass
+class TraitMethod(ASTNode):
+    """Method signature in a trait definition (no body)."""
+
+    name: str = ""
+    params: list[Param] = field(default_factory=list)
+    has_self: bool = False
+    return_type: TypeExpr | None = None
+
+
+@dataclass
+class TraitDef(Definition):
+    """Trait definition: `trait Name { method_signatures }`."""
+
+    name: str = ""
+    public: bool = False
+    methods: list[TraitMethod] = field(default_factory=list)
+
+
+@dataclass
 class ImplDef(Definition):
-    """Impl block: `impl Name { methods }`."""
+    """Impl block: `impl Name { methods }` or `impl Trait for Type { methods }`."""
 
     target: str = ""
+    trait_name: str | None = None
     methods: list[FnDef] = field(default_factory=list)
 
 

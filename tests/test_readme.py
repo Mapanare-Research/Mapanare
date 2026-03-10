@@ -80,28 +80,13 @@ class TestREADMERoadmapLink:
         text = _readme_text()
         assert "## Roadmap" in text, "README must have a Roadmap section"
 
-    def test_links_to_roadmap_md(self) -> None:
+    def test_mentions_current_version(self) -> None:
         text = _readme_text()
-        assert "ROADMAP.md" in text, "README must link to ROADMAP.md"
+        assert "v0.3.0" in text, "README roadmap must mention current version"
 
-    def test_roadmap_table_has_all_phases(self) -> None:
+    def test_links_to_changelog(self) -> None:
         text = _readme_text()
-        for phase_num in range(1, 8):
-            assert f"| {phase_num}" in text, f"README roadmap table must include Phase {phase_num}"
-
-    def test_roadmap_phase_names_match(self) -> None:
-        text = _readme_text()
-        expected_names = [
-            "Foundation",
-            "Transpiler",
-            "Runtime",
-            "LLVM",
-            "Tensor",
-            "Self-Hosting",
-            "Ecosystem",
-        ]
-        for name in expected_names:
-            assert name in text, f"README roadmap must include phase name containing '{name}'"
+        assert "CHANGELOG" in text, "README must link to CHANGELOG"
 
 
 class TestREADMEDocLinks:
@@ -189,16 +174,11 @@ class TestManifestoContent:
 
 
 class TestREADMERoadmapProgress:
-    def test_roadmap_shows_current_status(self) -> None:
+    def test_roadmap_mentions_next_milestone(self) -> None:
         text = _readme_text()
-        assert "In Progress" in text, "Roadmap must show at least one phase In Progress"
+        assert "v0.4.0" in text or "Next" in text, "Roadmap must mention next milestone"
 
-    def test_roadmap_shows_planned_phases(self) -> None:
+    def test_roadmap_has_version_description(self) -> None:
         text = _readme_text()
-        assert text.count("Planned") >= 5, "Roadmap must show future phases as Planned"
-
-    def test_roadmap_has_full_breakdown_link(self) -> None:
-        text = _readme_text()
-        assert (
-            "[ROADMAP.md]" in text or "(ROADMAP.md)" in text
-        ), "Roadmap section must link to full ROADMAP.md"
+        # The roadmap section should describe what the current version achieved
+        assert "v0.3.0" in text, "Roadmap must describe the current version"

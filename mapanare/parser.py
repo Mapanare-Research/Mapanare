@@ -70,8 +70,11 @@ from mapanare.ast_nodes import (
     StructField,
     SyncExpr,
     TensorType,
+    TraitDef,
+    TraitMethod,
     TypeAlias,
     TypeExpr,
+    TypeParam,
     UnaryExpr,
     WhileLoop,
     WildcardPattern,
@@ -126,6 +129,8 @@ _SKIP = frozenset(
         "KW_ENUM",
         "KW_TYPE",
         "KW_IMPL",
+        "KW_TRAIT",
+        "KW_FOR",
         "KW_IF",
         "KW_ELSE",
         "KW_MATCH",
@@ -307,8 +312,16 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             return FnType()
         return FnType(param_types=types[:-1], return_type=types[-1])
 
-    def type_params(self, children: list[Any]) -> list[str]:
-        return [str(c) for c in children if isinstance(c, Token) and c.type == "NAME"]
+    def type_params(self, children: list[Any]) -> list[TypeParam]:
+        return [c for c in children if isinstance(c, TypeParam)]
+
+    def type_param(self, children: list[Any]) -> TypeParam:
+        items = _filter(children)
+        name = str(items[0])
+        bound: str | None = None
+        if len(items) > 1 and isinstance(items[1], Token) and items[1].type == "NAME":
+            bound = str(items[1])
+        return TypeParam(name=name, bound=bound)
 
     # ------------------------------------------------------------------
     # Parameters
@@ -319,7 +332,19 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         return Param(name=str(items[0]), type_annotation=items[1])
 
     def param_list(self, children: list[Any]) -> list[Param]:
-        return [c for c in children if isinstance(c, Param)]
+        result: list[Param] = []
+        for c in children:
+            if isinstance(c, Param):
+                result.append(c)
+            elif isinstance(c, Token) and c.type == "KW_SELF":
+                result.append(Param(name="self"))
+        return result
+
+    def self_typed_param(self, children: list[Any]) -> Param:
+        items = _filter(children)
+        # items = [KW_SELF token, TypeExpr]
+        type_ann = next((i for i in items if isinstance(i, TypeExpr)), None)
+        return Param(name="self", type_annotation=type_ann)
 
     # ------------------------------------------------------------------
     # Block and statements
@@ -709,13 +734,19 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         name = str(items[idx])
         idx += 1
         type_params: list[str] = []
+        trait_bounds: dict[str, str] = {}
         if (
             idx < len(items)
             and isinstance(items[idx], list)
             and items[idx]
-            and isinstance(items[idx][0], str)
+            and isinstance(items[idx][0], (str, TypeParam))
         ):
-            type_params = items[idx]
+            raw_tps = items[idx]
+            if raw_tps and isinstance(raw_tps[0], TypeParam):
+                type_params = [tp.name for tp in raw_tps]
+                trait_bounds = {tp.name: tp.bound for tp in raw_tps if tp.bound}
+            else:
+                type_params = raw_tps
             idx += 1
         params: list[Param] = []
         if (
@@ -737,6 +768,7 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             params=params,
             return_type=return_type,
             body=body,
+            trait_bounds=trait_bounds,
         )
 
     # ------------------------------------------------------------------
@@ -841,9 +873,13 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             idx < len(items)
             and isinstance(items[idx], list)
             and items[idx]
-            and isinstance(items[idx][0], str)
+            and isinstance(items[idx][0], (str, TypeParam))
         ):
-            type_params = items[idx]
+            raw_tps = items[idx]
+            if raw_tps and isinstance(raw_tps[0], TypeParam):
+                type_params = [tp.name for tp in raw_tps]
+            else:
+                type_params = raw_tps
             idx += 1
         fields = items[idx] if idx < len(items) and isinstance(items[idx], list) else []
         return StructDef(name=name, public=public, type_params=type_params, fields=fields)
@@ -873,9 +909,13 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             idx < len(items)
             and isinstance(items[idx], list)
             and items[idx]
-            and isinstance(items[idx][0], str)
+            and isinstance(items[idx][0], (str, TypeParam))
         ):
-            type_params = items[idx]
+            raw_tps = items[idx]
+            if raw_tps and isinstance(raw_tps[0], TypeParam):
+                type_params = [tp.name for tp in raw_tps]
+            else:
+                type_params = raw_tps
             idx += 1
         variants = items[idx] if idx < len(items) and isinstance(items[idx], list) else []
         return EnumDef(name=name, public=public, type_params=type_params, variants=variants)
@@ -898,11 +938,58 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def type_alias(self, children: list[Any]) -> TypeAlias:
         items = _filter(children)
-        return TypeAlias(name=str(items[0]), type_expr=items[1])
+        public = False
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
+            public = True
+            idx += 1
+        return TypeAlias(name=str(items[idx]), public=public, type_expr=items[idx + 1])
+
+    # ------------------------------------------------------------------
+    # Trait definition
+    # ------------------------------------------------------------------
+
+    def trait_def(self, children: list[Any]) -> TraitDef:
+        items = _filter(children)
+        public = False
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
+            public = True
+            idx += 1
+        name = str(items[idx])
+        methods = [m for m in items[idx + 1 :] if isinstance(m, TraitMethod)]
+        return TraitDef(name=name, public=public, methods=methods)
+
+    def trait_method(self, children: list[Any]) -> TraitMethod:
+        items = _filter(children)
+        name = str(items[0])
+        has_self = False
+        params: list[Param] = []
+        return_type: TypeExpr | None = None
+        for item in items[1:]:
+            if isinstance(item, list):
+                for p in item:
+                    if isinstance(p, Param):
+                        params.append(p)
+                    elif isinstance(p, Token) and p.type == "KW_SELF":
+                        has_self = True
+            elif isinstance(item, TypeExpr):
+                return_type = item
+        return TraitMethod(name=name, params=params, has_self=has_self, return_type=return_type)
+
+    def trait_param_list(self, children: list[Any]) -> list[Param | Token]:
+        return [c for c in children if isinstance(c, (Param, Token))]
 
     # ------------------------------------------------------------------
     # Impl block
     # ------------------------------------------------------------------
+
+    def impl_trait_def(self, children: list[Any]) -> ImplDef:
+        items = _filter(children)
+        trait_name = str(items[0])
+        target = str(items[1])
+        methods = [m for m in items[2:] if isinstance(m, FnDef)]
+        return ImplDef(target=target, trait_name=trait_name, methods=methods)
 
     def impl_def(self, children: list[Any]) -> ImplDef:
         items = _filter(children)
@@ -1033,6 +1120,7 @@ _TOKEN_NAMES: dict[str, str] = {
     "KW_MATCH": "'match'",
     "KW_STRUCT": "'struct'",
     "KW_ENUM": "'enum'",
+    "KW_TRAIT": "'trait'",
     "KW_IMPORT": "'import'",
     "KW_EXPORT": "'export'",
     "KW_AGENT": "'agent'",

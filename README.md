@@ -4,6 +4,8 @@
 
 # Mapanare
 
+**/mah-pah-NAH-reh/**
+
 **The AI-native programming language.**
 
 *Agents. Signals. Streams. Tensors. First-class, not frameworks.*
@@ -17,13 +19,13 @@ Mapanare compiles to Python (transpiler) and native binaries (LLVM), with a self
 ![Platform](https://img.shields.io/badge/Linux%20%7C%20macOS%20%7C%20Windows-grey?style=for-the-badge)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-~60_files-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml)
 
 <br>
 
-[Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
+[**Getting Started**](docs/getting-started.md) · [Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
 
 </div>
 
@@ -91,15 +93,17 @@ What works today vs. what's planned.
 | `print`/`println`, `str`/`int`/`float`/`len` | Yes | Partial | Stable |
 | Lists: literals, indexing, `push`/`pop`/`length` | Yes | Partial | Stable |
 | String methods: `length`/`find`/`substring`/... | Yes | Partial | Stable |
-| Agents (spawn, channels, sync) | Yes | No | Experimental |
+| Dictionaries/Maps | Yes | Partial | Stable |
+| Traits (`trait`, `impl Trait for Type`) | Yes | Yes | Stable |
+| Module imports (`import`, `pub`, multi-file) | Yes | Yes | Stable |
+| Agents (spawn, channels, sync) | Yes | Codegen | Experimental |
 | Signals (reactive state) | Yes | No | Experimental |
 | Streams + `\|>` pipe operator | Partial | No | Experimental |
 | Pipes (multi-agent composition) | Partial | No | Experimental |
 | Tensors (shape validation, `@` matmul) | No | Partial | Experimental |
-| GPU dispatch (`@gpu`/`@cpu`) | No | No | Planned |
+| REPL / interactive mode | Yes | — | Experimental |
 | Standard library modules | Partial | No | In Progress |
-| Dictionaries/Maps | No | No | Planned |
-| REPL / interactive mode | No | No | Planned |
+| GPU dispatch (`@gpu`/`@cpu`) | No | No | Planned |
 
 ---
 
@@ -218,23 +222,32 @@ Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each 
 
 ### Performance (wall time, lower is better)
 
-| Benchmark | Mapanare | MN Native (LLVM) | Python | Go | Rust | vs Python |
-|-----------|----------|-------------------|--------|----|------|-----------|
-| Fibonacci (recursive, n=35) | 1.2104s | **0.0448s** | 1.1885s | 0.0341s | 0.0211s | 26.5x (native) |
-| Message Passing (10K msgs) | 0.9989s | — | 1.0978s | 0.0025s | 0.0203s | 1.1x |
-| Stream Pipeline (1M items) | 1.1141s | **0.0165s** | 1.0342s | 0.0005s | 0.0001s | 62.8x (native) |
-| Matrix Multiply (100x100) | 0.1769s | **0.0199s** | 0.4556s | 0.0005s | 0.0009s | 22.9x (native) |
+| Benchmark | Features Tested | Mapanare | MN Native (LLVM) | Python | Go | Rust | vs Python |
+|-----------|-----------------|----------|-------------------|--------|----|------|-----------|
+| Fibonacci (recursive, n=35) | Functions, recursion, arithmetic | 1.2104s | **0.0448s** | 1.1885s | 0.0341s | 0.0211s | 26.5x (native) |
+| Message Passing (10K msgs) | Agents, spawn, send (`<-`), sync, concurrency | 0.9989s | — | 1.0978s | 0.0025s | 0.0203s | 1.1x |
+| Stream Pipeline (1M items) | Streams, `stream()`, `.map()`, `.filter()`, `.fold()` | 1.1141s | **0.0165s** | 1.0342s | 0.0005s | 0.0001s | 62.8x (native) |
+| Matrix Multiply (100x100) | Nested loops, arithmetic, variables | 0.1769s | **0.0199s** | 0.4556s | 0.0005s | 0.0009s | 22.9x (native) |
+| Agent Pipeline (1K msgs) | Agents, spawn, send, sync, string ops, multi-stage | — | — | — | — | — | — |
 
 ### Expressiveness (lines of code, lower is better)
 
-| Benchmark | Mapanare | Python | Go | Rust |
-|-----------|----------|--------|----|------|
-| Fibonacci (recursive, n=35) | **8** | 12 | 18 | 23 |
-| Message Passing (10K msgs) | **16** | 28 | 27 | 32 |
-| Stream Pipeline (1M items) | **8** | 17 | 18 | 20 |
-| Matrix Multiply (100x100) | **12** | 21 | 37 | 33 |
+| Benchmark | Features Tested | Mapanare | Python | Go | Rust |
+|-----------|-----------------|----------|--------|----|------|
+| Fibonacci (recursive, n=35) | Functions, recursion | **8** | 12 | 18 | 23 |
+| Message Passing (10K msgs) | Agents, channels | **16** | 28 | 27 | 32 |
+| Stream Pipeline (1M items) | Stream primitives | **8** | 17 | 18 | 20 |
+| Matrix Multiply (100x100) | Nested loops, math | **12** | 21 | 37 | 33 |
+| Agent Pipeline (1K msgs) | Multi-stage agents, strings | **18** | 32 | 33 | 28 |
 
 > **Key takeaway:** Mapanare's interpreted backend matches Python speed (it transpiles to Python), but the LLVM native backend delivers **22–63x** speedups over Python. Mapanare programs are consistently the shortest across all benchmarks.
+
+**Benchmark notes:**
+- **Fibonacci:** Tests pure computation speed. No I/O, no concurrency. Interpreted backend runs as Python; native backend compiles to LLVM IR.
+- **Message Passing:** Tests agent spawn/send/sync with 4 concurrent workers. Interpreted backend uses asyncio (single-threaded cooperative concurrency); native backend not yet wired (Phase 2.1).
+- **Stream Pipeline:** Tests `stream()`, `.map()`, `.filter()`, `.fold()` primitives with stream fusion. Does NOT test backpressure or hot streams.
+- **Matrix Multiply:** Tests nested loops and arithmetic. Uses constant initialization (`1.0 * 2.0`), not realistic matrix data — measures loop/arithmetic throughput only.
+- **Agent Pipeline:** Tests real-world pattern: 3-stage pipeline (parse → validate → transform) processing string messages. Measures agent communication overhead across pipeline stages.
 
 ### Stream Pipelines (1M items, runtime microbenchmarks)
 
@@ -264,6 +277,7 @@ mapanare jit <file>           JIT-compile and run natively
 mapanare check <file>         Type-check only
 mapanare compile <file>       Transpile to Python
 mapanare emit-llvm <file>     Emit LLVM IR
+mapanare repl                 Start interactive REPL
 mapanare fmt <file>           Format source code
 mapanare init [path]          Initialize a new project
 mapanare install <pkg>        Install a package (git-based)
@@ -321,11 +335,13 @@ Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target 
 
 ---
 
-## GPU & Tensors
+## GPU & Tensors (Planned — v0.5.0+)
 
-- Device detection: CUDA, Metal, Vulkan
-- `@gpu` / `@cpu` annotations for kernel dispatch
-- Model loading: `.mnw` (native format), ONNX, safetensors, HuggingFace
+Tensor types with compile-time shape validation exist in the LLVM backend. GPU dispatch and model loading are deferred to v0.5.0+.
+
+- `Tensor<T>[shape]` type with shape checking (LLVM backend)
+- `@` matmul operator with dimensional compatibility verification (LLVM backend)
+- GPU dispatch (`@gpu`/`@cpu`), model loading (ONNX, safetensors): **not yet implemented**
 
 ---
 
@@ -398,8 +414,7 @@ mapanare/
 ├── benchmarks/            Performance benchmarks
 ├── docs/                  Documentation
 │   ├── rfcs/              Language change proposals
-│   ├── SPEC.md            Language specification
-│   └── ROADMAP.md         Development roadmap
+│   └── SPEC.md            Language specification
 ├── packaging/             Installers and build specs
 │   ├── install.sh         Linux/macOS installer
 │   ├── install.ps1        Windows installer
@@ -427,17 +442,11 @@ Requires Python 3.11+.
 
 ## Roadmap
 
-| Phase | Name | Status |
-|-------|------|--------|
-| 1 | Foundation | In Progress |
-| 2 | Transpiler | Planned |
-| 3 | Runtime | Planned |
-| 4 | LLVM | Planned |
-| 5 | Tensor | Planned |
-| 6 | Self-Hosting | Planned |
-| 7 | Ecosystem | Planned |
+**v0.3.0** — "Depth Over Breadth" — **Released 2026-03-10**
 
-See [ROADMAP.md](docs/ROADMAP.md) for the full breakdown.
+Memory management, native agents, modules, traits, type formalization, 110+ e2e tests, getting started tutorial, community governance. See [CHANGELOG](CHANGELOG.md) for details.
+
+**v0.4.0** — Next milestone — In Planning
 
 ---
 
@@ -455,7 +464,10 @@ This is not another language from someone who learned to code yesterday. It's th
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Language changes require an [RFC](docs/rfcs/).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Community standards and project
+processes live in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
+[GOVERNANCE.md](GOVERNANCE.md), and [SECURITY.md](SECURITY.md). Language
+changes require an [RFC](docs/rfcs/).
 
 ---
 
@@ -469,7 +481,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 **Mapanare** — The language AI deserves.
 
-[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues) · [Spec](docs/SPEC.md) · [Roadmap](docs/ROADMAP.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
+[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues/new?template=bug_report.yml) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues/new?template=feature_request.yml) · [Spec](docs/SPEC.md) · [Changelog](CHANGELOG.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
 
 Made with care by [Juan Denis](https://juandenis.com)
 

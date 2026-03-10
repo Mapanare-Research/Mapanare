@@ -9,6 +9,7 @@ import sys
 import tempfile
 
 from mapanare.emit_python import PythonEmitter
+from mapanare.modules import ModuleResolver
 from mapanare.optimizer import OptLevel, optimize
 from mapanare.parser import ParseError, parse
 from mapanare.semantic import SemanticErrors, check_or_raise
@@ -31,23 +32,32 @@ def _parse_opt_level(args: argparse.Namespace) -> OptLevel:
     return OptLevel(getattr(args, "opt_level", 2))
 
 
-def _compile_source(source: str, filename: str, opt_level: OptLevel = OptLevel.O2) -> str:
+def _compile_source(
+    source: str,
+    filename: str,
+    opt_level: OptLevel = OptLevel.O2,
+    resolver: ModuleResolver | None = None,
+) -> str:
     """Parse, check, optimize, and emit Python from Mapanare source. Returns Python code."""
     ast = parse(source, filename=filename)
-    check_or_raise(ast, filename=filename)
+    check_or_raise(ast, filename=filename, resolver=resolver)
     ast, stats = optimize(ast, opt_level)
     emitter = PythonEmitter()
     return emitter.emit(ast)
 
 
 def _compile_to_llvm_ir(
-    source: str, filename: str, opt_level: OptLevel = OptLevel.O2, target_name: str | None = None
+    source: str,
+    filename: str,
+    opt_level: OptLevel = OptLevel.O2,
+    target_name: str | None = None,
+    resolver: ModuleResolver | None = None,
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source."""
     from mapanare.emit_llvm import LLVMEmitter
 
     ast = parse(source, filename=filename)
-    check_or_raise(ast, filename=filename)
+    check_or_raise(ast, filename=filename, resolver=resolver)
     ast, stats = optimize(ast, opt_level)
     target = get_target(target_name)
     emitter = LLVMEmitter(
@@ -63,8 +73,9 @@ def cmd_compile(args: argparse.Namespace) -> None:
     """Compile an .mn source file to Python."""
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
+    resolver = ModuleResolver()
     try:
-        python_code = _compile_source(source, args.source, opt_level=opt_level)
+        python_code = _compile_source(source, args.source, opt_level=opt_level, resolver=resolver)
     except ParseError as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -74,14 +85,35 @@ def cmd_compile(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     out_path = args.o or args.source.replace(".mn", ".py")
+    out_dir = os.path.dirname(os.path.abspath(out_path))
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(python_code)
     print(f"compiled {args.source} -> {out_path}")
+
+    # Also compile any resolved imported modules
+    _compile_resolved_modules(resolver, opt_level, out_dir)
+
+
+def _compile_resolved_modules(resolver: ModuleResolver, opt_level: OptLevel, out_dir: str) -> None:
+    """Compile all resolved imported modules to Python in the output directory."""
+    for filepath, module in resolver.all_modules():
+        mod_name = os.path.splitext(os.path.basename(filepath))[0]
+        mod_out = os.path.join(out_dir, mod_name + ".py")
+        if os.path.abspath(mod_out) == os.path.abspath(filepath.replace(".mn", ".py")):
+            # Already compiled as the main file
+            continue
+        ast, _ = optimize(module.program, opt_level)
+        emitter = PythonEmitter()
+        code = emitter.emit(ast)
+        with open(mod_out, "w", encoding="utf-8") as f:
+            f.write(code)
+        print(f"  compiled module {mod_name} -> {mod_out}")
 
 
 def cmd_check(args: argparse.Namespace) -> None:
     """Type-check an .mn source file."""
     source = _read_source(args.source)
+    resolver = ModuleResolver()
     try:
         ast = parse(source, filename=args.source)
     except ParseError as e:
@@ -89,7 +121,7 @@ def cmd_check(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     try:
-        check_or_raise(ast, filename=args.source)
+        check_or_raise(ast, filename=args.source, resolver=resolver)
     except SemanticErrors as e:
         for err in e.errors:
             print(f"error: {err.filename}:{err.line}:{err.column}: {err.message}", file=sys.stderr)
@@ -102,8 +134,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     """Compile and run an .mn source file."""
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
+    resolver = ModuleResolver()
     try:
-        python_code = _compile_source(source, args.source, opt_level=opt_level)
+        python_code = _compile_source(source, args.source, opt_level=opt_level, resolver=resolver)
     except ParseError as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -262,8 +295,9 @@ def cmd_jit(args: argparse.Namespace) -> None:
     """JIT-compile an .mn source file via LLVM and execute natively."""
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
+    resolver = ModuleResolver()
     try:
-        llvm_ir = _compile_to_llvm_ir(source, args.source, opt_level=opt_level)
+        llvm_ir = _compile_to_llvm_ir(source, args.source, opt_level=opt_level, resolver=resolver)
     except ParseError as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -299,9 +333,10 @@ def cmd_build(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
+    resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
-            source, args.source, opt_level=opt_level, target_name=target_name
+            source, args.source, opt_level=opt_level, target_name=target_name, resolver=resolver
         )
     except ParseError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -359,9 +394,10 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
+    resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
-            source, args.source, opt_level=opt_level, target_name=target_name
+            source, args.source, opt_level=opt_level, target_name=target_name, resolver=resolver
         )
     except ParseError as e:
         print(f"error: {e}", file=sys.stderr)
