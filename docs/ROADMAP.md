@@ -56,125 +56,56 @@ Mapanare is real, compiled, and tested. The bootstrap compiler ships with two ba
 | **v0.2.0** ✅ | Self-Hosting | LLVM string/list codegen, C runtime (ring buffers, thread pool), self-hosted lexer + parser + semantic + emitter (5,800+ lines .mn), REPL, `str`/`int`/`float` builtins |
 | **v0.3.0** ✅ | Depth Over Breadth | Traits, module resolution, LLVM agent codegen, arena memory, `TypeKind` enum, getting started guide, governance, 110+ e2e tests, benchmarks rewrite, 1,960+ tests |
 | **v0.3.1** ✅ | Release Polish | Dynamic versioning from `VERSION` file, documentation tests |
+| **v0.4.0** ✅ | Ready for the World | Scope cleanup (`experimental/`), C runtime hardening (sanitizers, CI), structured diagnostics (spans, multi-error, recovery), C FFI (`extern "C"`, `--link-lib`), self-hosted verification (96 bootstrap tests), LSP improvements (incremental parse, cross-module go-to-def), VS Code extension extracted |
 
 ---
 
 ## The Road Ahead
 
-### v0.4.0 — "Ready for the World"
-
-> Harden what exists, expose it to the outside world, build ecosystem infrastructure.
-> No new language primitives — refine agents/signals/streams, don't add more.
-
-#### Phase 1: Scope & Cleanup
-
-| # | Task | Priority |
-|---|------|----------|
-| 1.1 | Move `gpu.py`, `model.py`, `tensor.py` to `experimental/`, remove from default build | HIGH |
-| 1.2 | Clean up dead imports and unused experimental code paths | HIGH |
-| 1.3 | Ensure `import mapanare` doesn't pull in torch/numpy/onnx | HIGH |
-| 1.4 | Extract VS Code extension to [`mapanare-vscode`](#organization--repo-strategy) repo | HIGH |
-
-**Done when:** Core compiler has zero experimental dependencies. VS Code extension has its own repo with marketplace CI. README feature table is honest.
-
-#### Phase 2: C Runtime Hardening
-
-| # | Task | Priority |
-|---|------|----------|
-| 2.1 | Add C runtime unit tests (ring buffer stress, thread pool saturation) | HIGH |
-| 2.2 | Run under AddressSanitizer and ThreadSanitizer | HIGH |
-| 2.3 | Fix any issues found | HIGH |
-| 2.4 | Add SIGTERM/SIGINT handling for graceful agent shutdown | HIGH |
-| 2.5 | Add C compilation + test to CI pipeline | HIGH |
-
-**Done when:** C runtime passes under sanitizers. CI compiles and tests native runtime.
-
-#### Phase 3: Error Recovery & Structured Diagnostics
-
-| # | Task | Priority |
-|---|------|----------|
-| 3.1 | Add source location (file, line, col) to all AST nodes | HIGH |
-| 3.2 | Implement structured error type with spans, labels, and suggestions | HIGH |
-| 3.3 | Add error recovery in parser (sync to next statement on error) | HIGH |
-| 3.4 | Emit multiple errors per compilation (currently stops at first) | MEDIUM |
-| 3.5 | Colorized terminal output for diagnostics | MEDIUM |
-
-**Done when:** Compiler reports multiple errors with source locations and fix suggestions.
-
-#### Phase 4: C FFI
-
-| # | Task | Priority |
-|---|------|----------|
-| 4.1 | Add `extern "C"` function declarations to grammar | CRITICAL |
-| 4.2 | Implement in semantic checker (signature + calling convention, no body) | CRITICAL |
-| 4.3 | Implement in LLVM emitter (declare external, generate call) | CRITICAL |
-| 4.4 | Add linker flag passthrough (`--link-lib`) | HIGH |
-| 4.5 | Test: call `puts` from libc via FFI | HIGH |
-| 4.6 | Add FFI tests to CI | HIGH |
-
-**Done when:** `extern "C" fn puts(s: String) -> Int` compiles and links. Mapanare programs can call C functions.
-
-#### Phase 5: Self-Hosted Compiler Verification
-
-| # | Task | Priority |
-|---|------|----------|
-| 5.1 | Run full test suite against binary produced by self-hosted compiler | HIGH |
-| 5.2 | Fix any failures in self-hosted output | HIGH |
-| 5.3 | Document bootstrap process (Stage 0 → Stage 1 → Stage 2) | MEDIUM |
-
-**Done when:** Self-hosted compiler passes full test suite. Bootstrap is reproducible.
-
-#### Phase 6: LSP & Editor Improvements
-
-| # | Task | Priority |
-|---|------|----------|
-| 6.1 | Incremental parsing (re-parse changed function only) | MEDIUM |
-| 6.2 | Semantic-aware autocomplete (trait methods, module exports) | MEDIUM |
-| 6.3 | Inline diagnostics for type errors with fix suggestions | MEDIUM |
-| 6.4 | Go-to-definition across module imports | MEDIUM |
-
-**Done when:** LSP autocompletes imported symbols and trait methods. Go-to-def works across files.
-
-#### v0.4.0 Success Criteria
-
-1. No experimental GPU/model code in default build
-2. C runtime passes under sanitizers, CI tests it
-3. Compiler reports multiple errors with source locations and spans
-4. `extern "C"` FFI works — Mapanare can call C functions
-5. Self-hosted compiler passes full test suite
-6. LSP provides cross-module go-to-definition
-7. All existing tests pass + new tests for FFI, diagnostics, bootstrap
-
----
-
 ### v0.5.0 — "The Ecosystem"
 
 > Build the infrastructure that turns Mapanare from a compiler into a platform.
+> See [`PLAN-v0.5.0.md`](PLAN-v0.5.0.md) for the detailed execution plan.
 
-#### Package Registry (new repo: [`mapanare-registry`](#organization--repo-strategy))
+#### Phase 1: String Interpolation & Language Polish
 
-- Registry backend at `mapanare.dev/packages`
-- `mapanare search`, `mapanare publish` (install already works in monolith)
-- Semantic versioning with conflict resolution
-- Package categories and discoverability
+- `"value is ${expr}"` syntax in grammar, parser, semantic, both emitters
+- Multi-line string literals (`"""..."""`)
+- Small grammar quality-of-life fixes deferred from prior versions
 
-#### WASM Playground (new repo: [`mapanare-playground`](#organization--repo-strategy))
+#### Phase 2: Linter
+
+- `mapanare lint` — unused variables, shadowing, unreachable code, anti-patterns
+- Integrated into LSP for real-time feedback
+- `mapanare lint --fix` for auto-fixable issues
+
+#### Phase 3: Python Interop
+
+- `extern "Python"` calling convention
+- Direct Python function calls from Mapanare (Python backend)
+- Type marshalling between Mapanare and Python types
+- Test: call numpy from Mapanare
+
+#### Phase 4: WASM Playground (new repo: [`mapanare-playground`](#organization--repo-strategy))
 
 - Compile Python transpiler backend to WASM (via Pyodide)
 - Minimal web UI: editor, output panel, share button
 - Pre-loaded getting-started examples
 - Deploy to `play.mapanare.dev`
 
-#### Python Interop (Stretch)
+#### Phase 5: Package Registry (new repo: [`mapanare-registry`](#organization--repo-strategy))
 
-- `extern "Python"` calling convention
-- Direct Python function calls from Mapanare
-- Test: call numpy from Mapanare via Python backend
+- Registry backend at `mapanare.dev/packages`
+- `mapanare search`, `mapanare publish` (install already works)
+- Semantic versioning with conflict resolution
+- Package categories and discoverability
 
-#### Linter
+#### Phase 6: Documentation & Ecosystem
 
-- `mapanare lint` — common mistakes and anti-patterns
-- Integrated into LSP for real-time feedback
+- Language reference (all syntax, all types, all builtins)
+- Cookbook: 10+ real-world examples
+- `mapanare doc` — generate docs from doc comments
+- Contributor onboarding improvements
 
 ---
 
@@ -347,8 +278,8 @@ Their top concerns and what we did about them:
 | No Getting Started tutorial | HIGH | ✅ 12-section guide in v0.3.0 |
 | No end-to-end tests | HIGH | ✅ 110+ e2e tests in v0.3.0 |
 | No governance / templates | HIGH | ✅ COC, SECURITY, templates in v0.3.0 |
-| Scope too broad (GPU/model) | MEDIUM | 🔜 v0.4.0 scope reduction |
-| No FFI | MEDIUM | 🔜 v0.4.0 FFI |
+| Scope too broad (GPU/model) | MEDIUM | ✅ v0.4.0 scope reduction |
+| No FFI | MEDIUM | ✅ v0.4.0 FFI |
 | No intermediate representation | MEDIUM | 🔜 v0.6.0 MIR |
 | No metrics / tracing | MEDIUM | 🔜 v0.7.0 observability |
 | No browser playground | MEDIUM | 🔜 v0.5.0 playground |
