@@ -9,11 +9,15 @@ from typing import Optional
 from lsprotocol import types as lsp
 from pygls.lsp.server import LanguageServer
 
-from mapanare.lsp.analysis import DocumentAnalysis, analyze_document
+from mapanare.lsp.analysis import (
+    DocumentAnalysis,
+    analyze_document,
+    invalidate_document,
+)
 
 logger = logging.getLogger("mapanare-lsp")
 
-server = LanguageServer("mapanare-lsp", "v0.2.0")
+server = LanguageServer("mapanare-lsp", "v0.4.0")
 
 # Document cache: uri -> DocumentAnalysis
 _documents: dict[str, DocumentAnalysis] = {}
@@ -21,25 +25,40 @@ _documents: dict[str, DocumentAnalysis] = {}
 
 def _analyze_and_publish(uri: str, source: str) -> None:
     """Analyze a document and publish diagnostics."""
-    analysis, errors = analyze_document(uri, source)
+    analysis, diags = analyze_document(uri, source)
     if analysis:
         _documents[uri] = analysis
 
     diagnostics: list[lsp.Diagnostic] = []
-    for err in errors:
-        line = max(0, err.line - 1)
-        col = max(0, err.column - 1)
-        diagnostics.append(
-            lsp.Diagnostic(
-                range=lsp.Range(
-                    start=lsp.Position(line=line, character=col),
-                    end=lsp.Position(line=line, character=col + 1),
-                ),
-                message=err.message,
-                severity=lsp.DiagnosticSeverity.Error,
-                source="mapanare",
-            )
+    for d in diags:
+        line = max(0, d.line - 1)
+        col = max(0, d.column - 1)
+        end_line = max(0, d.end_line - 1) if d.end_line else line
+        end_col = max(0, d.end_column - 1) if d.end_column else col + 1
+
+        severity_map = {
+            "error": lsp.DiagnosticSeverity.Error,
+            "warning": lsp.DiagnosticSeverity.Warning,
+            "info": lsp.DiagnosticSeverity.Information,
+            "hint": lsp.DiagnosticSeverity.Hint,
+        }
+
+        lsp_diag = lsp.Diagnostic(
+            range=lsp.Range(
+                start=lsp.Position(line=line, character=col),
+                end=lsp.Position(line=end_line, character=end_col),
+            ),
+            message=d.message,
+            severity=severity_map.get(d.severity, lsp.DiagnosticSeverity.Error),
+            source="mapanare",
         )
+
+        # Attach suggestions as related information
+        if d.suggestions:
+            suggestion_text = "; ".join(s.message for s in d.suggestions)
+            lsp_diag.message = f"{d.message} ({suggestion_text})"
+
+        diagnostics.append(lsp_diag)
 
     server.text_document_publish_diagnostics(
         lsp.PublishDiagnosticsParams(uri=uri, diagnostics=diagnostics)
@@ -98,6 +117,7 @@ def on_save(params: lsp.DidSaveTextDocumentParams) -> None:
 def on_close(params: lsp.DidCloseTextDocumentParams) -> None:
     uri = params.text_document.uri
     _documents.pop(uri, None)
+    invalidate_document(uri)
     server.text_document_publish_diagnostics(lsp.PublishDiagnosticsParams(uri=uri, diagnostics=[]))
 
 
