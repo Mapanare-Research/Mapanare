@@ -17,6 +17,7 @@ start: (_nl* (definition | stmt))* _nl*
            | agent_def
            | pipe_def
            | fn_def
+           | extern_fn_def
            | struct_def
            | enum_def
            | type_alias
@@ -45,6 +46,9 @@ export_names: NAME (COMMA NAME)* COMMA?
 // ------------------------------------------------------------
 
 fn_def: KW_PUB? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
+
+// FFI: extern "C" fn name(params) -> RetType
+extern_fn_def: KW_EXTERN STRING_LIT KW_FN NAME LPAREN param_list? RPAREN (ARROW type_expr)?
 
 type_params: LT type_param (COMMA type_param)* GT
 type_param: NAME (COLON NAME)?
@@ -315,6 +319,7 @@ KW_IMPL: "impl"
 KW_TRAIT: "trait"
 KW_IMPORT: "import"
 KW_EXPORT: "export"
+KW_EXTERN: "extern"
 KW_TRUE: "true"
 KW_FALSE: "false"
 KW_NONE: "none"

@@ -12,6 +12,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <signal.h>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 /* -----------------------------------------------------------------------
  * Platform atomic helpers
@@ -312,7 +317,10 @@ static void *pool_worker(void *arg) {
         if (!atomic_load_i32(&pool->running)) break;
 
         void *item_ptr = NULL;
-        if (mapanare_ring_pop(&pool->work_queue, &item_ptr) == 0 && item_ptr != NULL) {
+        mapanare_mutex_lock(&pool->queue_lock);
+        int got = mapanare_ring_pop(&pool->work_queue, &item_ptr);
+        mapanare_mutex_unlock(&pool->queue_lock);
+        if (got == 0 && item_ptr != NULL) {
             mapanare_work_item_t *item = (mapanare_work_item_t *)item_ptr;
             item->fn(item->arg);
             free(item);
@@ -338,6 +346,7 @@ MAPANARE_EXPORT int mapanare_pool_create(mapanare_thread_pool_t *pool, uint32_t 
         return -1;
     }
 
+    mapanare_mutex_init(&pool->queue_lock);
     mapanare_sem_init(&pool->work_ready, 0);
 
     pool->threads = (mapanare_thread_t *)calloc(num_threads, sizeof(mapanare_thread_t));
@@ -358,6 +367,7 @@ MAPANARE_EXPORT int mapanare_pool_create(mapanare_thread_pool_t *pool, uint32_t 
             }
             free(pool->threads);
             mapanare_ring_destroy(&pool->work_queue);
+            mapanare_mutex_destroy(&pool->queue_lock);
             return -1;
         }
     }
@@ -384,6 +394,7 @@ MAPANARE_EXPORT void mapanare_pool_destroy(mapanare_thread_pool_t *pool) {
 
     free(pool->threads);
     mapanare_ring_destroy(&pool->work_queue);
+    mapanare_mutex_destroy(&pool->queue_lock);
     mapanare_sem_destroy(&pool->work_ready);
 }
 
@@ -393,7 +404,10 @@ MAPANARE_EXPORT int mapanare_pool_submit(mapanare_thread_pool_t *pool, mapanare_
     item->fn = fn;
     item->arg = arg;
 
-    if (mapanare_ring_push(&pool->work_queue, item) != 0) {
+    mapanare_mutex_lock(&pool->queue_lock);
+    int rc = mapanare_ring_push(&pool->work_queue, item);
+    mapanare_mutex_unlock(&pool->queue_lock);
+    if (rc != 0) {
         free(item);
         return -1;
     }
@@ -418,7 +432,7 @@ static void *agent_thread_fn(void *arg) {
 #endif
     mapanare_agent_t *agent = (mapanare_agent_t *)arg;
 
-    agent->state = MAPANARE_AGENT_RUNNING;
+    atomic_store_i32(&agent->state, MAPANARE_AGENT_RUNNING);
     if (agent->on_init) agent->on_init(agent->agent_data);
 
     int restarts = 0;
@@ -453,13 +467,13 @@ static void *agent_thread_fn(void *arg) {
                     restarts++;
                     agent->restart_count = restarts;
                     if (restarts > agent->max_restarts) {
-                        agent->state = MAPANARE_AGENT_FAILED;
+                        atomic_store_i32(&agent->state, MAPANARE_AGENT_FAILED);
                         atomic_store_i32(&agent->running, 0);
                         break;
                     }
                     continue;
                 } else {
-                    agent->state = MAPANARE_AGENT_FAILED;
+                    atomic_store_i32(&agent->state, MAPANARE_AGENT_FAILED);
                     atomic_store_i32(&agent->running, 0);
                     break;
                 }
@@ -476,8 +490,8 @@ static void *agent_thread_fn(void *arg) {
         }
     }
 
-    if (agent->state != MAPANARE_AGENT_FAILED) {
-        agent->state = MAPANARE_AGENT_STOPPED;
+    if (atomic_load_i32(&agent->state) != MAPANARE_AGENT_FAILED) {
+        atomic_store_i32(&agent->state, MAPANARE_AGENT_STOPPED);
     }
     if (agent->on_stop) agent->on_stop(agent->agent_data);
 
@@ -497,7 +511,7 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
         strncpy(agent->name, name, sizeof(agent->name) - 1);
         agent->name[sizeof(agent->name) - 1] = '\0';
     }
-    agent->state = MAPANARE_AGENT_IDLE;
+    atomic_store_i32(&agent->state, MAPANARE_AGENT_IDLE);
     agent->handler = handler;
     agent->agent_data = agent_data;
     agent->restart_policy = MAPANARE_RESTART_STOP;
@@ -544,16 +558,16 @@ MAPANARE_EXPORT int mapanare_agent_recv(mapanare_agent_t *agent, void **out) {
 }
 
 MAPANARE_EXPORT void mapanare_agent_pause(mapanare_agent_t *agent) {
-    if (agent->state == MAPANARE_AGENT_RUNNING) {
-        agent->state = MAPANARE_AGENT_PAUSED;
+    if (atomic_load_i32(&agent->state) == MAPANARE_AGENT_RUNNING) {
+        atomic_store_i32(&agent->state, MAPANARE_AGENT_PAUSED);
         atomic_store_i32(&agent->paused, 1);
         if (agent->on_pause) agent->on_pause(agent->agent_data);
     }
 }
 
 MAPANARE_EXPORT void mapanare_agent_resume(mapanare_agent_t *agent) {
-    if (agent->state == MAPANARE_AGENT_PAUSED) {
-        agent->state = MAPANARE_AGENT_RUNNING;
+    if (atomic_load_i32(&agent->state) == MAPANARE_AGENT_PAUSED) {
+        atomic_store_i32(&agent->state, MAPANARE_AGENT_RUNNING);
         atomic_store_i32(&agent->paused, 0);
         if (agent->on_resume) agent->on_resume(agent->agent_data);
     }
@@ -568,7 +582,7 @@ MAPANARE_EXPORT void mapanare_agent_stop(mapanare_agent_t *agent) {
 }
 
 MAPANARE_EXPORT mapanare_agent_state_t mapanare_agent_get_state(mapanare_agent_t *agent) {
-    return agent->state;
+    return (mapanare_agent_state_t)atomic_load_i32(&agent->state);
 }
 
 MAPANARE_EXPORT int64_t mapanare_agent_messages_processed(mapanare_agent_t *agent) {
@@ -984,4 +998,64 @@ MAPANARE_EXPORT mapanare_tensor_t *mapanare_tensor_matmul_dispatch(
     mapanare_device_kind_t device) {
     (void)device;
     return mapanare_tensor_matmul_f64(a, b);
+}
+
+/* =======================================================================
+ * 7. Graceful Shutdown — SIGTERM/SIGINT handling
+ * ======================================================================= */
+
+static mapanare_agent_registry_t *s_shutdown_registry = NULL;
+static volatile int s_shutdown_requested = 0;
+
+#ifdef _WIN32
+static BOOL WINAPI mapanare_console_handler(DWORD sig) {
+    if (sig == CTRL_C_EVENT || sig == CTRL_BREAK_EVENT || sig == CTRL_CLOSE_EVENT) {
+        s_shutdown_requested = 1;
+        if (s_shutdown_registry) {
+            mapanare_registry_stop_all(s_shutdown_registry);
+        }
+        return TRUE;
+    }
+    return FALSE;
+}
+#else
+static void mapanare_signal_handler(int sig) {
+    s_shutdown_requested = 1;
+    if (s_shutdown_registry) {
+        /*
+         * Note: mapanare_registry_stop_all acquires a mutex, which is not
+         * strictly async-signal-safe. However, in practice the only signals
+         * we handle (SIGTERM, SIGINT) arrive from the terminal or process
+         * manager, and the program is about to exit. We accept this trade-off
+         * to ensure agents shut down cleanly (flush outbox, call on_stop).
+         *
+         * After stopping agents, re-raise with default disposition so the
+         * process exits with the correct signal status.
+         */
+        mapanare_registry_stop_all(s_shutdown_registry);
+    }
+    /* Re-raise with default handler so the exit code reflects the signal */
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+#endif
+
+MAPANARE_EXPORT void mapanare_shutdown_init(mapanare_agent_registry_t *reg) {
+    s_shutdown_registry = reg;
+    s_shutdown_requested = 0;
+#ifdef _WIN32
+    SetConsoleCtrlHandler(mapanare_console_handler, TRUE);
+#else
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = mapanare_signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
+#endif
+}
+
+MAPANARE_EXPORT int mapanare_shutdown_requested(void) {
+    return s_shutdown_requested;
 }

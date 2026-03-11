@@ -494,6 +494,16 @@ class FnDef(Definition):
 
 
 @dataclass
+class ExternFnDef(Definition):
+    """External function declaration: `extern "C" fn name(params) -> RetType`."""
+
+    name: str = ""
+    abi: str = "C"
+    params: list[Param] = field(default_factory=list)
+    return_type: TypeExpr | None = None
+
+
+@dataclass
 class AgentInput(ASTNode):
     """Agent input channel: `input name: Type`."""
 

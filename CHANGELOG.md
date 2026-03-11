@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-11
+
+### Added
+
+- **FFI support**: `extern "C" fn` declarations for binding native libraries, `--link-lib` CLI flag for linker pass-through
+- **Rich diagnostics**: Rust-style colorized error output with source spans, labels, and summary counts (`mapanare/diagnostics.py`)
+- **Error recovery**: `mapanare check` uses `parse_recovering()` to collect multiple parse errors in a single pass, then runs semantic analysis on the partial AST
+- **Parser span tracking**: all AST nodes now carry `Span` with line/column start and end positions
+- **Native runtime hardening**: mutex-protected thread-pool work queue, atomic agent state transitions, arena bounds checking
+- **CI native job**: compiles and runs C runtime tests with gcc, AddressSanitizer, and ThreadSanitizer
+- **LSP enhancements**: symbol table construction, cross-reference indexing, go-to-definition, find-references, hover info
+- **Bootstrap documentation** (`docs/BOOTSTRAP.md`): self-hosting compiler status and architecture
+- **Roadmap** (`docs/ROADMAP.md`): phased plan through v1.0
+- **Localized READMEs**: Spanish (`docs/README.es.md`), Portuguese (`docs/README.pt.md`), Chinese (`docs/README.zh-CN.md`)
+- Scope-analysis tests (`tests/test_scope.py`)
+- C runtime test harness (`tests/native/test_c_runtime.c`) and hardening tests (`tests/native/test_c_hardening.py`)
+- FFI test suite (`tests/ffi/test_ffi.py`)
+- Diagnostics test suite (`tests/diagnostics/test_diagnostics.py`)
+- Bootstrap verification tests (`tests/bootstrap/test_verification.py`)
+- Dev script (`dev.ps1`) now watches `*.c`/`*.h` files and runs gcc C runtime tests
+
+### Changed
+
+- GPU, model, and tensor modules moved from `mapanare/` to `experimental/` with clear opt-in boundary
+- `mapanare/types.py` gains `EXPERIMENTAL_TYPES` registry separating experimental type metadata from core
+- All CLI error output routes through the new diagnostics system instead of plain `print()`
+- README updated with language selector badges linking to localized docs
+- VSCode extension removed from tree (to be maintained separately)
+
+### Fixed
+
+- Thread-pool work queue race condition (missing mutex around push/pop)
+- Agent state updates using non-atomic writes (now uses `__atomic_compare_exchange_n`)
+- Missing `#include <unistd.h>` in C runtime for POSIX portability
+- Unused local variables in `mapanare/lsp/analysis.py`
+
 ## [0.3.1] - 2026-03-10
 
 ### Changed
@@ -111,7 +147,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Mapanare-Research/Mapanare/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.1.0...v0.2.0

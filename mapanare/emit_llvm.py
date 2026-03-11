@@ -21,6 +21,7 @@ from mapanare.ast_nodes import (
     ConstructExpr,
     EnumDef,
     ExprStmt,
+    ExternFnDef,
     FieldAccessExpr,
     FloatLiteral,
     FnDef,
@@ -438,18 +439,33 @@ class LLVMEmitter:
         for defn in program.definitions:
             if isinstance(defn, ImportDef):
                 self._emit_import(defn, resolver)
-        # First pass: register struct definitions (traits are type-level, skip)
+        # Pass 0.5: declare extern "C" functions as external
+        for defn in program.definitions:
+            if isinstance(defn, ExternFnDef):
+                self._emit_extern_fn(defn)
+        # First pass: forward-declare all types (enums as tagged unions, structs as placeholders)
+        for defn in program.definitions:
+            if isinstance(defn, EnumDef):
+                self._register_enum(defn)
+        for defn in program.definitions:
+            if isinstance(defn, StructDef):
+                self._forward_declare_struct(defn)
+        # Second pass: resolve struct field types now that all names are known
         for defn in program.definitions:
             if isinstance(defn, StructDef):
                 self._register_struct(defn)
-        # Second pass: emit agent definitions (handler methods + wrappers)
+        # Forward-declare all functions so calls to later-defined functions resolve
+        for defn in program.definitions:
+            if isinstance(defn, FnDef):
+                self._declare_fn(defn)
+        # Emit agent definitions (handler methods + wrappers)
         for defn in program.definitions:
             if isinstance(defn, AgentDef):
                 self._emit_agent(defn)
-        # Third pass: emit functions (including trait impl methods)
+        # Emit function bodies
         for defn in program.definitions:
             if isinstance(defn, FnDef):
-                self.emit_fn(defn)
+                self._emit_fn_body(defn)
             elif isinstance(defn, ImplDef):
                 self._emit_impl_methods(defn)
             elif isinstance(defn, TraitDef):
@@ -511,6 +527,34 @@ class LLVMEmitter:
             elif isinstance(defn, EnumDef):
                 pass  # enums are value types, no external declaration needed
 
+    def _emit_extern_fn(self, node: ExternFnDef) -> ir.Function:
+        """Declare an external C function in the LLVM module."""
+        param_types: list[ir.Type] = []
+        for p in node.params:
+            if p.type_annotation is not None:
+                resolved = self.type_mapper.resolve(p.type_annotation)
+                # For FFI: map Mapanare String to i8* (C char*)
+                if resolved == LLVM_STRING:
+                    param_types.append(ir.IntType(8).as_pointer())
+                else:
+                    param_types.append(resolved)
+            else:
+                param_types.append(LLVM_INT)
+
+        if node.return_type is not None:
+            ret_type = self.type_mapper.resolve(node.return_type)
+        else:
+            ret_type = LLVM_VOID
+
+        # Map Mapanare Int (i64) to C int (i32) for standard C functions
+        fn_type = ir.FunctionType(ret_type, param_types)
+        try:
+            func = self.module.get_global(node.name)
+        except KeyError:
+            func = ir.Function(self.module, fn_type, name=node.name)
+        self._functions[node.name] = func
+        return func
+
     def _emit_impl_methods(self, impl: ImplDef) -> None:
         """Emit impl methods as standalone LLVM functions (monomorphization)."""
         for method in impl.methods:
@@ -527,12 +571,75 @@ class LLVMEmitter:
             )
             self.emit_fn(mangled)
 
+    def _register_enum(self, node: EnumDef) -> None:
+        """Register an enum as a tagged union: { i32 tag, [payload_size x i8] }.
+
+        For enums with no variant fields (simple enums), just { i32 }.
+        This enables type resolution for functions that use enum types,
+        even though full enum lowering is not yet implemented.
+        """
+        max_payload = 0
+        for variant in node.variants:
+            variant_size = 0
+            for field_ty in variant.fields:
+                try:
+                    resolved = self.type_mapper.resolve(field_ty)
+                    # Approximate size: 8 bytes for pointers and i64, 4 for i32, etc.
+                    if resolved == LLVM_INT:
+                        variant_size += 8
+                    elif resolved == LLVM_FLOAT:
+                        variant_size += 8
+                    elif resolved == LLVM_BOOL:
+                        variant_size += 1
+                    elif resolved == LLVM_CHAR:
+                        variant_size += 4
+                    elif resolved == LLVM_STRING:
+                        # MnString struct is ~24 bytes (data ptr + len + cap)
+                        variant_size += 24
+                    else:
+                        variant_size += 8  # default: pointer-sized
+                except TypeError:
+                    variant_size += 8  # unresolvable type → pointer-sized placeholder
+            max_payload = max(max_payload, variant_size)
+
+        if max_payload > 0:
+            llvm_ty = ir.LiteralStructType([LLVM_I32, ir.ArrayType(ir.IntType(8), max_payload)])
+        else:
+            llvm_ty = ir.LiteralStructType([LLVM_I32])
+        self.type_mapper.register_struct(node.name, llvm_ty)
+
+    def _forward_declare_struct(self, node: StructDef) -> None:
+        """Forward-declare a struct type so other types can reference it.
+
+        Creates a placeholder struct with pointer-sized fields. The actual
+        field types are resolved in _register_struct after all types are
+        forward-declared.
+        """
+        if node.name in self._struct_defs:
+            return
+        # Placeholder: each field is pointer-sized (i8*)
+        placeholder_fields = [ir.IntType(8).as_pointer() for _ in node.fields]
+        placeholder_ty = (
+            ir.LiteralStructType(placeholder_fields)
+            if placeholder_fields
+            else ir.LiteralStructType([LLVM_I32])
+        )
+        self.type_mapper.register_struct(node.name, placeholder_ty)
+
     def _register_struct(self, node: StructDef) -> None:
-        """Register a struct definition so it can be used as a type."""
+        """Register a struct definition with resolved field types.
+
+        Must be called after all types are forward-declared so cross-references
+        between structs and enums resolve correctly.
+        """
         field_types: list[ir.Type] = []
         field_names: list[str] = []
         for f in node.fields:
-            field_types.append(self.type_mapper.resolve(f.type_annotation))
+            try:
+                field_types.append(self.type_mapper.resolve(f.type_annotation))
+            except TypeError:
+                # Unresolvable type (e.g., cross-module import) → pointer placeholder
+                field_types.append(ir.IntType(8).as_pointer())
             field_names.append(f.name)
         llvm_ty = ir.LiteralStructType(field_types)
         self._struct_defs[node.name] = (llvm_ty, field_names)
@@ -542,30 +649,69 @@ class LLVMEmitter:
     # Task 1: fn → LLVM function declarations
     # -----------------------------------------------------------------------
 
-    def emit_fn(self, node: FnDef) -> ir.Function:
-        """Emit a function definition as an LLVM function."""
-        # Resolve parameter types
+    def _declare_fn(self, node: FnDef) -> ir.Function:
+        """Forward-declare a function (signature only, no body)."""
+        if node.name in self._functions:
+            return self._functions[node.name]
         param_types: list[ir.Type] = []
         for p in node.params:
             if p.type_annotation is not None:
-                param_types.append(self.type_mapper.resolve(p.type_annotation))
+                try:
+                    param_types.append(self.type_mapper.resolve(p.type_annotation))
+                except TypeError:
+                    param_types.append(ir.IntType(8).as_pointer())
             else:
-                param_types.append(LLVM_INT)  # default to i64
-
-        # Resolve return type
+                param_types.append(LLVM_INT)
         if node.return_type is not None:
-            ret_type = self.type_mapper.resolve(node.return_type)
+            try:
+                ret_type = self.type_mapper.resolve(node.return_type)
+            except TypeError:
+                ret_type = ir.IntType(8).as_pointer()
         else:
             ret_type = LLVM_VOID
-
         fn_type = ir.FunctionType(ret_type, param_types)
-        func = ir.Function(self.module, fn_type, name=node.name)
-
-        # Name the parameters
+        try:
+            func = self.module.get_global(node.name)
+        except KeyError:
+            func = ir.Function(self.module, fn_type, name=node.name)
         for i, p in enumerate(node.params):
-            func.args[i].name = p.name
-
+            if i < len(func.args):
+                func.args[i].name = p.name
         self._functions[node.name] = func
+        return func
+
+    def _emit_fn_body(self, node: FnDef) -> ir.Function:
+        """Emit the body of a previously declared function."""
+        func = self._functions.get(node.name)
+        if func is None:
+            func = self._declare_fn(node)
+        return self._emit_fn_impl(func, node)
+
+    def emit_fn(self, node: FnDef) -> ir.Function:
+        """Emit a function definition as an LLVM function (declare + body)."""
+        func = self._declare_fn(node)
+        return self._emit_fn_impl(func, node)
+
+    def _emit_fn_impl(self, func: ir.Function, node: FnDef) -> ir.Function:
+        """Internal: emit function body into an already-declared function."""
+        # Resolve parameter types for body emission
+        param_types: list[ir.Type] = []
+        for p in node.params:
+            if p.type_annotation is not None:
+                try:
+                    param_types.append(self.type_mapper.resolve(p.type_annotation))
+                except TypeError:
+                    param_types.append(ir.IntType(8).as_pointer())
+            else:
+                param_types.append(LLVM_INT)
+
+        if node.return_type is not None:
+            try:
+                ret_type = self.type_mapper.resolve(node.return_type)
+            except TypeError:
+                ret_type = ir.IntType(8).as_pointer()
+        else:
+            ret_type = LLVM_VOID
 
         # Create entry block and builder
         block = func.append_basic_block(name="entry")
@@ -1064,6 +1210,15 @@ class LLVMEmitter:
             func = self._emit_expr(node.callee)
 
         args = [self._emit_expr(a) for a in node.args]
+
+        # FFI coercion: adapt argument types to match function signature
+        if hasattr(func, "function_type"):
+            fn_ty = func.function_type
+            for i, (arg, expected_ty) in enumerate(zip(args, fn_ty.args)):
+                # MnString → i8*: extract the data pointer for C FFI
+                if self._is_string_type(arg) and isinstance(expected_ty, ir.PointerType):
+                    args[i] = self.builder.extract_value(arg, 0, name="str_to_cptr")
+
         return self.builder.call(func, args, name="call")
 
     # -----------------------------------------------------------------------

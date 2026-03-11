@@ -25,6 +25,7 @@ from mapanare.ast_nodes import (
     ExportDef,
     Expr,
     ExprStmt,
+    ExternFnDef,
     FieldAccessExpr,
     FloatLiteral,
     FnDef,
@@ -322,7 +323,7 @@ class SemanticChecker:
             return TypeInfo(kind=TypeKind.STRUCT, name=te.name, args=args)
         if isinstance(te, TensorType):
             elem = self._resolve_type_expr(te.element_type)
-            from mapanare.tensor import resolve_shape_from_type
+            from mapanare.types import resolve_shape_from_type
 
             shape = resolve_shape_from_type(list(te.shape))
             return TypeInfo(kind=TypeKind.TENSOR, args=[elem], tensor_shape=shape)
@@ -562,7 +563,7 @@ class SemanticChecker:
             # Compile-time shape validation for matmul
             matmul_shape: tuple[int, ...] | None = None
             if left.tensor_shape is not None and right.tensor_shape is not None:
-                from mapanare.tensor import validate_matmul_shapes
+                from mapanare.types import validate_matmul_shapes
 
                 matmul_shape = validate_matmul_shapes(left.tensor_shape, right.tensor_shape)
                 if matmul_shape is None:
@@ -1115,6 +1116,21 @@ class SemanticChecker:
                         type_info=variant_sym.type_info,
                     ),
                 )
+        elif isinstance(defn, ExternFnDef):
+            if defn.abi != "C":
+                self._error(f"Unsupported ABI '{defn.abi}'; only \"C\" is supported", defn)
+            param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
+            ret = self._resolve_type_expr(defn.return_type)
+            fn_type = TypeInfo(
+                kind=TypeKind.FN,
+                is_function=True,
+                param_types=param_types,
+                return_type=ret,
+            )
+            self.global_scope.define(
+                defn.name,
+                Symbol(name=defn.name, kind="function", type_info=fn_type, node=defn),
+            )
         elif isinstance(defn, PipeDef):
             self.global_scope.define(
                 defn.name,
@@ -1312,6 +1328,8 @@ class SemanticChecker:
     def _check_def(self, defn: Definition) -> None:
         if isinstance(defn, FnDef):
             self._check_fn(defn)
+        elif isinstance(defn, ExternFnDef):
+            pass  # No body to check; registration handled in first pass
         elif isinstance(defn, AgentDef):
             self._check_agent(defn)
         elif isinstance(defn, PipeDef):
@@ -1339,7 +1357,7 @@ class SemanticChecker:
 
     def _check_decorators(self, defn: ASTNode) -> None:
         """Validate decorator annotations on a definition (Phase 5.2)."""
-        from mapanare.gpu import DEVICE_ANNOTATIONS
+        from mapanare.types import DEVICE_ANNOTATIONS
 
         decorators: list[object] = getattr(defn, "decorators", [])
         if not decorators:

@@ -104,6 +104,7 @@ typedef struct mapanare_thread_pool {
     mapanare_thread_t  *threads;         /* worker thread handles            */
     uint32_t        thread_count;    /* number of workers                */
     mapanare_ring_buffer_t work_queue;   /* ring buffer of work items        */
+    mapanare_mutex_t       queue_lock;   /* protects work_queue (SPSC→MPSC) */
     mapanare_semaphore_t   work_ready;   /* signalled when work is available */
     mapanare_atomic_i32    running;      /* 1 = pool active, 0 = shutting down */
 } mapanare_thread_pool_t;
@@ -179,7 +180,7 @@ typedef struct mapanare_agent {
     char                 name[64];
 
     /* State */
-    mapanare_agent_state_t   state;
+    mapanare_atomic_i32      state;            /* mapanare_agent_state_t */
     mapanare_atomic_i32      paused;           /* 1 = paused */
 
     /* Message queues */
@@ -403,6 +404,22 @@ MAPANARE_EXPORT mapanare_tensor_t *mapanare_tensor_div_dispatch(
 MAPANARE_EXPORT mapanare_tensor_t *mapanare_tensor_matmul_dispatch(
     const mapanare_tensor_t *a, const mapanare_tensor_t *b,
     mapanare_device_kind_t device);
+
+/* -----------------------------------------------------------------------
+ * 7. Graceful Shutdown — SIGTERM/SIGINT handling
+ *
+ * Installs signal handlers that stop all registered agents on SIGTERM
+ * or SIGINT, then re-raise the signal for default disposition.
+ * Call mapanare_shutdown_init() once at program start with the registry
+ * that should be drained on signal.
+ * ----------------------------------------------------------------------- */
+
+/** Install SIGTERM/SIGINT handlers that will gracefully stop all agents
+ *  in the given registry. Call once at startup. */
+MAPANARE_EXPORT void mapanare_shutdown_init(mapanare_agent_registry_t *reg);
+
+/** Check if a shutdown signal has been received. Returns 1 if so. */
+MAPANARE_EXPORT int mapanare_shutdown_requested(void);
 
 /* -----------------------------------------------------------------------
  * Utility

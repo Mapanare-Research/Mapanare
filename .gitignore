@@ -24,7 +24,6 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
-ROADMAP.md
 prompt.md
 1prompt.md
 error.log
@@ -34,5 +33,11 @@ error.log
 .sprint/
 docs/PLAN-v0.3.0.md
 docs/PLAN-v0.4.0.md
+docs/PLAN-v0.5.0.md
+docs/PLAN-v0.6.0.md
+docs/PLAN-v0.7.0.md
+docs/PLAN-v0.8.0.md
+docs/PLAN-v0.9.0.md
+docs/PLAN-v1.0.0.md
+
 sprint_runner.py
-docs/discord-seeding.md

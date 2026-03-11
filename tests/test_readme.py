@@ -176,7 +176,9 @@ class TestManifestoContent:
 class TestREADMERoadmapProgress:
     def test_roadmap_mentions_next_milestone(self) -> None:
         text = _readme_text()
-        assert "v0.4.0" in text or "Next" in text, "Roadmap must mention next milestone"
+        assert (
+            "v0.5.0" in text or "v1.0.0" in text or "Next" in text or "Planned" in text
+        ), "Roadmap must mention next milestone"
 
     def test_roadmap_has_version_description(self) -> None:
         text = _readme_text()

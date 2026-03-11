@@ -69,7 +69,7 @@ Run `make fmt` to auto-format. Pre-commit hooks are available via `.pre-commit-c
 ## What to Work On
 
 - Check open issues tagged with the current phase.
-- Check the roadmap in [docs/PLAN-v0.3.0.md](docs/PLAN-v0.3.0.md).
+- Check the roadmap in [docs/PLAN-v0.4.0.md](docs/PLAN-v0.4.0.md).
 - Join `#compiler-dev` on [Discord](https://discord.gg/5hpGBm3WXf) before building major features.
 - Read [docs/SPEC.md](docs/SPEC.md) to understand the language design.
 - Read [docs/ROADMAP.md](docs/ROADMAP.md) for the broader project direction.

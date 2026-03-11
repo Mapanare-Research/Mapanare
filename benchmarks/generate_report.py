@@ -125,12 +125,15 @@ Run <code>python benchmarks/run_all.py</code> to regenerate.</p>
 
 
 def _mapanare_version() -> str:
+    version_file = Path(__file__).resolve().parents[1] / "VERSION"
+    if version_file.exists():
+        return version_file.read_text().strip()
     try:
         from mapanare.cli import __version__
 
         return __version__
     except ImportError:
-        return "0.2.0"
+        return "0.0.0"
 
 
 def main() -> None:
