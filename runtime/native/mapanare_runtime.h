@@ -180,7 +180,7 @@ typedef struct mapanare_agent {
     char                 name[64];
 
     /* State */
-    mapanare_agent_state_t   state;
+    mapanare_atomic_i32      state;            /* mapanare_agent_state_t */
     mapanare_atomic_i32      paused;           /* 1 = paused */
 
     /* Message queues */

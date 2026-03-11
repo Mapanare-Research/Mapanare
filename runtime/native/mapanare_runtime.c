@@ -432,7 +432,7 @@ static void *agent_thread_fn(void *arg) {
 #endif
     mapanare_agent_t *agent = (mapanare_agent_t *)arg;
 
-    agent->state = MAPANARE_AGENT_RUNNING;
+    atomic_store_i32(&agent->state, MAPANARE_AGENT_RUNNING);
     if (agent->on_init) agent->on_init(agent->agent_data);
 
     int restarts = 0;
@@ -467,13 +467,13 @@ static void *agent_thread_fn(void *arg) {
                     restarts++;
                     agent->restart_count = restarts;
                     if (restarts > agent->max_restarts) {
-                        agent->state = MAPANARE_AGENT_FAILED;
+                        atomic_store_i32(&agent->state, MAPANARE_AGENT_FAILED);
                         atomic_store_i32(&agent->running, 0);
                         break;
                     }
                     continue;
                 } else {
-                    agent->state = MAPANARE_AGENT_FAILED;
+                    atomic_store_i32(&agent->state, MAPANARE_AGENT_FAILED);
                     atomic_store_i32(&agent->running, 0);
                     break;
                 }
@@ -490,8 +490,8 @@ static void *agent_thread_fn(void *arg) {
         }
     }
 
-    if (agent->state != MAPANARE_AGENT_FAILED) {
-        agent->state = MAPANARE_AGENT_STOPPED;
+    if (atomic_load_i32(&agent->state) != MAPANARE_AGENT_FAILED) {
+        atomic_store_i32(&agent->state, MAPANARE_AGENT_STOPPED);
     }
     if (agent->on_stop) agent->on_stop(agent->agent_data);
 
@@ -511,7 +511,7 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
         strncpy(agent->name, name, sizeof(agent->name) - 1);
         agent->name[sizeof(agent->name) - 1] = '\0';
     }
-    agent->state = MAPANARE_AGENT_IDLE;
+    atomic_store_i32(&agent->state, MAPANARE_AGENT_IDLE);
     agent->handler = handler;
     agent->agent_data = agent_data;
     agent->restart_policy = MAPANARE_RESTART_STOP;
@@ -558,16 +558,16 @@ MAPANARE_EXPORT int mapanare_agent_recv(mapanare_agent_t *agent, void **out) {
 }
 
 MAPANARE_EXPORT void mapanare_agent_pause(mapanare_agent_t *agent) {
-    if (agent->state == MAPANARE_AGENT_RUNNING) {
-        agent->state = MAPANARE_AGENT_PAUSED;
+    if (atomic_load_i32(&agent->state) == MAPANARE_AGENT_RUNNING) {
+        atomic_store_i32(&agent->state, MAPANARE_AGENT_PAUSED);
         atomic_store_i32(&agent->paused, 1);
         if (agent->on_pause) agent->on_pause(agent->agent_data);
     }
 }
 
 MAPANARE_EXPORT void mapanare_agent_resume(mapanare_agent_t *agent) {
-    if (agent->state == MAPANARE_AGENT_PAUSED) {
-        agent->state = MAPANARE_AGENT_RUNNING;
+    if (atomic_load_i32(&agent->state) == MAPANARE_AGENT_PAUSED) {
+        atomic_store_i32(&agent->state, MAPANARE_AGENT_RUNNING);
         atomic_store_i32(&agent->paused, 0);
         if (agent->on_resume) agent->on_resume(agent->agent_data);
     }
@@ -582,7 +582,7 @@ MAPANARE_EXPORT void mapanare_agent_stop(mapanare_agent_t *agent) {
 }
 
 MAPANARE_EXPORT mapanare_agent_state_t mapanare_agent_get_state(mapanare_agent_t *agent) {
-    return agent->state;
+    return (mapanare_agent_state_t)atomic_load_i32(&agent->state);
 }
 
 MAPANARE_EXPORT int64_t mapanare_agent_messages_processed(mapanare_agent_t *agent) {

@@ -85,6 +85,42 @@ function Invoke-AllChecks {
         $out | Where-Object { $_ -match "error:" } | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
     }
 
+    # --- C runtime (gcc) ---
+    Write-Host "  gcc (C runtime) " -ForegroundColor Cyan -NoNewline
+    $gccPath = Get-Command gcc -ErrorAction SilentlyContinue
+    if ($gccPath) {
+        $savedEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+        $testExe = Join-Path $Root "test_c_runtime.exe"
+        $out = & gcc -O2 -g -pthread `
+            "$Root\tests\native\test_c_runtime.c" `
+            "$Root\runtime\native\mapanare_core.c" `
+            "$Root\runtime\native\mapanare_runtime.c" `
+            -o $testExe 2>&1
+        $exitCode = $LASTEXITCODE
+        $ErrorActionPreference = $savedEAP
+        if ($exitCode -ne 0) {
+            $allPassed = $false
+            Write-Host "compile fail" -ForegroundColor Red
+            $out | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        } else {
+            $savedEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+            $out = & $testExe 2>&1
+            $exitCode = $LASTEXITCODE
+            $ErrorActionPreference = $savedEAP
+            if ($exitCode -eq 0) {
+                $passCount = ($out | Select-String "\[PASS\]").Count
+                Write-Host "ok ($passCount passed)" -ForegroundColor Green
+            } else {
+                $allPassed = $false
+                Write-Host "fail" -ForegroundColor Red
+                $out | Where-Object { $_ -match "FAIL|error|abort" } | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+            }
+            Remove-Item $testExe -ErrorAction SilentlyContinue
+        }
+    } else {
+        Write-Host "skip (gcc not found)" -ForegroundColor DarkGray
+    }
+
     # --- pytest ---
     Write-Host "  pytest          " -ForegroundColor Cyan -NoNewline
     $savedEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
@@ -170,13 +206,15 @@ if ($Mode -eq "validate") {
     $watchDirs = @($mapaPath, $runtimePath, $testsPath, $stdlibPath) | Where-Object { Test-Path $_ }
 
     foreach ($dir in $watchDirs) {
-        $w = [System.IO.FileSystemWatcher]::new($dir, "*.py")
-        $w.IncludeSubdirectories = $true
-        $w.NotifyFilter = [System.IO.NotifyFilters]::LastWrite -bor
-                          [System.IO.NotifyFilters]::FileName -bor
-                          [System.IO.NotifyFilters]::CreationTime
-        $w.EnableRaisingEvents = $true
-        $watchers += $w
+        foreach ($filter in @("*.py", "*.c", "*.h")) {
+            $w = [System.IO.FileSystemWatcher]::new($dir, $filter)
+            $w.IncludeSubdirectories = $true
+            $w.NotifyFilter = [System.IO.NotifyFilters]::LastWrite -bor
+                              [System.IO.NotifyFilters]::FileName -bor
+                              [System.IO.NotifyFilters]::CreationTime
+            $w.EnableRaisingEvents = $true
+            $watchers += $w
+        }
     }
 
     $script:lastChange = [datetime]::MinValue
