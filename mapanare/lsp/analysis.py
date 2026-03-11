@@ -245,7 +245,6 @@ class IncrementalParser:
             # Update cache with new chunk hashes
             chunks = _split_toplevel_chunks(source)
             cache = _ChunkCache()
-            chunk_idx = 0
             for chunk_text, _ in chunks:
                 h = _chunk_hash(chunk_text)
                 cache.chunk_hashes.append(h)
@@ -1269,9 +1268,6 @@ def analyze_document(
         program, parse_errors, _ = _incremental_parser.parse(uri, source)
         if not program.definitions and parse_errors:
             # Complete parse failure
-            all_names: set[str] = (
-                set(BUILTIN_FUNCTIONS.keys()) | PRIMITIVE_TYPES | BUILTIN_GENERIC_TYPES
-            )
             diagnostics = _enrich_diagnostics(parse_errors, source, {})
             return None, diagnostics
     else:
