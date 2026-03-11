@@ -317,7 +317,10 @@ static void *pool_worker(void *arg) {
         if (!atomic_load_i32(&pool->running)) break;
 
         void *item_ptr = NULL;
-        if (mapanare_ring_pop(&pool->work_queue, &item_ptr) == 0 && item_ptr != NULL) {
+        mapanare_mutex_lock(&pool->queue_lock);
+        int got = mapanare_ring_pop(&pool->work_queue, &item_ptr);
+        mapanare_mutex_unlock(&pool->queue_lock);
+        if (got == 0 && item_ptr != NULL) {
             mapanare_work_item_t *item = (mapanare_work_item_t *)item_ptr;
             item->fn(item->arg);
             free(item);
@@ -343,6 +346,7 @@ MAPANARE_EXPORT int mapanare_pool_create(mapanare_thread_pool_t *pool, uint32_t 
         return -1;
     }
 
+    mapanare_mutex_init(&pool->queue_lock);
     mapanare_sem_init(&pool->work_ready, 0);
 
     pool->threads = (mapanare_thread_t *)calloc(num_threads, sizeof(mapanare_thread_t));
@@ -363,6 +367,7 @@ MAPANARE_EXPORT int mapanare_pool_create(mapanare_thread_pool_t *pool, uint32_t 
             }
             free(pool->threads);
             mapanare_ring_destroy(&pool->work_queue);
+            mapanare_mutex_destroy(&pool->queue_lock);
             return -1;
         }
     }
@@ -389,6 +394,7 @@ MAPANARE_EXPORT void mapanare_pool_destroy(mapanare_thread_pool_t *pool) {
 
     free(pool->threads);
     mapanare_ring_destroy(&pool->work_queue);
+    mapanare_mutex_destroy(&pool->queue_lock);
     mapanare_sem_destroy(&pool->work_ready);
 }
 
@@ -398,7 +404,10 @@ MAPANARE_EXPORT int mapanare_pool_submit(mapanare_thread_pool_t *pool, mapanare_
     item->fn = fn;
     item->arg = arg;
 
-    if (mapanare_ring_push(&pool->work_queue, item) != 0) {
+    mapanare_mutex_lock(&pool->queue_lock);
+    int rc = mapanare_ring_push(&pool->work_queue, item);
+    mapanare_mutex_unlock(&pool->queue_lock);
+    if (rc != 0) {
         free(item);
         return -1;
     }

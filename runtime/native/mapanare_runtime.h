@@ -104,6 +104,7 @@ typedef struct mapanare_thread_pool {
     mapanare_thread_t  *threads;         /* worker thread handles            */
     uint32_t        thread_count;    /* number of workers                */
     mapanare_ring_buffer_t work_queue;   /* ring buffer of work items        */
+    mapanare_mutex_t       queue_lock;   /* protects work_queue (SPSC→MPSC) */
     mapanare_semaphore_t   work_ready;   /* signalled when work is available */
     mapanare_atomic_i32    running;      /* 1 = pool active, 0 = shutting down */
 } mapanare_thread_pool_t;
