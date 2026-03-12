@@ -340,6 +340,7 @@ _KEEP = frozenset(
         "FLOAT_LIT",
         "STRING_LIT",
         "CHAR_LIT",
+        "DOC_COMMENT",
     }
 )
 

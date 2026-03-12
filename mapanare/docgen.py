@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import html
-import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from mapanare.ast_nodes import (
     AgentDef,
@@ -150,12 +149,22 @@ def generate_html(items: list[DocItem], module_name: str = "module") -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(module_name)} — Mapanare Documentation</title>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem; color: #1a1a2e; background: #fafafa; }}
+body {{
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  max-width: 900px; margin: 0 auto; padding: 2rem;
+  color: #1a1a2e; background: #fafafa;
+}}
 h1 {{ color: #16213e; border-bottom: 2px solid #0f3460; padding-bottom: 0.5rem; }}
 h2 {{ color: #0f3460; margin-top: 2rem; }}
-.item {{ background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; }}
+.item {{
+  background: #fff; border: 1px solid #e0e0e0;
+  border-radius: 8px; padding: 1.5rem; margin: 1rem 0;
+}}
 .item-header {{ display: flex; align-items: center; gap: 0.5rem; }}
-.badge {{ display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }}
+.badge {{
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+}}
 .badge-function {{ background: #e3f2fd; color: #1565c0; }}
 .badge-struct {{ background: #e8f5e9; color: #2e7d32; }}
 .badge-enum {{ background: #fff3e0; color: #e65100; }}
@@ -163,13 +172,23 @@ h2 {{ color: #0f3460; margin-top: 2rem; }}
 .badge-trait {{ background: #fce4ec; color: #c62828; }}
 .badge-type {{ background: #e0f7fa; color: #00695c; }}
 .badge-pub {{ background: #c8e6c9; color: #1b5e20; font-size: 0.65rem; }}
-.signature {{ font-family: "JetBrains Mono", "Fira Code", monospace; background: #f5f5f5; padding: 0.75rem; border-radius: 4px; margin: 0.75rem 0; font-size: 0.9rem; overflow-x: auto; }}
+.signature {{
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  background: #f5f5f5; padding: 0.75rem; border-radius: 4px;
+  margin: 0.75rem 0; font-size: 0.9rem; overflow-x: auto;
+}}
 .doc {{ color: #424242; line-height: 1.6; }}
-.toc {{ background: #fff; padding: 1rem 1.5rem; border-radius: 8px; border: 1px solid #e0e0e0; }}
+.toc {{
+  background: #fff; padding: 1rem 1.5rem;
+  border-radius: 8px; border: 1px solid #e0e0e0;
+}}
 .toc ul {{ list-style: none; padding-left: 1rem; }}
 .toc a {{ text-decoration: none; color: #0f3460; }}
 .toc a:hover {{ text-decoration: underline; }}
-footer {{ margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #e0e0e0; color: #757575; font-size: 0.85rem; }}
+footer {{
+  margin-top: 3rem; padding-top: 1rem;
+  border-top: 1px solid #e0e0e0; color: #757575; font-size: 0.85rem;
+}}
 </style>
 </head>
 <body>

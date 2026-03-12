@@ -462,14 +462,6 @@ class ConstructorPattern(Pattern):
 
 
 @dataclass
-class DocComment(ASTNode):
-    """Doc comment block: one or more `///` lines attached to a definition."""
-
-    text: str = ""
-    definition: Definition | None = None
-
-
-@dataclass
 class Decorator(ASTNode):
     """Decorator annotation: `@name` or `@name(args)`."""
 
@@ -480,6 +472,14 @@ class Decorator(ASTNode):
 @dataclass
 class Definition(ASTNode):
     """Base for top-level definitions."""
+
+
+@dataclass
+class DocComment(Definition):
+    """Doc comment block: one or more `///` lines attached to a definition."""
+
+    text: str = ""
+    definition: "Definition | None" = None
 
 
 @dataclass

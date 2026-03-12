@@ -374,7 +374,14 @@ def cmd_install(args: argparse.Namespace) -> None:
 
 def cmd_publish(args: argparse.Namespace) -> None:
     """Publish a package to the Mapanare registry."""
-    from stdlib.pkg import ManifestError, PackageError, _save_token, bump_version, load_manifest, publish_package
+    from stdlib.pkg import (
+        ManifestError,
+        PackageError,
+        _save_token,
+        bump_version,
+        load_manifest,
+        publish_package,
+    )
 
     project_dir = getattr(args, "path", ".")
     token = getattr(args, "token", None)
@@ -868,10 +875,34 @@ def build_parser() -> argparse.ArgumentParser:
     p_publish.add_argument("path", nargs="?", default=".", help="Project directory (default: .)")
     p_publish.add_argument("--token", default=None, help="API token (saved to ~/.mapanare/token)")
     bump_group = p_publish.add_mutually_exclusive_group()
-    bump_group.add_argument("--patch", dest="bump", action="store_const", const="patch", help="Bump patch version (default)")
-    bump_group.add_argument("--minor", dest="bump", action="store_const", const="minor", help="Bump minor version (0.1.0 -> 0.2.0)")
-    bump_group.add_argument("--major", dest="bump", action="store_const", const="major", help="Bump major version (0.1.0 -> 1.0.0)")
-    bump_group.add_argument("--no-bump", dest="bump", action="store_const", const="none", help="Publish without bumping version")
+    bump_group.add_argument(
+        "--patch",
+        dest="bump",
+        action="store_const",
+        const="patch",
+        help="Bump patch version (default)",
+    )
+    bump_group.add_argument(
+        "--minor",
+        dest="bump",
+        action="store_const",
+        const="minor",
+        help="Bump minor version (0.1.0 -> 0.2.0)",
+    )
+    bump_group.add_argument(
+        "--major",
+        dest="bump",
+        action="store_const",
+        const="major",
+        help="Bump major version (0.1.0 -> 1.0.0)",
+    )
+    bump_group.add_argument(
+        "--no-bump",
+        dest="bump",
+        action="store_const",
+        const="none",
+        help="Publish without bumping version",
+    )
     p_publish.set_defaults(func=cmd_publish, bump="patch")
 
     # version (bump)

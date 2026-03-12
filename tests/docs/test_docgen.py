@@ -1,7 +1,5 @@
 """Tests for doc comment parsing and HTML doc generation."""
 
-import pytest
-
 from mapanare.ast_nodes import DocComment, FnDef
 from mapanare.docgen import extract_doc_items, generate_html
 from mapanare.parser import parse
@@ -11,7 +9,7 @@ class TestDocCommentParsing:
     """Test that /// doc comments are parsed into DocComment AST nodes."""
 
     def test_doc_comment_on_function(self):
-        source = '/// Adds two numbers.\nfn add(a: Int, b: Int) -> Int {\n    return a + b\n}'
+        source = "/// Adds two numbers.\nfn add(a: Int, b: Int) -> Int {\n    return a + b\n}"
         ast = parse(source, filename="test.mn")
         assert len(ast.definitions) == 1
         defn = ast.definitions[0]
@@ -21,7 +19,7 @@ class TestDocCommentParsing:
         assert defn.definition.name == "add"
 
     def test_multiline_doc_comment(self):
-        source = '/// First line.\n/// Second line.\nfn foo() -> Int {\n    return 1\n}'
+        source = "/// First line.\n/// Second line.\nfn foo() -> Int {\n    return 1\n}"
         ast = parse(source, filename="test.mn")
         defn = ast.definitions[0]
         assert isinstance(defn, DocComment)
@@ -29,20 +27,20 @@ class TestDocCommentParsing:
         assert "Second line." in defn.text
 
     def test_doc_comment_on_struct(self):
-        source = '/// A 2D point.\nstruct Point {\n    x: Float,\n    y: Float,\n}'
+        source = "/// A 2D point.\nstruct Point {\n    x: Float,\n    y: Float,\n}"
         ast = parse(source, filename="test.mn")
         defn = ast.definitions[0]
         assert isinstance(defn, DocComment)
         assert defn.text == "A 2D point."
 
     def test_no_doc_comment_regular_function(self):
-        source = 'fn add(a: Int, b: Int) -> Int {\n    return a + b\n}'
+        source = "fn add(a: Int, b: Int) -> Int {\n    return a + b\n}"
         ast = parse(source, filename="test.mn")
         assert len(ast.definitions) == 1
         assert isinstance(ast.definitions[0], FnDef)
 
     def test_regular_comment_ignored(self):
-        source = '// Just a regular comment\nfn foo() -> Int {\n    return 1\n}'
+        source = "// Just a regular comment\nfn foo() -> Int {\n    return 1\n}"
         ast = parse(source, filename="test.mn")
         assert len(ast.definitions) == 1
         assert isinstance(ast.definitions[0], FnDef)
@@ -51,7 +49,7 @@ class TestDocCommentParsing:
         """Doc-commented definitions should pass semantic analysis."""
         from mapanare.semantic import check
 
-        source = '/// Documented function.\nfn greet(name: String) -> String {\n    return name\n}'
+        source = "/// Documented function.\nfn greet(name: String) -> String {\n    return name\n}"
         ast = parse(source, filename="test.mn")
         errors = check(ast, filename="test.mn")
         assert len(errors) == 0
@@ -61,7 +59,7 @@ class TestDocCommentParsing:
         from mapanare.emit_python import PythonEmitter
         from mapanare.semantic import check_or_raise
 
-        source = '/// Adds two ints.\nfn add(a: Int, b: Int) -> Int {\n    return a + b\n}'
+        source = "/// Adds two ints.\nfn add(a: Int, b: Int) -> Int {\n    return a + b\n}"
         ast = parse(source, filename="test.mn")
         check_or_raise(ast, filename="test.mn")
         emitter = PythonEmitter()
@@ -73,7 +71,7 @@ class TestDocGenerator:
     """Test HTML doc generation from doc items."""
 
     def test_extract_doc_items(self):
-        source = '/// Adds two numbers.\nfn add(a: Int, b: Int) -> Int {\n    return a + b\n}'
+        source = "/// Adds two numbers.\nfn add(a: Int, b: Int) -> Int {\n    return a + b\n}"
         ast = parse(source, filename="test.mn")
         items = extract_doc_items(ast)
         assert len(items) == 1
@@ -82,7 +80,7 @@ class TestDocGenerator:
         assert items[0].doc == "Adds two numbers."
 
     def test_generate_html(self):
-        source = '/// A helper function.\npub fn helper() -> Int {\n    return 42\n}'
+        source = "/// A helper function.\npub fn helper() -> Int {\n    return 42\n}"
         ast = parse(source, filename="test.mn")
         items = extract_doc_items(ast)
         html = generate_html(items, module_name="test")
@@ -98,7 +96,7 @@ class TestDocGenerator:
         assert "<html" in html
 
     def test_extract_struct_doc(self):
-        source = '/// A 2D point.\nstruct Point {\n    x: Float,\n    y: Float,\n}'
+        source = "/// A 2D point.\nstruct Point {\n    x: Float,\n    y: Float,\n}"
         ast = parse(source, filename="test.mn")
         items = extract_doc_items(ast)
         assert len(items) == 1
@@ -106,7 +104,7 @@ class TestDocGenerator:
         assert "Point" in items[0].signature
 
     def test_extract_enum_doc(self):
-        source = '/// Represents a color.\nenum Color {\n    Red,\n    Green,\n    Blue,\n}'
+        source = "/// Represents a color.\nenum Color {\n    Red,\n    Green,\n    Blue,\n}"
         ast = parse(source, filename="test.mn")
         items = extract_doc_items(ast)
         assert len(items) == 1

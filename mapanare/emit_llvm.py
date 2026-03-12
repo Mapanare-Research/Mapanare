@@ -12,7 +12,6 @@ from llvmlite import ir
 
 from mapanare.ast_nodes import (
     AgentDef,
-    DocComment,
     AssignExpr,
     BinaryExpr,
     Block,
@@ -20,6 +19,7 @@ from mapanare.ast_nodes import (
     CallExpr,
     CharLiteral,
     ConstructExpr,
+    DocComment,
     EnumDef,
     ExprStmt,
     ExternFnDef,
