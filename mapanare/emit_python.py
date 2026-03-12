@@ -12,6 +12,7 @@ from mapanare.ast_nodes import (
     CharLiteral,
     ConstructExpr,
     Definition,
+    DocComment,
     EnumDef,
     EnumVariant,
     ErrExpr,
@@ -96,8 +97,20 @@ class PythonEmitter:
         # Emit definitions
         for defn in program.definitions:
             self._emit_definition(defn)
+
         # Emit main guard (only if a main function exists)
-        has_main = any(isinstance(d, FnDef) and d.name == "main" for d in program.definitions)
+        def _is_main(d: Definition) -> bool:
+            if isinstance(d, FnDef) and d.name == "main":
+                return True
+            if (
+                isinstance(d, DocComment)
+                and isinstance(d.definition, FnDef)
+                and d.definition.name == "main"
+            ):
+                return True
+            return False
+
+        has_main = any(_is_main(d) for d in program.definitions)
         if has_main:
             self._emit_line("")
             self._emit_line('if __name__ == "__main__":')
@@ -114,14 +127,15 @@ class PythonEmitter:
 
     def _scan_program(self, program: Program) -> None:
         for defn in program.definitions:
-            if isinstance(defn, ImplDef):
-                self._impl_methods.setdefault(defn.target, []).extend(defn.methods)
-            if isinstance(defn, AgentDef):
+            inner = defn.definition if isinstance(defn, DocComment) else defn
+            if isinstance(inner, ImplDef):
+                self._impl_methods.setdefault(inner.target, []).extend(inner.methods)
+            if isinstance(inner, AgentDef):
                 self._has_agents = True
-            if isinstance(defn, TraitDef):
+            if isinstance(inner, TraitDef):
                 self._has_traits = True
-            if isinstance(defn, ExternFnDef) and defn.abi == "Python":
-                self._extern_python_fns.append(defn)
+            if isinstance(inner, ExternFnDef) and inner.abi == "Python":
+                self._extern_python_fns.append(inner)
             self._scan_definition(defn)
 
     def _scan_definition(self, defn: Definition) -> None:
@@ -137,6 +151,9 @@ class PythonEmitter:
         elif isinstance(defn, PipeDef):
             self._has_agents = True
         elif isinstance(defn, ExportDef):
+            if defn.definition:
+                self._scan_definition(defn.definition)
+        elif isinstance(defn, DocComment):
             if defn.definition:
                 self._scan_definition(defn.definition)
 
@@ -411,6 +428,9 @@ class PythonEmitter:
             self._emit_export(defn)
         elif isinstance(defn, ExternFnDef):
             pass  # handled in header via _emit_python_interop
+        elif isinstance(defn, DocComment):
+            if defn.definition:
+                self._emit_definition(defn.definition)
 
     # -- fn ---------------------------------------------------------------
 

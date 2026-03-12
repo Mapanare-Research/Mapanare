@@ -19,6 +19,7 @@ from mapanare.ast_nodes import (
     CharLiteral,
     ConstructExpr,
     Definition,
+    DocComment,
     EnumDef,
     ErrExpr,
     ErrorPropExpr,
@@ -1177,6 +1178,9 @@ class SemanticChecker:
                 self._register_def(defn.definition)
         elif isinstance(defn, ImplDef):
             pass  # methods handled in second pass
+        elif isinstance(defn, DocComment):
+            if defn.definition:
+                self._register_def(defn.definition)
 
     # -- Import resolution -----------------------------------------------
 
@@ -1352,6 +1356,9 @@ class SemanticChecker:
         elif isinstance(defn, ImplDef):
             self._check_impl(defn)
         elif isinstance(defn, ExportDef):
+            if defn.definition:
+                self._check_def(defn.definition)
+        elif isinstance(defn, DocComment):
             if defn.definition:
                 self._check_def(defn.definition)
 

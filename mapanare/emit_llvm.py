@@ -12,6 +12,7 @@ from llvmlite import ir
 
 from mapanare.ast_nodes import (
     AgentDef,
+    DocComment,
     AssignExpr,
     BinaryExpr,
     Block,
@@ -436,35 +437,40 @@ class LLVMEmitter:
 
     def emit_program(self, program: Program, resolver: object | None = None) -> ir.Module:
         """Emit an entire Mapanare program to an LLVM module."""
+        # Unwrap DocComment nodes to get at the inner definitions
+        defs = [
+            d.definition if isinstance(d, DocComment) and d.definition else d
+            for d in program.definitions
+        ]
         # Pass 0: declare imported symbols as external
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, ImportDef):
                 self._emit_import(defn, resolver)
         # Pass 0.5: declare extern "C" functions as external (skip Python interop)
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, ExternFnDef) and defn.abi != "Python":
                 self._emit_extern_fn(defn)
         # First pass: forward-declare all types (enums as tagged unions, structs as placeholders)
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, EnumDef):
                 self._register_enum(defn)
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, StructDef):
                 self._forward_declare_struct(defn)
         # Second pass: resolve struct field types now that all names are known
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, StructDef):
                 self._register_struct(defn)
         # Forward-declare all functions so calls to later-defined functions resolve
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, FnDef):
                 self._declare_fn(defn)
         # Emit agent definitions (handler methods + wrappers)
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, AgentDef):
                 self._emit_agent(defn)
         # Emit function bodies
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, FnDef):
                 self._emit_fn_body(defn)
             elif isinstance(defn, ImplDef):

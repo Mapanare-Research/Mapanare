@@ -22,14 +22,14 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-2090_passing_(82_files)-brightgreen.svg?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-2200+_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
 <br>
 
-[**Try it Online**](https://mapanare-research.github.io/mapanare/) · [**Getting Started**](docs/getting-started.md) · [Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Roadmap](docs/ROADMAP.md) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
+[**Try it Online**](https://mapanare-research.github.io/mapanare/) · [**Getting Started**](docs/getting-started.md) · [Language Reference](docs/reference.md) · [Cookbook](docs/cookbook.md) · [Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Roadmap](docs/ROADMAP.md) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
 
 </div>
 
@@ -283,8 +283,13 @@ mapanare compile <file>       Transpile to Python
 mapanare emit-llvm <file>     Emit LLVM IR
 mapanare repl                 Start interactive REPL
 mapanare fmt <file>           Format source code
+mapanare lint <file>          Lint for code quality issues
+mapanare doc <file>           Generate HTML docs from doc comments
 mapanare init [path]          Initialize a new project
-mapanare install <pkg>        Install a package (git-based)
+mapanare install <pkg>        Install a package
+mapanare publish [path]       Publish package to registry
+mapanare search <query>       Search package registry
+mapanare login                Authenticate with registry
 mapanare targets              List supported compilation targets
 ```
 
@@ -335,7 +340,9 @@ Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target 
 | `math` | Constants, trig, statistics, linear algebra helpers |
 | `text` | Case conversion, search, split/join, slug, padding |
 | `log` | Structured logging with agent context, JSON/text output |
-| `pkg` | Project manifests, git-based package install, lock files |
+| `pkg` | Project manifests, package install, registry publish |
+
+See the full [stdlib reference](docs/stdlib.md).
 
 ---
 
@@ -426,8 +433,8 @@ Requires Python 3.11+.
 | **v0.1.0** | Foundation — bootstrap compiler, dual backends, runtime, LSP, stdlib | ✅ Released |
 | **v0.2.0** | Self-Hosting — LLVM codegen, C runtime, self-hosted compiler (5,800 lines .mn) | ✅ Released |
 | **v0.3.0** | Depth Over Breadth — traits, modules, agent codegen, arena memory, 1,960+ tests | ✅ Released |
-| **v0.4.0** | Ready for the World — FFI, C runtime hardening, diagnostics, scope cleanup | 🔶 Next |
-| **v0.5.0** | The Ecosystem — package registry, WASM playground, linter | Planned |
+| **v0.4.0** | Ready for the World — FFI, C runtime hardening, diagnostics, scope cleanup | ✅ Released |
+| **v0.5.0** | The Ecosystem — interpolation, linter, Python interop, playground, registry, docs | 🔶 Current |
 | **v0.6.0** | Compiler Infrastructure — MIR, freeze Python bootstrap | Planned |
 | **v0.7.0** | Production Ready — observability, tracing, deployment, test runner | Planned |
 | **v1.0.0** | Stable — language spec frozen, backwards compatibility guarantees | Planned |

@@ -23,6 +23,7 @@ from mapanare.ast_nodes import (
     ConstructorPattern,
     Decorator,
     Definition,
+    DocComment,
     EnumDef,
     EnumVariant,
     ErrorPropExpr,
@@ -827,6 +828,29 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             defn.decorators = decorators
         defn.span = _span_from_children(children)
         return defn
+
+    def doc_commented_def(self, children: list[Any]) -> Definition:
+        items = _filter(children)
+        doc_lines: list[str] = []
+        defn: Definition | None = None
+        for item in items:
+            if isinstance(item, Token) and item.type == "DOC_COMMENT":
+                # Strip the leading '///' and optional space
+                line = str(item)
+                if line.startswith("/// "):
+                    doc_lines.append(line[4:])
+                elif line.startswith("///"):
+                    doc_lines.append(line[3:])
+            elif isinstance(item, Definition):
+                defn = item
+        if defn is None:
+            result: Definition = items[-1]
+            result.span = _span_from_children(children)
+            return result
+        doc_text = "\n".join(doc_lines)
+        doc = DocComment(text=doc_text, definition=defn, span=_span_from_children(children))
+        doc.definition = defn
+        return doc
 
     def decorator(self, children: list[Any]) -> Decorator:
         items = _filter(children)

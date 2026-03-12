@@ -689,6 +689,27 @@ def cmd_lint(args: argparse.Namespace) -> None:
         print(f"lint: {args.source} OK — no warnings")
 
 
+def cmd_doc(args: argparse.Namespace) -> None:
+    """Generate HTML documentation from doc comments in .mn source files."""
+    source = _read_source(args.source)
+    try:
+        ast = parse(source, filename=args.source)
+    except ParseError as e:
+        _emit_parse_error(e, source, args.source)
+        sys.exit(1)
+
+    from mapanare.docgen import extract_doc_items, generate_html
+
+    module_name = os.path.splitext(os.path.basename(args.source))[0]
+    items = extract_doc_items(ast)
+    html = generate_html(items, module_name=module_name)
+
+    out_path = args.o or args.source.replace(".mn", ".html")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"doc: {args.source} -> {out_path} ({len(items)} items)")
+
+
 def cmd_targets(args: argparse.Namespace) -> None:
     """List all supported compilation targets."""
     print("Supported targets:\n")
@@ -929,6 +950,12 @@ def build_parser() -> argparse.ArgumentParser:
     # targets
     p_targets = subparsers.add_parser("targets", help="List supported compilation targets")
     p_targets.set_defaults(func=cmd_targets)
+
+    # doc
+    p_doc = subparsers.add_parser("doc", help="Generate HTML docs from doc comments")
+    p_doc.add_argument("source", help="Path to .mn source file")
+    p_doc.add_argument("-o", metavar="OUTPUT", help="Output .html file path", default=None)
+    p_doc.set_defaults(func=cmd_doc)
 
     return parser
 

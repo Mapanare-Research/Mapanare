@@ -20,6 +20,7 @@ from mapanare.ast_nodes import (
     CallExpr,
     ConstructExpr,
     Definition,
+    DocComment,
     EnumDef,
     ExportDef,
     Expr,
@@ -383,6 +384,9 @@ class DocumentAnalysis:
                 self._visit_definition(defn.definition)
         elif isinstance(defn, ExternFnDef):
             self._visit_extern_fn_def(defn)
+        elif isinstance(defn, DocComment):
+            if defn.definition:
+                self._visit_definition(defn.definition)
 
     def _visit_fn_def(self, fn: FnDef) -> None:
         loc = _span_to_location(fn.span, self.uri)

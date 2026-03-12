@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-11
+
+### Added
+
+- **String interpolation**: `"Hello, ${name}!"` with `${expr}` syntax in both regular and triple-quoted strings; `InterpString` AST node; works on Python and LLVM backends
+- **Multi-line strings**: `"""..."""` triple-quoted string literals
+- **Linter**: `mapanare lint` with 8 rules (W001-W008): unused variables, unused imports, shadowing, unreachable code, unnecessary mut, empty match arms, unchecked results; `--fix` auto-repairs W002/W005; `@allow(rule)` suppression; LSP integration
+- **Python interop**: `extern "Python" fn module::name(params) -> Type` for calling Python functions; type marshalling; `Result<T, String>` wraps exceptions; `--python-path` flag
+- **WASM playground**: Browser-based editor at `play.mapanare.dev` via Pyodide; CodeMirror 6 with `.mn` syntax highlighting; 7 pre-loaded examples; share via URL hash
+- **Package registry**: `mapanare publish`, `mapanare search`, `mapanare login`; FastAPI registry backend; semver resolution; `mapanare install` checks registry before git fallback; package browser UI
+- **Doc comments**: `///` syntax captured in grammar as `DOC_COMMENT` tokens; `DocComment` AST node wraps definitions
+- **Doc generator**: `mapanare doc <file>` generates styled HTML documentation from `///` doc comments
+- **Language reference** (`docs/reference.md`): complete reference covering all types, keywords, operators, syntax, builtins, CLI commands, lint rules
+- **Cookbook** (`docs/cookbook.md`): 14 real-world recipes from hello world to Python interop
+- **Stdlib documentation** (`docs/stdlib.md`): API reference for all 7 stdlib modules
+- **Migration guides**: `docs/for-python-devs.md`, `docs/for-rust-devs.md`, `docs/for-typescript-devs.md`
+- 37 Python interop tests, 25 interpolation tests, 35 linter tests, playground tests, registry tests
+
+### Changed
+
+- README updated with v0.5.0 CLI commands (lint, doc, publish, search, login), roadmap status, stdlib reference link
+- All compiler passes (parser, semantic, optimizer, emitters, linter, LSP) handle `DocComment` AST nodes
+
 ## [0.4.0] - 2026-03-11
 
 ### Added

@@ -29,6 +29,7 @@ from mapanare.ast_nodes import (
     CallExpr,
     ConstructExpr,
     Definition,
+    DocComment,
     ErrExpr,
     ErrorPropExpr,
     ExportDef,
@@ -645,6 +646,9 @@ class Linter:
         elif isinstance(defn, ImplDef):
             self._lint_impl(defn)
         elif isinstance(defn, ExportDef):
+            if defn.definition:
+                self._lint_definition(defn.definition)
+        elif isinstance(defn, DocComment):
             if defn.definition:
                 self._lint_definition(defn.definition)
 
