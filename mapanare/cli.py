@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 
+from mapanare.ast_nodes import Program
 from mapanare.diagnostics import (
     Diagnostic,
     Label,
@@ -151,6 +152,43 @@ def _compile_to_llvm_ir(
     )
     module = llvm_emitter.emit_program(ast)
     return str(module)
+
+
+def _compile_multi_module_llvm(
+    source_files: list[str],
+    opt_level: OptLevel = OptLevel.O2,
+    target_name: str | None = None,
+) -> str:
+    """Compile multiple .mn files into a single linked LLVM IR module.
+
+    Resolves imports between modules and combines all LLVM IR into one module.
+    Link order matters: dependencies must be listed before dependents.
+    """
+    from mapanare.emit_llvm import LLVMEmitter
+    from mapanare.targets import get_target
+
+    target = get_target(target_name)
+    resolver = ModuleResolver()
+
+    # First pass: parse and check all files, building the resolver cache
+    parsed: list[tuple[str, Program]] = []
+    for filepath in source_files:
+        source = _read_source(filepath)
+        ast = parse(source, filename=filepath)
+        check_or_raise(ast, filename=filepath, resolver=resolver)
+        parsed.append((filepath, ast))
+
+    # Second pass: emit all modules into a single LLVM emitter
+    combined_emitter = LLVMEmitter(
+        module_name="mapanare_linked",
+        target_triple=target.triple,
+        data_layout=target.data_layout,
+    )
+
+    for filepath, ast in parsed:
+        combined_emitter.emit_program(ast, resolver=resolver)
+
+    return str(combined_emitter.module)
 
 
 def cmd_compile(args: argparse.Namespace) -> None:
@@ -795,6 +833,32 @@ def cmd_lint(args: argparse.Namespace) -> None:
         print(f"lint: {args.source} OK — no warnings")
 
 
+def cmd_build_multi(args: argparse.Namespace) -> None:
+    """Compile multiple .mn source files into a single linked LLVM IR / binary."""
+    source_files = args.sources
+    opt_level = _parse_opt_level(args)
+    target_name: str | None = getattr(args, "target", None)
+    try:
+        llvm_ir = _compile_multi_module_llvm(
+            source_files, opt_level=opt_level, target_name=target_name
+        )
+    except ParseError as e:
+        print(f"parse error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except SemanticErrors as e:
+        for err in e.errors:
+            print(f"error: {err.message}", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    out_path = args.o or "linked.ll"
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(llvm_ir)
+    print(f"linked {len(source_files)} modules -> {out_path}")
+
+
 def cmd_doc(args: argparse.Namespace) -> None:
     """Generate HTML documentation from doc comments in .mn source files."""
     source = _read_source(args.source)
@@ -1104,6 +1168,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Auto-fix lint warnings (unused imports, unnecessary mut)",
     )
     p_lint.set_defaults(func=cmd_lint)
+
+    # build-multi
+    p_build_multi = subparsers.add_parser(
+        "build-multi", help="Compile multiple .mn files into linked LLVM IR"
+    )
+    p_build_multi.add_argument("sources", nargs="+", help="Paths to .mn source files")
+    p_build_multi.add_argument("-o", metavar="OUTPUT", help="Output .ll file path", default=None)
+    p_build_multi.add_argument("--target", metavar="TARGET", help="Target triple", default=None)
+    _add_opt_level_args(p_build_multi)
+    p_build_multi.set_defaults(func=cmd_build_multi)
 
     # targets
     p_targets = subparsers.add_parser("targets", help="List supported compilation targets")

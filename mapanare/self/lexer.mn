@@ -85,6 +85,7 @@ fn is_keyword(name: String) -> Bool {
     if name == "true" { return true }
     if name == "false" { return true }
     if name == "none" { return true }
+    if name == "new" { return true }
     if name == "input" { return true }
     if name == "output" { return true }
     return false
@@ -117,6 +118,7 @@ fn keyword_token_type(name: String) -> String {
     if name == "true" { return "KW_TRUE" }
     if name == "false" { return "KW_FALSE" }
     if name == "none" { return "KW_NONE" }
+    if name == "new" { return "KW_NEW" }
     if name == "input" { return "KW_INPUT" }
     if name == "output" { return "KW_OUTPUT" }
     return "NAME"
@@ -303,6 +305,7 @@ fn scan_string(source: String, pos: Int, line: Int, col: Int) -> Token {
             if esc == "\\" { value = value + "\\" }
             if esc == "\"" { value = value + "\"" }
             if esc == "0" { value = value + "\0" }
+            if esc == "$" { value = value + "$" }
             p = p + 1
         } else {
             if ch == "\n" { cur_line = cur_line + 1 }

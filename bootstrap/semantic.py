@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mapanare.modules import ModuleExport, ModuleResolver
 
 from mapanare.ast_nodes import (
     AgentDef,
@@ -16,12 +19,14 @@ from mapanare.ast_nodes import (
     CharLiteral,
     ConstructExpr,
     Definition,
+    DocComment,
     EnumDef,
     ErrExpr,
     ErrorPropExpr,
     ExportDef,
     Expr,
     ExprStmt,
+    ExternFnDef,
     FieldAccessExpr,
     FloatLiteral,
     FnDef,
@@ -33,10 +38,12 @@ from mapanare.ast_nodes import (
     ImplDef,
     ImportDef,
     IndexExpr,
+    InterpString,
     IntLiteral,
     LambdaExpr,
     LetBinding,
     ListLiteral,
+    MapLiteral,
     MatchExpr,
     MethodCallExpr,
     NamedType,
@@ -58,10 +65,53 @@ from mapanare.ast_nodes import (
     StructDef,
     SyncExpr,
     TensorType,
+    TraitDef,
     TypeAlias,
     TypeExpr,
     UnaryExpr,
+    WhileLoop,
 )
+from mapanare.types import (
+    BOOL_TYPE,
+    BUILTIN_FUNCTIONS,
+    BUILTIN_GENERIC_KINDS,
+    BUILTIN_GENERIC_TYPES,
+    BUILTIN_TRAITS,
+    CHAR_TYPE,
+    FLOAT_TYPE,
+    INT_TYPE,
+    PRIMITIVE_KINDS,
+    PRIMITIVE_TYPES,
+    RANGE_TYPE,
+    STRING_TYPE,
+    UNKNOWN_TYPE,
+    VOID_TYPE,
+    TypeInfo,
+    TypeKind,
+    _type_display,
+    kind_from_name,
+)
+
+# Re-export these for backward compatibility — other modules import from semantic.py
+__all__ = [
+    "SemanticError",
+    "SemanticErrors",
+    "SemanticChecker",
+    "check",
+    "check_or_raise",
+    "TypeInfo",
+    "TypeKind",
+    "UNKNOWN_TYPE",
+    "INT_TYPE",
+    "FLOAT_TYPE",
+    "BOOL_TYPE",
+    "STRING_TYPE",
+    "CHAR_TYPE",
+    "VOID_TYPE",
+    "BUILTIN_FUNCTIONS",
+    "BUILTIN_GENERIC_TYPES",
+    "PRIMITIVE_TYPES",
+]
 
 # ---------------------------------------------------------------------------
 # Semantic error
@@ -91,109 +141,6 @@ class SemanticErrors(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Internal type representation
-# ---------------------------------------------------------------------------
-
-# We use a simple string-based type representation for the initial
-# semantic checker.  Full generics resolution comes later.
-
-PRIMITIVE_TYPES = frozenset(
-    {
-        "Int",
-        "Float",
-        "Bool",
-        "String",
-        "Char",
-        "Void",
-    }
-)
-
-BUILTIN_GENERIC_TYPES = frozenset(
-    {
-        "Option",
-        "Result",
-        "List",
-        "Map",
-        "Signal",
-        "Stream",
-        "Channel",
-        "Tensor",
-    }
-)
-
-# Built-in functions available without import
-BUILTIN_FUNCTIONS: dict[str, str] = {
-    "print": "Void",
-    "println": "Void",
-    "len": "Int",
-    "toString": "String",
-    "Some": "Option",
-    "Ok": "Result",
-    "Err": "Result",
-    "signal": "Signal",
-    "stream": "Stream",
-}
-
-
-@dataclass
-class TypeInfo:
-    """Resolved type information for an expression or binding."""
-
-    name: str  # e.g. "Int", "Option", "MyAgent", "<unknown>"
-    args: list[TypeInfo] = field(default_factory=list)
-    is_function: bool = False
-    param_types: list[TypeInfo] = field(default_factory=list)
-    return_type: Optional[TypeInfo] = None
-    # Phase 5.1: Compile-time tensor shape (None = dynamic/unknown)
-    tensor_shape: Optional[tuple[int, ...]] = None
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, TypeInfo):
-            return NotImplemented
-        if self.name == "<unknown>" or other.name == "<unknown>":
-            return True  # unknown is compatible with everything
-        if self.is_function and other.is_function:
-            return (
-                self.return_type == other.return_type
-                and len(self.param_types) == len(other.param_types)
-                and all(a == b for a, b in zip(self.param_types, other.param_types))
-            )
-        if self.name != other.name:
-            return False
-        if len(self.args) != len(other.args):
-            return True  # allow partial generic matching for now
-        return all(a == b for a, b in zip(self.args, other.args))
-
-    def __repr__(self) -> str:
-        if self.is_function:
-            params = ", ".join(repr(p) for p in self.param_types)
-            ret = repr(self.return_type) if self.return_type else "Void"
-            return f"fn({params}) -> {ret}"
-        if self.name == "Tensor" and self.tensor_shape is not None:
-            elem = repr(self.args[0]) if self.args else "?"
-            dims = ", ".join(str(d) for d in self.tensor_shape)
-            return f"Tensor<{elem}>[{dims}]"
-        if self.args:
-            args = ", ".join(repr(a) for a in self.args)
-            return f"{self.name}<{args}>"
-        return self.name
-
-
-UNKNOWN_TYPE = TypeInfo(name="<unknown>")
-INT_TYPE = TypeInfo(name="Int")
-FLOAT_TYPE = TypeInfo(name="Float")
-BOOL_TYPE = TypeInfo(name="Bool")
-STRING_TYPE = TypeInfo(name="String")
-CHAR_TYPE = TypeInfo(name="Char")
-VOID_TYPE = TypeInfo(name="Void")
-
-
-def _type_display(t: TypeInfo) -> str:
-    """Human-readable type string."""
-    return repr(t)
-
-
-# ---------------------------------------------------------------------------
 # Symbol table / Scope
 # ---------------------------------------------------------------------------
 
@@ -203,7 +150,8 @@ class Symbol:
     """A declared symbol (variable, function, type, agent, etc.)."""
 
     name: str
-    kind: str  # "variable", "function", "agent", "struct", "enum", "type_alias", "pipe", "param"
+    kind: str  # "variable", "function", "agent", "struct", "enum",
+    # "type_alias", "pipe", "param", "trait"
     type_info: TypeInfo = field(default_factory=lambda: UNKNOWN_TYPE)
     mutable: bool = False
     node: ASTNode | None = None
@@ -237,6 +185,15 @@ class Scope:
 
 
 # ---------------------------------------------------------------------------
+# Numeric/arithmetic kind sets (for type checking)
+# ---------------------------------------------------------------------------
+
+_NUMERIC_KINDS = frozenset({TypeKind.INT, TypeKind.FLOAT})
+_ARITHMETIC_KINDS = frozenset({TypeKind.INT, TypeKind.FLOAT, TypeKind.STRING, TypeKind.UNKNOWN})
+_TENSOR_ARITH_KINDS = frozenset({TypeKind.UNKNOWN, TypeKind.TENSOR, TypeKind.INT, TypeKind.FLOAT})
+
+
+# ---------------------------------------------------------------------------
 # Semantic Checker
 # ---------------------------------------------------------------------------
 
@@ -254,23 +211,53 @@ class SemanticChecker:
     - Error messages with file, line, column
     """
 
-    def __init__(self, filename: str = "<input>") -> None:
+    def __init__(
+        self,
+        filename: str = "<input>",
+        resolver: ModuleResolver | None = None,
+    ) -> None:
         self.filename = filename
         self.errors: list[SemanticError] = []
         self.global_scope = Scope()
         self.current_scope = self.global_scope
+        self.resolver = resolver
+        # Track resolved modules for this checker (module name -> exports)
+        self._resolved_modules: dict[str, dict[str, ModuleExport]] = {}
+        # Track trait implementations: (trait_name, type_name) pairs
+        self._trait_impls: set[tuple[str, str]] = set()
 
-        # Register built-in functions
-        for name, ret in BUILTIN_FUNCTIONS.items():
+        # Register built-in traits
+        for trait_name, methods in BUILTIN_TRAITS.items():
+            trait_methods = []
+            for m_name, has_self, _params, ret_name in methods:
+                from mapanare.ast_nodes import TraitMethod as _TM
+
+                ret_te = None
+                if ret_name and ret_name != "Self":
+                    ret_te = NamedType(name=ret_name)
+                trait_methods.append(_TM(name=m_name, has_self=has_self, return_type=ret_te))
+            builtin_trait_node = TraitDef(name=trait_name, public=True, methods=trait_methods)
+            self.global_scope.define(
+                trait_name,
+                Symbol(
+                    name=trait_name,
+                    kind="trait",
+                    type_info=TypeInfo(kind=TypeKind.TRAIT, name=trait_name),
+                    node=builtin_trait_node,
+                ),
+            )
+
+        # Register built-in functions from canonical registry
+        for name, ret_type in BUILTIN_FUNCTIONS.items():
             self.global_scope.define(
                 name,
                 Symbol(
                     name=name,
                     kind="function",
                     type_info=TypeInfo(
-                        name="<builtin>",
+                        kind=TypeKind.BUILTIN_FN,
                         is_function=True,
-                        return_type=TypeInfo(name=ret),
+                        return_type=ret_type,
                     ),
                 ),
             )
@@ -314,22 +301,39 @@ class SemanticChecker:
         if te is None:
             return UNKNOWN_TYPE
         if isinstance(te, NamedType):
-            return TypeInfo(name=te.name)
+            k = kind_from_name(te.name)
+            if k != TypeKind.UNKNOWN:
+                return TypeInfo(kind=k)
+            # User-defined type — look up in scope to determine kind
+            sym = self.global_scope.lookup(te.name)
+            if sym is not None:
+                if sym.kind == "struct":
+                    return TypeInfo(kind=TypeKind.STRUCT, name=te.name)
+                elif sym.kind == "enum":
+                    return TypeInfo(kind=TypeKind.ENUM, name=te.name)
+                elif sym.kind == "agent":
+                    return TypeInfo(kind=TypeKind.AGENT, name=te.name)
+                elif sym.kind == "type_alias":
+                    return sym.type_info
+            # Unknown user type — default to struct-like
+            return TypeInfo(kind=TypeKind.STRUCT, name=te.name)
         if isinstance(te, GenericType):
             args = [self._resolve_type_expr(a) for a in te.args]
-            return TypeInfo(name=te.name, args=args)
+            k = kind_from_name(te.name)
+            if k != TypeKind.UNKNOWN:
+                return TypeInfo(kind=k, args=args)
+            return TypeInfo(kind=TypeKind.STRUCT, name=te.name, args=args)
         if isinstance(te, TensorType):
             elem = self._resolve_type_expr(te.element_type)
-            # Phase 5.1: Try to resolve compile-time shape from literals
             from mapanare.types import resolve_shape_from_type
 
             shape = resolve_shape_from_type(list(te.shape))
-            return TypeInfo(name="Tensor", args=[elem], tensor_shape=shape)
+            return TypeInfo(kind=TypeKind.TENSOR, args=[elem], tensor_shape=shape)
         if isinstance(te, FnType):
             params = [self._resolve_type_expr(p) for p in te.param_types]
             ret = self._resolve_type_expr(te.return_type)
             return TypeInfo(
-                name="<fn>",
+                kind=TypeKind.FN,
                 is_function=True,
                 param_types=params,
                 return_type=ret,
@@ -348,10 +352,14 @@ class SemanticChecker:
             return BOOL_TYPE
         if isinstance(expr, StringLiteral):
             return STRING_TYPE
+        if isinstance(expr, InterpString):
+            for part in expr.parts:
+                self._infer_expr(part)
+            return STRING_TYPE
         if isinstance(expr, CharLiteral):
             return CHAR_TYPE
         if isinstance(expr, NoneLiteral):
-            return TypeInfo(name="Option")
+            return TypeInfo(kind=TypeKind.OPTION)
         if isinstance(expr, Identifier):
             sym = self.current_scope.lookup(expr.name)
             if sym is None:
@@ -365,12 +373,12 @@ class SemanticChecker:
         if isinstance(expr, CallExpr):
             return self._check_call(expr)
         if isinstance(expr, MethodCallExpr):
-            obj_type = self._infer_expr(expr.object)
+            self._infer_expr(expr.object)
             for a in expr.args:
                 self._infer_expr(a)
             return UNKNOWN_TYPE
         if isinstance(expr, FieldAccessExpr):
-            obj_type = self._infer_expr(expr.object)
+            self._infer_expr(expr.object)
             # Check agent inputs/outputs
             sym = None
             if isinstance(expr.object, Identifier):
@@ -387,51 +395,69 @@ class SemanticChecker:
         if isinstance(expr, IndexExpr):
             obj_type = self._infer_expr(expr.object)
             self._infer_expr(expr.index)
-            if obj_type.name == "List" and obj_type.args:
+            if obj_type.kind == TypeKind.LIST and obj_type.args:
                 return obj_type.args[0]
+            if obj_type.kind == TypeKind.MAP and len(obj_type.args) >= 2:
+                return obj_type.args[1]
             return UNKNOWN_TYPE
         if isinstance(expr, PipeExpr):
             return self._check_pipe_expr(expr)
         if isinstance(expr, RangeExpr):
             self._infer_expr(expr.start)
             self._infer_expr(expr.end)
-            return TypeInfo(name="Range")
+            return RANGE_TYPE
         if isinstance(expr, LambdaExpr):
             return self._check_lambda(expr)
         if isinstance(expr, SpawnExpr):
             return self._check_spawn(expr)
         if isinstance(expr, SyncExpr):
-            inner = self._infer_expr(expr.expr)
+            self._infer_expr(expr.expr)
             return UNKNOWN_TYPE
         if isinstance(expr, SendExpr):
             self._check_send(expr)
             return VOID_TYPE
         if isinstance(expr, ErrorPropExpr):
-            inner = self._infer_expr(expr.expr)
+            self._infer_expr(expr.expr)
             return UNKNOWN_TYPE
         if isinstance(expr, ListLiteral):
             if expr.elements:
                 elem_type = self._infer_expr(expr.elements[0])
                 for e in expr.elements[1:]:
                     self._infer_expr(e)
-                return TypeInfo(name="List", args=[elem_type])
-            return TypeInfo(name="List", args=[UNKNOWN_TYPE])
+                return TypeInfo(kind=TypeKind.LIST, args=[elem_type])
+            return TypeInfo(kind=TypeKind.LIST, args=[UNKNOWN_TYPE])
+        if isinstance(expr, MapLiteral):
+            if expr.entries:
+                key_type = self._infer_expr(expr.entries[0].key)
+                val_type = self._infer_expr(expr.entries[0].value)
+                for entry in expr.entries[1:]:
+                    self._infer_expr(entry.key)
+                    self._infer_expr(entry.value)
+                return TypeInfo(kind=TypeKind.MAP, args=[key_type, val_type])
+            return TypeInfo(kind=TypeKind.MAP, args=[UNKNOWN_TYPE, UNKNOWN_TYPE])
         if isinstance(expr, ConstructExpr):
             for fi in expr.fields:
                 self._infer_expr(fi.value)
-            return TypeInfo(name=expr.name)
+            # Look up the struct/enum in scope
+            sym = self.global_scope.lookup(expr.name)
+            if sym is not None:
+                if sym.kind == "struct":
+                    return TypeInfo(kind=TypeKind.STRUCT, name=expr.name)
+                elif sym.kind == "enum":
+                    return TypeInfo(kind=TypeKind.ENUM, name=expr.name)
+            return TypeInfo(kind=TypeKind.STRUCT, name=expr.name)
         if isinstance(expr, SomeExpr):
             inner = self._infer_expr(expr.value)
-            return TypeInfo(name="Option", args=[inner])
+            return TypeInfo(kind=TypeKind.OPTION, args=[inner])
         if isinstance(expr, OkExpr):
             inner = self._infer_expr(expr.value)
-            return TypeInfo(name="Result", args=[inner])
+            return TypeInfo(kind=TypeKind.RESULT, args=[inner])
         if isinstance(expr, ErrExpr):
             inner = self._infer_expr(expr.value)
-            return TypeInfo(name="Result", args=[UNKNOWN_TYPE, inner])
+            return TypeInfo(kind=TypeKind.RESULT, args=[UNKNOWN_TYPE, inner])
         if isinstance(expr, SignalExpr):
             inner = self._infer_expr(expr.value)
-            return TypeInfo(name="Signal", args=[inner])
+            return TypeInfo(kind=TypeKind.SIGNAL, args=[inner])
         if isinstance(expr, AssignExpr):
             return self._check_assign(expr)
         if isinstance(expr, IfExpr):
@@ -439,7 +465,7 @@ class SemanticChecker:
         if isinstance(expr, MatchExpr):
             return self._check_match(expr)
         if isinstance(expr, NamespaceAccessExpr):
-            return UNKNOWN_TYPE
+            return self._check_namespace_access(expr)
         # Fallback
         return UNKNOWN_TYPE
 
@@ -455,15 +481,15 @@ class SemanticChecker:
         logical_ops = {"&&", "||"}
 
         if expr.op in arithmetic_ops:
-            # Tensor element-wise ops: Tensor +/-/*// Tensor → Tensor
-            if left.name == "Tensor" or right.name == "Tensor":
-                if left.name not in ("<unknown>", "Tensor", "Int", "Float"):
+            # Tensor element-wise ops: Tensor +/-/*// Tensor -> Tensor
+            if left.kind == TypeKind.TENSOR or right.kind == TypeKind.TENSOR:
+                if left.kind not in _TENSOR_ARITH_KINDS:
                     self._error(
                         f"Operator '{expr.op}' not supported for "
                         f"types {_type_display(left)} and {_type_display(right)}",
                         expr,
                     )
-                if right.name not in ("<unknown>", "Tensor", "Int", "Float"):
+                if right.kind not in _TENSOR_ARITH_KINDS:
                     self._error(
                         f"Operator '{expr.op}' not supported for "
                         f"types {_type_display(left)} and {_type_display(right)}",
@@ -471,7 +497,7 @@ class SemanticChecker:
                     )
                 # Compile-time shape validation for element-wise ops
                 result_shape: tuple[int, ...] | None = None
-                if left.name == "Tensor" and right.name == "Tensor":
+                if left.kind == TypeKind.TENSOR and right.kind == TypeKind.TENSOR:
                     if left.tensor_shape is not None and right.tensor_shape is not None:
                         if left.tensor_shape != right.tensor_shape:
                             self._error(
@@ -481,22 +507,22 @@ class SemanticChecker:
                             )
                         else:
                             result_shape = left.tensor_shape
-                elif left.name == "Tensor":
+                elif left.kind == TypeKind.TENSOR:
                     result_shape = left.tensor_shape
                 else:
                     result_shape = right.tensor_shape
                 elem_type = (
                     left.args[0]
-                    if left.name == "Tensor" and left.args
-                    else right.args[0] if right.name == "Tensor" and right.args else UNKNOWN_TYPE
+                    if left.kind == TypeKind.TENSOR and left.args
+                    else (
+                        right.args[0]
+                        if right.kind == TypeKind.TENSOR and right.args
+                        else UNKNOWN_TYPE
+                    )
                 )
-                return TypeInfo(name="Tensor", args=[elem_type], tensor_shape=result_shape)
-            if left.name not in ("<unknown>", "Int", "Float", "String") or right.name not in (
-                "<unknown>",
-                "Int",
-                "Float",
-                "String",
-            ):
+                return TypeInfo(kind=TypeKind.TENSOR, args=[elem_type], tensor_shape=result_shape)
+
+            if left.kind not in _ARITHMETIC_KINDS or right.kind not in _ARITHMETIC_KINDS:
                 left_s = _type_display(left)
                 right_s = _type_display(right)
                 self._error(
@@ -504,11 +530,11 @@ class SemanticChecker:
                     expr,
                 )
                 return UNKNOWN_TYPE
-            if expr.op == "+" and (left.name == "String" or right.name == "String"):
+            if expr.op == "+" and (left.kind == TypeKind.STRING or right.kind == TypeKind.STRING):
                 return STRING_TYPE
-            if left.name == "Float" or right.name == "Float":
+            if left.kind == TypeKind.FLOAT or right.kind == TypeKind.FLOAT:
                 return FLOAT_TYPE
-            if left.name == "Int" and right.name == "Int":
+            if left.kind == TypeKind.INT and right.kind == TypeKind.INT:
                 return INT_TYPE
             return UNKNOWN_TYPE
 
@@ -516,12 +542,12 @@ class SemanticChecker:
             return BOOL_TYPE
 
         if expr.op in logical_ops:
-            if left.name not in ("<unknown>", "Bool"):
+            if left.kind not in (TypeKind.UNKNOWN, TypeKind.BOOL):
                 self._error(
                     f"Operator '{expr.op}' requires Bool, got {_type_display(left)}",
                     expr,
                 )
-            if right.name not in ("<unknown>", "Bool"):
+            if right.kind not in (TypeKind.UNKNOWN, TypeKind.BOOL):
                 self._error(
                     f"Operator '{expr.op}' requires Bool, got {_type_display(right)}",
                     expr,
@@ -530,12 +556,12 @@ class SemanticChecker:
 
         # Matrix multiply (@) — requires Tensor operands
         if expr.op == "@":
-            if left.name not in ("<unknown>", "Tensor"):
+            if left.kind not in (TypeKind.UNKNOWN, TypeKind.TENSOR):
                 self._error(
                     f"Operator '@' requires Tensor, got {_type_display(left)}",
                     expr,
                 )
-            if right.name not in ("<unknown>", "Tensor"):
+            if right.kind not in (TypeKind.UNKNOWN, TypeKind.TENSOR):
                 self._error(
                     f"Operator '@' requires Tensor, got {_type_display(right)}",
                     expr,
@@ -554,7 +580,7 @@ class SemanticChecker:
                         expr,
                     )
             elem_type = left.args[0] if left.args else UNKNOWN_TYPE
-            return TypeInfo(name="Tensor", args=[elem_type], tensor_shape=matmul_shape)
+            return TypeInfo(kind=TypeKind.TENSOR, args=[elem_type], tensor_shape=matmul_shape)
 
         return UNKNOWN_TYPE
 
@@ -563,14 +589,14 @@ class SemanticChecker:
     def _check_unary(self, expr: UnaryExpr) -> TypeInfo:
         operand = self._infer_expr(expr.operand)
         if expr.op == "-":
-            if operand.name not in ("<unknown>", "Int", "Float"):
+            if operand.kind not in (TypeKind.UNKNOWN, TypeKind.INT, TypeKind.FLOAT):
                 self._error(
                     f"Unary '-' not supported for type {_type_display(operand)}",
                     expr,
                 )
             return operand
         if expr.op == "!":
-            if operand.name not in ("<unknown>", "Bool"):
+            if operand.kind not in (TypeKind.UNKNOWN, TypeKind.BOOL):
                 self._error(
                     f"Unary '!' requires Bool, got {_type_display(operand)}",
                     expr,
@@ -617,9 +643,9 @@ class SemanticChecker:
                     return sym.type_info.return_type
                 return UNKNOWN_TYPE
             if sym.kind == "agent":
-                return TypeInfo(name=sym.name)
+                return TypeInfo(kind=TypeKind.AGENT, name=sym.name)
             if sym.kind == "struct":
-                return TypeInfo(name=sym.name)
+                return TypeInfo(kind=TypeKind.STRUCT, name=sym.name)
             # Calling a variable that might be a function type
             return UNKNOWN_TYPE
 
@@ -644,8 +670,8 @@ class SemanticChecker:
                 )
             # Type check: if both known, they should match
             if (
-                sym.type_info.name != "<unknown>"
-                and value_type.name != "<unknown>"
+                sym.type_info.kind != TypeKind.UNKNOWN
+                and value_type.kind != TypeKind.UNKNOWN
                 and sym.type_info != value_type
             ):
                 val_s = _type_display(value_type)
@@ -663,7 +689,7 @@ class SemanticChecker:
 
     def _check_if(self, expr: IfExpr) -> TypeInfo:
         cond_type = self._infer_expr(expr.condition)
-        if cond_type.name not in ("<unknown>", "Bool"):
+        if cond_type.kind not in (TypeKind.UNKNOWN, TypeKind.BOOL):
             self._error(
                 f"If condition must be Bool, got {_type_display(cond_type)}",
                 expr,
@@ -707,6 +733,46 @@ class SemanticChecker:
             for arg in pattern.args:
                 self._bind_pattern(arg)
 
+    # -- Namespace access -----------------------------------------------
+
+    def _check_namespace_access(self, expr: NamespaceAccessExpr) -> TypeInfo:
+        """Check `Module::member` access against resolved module exports."""
+        ns = expr.namespace
+        member = expr.member
+
+        # Check if the namespace is a resolved module
+        mod_exports = self._resolved_modules.get(ns)
+        if mod_exports is not None:
+            export = mod_exports.get(member)
+            if export is None:
+                self._error(f"'{member}' not found in module '{ns}'", expr)
+                return UNKNOWN_TYPE
+            # Return the type of the export
+            defn = export.definition
+            if isinstance(defn, FnDef):
+                param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
+                ret = self._resolve_type_expr(defn.return_type)
+                return TypeInfo(
+                    kind=TypeKind.FN,
+                    is_function=True,
+                    param_types=param_types,
+                    return_type=ret,
+                )
+            elif isinstance(defn, StructDef):
+                return TypeInfo(kind=TypeKind.STRUCT, name=member)
+            elif isinstance(defn, EnumDef):
+                return TypeInfo(kind=TypeKind.ENUM, name=member)
+            elif isinstance(defn, AgentDef):
+                return TypeInfo(kind=TypeKind.AGENT, name=member)
+            return UNKNOWN_TYPE
+
+        # Check if it's an enum variant access (EnumName::VariantName)
+        sym = self.current_scope.lookup(ns)
+        if sym is not None and sym.kind == "enum":
+            return TypeInfo(kind=TypeKind.ENUM, name=ns)
+
+        return UNKNOWN_TYPE
+
     # -- Lambda ---------------------------------------------------------
 
     def _check_lambda(self, expr: LambdaExpr) -> TypeInfo:
@@ -726,7 +792,7 @@ class SemanticChecker:
             ret = self._infer_expr(expr.body)
         self._pop_scope()
         return TypeInfo(
-            name="<fn>",
+            kind=TypeKind.FN,
             is_function=True,
             param_types=param_types,
             return_type=ret,
@@ -748,7 +814,7 @@ class SemanticChecker:
                 )
             for a in expr.args:
                 self._infer_expr(a)
-            return TypeInfo(name=sym.name)
+            return TypeInfo(kind=TypeKind.AGENT, name=sym.name)
         for a in expr.args:
             self._infer_expr(a)
         return UNKNOWN_TYPE
@@ -772,10 +838,10 @@ class SemanticChecker:
                 agent_def: AgentDef | None = None
                 if sym.kind == "agent" and sym.node and isinstance(sym.node, AgentDef):
                     agent_def = sym.node
-                elif sym.type_info.name not in (
-                    "<unknown>",
-                    "<fn>",
-                    "<builtin>",
+                elif sym.type_info.kind not in (
+                    TypeKind.UNKNOWN,
+                    TypeKind.FN,
+                    TypeKind.BUILTIN_FN,
                 ):
                     agent_def = self._find_agent_def(sym.type_info.name)
 
@@ -784,8 +850,8 @@ class SemanticChecker:
                         if inp.name == expr.target.field_name:
                             expected = self._resolve_type_expr(inp.type_annotation)
                             if (
-                                expected.name != "<unknown>"
-                                and value_type.name != "<unknown>"
+                                expected.kind != TypeKind.UNKNOWN
+                                and value_type.kind != TypeKind.UNKNOWN
                                 and expected != value_type
                             ):
                                 val_s = _type_display(value_type)
@@ -815,8 +881,8 @@ class SemanticChecker:
                 if sym.type_info.param_types:
                     expected = sym.type_info.param_types[0]
                     if (
-                        expected.name != "<unknown>"
-                        and left_type.name != "<unknown>"
+                        expected.kind != TypeKind.UNKNOWN
+                        and left_type.kind != TypeKind.UNKNOWN
                         and expected != left_type
                     ):
                         lt_s = _type_display(left_type)
@@ -830,7 +896,7 @@ class SemanticChecker:
                 if sym.type_info.return_type:
                     return sym.type_info.return_type
             if sym.kind == "agent":
-                return TypeInfo(name=sym.name)
+                return TypeInfo(kind=TypeKind.AGENT, name=sym.name)
             return UNKNOWN_TYPE
         if isinstance(expr.right, CallExpr):
             return self._check_call(expr.right)
@@ -856,9 +922,9 @@ class SemanticChecker:
                 if sym.kind == "agent" and sym.node and isinstance(sym.node, AgentDef):
                     agent = sym.node
                     # Check input type matches previous output
-                    if agent.inputs and prev_output.name != "<unknown>":
+                    if agent.inputs and prev_output.kind != TypeKind.UNKNOWN:
                         input_type = self._resolve_type_expr(agent.inputs[0].type_annotation)
-                        if input_type.name != "<unknown>" and input_type != prev_output:
+                        if input_type.kind != TypeKind.UNKNOWN and input_type != prev_output:
                             it_s = _type_display(input_type)
                             po_s = _type_display(prev_output)
                             self._error(
@@ -874,9 +940,9 @@ class SemanticChecker:
                     else:
                         prev_output = UNKNOWN_TYPE
                 elif sym.kind == "function" and sym.type_info.is_function:
-                    if sym.type_info.param_types and prev_output.name != "<unknown>":
+                    if sym.type_info.param_types and prev_output.kind != TypeKind.UNKNOWN:
                         expected = sym.type_info.param_types[0]
-                        if expected.name != "<unknown>" and expected != prev_output:
+                        if expected.kind != TypeKind.UNKNOWN and expected != prev_output:
                             exp_s = _type_display(expected)
                             po_s = _type_display(prev_output)
                             self._error(
@@ -911,6 +977,8 @@ class SemanticChecker:
                 self._infer_expr(stmt.value)
         elif isinstance(stmt, ForLoop):
             self._check_for(stmt)
+        elif isinstance(stmt, WhileLoop):
+            self._check_while(stmt)
         elif isinstance(stmt, SignalDecl):
             self._check_signal_decl(stmt)
         elif isinstance(stmt, StreamDecl):
@@ -922,8 +990,8 @@ class SemanticChecker:
 
         # If both annotation and value type are known, check they match
         if (
-            ann_type.name != "<unknown>"
-            and value_type.name != "<unknown>"
+            ann_type.kind != TypeKind.UNKNOWN
+            and value_type.kind != TypeKind.UNKNOWN
             and ann_type != value_type
         ):
             ann_s = _type_display(ann_type)
@@ -934,7 +1002,7 @@ class SemanticChecker:
             )
 
         # Use annotation if available, otherwise inferred
-        resolved = ann_type if ann_type.name != "<unknown>" else value_type
+        resolved = ann_type if ann_type.kind != TypeKind.UNKNOWN else value_type
         self.current_scope.define(
             let.name,
             Symbol(
@@ -955,11 +1023,17 @@ class SemanticChecker:
         self._check_block(loop.body)
         self._pop_scope()
 
+    def _check_while(self, loop: WhileLoop) -> None:
+        self._infer_expr(loop.condition)
+        self._push_scope()
+        self._check_block(loop.body)
+        self._pop_scope()
+
     def _check_signal_decl(self, decl: SignalDecl) -> None:
         value_type = self._infer_expr(decl.value)
         ann_type = self._resolve_type_expr(decl.type_annotation)
-        resolved = ann_type if ann_type.name != "<unknown>" else value_type
-        sig_type = TypeInfo(name="Signal", args=[resolved])
+        resolved = ann_type if ann_type.kind != TypeKind.UNKNOWN else value_type
+        sig_type = TypeInfo(kind=TypeKind.SIGNAL, args=[resolved])
         self.current_scope.define(
             decl.name,
             Symbol(name=decl.name, kind="variable", type_info=sig_type, mutable=decl.mutable),
@@ -968,8 +1042,8 @@ class SemanticChecker:
     def _check_stream_decl(self, decl: StreamDecl) -> None:
         value_type = self._infer_expr(decl.value)
         ann_type = self._resolve_type_expr(decl.type_annotation)
-        resolved = ann_type if ann_type.name != "<unknown>" else value_type
-        stream_type = TypeInfo(name="Stream", args=[resolved])
+        resolved = ann_type if ann_type.kind != TypeKind.UNKNOWN else value_type
+        stream_type = TypeInfo(kind=TypeKind.STREAM, args=[resolved])
         self.current_scope.define(
             decl.name,
             Symbol(name=decl.name, kind="variable", type_info=stream_type),
@@ -987,7 +1061,7 @@ class SemanticChecker:
             param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
             ret = self._resolve_type_expr(defn.return_type)
             fn_type = TypeInfo(
-                name="<fn>",
+                kind=TypeKind.FN,
                 is_function=True,
                 param_types=param_types,
                 return_type=ret,
@@ -1002,7 +1076,7 @@ class SemanticChecker:
                 Symbol(
                     name=defn.name,
                     kind="agent",
-                    type_info=TypeInfo(name=defn.name),
+                    type_info=TypeInfo(kind=TypeKind.AGENT, name=defn.name),
                     node=defn,
                 ),
             )
@@ -1012,7 +1086,7 @@ class SemanticChecker:
                 Symbol(
                     name=defn.name,
                     kind="struct",
-                    type_info=TypeInfo(name=defn.name),
+                    type_info=TypeInfo(kind=TypeKind.STRUCT, name=defn.name),
                     node=defn,
                 ),
             )
@@ -1022,7 +1096,7 @@ class SemanticChecker:
                 Symbol(
                     name=defn.name,
                     kind="enum",
-                    type_info=TypeInfo(name=defn.name),
+                    type_info=TypeInfo(kind=TypeKind.ENUM, name=defn.name),
                     node=defn,
                 ),
             )
@@ -1032,9 +1106,9 @@ class SemanticChecker:
                     name=variant.name,
                     kind="function",
                     type_info=TypeInfo(
-                        name="<fn>",
+                        kind=TypeKind.FN,
                         is_function=True,
-                        return_type=TypeInfo(name=defn.name),
+                        return_type=TypeInfo(kind=TypeKind.ENUM, name=defn.name),
                     ),
                 )
                 self.global_scope.define(variant.name, variant_sym)
@@ -1048,6 +1122,29 @@ class SemanticChecker:
                         type_info=variant_sym.type_info,
                     ),
                 )
+        elif isinstance(defn, ExternFnDef):
+            if defn.abi not in ("C", "Python"):
+                self._error(
+                    f'Unsupported ABI \'{defn.abi}\'; only "C" and "Python" are supported', defn
+                )
+            if defn.abi == "Python" and not defn.module:
+                self._error(
+                    'extern "Python" requires module qualifier: '
+                    'extern "Python" fn module::name(...)',
+                    defn,
+                )
+            param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
+            ret = self._resolve_type_expr(defn.return_type)
+            fn_type = TypeInfo(
+                kind=TypeKind.FN,
+                is_function=True,
+                param_types=param_types,
+                return_type=ret,
+            )
+            self.global_scope.define(
+                defn.name,
+                Symbol(name=defn.name, kind="function", type_info=fn_type, node=defn),
+            )
         elif isinstance(defn, PipeDef):
             self.global_scope.define(
                 defn.name,
@@ -1064,8 +1161,34 @@ class SemanticChecker:
                 defn.name,
                 Symbol(name=defn.name, kind="type_alias", type_info=resolved, node=defn),
             )
+        elif isinstance(defn, TraitDef):
+            self.global_scope.define(
+                defn.name,
+                Symbol(
+                    name=defn.name,
+                    kind="trait",
+                    type_info=TypeInfo(kind=TypeKind.TRAIT, name=defn.name),
+                    node=defn,
+                ),
+            )
         elif isinstance(defn, ImportDef):
-            # Register imported names
+            self._resolve_import(defn)
+        elif isinstance(defn, ExportDef):
+            if defn.definition:
+                self._register_def(defn.definition)
+        elif isinstance(defn, ImplDef):
+            pass  # methods handled in second pass
+        elif isinstance(defn, DocComment):
+            if defn.definition:
+                self._register_def(defn.definition)
+
+    # -- Import resolution -----------------------------------------------
+
+    def _resolve_import(self, defn: ImportDef) -> None:
+        """Resolve an import, registering symbols from the imported module."""
+        if self.resolver is None:
+            # No resolver — fall back to registering names with UNKNOWN_TYPE
+            # (for backward compatibility with single-file checks)
             if defn.items:
                 for item in defn.items:
                     self.global_scope.define(
@@ -1073,18 +1196,144 @@ class SemanticChecker:
                         Symbol(name=item, kind="variable", type_info=UNKNOWN_TYPE),
                     )
             else:
-                # Import the module name itself
                 mod_name = defn.path[-1] if defn.path else ""
                 if mod_name:
                     self.global_scope.define(
                         mod_name,
-                        Symbol(name=mod_name, kind="variable", type_info=UNKNOWN_TYPE),
+                        Symbol(
+                            name=mod_name,
+                            kind="module",
+                            type_info=UNKNOWN_TYPE,
+                        ),
                     )
-        elif isinstance(defn, ExportDef):
-            if defn.definition:
-                self._register_def(defn.definition)
-        elif isinstance(defn, ImplDef):
-            pass  # methods handled in second pass
+            return
+
+        from mapanare.modules import ModuleResolutionError
+
+        try:
+            resolved = self.resolver.resolve_module(defn.path, self.filename)
+        except ModuleResolutionError as e:
+            self._error(str(e), defn)
+            return
+
+        # Recursively type-check the imported module
+        sub_checker = SemanticChecker(filename=resolved.filepath, resolver=self.resolver)
+        sub_errors = sub_checker.check(resolved.program)
+        self.errors.extend(sub_errors)
+        if sub_errors:
+            return
+
+        mod_name = defn.path[-1] if defn.path else ""
+
+        if defn.items:
+            # Selective import: `import foo { bar, baz }`
+            for item in defn.items:
+                export = resolved.exports.get(item)
+                if export is None:
+                    self._error(
+                        f"'{item}' not found in module '{mod_name}'",
+                        defn,
+                    )
+                    continue
+                if not export.public:
+                    self._error(
+                        f"'{item}' is not public in module '{mod_name}'",
+                        defn,
+                    )
+                    continue
+                # Register the imported definition in the current scope
+                self._register_imported_def(item, export)
+        else:
+            # Full module import: `import foo` — register as module
+            self._resolved_modules[mod_name] = {
+                name: exp for name, exp in resolved.exports.items() if exp.public
+            }
+            self.global_scope.define(
+                mod_name,
+                Symbol(
+                    name=mod_name,
+                    kind="module",
+                    type_info=TypeInfo(kind=TypeKind.STRUCT, name=mod_name),
+                ),
+            )
+
+    def _register_imported_def(self, name: str, export: ModuleExport) -> None:
+        """Register an imported symbol from a resolved module export."""
+        defn = export.definition
+        if isinstance(defn, FnDef):
+            param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
+            ret = self._resolve_type_expr(defn.return_type)
+            fn_type = TypeInfo(
+                kind=TypeKind.FN,
+                is_function=True,
+                param_types=param_types,
+                return_type=ret,
+            )
+            self.global_scope.define(
+                name,
+                Symbol(name=name, kind="function", type_info=fn_type, node=defn),
+            )
+        elif isinstance(defn, AgentDef):
+            self.global_scope.define(
+                name,
+                Symbol(
+                    name=name,
+                    kind="agent",
+                    type_info=TypeInfo(kind=TypeKind.AGENT, name=name),
+                    node=defn,
+                ),
+            )
+        elif isinstance(defn, StructDef):
+            self.global_scope.define(
+                name,
+                Symbol(
+                    name=name,
+                    kind="struct",
+                    type_info=TypeInfo(kind=TypeKind.STRUCT, name=name),
+                    node=defn,
+                ),
+            )
+        elif isinstance(defn, EnumDef):
+            self.global_scope.define(
+                name,
+                Symbol(
+                    name=name,
+                    kind="enum",
+                    type_info=TypeInfo(kind=TypeKind.ENUM, name=name),
+                    node=defn,
+                ),
+            )
+            # Also register enum variants
+            for variant in defn.variants:
+                self.global_scope.define(
+                    variant.name,
+                    Symbol(
+                        name=variant.name,
+                        kind="function",
+                        type_info=TypeInfo(
+                            kind=TypeKind.FN,
+                            is_function=True,
+                            return_type=TypeInfo(kind=TypeKind.ENUM, name=name),
+                        ),
+                    ),
+                )
+        elif isinstance(defn, PipeDef):
+            self.global_scope.define(
+                name,
+                Symbol(name=name, kind="pipe", type_info=UNKNOWN_TYPE, node=defn),
+            )
+        elif isinstance(defn, TypeAlias):
+            resolved_type = self._resolve_type_expr(defn.type_expr)
+            self.global_scope.define(
+                name,
+                Symbol(name=name, kind="type_alias", type_info=resolved_type, node=defn),
+            )
+        else:
+            # Fallback — register as unknown
+            self.global_scope.define(
+                name,
+                Symbol(name=name, kind="variable", type_info=UNKNOWN_TYPE),
+            )
 
     # -- Definition checking (second pass) ------------------------------
 
@@ -1096,13 +1345,20 @@ class SemanticChecker:
     def _check_def(self, defn: Definition) -> None:
         if isinstance(defn, FnDef):
             self._check_fn(defn)
+        elif isinstance(defn, ExternFnDef):
+            pass  # No body to check; registration handled in first pass
         elif isinstance(defn, AgentDef):
             self._check_agent(defn)
         elif isinstance(defn, PipeDef):
             self._check_pipe_def(defn)
+        elif isinstance(defn, TraitDef):
+            self._check_trait(defn)
         elif isinstance(defn, ImplDef):
             self._check_impl(defn)
         elif isinstance(defn, ExportDef):
+            if defn.definition:
+                self._check_def(defn.definition)
+        elif isinstance(defn, DocComment):
             if defn.definition:
                 self._check_def(defn.definition)
 
@@ -1149,16 +1405,16 @@ class SemanticChecker:
             Symbol(
                 name="self",
                 kind="variable",
-                type_info=TypeInfo(name=agent.name),
+                type_info=TypeInfo(kind=TypeKind.AGENT, name=agent.name),
             ),
         )
 
         # Validate input/output types exist
         for inp in agent.inputs:
             inp_type = self._resolve_type_expr(inp.type_annotation)
-            if inp_type.name not in ("<unknown>",) and not self._type_exists(inp_type):
+            if inp_type.kind != TypeKind.UNKNOWN and not self._type_exists(inp_type):
                 self._error(
-                    f"Unknown type '{inp_type.name}' for input '{inp.name}'",
+                    f"Unknown type '{inp_type.display_name}' for input '{inp.name}'",
                     inp,
                 )
             self.current_scope.define(
@@ -1168,9 +1424,9 @@ class SemanticChecker:
 
         for out in agent.outputs:
             out_type = self._resolve_type_expr(out.type_annotation)
-            if out_type.name not in ("<unknown>",) and not self._type_exists(out_type):
+            if out_type.kind != TypeKind.UNKNOWN and not self._type_exists(out_type):
                 self._error(
-                    f"Unknown type '{out_type.name}' for output '{out.name}'",
+                    f"Unknown type '{out_type.display_name}' for output '{out.name}'",
                     out,
                 )
             self.current_scope.define(
@@ -1188,19 +1444,84 @@ class SemanticChecker:
 
         self._pop_scope()
 
+    def _check_trait(self, trait: TraitDef) -> None:
+        """Check trait method signatures for valid types."""
+        for method in trait.methods:
+            for param in method.params:
+                if param.type_annotation is not None:
+                    self._resolve_type_expr(param.type_annotation)
+            if method.return_type is not None:
+                self._resolve_type_expr(method.return_type)
+
     def _check_impl(self, impl: ImplDef) -> None:
         sym = self.current_scope.lookup(impl.target)
         if sym is None:
             self._error_at(f"Undefined type '{impl.target}' in impl block", 0, 0)
+
+        # If this is a trait impl, verify all trait methods are implemented
+        if impl.trait_name is not None:
+            trait_sym = self.current_scope.lookup(impl.trait_name)
+            if trait_sym is None or trait_sym.kind != "trait":
+                self._error_at(f"Undefined trait '{impl.trait_name}' in impl block", 0, 0)
+            elif trait_sym.node is not None and isinstance(trait_sym.node, TraitDef):
+                trait_def = trait_sym.node
+                impl_method_names = {m.name for m in impl.methods}
+                trait_method_names = {m.name for m in trait_def.methods}
+
+                # Check for missing methods
+                for tm in trait_def.methods:
+                    if tm.name not in impl_method_names:
+                        self._error_at(
+                            f"Missing implementation of '{tm.name}' "
+                            f"from trait '{impl.trait_name}' for type '{impl.target}'",
+                            0,
+                            0,
+                        )
+
+                # Check for extra methods not in trait
+                has_errors = False
+                for m in impl.methods:
+                    if m.name not in trait_method_names:
+                        self._error_at(
+                            f"Method '{m.name}' is not defined in trait '{impl.trait_name}'",
+                            0,
+                            0,
+                        )
+                        has_errors = True
+
+                # Register successful trait impl
+                if not has_errors and not any(
+                    tm.name not in impl_method_names for tm in trait_def.methods
+                ):
+                    self._trait_impls.add((impl.trait_name, impl.target))
+
         for method in impl.methods:
             self._check_fn(method)
 
+    def _type_implements_trait(self, type_name: str, trait_name: str) -> bool:
+        """Check if a type has an impl for the given trait."""
+        return (trait_name, type_name) in self._trait_impls
+
     def _type_exists(self, t: TypeInfo) -> bool:
-        """Check if a type name is known (primitive, builtin generic, or user-defined)."""
-        if t.name in PRIMITIVE_TYPES or t.name in BUILTIN_GENERIC_TYPES:
+        """Check if a type is known (primitive, builtin generic, or user-defined)."""
+        if t.kind in PRIMITIVE_KINDS or t.kind in BUILTIN_GENERIC_KINDS:
             return True
-        sym = self.global_scope.lookup(t.name)
-        return sym is not None and sym.kind in ("struct", "enum", "agent", "type_alias")
+        if t.kind in (
+            TypeKind.STRUCT,
+            TypeKind.ENUM,
+            TypeKind.AGENT,
+            TypeKind.TYPE_ALIAS,
+            TypeKind.TRAIT,
+        ):
+            sym = self.global_scope.lookup(t.name)
+            return sym is not None and sym.kind in (
+                "struct",
+                "enum",
+                "agent",
+                "type_alias",
+                "trait",
+            )
+        return False
 
     # -- Public API -----------------------------------------------------
 
@@ -1216,33 +1537,42 @@ class SemanticChecker:
 # ---------------------------------------------------------------------------
 
 
-def check(program: Program, *, filename: str = "<input>") -> list[SemanticError]:
+def check(
+    program: Program,
+    *,
+    filename: str = "<input>",
+    resolver: ModuleResolver | None = None,
+) -> list[SemanticError]:
     """Run semantic analysis on a program.
 
     Args:
         program: The AST Program node to check.
         filename: Filename used in error messages.
+        resolver: Optional module resolver for multi-file compilation.
 
     Returns:
         A list of SemanticError objects. Empty list means no errors.
-
-    Raises:
-        SemanticErrors: If raise_on_error is needed, wrap this call.
     """
-    checker = SemanticChecker(filename=filename)
+    checker = SemanticChecker(filename=filename, resolver=resolver)
     return checker.check(program)
 
 
-def check_or_raise(program: Program, *, filename: str = "<input>") -> None:
+def check_or_raise(
+    program: Program,
+    *,
+    filename: str = "<input>",
+    resolver: ModuleResolver | None = None,
+) -> None:
     """Run semantic analysis and raise if there are errors.
 
     Args:
         program: The AST Program node to check.
         filename: Filename used in error messages.
+        resolver: Optional module resolver for multi-file compilation.
 
     Raises:
         SemanticErrors: If any semantic errors are found.
     """
-    errors = check(program, filename=filename)
+    errors = check(program, filename=filename, resolver=resolver)
     if errors:
         raise SemanticErrors(errors)

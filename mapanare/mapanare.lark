@@ -235,6 +235,7 @@ arg_list: expr (COMMA expr)* COMMA?
           | stream_expr
           | if_expr
           | match_expr
+          | construct_expr
           | namespace_access
           | self_expr
           | ident
@@ -243,9 +244,11 @@ arg_list: expr (COMMA expr)* COMMA?
           | paren_expr
           | tuple_expr
 
-// Struct construction: Name { field: value, ... }
-// Struct construction is handled via constructor functions until
-// the self-hosted parser implements a disambiguation strategy.
+// Struct construction: new Name { field: value, ... }
+// Uses `new` keyword prefix for LALR disambiguation (avoids
+// ambiguity between struct literals and blocks after if/for/while).
+construct_expr: KW_NEW NAME LBRACE (field_init (COMMA field_init)* COMMA?)? RBRACE
+field_init: NAME COLON expr
 
 int_lit: DEC_INT | HEX_INT | BIN_INT | OCT_INT
 float_lit: FLOAT_LIT
@@ -328,6 +331,7 @@ KW_EXTERN: "extern"
 KW_TRUE: "true"
 KW_FALSE: "false"
 KW_NONE: "none"
+KW_NEW: "new"
 
 // Contextual keywords (used in specific grammar positions)
 KW_INPUT: "input"
