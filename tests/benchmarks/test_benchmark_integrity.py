@@ -20,7 +20,7 @@ def _compile_and_run(mn_path: str) -> str:
     from pathlib import Path
 
     source = Path(mn_path).read_text(encoding="utf-8")
-    code = _compile_source(source, mn_path)
+    code = _compile_source(source, mn_path, use_mir=False)
 
     # Capture stdout
     old_stdout = sys.stdout

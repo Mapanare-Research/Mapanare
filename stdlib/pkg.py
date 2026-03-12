@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
+import tarfile
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -391,10 +393,39 @@ def install_package(
     branch: str | None = None,
     version: str = "*",
 ) -> LockedDependency:
-    """Install a package by cloning its git repo into mapanare_packages/.
+    """Install a package, checking the registry first with git fallback.
 
-    This is a git-based stub: packages are simply git repos cloned locally.
+    Resolution order:
+    1. If --git is specified, use git directly
+    2. Try the Mapanare package registry
+    3. Fall back to convention-based git URL
     """
+    # If explicit git URL given, skip registry
+    if git_url:
+        return _install_from_git(package_name, project_dir, git_url, branch, version)
+
+    # Try registry first
+    try:
+        locked = _install_from_registry(package_name, project_dir, version)
+        if locked:
+            # Update manifest and lockfile
+            _update_manifest_and_lock(package_name, project_dir, locked, version)
+            return locked
+    except PackageError:
+        pass  # Fall through to git
+
+    # Fall back to git
+    return _install_from_git(package_name, project_dir, None, branch, version)
+
+
+def _install_from_git(
+    package_name: str,
+    project_dir: str,
+    git_url: str | None,
+    branch: str | None,
+    version: str,
+) -> LockedDependency:
+    """Install a package by cloning its git repo into mapanare_packages/."""
     packages_dir = os.path.join(project_dir, MAPANARE_PACKAGES_DIR)
     os.makedirs(packages_dir, exist_ok=True)
 
@@ -437,6 +468,19 @@ def install_package(
         integrity=integrity,
     )
 
+    _update_manifest_and_lock(package_name, project_dir, locked, version, git_url, branch)
+    return locked
+
+
+def _update_manifest_and_lock(
+    package_name: str,
+    project_dir: str,
+    locked: LockedDependency,
+    version: str,
+    git_url: str | None = None,
+    branch: str | None = None,
+) -> None:
+    """Update manifest and lockfile after a successful install."""
     # Update manifest
     manifest_path = os.path.join(project_dir, "mapanare.toml")
     if os.path.isfile(manifest_path):
@@ -456,8 +500,6 @@ def install_package(
         lockfile.packages.remove(existing)
     lockfile.packages.append(locked)
     save_lockfile(lockfile, project_dir)
-
-    return locked
 
 
 def uninstall_package(package_name: str, project_dir: str) -> None:
@@ -486,33 +528,360 @@ class PackageError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# mapa publish stub (docs only — not yet functional)
+# Registry configuration
 # ---------------------------------------------------------------------------
 
-PUBLISH_HELP = """\
-mapa publish -- Publish a Mapanare package to the registry.
-
-STATUS: This command is not yet implemented. The Mapanare package registry
-is planned for Phase 7.2.
-
-When available, `mapanare publish` will:
-  1. Read mapanare.toml to get package metadata
-  2. Validate the package structure
-  3. Build a distributable archive
-  4. Upload to the Mapanare package registry at mapanare.dev/packages
-
-For now, packages are distributed via git repositories.
-To share a package:
-  1. Push your project to a git hosting service (GitHub, GitLab, etc.)
-  2. Others can install it with: mapa install <name> --git <url>
-
-See: https://mapanare.dev/docs/packages (coming soon)
-"""
+REGISTRY_URL = os.environ.get("MAPANARE_REGISTRY_URL", "https://mapanare.dev")
+TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".mapanare", "token")
 
 
-def cmd_publish_stub() -> str:
-    """Return help text for the not-yet-implemented publish command."""
-    return PUBLISH_HELP
+def _read_token() -> str | None:
+    """Read API token from ~/.mapanare/token."""
+    if os.path.isfile(TOKEN_FILE):
+        with open(TOKEN_FILE, encoding="utf-8") as f:
+            return f.read().strip()
+    return os.environ.get("MAPANARE_TOKEN")
+
+
+def _save_token(token: str) -> None:
+    """Save API token to ~/.mapanare/token."""
+    token_dir = os.path.dirname(TOKEN_FILE)
+    os.makedirs(token_dir, exist_ok=True)
+    with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+        f.write(token)
+
+
+# ---------------------------------------------------------------------------
+# mapa publish — upload package to registry
+# ---------------------------------------------------------------------------
+
+
+def _build_tarball(project_dir: str) -> bytes:
+    """Build a .tar.gz archive of the project for publishing."""
+    load_manifest(project_dir)  # Validate manifest exists and parses
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        # Add mapanare.toml
+        toml_path = os.path.join(project_dir, "mapanare.toml")
+        tar.add(toml_path, arcname="mapanare.toml")
+
+        # Add all .mn files
+        for root, _dirs, files in os.walk(project_dir):
+            # Skip hidden dirs, mapanare_packages, __pycache__, etc.
+            rel_root = os.path.relpath(root, project_dir)
+            if any(
+                part.startswith(".") or part in ("mapanare_packages", "__pycache__", "node_modules")
+                for part in rel_root.split(os.sep)
+            ):
+                if rel_root != ".":
+                    continue
+
+            for fname in sorted(files):
+                if fname.endswith(".mn") or fname.lower() in ("readme.md", "readme.txt", "license"):
+                    fpath = os.path.join(root, fname)
+                    arcname = os.path.relpath(fpath, project_dir)
+                    if arcname != "mapanare.toml":  # already added
+                        tar.add(fpath, arcname=arcname)
+
+    return buf.getvalue()
+
+
+def publish_package(project_dir: str, token: str | None = None) -> dict[str, str]:
+    """Publish a package to the Mapanare registry.
+
+    Returns dict with name, version, checksum on success.
+    Raises PackageError on failure.
+    """
+    import urllib.error
+    import urllib.request
+
+    manifest = load_manifest(project_dir)
+    auth_token = token or _read_token()
+    if not auth_token:
+        raise PackageError(
+            "No API token found. Set MAPANARE_TOKEN environment variable "
+            "or run: mapanare publish --token <token>"
+        )
+
+    tarball_data = _build_tarball(project_dir)
+
+    # Multipart upload
+    boundary = "----MapanarePublish"
+    filename = f"{manifest.name}-{manifest.version}.tar.gz"
+    header = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f"Content-Type: application/gzip\r\n\r\n"
+    )
+    body = header.encode("utf-8")
+    body += tarball_data
+    body += f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+    url = f"{REGISTRY_URL}/api/packages"
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {auth_token}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result: dict[str, str] = json.loads(resp.read().decode("utf-8"))
+            return result
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        try:
+            detail = json.loads(error_body).get("detail", error_body)
+        except (json.JSONDecodeError, AttributeError):
+            detail = error_body
+        raise PackageError(f"publish failed ({e.code}): {detail}") from e
+    except urllib.error.URLError as e:
+        raise PackageError(f"could not connect to registry at {url}: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# mapa search — query the package registry
+# ---------------------------------------------------------------------------
+
+
+def search_packages(
+    query: str = "", keyword: str = "", page: int = 1, per_page: int = 20
+) -> dict[str, Any]:
+    """Search the Mapanare package registry. Returns search response dict."""
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    params = urllib.parse.urlencode(
+        {"q": query, "keyword": keyword, "page": page, "per_page": per_page}
+    )
+    url = f"{REGISTRY_URL}/api/packages?{params}"
+
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+            return result
+    except urllib.error.HTTPError as e:
+        raise PackageError(f"search failed ({e.code})") from e
+    except urllib.error.URLError as e:
+        raise PackageError(f"could not connect to registry: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# mapa install — registry-first with git fallback
+# ---------------------------------------------------------------------------
+
+
+def _install_from_registry(
+    package_name: str, project_dir: str, version_constraint: str = "*"
+) -> LockedDependency | None:
+    """Try to install a package from the registry. Returns None if not found."""
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    # First, get package info to find available versions
+    url = f"{REGISTRY_URL}/api/packages/{urllib.parse.quote(package_name)}"
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            pkg_info = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise PackageError(f"registry error ({e.code})") from e
+    except urllib.error.URLError:
+        return None  # Registry unreachable, fall back to git
+
+    # Find best matching version
+    available = [v["version"] for v in pkg_info["versions"] if not v.get("yanked", False)]
+    if not available:
+        return None
+
+    # Simple version resolution
+    best = _resolve_best_local(available, version_constraint)
+    if not best:
+        return None
+
+    # Download the tarball
+    dl_url = f"{REGISTRY_URL}/api/packages/{urllib.parse.quote(package_name)}/{best}/download"
+    try:
+        req = urllib.request.Request(dl_url, method="GET")
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            tarball_data = resp.read()
+    except (urllib.error.HTTPError, urllib.error.URLError) as e:
+        raise PackageError(f"failed to download {package_name}@{best}: {e}") from e
+
+    # Extract to mapanare_packages/<name>/
+    packages_dir = os.path.join(project_dir, MAPANARE_PACKAGES_DIR)
+    os.makedirs(packages_dir, exist_ok=True)
+    pkg_dir = os.path.join(packages_dir, package_name)
+
+    if os.path.isdir(pkg_dir):
+        shutil.rmtree(pkg_dir)
+    os.makedirs(pkg_dir)
+
+    with tarfile.open(fileobj=io.BytesIO(tarball_data), mode="r:gz") as tar:
+        # Security check
+        for member in tar.getmembers():
+            if member.name.startswith("/") or ".." in member.name:
+                raise PackageError(f"unsafe path in tarball: {member.name}")
+        tar.extractall(pkg_dir)
+
+    integrity = _compute_integrity(pkg_dir)
+    checksum = f"sha256:{hashlib.sha256(tarball_data).hexdigest()}"
+
+    return LockedDependency(
+        name=package_name,
+        version=best,
+        git=f"{REGISTRY_URL}/api/packages/{package_name}/{best}/download",
+        commit=checksum,
+        integrity=integrity,
+    )
+
+
+def _resolve_best_local(available: list[str], constraint: str) -> str | None:
+    """Resolve best version from available list given a constraint.
+
+    Supports: *, >=X.Y.Z, ^X.Y.Z, ~X.Y.Z, exact match.
+    """
+    if constraint == "*":
+        # Return highest version
+        if not available:
+            return None
+        return sorted(available, key=_version_tuple, reverse=True)[0]
+
+    matching = [v for v in available if _satisfies_constraint(v, constraint)]
+    if not matching:
+        return None
+    return sorted(matching, key=_version_tuple, reverse=True)[0]
+
+
+def _version_tuple(ver: str) -> tuple[int, ...]:
+    """Parse version string into comparable tuple."""
+    # Strip prerelease/build for basic comparison
+    base = ver.split("-")[0].split("+")[0]
+    parts = base.split(".")
+    result = []
+    for p in parts:
+        try:
+            result.append(int(p))
+        except ValueError:
+            result.append(0)
+    return tuple(result)
+
+
+def _satisfies_constraint(version: str, constraint: str) -> bool:
+    """Check if version satisfies a constraint string."""
+    constraint = constraint.strip()
+    if constraint == "*":
+        return True
+
+    ver = _version_tuple(version)
+
+    for part in constraint.split(","):
+        part = part.strip()
+        if not part:
+            continue
+
+        if part.startswith("^"):
+            base = _version_tuple(part[1:])
+            if base[0] > 0:
+                upper = (base[0] + 1, 0, 0)
+            elif len(base) > 1 and base[1] > 0:
+                upper = (0, base[1] + 1, 0)
+            else:
+                upper = (0, 0, (base[2] if len(base) > 2 else 0) + 1)
+            if not (ver >= base and ver < upper):
+                return False
+
+        elif part.startswith("~"):
+            base = _version_tuple(part[1:])
+            upper = (base[0], (base[1] if len(base) > 1 else 0) + 1, 0)
+            if not (ver >= base and ver < upper):
+                return False
+
+        elif part.startswith(">="):
+            base = _version_tuple(part[2:])
+            if not (ver >= base):
+                return False
+
+        elif part.startswith(">"):
+            base = _version_tuple(part[1:])
+            if not (ver > base):
+                return False
+
+        elif part.startswith("<="):
+            base = _version_tuple(part[2:])
+            if not (ver <= base):
+                return False
+
+        elif part.startswith("<"):
+            base = _version_tuple(part[1:])
+            if not (ver < base):
+                return False
+
+        elif part.startswith("="):
+            base = _version_tuple(part[1:])
+            if ver != base:
+                return False
+
+        else:
+            base = _version_tuple(part)
+            if ver != base:
+                return False
+
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Version bumping
+# ---------------------------------------------------------------------------
+
+
+def bump_version(project_dir: str, bump_type: str = "patch") -> str:
+    """Bump the version in mapanare.toml and return the new version string.
+
+    bump_type can be: major, minor, patch, or an explicit version like "1.2.3".
+    """
+    manifest = load_manifest(project_dir)
+    old = manifest.version
+
+    # If it's an explicit version, just set it
+    if bump_type not in ("major", "minor", "patch"):
+        # Validate it looks like semver
+        parts = bump_type.split("-")[0].split("+")[0].split(".")
+        if len(parts) < 2 or not all(p.isdigit() for p in parts[:3]):
+            raise ManifestError(f"invalid version: {bump_type}")
+        manifest.version = bump_type
+        save_manifest(manifest, project_dir)
+        return manifest.version
+
+    # Parse current version
+    base = old.split("-")[0].split("+")[0]
+    parts = base.split(".")
+    major = int(parts[0]) if len(parts) > 0 else 0
+    minor = int(parts[1]) if len(parts) > 1 else 0
+    patch = int(parts[2]) if len(parts) > 2 else 0
+
+    if bump_type == "major":
+        major += 1
+        minor = 0
+        patch = 0
+    elif bump_type == "minor":
+        minor += 1
+        patch = 0
+    else:
+        patch += 1
+
+    manifest.version = f"{major}.{minor}.{patch}"
+    save_manifest(manifest, project_dir)
+    return manifest.version
 
 
 # ---------------------------------------------------------------------------

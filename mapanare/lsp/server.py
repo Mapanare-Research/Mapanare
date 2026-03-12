@@ -17,7 +17,7 @@ from mapanare.lsp.analysis import (
 
 logger = logging.getLogger("mapanare-lsp")
 
-server = LanguageServer("mapanare-lsp", "v0.4.0")
+server = LanguageServer("mapanare-lsp", "v0.5.0")
 
 # Document cache: uri -> DocumentAnalysis
 _documents: dict[str, DocumentAnalysis] = {}

@@ -23,6 +23,7 @@ from mapanare.ast_nodes import (
     ConstructorPattern,
     Decorator,
     Definition,
+    DocComment,
     EnumDef,
     EnumVariant,
     ErrorPropExpr,
@@ -43,6 +44,7 @@ from mapanare.ast_nodes import (
     ImplDef,
     ImportDef,
     IndexExpr,
+    InterpString,
     IntLiteral,
     LambdaExpr,
     LetBinding,
@@ -157,6 +159,88 @@ def _span_from_children(children: list[Any] | tuple[Any, ...]) -> Span:
     )
 
 
+def _unescape(s: str) -> str:
+    """Process escape sequences in a string literal."""
+    return (
+        s.replace("\\n", "\n")
+        .replace("\\t", "\t")
+        .replace("\\r", "\r")
+        .replace("\\\\", "\x00")  # temp placeholder
+        .replace('\\"', '"')
+        .replace("\\0", "\0")
+        .replace("\x00", "\\")  # restore backslashes
+    )
+
+
+def _split_interp(s: str) -> list[tuple[str, str]] | None:
+    """Split a string into literal and interpolation parts.
+
+    Returns None if no interpolation is found.
+    Returns list of ('lit', text) and ('expr', text) tuples.
+    """
+    parts: list[tuple[str, str]] = []
+    i = 0
+    buf: list[str] = []
+    found = False
+
+    while i < len(s):
+        # Check for escaped dollar: \$
+        if s[i] == "\\" and i + 1 < len(s) and s[i + 1] == "$":
+            buf.append("$")
+            i += 2
+            continue
+        # Check for ${
+        if s[i] == "$" and i + 1 < len(s) and s[i + 1] == "{":
+            found = True
+            # Flush literal buffer
+            if buf:
+                parts.append(("lit", "".join(buf)))
+                buf = []
+            # Find matching }
+            depth = 1
+            j = i + 2
+            while j < len(s) and depth > 0:
+                if s[j] == "{":
+                    depth += 1
+                elif s[j] == "}":
+                    depth -= 1
+                elif s[j] == "\\" and j + 1 < len(s):
+                    j += 1  # skip escaped char
+                j += 1
+            expr_text = s[i + 2 : j - 1]
+            parts.append(("expr", expr_text))
+            i = j
+            continue
+        buf.append(s[i])
+        i += 1
+
+    if not found:
+        return None
+
+    if buf:
+        parts.append(("lit", "".join(buf)))
+    return parts
+
+
+def _parse_interp_expr(expr_text: str, parent_span: Span) -> Expr:
+    """Parse an interpolated expression using the Mapanare parser."""
+    # Wrap in a minimal program: fn __interp__() -> Void { return <expr> }
+    wrapper = f"fn __interp__() {{ return {expr_text} }}"
+    try:
+        program = parse(wrapper, filename="<interp>")
+        # Extract the expression from the return statement
+        if program.definitions:
+            fn_def = program.definitions[0]
+            if isinstance(fn_def, FnDef) and fn_def.body.stmts:
+                stmt = fn_def.body.stmts[0]
+                if isinstance(stmt, ReturnStmt) and stmt.value is not None:
+                    return stmt.value
+    except Exception:
+        pass
+    # Fallback: treat as identifier
+    return Identifier(name=expr_text.strip(), span=parent_span)
+
+
 def _parse_int_token(t: Token) -> int:
     s = str(t).replace("_", "")
     if t.type == "HEX_INT":
@@ -256,6 +340,7 @@ _KEEP = frozenset(
         "FLOAT_LIT",
         "STRING_LIT",
         "CHAR_LIT",
+        "DOC_COMMENT",
     }
 )
 
@@ -315,9 +400,30 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         t = children[0]
         return FloatLiteral(value=float(str(t).replace("_", "")), span=_span_from_token(t))
 
-    def string_lit(self, children: list[Any]) -> StringLiteral:
+    def string_lit(self, children: list[Any]) -> StringLiteral | InterpString:
         t = children[0]
-        return StringLiteral(value=str(t)[1:-1], span=_span_from_token(t))
+        raw = str(t)
+        # Triple-quoted strings: strip """ delimiters
+        if raw.startswith('"""'):
+            value = raw[3:-3]
+        else:
+            value = raw[1:-1]
+        span = _span_from_token(t)
+        # Check for interpolation: ${...}
+        parts = _split_interp(value)
+        if parts is None:
+            # No interpolation found — preserve old behavior (no unescape)
+            return StringLiteral(value=value, span=span)
+        # Build InterpString with mixed literal/expr parts
+        interp_parts: list[Expr] = []
+        for kind, text in parts:
+            if kind == "lit":
+                interp_parts.append(StringLiteral(value=text, span=span))
+            else:
+                # Parse the expression text using Mapanare parser
+                expr_node = _parse_interp_expr(text, span)
+                interp_parts.append(expr_node)
+        return InterpString(parts=interp_parts, span=span)
 
     def char_lit(self, children: list[Any]) -> CharLiteral:
         t = children[0]
@@ -724,6 +830,29 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         defn.span = _span_from_children(children)
         return defn
 
+    def doc_commented_def(self, children: list[Any]) -> Definition:
+        items = _filter(children)
+        doc_lines: list[str] = []
+        defn: Definition | None = None
+        for item in items:
+            if isinstance(item, Token) and item.type == "DOC_COMMENT":
+                # Strip the leading '///' and optional space
+                line = str(item)
+                if line.startswith("/// "):
+                    doc_lines.append(line[4:])
+                elif line.startswith("///"):
+                    doc_lines.append(line[3:])
+            elif isinstance(item, Definition):
+                defn = item
+        if defn is None:
+            result: Definition = items[-1]
+            result.span = _span_from_children(children)
+            return result
+        doc_text = "\n".join(doc_lines)
+        doc = DocComment(text=doc_text, definition=defn, span=_span_from_children(children))
+        doc.definition = defn
+        return doc
+
     def decorator(self, children: list[Any]) -> Decorator:
         items = _filter(children)
         name = str(items[0])
@@ -902,13 +1031,21 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
     def extern_fn_def(self, children: list[Any]) -> ExternFnDef:
         items = _filter(children)
         idx = 0
-        # ABI string (e.g. "C")
+        # ABI string (e.g. "C", "Python")
         abi_raw = str(items[idx])
         abi = abi_raw.strip('"')
         idx += 1
-        # Function name
-        name = str(items[idx])
+        # Function name — possibly qualified as module::name for Python interop
+        first_name = str(items[idx])
         idx += 1
+        module: str | None = None
+        # Check for a second NAME (module::name pattern)
+        if idx < len(items) and isinstance(items[idx], Token) and items[idx].type == "NAME":
+            module = first_name
+            name = str(items[idx])
+            idx += 1
+        else:
+            name = first_name
         # Optional parameter list
         params: list[Param] = []
         if (
@@ -928,6 +1065,7 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             abi=abi,
             params=params,
             return_type=return_type,
+            module=module,
             span=_span_from_children(children),
         )
 

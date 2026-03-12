@@ -18,6 +18,7 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     CallExpr,
     Definition,
+    DocComment,
     ErrExpr,
     ErrorPropExpr,
     Expr,
@@ -227,8 +228,14 @@ class ConstantFolder:
         """Run constant folding on the entire program."""
         new_defs: list[Definition] = []
         for defn in program.definitions:
-            if isinstance(defn, FnDef):
-                new_defs.append(self._fold_fn(defn))
+            inner = defn.definition if isinstance(defn, DocComment) and defn.definition else defn
+            if isinstance(inner, FnDef):
+                folded = self._fold_fn(inner)
+                if isinstance(defn, DocComment):
+                    defn.definition = folded
+                    new_defs.append(defn)
+                else:
+                    new_defs.append(folded)
             else:
                 new_defs.append(defn)
         program.definitions = new_defs
@@ -433,8 +440,9 @@ class DeadCodeEliminator:
         """Run dead code elimination on the entire program."""
         # First: eliminate dead code within functions
         for defn in program.definitions:
-            if isinstance(defn, FnDef):
-                self._dce_fn(defn)
+            inner = defn.definition if isinstance(defn, DocComment) and defn.definition else defn
+            if isinstance(inner, FnDef):
+                self._dce_fn(inner)
 
         # Second: remove unreferenced private functions
         program = self._remove_dead_fns(program)
@@ -664,18 +672,20 @@ class DeadCodeEliminator:
         fn_defs: dict[str, FnDef] = {}
 
         for defn in program.definitions:
-            if isinstance(defn, FnDef):
-                fn_defs[defn.name] = defn
+            inner = defn.definition if isinstance(defn, DocComment) and defn.definition else defn
+            if isinstance(inner, FnDef):
+                fn_defs[inner.name] = inner
                 names: set[str] = set()
-                for s in defn.body.stmts:
+                for s in inner.body.stmts:
                     self._collect_used_names_stmt(s, names)
                 all_used.update(names)
 
         # Keep main, public fns, non-fn definitions, and referenced fns
         new_defs: list[Definition] = []
         for defn in program.definitions:
-            if isinstance(defn, FnDef):
-                if defn.name == "main" or defn.public or defn.name in all_used:
+            inner = defn.definition if isinstance(defn, DocComment) and defn.definition else defn
+            if isinstance(inner, FnDef):
+                if inner.name == "main" or inner.public or inner.name in all_used:
                     new_defs.append(defn)
                 else:
                     self.stats.dead_fns_removed += 1
@@ -711,14 +721,16 @@ class AgentInliner:
         """Run agent communication inlining."""
         # Phase 1: identify simple agents
         for defn in program.definitions:
-            if isinstance(defn, AgentDef):
-                self._analyze_agent(defn)
+            inner = defn.definition if isinstance(defn, DocComment) and defn.definition else defn
+            if isinstance(inner, AgentDef):
+                self._analyze_agent(inner)
 
         # Phase 2: inline pipe definitions with single stages
         new_defs: list[Definition] = []
         for defn in program.definitions:
-            if isinstance(defn, PipeDef):
-                inlined = self._inline_pipe(defn)
+            inner = defn.definition if isinstance(defn, DocComment) and defn.definition else defn
+            if isinstance(inner, PipeDef):
+                inlined = self._inline_pipe(inner)
                 if inlined is not None:
                     new_defs.append(inlined)
                     self.stats.agents_inlined += 1
@@ -729,8 +741,9 @@ class AgentInliner:
 
         # Phase 3: inline send expressions to simple agents
         for defn in new_defs:
-            if isinstance(defn, FnDef):
-                self._inline_sends_in_fn(defn)
+            inner = defn.definition if isinstance(defn, DocComment) and defn.definition else defn
+            if isinstance(inner, FnDef):
+                self._inline_sends_in_fn(inner)
 
         program.definitions = new_defs
         return program
@@ -860,8 +873,9 @@ class StreamFuser:
     def run(self, program: Program) -> Program:
         """Run stream fusion on the entire program."""
         for defn in program.definitions:
-            if isinstance(defn, FnDef):
-                self._fuse_fn(defn)
+            inner = defn.definition if isinstance(defn, DocComment) and defn.definition else defn
+            if isinstance(inner, FnDef):
+                self._fuse_fn(inner)
         return program
 
     def _fuse_fn(self, fn: FnDef) -> None:

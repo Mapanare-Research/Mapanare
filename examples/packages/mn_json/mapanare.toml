@@ -1,0 +1,11 @@
+[package]
+name = "mn_json"
+version = "0.1.0"
+description = "JSON parsing and serialization via Python interop"
+authors = ["Mapanare Research"]
+license = "MIT"
+mapanare_version = ">=0.4.0"
+keywords = ["json", "serialization", "data"]
+entry = "main.mn"
+
+[dependencies]

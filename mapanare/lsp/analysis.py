@@ -20,6 +20,7 @@ from mapanare.ast_nodes import (
     CallExpr,
     ConstructExpr,
     Definition,
+    DocComment,
     EnumDef,
     ExportDef,
     Expr,
@@ -383,6 +384,9 @@ class DocumentAnalysis:
                 self._visit_definition(defn.definition)
         elif isinstance(defn, ExternFnDef):
             self._visit_extern_fn_def(defn)
+        elif isinstance(defn, DocComment):
+            if defn.definition:
+                self._visit_definition(defn.definition)
 
     def _visit_fn_def(self, fn: FnDef) -> None:
         loc = _span_to_location(fn.span, self.uri)
@@ -1306,6 +1310,25 @@ def analyze_document(
     all_symbols = dict(analysis.symbols)
     all_symbols.update(imported_symbols)
     diagnostics = _enrich_diagnostics(all_errors, source, all_symbols)
+
+    # Run linter for additional warnings (only if no semantic errors)
+    if not semantic_errors and program is not None:
+        from mapanare.linter import lint as run_lint
+
+        lint_diags = run_lint(program, filename=uri)
+        for ld in lint_diags:
+            lint_suggestions: list[FixSuggestion] = []
+            for s in ld.suggestions:
+                lint_suggestions.append(FixSuggestion(message=s.message, replacement=s.replacement))
+            diagnostics.append(
+                LspDiagnostic(
+                    message=ld.message,
+                    line=ld.line,
+                    column=ld.column,
+                    severity="warning",
+                    suggestions=lint_suggestions,
+                )
+            )
 
     return analysis, diagnostics
 

@@ -19,6 +19,7 @@ from mapanare.ast_nodes import (
     CharLiteral,
     ConstructExpr,
     Definition,
+    DocComment,
     EnumDef,
     ErrExpr,
     ErrorPropExpr,
@@ -37,6 +38,7 @@ from mapanare.ast_nodes import (
     ImplDef,
     ImportDef,
     IndexExpr,
+    InterpString,
     IntLiteral,
     LambdaExpr,
     LetBinding,
@@ -349,6 +351,10 @@ class SemanticChecker:
         if isinstance(expr, BoolLiteral):
             return BOOL_TYPE
         if isinstance(expr, StringLiteral):
+            return STRING_TYPE
+        if isinstance(expr, InterpString):
+            for part in expr.parts:
+                self._infer_expr(part)
             return STRING_TYPE
         if isinstance(expr, CharLiteral):
             return CHAR_TYPE
@@ -1117,8 +1123,16 @@ class SemanticChecker:
                     ),
                 )
         elif isinstance(defn, ExternFnDef):
-            if defn.abi != "C":
-                self._error(f"Unsupported ABI '{defn.abi}'; only \"C\" is supported", defn)
+            if defn.abi not in ("C", "Python"):
+                self._error(
+                    f'Unsupported ABI \'{defn.abi}\'; only "C" and "Python" are supported', defn
+                )
+            if defn.abi == "Python" and not defn.module:
+                self._error(
+                    'extern "Python" requires module qualifier: '
+                    'extern "Python" fn module::name(...)',
+                    defn,
+                )
             param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
             ret = self._resolve_type_expr(defn.return_type)
             fn_type = TypeInfo(
@@ -1164,6 +1178,9 @@ class SemanticChecker:
                 self._register_def(defn.definition)
         elif isinstance(defn, ImplDef):
             pass  # methods handled in second pass
+        elif isinstance(defn, DocComment):
+            if defn.definition:
+                self._register_def(defn.definition)
 
     # -- Import resolution -----------------------------------------------
 
@@ -1339,6 +1356,9 @@ class SemanticChecker:
         elif isinstance(defn, ImplDef):
             self._check_impl(defn)
         elif isinstance(defn, ExportDef):
+            if defn.definition:
+                self._check_def(defn.definition)
+        elif isinstance(defn, DocComment):
             if defn.definition:
                 self._check_def(defn.definition)
 

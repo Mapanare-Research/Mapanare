@@ -12,6 +12,7 @@ from mapanare.ast_nodes import (
     CharLiteral,
     ConstructExpr,
     Definition,
+    DocComment,
     EnumDef,
     EnumVariant,
     ErrExpr,
@@ -19,6 +20,7 @@ from mapanare.ast_nodes import (
     ExportDef,
     Expr,
     ExprStmt,
+    ExternFnDef,
     FieldAccessExpr,
     FloatLiteral,
     FnDef,
@@ -30,10 +32,12 @@ from mapanare.ast_nodes import (
     ImplDef,
     ImportDef,
     IndexExpr,
+    InterpString,
     IntLiteral,
     LambdaExpr,
     LetBinding,
     ListLiteral,
+    MapLiteral,
     MatchArm,
     MatchExpr,
     MethodCallExpr,
@@ -58,16 +62,19 @@ from mapanare.ast_nodes import (
     StringLiteral,
     StructDef,
     SyncExpr,
+    TraitDef,
     TypeAlias,
     TypeExpr,
     UnaryExpr,
+    WhileLoop,
 )
+from mapanare.types import BUILTIN_CALL_MAP, PYTHON_TYPE_MAP
 
 
 class PythonEmitter:
     """Walks the AST and produces Python source code."""
 
-    def __init__(self) -> None:
+    def __init__(self, python_path: list[str] | None = None) -> None:
         self._indent = 0
         self._lines: list[str] = []
         self._has_agents = False
@@ -75,7 +82,11 @@ class PythonEmitter:
         self._has_option = False
         self._has_signal = False
         self._has_stream = False
+        self._has_traits = False
         self._impl_methods: dict[str, list[FnDef]] = {}
+        self._python_path: list[str] = python_path or []
+        # Python interop: extern "Python" fn declarations
+        self._extern_python_fns: list[ExternFnDef] = []
 
     def emit(self, program: Program) -> str:
         """Emit the full program and return Python source."""
@@ -86,14 +97,28 @@ class PythonEmitter:
         # Emit definitions
         for defn in program.definitions:
             self._emit_definition(defn)
-        # Emit main guard
-        self._emit_line("")
-        self._emit_line('if __name__ == "__main__":')
-        self._indent += 1
-        self._emit_line("import asyncio")
-        self._emit_line("")
-        self._emit_line("asyncio.run(main())")
-        self._indent -= 1
+
+        # Emit main guard (only if a main function exists)
+        def _is_main(d: Definition) -> bool:
+            if isinstance(d, FnDef) and d.name == "main":
+                return True
+            if (
+                isinstance(d, DocComment)
+                and isinstance(d.definition, FnDef)
+                and d.definition.name == "main"
+            ):
+                return True
+            return False
+
+        has_main = any(_is_main(d) for d in program.definitions)
+        if has_main:
+            self._emit_line("")
+            self._emit_line('if __name__ == "__main__":')
+            self._indent += 1
+            self._emit_line("import asyncio")
+            self._emit_line("")
+            self._emit_line("asyncio.run(main())")
+            self._indent -= 1
         return "\n".join(self._lines) + "\n"
 
     # ------------------------------------------------------------------
@@ -102,10 +127,15 @@ class PythonEmitter:
 
     def _scan_program(self, program: Program) -> None:
         for defn in program.definitions:
-            if isinstance(defn, ImplDef):
-                self._impl_methods.setdefault(defn.target, []).extend(defn.methods)
-            if isinstance(defn, AgentDef):
+            inner = defn.definition if isinstance(defn, DocComment) else defn
+            if isinstance(inner, ImplDef):
+                self._impl_methods.setdefault(inner.target, []).extend(inner.methods)
+            if isinstance(inner, AgentDef):
                 self._has_agents = True
+            if isinstance(inner, TraitDef):
+                self._has_traits = True
+            if isinstance(inner, ExternFnDef) and inner.abi == "Python":
+                self._extern_python_fns.append(inner)
             self._scan_definition(defn)
 
     def _scan_definition(self, defn: Definition) -> None:
@@ -123,6 +153,9 @@ class PythonEmitter:
         elif isinstance(defn, ExportDef):
             if defn.definition:
                 self._scan_definition(defn.definition)
+        elif isinstance(defn, DocComment):
+            if defn.definition:
+                self._scan_definition(defn.definition)
 
     def _scan_block(self, block: Block) -> None:
         for stmt in block.stmts:
@@ -136,6 +169,9 @@ class PythonEmitter:
             elif isinstance(stmt, ForLoop):
                 self._scan_expr(stmt.iterable)
                 self._scan_block(stmt.body)
+            elif isinstance(stmt, WhileLoop):
+                self._scan_expr(stmt.condition)
+                self._scan_block(stmt.body)
             elif isinstance(stmt, SignalDecl):
                 self._has_signal = True
                 self._scan_expr(stmt.value)
@@ -144,6 +180,11 @@ class PythonEmitter:
                 self._scan_expr(stmt.value)
 
     def _scan_expr(self, expr: Expr) -> None:
+        if isinstance(expr, InterpString):
+            for part in expr.parts:
+                if not isinstance(part, StringLiteral):
+                    self._scan_expr(part)
+            return
         if isinstance(expr, SignalExpr):
             self._has_signal = True
         elif isinstance(expr, SpawnExpr):
@@ -198,6 +239,10 @@ class PythonEmitter:
         elif isinstance(expr, ListLiteral):
             for e in expr.elements:
                 self._scan_expr(e)
+        elif isinstance(expr, MapLiteral):
+            for entry in expr.entries:
+                self._scan_expr(entry.key)
+                self._scan_expr(entry.value)
         elif isinstance(expr, IndexExpr):
             self._scan_expr(expr.object)
             self._scan_expr(expr.index)
@@ -215,6 +260,9 @@ class PythonEmitter:
         self._emit_line("# Generated by mapa -- do not edit")
         self._emit_line("from __future__ import annotations")
         self._emit_line("")
+        if self._has_traits:
+            self._emit_line("from typing import Protocol")
+            self._emit_line("")
         if self._has_agents:
             self._emit_line("import asyncio")
             self._emit_line("")
@@ -228,8 +276,78 @@ class PythonEmitter:
             self._emit_line("from runtime.result import Ok, Err, unwrap_or_return, _EarlyReturn")
         if self._has_option:
             self._emit_line("from runtime.result import Some")
+        # Python path for interop
+        if self._python_path:
+            self._emit_line("import sys")
+            for p in self._python_path:
+                self._emit_line(f"sys.path.insert(0, {repr(p)})")
+            self._emit_line("")
+        # Python interop imports and wrappers
+        if self._extern_python_fns:
+            self._emit_python_interop()
         self._emit_line("")
         self._emit_line("println = print")
+        self._emit_line("")
+        # Division helper: truncate toward zero for ints, real division for floats
+        self._emit_line("def _mn_div(a, b):")
+        self._indent += 1
+        self._emit_line("if isinstance(a, float) or isinstance(b, float):")
+        self._indent += 1
+        self._emit_line("return a / b")
+        self._indent -= 1
+        self._emit_line("return int(a / b)")
+        self._indent -= 1
+        self._emit_line("")
+
+    # ------------------------------------------------------------------
+    # Python interop
+    # ------------------------------------------------------------------
+
+    def _emit_python_interop(self) -> None:
+        """Emit imports and wrapper functions for extern "Python" declarations."""
+        # Group by module
+        modules: dict[str, list[ExternFnDef]] = {}
+        for fn in self._extern_python_fns:
+            if fn.module:
+                modules.setdefault(fn.module, []).append(fn)
+
+        for mod, fns in modules.items():
+            self._emit_line(f"import {mod}")
+
+        self._emit_line("")
+
+        for fn in self._extern_python_fns:
+            self._emit_python_wrapper(fn)
+
+    def _emit_python_wrapper(self, fn: ExternFnDef) -> None:
+        """Emit a Python wrapper function for an extern 'Python' declaration."""
+        params = ", ".join(p.name for p in fn.params)
+        call = f"{fn.module}.{fn.name}({params})"
+
+        # Check if return type is Result<T, String> — wrap in try/except
+        is_result_return = False
+        if (
+            fn.return_type
+            and isinstance(fn.return_type, GenericType)
+            and fn.return_type.name == "Result"
+        ):
+            is_result_return = True
+            self._has_result = True
+
+        self._emit_line(f"def {fn.name}({params}):")
+        self._indent += 1
+        if is_result_return:
+            self._emit_line("try:")
+            self._indent += 1
+            self._emit_line(f"return Ok({call})")
+            self._indent -= 1
+            self._emit_line("except Exception as __e:")
+            self._indent += 1
+            self._emit_line("return Err(str(__e))")
+            self._indent -= 1
+        else:
+            self._emit_line(f"return {call}")
+        self._indent -= 1
         self._emit_line("")
 
     # ------------------------------------------------------------------
@@ -294,6 +412,8 @@ class PythonEmitter:
             self._emit_agent(defn)
         elif isinstance(defn, PipeDef):
             self._emit_pipe(defn)
+        elif isinstance(defn, TraitDef):
+            self._emit_trait(defn)
         elif isinstance(defn, StructDef):
             self._emit_struct(defn)
         elif isinstance(defn, EnumDef):
@@ -306,6 +426,11 @@ class PythonEmitter:
             self._emit_import(defn)
         elif isinstance(defn, ExportDef):
             self._emit_export(defn)
+        elif isinstance(defn, ExternFnDef):
+            pass  # handled in header via _emit_python_interop
+        elif isinstance(defn, DocComment):
+            if defn.definition:
+                self._emit_definition(defn.definition)
 
     # -- fn ---------------------------------------------------------------
 
@@ -353,6 +478,11 @@ class PythonEmitter:
                 return True
             if isinstance(stmt, ForLoop):
                 if self._expr_needs_async(stmt.iterable):
+                    return True
+                if self._block_needs_async(stmt.body):
+                    return True
+            if isinstance(stmt, WhileLoop):
+                if self._expr_needs_async(stmt.condition):
                     return True
                 if self._block_needs_async(stmt.body):
                     return True
@@ -469,6 +599,32 @@ class PythonEmitter:
         self._indent -= 1
         self._emit_line("")
 
+    # -- trait ------------------------------------------------------------
+
+    def _emit_trait(self, trait: TraitDef) -> None:
+        self._emit_line(f"class {trait.name}(Protocol):")
+        self._indent += 1
+        if not trait.methods:
+            self._emit_line("pass")
+        for method in trait.methods:
+            params = "self"
+            if method.params:
+                p_strs = ", ".join(
+                    (
+                        f"{p.name}: {self._emit_type(p.type_annotation)}"
+                        if p.type_annotation
+                        else p.name
+                    )
+                    for p in method.params
+                )
+                params = f"self, {p_strs}"
+            ret = ""
+            if method.return_type:
+                ret = f" -> {self._emit_type(method.return_type)}"
+            self._emit_line(f"def {method.name}({params}){ret}: ...")
+        self._indent -= 1
+        self._emit_line("")
+
     # -- struct -----------------------------------------------------------
 
     def _emit_struct(self, struct: StructDef) -> None:
@@ -568,6 +724,8 @@ class PythonEmitter:
             self._emit_return(stmt)
         elif isinstance(stmt, ForLoop):
             self._emit_for(stmt)
+        elif isinstance(stmt, WhileLoop):
+            self._emit_while(stmt)
         elif isinstance(stmt, SignalDecl):
             self._emit_signal_decl(stmt)
         elif isinstance(stmt, StreamDecl):
@@ -610,6 +768,13 @@ class PythonEmitter:
     def _emit_for(self, loop: ForLoop) -> None:
         iterable = self._emit_expr(loop.iterable)
         self._emit_line(f"for {loop.var_name} in {iterable}:")
+        self._indent += 1
+        self._emit_block_body(loop.body)
+        self._indent -= 1
+
+    def _emit_while(self, loop: WhileLoop) -> None:
+        cond = self._emit_expr(loop.condition)
+        self._emit_line(f"while {cond}:")
         self._indent += 1
         self._emit_block_body(loop.body)
         self._indent -= 1
@@ -743,6 +908,8 @@ class PythonEmitter:
             return repr(expr.value)
         elif isinstance(expr, StringLiteral):
             return repr(expr.value)
+        elif isinstance(expr, InterpString):
+            return self._emit_interp_string(expr)
         elif isinstance(expr, CharLiteral):
             return repr(expr.value)
         elif isinstance(expr, BoolLiteral):
@@ -784,6 +951,13 @@ class PythonEmitter:
         elif isinstance(expr, ListLiteral):
             elems = ", ".join(self._emit_expr(e) for e in expr.elements)
             return f"[{elems}]"
+        elif isinstance(expr, MapLiteral):
+            if not expr.entries:
+                return "{}"
+            pairs = ", ".join(
+                f"{self._emit_expr(e.key)}: {self._emit_expr(e.value)}" for e in expr.entries
+            )
+            return f"{{{pairs}}}"
         elif isinstance(expr, ConstructExpr):
             return self._emit_construct(expr)
         elif isinstance(expr, SomeExpr):
@@ -826,6 +1000,11 @@ class PythonEmitter:
     def _emit_binary(self, expr: BinaryExpr) -> str:
         left = self._emit_expr(expr.left)
         right = self._emit_expr(expr.right)
+        if expr.op == "/":
+            # Mapanare integer division truncates toward zero (matches LLVM sdiv).
+            # Python's / always returns float, so we use int(a/b) for int operands
+            # while preserving real division for floats.
+            return f"_mn_div({left}, {right})"
         op = _OP_MAP.get(expr.op, expr.op)
         return f"({left} {op} {right})"
 
@@ -835,15 +1014,92 @@ class PythonEmitter:
             return f"(not {operand})"
         return f"({expr.op}{operand})"
 
+    # Mapanare builtins that map directly to Python builtins (from types.py)
+    _BUILTIN_CALL_MAP: dict[str, str] = BUILTIN_CALL_MAP
+
     def _emit_call(self, expr: CallExpr) -> str:
         callee = self._emit_expr(expr.callee)
+        # Map Mapanare builtins to Python equivalents
+        mapped = self._BUILTIN_CALL_MAP.get(callee, callee)
         args = ", ".join(self._emit_expr(a) for a in expr.args)
-        return f"{callee}({args})"
+        return f"{mapped}({args})"
+
+    # Mapanare method → Python equivalent for lists and strings
+    _LIST_METHOD_MAP: dict[str, str] = {
+        "push": "append",
+        "pop": "pop",
+        "clear": "clear",
+        "length": "__len__",
+    }
+
+    _STRING_METHOD_MAP: dict[str, str] = {
+        "length": "__len__",
+        "find": "find",
+        "starts_with": "startswith",
+        "ends_with": "endswith",
+        "char_at": "__getitem__",
+        "to_upper": "upper",
+        "to_lower": "lower",
+        "trim": "strip",
+        "split": "split",
+        "contains": "__contains__",
+        "replace": "replace",
+    }
+
+    _MAP_METHOD_MAP: dict[str, str] = {
+        "get": "get",
+        "insert": "__setitem__",
+        "delete": "pop",
+        "contains": "__contains__",
+        "keys": "keys",
+        "values": "values",
+        "length": "__len__",
+        "clear": "clear",
+    }
 
     def _emit_method_call(self, expr: MethodCallExpr) -> str:
         obj = self._emit_expr(expr.object)
         args = ", ".join(self._emit_expr(a) for a in expr.args)
-        return f"{obj}.{expr.method}({args})"
+        method = expr.method
+
+        # List methods
+        if method in self._LIST_METHOD_MAP:
+            mapped = self._LIST_METHOD_MAP[method]
+            if mapped == "__len__":
+                return f"len({obj})"
+            return f"{obj}.{mapped}({args})"
+
+        # String methods
+        if method in self._STRING_METHOD_MAP:
+            mapped = self._STRING_METHOD_MAP[method]
+            if mapped == "__len__":
+                return f"len({obj})"
+            if mapped == "__getitem__":
+                return f"{obj}[{args}]"
+            if mapped == "__contains__":
+                return f"({args} in {obj})"
+            return f"{obj}.{mapped}({args})"
+
+        # Map methods
+        if method in self._MAP_METHOD_MAP:
+            mapped = self._MAP_METHOD_MAP[method]
+            if mapped == "__len__":
+                return f"len({obj})"
+            if mapped == "__contains__":
+                return f"({args} in {obj})"
+            if mapped == "__setitem__":
+                arg_list = [self._emit_expr(a) for a in expr.args]
+                return f"{obj}.__setitem__({', '.join(arg_list)})"
+            return f"{obj}.{mapped}({args})"
+
+        # substring(start, end) → Python slicing
+        if method == "substring":
+            arg_list = [self._emit_expr(a) for a in expr.args]
+            if len(arg_list) == 2:
+                return f"{obj}[{arg_list[0]}:{arg_list[1]}]"
+            return f"{obj}[{args}]"
+
+        return f"{obj}.{method}({args})"
 
     def _emit_sync(self, expr: SyncExpr) -> str:
         """Emit sync (await).  When the inner expression is a field access on
@@ -893,6 +1149,19 @@ class PythonEmitter:
             body = self._emit_expr(expr.body)
         return f"lambda {params}: {body}"
 
+    def _emit_interp_string(self, expr: InterpString) -> str:
+        """Emit an interpolated string as a Python f-string."""
+        parts: list[str] = []
+        for part in expr.parts:
+            if isinstance(part, StringLiteral):
+                # Escape braces in literal parts for f-string
+                escaped = part.value.replace("{", "{{").replace("}", "}}")
+                parts.append(escaped)
+            else:
+                parts.append(f"{{{self._emit_expr(part)}}}")
+        joined = "".join(parts)
+        return f'f"{joined}"'
+
     def _emit_construct(self, expr: ConstructExpr) -> str:
         fields = ", ".join(f"{f.name}={self._emit_expr(f.value)}" for f in expr.fields)
         return f"{expr.name}({fields})"
@@ -900,15 +1169,7 @@ class PythonEmitter:
 
 # -- Mappings -----------------------------------------------------------
 
-_TYPE_MAP: dict[str, str] = {
-    "Int": "int",
-    "Float": "float",
-    "Bool": "bool",
-    "String": "str",
-    "Char": "str",
-    "Void": "None",
-    "Any": "Any",
-}
+_TYPE_MAP: dict[str, str] = PYTHON_TYPE_MAP
 
 _OP_MAP: dict[str, str] = {
     "&&": "and",

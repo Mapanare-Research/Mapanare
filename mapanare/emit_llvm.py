@@ -19,6 +19,8 @@ from mapanare.ast_nodes import (
     CallExpr,
     CharLiteral,
     ConstructExpr,
+    ConstructorPattern,
+    DocComment,
     EnumDef,
     ExprStmt,
     ExternFnDef,
@@ -28,10 +30,12 @@ from mapanare.ast_nodes import (
     ForLoop,
     GenericType,
     Identifier,
+    IdentPattern,
     IfExpr,
     ImplDef,
     ImportDef,
     IndexExpr,
+    InterpString,
     IntLiteral,
     LambdaExpr,
     LetBinding,
@@ -252,6 +256,10 @@ class LLVMEmitter:
         self._arena_ptr: ir.AllocaInstr | None = None
         # Track string temporaries for cleanup at function exit
         self._string_temps: list[ir.AllocaInstr] = []
+        # Enum type registry: enum_name → (llvm_type, variant_names, variant_field_types)
+        self._enum_defs: dict[str, tuple[ir.LiteralStructType, list[str], list[list[ir.Type]]]] = {}
+        # Reverse lookup: variant_name → (enum_name, tag_index)
+        self._variant_to_enum: dict[str, tuple[str, int]] = {}
         # Agent support: agent definitions and variable→agent-type tracking
         self._agent_defs: dict[str, AgentDef] = {}
         self._agent_types: dict[str, str] = {}  # var_name → agent_type_name
@@ -435,35 +443,40 @@ class LLVMEmitter:
 
     def emit_program(self, program: Program, resolver: object | None = None) -> ir.Module:
         """Emit an entire Mapanare program to an LLVM module."""
+        # Unwrap DocComment nodes to get at the inner definitions
+        defs = [
+            d.definition if isinstance(d, DocComment) and d.definition else d
+            for d in program.definitions
+        ]
         # Pass 0: declare imported symbols as external
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, ImportDef):
                 self._emit_import(defn, resolver)
-        # Pass 0.5: declare extern "C" functions as external
-        for defn in program.definitions:
-            if isinstance(defn, ExternFnDef):
+        # Pass 0.5: declare extern "C" functions as external (skip Python interop)
+        for defn in defs:
+            if isinstance(defn, ExternFnDef) and defn.abi != "Python":
                 self._emit_extern_fn(defn)
         # First pass: forward-declare all types (enums as tagged unions, structs as placeholders)
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, EnumDef):
                 self._register_enum(defn)
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, StructDef):
                 self._forward_declare_struct(defn)
         # Second pass: resolve struct field types now that all names are known
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, StructDef):
                 self._register_struct(defn)
         # Forward-declare all functions so calls to later-defined functions resolve
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, FnDef):
                 self._declare_fn(defn)
         # Emit agent definitions (handler methods + wrappers)
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, AgentDef):
                 self._emit_agent(defn)
         # Emit function bodies
-        for defn in program.definitions:
+        for defn in defs:
             if isinstance(defn, FnDef):
                 self._emit_fn_body(defn)
             elif isinstance(defn, ImplDef):
@@ -575,16 +588,20 @@ class LLVMEmitter:
         """Register an enum as a tagged union: { i32 tag, [payload_size x i8] }.
 
         For enums with no variant fields (simple enums), just { i32 }.
-        This enables type resolution for functions that use enum types,
-        even though full enum lowering is not yet implemented.
+        Also records variant names and field types for construction/matching.
         """
         max_payload = 0
+        variant_names: list[str] = []
+        variant_field_types: list[list[ir.Type]] = []
+
         for variant in node.variants:
+            variant_names.append(variant.name)
             variant_size = 0
+            field_types: list[ir.Type] = []
             for field_ty in variant.fields:
                 try:
                     resolved = self.type_mapper.resolve(field_ty)
-                    # Approximate size: 8 bytes for pointers and i64, 4 for i32, etc.
+                    field_types.append(resolved)
                     if resolved == LLVM_INT:
                         variant_size += 8
                     elif resolved == LLVM_FLOAT:
@@ -594,12 +611,13 @@ class LLVMEmitter:
                     elif resolved == LLVM_CHAR:
                         variant_size += 4
                     elif resolved == LLVM_STRING:
-                        # MnString struct is ~24 bytes (data ptr + len + cap)
                         variant_size += 24
                     else:
-                        variant_size += 8  # default: pointer-sized
+                        variant_size += 8
                 except TypeError:
-                    variant_size += 8  # unresolvable type → pointer-sized placeholder
+                    field_types.append(ir.IntType(8).as_pointer())
+                    variant_size += 8
+            variant_field_types.append(field_types)
             max_payload = max(max_payload, variant_size)
 
         if max_payload > 0:
@@ -607,6 +625,11 @@ class LLVMEmitter:
         else:
             llvm_ty = ir.LiteralStructType([LLVM_I32])
         self.type_mapper.register_struct(node.name, llvm_ty)
+
+        # Store enum metadata for construction and pattern matching
+        self._enum_defs[node.name] = (llvm_ty, variant_names, variant_field_types)
+        for i, vname in enumerate(variant_names):
+            self._variant_to_enum[vname] = (node.name, i)
 
     def _forward_declare_struct(self, node: StructDef) -> None:
         """Forward-declare a struct type so other types can reference it.
@@ -864,6 +887,9 @@ class LLVMEmitter:
         if isinstance(expr, StringLiteral):
             return self._emit_string_literal(expr)
 
+        if isinstance(expr, InterpString):
+            return self._emit_interp_string(expr)
+
         if isinstance(expr, Identifier):
             return self._emit_identifier(expr)
 
@@ -952,12 +978,60 @@ class LLVMEmitter:
         )
         return str_struct
 
+    def _rt_str_from_float(self) -> ir.Function:
+        """Declare __mn_str_from_float(double) -> MnString."""
+        return self._declare_runtime_fn("__mn_str_from_float", LLVM_STRING, [LLVM_FLOAT])
+
+    def _emit_interp_string(self, node: InterpString) -> ir.Value:
+        """Emit an interpolated string as a series of str conversions + concatenations."""
+        result: ir.Value | None = None
+        for part in node.parts:
+            if isinstance(part, StringLiteral):
+                val = self._emit_string_literal(part)
+            else:
+                raw = self._emit_expr(part)
+                val = self._to_string(raw)
+            if result is None:
+                result = val
+            else:
+                concat = self.builder.call(self._rt_str_concat(), [result, val], name="interp_cat")
+                self._track_string_temp(concat)
+                result = concat
+        if result is None:
+            return self._emit_string_literal(StringLiteral(value=""))
+        return result
+
+    def _to_string(self, val: ir.Value) -> ir.Value:
+        """Convert an LLVM value to MnString."""
+        if self._is_string_type(val):
+            return val
+        if isinstance(val.type, ir.IntType):
+            if val.type.width == 64:
+                result = self.builder.call(self._rt_str_from_int(), [val], name="to_str")
+                self._track_string_temp(result)
+                return result
+            if val.type.width == 1:
+                # Bool → extend to i64 → str_from_int
+                ext = self.builder.zext(val, LLVM_INT, name="bool_ext")
+                result = self.builder.call(self._rt_str_from_int(), [ext], name="bool_to_str")
+                self._track_string_temp(result)
+                return result
+        if isinstance(val.type, ir.DoubleType):
+            result = self.builder.call(self._rt_str_from_float(), [val], name="float_to_str")
+            self._track_string_temp(result)
+            return result
+        # Fallback: emit "<unknown>"
+        return self._emit_string_literal(StringLiteral(value="<unknown>"))
+
     def _emit_identifier(self, node: Identifier) -> ir.Value:
-        """Load a variable from its stack slot."""
+        """Load a variable from its stack slot, or construct a bare enum variant."""
         if node.name in self._locals:
             return self.builder.load(self._locals[node.name], name=node.name)
         if node.name in self._functions:
             return self._functions[node.name]
+        # Bare enum variant (no payload): e.g., `Red`, `None`
+        if node.name in self._variant_to_enum:
+            return self._emit_enum_construct(node.name, [])
         raise NameError(f"Undefined variable: {node.name}")
 
     # -----------------------------------------------------------------------
@@ -1201,6 +1275,10 @@ class LLVMEmitter:
                     return val
             return ir.Constant(ir.DoubleType(), 0.0)
 
+        # Enum variant construction: Some(x), Ok(x), MyEnum::Variant(x), etc.
+        if isinstance(node.callee, Identifier) and node.callee.name in self._variant_to_enum:
+            return self._emit_enum_construct(node.callee.name, list(node.args))
+
         # Resolve the callee
         if isinstance(node.callee, Identifier):
             if node.callee.name not in self._functions:
@@ -1420,13 +1498,25 @@ class LLVMEmitter:
     def _emit_match(self, node: MatchExpr) -> ir.Value:
         """Emit a match expression as LLVM switch + conditional branches.
 
-        Integer literal patterns use the LLVM switch instruction.
-        Wildcard patterns become the switch default.
+        Supports integer literal patterns, enum constructor/ident patterns
+        (using tag-based switch), and wildcard patterns.
         """
         subject = self._emit_expr(node.subject)
         func = self.builder.function
 
         merge_bb = func.append_basic_block(name="match.merge")
+
+        # Detect if this is an enum match (subject is a tagged union)
+        is_enum_match = False
+        enum_name: str | None = None
+        for ename, (ety, _vnames, _vfields) in self._enum_defs.items():
+            if subject.type == ety:
+                is_enum_match = True
+                enum_name = ename
+                break
+
+        if is_enum_match and enum_name is not None:
+            return self._emit_enum_match(node, subject, enum_name, merge_bb)
 
         # Separate arms into literal arms and default (wildcard) arm
         literal_arms: list[tuple[int, MatchArm]] = []
@@ -1492,6 +1582,115 @@ class LLVMEmitter:
             return phi
 
         return ir.Constant(LLVM_INT, 0)
+
+    def _emit_enum_match(
+        self,
+        node: MatchExpr,
+        subject: ir.Value,
+        enum_name: str,
+        merge_bb: ir.Block,
+    ) -> ir.Value:
+        """Emit a match on an enum value using tag-based switch.
+
+        Extracts the i32 tag from the tagged union, switches on it, and
+        binds payload fields for ConstructorPattern arms.
+        """
+        func = self.builder.function
+        _llvm_ty, variant_names, _variant_field_types = self._enum_defs[enum_name]
+
+        # Extract the tag (element 0 of the tagged union)
+        tag = self.builder.extract_value(subject, 0, name="enum.tag")
+
+        # Classify arms
+        tagged_arms: list[tuple[int, MatchArm]] = []
+        default_arm: MatchArm | None = None
+
+        for arm in node.arms:
+            if isinstance(arm.pattern, ConstructorPattern):
+                if arm.pattern.name in variant_names:
+                    tag_idx = variant_names.index(arm.pattern.name)
+                    tagged_arms.append((tag_idx, arm))
+                elif arm.pattern.name in self._variant_to_enum:
+                    _, tag_idx = self._variant_to_enum[arm.pattern.name]
+                    tagged_arms.append((tag_idx, arm))
+            elif isinstance(arm.pattern, IdentPattern):
+                # Bare variant name (no payload): Some, None, etc.
+                vname = arm.pattern.name
+                if vname in variant_names:
+                    tag_idx = variant_names.index(vname)
+                    tagged_arms.append((tag_idx, arm))
+                elif vname in self._variant_to_enum:
+                    _, tag_idx = self._variant_to_enum[vname]
+                    tagged_arms.append((tag_idx, arm))
+                else:
+                    default_arm = arm  # binding pattern
+            elif isinstance(arm.pattern, WildcardPattern):
+                default_arm = arm
+            elif isinstance(arm.pattern, LiteralPattern):
+                tagged_arms.append((0, arm))
+
+        # Create basic blocks
+        arm_blocks = [
+            func.append_basic_block(name=f"match.arm{i}") for i in range(len(tagged_arms))
+        ]
+        default_bb = func.append_basic_block(name="match.default")
+
+        # Switch on tag
+        switch = self.builder.switch(tag, default_bb)
+        for i, (tag_val, _arm) in enumerate(tagged_arms):
+            switch.add_case(ir.Constant(LLVM_I32, tag_val), arm_blocks[i])
+
+        # Emit each arm
+        arm_values: list[tuple[ir.Value, ir.Block]] = []
+        old_locals = dict(self._locals)
+
+        for i, (tag_val, arm) in enumerate(tagged_arms):
+            self._builder = ir.IRBuilder(arm_blocks[i])
+
+            # Bind payload fields for ConstructorPattern
+            if isinstance(arm.pattern, ConstructorPattern) and arm.pattern.args:
+                payload_values = self._extract_enum_payload(subject, enum_name, tag_val)
+                for j, subpat in enumerate(arm.pattern.args):
+                    if isinstance(subpat, IdentPattern) and j < len(payload_values):
+                        alloca = self.builder.alloca(payload_values[j].type, name=subpat.name)
+                        self.builder.store(payload_values[j], alloca)
+                        self._locals[subpat.name] = alloca
+
+            if isinstance(arm.body, Block):
+                result = self._emit_block(arm.body)
+            else:
+                result = self._emit_expr(arm.body)
+            if not self.builder.block.is_terminated:
+                self.builder.branch(merge_bb)
+            if result is not None:
+                arm_values.append((result, self.builder.block))
+
+        # Restore locals
+        self._locals = old_locals
+
+        # Default arm
+        self._builder = ir.IRBuilder(default_bb)
+        if default_arm is not None:
+            if isinstance(default_arm.body, Block):
+                default_result = self._emit_block(default_arm.body)
+            else:
+                default_result = self._emit_expr(default_arm.body)
+        else:
+            default_result = ir.Constant(LLVM_I32, 0)
+        if not self.builder.block.is_terminated:
+            self.builder.branch(merge_bb)
+        if default_result is not None:
+            arm_values.append((default_result, self.builder.block))
+
+        # Merge block with phi
+        self._builder = ir.IRBuilder(merge_bb)
+        if arm_values and all(v.type == arm_values[0][0].type for v, _bb in arm_values):
+            phi = self.builder.phi(arm_values[0][0].type, name="match.val")
+            for val, bb in arm_values:
+                phi.add_incoming(val, bb)
+            return phi
+
+        return ir.Constant(LLVM_I32, 0)
 
     # -----------------------------------------------------------------------
     # Phase 2.1: Agent codegen — native agents via C runtime
@@ -1883,6 +2082,92 @@ class LLVMEmitter:
                     struct_val, ir.Constant(field_ty, default), i, name=f"{node.name}.{fname}"
                 )
         return struct_val
+
+    def _emit_enum_construct(self, variant_name: str, args: list[object]) -> ir.Value:
+        """Emit enum variant construction as a tagged union.
+
+        Allocates a { i32 tag, [N x i8] } struct on the stack, stores the
+        tag value, then bitcasts the payload area and stores each field.
+        """
+        enum_name, tag_idx = self._variant_to_enum[variant_name]
+        llvm_ty, _variant_names, variant_field_types = self._enum_defs[enum_name]
+
+        # Start with undefined struct
+        enum_val = ir.Constant(llvm_ty, ir.Undefined)
+        # Store the tag
+        enum_val = self.builder.insert_value(
+            enum_val, ir.Constant(LLVM_I32, tag_idx), 0, name=f"{variant_name}.tag"
+        )
+
+        # Store payload fields if any
+        field_types = variant_field_types[tag_idx]
+        if field_types and len(llvm_ty.elements) > 1:
+            # Alloca for the enum, store tag, then bitcast payload area
+            enum_alloca = self.builder.alloca(llvm_ty, name=f"{variant_name}.alloca")
+            self.builder.store(enum_val, enum_alloca)
+
+            # Get pointer to payload area (element 1: [N x i8])
+            zero = ir.Constant(LLVM_I32, 0)
+            one = ir.Constant(LLVM_I32, 1)
+            payload_ptr = self.builder.gep(
+                enum_alloca, [zero, one], inbounds=True, name=f"{variant_name}.payload_ptr"
+            )
+
+            # Build a struct type for the fields and bitcast
+            payload_struct_ty = ir.LiteralStructType(field_types)
+            payload_cast = self.builder.bitcast(
+                payload_ptr, payload_struct_ty.as_pointer(), name=f"{variant_name}.cast"
+            )
+
+            # Store each field
+            for i, arg in enumerate(args):
+                val = self._emit_expr(arg)
+                field_ptr = self.builder.gep(
+                    payload_cast,
+                    [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, i)],
+                    inbounds=True,
+                    name=f"{variant_name}.field{i}_ptr",
+                )
+                self.builder.store(val, field_ptr)
+
+            return self.builder.load(enum_alloca, name=f"{variant_name}.val")
+
+        return enum_val
+
+    def _extract_enum_payload(
+        self, enum_val: ir.Value, enum_name: str, tag_idx: int
+    ) -> list[ir.Value]:
+        """Extract payload fields from an enum value for a specific variant."""
+        llvm_ty, _variant_names, variant_field_types = self._enum_defs[enum_name]
+        field_types = variant_field_types[tag_idx]
+        if not field_types or len(llvm_ty.elements) <= 1:
+            return []
+
+        # Alloca, store, then GEP + bitcast to extract fields
+        enum_alloca = self.builder.alloca(llvm_ty, name="enum.extract")
+        self.builder.store(enum_val, enum_alloca)
+
+        zero = ir.Constant(LLVM_I32, 0)
+        one = ir.Constant(LLVM_I32, 1)
+        payload_ptr = self.builder.gep(
+            enum_alloca, [zero, one], inbounds=True, name="enum.payload_ptr"
+        )
+
+        payload_struct_ty = ir.LiteralStructType(field_types)
+        payload_cast = self.builder.bitcast(
+            payload_ptr, payload_struct_ty.as_pointer(), name="enum.payload_cast"
+        )
+
+        values: list[ir.Value] = []
+        for i, fty in enumerate(field_types):
+            field_ptr = self.builder.gep(
+                payload_cast,
+                [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, i)],
+                inbounds=True,
+                name=f"enum.field{i}_ptr",
+            )
+            values.append(self.builder.load(field_ptr, name=f"enum.field{i}"))
+        return values
 
     def _emit_field_access(self, node: FieldAccessExpr) -> ir.Value:
         """Emit field access: `token.value`, `lexer.pos`."""

@@ -14,11 +14,11 @@ from stdlib.pkg import (
     LockFileError,
     ManifestError,
     MapanareManifest,
-    cmd_publish_stub,
     init_project,
     load_lockfile,
     load_manifest,
     parse_manifest,
+    publish_package,
     save_lockfile,
     save_manifest,
 )
@@ -293,17 +293,33 @@ class TestLockFileIO:
 # -----------------------------------------------------------------------
 
 
-class TestPublishStub:
-    def test_returns_help_text(self) -> None:
-        text = cmd_publish_stub()
-        assert "mapa publish" in text
-        assert "not yet implemented" in text.lower()
-        assert "Phase 7.2" in text
-        assert "mapa install" in text
+class TestPublishPackage:
+    def test_publish_requires_token(self) -> None:
+        """Publish raises PackageError when no token is available."""
+        from unittest.mock import patch
 
-    def test_mentions_git_distribution(self) -> None:
-        text = cmd_publish_stub()
-        assert "git" in text.lower()
+        from stdlib.pkg import PackageError
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            init_project(tmpdir, name="testpkg")
+            with patch("stdlib.pkg._read_token", return_value=None):
+                with pytest.raises(PackageError, match="No API token"):
+                    publish_package(tmpdir)
+
+    def test_publish_builds_tarball(self) -> None:
+        """Publish builds a valid tarball from the project."""
+        import io
+        import tarfile
+
+        from stdlib.pkg import _build_tarball
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            init_project(tmpdir, name="tarpkg")
+            data = _build_tarball(tmpdir)
+            assert len(data) > 0
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+                names = tar.getnames()
+                assert "mapanare.toml" in names
 
 
 # -----------------------------------------------------------------------

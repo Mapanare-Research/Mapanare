@@ -12,6 +12,7 @@ from mapanare.ast_nodes import (
     CharLiteral,
     ConstructExpr,
     Definition,
+    DocComment,
     EnumDef,
     EnumVariant,
     ErrExpr,
@@ -19,6 +20,7 @@ from mapanare.ast_nodes import (
     ExportDef,
     Expr,
     ExprStmt,
+    ExternFnDef,
     FieldAccessExpr,
     FloatLiteral,
     FnDef,
@@ -30,6 +32,7 @@ from mapanare.ast_nodes import (
     ImplDef,
     ImportDef,
     IndexExpr,
+    InterpString,
     IntLiteral,
     LambdaExpr,
     LetBinding,
@@ -71,7 +74,7 @@ from mapanare.types import BUILTIN_CALL_MAP, PYTHON_TYPE_MAP
 class PythonEmitter:
     """Walks the AST and produces Python source code."""
 
-    def __init__(self) -> None:
+    def __init__(self, python_path: list[str] | None = None) -> None:
         self._indent = 0
         self._lines: list[str] = []
         self._has_agents = False
@@ -81,6 +84,9 @@ class PythonEmitter:
         self._has_stream = False
         self._has_traits = False
         self._impl_methods: dict[str, list[FnDef]] = {}
+        self._python_path: list[str] = python_path or []
+        # Python interop: extern "Python" fn declarations
+        self._extern_python_fns: list[ExternFnDef] = []
 
     def emit(self, program: Program) -> str:
         """Emit the full program and return Python source."""
@@ -91,8 +97,20 @@ class PythonEmitter:
         # Emit definitions
         for defn in program.definitions:
             self._emit_definition(defn)
+
         # Emit main guard (only if a main function exists)
-        has_main = any(isinstance(d, FnDef) and d.name == "main" for d in program.definitions)
+        def _is_main(d: Definition) -> bool:
+            if isinstance(d, FnDef) and d.name == "main":
+                return True
+            if (
+                isinstance(d, DocComment)
+                and isinstance(d.definition, FnDef)
+                and d.definition.name == "main"
+            ):
+                return True
+            return False
+
+        has_main = any(_is_main(d) for d in program.definitions)
         if has_main:
             self._emit_line("")
             self._emit_line('if __name__ == "__main__":')
@@ -109,12 +127,15 @@ class PythonEmitter:
 
     def _scan_program(self, program: Program) -> None:
         for defn in program.definitions:
-            if isinstance(defn, ImplDef):
-                self._impl_methods.setdefault(defn.target, []).extend(defn.methods)
-            if isinstance(defn, AgentDef):
+            inner = defn.definition if isinstance(defn, DocComment) else defn
+            if isinstance(inner, ImplDef):
+                self._impl_methods.setdefault(inner.target, []).extend(inner.methods)
+            if isinstance(inner, AgentDef):
                 self._has_agents = True
-            if isinstance(defn, TraitDef):
+            if isinstance(inner, TraitDef):
                 self._has_traits = True
+            if isinstance(inner, ExternFnDef) and inner.abi == "Python":
+                self._extern_python_fns.append(inner)
             self._scan_definition(defn)
 
     def _scan_definition(self, defn: Definition) -> None:
@@ -130,6 +151,9 @@ class PythonEmitter:
         elif isinstance(defn, PipeDef):
             self._has_agents = True
         elif isinstance(defn, ExportDef):
+            if defn.definition:
+                self._scan_definition(defn.definition)
+        elif isinstance(defn, DocComment):
             if defn.definition:
                 self._scan_definition(defn.definition)
 
@@ -156,6 +180,11 @@ class PythonEmitter:
                 self._scan_expr(stmt.value)
 
     def _scan_expr(self, expr: Expr) -> None:
+        if isinstance(expr, InterpString):
+            for part in expr.parts:
+                if not isinstance(part, StringLiteral):
+                    self._scan_expr(part)
+            return
         if isinstance(expr, SignalExpr):
             self._has_signal = True
         elif isinstance(expr, SpawnExpr):
@@ -247,6 +276,15 @@ class PythonEmitter:
             self._emit_line("from runtime.result import Ok, Err, unwrap_or_return, _EarlyReturn")
         if self._has_option:
             self._emit_line("from runtime.result import Some")
+        # Python path for interop
+        if self._python_path:
+            self._emit_line("import sys")
+            for p in self._python_path:
+                self._emit_line(f"sys.path.insert(0, {repr(p)})")
+            self._emit_line("")
+        # Python interop imports and wrappers
+        if self._extern_python_fns:
+            self._emit_python_interop()
         self._emit_line("")
         self._emit_line("println = print")
         self._emit_line("")
@@ -258,6 +296,57 @@ class PythonEmitter:
         self._emit_line("return a / b")
         self._indent -= 1
         self._emit_line("return int(a / b)")
+        self._indent -= 1
+        self._emit_line("")
+
+    # ------------------------------------------------------------------
+    # Python interop
+    # ------------------------------------------------------------------
+
+    def _emit_python_interop(self) -> None:
+        """Emit imports and wrapper functions for extern "Python" declarations."""
+        # Group by module
+        modules: dict[str, list[ExternFnDef]] = {}
+        for fn in self._extern_python_fns:
+            if fn.module:
+                modules.setdefault(fn.module, []).append(fn)
+
+        for mod, fns in modules.items():
+            self._emit_line(f"import {mod}")
+
+        self._emit_line("")
+
+        for fn in self._extern_python_fns:
+            self._emit_python_wrapper(fn)
+
+    def _emit_python_wrapper(self, fn: ExternFnDef) -> None:
+        """Emit a Python wrapper function for an extern 'Python' declaration."""
+        params = ", ".join(p.name for p in fn.params)
+        call = f"{fn.module}.{fn.name}({params})"
+
+        # Check if return type is Result<T, String> — wrap in try/except
+        is_result_return = False
+        if (
+            fn.return_type
+            and isinstance(fn.return_type, GenericType)
+            and fn.return_type.name == "Result"
+        ):
+            is_result_return = True
+            self._has_result = True
+
+        self._emit_line(f"def {fn.name}({params}):")
+        self._indent += 1
+        if is_result_return:
+            self._emit_line("try:")
+            self._indent += 1
+            self._emit_line(f"return Ok({call})")
+            self._indent -= 1
+            self._emit_line("except Exception as __e:")
+            self._indent += 1
+            self._emit_line("return Err(str(__e))")
+            self._indent -= 1
+        else:
+            self._emit_line(f"return {call}")
         self._indent -= 1
         self._emit_line("")
 
@@ -337,6 +426,11 @@ class PythonEmitter:
             self._emit_import(defn)
         elif isinstance(defn, ExportDef):
             self._emit_export(defn)
+        elif isinstance(defn, ExternFnDef):
+            pass  # handled in header via _emit_python_interop
+        elif isinstance(defn, DocComment):
+            if defn.definition:
+                self._emit_definition(defn.definition)
 
     # -- fn ---------------------------------------------------------------
 
@@ -814,6 +908,8 @@ class PythonEmitter:
             return repr(expr.value)
         elif isinstance(expr, StringLiteral):
             return repr(expr.value)
+        elif isinstance(expr, InterpString):
+            return self._emit_interp_string(expr)
         elif isinstance(expr, CharLiteral):
             return repr(expr.value)
         elif isinstance(expr, BoolLiteral):
@@ -1052,6 +1148,19 @@ class PythonEmitter:
         else:
             body = self._emit_expr(expr.body)
         return f"lambda {params}: {body}"
+
+    def _emit_interp_string(self, expr: InterpString) -> str:
+        """Emit an interpolated string as a Python f-string."""
+        parts: list[str] = []
+        for part in expr.parts:
+            if isinstance(part, StringLiteral):
+                # Escape braces in literal parts for f-string
+                escaped = part.value.replace("{", "{{").replace("}", "}}")
+                parts.append(escaped)
+            else:
+                parts.append(f"{{{self._emit_expr(part)}}}")
+        joined = "".join(parts)
+        return f'f"{joined}"'
 
     def _emit_construct(self, expr: ConstructExpr) -> str:
         fields = ", ".join(f"{f.name}={self._emit_expr(f.value)}" for f in expr.fields)
