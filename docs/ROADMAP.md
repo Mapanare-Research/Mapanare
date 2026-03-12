@@ -7,16 +7,17 @@
 
 ---
 
-## Where We Are (v0.3.1)
+## Where We Are (v0.6.0)
 
-Mapanare is real, compiled, and tested. The bootstrap compiler ships with two backends
-(Python transpiler + LLVM native) and a self-hosted compiler written in Mapanare itself.
-**1,960+ tests pass** across the full pipeline.
+Mapanare is real, compiled, and tested. The bootstrap compiler ships with a MIR-based
+pipeline, dual backends (Python transpiler + LLVM native), and a self-hosted compiler
+written in Mapanare itself. **2,500+ tests pass** across the full pipeline.
 
 ### What works today
 
-- **Full compiler pipeline** — Lexer, parser, semantic checker, optimizer (O0–O3), code emitter
-- **Two compilation targets** — Python transpilation and native binaries via LLVM IR
+- **Full compiler pipeline** — Lexer, parser, semantic checker, MIR lowering, MIR optimizer (O0–O3), code emitter
+- **MIR pipeline** — Typed SSA-based intermediate representation with basic blocks and explicit terminators
+- **Two compilation targets** — Python transpilation and native binaries via LLVM IR (both AST-direct and MIR-based)
 - **Agent system** — Spawn concurrent actors with typed channels, message passing, supervision policies
 - **Reactive signals** — Automatic dependency tracking and recomputation
 - **Stream processing** — Async iterables with fusion, backpressure, and `|>` pipe operator
@@ -57,12 +58,14 @@ Mapanare is real, compiled, and tested. The bootstrap compiler ships with two ba
 | **v0.3.0** ✅ | Depth Over Breadth | Traits, module resolution, LLVM agent codegen, arena memory, `TypeKind` enum, getting started guide, governance, 110+ e2e tests, benchmarks rewrite, 1,960+ tests |
 | **v0.3.1** ✅ | Release Polish | Dynamic versioning from `VERSION` file, documentation tests |
 | **v0.4.0** ✅ | Ready for the World | Scope cleanup (`experimental/`), C runtime hardening (sanitizers, CI), structured diagnostics (spans, multi-error, recovery), C FFI (`extern "C"`, `--link-lib`), self-hosted verification (96 bootstrap tests), LSP improvements (incremental parse, cross-module go-to-def), VS Code extension extracted |
+| **v0.5.0** ✅ | The Ecosystem | String interpolation, linter, Python interop, WASM playground, package registry, doc generator, language reference, cookbook, 2,200+ tests |
+| **v0.6.0** ✅ | Compiler Infrastructure | MIR pipeline (SSA IR, lowering, optimizer, dual emitters), bootstrap frozen at v0.6.0, self-hosted semantic checker, 2,500+ tests |
 
 ---
 
 ## The Road Ahead
 
-### v0.5.0 — "The Ecosystem"
+### v0.5.0 — "The Ecosystem" ✅
 
 > Build the infrastructure that turns Mapanare from a compiler into a platform.
 > See [`PLAN-v0.5.0.md`](PLAN-v0.5.0.md) for the detailed execution plan.
@@ -109,23 +112,25 @@ Mapanare is real, compiled, and tested. The bootstrap compiler ships with two ba
 
 ---
 
-### v0.6.0 — "Compiler Infrastructure"
+### v0.6.0 — "Compiler Infrastructure" ✅
 
 > Replace ad-hoc patterns with principled compiler architecture.
 
-#### Intermediate Representation (MIR)
+#### Intermediate Representation (MIR) ✅
 
-- SSA-based, typed IR between AST and emission
-- AST → MIR lowering pass
-- Move optimizer passes to work on MIR instead of AST
-- MIR → Python and MIR → LLVM emission
+- SSA-based, typed IR between AST and emission (`mir.py`, `mir_builder.py`)
+- AST → MIR lowering pass (`lower.py`, 1,397 lines)
+- MIR optimizer passes: constant folding, DCE, copy propagation, block merging (`mir_opt.py`)
+- MIR → Python emitter (`emit_python_mir.py`)
+- MIR → LLVM IR emitter (`emit_llvm_mir.py`)
+- CLI commands: `emit-mir` for MIR text dump
 - Enables future backends (WASM native, SPIR-V) without duplicating logic
 
-#### Freeze Python Bootstrap
+#### Freeze Python Bootstrap ✅
 
-- Self-hosted compiler becomes the primary compiler
-- Python bootstrap preserved in `bootstrap/` for reference
-- All development moves to `.mn` sources
+- Python bootstrap frozen at v0.6.0 in `bootstrap/` (22 files)
+- `bootstrap/Makefile` for three-stage bootstrap verification
+- Self-hosted compiler continues development in `mapanare/self/*.mn`
 
 ---
 
@@ -205,20 +210,21 @@ The compiler is written in Mapanare itself — 5,802 lines across six modules.
 yourfile.mn
     │
     ▼
-┌─────────────────────────────────────────┐
-│       mapanare compiler                 │
-│  Lexer → Parser → AST → Semantic Check │
-│              │                          │
-│     Optimizer → IR Generator            │
-└─────────────┬───────────────────────────┘
-              │
-         ┌────┴────┐
-         ▼         ▼
-    Python      LLVM IR
-   (transpile)     │
-              ┌────┴────┐
-              ▼         ▼
-         Native x86  Native ARM
+┌──────────────────────────────────────────────────────┐
+│                  mapanare compiler                    │
+│  Lexer → Parser → AST → Semantic Check → MIR Lower  │
+│                                              │       │
+│                                     MIR Optimizer    │
+│                                        (O0–O3)      │
+└────────────────────────┬─────────────────────────────┘
+                         │
+                    ┌────┴────┐
+                    ▼         ▼
+               Python      LLVM IR
+              (transpile)     │
+                         ┌────┴────┐
+                         ▼         ▼
+                    Native x86  Native ARM
 ```
 
 ---
@@ -280,7 +286,7 @@ Their top concerns and what we did about them:
 | No governance / templates | HIGH | ✅ COC, SECURITY, templates in v0.3.0 |
 | Scope too broad (GPU/model) | MEDIUM | ✅ v0.4.0 scope reduction |
 | No FFI | MEDIUM | ✅ v0.4.0 FFI |
-| No intermediate representation | MEDIUM | 🔜 v0.6.0 MIR |
+| No intermediate representation | MEDIUM | ✅ MIR in v0.6.0 |
 | No metrics / tracing | MEDIUM | 🔜 v0.7.0 observability |
 | No browser playground | MEDIUM | 🔜 v0.5.0 playground |
 

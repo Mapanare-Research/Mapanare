@@ -22,8 +22,8 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-2200+_passing-brightgreen.svg?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-0.6.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-2500+_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
@@ -300,11 +300,11 @@ Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target 
 ## Compiler Architecture
 
 ```
-.mn source → Lexer → Parser → AST → Semantic Analysis → Optimizer → Emit
-                                                                      ↓
-                                                               Python | LLVM IR
-                                                                      ↓
-                                                       Interpreter | Native Binary
+.mn source → Lexer → Parser → AST → Semantic Analysis → MIR Lowering → MIR Optimizer → Emit
+                                                                                          ↓
+                                                                                   Python | LLVM IR
+                                                                                          ↓
+                                                                           Interpreter | Native Binary
 ```
 
 | Stage | Details |
@@ -312,9 +312,10 @@ Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target 
 | **Lexer** | Lark-based tokenizer (18 keywords, 29 operators) |
 | **Parser** | LALR with precedence climbing |
 | **Semantic** | Type checking, scope analysis, builtins registry |
-| **Optimizer** | Constant folding, dead code elimination, agent inlining, stream fusion (`-O0` to `-O3`) |
-| **Emit Python** | Agents map to asyncio, signals to reactive containers, streams to async generators |
-| **Emit LLVM** | Full IR generation via llvmlite with cross-compilation targets |
+| **MIR Lowering** | AST → typed SSA intermediate representation with basic blocks |
+| **MIR Optimizer** | Constant folding, dead code elimination, copy propagation, block merging (`-O0` to `-O3`) |
+| **Emit Python** | MIR → Python: agents map to asyncio, signals to reactive containers, streams to async generators |
+| **Emit LLVM** | MIR → LLVM IR generation via llvmlite with cross-compilation targets |
 
 ---
 
@@ -389,14 +390,14 @@ Bootstrap strategy: Python compiler (Stage 0) compiles self-hosted `.mn` sources
 
 ```
 mapanare/
-├── mapanare/              Compiler (lexer, parser, semantic, emit, optimizer, jit)
+├── mapanare/              Compiler (lexer, parser, semantic, MIR, emit, optimizer, jit)
 │   ├── self/              Self-hosted .mn compiler sources
 │   └── lsp/               Language Server Protocol
 ├── runtime/               Runtime (agents, signals, streams, result types)
 │   └── native/            Native C runtime (thread pool, ring buffers)
 ├── stdlib/                Standard library (io, http, time, math, text, log, pkg)
 ├── bootstrap/             Frozen Python compiler for bootstrapping
-├── tests/                 Test suite (82 files, 2090+ tests)
+├── tests/                 Test suite (2,500+ tests)
 ├── benchmarks/            Performance benchmarks
 ├── docs/                  Documentation
 │   ├── rfcs/              Language change proposals
@@ -434,9 +435,9 @@ Requires Python 3.11+.
 | **v0.2.0** | Self-Hosting — LLVM codegen, C runtime, self-hosted compiler (5,800 lines .mn) | ✅ Released |
 | **v0.3.0** | Depth Over Breadth — traits, modules, agent codegen, arena memory, 1,960+ tests | ✅ Released |
 | **v0.4.0** | Ready for the World — FFI, C runtime hardening, diagnostics, scope cleanup | ✅ Released |
-| **v0.5.0** | The Ecosystem — interpolation, linter, Python interop, playground, registry, docs | 🔶 Current |
-| **v0.6.0** | Compiler Infrastructure — MIR, freeze Python bootstrap | Planned |
-| **v0.7.0** | Production Ready — observability, tracing, deployment, test runner | Planned |
+| **v0.5.0** | The Ecosystem — interpolation, linter, Python interop, playground, registry, docs | ✅ Released |
+| **v0.6.0** | Compiler Infrastructure — MIR pipeline, bootstrap frozen | ✅ Released |
+| **v0.7.0** | Self-Standing — self-hosting, observability, test runner, deployment | 🔶 Current |
 | **v1.0.0** | Stable — language spec frozen, backwards compatibility guarantees | Planned |
 
 See the full [ROADMAP](docs/ROADMAP.md) for details.

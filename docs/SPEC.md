@@ -1,6 +1,6 @@
 # Mapanare Language Specification
 
-**Version:** 0.2.0
+**Version:** 0.6.0
 **Status:** Skeleton / Working Draft
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. It compiles via Python transpilation first, then LLVM native.
@@ -827,26 +827,72 @@ let_binding    = "let" ["mut"] IDENT [":" type] "=" expr ;
 
 ---
 
-## Appendix B: Compilation Targets
+## Appendix B: Compilation Pipeline
 
-### Python Transpiler (Phase 1)
+### Overview
 
-The initial Mapanare compiler translates Mapanare source code to Python. This enables:
+The Mapanare compiler uses a multi-stage pipeline with an intermediate representation (MIR) between the AST and final code emission:
+
+```
+.mn source → Lexer → Parser → AST → Semantic Analysis → MIR Lowering → MIR Optimizer → Emitter
+                                                                                          ├→ Python
+                                                                                          └→ LLVM IR → Native Binary
+```
+
+### MIR (Mid-level Intermediate Representation)
+
+MIR is a typed, SSA-based intermediate representation that sits between the AST and code emission. It was introduced in v0.6.0 to decouple frontend analysis from backend code generation.
+
+**Key properties:**
+
+- **SSA form:** Each temporary is assigned exactly once. Phi nodes merge values at control-flow join points.
+- **Typed:** Every instruction carries type information from the semantic checker.
+- **Basic blocks:** Code is organized into basic blocks with explicit terminators (branch, switch, return, jump).
+- **Three-address form:** Operations use `%temp = op(arg1, arg2)` style instructions.
+
+**Instruction categories:**
+
+| Category | Instructions |
+|----------|-------------|
+| **Arithmetic** | `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Neg` |
+| **Comparison** | `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge` |
+| **Logic** | `And`, `Or`, `Not` |
+| **Memory** | `Alloca`, `Load`, `Store`, `FieldGet`, `FieldSet` |
+| **Control** | `Branch`, `Jump`, `Switch`, `Return`, `Phi` |
+| **Calls** | `Call`, `CallBuiltin`, `CallMethod` |
+| **Types** | `StructInit`, `EnumInit`, `EnumTag`, `Cast` |
+| **Agents** | `AgentSpawn`, `AgentSend`, `AgentSync` |
+| **Signals** | `SignalInit`, `SignalGet`, `SignalSet` |
+| **Streams** | `StreamOp` |
+| **Strings** | `InterpConcat` |
+
+**MIR optimizer passes (applied at -O1 and above):**
+
+- Constant folding and propagation
+- Dead code elimination
+- Copy propagation
+- Basic block merging
+- Unreachable block removal
+
+### Python Transpiler
+
+The Python emitter translates MIR to Python source code. This enables:
 
 - Rapid language prototyping and iteration.
 - Leveraging the Python ecosystem (NumPy for tensors, asyncio for agents).
 - Immediate access to ML libraries during early development.
 
-Agents map to Python `asyncio` tasks. Signals map to observable patterns. Tensor support for the Python backend is not yet implemented.
+Agents map to Python `asyncio` tasks. Signals map to observable patterns.
 
-### LLVM Native Backend (Phase 2)
+### LLVM Native Backend
 
-The production compiler generates LLVM IR, producing native machine code. This enables:
+The LLVM emitter translates MIR to LLVM IR, producing native machine code. This enables:
 
 - Agent spawn/send/sync codegen backed by the C runtime thread pool and ring buffers.
 - Compile-time tensor shape verification (element-wise ops and matmul via runtime calls).
 - Arena-based memory management with tag-bit string freeing (no garbage collector).
 - Ahead-of-time compilation for deployment.
+- Cross-compilation to Linux x64, macOS ARM64, Windows x64.
 
 Note: Signals and streams are not yet supported in the LLVM backend.
 

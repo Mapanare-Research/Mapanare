@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-12
+
+### Added
+
+- **MIR pipeline**: Typed SSA-based intermediate representation between AST and code emission (`mir.py`, `mir_builder.py`, `lower.py`)
+- **MIR lowering**: AST → MIR translation pass (1,397 lines) covering all language constructs — expressions, control flow, agents, signals, streams, pattern matching, string interpolation
+- **MIR optimizer** (`mir_opt.py`): Constant folding, dead code elimination, copy propagation, basic block merging, unreachable block removal
+- **MIR → LLVM emitter** (`emit_llvm_mir.py`): Translates MIR basic blocks to LLVM IR via llvmlite
+- **MIR → Python emitter** (`emit_python_mir.py`): Translates MIR to Python source code
+- **`emit-mir` CLI command**: Dump MIR text representation for debugging
+- **Bootstrap Makefile** (`bootstrap/Makefile`): `make bootstrap` and `make verify` for three-stage bootstrap verification
+
+### Changed
+
+- Bootstrap snapshot updated to v0.6.0 (22 files: all compiler modules + grammar)
+- `bootstrap/README.md` rewritten with MIR pipeline documentation and file index
+- SPEC.md Appendix B rewritten with full MIR description (instruction categories, optimizer passes, pipeline diagram)
+- ROADMAP.md architecture diagram updated to show AST → MIR → Optimizer → Emitter pipeline
+- ROADMAP.md release history updated with v0.5.0 and v0.6.0 entries
+- SPEC.md version bumped to 0.6.0
+- 2,538 tests passing (up from 2,200+ in v0.5.0)
+
 ## [0.5.0] - 2026-03-11
 
 ### Added
@@ -170,7 +192,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Mapanare-Research/Mapanare/compare/v0.3.0...v0.3.1

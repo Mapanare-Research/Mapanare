@@ -244,10 +244,10 @@ class TestNoStaleAspirations:
         spec = (ROOT / "docs" / "SPEC.md").read_text(encoding="utf-8")
         assert "ownership-based" not in spec.lower()
 
-    def test_spec_notes_string_interpolation_unimplemented(self) -> None:
-        """SPEC marks string interpolation as not yet implemented."""
+    def test_spec_documents_string_interpolation(self) -> None:
+        """SPEC documents string interpolation as implemented (v0.5.0+)."""
         spec = (ROOT / "docs" / "SPEC.md").read_text(encoding="utf-8")
-        assert "not yet implemented" in spec.lower()
+        assert "${expr}" in spec or "string interpolation" in spec.lower()
 
     def test_readme_repl_not_planned(self) -> None:
         """README no longer says REPL is 'Planned'."""

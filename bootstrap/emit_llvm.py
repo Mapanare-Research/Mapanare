@@ -1024,11 +1024,14 @@ class LLVMEmitter:
         return self._emit_string_literal(StringLiteral(value="<unknown>"))
 
     def _emit_identifier(self, node: Identifier) -> ir.Value:
-        """Load a variable from its stack slot."""
+        """Load a variable from its stack slot, or construct a bare enum variant."""
         if node.name in self._locals:
             return self.builder.load(self._locals[node.name], name=node.name)
         if node.name in self._functions:
             return self._functions[node.name]
+        # Bare enum variant (no payload): e.g., `Red`, `None`
+        if node.name in self._variant_to_enum:
+            return self._emit_enum_construct(node.name, [])
         raise NameError(f"Undefined variable: {node.name}")
 
     # -----------------------------------------------------------------------
@@ -1274,7 +1277,7 @@ class LLVMEmitter:
 
         # Enum variant construction: Some(x), Ok(x), MyEnum::Variant(x), etc.
         if isinstance(node.callee, Identifier) and node.callee.name in self._variant_to_enum:
-            return self._emit_enum_construct(node.callee.name, node.args)
+            return self._emit_enum_construct(node.callee.name, list(node.args))
 
         # Resolve the callee
         if isinstance(node.callee, Identifier):
@@ -1645,9 +1648,9 @@ class LLVMEmitter:
             self._builder = ir.IRBuilder(arm_blocks[i])
 
             # Bind payload fields for ConstructorPattern
-            if isinstance(arm.pattern, ConstructorPattern) and arm.pattern.patterns:
+            if isinstance(arm.pattern, ConstructorPattern) and arm.pattern.args:
                 payload_values = self._extract_enum_payload(subject, enum_name, tag_val)
-                for j, subpat in enumerate(arm.pattern.patterns):
+                for j, subpat in enumerate(arm.pattern.args):
                     if isinstance(subpat, IdentPattern) and j < len(payload_values):
                         alloca = self.builder.alloca(payload_values[j].type, name=subpat.name)
                         self.builder.store(payload_values[j], alloca)
