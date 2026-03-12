@@ -650,6 +650,36 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     print(f"emitted {args.source} -> {out_path} (target: {target.triple})")
 
 
+def cmd_emit_mir(args: argparse.Namespace) -> None:
+    """Emit MIR (Mid-level IR) for an .mn source file."""
+    from mapanare.mir import pretty_print_module as mir_pretty_print
+    from mapanare.mir_builder import build_mir
+
+    source = _read_source(args.source)
+    opt_level = _parse_opt_level(args)
+    resolver = ModuleResolver()
+    try:
+        ast = parse(source, filename=args.source)
+        check_or_raise(ast, filename=args.source, resolver=resolver)
+        ast, _ = optimize(ast, opt_level)
+        mir_module = build_mir(ast, module_name=os.path.splitext(os.path.basename(args.source))[0])
+    except ParseError as e:
+        _emit_parse_error(e, source, args.source)
+        sys.exit(1)
+    except SemanticErrors as e:
+        _emit_semantic_errors(e, source)
+        sys.exit(1)
+
+    output = mir_pretty_print(mir_module)
+    out_path = args.o
+    if out_path:
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(output)
+        print(f"emitted {args.source} -> {out_path} (MIR)")
+    else:
+        print(output, end="")
+
+
 def cmd_lint(args: argparse.Namespace) -> None:
     """Lint an .mn source file for code quality issues."""
     source = _read_source(args.source)
@@ -967,6 +997,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_opt_level_args(p_emit_llvm)
     p_emit_llvm.set_defaults(func=cmd_emit_llvm)
+
+    # emit-mir
+    p_emit_mir = subparsers.add_parser("emit-mir", help="Emit MIR (mid-level IR) for .mn source")
+    p_emit_mir.add_argument("source", help="Path to .mn source file")
+    p_emit_mir.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
+    _add_opt_level_args(p_emit_mir)
+    p_emit_mir.set_defaults(func=cmd_emit_mir)
 
     # lint
     p_lint = subparsers.add_parser("lint", help="Lint .mn source for code quality issues")
