@@ -86,13 +86,27 @@ def _compile_source(
     opt_level: OptLevel = OptLevel.O2,
     resolver: ModuleResolver | None = None,
     python_path: list[str] | None = None,
+    use_mir: bool = True,
 ) -> str:
     """Parse, check, optimize, and emit Python from Mapanare source. Returns Python code."""
     ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename, resolver=resolver)
+
+    if use_mir:
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
+        from mapanare.mir_opt import MIROptLevel
+        from mapanare.mir_opt import optimize_module as mir_optimize
+
+        mir_module = build_mir(ast, module_name=os.path.splitext(os.path.basename(filename))[0])
+        mir_opt_level = MIROptLevel(opt_level.value)
+        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+        emitter = PythonMIREmitter(python_path=python_path)
+        return emitter.emit(mir_module)
+
     ast, stats = optimize(ast, opt_level)
-    emitter = PythonEmitter(python_path=python_path)
-    return emitter.emit(ast)
+    py_emitter = PythonEmitter(python_path=python_path)
+    return py_emitter.emit(ast)
 
 
 def _compile_to_llvm_ir(
@@ -101,20 +115,41 @@ def _compile_to_llvm_ir(
     opt_level: OptLevel = OptLevel.O2,
     target_name: str | None = None,
     resolver: ModuleResolver | None = None,
+    use_mir: bool = True,
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source."""
-    from mapanare.emit_llvm import LLVMEmitter
-
     ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename, resolver=resolver)
+
+    if use_mir:
+        from mapanare.emit_llvm_mir import LLVMMIREmitter
+        from mapanare.lower import lower as build_mir
+        from mapanare.mir_opt import MIROptLevel
+        from mapanare.mir_opt import optimize_module as mir_optimize
+
+        module_name = os.path.splitext(os.path.basename(filename))[0]
+        mir_module = build_mir(ast, module_name=module_name)
+        mir_opt_level = MIROptLevel(opt_level.value)
+        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+        target = get_target(target_name)
+        emitter = LLVMMIREmitter(
+            module_name=module_name,
+            target_triple=target.triple,
+            data_layout=target.data_layout,
+        )
+        llvm_module = emitter.emit(mir_module)
+        return str(llvm_module)
+
+    from mapanare.emit_llvm import LLVMEmitter
+
     ast, stats = optimize(ast, opt_level)
     target = get_target(target_name)
-    emitter = LLVMEmitter(
+    llvm_emitter = LLVMEmitter(
         module_name=os.path.splitext(os.path.basename(filename))[0],
         target_triple=target.triple,
         data_layout=target.data_layout,
     )
-    module = emitter.emit_program(ast)
+    module = llvm_emitter.emit_program(ast)
     return str(module)
 
 
@@ -123,10 +158,16 @@ def cmd_compile(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     python_path: list[str] = getattr(args, "python_path", None) or []
+    use_mir = not getattr(args, "no_mir", False)
     resolver = ModuleResolver()
     try:
         python_code = _compile_source(
-            source, args.source, opt_level=opt_level, resolver=resolver, python_path=python_path
+            source,
+            args.source,
+            opt_level=opt_level,
+            resolver=resolver,
+            python_path=python_path,
+            use_mir=use_mir,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -221,10 +262,16 @@ def cmd_run(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     python_path: list[str] = getattr(args, "python_path", None) or []
+    use_mir = not getattr(args, "no_mir", False)
     resolver = ModuleResolver()
     try:
         python_code = _compile_source(
-            source, args.source, opt_level=opt_level, resolver=resolver, python_path=python_path
+            source,
+            args.source,
+            opt_level=opt_level,
+            resolver=resolver,
+            python_path=python_path,
+            use_mir=use_mir,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -519,9 +566,12 @@ def cmd_jit(args: argparse.Namespace) -> None:
     """JIT-compile an .mn source file via LLVM and execute natively."""
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
+    use_mir = not getattr(args, "no_mir", False)
     resolver = ModuleResolver()
     try:
-        llvm_ir = _compile_to_llvm_ir(source, args.source, opt_level=opt_level, resolver=resolver)
+        llvm_ir = _compile_to_llvm_ir(
+            source, args.source, opt_level=opt_level, resolver=resolver, use_mir=use_mir
+        )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
         sys.exit(1)
@@ -556,10 +606,16 @@ def cmd_build(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
+    use_mir = not getattr(args, "no_mir", False)
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
-            source, args.source, opt_level=opt_level, target_name=target_name, resolver=resolver
+            source,
+            args.source,
+            opt_level=opt_level,
+            target_name=target_name,
+            resolver=resolver,
+            use_mir=use_mir,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -628,10 +684,16 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
+    use_mir = not getattr(args, "no_mir", False)
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
-            source, args.source, opt_level=opt_level, target_name=target_name, resolver=resolver
+            source,
+            args.source,
+            opt_level=opt_level,
+            target_name=target_name,
+            resolver=resolver,
+            use_mir=use_mir,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -652,17 +714,24 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
 
 def cmd_emit_mir(args: argparse.Namespace) -> None:
     """Emit MIR (Mid-level IR) for an .mn source file."""
+    from mapanare.lower import lower as build_mir
     from mapanare.mir import pretty_print_module as mir_pretty_print
-    from mapanare.mir_builder import build_mir
+    from mapanare.mir_opt import MIROptLevel
+    from mapanare.mir_opt import optimize_module as mir_optimize
 
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
+    legacy = getattr(args, "legacy_optimizer", False)
     resolver = ModuleResolver()
     try:
         ast = parse(source, filename=args.source)
         check_or_raise(ast, filename=args.source, resolver=resolver)
-        ast, _ = optimize(ast, opt_level)
+        if legacy:
+            ast, _ = optimize(ast, opt_level)
         mir_module = build_mir(ast, module_name=os.path.splitext(os.path.basename(args.source))[0])
+        if not legacy:
+            mir_opt_level = MIROptLevel(opt_level.value)
+            mir_module, _ = mir_optimize(mir_module, mir_opt_level)
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
         sys.exit(1)
@@ -799,6 +868,16 @@ def _format_mapanare(source: str) -> str:
     return "\n".join(result)
 
 
+def _add_mir_flag(parser: argparse.ArgumentParser) -> None:
+    """Add --no-mir flag to disable MIR pipeline (use legacy AST path)."""
+    parser.add_argument(
+        "--no-mir",
+        action="store_true",
+        default=False,
+        help="Use legacy AST-based pipeline instead of MIR",
+    )
+
+
 def _add_opt_level_args(parser: argparse.ArgumentParser) -> None:
     """Add -O0 through -O3 optimization level flags to a subcommand parser."""
     opt_group = parser.add_mutually_exclusive_group()
@@ -858,6 +937,7 @@ def build_parser() -> argparse.ArgumentParser:
         help='Add directory to Python module search path (for extern "Python" interop)',
     )
     _add_opt_level_args(p_compile)
+    _add_mir_flag(p_compile)
     p_compile.set_defaults(func=cmd_compile)
 
     # check
@@ -875,6 +955,7 @@ def build_parser() -> argparse.ArgumentParser:
         help='Add directory to Python module search path (for extern "Python" interop)',
     )
     _add_opt_level_args(p_run)
+    _add_mir_flag(p_run)
     p_run.set_defaults(func=cmd_run)
 
     # repl
@@ -964,6 +1045,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_jit.add_argument("source", help="Path to .mn source file")
     p_jit.add_argument("--bench", action="store_true", help="Output benchmark metrics")
     _add_opt_level_args(p_jit)
+    _add_mir_flag(p_jit)
     p_jit.set_defaults(func=cmd_jit)
 
     # build
@@ -983,6 +1065,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Link against a C library (e.g. --link-lib m for libm)",
     )
     _add_opt_level_args(p_build)
+    _add_mir_flag(p_build)
     p_build.set_defaults(func=cmd_build)
 
     # emit-llvm
@@ -996,12 +1079,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
     )
     _add_opt_level_args(p_emit_llvm)
+    _add_mir_flag(p_emit_llvm)
     p_emit_llvm.set_defaults(func=cmd_emit_llvm)
 
     # emit-mir
     p_emit_mir = subparsers.add_parser("emit-mir", help="Emit MIR (mid-level IR) for .mn source")
     p_emit_mir.add_argument("source", help="Path to .mn source file")
     p_emit_mir.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
+    p_emit_mir.add_argument(
+        "--legacy-optimizer",
+        action="store_true",
+        default=False,
+        help="Use the legacy AST-based optimizer instead of MIR optimizer",
+    )
     _add_opt_level_args(p_emit_mir)
     p_emit_mir.set_defaults(func=cmd_emit_mir)
 

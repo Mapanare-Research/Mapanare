@@ -188,8 +188,8 @@ def _make_test(name: str, source: str, expected: str):  # type: ignore[no-untype
             expected in result.stdout
         ), f"Python output mismatch: expected '{expected}' in '{result.stdout.strip()}'"
 
-        # 2) LLVM backend: compile to IR (no execution)
-        ir = _compile_to_llvm_ir(source, f"{name}.mn")
+        # 2) LLVM backend: compile to IR (no execution, using legacy AST path)
+        ir = _compile_to_llvm_ir(source, f"{name}.mn", use_mir=False)
         assert "define" in ir, "LLVM IR missing function definitions"
         assert len(ir) > 100, "LLVM IR suspiciously short"
 

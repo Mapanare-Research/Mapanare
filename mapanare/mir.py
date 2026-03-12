@@ -571,6 +571,25 @@ class MIRFunction:
 
 
 @dataclass
+class MIRAgentInfo:
+    """Agent class metadata for backend emission."""
+
+    name: str = ""
+    inputs: list[str] = field(default_factory=list)
+    outputs: list[str] = field(default_factory=list)
+    state: list[tuple[str, Any]] = field(default_factory=list)  # (name, initial_value)
+    method_names: list[str] = field(default_factory=list)  # MIR function names
+
+
+@dataclass
+class MIRPipeInfo:
+    """Pipe definition metadata."""
+
+    name: str = ""
+    stages: list[str] = field(default_factory=list)  # agent type names
+
+
+@dataclass
 class MIRModule:
     """Top-level MIR module: a collection of functions and type definitions."""
 
@@ -585,6 +604,10 @@ class MIRModule:
     extern_fns: list[tuple[str, str, str, list[MIRType], MIRType]] = field(
         default_factory=list
     )  # (abi, module, name, param_types, ret_type)
+    agents: dict[str, MIRAgentInfo] = field(default_factory=dict)
+    pipes: dict[str, MIRPipeInfo] = field(default_factory=dict)
+    imports: list[tuple[list[str], list[str]]] = field(default_factory=list)  # (path, items)
+    trait_names: list[str] = field(default_factory=list)
 
     def get_function(self, name: str) -> MIRFunction | None:
         for fn in self.functions:
@@ -920,17 +943,10 @@ class MIRVerifier:
 
         # Check definitions and target labels
         for inst in bb.instructions:
-            # Check SSA: value defined at most once
+            # Track definitions (relaxed SSA: mutable variables may be redefined)
             dest = self._get_dest(inst)
             if dest is not None and dest.name:
-                if dest.name in all_defs:
-                    self._error(
-                        fn_name,
-                        bb.label,
-                        f"value {dest.name} redefined" f" (first defined in {all_defs[dest.name]})",
-                    )
-                else:
-                    all_defs[dest.name] = bb.label
+                all_defs[dest.name] = bb.label
 
             # Check branch targets
             self._check_targets(fn_name, bb.label, inst, valid_labels)

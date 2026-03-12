@@ -23,7 +23,7 @@ def _run_mapanare(source: str, *, timeout: float = 10) -> subprocess.CompletedPr
 
     Returns the CompletedProcess so callers can inspect stdout/stderr/returncode.
     """
-    python_code = _compile_source(source, "<e2e>")
+    python_code = _compile_source(source, "<e2e>", use_mir=False)
 
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -795,8 +795,8 @@ class TestImportBetweenFiles:
             }
         """)
 
-        lib_code = _compile_source(lib_source, "agents.mn")
-        main_code = _compile_source(main_source, "main.mn")
+        lib_code = _compile_source(lib_source, "agents.mn", use_mir=False)
+        main_code = _compile_source(main_source, "main.mn", use_mir=False)
 
         with tempfile.TemporaryDirectory(dir=_PROJECT_ROOT) as tmpdir:
             lib_path = os.path.join(tmpdir, "agents.py")

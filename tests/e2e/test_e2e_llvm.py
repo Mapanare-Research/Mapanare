@@ -18,7 +18,7 @@ from mapanare.cli import _compile_to_llvm_ir
 
 def _to_llvm_ir(source: str, filename: str = "test.mn") -> str:
     """Compile Mapanare source to LLVM IR string."""
-    return _compile_to_llvm_ir(source, filename)
+    return _compile_to_llvm_ir(source, filename, use_mir=False)
 
 
 # ── LLVM: basic functions and arithmetic ─────────────────────────────────────

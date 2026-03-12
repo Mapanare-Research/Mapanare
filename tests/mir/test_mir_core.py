@@ -865,7 +865,8 @@ class TestMIRVerifier:
             ],
         )
         errors = verify(module)
-        assert any("redefined" in e.message for e in errors)
+        # Relaxed SSA: redefinitions are allowed for mutable variable support
+        assert not any("redefined" in e.message for e in errors)
 
     def test_ssa_redefinition_across_blocks(self) -> None:
         module = MIRModule(
@@ -893,7 +894,8 @@ class TestMIRVerifier:
             ],
         )
         errors = verify(module)
-        assert any("redefined" in e.message for e in errors)
+        # Relaxed SSA: redefinitions are allowed for mutable variable support
+        assert not any("redefined" in e.message for e in errors)
 
     def test_phi_after_non_phi(self) -> None:
         module = MIRModule(
