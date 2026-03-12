@@ -32,6 +32,7 @@ from mapanare.ast_nodes import (
     ImplDef,
     ImportDef,
     IndexExpr,
+    InterpString,
     IntLiteral,
     LambdaExpr,
     LetBinding,
@@ -439,9 +440,9 @@ class LLVMEmitter:
         for defn in program.definitions:
             if isinstance(defn, ImportDef):
                 self._emit_import(defn, resolver)
-        # Pass 0.5: declare extern "C" functions as external
+        # Pass 0.5: declare extern "C" functions as external (skip Python interop)
         for defn in program.definitions:
-            if isinstance(defn, ExternFnDef):
+            if isinstance(defn, ExternFnDef) and defn.abi != "Python":
                 self._emit_extern_fn(defn)
         # First pass: forward-declare all types (enums as tagged unions, structs as placeholders)
         for defn in program.definitions:
@@ -864,6 +865,9 @@ class LLVMEmitter:
         if isinstance(expr, StringLiteral):
             return self._emit_string_literal(expr)
 
+        if isinstance(expr, InterpString):
+            return self._emit_interp_string(expr)
+
         if isinstance(expr, Identifier):
             return self._emit_identifier(expr)
 
@@ -951,6 +955,51 @@ class LLVMEmitter:
             str_struct, ir.Constant(LLVM_INT, len(encoded)), 1, name="str_len"
         )
         return str_struct
+
+    def _rt_str_from_float(self) -> ir.Function:
+        """Declare __mn_str_from_float(double) -> MnString."""
+        return self._declare_runtime_fn("__mn_str_from_float", LLVM_STRING, [LLVM_FLOAT])
+
+    def _emit_interp_string(self, node: InterpString) -> ir.Value:
+        """Emit an interpolated string as a series of str conversions + concatenations."""
+        result: ir.Value | None = None
+        for part in node.parts:
+            if isinstance(part, StringLiteral):
+                val = self._emit_string_literal(part)
+            else:
+                raw = self._emit_expr(part)
+                val = self._to_string(raw)
+            if result is None:
+                result = val
+            else:
+                concat = self.builder.call(self._rt_str_concat(), [result, val], name="interp_cat")
+                self._track_string_temp(concat)
+                result = concat
+        if result is None:
+            return self._emit_string_literal(StringLiteral(value=""))
+        return result
+
+    def _to_string(self, val: ir.Value) -> ir.Value:
+        """Convert an LLVM value to MnString."""
+        if self._is_string_type(val):
+            return val
+        if isinstance(val.type, ir.IntType):
+            if val.type.width == 64:
+                result = self.builder.call(self._rt_str_from_int(), [val], name="to_str")
+                self._track_string_temp(result)
+                return result
+            if val.type.width == 1:
+                # Bool → extend to i64 → str_from_int
+                ext = self.builder.zext(val, LLVM_INT, name="bool_ext")
+                result = self.builder.call(self._rt_str_from_int(), [ext], name="bool_to_str")
+                self._track_string_temp(result)
+                return result
+        if isinstance(val.type, ir.DoubleType):
+            result = self.builder.call(self._rt_str_from_float(), [val], name="float_to_str")
+            self._track_string_temp(result)
+            return result
+        # Fallback: emit "<unknown>"
+        return self._emit_string_literal(StringLiteral(value="<unknown>"))
 
     def _emit_identifier(self, node: Identifier) -> ir.Value:
         """Load a variable from its stack slot."""

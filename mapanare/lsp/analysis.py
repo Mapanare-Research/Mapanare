@@ -1307,6 +1307,25 @@ def analyze_document(
     all_symbols.update(imported_symbols)
     diagnostics = _enrich_diagnostics(all_errors, source, all_symbols)
 
+    # Run linter for additional warnings (only if no semantic errors)
+    if not semantic_errors and program is not None:
+        from mapanare.linter import lint as run_lint
+
+        lint_diags = run_lint(program, filename=uri)
+        for ld in lint_diags:
+            lint_suggestions: list[FixSuggestion] = []
+            for s in ld.suggestions:
+                lint_suggestions.append(FixSuggestion(message=s.message, replacement=s.replacement))
+            diagnostics.append(
+                LspDiagnostic(
+                    message=ld.message,
+                    line=ld.line,
+                    column=ld.column,
+                    severity="warning",
+                    suggestions=lint_suggestions,
+                )
+            )
+
     return analysis, diagnostics
 
 

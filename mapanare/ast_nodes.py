@@ -111,6 +111,17 @@ class StringLiteral(Expr):
 
 
 @dataclass
+class InterpString(Expr):
+    """Interpolated string: `"Hello, ${name}!"`.
+
+    Parts alternate between literal strings and expressions.
+    Each part is either a StringLiteral (text) or an arbitrary Expr (interpolated).
+    """
+
+    parts: list[Expr] = field(default_factory=list)
+
+
+@dataclass
 class CharLiteral(Expr):
     """Character literal."""
 
@@ -495,12 +506,17 @@ class FnDef(Definition):
 
 @dataclass
 class ExternFnDef(Definition):
-    """External function declaration: `extern "C" fn name(params) -> RetType`."""
+    """External function declaration: `extern "C" fn name(params) -> RetType`.
+
+    For Python interop: `extern "Python" fn module::name(params) -> RetType`.
+    The `module` field holds the Python module name (e.g. "math").
+    """
 
     name: str = ""
     abi: str = "C"
     params: list[Param] = field(default_factory=list)
     return_type: TypeExpr | None = None
+    module: str | None = None
 
 
 @dataclass

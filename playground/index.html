@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mapanare Playground</title>
+  <meta name="description" content="Try Mapanare in your browser — an AI-native compiled programming language with first-class agents, signals, streams, and tensors." />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1>Mapanare <span class="version">Playground</span></h1>
+    </div>
+    <div class="header-center">
+      <select id="examples" aria-label="Load example">
+        <option value="">-- Load Example --</option>
+      </select>
+    </div>
+    <div class="header-right">
+      <button id="btn-share" title="Copy share link">Share</button>
+      <button id="btn-run" title="Compile & Run (Ctrl+Enter)">Run</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="panel panel-editor">
+      <div class="panel-header">
+        <span>Editor</span>
+        <span id="status" class="status">Loading Pyodide...</span>
+      </div>
+      <div id="editor"></div>
+    </div>
+
+    <div class="gutter" id="gutter"></div>
+
+    <div class="panel panel-output">
+      <div class="panel-header">
+        <span>Output</span>
+        <button id="btn-clear" class="btn-small" title="Clear output">Clear</button>
+      </div>
+      <pre id="output"></pre>
+    </div>
+  </main>
+
+  <footer>
+    <span>Mapanare v0.5.0 &mdash; AI-native compiled language</span>
+    <a href="https://github.com/Mapanare-Research/mapanare" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

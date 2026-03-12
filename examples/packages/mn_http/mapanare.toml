@@ -1,0 +1,9 @@
+[package]
+name = "mn_http"
+version = "0.1.0"
+description = "HTTP client and server utilities for Mapanare"
+authors = ["Mapanare Research"]
+license = "MIT"
+mapanare_version = ">=0.4.0"
+keywords = ["http", "network", "web"]
+entry = "main.mn"

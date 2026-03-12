@@ -1,0 +1,14 @@
+/// JSON utilities for Mapanare via Python interop.
+
+extern "Python" fn loads(s: String) -> String from json::loads
+extern "Python" fn dumps(obj: String) -> String from json::dumps
+
+/// Parse a JSON string. Returns Err on invalid JSON.
+fn parse(s: String) -> Result<String, String> {
+    return Ok(loads(s))
+}
+
+/// Serialize a value to a JSON string.
+fn stringify(obj: String) -> Result<String, String> {
+    return Ok(dumps(obj))
+}

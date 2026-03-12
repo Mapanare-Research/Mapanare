@@ -66,7 +66,21 @@ let g: Int = 0o77             // octal
 ```mn
 let s = "hello, world"
 let multi = "line one\nline two"
-let interpolated = "value is ${x}"   // planned — not yet implemented
+let interpolated = "value is ${x}"   // string interpolation
+let multiline = """
+    This is a multi-line
+    string literal
+"""
+```
+
+String interpolation with `${expr}` is supported in both regular and triple-quoted strings.
+Any valid expression can appear inside `${...}`, including function calls and binary operations:
+
+```mn
+let name = "world"
+println("Hello, ${name}!")
+println("sum: ${a + b}")
+println("length: ${len(items)}")
 ```
 
 ---
@@ -852,7 +866,7 @@ The following sections are planned but not yet specified or implemented:
 - **Error Model:** Error types, panic vs recoverable errors, stack traces.
 - **Concurrency Guarantees:** Ordering, fairness, deadlock prevention.
 - **Tensor Operations:** Full operator set, broadcasting rules, autodiff (LLVM backend has partial tensor codegen; Python backend does not yet support tensors).
-- **String Interpolation:** `${expr}` syntax appears in spec examples but is not yet implemented in either backend.
+- **String Interpolation:** `${expr}` syntax is implemented in both Python and LLVM backends. Multi-line strings (`"""..."""`) are also supported.
 - **Decorator System:** Built-in decorators, custom decorator definitions.
 - **Testing Framework:** Built-in test support, assertion primitives.
-- **FFI:** Foreign function interface for C and Python interop.
+- **FFI:** Foreign function interface for C and Python interop. C FFI uses `extern "C" fn name(params) -> Type`. Python interop uses `extern "Python" fn module::name(params) -> Type` to import and call Python functions with type-safe wrappers. Return type `Result<T, String>` wraps Python exceptions in `Err`. Use `--python-path` to add custom module search paths.

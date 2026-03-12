@@ -1,0 +1,19 @@
+/// HTTP client utilities for Mapanare.
+///
+/// Wraps Python's urllib for simple HTTP operations.
+
+extern "Python" fn urlopen(url: String) -> String from urllib.request::urlopen
+
+/// Perform a GET request and return the response body as a string.
+fn get(url: String) -> Result<String, String> {
+    return Ok(urlopen(url))
+}
+
+/// Check if a URL is reachable.
+fn ping(url: String) -> Bool {
+    let result = get(url)
+    return match result {
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}

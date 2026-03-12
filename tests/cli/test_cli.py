@@ -374,10 +374,10 @@ class TestInitCommand:
 
 
 class TestPublishCommand:
-    def test_publish_shows_stub(self) -> None:
+    def test_publish_requires_manifest(self) -> None:
         result = _run_cli("publish")
-        assert result.returncode == 0
-        assert "not yet implemented" in result.stdout.lower()
+        assert result.returncode == 1
+        assert "mapanare.toml" in result.stderr.lower() or "error" in result.stderr.lower()
 
 
 # ---------------------------------------------------------------------------

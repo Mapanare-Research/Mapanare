@@ -48,7 +48,8 @@ export_names: NAME (COMMA NAME)* COMMA?
 fn_def: KW_PUB? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
 
 // FFI: extern "C" fn name(params) -> RetType
-extern_fn_def: KW_EXTERN STRING_LIT KW_FN NAME LPAREN param_list? RPAREN (ARROW type_expr)?
+// Python interop: extern "Python" fn module::name(params) -> RetType
+extern_fn_def: KW_EXTERN STRING_LIT KW_FN NAME (DOUBLE_COLON NAME)? LPAREN param_list? RPAREN (ARROW type_expr)?
 
 type_params: LT type_param (COMMA type_param)* GT
 type_param: NAME (COLON NAME)?
@@ -244,7 +245,7 @@ arg_list: expr (COMMA expr)* COMMA?
 
 int_lit: DEC_INT | HEX_INT | BIN_INT | OCT_INT
 float_lit: FLOAT_LIT
-string_lit: STRING_LIT
+string_lit: STRING_LIT | TRIPLE_STRING
 char_lit: CHAR_LIT
 bool_true: KW_TRUE
 bool_false: KW_FALSE
@@ -389,6 +390,7 @@ HEX_INT.2: /0[xX][0-9a-fA-F][0-9a-fA-F_]*/
 BIN_INT.2: /0[bB][01][01_]*/
 OCT_INT.2: /0[oO][0-7][0-7_]*/
 DEC_INT: /[0-9][0-9_]*/
+TRIPLE_STRING.4: /\"\"\"[\s\S]*?\"\"\"/
 STRING_LIT: /\"([^\"\\]|\\.)*\"/
 CHAR_LIT: /\'([^\'\\]|\\.)'/
 

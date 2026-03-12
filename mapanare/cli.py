@@ -85,12 +85,13 @@ def _compile_source(
     filename: str,
     opt_level: OptLevel = OptLevel.O2,
     resolver: ModuleResolver | None = None,
+    python_path: list[str] | None = None,
 ) -> str:
     """Parse, check, optimize, and emit Python from Mapanare source. Returns Python code."""
     ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename, resolver=resolver)
     ast, stats = optimize(ast, opt_level)
-    emitter = PythonEmitter()
+    emitter = PythonEmitter(python_path=python_path)
     return emitter.emit(ast)
 
 
@@ -121,9 +122,12 @@ def cmd_compile(args: argparse.Namespace) -> None:
     """Compile an .mn source file to Python."""
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
+    python_path: list[str] = getattr(args, "python_path", None) or []
     resolver = ModuleResolver()
     try:
-        python_code = _compile_source(source, args.source, opt_level=opt_level, resolver=resolver)
+        python_code = _compile_source(
+            source, args.source, opt_level=opt_level, resolver=resolver, python_path=python_path
+        )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
         sys.exit(1)
@@ -216,9 +220,12 @@ def cmd_run(args: argparse.Namespace) -> None:
     """Compile and run an .mn source file."""
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
+    python_path: list[str] = getattr(args, "python_path", None) or []
     resolver = ModuleResolver()
     try:
-        python_code = _compile_source(source, args.source, opt_level=opt_level, resolver=resolver)
+        python_code = _compile_source(
+            source, args.source, opt_level=opt_level, resolver=resolver, python_path=python_path
+        )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
         sys.exit(1)
@@ -366,10 +373,139 @@ def cmd_install(args: argparse.Namespace) -> None:
 
 
 def cmd_publish(args: argparse.Namespace) -> None:
-    """Show publish stub documentation."""
-    from stdlib.pkg import cmd_publish_stub
+    """Publish a package to the Mapanare registry."""
+    from stdlib.pkg import ManifestError, PackageError, _save_token, bump_version, load_manifest, publish_package
 
-    print(cmd_publish_stub())
+    project_dir = getattr(args, "path", ".")
+    token = getattr(args, "token", None)
+
+    # If --token provided, save it for future use
+    if token:
+        _save_token(token)
+        print("token saved to ~/.mapanare/token")
+
+    # Auto-bump version (patch by default, skip with --no-bump)
+    bump_type = getattr(args, "bump", "patch")
+    if bump_type and bump_type != "none":
+        try:
+            old_ver = load_manifest(project_dir).version
+            new_ver = bump_version(project_dir, bump_type)
+            print(f"version: {old_ver} -> {new_ver}")
+        except ManifestError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    try:
+        result = publish_package(project_dir, token=token)
+        print(f"published {result['name']}@{result['version']}")
+        print(f"  checksum: {result['checksum']}")
+    except PackageError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_bump(args: argparse.Namespace) -> None:
+    """Bump the project version in mapanare.toml."""
+    from stdlib.pkg import ManifestError, bump_version, load_manifest
+
+    project_dir = getattr(args, "path", ".")
+    bump_type = getattr(args, "bump_type", None)
+
+    try:
+        manifest = load_manifest(project_dir)
+        if bump_type is None:
+            print(manifest.version)
+            return
+        old_version = manifest.version
+        new_version = bump_version(project_dir, bump_type)
+        print(f"{old_version} -> {new_version}")
+    except ManifestError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_search(args: argparse.Namespace) -> None:
+    """Search the Mapanare package registry."""
+    from stdlib.pkg import PackageError, search_packages
+
+    query = getattr(args, "query", "")
+    keyword = getattr(args, "keyword", "")
+
+    try:
+        result = search_packages(query=query, keyword=keyword)
+    except PackageError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    packages = result.get("packages", [])
+    total = result.get("total", 0)
+
+    if not packages:
+        print("no packages found")
+        return
+
+    print(f"found {total} package(s):\n")
+    for pkg in packages:
+        name = pkg.get("name", "?")
+        version = pkg.get("latest_version", "?")
+        desc = pkg.get("description", "")
+        keywords = pkg.get("keywords", [])
+
+        print(f"  {name} ({version})")
+        if desc:
+            print(f"    {desc}")
+        if keywords:
+            print(f"    keywords: {', '.join(keywords)}")
+        print()
+
+
+def cmd_login(args: argparse.Namespace) -> None:
+    """Authenticate with the Mapanare package registry via GitHub OAuth."""
+    import json
+    import secrets
+    import time
+    import urllib.error
+    import urllib.request
+    import webbrowser
+
+    from stdlib.pkg import REGISTRY_URL, _save_token
+
+    session_id = secrets.token_urlsafe(32)
+    login_url = f"{REGISTRY_URL}/auth/github?session={session_id}"
+
+    print("opening browser for GitHub authentication...")
+    print(f"  {login_url}")
+    print()
+
+    try:
+        webbrowser.open(login_url)
+    except Exception:
+        print("could not open browser automatically.")
+        print(f"open this URL manually: {login_url}")
+
+    print("waiting for authentication", end="", flush=True)
+
+    poll_url = f"{REGISTRY_URL}/auth/poll?session={session_id}"
+    for _ in range(120):  # Poll for up to 2 minutes
+        time.sleep(1)
+        print(".", end="", flush=True)
+        try:
+            req = urllib.request.Request(poll_url, method="GET")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("status") == "ready":
+                    token = data["token"]
+                    username = data.get("username", "user")
+                    _save_token(token)
+                    print(f"\n\nlogged in as {username}")
+                    print("token saved to ~/.mapanare/token")
+                    return
+        except (urllib.error.HTTPError, urllib.error.URLError):
+            pass
+
+    print("\n\ntimed out waiting for authentication.")
+    print("try again with: mapanare login")
+    sys.exit(1)
 
 
 def cmd_jit(args: argparse.Namespace) -> None:
@@ -507,6 +643,52 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     print(f"emitted {args.source} -> {out_path} (target: {target.triple})")
 
 
+def cmd_lint(args: argparse.Namespace) -> None:
+    """Lint an .mn source file for code quality issues."""
+    source = _read_source(args.source)
+
+    # Parse (abort on parse error)
+    try:
+        ast = parse(source, filename=args.source)
+    except ParseError as e:
+        _emit_parse_error(e, source, args.source)
+        sys.exit(1)
+
+    # Semantic check (abort on type errors)
+    try:
+        check_or_raise(ast, filename=args.source)
+    except SemanticErrors as e:
+        _emit_semantic_errors(e, source)
+        sys.exit(1)
+
+    # Lint
+    if args.fix:
+        from mapanare.linter import lint_and_fix
+
+        diagnostics, fixed_source = lint_and_fix(source, ast, filename=args.source)
+        if fixed_source != source:
+            with open(args.source, "w", encoding="utf-8") as f:
+                f.write(fixed_source)
+            fixed_count = sum(
+                1 for d in diagnostics if "[W002]" in d.message or "[W005]" in d.message
+            )
+            print(f"fixed {fixed_count} issue(s) in {args.source}")
+    else:
+        from mapanare.linter import lint
+
+        diagnostics = lint(ast, filename=args.source)
+
+    if diagnostics:
+        for diag in diagnostics:
+            print(format_diagnostic(diag, source), file=sys.stderr)
+        summary = format_summary(diagnostics)
+        if summary:
+            print(summary, file=sys.stderr)
+        sys.exit(0)  # Lint warnings are not fatal
+    else:
+        print(f"lint: {args.source} OK — no warnings")
+
+
 def cmd_targets(args: argparse.Namespace) -> None:
     """List all supported compilation targets."""
     print("Supported targets:\n")
@@ -611,6 +793,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_compile = subparsers.add_parser("compile", help="Compile .mn source to Python")
     p_compile.add_argument("source", help="Path to .mn source file")
     p_compile.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
+    p_compile.add_argument(
+        "--python-path",
+        metavar="DIR",
+        action="append",
+        help='Add directory to Python module search path (for extern "Python" interop)',
+    )
     _add_opt_level_args(p_compile)
     p_compile.set_defaults(func=cmd_compile)
 
@@ -622,6 +810,12 @@ def build_parser() -> argparse.ArgumentParser:
     # run
     p_run = subparsers.add_parser("run", help="Compile and run .mn source")
     p_run.add_argument("source", help="Path to .mn source file")
+    p_run.add_argument(
+        "--python-path",
+        metavar="DIR",
+        action="append",
+        help='Add directory to Python module search path (for extern "Python" interop)',
+    )
     _add_opt_level_args(p_run)
     p_run.set_defaults(func=cmd_run)
 
@@ -649,8 +843,39 @@ def build_parser() -> argparse.ArgumentParser:
     p_install.set_defaults(func=cmd_install)
 
     # publish
-    p_publish = subparsers.add_parser("publish", help="Publish package (not yet implemented)")
-    p_publish.set_defaults(func=cmd_publish)
+    p_publish = subparsers.add_parser("publish", help="Publish package to the Mapanare registry")
+    p_publish.add_argument("path", nargs="?", default=".", help="Project directory (default: .)")
+    p_publish.add_argument("--token", default=None, help="API token (saved to ~/.mapanare/token)")
+    bump_group = p_publish.add_mutually_exclusive_group()
+    bump_group.add_argument("--patch", dest="bump", action="store_const", const="patch", help="Bump patch version (default)")
+    bump_group.add_argument("--minor", dest="bump", action="store_const", const="minor", help="Bump minor version (0.1.0 -> 0.2.0)")
+    bump_group.add_argument("--major", dest="bump", action="store_const", const="major", help="Bump major version (0.1.0 -> 1.0.0)")
+    bump_group.add_argument("--no-bump", dest="bump", action="store_const", const="none", help="Publish without bumping version")
+    p_publish.set_defaults(func=cmd_publish, bump="patch")
+
+    # version (bump)
+    p_bump = subparsers.add_parser(
+        "version",
+        help="Show or bump the project version (major, minor, patch, or explicit)",
+    )
+    p_bump.add_argument(
+        "bump_type",
+        nargs="?",
+        default=None,
+        help="Bump type: major, minor, patch, or an explicit version (e.g. 1.2.3)",
+    )
+    p_bump.add_argument("--path", default=".", help="Project directory (default: .)")
+    p_bump.set_defaults(func=cmd_bump)
+
+    # search
+    p_search = subparsers.add_parser("search", help="Search the Mapanare package registry")
+    p_search.add_argument("query", nargs="?", default="", help="Search query")
+    p_search.add_argument("--keyword", default="", help="Filter by keyword")
+    p_search.set_defaults(func=cmd_search)
+
+    # login
+    p_login = subparsers.add_parser("login", help="Authenticate with the Mapanare package registry")
+    p_login.set_defaults(func=cmd_login)
 
     # jit
     p_jit = subparsers.add_parser("jit", help="JIT-compile and run .mn source natively via LLVM")
@@ -690,6 +915,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_opt_level_args(p_emit_llvm)
     p_emit_llvm.set_defaults(func=cmd_emit_llvm)
+
+    # lint
+    p_lint = subparsers.add_parser("lint", help="Lint .mn source for code quality issues")
+    p_lint.add_argument("source", help="Path to .mn source file")
+    p_lint.add_argument(
+        "--fix",
+        action="store_true",
+        help="Auto-fix lint warnings (unused imports, unnecessary mut)",
+    )
+    p_lint.set_defaults(func=cmd_lint)
 
     # targets
     p_targets = subparsers.add_parser("targets", help="List supported compilation targets")
