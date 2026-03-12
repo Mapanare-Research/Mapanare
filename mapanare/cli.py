@@ -158,6 +158,7 @@ def _compile_multi_module_llvm(
     source_files: list[str],
     opt_level: OptLevel = OptLevel.O2,
     target_name: str | None = None,
+    skip_check: bool = False,
 ) -> str:
     """Compile multiple .mn files into a single linked LLVM IR module.
 
@@ -175,7 +176,8 @@ def _compile_multi_module_llvm(
     for filepath in source_files:
         source = _read_source(filepath)
         ast = parse(source, filename=filepath)
-        check_or_raise(ast, filename=filepath, resolver=resolver)
+        if not skip_check:
+            check_or_raise(ast, filename=filepath, resolver=resolver)
         parsed.append((filepath, ast))
 
     # Second pass: emit all modules into a single LLVM emitter
@@ -838,9 +840,10 @@ def cmd_build_multi(args: argparse.Namespace) -> None:
     source_files = args.sources
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
+    skip_check = getattr(args, "no_check", False)
     try:
         llvm_ir = _compile_multi_module_llvm(
-            source_files, opt_level=opt_level, target_name=target_name
+            source_files, opt_level=opt_level, target_name=target_name, skip_check=skip_check
         )
     except ParseError as e:
         print(f"parse error: {e}", file=sys.stderr)
@@ -857,6 +860,22 @@ def cmd_build_multi(args: argparse.Namespace) -> None:
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(llvm_ir)
     print(f"linked {len(source_files)} modules -> {out_path}")
+
+
+def cmd_test(args: argparse.Namespace) -> None:
+    """Discover and run @test functions in .mn files."""
+    from mapanare.test_runner import format_results, run_tests
+
+    path = getattr(args, "path", ".")
+    filter_pattern: str | None = getattr(args, "filter", None)
+
+    suite = run_tests(path, filter_pattern=filter_pattern)
+    print(format_results(suite))
+
+    if suite.failed > 0:
+        sys.exit(1)
+    if suite.total == 0:
+        sys.exit(0)
 
 
 def cmd_doc(args: argparse.Namespace) -> None:
@@ -1176,12 +1195,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_build_multi.add_argument("sources", nargs="+", help="Paths to .mn source files")
     p_build_multi.add_argument("-o", metavar="OUTPUT", help="Output .ll file path", default=None)
     p_build_multi.add_argument("--target", metavar="TARGET", help="Target triple", default=None)
+    p_build_multi.add_argument(
+        "--no-check",
+        action="store_true",
+        default=False,
+        help="Skip semantic checking (for bootstrapping self-hosted modules)",
+    )
     _add_opt_level_args(p_build_multi)
     p_build_multi.set_defaults(func=cmd_build_multi)
 
     # targets
     p_targets = subparsers.add_parser("targets", help="List supported compilation targets")
     p_targets.set_defaults(func=cmd_targets)
+
+    # test
+    p_test = subparsers.add_parser("test", help="Run @test functions in .mn files")
+    p_test.add_argument(
+        "path", nargs="?", default=".", help="File or directory to search for tests (default: .)"
+    )
+    p_test.add_argument(
+        "--filter",
+        metavar="PATTERN",
+        default=None,
+        help="Only run tests whose name contains PATTERN",
+    )
+    p_test.set_defaults(func=cmd_test)
 
     # doc
     p_doc = subparsers.add_parser("doc", help="Generate HTML docs from doc comments")

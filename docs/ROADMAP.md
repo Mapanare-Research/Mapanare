@@ -189,7 +189,7 @@ These are aspirational features that require research or depend on ecosystem mat
 
 ## Self-Hosted Compiler Status
 
-The compiler is written in Mapanare itself — 5,802 lines across six modules.
+The compiler is written in Mapanare itself — 7,500+ lines across seven modules.
 
 | Component | Lines | Status |
 |-----------|------:|--------|
@@ -197,10 +197,12 @@ The compiler is written in Mapanare itself — 5,802 lines across six modules.
 | AST definitions (`ast.mn`) | 255 | ✅ Complete |
 | Parser (`parser.mn`) | 1,721 | ✅ Complete |
 | Semantic checker (`semantic.mn`) | 1,607 | ✅ Complete |
-| LLVM IR emitter (`emit_llvm.mn`) | 1,644 | ✅ Complete |
-| Compiler driver (`main.mn`) | 77 | ✅ Complete |
-| Fixed-point verification | — | ✅ Stage 2 = Stage 1 |
-| Bootstrap test suite (96 tests) | — | ✅ All passing |
+| MIR lowering (`lower.mn`) | 2,629 | ✅ Complete |
+| LLVM IR emitter (`emit_llvm.mn`) | 1,497 | ✅ Complete (MIR-based rewrite) |
+| Compiler driver (`main.mn`) | 81 | ✅ Complete (MIR pipeline wired) |
+| Module resolution (`self::` imports) | — | ✅ Working |
+| Fixed-point verification | — | ⏳ Blocked by bootstrap emitter gaps |
+| Bootstrap test suite (264 tests) | — | ✅ All passing |
 
 ---
 

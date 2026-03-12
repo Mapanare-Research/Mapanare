@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from mapanare.ast_nodes import (
     AgentDef,
+    AssertStmt,
     AssignExpr,
     BinaryExpr,
     Block,
@@ -172,6 +173,10 @@ class PythonEmitter:
             elif isinstance(stmt, WhileLoop):
                 self._scan_expr(stmt.condition)
                 self._scan_block(stmt.body)
+            elif isinstance(stmt, AssertStmt):
+                self._scan_expr(stmt.condition)
+                if stmt.message is not None:
+                    self._scan_expr(stmt.message)
             elif isinstance(stmt, SignalDecl):
                 self._has_signal = True
                 self._scan_expr(stmt.value)
@@ -726,10 +731,20 @@ class PythonEmitter:
             self._emit_for(stmt)
         elif isinstance(stmt, WhileLoop):
             self._emit_while(stmt)
+        elif isinstance(stmt, AssertStmt):
+            self._emit_assert(stmt)
         elif isinstance(stmt, SignalDecl):
             self._emit_signal_decl(stmt)
         elif isinstance(stmt, StreamDecl):
             self._emit_stream_decl(stmt)
+
+    def _emit_assert(self, stmt: AssertStmt) -> None:
+        cond = self._emit_expr(stmt.condition)
+        if stmt.message is not None:
+            msg = self._emit_expr(stmt.message)
+            self._emit_line(f"assert {cond}, {msg}")
+        else:
+            self._emit_line(f"assert {cond}")
 
     def _emit_let(self, let: LetBinding) -> None:
         val = self._emit_expr(let.value)

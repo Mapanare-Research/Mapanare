@@ -27,6 +27,7 @@ from mapanare.mir import (
     AgentSend,
     AgentSpawn,
     AgentSync,
+    Assert,
     BinOp,
     BinOpKind,
     Branch,
@@ -634,6 +635,8 @@ class LLVMMIREmitter:
             self._emit_signal_set(inst, builder, values)
         elif isinstance(inst, StreamOp):
             self._emit_stream_op(inst, builder, values)
+        elif isinstance(inst, Assert):
+            self._emit_assert(inst, builder, values, func)
         elif isinstance(inst, Phi):
             pass  # Handled in the first pass
         else:
@@ -1514,6 +1517,34 @@ class LLVMMIREmitter:
         builder.store(val, typed_ptr)
 
     # --- Stream operations (runtime calls) ---
+
+    def _emit_assert(self, inst: Assert, builder: Any, values: dict[str, Any], func: Any) -> None:
+        """Emit an assert: branch on condition, print error and exit if false."""
+        cond = self._get_value(inst.cond, values)
+        # Ensure we have an i1
+        if hasattr(cond.type, "width") and cond.type.width != 1:
+            cond = builder.trunc(cond, ir.IntType(1))
+
+        pass_bb = builder.append_basic_block(name="assert.pass")
+        fail_bb = builder.append_basic_block(name="assert.fail")
+        builder.cbranch(cond, pass_bb, fail_bb)
+
+        # Fail block: print message and exit
+        builder.position_at_end(fail_bb)
+        msg = f"assertion failed at {inst.filename}:{inst.line}\\n"
+        self._emit_printf(builder, msg, [])
+        # Call exit(1)
+        exit_fn = self._functions.get("exit")
+        if exit_fn is None:
+            exit_ty = ir.FunctionType(ir.VoidType(), [LLVM_INT])
+            exit_fn = ir.Function(self.module, exit_ty, name="exit")
+            exit_fn.linkage = "external"
+            self._functions["exit"] = exit_fn
+        builder.call(exit_fn, [ir.Constant(LLVM_INT, 1)])
+        builder.unreachable()
+
+        # Continue in pass block
+        builder.position_at_end(pass_bb)
 
     def _emit_stream_op(self, inst: StreamOp, builder: Any, values: dict[str, Any]) -> None:
         # Stream operations are not directly supported in the LLVM backend;

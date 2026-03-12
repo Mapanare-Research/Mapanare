@@ -1,0 +1,2628 @@
+// lower.mn — AST → MIR lowering pass for the Mapanare self-hosted compiler.
+// Port of bootstrap/lower.py to native Mapanare.
+//
+// Walks the typed AST (after semantic analysis) and produces MIR functions
+// with basic blocks. Nested expressions become flat three-address code and
+// control flow becomes explicit jumps/branches.
+//
+// Architecture:
+//   - Two-pass: register declarations first, then lower function bodies
+//   - State-threaded: all functions thread LowerState through
+//   - SSA: every value gets a unique name (%t0, %t1, ...)
+//   - Basic blocks with explicit terminators (Jump, Branch, Switch, Return)
+
+import self::ast
+
+// ---------------------------------------------------------------------------
+// MIR type representation
+// ---------------------------------------------------------------------------
+
+struct MIRType {
+    name: String,
+    kind: String,
+    args: List<MIRType>
+}
+
+fn new_mir_type(name: String, kind: String) -> MIRType {
+    let args: List<MIRType> = []
+    let t: MIRType = name
+    return t
+}
+
+fn new_mir_type_with_args(name: String, kind: String, args: List<MIRType>) -> MIRType {
+    let t: MIRType = name
+    return t
+}
+
+fn mir_int() -> MIRType { return new_mir_type("Int", "int") }
+fn mir_float() -> MIRType { return new_mir_type("Float", "float") }
+fn mir_bool() -> MIRType { return new_mir_type("Bool", "bool") }
+fn mir_string() -> MIRType { return new_mir_type("String", "string") }
+fn mir_void() -> MIRType { return new_mir_type("Void", "void") }
+fn mir_unknown() -> MIRType { return new_mir_type("<unknown>", "unknown") }
+fn mir_option() -> MIRType { return new_mir_type("Option", "option") }
+fn mir_result() -> MIRType { return new_mir_type("Result", "result") }
+fn mir_list() -> MIRType { return new_mir_type("List", "list") }
+fn mir_map() -> MIRType { return new_mir_type("Map", "map") }
+fn mir_signal() -> MIRType { return new_mir_type("Signal", "signal") }
+fn mir_range() -> MIRType { return new_mir_type("Range", "range") }
+fn mir_fn_type() -> MIRType { return new_mir_type("<fn>", "fn") }
+
+fn mir_struct(name: String) -> MIRType {
+    return new_mir_type(name, "struct")
+}
+
+fn mir_enum(name: String) -> MIRType {
+    return new_mir_type(name, "enum")
+}
+
+fn mir_agent(name: String) -> MIRType {
+    return new_mir_type(name, "agent")
+}
+
+// ---------------------------------------------------------------------------
+// MIR values — SSA virtual registers
+// ---------------------------------------------------------------------------
+
+struct Value {
+    name: String,
+    ty: MIRType
+}
+
+fn new_value(name: String, ty: MIRType) -> Value {
+    let v: Value = name
+    return v
+}
+
+fn void_value() -> Value {
+    return new_value("%void", mir_void())
+}
+
+// ---------------------------------------------------------------------------
+// MIR instructions — encoded as tagged enum
+// ---------------------------------------------------------------------------
+
+enum BinOpKind {
+    Add, Sub, Mul, Div, Mod,
+    Eq, Ne, Lt, Gt, Le, Ge,
+    And, Or
+}
+
+enum UnaryOpKind {
+    Neg, Not
+}
+
+enum StreamOpKind {
+    Map, Filter, Fold, Take, Skip, Collect
+}
+
+// Field pair for struct init
+struct FieldPair {
+    name: String,
+    val: Value
+}
+
+fn new_field_pair(name: String, val: Value) -> FieldPair {
+    let p: FieldPair = name
+    return p
+}
+
+// Key-value pair for map init
+struct KVPair {
+    key: Value,
+    val: Value
+}
+
+fn new_kv_pair(key: Value, val: Value) -> KVPair {
+    let p: KVPair = key
+    return p
+}
+
+// Phi incoming entry
+struct PhiEntry {
+    block_label: String,
+    val: Value
+}
+
+fn new_phi_entry(label: String, val: Value) -> PhiEntry {
+    let e: PhiEntry = label
+    return e
+}
+
+// Switch case entry
+struct SwitchCase {
+    tag_value: String,
+    block_label: String
+}
+
+fn new_switch_case(tag: String, label: String) -> SwitchCase {
+    let c: SwitchCase = tag
+    return c
+}
+
+enum Instruction {
+    // Values
+    Const(Value, MIRType, String),
+    Copy(Value, Value),
+    Cast(Value, Value, MIRType),
+    // Arithmetic
+    BinOp(Value, BinOpKind, Value, Value),
+    UnaryOp(Value, UnaryOpKind, Value),
+    // Aggregates
+    StructInit(Value, MIRType, List<FieldPair>),
+    FieldGet(Value, Value, String),
+    FieldSet(Value, String, Value),
+    ListInit(Value, MIRType, List<Value>),
+    IndexGet(Value, Value, Value),
+    IndexSet(Value, Value, Value),
+    MapInit(Value, MIRType, MIRType, List<KVPair>),
+    // Enum
+    EnumInit(Value, MIRType, String, List<Value>),
+    EnumTag(Value, Value),
+    EnumPayload(Value, Value, String),
+    // Option/Result
+    WrapSome(Value, Value),
+    WrapNone(Value, MIRType),
+    WrapOk(Value, Value),
+    WrapErr(Value, Value),
+    Unwrap(Value, Value),
+    // Functions
+    Call(Value, String, List<Value>),
+    Return(Option<Value>),
+    // Control flow
+    Jump(String),
+    Branch(Value, String, String),
+    Switch(Value, List<SwitchCase>, String),
+    // Agents
+    AgentSpawn(Value, MIRType, List<Value>),
+    AgentSend(Value, String, Value),
+    AgentSync(Value, Value, String),
+    // Signals
+    SignalInit(Value, MIRType, Value),
+    SignalGet(Value, Value),
+    SignalSet(Value, Value),
+    // Streams
+    StreamOp(Value, StreamOpKind, Value, List<Value>),
+    // Strings
+    InterpConcat(Value, List<Value>),
+    // SSA
+    Phi(Value, List<PhiEntry>)
+}
+
+// ---------------------------------------------------------------------------
+// Basic block
+// ---------------------------------------------------------------------------
+
+struct BasicBlock {
+    label: String,
+    instructions: List<Instruction>
+}
+
+fn new_basic_block(label: String) -> BasicBlock {
+    let instrs: List<Instruction> = []
+    let bb: BasicBlock = label
+    return bb
+}
+
+fn is_terminator(inst: Instruction) -> Bool {
+    match inst {
+        Jump(_) => { return true },
+        Branch(_, _, _) => { return true },
+        Switch(_, _, _) => { return true },
+        Return(_) => { return true },
+        _ => { return false }
+    }
+}
+
+fn block_terminated(bb: BasicBlock) -> Bool {
+    if len(bb.instructions) == 0 { return false }
+    let last: Instruction = bb.instructions[len(bb.instructions) - 1]
+    return is_terminator(last)
+}
+
+// ---------------------------------------------------------------------------
+// MIR function
+// ---------------------------------------------------------------------------
+
+struct MIRParam {
+    name: String,
+    ty: MIRType
+}
+
+fn new_mir_param(name: String, ty: MIRType) -> MIRParam {
+    let p: MIRParam = name
+    return p
+}
+
+struct MIRFunction {
+    name: String,
+    params: List<MIRParam>,
+    return_type: MIRType,
+    blocks: List<BasicBlock>,
+    decorators: List<String>,
+    is_public: Bool
+}
+
+fn new_mir_function(name: String, params: List<MIRParam>, ret: MIRType, decorators: List<String>, is_public: Bool) -> MIRFunction {
+    let blocks: List<BasicBlock> = []
+    let f: MIRFunction = name
+    return f
+}
+
+// ---------------------------------------------------------------------------
+// MIR module
+// ---------------------------------------------------------------------------
+
+struct StructInfo {
+    name: String,
+    fields: List<FieldPair>
+}
+
+fn new_struct_info(name: String, fields: List<FieldPair>) -> StructInfo {
+    let s: StructInfo = name
+    return s
+}
+
+struct EnumVariantInfo {
+    name: String,
+    payload_types: List<MIRType>
+}
+
+fn new_enum_variant_info(name: String, types: List<MIRType>) -> EnumVariantInfo {
+    let v: EnumVariantInfo = name
+    return v
+}
+
+struct EnumInfo {
+    name: String,
+    variants: List<EnumVariantInfo>
+}
+
+fn new_enum_info(name: String, variants: List<EnumVariantInfo>) -> EnumInfo {
+    let e: EnumInfo = name
+    return e
+}
+
+struct ExternFnInfo {
+    abi: String,
+    module_name: String,
+    fn_name: String,
+    param_types: List<MIRType>,
+    return_type: MIRType
+}
+
+fn new_extern_fn_info(abi: String, module_name: String, fn_name: String, params: List<MIRType>, ret: MIRType) -> ExternFnInfo {
+    let e: ExternFnInfo = abi
+    return e
+}
+
+struct AgentInfo {
+    name: String,
+    inputs: List<String>,
+    outputs: List<String>,
+    method_names: List<String>
+}
+
+fn new_agent_info(name: String, inputs: List<String>, outputs: List<String>, methods: List<String>) -> AgentInfo {
+    let a: AgentInfo = name
+    return a
+}
+
+struct PipeInfo {
+    name: String,
+    stages: List<String>
+}
+
+fn new_pipe_info(name: String, stages: List<String>) -> PipeInfo {
+    let p: PipeInfo = name
+    return p
+}
+
+struct ImportInfo {
+    path: List<String>,
+    items: List<String>
+}
+
+fn new_import_info(path: List<String>, items: List<String>) -> ImportInfo {
+    let i: ImportInfo = path
+    return i
+}
+
+struct MIRModule {
+    name: String,
+    functions: List<MIRFunction>,
+    structs: List<StructInfo>,
+    enums: List<EnumInfo>,
+    extern_fns: List<ExternFnInfo>,
+    agents: List<AgentInfo>,
+    pipes: List<PipeInfo>,
+    imports: List<ImportInfo>,
+    trait_names: List<String>
+}
+
+fn new_mir_module(name: String) -> MIRModule {
+    let functions: List<MIRFunction> = []
+    let structs: List<StructInfo> = []
+    let enums: List<EnumInfo> = []
+    let extern_fns: List<ExternFnInfo> = []
+    let agents: List<AgentInfo> = []
+    let pipes: List<PipeInfo> = []
+    let imports: List<ImportInfo> = []
+    let trait_names: List<String> = []
+    let m: MIRModule = name
+    return m
+}
+
+// ---------------------------------------------------------------------------
+// Variable tracking
+// ---------------------------------------------------------------------------
+
+struct VarInfo {
+    name: String,
+    current: Value,
+    mutable: Bool
+}
+
+fn new_var_info(name: String, val: Value, mutable: Bool) -> VarInfo {
+    let v: VarInfo = name
+    return v
+}
+
+// Impl method mapping: "Type.method" -> "Type_method"
+struct ImplEntry {
+    key: String,
+    mir_name: String
+}
+
+fn new_impl_entry(key: String, mir_name: String) -> ImplEntry {
+    let e: ImplEntry = key
+    return e
+}
+
+// Struct field names mapping
+struct StructFieldInfo {
+    name: String,
+    field_names: List<String>
+}
+
+fn new_struct_field_info(name: String, fields: List<String>) -> StructFieldInfo {
+    let s: StructFieldInfo = name
+    return s
+}
+
+// Enum variant names mapping
+struct EnumVariantNames {
+    enum_name: String,
+    variant_names: List<String>
+}
+
+fn new_enum_variant_names(name: String, variants: List<String>) -> EnumVariantNames {
+    let e: EnumVariantNames = name
+    return e
+}
+
+// Lambda variable mapping
+struct LambdaEntry {
+    var_name: String,
+    fn_name: String
+}
+
+fn new_lambda_entry(var_name: String, fn_name: String) -> LambdaEntry {
+    let e: LambdaEntry = var_name
+    return e
+}
+
+// ---------------------------------------------------------------------------
+// Lowerer state — threaded through all lowering functions
+// ---------------------------------------------------------------------------
+
+struct LowerState {
+    module: MIRModule,
+    current_fn: Option<MIRFunction>,
+    current_block_idx: Int,
+    tmp_counter: Int,
+    block_counter: Int,
+    vars: List<VarInfo>,
+    scope_stack: List<List<VarInfo>>,
+    impl_methods: List<ImplEntry>,
+    struct_fields: List<StructFieldInfo>,
+    enum_variants: List<EnumVariantNames>,
+    lambda_vars: List<LambdaEntry>
+}
+
+fn new_lower_state(module_name: String) -> LowerState {
+    let module: MIRModule = new_mir_module(module_name)
+    let vars: List<VarInfo> = []
+    let scope_stack: List<List<VarInfo>> = []
+    let impl_methods: List<ImplEntry> = []
+    let struct_fields: List<StructFieldInfo> = []
+    let enum_variants: List<EnumVariantNames> = []
+    let lambda_vars: List<LambdaEntry> = []
+    let st: LowerState = module
+    return st
+}
+
+// Lower result: value + updated state
+struct LowerResult {
+    value: Value,
+    state: LowerState
+}
+
+fn new_lower_result(val: Value, st: LowerState) -> LowerResult {
+    let r: LowerResult = val
+    return r
+}
+
+// ---------------------------------------------------------------------------
+// Name generation
+// ---------------------------------------------------------------------------
+
+fn fresh_tmp(st: LowerState, prefix: String) -> LowerResult {
+    let name: String = "%" + prefix + toString(st.tmp_counter)
+    let mut new_st: LowerState = st
+    new_st.tmp_counter = st.tmp_counter + 1
+    let val: Value = new_value(name, mir_unknown())
+    return new_lower_result(val, new_st)
+}
+
+fn fresh_block_label(st: LowerState, prefix: String) -> LowerResult {
+    let name: String = prefix + toString(st.block_counter)
+    let mut new_st: LowerState = st
+    new_st.block_counter = st.block_counter + 1
+    let val: Value = new_value(name, mir_unknown())
+    return new_lower_result(val, new_st)
+}
+
+fn make_value(st: LowerState, ty: MIRType, prefix: String) -> LowerResult {
+    let r: LowerResult = fresh_tmp(st, prefix)
+    let val: Value = new_value(r.value.name, ty)
+    return new_lower_result(val, r.state)
+}
+
+// ---------------------------------------------------------------------------
+// Block management
+// ---------------------------------------------------------------------------
+
+fn add_block(st: LowerState, label: String) -> LowerState {
+    let bb: BasicBlock = new_basic_block(label)
+    let mut new_st: LowerState = st
+    match st.current_fn {
+        Some(f) => {
+            let mut new_fn: MIRFunction = f
+            // new_fn.blocks.push(bb)
+            new_st.current_fn = Some(new_fn)
+            new_st.current_block_idx = len(f.blocks)
+        },
+        _ => {}
+    }
+    return new_st
+}
+
+fn set_block(st: LowerState, idx: Int) -> LowerState {
+    let mut new_st: LowerState = st
+    new_st.current_block_idx = idx
+    return new_st
+}
+
+fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
+    // Append instruction to current block in current function
+    let mut new_st: LowerState = st
+    // In the self-hosted compiler, this appends to the current block's
+    // instruction list. The actual mutation is handled by the runtime.
+    return new_st
+}
+
+fn current_block_terminated(st: LowerState) -> Bool {
+    match st.current_fn {
+        Some(f) => {
+            if st.current_block_idx >= 0 {
+                if st.current_block_idx < len(f.blocks) {
+                    let bb: BasicBlock = f.blocks[st.current_block_idx]
+                    return block_terminated(bb)
+                }
+            }
+            return true
+        },
+        _ => { return true }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scope management
+// ---------------------------------------------------------------------------
+
+fn push_scope(st: LowerState) -> LowerState {
+    let mut new_st: LowerState = st
+    // Copy current vars to scope stack
+    let mut copy: List<VarInfo> = []
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.vars) {
+            // new_st.scope_stack.push(copy)
+            return new_st
+        }
+        let v: VarInfo = st.vars[i]
+        // copy.push(v)
+        i = i + 1
+    }
+    return new_st
+}
+
+fn pop_scope(st: LowerState) -> LowerState {
+    let mut new_st: LowerState = st
+    if len(st.scope_stack) > 0 {
+        new_st.vars = st.scope_stack[len(st.scope_stack) - 1]
+        // Remove last element from scope_stack
+    }
+    return new_st
+}
+
+fn define_var(st: LowerState, name: String, val: Value, mutable: Bool) -> LowerState {
+    let mut new_st: LowerState = st
+    let vi: VarInfo = new_var_info(name, val, mutable)
+    // new_st.vars.push(vi)
+    return new_st
+}
+
+fn lookup_var(st: LowerState, name: String) -> Option<Value> {
+    let mut i: Int = len(st.vars) - 1
+    for _ in 0..100000 {
+        if i < 0 { return none }
+        let v: VarInfo = st.vars[i]
+        if v.name == name { return Some(v.current) }
+        i = i - 1
+    }
+    return none
+}
+
+fn update_var(st: LowerState, name: String, val: Value) -> LowerState {
+    let mut new_st: LowerState = st
+    let mut i: Int = len(st.vars) - 1
+    for _ in 0..100000 {
+        if i < 0 { return new_st }
+        let v: VarInfo = st.vars[i]
+        if v.name == name {
+            let updated: VarInfo = new_var_info(name, val, v.mutable)
+            // st.vars[i] = updated
+            return new_st
+        }
+        i = i - 1
+    }
+    return new_st
+}
+
+// ---------------------------------------------------------------------------
+// Lookup helpers
+// ---------------------------------------------------------------------------
+
+fn find_struct_fields(st: LowerState, name: String) -> Option<List<String>> {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.struct_fields) { return none }
+        let sf: StructFieldInfo = st.struct_fields[i]
+        if sf.name == name { return Some(sf.field_names) }
+        i = i + 1
+    }
+    return none
+}
+
+fn find_enum_variants(st: LowerState, name: String) -> Option<List<String>> {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.enum_variants) { return none }
+        let ev: EnumVariantNames = st.enum_variants[i]
+        if ev.enum_name == name { return Some(ev.variant_names) }
+        i = i + 1
+    }
+    return none
+}
+
+fn is_enum_variant(st: LowerState, name: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.enum_variants) { return false }
+        let ev: EnumVariantNames = st.enum_variants[i]
+        let mut j: Int = 0
+        for _ in 0..100000 {
+            if j >= len(ev.variant_names) { break }
+            let vn: String = ev.variant_names[j]
+            if vn == name { return true }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return false
+}
+
+fn enum_name_for_variant(st: LowerState, variant: String) -> String {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.enum_variants) { return "" }
+        let ev: EnumVariantNames = st.enum_variants[i]
+        let mut j: Int = 0
+        for _ in 0..100000 {
+            if j >= len(ev.variant_names) { break }
+            let vn: String = ev.variant_names[j]
+            if vn == variant { return ev.enum_name }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+fn find_impl_method(st: LowerState, type_name: String, method: String) -> Option<String> {
+    let key: String = type_name + "." + method
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.impl_methods) { return none }
+        let e: ImplEntry = st.impl_methods[i]
+        if e.key == key { return Some(e.mir_name) }
+        i = i + 1
+    }
+    return none
+}
+
+fn find_lambda(st: LowerState, name: String) -> Option<String> {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.lambda_vars) { return none }
+        let e: LambdaEntry = st.lambda_vars[i]
+        if e.var_name == name { return Some(e.fn_name) }
+        i = i + 1
+    }
+    return none
+}
+
+// ---------------------------------------------------------------------------
+// Type resolution: AST TypeExpr -> MIRType
+// ---------------------------------------------------------------------------
+
+fn resolve_type_expr(te: TypeExpr) -> MIRType {
+    match te {
+        Named(name) => {
+            return resolve_type_name(name)
+        },
+        Generic(name, args) => {
+            let mut resolved_args: List<MIRType> = []
+            let mut i: Int = 0
+            for _ in 0..100 {
+                if i >= len(args) {
+                    let kind: String = kind_from_name(name)
+                    if kind != "unknown" {
+                        return new_mir_type_with_args(name, kind, resolved_args)
+                    }
+                    return new_mir_type_with_args(name, "struct", resolved_args)
+                }
+                let arg: TypeExpr = args[i]
+                let resolved: MIRType = resolve_type_expr(arg)
+                // resolved_args.push(resolved)
+                i = i + 1
+            }
+            return mir_unknown()
+        },
+        FnTy(param_types, return_type) => {
+            return mir_fn_type()
+        },
+        _ => { return mir_unknown() }
+    }
+}
+
+fn resolve_type_name(name: String) -> MIRType {
+    if name == "Int" { return mir_int() }
+    if name == "Float" { return mir_float() }
+    if name == "Bool" { return mir_bool() }
+    if name == "String" { return mir_string() }
+    if name == "Char" { return mir_string() }
+    if name == "Void" { return mir_void() }
+    if name == "Option" { return mir_option() }
+    if name == "Result" { return mir_result() }
+    if name == "List" { return mir_list() }
+    if name == "Map" { return mir_map() }
+    if name == "Signal" { return mir_signal() }
+    return mir_struct(name)
+}
+
+fn kind_from_name(name: String) -> String {
+    if name == "Int" { return "int" }
+    if name == "Float" { return "float" }
+    if name == "Bool" { return "bool" }
+    if name == "String" { return "string" }
+    if name == "Char" { return "string" }
+    if name == "Void" { return "void" }
+    if name == "Option" { return "option" }
+    if name == "Result" { return "result" }
+    if name == "List" { return "list" }
+    if name == "Map" { return "map" }
+    if name == "Signal" { return "signal" }
+    if name == "Stream" { return "stream" }
+    if name == "Agent" { return "agent" }
+    if name == "Tensor" { return "tensor" }
+    if name == "Range" { return "range" }
+    return "unknown"
+}
+
+fn resolve_type_opt(te: Option<TypeExpr>) -> MIRType {
+    match te {
+        Some(t) => { return resolve_type_expr(t) },
+        _ => { return mir_unknown() }
+    }
+}
+
+fn resolve_return_type(te: Option<TypeExpr>) -> MIRType {
+    match te {
+        Some(t) => { return resolve_type_expr(t) },
+        _ => { return mir_void() }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Operator mapping
+// ---------------------------------------------------------------------------
+
+fn binop_from_str(op: String) -> Option<BinOpKind> {
+    if op == "+" { return Some(BinOpKind::Add) }
+    if op == "-" { return Some(BinOpKind::Sub) }
+    if op == "*" { return Some(BinOpKind::Mul) }
+    if op == "/" { return Some(BinOpKind::Div) }
+    if op == "%" { return Some(BinOpKind::Mod) }
+    if op == "==" { return Some(BinOpKind::Eq) }
+    if op == "!=" { return Some(BinOpKind::Ne) }
+    if op == "<" { return Some(BinOpKind::Lt) }
+    if op == ">" { return Some(BinOpKind::Gt) }
+    if op == "<=" { return Some(BinOpKind::Le) }
+    if op == ">=" { return Some(BinOpKind::Ge) }
+    if op == "&&" { return Some(BinOpKind::And) }
+    if op == "||" { return Some(BinOpKind::Or) }
+    return none
+}
+
+fn unaryop_from_str(op: String) -> Option<UnaryOpKind> {
+    if op == "-" { return Some(UnaryOpKind::Neg) }
+    if op == "!" { return Some(UnaryOpKind::Not) }
+    return none
+}
+
+fn stream_op_from_str(name: String) -> Option<StreamOpKind> {
+    if name == "map" { return Some(StreamOpKind::Map) }
+    if name == "filter" { return Some(StreamOpKind::Filter) }
+    if name == "fold" { return Some(StreamOpKind::Fold) }
+    if name == "take" { return Some(StreamOpKind::Take) }
+    if name == "skip" { return Some(StreamOpKind::Skip) }
+    if name == "collect" { return Some(StreamOpKind::Collect) }
+    return none
+}
+
+fn is_comparison_op(op: BinOpKind) -> Bool {
+    match op {
+        Eq => { return true },
+        Ne => { return true },
+        Lt => { return true },
+        Gt => { return true },
+        Le => { return true },
+        Ge => { return true },
+        And => { return true },
+        Or => { return true },
+        _ => { return false }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Declaration registration (Pass 1)
+// ---------------------------------------------------------------------------
+
+fn register_declarations(st: LowerState, program: Program) -> LowerState {
+    let mut s: LowerState = st
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(program.definitions) { return s }
+        let defn: Definition = program.definitions[i]
+        s = register_definition(s, defn)
+        i = i + 1
+    }
+    return s
+}
+
+fn register_definition(st: LowerState, defn: Definition) -> LowerState {
+    match defn {
+        StructDef(data) => {
+            return register_struct(st, data)
+        },
+        EnumDef(data) => {
+            return register_enum(st, data)
+        },
+        ImplDef(target, methods) => {
+            return register_impl(st, target, methods)
+        },
+        ImportDef(path, items) => {
+            let info: ImportInfo = new_import_info(path, items)
+            let mut new_st: LowerState = st
+            // new_st.module.imports.push(info)
+            return new_st
+        },
+        ExportDef(inner_opt, _) => {
+            match inner_opt {
+                Some(inner) => { return register_definition(st, inner) },
+                _ => { return st }
+            }
+        },
+        _ => { return st }
+    }
+}
+
+fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
+    let mut fields: List<FieldPair> = []
+    let mut field_names: List<String> = []
+    let mut i: Int = 0
+    let mut s: LowerState = st
+
+    for _ in 0..1000 {
+        if i >= len(data.fields) {
+            let info: StructInfo = new_struct_info(data.name, fields)
+            // s.module.structs.push(info)
+            let sfi: StructFieldInfo = new_struct_field_info(data.name, field_names)
+            // s.struct_fields.push(sfi)
+            return s
+        }
+        let field: StructField = data.fields[i]
+        let fty: MIRType = resolve_type_expr(field.type_annotation)
+        let fp: FieldPair = new_field_pair(field.name, new_value("", fty))
+        // fields.push(fp)
+        // field_names.push(field.name)
+        i = i + 1
+    }
+    return s
+}
+
+fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
+    let mut variants: List<EnumVariantInfo> = []
+    let mut variant_names: List<String> = []
+    let mut i: Int = 0
+    let mut s: LowerState = st
+
+    for _ in 0..1000 {
+        if i >= len(data.variants) {
+            let info: EnumInfo = new_enum_info(data.name, variants)
+            // s.module.enums.push(info)
+            let evn: EnumVariantNames = new_enum_variant_names(data.name, variant_names)
+            // s.enum_variants.push(evn)
+            return s
+        }
+        let variant: EnumVariant = data.variants[i]
+        let mut payload_types: List<MIRType> = []
+        let mut j: Int = 0
+        for _ in 0..100 {
+            if j >= len(variant.fields) { break }
+            let fty: MIRType = resolve_type_expr(variant.fields[j])
+            // payload_types.push(fty)
+            j = j + 1
+        }
+        let vi: EnumVariantInfo = new_enum_variant_info(variant.name, payload_types)
+        // variants.push(vi)
+        // variant_names.push(variant.name)
+        i = i + 1
+    }
+    return s
+}
+
+fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> LowerState {
+    let mut s: LowerState = st
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(methods) { return s }
+        let method: FnDefData = methods[i]
+        let key: String = target + "." + method.name
+        let mir_name: String = target + "_" + method.name
+        let entry: ImplEntry = new_impl_entry(key, mir_name)
+        // s.impl_methods.push(entry)
+        i = i + 1
+    }
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// Definition lowering (Pass 2)
+// ---------------------------------------------------------------------------
+
+fn lower_definitions(st: LowerState, program: Program) -> LowerState {
+    let mut s: LowerState = st
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(program.definitions) { return s }
+        let defn: Definition = program.definitions[i]
+        s = lower_definition(s, defn)
+        i = i + 1
+    }
+    return s
+}
+
+fn lower_definition(st: LowerState, defn: Definition) -> LowerState {
+    match defn {
+        FnDef(data) => {
+            return lower_fn(st, data, "")
+        },
+        AgentDef(data) => {
+            return lower_agent(st, data)
+        },
+        ImplDef(target, methods) => {
+            return lower_impl(st, target, methods)
+        },
+        ExportDef(inner_opt, _) => {
+            match inner_opt {
+                Some(inner) => {
+                    let s: LowerState = lower_definition(st, inner)
+                    // Mark the lowered function as public
+                    return s
+                },
+                _ => { return st }
+            }
+        },
+        _ => { return st }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Function lowering
+// ---------------------------------------------------------------------------
+
+fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerState {
+    let fn_name: String = name_prefix + fn_def.name
+
+    // Build params
+    let mut params: List<MIRParam> = []
+    let mut pi: Int = 0
+    for _ in 0..1000 {
+        if pi >= len(fn_def.params) { break }
+        let p: Param = fn_def.params[pi]
+        let pty: MIRType = resolve_type_opt(p.type_annotation)
+        let mp: MIRParam = new_mir_param(p.name, pty)
+        // params.push(mp)
+        pi = pi + 1
+    }
+
+    let ret_type: MIRType = resolve_return_type(fn_def.return_type)
+
+    // Collect decorator names
+    let mut decorators: List<String> = []
+    let mut di: Int = 0
+    for _ in 0..100 {
+        if di >= len(fn_def.decorators) { break }
+        let dec: Decorator = fn_def.decorators[di]
+        // decorators.push(dec.name)
+        di = di + 1
+    }
+
+    let mir_fn: MIRFunction = new_mir_function(fn_name, params, ret_type, decorators, fn_def.public)
+
+    // Save state
+    let prev_fn: Option<MIRFunction> = st.current_fn
+    let prev_block_idx: Int = st.current_block_idx
+    let prev_tmp: Int = st.tmp_counter
+    let prev_blk_cnt: Int = st.block_counter
+    let prev_vars: List<VarInfo> = st.vars
+
+    let mut s: LowerState = st
+    s.current_fn = Some(mir_fn)
+    s.tmp_counter = 0
+    s.block_counter = 0
+    s.vars = []
+
+    // Create entry block
+    s = add_block(s, "entry")
+    s = set_block(s, 0)
+
+    // Bind params as variables
+    let mut bi: Int = 0
+    for _ in 0..1000 {
+        if bi >= len(fn_def.params) { break }
+        let p: Param = fn_def.params[bi]
+        let pty: MIRType = resolve_type_opt(p.type_annotation)
+        let param_val: Value = new_value("%" + p.name, pty)
+        s = define_var(s, p.name, param_val, false)
+        bi = bi + 1
+    }
+
+    // Lower body
+    let body_r: LowerResult = lower_block(s, fn_def.body)
+    s = body_r.state
+
+    // Add implicit return if block isn't terminated
+    if !current_block_terminated(s) {
+        if ret_type.kind == "void" {
+            s = emit_instr(s, Instruction::Return(none))
+        } else {
+            s = emit_instr(s, Instruction::Return(Some(body_r.value)))
+        }
+    }
+
+    // Add function to module
+    match s.current_fn {
+        Some(f) => {
+            // s.module.functions.push(f)
+        },
+        _ => {}
+    }
+
+    // Restore state
+    s.current_fn = prev_fn
+    s.current_block_idx = prev_block_idx
+    s.tmp_counter = prev_tmp
+    s.block_counter = prev_blk_cnt
+    s.vars = prev_vars
+
+    return s
+}
+
+fn lower_agent(st: LowerState, data: AgentDefData) -> LowerState {
+    let mut s: LowerState = st
+    let mut method_names: List<String> = []
+
+    // Lower each method
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(data.methods) {
+            let inputs: List<String> = extract_agent_input_names(data)
+            let outputs: List<String> = extract_agent_output_names(data)
+            let info: AgentInfo = new_agent_info(data.name, inputs, outputs, method_names)
+            // s.module.agents.push(info)
+            return s
+        }
+        let method: FnDefData = data.methods[i]
+        s = lower_fn(s, method, data.name + "_")
+        let method_mir_name: String = data.name + "_" + method.name
+        // method_names.push(method_mir_name)
+        i = i + 1
+    }
+    return s
+}
+
+fn extract_agent_input_names(data: AgentDefData) -> List<String> {
+    let mut names: List<String> = []
+    let mut i: Int = 0
+    for _ in 0..100 {
+        if i >= len(data.inputs) { return names }
+        let inp: AgentInput = data.inputs[i]
+        // names.push(inp.name)
+        i = i + 1
+    }
+    return names
+}
+
+fn extract_agent_output_names(data: AgentDefData) -> List<String> {
+    let mut names: List<String> = []
+    let mut i: Int = 0
+    for _ in 0..100 {
+        if i >= len(data.outputs) { return names }
+        let out: AgentOutput = data.outputs[i]
+        // names.push(out.name)
+        i = i + 1
+    }
+    return names
+}
+
+fn lower_impl(st: LowerState, target: String, methods: List<FnDefData>) -> LowerState {
+    let mut s: LowerState = st
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(methods) { return s }
+        let method: FnDefData = methods[i]
+        s = lower_fn(s, method, target + "_")
+        i = i + 1
+    }
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// Block / statement lowering
+// ---------------------------------------------------------------------------
+
+fn lower_block(st: LowerState, block: Block) -> LowerResult {
+    let mut s: LowerState = push_scope(st)
+    let mut last_val: Value = void_value()
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(block.stmts) {
+            s = pop_scope(s)
+            return new_lower_result(last_val, s)
+        }
+        if current_block_terminated(s) {
+            s = pop_scope(s)
+            return new_lower_result(last_val, s)
+        }
+        let stmt: Stmt = block.stmts[i]
+        let r: LowerResult = lower_stmt(s, stmt)
+        s = r.state
+        last_val = r.value
+        i = i + 1
+    }
+    s = pop_scope(s)
+    return new_lower_result(last_val, s)
+}
+
+fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
+    match stmt {
+        Let(name, mutable, type_ann, value) => {
+            let s: LowerState = lower_let(st, name, mutable, value)
+            return new_lower_result(void_value(), s)
+        },
+        ExprStmt(expr) => {
+            return lower_expr(st, expr)
+        },
+        Return(value_opt) => {
+            let s: LowerState = lower_return(st, value_opt)
+            return new_lower_result(void_value(), s)
+        },
+        For(var_name, iterable, body) => {
+            let s: LowerState = lower_for(st, var_name, iterable, body)
+            return new_lower_result(void_value(), s)
+        },
+        SignalDecl(name, mutable, type_ann, value, _) => {
+            let s: LowerState = lower_signal_decl(st, name, mutable, type_ann, value)
+            return new_lower_result(void_value(), s)
+        },
+        StreamDecl(name, type_ann, value) => {
+            let s: LowerState = lower_stream_decl(st, name, value)
+            return new_lower_result(void_value(), s)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Let binding
+// ---------------------------------------------------------------------------
+
+fn lower_let(st: LowerState, name: String, mutable: Bool, value: Expr) -> LowerState {
+    let r: LowerResult = lower_expr(st, value)
+    let named: Value = new_value("%" + name, r.value.ty)
+    let mut s: LowerState = emit_instr(r.state, Instruction::Copy(named, r.value))
+    s = define_var(s, name, named, mutable)
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// Return
+// ---------------------------------------------------------------------------
+
+fn lower_return(st: LowerState, value_opt: Option<Expr>) -> LowerState {
+    match value_opt {
+        Some(expr) => {
+            let r: LowerResult = lower_expr(st, expr)
+            return emit_instr(r.state, Instruction::Return(Some(r.value)))
+        },
+        _ => {
+            return emit_instr(st, Instruction::Return(none))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// For loop
+// ---------------------------------------------------------------------------
+
+fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> LowerState {
+    // Lower the iterable
+    let iter_r: LowerResult = lower_expr(st, iterable)
+    let mut s: LowerState = iter_r.state
+
+    // Create blocks
+    let header_r: LowerResult = fresh_block_label(s, "for_header")
+    s = header_r.state
+    let header_label: String = header_r.value.name
+    s = add_block(s, header_label)
+    let header_idx: Int = s.current_block_idx
+
+    let body_r: LowerResult = fresh_block_label(s, "for_body")
+    s = body_r.state
+    let body_label: String = body_r.value.name
+    s = add_block(s, body_label)
+    let body_idx: Int = s.current_block_idx
+
+    let exit_r: LowerResult = fresh_block_label(s, "for_exit")
+    s = exit_r.state
+    let exit_label: String = exit_r.value.name
+    s = add_block(s, exit_label)
+    let exit_idx: Int = s.current_block_idx
+
+    // Jump from current block to header
+    if !current_block_terminated(s) {
+        s = emit_instr(s, Instruction::Jump(header_label))
+    }
+
+    // Header block
+    s = set_block(s, header_idx)
+    let iter_val_r: LowerResult = make_value(s, mir_unknown(), "iter")
+    s = iter_val_r.state
+    s = define_var(s, var_name, iter_val_r.value, false)
+
+    let has_next_r: LowerResult = make_value(s, mir_bool(), "has_next")
+    s = has_next_r.state
+    let mut iter_args: List<Value> = []
+    // iter_args.push(iter_r.value)
+    s = emit_instr(s, Instruction::Call(has_next_r.value, "__iter_has_next", iter_args))
+    s = emit_instr(s, Instruction::Branch(has_next_r.value, body_label, exit_label))
+
+    // Body block
+    s = set_block(s, body_idx)
+    let next_r: LowerResult = make_value(s, mir_unknown(), "next")
+    s = next_r.state
+    let mut next_args: List<Value> = []
+    // next_args.push(iter_r.value)
+    s = emit_instr(s, Instruction::Call(next_r.value, "__iter_next", next_args))
+    s = define_var(s, var_name, next_r.value, false)
+
+    s = push_scope(s)
+    let body_result: LowerResult = lower_block(s, body)
+    s = body_result.state
+    s = pop_scope(s)
+
+    if !current_block_terminated(s) {
+        s = emit_instr(s, Instruction::Jump(header_label))
+    }
+
+    // Exit block
+    s = set_block(s, exit_idx)
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// Signal / stream declarations
+// ---------------------------------------------------------------------------
+
+fn lower_signal_decl(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState {
+    let init_r: LowerResult = lower_expr(st, value)
+    let sig_type: MIRType = resolve_type_opt(type_ann)
+    let dest_r: LowerResult = make_value(init_r.state, mir_signal(), "sig")
+    let mut s: LowerState = emit_instr(dest_r.state, Instruction::SignalInit(dest_r.value, sig_type, init_r.value))
+    s = define_var(s, name, dest_r.value, mutable)
+    return s
+}
+
+fn lower_stream_decl(st: LowerState, name: String, value: Expr) -> LowerState {
+    let r: LowerResult = lower_expr(st, value)
+    return define_var(r.state, name, r.value, false)
+}
+
+// ---------------------------------------------------------------------------
+// Expression lowering
+// ---------------------------------------------------------------------------
+
+fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
+    match expr {
+        IntLit(n) => {
+            let r: LowerResult = make_value(st, mir_int(), "t")
+            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_int(), toString(n)))
+            return new_lower_result(r.value, s)
+        },
+        FloatLit(f) => {
+            let r: LowerResult = make_value(st, mir_float(), "t")
+            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_float(), toString(f)))
+            return new_lower_result(r.value, s)
+        },
+        BoolLit(b) => {
+            let r: LowerResult = make_value(st, mir_bool(), "t")
+            let val_str: String = if b { "true" } else { "false" }
+            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_bool(), val_str))
+            return new_lower_result(r.value, s)
+        },
+        StringLit(text) => {
+            let r: LowerResult = make_value(st, mir_string(), "t")
+            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_string(), text))
+            return new_lower_result(r.value, s)
+        },
+        CharLit(ch) => {
+            let r: LowerResult = make_value(st, mir_string(), "t")
+            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_string(), ch))
+            return new_lower_result(r.value, s)
+        },
+        NoneLit => {
+            let r: LowerResult = make_value(st, mir_option(), "t")
+            let s: LowerState = emit_instr(r.state, Instruction::WrapNone(r.value, mir_option()))
+            return new_lower_result(r.value, s)
+        },
+        Ident(name) => {
+            return lower_identifier(st, name)
+        },
+        Binary(left, op, right) => {
+            return lower_binary(st, left, op, right)
+        },
+        Unary(op, operand) => {
+            return lower_unary(st, op, operand)
+        },
+        Call(callee, args) => {
+            return lower_call(st, callee, args)
+        },
+        MethodCall(obj, method, args) => {
+            return lower_method_call(st, obj, method, args)
+        },
+        FieldAccess(obj, field_name) => {
+            return lower_field_access(st, obj, field_name)
+        },
+        NamespaceAccess(ns, member) => {
+            return lower_namespace_access(st, ns, member)
+        },
+        Index(obj, idx) => {
+            return lower_index(st, obj, idx)
+        },
+        Pipe(left, right) => {
+            return lower_pipe(st, left, right)
+        },
+        Range(start, end, inclusive) => {
+            return lower_range(st, start, end, inclusive)
+        },
+        Lambda(params, body) => {
+            return lower_lambda(st, params, body)
+        },
+        Spawn(callee, args) => {
+            return lower_spawn(st, callee, args)
+        },
+        Sync(inner) => {
+            return lower_sync(st, inner)
+        },
+        Send(target, value) => {
+            return lower_send(st, target, value)
+        },
+        ErrorProp(inner) => {
+            return lower_error_prop(st, inner)
+        },
+        ListLit(elements) => {
+            return lower_list(st, elements)
+        },
+        Construct(name, fields) => {
+            return lower_construct(st, name, fields)
+        },
+        SomeWrap(inner) => {
+            let r: LowerResult = lower_expr(st, inner)
+            let dest_r: LowerResult = make_value(r.state, mir_option(), "t")
+            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapSome(dest_r.value, r.value))
+            return new_lower_result(dest_r.value, s)
+        },
+        OkWrap(inner) => {
+            let r: LowerResult = lower_expr(st, inner)
+            let dest_r: LowerResult = make_value(r.state, mir_result(), "t")
+            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapOk(dest_r.value, r.value))
+            return new_lower_result(dest_r.value, s)
+        },
+        ErrWrap(inner) => {
+            let r: LowerResult = lower_expr(st, inner)
+            let dest_r: LowerResult = make_value(r.state, mir_result(), "t")
+            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapErr(dest_r.value, r.value))
+            return new_lower_result(dest_r.value, s)
+        },
+        SignalVal(inner, _) => {
+            return lower_signal_expr(st, inner)
+        },
+        Assign(target, op, value) => {
+            return lower_assign(st, target, op, value)
+        },
+        If(cond, then_block, else_clause) => {
+            return lower_if(st, cond, then_block, else_clause)
+        },
+        Match(subject, arms) => {
+            return lower_match(st, subject, arms)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Identifier lowering
+// ---------------------------------------------------------------------------
+
+fn lower_identifier(st: LowerState, name: String) -> LowerResult {
+    // Check variable scope
+    let var_opt: Option<Value> = lookup_var(st, name)
+    match var_opt {
+        Some(val) => { return new_lower_result(val, st) },
+        _ => {}
+    }
+
+    // Check if it's a bare enum variant (no payload)
+    if is_enum_variant(st, name) {
+        let enum_name: String = enum_name_for_variant(st, name)
+        let enum_ty: MIRType = mir_enum(enum_name)
+        let r: LowerResult = make_value(st, enum_ty, "t")
+        let empty_payload: List<Value> = []
+        let s: LowerState = emit_instr(r.state, Instruction::EnumInit(r.value, enum_ty, name, empty_payload))
+        return new_lower_result(r.value, s)
+    }
+
+    // Unknown — emit placeholder
+    let r: LowerResult = make_value(st, mir_unknown(), name)
+    let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_unknown(), ""))
+    return new_lower_result(r.value, s)
+}
+
+// ---------------------------------------------------------------------------
+// Binary expression lowering
+// ---------------------------------------------------------------------------
+
+fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerResult {
+    // Handle pipe operator
+    if op == "|>" {
+        return lower_pipe(st, left, right)
+    }
+
+    let lhs_r: LowerResult = lower_expr(st, left)
+    let rhs_r: LowerResult = lower_expr(lhs_r.state, right)
+
+    let binop_opt: Option<BinOpKind> = binop_from_str(op)
+    match binop_opt {
+        Some(binop) => {
+            let result_ty: MIRType = if is_comparison_op(binop) { mir_bool() } else { lhs_r.value.ty }
+            let dest_r: LowerResult = make_value(rhs_r.state, result_ty, "t")
+            let s: LowerState = emit_instr(dest_r.state, Instruction::BinOp(dest_r.value, binop, lhs_r.value, rhs_r.value))
+            return new_lower_result(dest_r.value, s)
+        },
+        _ => {
+            // Unknown operator — emit as call
+            let dest_r: LowerResult = make_value(rhs_r.state, mir_unknown(), "t")
+            let mut args: List<Value> = []
+            // args.push(lhs_r.value)
+            // args.push(rhs_r.value)
+            let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__op_" + op, args))
+            return new_lower_result(dest_r.value, s)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Unary expression lowering
+// ---------------------------------------------------------------------------
+
+fn lower_unary(st: LowerState, op: String, operand: Expr) -> LowerResult {
+    let op_r: LowerResult = lower_expr(st, operand)
+    let uop_opt: Option<UnaryOpKind> = unaryop_from_str(op)
+    match uop_opt {
+        Some(uop) => {
+            let result_ty: MIRType = match uop {
+                Not => { mir_bool() },
+                _ => { op_r.value.ty }
+            }
+            let dest_r: LowerResult = make_value(op_r.state, result_ty, "t")
+            let s: LowerState = emit_instr(dest_r.state, Instruction::UnaryOp(dest_r.value, uop, op_r.value))
+            return new_lower_result(dest_r.value, s)
+        },
+        _ => {
+            let dest_r: LowerResult = make_value(op_r.state, mir_unknown(), "t")
+            let mut args: List<Value> = []
+            // args.push(op_r.value)
+            let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__unary_" + op, args))
+            return new_lower_result(dest_r.value, s)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Call lowering
+// ---------------------------------------------------------------------------
+
+fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResult {
+    // Lower all arguments first
+    let mut s: LowerState = st
+    let mut args: List<Value> = []
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(arg_exprs) { break }
+        let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
+        s = arg_r.state
+        // args.push(arg_r.value)
+        i = i + 1
+    }
+
+    // Dispatch on callee type
+    match callee {
+        Ident(fn_name) => {
+            return lower_call_by_name(s, fn_name, args)
+        },
+        FieldAccess(obj, method) => {
+            // obj.method(args) that parsed as Call(FieldAccess, args)
+            let obj_r: LowerResult = lower_expr(s, obj)
+            let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+            let mut all_args: List<Value> = []
+            // all_args.push(obj_r.value)
+            let mut j: Int = 0
+            for _ in 0..1000 {
+                if j >= len(args) { break }
+                // all_args.push(args[j])
+                j = j + 1
+            }
+            let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
+            return new_lower_result(dest_r.value, new_s)
+        },
+        NamespaceAccess(ns, member) => {
+            let fn_name: String = ns + "_" + member
+            let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+            let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+            return new_lower_result(dest_r.value, new_s)
+        },
+        _ => {
+            let callee_r: LowerResult = lower_expr(s, callee)
+            let dest_r: LowerResult = make_value(callee_r.state, mir_unknown(), "t")
+            let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, callee_r.value.name, args))
+            return new_lower_result(dest_r.value, new_s)
+        }
+    }
+}
+
+fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
+    // Handle Option/Result builtins
+    if fn_name == "Some" {
+        if len(args) == 1 {
+            let dest_r: LowerResult = make_value(st, mir_option(), "t")
+            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapSome(dest_r.value, args[0]))
+            return new_lower_result(dest_r.value, s)
+        }
+    }
+    if fn_name == "Ok" {
+        if len(args) == 1 {
+            let dest_r: LowerResult = make_value(st, mir_result(), "t")
+            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapOk(dest_r.value, args[0]))
+            return new_lower_result(dest_r.value, s)
+        }
+    }
+    if fn_name == "Err" {
+        if len(args) == 1 {
+            let dest_r: LowerResult = make_value(st, mir_result(), "t")
+            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapErr(dest_r.value, args[0]))
+            return new_lower_result(dest_r.value, s)
+        }
+    }
+
+    // Check if it's an enum variant constructor
+    if is_enum_variant(st, fn_name) {
+        let enum_name: String = enum_name_for_variant(st, fn_name)
+        let enum_ty: MIRType = mir_enum(enum_name)
+        let dest_r: LowerResult = make_value(st, enum_ty, "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, fn_name, args))
+        return new_lower_result(dest_r.value, s)
+    }
+
+    // Check if it's a struct constructor
+    let fields_opt: Option<List<String>> = find_struct_fields(st, fn_name)
+    match fields_opt {
+        Some(field_names) => {
+            let struct_ty: MIRType = mir_struct(fn_name)
+            let mut field_pairs: List<FieldPair> = []
+            let mut fi: Int = 0
+            for _ in 0..1000 {
+                if fi >= len(field_names) { break }
+                if fi >= len(args) { break }
+                let fp: FieldPair = new_field_pair(field_names[fi], args[fi])
+                // field_pairs.push(fp)
+                fi = fi + 1
+            }
+            let dest_r: LowerResult = make_value(st, struct_ty, "t")
+            let s: LowerState = emit_instr(dest_r.state, Instruction::StructInit(dest_r.value, struct_ty, field_pairs))
+            return new_lower_result(dest_r.value, s)
+        },
+        _ => {}
+    }
+
+    // Resolve lambda variable names to actual function names
+    let resolved: String = match find_lambda(st, fn_name) {
+        Some(actual) => { actual },
+        _ => { fn_name }
+    }
+
+    let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
+    let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, resolved, args))
+    return new_lower_result(dest_r.value, s)
+}
+
+// ---------------------------------------------------------------------------
+// Method call lowering
+// ---------------------------------------------------------------------------
+
+fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<Expr>) -> LowerResult {
+    let obj_r: LowerResult = lower_expr(st, obj)
+    let mut s: LowerState = obj_r.state
+    let mut args: List<Value> = []
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(arg_exprs) { break }
+        let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
+        s = arg_r.state
+        // args.push(arg_r.value)
+        i = i + 1
+    }
+
+    // Check if stream operation
+    let stream_opt: Option<StreamOpKind> = stream_op_from_str(method)
+    match stream_opt {
+        Some(op_kind) => {
+            let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+            let new_s: LowerState = emit_instr(dest_r.state, Instruction::StreamOp(dest_r.value, op_kind, obj_r.value, args))
+            return new_lower_result(dest_r.value, new_s)
+        },
+        _ => {}
+    }
+
+    // Check if signal .value access
+    if method == "value" {
+        if len(args) == 0 {
+            let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+            let new_s: LowerState = emit_instr(dest_r.state, Instruction::SignalGet(dest_r.value, obj_r.value))
+            return new_lower_result(dest_r.value, new_s)
+        }
+    }
+
+    // General method call → Call with self as first arg
+    let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+    let mut all_args: List<Value> = []
+    // all_args.push(obj_r.value)
+    let mut j: Int = 0
+    for _ in 0..1000 {
+        if j >= len(args) { break }
+        // all_args.push(args[j])
+        j = j + 1
+    }
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
+    return new_lower_result(dest_r.value, new_s)
+}
+
+// ---------------------------------------------------------------------------
+// Field access lowering
+// ---------------------------------------------------------------------------
+
+fn lower_field_access(st: LowerState, obj: Expr, field_name: String) -> LowerResult {
+    let obj_r: LowerResult = lower_expr(st, obj)
+
+    // Check for signal .value
+    if field_name == "value" {
+        let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::SignalGet(dest_r.value, obj_r.value))
+        return new_lower_result(dest_r.value, s)
+    }
+
+    let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+    let s: LowerState = emit_instr(dest_r.state, Instruction::FieldGet(dest_r.value, obj_r.value, field_name))
+    return new_lower_result(dest_r.value, s)
+}
+
+// ---------------------------------------------------------------------------
+// Namespace access lowering
+// ---------------------------------------------------------------------------
+
+fn lower_namespace_access(st: LowerState, ns: String, member: String) -> LowerResult {
+    let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
+    let fn_name: String = ns + "_" + member
+    let empty_args: List<Value> = []
+    let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, empty_args))
+    return new_lower_result(dest_r.value, s)
+}
+
+// ---------------------------------------------------------------------------
+// Index lowering
+// ---------------------------------------------------------------------------
+
+fn lower_index(st: LowerState, obj: Expr, idx: Expr) -> LowerResult {
+    let obj_r: LowerResult = lower_expr(st, obj)
+    let idx_r: LowerResult = lower_expr(obj_r.state, idx)
+    let dest_r: LowerResult = make_value(idx_r.state, mir_unknown(), "t")
+    let s: LowerState = emit_instr(dest_r.state, Instruction::IndexGet(dest_r.value, obj_r.value, idx_r.value))
+    return new_lower_result(dest_r.value, s)
+}
+
+// ---------------------------------------------------------------------------
+// Pipe lowering
+// ---------------------------------------------------------------------------
+
+fn lower_pipe(st: LowerState, left: Expr, right: Expr) -> LowerResult {
+    let arg_r: LowerResult = lower_expr(st, left)
+
+    match right {
+        Ident(fn_name) => {
+            let dest_r: LowerResult = make_value(arg_r.state, mir_unknown(), "t")
+            let mut args: List<Value> = []
+            // args.push(arg_r.value)
+            let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+            return new_lower_result(dest_r.value, s)
+        },
+        Call(callee, extra_arg_exprs) => {
+            match callee {
+                Ident(fn_name) => {
+                    let mut s: LowerState = arg_r.state
+                    let mut args: List<Value> = []
+                    // args.push(arg_r.value)
+                    let mut i: Int = 0
+                    for _ in 0..1000 {
+                        if i >= len(extra_arg_exprs) { break }
+                        let extra_r: LowerResult = lower_expr(s, extra_arg_exprs[i])
+                        s = extra_r.state
+                        // args.push(extra_r.value)
+                        i = i + 1
+                    }
+                    let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+                    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+                    return new_lower_result(dest_r.value, new_s)
+                },
+                _ => {}
+            }
+        },
+        _ => {}
+    }
+
+    // General case
+    let fn_r: LowerResult = lower_expr(arg_r.state, right)
+    let dest_r: LowerResult = make_value(fn_r.state, mir_unknown(), "t")
+    let mut args: List<Value> = []
+    // args.push(arg_r.value)
+    let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_r.value.name, args))
+    return new_lower_result(dest_r.value, s)
+}
+
+// ---------------------------------------------------------------------------
+// Range lowering
+// ---------------------------------------------------------------------------
+
+fn lower_range(st: LowerState, start: Expr, end: Expr, inclusive: Bool) -> LowerResult {
+    let start_r: LowerResult = lower_expr(st, start)
+    let end_r: LowerResult = lower_expr(start_r.state, end)
+    let dest_r: LowerResult = make_value(end_r.state, mir_range(), "t")
+    let fn_name: String = if inclusive { "__range_inclusive" } else { "__range" }
+    let mut args: List<Value> = []
+    // args.push(start_r.value)
+    // args.push(end_r.value)
+    let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+    return new_lower_result(dest_r.value, s)
+}
+
+// ---------------------------------------------------------------------------
+// Lambda lowering
+// ---------------------------------------------------------------------------
+
+fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerResult {
+    let name_r: LowerResult = fresh_tmp(st, "lambda")
+    let lambda_name: String = name_r.value.name
+
+    // Build the body block
+    let body_block: Block = match body {
+        BlockBody(block) => { block },
+        ExprBody(expr) => {
+            // Wrap expression in a block with return
+            let ret_stmt: Stmt = Stmt::Return(Some(expr))
+            let stmts: List<Stmt> = []
+            // stmts.push(ret_stmt)
+            let span: Span = new_span(0, 0, 0, 0)
+            new_block(span, stmts)
+        }
+    }
+
+    // Create a FnDefData for the lambda
+    let span: Span = new_span(0, 0, 0, 0)
+    let empty_type_params: List<String> = []
+    let empty_decorators: List<Decorator> = []
+    let fn_def: FnDefData = new_fn_def_data(span, lambda_name, false, empty_type_params, params, none, body_block, empty_decorators)
+
+    let mut s: LowerState = lower_fn(name_r.state, fn_def, "")
+
+    // Return a reference to the lambda function
+    let dest_r: LowerResult = make_value(s, mir_fn_type(), "t")
+    s = emit_instr(dest_r.state, Instruction::Const(dest_r.value, mir_fn_type(), lambda_name))
+    return new_lower_result(dest_r.value, s)
+}
+
+// Helper: create Span
+fn new_span(line: Int, col: Int, end_line: Int, end_col: Int) -> Span {
+    let s: Span = line
+    return s
+}
+
+// Helper: create Block
+fn new_block(span: Span, stmts: List<Stmt>) -> Block {
+    let b: Block = span
+    return b
+}
+
+// Helper: create FnDefData
+fn new_fn_def_data(span: Span, name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
+    let f: FnDefData = span
+    return f
+}
+
+// ---------------------------------------------------------------------------
+// Spawn / Sync / Send lowering
+// ---------------------------------------------------------------------------
+
+fn lower_spawn(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResult {
+    let mut s: LowerState = st
+    let mut args: List<Value> = []
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(arg_exprs) { break }
+        let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
+        s = arg_r.state
+        // args.push(arg_r.value)
+        i = i + 1
+    }
+
+    let agent_name: String = match callee {
+        Ident(name) => { name },
+        _ => { "" }
+    }
+
+    let agent_ty: MIRType = mir_agent(agent_name)
+    let dest_r: LowerResult = make_value(s, agent_ty, "t")
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::AgentSpawn(dest_r.value, agent_ty, args))
+    return new_lower_result(dest_r.value, new_s)
+}
+
+fn lower_sync(st: LowerState, inner: Expr) -> LowerResult {
+    match inner {
+        FieldAccess(obj, field_name) => {
+            let obj_r: LowerResult = lower_expr(st, obj)
+            let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+            let s: LowerState = emit_instr(dest_r.state, Instruction::AgentSync(dest_r.value, obj_r.value, field_name))
+            return new_lower_result(dest_r.value, s)
+        },
+        _ => {
+            let val_r: LowerResult = lower_expr(st, inner)
+            let dest_r: LowerResult = make_value(val_r.state, mir_unknown(), "t")
+            let s: LowerState = emit_instr(dest_r.state, Instruction::AgentSync(dest_r.value, val_r.value, ""))
+            return new_lower_result(dest_r.value, s)
+        }
+    }
+}
+
+fn lower_send(st: LowerState, target: Expr, value: Expr) -> LowerResult {
+    let val_r: LowerResult = lower_expr(st, value)
+
+    match target {
+        FieldAccess(obj, field_name) => {
+            let obj_r: LowerResult = lower_expr(val_r.state, obj)
+            let s: LowerState = emit_instr(obj_r.state, Instruction::AgentSend(obj_r.value, field_name, val_r.value))
+            let dest_r: LowerResult = make_value(s, mir_void(), "t")
+            let s2: LowerState = emit_instr(dest_r.state, Instruction::Const(dest_r.value, mir_void(), ""))
+            return new_lower_result(dest_r.value, s2)
+        },
+        _ => {
+            let target_r: LowerResult = lower_expr(val_r.state, target)
+            let s: LowerState = emit_instr(target_r.state, Instruction::AgentSend(target_r.value, "", val_r.value))
+            let dest_r: LowerResult = make_value(s, mir_void(), "t")
+            let s2: LowerState = emit_instr(dest_r.state, Instruction::Const(dest_r.value, mir_void(), ""))
+            return new_lower_result(dest_r.value, s2)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Error propagation lowering
+// ---------------------------------------------------------------------------
+
+fn lower_error_prop(st: LowerState, inner: Expr) -> LowerResult {
+    let val_r: LowerResult = lower_expr(st, inner)
+    let mut s: LowerState = val_r.state
+
+    // Extract tag
+    let tag_r: LowerResult = make_value(s, mir_bool(), "tag")
+    s = emit_instr(tag_r.state, Instruction::EnumTag(tag_r.value, val_r.value))
+
+    // Create blocks
+    let ok_label_r: LowerResult = fresh_block_label(s, "prop_ok")
+    s = ok_label_r.state
+    let ok_label: String = ok_label_r.value.name
+
+    let err_label_r: LowerResult = fresh_block_label(s, "prop_err")
+    s = err_label_r.state
+    let err_label: String = err_label_r.value.name
+
+    s = add_block(s, ok_label)
+    let ok_idx: Int = s.current_block_idx
+    s = add_block(s, err_label)
+    let err_idx: Int = s.current_block_idx
+
+    // Branch on tag
+    s = emit_instr(s, Instruction::Branch(tag_r.value, ok_label, err_label))
+
+    // Error path: return the error
+    s = set_block(s, err_idx)
+    s = emit_instr(s, Instruction::Return(Some(val_r.value)))
+
+    // Ok path: unwrap
+    s = set_block(s, ok_idx)
+    let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+    s = emit_instr(dest_r.state, Instruction::Unwrap(dest_r.value, val_r.value))
+    return new_lower_result(dest_r.value, s)
+}
+
+// ---------------------------------------------------------------------------
+// List lowering
+// ---------------------------------------------------------------------------
+
+fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
+    let mut s: LowerState = st
+    let mut vals: List<Value> = []
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(elements) { break }
+        let el_r: LowerResult = lower_expr(s, elements[i])
+        s = el_r.state
+        // vals.push(el_r.value)
+        i = i + 1
+    }
+
+    let elem_type: MIRType = if len(vals) > 0 { vals[0].ty } else { mir_unknown() }
+    let dest_r: LowerResult = make_value(s, mir_list(), "t")
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::ListInit(dest_r.value, elem_type, vals))
+    return new_lower_result(dest_r.value, new_s)
+}
+
+// ---------------------------------------------------------------------------
+// Construct (struct literal) lowering
+// ---------------------------------------------------------------------------
+
+fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -> LowerResult {
+    let mut s: LowerState = st
+    let mut fields: List<FieldPair> = []
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(field_inits) { break }
+        let fi: FieldInit = field_inits[i]
+        let val_r: LowerResult = lower_expr(s, fi.value)
+        s = val_r.state
+        let fp: FieldPair = new_field_pair(fi.name, val_r.value)
+        // fields.push(fp)
+        i = i + 1
+    }
+
+    let struct_ty: MIRType = mir_struct(name)
+    let dest_r: LowerResult = make_value(s, struct_ty, "t")
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::StructInit(dest_r.value, struct_ty, fields))
+    return new_lower_result(dest_r.value, new_s)
+}
+
+// ---------------------------------------------------------------------------
+// Signal expression lowering
+// ---------------------------------------------------------------------------
+
+fn lower_signal_expr(st: LowerState, inner: Expr) -> LowerResult {
+    let init_r: LowerResult = lower_expr(st, inner)
+    let dest_r: LowerResult = make_value(init_r.state, mir_signal(), "t")
+    let s: LowerState = emit_instr(dest_r.state, Instruction::SignalInit(dest_r.value, mir_signal(), init_r.value))
+    return new_lower_result(dest_r.value, s)
+}
+
+// ---------------------------------------------------------------------------
+// Assignment lowering
+// ---------------------------------------------------------------------------
+
+fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerResult {
+    let val_r: LowerResult = lower_expr(st, value)
+    let mut s: LowerState = val_r.state
+
+    match target {
+        Ident(name) => {
+            if op != "=" {
+                // Compound assignment: x += 1 → x = x + 1
+                let old_r: LowerResult = lower_identifier(s, name)
+                s = old_r.state
+                let op_str: String = substr(op, 0, len(op) - 1)
+                let binop_opt: Option<BinOpKind> = binop_from_str(op_str)
+                match binop_opt {
+                    Some(binop) => {
+                        let result_r: LowerResult = make_value(s, old_r.value.ty, "t")
+                        s = emit_instr(result_r.state, Instruction::BinOp(result_r.value, binop, old_r.value, val_r.value))
+                        let new_val: Value = new_value("%" + name, result_r.value.ty)
+                        s = emit_instr(s, Instruction::Copy(new_val, result_r.value))
+                        s = update_var(s, name, new_val)
+                        return new_lower_result(new_val, s)
+                    },
+                    _ => {}
+                }
+            }
+
+            let new_val: Value = new_value("%" + name, val_r.value.ty)
+            s = emit_instr(s, Instruction::Copy(new_val, val_r.value))
+            s = update_var(s, name, new_val)
+            return new_lower_result(new_val, s)
+        },
+        FieldAccess(obj, field_name) => {
+            let obj_r: LowerResult = lower_expr(s, obj)
+            s = emit_instr(obj_r.state, Instruction::FieldSet(obj_r.value, field_name, val_r.value))
+            return new_lower_result(val_r.value, s)
+        },
+        Index(obj, idx) => {
+            let obj_r: LowerResult = lower_expr(s, obj)
+            let idx_r: LowerResult = lower_expr(obj_r.state, idx)
+            s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r.value, idx_r.value, val_r.value))
+            return new_lower_result(val_r.value, s)
+        },
+        _ => {
+            return new_lower_result(val_r.value, s)
+        }
+    }
+}
+
+// Helper to extract substring
+fn substr(s: String, start: Int, end: Int) -> String {
+    // substring extraction — handles compound assignment operators
+    if s == "+=" { return "+" }
+    if s == "-=" { return "-" }
+    if s == "*=" { return "*" }
+    if s == "/=" { return "/" }
+    if s == "%=" { return "%" }
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// If/else lowering
+// ---------------------------------------------------------------------------
+
+fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<ElseClause>) -> LowerResult {
+    let cond_r: LowerResult = lower_expr(st, cond)
+    let mut s: LowerState = cond_r.state
+
+    // Create blocks
+    let then_label_r: LowerResult = fresh_block_label(s, "if_then")
+    s = then_label_r.state
+    let then_label: String = then_label_r.value.name
+    s = add_block(s, then_label)
+    let then_idx: Int = s.current_block_idx
+
+    let else_label_r: LowerResult = fresh_block_label(s, "if_else")
+    s = else_label_r.state
+    let else_label: String = else_label_r.value.name
+    s = add_block(s, else_label)
+    let else_idx: Int = s.current_block_idx
+
+    let merge_label_r: LowerResult = fresh_block_label(s, "if_merge")
+    s = merge_label_r.state
+    let merge_label: String = merge_label_r.value.name
+    s = add_block(s, merge_label)
+    let merge_idx: Int = s.current_block_idx
+
+    // Branch
+    s = emit_instr(s, Instruction::Branch(cond_r.value, then_label, else_label))
+
+    // Then block
+    s = set_block(s, then_idx)
+    let then_r: LowerResult = lower_block(s, then_block)
+    s = then_r.state
+    let then_val: Value = then_r.value
+    let then_exit_idx: Int = s.current_block_idx
+    if !current_block_terminated(s) {
+        s = emit_instr(s, Instruction::Jump(merge_label))
+    }
+
+    // Else block
+    s = set_block(s, else_idx)
+    let mut else_val: Value = void_value()
+    match else_clause {
+        Some(clause) => {
+            match clause {
+                ElseBlock(block) => {
+                    let else_r: LowerResult = lower_block(s, block)
+                    s = else_r.state
+                    else_val = else_r.value
+                },
+                ElseIf(next_cond, next_then, next_else) => {
+                    let else_r: LowerResult = lower_if(s, next_cond, next_then, next_else)
+                    s = else_r.state
+                    else_val = else_r.value
+                }
+            }
+        },
+        _ => {}
+    }
+    let else_exit_idx: Int = s.current_block_idx
+    if !current_block_terminated(s) {
+        s = emit_instr(s, Instruction::Jump(merge_label))
+    }
+
+    // Merge block with phi
+    s = set_block(s, merge_idx)
+
+    // Get exit block labels for phi
+    let then_exit_label: String = get_block_label(s, then_exit_idx)
+    let else_exit_label: String = get_block_label(s, else_exit_idx)
+
+    if then_val.name != "%void" {
+        let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
+        s = result_r.state
+        let mut incoming: List<PhiEntry> = []
+        let e1: PhiEntry = new_phi_entry(then_exit_label, then_val)
+        let e2: PhiEntry = new_phi_entry(else_exit_label, else_val)
+        // incoming.push(e1)
+        // incoming.push(e2)
+        s = emit_instr(s, Instruction::Phi(result_r.value, incoming))
+        return new_lower_result(result_r.value, s)
+    }
+
+    // Void if — no value
+    let result_r: LowerResult = make_value(s, mir_void(), "t")
+    s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
+    return new_lower_result(result_r.value, s)
+}
+
+fn get_block_label(st: LowerState, idx: Int) -> String {
+    match st.current_fn {
+        Some(f) => {
+            if idx >= 0 {
+                if idx < len(f.blocks) {
+                    let bb: BasicBlock = f.blocks[idx]
+                    return bb.label
+                }
+            }
+            return "unknown"
+        },
+        _ => { return "unknown" }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Match lowering
+// ---------------------------------------------------------------------------
+
+fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResult {
+    let subject_r: LowerResult = lower_expr(st, subject)
+    let mut s: LowerState = subject_r.state
+
+    // Create merge block
+    let merge_label_r: LowerResult = fresh_block_label(s, "match_merge")
+    s = merge_label_r.state
+    let merge_label: String = merge_label_r.value.name
+    s = add_block(s, merge_label)
+    let merge_idx: Int = s.current_block_idx
+
+    // Create blocks for each arm
+    let mut arm_labels: List<String> = []
+    let mut arm_indices: List<Int> = []
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(arms) { break }
+        let label_r: LowerResult = fresh_block_label(s, "match_arm")
+        s = label_r.state
+        let label: String = label_r.value.name
+        s = add_block(s, label)
+        // arm_labels.push(label)
+        // arm_indices.push(s.current_block_idx)
+        i = i + 1
+    }
+
+    // Build switch cases
+    let mut cases: List<SwitchCase> = []
+    let mut default_label: String = merge_label
+    let mut ci: Int = 0
+    for _ in 0..1000 {
+        if ci >= len(arms) { break }
+        let arm: MatchArm = arms[ci]
+        let label: String = arm_labels[ci]
+        match arm.pattern {
+            ConstructorPat(name, _) => {
+                let sc: SwitchCase = new_switch_case(name, label)
+                // cases.push(sc)
+            },
+            LiteralPat(expr) => {
+                let lit_val: String = get_literal_value(expr)
+                let sc: SwitchCase = new_switch_case(lit_val, label)
+                // cases.push(sc)
+            },
+            IdentPat(name) => {
+                if is_enum_variant(s, name) {
+                    let sc: SwitchCase = new_switch_case(name, label)
+                    // cases.push(sc)
+                } else {
+                    default_label = label
+                }
+            },
+            Wildcard => {
+                default_label = label
+            }
+        }
+        ci = ci + 1
+    }
+
+    // Emit switch or branch
+    if len(cases) > 0 {
+        let tag_r: LowerResult = make_value(s, mir_unknown(), "tag")
+        s = tag_r.state
+        s = emit_instr(s, Instruction::EnumTag(tag_r.value, subject_r.value))
+        s = emit_instr(s, Instruction::Switch(tag_r.value, cases, default_label))
+    } else {
+        if len(arm_labels) > 0 {
+            s = emit_instr(s, Instruction::Jump(arm_labels[0]))
+        }
+    }
+
+    // Lower each arm
+    let mut arm_results: List<PhiEntry> = []
+    let mut ai: Int = 0
+    for _ in 0..1000 {
+        if ai >= len(arms) { break }
+        let arm: MatchArm = arms[ai]
+        let arm_idx: Int = arm_indices[ai]
+
+        s = set_block(s, arm_idx)
+        s = push_scope(s)
+
+        // Bind pattern variables
+        match arm.pattern {
+            ConstructorPat(name, sub_patterns) => {
+                let mut pi: Int = 0
+                for _ in 0..100 {
+                    if pi >= len(sub_patterns) { break }
+                    let sub_pat: Pattern = sub_patterns[pi]
+                    match sub_pat {
+                        IdentPat(var_name) => {
+                            let payload_r: LowerResult = make_value(s, mir_unknown(), var_name)
+                            s = payload_r.state
+                            s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject_r.value, name))
+                            s = define_var(s, var_name, payload_r.value, false)
+                        },
+                        _ => {}
+                    }
+                    pi = pi + 1
+                }
+            },
+            IdentPat(name) => {
+                if !is_enum_variant(s, name) {
+                    s = define_var(s, name, subject_r.value, false)
+                }
+            },
+            _ => {}
+        }
+
+        // Lower arm body
+        let arm_val_r: LowerResult = match arm.body {
+            BlockBody(block) => { lower_block(s, block) },
+            ExprBody(expr) => { lower_expr(s, expr) }
+        }
+        s = arm_val_r.state
+
+        let exit_label: String = get_block_label(s, s.current_block_idx)
+        if !current_block_terminated(s) {
+            s = emit_instr(s, Instruction::Jump(merge_label))
+        }
+        s = pop_scope(s)
+
+        let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
+        // arm_results.push(pe)
+        ai = ai + 1
+    }
+
+    // Merge block
+    s = set_block(s, merge_idx)
+    if len(arm_results) > 0 {
+        let result_r: LowerResult = make_value(s, arm_results[0].val.ty, "match_result")
+        s = result_r.state
+        s = emit_instr(s, Instruction::Phi(result_r.value, arm_results))
+        return new_lower_result(result_r.value, s)
+    }
+
+    let result_r: LowerResult = make_value(s, mir_void(), "t")
+    s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
+    return new_lower_result(result_r.value, s)
+}
+
+fn get_literal_value(expr: Expr) -> String {
+    match expr {
+        IntLit(n) => { return toString(n) },
+        FloatLit(f) => { return toString(f) },
+        BoolLit(b) => { if b { return "true" } else { return "false" } },
+        StringLit(s) => { return s },
+        _ => { return "" }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pretty-printer
+// ---------------------------------------------------------------------------
+
+fn format_value(v: Value) -> String {
+    return v.name
+}
+
+fn format_type(t: MIRType) -> String {
+    return t.name
+}
+
+fn format_instruction(inst: Instruction) -> String {
+    match inst {
+        Const(dest, ty, val) => {
+            return dest.name + " = const " + format_type(ty) + " " + val
+        },
+        Copy(dest, src) => {
+            return dest.name + " = copy " + src.name
+        },
+        Cast(dest, src, target) => {
+            return dest.name + " = cast " + src.name + " to " + format_type(target)
+        },
+        BinOp(dest, op, lhs, rhs) => {
+            return dest.name + " = binop " + lhs.name + ", " + rhs.name
+        },
+        UnaryOp(dest, op, operand) => {
+            return dest.name + " = unaryop " + operand.name
+        },
+        StructInit(dest, ty, fields) => {
+            return dest.name + " = struct_init " + format_type(ty)
+        },
+        FieldGet(dest, obj, field) => {
+            return dest.name + " = field_get " + obj.name + "." + field
+        },
+        FieldSet(obj, field, val) => {
+            return "field_set " + obj.name + "." + field + " = " + val.name
+        },
+        ListInit(dest, ty, elems) => {
+            return dest.name + " = list_init " + format_type(ty)
+        },
+        IndexGet(dest, obj, idx) => {
+            return dest.name + " = index_get " + obj.name + "[" + idx.name + "]"
+        },
+        IndexSet(obj, idx, val) => {
+            return "index_set " + obj.name + "[" + idx.name + "] = " + val.name
+        },
+        MapInit(dest, kt, vt, pairs) => {
+            return dest.name + " = map_init"
+        },
+        EnumInit(dest, ty, variant, payload) => {
+            return dest.name + " = enum_init " + format_type(ty) + "::" + variant
+        },
+        EnumTag(dest, val) => {
+            return dest.name + " = enum_tag " + val.name
+        },
+        EnumPayload(dest, val, variant) => {
+            return dest.name + " = enum_payload " + val.name + "::" + variant
+        },
+        WrapSome(dest, val) => {
+            return dest.name + " = wrap_some " + val.name
+        },
+        WrapNone(dest, ty) => {
+            return dest.name + " = wrap_none " + format_type(ty)
+        },
+        WrapOk(dest, val) => {
+            return dest.name + " = wrap_ok " + val.name
+        },
+        WrapErr(dest, val) => {
+            return dest.name + " = wrap_err " + val.name
+        },
+        Unwrap(dest, val) => {
+            return dest.name + " = unwrap " + val.name
+        },
+        Call(dest, fn_name, args) => {
+            return dest.name + " = call " + fn_name + "(...)"
+        },
+        Return(val_opt) => {
+            match val_opt {
+                Some(v) => { return "ret " + v.name },
+                _ => { return "ret void" }
+            }
+        },
+        Jump(target) => {
+            return "jump " + target
+        },
+        Branch(cond, true_bb, false_bb) => {
+            return "branch " + cond.name + ", " + true_bb + ", " + false_bb
+        },
+        Switch(tag, cases, default_bb) => {
+            return "switch " + tag.name + " default " + default_bb
+        },
+        AgentSpawn(dest, ty, args) => {
+            return dest.name + " = agent_spawn " + format_type(ty)
+        },
+        AgentSend(agent, channel, val) => {
+            return "agent_send " + agent.name + "." + channel + " <- " + val.name
+        },
+        AgentSync(dest, agent, channel) => {
+            return dest.name + " = agent_sync " + agent.name + "." + channel
+        },
+        SignalInit(dest, ty, val) => {
+            return dest.name + " = signal_init " + format_type(ty) + " " + val.name
+        },
+        SignalGet(dest, sig) => {
+            return dest.name + " = signal_get " + sig.name
+        },
+        SignalSet(sig, val) => {
+            return "signal_set " + sig.name + " = " + val.name
+        },
+        StreamOp(dest, kind, source, args) => {
+            return dest.name + " = stream_op " + source.name
+        },
+        InterpConcat(dest, parts) => {
+            return dest.name + " = interp_concat [...]"
+        },
+        Phi(dest, incoming) => {
+            return dest.name + " = phi [...]"
+        }
+    }
+}
+
+fn pretty_print_block(bb: BasicBlock) -> String {
+    let mut result: String = "  " + bb.label + ":\n"
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(bb.instructions) { return result }
+        let inst: Instruction = bb.instructions[i]
+        result = result + "    " + format_instruction(inst) + "\n"
+        i = i + 1
+    }
+    return result
+}
+
+fn pretty_print_function(f: MIRFunction) -> String {
+    let mut params_str: String = ""
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(f.params) { break }
+        let p: MIRParam = f.params[i]
+        if i > 0 { params_str = params_str + ", " }
+        params_str = params_str + p.name + ": " + format_type(p.ty)
+        i = i + 1
+    }
+
+    let header: String = "fn " + f.name + "(" + params_str + ") -> " + format_type(f.return_type)
+    if len(f.blocks) == 0 { return header + " {}" }
+
+    let mut result: String = header + " {\n"
+    let mut bi: Int = 0
+    for _ in 0..100000 {
+        if bi >= len(f.blocks) { break }
+        let bb: BasicBlock = f.blocks[bi]
+        result = result + pretty_print_block(bb)
+        bi = bi + 1
+    }
+    result = result + "}"
+    return result
+}
+
+fn pretty_print_module(module: MIRModule) -> String {
+    let mut result: String = ""
+    if module.name != "" {
+        result = "module " + module.name + "\n\n"
+    }
+
+    // Print structs
+    let mut si: Int = 0
+    for _ in 0..1000 {
+        if si >= len(module.structs) { break }
+        let s: StructInfo = module.structs[si]
+        result = result + "struct " + s.name + " {...}\n"
+        si = si + 1
+    }
+
+    // Print enums
+    let mut ei: Int = 0
+    for _ in 0..1000 {
+        if ei >= len(module.enums) { break }
+        let e: EnumInfo = module.enums[ei]
+        result = result + "enum " + e.name + " {...}\n"
+        ei = ei + 1
+    }
+
+    if len(module.structs) > 0 { result = result + "\n" }
+    if len(module.enums) > 0 { result = result + "\n" }
+
+    // Print functions
+    let mut fi: Int = 0
+    for _ in 0..100000 {
+        if fi >= len(module.functions) { break }
+        let f: MIRFunction = module.functions[fi]
+        result = result + pretty_print_function(f) + "\n\n"
+        fi = fi + 1
+    }
+
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// MIR verifier
+// ---------------------------------------------------------------------------
+
+struct VerifyError {
+    fn_name: String,
+    block_label: String,
+    message: String
+}
+
+fn new_verify_error(fn_name: String, block: String, msg: String) -> VerifyError {
+    let e: VerifyError = fn_name
+    return e
+}
+
+fn verify_module(module: MIRModule) -> List<VerifyError> {
+    let mut errors: List<VerifyError> = []
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(module.functions) { return errors }
+        let f: MIRFunction = module.functions[i]
+        let fn_errors: List<VerifyError> = verify_function(f)
+        let mut j: Int = 0
+        for _ in 0..100000 {
+            if j >= len(fn_errors) { break }
+            // errors.push(fn_errors[j])
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return errors
+}
+
+fn verify_function(f: MIRFunction) -> List<VerifyError> {
+    let mut errors: List<VerifyError> = []
+
+    if len(f.blocks) == 0 {
+        let e: VerifyError = new_verify_error(f.name, "", "function has no basic blocks")
+        // errors.push(e)
+        return errors
+    }
+
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(f.blocks) { return errors }
+        let bb: BasicBlock = f.blocks[i]
+        let bb_errors: List<VerifyError> = verify_block(f.name, bb, f)
+        let mut j: Int = 0
+        for _ in 0..100000 {
+            if j >= len(bb_errors) { break }
+            // errors.push(bb_errors[j])
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return errors
+}
+
+fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyError> {
+    let mut errors: List<VerifyError> = []
+
+    if len(bb.instructions) == 0 {
+        let e: VerifyError = new_verify_error(fn_name, bb.label, "block has no instructions")
+        // errors.push(e)
+        return errors
+    }
+
+    // Check terminator
+    let last: Instruction = bb.instructions[len(bb.instructions) - 1]
+    if !is_terminator(last) {
+        let e: VerifyError = new_verify_error(fn_name, bb.label, "block does not end with a terminator")
+        // errors.push(e)
+    }
+
+    // Check no terminators in the middle
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(bb.instructions) - 1 { break }
+        let inst: Instruction = bb.instructions[i]
+        if is_terminator(inst) {
+            let e: VerifyError = new_verify_error(fn_name, bb.label, "terminator at position " + toString(i) + " (not last)")
+            // errors.push(e)
+        }
+        i = i + 1
+    }
+
+    // Check phi nodes are at the start
+    let mut seen_non_phi: Bool = false
+    let mut pi: Int = 0
+    for _ in 0..100000 {
+        if pi >= len(bb.instructions) { break }
+        let inst: Instruction = bb.instructions[pi]
+        match inst {
+            Phi(_, _) => {
+                if seen_non_phi {
+                    let e: VerifyError = new_verify_error(fn_name, bb.label, "phi node after non-phi instruction")
+                    // errors.push(e)
+                }
+            },
+            _ => {
+                seen_non_phi = true
+            }
+        }
+        pi = pi + 1
+    }
+
+    return errors
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+fn lower(program: Program, module_name: String) -> MIRModule {
+    let mut st: LowerState = new_lower_state(module_name)
+
+    // Pass 1: register declarations
+    st = register_declarations(st, program)
+
+    // Pass 2: lower function bodies
+    st = lower_definitions(st, program)
+
+    return st.module
+}

@@ -12,6 +12,7 @@ from mapanare.ast_nodes import (
     AgentDef,
     AgentInput,
     AgentOutput,
+    AssertStmt,
     AssignExpr,
     ASTNode,
     BinaryExpr,
@@ -545,6 +546,12 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         items = _filter(children)
         value = items[0] if items else None
         return ReturnStmt(value=value, span=_span_from_children(children))
+
+    def assert_stmt(self, children: list[Any]) -> AssertStmt:
+        items = _filter(children)
+        condition = items[0]
+        message = items[1] if len(items) > 1 else None
+        return AssertStmt(condition=condition, message=message, span=_span_from_children(children))
 
     def for_stmt(self, children: list[Any]) -> ForLoop:
         items = _filter(children)

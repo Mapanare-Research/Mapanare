@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 from mapanare.ast_nodes import (
     AgentDef,
+    AssertStmt,
     AssignExpr,
     ASTNode,
     BinaryExpr,
@@ -981,6 +982,10 @@ class SemanticChecker:
             self._check_while(stmt)
         elif isinstance(stmt, SignalDecl):
             self._check_signal_decl(stmt)
+        elif isinstance(stmt, AssertStmt):
+            self._infer_expr(stmt.condition)
+            if stmt.message is not None:
+                self._infer_expr(stmt.message)
         elif isinstance(stmt, StreamDecl):
             self._check_stream_decl(stmt)
 

@@ -371,6 +371,14 @@ class ReturnStmt(Stmt):
 
 
 @dataclass
+class AssertStmt(Stmt):
+    """Assert statement: `assert expr` or `assert expr, "message"`."""
+
+    condition: Expr = field(default_factory=Expr)
+    message: Expr | None = None
+
+
+@dataclass
 class ForLoop(Stmt):
     """For loop: `for x in items { ... }`."""
 

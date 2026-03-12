@@ -67,12 +67,29 @@ class ModuleResolver:
         """Resolve an import path to a file on disk.
 
         Search order:
+        0. Handle ``self::`` prefix: resolve relative to source_dir directly
         1. <source_dir>/<path>.mn
         2. <source_dir>/<path>/mod.mn
         3. Each search path (stdlib, etc.)
 
         Returns absolute path or None if not found.
         """
+        # Handle `import self::module` — resolve relative to source_dir,
+        # stripping the "self" prefix so `self::ast` resolves to `<dir>/ast.mn`
+        # rather than `<dir>/self/ast.mn`.
+        if import_path and import_path[0] == "self":
+            remaining = import_path[1:]
+            if remaining:
+                rel_self = os.path.join(*remaining) + ".mn"
+                candidate_self = os.path.normpath(os.path.join(source_dir, rel_self))
+                if os.path.isfile(candidate_self):
+                    return os.path.abspath(candidate_self)
+                # Try directory module
+                rel_self_dir = os.path.join(*remaining, "mod.mn")
+                candidate_self_dir = os.path.normpath(os.path.join(source_dir, rel_self_dir))
+                if os.path.isfile(candidate_self_dir):
+                    return os.path.abspath(candidate_self_dir)
+
         rel = os.path.join(*import_path) + ".mn"
         candidate = os.path.normpath(os.path.join(source_dir, rel))
         if os.path.isfile(candidate):

@@ -10,6 +10,8 @@
 
 *Agents. Signals. Streams. Tensors. First-class, not frameworks.*
 
+Built after years of hitting Python's limits in AI-native, concurrent, and tensor-heavy software.
+
 Mapanare compiles to Python (transpiler) and native binaries (LLVM), with a self-hosted compiler in progress.
 
 English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [Português](docs/README.pt.md)
@@ -37,14 +39,34 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 
 ## Why Mapanare?
 
-Every mainstream language treats agents, signals, streams, and tensors as library constructs — one abstraction layer away from the compiler. That means no compile-time data-flow verification, no static tensor shape checking, and no language-level guarantees about message passing.
+Mapanare started with a self-taught teenager in Venezuela building a calculator in ActionScript 2 for math class. Fifteen years later, after ColdFusion, PHP, and especially Python, the case for a new language became unavoidable. Python was the language that stuck the longest, but years of building AI-native, concurrent, and data-heavy systems with it made the cracks impossible to ignore.
 
-Mapanare makes these primitives **part of the language**:
+Agents lived in frameworks. Reactive state lived in conventions. Streams were stitched together with libraries. Tensor mistakes showed up at runtime, sometimes after a long run was already underway. The compiler had no idea what kind of work the program was actually doing.
 
-- **Agents** are as natural as functions — declare, spawn, send, receive, all with dedicated syntax checked by the compiler
+Mapanare exists because those are language problems, not library problems.
+
+A familiar failure in today's stack looks like this:
+
+```python
+# Python / PyTorch
+x = torch.randn(32, 768)
+w = torch.randn(512, 256)
+y = x @ w  # fails at runtime after the job has already started
+```
+
+```mn
+// Mapanare (experimental LLVM tensor backend)
+let x: Tensor<Float>[32, 768] = ...
+let w: Tensor<Float>[512, 256] = ...
+let y = x @ w    // compile error: incompatible tensor shapes
+```
+
+That same idea drives the rest of the language. Mapanare makes these primitives **part of the language**:
+
+- **Agents** are as natural as functions — declare, spawn, send, and sync with dedicated syntax checked by the compiler
 - **Signals** replace callback hell with automatic dependency tracking
 - **Streams** compose with `|>` the way you think about data, with operator fusion built in
-- **Tensors** get compile-time shape validation — shape errors caught before runtime
+- **Tensors** get compile-time shape validation in the experimental LLVM backend
 - **No OOP** — structs, enums, and pattern matching instead of class hierarchies
 
 Read the full [manifesto](docs/manifesto.md).
@@ -441,18 +463,6 @@ Requires Python 3.11+.
 | **v1.0.0** | Stable — language spec frozen, backwards compatibility guarantees | Planned |
 
 See the full [ROADMAP](docs/ROADMAP.md) for details.
-
----
-
-## The Story Behind Mapanare
-
-Mapanare wasn't born from a weekend tutorial or a trending tweet. It comes from 15 years of writing code across more languages and paradigms than most developers will ever touch.
-
-It started at 14, self-taught, building a calculator in ActionScript 2 for math class in Venezuela — no formal training, no English, no Stack Overflow in Spanish. From Flash games inspired by the Flappy Bird era, to ColdFusion, PHP, and eventually Python — each language taught something, and each one eventually showed its limits.
-
-Python was the one that stuck the longest. But after years of building with it, the cracks became impossible to ignore — especially for the kind of AI-native, concurrent, data-heavy work that defines modern software. Mapanare is the answer to a question that's been forming for over a decade: *what would a language look like if it was designed for how we actually build software today?*
-
-This is not another language from someone who learned to code yesterday. It's the product of real experience, real frustration, and a genuine vision for what programming languages should be in the age of AI.
 
 ---
 

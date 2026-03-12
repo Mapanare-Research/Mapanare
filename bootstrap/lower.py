@@ -12,6 +12,7 @@ from typing import Any
 
 from mapanare.ast_nodes import (
     AgentDef,
+    AssertStmt,
     AssignExpr,
     BinaryExpr,
     Block,
@@ -78,6 +79,7 @@ from mapanare.mir import (
     AgentSend,
     AgentSpawn,
     AgentSync,
+    Assert,
     BasicBlock,
     BinOp,
     BinOpKind,
@@ -531,6 +533,9 @@ class MIRLowerer:
         if isinstance(stmt, SignalDecl):
             self._lower_signal_decl(stmt)
             return None
+        if isinstance(stmt, AssertStmt):
+            self._lower_assert(stmt)
+            return None
         if isinstance(stmt, StreamDecl):
             self._lower_stream_decl(stmt)
             return None
@@ -565,6 +570,14 @@ class MIRLowerer:
             self._emit(Return(val=val))
         else:
             self._emit(Return())
+
+    def _lower_assert(self, stmt: AssertStmt) -> None:
+        """Lower an assert statement to an Assert MIR instruction."""
+        cond = self._lower_expr(stmt.condition)
+        msg_val = self._lower_expr(stmt.message) if stmt.message is not None else None
+        line = stmt.span.line if stmt.span else 0
+        filename = self._module.name if self._module else ""
+        self._emit(Assert(cond=cond, message=msg_val, filename=filename, line=line))
 
     def _lower_for(self, loop: ForLoop) -> None:
         """Lower a for loop to basic blocks.

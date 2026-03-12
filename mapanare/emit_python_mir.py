@@ -14,6 +14,7 @@ from mapanare.mir import (
     AgentSend,
     AgentSpawn,
     AgentSync,
+    Assert,
     BasicBlock,
     BinOp,
     BinOpKind,
@@ -440,6 +441,8 @@ class PythonMIREmitter:
 
         self._emit_line("")
         for dec in fn.decorators:
+            if dec == "test":
+                continue  # @test is a Mapanare test marker, not a Python decorator
             self._emit_line(f"@{dec}")
         self._emit_line(f"{prefix} {fn_name}({params}):")
         self._indent += 1
@@ -939,6 +942,20 @@ class PythonMIREmitter:
             dest = self._val(inst.dest)
             parts = "".join(f"{{{self._val(p)}}}" for p in inst.parts)
             self._emit_line(f'{dest} = f"{parts}"')
+
+        elif isinstance(inst, Assert):
+            cond = self._val(inst.cond)
+            if inst.message is not None:
+                msg = self._val(inst.message)
+                self._emit_line(
+                    f"if not ({cond}): raise AssertionError("
+                    f'f"{inst.filename}:{inst.line}: assertion failed: {{{msg}}}")'
+                )
+            else:
+                self._emit_line(
+                    f"if not ({cond}): raise AssertionError("
+                    f'"{inst.filename}:{inst.line}: assertion failed")'
+                )
 
     # ------------------------------------------------------------------
     # Specialized instruction emitters

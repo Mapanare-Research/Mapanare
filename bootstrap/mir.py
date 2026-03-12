@@ -479,6 +479,19 @@ class InterpConcat(Instruction):
     parts: list[Value] = field(default_factory=list)
 
 
+# --- Assert ---
+
+
+@dataclass
+class Assert(Instruction):
+    """Runtime assertion: fails with message if condition is false."""
+
+    cond: Value = field(default_factory=Value)
+    message: Value | None = None
+    filename: str = ""
+    line: int = 0
+
+
 # --- Phi ---
 
 
@@ -768,6 +781,10 @@ def pretty_print_instruction(inst: Instruction) -> str:  # noqa: C901
     if isinstance(inst, InterpConcat):
         parts = ", ".join(v.name for v in inst.parts)
         return f"{inst.dest.name} = interp_concat [{parts}]"
+
+    if isinstance(inst, Assert):
+        msg_str = f", {inst.message.name}" if inst.message else ""
+        return f"assert {inst.cond.name}{msg_str}  ; {inst.filename}:{inst.line}"
 
     if isinstance(inst, Phi):
         incoming = ", ".join(f"{lbl}: {v.name}" for lbl, v in inst.incoming)

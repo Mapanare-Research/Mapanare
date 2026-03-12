@@ -26,6 +26,7 @@ from mapanare.mir import (
     AgentSend,
     AgentSpawn,
     AgentSync,
+    Assert,
     BasicBlock,
     BinOp,
     BinOpKind,
@@ -156,6 +157,10 @@ def _get_uses(inst: Instruction) -> list[Value]:
     elif isinstance(inst, StreamOp):
         uses.append(inst.source)
         uses.extend(inst.args)
+    elif isinstance(inst, Assert):
+        uses.append(inst.cond)
+        if inst.message is not None:
+            uses.append(inst.message)
     else:
         # Generic fallback: look for common value-holding attributes
         for attr in ("src", "val", "signal", "enum_val", "initial_val", "operand"):
