@@ -276,7 +276,9 @@ REQUIRED_RUNTIME_FILES = [
 
 
 @pytest.mark.parametrize("filename", REQUIRED_COMPILER_FILES)
-@pytest.mark.skipif(not COMPILER_DIR.exists(), reason="Bundle not built (run playground/scripts/bundle-compiler.sh)")
+@pytest.mark.skipif(
+    not COMPILER_DIR.exists(), reason="Bundle not built (run playground/scripts/bundle-compiler.sh)"
+)
 def test_compiler_module_bundled(filename: str) -> None:
     """Each required compiler module must exist in public/compiler/."""
     path = COMPILER_DIR / filename
@@ -285,7 +287,9 @@ def test_compiler_module_bundled(filename: str) -> None:
 
 
 @pytest.mark.parametrize("filename", REQUIRED_RUNTIME_FILES)
-@pytest.mark.skipif(not COMPILER_DIR.exists(), reason="Bundle not built (run playground/scripts/bundle-compiler.sh)")
+@pytest.mark.skipif(
+    not COMPILER_DIR.exists(), reason="Bundle not built (run playground/scripts/bundle-compiler.sh)"
+)
 def test_runtime_module_bundled(filename: str) -> None:
     """Each required runtime module must exist in public/compiler/runtime/."""
     path = COMPILER_DIR / "runtime" / filename
