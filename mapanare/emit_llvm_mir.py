@@ -1760,7 +1760,14 @@ class LLVMMIREmitter:
         name = self._val_name(inst.dest)
         obj_type_name = inst.obj.ty.type_info.name
 
-        # If MIR type is UNKNOWN, try to reverse-lookup struct by LLVM type match
+        # Fallback 1: try suffix match for cross-module structs (e.g. "Token" → "lexer__Token")
+        if obj_type_name not in self._struct_fields:
+            for sname in self._struct_fields:
+                if sname.endswith("__" + obj_type_name) or sname == obj_type_name:
+                    obj_type_name = sname
+                    break
+
+        # Fallback 2: reverse-lookup struct by LLVM type identity
         if obj_type_name not in self._struct_fields:
             for sname, stype in self._struct_types.items():
                 if stype == obj.type and sname in self._struct_fields:
@@ -1789,6 +1796,13 @@ class LLVMMIREmitter:
         obj = self._get_value(inst.obj, values)
         val = self._get_value(inst.val, values)
         obj_type_name = inst.obj.ty.type_info.name
+
+        # Suffix match for cross-module structs
+        if obj_type_name not in self._struct_fields:
+            for sname in self._struct_fields:
+                if sname.endswith("__" + obj_type_name) or sname == obj_type_name:
+                    obj_type_name = sname
+                    break
 
         if obj_type_name in self._struct_fields:
             field_names = self._struct_fields[obj_type_name]
@@ -1848,6 +1862,9 @@ class LLVMMIREmitter:
             fn_get = self._rt_list_get()
             list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.lptr")
             builder.store(obj, list_ptr)
+            # Ensure index is i64 (cross-module lowering may resolve as i8*)
+            if index.type != LLVM_INT:
+                index = builder.ptrtoint(index, LLVM_INT, name=f"{name}.idx")
             raw_ptr = builder.call(fn_get, [list_ptr, index], name=f"{name}.raw")
             # Bitcast to element type pointer and load
             elem_ty = self._resolve_mir_type(inst.dest.ty)

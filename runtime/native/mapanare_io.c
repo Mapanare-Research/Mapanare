@@ -45,6 +45,7 @@
   #include <netdb.h>
   #include <fcntl.h>
   #include <dirent.h>
+  #include <dlfcn.h>
 
   typedef int mn_socket_t;
   #define MN_INVALID_SOCKET (-1)
@@ -314,7 +315,6 @@ static int ssl_load_library(void) {
     #define SSL_SYM(name) s_ssl.name = (fn_##name)GetProcAddress(s_ssl.libssl, #name)
     #define CRYPTO_SYM(name) s_ssl.name = (fn_##name)GetProcAddress(s_ssl.libcrypto, #name)
 #else
-    #include <dlfcn.h>
     /* Try common library names */
     s_ssl.libssl = dlopen("libssl.so.3", RTLD_NOW);
     if (!s_ssl.libssl) s_ssl.libssl = dlopen("libssl.so.1.1", RTLD_NOW);
@@ -1303,7 +1303,11 @@ static int pcre2_load(void) {
 
     PCRE2_SYM(compile);
     PCRE2_SYM(code_free);
-    PCRE2_SYM(match_data_create);
+#ifdef _WIN32
+    s_pcre2.match_data_create = (fn_pcre2_match_data_create_from_pattern)GetProcAddress((HMODULE)lib, "pcre2_match_data_create_from_pattern_8");
+#else
+    s_pcre2.match_data_create = (fn_pcre2_match_data_create_from_pattern)dlsym(lib, "pcre2_match_data_create_from_pattern_8");
+#endif
     PCRE2_SYM(match);
     PCRE2_SYM(get_ovector_pointer);
     PCRE2_SYM(get_ovector_count);

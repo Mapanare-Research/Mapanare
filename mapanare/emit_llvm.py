@@ -2394,12 +2394,21 @@ class LLVMEmitter:
 
         obj = self._emit_expr(node.object)
 
-        # Try to find the struct type in our registry
+        # Try to find the struct type in our registry (by type equality, then suffix match)
         for sname, (stype, field_names) in self._struct_defs.items():
             if obj.type == stype:
                 if node.field_name in field_names:
                     idx = field_names.index(node.field_name)
                     return self.builder.extract_value(obj, idx, name=f"{sname}.{node.field_name}")
+
+        # Cross-module fallback: match by field name presence across all structs
+        for sname, (stype, field_names) in self._struct_defs.items():
+            if node.field_name in field_names:
+                idx = field_names.index(node.field_name)
+                try:
+                    return self.builder.extract_value(obj, idx, name=f"{sname}.{node.field_name}")
+                except Exception:
+                    continue
 
         # For MnString, .len is at index 1
         if self._is_string_type(obj):

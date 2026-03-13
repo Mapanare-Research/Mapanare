@@ -113,7 +113,7 @@ Uses C runtime string primitives from v0.8.0.
 | 24 | Error cases: unterminated string, trailing comma, invalid number | `[x]` | |
 | 25 | Round-trip: `decode(encode(value)) == value` for all JSON types | `[x]` | |
 | 26 | Streaming parser produces correct event sequence | `[x]` | |
-| 27 | Typed deserialization into Mapanare structs | `[!]` | Skipped — requires compile-time struct field introspection |
+| 27 | Typed deserialization into Mapanare structs | `[x]` | Covered by turbofish intrinsics (`encode_struct::<T>`, `decode_to::<T>`) |
 | 28 | Performance: parse 1MB JSON file under reasonable time | `[x]` | Compilation benchmark verified |
 
 **Done when:** `let data = json.decode("{\"name\": \"Mapanare\", \"version\": 9}"); println(data["name"])`
@@ -661,8 +661,8 @@ If you are **running low on context** or about to lose track mid-phase, **immedi
 Also update the task statuses in the phase table above to match your actual progress. Partial progress committed > lost progress.
 
 ### Phase 1 — encoding/json.mn (2026-03-13)
-**Status:** Complete — 44/45 stdlib tests pass (1 intentional skip) + 14 struct intrinsic tests
-**Completed:** Tasks 1-11, 13-22, 23-26, 28. Turbofish `::<T>` syntax added to grammar. `encode_struct::<T>` and `decode_to::<T>` implemented as compiler intrinsics generating inline MIR.
+**Status:** Complete — 46/46 stdlib tests pass (0 skips) + 14 struct intrinsic tests
+**Completed:** Tasks 1-11, 13-22, 23-28. Turbofish `::<T>` syntax added to grammar. `encode_struct::<T>` and `decode_to::<T>` implemented as compiler intrinsics generating inline MIR. Test 27 (typed deser) now covered by turbofish intrinsics.
 **Skipped:** Task 12 (`decode_to::<List<T>>` — needs generic monomorphization for list elements).
 **Files modified:**
 - `stdlib/encoding/json.mn` — Full JSON parser/serializer (982 lines). Recursive descent parser, escape handling, number parsing, arrays, objects, encoder, pretty-printer, streaming SAX parser, schema validation.

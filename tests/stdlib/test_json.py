@@ -577,13 +577,35 @@ class TestSchemaValidation:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(
-    reason="Typed deserialization requires compile-time struct introspection (not available yet)"
-)
+@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not installed")
 class TestTypedDeserialization:
-    def test_decode_to_struct(self) -> None:
-        """Typed deserialization into struct — deferred to v1.0+."""
-        pass
+    def test_encode_struct_compiles(self) -> None:
+        """encode_struct::<T> turbofish intrinsic compiles to LLVM IR."""
+        src = _JSON_MN + "\n" + textwrap.dedent("""\
+            struct User { name: String, age: Int }
+            fn main() {
+                let u: User = User("Alice", 30)
+                let json: String = encode_struct::<User>(u)
+                println(json)
+            }
+        """)
+        ir_out = _compile_mir(src)
+        assert "main" in ir_out
+        assert "name" in ir_out
+
+    def test_decode_to_struct_compiles(self) -> None:
+        """decode_to::<T> turbofish intrinsic compiles to LLVM IR."""
+        src = _JSON_MN + "\n" + textwrap.dedent("""\
+            struct Person { name: String, age: Int }
+            fn main() {
+                let entries: Map<String, JsonValue> = #{}
+                let jv: JsonValue = Object(entries)
+                let result: Result<Person, JsonError> = decode_to::<Person>(jv)
+                println("ok")
+            }
+        """)
+        ir_out = _compile_mir(src)
+        assert "main" in ir_out
 
 
 # ---------------------------------------------------------------------------

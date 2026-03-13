@@ -14,6 +14,7 @@ from pathlib import Path
 
 NATIVE_DIR = Path(__file__).parent
 SRC = NATIVE_DIR / "mapanare_io.c"
+CORE_SRC = NATIVE_DIR / "mapanare_core.c"
 
 
 def _lib_name() -> str:
@@ -67,12 +68,13 @@ def _build_msvc(out: Path) -> None:
         raise RuntimeError("Cannot find vcvarsall.bat — install Visual Studio Build Tools")
 
     src = str(SRC).replace("/", "\\")
+    core_src = str(CORE_SRC).replace("/", "\\")
     dll = str(out).replace("/", "\\")
 
     cmd = (
         f'"{vcvars}" x64 && '
         f"cl /nologo /O2 /LD /D_CRT_SECURE_NO_WARNINGS "
-        f'"{src}" /Fe:"{dll}" /link /DLL ws2_32.lib'
+        f'"{core_src}" "{src}" /Fe:"{dll}" /link /DLL ws2_32.lib'
     )
 
     subprocess.run(cmd, shell=True, check=True, cwd=str(NATIVE_DIR))
@@ -93,7 +95,7 @@ def _build_gcc(out: Path) -> None:
     # Link against dl for dlopen/dlsym (needed for OpenSSL dynamic loading)
     libs = ["-ldl"]
 
-    cmd = [cc] + flags + [str(SRC), "-o", str(out)] + libs
+    cmd = [cc] + flags + [str(CORE_SRC), str(SRC), "-o", str(out)] + libs
     subprocess.run(cmd, check=True)
 
 

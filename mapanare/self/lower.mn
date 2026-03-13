@@ -2586,7 +2586,7 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
 // Public API
 // ---------------------------------------------------------------------------
 
-fn lower(program: Program, module_name: String) -> MIRModule {
+pub fn lower(program: Program, module_name: String) -> MIRModule {
     let mut st: LowerState = new_lower_state(module_name)
 
     // Pass 1: register declarations

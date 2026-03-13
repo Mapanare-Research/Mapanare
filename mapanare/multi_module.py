@@ -27,6 +27,8 @@ from mapanare.mir import (
     EnumInit,
     EnumPayload,
     EnumTag,
+    FieldGet,
+    FieldSet,
     Instruction,
     MIRModule,
     MIRType,
@@ -207,6 +209,12 @@ def _rename_instruction(
     elif isinstance(inst, SignalComputed):
         if inst.compute_fn in fn_map:
             inst.compute_fn = fn_map[inst.compute_fn]
+    elif isinstance(inst, FieldGet):
+        _rename_value_type(inst.dest, type_map)
+        _rename_value_type(inst.obj, type_map)
+    elif isinstance(inst, FieldSet):
+        _rename_value_type(inst.obj, type_map)
+        _rename_value_type(inst.val, type_map)
     elif isinstance(inst, AgentSpawn):
         inst.agent_type = _rename_mir_type(inst.agent_type, type_map)
 
