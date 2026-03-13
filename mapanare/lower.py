@@ -88,11 +88,14 @@ from mapanare.mir import (
     Branch,
     Call,
     Cast,
+    ClosureCall,
+    ClosureCreate,
     Const,
     Copy,
     EnumInit,
     EnumPayload,
     EnumTag,
+    EnvLoad,
     FieldGet,
     FieldSet,
     IndexGet,
@@ -112,7 +115,9 @@ from mapanare.mir import (
     Return,
     SignalGet,
     SignalInit,
+    SignalSet,
     SourceSpan,
+    StreamInit,
     StreamOp,
     StreamOpKind,
     StructInit,
@@ -247,6 +252,10 @@ class MIRLowerer:
         self._struct_fields: dict[str, list[str]] = {}
         # Lambda variable mappings: variable name -> lambda function name
         self._lambda_vars: dict[str, str] = {}
+        # Closure variable names: variables bound to closures (lambdas with captures)
+        self._closure_vars: set[str] = set()
+        # Active closure captures: set during lambda lowering so _lower_fn can inject env loads
+        self._pending_captures: list[tuple[str, MIRType]] | None = None
         # Enum info: name → list of variant names
         self._enum_variants: dict[str, list[str]] = {}
         # Decorator metadata for functions
@@ -319,6 +328,115 @@ class MIRLowerer:
         info = self._vars.get(name)
         if info is not None:
             info.current = val
+
+    # -- Free variable analysis --------------------------------------------
+
+    def _analyze_free_vars(
+        self,
+        body: Expr | Block,
+        param_names: set[str],
+    ) -> list[str]:
+        """Collect identifiers in a lambda body that reference enclosing scope variables.
+
+        Returns a deduplicated list of variable names that are free in the body
+        (i.e., not lambda parameters, not builtins, not struct/enum names, and
+        defined in the current scope).
+        """
+        from mapanare.types import BUILTIN_FUNCTIONS
+
+        builtin_names = set(BUILTIN_FUNCTIONS.keys()) | {
+            "println",
+            "print",
+            "len",
+            "str",
+            "int",
+            "float",
+            "Some",
+            "Ok",
+            "Err",
+            "signal",
+            "stream",
+            "computed",
+        }
+        struct_names = set(self._struct_fields.keys())
+        enum_names = set(self._enum_variants.keys())
+        # All enum variant names as well
+        variant_names: set[str] = set()
+        for variants in self._enum_variants.values():
+            variant_names.update(variants)
+
+        refs: list[str] = []
+        seen: set[str] = set()
+
+        def _collect(node: Any) -> None:
+            if node is None:
+                return
+            if isinstance(node, Identifier):
+                name = node.name
+                if (
+                    name not in param_names
+                    and name not in builtin_names
+                    and name not in struct_names
+                    and name not in enum_names
+                    and name not in variant_names
+                    and name not in seen
+                    and self._lookup_var(name) is not None
+                ):
+                    seen.add(name)
+                    refs.append(name)
+                return
+            if isinstance(node, LambdaExpr):
+                # Nested lambda: its params shadow outer vars
+                inner_params = param_names | {p.name for p in node.params}
+                inner_refs: list[str] = []
+                inner_seen: set[str] = set()
+
+                def _collect_inner(n: Any) -> None:
+                    if n is None:
+                        return
+                    if isinstance(n, Identifier):
+                        nm = n.name
+                        if (
+                            nm not in inner_params
+                            and nm not in builtin_names
+                            and nm not in struct_names
+                            and nm not in enum_names
+                            and nm not in variant_names
+                            and nm not in inner_seen
+                            and self._lookup_var(nm) is not None
+                        ):
+                            inner_seen.add(nm)
+                            inner_refs.append(nm)
+                        return
+                    if isinstance(n, LambdaExpr):
+                        return  # Don't recurse into doubly-nested lambdas
+                    for attr_val in (vars(n).values() if hasattr(n, "__dict__") else []):
+                        if isinstance(attr_val, list):
+                            for item in attr_val:
+                                if isinstance(item, ASTNode):
+                                    _collect_inner(item)
+                        elif isinstance(attr_val, ASTNode):
+                            _collect_inner(attr_val)
+
+                _collect_inner(node.body)
+                # Add inner refs to our refs (they're also free in the outer lambda)
+                for r in inner_refs:
+                    if r not in seen:
+                        seen.add(r)
+                        refs.append(r)
+                return
+
+            # Generic AST walk
+            for attr_val in vars(node).values() if hasattr(node, "__dict__") else []:
+                if isinstance(attr_val, list):
+                    for item in attr_val:
+                        if isinstance(item, ASTNode):
+                            _collect(item)
+                elif isinstance(attr_val, ASTNode):
+                    _collect(attr_val)
+
+        _collect(body)
+        return refs
 
     # -- Top-level lowering ------------------------------------------------
 
@@ -474,6 +592,15 @@ class MIRLowerer:
             )
             self._define_var(p.name, param_val)
 
+        # If this is a closure lambda, inject env loads for captured variables
+        if self._pending_captures is not None:
+            env_val = Value(name="%__env_ptr", ty=MIRType(TypeInfo(kind=TypeKind.UNKNOWN)))
+            for idx, (cap_name, cap_type) in enumerate(self._pending_captures):
+                dest = Value(name=f"%{cap_name}", ty=cap_type)
+                self._emit(EnvLoad(dest=dest, env=env_val, index=idx, val_type=cap_type))
+                self._define_var(cap_name, dest)
+            self._pending_captures = None  # consumed
+
         # Lower body
         last_val = self._lower_block(fn_def.body)
 
@@ -590,10 +717,13 @@ class MIRLowerer:
             named = Value(name=f"%{let.name}", ty=val.ty)
             self._emit(Copy(dest=named, src=val))
             self._define_var(let.name, named, mutable=let.mutable)
-            # Record the lambda function name for call resolution
-            # The Const instruction emitted by _lower_lambda has the name
+            # Check if this was a closure (ClosureCreate) or plain lambda (Const)
             for bb in (self._fn.blocks if self._fn else []):
                 for inst in bb.instructions:
+                    if isinstance(inst, ClosureCreate) and inst.dest == val:
+                        self._lambda_vars[let.name] = inst.fn_name
+                        self._closure_vars.add(let.name)
+                        return
                     if isinstance(inst, Const) and inst.dest == val:
                         if isinstance(inst.value, str):
                             self._lambda_vars[let.name] = inst.value
@@ -898,19 +1028,68 @@ class MIRLowerer:
         return dest
 
     def _lower_pipe_binary(self, expr: BinaryExpr) -> Value:
-        """Lower `a |> f` to `Call(f, [a])`."""
+        """Lower `a |> f` to `Call(f, [a])`, with special handling for stream ops."""
         arg = self._lower_expr(expr.left)
+
+        # Check for stream operations via pipe: `x |> stream()`, `x |> filter(fn)`, etc.
+        if isinstance(expr.right, CallExpr) and isinstance(expr.right.callee, Identifier):
+            fn_name = expr.right.callee.name
+
+            # `list |> stream()` → StreamInit
+            if fn_name == "stream" and not expr.right.args:
+                dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.STREAM)))
+                elem_type = arg.ty
+                self._emit(
+                    StreamInit(dest=dest, source=arg, elem_type=MIRType(elem_type.type_info))
+                )
+                return dest
+
+            # Stream operator via pipe: `stream |> filter(fn)`, `stream |> map(fn)`, etc.
+            stream_op = _STREAM_OP_MAP.get(fn_name)
+            if stream_op is not None:
+                extra_args = [self._lower_expr(a) for a in expr.right.args]
+                dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.STREAM)))
+                if stream_op == StreamOpKind.COLLECT:
+                    dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.LIST)))
+                # Resolve lambda function name
+                fn_arg_name = ""
+                if expr.right.args and isinstance(expr.right.args[0], LambdaExpr):
+                    fn_arg_name = extra_args[0].name if extra_args else ""
+                    for var_name, lambda_fn in self._lambda_vars.items():
+                        if var_name == fn_arg_name.lstrip("%"):
+                            fn_arg_name = lambda_fn
+                            break
+                self._emit(
+                    StreamOp(
+                        dest=dest,
+                        op_kind=stream_op,
+                        source=arg,
+                        args=extra_args,
+                        fn_name=fn_arg_name,
+                    )
+                )
+                return dest
+
+            # Regular pipe: `a |> f(b)` → `f(a, b)`
+            extra_args = [self._lower_expr(a) for a in expr.right.args]
+            dest = self._make_value()
+            self._emit(Call(dest=dest, fn_name=fn_name, args=[arg] + extra_args))
+            return dest
+
         # The right side should be a callable
         if isinstance(expr.right, Identifier):
+            # Check for bare stream op names: `x |> collect`
+            stream_op = _STREAM_OP_MAP.get(expr.right.name)
+            if stream_op is not None:
+                dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.STREAM)))
+                if stream_op == StreamOpKind.COLLECT:
+                    dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.LIST)))
+                self._emit(StreamOp(dest=dest, op_kind=stream_op, source=arg, args=[]))
+                return dest
             dest = self._make_value()
             self._emit(Call(dest=dest, fn_name=expr.right.name, args=[arg]))
             return dest
-        if isinstance(expr.right, CallExpr) and isinstance(expr.right.callee, Identifier):
-            # `a |> f(b)` → `f(a, b)`
-            extra_args = [self._lower_expr(a) for a in expr.right.args]
-            dest = self._make_value()
-            self._emit(Call(dest=dest, fn_name=expr.right.callee.name, args=[arg] + extra_args))
-            return dest
+
         # General case
         fn_val = self._lower_expr(expr.right)
         dest = self._make_value()
@@ -957,6 +1136,15 @@ class MIRLowerer:
                 self._emit(WrapErr(dest=dest, val=args[0]))
                 return dest
 
+            # Handle stream() builtin: create stream from list
+            if fn_name == "stream" and len(args) == 1:
+                dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.STREAM)))
+                elem_type = args[0].ty  # inherit element type info from source
+                self._emit(
+                    StreamInit(dest=dest, source=args[0], elem_type=MIRType(elem_type.type_info))
+                )
+                return dest
+
             # Check if this is an enum variant constructor
             for enum_name, variant_names in self._enum_variants.items():
                 if fn_name in variant_names:
@@ -975,6 +1163,13 @@ class MIRLowerer:
                 dest = self._make_value(ty=struct_ty)
                 self._emit(StructInit(dest=dest, struct_type=struct_ty, fields=fields))
                 return dest
+
+            # Check if this is a closure call (lambda with captures)
+            if fn_name in self._closure_vars:
+                closure_val = self._lookup_var(fn_name)
+                if closure_val is not None:
+                    self._emit(ClosureCall(dest=dest, closure=closure_val, args=args))
+                    return dest
 
             # Resolve lambda variable names to actual function names
             resolved_name = self._lambda_vars.get(fn_name, fn_name)
@@ -1002,8 +1197,23 @@ class MIRLowerer:
         # Check if this is a stream operation
         stream_op = _STREAM_OP_MAP.get(expr.method)
         if stream_op is not None:
-            dest = self._make_value()
-            self._emit(StreamOp(dest=dest, op_kind=stream_op, source=obj, args=args))
+            dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.STREAM)))
+            # For collect, the result is a list, not a stream
+            if stream_op == StreamOpKind.COLLECT:
+                dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.LIST)))
+            # Resolve lambda function name from args if the first arg is a lambda
+            fn_name = ""
+            if expr.args and isinstance(expr.args[0], LambdaExpr):
+                # The lambda was lowered and its function name is stored
+                fn_name = args[0].name if args else ""
+                # Look up the actual MIR function name from lambda vars
+                for var_name, lambda_fn in self._lambda_vars.items():
+                    if var_name == fn_name.lstrip("%"):
+                        fn_name = lambda_fn
+                        break
+            self._emit(
+                StreamOp(dest=dest, op_kind=stream_op, source=obj, args=args, fn_name=fn_name)
+            )
             return dest
 
         # Check if this is a signal .value access
@@ -1076,29 +1286,71 @@ class MIRLowerer:
         """Lower a lambda expression.
 
         Creates an anonymous function in the module and returns a reference.
+        If the lambda body references variables from the enclosing scope,
+        a closure is created with an environment struct containing captured values.
         """
         lambda_name = self._fresh_tmp("lambda")
-        # Build a FnDef for the lambda body
         from mapanare.ast_nodes import Block as _Block
         from mapanare.ast_nodes import FnDef as _FnDef
+        from mapanare.ast_nodes import Param as _Param
 
         body_block: Block
         if isinstance(expr.body, Block):
             body_block = expr.body
         else:
-            # Expression body -> wrap in block with implicit return
             body_block = _Block(stmts=[ReturnStmt(value=expr.body)])
+
+        # Analyze free variables in the lambda body
+        param_names = {p.name for p in expr.params}
+        free_vars = self._analyze_free_vars(expr.body, param_names)
+
+        # Collect captured values from current scope
+        captures: list[tuple[str, Value]] = []
+        for var_name in free_vars:
+            var_val = self._lookup_var(var_name)
+            if var_val is not None:
+                captures.append((var_name, var_val))
+
+        if not captures:
+            # No captures — plain function reference (existing behavior)
+            fn_def = _FnDef(
+                name=lambda_name,
+                params=list(expr.params),
+                body=body_block,
+            )
+            self._lower_fn(fn_def)
+            dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.FN)))
+            self._emit(Const(dest=dest, ty=MIRType(TypeInfo(kind=TypeKind.FN)), value=lambda_name))
+            return dest
+
+        # Has captures — create a closure
+        # Add __env_ptr as first parameter
+        env_param = _Param(name="__env_ptr")
+        modified_params = [env_param] + list(expr.params)
 
         fn_def = _FnDef(
             name=lambda_name,
-            params=list(expr.params),
+            params=modified_params,
             body=body_block,
         )
+
+        # Set pending captures so _lower_fn injects EnvLoad instructions
+        capture_info = [(name, val.ty) for name, val in captures]
+        self._pending_captures = capture_info
         self._lower_fn(fn_def)
 
-        # Return a reference to the lambda function
+        # Emit ClosureCreate instruction
+        captured_values = [val for _, val in captures]
+        capture_types = [val.ty for _, val in captures]
         dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.FN)))
-        self._emit(Const(dest=dest, ty=MIRType(TypeInfo(kind=TypeKind.FN)), value=lambda_name))
+        self._emit(
+            ClosureCreate(
+                dest=dest,
+                fn_name=lambda_name,
+                captures=captured_values,
+                capture_types=capture_types,
+            )
+        )
         return dest
 
     def _lower_spawn(self, expr: SpawnExpr) -> Value:
@@ -1231,6 +1483,10 @@ class MIRLowerer:
 
         if isinstance(expr.target, FieldAccessExpr):
             obj = self._lower_expr(expr.target.object)
+            # Signal .value assignment → emit SignalSet for reactivity
+            if expr.target.field_name == "value":
+                self._emit(SignalSet(signal=obj, val=val))
+                return val
             self._emit(FieldSet(obj=obj, field_name=expr.target.field_name, val=val))
             return val
 

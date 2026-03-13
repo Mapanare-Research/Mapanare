@@ -286,6 +286,143 @@ MN_EXPORT uint64_t __mn_hash_str(const void *key);
 MN_EXPORT uint64_t __mn_hash_float(const void *key);
 
 /* -----------------------------------------------------------------------
+ * MnSignal — reactive signal with dependency graph
+ *
+ * Signals hold a typed value and participate in a reactive dependency graph.
+ * When a signal's value changes, all subscribers (dependent computed signals
+ * and callbacks) are automatically notified and recomputed.
+ *
+ * Plain signals: created with __mn_signal_new(), updated with __mn_signal_set().
+ * Computed signals: created with __mn_signal_computed(), auto-recompute on
+ *   dependency change.
+ *
+ * Subscribers are stored as a dynamic array of signal pointers.
+ * Topological propagation prevents glitches (stale reads).
+ * Batching defers propagation until the outermost batch ends.
+ * ----------------------------------------------------------------------- */
+
+/** Opaque signal type — heap-allocated via __mn_signal_new. */
+typedef struct MnSignal MnSignal;
+
+/** Callback function type for signal subscriptions. */
+typedef void (*MnSignalCallback)(void *value, void *user_data);
+
+/** Computed signal function type: returns void, writes result via out_ptr. */
+typedef void (*MnSignalComputeFn)(void *out_ptr, void *user_data);
+
+/** Create a new plain signal with the given initial value.
+ *  val_size is the byte size of the value type. */
+MN_EXPORT MnSignal *__mn_signal_new(const void *initial_value, int64_t val_size);
+
+/** Read the current signal value. Returns pointer to internal value storage.
+ *  If called during a computed signal evaluation, registers a dependency. */
+MN_EXPORT void *__mn_signal_get(MnSignal *signal);
+
+/** Set a plain signal's value. Triggers subscriber notification. */
+MN_EXPORT void __mn_signal_set(MnSignal *signal, const void *value);
+
+/** Create a computed signal that depends on `n_deps` signals.
+ *  The compute_fn is called with (out_ptr, user_data) to produce the value.
+ *  deps is an array of MnSignal* that this computed signal reads. */
+MN_EXPORT MnSignal *__mn_signal_computed(
+    MnSignalComputeFn compute_fn,
+    void *user_data,
+    MnSignal **deps,
+    int64_t n_deps,
+    int64_t val_size
+);
+
+/** Add a dependent signal as a subscriber. When this signal changes,
+ *  the subscriber will be notified (marked dirty and re-evaluated). */
+MN_EXPORT void __mn_signal_subscribe(MnSignal *signal, MnSignal *subscriber);
+
+/** Remove a subscriber from the signal's subscriber list. */
+MN_EXPORT void __mn_signal_unsubscribe(MnSignal *signal, MnSignal *subscriber);
+
+/** Register a callback to be called when the signal value changes.
+ *  The callback receives a pointer to the new value and the user_data. */
+MN_EXPORT void __mn_signal_on_change(MnSignal *signal, MnSignalCallback cb, void *user_data);
+
+/** Begin a batch update. Propagation is deferred until the matching
+ *  __mn_signal_batch_end() call. Batches can be nested. */
+MN_EXPORT void __mn_signal_batch_begin(void);
+
+/** End a batch update. If this is the outermost batch, triggers
+ *  propagation for all signals that changed during the batch. */
+MN_EXPORT void __mn_signal_batch_end(void);
+
+/** Free a signal and its internal storage. */
+MN_EXPORT void __mn_signal_free(MnSignal *signal);
+
+/* -----------------------------------------------------------------------
+ * MnStream — lazy, composable stream (iterator-based)
+ *
+ * Streams are lazy pipelines: operators (map, filter, take, skip) create
+ * new stream nodes that compose without evaluating. Evaluation happens
+ * when a terminal operation (collect, fold, next) pulls elements.
+ *
+ * Each stream node has a `next_fn` that produces the next element:
+ *   - Returns 1 and writes to `out_ptr` if an element is available
+ *   - Returns 0 when the stream is exhausted
+ *
+ * Function pointer types for stream operations:
+ *   MapFn:    void (*)(void *out, const void *in, void *user_data)
+ *   FilterFn: int64_t (*)(const void *elem, void *user_data)
+ *   FoldFn:   void (*)(void *acc, const void *elem, void *user_data)
+ * ----------------------------------------------------------------------- */
+
+/** Opaque stream type — heap-allocated via __mn_stream_* functions. */
+typedef struct MnStream MnStream;
+
+/** Stream next function: returns 1 + writes out_ptr, or 0 when done. */
+typedef int64_t (*MnStreamNextFn)(void *out_ptr, void *state);
+
+/** Map function: transforms an element. */
+typedef void (*MnStreamMapFn)(void *out, const void *in, void *user_data);
+
+/** Filter predicate: returns 1 to keep, 0 to skip. */
+typedef int64_t (*MnStreamFilterFn)(const void *elem, void *user_data);
+
+/** Fold function: accumulates a value. */
+typedef void (*MnStreamFoldFn)(void *acc, const void *elem, void *user_data);
+
+/** Create a stream from a list. elem_size is the byte size of each element. */
+MN_EXPORT MnStream *__mn_stream_from_list(MnList *list, int64_t elem_size);
+
+/** Lazy map: transform each element. out_elem_size is the output element size. */
+MN_EXPORT MnStream *__mn_stream_map(MnStream *source, MnStreamMapFn map_fn,
+                                     void *user_data, int64_t out_elem_size);
+
+/** Lazy filter: keep elements where pred returns 1. */
+MN_EXPORT MnStream *__mn_stream_filter(MnStream *source, MnStreamFilterFn pred_fn,
+                                        void *user_data);
+
+/** Lazy take: yield at most n elements. */
+MN_EXPORT MnStream *__mn_stream_take(MnStream *source, int64_t n);
+
+/** Lazy skip: skip the first n elements. */
+MN_EXPORT MnStream *__mn_stream_skip(MnStream *source, int64_t n);
+
+/** Terminal: collect stream into a new list. */
+MN_EXPORT MnList __mn_stream_collect(MnStream *stream, int64_t elem_size);
+
+/** Terminal: fold stream into a single value.
+ *  init_ptr points to the initial accumulator (copied).
+ *  acc_size is the byte size of the accumulator. */
+MN_EXPORT void __mn_stream_fold(MnStream *stream, void *init_ptr, int64_t acc_size,
+                                 MnStreamFoldFn fold_fn, void *user_data, void *out_ptr);
+
+/** Pull next element. Returns 1 + writes out_ptr, or 0 when done. */
+MN_EXPORT int64_t __mn_stream_next(MnStream *stream, void *out_ptr);
+
+/** Lazy bounded: apply backpressure via bounded buffer of given capacity. */
+MN_EXPORT MnStream *__mn_stream_bounded(MnStream *source, int64_t capacity,
+                                         int64_t elem_size);
+
+/** Free a stream node (does NOT free upstream sources). */
+MN_EXPORT void __mn_stream_free(MnStream *stream);
+
+/* -----------------------------------------------------------------------
  * Process
  * ----------------------------------------------------------------------- */
 

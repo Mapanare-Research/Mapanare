@@ -8,6 +8,8 @@ Phase 6.1: Core runtime integration — string ops, list ops, struct/enum codege
 
 from __future__ import annotations
 
+from typing import Any
+
 from llvmlite import ir
 
 from mapanare.ast_nodes import (
@@ -84,6 +86,9 @@ LLVM_STRING = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
 
 # List: { i8*, i64, i64, i64 } — data, len, cap, elem_size (matches MnList in C runtime)
 LLVM_LIST = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT])
+
+# Closure: { i8*, i8* } — fn_ptr, env_ptr
+LLVM_CLOSURE = ir.LiteralStructType([ir.IntType(8).as_pointer(), ir.IntType(8).as_pointer()])
 
 
 def option_type(inner: ir.Type) -> ir.LiteralStructType:
@@ -1376,11 +1381,26 @@ class LLVMEmitter:
 
         # Resolve the callee
         if isinstance(node.callee, Identifier):
-            if node.callee.name not in self._functions:
-                raise NameError(f"Undefined function: {node.callee.name}")
-            func = self._functions[node.callee.name]
+            name = node.callee.name
+            # Check if this is a closure variable (stored as {fn_ptr, env_ptr} in locals)
+            if name in self._locals and name not in self._functions:
+                closure = self.builder.load(self._locals[name], name=f"{name}.clos")
+                args = [self._emit_expr(a) for a in node.args]
+                return self._call_closure(closure, args)
+            if name not in self._functions:
+                raise NameError(f"Undefined function: {name}")
+            func = self._functions[name]
         else:
             func = self._emit_expr(node.callee)
+            # If the result is a closure struct, call it as a closure
+            if (
+                hasattr(func, "type")
+                and isinstance(func.type, ir.LiteralStructType)
+                and len(func.type.elements) == 2
+                and all(isinstance(e, ir.PointerType) for e in func.type.elements)
+            ):
+                args = [self._emit_expr(a) for a in node.args]
+                return self._call_closure(func, args)
 
         args = [self._emit_expr(a) for a in node.args]
 
@@ -1393,6 +1413,15 @@ class LLVMEmitter:
                     args[i] = self.builder.extract_value(arg, 0, name="str_to_cptr")
 
         return self.builder.call(func, args, name="call")
+
+    def _call_closure(self, closure: ir.Value, args: list[ir.Value]) -> ir.Value:
+        """Call a closure {fn_ptr, env_ptr} with args."""
+        fn_raw = self.builder.extract_value(closure, 0, name="clos.fn")
+        env_ptr = self.builder.extract_value(closure, 1, name="clos.env")
+        arg_types = [a.type for a in args]
+        fn_ty = ir.FunctionType(LLVM_INT, [LLVM_PTR] + arg_types)
+        fn_ptr = self.builder.bitcast(fn_raw, fn_ty.as_pointer(), name="clos.fptr")
+        return self.builder.call(fn_ptr, [env_ptr] + args, name="clos.call")
 
     # -----------------------------------------------------------------------
     # Task 9: |> → inlined LLVM call chain
@@ -2493,8 +2522,7 @@ class LLVMEmitter:
     # -----------------------------------------------------------------------
 
     def _emit_lambda(self, node: LambdaExpr) -> ir.Value:
-        """Emit a lambda as an anonymous function. Returns function pointer."""
-        # Generate unique name
+        """Emit a lambda as an anonymous function. Returns function pointer or closure."""
         lambda_name = self.module.get_unique_name("lambda")
 
         # Build parameter types (default to i64 if no annotation)
@@ -2505,29 +2533,89 @@ class LLVMEmitter:
             else:
                 param_types.append(LLVM_INT)
 
-        # Infer return type from body — default to i64
         ret_type = LLVM_INT
 
-        fn_type = ir.FunctionType(ret_type, param_types)
+        # Analyze free variables in the lambda body
+        param_names = {p.name for p in node.params}
+        captures = self._collect_captures(node.body, param_names)
+
+        if not captures:
+            # No captures — plain function pointer (existing behavior)
+            fn_type = ir.FunctionType(ret_type, param_types)
+            func = ir.Function(self.module, fn_type, name=lambda_name)
+            for i, p in enumerate(node.params):
+                func.args[i].name = p.name
+            self._functions[lambda_name] = func
+
+            old_builder = self._builder
+            old_locals = self._locals.copy()
+            old_mutables = self._mutables.copy()
+
+            block = func.append_basic_block(name="entry")
+            self._builder = ir.IRBuilder(block)
+            self._locals = {}
+            self._mutables = set()
+
+            for i, p in enumerate(node.params):
+                alloca = self.builder.alloca(param_types[i], name=p.name)
+                self.builder.store(func.args[i], alloca)
+                self._locals[p.name] = alloca
+
+            if isinstance(node.body, Block):
+                self._emit_block(node.body)
+            else:
+                val = self._emit_expr(node.body)
+                self.builder.ret(val)
+
+            if not self.builder.block.is_terminated:
+                self.builder.ret(ir.Constant(ret_type, 0))
+
+            self._builder = old_builder
+            self._locals = old_locals
+            self._mutables = old_mutables
+            return func
+
+        # Has captures — create a closure {fn_ptr, env_ptr}
+        # Capture the current LLVM values
+        cap_names = [name for name, _ in captures]
+        cap_vals = [val for _, val in captures]
+        cap_types = [val.type for val in cap_vals]
+        env_struct_ty = ir.LiteralStructType(cap_types)
+
+        # Create the function with env_ptr as first param
+        fn_type = ir.FunctionType(ret_type, [LLVM_PTR] + param_types)
         func = ir.Function(self.module, fn_type, name=lambda_name)
+        func.args[0].name = "__env_ptr"
         for i, p in enumerate(node.params):
-            func.args[i].name = p.name
+            func.args[i + 1].name = p.name
         self._functions[lambda_name] = func
 
-        # Save state
         old_builder = self._builder
         old_locals = self._locals.copy()
         old_mutables = self._mutables.copy()
 
-        # Build lambda body
         block = func.append_basic_block(name="entry")
         self._builder = ir.IRBuilder(block)
         self._locals = {}
         self._mutables = set()
 
+        # Load captured variables from env struct
+        env_typed = self.builder.bitcast(func.args[0], env_struct_ty.as_pointer(), name="env")
+        for i, cap_name in enumerate(cap_names):
+            field_ptr = self.builder.gep(
+                env_typed,
+                [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, i)],
+                name=f"cap.{cap_name}.ptr",
+            )
+            loaded = self.builder.load(field_ptr, name=f"cap.{cap_name}")
+            alloca = self.builder.alloca(cap_types[i], name=cap_name)
+            self.builder.store(loaded, alloca)
+            self._locals[cap_name] = alloca
+
+        # Bind normal parameters
         for i, p in enumerate(node.params):
             alloca = self.builder.alloca(param_types[i], name=p.name)
-            self.builder.store(func.args[i], alloca)
+            self.builder.store(func.args[i + 1], alloca)
             self._locals[p.name] = alloca
 
         if isinstance(node.body, Block):
@@ -2539,12 +2627,91 @@ class LLVMEmitter:
         if not self.builder.block.is_terminated:
             self.builder.ret(ir.Constant(ret_type, 0))
 
-        # Restore state
         self._builder = old_builder
         self._locals = old_locals
         self._mutables = old_mutables
 
+        # Allocate env, store captures, build closure struct
+        alloc_fn = self._get_or_declare_fn("__mn_alloc", LLVM_PTR, [LLVM_INT])
+        env_size = sum(self._type_size(t) for t in cap_types)
+        env_raw = self.builder.call(
+            alloc_fn, [ir.Constant(LLVM_INT, max(env_size, 8))], name="env.alloc"
+        )
+        env_ptr = self.builder.bitcast(env_raw, env_struct_ty.as_pointer(), name="env.ptr")
+        for i, cap_val in enumerate(cap_vals):
+            field_ptr = self.builder.gep(
+                env_ptr,
+                [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, i)],
+                name=f"env.f{i}",
+            )
+            self.builder.store(cap_val, field_ptr)
+
+        fn_ptr = self.builder.bitcast(func, LLVM_PTR, name="fn.ptr")
+        closure = ir.Constant(LLVM_CLOSURE, ir.Undefined)
+        closure = self.builder.insert_value(closure, fn_ptr, 0, name="closure.fn")
+        closure = self.builder.insert_value(closure, env_raw, 1, name="closure")
+        return closure
+
+    def _collect_captures(self, body: Any, param_names: set[str]) -> list[tuple[str, ir.Value]]:
+        """Walk a lambda body AST and collect references to enclosing scope variables."""
+        captures: list[tuple[str, ir.Value]] = []
+        seen: set[str] = set()
+
+        def _walk(node: Any) -> None:
+            if node is None:
+                return
+            if isinstance(node, Identifier):
+                name = node.name
+                if name not in param_names and name not in seen and name in self._locals:
+                    seen.add(name)
+                    val = self.builder.load(self._locals[name], name=f"cap.{name}")
+                    captures.append((name, val))
+                return
+            if isinstance(node, LambdaExpr):
+                # Nested lambda: skip body (nested closures handle own captures)
+                for attr_val in vars(node.body).values() if hasattr(node.body, "__dict__") else []:
+                    if isinstance(attr_val, list):
+                        for item in attr_val:
+                            if hasattr(item, "__dict__"):
+                                _walk(item)
+                    elif hasattr(attr_val, "__dict__"):
+                        _walk(attr_val)
+                return
+            for attr_val in vars(node).values() if hasattr(node, "__dict__") else []:
+                if isinstance(attr_val, list):
+                    for item in attr_val:
+                        if hasattr(item, "__dict__"):
+                            _walk(item)
+                elif hasattr(attr_val, "__dict__"):
+                    _walk(attr_val)
+
+        _walk(body)
+        return captures
+
+    def _get_or_declare_fn(
+        self, name: str, ret_ty: ir.Type, param_types: list[ir.Type]
+    ) -> ir.Function:
+        """Get or declare an external function."""
+        if name in self._functions:
+            return self._functions[name]
+        fn_ty = ir.FunctionType(ret_ty, param_types)
+        func = ir.Function(self.module, fn_ty, name=name)
+        func.linkage = "external"
+        self._functions[name] = func
         return func
+
+    @staticmethod
+    def _type_size(ty: ir.Type) -> int:
+        """Approximate byte size of an LLVM type."""
+        if isinstance(ty, ir.IntType):
+            return int(ty.width) // 8
+        if isinstance(ty, ir.DoubleType):
+            return 8
+        if isinstance(ty, ir.PointerType):
+            return 8
+        if isinstance(ty, ir.LiteralStructType):
+            return sum(LLVMEmitter._type_size(e) for e in ty.elements)
+        return 8
 
     # -----------------------------------------------------------------------
     # Phase 6.1: Extended print support (string-aware)

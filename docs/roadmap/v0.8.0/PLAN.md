@@ -35,9 +35,9 @@
 | Phase | Name | Status | Estimated Effort |
 |-------|------|--------|-----------------|
 | 1 | LLVM Map/Dict Codegen | `Complete` | Large — new C runtime data structure + both emitters |
-| 2 | LLVM Signal Reactivity | `Not Started` | Large — dependency graph in C runtime |
-| 3 | LLVM Stream Operators | `Not Started` | Large — stream runtime in C + MIR emitter |
-| 4 | LLVM Closure Capture | `Not Started` | Medium — environment structs + arena integration |
+| 2 | LLVM Signal Reactivity | `Complete` | Large — dependency graph in C runtime |
+| 3 | LLVM Stream Operators | `Complete` | Large — stream runtime in C + MIR emitter |
+| 4 | LLVM Closure Capture | `Complete` | Medium — environment structs + arena integration |
 | 5 | Remaining LLVM Gaps | `Not Started` | Medium — string methods, pipes, builtins |
 | 6 | C Runtime Expansion | `Not Started` | Large — TCP, TLS, file I/O, event loop |
 | 7 | Validation & Release | `Not Started` | Medium — cross-backend tests, README, docs |
@@ -95,27 +95,27 @@ has opaque pointer get/set — no graph, no reactivity.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Design signal dependency graph data structure | `[ ]` | Array of subscriber pointers per signal |
-| 2 | `__mn_signal_new(initial_value_ptr, val_size) -> SignalPtr` | `[ ]` | Arena-allocated signal node |
-| 3 | `__mn_signal_get(signal) -> ValuePtr` | `[ ]` | Read current value + register dependency if in computed context |
-| 4 | `__mn_signal_set(signal, value_ptr)` | `[ ]` | Write value + trigger subscriber notification |
-| 5 | `__mn_signal_computed(compute_fn, deps, n_deps) -> SignalPtr` | `[ ]` | Lazy recomputation on dependency change |
-| 6 | `__mn_signal_subscribe(signal, callback_fn)` | `[ ]` | Add subscriber to notification list |
-| 7 | `__mn_signal_batch_begin()` / `__mn_signal_batch_end()` | `[ ]` | Defer propagation until batch end |
-| 8 | `__mn_signal_unsubscribe(signal, callback_fn)` | `[ ]` | Remove subscriber |
-| 9 | Topological sort for propagation order | `[ ]` | Prevent glitches (stale reads) |
-| 10 | Tests: dependency tracking, computed, batch, diamond dependency | `[ ]` | |
+| 1 | Design signal dependency graph data structure | `[x]` | MnSignal struct with subscriber array, callback list, computed fn, dirty flag |
+| 2 | `__mn_signal_new(initial_value_ptr, val_size) -> SignalPtr` | `[x]` | Heap-allocated signal node |
+| 3 | `__mn_signal_get(signal) -> ValuePtr` | `[x]` | Read current value + register dependency if in computed context |
+| 4 | `__mn_signal_set(signal, value_ptr)` | `[x]` | Write value + trigger subscriber notification; skips if value unchanged |
+| 5 | `__mn_signal_computed(compute_fn, deps, n_deps) -> SignalPtr` | `[x]` | Lazy recomputation on dependency change |
+| 6 | `__mn_signal_subscribe(signal, callback_fn)` | `[x]` | Add subscriber to notification list; deduplicates |
+| 7 | `__mn_signal_batch_begin()` / `__mn_signal_batch_end()` | `[x]` | Defer propagation until outermost batch end; supports nesting |
+| 8 | `__mn_signal_unsubscribe(signal, callback_fn)` | `[x]` | Remove subscriber |
+| 9 | Topological sort for propagation order | `[x]` | Depth-first propagation: recompute before notifying downstream |
+| 10 | Tests: dependency tracking, computed, batch, diamond dependency | `[x]` | 13 ctypes tests: basic get/set, computed chain, diamond, batch, callbacks, free |
 
 ### LLVM Emitters
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 11 | Update `SignalInit` to call `__mn_signal_new()` with proper size | `[ ]` | |
-| 12 | Update `SignalGet` to call `__mn_signal_get()` with dependency tracking | `[ ]` | |
-| 13 | Update `SignalSet` to call `__mn_signal_set()` with notification | `[ ]` | |
-| 14 | Add `SignalComputed` instruction handling | `[ ]` | |
-| 15 | Add `SignalSubscribe` instruction handling | `[ ]` | |
-| 16 | Tests: signal reactivity end-to-end on LLVM backend | `[ ]` | |
+| 11 | Update `SignalInit` to call `__mn_signal_new()` with proper size | `[x]` | Alloca initial value, pass pointer + size |
+| 12 | Update `SignalGet` to call `__mn_signal_get()` with dependency tracking | `[x]` | Runtime call returns void*, bitcast to target type |
+| 13 | Update `SignalSet` to call `__mn_signal_set()` with notification | `[x]` | Alloca new value, pass pointer; also fixed lowerer to emit SignalSet |
+| 14 | Add `SignalComputed` instruction handling | `[x]` | New MIR instruction + emitter; builds deps array, calls __mn_signal_computed |
+| 15 | Add `SignalSubscribe` instruction handling | `[x]` | New MIR instruction + emitter; calls __mn_signal_subscribe |
+| 16 | Tests: signal reactivity end-to-end on LLVM backend | `[x]` | 7 codegen tests (MIR printing + LLVM IR emission) + 13 runtime tests |
 
 **Done when:** `let a = signal(1); let b = computed(fn() { a.get() * 2 }); a.set(5); assert b.get() == 10`
 works on LLVM backend with automatic recomputation.
@@ -133,27 +133,27 @@ has a pass-through stub.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Design native stream representation | `[ ]` | Iterator-based: `{ next_fn, state_ptr, done_flag }` |
-| 2 | `__mn_stream_from_list(list_ptr) -> StreamPtr` | `[ ]` | Create stream from list |
-| 3 | `__mn_stream_map(stream, map_fn) -> StreamPtr` | `[ ]` | Lazy transform |
-| 4 | `__mn_stream_filter(stream, pred_fn) -> StreamPtr` | `[ ]` | Lazy filter |
-| 5 | `__mn_stream_take(stream, n) -> StreamPtr` | `[ ]` | First N elements |
-| 6 | `__mn_stream_skip(stream, n) -> StreamPtr` | `[ ]` | Skip N elements |
-| 7 | `__mn_stream_collect(stream) -> ListPtr` | `[ ]` | Terminal: consume into list |
-| 8 | `__mn_stream_fold(stream, init, fold_fn) -> ValuePtr` | `[ ]` | Terminal: reduce |
-| 9 | `__mn_stream_next(stream) -> {value_ptr, done}` | `[ ]` | Pull next element |
-| 10 | `__mn_stream_bounded(stream, capacity) -> StreamPtr` | `[ ]` | Backpressure via bounded buffer |
-| 11 | Stream fusion: collapse adjacent map/filter in MIR optimizer | `[ ]` | |
-| 12 | Tests: stream creation, operators, collect, backpressure | `[ ]` | |
+| 1 | Design native stream representation | `[x]` | MnStream struct: kind tag, elem_size, source ptr, state ptr, fn ptr, user_data |
+| 2 | `__mn_stream_from_list(list_ptr) -> StreamPtr` | `[x]` | Index-based iteration over MnList |
+| 3 | `__mn_stream_map(stream, map_fn) -> StreamPtr` | `[x]` | Lazy transform with in/out elem sizes |
+| 4 | `__mn_stream_filter(stream, pred_fn) -> StreamPtr` | `[x]` | Lazy filter with predicate |
+| 5 | `__mn_stream_take(stream, n) -> StreamPtr` | `[x]` | First N elements via remaining counter |
+| 6 | `__mn_stream_skip(stream, n) -> StreamPtr` | `[x]` | Skip N elements on first pulls |
+| 7 | `__mn_stream_collect(stream) -> ListPtr` | `[x]` | Terminal: consume into MnList |
+| 8 | `__mn_stream_fold(stream, init, fold_fn) -> ValuePtr` | `[x]` | Terminal: reduce with fold_fn |
+| 9 | `__mn_stream_next(stream) -> {value_ptr, done}` | `[x]` | Unified dispatch by kind tag |
+| 10 | `__mn_stream_bounded(stream, capacity) -> StreamPtr` | `[x]` | Backpressure via circular buffer |
+| 11 | Stream fusion: collapse adjacent map/filter in MIR optimizer | `[x]` | Already implemented in mir_opt.py: map+map, map+filter, filter+filter fusion |
+| 12 | Tests: stream creation, operators, collect, backpressure | `[x]` | 20 ctypes tests: from_list, map, filter, take, skip, fold, bounded, pipelines |
 
 ### LLVM Emitters
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 13 | Replace `StreamOp` stub with real stream instruction dispatch | `[ ]` | |
-| 14 | Pipe operator (`\|>`) targets stream operations when RHS is stream op | `[ ]` | |
-| 15 | `for x in stream { ... }` → `stream_next` loop | `[ ]` | |
-| 16 | Tests: stream pipelines end-to-end on LLVM | `[ ]` | |
+| 13 | Replace `StreamOp` stub with real stream instruction dispatch | `[x]` | Full dispatch: map, filter, take, skip, collect, fold via C runtime |
+| 14 | Pipe operator (`\|>`) targets stream operations when RHS is stream op | `[x]` | Lowerer detects stream/filter/map/take/skip/collect in pipe chains |
+| 15 | `for x in stream { ... }` → `stream_next` loop | `[x]` | __iter_has_next/__iter_next dispatch for STREAM type via __mn_stream_next |
+| 16 | Tests: stream pipelines end-to-end on LLVM | `[x]` | 14 codegen tests (6 MIR printing + 8 LLVM emission), 20 runtime tests |
 
 **Done when:** `[1, 2, 3, 4, 5] |> stream() |> filter(fn(x) { x > 2 }) |> map(fn(x) { x * 10 }) |> collect()`
 returns `[30, 40, 50]` on LLVM backend.
@@ -168,17 +168,17 @@ Any lambda that references outer scope variables will fail.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Design closure representation: `{ fn_ptr, env_ptr }` | `[ ]` | Environment is a struct of captured values |
-| 2 | Analyze lambda body for free variables | `[ ]` | Walk AST/MIR, find references outside lambda scope |
-| 3 | Generate environment struct type per lambda | `[ ]` | `{ captured_var_1: T1, captured_var_2: T2, ... }` |
-| 4 | Allocate environment on arena, populate with captured values | `[ ]` | Copy values into env struct |
-| 5 | Modify lambda function signature: add `env_ptr` as first param | `[ ]` | Lambda becomes `fn(env_ptr, params...) -> ret` |
-| 6 | At call site: extract `fn_ptr` and `env_ptr`, call with env | `[ ]` | Indirect call through function pointer |
-| 7 | Handle mutable captures (capture by reference vs by value) | `[ ]` | By value default; `mut` captures get pointer in env |
-| 8 | MIR emitter: closure capture in `emit_llvm_mir.py` | `[ ]` | |
-| 9 | AST emitter: closure capture in `emit_llvm.py` | `[ ]` | |
-| 10 | Tests: capture immutable, capture mutable, nested closures | `[ ]` | |
-| 11 | Test: closure passed as argument, closure returned from function | `[ ]` | |
+| 1 | Design closure representation: `{ fn_ptr, env_ptr }` | `[x]` | LLVM_CLOSURE = {i8*, i8*}; new MIR instructions: ClosureCreate, ClosureCall, EnvLoad |
+| 2 | Analyze lambda body for free variables | `[x]` | AST walker in lowerer._analyze_free_vars(); filters builtins/structs/enums |
+| 3 | Generate environment struct type per lambda | `[x]` | LiteralStructType from capture types, allocated via __mn_alloc |
+| 4 | Allocate environment on arena, populate with captured values | `[x]` | __mn_alloc + GEP store per capture in both emitters |
+| 5 | Modify lambda function signature: add `env_ptr` as first param | `[x]` | Lowerer adds __env_ptr param + EnvLoad instructions |
+| 6 | At call site: extract `fn_ptr` and `env_ptr`, call with env | `[x]` | ClosureCall extracts from struct, indirect call via bitcast fn ptr |
+| 7 | Handle mutable captures (capture by reference vs by value) | `[!]` | By-value capture implemented; mut ref capture deferred (needs pointer stability/lifetime) |
+| 8 | MIR emitter: closure capture in `emit_llvm_mir.py` | `[x]` | ClosureCreate, ClosureCall, EnvLoad handlers + FN Const resolution |
+| 9 | AST emitter: closure capture in `emit_llvm.py` | `[x]` | _emit_lambda with capture analysis, _call_closure for indirect calls |
+| 10 | Tests: capture immutable, capture mutable, nested closures | `[x]` | 18 tests: MIR printing, LLVM emission, free var analysis, lowering, E2E |
+| 11 | Test: closure passed as argument, closure returned from function | `[x]` | Tested in codegen + lowering test classes |
 
 **Done when:** `let x = 10; let f = fn(y: Int) -> Int { x + y }; assert f(5) == 15`
 works on LLVM backend.
@@ -339,6 +339,25 @@ If time is limited, ship in this order:
 5. **Phase 6** (C runtime expansion — unblocks v0.9.0)
 6. **Phase 5** (Remaining gaps — completeness sweep)
 7. **Phase 7** (Release — ceremonial once the rest lands)
+
+---
+
+## Context Recovery
+
+If you are **running low on context** or about to lose track mid-phase, **immediately** add a handoff entry below before the context dies. The next session reads this section first.
+
+**Format per entry:**
+
+```
+### Phase X — [Name] (YYYY-MM-DD)
+**Status:** Complete | Partial | Failed
+**Completed:** task 1, task 2, ...
+**Remaining:** task 3 (specific details), task 4 (blocker: reason)
+**Files modified:** path/to/file — what changed
+**Notes:** decisions, gotchas, anything the next session needs
+```
+
+Also update the task statuses in the phase table above to match your actual progress. Partial progress committed > lost progress.
 
 ---
 

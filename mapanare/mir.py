@@ -471,6 +471,33 @@ class SignalSet(Instruction):
 
 
 @dataclass
+class SignalComputed(Instruction):
+    """Create a computed signal with a compute function and dependencies."""
+
+    dest: Value = field(default_factory=Value)
+    compute_fn: str = ""  # Name of the compute function
+    deps: list[Value] = field(default_factory=list)  # Dependency signals
+    val_size: int = 8  # Size of the result value
+
+
+@dataclass
+class SignalSubscribe(Instruction):
+    """Subscribe one signal to another (add as dependent)."""
+
+    signal: Value = field(default_factory=Value)
+    subscriber: Value = field(default_factory=Value)
+
+
+@dataclass
+class StreamInit(Instruction):
+    """Create a stream from a list source."""
+
+    dest: Value = field(default_factory=Value)
+    source: Value = field(default_factory=Value)  # The source list
+    elem_type: MIRType = field(default_factory=mir_unknown)
+
+
+@dataclass
 class StreamOp(Instruction):
     """Stream operation (map, filter, fold, etc.)."""
 
@@ -478,6 +505,43 @@ class StreamOp(Instruction):
     op_kind: StreamOpKind = StreamOpKind.MAP
     source: Value = field(default_factory=Value)
     args: list[Value] = field(default_factory=list)
+    fn_name: str = ""  # Lambda/function name for map/filter/fold callbacks
+
+
+# --- Closures ---
+
+
+@dataclass
+class ClosureCreate(Instruction):
+    """Create a closure: bundle a function pointer with a captured environment.
+
+    The result is a closure value {fn_ptr, env_ptr}. The function's first
+    parameter is the env_ptr (opaque i8*), followed by its normal parameters.
+    """
+
+    dest: Value = field(default_factory=Value)
+    fn_name: str = ""  # Lambda function name (has __env_ptr as first param)
+    captures: list[Value] = field(default_factory=list)  # Captured values
+    capture_types: list[MIRType] = field(default_factory=list)  # Types of captured values
+
+
+@dataclass
+class ClosureCall(Instruction):
+    """Call a closure value (indirect call through fn_ptr with env_ptr)."""
+
+    dest: Value = field(default_factory=Value)
+    closure: Value = field(default_factory=Value)  # The closure {fn_ptr, env_ptr}
+    args: list[Value] = field(default_factory=list)
+
+
+@dataclass
+class EnvLoad(Instruction):
+    """Load a captured variable from a closure environment struct."""
+
+    dest: Value = field(default_factory=Value)
+    env: Value = field(default_factory=Value)  # The env_ptr
+    index: int = 0  # Field index in the environment struct
+    val_type: MIRType = field(default_factory=mir_unknown)
 
 
 # --- Strings ---
@@ -786,12 +850,40 @@ def pretty_print_instruction(inst: Instruction) -> str:  # noqa: C901
     if isinstance(inst, SignalSet):
         return f"signal_set {inst.signal.name} = {inst.val.name}"
 
+    if isinstance(inst, SignalComputed):
+        deps = ", ".join(v.name for v in inst.deps)
+        return f"{inst.dest.name} = signal_computed {inst.compute_fn}([{deps}])"
+
+    if isinstance(inst, SignalSubscribe):
+        return f"signal_subscribe {inst.signal.name} <- {inst.subscriber.name}"
+
+    if isinstance(inst, StreamInit):
+        return (
+            f"{inst.dest.name} = stream_init"
+            f" {inst.source.name} : {_format_type(inst.elem_type)}"
+        )
+
     if isinstance(inst, StreamOp):
         args = ", ".join(v.name for v in inst.args)
         args_str = f", {args}" if args else ""
+        fn_str = f" fn={inst.fn_name}" if inst.fn_name else ""
         return (
             f"{inst.dest.name} = stream_op"
-            f" {inst.op_kind.name.lower()} {inst.source.name}{args_str}"
+            f" {inst.op_kind.name.lower()} {inst.source.name}{args_str}{fn_str}"
+        )
+
+    if isinstance(inst, ClosureCreate):
+        caps = ", ".join(v.name for v in inst.captures)
+        return f"{inst.dest.name} = closure_create {inst.fn_name}([{caps}])"
+
+    if isinstance(inst, ClosureCall):
+        args = ", ".join(v.name for v in inst.args)
+        return f"{inst.dest.name} = closure_call {inst.closure.name}({args})"
+
+    if isinstance(inst, EnvLoad):
+        return (
+            f"{inst.dest.name} = env_load {inst.env.name}[{inst.index}]"
+            f" : {_format_type(inst.val_type)}"
         )
 
     if isinstance(inst, InterpConcat):

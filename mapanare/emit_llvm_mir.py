@@ -33,11 +33,14 @@ from mapanare.mir import (
     Branch,
     Call,
     Cast,
+    ClosureCall,
+    ClosureCreate,
     Const,
     Copy,
     EnumInit,
     EnumPayload,
     EnumTag,
+    EnvLoad,
     ExternCall,
     FieldGet,
     FieldSet,
@@ -53,11 +56,15 @@ from mapanare.mir import (
     MIRType,
     Phi,
     Return,
+    SignalComputed,
     SignalGet,
     SignalInit,
     SignalSet,
+    SignalSubscribe,
     SourceSpan,
+    StreamInit,
     StreamOp,
+    StreamOpKind,
     StructInit,
     Switch,
     UnaryOp,
@@ -96,13 +103,14 @@ LLVM_I32: Any = None
 LLVM_STRING: Any = None
 LLVM_LIST: Any = None
 LLVM_MAP: Any = None
+LLVM_CLOSURE: Any = None  # {i8* fn_ptr, i8* env_ptr}
 
 
 def _init_llvm_types() -> None:
     """Initialize LLVM type constants. Must be called after confirming llvmlite exists."""
     global _llvm_types_initialized
     global LLVM_INT, LLVM_FLOAT, LLVM_BOOL, LLVM_CHAR, LLVM_VOID
-    global LLVM_PTR, LLVM_I32, LLVM_STRING, LLVM_LIST, LLVM_MAP
+    global LLVM_PTR, LLVM_I32, LLVM_STRING, LLVM_LIST, LLVM_MAP, LLVM_CLOSURE
 
     if _llvm_types_initialized:
         return
@@ -117,6 +125,9 @@ def _init_llvm_types() -> None:
     LLVM_STRING = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
     LLVM_LIST = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT])
     LLVM_MAP = ir.IntType(8).as_pointer()  # Opaque pointer to C MnMap struct
+    LLVM_CLOSURE = ir.LiteralStructType(
+        [ir.IntType(8).as_pointer(), ir.IntType(8).as_pointer()]
+    )  # {fn_ptr, env_ptr}
 
     _llvm_types_initialized = True
 
@@ -681,6 +692,73 @@ class LLVMMIREmitter:
     def _rt_free(self) -> Any:
         return self._declare_runtime_fn("__mn_free", LLVM_VOID, [LLVM_PTR])
 
+    # -- Signal runtime functions -----------------------------------------------
+
+    def _rt_signal_new(self) -> Any:
+        return self._declare_runtime_fn("__mn_signal_new", LLVM_PTR, [LLVM_PTR, LLVM_INT])
+
+    def _rt_signal_get(self) -> Any:
+        return self._declare_runtime_fn("__mn_signal_get", LLVM_PTR, [LLVM_PTR])
+
+    def _rt_signal_set(self) -> Any:
+        return self._declare_runtime_fn("__mn_signal_set", LLVM_VOID, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_signal_computed(self) -> Any:
+        return self._declare_runtime_fn(
+            "__mn_signal_computed",
+            LLVM_PTR,
+            [LLVM_PTR, LLVM_PTR, LLVM_PTR, LLVM_INT, LLVM_INT],
+        )
+
+    def _rt_signal_subscribe(self) -> Any:
+        return self._declare_runtime_fn("__mn_signal_subscribe", LLVM_VOID, [LLVM_PTR, LLVM_PTR])
+
+    # -- Stream runtime functions ------------------------------------------------
+
+    def _rt_stream_from_list(self) -> Any:
+        return self._declare_runtime_fn(
+            "__mn_stream_from_list", LLVM_PTR, [LLVM_LIST.as_pointer(), LLVM_INT]
+        )
+
+    def _rt_stream_map(self) -> Any:
+        return self._declare_runtime_fn(
+            "__mn_stream_map", LLVM_PTR, [LLVM_PTR, LLVM_PTR, LLVM_PTR, LLVM_INT]
+        )
+
+    def _rt_stream_filter(self) -> Any:
+        return self._declare_runtime_fn(
+            "__mn_stream_filter", LLVM_PTR, [LLVM_PTR, LLVM_PTR, LLVM_PTR]
+        )
+
+    def _rt_stream_take(self) -> Any:
+        return self._declare_runtime_fn("__mn_stream_take", LLVM_PTR, [LLVM_PTR, LLVM_INT])
+
+    def _rt_stream_skip(self) -> Any:
+        return self._declare_runtime_fn("__mn_stream_skip", LLVM_PTR, [LLVM_PTR, LLVM_INT])
+
+    def _rt_stream_collect(self) -> Any:
+        return self._declare_runtime_fn("__mn_stream_collect", LLVM_LIST, [LLVM_PTR, LLVM_INT])
+
+    def _rt_stream_fold(self) -> Any:
+        return self._declare_runtime_fn(
+            "__mn_stream_fold",
+            LLVM_VOID,
+            [LLVM_PTR, LLVM_PTR, LLVM_INT, LLVM_PTR, LLVM_PTR, LLVM_PTR],
+        )
+
+    def _rt_stream_next(self) -> Any:
+        return self._declare_runtime_fn("__mn_stream_next", LLVM_INT, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_stream_bounded(self) -> Any:
+        return self._declare_runtime_fn(
+            "__mn_stream_bounded", LLVM_PTR, [LLVM_PTR, LLVM_INT, LLVM_INT]
+        )
+
+    def _rt_stream_free(self) -> Any:
+        return self._declare_runtime_fn("__mn_stream_free", LLVM_VOID, [LLVM_PTR])
+
+    # -- Agent runtime functions ------------------------------------------------
+
     def _rt_agent_new(self) -> Any:
         return self._declare_runtime_fn(
             "mapanare_agent_new", LLVM_PTR, [LLVM_PTR, LLVM_PTR, LLVM_PTR, LLVM_I32, LLVM_I32]
@@ -934,8 +1012,20 @@ class LLVMMIREmitter:
             self._emit_signal_get(inst, builder, values)
         elif isinstance(inst, SignalSet):
             self._emit_signal_set(inst, builder, values)
+        elif isinstance(inst, SignalComputed):
+            self._emit_signal_computed(inst, builder, values)
+        elif isinstance(inst, SignalSubscribe):
+            self._emit_signal_subscribe(inst, builder, values)
+        elif isinstance(inst, StreamInit):
+            self._emit_stream_init(inst, builder, values)
         elif isinstance(inst, StreamOp):
             self._emit_stream_op(inst, builder, values)
+        elif isinstance(inst, ClosureCreate):
+            self._emit_closure_create(inst, builder, values)
+        elif isinstance(inst, ClosureCall):
+            self._emit_closure_call(inst, builder, values)
+        elif isinstance(inst, EnvLoad):
+            self._emit_env_load(inst, builder, values)
         elif isinstance(inst, Assert):
             self._emit_assert(inst, builder, values, func)
         elif isinstance(inst, Phi):
@@ -980,6 +1070,13 @@ class LLVMMIREmitter:
         elif kind == TypeKind.STRING:
             text = str(val) if val is not None else ""
             result = self._make_string_constant(builder, text)
+        elif kind == TypeKind.FN and isinstance(val, str):
+            # Function reference — resolve to function pointer (i8*)
+            fn = self._functions.get(val)
+            if fn is not None:
+                result = builder.bitcast(fn, LLVM_PTR)
+            else:
+                result = ir.Constant(LLVM_PTR, None)
         elif kind == TypeKind.VOID:
             # Void constants are not really values; store a dummy
             result = ir.Constant(LLVM_BOOL, 0)
@@ -1328,6 +1425,40 @@ class LLVMMIREmitter:
                 elem_ty = self._resolve_mir_type(inst.dest.ty)
                 typed = builder.bitcast(key_ptr, elem_ty.as_pointer(), name=f"{name}.typed")
                 result = builder.load(typed, name=name)
+            else:
+                result = ir.Constant(LLVM_INT, 0)
+            self._store_value(inst.dest, result, values)
+            return
+
+        # --- Stream iteration via __iter_has_next / __iter_next ---
+        if fn_name == "__iter_has_next" and inst.args and inst.args[0].ty.kind == TypeKind.STREAM:
+            stream_val = args[0]
+            iter_name = f"_stream_iter_{inst.args[0].name}"
+            if f"{iter_name}.out" not in values:
+                # Allocate output buffer for stream_next
+                out_alloca = builder.alloca(LLVM_INT, name=f"{iter_name}.out")
+                values[f"{iter_name}.out"] = out_alloca
+            out_alloca = values[f"{iter_name}.out"]
+            out_ptr = builder.bitcast(out_alloca, LLVM_PTR)
+            result_i64 = builder.call(
+                self._rt_stream_next(), [stream_val, out_ptr], name=f"{name}.i64"
+            )
+            result = builder.trunc(result_i64, LLVM_BOOL, name=name)
+            self._store_value(inst.dest, result, values)
+            return
+
+        if fn_name == "__iter_next" and inst.args and inst.args[0].ty.kind == TypeKind.STREAM:
+            iter_name = f"_stream_iter_{inst.args[0].name}"
+            out_alloca = values.get(f"{iter_name}.out")
+            if out_alloca:
+                elem_ty = self._resolve_mir_type(inst.dest.ty)
+                if isinstance(elem_ty, ir.VoidType):
+                    result = ir.Constant(LLVM_INT, 0)
+                else:
+                    typed_ptr = builder.bitcast(
+                        out_alloca, elem_ty.as_pointer(), name=f"{name}.tptr"
+                    )
+                    result = builder.load(typed_ptr, name=name)
             else:
                 result = ir.Constant(LLVM_INT, 0)
             self._store_value(inst.dest, result, values)
@@ -1881,35 +2012,230 @@ class LLVMMIREmitter:
             result = builder.load(typed_ptr, name=name)
         self._store_value(inst.dest, result, values)
 
-    # --- Signal operations (opaque pointer) ---
+    # --- Signal operations (C runtime) ---
 
     def _emit_signal_init(self, inst: SignalInit, builder: Any, values: dict[str, Any]) -> None:
         name = self._val_name(inst.dest)
         initial = self._get_value(inst.initial_val, values)
-        # Store as an alloca'd pointer (opaque signal representation)
-        fn_alloc = self._rt_alloc()
-        val_size = ir.Constant(LLVM_INT, _approx_type_size(initial.type))
-        ptr = builder.call(fn_alloc, [val_size], name=f"{name}.ptr")
-        typed_ptr = builder.bitcast(ptr, initial.type.as_pointer())
-        builder.store(initial, typed_ptr)
-        self._store_value(inst.dest, ptr, values)
+        val_size = _approx_type_size(initial.type)
+
+        # Alloca the initial value so we can pass a pointer to __mn_signal_new
+        val_alloca = builder.alloca(initial.type, name=f"{name}.init")
+        builder.store(initial, val_alloca)
+        val_ptr = builder.bitcast(val_alloca, LLVM_PTR)
+
+        fn_new = self._rt_signal_new()
+        sig_ptr = builder.call(
+            fn_new,
+            [val_ptr, ir.Constant(LLVM_INT, val_size)],
+            name=f"{name}.sig",
+        )
+        self._store_value(inst.dest, sig_ptr, values)
 
     def _emit_signal_get(self, inst: SignalGet, builder: Any, values: dict[str, Any]) -> None:
         signal = self._get_value(inst.signal, values)
         name = self._val_name(inst.dest)
         target_ty = self._resolve_mir_type(inst.dest.ty)
+
+        fn_get = self._rt_signal_get()
+        raw_ptr = builder.call(fn_get, [signal], name=f"{name}.raw")
+
         if isinstance(target_ty, ir.VoidType):
             result = ir.Constant(LLVM_BOOL, 0)
         else:
-            typed_ptr = builder.bitcast(signal, target_ty.as_pointer(), name=f"{name}.tptr")
+            typed_ptr = builder.bitcast(raw_ptr, target_ty.as_pointer(), name=f"{name}.tptr")
             result = builder.load(typed_ptr, name=name)
         self._store_value(inst.dest, result, values)
 
     def _emit_signal_set(self, inst: SignalSet, builder: Any, values: dict[str, Any]) -> None:
         signal = self._get_value(inst.signal, values)
         val = self._get_value(inst.val, values)
-        typed_ptr = builder.bitcast(signal, val.type.as_pointer())
-        builder.store(val, typed_ptr)
+
+        # Alloca value and pass pointer to __mn_signal_set
+        val_alloca = builder.alloca(val.type, name="sig.set.val")
+        builder.store(val, val_alloca)
+        val_ptr = builder.bitcast(val_alloca, LLVM_PTR)
+
+        fn_set = self._rt_signal_set()
+        builder.call(fn_set, [signal, val_ptr])
+
+    def _emit_signal_computed(
+        self, inst: SignalComputed, builder: Any, values: dict[str, Any]
+    ) -> None:
+        name = self._val_name(inst.dest)
+
+        # Get the compute function pointer
+        compute_fn = self._functions.get(inst.compute_fn)
+        if compute_fn is None:
+            # Try to find it in the module
+            for fn in self.module.functions:
+                if fn.name == inst.compute_fn:
+                    compute_fn = fn
+                    break
+        if compute_fn is not None:
+            fn_ptr = builder.bitcast(compute_fn, LLVM_PTR)
+        else:
+            fn_ptr = ir.Constant(LLVM_PTR, None)
+
+        # Build deps array
+        n_deps = len(inst.deps)
+        if n_deps > 0:
+            deps_array_ty = ir.ArrayType(LLVM_PTR, n_deps)
+            deps_alloca = builder.alloca(deps_array_ty, name=f"{name}.deps")
+            for i, dep_val in enumerate(inst.deps):
+                dep = self._get_value(dep_val, values)
+                gep = builder.gep(
+                    deps_alloca,
+                    [ir.Constant(LLVM_INT, 0), ir.Constant(LLVM_INT, i)],
+                    name=f"{name}.dep.{i}",
+                )
+                builder.store(dep, builder.bitcast(gep, LLVM_PTR.as_pointer()))
+            deps_ptr = builder.bitcast(deps_alloca, LLVM_PTR)
+        else:
+            deps_ptr = ir.Constant(LLVM_PTR, None)
+
+        fn_computed = self._rt_signal_computed()
+        sig_ptr = builder.call(
+            fn_computed,
+            [
+                fn_ptr,
+                ir.Constant(LLVM_PTR, None),  # user_data
+                deps_ptr,
+                ir.Constant(LLVM_INT, n_deps),
+                ir.Constant(LLVM_INT, inst.val_size),
+            ],
+            name=f"{name}.computed",
+        )
+        self._store_value(inst.dest, sig_ptr, values)
+
+    def _emit_signal_subscribe(
+        self, inst: SignalSubscribe, builder: Any, values: dict[str, Any]
+    ) -> None:
+        signal = self._get_value(inst.signal, values)
+        subscriber = self._get_value(inst.subscriber, values)
+        fn_sub = self._rt_signal_subscribe()
+        builder.call(fn_sub, [signal, subscriber])
+
+    # --- Closure operations ---
+
+    def _emit_closure_create(
+        self, inst: ClosureCreate, builder: Any, values: dict[str, Any]
+    ) -> None:
+        """Emit a closure: allocate env struct, store captures, build {fn_ptr, env_ptr}."""
+        name = self._val_name(inst.dest)
+
+        # Build the environment struct type from capture types
+        cap_llvm_types = [self._resolve_mir_type(ct) for ct in inst.capture_types]
+
+        if not cap_llvm_types:
+            # No captures (shouldn't happen but handle gracefully)
+            fn = self._functions.get(inst.fn_name)
+            if fn is None:
+                fn = ir.Constant(LLVM_PTR, None)
+            fn_ptr = builder.bitcast(fn, LLVM_PTR, name=f"{name}.fnptr")
+            env_ptr = ir.Constant(LLVM_PTR, None)
+            closure = ir.Constant(LLVM_CLOSURE, ir.Undefined)
+            closure = builder.insert_value(closure, fn_ptr, 0, name=f"{name}.c0")
+            closure = builder.insert_value(closure, env_ptr, 1, name=name)
+            self._store_value(inst.dest, closure, values)
+            return
+
+        env_struct_ty = ir.LiteralStructType(cap_llvm_types)
+
+        # Allocate environment via __mn_alloc
+        env_size = sum(self._llvm_type_size(t) for t in cap_llvm_types)
+        # Ensure at least 8 bytes and round up to struct size
+        env_size = max(env_size, 8)
+        alloc_fn = self._declare_runtime_fn("__mn_alloc", LLVM_PTR, [LLVM_INT])
+        env_raw = builder.call(alloc_fn, [ir.Constant(LLVM_INT, env_size)], name=f"{name}.env")
+        env_typed = builder.bitcast(env_raw, env_struct_ty.as_pointer(), name=f"{name}.envp")
+
+        # Store each captured value into the environment struct
+        for i, cap_val in enumerate(inst.captures):
+            llvm_val = self._get_value(cap_val, values)
+            # Handle type mismatches (e.g., i64 into ptr-sized slot)
+            expected_ty = cap_llvm_types[i]
+            if llvm_val.type != expected_ty:
+                if isinstance(expected_ty, ir.PointerType):
+                    llvm_val = builder.inttoptr(llvm_val, expected_ty)
+                elif isinstance(llvm_val.type, ir.PointerType):
+                    llvm_val = builder.ptrtoint(llvm_val, expected_ty)
+                else:
+                    llvm_val = builder.bitcast(llvm_val, expected_ty)
+            field_ptr = builder.gep(
+                env_typed,
+                [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, i)],
+                name=f"{name}.f{i}",
+            )
+            builder.store(llvm_val, field_ptr)
+
+        # Build the closure struct {fn_ptr, env_ptr}
+        fn = self._functions.get(inst.fn_name)
+        if fn is not None:
+            fn_ptr = builder.bitcast(fn, LLVM_PTR, name=f"{name}.fnptr")
+        else:
+            fn_ptr = ir.Constant(LLVM_PTR, None)
+
+        closure = ir.Constant(LLVM_CLOSURE, ir.Undefined)
+        closure = builder.insert_value(closure, fn_ptr, 0, name=f"{name}.c0")
+        closure = builder.insert_value(closure, env_raw, 1, name=name)
+        self._store_value(inst.dest, closure, values)
+
+    def _emit_closure_call(self, inst: ClosureCall, builder: Any, values: dict[str, Any]) -> None:
+        """Emit an indirect call through a closure {fn_ptr, env_ptr}."""
+        name = self._val_name(inst.dest)
+        closure = self._get_value(inst.closure, values)
+        args = [self._get_value(a, values) for a in inst.args]
+
+        # Extract fn_ptr and env_ptr from closure struct
+        fn_raw = builder.extract_value(closure, 0, name=f"{name}.fn")
+        env_ptr = builder.extract_value(closure, 1, name=f"{name}.env")
+
+        # Build function type: ret_type(i8*, arg_types...)
+        arg_types = [a.type for a in args]
+        ret_type = self._resolve_mir_type(inst.dest.ty)
+        if isinstance(ret_type, ir.VoidType):
+            ret_type = LLVM_INT  # closures return at least i64
+
+        fn_ty = ir.FunctionType(ret_type, [LLVM_PTR] + arg_types)
+        fn_ptr = builder.bitcast(fn_raw, fn_ty.as_pointer(), name=f"{name}.fptr")
+
+        # Call with env_ptr as first arg
+        result = builder.call(fn_ptr, [env_ptr] + args, name=name)
+        self._store_value(inst.dest, result, values)
+
+    def _emit_env_load(self, inst: EnvLoad, builder: Any, values: dict[str, Any]) -> None:
+        """Load a captured variable from a closure environment struct.
+
+        The env is an i8*. We bitcast it to a struct pointer with the right
+        field type at the right index and load.
+        """
+        name = self._val_name(inst.dest)
+        env_raw = self._get_value(inst.env, values)
+        field_ty = self._resolve_mir_type(inst.val_type)
+
+        # Build a struct type with fields up to and including the target index.
+        # We use a placeholder approach: put field_ty at the target offset.
+        # For simplicity, build a struct of N+1 fields all sized i64 (8 bytes),
+        # with the target field being the actual type.
+        # This works because our captures are all 8-byte-aligned scalars or pointers.
+        placeholder_fields: list[Any] = []
+        for i in range(inst.index + 1):
+            if i == inst.index:
+                placeholder_fields.append(field_ty)
+            else:
+                # Use i64 as 8-byte placeholder (matches alignment)
+                placeholder_fields.append(LLVM_INT)
+        env_struct_ty = ir.LiteralStructType(placeholder_fields)
+
+        env_typed = builder.bitcast(env_raw, env_struct_ty.as_pointer(), name=f"{name}.envp")
+        field_ptr = builder.gep(
+            env_typed,
+            [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, inst.index)],
+            name=f"{name}.ptr",
+        )
+        result = builder.load(field_ptr, name=name)
+        self._store_value(inst.dest, result, values)
 
     # --- Stream operations (runtime calls) ---
 
@@ -1941,11 +2267,122 @@ class LLVMMIREmitter:
         # Continue in pass block
         builder.position_at_end(pass_bb)
 
-    def _emit_stream_op(self, inst: StreamOp, builder: Any, values: dict[str, Any]) -> None:
-        # Stream operations are not directly supported in the LLVM backend;
-        # emit as an opaque pointer pass-through for now
+    def _emit_stream_init(self, inst: StreamInit, builder: Any, values: dict[str, Any]) -> None:
+        """Emit stream creation from a list source."""
+        name = self._val_name(inst.dest)
         source = self._get_value(inst.source, values)
-        self._store_value(inst.dest, source, values)
+
+        # Determine element size from the list's elem_size field
+        elem_size = 8  # default to i64 (8 bytes)
+        if inst.elem_type.kind == TypeKind.LIST:
+            # Extract elem_size from the list type info
+            inner = inst.elem_type.type_info
+            if inner and inner.args:
+                inner_ty = self._resolve_mir_type(MIRType(inner.args[0]))
+                elem_size = _approx_type_size(inner_ty)
+
+        # Store list in alloca so we can pass a pointer
+        list_alloca = builder.alloca(LLVM_LIST, name=f"{name}.lptr")
+        builder.store(source, list_alloca)
+
+        fn = self._rt_stream_from_list()
+        stream_ptr = builder.call(fn, [list_alloca, ir.Constant(LLVM_INT, elem_size)], name=name)
+        self._store_value(inst.dest, stream_ptr, values)
+
+    def _emit_stream_op(self, inst: StreamOp, builder: Any, values: dict[str, Any]) -> None:
+        """Emit stream operations as calls to C runtime."""
+        name = self._val_name(inst.dest)
+        source = self._get_value(inst.source, values)
+        null_ptr = ir.Constant(LLVM_PTR, None)
+
+        if inst.op_kind == StreamOpKind.MAP:
+            # Get function pointer for the map callback
+            fn_ptr = self._get_stream_fn_ptr(inst, builder, values)
+            result = builder.call(
+                self._rt_stream_map(),
+                [source, fn_ptr, null_ptr, ir.Constant(LLVM_INT, 8)],
+                name=name,
+            )
+            self._store_value(inst.dest, result, values)
+
+        elif inst.op_kind == StreamOpKind.FILTER:
+            fn_ptr = self._get_stream_fn_ptr(inst, builder, values)
+            result = builder.call(
+                self._rt_stream_filter(),
+                [source, fn_ptr, null_ptr],
+                name=name,
+            )
+            self._store_value(inst.dest, result, values)
+
+        elif inst.op_kind == StreamOpKind.TAKE:
+            n = self._get_value(inst.args[0], values) if inst.args else ir.Constant(LLVM_INT, 0)
+            result = builder.call(self._rt_stream_take(), [source, n], name=name)
+            self._store_value(inst.dest, result, values)
+
+        elif inst.op_kind == StreamOpKind.SKIP:
+            n = self._get_value(inst.args[0], values) if inst.args else ir.Constant(LLVM_INT, 0)
+            result = builder.call(self._rt_stream_skip(), [source, n], name=name)
+            self._store_value(inst.dest, result, values)
+
+        elif inst.op_kind == StreamOpKind.COLLECT:
+            result = builder.call(
+                self._rt_stream_collect(),
+                [source, ir.Constant(LLVM_INT, 8)],
+                name=name,
+            )
+            self._store_value(inst.dest, result, values)
+
+        elif inst.op_kind == StreamOpKind.FOLD:
+            # fold(init, fn) → __mn_stream_fold(stream, &init, size, fn, user_data, &out)
+            if len(inst.args) >= 2:
+                init_val = self._get_value(inst.args[0], values)
+                fn_ptr = self._get_stream_fn_ptr(inst, builder, values, fn_arg_idx=1)
+                init_alloca = builder.alloca(init_val.type, name=f"{name}.init")
+                builder.store(init_val, init_alloca)
+                init_ptr = builder.bitcast(init_alloca, LLVM_PTR)
+                out_alloca = builder.alloca(init_val.type, name=f"{name}.out")
+                out_ptr = builder.bitcast(out_alloca, LLVM_PTR)
+                acc_size = _approx_type_size(init_val.type)
+                builder.call(
+                    self._rt_stream_fold(),
+                    [source, init_ptr, ir.Constant(LLVM_INT, acc_size), fn_ptr, null_ptr, out_ptr],
+                )
+                result = builder.load(out_alloca, name=name)
+            else:
+                result = ir.Constant(LLVM_INT, 0)
+            self._store_value(inst.dest, result, values)
+
+        else:
+            # Fallback: pass through
+            self._store_value(inst.dest, source, values)
+
+    def _get_stream_fn_ptr(
+        self, inst: StreamOp, builder: Any, values: dict[str, Any], fn_arg_idx: int = 0
+    ) -> Any:
+        """Get a function pointer (bitcast to i8*) for stream map/filter/fold callbacks."""
+        # Try to resolve from the fn_name field
+        if inst.fn_name:
+            fn = self._functions.get(inst.fn_name)
+            if fn is None:
+                for f in self.module.functions:
+                    if f.name == inst.fn_name:
+                        fn = f
+                        break
+            if fn is not None:
+                return builder.bitcast(fn, LLVM_PTR)
+
+        # Try to resolve from args (function pointer value)
+        if inst.args and fn_arg_idx < len(inst.args):
+            val = self._get_value(inst.args[fn_arg_idx], values)
+            if hasattr(val.type, "pointee"):
+                return builder.bitcast(val, LLVM_PTR)
+            # It might be a function reference by name
+            fn_name = inst.args[fn_arg_idx].name.lstrip("%")
+            fn = self._functions.get(fn_name)
+            if fn is not None:
+                return builder.bitcast(fn, LLVM_PTR)
+
+        return ir.Constant(LLVM_PTR, None)
 
 
 # ---------------------------------------------------------------------------
