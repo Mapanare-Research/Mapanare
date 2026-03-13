@@ -1,6 +1,6 @@
 # Mapanare Language Specification
 
-**Version:** 0.7.0
+**Version:** 0.8.0
 **Status:** Skeleton / Working Draft
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. It compiles via Python transpilation first, then LLVM native.
@@ -1042,8 +1042,9 @@ MIR is a typed, SSA-based intermediate representation that sits between the AST 
 | **Calls** | `Call`, `CallBuiltin`, `CallMethod` |
 | **Types** | `StructInit`, `EnumInit`, `EnumTag`, `Cast` |
 | **Agents** | `AgentSpawn`, `AgentSend`, `AgentSync` |
-| **Signals** | `SignalInit`, `SignalGet`, `SignalSet` |
-| **Streams** | `StreamOp` |
+| **Signals** | `SignalInit`, `SignalGet`, `SignalSet`, `SignalComputed`, `SignalSubscribe` |
+| **Streams** | `StreamOp` (map, filter, take, skip, collect, fold) |
+| **Closures** | `ClosureCreate`, `ClosureCall`, `EnvLoad` |
 | **Strings** | `InterpConcat` |
 
 **MIR optimizer passes (applied at -O1 and above):**
@@ -1074,7 +1075,7 @@ The LLVM emitter translates MIR to LLVM IR, producing native machine code. This 
 - Ahead-of-time compilation for deployment.
 - Cross-compilation to Linux x64, macOS ARM64, Windows x64.
 
-Note: Signals and streams are not yet supported in the LLVM backend.
+As of v0.8.0, all core features (maps, signals with reactivity, streams with operators, closures with capture) are fully supported on the LLVM backend.
 
 ---
 

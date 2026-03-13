@@ -7,12 +7,14 @@
 
 ---
 
-## Where We Are (v0.7.0)
+## Where We Are (v0.8.0)
 
 Mapanare is real, compiled, and tested. The compiler is self-hosted (7 modules, 8,288+ lines
 of Mapanare), ships with a MIR-based pipeline, dual backends (Python transpiler + LLVM native),
 a built-in test runner, agent observability (tracing + metrics), DWARF debug info, and
-deployment infrastructure. **2,983 tests pass** across the full pipeline.
+deployment infrastructure. **Every core feature now works on both backends.** The C runtime
+has been expanded with TCP sockets, TLS, file I/O, and an event loop — ready for v0.9.0
+native stdlib. **3,020 tests pass** across the full pipeline.
 
 ### What works today
 
@@ -43,27 +45,27 @@ deployment infrastructure. **2,983 tests pass** across the full pipeline.
 - **Binary distribution** — PyInstaller builds, install scripts (Unix + Windows), GitHub Releases CI
 - **Getting Started guide** — 12-section tutorial from install to streams
 
-### LLVM Backend Feature Status (Honest)
+### LLVM Backend Feature Status
 
 | Feature | Python Backend | LLVM Backend | Notes |
 |---------|:-:|:-:|--------|
-| Functions, closures, lambdas | Yes | Partial | LLVM has no closure capture |
+| Functions, closures, lambdas | Yes | Yes | Full closure capture via environment structs |
 | Structs, enums, pattern matching | Yes | Yes | Full tagged union + switch |
 | `if`/`else`, `for..in`, `while` | Yes | Yes | |
 | Type inference, generics | Yes | Yes | |
-| `Result`/`Option` + `?` operator | Yes | Yes | |
+| `Result`/`Option` | Yes | Yes | |
 | `print`/`println`, `str`/`int`/`float`/`len` | Yes | Yes | |
 | Lists: literals, indexing, `push`/`pop`/`length` | Yes | Yes | |
-| String methods | Yes | Partial | 7 of ~12 methods |
-| Dictionaries/Maps | Yes | **No** | Raises NotImplementedError |
+| String methods | Yes | Yes | All methods: length, find, substring, contains, split, trim, replace, to_upper, to_lower |
+| Dictionaries/Maps | Yes | Yes | Robin Hood hash table in C runtime |
 | Traits (`trait`, `impl Trait for Type`) | Yes | Yes | |
 | Module imports (`import`, `pub`, multi-file) | Yes | Yes | |
 | Agents (spawn, channels, sync) | Yes | Yes | Full lifecycle |
-| Signals (reactive state) | Yes | Basic | Get/set only, no reactivity graph |
-| Streams + `\|>` pipe operator | Yes | **No** | Stub in MIR emitter |
-| Pipes (multi-agent composition) | Yes | No | |
+| Signals (reactive state) | Yes | Yes | Full reactivity: computed, subscribers, batched updates |
+| Streams + `\|>` pipe operator | Yes | Yes | map, filter, take, skip, collect, fold, backpressure |
+| Pipes (multi-agent composition) | Yes | Yes | Agent spawn chain compilation |
 | Tensors | No | No | Experimental only, no language integration |
-| Standard library modules | Partial | **No** | Python .py files only |
+| Standard library modules | Partial | No | Python .py files only (native in v0.9.0) |
 
 ### Performance (LLVM native vs Python)
 
@@ -88,6 +90,7 @@ deployment infrastructure. **2,983 tests pass** across the full pipeline.
 | **v0.5.0** ✅ | The Ecosystem | String interpolation, linter, Python interop, WASM playground, package registry, doc generator, language reference, cookbook, 2,200+ tests |
 | **v0.6.0** ✅ | Compiler Infrastructure | MIR pipeline (SSA IR, lowering, optimizer, dual emitters), bootstrap frozen at v0.6.0, self-hosted semantic checker, 2,500+ tests |
 | **v0.7.0** ✅ | Self-Standing | Self-hosted MIR lowering (lower.mn), built-in test runner, agent observability (tracing + metrics), DWARF debug info, deployment infrastructure, 2,983 tests |
+| **v0.8.0** ✅ | Native Parity | LLVM backend parity (maps, signals, streams, closures), complete string methods, pipe definitions, C runtime expansion (TCP, TLS, file I/O, event loop), 3,020 tests |
 
 ---
 
@@ -200,7 +203,7 @@ deployment infrastructure. **2,983 tests pass** across the full pipeline.
 
 ---
 
-### v0.8.0 — "Native Parity"
+### v0.8.0 — "Native Parity" ✅
 
 > Every core feature works on both backends. The LLVM backend is no longer a second-class citizen.
 > See [`PLAN-v0.8.0.md`](v0.8.0/PLAN.md) for the detailed execution plan.

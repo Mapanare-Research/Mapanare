@@ -42,7 +42,18 @@ async def _bench_single_agent(n_messages: int) -> BenchmarkResult:
             except asyncio.TimeoutError:
                 continue
 
+    async def drain() -> None:
+        """Drain the outbox to prevent backpressure deadlock."""
+        drained = 0
+        while drained < n_messages:
+            try:
+                await asyncio.wait_for(outbox.receive(), timeout=0.1)
+                drained += 1
+            except asyncio.TimeoutError:
+                continue
+
     task = asyncio.create_task(agent_loop())
+    drain_task = asyncio.create_task(drain())
 
     start = time.perf_counter()
     for i in range(n_messages):
@@ -52,8 +63,13 @@ async def _bench_single_agent(n_messages: int) -> BenchmarkResult:
     elapsed = time.perf_counter() - start
 
     task.cancel()
+    drain_task.cancel()
     try:
         await task
+    except (asyncio.CancelledError, Exception):
+        pass
+    try:
+        await drain_task
     except (asyncio.CancelledError, Exception):
         pass
 
@@ -87,7 +103,18 @@ async def _bench_agent_chain(n_messages: int, chain_length: int) -> BenchmarkRes
             except asyncio.TimeoutError:
                 continue
 
+    async def drain_sink() -> None:
+        """Drain the final channel to prevent backpressure deadlock."""
+        drained = 0
+        while drained < n_messages:
+            try:
+                await asyncio.wait_for(channels[chain_length].receive(), timeout=0.1)
+                drained += 1
+            except asyncio.TimeoutError:
+                continue
+
     tasks = [asyncio.create_task(relay(i)) for i in range(chain_length)]
+    drain_task = asyncio.create_task(drain_sink())
 
     start = time.perf_counter()
     for i in range(n_messages):
@@ -96,9 +123,10 @@ async def _bench_agent_chain(n_messages: int, chain_length: int) -> BenchmarkRes
         await asyncio.sleep(0.001)
     elapsed = time.perf_counter() - start
 
+    drain_task.cancel()
     for t in tasks:
         t.cancel()
-    await asyncio.gather(*tasks, return_exceptions=True)
+    await asyncio.gather(*tasks, drain_task, return_exceptions=True)
 
     total_hops = n_messages * chain_length
     return BenchmarkResult(

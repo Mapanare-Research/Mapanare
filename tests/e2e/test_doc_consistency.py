@@ -291,12 +291,12 @@ class TestNoStaleAspirations:
                 assert "Complete" in line, "Phase 2 should show Complete"
                 break
 
-    def test_readme_gpu_section_labeled_planned(self) -> None:
-        """README GPU & Tensors section is labeled as planned/future."""
+    def test_readme_gpu_section_labeled_experimental(self) -> None:
+        """README GPU & Tensors section is labeled as experimental."""
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         for line in readme.splitlines():
             if "GPU & Tensors" in line:
-                assert "Planned" in line or "v0.5.0" in line
+                assert "Experimental" in line or "Planned" in line
                 break
 
     def test_spec_grammar_includes_traits(self) -> None:

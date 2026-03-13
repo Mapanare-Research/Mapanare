@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-03-13
+
+### Added
+
+- **LLVM Map/Dict codegen**: Robin Hood hash table in C runtime (`__mn_map_new`, `__mn_map_set`, `__mn_map_get`, `__mn_map_del`, `__mn_map_iter`, `__mn_map_contains`); both AST and MIR emitters; map literals, indexing, assignment, iteration all work natively
+- **LLVM signal reactivity**: Full dependency graph in C runtime — computed signals with lazy recomputation, subscriber notification, batched updates (`__mn_signal_computed`, `__mn_signal_subscribe`, `__mn_signal_batch_begin/end`), topological propagation order
+- **LLVM stream operators**: Native stream runtime with `__mn_stream_from_list`, `__mn_stream_map`, `__mn_stream_filter`, `__mn_stream_take`, `__mn_stream_skip`, `__mn_stream_collect`, `__mn_stream_fold`, `__mn_stream_bounded` (backpressure); pipe operator (`|>`) targets stream operations; `for x in stream` iteration
+- **LLVM closure capture**: Environment struct generation per lambda, free variable analysis, arena-allocated closure environments (`{fn_ptr, env_ptr}`), `ClosureCreate`/`ClosureCall`/`EnvLoad` MIR instructions; both AST and MIR emitters
+- **Complete string methods on LLVM**: `contains`, `split`, `trim`, `trim_start`, `trim_end`, `to_upper`, `to_lower`, `replace` — all via C runtime functions + both emitters
+- **Pipe definitions on LLVM**: `pipe Name { A |> B |> C }` compiles to agent spawn chains in both emitters
+- **C runtime TCP sockets**: `__mn_tcp_connect`, `__mn_tcp_listen`, `__mn_tcp_accept`, `__mn_tcp_send`, `__mn_tcp_recv`, `__mn_tcp_close`, `__mn_tcp_set_timeout`; cross-platform (POSIX + Winsock2)
+- **C runtime TLS**: `__mn_tls_init`, `__mn_tls_connect`, `__mn_tls_read`, `__mn_tls_write`, `__mn_tls_close`; dynamic OpenSSL loading via dlopen/LoadLibrary, SNI support
+- **C runtime file I/O**: `__mn_file_open`, `__mn_file_read_fd`, `__mn_file_write_fd`, `__mn_file_close`, `__mn_file_stat`, `__mn_dir_list`
+- **C runtime event loop**: `__mn_event_loop_new`, `__mn_event_loop_add_fd`, `__mn_event_loop_remove_fd`, `__mn_event_loop_run`, `__mn_event_loop_run_once`; epoll (Linux), kqueue (macOS), select fallback (Windows)
+- Stream fusion in MIR optimizer: map+map, map+filter, filter+filter fusion passes
+- 37 new map tests (codegen + runtime), 26 signal tests, 34 stream tests, 18 closure tests, TCP/TLS/file I/O/event loop tests
+
+### Changed
+
+- README feature status table updated to reflect full LLVM backend parity — all core features now Yes/Yes
+- REPL removed from CLI listing and feature table (never fully implemented)
+- Tensor/GPU section rewritten honestly — experimental prototypes only, no language integration
+- SPEC.md updated with closure semantics, map codegen on LLVM, signal/stream LLVM status
+- ROADMAP.md updated with v0.8.0 release entry and feature status
+- 3,020 tests passing (up from 2,983 in v0.7.0)
+
+### Fixed
+
+- MIR emitter `EnumTag` for non-enum types in nested pattern matching
+- DCE not tracking `InterpString` references (string interpolation on LLVM)
+- `while` loop `break`/`continue` on LLVM backend
+
 ## [0.7.0] - 2026-03-12
 
 ### Added
@@ -215,7 +247,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.4.0...v0.5.0
