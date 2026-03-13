@@ -451,6 +451,332 @@ MN_EXPORT int64_t __mn_file_write(MnString path, MnString content) {
 }
 
 /* -----------------------------------------------------------------------
+ * MnMap — Robin Hood open-addressing hash table
+ * ----------------------------------------------------------------------- */
+
+#define MN_MAP_INITIAL_CAP 16
+#define MN_MAP_LOAD_FACTOR_NUM 3
+#define MN_MAP_LOAD_FACTOR_DEN 4  /* 0.75 */
+
+/* Bucket status bytes */
+#define MN_BUCKET_EMPTY     0
+#define MN_BUCKET_OCCUPIED  1
+#define MN_BUCKET_TOMBSTONE 2
+
+struct MnMap {
+    char    *buckets;     /* Array of (status:1 + psl:1 + key:key_size + val:val_size) */
+    int64_t  len;         /* Live entry count */
+    int64_t  cap;         /* Number of buckets (power of 2) */
+    int64_t  key_size;
+    int64_t  val_size;
+    int64_t  bucket_size; /* 2 + key_size + val_size (status + psl + key + val) */
+    int64_t  key_type;    /* MN_MAP_KEY_INT / STR / FLOAT */
+};
+
+struct MnMapIter {
+    MnMap  *map;
+    int64_t index;
+};
+
+/* --- Hash functions (FNV-1a) --- */
+
+MN_EXPORT uint64_t __mn_hash_int(const void *key) {
+    int64_t v = *(const int64_t *)key;
+    /* Splitmix64-style finalizer */
+    uint64_t x = (uint64_t)v;
+    x ^= x >> 30;
+    x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27;
+    x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31;
+    return x;
+}
+
+MN_EXPORT uint64_t __mn_hash_str(const void *key) {
+    const MnString *s = (const MnString *)key;
+    const char *data = mn_untag(s->data);
+    int64_t len = s->len;
+    /* FNV-1a */
+    uint64_t h = 14695981039346656037ULL;
+    for (int64_t i = 0; i < len; i++) {
+        h ^= (uint64_t)(unsigned char)data[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+MN_EXPORT uint64_t __mn_hash_float(const void *key) {
+    double v = *(const double *)key;
+    /* Handle -0.0 == 0.0 */
+    if (v == 0.0) v = 0.0;
+    uint64_t bits;
+    memcpy(&bits, &v, sizeof(bits));
+    /* Splitmix64-style finalizer */
+    bits ^= bits >> 30;
+    bits *= 0xbf58476d1ce4e5b9ULL;
+    bits ^= bits >> 27;
+    bits *= 0x94d049bb133111ebULL;
+    bits ^= bits >> 31;
+    return bits;
+}
+
+/* --- Internal equality functions --- */
+
+static int64_t mn_eq_int(const void *a, const void *b) {
+    return *(const int64_t *)a == *(const int64_t *)b ? 1 : 0;
+}
+
+static int64_t mn_eq_str(const void *a, const void *b) {
+    return __mn_str_eq(*(const MnString *)a, *(const MnString *)b);
+}
+
+static int64_t mn_eq_float(const void *a, const void *b) {
+    return *(const double *)a == *(const double *)b ? 1 : 0;
+}
+
+/* --- Internal helpers --- */
+
+typedef uint64_t (*mn_hash_fn)(const void *);
+typedef int64_t  (*mn_eq_fn)(const void *, const void *);
+
+static mn_hash_fn mn_map_hash_fn(int64_t key_type) {
+    switch (key_type) {
+        case MN_MAP_KEY_STR:   return __mn_hash_str;
+        case MN_MAP_KEY_FLOAT: return __mn_hash_float;
+        default:               return __mn_hash_int;
+    }
+}
+
+static mn_eq_fn mn_map_eq_fn(int64_t key_type) {
+    switch (key_type) {
+        case MN_MAP_KEY_STR:   return mn_eq_str;
+        case MN_MAP_KEY_FLOAT: return mn_eq_float;
+        default:               return mn_eq_int;
+    }
+}
+
+static inline char *mn_bucket_at(MnMap *map, int64_t i) {
+    return map->buckets + i * map->bucket_size;
+}
+
+static inline uint8_t mn_bucket_status(const char *bucket) {
+    return (uint8_t)bucket[0];
+}
+
+static inline uint8_t mn_bucket_psl(const char *bucket) {
+    return (uint8_t)bucket[1];
+}
+
+static inline void *mn_bucket_key(char *bucket) {
+    return bucket + 2;
+}
+
+static inline void *mn_bucket_val(char *bucket, int64_t key_size) {
+    return bucket + 2 + key_size;
+}
+
+static void mn_map_grow(MnMap *map);
+
+MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type) {
+    MnMap *map = (MnMap *)__mn_alloc(sizeof(MnMap));
+    map->key_size = key_size;
+    map->val_size = val_size;
+    map->key_type = key_type;
+    map->bucket_size = 2 + key_size + val_size;  /* status + psl + key + val */
+    map->len = 0;
+    map->cap = MN_MAP_INITIAL_CAP;
+    map->buckets = (char *)__mn_alloc(map->cap * map->bucket_size);
+    /* calloc zeros → all status bytes are MN_BUCKET_EMPTY (0) */
+    return map;
+}
+
+MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
+    /* Grow if load factor exceeded */
+    if (map->len * MN_MAP_LOAD_FACTOR_DEN >= map->cap * MN_MAP_LOAD_FACTOR_NUM) {
+        mn_map_grow(map);
+    }
+
+    mn_hash_fn hash = mn_map_hash_fn(map->key_type);
+    mn_eq_fn   eq   = mn_map_eq_fn(map->key_type);
+    uint64_t h = hash(key);
+    int64_t mask = map->cap - 1;
+    int64_t idx = (int64_t)(h & (uint64_t)mask);
+    uint8_t psl = 0;
+
+    /* Copy key/val into temp buffer for potential swaps */
+    char *temp = (char *)__mn_alloc(map->key_size + map->val_size);
+    memcpy(temp, key, (size_t)map->key_size);
+    memcpy(temp + map->key_size, val, (size_t)map->val_size);
+
+    for (;;) {
+        char *bucket = mn_bucket_at(map, idx);
+        uint8_t status = mn_bucket_status(bucket);
+
+        if (status == MN_BUCKET_EMPTY || status == MN_BUCKET_TOMBSTONE) {
+            /* Insert here */
+            bucket[0] = MN_BUCKET_OCCUPIED;
+            bucket[1] = (char)psl;
+            memcpy(mn_bucket_key(bucket), temp, (size_t)map->key_size);
+            memcpy(mn_bucket_val(bucket, map->key_size),
+                   temp + map->key_size, (size_t)map->val_size);
+            map->len++;
+            __mn_free(temp);
+            return;
+        }
+
+        /* Check if key already exists → update value */
+        if (status == MN_BUCKET_OCCUPIED && eq(mn_bucket_key(bucket), temp)) {
+            memcpy(mn_bucket_val(bucket, map->key_size),
+                   temp + map->key_size, (size_t)map->val_size);
+            __mn_free(temp);
+            return;
+        }
+
+        /* Robin Hood: if our PSL > existing PSL, swap and continue */
+        if (status == MN_BUCKET_OCCUPIED && psl > mn_bucket_psl(bucket)) {
+            /* Swap current entry with bucket contents */
+            uint8_t old_psl = mn_bucket_psl(bucket);
+            char *old_key = mn_bucket_key(bucket);
+            char *old_val = mn_bucket_val(bucket, map->key_size);
+
+            /* Save old bucket data */
+            char *swap = (char *)__mn_alloc(map->key_size + map->val_size);
+            memcpy(swap, old_key, (size_t)map->key_size);
+            memcpy(swap + map->key_size, old_val, (size_t)map->val_size);
+
+            /* Write new data into bucket */
+            bucket[1] = (char)psl;
+            memcpy(old_key, temp, (size_t)map->key_size);
+            memcpy(old_val, temp + map->key_size, (size_t)map->val_size);
+
+            /* Continue inserting displaced entry */
+            memcpy(temp, swap, (size_t)(map->key_size + map->val_size));
+            psl = old_psl;
+            __mn_free(swap);
+        }
+
+        psl++;
+        idx = (idx + 1) & mask;
+    }
+}
+
+MN_EXPORT void *__mn_map_get(MnMap *map, const void *key) {
+    mn_hash_fn hash = mn_map_hash_fn(map->key_type);
+    mn_eq_fn   eq   = mn_map_eq_fn(map->key_type);
+    uint64_t h = hash(key);
+    int64_t mask = map->cap - 1;
+    int64_t idx = (int64_t)(h & (uint64_t)mask);
+    uint8_t psl = 0;
+
+    for (;;) {
+        char *bucket = mn_bucket_at(map, idx);
+        uint8_t status = mn_bucket_status(bucket);
+
+        if (status == MN_BUCKET_EMPTY) return NULL;
+
+        if (status == MN_BUCKET_OCCUPIED) {
+            if (psl > mn_bucket_psl(bucket)) return NULL;  /* Robin Hood early exit */
+            if (eq(mn_bucket_key(bucket), key)) {
+                return mn_bucket_val(bucket, map->key_size);
+            }
+        }
+
+        psl++;
+        idx = (idx + 1) & mask;
+    }
+}
+
+MN_EXPORT int64_t __mn_map_del(MnMap *map, const void *key) {
+    mn_hash_fn hash = mn_map_hash_fn(map->key_type);
+    mn_eq_fn   eq   = mn_map_eq_fn(map->key_type);
+    uint64_t h = hash(key);
+    int64_t mask = map->cap - 1;
+    int64_t idx = (int64_t)(h & (uint64_t)mask);
+    uint8_t psl = 0;
+
+    for (;;) {
+        char *bucket = mn_bucket_at(map, idx);
+        uint8_t status = mn_bucket_status(bucket);
+
+        if (status == MN_BUCKET_EMPTY) return 0;
+
+        if (status == MN_BUCKET_OCCUPIED) {
+            if (psl > mn_bucket_psl(bucket)) return 0;
+            if (eq(mn_bucket_key(bucket), key)) {
+                bucket[0] = MN_BUCKET_TOMBSTONE;
+                map->len--;
+                return 1;
+            }
+        }
+
+        psl++;
+        idx = (idx + 1) & mask;
+    }
+}
+
+MN_EXPORT int64_t __mn_map_len(MnMap *map) {
+    return map->len;
+}
+
+MN_EXPORT int64_t __mn_map_contains(MnMap *map, const void *key) {
+    return __mn_map_get(map, key) != NULL ? 1 : 0;
+}
+
+static void mn_map_grow(MnMap *map) {
+    int64_t old_cap = map->cap;
+    char *old_buckets = map->buckets;
+    int64_t old_bucket_size = map->bucket_size;
+
+    map->cap = old_cap * 2;
+    map->buckets = (char *)__mn_alloc(map->cap * map->bucket_size);
+    map->len = 0;
+
+    /* Re-insert all occupied entries */
+    for (int64_t i = 0; i < old_cap; i++) {
+        char *bucket = old_buckets + i * old_bucket_size;
+        if (mn_bucket_status(bucket) == MN_BUCKET_OCCUPIED) {
+            __mn_map_set(map, mn_bucket_key(bucket),
+                         mn_bucket_val(bucket, map->key_size));
+        }
+    }
+    __mn_free(old_buckets);
+}
+
+/* --- Iterator --- */
+
+MN_EXPORT MnMapIter *__mn_map_iter_new(MnMap *map) {
+    MnMapIter *iter = (MnMapIter *)__mn_alloc(sizeof(MnMapIter));
+    iter->map = map;
+    iter->index = 0;
+    return iter;
+}
+
+MN_EXPORT int64_t __mn_map_iter_next(MnMapIter *iter, void **key_out, void **val_out) {
+    MnMap *map = iter->map;
+    while (iter->index < map->cap) {
+        char *bucket = mn_bucket_at(map, iter->index);
+        iter->index++;
+        if (mn_bucket_status(bucket) == MN_BUCKET_OCCUPIED) {
+            *key_out = mn_bucket_key(bucket);
+            *val_out = mn_bucket_val(bucket, map->key_size);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+MN_EXPORT void __mn_map_iter_free(MnMapIter *iter) {
+    __mn_free(iter);
+}
+
+MN_EXPORT void __mn_map_free(MnMap *map) {
+    if (map) {
+        if (map->buckets) __mn_free(map->buckets);
+        __mn_free(map);
+    }
+}
+
+/* -----------------------------------------------------------------------
  * Process
  * ----------------------------------------------------------------------- */
 

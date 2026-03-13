@@ -227,6 +227,65 @@ MN_EXPORT MnArena *mn_agent_arena_create(void);
 MN_EXPORT void mn_agent_arena_destroy(MnArena *arena);
 
 /* -----------------------------------------------------------------------
+ * MnMap — open-addressing hash table with Robin Hood hashing
+ *
+ * Opaque struct; all access via __mn_map_* functions.
+ * Keys and values are stored inline (memcpy'd) like MnList elements.
+ *
+ * Key type tags select hash/equality functions:
+ *   0 = Int (i64), 1 = String (MnString), 2 = Float (double)
+ * ----------------------------------------------------------------------- */
+
+/** Opaque map type — heap-allocated via __mn_map_new. */
+typedef struct MnMap MnMap;
+
+/** Opaque map iterator — heap-allocated via __mn_map_iter_new. */
+typedef struct MnMapIter MnMapIter;
+
+/** Key type tags for hash/equality function selection. */
+#define MN_MAP_KEY_INT   0
+#define MN_MAP_KEY_STR   1
+#define MN_MAP_KEY_FLOAT 2
+
+/** Create a new empty map. key_type: MN_MAP_KEY_INT/STR/FLOAT. */
+MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type);
+
+/** Insert or update a key-value pair. */
+MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val);
+
+/** Look up a key. Returns pointer to value, or NULL if not found. */
+MN_EXPORT void *__mn_map_get(MnMap *map, const void *key);
+
+/** Delete a key. Returns 1 if deleted, 0 if not found. */
+MN_EXPORT int64_t __mn_map_del(MnMap *map, const void *key);
+
+/** Number of entries. */
+MN_EXPORT int64_t __mn_map_len(MnMap *map);
+
+/** Check if key exists. Returns 1 if present, 0 otherwise. */
+MN_EXPORT int64_t __mn_map_contains(MnMap *map, const void *key);
+
+/** Create an iterator over map entries. */
+MN_EXPORT MnMapIter *__mn_map_iter_new(MnMap *map);
+
+/** Advance iterator. Returns 1 and sets key_out/val_out, or 0 when done. */
+MN_EXPORT int64_t __mn_map_iter_next(MnMapIter *iter, void **key_out, void **val_out);
+
+/** Free the iterator (does NOT free the map). */
+MN_EXPORT void __mn_map_iter_free(MnMapIter *iter);
+
+/** Free the map and its storage. Does NOT free contained strings. */
+MN_EXPORT void __mn_map_free(MnMap *map);
+
+/* -----------------------------------------------------------------------
+ * Hash functions (exposed for testing; used internally by MnMap)
+ * ----------------------------------------------------------------------- */
+
+MN_EXPORT uint64_t __mn_hash_int(const void *key);
+MN_EXPORT uint64_t __mn_hash_str(const void *key);
+MN_EXPORT uint64_t __mn_hash_float(const void *key);
+
+/* -----------------------------------------------------------------------
  * Process
  * ----------------------------------------------------------------------- */
 

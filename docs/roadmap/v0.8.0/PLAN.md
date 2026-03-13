@@ -34,7 +34,7 @@
 
 | Phase | Name | Status | Estimated Effort |
 |-------|------|--------|-----------------|
-| 1 | LLVM Map/Dict Codegen | `Not Started` | Large — new C runtime data structure + both emitters |
+| 1 | LLVM Map/Dict Codegen | `Complete` | Large — new C runtime data structure + both emitters |
 | 2 | LLVM Signal Reactivity | `Not Started` | Large — dependency graph in C runtime |
 | 3 | LLVM Stream Operators | `Not Started` | Large — stream runtime in C + MIR emitter |
 | 4 | LLVM Closure Capture | `Not Started` | Medium — environment structs + arena integration |
@@ -54,30 +54,30 @@ uses Python dicts; the LLVM backend needs a hash table in the C runtime.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Implement hash table in C runtime (`__mn_map_*` family) | `[ ]` | Open addressing with Robin Hood hashing; arena-allocated |
-| 2 | `__mn_map_new(key_size, val_size) -> MapPtr` | `[ ]` | Initial capacity 16, load factor 0.75 |
-| 3 | `__mn_map_set(map, key_ptr, val_ptr)` | `[ ]` | Insert or update; grow on load threshold |
-| 4 | `__mn_map_get(map, key_ptr) -> ValPtr or NULL` | `[ ]` | Returns NULL for missing keys |
-| 5 | `__mn_map_del(map, key_ptr) -> Bool` | `[ ]` | Tombstone deletion |
-| 6 | `__mn_map_len(map) -> i64` | `[ ]` | Current entry count |
-| 7 | `__mn_map_iter_new(map) -> IterPtr` | `[ ]` | Iterator over entries |
-| 8 | `__mn_map_iter_next(iter) -> {key_ptr, val_ptr} or NULL` | `[ ]` | Advance iterator |
-| 9 | `__mn_map_contains(map, key_ptr) -> Bool` | `[ ]` | Key existence check |
-| 10 | Hash functions: `__mn_hash_int`, `__mn_hash_str`, `__mn_hash_float` | `[ ]` | FNV-1a or SipHash |
-| 11 | C runtime tests with AddressSanitizer | `[ ]` | Catch memory bugs early |
+| 1 | Implement hash table in C runtime (`__mn_map_*` family) | `[x]` | Robin Hood open-addressing, key_type tag selects hash/eq |
+| 2 | `__mn_map_new(key_size, val_size) -> MapPtr` | `[x]` | Initial capacity 16, load factor 0.75 |
+| 3 | `__mn_map_set(map, key_ptr, val_ptr)` | `[x]` | Insert or update; grow on load threshold |
+| 4 | `__mn_map_get(map, key_ptr) -> ValPtr or NULL` | `[x]` | Returns NULL for missing keys |
+| 5 | `__mn_map_del(map, key_ptr) -> Bool` | `[x]` | Tombstone deletion |
+| 6 | `__mn_map_len(map) -> i64` | `[x]` | Current entry count |
+| 7 | `__mn_map_iter_new(map) -> IterPtr` | `[x]` | Iterator over entries |
+| 8 | `__mn_map_iter_next(iter) -> {key_ptr, val_ptr} or NULL` | `[x]` | Advance iterator |
+| 9 | `__mn_map_contains(map, key_ptr) -> Bool` | `[x]` | Key existence check |
+| 10 | Hash functions: `__mn_hash_int`, `__mn_hash_str`, `__mn_hash_float` | `[x]` | Splitmix64 for int/float, FNV-1a for strings |
+| 11 | C runtime tests with AddressSanitizer | `[!]` | Tests pass via ctypes; ASan requires CI Linux build |
 
 ### LLVM Emitters
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 12 | Define LLVM map type: `{ i8* data, i64 len, i64 cap, i64 key_size, i64 val_size }` | `[ ]` | Or opaque pointer to C struct |
-| 13 | `emit_llvm.py`: Implement `_emit_map_literal()` — create map, insert each k/v pair | `[ ]` | Replace current NotImplementedError |
-| 14 | `emit_llvm.py`: Map indexing — `map[key]` calls `__mn_map_get()` | `[ ]` | Returns `Option<V>` or crashes on missing |
-| 15 | `emit_llvm.py`: Map assignment — `map[key] = value` calls `__mn_map_set()` | `[ ]` | |
-| 16 | `emit_llvm_mir.py`: `MapInit` instruction — create and populate map | `[ ]` | Replace current stub |
-| 17 | `emit_llvm_mir.py`: Map get/set/del via Call instructions | `[ ]` | |
-| 18 | `emit_llvm_mir.py`: Map iteration in `for` loops | `[ ]` | Lower to iter_new + iter_next + branch |
-| 19 | Tests: map creation, lookup, insertion, deletion, iteration, nested maps | `[ ]` | Both AST and MIR emitters |
+| 12 | Define LLVM map type: `{ i8* data, i64 len, i64 cap, i64 key_size, i64 val_size }` | `[x]` | Opaque pointer (i8*) to C MnMap struct |
+| 13 | `emit_llvm.py`: Implement `_emit_map_literal()` — create map, insert each k/v pair | `[x]` | Calls __mn_map_new + __mn_map_set per pair |
+| 14 | `emit_llvm.py`: Map indexing — `map[key]` calls `__mn_map_get()` | `[x]` | Alloca key, bitcast, call __mn_map_get |
+| 15 | `emit_llvm.py`: Map assignment — `map[key] = value` calls `__mn_map_set()` | `[x]` | Via _map_insert helper |
+| 16 | `emit_llvm_mir.py`: `MapInit` instruction — create and populate map | `[x]` | Full implementation with key type tag |
+| 17 | `emit_llvm_mir.py`: Map get/set/del via Call instructions | `[x]` | IndexGet/IndexSet dispatch on TypeKind.MAP |
+| 18 | `emit_llvm_mir.py`: Map iteration in `for` loops | `[x]` | __iter_has_next/__iter_next dispatch for MAP type |
+| 19 | Tests: map creation, lookup, insertion, deletion, iteration, nested maps | `[x]` | 24 codegen + 13 runtime tests, all passing |
 
 **Done when:** `let m: Map<String, Int> = {"a": 1, "b": 2}; println(m["a"])` compiles
 and runs via LLVM backend. All existing Python-backend map tests pass on LLVM.

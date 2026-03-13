@@ -116,7 +116,7 @@ def _init_llvm_types() -> None:
     LLVM_I32 = ir.IntType(32)
     LLVM_STRING = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
     LLVM_LIST = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT])
-    LLVM_MAP = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
+    LLVM_MAP = ir.IntType(8).as_pointer()  # Opaque pointer to C MnMap struct
 
     _llvm_types_initialized = True
 
@@ -490,6 +490,26 @@ class LLVMMIREmitter:
         """Resolve a TypeInfo (from type args) to LLVM type."""
         return self._resolve_mir_type(MIRType(type_info=ti))
 
+    def _llvm_type_size(self, ty: Any) -> int:
+        """Approximate byte size of an LLVM type."""
+        if isinstance(ty, ir.IntType):
+            return int(ty.width) // 8
+        if isinstance(ty, ir.DoubleType):
+            return 8
+        if isinstance(ty, ir.PointerType):
+            return 8
+        if isinstance(ty, ir.LiteralStructType):
+            return sum(self._llvm_type_size(e) for e in ty.elements)
+        return 8
+
+    def _map_key_type_tag(self, mir_type: MIRType) -> int:
+        """Return MN_MAP_KEY_* tag for a MIR key type."""
+        if mir_type.kind == TypeKind.STRING:
+            return 1  # MN_MAP_KEY_STR
+        if mir_type.kind == TypeKind.FLOAT:
+            return 2  # MN_MAP_KEY_FLOAT
+        return 0  # MN_MAP_KEY_INT
+
     # -----------------------------------------------------------------------
     # Struct / Enum registration
     # -----------------------------------------------------------------------
@@ -621,6 +641,39 @@ class LLVMMIREmitter:
 
     def _rt_panic(self) -> Any:
         return self._declare_runtime_fn("__mn_panic", LLVM_VOID, [LLVM_STRING])
+
+    # -- Map runtime functions ------------------------------------------------
+
+    def _rt_map_new(self) -> Any:
+        return self._declare_runtime_fn("__mn_map_new", LLVM_PTR, [LLVM_INT, LLVM_INT, LLVM_INT])
+
+    def _rt_map_set(self) -> Any:
+        return self._declare_runtime_fn("__mn_map_set", LLVM_VOID, [LLVM_PTR, LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_get(self) -> Any:
+        return self._declare_runtime_fn("__mn_map_get", LLVM_PTR, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_del(self) -> Any:
+        return self._declare_runtime_fn("__mn_map_del", LLVM_INT, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_len(self) -> Any:
+        return self._declare_runtime_fn("__mn_map_len", LLVM_INT, [LLVM_PTR])
+
+    def _rt_map_contains(self) -> Any:
+        return self._declare_runtime_fn("__mn_map_contains", LLVM_INT, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_iter_new(self) -> Any:
+        return self._declare_runtime_fn("__mn_map_iter_new", LLVM_PTR, [LLVM_PTR])
+
+    def _rt_map_iter_next(self) -> Any:
+        return self._declare_runtime_fn(
+            "__mn_map_iter_next",
+            LLVM_INT,
+            [LLVM_PTR, LLVM_PTR.as_pointer(), LLVM_PTR.as_pointer()],
+        )
+
+    def _rt_map_iter_free(self) -> Any:
+        return self._declare_runtime_fn("__mn_map_iter_free", LLVM_VOID, [LLVM_PTR])
 
     def _rt_alloc(self) -> Any:
         return self._declare_runtime_fn("__mn_alloc", LLVM_PTR, [LLVM_INT])
@@ -1161,6 +1214,9 @@ class LLVMMIREmitter:
                 list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.tmp")
                 builder.store(args[0], list_ptr)
                 result = builder.call(fn, [list_ptr], name=name)
+            elif inst.args and inst.args[0].ty.kind == TypeKind.MAP:
+                fn = self._rt_map_len()
+                result = builder.call(fn, [args[0]], name=name)
             else:
                 result = ir.Constant(LLVM_INT, 0)
             self._store_value(inst.dest, result, values)
@@ -1234,6 +1290,46 @@ class LLVMMIREmitter:
             result = ir.Constant(res_ty, ir.Undefined)
             result = builder.insert_value(result, ir.Constant(LLVM_BOOL, 0), 0, name=f"{name}.tag")
             result = builder.insert_value(result, args[0], [1, 1], name=name)
+            self._store_value(inst.dest, result, values)
+            return
+
+        # --- Map iteration via __iter_has_next / __iter_next ---
+        if fn_name == "__iter_has_next" and inst.args and inst.args[0].ty.kind == TypeKind.MAP:
+            # For maps: create an iterator if not already created, then check
+            # We store map iterators in a dict keyed by the map SSA value name
+            map_val = args[0]
+            iter_name = f"_map_iter_{inst.args[0].name}"
+            if iter_name not in values:
+                # Create iterator
+                map_iter = builder.call(self._rt_map_iter_new(), [map_val], name=iter_name)
+                values[iter_name] = map_iter
+                # Allocate key/val output pointers
+                key_out = builder.alloca(LLVM_PTR, name=f"{iter_name}.kout")
+                val_out = builder.alloca(LLVM_PTR, name=f"{iter_name}.vout")
+                values[f"{iter_name}.kout"] = key_out
+                values[f"{iter_name}.vout"] = val_out
+            map_iter = values[iter_name]
+            key_out = values[f"{iter_name}.kout"]
+            val_out = values[f"{iter_name}.vout"]
+            result_i64 = builder.call(
+                self._rt_map_iter_next(), [map_iter, key_out, val_out], name=f"{name}.i64"
+            )
+            result = builder.trunc(result_i64, LLVM_BOOL, name=name)
+            self._store_value(inst.dest, result, values)
+            return
+
+        if fn_name == "__iter_next" and inst.args and inst.args[0].ty.kind == TypeKind.MAP:
+            # Return the key from the last __iter_has_next call
+            iter_name = f"_map_iter_{inst.args[0].name}"
+            key_out = values.get(f"{iter_name}.kout")
+            if key_out:
+                key_ptr = builder.load(key_out, name=f"{name}.kptr")
+                # Default: load as the dest type
+                elem_ty = self._resolve_mir_type(inst.dest.ty)
+                typed = builder.bitcast(key_ptr, elem_ty.as_pointer(), name=f"{name}.typed")
+                result = builder.load(typed, name=name)
+            else:
+                result = ir.Constant(LLVM_INT, 0)
             self._store_value(inst.dest, result, values)
             return
 
@@ -1469,6 +1565,15 @@ class LLVMMIREmitter:
             # String indexing: __mn_str_byte_at or char access
             fn = self._declare_runtime_fn("__mn_str_byte_at", LLVM_INT, [LLVM_STRING, LLVM_INT])
             result = builder.call(fn, [obj, index], name=name)
+        elif obj_kind == TypeKind.MAP:
+            # Map indexing: __mn_map_get(map, &key) -> val_ptr
+            key_alloca = builder.alloca(index.type, name=f"{name}.key")
+            builder.store(index, key_alloca)
+            key_ptr = builder.bitcast(key_alloca, LLVM_PTR)
+            raw_ptr = builder.call(self._rt_map_get(), [obj, key_ptr], name=f"{name}.raw")
+            elem_ty = self._resolve_mir_type(inst.dest.ty)
+            typed_ptr = builder.bitcast(raw_ptr, elem_ty.as_pointer(), name=f"{name}.tptr")
+            result = builder.load(typed_ptr, name=name)
         else:
             result = ir.Constant(LLVM_PTR, None)
 
@@ -1489,13 +1594,55 @@ class LLVMMIREmitter:
             elem_ty = val.type
             typed_ptr = builder.bitcast(raw_ptr, elem_ty.as_pointer(), name="idxset.tptr")
             builder.store(val, typed_ptr)
+        elif inst.obj.ty.kind == TypeKind.MAP:
+            # Map assignment: __mn_map_set(map, &key, &val)
+            key_alloca = builder.alloca(index.type, name="idxset.key")
+            builder.store(index, key_alloca)
+            key_ptr = builder.bitcast(key_alloca, LLVM_PTR)
+            val_alloca = builder.alloca(val.type, name="idxset.val")
+            builder.store(val, val_alloca)
+            val_ptr = builder.bitcast(val_alloca, LLVM_PTR)
+            builder.call(self._rt_map_set(), [obj, key_ptr, val_ptr])
 
     # --- MapInit ---
 
     def _emit_map_init(self, inst: MapInit, builder: Any, values: dict[str, Any]) -> None:
-        # Maps are opaque pointer-based; for now emit a zeroinitializer
-        result = ir.Constant(LLVM_MAP, None)
-        self._store_value(inst.dest, result, values)
+        name = self._val_name(inst.dest)
+
+        # Determine key/val sizes and key type tag
+        if inst.pairs:
+            first_key = self._get_value(inst.pairs[0][0], values)
+            first_val = self._get_value(inst.pairs[0][1], values)
+            key_size = self._llvm_type_size(first_key.type)
+            val_size = self._llvm_type_size(first_val.type)
+            key_type_tag = self._map_key_type_tag(inst.key_type)
+        else:
+            key_size, val_size, key_type_tag = 8, 8, 0
+
+        # Create map
+        map_ptr = builder.call(
+            self._rt_map_new(),
+            [
+                ir.Constant(LLVM_INT, key_size),
+                ir.Constant(LLVM_INT, val_size),
+                ir.Constant(LLVM_INT, key_type_tag),
+            ],
+            name=name,
+        )
+
+        # Insert each pair
+        for k_val, v_val in inst.pairs:
+            k = self._get_value(k_val, values)
+            v = self._get_value(v_val, values)
+            k_alloca = builder.alloca(k.type, name=f"{name}.k")
+            builder.store(k, k_alloca)
+            k_ptr = builder.bitcast(k_alloca, LLVM_PTR)
+            v_alloca = builder.alloca(v.type, name=f"{name}.v")
+            builder.store(v, v_alloca)
+            v_ptr = builder.bitcast(v_alloca, LLVM_PTR)
+            builder.call(self._rt_map_set(), [map_ptr, k_ptr, v_ptr])
+
+        self._store_value(inst.dest, map_ptr, values)
 
     # --- EnumInit ---
 

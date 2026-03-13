@@ -123,12 +123,13 @@ def list_type(element_ty: ir.Type) -> ir.LiteralStructType:
     return LLVM_LIST
 
 
-def map_type(key_ty: ir.Type, val_ty: ir.Type) -> ir.LiteralStructType:
-    """Map<K, V> → opaque pointer (hash map implementation detail).
+def map_type(key_ty: ir.Type, val_ty: ir.Type) -> ir.PointerType:
+    """Map<K, V> → opaque pointer to C MnMap struct.
 
-    Represented as { i8*, i64 } — pointer to hash table + count.
+    The C runtime manages the hash table internals. LLVM code
+    interacts via __mn_map_* functions that take/return i8*.
     """
-    return ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
+    return ir.IntType(8).as_pointer()
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +369,52 @@ class LLVMEmitter:
     def _rt_panic(self) -> ir.Function:
         """Declare __mn_panic(MnString) -> void."""
         return self._declare_runtime_fn("__mn_panic", LLVM_VOID, [LLVM_STRING])
+
+    # -- Map runtime functions ------------------------------------------------
+
+    def _rt_map_new(self) -> ir.Function:
+        """Declare __mn_map_new(i64 key_size, i64 val_size, i64 key_type) -> i8*."""
+        return self._declare_runtime_fn("__mn_map_new", LLVM_PTR, [LLVM_INT, LLVM_INT, LLVM_INT])
+
+    def _rt_map_set(self) -> ir.Function:
+        """Declare __mn_map_set(i8* map, i8* key, i8* val) -> void."""
+        return self._declare_runtime_fn("__mn_map_set", LLVM_VOID, [LLVM_PTR, LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_get(self) -> ir.Function:
+        """Declare __mn_map_get(i8* map, i8* key) -> i8*."""
+        return self._declare_runtime_fn("__mn_map_get", LLVM_PTR, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_del(self) -> ir.Function:
+        """Declare __mn_map_del(i8* map, i8* key) -> i64."""
+        return self._declare_runtime_fn("__mn_map_del", LLVM_INT, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_len(self) -> ir.Function:
+        """Declare __mn_map_len(i8* map) -> i64."""
+        return self._declare_runtime_fn("__mn_map_len", LLVM_INT, [LLVM_PTR])
+
+    def _rt_map_contains(self) -> ir.Function:
+        """Declare __mn_map_contains(i8* map, i8* key) -> i64."""
+        return self._declare_runtime_fn("__mn_map_contains", LLVM_INT, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_free(self) -> ir.Function:
+        """Declare __mn_map_free(i8* map) -> void."""
+        return self._declare_runtime_fn("__mn_map_free", LLVM_VOID, [LLVM_PTR])
+
+    def _rt_map_iter_new(self) -> ir.Function:
+        """Declare __mn_map_iter_new(i8* map) -> i8*."""
+        return self._declare_runtime_fn("__mn_map_iter_new", LLVM_PTR, [LLVM_PTR])
+
+    def _rt_map_iter_next(self) -> ir.Function:
+        """Declare __mn_map_iter_next(i8* iter, i8** key_out, i8** val_out) -> i64."""
+        return self._declare_runtime_fn(
+            "__mn_map_iter_next",
+            LLVM_INT,
+            [LLVM_PTR, LLVM_PTR.as_pointer(), LLVM_PTR.as_pointer()],
+        )
+
+    def _rt_map_iter_free(self) -> ir.Function:
+        """Declare __mn_map_iter_free(i8* iter) -> void."""
+        return self._declare_runtime_fn("__mn_map_iter_free", LLVM_VOID, [LLVM_PTR])
 
     def _rt_file_read(self) -> ir.Function:
         """Declare __mn_file_read(MnString, i64*) -> MnString."""
@@ -944,7 +991,7 @@ class LLVMEmitter:
             return self._emit_list_literal(expr)
 
         if isinstance(expr, MapLiteral):
-            raise NotImplementedError("Map literals are not yet supported in the LLVM backend")
+            return self._emit_map_literal(expr)
 
         if isinstance(expr, IndexExpr):
             return self._emit_index(expr)
@@ -1269,6 +1316,8 @@ class LLVMEmitter:
                     list_alloca = self.builder.alloca(LLVM_LIST, name="len_tmp")
                     self.builder.store(val, list_alloca)
                     return self.builder.call(self._rt_list_len(), [list_alloca], name="len")
+                if isinstance(val.type, ir.PointerType):
+                    return self.builder.call(self._rt_map_len(), [val], name="len")
             return ir.Constant(LLVM_INT, 0)
 
         # Built-in: toString() / str()
@@ -2330,8 +2379,85 @@ class LLVMEmitter:
 
         return self.builder.load(list_alloca, name="list_result")
 
+    # -----------------------------------------------------------------------
+    # Map operations
+    # -----------------------------------------------------------------------
+
+    def _map_key_type_tag(self, key_val: ir.Value) -> int:
+        """Determine the MN_MAP_KEY_* tag from an LLVM key value."""
+        if self._is_string_type(key_val):
+            return 1  # MN_MAP_KEY_STR
+        if isinstance(key_val.type, ir.DoubleType):
+            return 2  # MN_MAP_KEY_FLOAT
+        return 0  # MN_MAP_KEY_INT
+
+    def _map_elem_size(self, val: ir.Value) -> int:
+        """Approximate byte size of an LLVM value for map key/val sizing."""
+        ty = val.type
+        if isinstance(ty, ir.IntType):
+            return int(ty.width) // 8
+        if isinstance(ty, ir.DoubleType):
+            return 8
+        if isinstance(ty, ir.LiteralStructType):
+            return sum(
+                8 if isinstance(e, (ir.PointerType, ir.IntType, ir.DoubleType)) else 8
+                for e in ty.elements
+            )
+        return 8
+
+    def _emit_map_literal(self, node: MapLiteral) -> ir.Value:
+        """Emit a map literal: `#{key: value, ...}` or `#{}`."""
+        if not node.entries:
+            # Empty map — default to Int keys, Int values
+            return self.builder.call(
+                self._rt_map_new(),
+                [ir.Constant(LLVM_INT, 8), ir.Constant(LLVM_INT, 8), ir.Constant(LLVM_INT, 0)],
+                name="empty_map",
+            )
+
+        # Evaluate first entry to determine types and sizes
+        first_key = self._emit_expr(node.entries[0].key)
+        first_val = self._emit_expr(node.entries[0].value)
+        key_size = self._map_elem_size(first_key)
+        val_size = self._map_elem_size(first_val)
+        key_type_tag = self._map_key_type_tag(first_key)
+
+        # Create map
+        map_ptr = self.builder.call(
+            self._rt_map_new(),
+            [
+                ir.Constant(LLVM_INT, key_size),
+                ir.Constant(LLVM_INT, val_size),
+                ir.Constant(LLVM_INT, key_type_tag),
+            ],
+            name="map",
+        )
+
+        # Insert first entry
+        self._map_insert(map_ptr, first_key, first_val)
+
+        # Insert remaining entries
+        for entry in node.entries[1:]:
+            k = self._emit_expr(entry.key)
+            v = self._emit_expr(entry.value)
+            self._map_insert(map_ptr, k, v)
+
+        return map_ptr
+
+    def _map_insert(self, map_ptr: ir.Value, key: ir.Value, val: ir.Value) -> None:
+        """Insert a key-value pair into a map via __mn_map_set."""
+        key_alloca = self.builder.alloca(key.type, name="map_key_tmp")
+        self.builder.store(key, key_alloca)
+        key_ptr = self.builder.bitcast(key_alloca, LLVM_PTR, name="map_key_ptr")
+
+        val_alloca = self.builder.alloca(val.type, name="map_val_tmp")
+        self.builder.store(val, val_alloca)
+        val_ptr = self.builder.bitcast(val_alloca, LLVM_PTR, name="map_val_ptr")
+
+        self.builder.call(self._rt_map_set(), [map_ptr, key_ptr, val_ptr])
+
     def _emit_index(self, node: IndexExpr) -> ir.Value:
-        """Emit index expression: `list[i]` or `str[i]`."""
+        """Emit index expression: `list[i]`, `str[i]`, or `map[key]`."""
         obj = self._emit_expr(node.object)
         idx = self._emit_expr(node.index)
 
@@ -2349,6 +2475,16 @@ class LLVMEmitter:
             # Default: load as i64
             typed_ptr = self.builder.bitcast(raw_ptr, LLVM_INT.as_pointer(), name="typed_ptr")
             return self.builder.load(typed_ptr, name="list_elem")
+
+        # Map indexing — map[key] calls __mn_map_get
+        if isinstance(obj.type, ir.PointerType):
+            key_alloca = self.builder.alloca(idx.type, name="map_key_tmp")
+            self.builder.store(idx, key_alloca)
+            key_ptr = self.builder.bitcast(key_alloca, LLVM_PTR, name="map_key_ptr")
+            raw_ptr = self.builder.call(self._rt_map_get(), [obj, key_ptr], name="map_val_ptr")
+            # Default: load as i64
+            typed_ptr = self.builder.bitcast(raw_ptr, LLVM_INT.as_pointer(), name="map_val_typed")
+            return self.builder.load(typed_ptr, name="map_val")
 
         raise NotImplementedError(f"Index not supported on type: {obj.type}")
 

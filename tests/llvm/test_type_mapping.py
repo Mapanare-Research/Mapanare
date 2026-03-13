@@ -306,8 +306,7 @@ class TestTypeMapperIntegration:
         ty = self.mapper.resolve(
             GenericType(name="Map", args=[NamedType(name="String"), NamedType(name="Int")])
         )
-        assert isinstance(ty, ir.LiteralStructType)
-        assert len(ty.elements) == 2
+        assert isinstance(ty, ir.PointerType)  # Opaque pointer to C MnMap struct
 
     def test_unsupported_type_expr(self) -> None:
         from mapanare.ast_nodes import FnType
