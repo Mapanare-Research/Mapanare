@@ -31,7 +31,7 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 
 <br>
 
-[**Try it Online**](https://mapanare-research.github.io/mapanare/) · [**Getting Started**](docs/getting-started.md) · [Language Reference](docs/reference.md) · [Cookbook](docs/cookbook.md) · [Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Roadmap](docs/ROADMAP.md) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
+[**Try it Online**](https://mapanare-research.github.io/mapanare/) · [**Getting Started**](docs/getting-started.md) · [Language Reference](docs/reference.md) · [Cookbook](docs/cookbook.md) · [Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Roadmap](docs/roadmap/ROADMAP.md) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
 
 </div>
 
@@ -466,7 +466,7 @@ Requires Python 3.11+.
 | **v0.7.0** | Self-Standing — self-hosting, observability, test runner, deployment | ✅ Released |
 | **v1.0.0** | Stable — language spec frozen, backwards compatibility guarantees | Planned |
 
-See the full [ROADMAP](docs/ROADMAP.md) for details.
+See the full [ROADMAP](docs/roadmap/ROADMAP.md) for details.
 
 ---
 

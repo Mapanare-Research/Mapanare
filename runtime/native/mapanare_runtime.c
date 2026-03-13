@@ -161,6 +161,21 @@ static inline void mapanare_thread_join(mapanare_thread_t t) {
 
 #endif
 
+/* Trace hook — declared early so agent_thread_fn can call trace_emit */
+static mapanare_trace_hook_fn s_trace_hook = NULL;
+
+static inline void trace_emit(
+    mapanare_trace_event_t event,
+    const mapanare_agent_t *agent,
+    void *data,
+    int64_t duration_us
+) {
+    mapanare_trace_hook_fn hook = s_trace_hook;
+    if (hook) {
+        hook(event, agent, data, duration_us);
+    }
+}
+
 /* -----------------------------------------------------------------------
  * Utility: CPU core count
  * ----------------------------------------------------------------------- */
@@ -1074,25 +1089,10 @@ MAPANARE_EXPORT int mapanare_shutdown_requested(void) {
  * 8. Trace hooks — observability for native agent operations
  * ======================================================================= */
 
-static mapanare_trace_hook_fn s_trace_hook = NULL;
-
 MAPANARE_EXPORT void mapanare_trace_set_hook(mapanare_trace_hook_fn hook) {
     s_trace_hook = hook;
 }
 
 MAPANARE_EXPORT mapanare_trace_hook_fn mapanare_trace_get_hook(void) {
     return s_trace_hook;
-}
-
-/* Internal helper: emit a trace event if hook is set */
-static inline void trace_emit(
-    mapanare_trace_event_t event,
-    const mapanare_agent_t *agent,
-    void *data,
-    int64_t duration_us
-) {
-    mapanare_trace_hook_fn hook = s_trace_hook;
-    if (hook) {
-        hook(event, agent, data, duration_us);
-    }
 }

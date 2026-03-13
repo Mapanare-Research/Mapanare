@@ -87,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI native job**: compiles and runs C runtime tests with gcc, AddressSanitizer, and ThreadSanitizer
 - **LSP enhancements**: symbol table construction, cross-reference indexing, go-to-definition, find-references, hover info
 - **Bootstrap documentation** (`docs/BOOTSTRAP.md`): self-hosting compiler status and architecture
-- **Roadmap** (`docs/ROADMAP.md`): phased plan through v1.0
+- **Roadmap** (`docs/roadmap/ROADMAP.md`): phased plan through v1.0
 - **Localized READMEs**: Spanish (`docs/README.es.md`), Portuguese (`docs/README.pt.md`), Chinese (`docs/README.zh-CN.md`)
 - Scope-analysis tests (`tests/test_scope.py`)
 - C runtime test harness (`tests/native/test_c_runtime.c`) and hardening tests (`tests/native/test_c_hardening.py`)

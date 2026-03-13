@@ -112,9 +112,9 @@ class TestVersionConsistency:
 
     def test_readme_roadmap_link_valid(self) -> None:
         readme = README.read_text(encoding="utf-8")
-        # README should link to docs/ROADMAP.md which must exist
-        assert "docs/ROADMAP.md" in readme, "README should link to docs/ROADMAP.md"
-        assert (ROOT / "docs" / "ROADMAP.md").exists(), "docs/ROADMAP.md must exist"
+        # README should link to docs/roadmap/ROADMAP.md which must exist
+        assert "docs/roadmap/ROADMAP.md" in readme, "README should link to docs/roadmap/ROADMAP.md"
+        assert (ROOT / "docs" / "roadmap" / "ROADMAP.md").exists(), "docs/roadmap/ROADMAP.md must exist"
 
     def test_roadmap_target_exists(self) -> None:
         readme = README.read_text(encoding="utf-8")
