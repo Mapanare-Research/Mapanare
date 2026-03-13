@@ -170,7 +170,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Community governance**: `CODE_OF_CONDUCT.md`, `SECURITY.md`, `GOVERNANCE.md`, issue/PR templates
 - **110+ end-to-end tests**: correctness, cross-backend consistency, tutorial verification
 - **Memory stress tests** (`tests/native/test_memory_stress.py`)
-- **Agent-pipeline benchmark** (`test_vs/05_agent_pipeline`) with .mn/.py/.go/.rs versions
+- **Agent-pipeline benchmark** (`benchmarks/cross_language/05_agent_pipeline`) with .mn/.py/.go/.rs versions
 - **RFCs**: memory management (0002), module resolution (0003), traits (0004)
 - `CLAUDE.md` with repo guidance for AI-assisted development
 - 1968 total tests (up from ~1400 in v0.2.0)

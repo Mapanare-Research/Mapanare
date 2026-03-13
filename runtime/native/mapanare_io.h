@@ -203,4 +203,49 @@ MN_IO_EXPORT void __mn_event_loop_stop(MnEventLoop *loop);
 /** Destroy the event loop and free resources. */
 MN_IO_EXPORT void __mn_event_loop_free(MnEventLoop *loop);
 
+/* -----------------------------------------------------------------------
+ * 5. MnString-based TCP/TLS wrappers
+ *
+ * These wrappers accept and return MnString (the Mapanare { i8*, i64 }
+ * struct) so that .mn stdlib modules can call TCP/TLS functions directly
+ * without manual pointer extraction. Used by net/http.mn, etc.
+ * ----------------------------------------------------------------------- */
+
+#include "mapanare_core.h"
+
+/** Connect to host:port via TCP. host is an MnString.
+ *  Returns socket fd or -1 on error. */
+MN_IO_EXPORT int64_t __mn_tcp_connect_str(MnString host, int64_t port);
+
+/** Send data over a connected socket. data is an MnString.
+ *  Returns number of bytes sent, or -1 on error. */
+MN_IO_EXPORT int64_t __mn_tcp_send_str(int64_t fd, MnString data);
+
+/** Receive data from a connected socket into an MnString.
+ *  max_len is the maximum bytes to read.
+ *  Returns an MnString with the received data (empty on error/close). */
+MN_IO_EXPORT MnString __mn_tcp_recv_str(int64_t fd, int64_t max_len);
+
+/** Close a socket. Returns 0 always (void wrapper). */
+MN_IO_EXPORT int64_t __mn_tcp_close_fd(int64_t fd);
+
+/** Wrap a TCP socket with TLS. hostname is an MnString.
+ *  Returns opaque TLS context as int64_t, or 0 on failure. */
+MN_IO_EXPORT int64_t __mn_tls_connect_str(int64_t fd, MnString hostname);
+
+/** Write data to a TLS connection. data is an MnString.
+ *  tls_ctx is the opaque context from __mn_tls_connect_str.
+ *  Returns bytes written, or -1 on error. */
+MN_IO_EXPORT int64_t __mn_tls_write_str(int64_t tls_ctx, MnString data);
+
+/** Read decrypted data from a TLS connection into an MnString.
+ *  max_len is the maximum bytes to read.
+ *  Returns an MnString with the received data (empty on error/close). */
+MN_IO_EXPORT MnString __mn_tls_read_str(int64_t tls_ctx, int64_t max_len);
+
+/** Close a TLS connection and the underlying TCP socket.
+ *  tls_ctx is the opaque context from __mn_tls_connect_str.
+ *  Returns 0 always (void wrapper). */
+MN_IO_EXPORT int64_t __mn_tls_close_fd(int64_t tls_ctx, int64_t fd);
+
 #endif /* MAPANARE_IO_H */

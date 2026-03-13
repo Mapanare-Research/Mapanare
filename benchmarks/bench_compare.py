@@ -1,20 +1,21 @@
-"""Benchmark: compare Mapanare runtime vs Python asyncio and Rust baselines (Phase 4.5).
+"""Benchmark: compare Mapanare runtime vs Python asyncio and Rust baselines.
 
 Runs identical workloads using:
   1. Mapanare runtime (agents + streams)
   2. Pure Python asyncio (baseline)
   3. Rust reference (read from pre-computed results if available)
 
-Produces a comparison report with relative speedups.
+Uses isolation harness for reliable measurements.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from benchmarks.isolate import isolated_async_bench, isolated_sync_bench
 
 
 @dataclass
@@ -36,68 +37,72 @@ class ComparisonResult:
 
 async def _asyncio_message_passing(n_messages: int) -> float:
     """Baseline: pure asyncio queue message passing."""
-    q_in: asyncio.Queue[int] = asyncio.Queue(maxsize=1024)
-    q_out: asyncio.Queue[int] = asyncio.Queue(maxsize=1024)
-    done = asyncio.Event()
 
-    async def worker() -> None:
-        count = 0
-        while count < n_messages:
-            msg = await q_in.get()
-            await q_out.put(msg)
-            count += 1
-        done.set()
+    async def run() -> None:
+        q_in: asyncio.Queue[int] = asyncio.Queue(maxsize=1024)
+        q_out: asyncio.Queue[int] = asyncio.Queue(maxsize=1024)
+        done = asyncio.Event()
 
-    async def drain() -> None:
-        drained = 0
-        while drained < n_messages:
-            await q_out.get()
-            drained += 1
+        async def worker() -> None:
+            count = 0
+            while count < n_messages:
+                msg = await q_in.get()
+                await q_out.put(msg)
+                count += 1
+            done.set()
 
-    task = asyncio.create_task(worker())
-    drain_task = asyncio.create_task(drain())
-    start = time.perf_counter()
-    for i in range(n_messages):
-        await q_in.put(i)
-    await done.wait()
-    elapsed = time.perf_counter() - start
-    await task
-    drain_task.cancel()
-    try:
-        await drain_task
-    except asyncio.CancelledError:
-        pass
-    return elapsed
+        async def drain() -> None:
+            drained = 0
+            while drained < n_messages:
+                await q_out.get()
+                drained += 1
+
+        task = asyncio.create_task(worker())
+        drain_task = asyncio.create_task(drain())
+        for i in range(n_messages):
+            await q_in.put(i)
+        await done.wait()
+        await task
+        drain_task.cancel()
+        try:
+            await drain_task
+        except asyncio.CancelledError:
+            pass
+
+    return await isolated_async_bench(run)
 
 
 async def _asyncio_stream_map(n_items: int) -> float:
     """Baseline: pure Python list map (simulating stream pipeline)."""
-    data = list(range(n_items))
-    start = time.perf_counter()
-    result = [x * 2 for x in data]
-    elapsed = time.perf_counter() - start
-    assert len(result) == n_items
-    return elapsed
+
+    def run() -> None:
+        data = list(range(n_items))
+        result = [x * 2 for x in data]
+        assert len(result) == n_items
+
+    return isolated_sync_bench(run)
 
 
 async def _asyncio_stream_filter(n_items: int) -> float:
     """Baseline: pure Python list filter."""
-    data = list(range(n_items))
-    start = time.perf_counter()
-    result = [x for x in data if x % 2 == 0]
-    elapsed = time.perf_counter() - start
-    assert len(result) == n_items // 2
-    return elapsed
+
+    def run() -> None:
+        data = list(range(n_items))
+        result = [x for x in data if x % 2 == 0]
+        assert len(result) == n_items // 2
+
+    return isolated_sync_bench(run)
 
 
 async def _asyncio_stream_map_filter(n_items: int) -> float:
     """Baseline: pure Python map then filter."""
-    data = list(range(n_items))
-    start = time.perf_counter()
-    mapped = [x * 3 for x in data]
-    _ = [x for x in mapped if x % 2 == 0]
-    elapsed = time.perf_counter() - start
-    return elapsed
+
+    def run() -> None:
+        data = list(range(n_items))
+        mapped = [x * 3 for x in data]
+        _ = [x for x in mapped if x % 2 == 0]
+
+    return isolated_sync_bench(run)
 
 
 # ---------------------------------------------------------------------------
@@ -109,80 +114,70 @@ async def _mapanare_message_passing(n_messages: int) -> float:
     """Mapanare: agent channel message passing."""
     from runtime.agent import Channel
 
-    ch_in: Channel[int] = Channel(maxsize=1024)
-    ch_out: Channel[int] = Channel(maxsize=1024)
-    done = asyncio.Event()
+    async def run() -> None:
+        ch_in: Channel[int] = Channel(maxsize=1024)
+        ch_out: Channel[int] = Channel(maxsize=1024)
+        done = asyncio.Event()
 
-    async def worker() -> None:
-        count = 0
-        while count < n_messages:
-            msg = await ch_in.receive()
-            await ch_out.send(msg)
-            count += 1
-        done.set()
+        async def worker() -> None:
+            count = 0
+            while count < n_messages:
+                msg = await ch_in.receive()
+                await ch_out.send(msg)
+                count += 1
+            done.set()
 
-    async def drain() -> None:
-        drained = 0
-        while drained < n_messages:
-            await ch_out.receive()
-            drained += 1
+        async def drain() -> None:
+            drained = 0
+            while drained < n_messages:
+                await ch_out.receive()
+                drained += 1
 
-    task = asyncio.create_task(worker())
-    drain_task = asyncio.create_task(drain())
-    start = time.perf_counter()
-    for i in range(n_messages):
-        await ch_in.send(i)
-    await done.wait()
-    elapsed = time.perf_counter() - start
-    task.cancel()
-    drain_task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await drain_task
-    except asyncio.CancelledError:
-        pass
-    return elapsed
+        task = asyncio.create_task(worker())
+        drain_task = asyncio.create_task(drain())
+        for i in range(n_messages):
+            await ch_in.send(i)
+        await done.wait()
+        task.cancel()
+        drain_task.cancel()
+        await asyncio.gather(task, drain_task, return_exceptions=True)
+
+    return await isolated_async_bench(run)
 
 
 async def _mapanare_stream_map(n_items: int) -> float:
     """Mapanare: stream map pipeline."""
     from runtime.stream import Stream
 
-    stream = Stream.from_iter(range(n_items))
-    mapped = stream.map(lambda x: x * 2)
-    start = time.perf_counter()
-    result = await mapped.collect()
-    elapsed = time.perf_counter() - start
-    assert len(result) == n_items
-    return elapsed
+    async def run() -> None:
+        stream = Stream.from_iter(range(n_items))
+        result = await stream.map(lambda x: x * 2).collect()
+        assert len(result) == n_items
+
+    return await isolated_async_bench(run)
 
 
 async def _mapanare_stream_filter(n_items: int) -> float:
     """Mapanare: stream filter pipeline."""
     from runtime.stream import Stream
 
-    stream = Stream.from_iter(range(n_items))
-    filtered = stream.filter(lambda x: x % 2 == 0)
-    start = time.perf_counter()
-    result = await filtered.collect()
-    elapsed = time.perf_counter() - start
-    assert len(result) == n_items // 2
-    return elapsed
+    async def run() -> None:
+        stream = Stream.from_iter(range(n_items))
+        result = await stream.filter(lambda x: x % 2 == 0).collect()
+        assert len(result) == n_items // 2
+
+    return await isolated_async_bench(run)
 
 
 async def _mapanare_stream_map_filter(n_items: int) -> float:
     """Mapanare: stream map+filter pipeline."""
     from runtime.stream import Stream
 
-    stream = Stream.from_iter(range(n_items))
-    pipeline = stream.map(lambda x: x * 3).filter(lambda x: x % 2 == 0)
-    start = time.perf_counter()
-    await pipeline.collect()
-    elapsed = time.perf_counter() - start
-    return elapsed
+    async def run() -> None:
+        stream = Stream.from_iter(range(n_items))
+        await stream.map(lambda x: x * 3).filter(lambda x: x % 2 == 0).collect()
+
+    return await isolated_async_bench(run)
 
 
 # ---------------------------------------------------------------------------

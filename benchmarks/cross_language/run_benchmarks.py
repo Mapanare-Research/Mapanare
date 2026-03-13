@@ -5,9 +5,9 @@ Runs each benchmark multiple times for stability.
 Process isolation per run.
 
 Usage:
-    python -m test_vs.run_benchmarks          # run all
-    python -m test_vs.run_benchmarks --only 01 # run only fibonacci
-    python -m test_vs.run_benchmarks --runs 5  # 5 iterations per benchmark
+    python -m benchmarks.cross_language.run_benchmarks          # run all
+    python -m benchmarks.cross_language.run_benchmarks --only 01 # run only fibonacci
+    python -m benchmarks.cross_language.run_benchmarks --runs 5  # 5 iterations per benchmark
 """
 
 from __future__ import annotations

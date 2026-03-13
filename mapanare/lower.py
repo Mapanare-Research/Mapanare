@@ -1223,7 +1223,28 @@ class MIRLowerer:
             return dest
 
         # General method call → Call with self as first arg
-        dest = self._make_value()
+        # Infer return type for known string methods so LLVM codegen uses correct types
+        _str_method_ret: dict[str, TypeKind] = {
+            "char_at": TypeKind.STRING,
+            "byte_at": TypeKind.INT,
+            "substr": TypeKind.STRING,
+            "starts_with": TypeKind.BOOL,
+            "ends_with": TypeKind.BOOL,
+            "find": TypeKind.INT,
+            "contains": TypeKind.BOOL,
+            "trim": TypeKind.STRING,
+            "trim_start": TypeKind.STRING,
+            "trim_end": TypeKind.STRING,
+            "to_upper": TypeKind.STRING,
+            "to_lower": TypeKind.STRING,
+            "replace": TypeKind.STRING,
+            "split": TypeKind.LIST,
+        }
+        ret_kind = _str_method_ret.get(expr.method)
+        if ret_kind is not None and obj.ty.kind == TypeKind.STRING:
+            dest = self._make_value(ty=MIRType(TypeInfo(kind=ret_kind)))
+        else:
+            dest = self._make_value()
         self._emit(Call(dest=dest, fn_name=expr.method, args=[obj] + args))
         return dest
 

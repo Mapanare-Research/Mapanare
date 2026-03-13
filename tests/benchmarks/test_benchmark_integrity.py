@@ -46,14 +46,14 @@ class TestStreamPipelineIntegrity:
     def test_compiles(self) -> None:
         from pathlib import Path
 
-        source = Path("test_vs/03_stream_pipeline.mn").read_text(encoding="utf-8")
+        source = Path("benchmarks/cross_language/03_stream_pipeline.mn").read_text(encoding="utf-8")
         code = _compile_source(source, "03_stream_pipeline.mn")
         assert "Stream.from_iter" in code or "stream" in code
 
     def test_uses_stream_primitives(self) -> None:
         from pathlib import Path
 
-        source = Path("test_vs/03_stream_pipeline.mn").read_text(encoding="utf-8")
+        source = Path("benchmarks/cross_language/03_stream_pipeline.mn").read_text(encoding="utf-8")
         # Must use stream() constructor
         assert "stream(" in source
         # Must use at least one stream operator
@@ -62,13 +62,13 @@ class TestStreamPipelineIntegrity:
     def test_does_not_use_plain_loop_only(self) -> None:
         from pathlib import Path
 
-        source = Path("test_vs/03_stream_pipeline.mn").read_text(encoding="utf-8")
+        source = Path("benchmarks/cross_language/03_stream_pipeline.mn").read_text(encoding="utf-8")
         code = _compile_source(source, "03_stream_pipeline.mn")
         # The compiled code should use Stream, not just a for loop
         assert "Stream" in code or "stream" in code
 
     def test_produces_correct_output(self) -> None:
-        output = _compile_and_run("test_vs/03_stream_pipeline.mn")
+        output = _compile_and_run("benchmarks/cross_language/03_stream_pipeline.mn")
         # stream(0..1000000).map(x => x*3).filter(x => x%2==0).fold(0, +)
         # Sum of x*3 for even x*3 in 0..999999
         # x*3 is even when x is even, so sum of 6*x for x in 0,1,...,499999
@@ -87,7 +87,7 @@ class TestConcurrencyIntegrity:
     def test_uses_agent_primitives(self) -> None:
         from pathlib import Path
 
-        source = Path("test_vs/02_concurrency.mn").read_text(encoding="utf-8")
+        source = Path("benchmarks/cross_language/02_concurrency.mn").read_text(encoding="utf-8")
         assert "agent " in source
         assert "spawn " in source
         assert "<-" in source
@@ -96,13 +96,13 @@ class TestConcurrencyIntegrity:
     def test_uses_multiple_agents(self) -> None:
         from pathlib import Path
 
-        source = Path("test_vs/02_concurrency.mn").read_text(encoding="utf-8")
+        source = Path("benchmarks/cross_language/02_concurrency.mn").read_text(encoding="utf-8")
         # Should spawn more than one worker
         spawn_count = source.count("spawn ")
         assert spawn_count >= 2, f"Expected multiple spawns, got {spawn_count}"
 
     def test_produces_correct_output(self) -> None:
-        output = _compile_and_run("test_vs/02_concurrency.mn")
+        output = _compile_and_run("benchmarks/cross_language/02_concurrency.mn")
         # 4 workers, each processes 2500 messages: val*2+1 for val in their range
         # Total = sum(i*2+1 for i in range(10000)) = 100000000
         assert output == "100000000"
@@ -184,47 +184,47 @@ class TestAgentPipelineBenchmark:
     def test_mn_file_exists(self) -> None:
         from pathlib import Path
 
-        assert Path("test_vs/05_agent_pipeline.mn").exists()
+        assert Path("benchmarks/cross_language/05_agent_pipeline.mn").exists()
 
     def test_py_file_exists(self) -> None:
         from pathlib import Path
 
-        assert Path("test_vs/05_agent_pipeline.py").exists()
+        assert Path("benchmarks/cross_language/05_agent_pipeline.py").exists()
 
     def test_go_file_exists(self) -> None:
         from pathlib import Path
 
-        assert Path("test_vs/05_agent_pipeline.go").exists()
+        assert Path("benchmarks/cross_language/05_agent_pipeline.go").exists()
 
     def test_rs_file_exists(self) -> None:
         from pathlib import Path
 
-        assert Path("test_vs/05_agent_pipeline.rs").exists()
+        assert Path("benchmarks/cross_language/05_agent_pipeline.rs").exists()
 
     def test_uses_multiple_agents(self) -> None:
         from pathlib import Path
 
-        source = Path("test_vs/05_agent_pipeline.mn").read_text(encoding="utf-8")
+        source = Path("benchmarks/cross_language/05_agent_pipeline.mn").read_text(encoding="utf-8")
         agent_count = source.count("agent ")
         assert agent_count >= 3, "Pipeline should have at least 3 stages"
 
     def test_uses_string_operations(self) -> None:
         from pathlib import Path
 
-        source = Path("test_vs/05_agent_pipeline.mn").read_text(encoding="utf-8")
+        source = Path("benchmarks/cross_language/05_agent_pipeline.mn").read_text(encoding="utf-8")
         assert "String" in source
 
     def test_compiles_and_runs(self) -> None:
-        output = _compile_and_run("test_vs/05_agent_pipeline.mn")
+        output = _compile_and_run("benchmarks/cross_language/05_agent_pipeline.mn")
         # Should produce a numeric result
         assert output.strip().isdigit() or output.strip().lstrip("-").isdigit()
 
     def test_produces_correct_output(self) -> None:
-        output = _compile_and_run("test_vs/05_agent_pipeline.mn")
+        output = _compile_and_run("benchmarks/cross_language/05_agent_pipeline.mn")
         assert output == "78670"
 
     def test_in_benchmark_runner(self) -> None:
-        from test_vs.run_benchmarks import BENCHMARKS
+        from benchmarks.cross_language.run_benchmarks import BENCHMARKS
 
         bench_ids = [b[0] for b in BENCHMARKS]
         assert "05_agent_pipeline" in bench_ids

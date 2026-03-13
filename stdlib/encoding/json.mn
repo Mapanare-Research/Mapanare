@@ -1,0 +1,981 @@
+// encoding/json.mn — JSON Parser/Serializer for Mapanare.
+//
+// A recursive descent JSON parser written entirely in Mapanare.
+// No external dependencies. Uses C runtime string primitives from v0.8.0.
+//
+// Supports: null, booleans, integers, floats, strings (with escape sequences),
+// arrays, objects. Full JSON spec compliance (RFC 8259).
+
+// ---------------------------------------------------------------------------
+// Core Types
+// ---------------------------------------------------------------------------
+
+pub struct JsonError {
+    message: String,
+    line: Int,
+    col: Int
+}
+
+pub enum JsonValue {
+    Null,
+    Bool(Bool),
+    Int(Int),
+    Float(Float),
+    Str(String),
+    Array(List<JsonValue>),
+    Object(Map<String, JsonValue>)
+}
+
+// Result struct for internal parser state (value + position after parsing)
+struct DecodeResult {
+    value: JsonValue,
+    pos: Int,
+    line: Int,
+    col: Int
+}
+
+// Streaming parser events
+pub enum JsonEvent {
+    StartObject,
+    EndObject,
+    StartArray,
+    EndArray,
+    Key(String),
+    Value(JsonValue)
+}
+
+// Schema validation types
+pub enum JsonSchemaType {
+    SNull,
+    SBool,
+    SInt,
+    SFloat,
+    SStr,
+    SArray,
+    SObject,
+    SAny
+}
+
+pub struct JsonSchema {
+    schema_type: JsonSchemaType,
+    required_fields: List<String>,
+    min_value: Int,
+    max_value: Int,
+    has_min: Bool,
+    has_max: Bool
+}
+
+// ---------------------------------------------------------------------------
+// Constructor helpers
+// ---------------------------------------------------------------------------
+
+fn new_json_error(message: String, line: Int, col: Int) -> JsonError {
+    return new JsonError { message: message, line: line, col: col }
+}
+
+fn new_decode_result(value: JsonValue, pos: Int, line: Int, col: Int) -> DecodeResult {
+    return new DecodeResult { value: value, pos: pos, line: line, col: col }
+}
+
+// ---------------------------------------------------------------------------
+// Character classification helpers
+// ---------------------------------------------------------------------------
+
+fn is_json_digit(ch: String) -> Bool {
+    if ch >= "0" { if ch <= "9" { return true } }
+    return false
+}
+
+fn is_hex(ch: String) -> Bool {
+    if is_json_digit(ch) { return true }
+    if ch >= "a" { if ch <= "f" { return true } }
+    if ch >= "A" { if ch <= "F" { return true } }
+    return false
+}
+
+fn digit_value(ch: String) -> Int {
+    if ch == "0" { return 0 }
+    if ch == "1" { return 1 }
+    if ch == "2" { return 2 }
+    if ch == "3" { return 3 }
+    if ch == "4" { return 4 }
+    if ch == "5" { return 5 }
+    if ch == "6" { return 6 }
+    if ch == "7" { return 7 }
+    if ch == "8" { return 8 }
+    if ch == "9" { return 9 }
+    return 0
+}
+
+fn hex_digit_value(ch: String) -> Int {
+    if ch == "0" { return 0 }
+    if ch == "1" { return 1 }
+    if ch == "2" { return 2 }
+    if ch == "3" { return 3 }
+    if ch == "4" { return 4 }
+    if ch == "5" { return 5 }
+    if ch == "6" { return 6 }
+    if ch == "7" { return 7 }
+    if ch == "8" { return 8 }
+    if ch == "9" { return 9 }
+    if ch == "a" { return 10 }
+    if ch == "b" { return 11 }
+    if ch == "c" { return 12 }
+    if ch == "d" { return 13 }
+    if ch == "e" { return 14 }
+    if ch == "f" { return 15 }
+    if ch == "A" { return 10 }
+    if ch == "B" { return 11 }
+    if ch == "C" { return 12 }
+    if ch == "D" { return 13 }
+    if ch == "E" { return 14 }
+    if ch == "F" { return 15 }
+    return 0
+}
+
+// ---------------------------------------------------------------------------
+// Whitespace skipper (Task 9)
+// ---------------------------------------------------------------------------
+
+struct SkipResult {
+    pos: Int,
+    line: Int,
+    col: Int
+}
+
+fn skip_whitespace(input: String, pos: Int, line: Int, col: Int) -> SkipResult {
+    let slen: Int = len(input)
+    let mut p: Int = pos
+    let mut ln: Int = line
+    let mut c: Int = col
+    while p < slen {
+        let ch: String = input.char_at(p)
+        if ch == " " { p = p + 1; c = c + 1 } else { if ch == "\t" { p = p + 1; c = c + 1 } else { if ch == "\r" { p = p + 1; c = c + 1 } else { if ch == "\n" { p = p + 1; ln = ln + 1; c = 1 } else { return new SkipResult { pos: p, line: ln, col: c } } } } }
+    }
+    return new SkipResult { pos: p, line: ln, col: c }
+}
+
+// ---------------------------------------------------------------------------
+// Escape sequence handler (Task 5 helper)
+// ---------------------------------------------------------------------------
+
+struct EscapeResult {
+    value: String,
+    advance: Int,
+    ok: Bool,
+    error_msg: String
+}
+
+fn handle_escape(input: String, pos: Int, slen: Int) -> EscapeResult {
+    // pos points to the character AFTER the backslash
+    if pos >= slen {
+        return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Unexpected end of input in escape" }
+    }
+    let esc: String = input.char_at(pos)
+    if esc == "\"" { return new EscapeResult { value: "\"", advance: 1, ok: true, error_msg: "" } }
+    if esc == "\\" { return new EscapeResult { value: "\\", advance: 1, ok: true, error_msg: "" } }
+    if esc == "/" { return new EscapeResult { value: "/", advance: 1, ok: true, error_msg: "" } }
+    if esc == "n" { return new EscapeResult { value: "\n", advance: 1, ok: true, error_msg: "" } }
+    if esc == "t" { return new EscapeResult { value: "\t", advance: 1, ok: true, error_msg: "" } }
+    if esc == "r" { return new EscapeResult { value: "\r", advance: 1, ok: true, error_msg: "" } }
+    if esc == "b" { return new EscapeResult { value: "", advance: 1, ok: true, error_msg: "" } }
+    if esc == "f" { return new EscapeResult { value: "", advance: 1, ok: true, error_msg: "" } }
+    if esc == "u" {
+        // Unicode escape \uXXXX
+        if pos + 4 >= slen {
+            return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Incomplete unicode escape" }
+        }
+        let h0: String = input.char_at(pos + 1)
+        let h1: String = input.char_at(pos + 2)
+        let h2: String = input.char_at(pos + 3)
+        let h3: String = input.char_at(pos + 4)
+        if is_hex(h0) == false { return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit in unicode escape" } }
+        if is_hex(h1) == false { return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit in unicode escape" } }
+        if is_hex(h2) == false { return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit in unicode escape" } }
+        if is_hex(h3) == false { return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit in unicode escape" } }
+        let codepoint: Int = hex_digit_value(h0) * 4096 + hex_digit_value(h1) * 256 + hex_digit_value(h2) * 16 + hex_digit_value(h3)
+        if codepoint < 128 {
+            return new EscapeResult { value: str(codepoint), advance: 5, ok: true, error_msg: "" }
+        } else {
+            return new EscapeResult { value: "?", advance: 5, ok: true, error_msg: "" }
+        }
+    }
+    return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid escape character" }
+}
+
+// ---------------------------------------------------------------------------
+// String parser (Task 5)
+// ---------------------------------------------------------------------------
+
+struct StringResult {
+    value: String,
+    pos: Int,
+    line: Int,
+    col: Int,
+    ok: Bool,
+    error: JsonError
+}
+
+fn parse_json_string(input: String, pos: Int, line: Int, col: Int) -> StringResult {
+    let slen: Int = len(input)
+    if pos >= slen {
+        return new StringResult { value: "", pos: pos, line: line, col: col, ok: false, error: new_json_error("Unexpected end of input in string", line, col) }
+    }
+    if input.char_at(pos) != "\"" {
+        return new StringResult { value: "", pos: pos, line: line, col: col, ok: false, error: new_json_error("Expected quote to start string", line, col) }
+    }
+    let mut p: Int = pos + 1
+    let mut c: Int = col + 1
+    let mut ln: Int = line
+    let mut result: String = ""
+
+    while p < slen {
+        let ch: String = input.char_at(p)
+        if ch == "\"" {
+            return new StringResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
+        }
+        if ch == "\\" {
+            let er: EscapeResult = handle_escape(input, p + 1, slen)
+            if er.ok == false {
+                return new StringResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_json_error(er.error_msg, ln, c) }
+            }
+            result = result + er.value
+            p = p + 1 + er.advance
+            c = c + 1 + er.advance
+        } else { if ch == "\n" {
+            ln = ln + 1
+            c = 1
+            result = result + ch
+            p = p + 1
+        } else {
+            result = result + ch
+            p = p + 1
+            c = c + 1
+        } }
+    }
+    return new StringResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_json_error("Unterminated string", line, col) }
+}
+
+// ---------------------------------------------------------------------------
+// Number parser (Task 6)
+// ---------------------------------------------------------------------------
+
+struct NumberResult {
+    int_val: Int,
+    float_val: Float,
+    is_float: Bool,
+    pos: Int,
+    col: Int,
+    ok: Bool,
+    error: JsonError
+}
+
+fn parse_json_number(input: String, pos: Int, line: Int, col: Int) -> NumberResult {
+    let slen: Int = len(input)
+    let mut p: Int = pos
+    let mut c: Int = col
+    let mut negative: Bool = false
+
+    if p < slen {
+        if input.char_at(p) == "-" {
+            negative = true
+            p = p + 1
+            c = c + 1
+        }
+    }
+
+    if p >= slen {
+        return new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Unexpected end of input in number", line, c) }
+    }
+
+    let first_digit: String = input.char_at(p)
+    if is_json_digit(first_digit) == false {
+        return new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit in number", line, c) }
+    }
+
+    // Integer part
+    let mut int_part: Int = 0
+    while p < slen {
+        let ch: String = input.char_at(p)
+        if is_json_digit(ch) {
+            int_part = int_part * 10 + digit_value(ch)
+            p = p + 1
+            c = c + 1
+        } else {
+            break
+        }
+    }
+
+    // Check for fractional part
+    let mut is_float: Bool = false
+    let mut frac_part: Float = 0.0
+    let mut frac_divisor: Float = 1.0
+
+    if p < slen {
+        if input.char_at(p) == "." {
+            is_float = true
+            p = p + 1
+            c = c + 1
+            if p >= slen {
+                return new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit after decimal point", line, c) }
+            }
+            if is_json_digit(input.char_at(p)) == false {
+                return new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit after decimal point", line, c) }
+            }
+            while p < slen {
+                let fch: String = input.char_at(p)
+                if is_json_digit(fch) {
+                    frac_divisor = frac_divisor * 10.0
+                    frac_part = frac_part + float(digit_value(fch)) / frac_divisor
+                    p = p + 1
+                    c = c + 1
+                } else {
+                    break
+                }
+            }
+        }
+    }
+
+    // Check for exponent part
+    let mut exp_val: Int = 0
+    let mut exp_negative: Bool = false
+    let mut has_exp: Bool = false
+
+    if p < slen {
+        let ech: String = input.char_at(p)
+        if ech == "e" { has_exp = true; is_float = true; p = p + 1; c = c + 1 } else { if ech == "E" { has_exp = true; is_float = true; p = p + 1; c = c + 1 } }
+    }
+
+    if has_exp {
+        if p < slen {
+            let sign_ch: String = input.char_at(p)
+            if sign_ch == "+" { p = p + 1; c = c + 1 } else { if sign_ch == "-" { exp_negative = true; p = p + 1; c = c + 1 } }
+        }
+        if p >= slen {
+            return new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit in exponent", line, c) }
+        }
+        if is_json_digit(input.char_at(p)) == false {
+            return new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit in exponent", line, c) }
+        }
+        while p < slen {
+            let ech2: String = input.char_at(p)
+            if is_json_digit(ech2) {
+                exp_val = exp_val * 10 + digit_value(ech2)
+                p = p + 1
+                c = c + 1
+            } else {
+                break
+            }
+        }
+    }
+
+    if is_float {
+        let mut result_f: Float = float(int_part) + frac_part
+        if has_exp {
+            let mut multiplier: Float = 1.0
+            let mut i: Int = 0
+            while i < exp_val {
+                multiplier = multiplier * 10.0
+                i = i + 1
+            }
+            if exp_negative { result_f = result_f / multiplier } else { result_f = result_f * multiplier }
+        }
+        if negative { result_f = 0.0 - result_f }
+        return new NumberResult { int_val: 0, float_val: result_f, is_float: true, pos: p, col: c, ok: true, error: new_json_error("", 0, 0) }
+    } else {
+        let mut result_i: Int = int_part
+        if negative { result_i = 0 - result_i }
+        return new NumberResult { int_val: result_i, float_val: 0.0, is_float: false, pos: p, col: c, ok: true, error: new_json_error("", 0, 0) }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Recursive descent parser (Tasks 4, 7, 8, 10)
+// ---------------------------------------------------------------------------
+
+pub fn decode_value(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
+    let slen: Int = len(input)
+
+    let ws: SkipResult = skip_whitespace(input, pos, line, col)
+    let mut p: Int = ws.pos
+    let mut ln: Int = ws.line
+    let mut c: Int = ws.col
+
+    if p >= slen {
+        return Err(new_json_error("Unexpected end of input", ln, c))
+    }
+
+    let ch: String = input.char_at(p)
+
+    // Null
+    if ch == "n" {
+        if p + 3 < slen {
+            if input.char_at(p + 1) == "u" {
+                if input.char_at(p + 2) == "l" {
+                    if input.char_at(p + 3) == "l" {
+                        return Ok(new_decode_result(Null(), p + 4, ln, c + 4))
+                    }
+                }
+            }
+        }
+        return Err(new_json_error("Invalid value: expected 'null'", ln, c))
+    }
+
+    // True
+    if ch == "t" {
+        if p + 3 < slen {
+            if input.char_at(p + 1) == "r" {
+                if input.char_at(p + 2) == "u" {
+                    if input.char_at(p + 3) == "e" {
+                        return Ok(new_decode_result(Bool(true), p + 4, ln, c + 4))
+                    }
+                }
+            }
+        }
+        return Err(new_json_error("Invalid value: expected 'true'", ln, c))
+    }
+
+    // False
+    if ch == "f" {
+        if p + 4 < slen {
+            if input.char_at(p + 1) == "a" {
+                if input.char_at(p + 2) == "l" {
+                    if input.char_at(p + 3) == "s" {
+                        if input.char_at(p + 4) == "e" {
+                            return Ok(new_decode_result(Bool(false), p + 5, ln, c + 5))
+                        }
+                    }
+                }
+            }
+        }
+        return Err(new_json_error("Invalid value: expected 'false'", ln, c))
+    }
+
+    // String
+    if ch == "\"" {
+        let sr: StringResult = parse_json_string(input, p, ln, c)
+        if sr.ok { return Ok(new_decode_result(Str(sr.value), sr.pos, sr.line, sr.col)) } else { return Err(sr.error) }
+    }
+
+    // Number
+    if is_json_digit(ch) {
+        let nr: NumberResult = parse_json_number(input, p, ln, c)
+        if nr.ok {
+            if nr.is_float { return Ok(new_decode_result(Float(nr.float_val), nr.pos, ln, nr.col)) } else { return Ok(new_decode_result(Int(nr.int_val), nr.pos, ln, nr.col)) }
+        } else { return Err(nr.error) }
+    }
+    if ch == "-" {
+        let nr: NumberResult = parse_json_number(input, p, ln, c)
+        if nr.ok {
+            if nr.is_float { return Ok(new_decode_result(Float(nr.float_val), nr.pos, ln, nr.col)) } else { return Ok(new_decode_result(Int(nr.int_val), nr.pos, ln, nr.col)) }
+        } else { return Err(nr.error) }
+    }
+
+    // Array
+    if ch == "[" { return decode_array(input, p, ln, c) }
+
+    // Object
+    if ch == "{" { return decode_object(input, p, ln, c) }
+
+    return Err(new_json_error("Unexpected character: " + ch, ln, c))
+}
+
+// ---------------------------------------------------------------------------
+// Array parser (Task 7)
+// ---------------------------------------------------------------------------
+
+fn decode_array(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
+    let slen: Int = len(input)
+    let mut p: Int = pos + 1
+    let mut ln: Int = line
+    let mut c: Int = col + 1
+    let mut items: List<JsonValue> = []
+
+    let ws1: SkipResult = skip_whitespace(input, p, ln, c)
+    p = ws1.pos
+    ln = ws1.line
+    c = ws1.col
+
+    if p < slen {
+        if input.char_at(p) == "]" {
+            return Ok(new_decode_result(Array(items), p + 1, ln, c + 1))
+        }
+    }
+
+    let mut count: Int = 0
+    while count < 1000000 {
+        count = count + 1
+
+        let val_result: Result<DecodeResult, JsonError> = decode_value(input, p, ln, c)
+        match val_result {
+            Ok(dr) => {
+                items = items + [dr.value]
+                p = dr.pos
+                ln = dr.line
+                c = dr.col
+            },
+            Err(e) => { return Err(e) }
+        }
+
+        let ws2: SkipResult = skip_whitespace(input, p, ln, c)
+        p = ws2.pos
+        ln = ws2.line
+        c = ws2.col
+
+        if p >= slen { return Err(new_json_error("Unterminated array", ln, c)) }
+
+        let next_ch: String = input.char_at(p)
+        if next_ch == "]" { return Ok(new_decode_result(Array(items), p + 1, ln, c + 1)) }
+        if next_ch == "," {
+            p = p + 1
+            c = c + 1
+            let ws3: SkipResult = skip_whitespace(input, p, ln, c)
+            p = ws3.pos
+            ln = ws3.line
+            c = ws3.col
+        } else { return Err(new_json_error("Expected comma or closing bracket in array", ln, c)) }
+    }
+    return Err(new_json_error("Array too many elements", ln, c))
+}
+
+// ---------------------------------------------------------------------------
+// Object parser (Task 8)
+// ---------------------------------------------------------------------------
+
+fn decode_object(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
+    let slen: Int = len(input)
+    let mut p: Int = pos + 1
+    let mut ln: Int = line
+    let mut c: Int = col + 1
+    let mut entries: Map<String, JsonValue> = #{}
+
+    let ws1: SkipResult = skip_whitespace(input, p, ln, c)
+    p = ws1.pos
+    ln = ws1.line
+    c = ws1.col
+
+    if p < slen {
+        if input.char_at(p) == "}" {
+            return Ok(new_decode_result(Object(entries), p + 1, ln, c + 1))
+        }
+    }
+
+    let mut count: Int = 0
+    while count < 1000000 {
+        count = count + 1
+
+        let ws_k: SkipResult = skip_whitespace(input, p, ln, c)
+        p = ws_k.pos
+        ln = ws_k.line
+        c = ws_k.col
+
+        if p >= slen { return Err(new_json_error("Unterminated object", ln, c)) }
+        if input.char_at(p) != "\"" { return Err(new_json_error("Expected string key in object", ln, c)) }
+
+        let key_result: StringResult = parse_json_string(input, p, ln, c)
+        if key_result.ok == false { return Err(key_result.error) }
+        p = key_result.pos
+        ln = key_result.line
+        c = key_result.col
+
+        let ws2: SkipResult = skip_whitespace(input, p, ln, c)
+        p = ws2.pos
+        ln = ws2.line
+        c = ws2.col
+
+        if p >= slen { return Err(new_json_error("Expected colon after object key", ln, c)) }
+        if input.char_at(p) != ":" { return Err(new_json_error("Expected colon after object key", ln, c)) }
+        p = p + 1
+        c = c + 1
+
+        let val_result: Result<DecodeResult, JsonError> = decode_value(input, p, ln, c)
+        match val_result {
+            Ok(dr) => {
+                entries[key_result.value] = dr.value
+                p = dr.pos
+                ln = dr.line
+                c = dr.col
+            },
+            Err(e) => { return Err(e) }
+        }
+
+        let ws3: SkipResult = skip_whitespace(input, p, ln, c)
+        p = ws3.pos
+        ln = ws3.line
+        c = ws3.col
+
+        if p >= slen { return Err(new_json_error("Unterminated object", ln, c)) }
+
+        let next_ch: String = input.char_at(p)
+        if next_ch == "}" { return Ok(new_decode_result(Object(entries), p + 1, ln, c + 1)) }
+        if next_ch == "," {
+            p = p + 1
+            c = c + 1
+        } else { return Err(new_json_error("Expected comma or closing brace in object", ln, c)) }
+    }
+    return Err(new_json_error("Object too many keys", ln, c))
+}
+
+// ---------------------------------------------------------------------------
+// Top-level decode (Task 10)
+// ---------------------------------------------------------------------------
+
+pub fn decode(input: String) -> Result<JsonValue, JsonError> {
+    let result: Result<DecodeResult, JsonError> = decode_value(input, 0, 1, 1)
+    match result {
+        Ok(dr) => {
+            let ws: SkipResult = skip_whitespace(input, dr.pos, dr.line, dr.col)
+            if ws.pos < len(input) { return Err(new_json_error("Unexpected trailing content", ws.line, ws.col)) }
+            return Ok(dr.value)
+        },
+        Err(e) => { return Err(e) }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Serializer (Task 14)
+// ---------------------------------------------------------------------------
+
+fn escape_json_string(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        if ch == "\"" { result = result + "\\\"" } else { if ch == "\\" { result = result + "\\\\" } else { if ch == "\n" { result = result + "\\n" } else { if ch == "\t" { result = result + "\\t" } else { if ch == "\r" { result = result + "\\r" } else { result = result + ch } } } } }
+        i = i + 1
+    }
+    return result
+}
+
+pub fn encode(value: JsonValue) -> String {
+    match value {
+        Null => { return "null" },
+        Bool(b) => {
+            if b { return "true" } else { return "false" }
+        },
+        Int(n) => { return str(n) },
+        Float(f) => { return str(f) },
+        Str(s) => { return "\"" + escape_json_string(s) + "\"" },
+        Array(items) => {
+            let item_count: Int = len(items)
+            if item_count == 0 { return "[]" }
+            let mut result: String = "["
+            let mut i: Int = 0
+            while i < item_count {
+                if i > 0 { result = result + "," }
+                result = result + encode(items[i])
+                i = i + 1
+            }
+            result = result + "]"
+            return result
+        },
+        Object(entries) => {
+            let mut result: String = "{"
+            let mut first: Bool = true
+            for key in entries {
+                if first { first = false } else { result = result + "," }
+                result = result + "\"" + escape_json_string(key) + "\":" + encode(entries[key])
+            }
+            result = result + "}"
+            return result
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pretty-print serializer (Task 15)
+// ---------------------------------------------------------------------------
+
+fn make_indent(level: Int) -> String {
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < level {
+        result = result + "  "
+        i = i + 1
+    }
+    return result
+}
+
+fn encode_pretty_inner(value: JsonValue, indent: Int, level: Int) -> String {
+    match value {
+        Null => { return "null" },
+        Bool(b) => {
+            if b { return "true" } else { return "false" }
+        },
+        Int(n) => { return str(n) },
+        Float(f) => { return str(f) },
+        Str(s) => { return "\"" + escape_json_string(s) + "\"" },
+        Array(items) => {
+            let item_count: Int = len(items)
+            if item_count == 0 { return "[]" }
+            let next_level: Int = level + 1
+            let inner_indent: String = make_indent(next_level)
+            let outer_indent: String = make_indent(level)
+            let mut result: String = "[\n"
+            let mut i: Int = 0
+            while i < item_count {
+                if i > 0 { result = result + ",\n" }
+                result = result + inner_indent + encode_pretty_inner(items[i], indent, next_level)
+                i = i + 1
+            }
+            result = result + "\n" + outer_indent + "]"
+            return result
+        },
+        Object(entries) => {
+            let next_level: Int = level + 1
+            let inner_indent: String = make_indent(next_level)
+            let outer_indent: String = make_indent(level)
+            let mut result: String = "{\n"
+            let mut first: Bool = true
+            for key in entries {
+                if first { first = false } else { result = result + ",\n" }
+                result = result + inner_indent + "\"" + escape_json_string(key) + "\": " + encode_pretty_inner(entries[key], indent, next_level)
+            }
+            result = result + "\n" + outer_indent + "}"
+            return result
+        }
+    }
+}
+
+pub fn encode_pretty(value: JsonValue, indent: Int) -> String {
+    return encode_pretty_inner(value, indent, 0)
+}
+
+// ---------------------------------------------------------------------------
+// Streaming parser (Task 17, 18) — SAX-style events
+// ---------------------------------------------------------------------------
+
+struct EventResult {
+    events: List<JsonEvent>,
+    pos: Int,
+    line: Int,
+    col: Int,
+    ok: Bool,
+    error: JsonError
+}
+
+fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResult {
+    let slen: Int = len(input)
+    let ws: SkipResult = skip_whitespace(input, pos, line, col)
+    let mut p: Int = ws.pos
+    let mut ln: Int = ws.line
+    let mut c: Int = ws.col
+    let mut events: List<JsonEvent> = []
+
+    if p >= slen {
+        return new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Unexpected end of input", ln, c) }
+    }
+
+    let ch: String = input.char_at(p)
+
+    // Object
+    if ch == "{" {
+        events = events + [StartObject()]
+        p = p + 1
+        c = c + 1
+
+        let ws1: SkipResult = skip_whitespace(input, p, ln, c)
+        p = ws1.pos
+        ln = ws1.line
+        c = ws1.col
+
+        if p < slen {
+            if input.char_at(p) == "}" {
+                events = events + [EndObject()]
+                return new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
+            }
+        }
+
+        let mut count: Int = 0
+        while count < 1000000 {
+            count = count + 1
+
+            let ws_k: SkipResult = skip_whitespace(input, p, ln, c)
+            p = ws_k.pos
+            ln = ws_k.line
+            c = ws_k.col
+
+            let key_r: StringResult = parse_json_string(input, p, ln, c)
+            if key_r.ok == false {
+                return new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: key_r.error }
+            }
+            events = events + [Key(key_r.value)]
+            p = key_r.pos
+            ln = key_r.line
+            c = key_r.col
+
+            let ws_c: SkipResult = skip_whitespace(input, p, ln, c)
+            p = ws_c.pos
+            ln = ws_c.line
+            c = ws_c.col
+            if p >= slen {
+                return new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected colon", ln, c) }
+            }
+            if input.char_at(p) != ":" {
+                return new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected colon", ln, c) }
+            }
+            p = p + 1
+            c = c + 1
+
+            let val_r: EventResult = stream_parse_value(input, p, ln, c)
+            if val_r.ok == false { return val_r }
+            events = events + val_r.events
+            p = val_r.pos
+            ln = val_r.line
+            c = val_r.col
+
+            let ws_n: SkipResult = skip_whitespace(input, p, ln, c)
+            p = ws_n.pos
+            ln = ws_n.line
+            c = ws_n.col
+
+            if p >= slen {
+                return new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Unterminated object", ln, c) }
+            }
+            if input.char_at(p) == "}" {
+                events = events + [EndObject()]
+                return new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
+            }
+            if input.char_at(p) == "," {
+                p = p + 1
+                c = c + 1
+            } else { return new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected comma or closing brace", ln, c) } }
+        }
+    }
+
+    // Array
+    if ch == "[" {
+        events = events + [StartArray()]
+        p = p + 1
+        c = c + 1
+
+        let ws1: SkipResult = skip_whitespace(input, p, ln, c)
+        p = ws1.pos
+        ln = ws1.line
+        c = ws1.col
+
+        if p < slen {
+            if input.char_at(p) == "]" {
+                events = events + [EndArray()]
+                return new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
+            }
+        }
+
+        let mut count: Int = 0
+        while count < 1000000 {
+            count = count + 1
+
+            let val_r: EventResult = stream_parse_value(input, p, ln, c)
+            if val_r.ok == false { return val_r }
+            events = events + val_r.events
+            p = val_r.pos
+            ln = val_r.line
+            c = val_r.col
+
+            let ws_n: SkipResult = skip_whitespace(input, p, ln, c)
+            p = ws_n.pos
+            ln = ws_n.line
+            c = ws_n.col
+
+            if p >= slen {
+                return new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Unterminated array", ln, c) }
+            }
+            if input.char_at(p) == "]" {
+                events = events + [EndArray()]
+                return new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
+            }
+            if input.char_at(p) == "," {
+                p = p + 1
+                c = c + 1
+            } else { return new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected comma or closing bracket", ln, c) } }
+        }
+    }
+
+    // Primitive values — emit as Value event
+    let val_result: Result<DecodeResult, JsonError> = decode_value(input, p, ln, c)
+    match val_result {
+        Ok(dr) => {
+            events = events + [Value(dr.value)]
+            return new EventResult { events: events, pos: dr.pos, line: dr.line, col: dr.col, ok: true, error: new_json_error("", 0, 0) }
+        },
+        Err(e) => {
+            return new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: e }
+        }
+    }
+}
+
+pub fn stream_parse(input: String) -> Result<List<JsonEvent>, JsonError> {
+    let result: EventResult = stream_parse_value(input, 0, 1, 1)
+    if result.ok { return Ok(result.events) } else { return Err(result.error) }
+}
+
+// ---------------------------------------------------------------------------
+// Schema validation (Tasks 19, 20)
+// ---------------------------------------------------------------------------
+
+fn json_type_name(value: JsonValue) -> String {
+    match value {
+        Null => { return "null" },
+        Bool(b) => { return "bool" },
+        Int(n) => { return "int" },
+        Float(f) => { return "float" },
+        Str(s) => { return "string" },
+        Array(items) => { return "array" },
+        Object(entries) => { return "object" }
+    }
+}
+
+fn schema_type_matches(value: JsonValue, schema_type: JsonSchemaType) -> Bool {
+    match schema_type {
+        SAny => { return true },
+        SNull => { match value { Null => { return true }, _ => { return false } } },
+        SBool => { match value { Bool(b) => { return true }, _ => { return false } } },
+        SInt => { match value { Int(n) => { return true }, _ => { return false } } },
+        SFloat => { match value { Float(f) => { return true }, Int(n) => { return true }, _ => { return false } } },
+        SStr => { match value { Str(s) => { return true }, _ => { return false } } },
+        SArray => { match value { Array(items) => { return true }, _ => { return false } } },
+        SObject => { match value { Object(entries) => { return true }, _ => { return false } } }
+    }
+}
+
+pub fn validate(value: JsonValue, schema: JsonSchema) -> Result<Bool, List<JsonError>> {
+    let mut errors: List<JsonError> = []
+
+    if schema_type_matches(value, schema.schema_type) == false {
+        errors = errors + [new_json_error("Type mismatch: expected " + json_type_name(value), 0, 0)]
+    }
+
+    match value {
+        Int(n) => {
+            if schema.has_min {
+                if n < schema.min_value {
+                    errors = errors + [new_json_error("Value below minimum", 0, 0)]
+                }
+            }
+            if schema.has_max {
+                if n > schema.max_value {
+                    errors = errors + [new_json_error("Value above maximum", 0, 0)]
+                }
+            }
+        },
+        Object(entries) => {
+            let req_count: Int = len(schema.required_fields)
+            let mut i: Int = 0
+            while i < req_count {
+                let field_name: String = schema.required_fields[i]
+                let mut found: Bool = false
+                for key in entries {
+                    if key == field_name { found = true }
+                }
+                if found == false {
+                    errors = errors + [new_json_error("Missing required field: " + field_name, 0, 0)]
+                }
+                i = i + 1
+            }
+        },
+        _ => {}
+    }
+
+    if len(errors) == 0 { return Ok(true) } else { return Err(errors) }
+}

@@ -243,7 +243,7 @@ let result = data
 
 ## Benchmarks
 
-Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each benchmark runs 3 times; median wall time reported. Run `python -m test_vs.run_benchmarks` to reproduce.
+Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each benchmark runs 3 times; median wall time reported. Run `python -m benchmarks.cross_language.run_benchmarks` to reproduce.
 
 ### Performance (wall time, lower is better)
 
@@ -288,7 +288,7 @@ Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each 
 
 ```bash
 make benchmark                       # run all benchmarks
-python -m test_vs.run_benchmarks     # cross-language comparison suite
+python -m benchmarks.cross_language.run_benchmarks     # cross-language comparison suite
 ```
 
 ---

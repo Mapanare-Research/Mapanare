@@ -829,3 +829,95 @@ MN_IO_EXPORT void __mn_event_loop_free(MnEventLoop *loop) {
 #endif
     free(loop);
 }
+
+/* =======================================================================
+ * 5. MnString-based TCP/TLS wrappers
+ *
+ * Bridge between Mapanare's { i8*, i64 } strings and the raw C
+ * TCP/TLS API. Uses mn_untag() from mapanare_core.h for pointer safety.
+ * ======================================================================= */
+
+#include "mapanare_core.h"
+
+/* Utility: extract a null-terminated C string from MnString.
+ * Caller must free the result. */
+static char *mnstr_to_cstr(MnString s) {
+    const char *data = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
+    char *cstr = (char *)malloc((size_t)s.len + 1);
+    if (!cstr) return NULL;
+    memcpy(cstr, data, (size_t)s.len);
+    cstr[s.len] = '\0';
+    return cstr;
+}
+
+MN_IO_EXPORT int64_t __mn_tcp_connect_str(MnString host, int64_t port) {
+    char *chost = mnstr_to_cstr(host);
+    if (!chost) return -1;
+    int64_t fd = __mn_tcp_connect(chost, port);
+    free(chost);
+    return fd;
+}
+
+MN_IO_EXPORT int64_t __mn_tcp_send_str(int64_t fd, MnString data) {
+    const char *buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    return __mn_tcp_send(fd, buf, data.len);
+}
+
+MN_IO_EXPORT MnString __mn_tcp_recv_str(int64_t fd, int64_t max_len) {
+    if (max_len <= 0) return __mn_str_empty();
+    char *buf = (char *)malloc((size_t)max_len);
+    if (!buf) return __mn_str_empty();
+
+    int64_t n = __mn_tcp_recv(fd, buf, max_len);
+    if (n <= 0) {
+        free(buf);
+        return __mn_str_empty();
+    }
+
+    MnString result = __mn_str_from_parts(buf, n);
+    free(buf);
+    return result;
+}
+
+MN_IO_EXPORT int64_t __mn_tcp_close_fd(int64_t fd) {
+    __mn_tcp_close(fd);
+    return 0;
+}
+
+MN_IO_EXPORT int64_t __mn_tls_connect_str(int64_t fd, MnString hostname) {
+    char *chost = mnstr_to_cstr(hostname);
+    if (!chost) return 0;
+    void *ctx = __mn_tls_connect(fd, chost);
+    free(chost);
+    return (int64_t)(uintptr_t)ctx;
+}
+
+MN_IO_EXPORT int64_t __mn_tls_write_str(int64_t tls_ctx, MnString data) {
+    void *ctx = (void *)(uintptr_t)tls_ctx;
+    const char *buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    return __mn_tls_write(ctx, buf, data.len);
+}
+
+MN_IO_EXPORT MnString __mn_tls_read_str(int64_t tls_ctx, int64_t max_len) {
+    void *ctx = (void *)(uintptr_t)tls_ctx;
+    if (max_len <= 0 || !ctx) return __mn_str_empty();
+    char *buf = (char *)malloc((size_t)max_len);
+    if (!buf) return __mn_str_empty();
+
+    int64_t n = __mn_tls_read(ctx, buf, max_len);
+    if (n <= 0) {
+        free(buf);
+        return __mn_str_empty();
+    }
+
+    MnString result = __mn_str_from_parts(buf, n);
+    free(buf);
+    return result;
+}
+
+MN_IO_EXPORT int64_t __mn_tls_close_fd(int64_t tls_ctx, int64_t fd) {
+    void *ctx = (void *)(uintptr_t)tls_ctx;
+    if (ctx) __mn_tls_close(ctx);
+    __mn_tcp_close(fd);
+    return 0;
+}

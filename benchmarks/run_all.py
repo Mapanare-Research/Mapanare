@@ -1,4 +1,8 @@
-"""Run all Mapanare benchmarks and produce a summary report."""
+"""Run all Mapanare benchmarks and produce a summary report.
+
+Uses the isolation harness (benchmarks/isolate.py) for reliable measurements:
+GC disabled, warmup runs, median of N samples, IQR outlier removal, CV noise detection.
+"""
 
 from __future__ import annotations
 
@@ -44,6 +48,19 @@ def main() -> None:
     print(f"  Agent benchmarks:  {len(results['agents'])} scenarios")
     print(f"  Stream benchmarks: {len(results['streams'])} scenarios")
     print(f"  Comparisons:       {len(results['comparison'])} workloads")
+
+    # Check for noisy results
+    noisy = []
+    for section_name, section in results.items():
+        for entry in section:
+            cv = entry.get("cv")
+            if cv is not None and cv > 0.05:
+                name = entry.get("name") or entry.get("workload") or "?"
+                noisy.append(f"  {section_name}/{name}: CV={cv:.1%}")
+    if noisy:
+        print("\nWarning: noisy results (CV > 5%) — consider re-running:")
+        for line in noisy:
+            print(line)
 
 
 if __name__ == "__main__":

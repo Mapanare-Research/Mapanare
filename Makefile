@@ -1,4 +1,4 @@
-.PHONY: install build test lint fmt clean benchmark benchmark-report
+.PHONY: install build test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report
 
 install:
 	pip install -e ".[dev]"
@@ -15,8 +15,13 @@ lint:
 fmt:
 	black . && ruff check --fix .
 
-benchmark:
+benchmark: benchmark-runtime benchmark-cross-lang
+
+benchmark-runtime:
 	python -m benchmarks.run_all
+
+benchmark-cross-lang:
+	python -m benchmarks.cross_language.run_benchmarks
 
 benchmark-report:
 	python -m benchmarks.generate_report

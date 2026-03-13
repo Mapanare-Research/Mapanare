@@ -558,7 +558,7 @@ Available stream operators: `.map()`, `.filter()`, `.fold()`, `.take()`, `.colle
 ## What's Next
 
 - Read the [Language Specification](SPEC.md) for full syntax details
-- Explore the [benchmarks](../test_vs/) to see Mapanare vs Python, Go, and Rust
+- Explore the [benchmarks](../benchmarks/cross_language/) to see Mapanare vs Python, Go, and Rust
 - Check out the [compiler architecture](../README.md#compiler-architecture)
 - Browse [RFCs](rfcs/) for upcoming language changes
 - Join the [Discord](https://discord.gg/5hpGBm3WXf) community
