@@ -276,8 +276,7 @@ struct StructEntry {
 }
 
 fn new_struct_entry(name: String, fields: List<String>, types: List<String>, ty: String) -> StructEntry {
-    let e: StructEntry = name
-    return e
+    return new StructEntry { name: name, field_names: fields, field_types: types, llvm_type: ty }
 }
 
 struct FnEntry {
@@ -287,8 +286,7 @@ struct FnEntry {
 }
 
 fn new_fn_entry(name: String, ret: String, params: List<String>) -> FnEntry {
-    let e: FnEntry = name
-    return e
+    return new FnEntry { name: name, ret_type: ret, param_types: params }
 }
 
 struct EmitState {
@@ -304,8 +302,7 @@ fn new_emit_state(module_name: String) -> EmitState {
     let lines: List<String> = []
     let functions: List<FnEntry> = []
     let structs: List<StructEntry> = []
-    let es: EmitState = lines
-    return es
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0 }
 }
 
 // ---------------------------------------------------------------------------

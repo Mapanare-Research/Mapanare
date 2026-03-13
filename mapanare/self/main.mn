@@ -18,8 +18,7 @@ struct CompileResult {
 }
 
 fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError>) -> CompileResult {
-    let r: CompileResult = success
-    return r
+    return new CompileResult { success: success, ir_text: ir_text, errors: errors }
 }
 
 // ---------------------------------------------------------------------------

@@ -25,13 +25,11 @@ struct MIRType {
 
 fn new_mir_type(name: String, kind: String) -> MIRType {
     let args: List<MIRType> = []
-    let t: MIRType = name
-    return t
+    return new MIRType { name: name, kind: kind, args: args }
 }
 
 fn new_mir_type_with_args(name: String, kind: String, args: List<MIRType>) -> MIRType {
-    let t: MIRType = name
-    return t
+    return new MIRType { name: name, kind: kind, args: args }
 }
 
 fn mir_int() -> MIRType { return new_mir_type("Int", "int") }
@@ -70,8 +68,7 @@ struct Value {
 }
 
 fn new_value(name: String, ty: MIRType) -> Value {
-    let v: Value = name
-    return v
+    return new Value { name: name, ty: ty }
 }
 
 fn void_value() -> Value {
@@ -103,8 +100,7 @@ struct FieldPair {
 }
 
 fn new_field_pair(name: String, val: Value) -> FieldPair {
-    let p: FieldPair = name
-    return p
+    return new FieldPair { name: name, val: val }
 }
 
 // Key-value pair for map init
@@ -114,8 +110,7 @@ struct KVPair {
 }
 
 fn new_kv_pair(key: Value, val: Value) -> KVPair {
-    let p: KVPair = key
-    return p
+    return new KVPair { key: key, val: val }
 }
 
 // Phi incoming entry
@@ -125,8 +120,7 @@ struct PhiEntry {
 }
 
 fn new_phi_entry(label: String, val: Value) -> PhiEntry {
-    let e: PhiEntry = label
-    return e
+    return new PhiEntry { block_label: label, val: val }
 }
 
 // Switch case entry
@@ -136,8 +130,7 @@ struct SwitchCase {
 }
 
 fn new_switch_case(tag: String, label: String) -> SwitchCase {
-    let c: SwitchCase = tag
-    return c
+    return new SwitchCase { tag_value: tag, block_label: label }
 }
 
 enum Instruction {
@@ -200,8 +193,7 @@ struct BasicBlock {
 
 fn new_basic_block(label: String) -> BasicBlock {
     let instrs: List<Instruction> = []
-    let bb: BasicBlock = label
-    return bb
+    return new BasicBlock { label: label, instructions: instrs }
 }
 
 fn is_terminator(inst: Instruction) -> Bool {
@@ -230,8 +222,7 @@ struct MIRParam {
 }
 
 fn new_mir_param(name: String, ty: MIRType) -> MIRParam {
-    let p: MIRParam = name
-    return p
+    return new MIRParam { name: name, ty: ty }
 }
 
 struct MIRFunction {
@@ -245,8 +236,7 @@ struct MIRFunction {
 
 fn new_mir_function(name: String, params: List<MIRParam>, ret: MIRType, decorators: List<String>, is_public: Bool) -> MIRFunction {
     let blocks: List<BasicBlock> = []
-    let f: MIRFunction = name
-    return f
+    return new MIRFunction { name: name, params: params, return_type: ret, blocks: blocks, decorators: decorators, is_public: is_public }
 }
 
 // ---------------------------------------------------------------------------
@@ -259,8 +249,7 @@ struct StructInfo {
 }
 
 fn new_struct_info(name: String, fields: List<FieldPair>) -> StructInfo {
-    let s: StructInfo = name
-    return s
+    return new StructInfo { name: name, fields: fields }
 }
 
 struct EnumVariantInfo {
@@ -269,8 +258,7 @@ struct EnumVariantInfo {
 }
 
 fn new_enum_variant_info(name: String, types: List<MIRType>) -> EnumVariantInfo {
-    let v: EnumVariantInfo = name
-    return v
+    return new EnumVariantInfo { name: name, payload_types: types }
 }
 
 struct EnumInfo {
@@ -279,8 +267,7 @@ struct EnumInfo {
 }
 
 fn new_enum_info(name: String, variants: List<EnumVariantInfo>) -> EnumInfo {
-    let e: EnumInfo = name
-    return e
+    return new EnumInfo { name: name, variants: variants }
 }
 
 struct ExternFnInfo {
@@ -292,8 +279,7 @@ struct ExternFnInfo {
 }
 
 fn new_extern_fn_info(abi: String, module_name: String, fn_name: String, params: List<MIRType>, ret: MIRType) -> ExternFnInfo {
-    let e: ExternFnInfo = abi
-    return e
+    return new ExternFnInfo { abi: abi, module_name: module_name, fn_name: fn_name, param_types: params, return_type: ret }
 }
 
 struct AgentInfo {
@@ -304,8 +290,7 @@ struct AgentInfo {
 }
 
 fn new_agent_info(name: String, inputs: List<String>, outputs: List<String>, methods: List<String>) -> AgentInfo {
-    let a: AgentInfo = name
-    return a
+    return new AgentInfo { name: name, inputs: inputs, outputs: outputs, method_names: methods }
 }
 
 struct PipeInfo {
@@ -314,8 +299,7 @@ struct PipeInfo {
 }
 
 fn new_pipe_info(name: String, stages: List<String>) -> PipeInfo {
-    let p: PipeInfo = name
-    return p
+    return new PipeInfo { name: name, stages: stages }
 }
 
 struct ImportInfo {
@@ -324,8 +308,7 @@ struct ImportInfo {
 }
 
 fn new_import_info(path: List<String>, items: List<String>) -> ImportInfo {
-    let i: ImportInfo = path
-    return i
+    return new ImportInfo { path: path, items: items }
 }
 
 struct MIRModule {
@@ -349,8 +332,7 @@ fn new_mir_module(name: String) -> MIRModule {
     let pipes: List<PipeInfo> = []
     let imports: List<ImportInfo> = []
     let trait_names: List<String> = []
-    let m: MIRModule = name
-    return m
+    return new MIRModule { name: name, functions: functions, structs: structs, enums: enums, extern_fns: extern_fns, agents: agents, pipes: pipes, imports: imports, trait_names: trait_names }
 }
 
 // ---------------------------------------------------------------------------
@@ -364,8 +346,7 @@ struct VarInfo {
 }
 
 fn new_var_info(name: String, val: Value, mutable: Bool) -> VarInfo {
-    let v: VarInfo = name
-    return v
+    return new VarInfo { name: name, current: val, mutable: mutable }
 }
 
 // Impl method mapping: "Type.method" -> "Type_method"
@@ -375,8 +356,7 @@ struct ImplEntry {
 }
 
 fn new_impl_entry(key: String, mir_name: String) -> ImplEntry {
-    let e: ImplEntry = key
-    return e
+    return new ImplEntry { key: key, mir_name: mir_name }
 }
 
 // Struct field names mapping
@@ -386,8 +366,7 @@ struct StructFieldInfo {
 }
 
 fn new_struct_field_info(name: String, fields: List<String>) -> StructFieldInfo {
-    let s: StructFieldInfo = name
-    return s
+    return new StructFieldInfo { name: name, field_names: fields }
 }
 
 // Enum variant names mapping
@@ -397,8 +376,7 @@ struct EnumVariantNames {
 }
 
 fn new_enum_variant_names(name: String, variants: List<String>) -> EnumVariantNames {
-    let e: EnumVariantNames = name
-    return e
+    return new EnumVariantNames { enum_name: name, variant_names: variants }
 }
 
 // Lambda variable mapping
@@ -408,8 +386,7 @@ struct LambdaEntry {
 }
 
 fn new_lambda_entry(var_name: String, fn_name: String) -> LambdaEntry {
-    let e: LambdaEntry = var_name
-    return e
+    return new LambdaEntry { var_name: var_name, fn_name: fn_name }
 }
 
 // ---------------------------------------------------------------------------
@@ -438,8 +415,7 @@ fn new_lower_state(module_name: String) -> LowerState {
     let struct_fields: List<StructFieldInfo> = []
     let enum_variants: List<EnumVariantNames> = []
     let lambda_vars: List<LambdaEntry> = []
-    let st: LowerState = module
-    return st
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars }
 }
 
 // Lower result: value + updated state
@@ -449,8 +425,7 @@ struct LowerResult {
 }
 
 fn new_lower_result(val: Value, st: LowerState) -> LowerResult {
-    let r: LowerResult = val
-    return r
+    return new LowerResult { value: val, state: st }
 }
 
 // ---------------------------------------------------------------------------
@@ -1803,20 +1778,17 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
 
 // Helper: create Span
 fn new_span(line: Int, col: Int, end_line: Int, end_col: Int) -> Span {
-    let s: Span = line
-    return s
+    return new Span { line: line, column: col, end_line: end_line, end_column: end_col }
 }
 
 // Helper: create Block
 fn new_block(span: Span, stmts: List<Stmt>) -> Block {
-    let b: Block = span
-    return b
+    return new Block { span: span, stmts: stmts }
 }
 
 // Helper: create FnDefData
 fn new_fn_def_data(span: Span, name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
-    let f: FnDefData = span
-    return f
+    return new FnDefData { span: span, name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
 }
 
 // ---------------------------------------------------------------------------
@@ -2513,8 +2485,7 @@ struct VerifyError {
 }
 
 fn new_verify_error(fn_name: String, block: String, msg: String) -> VerifyError {
-    let e: VerifyError = fn_name
-    return e
+    return new VerifyError { fn_name: fn_name, block_label: block, message: msg }
 }
 
 fn verify_module(module: MIRModule) -> List<VerifyError> {

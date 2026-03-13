@@ -9,6 +9,7 @@ from mapanare.ast_nodes import (
     BinaryExpr,
     Block,
     BoolLiteral,
+    BreakStmt,
     CallExpr,
     CharLiteral,
     ConstructExpr,
@@ -745,6 +746,8 @@ class PythonEmitter:
             self._emit_for(stmt)
         elif isinstance(stmt, WhileLoop):
             self._emit_while(stmt)
+        elif isinstance(stmt, BreakStmt):
+            self._emit_line("break")
         elif isinstance(stmt, AssertStmt):
             self._emit_assert(stmt)
         elif isinstance(stmt, SignalDecl):

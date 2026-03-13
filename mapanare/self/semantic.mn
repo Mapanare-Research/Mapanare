@@ -18,8 +18,7 @@ struct SemanticError {
 }
 
 fn new_semantic_error(msg: String, line: Int, col: Int, fname: String) -> SemanticError {
-    let e: SemanticError = msg
-    return e
+    return new SemanticError { message: msg, line: line, column: col, filename: fname }
 }
 
 // ---------------------------------------------------------------------------
@@ -36,8 +35,7 @@ struct TypeInfo {
 }
 
 fn new_type_info(name: String, args: List<TypeInfo>, is_fn: Bool, params: List<TypeInfo>, ret: Option<TypeInfo>, shape: Option<List<Int>>) -> TypeInfo {
-    let ti: TypeInfo = name
-    return ti
+    return new TypeInfo { name: name, args: args, is_function: is_fn, param_types: params, return_type: ret, tensor_shape: shape }
 }
 
 // Singleton type constructors
@@ -161,8 +159,7 @@ struct Symbol {
 }
 
 fn new_symbol(name: String, kind: String, ti: TypeInfo, mutable: Bool) -> Symbol {
-    let s: Symbol = name
-    return s
+    return new Symbol { name: name, kind: kind, type_info: ti, mutable: mutable }
 }
 
 struct Scope {
@@ -171,9 +168,7 @@ struct Scope {
 }
 
 fn new_scope(parent: Option<Scope>) -> Scope {
-    let syms: List<Symbol> = []
-    let sc: Scope = parent
-    return sc
+    return new Scope { parent: parent, symbols: [] }
 }
 
 fn scope_define(scope: Scope, name: String, sym: Symbol) -> Scope {
@@ -226,10 +221,8 @@ struct SemanticChecker {
 }
 
 fn new_checker(filename: String) -> SemanticChecker {
-    let errors: List<SemanticError> = []
     let scope: Scope = new_scope(none)
-    let chk: SemanticChecker = filename
-    return chk
+    return new SemanticChecker { filename: filename, errors: [], global_scope: scope, current_scope: scope }
 }
 
 // ---------------------------------------------------------------------------
@@ -252,20 +245,16 @@ struct CheckResult {
 }
 
 fn new_sem_state(filename: String) -> SemState {
-    let errors: List<SemanticError> = []
     let scope: Scope = new_scope(none)
-    let ss: SemState = errors
-    return ss
+    return new SemState { errors: [], scope: scope, filename: filename }
 }
 
 fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult {
-    let r: InferResult = ti
-    return r
+    return new InferResult { type_info: ti, st: st }
 }
 
 fn new_check_result(st: SemState) -> CheckResult {
-    let r: CheckResult = st
-    return r
+    return new CheckResult { st: st }
 }
 
 // ---------------------------------------------------------------------------

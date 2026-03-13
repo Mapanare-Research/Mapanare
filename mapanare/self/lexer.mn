@@ -41,17 +41,15 @@ struct Lexer {
 }
 
 // ---------------------------------------------------------------------------
-// Constructor functions (struct literals not yet in grammar)
+// Constructor functions
 // ---------------------------------------------------------------------------
 
 fn new_token(tok_type: String, value: String, line: Int, col: Int, end_line: Int, end_col: Int) -> Token {
-    let t: Token = tok_type
-    return t
+    return new Token { tok_type: tok_type, value: value, line: line, column: col, end_line: end_line, end_column: end_col }
 }
 
 fn new_lexer(source: String, pos: Int, line: Int, column: Int, filename: String) -> Lexer {
-    let l: Lexer = source
-    return l
+    return new Lexer { source: source, pos: pos, line: line, column: column, filename: filename }
 }
 
 // ---------------------------------------------------------------------------

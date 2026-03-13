@@ -371,6 +371,13 @@ class ReturnStmt(Stmt):
 
 
 @dataclass
+class BreakStmt(Stmt):
+    """Break statement: `break`."""
+
+    pass
+
+
+@dataclass
 class AssertStmt(Stmt):
     """Assert statement: `assert expr` or `assert expr, "message"`."""
 

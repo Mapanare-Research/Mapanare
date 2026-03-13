@@ -18,6 +18,7 @@ from mapanare.ast_nodes import (
     BinaryExpr,
     Block,
     BoolLiteral,
+    BreakStmt,
     CallExpr,
     CharLiteral,
     ConstructExpr,
@@ -546,6 +547,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         items = _filter(children)
         value = items[0] if items else None
         return ReturnStmt(value=value, span=_span_from_children(children))
+
+    def break_stmt(self, children: list[Any]) -> BreakStmt:
+        return BreakStmt(span=_span_from_children(children))
 
     def assert_stmt(self, children: list[Any]) -> AssertStmt:
         items = _filter(children)

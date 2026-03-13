@@ -18,6 +18,7 @@ from mapanare.ast_nodes import (
     BinaryExpr,
     Block,
     BoolLiteral,
+    BreakStmt,
     CallExpr,
     CharLiteral,
     ConstructExpr,
@@ -252,6 +253,8 @@ class MIRLowerer:
         self._fn_decorators: dict[str, list[str]] = {}
         # Current source span — set by _lower_expr/_lower_stmt for debug info
         self._current_span: SourceSpan | None = None
+        # Loop exit label stack for break statements
+        self._loop_exit_stack: list[str] = []
 
     # -- Name generation ---------------------------------------------------
 
@@ -567,6 +570,10 @@ class MIRLowerer:
         if isinstance(stmt, SignalDecl):
             self._lower_signal_decl(stmt)
             return None
+        if isinstance(stmt, BreakStmt):
+            if self._loop_exit_stack:
+                self._emit(Jump(target=self._loop_exit_stack[-1]))
+            return None
         if isinstance(stmt, AssertStmt):
             self._lower_assert(stmt)
             return None
@@ -649,7 +656,9 @@ class MIRLowerer:
         self._emit(Call(dest=next_val, fn_name="__iter_next", args=[iterable]))
         self._define_var(loop.var_name, next_val)
         self._push_scope()
+        self._loop_exit_stack.append(exit_bb.label)
         self._lower_block(loop.body)
+        self._loop_exit_stack.pop()
         self._pop_scope()
         if not self._block_terminated():
             self._emit(Jump(target=header.label))
@@ -680,7 +689,9 @@ class MIRLowerer:
 
         # Body
         self._set_block(body)
+        self._loop_exit_stack.append(exit_bb.label)
         self._lower_block(loop.body)
+        self._loop_exit_stack.pop()
         if not self._block_terminated():
             self._emit(Jump(target=header.label))
 
