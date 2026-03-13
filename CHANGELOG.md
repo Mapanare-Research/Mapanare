@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-12
+
+### Added
+
+- **Self-hosted MIR lowering** (`lower.mn`): 2,629 lines of Mapanare translating AST → MIR, completing the self-hosted compiler pipeline (7 modules, 8,288+ lines)
+- **Self-hosted LLVM emitter rewrite** (`emit_llvm.mn`): rewrote to consume MIR instead of AST (~1,050 lines), matching the bootstrap architecture
+- **Built-in test runner**: `mapanare test` discovers and runs `@test` functions in `.mn` files; `assert` statement in grammar, AST, MIR, and both emitters; `--filter` for substring matching
+- **Agent observability**: OpenTelemetry-compatible tracing (`--trace` flag), OTLP HTTP export, W3C Trace Context spans for agent lifecycle (spawn, send, handle, stop, pause, resume)
+- **Prometheus metrics**: `--metrics :PORT` flag serves agent counters (spawns, messages, errors, stops) and handle-duration histograms
+- **Structured error codes**: 33 codes in `MN-X0000` format across parse (MN-P), semantic (MN-S), lowering (MN-L), codegen (MN-C), runtime (MN-R), and tooling (MN-T) categories
+- **DWARF debug info**: `mapanare build -g` emits compile units, function info, line numbers, variable debug info, and struct type metadata for `gdb`/`lldb` debugging
+- **Deployment infrastructure**: `mapanare deploy init` scaffolds Dockerfile; `HealthServer` with `/health`, `/ready`, `/status` endpoints; `SupervisionTree` with one-for-one, one-for-all, rest-for-one strategies; `@supervised` decorator; SIGTERM graceful shutdown with drain timeout
+- **Native runtime trace hooks**: C runtime `mapanare_trace_hook_fn` callback for spawn/send/handle/stop/pause/resume/error events
+- **CI bootstrap verification**: parse verification and module resolution tests for self-hosted compiler
+
+### Changed
+
+- Self-hosted compiler driver (`main.mn`) wired to AST → MIR → LLVM pipeline
+- SPEC.md updated to v0.7.0: new sections for testing (10), observability (11), and deployment (12)
+- ROADMAP.md updated with v0.7.0 release and self-hosted compiler status (7,500+ lines across 7 modules)
+- Bootstrap snapshot remains at v0.6.0 (self-hosted binary compilation blocked by bootstrap emitter gaps)
+- 2,983 tests passing (up from 2,538 in v0.6.0)
+
+## [0.6.0] - 2026-03-12
+
+### Added
+
+- **MIR pipeline**: Typed SSA-based intermediate representation between AST and code emission (`mir.py`, `mir_builder.py`, `lower.py`)
+- **MIR lowering**: AST → MIR translation pass (1,397 lines) covering all language constructs — expressions, control flow, agents, signals, streams, pattern matching, string interpolation
+- **MIR optimizer** (`mir_opt.py`): Constant folding, dead code elimination, copy propagation, basic block merging, unreachable block removal
+- **MIR → LLVM emitter** (`emit_llvm_mir.py`): Translates MIR basic blocks to LLVM IR via llvmlite
+- **MIR → Python emitter** (`emit_python_mir.py`): Translates MIR to Python source code
+- **`emit-mir` CLI command**: Dump MIR text representation for debugging
+- **Bootstrap Makefile** (`bootstrap/Makefile`): `make bootstrap` and `make verify` for three-stage bootstrap verification
+
+### Changed
+
+- Bootstrap snapshot updated to v0.6.0 (22 files: all compiler modules + grammar)
+- `bootstrap/README.md` rewritten with MIR pipeline documentation and file index
+- SPEC.md Appendix B rewritten with full MIR description (instruction categories, optimizer passes, pipeline diagram)
+- ROADMAP.md architecture diagram updated to show AST → MIR → Optimizer → Emitter pipeline
+- ROADMAP.md release history updated with v0.5.0 and v0.6.0 entries
+- SPEC.md version bumped to 0.6.0
+- 2,538 tests passing (up from 2,200+ in v0.5.0)
+
 ## [0.5.0] - 2026-03-11
 
 ### Added
@@ -42,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI native job**: compiles and runs C runtime tests with gcc, AddressSanitizer, and ThreadSanitizer
 - **LSP enhancements**: symbol table construction, cross-reference indexing, go-to-definition, find-references, hover info
 - **Bootstrap documentation** (`docs/BOOTSTRAP.md`): self-hosting compiler status and architecture
-- **Roadmap** (`docs/ROADMAP.md`): phased plan through v1.0
+- **Roadmap** (`docs/roadmap/ROADMAP.md`): phased plan through v1.0
 - **Localized READMEs**: Spanish (`docs/README.es.md`), Portuguese (`docs/README.pt.md`), Chinese (`docs/README.zh-CN.md`)
 - Scope-analysis tests (`tests/test_scope.py`)
 - C runtime test harness (`tests/native/test_c_runtime.c`) and hardening tests (`tests/native/test_c_hardening.py`)
@@ -170,7 +215,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Mapanare-Research/Mapanare/compare/v0.3.0...v0.3.1

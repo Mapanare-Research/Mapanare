@@ -1,6 +1,6 @@
 # Mapanare Language Specification
 
-**Version:** 0.2.0
+**Version:** 0.7.0
 **Status:** Skeleton / Working Draft
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. It compiles via Python transpilation first, then LLVM native.
@@ -789,6 +789,186 @@ sensor.readings
 
 ---
 
+## 10. Testing
+
+### Built-in Test Runner
+
+Mapanare includes a built-in test runner invoked via `mapanare test`. Test functions are marked with the `@test` decorator and use `assert` statements for verification.
+
+### Test Syntax
+
+```mn
+@test
+fn test_addition() {
+    assert 1 + 1 == 2
+}
+
+@test
+fn test_string_length() {
+    let s = "hello"
+    assert len(s) == 5
+}
+```
+
+**Rules:**
+
+- Test functions must be decorated with `@test`.
+- Test functions take no parameters and return `Void`.
+- `assert <expr>` evaluates the expression; if it is `false`, the test fails with an `AssertionError` including the source location.
+- Test functions are discovered automatically in `.mn` files.
+
+### Assert Statement
+
+`assert` is a built-in statement (not a function call). It evaluates a boolean expression and aborts with an error if the result is `false`.
+
+```mn
+assert x > 0
+assert len(items) == expected_count
+```
+
+The compiler emits `assert` as an `Assert` MIR instruction, which both the Python and LLVM backends handle natively.
+
+### Test Discovery and Execution
+
+```bash
+mapanare test                          # run all tests in current directory
+mapanare test path/to/tests/           # run tests in a specific directory
+mapanare test --filter "test_add"      # run tests matching a substring
+```
+
+The test runner:
+
+1. Scans `.mn` files for functions decorated with `@test`.
+2. Compiles each test file through the MIR pipeline.
+3. Executes each test function in a subprocess.
+4. Reports pass/fail results with file:line locations and durations.
+
+---
+
+## 11. Observability
+
+### Tracing
+
+Mapanare supports OpenTelemetry-compatible distributed tracing for agent operations. Tracing is enabled via the `--trace` CLI flag.
+
+```bash
+mapanare run --trace program.mn              # console output
+mapanare run --trace=otlp program.mn         # OTLP HTTP export
+```
+
+Traced operations:
+
+| Operation | Span Name | Attributes |
+|-----------|-----------|------------|
+| Agent spawn | `agent.spawn` | `agent.name`, `agent.id` |
+| Message send | `agent.send` | `agent.name`, `channel` |
+| Message handle | `agent.handle` | `agent.name`, `duration_ms` |
+| Agent stop | `agent.stop` | `agent.name`, `reason` |
+| Agent pause/resume | `agent.pause`, `agent.resume` | `agent.name` |
+
+Spans carry W3C Trace Context (`trace_id`, `span_id`, `parent_span_id`) and are exportable via OTLP HTTP/JSON to any OpenTelemetry-compatible backend (Jaeger, Zipkin, Grafana Tempo, etc.).
+
+### Metrics
+
+Prometheus-format metrics are served via the `--metrics` flag:
+
+```bash
+mapanare run --metrics :9090 program.mn
+```
+
+Exposed metrics:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `mapanare_agent_spawns_total` | Counter | Total agents spawned |
+| `mapanare_agent_messages_total` | Counter | Total messages sent |
+| `mapanare_agent_errors_total` | Counter | Total agent errors |
+| `mapanare_agent_stops_total` | Counter | Total agents stopped |
+| `mapanare_agent_handle_duration_seconds` | Histogram | Message handling latency |
+
+### Structured Error Codes
+
+All compiler and runtime errors use structured codes in the format `MN-X0000`:
+
+| Prefix | Category | Example |
+|--------|----------|---------|
+| `MN-P` | Parse errors | `MN-P0001` unexpected token |
+| `MN-S` | Semantic errors | `MN-S0001` undefined variable |
+| `MN-L` | MIR lowering errors | `MN-L0001` unsupported node |
+| `MN-C` | Code generation errors | `MN-C0001` LLVM emit failure |
+| `MN-R` | Runtime errors | `MN-R0001` agent mailbox full |
+| `MN-T` | Tooling errors | `MN-T0001` test discovery failure |
+
+### Debug Info (DWARF)
+
+Native binaries compiled with `-g` / `--debug` include DWARF debug information for source-level debugging with `gdb` or `lldb`:
+
+```bash
+mapanare build -g program.mn -o program
+lldb ./program
+```
+
+Debug info includes:
+
+- Compile unit metadata (source file, producer)
+- Function debug info (name, file, line, scope)
+- Line number mapping from MIR instructions to source locations
+- Variable debug info (names, types, locations)
+- Struct type debug info (member layout)
+
+---
+
+## 12. Deployment
+
+### Supervision Trees
+
+Agents can be organized into supervision trees with configurable restart strategies:
+
+```mn
+@supervised("one_for_one")
+agent Worker {
+    input task: String
+    output result: String
+
+    fn handle(task: String) -> String {
+        return process(task)
+    }
+}
+```
+
+| Strategy | Behavior |
+|----------|----------|
+| `one_for_one` | Restart only the failed agent |
+| `one_for_all` | Restart all agents in the tree when one fails |
+| `rest_for_one` | Restart the failed agent and all agents started after it |
+
+### Health Checks
+
+Agent applications expose health and readiness endpoints:
+
+- `/health` — liveness check (is the process running?)
+- `/ready` — readiness check (are all agents initialized and running?)
+- `/status` — detailed agent status (names, states, uptime)
+
+### Graceful Shutdown
+
+On `SIGTERM`, the runtime:
+
+1. Stops accepting new messages.
+2. Drains in-flight messages from all agent mailboxes.
+3. Calls `on_stop()` on each agent.
+4. Exits cleanly within a configurable timeout (default: 30 seconds).
+
+### Deploy Scaffolding
+
+```bash
+mapanare deploy init                   # generate Dockerfile + config
+```
+
+Generates a multi-stage Dockerfile optimized for Mapanare agent applications.
+
+---
+
 ## Appendix A: Grammar Summary (EBNF Sketch)
 
 This is an informal sketch, not the complete formal grammar.
@@ -827,26 +1007,72 @@ let_binding    = "let" ["mut"] IDENT [":" type] "=" expr ;
 
 ---
 
-## Appendix B: Compilation Targets
+## Appendix B: Compilation Pipeline
 
-### Python Transpiler (Phase 1)
+### Overview
 
-The initial Mapanare compiler translates Mapanare source code to Python. This enables:
+The Mapanare compiler uses a multi-stage pipeline with an intermediate representation (MIR) between the AST and final code emission:
+
+```
+.mn source → Lexer → Parser → AST → Semantic Analysis → MIR Lowering → MIR Optimizer → Emitter
+                                                                                          ├→ Python
+                                                                                          └→ LLVM IR → Native Binary
+```
+
+### MIR (Mid-level Intermediate Representation)
+
+MIR is a typed, SSA-based intermediate representation that sits between the AST and code emission. It was introduced in v0.6.0 to decouple frontend analysis from backend code generation.
+
+**Key properties:**
+
+- **SSA form:** Each temporary is assigned exactly once. Phi nodes merge values at control-flow join points.
+- **Typed:** Every instruction carries type information from the semantic checker.
+- **Basic blocks:** Code is organized into basic blocks with explicit terminators (branch, switch, return, jump).
+- **Three-address form:** Operations use `%temp = op(arg1, arg2)` style instructions.
+
+**Instruction categories:**
+
+| Category | Instructions |
+|----------|-------------|
+| **Arithmetic** | `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Neg` |
+| **Comparison** | `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge` |
+| **Logic** | `And`, `Or`, `Not` |
+| **Memory** | `Alloca`, `Load`, `Store`, `FieldGet`, `FieldSet` |
+| **Control** | `Branch`, `Jump`, `Switch`, `Return`, `Phi` |
+| **Calls** | `Call`, `CallBuiltin`, `CallMethod` |
+| **Types** | `StructInit`, `EnumInit`, `EnumTag`, `Cast` |
+| **Agents** | `AgentSpawn`, `AgentSend`, `AgentSync` |
+| **Signals** | `SignalInit`, `SignalGet`, `SignalSet` |
+| **Streams** | `StreamOp` |
+| **Strings** | `InterpConcat` |
+
+**MIR optimizer passes (applied at -O1 and above):**
+
+- Constant folding and propagation
+- Dead code elimination
+- Copy propagation
+- Basic block merging
+- Unreachable block removal
+
+### Python Transpiler
+
+The Python emitter translates MIR to Python source code. This enables:
 
 - Rapid language prototyping and iteration.
 - Leveraging the Python ecosystem (NumPy for tensors, asyncio for agents).
 - Immediate access to ML libraries during early development.
 
-Agents map to Python `asyncio` tasks. Signals map to observable patterns. Tensor support for the Python backend is not yet implemented.
+Agents map to Python `asyncio` tasks. Signals map to observable patterns.
 
-### LLVM Native Backend (Phase 2)
+### LLVM Native Backend
 
-The production compiler generates LLVM IR, producing native machine code. This enables:
+The LLVM emitter translates MIR to LLVM IR, producing native machine code. This enables:
 
 - Agent spawn/send/sync codegen backed by the C runtime thread pool and ring buffers.
 - Compile-time tensor shape verification (element-wise ops and matmul via runtime calls).
 - Arena-based memory management with tag-bit string freeing (no garbage collector).
 - Ahead-of-time compilation for deployment.
+- Cross-compilation to Linux x64, macOS ARM64, Windows x64.
 
 Note: Signals and streams are not yet supported in the LLVM backend.
 
@@ -867,6 +1093,5 @@ The following sections are planned but not yet specified or implemented:
 - **Concurrency Guarantees:** Ordering, fairness, deadlock prevention.
 - **Tensor Operations:** Full operator set, broadcasting rules, autodiff (LLVM backend has partial tensor codegen; Python backend does not yet support tensors).
 - **String Interpolation:** `${expr}` syntax is implemented in both Python and LLVM backends. Multi-line strings (`"""..."""`) are also supported.
-- **Decorator System:** Built-in decorators, custom decorator definitions.
-- **Testing Framework:** Built-in test support, assertion primitives.
+- **Decorator System:** Custom decorator definitions (built-in decorators `@test`, `@supervised`, `@restart`, `@allow` are specified above).
 - **FFI:** Foreign function interface for C and Python interop. C FFI uses `extern "C" fn name(params) -> Type`. Python interop uses `extern "Python" fn module::name(params) -> Type` to import and call Python functions with type-safe wrappers. Return type `Result<T, String>` wraps Python exceptions in `Err`. Use `--python-path` to add custom module search paths.

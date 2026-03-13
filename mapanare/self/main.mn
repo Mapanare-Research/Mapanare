@@ -1,9 +1,10 @@
 // main.mn — Compiler driver for the Mapanare self-hosted compiler.
-// Wires the pipeline: source -> parse -> check -> emit_llvm -> LLVM IR.
+// Wires the pipeline: source -> parse -> check -> lower -> emit_llvm -> LLVM IR.
 
 import self::ast
 import self::parser
 import self::semantic
+import self::lower
 import self::emit_llvm
 
 // ---------------------------------------------------------------------------
@@ -17,8 +18,7 @@ struct CompileResult {
 }
 
 fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError>) -> CompileResult {
-    let r: CompileResult = success
-    return r
+    return new CompileResult { success: success, ir_text: ir_text, errors: errors }
 }
 
 // ---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 0.2.0"
+    return "mapanare 0.7.0"
 }
 
 // ---------------------------------------------------------------------------
@@ -44,8 +44,11 @@ fn compile(source: String, filename: String) -> CompileResult {
         return new_compile_result(false, "", errors)
     }
 
-    // Stage 3: emit LLVM IR
-    let ir_text: String = emit_program(program, filename)
+    // Stage 3: lower AST to MIR
+    let mir_module: MIRModule = lower(program, filename)
+
+    // Stage 4: emit LLVM IR from MIR
+    let ir_text: String = emit_mir_module(mir_module, filename)
     let no_errors: List<SemanticError> = []
     return new_compile_result(true, ir_text, no_errors)
 }

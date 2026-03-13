@@ -27,6 +27,7 @@ from mapanare.mir import (
     AgentSend,
     AgentSpawn,
     AgentSync,
+    Assert,
     BinOp,
     BinOpKind,
     Branch,
@@ -55,6 +56,7 @@ from mapanare.mir import (
     SignalGet,
     SignalInit,
     SignalSet,
+    SourceSpan,
     StreamOp,
     StructInit,
     Switch,
@@ -152,6 +154,7 @@ class LLVMMIREmitter:
         module_name: str = "mapanare_module",
         target_triple: str | None = None,
         data_layout: str | None = None,
+        debug: bool = False,
     ) -> None:
         _require_llvmlite()
         _init_llvm_types()
@@ -177,12 +180,23 @@ class LLVMMIREmitter:
         # Printf format string cache
         self._fmt_strings: dict[str, Any] = {}
 
+        # DWARF debug info state
+        self._debug = debug
+        self._di_file: Any = None  # DIFile
+        self._di_compile_unit: Any = None  # DICompileUnit
+        self._di_subprograms: dict[str, Any] = {}  # fn name -> DISubprogram
+        self._di_type_cache: dict[str, Any] = {}  # type key -> DIType
+
     # -----------------------------------------------------------------------
     # Public entry point
     # -----------------------------------------------------------------------
 
     def emit(self, mir_module: MIRModule) -> Any:
         """Emit LLVM IR from a MIR module. Returns the llvmlite ir.Module."""
+        # 0. Initialize DWARF debug info if enabled
+        if self._debug:
+            self._init_debug_info(mir_module)
+
         # 1. Register struct types
         for name, fields in mir_module.structs.items():
             self._register_struct(name, fields)
@@ -203,7 +217,215 @@ class LLVMMIREmitter:
         for mir_fn in mir_module.functions:
             self._emit_function(mir_fn)
 
+        # 6. Finalize debug info metadata
+        if self._debug:
+            self._finalize_debug_info()
+
         return self.module
+
+    # -----------------------------------------------------------------------
+    # DWARF debug info
+    # -----------------------------------------------------------------------
+
+    def _init_debug_info(self, mir_module: MIRModule) -> None:
+        """Initialize DWARF compile unit and file metadata."""
+        source_file = mir_module.source_file or (mir_module.name + ".mn")
+        source_dir = mir_module.source_directory or "."
+
+        self._di_file = self.module.add_debug_info(
+            "DIFile",
+            {"filename": source_file, "directory": source_dir},
+        )
+        self._di_compile_unit = self.module.add_debug_info(
+            "DICompileUnit",
+            {
+                "language": ir.DIToken("DW_LANG_C"),
+                "file": self._di_file,
+                "producer": "mapanare 0.7.0",
+                "isOptimized": False,
+                "runtimeVersion": 0,
+                "emissionKind": ir.DIToken("FullDebug"),
+            },
+            is_distinct=True,
+        )
+
+    def _finalize_debug_info(self) -> None:
+        """Add named metadata entries for DWARF."""
+        if self._di_compile_unit is None:
+            return
+        self.module.add_named_metadata("llvm.dbg.cu", self._di_compile_unit)
+        # Debug info version flag (required by LLVM)
+        di_version_flag = self.module.add_metadata(
+            [ir.IntType(32)(2), self.module.add_metadata(["Debug Info Version", ir.IntType(32)(3)])]
+        )
+        self.module.add_named_metadata("llvm.module.flags", di_version_flag)
+        # DWARF version flag
+        dwarf_version_flag = self.module.add_metadata(
+            [ir.IntType(32)(2), self.module.add_metadata(["Dwarf Version", ir.IntType(32)(4)])]
+        )
+        self.module.add_named_metadata("llvm.module.flags", dwarf_version_flag)
+
+    def _get_di_type(self, mir_type: MIRType) -> Any:
+        """Get or create a DWARF type descriptor for a MIR type."""
+        kind = mir_type.kind
+        key = mir_type.name
+
+        if key in self._di_type_cache:
+            return self._di_type_cache[key]
+
+        di_type: Any = None
+
+        if kind == TypeKind.INT:
+            di_type = self.module.add_debug_info(
+                "DIBasicType",
+                {"name": "Int", "size": 64, "encoding": ir.DIToken("DW_ATE_signed")},
+            )
+        elif kind == TypeKind.FLOAT:
+            di_type = self.module.add_debug_info(
+                "DIBasicType",
+                {"name": "Float", "size": 64, "encoding": ir.DIToken("DW_ATE_float")},
+            )
+        elif kind == TypeKind.BOOL:
+            di_type = self.module.add_debug_info(
+                "DIBasicType",
+                {"name": "Bool", "size": 1, "encoding": ir.DIToken("DW_ATE_boolean")},
+            )
+        elif kind == TypeKind.CHAR:
+            di_type = self.module.add_debug_info(
+                "DIBasicType",
+                {"name": "Char", "size": 8, "encoding": ir.DIToken("DW_ATE_unsigned_char")},
+            )
+        elif kind == TypeKind.STRING:
+            di_type = self.module.add_debug_info(
+                "DICompositeType",
+                {
+                    "tag": ir.DIToken("DW_TAG_structure_type"),
+                    "name": "String",
+                    "size": 128,
+                    "file": self._di_file,
+                    "elements": self.module.add_metadata([]),
+                },
+            )
+        elif kind == TypeKind.STRUCT:
+            name = mir_type.type_info.name
+            # Build member list from registered struct fields
+            members: list[Any] = []
+            if name in self._struct_fields:
+                offset = 0
+                for field_name in self._struct_fields[name]:
+                    member = self.module.add_debug_info(
+                        "DIDerivedType",
+                        {
+                            "tag": ir.DIToken("DW_TAG_member"),
+                            "name": field_name,
+                            "file": self._di_file,
+                            "size": 64,
+                            "offset": offset,
+                        },
+                    )
+                    members.append(member)
+                    offset += 64
+            total_size = len(members) * 64 if members else 0
+            di_type = self.module.add_debug_info(
+                "DICompositeType",
+                {
+                    "tag": ir.DIToken("DW_TAG_structure_type"),
+                    "name": name,
+                    "file": self._di_file,
+                    "size": total_size,
+                    "elements": self.module.add_metadata(members),
+                },
+            )
+        elif kind == TypeKind.VOID:
+            # Void has no debug type
+            self._di_type_cache[key] = None
+            return None
+        else:
+            # Opaque pointer type for complex/unsupported types
+            di_type = self.module.add_debug_info(
+                "DIBasicType",
+                {"name": key or "opaque", "size": 64, "encoding": ir.DIToken("DW_ATE_address")},
+            )
+
+        self._di_type_cache[key] = di_type
+        return di_type
+
+    def _get_di_subroutine_type(self, mir_fn: MIRFunction) -> Any:
+        """Create a DISubroutineType for a function."""
+        types: list[Any] = []
+        # Return type first (DWARF convention)
+        ret_di = self._get_di_type(mir_fn.return_type)
+        types.append(ret_di)
+        # Then parameter types
+        for p in mir_fn.params:
+            types.append(self._get_di_type(p.ty))
+        return self.module.add_debug_info(
+            "DISubroutineType",
+            {"types": self.module.add_metadata(types)},
+        )
+
+    def _create_di_subprogram(self, mir_fn: MIRFunction) -> Any:
+        """Create a DISubprogram for a MIR function."""
+        if self._di_compile_unit is None:
+            return None
+
+        di_func_type = self._get_di_subroutine_type(mir_fn)
+        line = mir_fn.source_line if mir_fn.source_line > 0 else 1
+
+        di_sp = self.module.add_debug_info(
+            "DISubprogram",
+            {
+                "name": mir_fn.name,
+                "file": self._di_file,
+                "line": line,
+                "type": di_func_type,
+                "isLocal": not mir_fn.is_public,
+                "isDefinition": True,
+                "scopeLine": line,
+                "unit": self._di_compile_unit,
+            },
+            is_distinct=True,
+        )
+        self._di_subprograms[mir_fn.name] = di_sp
+        return di_sp
+
+    def _attach_debug_location(self, llvm_inst: Any, span: SourceSpan, fn_name: str) -> None:
+        """Attach a !dbg location to an LLVM instruction."""
+        di_sp = self._di_subprograms.get(fn_name)
+        if di_sp is None:
+            return
+        di_loc = self.module.add_debug_info(
+            "DILocation",
+            {
+                "line": span.line,
+                "column": span.column,
+                "scope": di_sp,
+            },
+        )
+        llvm_inst.set_metadata("dbg", di_loc)
+
+    def _emit_di_local_variable(
+        self, builder: Any, var_name: str, mir_type: MIRType, line: int, fn_name: str
+    ) -> None:
+        """Emit debug info for a local variable."""
+        di_sp = self._di_subprograms.get(fn_name)
+        if di_sp is None:
+            return
+        di_type = self._get_di_type(mir_type)
+        if di_type is None:
+            return
+        # Create DILocalVariable metadata (stored but not attached to alloca
+        # since we use SSA values — the metadata is enough for DWARF)
+        self.module.add_debug_info(
+            "DILocalVariable",
+            {
+                "name": var_name,
+                "scope": di_sp,
+                "file": self._di_file,
+                "line": line,
+                "type": di_type,
+            },
+        )
 
     # -----------------------------------------------------------------------
     # Type resolution: MIRType -> LLVM type
@@ -485,6 +707,12 @@ class LLVMMIREmitter:
             # Function with no body — just a declaration
             return
 
+        # Attach DISubprogram if debug info is enabled
+        if self._debug:
+            di_sp = self._create_di_subprogram(mir_fn)
+            if di_sp is not None:
+                func.set_metadata("dbg", di_sp)
+
         # 1. Create all LLVM basic blocks upfront
         llvm_blocks: dict[str, Any] = {}
         for bb in mir_fn.blocks:
@@ -522,7 +750,28 @@ class LLVMMIREmitter:
             for inst in bb.instructions:
                 if isinstance(inst, Phi):
                     continue  # Already handled
+                # Track instruction count before emission for debug location
+                n_before = len(builder.block.instructions) if self._debug else 0
                 self._emit_instruction(inst, builder, values, llvm_blocks, func)
+                # Attach debug location to newly emitted LLVM instructions
+                if self._debug and inst.span is not None:
+                    for llvm_inst in builder.block.instructions[n_before:]:
+                        if not hasattr(llvm_inst, "metadata") or "dbg" in getattr(
+                            llvm_inst, "metadata", {}
+                        ):
+                            continue
+                        self._attach_debug_location(llvm_inst, inst.span, mir_fn.name)
+                # Emit variable debug info for named copies (let bindings)
+                if self._debug and isinstance(inst, Copy) and inst.span is not None:
+                    dest_name = inst.dest.name
+                    if dest_name.startswith("%") and not dest_name[1:].startswith("t"):
+                        self._emit_di_local_variable(
+                            builder,
+                            dest_name[1:],
+                            inst.dest.ty,
+                            inst.span.line,
+                            mir_fn.name,
+                        )
 
         # 6. Resolve deferred phi incoming edges
         for phi, incoming, blocks in deferred_phis:
@@ -634,6 +883,8 @@ class LLVMMIREmitter:
             self._emit_signal_set(inst, builder, values)
         elif isinstance(inst, StreamOp):
             self._emit_stream_op(inst, builder, values)
+        elif isinstance(inst, Assert):
+            self._emit_assert(inst, builder, values, func)
         elif isinstance(inst, Phi):
             pass  # Handled in the first pass
         else:
@@ -1514,6 +1765,34 @@ class LLVMMIREmitter:
         builder.store(val, typed_ptr)
 
     # --- Stream operations (runtime calls) ---
+
+    def _emit_assert(self, inst: Assert, builder: Any, values: dict[str, Any], func: Any) -> None:
+        """Emit an assert: branch on condition, print error and exit if false."""
+        cond = self._get_value(inst.cond, values)
+        # Ensure we have an i1
+        if hasattr(cond.type, "width") and cond.type.width != 1:
+            cond = builder.trunc(cond, ir.IntType(1))
+
+        pass_bb = builder.append_basic_block(name="assert.pass")
+        fail_bb = builder.append_basic_block(name="assert.fail")
+        builder.cbranch(cond, pass_bb, fail_bb)
+
+        # Fail block: print message and exit
+        builder.position_at_end(fail_bb)
+        msg = f"assertion failed at {inst.filename}:{inst.line}\\n"
+        self._emit_printf(builder, msg, [])
+        # Call exit(1)
+        exit_fn = self._functions.get("exit")
+        if exit_fn is None:
+            exit_ty = ir.FunctionType(ir.VoidType(), [LLVM_INT])
+            exit_fn = ir.Function(self.module, exit_ty, name="exit")
+            exit_fn.linkage = "external"
+            self._functions["exit"] = exit_fn
+        builder.call(exit_fn, [ir.Constant(LLVM_INT, 1)])
+        builder.unreachable()
+
+        # Continue in pass block
+        builder.position_at_end(pass_bb)
 
     def _emit_stream_op(self, inst: StreamOp, builder: Any, values: dict[str, Any]) -> None:
         # Stream operations are not directly supported in the LLVM backend;

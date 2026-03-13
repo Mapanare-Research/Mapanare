@@ -10,11 +10,13 @@ if TYPE_CHECKING:
 
 from mapanare.ast_nodes import (
     AgentDef,
+    AssertStmt,
     AssignExpr,
     ASTNode,
     BinaryExpr,
     Block,
     BoolLiteral,
+    BreakStmt,
     CallExpr,
     CharLiteral,
     ConstructExpr,
@@ -522,6 +524,10 @@ class SemanticChecker:
                 )
                 return TypeInfo(kind=TypeKind.TENSOR, args=[elem_type], tensor_shape=result_shape)
 
+            # List concatenation: List<T> + List<T> -> List<T>
+            if expr.op == "+" and left.kind == TypeKind.LIST and right.kind == TypeKind.LIST:
+                return left
+
             if left.kind not in _ARITHMETIC_KINDS or right.kind not in _ARITHMETIC_KINDS:
                 left_s = _type_display(left)
                 right_s = _type_display(right)
@@ -981,6 +987,12 @@ class SemanticChecker:
             self._check_while(stmt)
         elif isinstance(stmt, SignalDecl):
             self._check_signal_decl(stmt)
+        elif isinstance(stmt, BreakStmt):
+            pass  # break is valid in for/while loops
+        elif isinstance(stmt, AssertStmt):
+            self._infer_expr(stmt.condition)
+            if stmt.message is not None:
+                self._infer_expr(stmt.message)
         elif isinstance(stmt, StreamDecl):
             self._check_stream_decl(stmt)
 
@@ -1256,6 +1268,12 @@ class SemanticChecker:
                     type_info=TypeInfo(kind=TypeKind.STRUCT, name=mod_name),
                 ),
             )
+            # For `self::` imports, also register all exports directly into scope
+            # (same compilation unit — no visibility barrier)
+            is_self_import = defn.path and defn.path[0] == "self"
+            for exp_name, exp in resolved.exports.items():
+                if exp.public or is_self_import:
+                    self._register_imported_def(exp_name, exp)
 
     def _register_imported_def(self, name: str, export: ModuleExport) -> None:
         """Register an imported symbol from a resolved module export."""

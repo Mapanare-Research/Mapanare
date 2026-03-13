@@ -422,6 +422,44 @@ MAPANARE_EXPORT void mapanare_shutdown_init(mapanare_agent_registry_t *reg);
 MAPANARE_EXPORT int mapanare_shutdown_requested(void);
 
 /* -----------------------------------------------------------------------
+ * 8. Trace hooks — observability for native agent operations
+ *
+ * Trace hooks are function pointers called on agent lifecycle events.
+ * Set them to route events to an external tracing system (OTLP, logging, etc.).
+ * All hooks default to NULL (no-op). Thread-safe: hooks are read atomically.
+ * ----------------------------------------------------------------------- */
+
+/** Trace event kinds for agent operations. */
+typedef enum {
+    MAPANARE_TRACE_SPAWN   = 0,
+    MAPANARE_TRACE_SEND    = 1,
+    MAPANARE_TRACE_RECV    = 2,
+    MAPANARE_TRACE_HANDLE  = 3,
+    MAPANARE_TRACE_STOP    = 4,
+    MAPANARE_TRACE_PAUSE   = 5,
+    MAPANARE_TRACE_RESUME  = 6,
+    MAPANARE_TRACE_ERROR   = 7,
+} mapanare_trace_event_t;
+
+/** Trace hook callback signature.
+ *  @param event    The trace event kind
+ *  @param agent    The agent involved (may be NULL for global events)
+ *  @param data     Event-specific data (message pointer for send/recv, NULL otherwise)
+ *  @param duration_us  Duration in microseconds (for HANDLE events, 0 otherwise) */
+typedef void (*mapanare_trace_hook_fn)(
+    mapanare_trace_event_t event,
+    const mapanare_agent_t *agent,
+    void *data,
+    int64_t duration_us
+);
+
+/** Set the global trace hook. Pass NULL to disable tracing. */
+MAPANARE_EXPORT void mapanare_trace_set_hook(mapanare_trace_hook_fn hook);
+
+/** Get the current trace hook (for chaining). */
+MAPANARE_EXPORT mapanare_trace_hook_fn mapanare_trace_get_hook(void);
+
+/* -----------------------------------------------------------------------
  * Utility
  * ----------------------------------------------------------------------- */
 

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 
+from mapanare.ast_nodes import Program
 from mapanare.diagnostics import (
     Diagnostic,
     Label,
@@ -170,7 +171,7 @@ def _compile_multi_module_llvm(
     resolver = ModuleResolver()
 
     # First pass: parse and check all files, building the resolver cache
-    parsed: list[tuple[str, object]] = []
+    parsed: list[tuple[str, Program]] = []
     for filepath in source_files:
         source = _read_source(filepath)
         ast = parse(source, filename=filepath)

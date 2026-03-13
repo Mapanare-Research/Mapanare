@@ -1,5 +1,5 @@
 """Tests for mapanare/self/emit_llvm.mn — verifies the self-hosted LLVM emitter
-definitions can be parsed and type-checked by the Python compiler."""
+(MIR-based) can be parsed by the Python compiler."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class TestEmitLlvmMnParsing:
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
         struct_names = {s.name for s in structs}
-        assert "LLVMEmitter" in struct_names
+        assert "EmitState" in struct_names
 
     def test_has_type_functions(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
@@ -70,8 +70,7 @@ class TestEmitLlvmMnParsing:
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
-        assert "resolve_type" in fn_names
-        assert "resolve_generic_type" in fn_names
+        assert "resolve_mir_type" in fn_names
 
     def test_has_arithmetic_instructions(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
@@ -79,16 +78,10 @@ class TestEmitLlvmMnParsing:
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
-        assert "emit_add" in fn_names
-        assert "emit_sub" in fn_names
-        assert "emit_mul" in fn_names
-        assert "emit_sdiv" in fn_names
-        assert "emit_srem" in fn_names
-        assert "emit_fadd" in fn_names
-        assert "emit_fsub" in fn_names
-        assert "emit_fmul" in fn_names
-        assert "emit_fdiv" in fn_names
-        assert "emit_frem" in fn_names
+        for name in ["emit_add", "emit_sub", "emit_mul", "emit_sdiv", "emit_srem"]:
+            assert name in fn_names
+        for name in ["emit_fadd", "emit_fsub", "emit_fmul", "emit_fdiv", "emit_frem"]:
+            assert name in fn_names
 
     def test_has_unary_instructions(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
@@ -108,8 +101,8 @@ class TestEmitLlvmMnParsing:
         fn_names = {f.name for f in fns}
         assert "emit_icmp" in fn_names
         assert "emit_fcmp" in fn_names
-        assert "emit_and" in fn_names
-        assert "emit_or" in fn_names
+        assert "emit_and_instr" in fn_names
+        assert "emit_or_instr" in fn_names
 
     def test_has_control_flow(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
@@ -119,8 +112,7 @@ class TestEmitLlvmMnParsing:
         fn_names = {f.name for f in fns}
         assert "emit_br" in fn_names
         assert "emit_cbranch" in fn_names
-        assert "emit_phi" in fn_names
-        assert "emit_switch" in fn_names
+        assert "emit_mir_phi" in fn_names
         assert "emit_switch_case" in fn_names
 
     def test_has_memory_instructions(self, emitter_source: str) -> None:
@@ -139,19 +131,14 @@ class TestEmitLlvmMnParsing:
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
-        assert "emit_call" in fn_names
+        assert "emit_call_ir" in fn_names
         assert "emit_call_void" in fn_names
         assert "emit_ret" in fn_names
         assert "emit_ret_void" in fn_names
 
     def test_has_tensor_runtime(self, emitter_source: str) -> None:
-        program = parse(emitter_source, filename="emit_llvm.mn")
-        from mapanare.ast_nodes import FnDef
-
-        fns = [d for d in program.definitions if isinstance(d, FnDef)]
-        fn_names = {f.name for f in fns}
-        assert "is_tensor_runtime_fn" in fn_names
-        assert "tensor_runtime_names" in fn_names
+        assert "__mapanare_tensor_add" in emitter_source
+        assert "__mapanare_matmul" in emitter_source
 
     def test_has_public_api(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
@@ -159,9 +146,9 @@ class TestEmitLlvmMnParsing:
 
         fns = [d for d in program.definitions if isinstance(d, FnDef)]
         fn_names = {f.name for f in fns}
-        assert "emit_program" in fn_names
-        assert "emit_fn" in fn_names
-        assert "emit_module_header" in fn_names
+        assert "emit_mir_module" in fn_names
+        assert "emit_mir_function" in fn_names
+        assert "emit_mir_basic_block" in fn_names
 
     def test_semantic_check(self, emitter_source: str) -> None:
         program = parse(emitter_source, filename="emit_llvm.mn")
@@ -200,10 +187,16 @@ class TestEmitLlvmMnCoverage:
         from mapanare.ast_nodes import StructDef
 
         structs = [d for d in program.definitions if isinstance(d, StructDef)]
-        emitter = next(s for s in structs if s.name == "LLVMEmitter")
-        field_names = {f.name for f in emitter.fields}
-        assert "module_name" in field_names
-        assert "target_triple" in field_names
-        assert "data_layout" in field_names
+        emit_state = next(s for s in structs if s.name == "EmitState")
+        field_names = {f.name for f in emit_state.fields}
         assert "lines" in field_names
-        assert "local_counter" in field_names
+        assert "counter" in field_names
+        assert "module_name" in field_names
+
+    def test_emittable_function_ratio(self, emitter_source: str) -> None:
+        """emit_llvm.mn should have many functions (MIR handlers + builders)."""
+        program = parse(emitter_source, filename="emit_llvm.mn")
+        from mapanare.ast_nodes import FnDef
+
+        fns = [d for d in program.definitions if isinstance(d, FnDef)]
+        assert len(fns) >= 50, f"Only {len(fns)} functions (expected >= 50)"

@@ -192,105 +192,85 @@ struct MatchArmResult {
 // ---------------------------------------------------------------------------
 
 fn new_expr_result(expr: Expr, pos: Int) -> ExprResult {
-    let r: ExprResult = expr
-    return r
+    return new ExprResult { expr: expr, pos: pos }
 }
 
 fn new_stmt_result(stmt: Stmt, pos: Int) -> StmtResult {
-    let r: StmtResult = stmt
-    return r
+    return new StmtResult { stmt: stmt, pos: pos }
 }
 
 fn new_block_result(block: Block, pos: Int) -> BlockResult {
-    let r: BlockResult = block
-    return r
+    return new BlockResult { block: block, pos: pos }
 }
 
 fn new_type_result(type_expr: TypeExpr, pos: Int) -> TypeResult {
-    let r: TypeResult = type_expr
-    return r
+    return new TypeResult { type_expr: type_expr, pos: pos }
 }
 
 fn new_pattern_result(pattern: Pattern, pos: Int) -> PatternResult {
-    let r: PatternResult = pattern
-    return r
+    return new PatternResult { pattern: pattern, pos: pos }
 }
 
 fn new_def_result(def_node: Definition, pos: Int) -> DefResult {
-    let r: DefResult = def_node
-    return r
+    return new DefResult { def_node: def_node, pos: pos }
 }
 
 fn new_param_result(param: Param, pos: Int) -> ParamResult {
-    let r: ParamResult = param
-    return r
+    return new ParamResult { param: param, pos: pos }
 }
 
 fn new_match_arm_result(arm: MatchArm, pos: Int) -> MatchArmResult {
-    let r: MatchArmResult = arm
-    return r
+    return new MatchArmResult { arm: arm, pos: pos }
 }
 
 // AST node constructors
 
 fn new_span(line: Int, col: Int, end_line: Int, end_col: Int) -> Span {
-    let s: Span = line
-    return s
+    return new Span { line: line, column: col, end_line: end_line, end_column: end_col }
 }
 
 fn new_block(stmts: List<Stmt>) -> Block {
-    let b: Block = new_span(0, 0, 0, 0)
-    return b
+    return new Block { span: new_span(0, 0, 0, 0), stmts: stmts }
 }
 
 fn new_param(name: String, type_ann: Option<TypeExpr>) -> Param {
-    let p: Param = new_span(0, 0, 0, 0)
-    return p
+    return new Param { span: new_span(0, 0, 0, 0), name: name, type_annotation: type_ann }
 }
 
 fn new_struct_field(name: String, type_ann: TypeExpr) -> StructField {
-    let f: StructField = new_span(0, 0, 0, 0)
-    return f
+    return new StructField { span: new_span(0, 0, 0, 0), name: name, type_annotation: type_ann }
 }
 
 fn new_enum_variant(name: String, fields: List<TypeExpr>) -> EnumVariant {
-    let v: EnumVariant = new_span(0, 0, 0, 0)
-    return v
+    return new EnumVariant { span: new_span(0, 0, 0, 0), name: name, fields: fields }
 }
 
 fn new_match_arm(pattern: Pattern, body: MatchArmBody) -> MatchArm {
-    let a: MatchArm = new_span(0, 0, 0, 0)
-    return a
+    return new MatchArm { span: new_span(0, 0, 0, 0), pattern: pattern, body: body }
 }
 
 fn new_fn_def_data(name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
-    let d: FnDefData = new_span(0, 0, 0, 0)
-    return d
+    return new FnDefData { span: new_span(0, 0, 0, 0), name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
 }
 
 fn new_struct_def_data(name: String, public: Bool, type_params: List<String>, fields: List<StructField>) -> StructDefData {
-    let d: StructDefData = new_span(0, 0, 0, 0)
-    return d
+    return new StructDefData { span: new_span(0, 0, 0, 0), name: name, public: public, type_params: type_params, fields: fields }
 }
 
 fn new_enum_def_data(name: String, public: Bool, type_params: List<String>, variants: List<EnumVariant>) -> EnumDefData {
-    let d: EnumDefData = new_span(0, 0, 0, 0)
-    return d
+    return new EnumDefData { span: new_span(0, 0, 0, 0), name: name, public: public, type_params: type_params, variants: variants }
 }
 
-fn new_agent_def_data(name: String, public: Bool) -> AgentDefData {
-    let d: AgentDefData = new_span(0, 0, 0, 0)
-    return d
+fn new_agent_def_data(name: String, public: Bool, inputs: List<AgentInput>, outputs: List<AgentOutput>, state: List<Stmt>, methods: List<FnDefData>, decorators: List<Decorator>) -> AgentDefData {
+    return new AgentDefData { span: new_span(0, 0, 0, 0), name: name, public: public, inputs: inputs, outputs: outputs, state: state, methods: methods, decorators: decorators }
 }
 
-fn new_pipe_def_data(name: String, public: Bool) -> PipeDefData {
-    let d: PipeDefData = new_span(0, 0, 0, 0)
-    return d
+fn new_pipe_def_data(name: String, public: Bool, stages: List<Expr>) -> PipeDefData {
+    return new PipeDefData { span: new_span(0, 0, 0, 0), name: name, public: public, stages: stages }
 }
 
 fn new_decorator(name: String, args: List<Expr>) -> Decorator {
-    let d: Decorator = new_span(0, 0, 0, 0)
-    return d
+    return new Decorator { span: new_span(0, 0, 0, 0), name: name, args: args }
 }
 
 // ---------------------------------------------------------------------------
@@ -910,7 +890,7 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
     let mut depth: Int = 1
     for _ in 0..100000 {
         if p >= len(tokens) {
-            let ad: AgentDefData = new_agent_def_data(name, is_pub)
+            let ad: AgentDefData = new_agent_def_data(name, is_pub, [], [], [], [], [])
             return new_def_result(Definition::AgentDef(ad), p)
         }
         let tt: String = peek_type(tokens, p)
@@ -919,13 +899,13 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
             depth = depth - 1
             if depth == 0 {
                 p = p + 1
-                let ad: AgentDefData = new_agent_def_data(name, is_pub)
+                let ad: AgentDefData = new_agent_def_data(name, is_pub, [], [], [], [], [])
                 return new_def_result(Definition::AgentDef(ad), p)
             }
         }
         p = p + 1
     }
-    let ad: AgentDefData = new_agent_def_data(name, is_pub)
+    let ad: AgentDefData = new_agent_def_data(name, is_pub, [], [], [], [], [])
     return new_def_result(Definition::AgentDef(ad), p)
 }
 
@@ -947,7 +927,7 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
     let mut depth: Int = 1
     for _ in 0..100000 {
         if p >= len(tokens) {
-            let pd: PipeDefData = new_pipe_def_data(name, is_pub)
+            let pd: PipeDefData = new_pipe_def_data(name, is_pub, [])
             return new_def_result(Definition::PipeDef(pd), p)
         }
         let tt: String = peek_type(tokens, p)
@@ -956,13 +936,13 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
             depth = depth - 1
             if depth == 0 {
                 p = p + 1
-                let pd: PipeDefData = new_pipe_def_data(name, is_pub)
+                let pd: PipeDefData = new_pipe_def_data(name, is_pub, [])
                 return new_def_result(Definition::PipeDef(pd), p)
             }
         }
         p = p + 1
     }
-    let pd: PipeDefData = new_pipe_def_data(name, is_pub)
+    let pd: PipeDefData = new_pipe_def_data(name, is_pub, [])
     return new_def_result(Definition::PipeDef(pd), p)
 }
 

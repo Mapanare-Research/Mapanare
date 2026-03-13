@@ -16,6 +16,7 @@ from mapanare.ast_nodes import (
     BinaryExpr,
     Block,
     BoolLiteral,
+    BreakStmt,
     CallExpr,
     CharLiteral,
     ConstructExpr,
@@ -46,6 +47,7 @@ from mapanare.ast_nodes import (
     MatchExpr,
     MethodCallExpr,
     NamedType,
+    NamespaceAccessExpr,
     NoneLiteral,
     PipeExpr,
     Program,
@@ -260,6 +262,8 @@ class LLVMEmitter:
         self._enum_defs: dict[str, tuple[ir.LiteralStructType, list[str], list[list[ir.Type]]]] = {}
         # Reverse lookup: variant_name → (enum_name, tag_index)
         self._variant_to_enum: dict[str, tuple[str, int]] = {}
+        # Loop exit block stack for break statements
+        self._loop_exit_stack: list[ir.Block] = []
         # Agent support: agent definitions and variable→agent-type tracking
         self._agent_defs: dict[str, AgentDef] = {}
         self._agent_types: dict[str, str] = {}  # var_name → agent_type_name
@@ -509,11 +513,14 @@ class LLVMEmitter:
             return
 
         # Determine which symbols to import
+        is_self_import = imp.path and imp.path[0] == "self"
         names_to_import: list[str] = []
         if imp.items:
             names_to_import = imp.items
         else:
-            names_to_import = [name for name, exp in cached.exports.items() if exp.public]
+            names_to_import = [
+                name for name, exp in cached.exports.items() if exp.public or is_self_import
+            ]
 
         # Declare each imported function as external
         for name in names_to_import:
@@ -536,9 +543,11 @@ class LLVMEmitter:
                 except KeyError:
                     ir.Function(self.module, fn_ty, name=name)
             elif isinstance(defn, StructDef):
-                self._register_struct(defn)
+                if defn.name not in self._struct_defs:
+                    self._forward_declare_struct(defn)
+                    self._register_struct(defn)
             elif isinstance(defn, EnumDef):
-                pass  # enums are value types, no external declaration needed
+                self._register_enum(defn)
 
     def _emit_extern_fn(self, node: ExternFnDef) -> ir.Function:
         """Declare an external C function in the LLVM module."""
@@ -819,6 +828,8 @@ class LLVMEmitter:
             return self._emit_for(stmt)
         if isinstance(stmt, WhileLoop):
             return self._emit_while(stmt)
+        if isinstance(stmt, BreakStmt):
+            return self._emit_break()
         return None
 
     # -----------------------------------------------------------------------
@@ -950,6 +961,9 @@ class LLVMEmitter:
         if isinstance(expr, SyncExpr):
             return self._emit_sync_expr(expr)
 
+        if isinstance(expr, NamespaceAccessExpr):
+            return self._emit_namespace_access(expr)
+
         raise NotImplementedError(f"Cannot emit expression: {type(expr).__name__}")
 
     # -----------------------------------------------------------------------
@@ -1024,12 +1038,29 @@ class LLVMEmitter:
         return self._emit_string_literal(StringLiteral(value="<unknown>"))
 
     def _emit_identifier(self, node: Identifier) -> ir.Value:
-        """Load a variable from its stack slot."""
+        """Load a variable from its stack slot, or construct a bare enum variant."""
         if node.name in self._locals:
             return self.builder.load(self._locals[node.name], name=node.name)
         if node.name in self._functions:
             return self._functions[node.name]
+        # Bare enum variant (no payload): e.g., `Red`, `None`
+        if node.name in self._variant_to_enum:
+            return self._emit_enum_construct(node.name, [])
         raise NameError(f"Undefined variable: {node.name}")
+
+    def _emit_namespace_access(self, node: NamespaceAccessExpr) -> ir.Value:
+        """Emit namespace access: `Enum::Variant` or `Module::value`."""
+        # Bare enum variant (no payload): e.g., `BinOpKind::Add`
+        if node.member in self._variant_to_enum:
+            return self._emit_enum_construct(node.member, [])
+        # Namespace-qualified function reference
+        fn_name = f"{node.namespace}_{node.member}"
+        if fn_name in self._functions:
+            return self._functions[fn_name]
+        # Namespace-qualified variable
+        if fn_name in self._locals:
+            return self.builder.load(self._locals[fn_name], name=fn_name)
+        raise NameError(f"Undefined namespace access: {node.namespace}::{node.member}")
 
     # -----------------------------------------------------------------------
     # Task 2: Arithmetic expressions → LLVM arithmetic instructions
@@ -1274,7 +1305,25 @@ class LLVMEmitter:
 
         # Enum variant construction: Some(x), Ok(x), MyEnum::Variant(x), etc.
         if isinstance(node.callee, Identifier) and node.callee.name in self._variant_to_enum:
-            return self._emit_enum_construct(node.callee.name, node.args)
+            return self._emit_enum_construct(node.callee.name, list(node.args))
+
+        # Namespace-qualified enum variant: Enum::Variant(args)
+        if isinstance(node.callee, NamespaceAccessExpr):
+            variant = node.callee.member
+            if variant in self._variant_to_enum:
+                return self._emit_enum_construct(variant, list(node.args))
+            # Namespace-qualified function call: Module::func(args)
+            fn_name = f"{node.callee.namespace}_{node.callee.member}"
+            if fn_name in self._functions:
+                func = self._functions[fn_name]
+                args = [self._emit_expr(a) for a in node.args]
+                if hasattr(func, "function_type"):
+                    fn_ty = func.function_type
+                    for i, (arg, expected_ty) in enumerate(zip(args, fn_ty.args)):
+                        if self._is_string_type(arg) and isinstance(expected_ty, ir.PointerType):
+                            args[i] = self.builder.extract_value(arg, 0, name="str_to_cptr")
+                return self.builder.call(func, args, name="call")
+            raise NameError(f"Undefined function: {fn_name}")
 
         # Resolve the callee
         if isinstance(node.callee, Identifier):
@@ -1426,7 +1475,9 @@ class LLVMEmitter:
 
         # Body
         self._builder = ir.IRBuilder(body_bb)
+        self._loop_exit_stack.append(exit_bb)
         self._emit_block(node.body)
+        self._loop_exit_stack.pop()
 
         # Increment loop variable
         next_val = self.builder.add(phi, ir.Constant(LLVM_INT, 1), name="for.next")
@@ -1444,6 +1495,13 @@ class LLVMEmitter:
             del self._locals[node.var_name]
         self._builder = ir.IRBuilder(exit_bb)
 
+        return ir.Constant(LLVM_INT, 0)
+
+    def _emit_break(self) -> ir.Value:
+        """Emit a break statement — jump to the nearest loop exit block."""
+        if self._loop_exit_stack:
+            if not self.builder.block.is_terminated:
+                self.builder.branch(self._loop_exit_stack[-1])
         return ir.Constant(LLVM_INT, 0)
 
     # -----------------------------------------------------------------------
@@ -1479,7 +1537,9 @@ class LLVMEmitter:
 
         # Body
         self._builder = ir.IRBuilder(body_bb)
+        self._loop_exit_stack.append(exit_bb)
         self._emit_block(node.body)
+        self._loop_exit_stack.pop()
         if not self.builder.block.is_terminated:
             self.builder.branch(header_bb)
 
@@ -1645,9 +1705,9 @@ class LLVMEmitter:
             self._builder = ir.IRBuilder(arm_blocks[i])
 
             # Bind payload fields for ConstructorPattern
-            if isinstance(arm.pattern, ConstructorPattern) and arm.pattern.patterns:
+            if isinstance(arm.pattern, ConstructorPattern) and arm.pattern.args:
                 payload_values = self._extract_enum_payload(subject, enum_name, tag_val)
-                for j, subpat in enumerate(arm.pattern.patterns):
+                for j, subpat in enumerate(arm.pattern.args):
                     if isinstance(subpat, IdentPattern) and j < len(payload_values):
                         alloca = self.builder.alloca(payload_values[j].type, name=subpat.name)
                         self.builder.store(payload_values[j], alloca)

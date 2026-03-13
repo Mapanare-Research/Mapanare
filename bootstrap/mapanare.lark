@@ -148,11 +148,15 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
      | for_stmt
      | while_stmt
      | return_stmt
+     | break_stmt
+     | assert_stmt
      | expr_stmt
 
 
 let_stmt: KW_LET KW_MUT? NAME (COLON type_expr)? ASSIGN expr
 return_stmt: KW_RETURN expr?
+break_stmt: KW_BREAK
+assert_stmt: KW_ASSERT expr (COMMA expr)?
 for_stmt: KW_FOR NAME KW_IN expr block
 while_stmt: KW_WHILE expr block
 expr_stmt: expr
@@ -332,6 +336,8 @@ KW_TRUE: "true"
 KW_FALSE: "false"
 KW_NONE: "none"
 KW_NEW: "new"
+KW_ASSERT: "assert"
+KW_BREAK: "break"
 
 // Contextual keywords (used in specific grammar positions)
 KW_INPUT: "input"
