@@ -791,7 +791,8 @@ pub fn ws_recv(conn: WsConnection) -> Result<WsMessage, WsError> {
         return Ok(Close(close_code, close_reason))
     }
 
-    // Task 15: Continuation frame (fragmentation)
+    // Task 15: Continuation frame (fragmentation) — single-frame messages
+    // For multi-frame reassembly, use ws_recv_full() which loops until FIN.
     if frame.opcode == 0 {
         return Ok(Text(frame.payload))
     }
@@ -805,6 +806,219 @@ pub fn ws_recv(conn: WsConnection) -> Result<WsMessage, WsError> {
     }
 
     return Err(ProtocolError("Unknown opcode: " + str(frame.opcode)))
+}
+
+// ---------------------------------------------------------------------------
+// Task 15: Fragmentation — send large messages as continuation frames
+// ---------------------------------------------------------------------------
+
+// Send a message split into fragments of max_frag_size bytes.
+// First frame: FIN=0, opcode=text/binary. Middle frames: FIN=0, opcode=0.
+// Final frame: FIN=1, opcode=0.
+pub fn ws_send_fragmented(conn: WsConnection, msg: WsMessage, max_frag_size: Int) -> Result<Int, WsError> {
+    if conn.state != 1 {
+        return Err(SendFailed("Connection not open"))
+    }
+
+    let mut opcode: Int = 1
+    let mut payload: String = ""
+
+    match msg {
+        Text(data) => {
+            opcode = 1
+            payload = data
+        },
+        Binary(data) => {
+            opcode = 2
+            payload = data
+        },
+        Ping(data) => {
+            return ws_send(conn, Ping(data))
+        },
+        Pong(data) => {
+            return ws_send(conn, Pong(data))
+        },
+        Close(code, reason) => {
+            return ws_send(conn, Close(code, reason))
+        }
+    }
+
+    let total_len: Int = len(payload)
+    if total_len <= max_frag_size {
+        return ws_send(conn, msg)
+    }
+
+    let do_mask: Bool = conn.is_server == false
+    let mut offset: Int = 0
+    let mut first: Bool = true
+
+    while offset < total_len {
+        let mut chunk_end: Int = offset + max_frag_size
+        if chunk_end > total_len {
+            chunk_end = total_len
+        }
+
+        let mut chunk: String = ""
+        let mut ci: Int = offset
+        while ci < chunk_end {
+            chunk = chunk + payload.char_at(ci)
+            ci = ci + 1
+        }
+
+        let is_final: Bool = chunk_end >= total_len
+        let mut frame_op: Int = 0
+        if first {
+            frame_op = opcode
+            first = false
+        }
+
+        let mut byte0: Int = frame_op
+        if is_final {
+            byte0 = bitor(128, frame_op)
+        }
+
+        let chunk_len: Int = len(chunk)
+        let mut byte1: Int = 0
+        if do_mask { byte1 = 128 }
+
+        let mut header_extra: String = ""
+        if chunk_len < 126 {
+            byte1 = bitor(byte1, chunk_len)
+        } else { if chunk_len < 65536 {
+            byte1 = bitor(byte1, 126)
+            let hi: Int = chunk_len / 256
+            let lo: Int = chunk_len - hi * 256
+            header_extra = str(hi) + str(lo)
+        } else {
+            byte1 = bitor(byte1, 127)
+            let b4: Int = chunk_len / 16777216
+            let rem3: Int = chunk_len - b4 * 16777216
+            let b5: Int = rem3 / 65536
+            let rem2: Int = rem3 - b5 * 65536
+            let b6: Int = rem2 / 256
+            let b7: Int = rem2 - b6 * 256
+            header_extra = str(0) + str(0) + str(0) + str(0) + str(b4) + str(b5) + str(b6) + str(b7)
+        } }
+
+        let mut frame_data: String = str(byte0) + str(byte1) + header_extra
+
+        if do_mask {
+            let mask_key: String = __mn_random_bytes_str(4)
+            frame_data = frame_data + mask_key
+            let masked_chunk: String = apply_mask(chunk, mask_key)
+            frame_data = frame_data + masked_chunk
+        } else {
+            frame_data = frame_data + chunk
+        }
+
+        let sent: Int = ws_raw_send(conn, frame_data)
+        if sent < 0 {
+            return Err(SendFailed("Failed to send fragment"))
+        }
+
+        offset = chunk_end
+    }
+
+    return Ok(total_len)
+}
+
+// Receive a possibly-fragmented message by reading continuation frames until FIN.
+// Returns the fully reassembled message.
+pub fn ws_recv_full(conn: WsConnection) -> Result<WsMessage, WsError> {
+    if conn.state != 1 {
+        return Err(RecvFailed("Connection not open"))
+    }
+
+    let raw: String = ws_raw_recv(conn, 65536)
+    if len(raw) == 0 {
+        return Err(ConnectionClosed("Connection closed by peer"))
+    }
+
+    let dr: FrameDecodeResult = decode_frame(raw)
+    if dr.ok == false {
+        return Err(InvalidFrame(dr.error_msg))
+    }
+
+    let frame: WsFrame = dr.frame
+
+    // Control frames (ping, pong, close) are never fragmented
+    if frame.opcode == 9 {
+        let pong_frame: String = build_send_frame(10, frame.payload, conn.is_server == false)
+        let sent: Int = ws_raw_send(conn, pong_frame)
+        return Ok(Ping(frame.payload))
+    }
+    if frame.opcode == 10 {
+        return Ok(Pong(frame.payload))
+    }
+    if frame.opcode == 8 {
+        let mut close_code: Int = 1000
+        let mut close_reason: String = ""
+        if frame.payload_len >= 2 {
+            close_code = frame.payload.byte_at(0) * 256 + frame.payload.byte_at(1)
+            let mut ri: Int = 2
+            while ri < frame.payload_len {
+                close_reason = close_reason + frame.payload.char_at(ri)
+                ri = ri + 1
+            }
+        }
+        let close_resp: String = build_send_frame(8, frame.payload, conn.is_server == false)
+        let sent: Int = ws_raw_send(conn, close_resp)
+        return Ok(Close(close_code, close_reason))
+    }
+
+    // Data frame — check if FIN is set (non-fragmented)
+    if frame.fin {
+        if frame.opcode == 1 {
+            return Ok(Text(frame.payload))
+        }
+        if frame.opcode == 2 {
+            return Ok(Binary(frame.payload))
+        }
+    }
+
+    // Fragmented: first frame has FIN=0, opcode=1 or 2
+    let first_opcode: Int = frame.opcode
+    let mut assembled: String = frame.payload
+    let mut max_frames: Int = 10000
+
+    while max_frames > 0 {
+        max_frames = max_frames - 1
+        let cont_raw: String = ws_raw_recv(conn, 65536)
+        if len(cont_raw) == 0 {
+            return Err(ConnectionClosed("Connection lost during fragmented message"))
+        }
+
+        let cont_dr: FrameDecodeResult = decode_frame(cont_raw)
+        if cont_dr.ok == false {
+            return Err(InvalidFrame(cont_dr.error_msg))
+        }
+
+        let cont_frame: WsFrame = cont_dr.frame
+
+        // Continuation frame must have opcode 0
+        if cont_frame.opcode != 0 {
+            // Control frames can interleave — handle them
+            if cont_frame.opcode == 9 {
+                let pong_data: String = build_send_frame(10, cont_frame.payload, conn.is_server == false)
+                let psent: Int = ws_raw_send(conn, pong_data)
+                max_frames = max_frames + 1
+            } else { if cont_frame.opcode == 10 {
+                max_frames = max_frames + 1
+            } else {
+                return Err(ProtocolError("Expected continuation frame, got opcode " + str(cont_frame.opcode)))
+            } }
+        } else {
+            assembled = assembled + cont_frame.payload
+            if cont_frame.fin {
+                if first_opcode == 1 {
+                    return Ok(Text(assembled))
+                }
+                return Ok(Binary(assembled))
+            }
+        }
+    }
+
+    return Err(ProtocolError("Too many continuation frames"))
 }
 
 // ---------------------------------------------------------------------------

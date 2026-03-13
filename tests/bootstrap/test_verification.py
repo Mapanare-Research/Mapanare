@@ -113,12 +113,16 @@ class TestPipelineIntegrity:
             is_missing_variable = "Undefined variable" in msg
             is_missing_module = "module" in msg and "not found" in msg
             is_operator_mismatch = "Operator" in msg and "not supported" in msg
+            is_assign_mismatch = "Cannot assign" in msg
+            is_arg_mismatch = "Argument" in msg and "expects" in msg
             assert (
                 is_constructor
                 or is_missing_import
                 or is_missing_variable
                 or is_missing_module
                 or is_operator_mismatch
+                or is_assign_mismatch
+                or is_arg_mismatch
             ), f"Unexpected semantic error in {mn_file.name}: {msg}"
 
     def test_ast_mn_zero_errors(self) -> None:

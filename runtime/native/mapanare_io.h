@@ -267,6 +267,18 @@ MN_IO_EXPORT MnString __mn_sha1_str(MnString data);
 /** SHA-256 hash of input data. Returns 32-byte raw hash as MnString. */
 MN_IO_EXPORT MnString __mn_sha256_str(MnString data);
 
+/** SHA-512 hash of input data. Returns 64-byte raw hash as MnString. */
+MN_IO_EXPORT MnString __mn_sha512_str(MnString data);
+
+/** HMAC-SHA256. Returns 32-byte raw HMAC as MnString. */
+MN_IO_EXPORT MnString __mn_hmac_sha256_str(MnString key, MnString data);
+
+/** Hex-encode a binary string. Returns hex MnString (2x input length). */
+MN_IO_EXPORT MnString __mn_hex_encode_str(MnString data);
+
+/** Hex-decode a hex string. Returns binary MnString (empty on invalid input). */
+MN_IO_EXPORT MnString __mn_hex_decode_str(MnString data);
+
 /** Base64-encode a binary string. Returns base64-encoded MnString. */
 MN_IO_EXPORT MnString __mn_base64_encode_str(MnString data);
 

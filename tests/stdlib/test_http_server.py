@@ -41,11 +41,7 @@ from mapanare.cli import _compile_to_llvm_ir
 
 # Read the server module source once
 _SERVER_MN = (
-    Path(__file__).resolve().parent.parent.parent
-    / "stdlib"
-    / "net"
-    / "http"
-    / "server.mn"
+    Path(__file__).resolve().parent.parent.parent / "stdlib" / "net" / "http" / "server.mn"
 ).read_text(encoding="utf-8")
 
 
@@ -56,17 +52,11 @@ def _compile_mir(source: str) -> str:
 
 def _server_source_with_main(main_body: str) -> str:
     """Prepend the server module source and wrap main_body in fn main()."""
-    return (
-        _SERVER_MN
-        + "\n\n"
-        + textwrap.dedent(
-            f"""\
+    return _SERVER_MN + "\n\n" + textwrap.dedent(f"""\
         fn main() {{
         {textwrap.indent(textwrap.dedent(main_body), '    ')}
         }}
-    """
-        )
-    )
+    """)
 
 
 # ---------------------------------------------------------------------------
@@ -185,9 +175,9 @@ class TestRouteMatching:
     def test_is_param_segment(self) -> None:
         """is_param_segment detects ${name} pattern."""
         src = _server_source_with_main("""\
-            let r1: Bool = is_param_segment("${id}")
+            let r1: Bool = is_param_segment("\\${id}")
             let r2: Bool = is_param_segment("users")
-            let r3: Bool = is_param_segment("${}")
+            let r3: Bool = is_param_segment("\\${}")
             println(str(r1))
             println(str(r2))
         """)
@@ -197,7 +187,7 @@ class TestRouteMatching:
     def test_extract_param_name(self) -> None:
         """extract_param_name gets name from ${name}."""
         src = _server_source_with_main("""\
-            let name: String = extract_param_name("${user_id}")
+            let name: String = extract_param_name("\\${user_id}")
             println(name)
         """)
         ir_out = _compile_mir(src)
@@ -215,7 +205,7 @@ class TestRouteMatching:
     def test_param_path_match(self) -> None:
         """Task 5: Path parameter extraction works."""
         src = _server_source_with_main("""\
-            let mr: MatchResult = match_route("/api/users/${id}", "/api/users/42", "GET", "GET")
+            let mr: MatchResult = match_route("/api/users/\\${id}", "/api/users/42", "GET", "GET")
             if mr.matched {
                 println(mr.params["id"])
             }
@@ -244,7 +234,7 @@ class TestRouteMatching:
     def test_multi_param_match(self) -> None:
         """Multiple path parameters extracted."""
         src = _server_source_with_main("""\
-            let mr: MatchResult = match_route("/api/${resource}/${id}", "/api/users/42", "GET", "GET")
+            let mr: MatchResult = match_route("/api/\\${resource}/\\${id}", "/api/users/42", "GET", "GET")
             if mr.matched {
                 println(mr.params["resource"])
                 println(mr.params["id"])
@@ -523,7 +513,7 @@ class TestRouteDispatch:
         """dispatch_route extracts path parameters."""
         src = _server_source_with_main("""\
             let mut router: Router = new_router()
-            router = router_add_route(router, "GET", "/users/${id}", "handle_user")
+            router = router_add_route(router, "GET", "/users/\\${id}", "handle_user")
             let dr: DispatchResult = dispatch_route(router, "GET", "/users/42")
             if dr.matched {
                 println(dr.params["id"])
@@ -568,7 +558,7 @@ class TestIntegration:
         """Full cycle: parse request, match route, build response."""
         src = _server_source_with_main("""\
             let mut router: Router = new_router()
-            router = router_add_route(router, "GET", "/api/users/${id}", "handle_user")
+            router = router_add_route(router, "GET", "/api/users/\\${id}", "handle_user")
             router = router_use_logging(router)
             router = router_use_cors(router, "*", "GET, POST", "Content-Type")
             let raw: String = "GET /api/users/42 HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n"
@@ -622,7 +612,7 @@ class TestIntegration:
         src = _server_source_with_main("""\
             let mut router: Router = new_router()
             router = router_add_route(router, "GET", "/", "handler")
-            router = router_add_route(router, "GET", "/api/${id}", "api_handler")
+            router = router_add_route(router, "GET", "/api/\\${id}", "api_handler")
             let cfg: ServerConfig = new_server_config("0.0.0.0", 3000)
             // Verify the full server structure compiles
             println(str(cfg.max_connections))

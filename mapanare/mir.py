@@ -312,6 +312,7 @@ class EnumPayload(Instruction):
     dest: Value = field(default_factory=Value)
     enum_val: Value = field(default_factory=Value)
     variant: str = ""
+    payload_idx: int = 0
 
 
 # --- Option / Result ---

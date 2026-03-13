@@ -944,9 +944,15 @@ typedef void* (*fn_EVP_MD_CTX_new)(void);
 typedef void  (*fn_EVP_MD_CTX_free)(void *ctx);
 typedef void* (*fn_EVP_sha1)(void);
 typedef void* (*fn_EVP_sha256)(void);
+typedef void* (*fn_EVP_sha512)(void);
 typedef int   (*fn_EVP_DigestInit_ex)(void *ctx, const void *type, void *impl);
 typedef int   (*fn_EVP_DigestUpdate)(void *ctx, const void *d, size_t cnt);
 typedef int   (*fn_EVP_DigestFinal_ex)(void *ctx, unsigned char *md, unsigned int *s);
+
+/* HMAC function pointers */
+typedef void* (*fn_HMAC)(const void *evp_md, const void *key, int key_len,
+                         const unsigned char *d, size_t n,
+                         unsigned char *md, unsigned int *md_len);
 
 static struct {
     int loaded;
@@ -955,9 +961,11 @@ static struct {
     fn_EVP_MD_CTX_free    EVP_MD_CTX_free;
     fn_EVP_sha1           EVP_sha1;
     fn_EVP_sha256         EVP_sha256;
+    fn_EVP_sha512         EVP_sha512;
     fn_EVP_DigestInit_ex  EVP_DigestInit_ex;
     fn_EVP_DigestUpdate   EVP_DigestUpdate;
     fn_EVP_DigestFinal_ex EVP_DigestFinal_ex;
+    fn_HMAC               HMAC;
 } s_evp = {0};
 
 static int evp_load(void) {
@@ -979,14 +987,16 @@ static int evp_load(void) {
     EVP_SYM(EVP_MD_CTX_free);
     EVP_SYM(EVP_sha1);
     EVP_SYM(EVP_sha256);
+    EVP_SYM(EVP_sha512);
     EVP_SYM(EVP_DigestInit_ex);
     EVP_SYM(EVP_DigestUpdate);
     EVP_SYM(EVP_DigestFinal_ex);
+    EVP_SYM(HMAC);
 
     #undef EVP_SYM
 
     if (!s_evp.EVP_MD_CTX_new || !s_evp.EVP_MD_CTX_free ||
-        !s_evp.EVP_sha1 || !s_evp.EVP_sha256 ||
+        !s_evp.EVP_sha1 || !s_evp.EVP_sha256 || !s_evp.EVP_sha512 ||
         !s_evp.EVP_DigestInit_ex || !s_evp.EVP_DigestUpdate ||
         !s_evp.EVP_DigestFinal_ex) {
         return -1;
@@ -1024,6 +1034,80 @@ MN_IO_EXPORT MnString __mn_sha1_str(MnString data) {
 
 MN_IO_EXPORT MnString __mn_sha256_str(MnString data) {
     return evp_hash(data, s_evp.EVP_sha256, 32);
+}
+
+MN_IO_EXPORT MnString __mn_sha512_str(MnString data) {
+    return evp_hash(data, s_evp.EVP_sha512, 64);
+}
+
+/* --- HMAC-SHA256 via OpenSSL HMAC() --- */
+
+MN_IO_EXPORT MnString __mn_hmac_sha256_str(MnString key, MnString data) {
+    if (evp_load() < 0 || !s_evp.HMAC) return __mn_str_empty();
+
+    const char *key_buf = (const char *)((uintptr_t)key.data & ~(uintptr_t)1);
+    const char *data_buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+
+    unsigned char md[32];
+    unsigned int md_len = 0;
+
+    void *result = s_evp.HMAC(s_evp.EVP_sha256(), key_buf, (int)key.len,
+                              (const unsigned char *)data_buf, (size_t)data.len,
+                              md, &md_len);
+    if (!result || md_len != 32) return __mn_str_empty();
+
+    return __mn_str_from_parts((const char *)md, 32);
+}
+
+/* --- Hex encode/decode (pure C) --- */
+
+MN_IO_EXPORT MnString __mn_hex_encode_str(MnString data) {
+    const unsigned char *src = (const unsigned char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    int64_t slen = data.len;
+    int64_t olen = slen * 2;
+    char *out = (char *)malloc((size_t)olen + 1);
+    if (!out) return __mn_str_empty();
+
+    static const char hex[] = "0123456789abcdef";
+    for (int64_t i = 0; i < slen; i++) {
+        out[i * 2]     = hex[(src[i] >> 4) & 0x0F];
+        out[i * 2 + 1] = hex[src[i]        & 0x0F];
+    }
+    out[olen] = '\0';
+
+    MnString result = __mn_str_from_parts(out, olen);
+    free(out);
+    return result;
+}
+
+MN_IO_EXPORT MnString __mn_hex_decode_str(MnString data) {
+    const char *src = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    int64_t slen = data.len;
+    if (slen % 2 != 0) return __mn_str_empty();
+
+    int64_t olen = slen / 2;
+    char *out = (char *)malloc((size_t)olen + 1);
+    if (!out) return __mn_str_empty();
+
+    for (int64_t i = 0; i < olen; i++) {
+        int hi, lo;
+        char ch = src[i * 2];
+        char cl = src[i * 2 + 1];
+        if (ch >= '0' && ch <= '9') hi = ch - '0';
+        else if (ch >= 'a' && ch <= 'f') hi = ch - 'a' + 10;
+        else if (ch >= 'A' && ch <= 'F') hi = ch - 'A' + 10;
+        else { free(out); return __mn_str_empty(); }
+        if (cl >= '0' && cl <= '9') lo = cl - '0';
+        else if (cl >= 'a' && cl <= 'f') lo = cl - 'a' + 10;
+        else if (cl >= 'A' && cl <= 'F') lo = cl - 'A' + 10;
+        else { free(out); return __mn_str_empty(); }
+        out[i] = (char)((hi << 4) | lo);
+    }
+    out[olen] = '\0';
+
+    MnString result = __mn_str_from_parts(out, olen);
+    free(out);
+    return result;
 }
 
 /* --- Base64 (pure C) --- */

@@ -1,0 +1,283 @@
+// crypto.mn — Cryptographic Primitives for Mapanare
+//
+// Provides hashing (SHA-256, SHA-512), HMAC, encoding (Base64, Hex),
+// JWT (HS256), and cryptographically secure random bytes.
+//
+// All heavy lifting delegates to C runtime (OpenSSL via dlopen).
+
+// ---------------------------------------------------------------------------
+// Extern C runtime functions
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_sha1_str(data: String) -> String
+extern "C" fn __mn_sha256_str(data: String) -> String
+extern "C" fn __mn_sha512_str(data: String) -> String
+extern "C" fn __mn_hmac_sha256_str(key: String, data: String) -> String
+extern "C" fn __mn_base64_encode_str(data: String) -> String
+extern "C" fn __mn_base64_decode_str(data: String) -> String
+extern "C" fn __mn_hex_encode_str(data: String) -> String
+extern "C" fn __mn_hex_decode_str(data: String) -> String
+extern "C" fn __mn_random_bytes_str(n: Int) -> String
+
+// ---------------------------------------------------------------------------
+// Error type
+// ---------------------------------------------------------------------------
+
+pub enum CryptoError {
+    InvalidInput(String),
+    DecodeFailed(String),
+    VerificationFailed(String),
+    HashError(String)
+}
+
+fn new_invalid_input(msg: String) -> CryptoError {
+    return InvalidInput(msg)
+}
+
+fn new_decode_failed(msg: String) -> CryptoError {
+    return DecodeFailed(msg)
+}
+
+fn new_verification_failed(msg: String) -> CryptoError {
+    return VerificationFailed(msg)
+}
+
+fn new_hash_error(msg: String) -> CryptoError {
+    return HashError(msg)
+}
+
+// ---------------------------------------------------------------------------
+// Hashing — SHA-1, SHA-256, SHA-512 (hex digest output)
+// ---------------------------------------------------------------------------
+
+fn sha1(input: String) -> String {
+    let raw: String = __mn_sha1_str(input)
+    return __mn_hex_encode_str(raw)
+}
+
+fn sha256(input: String) -> String {
+    let raw: String = __mn_sha256_str(input)
+    return __mn_hex_encode_str(raw)
+}
+
+fn sha512(input: String) -> String {
+    let raw: String = __mn_sha512_str(input)
+    return __mn_hex_encode_str(raw)
+}
+
+// Raw hash variants (return binary, not hex)
+fn sha1_raw(input: String) -> String {
+    return __mn_sha1_str(input)
+}
+
+fn sha256_raw(input: String) -> String {
+    return __mn_sha256_str(input)
+}
+
+fn sha512_raw(input: String) -> String {
+    return __mn_sha512_str(input)
+}
+
+// ---------------------------------------------------------------------------
+// HMAC-SHA256 (hex digest output)
+// ---------------------------------------------------------------------------
+
+fn hmac_sha256(key: String, data: String) -> String {
+    let raw: String = __mn_hmac_sha256_str(key, data)
+    return __mn_hex_encode_str(raw)
+}
+
+fn hmac_sha256_raw(key: String, data: String) -> String {
+    return __mn_hmac_sha256_str(key, data)
+}
+
+// ---------------------------------------------------------------------------
+// Base64 encoding/decoding
+// ---------------------------------------------------------------------------
+
+fn base64_encode(input: String) -> String {
+    return __mn_base64_encode_str(input)
+}
+
+fn base64_decode(input: String) -> Result<String, CryptoError> {
+    let decoded: String = __mn_base64_decode_str(input)
+    if len(decoded) == 0 {
+        if len(input) > 0 {
+            return Err(new_decode_failed("invalid base64 input"))
+        }
+    }
+    return Ok(decoded)
+}
+
+// URL-safe Base64 (RFC 4648 section 5) — no padding
+fn base64url_encode(input: String) -> String {
+    let b64: String = __mn_base64_encode_str(input)
+    // Replace + with -, / with _, strip =
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < len(b64) {
+        let c: String = b64.char_at(i)
+        if c == "+" {
+            result = result + "-"
+        } else if c == "/" {
+            result = result + "_"
+        } else if c != "=" {
+            result = result + c
+        }
+        i = i + 1
+    }
+    return result
+}
+
+fn base64url_decode(input: String) -> Result<String, CryptoError> {
+    // Restore standard Base64: replace - with +, _ with /
+    let mut std_b64: String = ""
+    let mut i: Int = 0
+    while i < len(input) {
+        let c: String = input.char_at(i)
+        if c == "-" {
+            std_b64 = std_b64 + "+"
+        } else if c == "_" {
+            std_b64 = std_b64 + "/"
+        } else {
+            std_b64 = std_b64 + c
+        }
+        i = i + 1
+    }
+    // Add padding
+    let pad: Int = len(std_b64) % 4
+    if pad == 2 {
+        std_b64 = std_b64 + "=="
+    } else if pad == 3 {
+        std_b64 = std_b64 + "="
+    }
+    let decoded: String = __mn_base64_decode_str(std_b64)
+    if len(decoded) == 0 {
+        if len(input) > 0 {
+            return Err(new_decode_failed("invalid base64url input"))
+        }
+    }
+    return Ok(decoded)
+}
+
+// ---------------------------------------------------------------------------
+// Hex encoding/decoding
+// ---------------------------------------------------------------------------
+
+fn hex_encode(input: String) -> String {
+    return __mn_hex_encode_str(input)
+}
+
+fn hex_decode(input: String) -> Result<String, CryptoError> {
+    if len(input) % 2 != 0 {
+        return Err(new_invalid_input("hex string must have even length"))
+    }
+    let decoded: String = __mn_hex_decode_str(input)
+    if len(decoded) == 0 {
+        if len(input) > 0 {
+            return Err(new_decode_failed("invalid hex input"))
+        }
+    }
+    return Ok(decoded)
+}
+
+// ---------------------------------------------------------------------------
+// JWT (HS256) — uses String-based JSON (no cross-module JsonValue dependency)
+//
+// JWT format: base64url(header) + "." + base64url(payload) + "." + base64url(signature)
+// Header is always: {"alg":"HS256","typ":"JWT"}
+// ---------------------------------------------------------------------------
+
+fn jwt_header() -> String {
+    return "{\"alg\":\"HS256\",\"typ\":\"JWT\"}"
+}
+
+fn jwt_encode(payload_json: String, secret: String) -> String {
+    let header_b64: String = base64url_encode(jwt_header())
+    let payload_b64: String = base64url_encode(payload_json)
+    let signing_input: String = header_b64 + "." + payload_b64
+    let sig_raw: String = __mn_hmac_sha256_str(secret, signing_input)
+    let sig_b64: String = base64url_encode(sig_raw)
+    return signing_input + "." + sig_b64
+}
+
+fn jwt_decode(token: String, secret: String) -> Result<String, CryptoError> {
+    // Find first dot
+    let dot1: Int = token.find(".")
+    if dot1 < 0 {
+        return Err(new_invalid_input("invalid JWT: missing first dot"))
+    }
+    // Find second dot
+    let rest: String = token.substr(dot1 + 1, len(token))
+    let dot2_rel: Int = rest.find(".")
+    if dot2_rel < 0 {
+        return Err(new_invalid_input("invalid JWT: missing second dot"))
+    }
+    let dot2: Int = dot1 + 1 + dot2_rel
+
+    let signing_input: String = token.substr(0, dot2)
+    let sig_b64: String = token.substr(dot2 + 1, len(token))
+
+    // Verify signature
+    let expected_raw: String = __mn_hmac_sha256_str(secret, signing_input)
+    let expected_b64: String = base64url_encode(expected_raw)
+
+    if sig_b64 != expected_b64 {
+        return Err(new_verification_failed("JWT signature mismatch"))
+    }
+
+    // Decode payload
+    let payload_b64: String = token.substr(dot1 + 1, dot2)
+    let payload_result: Result<String, CryptoError> = base64url_decode(payload_b64)
+    match payload_result {
+        Ok(payload) => {
+            return Ok(payload)
+        },
+        Err(e) => {
+            return Err(new_decode_failed("JWT payload decode failed"))
+        }
+    }
+    return Err(new_decode_failed("unreachable"))
+}
+
+fn jwt_verify(token: String, secret: String) -> Bool {
+    let dot1: Int = token.find(".")
+    if dot1 < 0 {
+        return false
+    }
+    let rest: String = token.substr(dot1 + 1, len(token))
+    let dot2_rel: Int = rest.find(".")
+    if dot2_rel < 0 {
+        return false
+    }
+    let dot2: Int = dot1 + 1 + dot2_rel
+
+    let signing_input: String = token.substr(0, dot2)
+    let sig_b64: String = token.substr(dot2 + 1, len(token))
+
+    let expected_raw: String = __mn_hmac_sha256_str(secret, signing_input)
+    let expected_b64: String = base64url_encode(expected_raw)
+
+    return sig_b64 == expected_b64
+}
+
+// ---------------------------------------------------------------------------
+// Random bytes
+// ---------------------------------------------------------------------------
+
+fn random_bytes(n: Int) -> List<Int> {
+    let raw: String = __mn_random_bytes_str(n)
+    let mut result: List<Int> = []
+    let mut i: Int = 0
+    while i < len(raw) {
+        let b: Int = raw.byte_at(i)
+        result = result + [b]
+        i = i + 1
+    }
+    return result
+}
+
+fn random_hex(n: Int) -> String {
+    let raw: String = __mn_random_bytes_str(n)
+    return __mn_hex_encode_str(raw)
+}

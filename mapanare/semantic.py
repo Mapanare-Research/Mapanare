@@ -380,7 +380,7 @@ class SemanticChecker:
                 self._infer_expr(a)
             return UNKNOWN_TYPE
         if isinstance(expr, FieldAccessExpr):
-            self._infer_expr(expr.object)
+            obj_type = self._infer_expr(expr.object)
             # Check agent inputs/outputs
             sym = None
             if isinstance(expr.object, Identifier):
@@ -393,6 +393,13 @@ class SemanticChecker:
                 for out in agent.outputs:
                     if out.name == expr.field_name:
                         return self._resolve_type_expr(out.type_annotation)
+            # Resolve struct field types
+            if obj_type.kind == TypeKind.STRUCT and obj_type.name:
+                struct_sym = self.current_scope.lookup(obj_type.name)
+                if struct_sym and struct_sym.node and isinstance(struct_sym.node, StructDef):
+                    for f in struct_sym.node.fields:
+                        if f.name == expr.field_name:
+                            return self._resolve_type_expr(f.type_annotation)
             return UNKNOWN_TYPE
         if isinstance(expr, IndexExpr):
             obj_type = self._infer_expr(expr.object)

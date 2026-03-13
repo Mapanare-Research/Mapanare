@@ -793,9 +793,12 @@ class MIRLowerer:
         if not self._block_terminated():
             self._emit(Jump(target=header.label))
 
+        # Infer loop variable type from iterable
+        elem_ty = self._infer_iterable_elem_type(iterable.ty)
+
         # Header: we model the loop variable as receiving values
         self._set_block(header)
-        iter_val = self._make_value(prefix="iter")
+        iter_val = self._make_value(ty=elem_ty, prefix="iter")
         self._define_var(loop.var_name, iter_val)
         # For simplicity, we use a Call to a runtime iterator function
         has_next = self._make_value(ty=mir_bool(), prefix="has_next")
@@ -804,7 +807,7 @@ class MIRLowerer:
 
         # Body
         self._set_block(body)
-        next_val = self._make_value(prefix="next")
+        next_val = self._make_value(ty=elem_ty, prefix="next")
         self._emit(Call(dest=next_val, fn_name="__iter_next", args=[iterable]))
         self._define_var(loop.var_name, next_val)
         self._push_scope()
@@ -1287,6 +1290,55 @@ class MIRLowerer:
         self._emit(Call(dest=dest, fn_name=expr.method, args=[obj] + args))
         return dest
 
+    def _infer_payload_type(
+        self, subject_ty: MIRType, variant_name: str, payload_idx: int
+    ) -> MIRType:
+        """Infer the type of a match arm payload binding from the subject's type."""
+        kind = subject_ty.kind
+        args = subject_ty.type_info.args
+
+        # Result<T, E>: Ok → T, Err → E
+        if kind == TypeKind.RESULT:
+            if variant_name == "Ok" and len(args) >= 1:
+                return MIRType(args[0])
+            if variant_name == "Err" and len(args) >= 2:
+                return MIRType(args[1])
+
+        # Option<T>: Some → T
+        if kind == TypeKind.OPTION:
+            if variant_name == "Some" and len(args) >= 1:
+                return MIRType(args[0])
+
+        # User-defined enum: look up variant payload types
+        enum_name = subject_ty.type_info.name
+        if enum_name:
+            variants = self._module.enums.get(enum_name)
+            if variants:
+                for vname, payload_types in variants:
+                    if vname == variant_name and payload_idx < len(payload_types):
+                        return payload_types[payload_idx]
+
+        # STRUCT kind that might actually be an enum (lowerer tags user enums as STRUCT)
+        if kind == TypeKind.STRUCT and enum_name:
+            variants = self._module.enums.get(enum_name)
+            if variants:
+                for vname, payload_types in variants:
+                    if vname == variant_name and payload_idx < len(payload_types):
+                        return payload_types[payload_idx]
+
+        return mir_unknown()
+
+    def _infer_iterable_elem_type(self, iter_ty: MIRType) -> MIRType:
+        """Infer the element type from an iterable's MIR type."""
+        args = iter_ty.type_info.args
+        if iter_ty.kind == TypeKind.LIST and args:
+            return MIRType(args[0])
+        if iter_ty.kind == TypeKind.MAP and args:
+            return MIRType(args[0])  # key type for map iteration
+        if iter_ty.kind == TypeKind.STRING:
+            return mir_string()  # iterating over chars → strings
+        return mir_unknown()
+
     def _infer_field_type(self, obj_ty: MIRType, field_name: str) -> MIRType:
         """Look up the MIR type of a struct field from the module's struct registry."""
         struct_name = obj_ty.type_info.name
@@ -1302,8 +1354,8 @@ class MIRLowerer:
         """Lower field access: `obj.field`."""
         obj = self._lower_expr(expr.object)
 
-        # Check for signal .value
-        if expr.field_name == "value":
+        # Check for signal .value — only if the object is actually a signal type
+        if expr.field_name == "value" and obj.ty.kind == TypeKind.SIGNAL:
             dest = self._make_value()
             self._emit(SignalGet(dest=dest, signal=obj))
             return dest
@@ -1700,8 +1752,13 @@ class MIRLowerer:
             if isinstance(pat, ConstructorPattern):
                 for j, arg_pat in enumerate(pat.args):
                     if isinstance(arg_pat, IdentPattern):
-                        payload = self._make_value(prefix=arg_pat.name)
-                        self._emit(EnumPayload(dest=payload, enum_val=subject, variant=pat.name))
+                        payload_ty = self._infer_payload_type(subject.ty, pat.name, j)
+                        payload = self._make_value(ty=payload_ty, prefix=arg_pat.name)
+                        self._emit(
+                            EnumPayload(
+                                dest=payload, enum_val=subject, variant=pat.name, payload_idx=j
+                            )
+                        )
                         self._define_var(arg_pat.name, payload)
             elif isinstance(pat, IdentPattern):
                 self._define_var(pat.name, subject)

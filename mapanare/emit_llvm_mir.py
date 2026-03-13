@@ -1323,7 +1323,11 @@ class LLVMMIREmitter:
 
         # print/println
         if fn_name in ("println", "print"):
-            if inst.args and inst.args[0].ty.kind == TypeKind.STRING:
+            if (
+                inst.args
+                and inst.args[0].ty.kind == TypeKind.STRING
+                and args[0].type == LLVM_STRING
+            ):
                 rt_fn = self._rt_str_println() if fn_name == "println" else self._rt_str_print()
                 builder.call(rt_fn, [args[0]])
             elif inst.args and inst.args[0].ty.kind == TypeKind.INT:
@@ -1425,7 +1429,12 @@ class LLVMMIREmitter:
             "split": ("__mn_str_split", 2),
             "replace": ("__mn_str_replace", 3),
         }
-        if fn_name in _str_method_map and inst.args and inst.args[0].ty.kind == TypeKind.STRING:
+        if (
+            fn_name in _str_method_map
+            and fn_name not in self._functions
+            and inst.args
+            and inst.args[0].ty.kind == TypeKind.STRING
+        ):
             rt_name, expected_argc = _str_method_map[fn_name]
             if len(args) == expected_argc:
                 rt_fn = self._declare_runtime_fn(
@@ -1586,8 +1595,17 @@ class LLVMMIREmitter:
             return
 
         # Unknown function — emit a call to an extern with matching name
-        # Declare it on the fly as i64(...) → best effort
-        param_types = [a.type for a in args]
+        # Use MIR semantic types for parameter declaration (not LLVM value types,
+        # which may lose info after field extraction etc.)
+        param_types = []
+        for i, a in enumerate(inst.args):
+            mir_ty = self._resolve_mir_type(a.ty)
+            if mir_ty == LLVM_PTR and i < len(args) and args[i].type != LLVM_PTR:
+                # MIR type was UNKNOWN (resolved to i8*) but we have a concrete LLVM value;
+                # use the actual LLVM type as fallback.
+                param_types.append(args[i].type)
+            else:
+                param_types.append(mir_ty)
         ret_ty = self._resolve_mir_type(inst.dest.ty)
         fn_ty = ir.FunctionType(ret_ty, param_types)
         extern_fn = ir.Function(self.module, fn_ty, name=fn_name)
@@ -1619,8 +1637,14 @@ class LLVMMIREmitter:
         elif full_name in self._runtime_fns:
             target_fn = self._runtime_fns[full_name]
         else:
-            # Auto-declare
-            param_types = [a.type for a in args]
+            # Auto-declare — prefer MIR semantic types over LLVM value types
+            param_types = []
+            for i, a in enumerate(inst.args):
+                mir_ty = self._resolve_mir_type(a.ty)
+                if mir_ty == LLVM_PTR and i < len(args) and args[i].type != LLVM_PTR:
+                    param_types.append(args[i].type)
+                else:
+                    param_types.append(mir_ty)
             ret_ty = self._resolve_mir_type(inst.dest.ty)
             fn_ty = ir.FunctionType(ret_ty, param_types)
             target_fn = ir.Function(self.module, fn_ty, name=full_name)
@@ -1697,6 +1721,20 @@ class LLVMMIREmitter:
                 else:
                     # Positional fallback
                     idx = inst.fields.index((field_name, field_val))
+                # Coerce value type to match struct field type
+                expected_ty = llvm_ty.elements[idx]
+                if val.type != expected_ty:
+                    if isinstance(val.type, ir.PointerType) and isinstance(
+                        expected_ty, ir.LiteralStructType
+                    ):
+                        typed_ptr = builder.bitcast(val, expected_ty.as_pointer())
+                        val = builder.load(typed_ptr, name=f"{name}.coerce{idx}")
+                    elif isinstance(expected_ty, ir.PointerType) and isinstance(
+                        val.type, ir.LiteralStructType
+                    ):
+                        tmp = builder.alloca(val.type)
+                        builder.store(val, tmp)
+                        val = builder.bitcast(tmp, expected_ty)
                 result = builder.insert_value(result, val, idx, name=f"{name}.f{idx}")
         else:
             # Unknown struct — build a literal struct from fields
@@ -1718,6 +1756,13 @@ class LLVMMIREmitter:
         obj = self._get_value(inst.obj, values)
         name = self._val_name(inst.dest)
         obj_type_name = inst.obj.ty.type_info.name
+
+        # If MIR type is UNKNOWN, try to reverse-lookup struct by LLVM type match
+        if obj_type_name not in self._struct_fields:
+            for sname, stype in self._struct_types.items():
+                if stype == obj.type and sname in self._struct_fields:
+                    obj_type_name = sname
+                    break
 
         if obj_type_name in self._struct_fields:
             field_names = self._struct_fields[obj_type_name]
@@ -2009,19 +2054,35 @@ class LLVMMIREmitter:
                 )
                 result = builder.load(payload_i8, name=name)
             elif payload_types:
-                # Multi-field payload: build a struct
+                # Multi-field payload: build a struct, then extract the field at payload_idx
                 field_tys = [self._resolve_mir_type(pt) for pt in payload_types]
                 payload_struct_ty = ir.LiteralStructType(field_tys)
                 typed_ptr = builder.bitcast(
                     payload_ptr, payload_struct_ty.as_pointer(), name=f"{name}.sptr"
                 )
-                result = builder.load(typed_ptr, name=name)
+                full_payload = builder.load(typed_ptr, name=f"{name}.full")
+                idx = inst.payload_idx
+                if idx < len(field_tys):
+                    result = builder.extract_value(full_payload, idx, name=name)
+                else:
+                    result = full_payload
             else:
                 result = ir.Constant(LLVM_BOOL, 0)
         else:
-            # Extract payload field (index 1) as fallback
+            # Result/Option or unknown enum — extract payload by variant
             try:
-                result = builder.extract_value(enum_val, 1, name=name)
+                variant = inst.variant
+                if variant == "Ok":
+                    # Result<T, E>: {i1, {T, E}} → extract [1, 0]
+                    result = builder.extract_value(enum_val, [1, 0], name=name)
+                elif variant == "Err":
+                    # Result<T, E>: {i1, {T, E}} → extract [1, 1]
+                    result = builder.extract_value(enum_val, [1, 1], name=name)
+                elif variant == "Some":
+                    # Option<T>: {i1, T} → extract 1
+                    result = builder.extract_value(enum_val, 1, name=name)
+                else:
+                    result = builder.extract_value(enum_val, 1, name=name)
             except Exception:
                 result = ir.Constant(LLVM_PTR, None)
 
