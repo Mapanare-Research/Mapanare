@@ -137,7 +137,7 @@ MN_EXPORT void __mn_str_eprintln(MnString s);
  * (strings, other lists), this stores them by value.
  * ----------------------------------------------------------------------- */
 
-typedef struct {
+typedef struct MnList {
     char   *data;
     int64_t len;
     int64_t cap;
