@@ -53,6 +53,7 @@ from mapanare.mir import (
     MapInit,
     MIRFunction,
     MIRModule,
+    MIRPipeInfo,
     MIRType,
     Phi,
     Return,
@@ -227,6 +228,10 @@ class LLVMMIREmitter:
         # 5. Emit function bodies
         for mir_fn in mir_module.functions:
             self._emit_function(mir_fn)
+
+        # 5b. Emit pipe definitions as pipeline functions
+        for pipe_name, pipe_info in mir_module.pipes.items():
+            self._emit_pipe_def(pipe_name, pipe_info)
 
         # 6. Finalize debug info metadata
         if self._debug:
@@ -1361,6 +1366,35 @@ class LLVMMIREmitter:
             self._store_value(inst.dest, result, values)
             return
 
+        # --- String methods (lowered as Call with obj as first arg) ---
+        _str_method_map: dict[str, tuple[str, int]] = {
+            "char_at": ("__mn_str_char_at", 2),
+            "byte_at": ("__mn_str_byte_at", 2),
+            "substr": ("__mn_str_substr", 3),
+            "starts_with": ("__mn_str_starts_with", 2),
+            "ends_with": ("__mn_str_ends_with", 2),
+            "find": ("__mn_str_find", 2),
+            "contains": ("__mn_str_contains", 2),
+            "trim": ("__mn_str_trim", 1),
+            "trim_start": ("__mn_str_trim_start", 1),
+            "trim_end": ("__mn_str_trim_end", 1),
+            "to_upper": ("__mn_str_to_upper", 1),
+            "to_lower": ("__mn_str_to_lower", 1),
+            "split": ("__mn_str_split", 2),
+            "replace": ("__mn_str_replace", 3),
+        }
+        if fn_name in _str_method_map and inst.args and inst.args[0].ty.kind == TypeKind.STRING:
+            rt_name, expected_argc = _str_method_map[fn_name]
+            if len(args) == expected_argc:
+                rt_fn = self._declare_runtime_fn(
+                    rt_name,
+                    self._resolve_mir_type(inst.dest.ty),
+                    [a.type for a in args],
+                )
+                result = builder.call(rt_fn, args, name=name)
+                self._store_value(inst.dest, result, values)
+                return
+
         # Some / Ok / Err
         if fn_name == "Some" and args:
             inner_ty = args[0].type
@@ -1830,7 +1864,22 @@ class LLVMMIREmitter:
     def _emit_enum_tag(self, inst: EnumTag, builder: Any, values: dict[str, Any]) -> None:
         enum_val = self._get_value(inst.enum_val, values)
         name = self._val_name(inst.dest)
-        result = builder.extract_value(enum_val, 0, name=name)
+        # For non-struct types (e.g., Int in match expressions), use the value directly
+        if isinstance(enum_val.type, ir.IntType) and not isinstance(
+            enum_val.type, ir.LiteralStructType
+        ):
+            result = enum_val
+            # Truncate to i32 if needed (tags are i32)
+            if enum_val.type.width != 32:
+                result = (
+                    builder.trunc(enum_val, LLVM_I32, name=name)
+                    if enum_val.type.width > 32
+                    else builder.zext(enum_val, LLVM_I32, name=name)
+                )
+        elif isinstance(enum_val.type, (ir.LiteralStructType,)):
+            result = builder.extract_value(enum_val, 0, name=name)
+        else:
+            result = builder.extract_value(enum_val, 0, name=name)
         self._store_value(inst.dest, result, values)
 
     # --- EnumPayload ---
@@ -2383,6 +2432,52 @@ class LLVMMIREmitter:
                 return builder.bitcast(fn, LLVM_PTR)
 
         return ir.Constant(LLVM_PTR, None)
+
+    # --- Pipe definitions ---
+
+    def _emit_pipe_def(self, pipe_name: str, pipe_info: MIRPipeInfo) -> None:
+        """Emit a pipe definition as a function that chains agent spawn/send/recv.
+
+        `pipe Transform { A |> B |> C }` becomes a function
+        `Transform(input: i8*) -> i8*` that spawns each stage agent,
+        sends data through, and returns the final result.
+        """
+        if not _HAS_LLVMLITE:
+            return
+
+        fn_ty = ir.FunctionType(LLVM_PTR, [LLVM_PTR])
+        fn = ir.Function(self.module, fn_ty, name=pipe_name)
+        fn.linkage = "internal"
+        self._functions[pipe_name] = fn
+
+        entry = fn.append_basic_block(name="entry")
+        builder = ir.IRBuilder(entry)
+
+        if not pipe_info.stages:
+            builder.ret(fn.args[0])
+            return
+
+        current_val = fn.args[0]
+        null_ptr = ir.Constant(LLVM_PTR, None)
+        cap = ir.Constant(LLVM_I32, 256)
+        fn_new = self._rt_agent_new()
+        fn_spawn = self._rt_agent_spawn()
+        fn_send = self._rt_agent_send()
+        fn_recv = self._rt_agent_recv_blocking()
+        fn_stop = self._declare_runtime_fn("mapanare_agent_stop", LLVM_VOID, [LLVM_PTR])
+
+        for i, stage in enumerate(pipe_info.stages):
+            stage_name = self._make_string_constant(builder, stage)
+            name_ptr = builder.extract_value(stage_name, 0)
+            agent = builder.call(fn_new, [name_ptr, null_ptr, null_ptr, cap, cap], name=f"stage{i}")
+            builder.call(fn_spawn, [agent])
+            builder.call(fn_send, [agent, current_val])
+            out_ptr = builder.alloca(LLVM_PTR, name=f"stage{i}.out")
+            builder.call(fn_recv, [agent, out_ptr])
+            current_val = builder.load(out_ptr, name=f"stage{i}.result")
+            builder.call(fn_stop, [agent])
+
+        builder.ret(current_val)
 
 
 # ---------------------------------------------------------------------------

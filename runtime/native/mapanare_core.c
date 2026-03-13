@@ -259,6 +259,159 @@ MN_EXPORT int64_t __mn_str_find(MnString haystack, MnString needle) {
     return -1;
 }
 
+MN_EXPORT int64_t __mn_str_contains(MnString haystack, MnString needle) {
+    return __mn_str_find(haystack, needle) >= 0 ? 1 : 0;
+}
+
+MN_EXPORT MnList __mn_str_split(MnString s, MnString delim) {
+    MnList result = __mn_list_str_new();
+    const char *s_data = mn_untag(s.data);
+
+    if (delim.len == 0) {
+        /* Split into individual characters. */
+        for (int64_t i = 0; i < s.len; i++) {
+            MnString ch = __mn_str_from_parts(s_data + i, 1);
+            __mn_list_str_push(&result, ch);
+        }
+        return result;
+    }
+
+    const char *d_data = mn_untag(delim.data);
+    int64_t start = 0;
+    for (int64_t i = 0; i <= s.len - delim.len; i++) {
+        if (memcmp(s_data + i, d_data, (size_t)delim.len) == 0) {
+            MnString part = __mn_str_from_parts(s_data + start, i - start);
+            __mn_list_str_push(&result, part);
+            i += delim.len - 1; /* -1 because the loop increments */
+            start = i + 1;
+        }
+    }
+    /* Push the remainder. */
+    MnString tail = __mn_str_from_parts(s_data + start, s.len - start);
+    __mn_list_str_push(&result, tail);
+    return result;
+}
+
+MN_EXPORT MnString __mn_str_trim(MnString s) {
+    const char *data = mn_untag(s.data);
+    int64_t start = 0;
+    int64_t end = s.len;
+    while (start < end && (data[start] == ' ' || data[start] == '\t' ||
+           data[start] == '\n' || data[start] == '\r')) {
+        start++;
+    }
+    while (end > start && (data[end - 1] == ' ' || data[end - 1] == '\t' ||
+           data[end - 1] == '\n' || data[end - 1] == '\r')) {
+        end--;
+    }
+    if (start == 0 && end == s.len) {
+        return __mn_str_from_parts(data, s.len);
+    }
+    return __mn_str_from_parts(data + start, end - start);
+}
+
+MN_EXPORT MnString __mn_str_trim_start(MnString s) {
+    const char *data = mn_untag(s.data);
+    int64_t start = 0;
+    while (start < s.len && (data[start] == ' ' || data[start] == '\t' ||
+           data[start] == '\n' || data[start] == '\r')) {
+        start++;
+    }
+    if (start == 0) return __mn_str_from_parts(data, s.len);
+    return __mn_str_from_parts(data + start, s.len - start);
+}
+
+MN_EXPORT MnString __mn_str_trim_end(MnString s) {
+    const char *data = mn_untag(s.data);
+    int64_t end = s.len;
+    while (end > 0 && (data[end - 1] == ' ' || data[end - 1] == '\t' ||
+           data[end - 1] == '\n' || data[end - 1] == '\r')) {
+        end--;
+    }
+    if (end == s.len) return __mn_str_from_parts(data, s.len);
+    return __mn_str_from_parts(data, end);
+}
+
+MN_EXPORT MnString __mn_str_to_upper(MnString s) {
+    if (s.len == 0) return __mn_str_empty();
+    const char *data = mn_untag(s.data);
+    char *buf = (char *)__mn_alloc(s.len + 1);
+    for (int64_t i = 0; i < s.len; i++) {
+        char c = data[i];
+        buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
+    }
+    buf[s.len] = '\0';
+    MnString r;
+    r.data = mn_tag_heap(buf);
+    r.len = s.len;
+    return r;
+}
+
+MN_EXPORT MnString __mn_str_to_lower(MnString s) {
+    if (s.len == 0) return __mn_str_empty();
+    const char *data = mn_untag(s.data);
+    char *buf = (char *)__mn_alloc(s.len + 1);
+    for (int64_t i = 0; i < s.len; i++) {
+        char c = data[i];
+        buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
+    }
+    buf[s.len] = '\0';
+    MnString r;
+    r.data = mn_tag_heap(buf);
+    r.len = s.len;
+    return r;
+}
+
+MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) {
+    if (old_s.len == 0 || s.len == 0) {
+        return __mn_str_from_parts(mn_untag(s.data), s.len);
+    }
+
+    const char *s_data = mn_untag(s.data);
+    const char *old_data = mn_untag(old_s.data);
+    const char *new_data = mn_untag(new_s.data);
+
+    /* Count occurrences to pre-allocate. */
+    int64_t count = 0;
+    for (int64_t i = 0; i <= s.len - old_s.len; i++) {
+        if (memcmp(s_data + i, old_data, (size_t)old_s.len) == 0) {
+            count++;
+            i += old_s.len - 1;
+        }
+    }
+
+    if (count == 0) {
+        return __mn_str_from_parts(s_data, s.len);
+    }
+
+    int64_t new_len = s.len + count * (new_s.len - old_s.len);
+    char *buf = (char *)__mn_alloc(new_len + 1);
+    int64_t out = 0;
+    int64_t i = 0;
+    while (i < s.len) {
+        if (i <= s.len - old_s.len &&
+            memcmp(s_data + i, old_data, (size_t)old_s.len) == 0) {
+            if (new_s.len > 0) {
+                memcpy(buf + out, new_data, (size_t)new_s.len);
+            }
+            out += new_s.len;
+            i += old_s.len;
+        } else {
+            buf[out++] = s_data[i++];
+        }
+    }
+    buf[new_len] = '\0';
+
+    MnString r;
+    r.data = mn_tag_heap(buf);
+    r.len = new_len;
+    return r;
+}
+
+MN_EXPORT MnString __mn_str_from_bool(int64_t value) {
+    return value ? __mn_str_from_cstr("true") : __mn_str_from_cstr("false");
+}
+
 MN_EXPORT MnString __mn_str_from_int(int64_t value) {
     char buf[32];
     int n = snprintf(buf, sizeof(buf), "%lld", (long long)value);

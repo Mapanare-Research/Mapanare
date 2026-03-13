@@ -78,6 +78,33 @@ MN_EXPORT int64_t __mn_str_ends_with(MnString s, MnString suffix);
 /** Find first occurrence of `needle` in `haystack`. Returns index or -1. */
 MN_EXPORT int64_t __mn_str_find(MnString haystack, MnString needle);
 
+/** Returns 1 if `haystack` contains `needle`, 0 otherwise. */
+MN_EXPORT int64_t __mn_str_contains(MnString haystack, MnString needle);
+
+/** Split `s` by `delim`. Returns a List<String>. */
+MN_EXPORT MnList __mn_str_split(MnString s, MnString delim);
+
+/** Trim whitespace from both ends. */
+MN_EXPORT MnString __mn_str_trim(MnString s);
+
+/** Trim whitespace from the start. */
+MN_EXPORT MnString __mn_str_trim_start(MnString s);
+
+/** Trim whitespace from the end. */
+MN_EXPORT MnString __mn_str_trim_end(MnString s);
+
+/** Convert all ASCII lowercase to uppercase. */
+MN_EXPORT MnString __mn_str_to_upper(MnString s);
+
+/** Convert all ASCII uppercase to lowercase. */
+MN_EXPORT MnString __mn_str_to_lower(MnString s);
+
+/** Replace all occurrences of `old_s` with `new_s`. */
+MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s);
+
+/** Convert a boolean (0/1) to "true" or "false". */
+MN_EXPORT MnString __mn_str_from_bool(int64_t value);
+
 /** Convert an i64 to its decimal string representation. */
 MN_EXPORT MnString __mn_str_from_int(int64_t value);
 

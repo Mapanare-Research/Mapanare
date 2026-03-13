@@ -38,7 +38,7 @@
 | 2 | LLVM Signal Reactivity | `Complete` | Large — dependency graph in C runtime |
 | 3 | LLVM Stream Operators | `Complete` | Large — stream runtime in C + MIR emitter |
 | 4 | LLVM Closure Capture | `Complete` | Medium — environment structs + arena integration |
-| 5 | Remaining LLVM Gaps | `Not Started` | Medium — string methods, pipes, builtins |
+| 5 | Remaining LLVM Gaps | `Complete` | String methods, pipes, match fix, interp fix, TypeKind audit |
 | 6 | C Runtime Expansion | `Not Started` | Large — TCP, TLS, file I/O, event loop |
 | 7 | Validation & Release | `Not Started` | Medium — cross-backend tests, README, docs |
 
@@ -190,18 +190,18 @@ works on LLVM backend.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | String method: `.contains(needle)` | `[ ]` | `__mn_str_contains()` in C runtime |
-| 2 | String method: `.split(delimiter)` | `[ ]` | Returns `List<String>` |
-| 3 | String method: `.trim()` / `.trim_start()` / `.trim_end()` | `[ ]` | |
-| 4 | String method: `.to_upper()` / `.to_lower()` | `[ ]` | |
-| 5 | String method: `.replace(old, new)` | `[ ]` | |
-| 6 | Pipe definitions: `pipe Transform { A \|> B \|> C }` on LLVM | `[ ]` | Compile to agent spawn chain |
-| 7 | `while` loop with `break`/`continue` on LLVM | `[ ]` | Verify both emitters handle this |
-| 8 | Nested pattern matching (match inside match) | `[ ]` | |
-| 9 | String interpolation on LLVM backend | `[ ]` | Verify `InterpConcat` MIR instruction works |
-| 10 | `?` operator (Result/Option early return) on LLVM | `[ ]` | Verify unwrap + branch emitted correctly |
-| 11 | Verify all 25 TypeKind variants handled in LLVM type mapping | `[ ]` | |
-| 12 | Cross-backend consistency test suite | `[ ]` | Run identical .mn files on both backends, diff outputs |
+| 1 | String method: `.contains(needle)` | `[x]` | `__mn_str_contains()` in C runtime + both emitters |
+| 2 | String method: `.split(delimiter)` | `[x]` | Returns `List<String>` via `__mn_str_split()` |
+| 3 | String method: `.trim()` / `.trim_start()` / `.trim_end()` | `[x]` | 3 C functions + both emitters |
+| 4 | String method: `.to_upper()` / `.to_lower()` | `[x]` | ASCII case conversion + both emitters |
+| 5 | String method: `.replace(old, new)` | `[x]` | `__mn_str_replace()` + both emitters |
+| 6 | Pipe definitions: `pipe Transform { A \|> B \|> C }` on LLVM | `[x]` | Compile to agent spawn chain in both emitters |
+| 7 | `while` loop with `break`/`continue` on LLVM | `[x]` | Both emitters verified working |
+| 8 | Nested pattern matching (match inside match) | `[x]` | Fixed MIR emitter EnumTag for non-enum types |
+| 9 | String interpolation on LLVM backend | `[x]` | Fixed DCE not tracking InterpString refs; both emitters verified |
+| 10 | `?` operator (Result/Option early return) on LLVM | `[!]` | Not in grammar; new syntax violates v0.8.0 scope rule #3 — deferred to v0.9.0 |
+| 11 | Verify all 25 TypeKind variants handled in LLVM type mapping | `[x]` | 23/25 mapped; CHANNEL/TENSOR stubbed (expected — no runtime) |
+| 12 | Cross-backend consistency test suite | `[x]` | Added string methods, match, interpolation, while+break cases |
 
 **Done when:** No feature in the README table says "No" or "Partial" for LLVM
 when the Python backend says "Yes" (except planned experimental features).

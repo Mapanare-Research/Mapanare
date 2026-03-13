@@ -171,6 +171,52 @@ _CROSS_BACKEND_CASES: list[tuple[str, str, str]] = [
         """),
         "1",
     ),
+    (
+        "while_break",
+        textwrap.dedent("""\
+            fn main() {
+                let mut i: Int = 0
+                let mut sum: Int = 0
+                while i < 10 {
+                    if i == 5 {
+                        break
+                    }
+                    sum += i
+                    i += 1
+                }
+                print(sum)
+            }
+        """),
+        "10",
+    ),
+    (
+        "string_interpolation",
+        textwrap.dedent("""\
+            fn main() {
+                let x: Int = 42
+                let msg: String = "val=${x}"
+                print(msg)
+            }
+        """),
+        "val=42",
+    ),
+    (
+        "nested_match",
+        textwrap.dedent("""\
+            fn classify(x: Int) -> Int {
+                match x {
+                    0 => { return 0 },
+                    1 => { return 10 },
+                    _ => { return 99 }
+                }
+                return -1
+            }
+            fn main() {
+                print(classify(1))
+            }
+        """),
+        "10",
+    ),
 ]
 
 

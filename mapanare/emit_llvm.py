@@ -51,6 +51,7 @@ from mapanare.ast_nodes import (
     NamedType,
     NamespaceAccessExpr,
     NoneLiteral,
+    PipeDef,
     PipeExpr,
     Program,
     ReturnStmt,
@@ -351,6 +352,35 @@ class LLVMEmitter:
     def _rt_str_find(self) -> ir.Function:
         return self._declare_runtime_fn("__mn_str_find", LLVM_INT, [LLVM_STRING, LLVM_STRING])
 
+    def _rt_str_contains(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_contains", LLVM_INT, [LLVM_STRING, LLVM_STRING])
+
+    def _rt_str_split(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_split", LLVM_LIST, [LLVM_STRING, LLVM_STRING])
+
+    def _rt_str_trim(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_trim", LLVM_STRING, [LLVM_STRING])
+
+    def _rt_str_trim_start(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_trim_start", LLVM_STRING, [LLVM_STRING])
+
+    def _rt_str_trim_end(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_trim_end", LLVM_STRING, [LLVM_STRING])
+
+    def _rt_str_to_upper(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_to_upper", LLVM_STRING, [LLVM_STRING])
+
+    def _rt_str_to_lower(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_to_lower", LLVM_STRING, [LLVM_STRING])
+
+    def _rt_str_replace(self) -> ir.Function:
+        return self._declare_runtime_fn(
+            "__mn_str_replace", LLVM_STRING, [LLVM_STRING, LLVM_STRING, LLVM_STRING]
+        )
+
+    def _rt_str_from_bool(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_from_bool", LLVM_STRING, [LLVM_INT])
+
     def _rt_list_new(self) -> ir.Function:
         """Declare __mn_list_new(i64 elem_size) -> MnList."""
         return self._declare_runtime_fn("__mn_list_new", LLVM_LIST, [LLVM_INT])
@@ -539,6 +569,8 @@ class LLVMEmitter:
                 self._emit_impl_methods(defn)
             elif isinstance(defn, TraitDef):
                 pass  # Traits are type-level only; no LLVM codegen needed
+            elif isinstance(defn, PipeDef):
+                self._emit_pipe_def(defn)
         return self.module
 
     def _emit_import(self, imp: ImportDef, resolver: object | None) -> None:
@@ -1921,6 +1953,56 @@ class LLVMEmitter:
         self._functions[handler_name] = func
         return func
 
+    def _emit_pipe_def(self, pipe: PipeDef) -> None:
+        """Emit a pipe definition as a function that chains agent spawn/send/recv."""
+        fn_ty = ir.FunctionType(LLVM_PTR, [LLVM_PTR])
+        func = ir.Function(self.module, fn_ty, name=pipe.name)
+        func.linkage = "internal"
+        self._functions[pipe.name] = func
+
+        entry = func.append_basic_block("entry")
+        old_builder = self._builder
+        self._builder = ir.IRBuilder(entry)
+
+        stages: list[str] = []
+        for s in pipe.stages:
+            if isinstance(s, Identifier):
+                stages.append(s.name)
+
+        if not stages:
+            self.builder.ret(func.args[0])
+            self._builder = old_builder
+            return
+
+        current_val = func.args[0]
+        null_ptr = ir.Constant(LLVM_PTR, None)
+        cap = ir.Constant(LLVM_I32, 256)
+
+        for i, stage in enumerate(stages):
+            name_bytes = stage.encode("utf-8") + b"\x00"
+            arr_ty = ir.ArrayType(ir.IntType(8), len(name_bytes))
+            name_const = ir.Constant(arr_ty, bytearray(name_bytes))
+            gname = self.module.get_unique_name(f"pipe_stage_{i}")
+            gv = ir.GlobalVariable(self.module, name_const.type, name=gname)
+            gv.global_constant = True
+            gv.initializer = name_const
+            gv.linkage = "private"
+            zero = ir.Constant(LLVM_INT, 0)
+            name_ptr = self.builder.gep(gv, [zero, zero], inbounds=True)
+
+            agent = self.builder.call(
+                self._rt_agent_new(), [name_ptr, null_ptr, null_ptr, cap, cap], name=f"s{i}"
+            )
+            self.builder.call(self._rt_agent_spawn(), [agent])
+            self.builder.call(self._rt_agent_send(), [agent, current_val])
+            out_ptr = self.builder.alloca(LLVM_PTR, name=f"s{i}_out")
+            self.builder.call(self._rt_agent_recv_blocking(), [agent, out_ptr])
+            current_val = self.builder.load(out_ptr, name=f"s{i}_result")
+            self.builder.call(self._rt_agent_stop(), [agent])
+
+        self.builder.ret(current_val)
+        self._builder = old_builder
+
     def _emit_spawn(self, expr: SpawnExpr) -> ir.Value:
         """Emit spawn: allocate agent, init with handler, start thread."""
         agent_name = expr.callee.name if isinstance(expr.callee, Identifier) else "Agent"
@@ -2353,6 +2435,26 @@ class LLVMEmitter:
                 return self.builder.call(self._rt_str_ends_with(), [obj, args[0]], name="str_ew")
             if node.method == "find" and len(args) == 1:
                 return self.builder.call(self._rt_str_find(), [obj, args[0]], name="str_find")
+            if node.method == "contains" and len(args) == 1:
+                return self.builder.call(
+                    self._rt_str_contains(), [obj, args[0]], name="str_contains"
+                )
+            if node.method == "split" and len(args) == 1:
+                return self.builder.call(self._rt_str_split(), [obj, args[0]], name="str_split")
+            if node.method == "trim" and len(args) == 0:
+                return self.builder.call(self._rt_str_trim(), [obj], name="str_trim")
+            if node.method == "trim_start" and len(args) == 0:
+                return self.builder.call(self._rt_str_trim_start(), [obj], name="str_ts")
+            if node.method == "trim_end" and len(args) == 0:
+                return self.builder.call(self._rt_str_trim_end(), [obj], name="str_te")
+            if node.method == "to_upper" and len(args) == 0:
+                return self.builder.call(self._rt_str_to_upper(), [obj], name="str_upper")
+            if node.method == "to_lower" and len(args) == 0:
+                return self.builder.call(self._rt_str_to_lower(), [obj], name="str_lower")
+            if node.method == "replace" and len(args) == 2:
+                return self.builder.call(
+                    self._rt_str_replace(), [obj, args[0], args[1]], name="str_replace"
+                )
 
         raise NotImplementedError(f"Method call not supported: .{node.method}()")
 

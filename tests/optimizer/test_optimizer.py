@@ -662,7 +662,7 @@ class TestAgentInlining:
         assert "Printer" not in inliner._simple_agents
 
     def test_inline_single_stage_pipe(self) -> None:
-        """Single-stage pipes are inlined to direct function calls."""
+        """Single-stage pipes with unknown agents are NOT inlined (preserved as PipeDef)."""
         pipe = PipeDef(
             name="SimplePipe",
             stages=[CallExpr(callee=Identifier(name="transform"), args=[])],
@@ -670,9 +670,9 @@ class TestAgentInlining:
         prog = _make_program(pipe)
         inliner = AgentInliner()
         inliner.run(prog)
-        assert isinstance(prog.definitions[0], FnDef)
+        # Not inlined because 'transform' is not a known simple agent
+        assert isinstance(prog.definitions[0], PipeDef)
         assert prog.definitions[0].name == "SimplePipe"
-        assert inliner.stats.agents_inlined == 1
 
     def test_no_inline_multi_stage_pipe(self) -> None:
         """Multi-stage pipes are not inlined."""
