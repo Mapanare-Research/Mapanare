@@ -81,9 +81,6 @@ MN_EXPORT int64_t __mn_str_find(MnString haystack, MnString needle);
 /** Returns 1 if `haystack` contains `needle`, 0 otherwise. */
 MN_EXPORT int64_t __mn_str_contains(MnString haystack, MnString needle);
 
-/** Split `s` by `delim`. Returns a List<String>. */
-MN_EXPORT MnList __mn_str_split(MnString s, MnString delim);
-
 /** Trim whitespace from both ends. */
 MN_EXPORT MnString __mn_str_trim(MnString s);
 
@@ -143,6 +140,9 @@ typedef struct MnList {
     int64_t cap;
     int64_t elem_size;
 } MnList;
+
+/** Split `s` by `delim`. Returns a List<String>. */
+MN_EXPORT MnList __mn_str_split(MnString s, MnString delim);
 
 /** Create an empty list for elements of `elem_size` bytes. */
 MN_EXPORT MnList __mn_list_new(int64_t elem_size);
