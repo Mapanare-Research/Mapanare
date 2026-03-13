@@ -117,6 +117,7 @@ def _compile_to_llvm_ir(
     target_name: str | None = None,
     resolver: ModuleResolver | None = None,
     use_mir: bool = True,
+    debug: bool = False,
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source."""
     ast = parse(source, filename=filename)
@@ -129,7 +130,14 @@ def _compile_to_llvm_ir(
         from mapanare.mir_opt import optimize_module as mir_optimize
 
         module_name = os.path.splitext(os.path.basename(filename))[0]
-        mir_module = build_mir(ast, module_name=module_name)
+        source_file = os.path.basename(filename)
+        source_dir = os.path.dirname(os.path.abspath(filename))
+        mir_module = build_mir(
+            ast,
+            module_name=module_name,
+            source_file=source_file,
+            source_directory=source_dir,
+        )
         mir_opt_level = MIROptLevel(opt_level.value)
         mir_module, _ = mir_optimize(mir_module, mir_opt_level)
         target = get_target(target_name)
@@ -137,6 +145,7 @@ def _compile_to_llvm_ir(
             module_name=module_name,
             target_triple=target.triple,
             data_layout=target.data_layout,
+            debug=debug,
         )
         llvm_module = emitter.emit(mir_module)
         return str(llvm_module)
@@ -299,6 +308,28 @@ def cmd_check(args: argparse.Namespace) -> None:
 
 def cmd_run(args: argparse.Namespace) -> None:
     """Compile and run an .mn source file."""
+    # Enable tracing if --trace is passed
+    trace_mode = getattr(args, "trace", None)
+    if trace_mode:
+        from mapanare.tracing import enable_tracing
+
+        exporter = "otlp" if trace_mode.startswith("otlp") else "console"
+        otlp_endpoint = None
+        if "=" in trace_mode:
+            otlp_endpoint = trace_mode.split("=", 1)[1]
+        enable_tracing(
+            service_name=os.path.basename(args.source),
+            exporter=exporter,
+            otlp_endpoint=otlp_endpoint,
+        )
+
+    # Enable metrics if --metrics is passed
+    metrics_addr = getattr(args, "metrics", None)
+    if metrics_addr:
+        from mapanare.metrics import start_metrics_server
+
+        start_metrics_server(metrics_addr)
+
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     python_path: list[str] = getattr(args, "python_path", None) or []
@@ -607,10 +638,16 @@ def cmd_jit(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     use_mir = not getattr(args, "no_mir", False)
+    debug = getattr(args, "debug", False)
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
-            source, args.source, opt_level=opt_level, resolver=resolver, use_mir=use_mir
+            source,
+            args.source,
+            opt_level=opt_level,
+            resolver=resolver,
+            use_mir=use_mir,
+            debug=debug,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -647,6 +684,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
     use_mir = not getattr(args, "no_mir", False)
+    debug = getattr(args, "debug", False)
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -656,6 +694,7 @@ def cmd_build(args: argparse.Namespace) -> None:
             target_name=target_name,
             resolver=resolver,
             use_mir=use_mir,
+            debug=debug,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -725,6 +764,7 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
     use_mir = not getattr(args, "no_mir", False)
+    debug = getattr(args, "debug", False)
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -734,6 +774,7 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
             target_name=target_name,
             resolver=resolver,
             use_mir=use_mir,
+            debug=debug,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -961,6 +1002,17 @@ def _add_mir_flag(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
+    """Add -g/--debug flag to emit DWARF debug info."""
+    parser.add_argument(
+        "-g",
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Emit DWARF debug info for source-level debugging",
+    )
+
+
 def _add_opt_level_args(parser: argparse.ArgumentParser) -> None:
     """Add -O0 through -O3 optimization level flags to a subcommand parser."""
     opt_group = parser.add_mutually_exclusive_group()
@@ -1036,6 +1088,22 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         action="append",
         help='Add directory to Python module search path (for extern "Python" interop)',
+    )
+    p_run.add_argument(
+        "--trace",
+        metavar="MODE",
+        nargs="?",
+        const="console",
+        default=None,
+        help="Enable tracing: 'console' (default), 'otlp', or 'otlp=http://host:4318'",
+    )
+    p_run.add_argument(
+        "--metrics",
+        metavar="ADDR",
+        nargs="?",
+        const=":9090",
+        default=None,
+        help="Start Prometheus metrics endpoint (default :9090)",
     )
     _add_opt_level_args(p_run)
     _add_mir_flag(p_run)
@@ -1129,6 +1197,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_jit.add_argument("--bench", action="store_true", help="Output benchmark metrics")
     _add_opt_level_args(p_jit)
     _add_mir_flag(p_jit)
+    _add_debug_flag(p_jit)
     p_jit.set_defaults(func=cmd_jit)
 
     # build
@@ -1149,6 +1218,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_opt_level_args(p_build)
     _add_mir_flag(p_build)
+    _add_debug_flag(p_build)
     p_build.set_defaults(func=cmd_build)
 
     # emit-llvm
@@ -1163,6 +1233,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_opt_level_args(p_emit_llvm)
     _add_mir_flag(p_emit_llvm)
+    _add_debug_flag(p_emit_llvm)
     p_emit_llvm.set_defaults(func=cmd_emit_llvm)
 
     # emit-mir

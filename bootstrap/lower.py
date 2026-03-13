@@ -14,6 +14,7 @@ from mapanare.ast_nodes import (
     AgentDef,
     AssertStmt,
     AssignExpr,
+    ASTNode,
     BinaryExpr,
     Block,
     BoolLiteral,
@@ -110,6 +111,7 @@ from mapanare.mir import (
     Return,
     SignalGet,
     SignalInit,
+    SourceSpan,
     StreamOp,
     StreamOpKind,
     StructInit,
@@ -164,6 +166,14 @@ _STREAM_OP_MAP: dict[str, StreamOpKind] = {
     "skip": StreamOpKind.SKIP,
     "collect": StreamOpKind.COLLECT,
 }
+
+
+def _ast_span_to_mir(node: ASTNode | None) -> SourceSpan | None:
+    """Convert an AST node's span to a MIR SourceSpan, or None if unavailable."""
+    if node is None or not hasattr(node, "span") or node.span is None:
+        return None
+    s = node.span
+    return SourceSpan(line=s.line, column=s.column, end_line=s.end_line, end_column=s.end_column)
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +250,8 @@ class MIRLowerer:
         self._enum_variants: dict[str, list[str]] = {}
         # Decorator metadata for functions
         self._fn_decorators: dict[str, list[str]] = {}
+        # Current source span — set by _lower_expr/_lower_stmt for debug info
+        self._current_span: SourceSpan | None = None
 
     # -- Name generation ---------------------------------------------------
 
@@ -271,6 +283,8 @@ class MIRLowerer:
 
     def _emit(self, inst: Instruction) -> None:
         assert self._block is not None, "No current basic block"
+        if inst.span is None and self._current_span is not None:
+            inst.span = self._current_span
         self._block.instructions.append(inst)
 
     def _block_terminated(self) -> bool:
@@ -305,9 +319,19 @@ class MIRLowerer:
 
     # -- Top-level lowering ------------------------------------------------
 
-    def lower(self, program: Program, module_name: str = "") -> MIRModule:
+    def lower(
+        self,
+        program: Program,
+        module_name: str = "",
+        source_file: str = "",
+        source_directory: str = "",
+    ) -> MIRModule:
         """Lower an entire program to MIR."""
-        self._module = MIRModule(name=module_name)
+        self._module = MIRModule(
+            name=module_name,
+            source_file=source_file,
+            source_directory=source_directory,
+        )
 
         # First pass: register struct/enum/extern/impl declarations
         self._register_declarations(program)
@@ -409,6 +433,9 @@ class MIRLowerer:
         ret_type = _resolve_type_expr(fn_def.return_type) if fn_def.return_type else mir_void()
         decorators = [d.name for d in fn_def.decorators]
 
+        source_line = fn_def.span.line if fn_def.span else 0
+        source_file = self._module.source_file if self._module else ""
+
         mir_fn = MIRFunction(
             name=fn_name,
             params=params,
@@ -416,6 +443,8 @@ class MIRLowerer:
             blocks=[],
             decorators=decorators,
             is_public=fn_def.public,
+            source_line=source_line,
+            source_file=source_file,
         )
 
         # Save/restore lowerer state for nested functions
@@ -516,6 +545,11 @@ class MIRLowerer:
 
     def _lower_stmt(self, stmt: Stmt) -> Value | None:
         """Lower a single statement. Returns a value for expression-statements."""
+        # Track source span for debug info
+        span = _ast_span_to_mir(stmt)
+        if span is not None:
+            self._current_span = span
+
         if isinstance(stmt, LetBinding):
             self._lower_let(stmt)
             return None
@@ -670,6 +704,11 @@ class MIRLowerer:
 
     def _lower_expr(self, expr: Expr) -> Value:  # noqa: C901
         """Lower an expression to MIR, returning the SSA value holding the result."""
+        # Track source span for debug info
+        span = _ast_span_to_mir(expr)
+        if span is not None:
+            self._current_span = span
+
         if isinstance(expr, IntLiteral):
             dest = self._make_value(ty=mir_int())
             self._emit(Const(dest=dest, ty=mir_int(), value=expr.value))
@@ -1397,14 +1436,26 @@ class MIRLowerer:
 # ---------------------------------------------------------------------------
 
 
-def lower(program: Program, module_name: str = "") -> MIRModule:
+def lower(
+    program: Program,
+    module_name: str = "",
+    source_file: str = "",
+    source_directory: str = "",
+) -> MIRModule:
     """Lower an AST program to MIR.
 
     Args:
         program: The typed AST (after semantic analysis).
         module_name: Optional module name.
+        source_file: Original source file name (for debug info).
+        source_directory: Directory of the source file (for debug info).
 
     Returns:
         A MIRModule containing the lowered MIR.
     """
-    return MIRLowerer().lower(program, module_name)
+    return MIRLowerer().lower(
+        program,
+        module_name,
+        source_file=source_file,
+        source_directory=source_directory,
+    )

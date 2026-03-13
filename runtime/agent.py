@@ -9,6 +9,9 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
+from mapanare.metrics import get_metrics
+from mapanare.tracing import get_tracer
+
 T = TypeVar("T")
 
 
@@ -243,20 +246,42 @@ class AgentBase:
                     except asyncio.TimeoutError:
                         continue
 
-                    t0 = time.monotonic()
-                    result = await self.handle(value)
-                    elapsed_ms = (time.monotonic() - t0) * 1000
-                    self._metrics.messages_processed += 1
-                    self._metrics.total_latency_ms += elapsed_ms
+                    tracer = get_tracer()
+                    with tracer.start_span(
+                        "agent.handle",
+                        attributes={
+                            "agent.id": self._id,
+                            "agent.type": type(self).__name__,
+                        },
+                    ) as handle_span:
+                        t0 = time.monotonic()
+                        result = await self.handle(value)
+                        elapsed_ms = (time.monotonic() - t0) * 1000
+                        self._metrics.messages_processed += 1
+                        self._metrics.total_latency_ms += elapsed_ms
+                        handle_span.set_attribute("agent.handle.latency_ms", elapsed_ms)
+                        metrics = get_metrics()
+                        metrics.agent_messages.inc(agent_type=type(self).__name__)
+                        metrics.agent_latency.observe(
+                            elapsed_ms / 1000, agent_type=type(self).__name__
+                        )
 
                     if output_names and result is not None:
-                        await self._outputs[output_names[0]].send(result)
+                        with tracer.start_span(
+                            "agent.send",
+                            attributes={
+                                "agent.id": self._id,
+                                "agent.channel": output_names[0],
+                            },
+                        ):
+                            await self._outputs[output_names[0]].send(result)
                 else:
                     await asyncio.sleep(0.01)
 
             except asyncio.CancelledError:
                 break
             except Exception:
+                get_metrics().agent_errors.inc(agent_type=type(self).__name__)
                 # Supervision
                 if self._supervision.policy == RestartPolicy.RESTART:
                     restart_count += 1
@@ -295,31 +320,38 @@ class AgentBase:
     async def pause(self) -> None:
         """Pause the agent — it will stop processing until resumed."""
         if self._state == AgentState.RUNNING:
-            self._state = AgentState.PAUSED
-            self._pause_event.clear()
-            await self.on_pause()
+            tracer = get_tracer()
+            with tracer.start_span("agent.pause", attributes={"agent.id": self._id}):
+                self._state = AgentState.PAUSED
+                self._pause_event.clear()
+                await self.on_pause()
 
     async def resume(self) -> None:
         """Resume a paused agent."""
         if self._state == AgentState.PAUSED:
-            self._state = AgentState.RUNNING
-            await self.on_resume()
-            self._pause_event.set()
+            tracer = get_tracer()
+            with tracer.start_span("agent.resume", attributes={"agent.id": self._id}):
+                self._state = AgentState.RUNNING
+                await self.on_resume()
+                self._pause_event.set()
 
     async def stop(self) -> None:
-        self._running = False
-        self._pause_event.set()  # Unblock if paused so _run can exit
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        # Ensure on_stop runs and state is set even if task was cancelled
-        # before the _run cleanup path executed.
-        if self._state not in (AgentState.STOPPED, AgentState.FAILED):
-            self._state = AgentState.STOPPED
-            await self.on_stop()
+        tracer = get_tracer()
+        with tracer.start_span("agent.stop", attributes={"agent.id": self._id}):
+            get_metrics().agent_stops.inc(agent_type=type(self).__name__)
+            self._running = False
+            self._pause_event.set()  # Unblock if paused so _run can exit
+            if self._task:
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+            # Ensure on_stop runs and state is set even if task was cancelled
+            # before the _run cleanup path executed.
+            if self._state not in (AgentState.STOPPED, AgentState.FAILED):
+                self._state = AgentState.STOPPED
+                await self.on_stop()
 
     @classmethod
     async def spawn(
@@ -329,10 +361,22 @@ class AgentBase:
         **kwargs: Any,
     ) -> AgentHandle:
         """Create and start the agent, return a handle."""
+        tracer = get_tracer()
         agent = cls(*args, **kwargs)
         if supervision is not None:
             agent._supervision = supervision
-        agent._task = asyncio.create_task(agent._run())
+
+        with tracer.start_span(
+            "agent.spawn",
+            attributes={
+                "agent.id": agent._id,
+                "agent.type": cls.__name__,
+                "agent.supervision.policy": agent._supervision.policy.value,
+            },
+        ):
+            agent._task = asyncio.create_task(agent._run())
+            get_metrics().agent_spawns.inc(agent_type=cls.__name__)
+
         return AgentHandle(agent)
 
 

@@ -460,8 +460,10 @@ static void *agent_thread_fn(void *arg) {
             int64_t elapsed = mapanare_time_us() - t0;
             atomic_add_i64(&agent->messages_processed, 1);
             atomic_add_i64(&agent->total_latency_us, elapsed);
+            trace_emit(MAPANARE_TRACE_HANDLE, agent, msg, elapsed);
 
             if (rc != 0) {
+                trace_emit(MAPANARE_TRACE_ERROR, agent, msg, 0);
                 /* Handler error — apply supervision */
                 if (agent->restart_policy == MAPANARE_RESTART_RESTART) {
                     restarts++;
@@ -541,7 +543,11 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
 
 MAPANARE_EXPORT int mapanare_agent_spawn(mapanare_agent_t *agent) {
     atomic_store_i32(&agent->running, 1);
-    return mapanare_thread_create(&agent->thread, agent_thread_fn, agent);
+    int rc = mapanare_thread_create(&agent->thread, agent_thread_fn, agent);
+    if (rc == 0) {
+        trace_emit(MAPANARE_TRACE_SPAWN, agent, NULL, 0);
+    }
+    return rc;
 }
 
 MAPANARE_EXPORT int mapanare_agent_send(mapanare_agent_t *agent, void *msg) {
@@ -549,6 +555,7 @@ MAPANARE_EXPORT int mapanare_agent_send(mapanare_agent_t *agent, void *msg) {
     if (rc == 0) {
         mapanare_bp_increment(&agent->bp);
         mapanare_sem_post(&agent->inbox_ready);
+        trace_emit(MAPANARE_TRACE_SEND, agent, msg, 0);
     }
     return rc;
 }
@@ -561,6 +568,7 @@ MAPANARE_EXPORT void mapanare_agent_pause(mapanare_agent_t *agent) {
     if (atomic_load_i32(&agent->state) == MAPANARE_AGENT_RUNNING) {
         atomic_store_i32(&agent->state, MAPANARE_AGENT_PAUSED);
         atomic_store_i32(&agent->paused, 1);
+        trace_emit(MAPANARE_TRACE_PAUSE, agent, NULL, 0);
         if (agent->on_pause) agent->on_pause(agent->agent_data);
     }
 }
@@ -569,11 +577,13 @@ MAPANARE_EXPORT void mapanare_agent_resume(mapanare_agent_t *agent) {
     if (atomic_load_i32(&agent->state) == MAPANARE_AGENT_PAUSED) {
         atomic_store_i32(&agent->state, MAPANARE_AGENT_RUNNING);
         atomic_store_i32(&agent->paused, 0);
+        trace_emit(MAPANARE_TRACE_RESUME, agent, NULL, 0);
         if (agent->on_resume) agent->on_resume(agent->agent_data);
     }
 }
 
 MAPANARE_EXPORT void mapanare_agent_stop(mapanare_agent_t *agent) {
+    trace_emit(MAPANARE_TRACE_STOP, agent, NULL, 0);
     atomic_store_i32(&agent->running, 0);
     atomic_store_i32(&agent->paused, 0);  /* unblock if paused */
     mapanare_sem_post(&agent->inbox_ready);   /* wake agent thread */
@@ -1058,4 +1068,31 @@ MAPANARE_EXPORT void mapanare_shutdown_init(mapanare_agent_registry_t *reg) {
 
 MAPANARE_EXPORT int mapanare_shutdown_requested(void) {
     return s_shutdown_requested;
+}
+
+/* =======================================================================
+ * 8. Trace hooks — observability for native agent operations
+ * ======================================================================= */
+
+static mapanare_trace_hook_fn s_trace_hook = NULL;
+
+MAPANARE_EXPORT void mapanare_trace_set_hook(mapanare_trace_hook_fn hook) {
+    s_trace_hook = hook;
+}
+
+MAPANARE_EXPORT mapanare_trace_hook_fn mapanare_trace_get_hook(void) {
+    return s_trace_hook;
+}
+
+/* Internal helper: emit a trace event if hook is set */
+static inline void trace_emit(
+    mapanare_trace_event_t event,
+    const mapanare_agent_t *agent,
+    void *data,
+    int64_t duration_us
+) {
+    mapanare_trace_hook_fn hook = s_trace_hook;
+    if (hook) {
+        hook(event, agent, data, duration_us);
+    }
 }

@@ -150,8 +150,20 @@ class StreamOpKind(Enum):
 
 
 @dataclass
+class SourceSpan:
+    """Source location for debug info. Attached to MIR instructions and functions."""
+
+    line: int = 0
+    column: int = 0
+    end_line: int = 0
+    end_column: int = 0
+
+
+@dataclass
 class Instruction:
     """Base class for all MIR instructions."""
+
+    span: SourceSpan | None = field(default=None, repr=False, compare=False)
 
 
 # --- Values ---
@@ -568,6 +580,8 @@ class MIRFunction:
     blocks: list[BasicBlock] = field(default_factory=list)
     decorators: list[str] = field(default_factory=list)  # metadata from AST decorators
     is_public: bool = False
+    source_line: int = 0  # Source line where this function is defined
+    source_file: str = ""  # Source file name
 
     @property
     def entry_block(self) -> BasicBlock | None:
@@ -607,6 +621,8 @@ class MIRModule:
     """Top-level MIR module: a collection of functions and type definitions."""
 
     name: str = ""
+    source_file: str = ""  # Original source file path
+    source_directory: str = ""  # Directory of the source file
     functions: list[MIRFunction] = field(default_factory=list)
     structs: dict[str, list[tuple[str, MIRType]]] = field(
         default_factory=dict
