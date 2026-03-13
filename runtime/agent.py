@@ -42,6 +42,14 @@ class RestartPolicy(enum.Enum):
     RESTART = "restart"
 
 
+class TreeStrategy(enum.Enum):
+    """Supervision tree strategies (Erlang-inspired)."""
+
+    ONE_FOR_ONE = "one-for-one"
+    ONE_FOR_ALL = "one-for-all"
+    REST_FOR_ONE = "rest-for-one"
+
+
 @dataclass
 class SupervisionStrategy:
     """Configuration for agent failure recovery."""
@@ -443,3 +451,149 @@ class AgentGroup:
     async def stop_all(self) -> None:
         for h in self.handles:
             await h.stop()
+
+
+# ---------------------------------------------------------------------------
+# Supervision Trees
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _ChildSpec:
+    """Specification for a child in a supervision tree."""
+
+    name: str
+    agent_cls: type[AgentBase]
+    args: tuple[Any, ...]
+    kwargs: dict[str, Any]
+    supervision: SupervisionStrategy
+
+
+class SupervisionTree:
+    """Erlang-inspired supervision tree for agent groups.
+
+    Strategies:
+    - one-for-one: only restart the failed agent
+    - one-for-all: restart all children when one fails
+    - rest-for-one: restart the failed agent and all children after it
+    """
+
+    def __init__(
+        self,
+        strategy: TreeStrategy = TreeStrategy.ONE_FOR_ONE,
+        max_restarts: int = 5,
+    ) -> None:
+        self._strategy = strategy
+        self._max_restarts = max_restarts
+        self._restart_count = 0
+        self._children: list[_ChildSpec] = []
+        self._handles: dict[str, AgentHandle] = {}
+        self._monitor_task: asyncio.Task[None] | None = None
+        self._running = False
+
+    @property
+    def strategy(self) -> TreeStrategy:
+        return self._strategy
+
+    @property
+    def children(self) -> list[str]:
+        return [c.name for c in self._children]
+
+    @property
+    def restart_count(self) -> int:
+        return self._restart_count
+
+    def add_child(
+        self,
+        name: str,
+        agent_cls: type[AgentBase],
+        *args: Any,
+        supervision: SupervisionStrategy | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Register a child agent specification."""
+        sup = supervision or SupervisionStrategy(
+            policy=RestartPolicy.RESTART, max_restarts=self._max_restarts
+        )
+        self._children.append(_ChildSpec(name, agent_cls, args, kwargs, sup))
+
+    async def start(self) -> dict[str, AgentHandle]:
+        """Spawn all children and start monitoring."""
+        self._running = True
+        for spec in self._children:
+            handle = await spec.agent_cls.spawn(
+                *spec.args, supervision=spec.supervision, **spec.kwargs
+            )
+            self._handles[spec.name] = handle
+        self._monitor_task = asyncio.create_task(self._monitor())
+        return dict(self._handles)
+
+    async def stop(self) -> None:
+        """Stop monitoring and all children."""
+        self._running = False
+        if self._monitor_task:
+            self._monitor_task.cancel()
+            try:
+                await self._monitor_task
+            except asyncio.CancelledError:
+                pass
+        for handle in reversed(list(self._handles.values())):
+            await handle.stop()
+        self._handles.clear()
+
+    def get_handle(self, name: str) -> AgentHandle | None:
+        return self._handles.get(name)
+
+    async def _monitor(self) -> None:
+        """Monitor children for failures and apply tree strategy."""
+        while self._running:
+            for spec in self._children:
+                handle = self._handles.get(spec.name)
+                if handle is None:
+                    continue
+                if handle._agent.state == AgentState.FAILED:
+                    if self._restart_count >= self._max_restarts:
+                        self._running = False
+                        return
+                    self._restart_count += 1
+                    await self._apply_strategy(spec)
+            await asyncio.sleep(0.05)
+
+    async def _apply_strategy(self, failed_spec: _ChildSpec) -> None:
+        """Apply the supervision tree strategy after a child failure."""
+        if self._strategy == TreeStrategy.ONE_FOR_ONE:
+            await self._restart_child(failed_spec)
+
+        elif self._strategy == TreeStrategy.ONE_FOR_ALL:
+            # Stop all, then restart all
+            for spec in self._children:
+                handle = self._handles.get(spec.name)
+                if handle and handle._agent.state != AgentState.STOPPED:
+                    await handle.stop()
+            for spec in self._children:
+                new_handle = await spec.agent_cls.spawn(
+                    *spec.args, supervision=spec.supervision, **spec.kwargs
+                )
+                self._handles[spec.name] = new_handle
+
+        elif self._strategy == TreeStrategy.REST_FOR_ONE:
+            # Restart failed + all children defined after it
+            idx = next(i for i, c in enumerate(self._children) if c.name == failed_spec.name)
+            for spec in self._children[idx:]:
+                handle = self._handles.get(spec.name)
+                if handle and handle._agent.state != AgentState.STOPPED:
+                    await handle.stop()
+                new_handle = await spec.agent_cls.spawn(
+                    *spec.args, supervision=spec.supervision, **spec.kwargs
+                )
+                self._handles[spec.name] = new_handle
+
+    async def _restart_child(self, spec: _ChildSpec) -> None:
+        """Restart a single child agent."""
+        handle = self._handles.get(spec.name)
+        if handle and handle._agent.state != AgentState.STOPPED:
+            await handle.stop()
+        new_handle = await spec.agent_cls.spawn(
+            *spec.args, supervision=spec.supervision, **spec.kwargs
+        )
+        self._handles[spec.name] = new_handle

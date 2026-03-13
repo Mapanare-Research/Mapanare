@@ -940,6 +940,22 @@ def cmd_doc(args: argparse.Namespace) -> None:
     print(f"doc: {args.source} -> {out_path} ({len(items)} items)")
 
 
+def cmd_deploy(args: argparse.Namespace) -> None:
+    """Generate Dockerfile + docker-compose.yml for deployment."""
+    from mapanare.deploy import scaffold_deploy
+
+    project_dir = getattr(args, "path", ".")
+    entry = getattr(args, "entry", "main.mn")
+
+    created = scaffold_deploy(project_dir, entry_point=entry)
+    if not created:
+        print("deploy: all files already exist, nothing to do")
+    else:
+        for path in created:
+            print(f"  created {path}")
+        print(f"\ndeploy: {len(created)} file(s) generated in {os.path.abspath(project_dir)}")
+
+
 def cmd_targets(args: argparse.Namespace) -> None:
     """List all supported compilation targets."""
     print("Supported targets:\n")
@@ -1297,6 +1313,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_doc.add_argument("source", help="Path to .mn source file")
     p_doc.add_argument("-o", metavar="OUTPUT", help="Output .html file path", default=None)
     p_doc.set_defaults(func=cmd_doc)
+
+    # deploy
+    p_deploy = subparsers.add_parser(
+        "deploy", help="Generate Dockerfile + docker-compose.yml for deployment"
+    )
+    p_deploy.add_argument("path", nargs="?", default=".", help="Project directory (default: .)")
+    p_deploy.add_argument(
+        "--entry",
+        metavar="FILE",
+        default="main.mn",
+        help="Entry point .mn file (default: main.mn)",
+    )
+    p_deploy.set_defaults(func=cmd_deploy)
 
     return parser
 

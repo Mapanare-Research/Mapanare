@@ -8,9 +8,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestVersion:
-    def test_version_file_reads_060(self) -> None:
+    def test_version_file_reads_current(self) -> None:
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-        assert version == "0.6.0", f"VERSION should be 0.6.0, got {version}"
+        assert version in ("0.6.0", "0.7.0"), f"VERSION should be 0.6.0 or 0.7.0, got {version}"
 
     def test_changelog_has_060_entry(self) -> None:
         text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -80,9 +80,11 @@ class TestSpecMIR:
             "Basic block" in text or "basic block" in text
         ), "SPEC.md MIR section should mention basic blocks"
 
-    def test_spec_version_is_060(self) -> None:
+    def test_spec_version_is_current(self) -> None:
         text = (ROOT / "docs" / "SPEC.md").read_text(encoding="utf-8")
-        assert "**Version:** 0.6.0" in text, "SPEC.md version should be 0.6.0"
+        assert (
+            "**Version:** 0.6.0" in text or "**Version:** 0.7.0" in text
+        ), "SPEC.md version should be 0.6.0 or 0.7.0"
 
 
 class TestRoadmap:
@@ -98,7 +100,9 @@ class TestRoadmap:
 class TestReadme:
     def test_readme_version_badge(self) -> None:
         text = (ROOT / "README.md").read_text(encoding="utf-8")
-        assert "version-0.6.0" in text, "README version badge should show 0.6.0"
+        assert (
+            "version-0.6.0" in text or "version-0.7.0" in text
+        ), "README version badge should show 0.6.0 or 0.7.0"
 
     def test_readme_architecture_has_mir(self) -> None:
         text = (ROOT / "README.md").read_text(encoding="utf-8")

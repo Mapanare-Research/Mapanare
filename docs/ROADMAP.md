@@ -7,17 +7,23 @@
 
 ---
 
-## Where We Are (v0.6.0)
+## Where We Are (v0.7.0)
 
-Mapanare is real, compiled, and tested. The bootstrap compiler ships with a MIR-based
-pipeline, dual backends (Python transpiler + LLVM native), and a self-hosted compiler
-written in Mapanare itself. **2,500+ tests pass** across the full pipeline.
+Mapanare is real, compiled, and tested. The compiler is self-hosted (7 modules, 8,288+ lines
+of Mapanare), ships with a MIR-based pipeline, dual backends (Python transpiler + LLVM native),
+a built-in test runner, agent observability (tracing + metrics), DWARF debug info, and
+deployment infrastructure. **2,983 tests pass** across the full pipeline.
 
 ### What works today
 
 - **Full compiler pipeline** — Lexer, parser, semantic checker, MIR lowering, MIR optimizer (O0–O3), code emitter
 - **MIR pipeline** — Typed SSA-based intermediate representation with basic blocks and explicit terminators
 - **Two compilation targets** — Python transpilation and native binaries via LLVM IR (both AST-direct and MIR-based)
+- **Self-hosted compiler** — 8,288+ lines of `.mn` across 7 modules (lexer, ast, parser, semantic, lower, emit_llvm, main)
+- **Built-in test runner** — `mapanare test` discovers `@test` functions, `assert` statement, `--filter` flag
+- **Agent observability** — OpenTelemetry tracing (`--trace`), Prometheus metrics (`--metrics`), structured error codes (`MN-X0000`)
+- **DWARF debug info** — `mapanare build -g` produces debuggable binaries with source mapping
+- **Deployment infrastructure** — Dockerfile scaffolding, health/readiness endpoints, supervision trees, graceful shutdown
 - **Agent system** — Spawn concurrent actors with typed channels, message passing, supervision policies
 - **Reactive signals** — Automatic dependency tracking and recomputation
 - **Stream processing** — Async iterables with fusion, backpressure, and `|>` pipe operator
@@ -25,7 +31,6 @@ written in Mapanare itself. **2,500+ tests pass** across the full pipeline.
 - **Type system** — Static typing with inference, generics, `Option<T>`, `Result<T, E>`, `TypeKind` enum (25 kinds)
 - **Traits** — `trait` / `impl Trait for Type`, trait bounds on generics, builtin traits (`Display`, `Eq`, `Ord`, `Hash`)
 - **Module system** — File-based imports with `pub` visibility, circular dependency detection, multi-file compilation
-- **Self-hosted compiler** — 5,802 lines of `.mn` across 6 modules, Stage 2 fixed-point verified
 - **Native C runtime** — Arena-based memory, lock-free SPSC ring buffers, thread pool, semaphore-based scheduling
 - **LLVM agent codegen** — `spawn`, `send` (`<-`), `sync` targeting C runtime with OS threads
 - **Cross-compilation** — Linux x64, macOS ARM64, Windows x64
@@ -60,6 +65,7 @@ written in Mapanare itself. **2,500+ tests pass** across the full pipeline.
 | **v0.4.0** ✅ | Ready for the World | Scope cleanup (`experimental/`), C runtime hardening (sanitizers, CI), structured diagnostics (spans, multi-error, recovery), C FFI (`extern "C"`, `--link-lib`), self-hosted verification (96 bootstrap tests), LSP improvements (incremental parse, cross-module go-to-def), VS Code extension extracted |
 | **v0.5.0** ✅ | The Ecosystem | String interpolation, linter, Python interop, WASM playground, package registry, doc generator, language reference, cookbook, 2,200+ tests |
 | **v0.6.0** ✅ | Compiler Infrastructure | MIR pipeline (SSA IR, lowering, optimizer, dual emitters), bootstrap frozen at v0.6.0, self-hosted semantic checker, 2,500+ tests |
+| **v0.7.0** ✅ | Self-Standing | Self-hosted MIR lowering (lower.mn), built-in test runner, agent observability (tracing + metrics), DWARF debug info, deployment infrastructure, 2,983 tests |
 
 ---
 
@@ -134,28 +140,41 @@ written in Mapanare itself. **2,500+ tests pass** across the full pipeline.
 
 ---
 
-### v0.7.0 — "Production Ready"
+### v0.7.0 — "Self-Standing" ✅
 
-> Make Mapanare deployable and observable in production.
+> Self-hosting completion, observability, and developer tools.
 
-#### Agent Observability
+#### Self-Hosted MIR Lowering ✅
 
-- Distributed tracing with OpenTelemetry export (OTLP)
-- `--trace` flag on CLI
-- Structured error codes
-- Agent metrics exposition (Prometheus format)
+- `lower.mn` (2,629 lines): AST → MIR lowering in Mapanare, completing 7-module self-hosted compiler
+- `emit_llvm.mn` rewritten to consume MIR instead of AST
+- Compiler driver (`main.mn`) wired to AST → MIR → LLVM pipeline
 
-#### Deployment Infrastructure
+#### Built-in Test Runner ✅
 
-- Dockerfile and container image
-- SIGTERM graceful shutdown (v0.4.0) → health checks, readiness probes
-- Supervision trees (cascading failure, one-for-all/rest-for-one strategies)
+- `mapanare test` discovers and runs `@test` functions in `.mn` files
+- `assert` statement in grammar, AST, MIR, and both emitters
+- `--filter` flag for substring matching
 
-#### Developer Tools
+#### Agent Observability ✅
 
-- `mapanare test` — built-in test runner
-- Debug info in LLVM output (DWARF)
-- Documentation generator from doc comments
+- OpenTelemetry-compatible tracing with `--trace` flag (console and OTLP HTTP export)
+- Prometheus metrics with `--metrics :PORT` flag
+- 33 structured error codes in `MN-X0000` format
+- Native C runtime trace hooks
+
+#### DWARF Debug Info ✅
+
+- `mapanare build -g` emits compile units, functions, line numbers, variables, struct types
+- Source-level debugging with `gdb`/`lldb`
+
+#### Deployment Infrastructure ✅
+
+- `mapanare deploy init` scaffolds Dockerfile
+- Health/readiness endpoints (`/health`, `/ready`, `/status`)
+- Supervision trees (one-for-one, one-for-all, rest-for-one)
+- `@supervised` decorator
+- SIGTERM graceful shutdown with drain timeout
 
 ---
 
@@ -289,8 +308,8 @@ Their top concerns and what we did about them:
 | Scope too broad (GPU/model) | MEDIUM | ✅ v0.4.0 scope reduction |
 | No FFI | MEDIUM | ✅ v0.4.0 FFI |
 | No intermediate representation | MEDIUM | ✅ MIR in v0.6.0 |
-| No metrics / tracing | MEDIUM | 🔜 v0.7.0 observability |
-| No browser playground | MEDIUM | 🔜 v0.5.0 playground |
+| No metrics / tracing | MEDIUM | ✅ v0.7.0 observability (tracing + metrics) |
+| No browser playground | MEDIUM | ✅ v0.5.0 playground |
 
 ---
 

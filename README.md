@@ -24,8 +24,8 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.0-blue.svg?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-2500+_passing-brightgreen.svg?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-2983_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
@@ -303,10 +303,12 @@ mapanare jit <file>           JIT-compile and run natively
 mapanare check <file>         Type-check only
 mapanare compile <file>       Transpile to Python
 mapanare emit-llvm <file>     Emit LLVM IR
+mapanare test [path]          Discover and run @test functions
 mapanare repl                 Start interactive REPL
 mapanare fmt <file>           Format source code
 mapanare lint <file>          Lint for code quality issues
 mapanare doc <file>           Generate HTML docs from doc comments
+mapanare deploy init          Scaffold Dockerfile and deploy config
 mapanare init [path]          Initialize a new project
 mapanare install <pkg>        Install a package
 mapanare publish [path]       Publish package to registry
@@ -315,7 +317,7 @@ mapanare login                Authenticate with registry
 mapanare targets              List supported compilation targets
 ```
 
-Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target <triple>` cross-compilation target.
+Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target <triple>` cross-compilation target, `-g` debug info, `--trace` agent tracing, `--metrics :PORT` Prometheus metrics, `--filter` test filter.
 
 ---
 
@@ -396,13 +398,15 @@ Install the LSP server: `mapanare-lsp`
 
 ## Self-Hosted Compiler
 
-The compiler is being rewritten in Mapanare itself (`mapanare/self/`):
+The compiler is written in Mapanare itself (`mapanare/self/`) — 8,288+ lines across 7 modules:
 
-- `lexer.mn` — Tokenizer
-- `parser.mn` — Recursive descent parser
-- `ast.mn` — 31 AST definitions
-- `semantic.mn` — Type checker
-- `emit_llvm.mn` — LLVM IR emitter
+- `lexer.mn` — Tokenizer (498 lines)
+- `ast.mn` — AST definitions (255 lines)
+- `parser.mn` — Recursive descent parser (1,721 lines)
+- `semantic.mn` — Type checker (1,607 lines)
+- `lower.mn` — MIR lowering (2,629 lines)
+- `emit_llvm.mn` — LLVM IR emitter from MIR (1,497 lines)
+- `main.mn` — Compiler driver (81 lines)
 
 Bootstrap strategy: Python compiler (Stage 0) compiles self-hosted `.mn` sources (Stage 1), which must reproduce identical output (Stage 2 fixed-point verification).
 
@@ -419,7 +423,7 @@ mapanare/
 │   └── native/            Native C runtime (thread pool, ring buffers)
 ├── stdlib/                Standard library (io, http, time, math, text, log, pkg)
 ├── bootstrap/             Frozen Python compiler for bootstrapping
-├── tests/                 Test suite (2,500+ tests)
+├── tests/                 Test suite (2,983 tests)
 ├── benchmarks/            Performance benchmarks
 ├── docs/                  Documentation
 │   ├── rfcs/              Language change proposals
@@ -459,7 +463,7 @@ Requires Python 3.11+.
 | **v0.4.0** | Ready for the World — FFI, C runtime hardening, diagnostics, scope cleanup | ✅ Released |
 | **v0.5.0** | The Ecosystem — interpolation, linter, Python interop, playground, registry, docs | ✅ Released |
 | **v0.6.0** | Compiler Infrastructure — MIR pipeline, bootstrap frozen | ✅ Released |
-| **v0.7.0** | Self-Standing — self-hosting, observability, test runner, deployment | 🔶 Current |
+| **v0.7.0** | Self-Standing — self-hosting, observability, test runner, deployment | ✅ Released |
 | **v1.0.0** | Stable — language spec frozen, backwards compatibility guarantees | Planned |
 
 See the full [ROADMAP](docs/ROADMAP.md) for details.

@@ -564,8 +564,22 @@ class PythonEmitter:
             self._emit_line(f'self.{out.name} = self._register_output("{out.name}")')
         for s in agent.state:
             self._emit_line(f"self.{s.name} = {self._emit_expr(s.value)}")
+        # Apply @supervised decorator
+        for dec in agent.decorators:
+            if dec.name == "supervised":
+                strategy = "one-for-one"
+                if dec.args and isinstance(dec.args[0], StringLiteral):
+                    strategy = dec.args[0].value
+                self._emit_line("from runtime.agent import RestartPolicy, SupervisionStrategy")
+                self._emit_line(
+                    "self._supervision = SupervisionStrategy("
+                    "policy=RestartPolicy.RESTART, max_restarts=5)"
+                )
+                self._emit_line(f'self._tree_strategy = "{strategy}"')
         if not agent.inputs and not agent.outputs and not agent.state:
-            self._emit_line("pass")
+            has_supervised = any(d.name == "supervised" for d in agent.decorators)
+            if not has_supervised:
+                self._emit_line("pass")
         self._indent -= 1
         self._emit_line("")
 
