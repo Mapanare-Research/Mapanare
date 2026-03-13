@@ -30,6 +30,7 @@ from mapanare.ast_nodes import (
     Identifier,
     IfExpr,
     IndexExpr,
+    InterpString,
     IntLiteral,
     LambdaExpr,
     LetBinding,
@@ -664,6 +665,10 @@ class DeadCodeEliminator:
             self._collect_used_names_expr(expr.value, names)
         elif isinstance(expr, ErrorPropExpr):
             self._collect_used_names_expr(expr.expr, names)
+        elif isinstance(expr, InterpString):
+            for part in expr.parts:
+                if isinstance(part, Expr):
+                    self._collect_used_names_expr(part, names)
 
     def _remove_dead_fns(self, program: Program) -> Program:
         """Remove private functions that are never referenced."""
@@ -800,18 +805,40 @@ class AgentInliner:
         return False
 
     def _inline_pipe(self, pipe: PipeDef) -> FnDef | None:
-        """Try to inline a single-stage pipe into a direct function."""
+        """Try to inline a single-stage pipe into a direct function.
+
+        Only inline when the stage is a known simple agent whose handler
+        can be expressed as a direct call. Otherwise, return None so the
+        PipeDef is preserved for the emitter to handle.
+        """
         if len(pipe.stages) != 1:
             return None
 
         stage = pipe.stages[0]
-        # Create a wrapper function that just calls the stage
+        if not isinstance(stage, Identifier):
+            return None
+
+        # Only inline if the stage maps to a known simple agent
+        method = self._simple_agents.get(stage.name)
+        if method is None:
+            return None
+
+        # Create a wrapper function that calls the agent's handler directly
         return FnDef(
             name=pipe.name,
             public=pipe.public,
-            params=[],
-            return_type=None,
-            body=Block(stmts=[ExprStmt(expr=stage)]),
+            params=list(method.params),
+            return_type=method.return_type,
+            body=Block(
+                stmts=[
+                    ReturnStmt(
+                        value=CallExpr(
+                            callee=Identifier(name=f"{stage.name}_{method.name}"),
+                            args=[Identifier(name=p.name) for p in method.params],
+                        )
+                    )
+                ]
+            ),
             span=pipe.span,
         )
 

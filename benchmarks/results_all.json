@@ -1,0 +1,121 @@
+{
+  "agents": [
+    {
+      "name": "single_agent",
+      "messages": 10000,
+      "agents": 1,
+      "elapsed_s": 0.17907700000796467,
+      "messages_per_sec": 55841.90040907117,
+      "avg_latency_us": 17.907700000796467
+    },
+    {
+      "name": "agent_chain_3",
+      "messages": 10000,
+      "agents": 3,
+      "elapsed_s": 0.31982249999418855,
+      "messages_per_sec": 93802.03081567159,
+      "avg_latency_us": 31.98224999941886
+    },
+    {
+      "name": "agent_chain_5",
+      "messages": 10000,
+      "agents": 5,
+      "elapsed_s": 0.5106302999774925,
+      "messages_per_sec": 97918.20031479505,
+      "avg_latency_us": 51.063029997749254
+    },
+    {
+      "name": "fan_out_4",
+      "messages": 4000,
+      "agents": 4,
+      "elapsed_s": 0.034160699986387044,
+      "messages_per_sec": 117093.61932261313,
+      "avg_latency_us": 8.540174996596761
+    }
+  ],
+  "streams": [
+    {
+      "name": "map_pipeline",
+      "items": 1000000,
+      "elapsed_s": 0.20013010001275688,
+      "items_per_sec": 4996749.614057341,
+      "avg_latency_us": 0.20013010001275688
+    },
+    {
+      "name": "filter_pipeline",
+      "items": 1000000,
+      "elapsed_s": 0.20907400001306087,
+      "items_per_sec": 4782995.49411945,
+      "avg_latency_us": 0.20907400001306087
+    },
+    {
+      "name": "map_filter_pipeline",
+      "items": 1000000,
+      "elapsed_s": 0.25075459998333827,
+      "items_per_sec": 3987962.733550836,
+      "avg_latency_us": 0.25075459998333827
+    },
+    {
+      "name": "chained_maps_5",
+      "items": 1000000,
+      "elapsed_s": 0.4366063000052236,
+      "items_per_sec": 2290392.9695655694,
+      "avg_latency_us": 0.4366063000052236
+    },
+    {
+      "name": "chained_maps_10",
+      "items": 1000000,
+      "elapsed_s": 0.7651808999944478,
+      "items_per_sec": 1306880.503691684,
+      "avg_latency_us": 0.7651808999944478
+    },
+    {
+      "name": "take_1000_from_1000000",
+      "items": 1000000,
+      "elapsed_s": 0.00023140001576393843,
+      "items_per_sec": 4321520.881053634,
+      "avg_latency_us": 0.23140001576393843
+    },
+    {
+      "name": "fold_sum",
+      "items": 1000000,
+      "elapsed_s": 0.11018069996498525,
+      "items_per_sec": 9075999.701561106,
+      "avg_latency_us": 0.11018069996498525
+    }
+  ],
+  "comparison": [
+    {
+      "workload": "message_passing",
+      "mapanare_elapsed_s": 0.017918900004588068,
+      "asyncio_elapsed_s": 0.013376299990341067,
+      "rust_elapsed_s": null,
+      "mapanare_vs_asyncio": 0.7464911343283414,
+      "mapanare_vs_rust": null
+    },
+    {
+      "workload": "stream_map",
+      "mapanare_elapsed_s": 0.22812410001643002,
+      "asyncio_elapsed_s": 0.032607999979518354,
+      "rust_elapsed_s": null,
+      "mapanare_vs_asyncio": 0.14293974190876743,
+      "mapanare_vs_rust": null
+    },
+    {
+      "workload": "stream_filter",
+      "mapanare_elapsed_s": 0.21249850001186132,
+      "asyncio_elapsed_s": 0.02685429999837652,
+      "rust_elapsed_s": null,
+      "mapanare_vs_asyncio": 0.12637406850814267,
+      "mapanare_vs_rust": null
+    },
+    {
+      "workload": "stream_map_filter",
+      "mapanare_elapsed_s": 0.29053539998130873,
+      "asyncio_elapsed_s": 0.05621489998884499,
+      "rust_elapsed_s": null,
+      "mapanare_vs_asyncio": 0.19348726520920176,
+      "mapanare_vs_rust": null
+    }
+  ]
+}

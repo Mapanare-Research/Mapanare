@@ -48,13 +48,25 @@ async def _asyncio_message_passing(n_messages: int) -> float:
             count += 1
         done.set()
 
+    async def drain() -> None:
+        drained = 0
+        while drained < n_messages:
+            await q_out.get()
+            drained += 1
+
     task = asyncio.create_task(worker())
+    drain_task = asyncio.create_task(drain())
     start = time.perf_counter()
     for i in range(n_messages):
         await q_in.put(i)
     await done.wait()
     elapsed = time.perf_counter() - start
     await task
+    drain_task.cancel()
+    try:
+        await drain_task
+    except asyncio.CancelledError:
+        pass
     return elapsed
 
 
@@ -109,15 +121,27 @@ async def _mapanare_message_passing(n_messages: int) -> float:
             count += 1
         done.set()
 
+    async def drain() -> None:
+        drained = 0
+        while drained < n_messages:
+            await ch_out.receive()
+            drained += 1
+
     task = asyncio.create_task(worker())
+    drain_task = asyncio.create_task(drain())
     start = time.perf_counter()
     for i in range(n_messages):
         await ch_in.send(i)
     await done.wait()
     elapsed = time.perf_counter() - start
     task.cancel()
+    drain_task.cancel()
     try:
         await task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await drain_task
     except asyncio.CancelledError:
         pass
     return elapsed

@@ -8,6 +8,8 @@ Phase 6.1: Core runtime integration — string ops, list ops, struct/enum codege
 
 from __future__ import annotations
 
+from typing import Any
+
 from llvmlite import ir
 
 from mapanare.ast_nodes import (
@@ -49,6 +51,7 @@ from mapanare.ast_nodes import (
     NamedType,
     NamespaceAccessExpr,
     NoneLiteral,
+    PipeDef,
     PipeExpr,
     Program,
     ReturnStmt,
@@ -84,6 +87,9 @@ LLVM_STRING = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
 
 # List: { i8*, i64, i64, i64 } — data, len, cap, elem_size (matches MnList in C runtime)
 LLVM_LIST = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT])
+
+# Closure: { i8*, i8* } — fn_ptr, env_ptr
+LLVM_CLOSURE = ir.LiteralStructType([ir.IntType(8).as_pointer(), ir.IntType(8).as_pointer()])
 
 
 def option_type(inner: ir.Type) -> ir.LiteralStructType:
@@ -123,12 +129,13 @@ def list_type(element_ty: ir.Type) -> ir.LiteralStructType:
     return LLVM_LIST
 
 
-def map_type(key_ty: ir.Type, val_ty: ir.Type) -> ir.LiteralStructType:
-    """Map<K, V> → opaque pointer (hash map implementation detail).
+def map_type(key_ty: ir.Type, val_ty: ir.Type) -> ir.PointerType:
+    """Map<K, V> → opaque pointer to C MnMap struct.
 
-    Represented as { i8*, i64 } — pointer to hash table + count.
+    The C runtime manages the hash table internals. LLVM code
+    interacts via __mn_map_* functions that take/return i8*.
     """
-    return ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
+    return ir.IntType(8).as_pointer()
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +352,35 @@ class LLVMEmitter:
     def _rt_str_find(self) -> ir.Function:
         return self._declare_runtime_fn("__mn_str_find", LLVM_INT, [LLVM_STRING, LLVM_STRING])
 
+    def _rt_str_contains(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_contains", LLVM_INT, [LLVM_STRING, LLVM_STRING])
+
+    def _rt_str_split(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_split", LLVM_LIST, [LLVM_STRING, LLVM_STRING])
+
+    def _rt_str_trim(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_trim", LLVM_STRING, [LLVM_STRING])
+
+    def _rt_str_trim_start(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_trim_start", LLVM_STRING, [LLVM_STRING])
+
+    def _rt_str_trim_end(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_trim_end", LLVM_STRING, [LLVM_STRING])
+
+    def _rt_str_to_upper(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_to_upper", LLVM_STRING, [LLVM_STRING])
+
+    def _rt_str_to_lower(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_to_lower", LLVM_STRING, [LLVM_STRING])
+
+    def _rt_str_replace(self) -> ir.Function:
+        return self._declare_runtime_fn(
+            "__mn_str_replace", LLVM_STRING, [LLVM_STRING, LLVM_STRING, LLVM_STRING]
+        )
+
+    def _rt_str_from_bool(self) -> ir.Function:
+        return self._declare_runtime_fn("__mn_str_from_bool", LLVM_STRING, [LLVM_INT])
+
     def _rt_list_new(self) -> ir.Function:
         """Declare __mn_list_new(i64 elem_size) -> MnList."""
         return self._declare_runtime_fn("__mn_list_new", LLVM_LIST, [LLVM_INT])
@@ -368,6 +404,52 @@ class LLVMEmitter:
     def _rt_panic(self) -> ir.Function:
         """Declare __mn_panic(MnString) -> void."""
         return self._declare_runtime_fn("__mn_panic", LLVM_VOID, [LLVM_STRING])
+
+    # -- Map runtime functions ------------------------------------------------
+
+    def _rt_map_new(self) -> ir.Function:
+        """Declare __mn_map_new(i64 key_size, i64 val_size, i64 key_type) -> i8*."""
+        return self._declare_runtime_fn("__mn_map_new", LLVM_PTR, [LLVM_INT, LLVM_INT, LLVM_INT])
+
+    def _rt_map_set(self) -> ir.Function:
+        """Declare __mn_map_set(i8* map, i8* key, i8* val) -> void."""
+        return self._declare_runtime_fn("__mn_map_set", LLVM_VOID, [LLVM_PTR, LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_get(self) -> ir.Function:
+        """Declare __mn_map_get(i8* map, i8* key) -> i8*."""
+        return self._declare_runtime_fn("__mn_map_get", LLVM_PTR, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_del(self) -> ir.Function:
+        """Declare __mn_map_del(i8* map, i8* key) -> i64."""
+        return self._declare_runtime_fn("__mn_map_del", LLVM_INT, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_len(self) -> ir.Function:
+        """Declare __mn_map_len(i8* map) -> i64."""
+        return self._declare_runtime_fn("__mn_map_len", LLVM_INT, [LLVM_PTR])
+
+    def _rt_map_contains(self) -> ir.Function:
+        """Declare __mn_map_contains(i8* map, i8* key) -> i64."""
+        return self._declare_runtime_fn("__mn_map_contains", LLVM_INT, [LLVM_PTR, LLVM_PTR])
+
+    def _rt_map_free(self) -> ir.Function:
+        """Declare __mn_map_free(i8* map) -> void."""
+        return self._declare_runtime_fn("__mn_map_free", LLVM_VOID, [LLVM_PTR])
+
+    def _rt_map_iter_new(self) -> ir.Function:
+        """Declare __mn_map_iter_new(i8* map) -> i8*."""
+        return self._declare_runtime_fn("__mn_map_iter_new", LLVM_PTR, [LLVM_PTR])
+
+    def _rt_map_iter_next(self) -> ir.Function:
+        """Declare __mn_map_iter_next(i8* iter, i8** key_out, i8** val_out) -> i64."""
+        return self._declare_runtime_fn(
+            "__mn_map_iter_next",
+            LLVM_INT,
+            [LLVM_PTR, LLVM_PTR.as_pointer(), LLVM_PTR.as_pointer()],
+        )
+
+    def _rt_map_iter_free(self) -> ir.Function:
+        """Declare __mn_map_iter_free(i8* iter) -> void."""
+        return self._declare_runtime_fn("__mn_map_iter_free", LLVM_VOID, [LLVM_PTR])
 
     def _rt_file_read(self) -> ir.Function:
         """Declare __mn_file_read(MnString, i64*) -> MnString."""
@@ -487,6 +569,8 @@ class LLVMEmitter:
                 self._emit_impl_methods(defn)
             elif isinstance(defn, TraitDef):
                 pass  # Traits are type-level only; no LLVM codegen needed
+            elif isinstance(defn, PipeDef):
+                self._emit_pipe_def(defn)
         return self.module
 
     def _emit_import(self, imp: ImportDef, resolver: object | None) -> None:
@@ -944,7 +1028,7 @@ class LLVMEmitter:
             return self._emit_list_literal(expr)
 
         if isinstance(expr, MapLiteral):
-            raise NotImplementedError("Map literals are not yet supported in the LLVM backend")
+            return self._emit_map_literal(expr)
 
         if isinstance(expr, IndexExpr):
             return self._emit_index(expr)
@@ -1269,6 +1353,8 @@ class LLVMEmitter:
                     list_alloca = self.builder.alloca(LLVM_LIST, name="len_tmp")
                     self.builder.store(val, list_alloca)
                     return self.builder.call(self._rt_list_len(), [list_alloca], name="len")
+                if isinstance(val.type, ir.PointerType):
+                    return self.builder.call(self._rt_map_len(), [val], name="len")
             return ir.Constant(LLVM_INT, 0)
 
         # Built-in: toString() / str()
@@ -1327,11 +1413,26 @@ class LLVMEmitter:
 
         # Resolve the callee
         if isinstance(node.callee, Identifier):
-            if node.callee.name not in self._functions:
-                raise NameError(f"Undefined function: {node.callee.name}")
-            func = self._functions[node.callee.name]
+            name = node.callee.name
+            # Check if this is a closure variable (stored as {fn_ptr, env_ptr} in locals)
+            if name in self._locals and name not in self._functions:
+                closure = self.builder.load(self._locals[name], name=f"{name}.clos")
+                args = [self._emit_expr(a) for a in node.args]
+                return self._call_closure(closure, args)
+            if name not in self._functions:
+                raise NameError(f"Undefined function: {name}")
+            func = self._functions[name]
         else:
             func = self._emit_expr(node.callee)
+            # If the result is a closure struct, call it as a closure
+            if (
+                hasattr(func, "type")
+                and isinstance(func.type, ir.LiteralStructType)
+                and len(func.type.elements) == 2
+                and all(isinstance(e, ir.PointerType) for e in func.type.elements)
+            ):
+                args = [self._emit_expr(a) for a in node.args]
+                return self._call_closure(func, args)
 
         args = [self._emit_expr(a) for a in node.args]
 
@@ -1344,6 +1445,15 @@ class LLVMEmitter:
                     args[i] = self.builder.extract_value(arg, 0, name="str_to_cptr")
 
         return self.builder.call(func, args, name="call")
+
+    def _call_closure(self, closure: ir.Value, args: list[ir.Value]) -> ir.Value:
+        """Call a closure {fn_ptr, env_ptr} with args."""
+        fn_raw = self.builder.extract_value(closure, 0, name="clos.fn")
+        env_ptr = self.builder.extract_value(closure, 1, name="clos.env")
+        arg_types = [a.type for a in args]
+        fn_ty = ir.FunctionType(LLVM_INT, [LLVM_PTR] + arg_types)
+        fn_ptr = self.builder.bitcast(fn_raw, fn_ty.as_pointer(), name="clos.fptr")
+        return self.builder.call(fn_ptr, [env_ptr] + args, name="clos.call")
 
     # -----------------------------------------------------------------------
     # Task 9: |> → inlined LLVM call chain
@@ -1843,6 +1953,56 @@ class LLVMEmitter:
         self._functions[handler_name] = func
         return func
 
+    def _emit_pipe_def(self, pipe: PipeDef) -> None:
+        """Emit a pipe definition as a function that chains agent spawn/send/recv."""
+        fn_ty = ir.FunctionType(LLVM_PTR, [LLVM_PTR])
+        func = ir.Function(self.module, fn_ty, name=pipe.name)
+        func.linkage = "internal"
+        self._functions[pipe.name] = func
+
+        entry = func.append_basic_block("entry")
+        old_builder = self._builder
+        self._builder = ir.IRBuilder(entry)
+
+        stages: list[str] = []
+        for s in pipe.stages:
+            if isinstance(s, Identifier):
+                stages.append(s.name)
+
+        if not stages:
+            self.builder.ret(func.args[0])
+            self._builder = old_builder
+            return
+
+        current_val = func.args[0]
+        null_ptr = ir.Constant(LLVM_PTR, None)
+        cap = ir.Constant(LLVM_I32, 256)
+
+        for i, stage in enumerate(stages):
+            name_bytes = stage.encode("utf-8") + b"\x00"
+            arr_ty = ir.ArrayType(ir.IntType(8), len(name_bytes))
+            name_const = ir.Constant(arr_ty, bytearray(name_bytes))
+            gname = self.module.get_unique_name(f"pipe_stage_{i}")
+            gv = ir.GlobalVariable(self.module, name_const.type, name=gname)
+            gv.global_constant = True
+            gv.initializer = name_const
+            gv.linkage = "private"
+            zero = ir.Constant(LLVM_INT, 0)
+            name_ptr = self.builder.gep(gv, [zero, zero], inbounds=True)
+
+            agent = self.builder.call(
+                self._rt_agent_new(), [name_ptr, null_ptr, null_ptr, cap, cap], name=f"s{i}"
+            )
+            self.builder.call(self._rt_agent_spawn(), [agent])
+            self.builder.call(self._rt_agent_send(), [agent, current_val])
+            out_ptr = self.builder.alloca(LLVM_PTR, name=f"s{i}_out")
+            self.builder.call(self._rt_agent_recv_blocking(), [agent, out_ptr])
+            current_val = self.builder.load(out_ptr, name=f"s{i}_result")
+            self.builder.call(self._rt_agent_stop(), [agent])
+
+        self.builder.ret(current_val)
+        self._builder = old_builder
+
     def _emit_spawn(self, expr: SpawnExpr) -> ir.Value:
         """Emit spawn: allocate agent, init with handler, start thread."""
         agent_name = expr.callee.name if isinstance(expr.callee, Identifier) else "Agent"
@@ -2275,6 +2435,26 @@ class LLVMEmitter:
                 return self.builder.call(self._rt_str_ends_with(), [obj, args[0]], name="str_ew")
             if node.method == "find" and len(args) == 1:
                 return self.builder.call(self._rt_str_find(), [obj, args[0]], name="str_find")
+            if node.method == "contains" and len(args) == 1:
+                return self.builder.call(
+                    self._rt_str_contains(), [obj, args[0]], name="str_contains"
+                )
+            if node.method == "split" and len(args) == 1:
+                return self.builder.call(self._rt_str_split(), [obj, args[0]], name="str_split")
+            if node.method == "trim" and len(args) == 0:
+                return self.builder.call(self._rt_str_trim(), [obj], name="str_trim")
+            if node.method == "trim_start" and len(args) == 0:
+                return self.builder.call(self._rt_str_trim_start(), [obj], name="str_ts")
+            if node.method == "trim_end" and len(args) == 0:
+                return self.builder.call(self._rt_str_trim_end(), [obj], name="str_te")
+            if node.method == "to_upper" and len(args) == 0:
+                return self.builder.call(self._rt_str_to_upper(), [obj], name="str_upper")
+            if node.method == "to_lower" and len(args) == 0:
+                return self.builder.call(self._rt_str_to_lower(), [obj], name="str_lower")
+            if node.method == "replace" and len(args) == 2:
+                return self.builder.call(
+                    self._rt_str_replace(), [obj, args[0], args[1]], name="str_replace"
+                )
 
         raise NotImplementedError(f"Method call not supported: .{node.method}()")
 
@@ -2330,8 +2510,85 @@ class LLVMEmitter:
 
         return self.builder.load(list_alloca, name="list_result")
 
+    # -----------------------------------------------------------------------
+    # Map operations
+    # -----------------------------------------------------------------------
+
+    def _map_key_type_tag(self, key_val: ir.Value) -> int:
+        """Determine the MN_MAP_KEY_* tag from an LLVM key value."""
+        if self._is_string_type(key_val):
+            return 1  # MN_MAP_KEY_STR
+        if isinstance(key_val.type, ir.DoubleType):
+            return 2  # MN_MAP_KEY_FLOAT
+        return 0  # MN_MAP_KEY_INT
+
+    def _map_elem_size(self, val: ir.Value) -> int:
+        """Approximate byte size of an LLVM value for map key/val sizing."""
+        ty = val.type
+        if isinstance(ty, ir.IntType):
+            return int(ty.width) // 8
+        if isinstance(ty, ir.DoubleType):
+            return 8
+        if isinstance(ty, ir.LiteralStructType):
+            return sum(
+                8 if isinstance(e, (ir.PointerType, ir.IntType, ir.DoubleType)) else 8
+                for e in ty.elements
+            )
+        return 8
+
+    def _emit_map_literal(self, node: MapLiteral) -> ir.Value:
+        """Emit a map literal: `#{key: value, ...}` or `#{}`."""
+        if not node.entries:
+            # Empty map — default to Int keys, Int values
+            return self.builder.call(
+                self._rt_map_new(),
+                [ir.Constant(LLVM_INT, 8), ir.Constant(LLVM_INT, 8), ir.Constant(LLVM_INT, 0)],
+                name="empty_map",
+            )
+
+        # Evaluate first entry to determine types and sizes
+        first_key = self._emit_expr(node.entries[0].key)
+        first_val = self._emit_expr(node.entries[0].value)
+        key_size = self._map_elem_size(first_key)
+        val_size = self._map_elem_size(first_val)
+        key_type_tag = self._map_key_type_tag(first_key)
+
+        # Create map
+        map_ptr = self.builder.call(
+            self._rt_map_new(),
+            [
+                ir.Constant(LLVM_INT, key_size),
+                ir.Constant(LLVM_INT, val_size),
+                ir.Constant(LLVM_INT, key_type_tag),
+            ],
+            name="map",
+        )
+
+        # Insert first entry
+        self._map_insert(map_ptr, first_key, first_val)
+
+        # Insert remaining entries
+        for entry in node.entries[1:]:
+            k = self._emit_expr(entry.key)
+            v = self._emit_expr(entry.value)
+            self._map_insert(map_ptr, k, v)
+
+        return map_ptr
+
+    def _map_insert(self, map_ptr: ir.Value, key: ir.Value, val: ir.Value) -> None:
+        """Insert a key-value pair into a map via __mn_map_set."""
+        key_alloca = self.builder.alloca(key.type, name="map_key_tmp")
+        self.builder.store(key, key_alloca)
+        key_ptr = self.builder.bitcast(key_alloca, LLVM_PTR, name="map_key_ptr")
+
+        val_alloca = self.builder.alloca(val.type, name="map_val_tmp")
+        self.builder.store(val, val_alloca)
+        val_ptr = self.builder.bitcast(val_alloca, LLVM_PTR, name="map_val_ptr")
+
+        self.builder.call(self._rt_map_set(), [map_ptr, key_ptr, val_ptr])
+
     def _emit_index(self, node: IndexExpr) -> ir.Value:
-        """Emit index expression: `list[i]` or `str[i]`."""
+        """Emit index expression: `list[i]`, `str[i]`, or `map[key]`."""
         obj = self._emit_expr(node.object)
         idx = self._emit_expr(node.index)
 
@@ -2350,6 +2607,16 @@ class LLVMEmitter:
             typed_ptr = self.builder.bitcast(raw_ptr, LLVM_INT.as_pointer(), name="typed_ptr")
             return self.builder.load(typed_ptr, name="list_elem")
 
+        # Map indexing — map[key] calls __mn_map_get
+        if isinstance(obj.type, ir.PointerType):
+            key_alloca = self.builder.alloca(idx.type, name="map_key_tmp")
+            self.builder.store(idx, key_alloca)
+            key_ptr = self.builder.bitcast(key_alloca, LLVM_PTR, name="map_key_ptr")
+            raw_ptr = self.builder.call(self._rt_map_get(), [obj, key_ptr], name="map_val_ptr")
+            # Default: load as i64
+            typed_ptr = self.builder.bitcast(raw_ptr, LLVM_INT.as_pointer(), name="map_val_typed")
+            return self.builder.load(typed_ptr, name="map_val")
+
         raise NotImplementedError(f"Index not supported on type: {obj.type}")
 
     # -----------------------------------------------------------------------
@@ -2357,8 +2624,7 @@ class LLVMEmitter:
     # -----------------------------------------------------------------------
 
     def _emit_lambda(self, node: LambdaExpr) -> ir.Value:
-        """Emit a lambda as an anonymous function. Returns function pointer."""
-        # Generate unique name
+        """Emit a lambda as an anonymous function. Returns function pointer or closure."""
         lambda_name = self.module.get_unique_name("lambda")
 
         # Build parameter types (default to i64 if no annotation)
@@ -2369,29 +2635,89 @@ class LLVMEmitter:
             else:
                 param_types.append(LLVM_INT)
 
-        # Infer return type from body — default to i64
         ret_type = LLVM_INT
 
-        fn_type = ir.FunctionType(ret_type, param_types)
+        # Analyze free variables in the lambda body
+        param_names = {p.name for p in node.params}
+        captures = self._collect_captures(node.body, param_names)
+
+        if not captures:
+            # No captures — plain function pointer (existing behavior)
+            fn_type = ir.FunctionType(ret_type, param_types)
+            func = ir.Function(self.module, fn_type, name=lambda_name)
+            for i, p in enumerate(node.params):
+                func.args[i].name = p.name
+            self._functions[lambda_name] = func
+
+            old_builder = self._builder
+            old_locals = self._locals.copy()
+            old_mutables = self._mutables.copy()
+
+            block = func.append_basic_block(name="entry")
+            self._builder = ir.IRBuilder(block)
+            self._locals = {}
+            self._mutables = set()
+
+            for i, p in enumerate(node.params):
+                alloca = self.builder.alloca(param_types[i], name=p.name)
+                self.builder.store(func.args[i], alloca)
+                self._locals[p.name] = alloca
+
+            if isinstance(node.body, Block):
+                self._emit_block(node.body)
+            else:
+                val = self._emit_expr(node.body)
+                self.builder.ret(val)
+
+            if not self.builder.block.is_terminated:
+                self.builder.ret(ir.Constant(ret_type, 0))
+
+            self._builder = old_builder
+            self._locals = old_locals
+            self._mutables = old_mutables
+            return func
+
+        # Has captures — create a closure {fn_ptr, env_ptr}
+        # Capture the current LLVM values
+        cap_names = [name for name, _ in captures]
+        cap_vals = [val for _, val in captures]
+        cap_types = [val.type for val in cap_vals]
+        env_struct_ty = ir.LiteralStructType(cap_types)
+
+        # Create the function with env_ptr as first param
+        fn_type = ir.FunctionType(ret_type, [LLVM_PTR] + param_types)
         func = ir.Function(self.module, fn_type, name=lambda_name)
+        func.args[0].name = "__env_ptr"
         for i, p in enumerate(node.params):
-            func.args[i].name = p.name
+            func.args[i + 1].name = p.name
         self._functions[lambda_name] = func
 
-        # Save state
         old_builder = self._builder
         old_locals = self._locals.copy()
         old_mutables = self._mutables.copy()
 
-        # Build lambda body
         block = func.append_basic_block(name="entry")
         self._builder = ir.IRBuilder(block)
         self._locals = {}
         self._mutables = set()
 
+        # Load captured variables from env struct
+        env_typed = self.builder.bitcast(func.args[0], env_struct_ty.as_pointer(), name="env")
+        for i, cap_name in enumerate(cap_names):
+            field_ptr = self.builder.gep(
+                env_typed,
+                [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, i)],
+                name=f"cap.{cap_name}.ptr",
+            )
+            loaded = self.builder.load(field_ptr, name=f"cap.{cap_name}")
+            alloca = self.builder.alloca(cap_types[i], name=cap_name)
+            self.builder.store(loaded, alloca)
+            self._locals[cap_name] = alloca
+
+        # Bind normal parameters
         for i, p in enumerate(node.params):
             alloca = self.builder.alloca(param_types[i], name=p.name)
-            self.builder.store(func.args[i], alloca)
+            self.builder.store(func.args[i + 1], alloca)
             self._locals[p.name] = alloca
 
         if isinstance(node.body, Block):
@@ -2403,12 +2729,91 @@ class LLVMEmitter:
         if not self.builder.block.is_terminated:
             self.builder.ret(ir.Constant(ret_type, 0))
 
-        # Restore state
         self._builder = old_builder
         self._locals = old_locals
         self._mutables = old_mutables
 
+        # Allocate env, store captures, build closure struct
+        alloc_fn = self._get_or_declare_fn("__mn_alloc", LLVM_PTR, [LLVM_INT])
+        env_size = sum(self._type_size(t) for t in cap_types)
+        env_raw = self.builder.call(
+            alloc_fn, [ir.Constant(LLVM_INT, max(env_size, 8))], name="env.alloc"
+        )
+        env_ptr = self.builder.bitcast(env_raw, env_struct_ty.as_pointer(), name="env.ptr")
+        for i, cap_val in enumerate(cap_vals):
+            field_ptr = self.builder.gep(
+                env_ptr,
+                [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, i)],
+                name=f"env.f{i}",
+            )
+            self.builder.store(cap_val, field_ptr)
+
+        fn_ptr = self.builder.bitcast(func, LLVM_PTR, name="fn.ptr")
+        closure = ir.Constant(LLVM_CLOSURE, ir.Undefined)
+        closure = self.builder.insert_value(closure, fn_ptr, 0, name="closure.fn")
+        closure = self.builder.insert_value(closure, env_raw, 1, name="closure")
+        return closure
+
+    def _collect_captures(self, body: Any, param_names: set[str]) -> list[tuple[str, ir.Value]]:
+        """Walk a lambda body AST and collect references to enclosing scope variables."""
+        captures: list[tuple[str, ir.Value]] = []
+        seen: set[str] = set()
+
+        def _walk(node: Any) -> None:
+            if node is None:
+                return
+            if isinstance(node, Identifier):
+                name = node.name
+                if name not in param_names and name not in seen and name in self._locals:
+                    seen.add(name)
+                    val = self.builder.load(self._locals[name], name=f"cap.{name}")
+                    captures.append((name, val))
+                return
+            if isinstance(node, LambdaExpr):
+                # Nested lambda: skip body (nested closures handle own captures)
+                for attr_val in vars(node.body).values() if hasattr(node.body, "__dict__") else []:
+                    if isinstance(attr_val, list):
+                        for item in attr_val:
+                            if hasattr(item, "__dict__"):
+                                _walk(item)
+                    elif hasattr(attr_val, "__dict__"):
+                        _walk(attr_val)
+                return
+            for attr_val in vars(node).values() if hasattr(node, "__dict__") else []:
+                if isinstance(attr_val, list):
+                    for item in attr_val:
+                        if hasattr(item, "__dict__"):
+                            _walk(item)
+                elif hasattr(attr_val, "__dict__"):
+                    _walk(attr_val)
+
+        _walk(body)
+        return captures
+
+    def _get_or_declare_fn(
+        self, name: str, ret_ty: ir.Type, param_types: list[ir.Type]
+    ) -> ir.Function:
+        """Get or declare an external function."""
+        if name in self._functions:
+            return self._functions[name]
+        fn_ty = ir.FunctionType(ret_ty, param_types)
+        func = ir.Function(self.module, fn_ty, name=name)
+        func.linkage = "external"
+        self._functions[name] = func
         return func
+
+    @staticmethod
+    def _type_size(ty: ir.Type) -> int:
+        """Approximate byte size of an LLVM type."""
+        if isinstance(ty, ir.IntType):
+            return int(ty.width) // 8
+        if isinstance(ty, ir.DoubleType):
+            return 8
+        if isinstance(ty, ir.PointerType):
+            return 8
+        if isinstance(ty, ir.LiteralStructType):
+            return sum(LLVMEmitter._type_size(e) for e in ty.elements)
+        return 8
 
     # -----------------------------------------------------------------------
     # Phase 6.1: Extended print support (string-aware)

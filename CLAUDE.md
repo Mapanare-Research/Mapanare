@@ -4,12 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language (v0.7.0) with first-class agents, signals, streams, and tensors. It compiles to Python (transpiler, legacy) and LLVM IR (native backend via llvmlite). The self-hosted compiler is 8,288+ lines of `.mn` across 7 modules in `mapanare/self/`. The project is on a path to full Python independence — stdlib modules will be rewritten in `.mn` and compiled natively.
+Mapanare is an AI-native compiled programming language (v0.8.0) with first-class agents, signals, streams, and tensors. It compiles to Python (transpiler, legacy) and LLVM IR (native backend via llvmlite). The self-hosted compiler is 8,288+ lines of `.mn` across 7 modules in `mapanare/self/`. The project is on a path to full Python independence — stdlib modules will be rewritten in `.mn` and compiled natively.
 
 ## Current Version & Roadmap
 
-- **v0.7.0** (current) — Self-hosted compiler, MIR pipeline, test runner, observability, DWARF debug
-- **v0.8.0** (next) — LLVM backend parity: maps, signals, streams, closures + C runtime expansion (TCP, TLS, file I/O, event loop)
+- **v0.8.0** (current) — LLVM backend parity: maps, signals, streams, closures + C runtime expansion (TCP, TLS, file I/O, event loop)
 - **v0.9.0** — Native stdlib in `.mn`: HTTP client/server, JSON, WebSocket, regex, crypto
 - **v1.0.0** — Language freeze, self-hosted fixed-point, formal memory model
 - **v1.1.0** — AI native: LLM drivers, embeddings, RAG as stdlib
@@ -77,15 +76,13 @@ Key modules in `mapanare/`:
 
 **Python runtime** (`runtime/`): `agent.py`, `signal.py`, `stream.py`, `result.py`, `deploy.py` — asyncio-based agents, reactive signals, async stream operators, Result/Option types, deployment infrastructure. **Legacy — will be replaced by native .mn stdlib.**
 
-**Native C runtime** (`runtime/native/`): Arena-based memory (no GC), lock-free SPSC ring buffers, thread pool with work stealing, agent lifecycle, trace hooks. Used by the LLVM backend. **Expanding in v0.8.0** to include TCP sockets, TLS (OpenSSL), file I/O, and event loop primitives.
+**Native C runtime** (`runtime/native/`): Arena-based memory (no GC), lock-free SPSC ring buffers, thread pool with work stealing, agent lifecycle, trace hooks, TCP sockets, TLS (OpenSSL via dlopen), file I/O, event loop (epoll/kqueue/select). Used by the LLVM backend.
 
-## LLVM Backend Status (v0.7.0 — honest assessment)
+## LLVM Backend Status (v0.8.0 — full parity)
 
-**Working:** Functions, structs, enums, pattern matching, control flow, type inference, generics, Result/Option, print/println, builtins, lists, agents (full lifecycle), traits, module imports, pipes (`|>` for function application).
+**Working:** Functions, structs, enums, pattern matching, control flow, type inference, generics, Result/Option, print/println, builtins, lists, maps/dicts (Robin Hood hash table), agents (full lifecycle), signals (full reactivity: computed, subscribers, batched updates), streams (map/filter/take/skip/collect/fold, backpressure), closures (free variable capture via environment structs), traits, module imports, pipes (`|>` for function application), pipe definitions (multi-agent composition), all string methods.
 
-**Partial:** String methods (7 of 12), signals (get/set only, no reactivity), closures (no capture).
-
-**Not working:** Maps/Dicts (NotImplementedError), streams (stub), pipe definitions (multi-agent composition), stdlib modules (Python-only).
+**Not yet on LLVM:** Stdlib modules (Python-only, native in v0.9.0), tensors (experimental only).
 
 New LLVM features should target `emit_llvm_mir.py` (MIR-based emitter), not `emit_llvm.py` (AST-based).
 

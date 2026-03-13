@@ -1,0 +1,831 @@
+/**
+ * mapanare_io.c — I/O runtime implementation (Phase 6: C Runtime Expansion)
+ *
+ * Implements TCP networking, TLS (OpenSSL), extended file I/O, and
+ * cross-platform event loop multiplexing.
+ */
+
+#include "mapanare_io.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+
+/* =======================================================================
+ * Platform-specific includes and helpers
+ * ======================================================================= */
+
+#ifdef _WIN32
+  #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+  #endif
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
+  #include <windows.h>
+  #include <io.h>
+  #include <fcntl.h>
+  #include <sys/stat.h>
+  #pragma comment(lib, "ws2_32.lib")
+
+  typedef SOCKET mn_socket_t;
+  #define MN_INVALID_SOCKET INVALID_SOCKET
+  #define MN_SOCKET_ERROR   SOCKET_ERROR
+  #define mn_closesocket    closesocket
+  #define mn_errno          WSAGetLastError()
+
+#else /* POSIX */
+  #include <unistd.h>
+  #include <sys/socket.h>
+  #include <sys/types.h>
+  #include <sys/stat.h>
+  #include <netinet/in.h>
+  #include <netinet/tcp.h>
+  #include <arpa/inet.h>
+  #include <netdb.h>
+  #include <fcntl.h>
+  #include <dirent.h>
+
+  typedef int mn_socket_t;
+  #define MN_INVALID_SOCKET (-1)
+  #define MN_SOCKET_ERROR   (-1)
+  #define mn_closesocket    close
+  #define mn_errno          errno
+
+  #if defined(__linux__)
+    #include <sys/epoll.h>
+    #define MN_USE_EPOLL 1
+  #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+    #include <sys/event.h>
+    #define MN_USE_KQUEUE 1
+  #else
+    /* Fallback to select */
+    #include <sys/select.h>
+    #define MN_USE_SELECT 1
+  #endif
+#endif
+
+/* =======================================================================
+ * 1. TCP Networking
+ * ======================================================================= */
+
+static int s_net_initialized = 0;
+
+MN_IO_EXPORT int64_t __mn_net_init(void) {
+    if (s_net_initialized) return 0;
+#ifdef _WIN32
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        return -1;
+    }
+#endif
+    s_net_initialized = 1;
+    return 0;
+}
+
+MN_IO_EXPORT void __mn_net_cleanup(void) {
+#ifdef _WIN32
+    if (s_net_initialized) {
+        WSACleanup();
+        s_net_initialized = 0;
+    }
+#else
+    s_net_initialized = 0;
+#endif
+}
+
+MN_IO_EXPORT int64_t __mn_tcp_connect(const char *host, int64_t port) {
+    if (!s_net_initialized) {
+        if (__mn_net_init() < 0) return -1;
+    }
+
+    struct addrinfo hints, *res = NULL, *rp;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;      /* IPv4 or IPv6 */
+    hints.ai_socktype = SOCK_STREAM;  /* TCP */
+
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", (int)port);
+
+    int gai_err = getaddrinfo(host, port_str, &hints, &res);
+    if (gai_err != 0) {
+        return -1;
+    }
+
+    mn_socket_t sock = MN_INVALID_SOCKET;
+    for (rp = res; rp != NULL; rp = rp->ai_next) {
+        sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (sock == MN_INVALID_SOCKET) continue;
+
+        if (connect(sock, rp->ai_addr, (int)rp->ai_addrlen) == 0) {
+            break;  /* Success */
+        }
+        mn_closesocket(sock);
+        sock = MN_INVALID_SOCKET;
+    }
+
+    freeaddrinfo(res);
+    if (sock == MN_INVALID_SOCKET) return -1;
+    return (int64_t)sock;
+}
+
+MN_IO_EXPORT int64_t __mn_tcp_listen(const char *host, int64_t port, int64_t backlog) {
+    if (!s_net_initialized) {
+        if (__mn_net_init() < 0) return -1;
+    }
+
+    struct addrinfo hints, *res = NULL;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;        /* IPv4 */
+    hints.ai_socktype = SOCK_STREAM;  /* TCP */
+    hints.ai_flags = AI_PASSIVE;      /* For bind */
+
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", (int)port);
+
+    if (getaddrinfo(host, port_str, &hints, &res) != 0) {
+        return -1;
+    }
+
+    mn_socket_t sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (sock == MN_INVALID_SOCKET) {
+        freeaddrinfo(res);
+        return -1;
+    }
+
+    /* Allow port reuse */
+    int opt = 1;
+#ifdef _WIN32
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char *)&opt, sizeof(opt));
+#else
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
+
+    if (bind(sock, res->ai_addr, (int)res->ai_addrlen) != 0) {
+        freeaddrinfo(res);
+        mn_closesocket(sock);
+        return -1;
+    }
+    freeaddrinfo(res);
+
+    if (listen(sock, (int)backlog) != 0) {
+        mn_closesocket(sock);
+        return -1;
+    }
+
+    return (int64_t)sock;
+}
+
+MN_IO_EXPORT int64_t __mn_tcp_accept(int64_t listen_fd) {
+    mn_socket_t lfd = (mn_socket_t)listen_fd;
+    struct sockaddr_storage addr;
+    socklen_t addr_len = sizeof(addr);
+
+    mn_socket_t client = accept(lfd, (struct sockaddr *)&addr, &addr_len);
+    if (client == MN_INVALID_SOCKET) return -1;
+    return (int64_t)client;
+}
+
+MN_IO_EXPORT int64_t __mn_tcp_send(int64_t fd, const void *buf, int64_t len) {
+    mn_socket_t sock = (mn_socket_t)fd;
+#ifdef _WIN32
+    int result = send(sock, (const char *)buf, (int)len, 0);
+#else
+    ssize_t result = send(sock, buf, (size_t)len, 0);
+#endif
+    if (result < 0) return -1;
+    return (int64_t)result;
+}
+
+MN_IO_EXPORT int64_t __mn_tcp_recv(int64_t fd, void *buf, int64_t len) {
+    mn_socket_t sock = (mn_socket_t)fd;
+#ifdef _WIN32
+    int result = recv(sock, (char *)buf, (int)len, 0);
+#else
+    ssize_t result = recv(sock, buf, (size_t)len, 0);
+#endif
+    if (result < 0) return -1;
+    return (int64_t)result;
+}
+
+MN_IO_EXPORT void __mn_tcp_close(int64_t fd) {
+    mn_socket_t sock = (mn_socket_t)fd;
+    mn_closesocket(sock);
+}
+
+MN_IO_EXPORT int64_t __mn_tcp_set_timeout(int64_t fd, int64_t ms) {
+    mn_socket_t sock = (mn_socket_t)fd;
+#ifdef _WIN32
+    DWORD timeout = (DWORD)ms;
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout,
+                   sizeof(timeout)) != 0)
+        return -1;
+    if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout,
+                   sizeof(timeout)) != 0)
+        return -1;
+#else
+    struct timeval tv;
+    tv.tv_sec = ms / 1000;
+    tv.tv_usec = (ms % 1000) * 1000;
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) != 0)
+        return -1;
+    if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) != 0)
+        return -1;
+#endif
+    return 0;
+}
+
+/* =======================================================================
+ * 2. TLS (via OpenSSL)
+ *
+ * We dynamically load OpenSSL so the library can be built without
+ * OpenSSL headers. If OpenSSL is not available, TLS functions return
+ * errors gracefully.
+ * ======================================================================= */
+
+/*
+ * OpenSSL type/function declarations (minimal subset we need).
+ * We declare these ourselves to avoid requiring OpenSSL headers at
+ * compile time. The actual symbols are resolved via dlopen/LoadLibrary.
+ */
+
+/* Opaque OpenSSL types */
+typedef struct ssl_ctx_st MN_SSL_CTX;
+typedef struct ssl_st MN_SSL;
+typedef struct ssl_method_st MN_SSL_METHOD;
+
+/* Function pointer types for OpenSSL API */
+typedef MN_SSL_METHOD *(*fn_TLS_client_method)(void);
+typedef MN_SSL_CTX *(*fn_SSL_CTX_new)(const MN_SSL_METHOD *);
+typedef void (*fn_SSL_CTX_free)(MN_SSL_CTX *);
+typedef MN_SSL *(*fn_SSL_new)(MN_SSL_CTX *);
+typedef void (*fn_SSL_free)(MN_SSL *);
+typedef int (*fn_SSL_set_fd)(MN_SSL *, int);
+typedef int (*fn_SSL_connect)(MN_SSL *);
+typedef int (*fn_SSL_read)(MN_SSL *, void *, int);
+typedef int (*fn_SSL_write)(MN_SSL *, const void *, int);
+typedef int (*fn_SSL_shutdown)(MN_SSL *);
+typedef long (*fn_SSL_ctrl)(MN_SSL *, int, long, void *);
+typedef int (*fn_SSL_CTX_set_default_verify_paths)(MN_SSL_CTX *);
+
+/* OpenSSL constants */
+#define MN_SSL_CTRL_SET_TLSEXT_HOSTNAME 55
+
+/* Dynamic OpenSSL state */
+static struct {
+    int loaded;
+    int available;
+#ifdef _WIN32
+    HMODULE libssl;
+    HMODULE libcrypto;
+#else
+    void *libssl;
+    void *libcrypto;
+#endif
+    fn_TLS_client_method    TLS_client_method;
+    fn_SSL_CTX_new          SSL_CTX_new;
+    fn_SSL_CTX_free         SSL_CTX_free;
+    fn_SSL_new              SSL_new;
+    fn_SSL_free             SSL_free;
+    fn_SSL_set_fd           SSL_set_fd;
+    fn_SSL_connect          SSL_connect;
+    fn_SSL_read             SSL_read;
+    fn_SSL_write            SSL_write;
+    fn_SSL_shutdown         SSL_shutdown;
+    fn_SSL_ctrl             SSL_ctrl;
+    fn_SSL_CTX_set_default_verify_paths SSL_CTX_set_default_verify_paths;
+} s_ssl = {0};
+
+/* Internal: load OpenSSL dynamically */
+static int ssl_load_library(void) {
+    if (s_ssl.loaded) return s_ssl.available ? 0 : -1;
+    s_ssl.loaded = 1;
+    s_ssl.available = 0;
+
+#ifdef _WIN32
+    s_ssl.libssl = LoadLibraryA("libssl-3-x64.dll");
+    if (!s_ssl.libssl) s_ssl.libssl = LoadLibraryA("libssl-1_1-x64.dll");
+    if (!s_ssl.libssl) s_ssl.libssl = LoadLibraryA("ssleay32.dll");
+    s_ssl.libcrypto = LoadLibraryA("libcrypto-3-x64.dll");
+    if (!s_ssl.libcrypto) s_ssl.libcrypto = LoadLibraryA("libcrypto-1_1-x64.dll");
+    if (!s_ssl.libcrypto) s_ssl.libcrypto = LoadLibraryA("libeay32.dll");
+    if (!s_ssl.libssl || !s_ssl.libcrypto) return -1;
+
+    #define SSL_SYM(name) s_ssl.name = (fn_##name)GetProcAddress(s_ssl.libssl, #name)
+    #define CRYPTO_SYM(name) s_ssl.name = (fn_##name)GetProcAddress(s_ssl.libcrypto, #name)
+#else
+    #include <dlfcn.h>
+    /* Try common library names */
+    s_ssl.libssl = dlopen("libssl.so.3", RTLD_NOW);
+    if (!s_ssl.libssl) s_ssl.libssl = dlopen("libssl.so.1.1", RTLD_NOW);
+    if (!s_ssl.libssl) s_ssl.libssl = dlopen("libssl.so", RTLD_NOW);
+    #ifdef __APPLE__
+    if (!s_ssl.libssl) s_ssl.libssl = dlopen("libssl.dylib", RTLD_NOW);
+    #endif
+
+    s_ssl.libcrypto = dlopen("libcrypto.so.3", RTLD_NOW);
+    if (!s_ssl.libcrypto) s_ssl.libcrypto = dlopen("libcrypto.so.1.1", RTLD_NOW);
+    if (!s_ssl.libcrypto) s_ssl.libcrypto = dlopen("libcrypto.so", RTLD_NOW);
+    #ifdef __APPLE__
+    if (!s_ssl.libcrypto) s_ssl.libcrypto = dlopen("libcrypto.dylib", RTLD_NOW);
+    #endif
+
+    if (!s_ssl.libssl || !s_ssl.libcrypto) return -1;
+
+    #define SSL_SYM(name) s_ssl.name = (fn_##name)dlsym(s_ssl.libssl, #name)
+    #define CRYPTO_SYM(name) s_ssl.name = (fn_##name)dlsym(s_ssl.libcrypto, #name)
+#endif
+
+    SSL_SYM(TLS_client_method);
+    SSL_SYM(SSL_CTX_new);
+    SSL_SYM(SSL_CTX_free);
+    SSL_SYM(SSL_new);
+    SSL_SYM(SSL_free);
+    SSL_SYM(SSL_set_fd);
+    SSL_SYM(SSL_connect);
+    SSL_SYM(SSL_read);
+    SSL_SYM(SSL_write);
+    SSL_SYM(SSL_shutdown);
+    SSL_SYM(SSL_ctrl);
+    SSL_SYM(SSL_CTX_set_default_verify_paths);
+
+    #undef SSL_SYM
+    #undef CRYPTO_SYM
+
+    /* Verify all required symbols loaded */
+    if (!s_ssl.TLS_client_method || !s_ssl.SSL_CTX_new || !s_ssl.SSL_CTX_free ||
+        !s_ssl.SSL_new || !s_ssl.SSL_free || !s_ssl.SSL_set_fd ||
+        !s_ssl.SSL_connect || !s_ssl.SSL_read || !s_ssl.SSL_write ||
+        !s_ssl.SSL_shutdown || !s_ssl.SSL_ctrl) {
+        return -1;
+    }
+
+    s_ssl.available = 1;
+    return 0;
+}
+
+/* TLS context wrapper — holds SSL* and SSL_CTX* together */
+typedef struct {
+    MN_SSL_CTX *ctx;
+    MN_SSL     *ssl;
+} MnTlsCtx;
+
+MN_IO_EXPORT int64_t __mn_tls_init(void) {
+    return ssl_load_library();
+}
+
+MN_IO_EXPORT void *__mn_tls_connect(int64_t fd, const char *hostname) {
+    if (!s_ssl.available) {
+        if (ssl_load_library() < 0) return NULL;
+    }
+
+    MN_SSL_CTX *ctx = s_ssl.SSL_CTX_new(s_ssl.TLS_client_method());
+    if (!ctx) return NULL;
+
+    /* Load default CA certificates */
+    if (s_ssl.SSL_CTX_set_default_verify_paths) {
+        s_ssl.SSL_CTX_set_default_verify_paths(ctx);
+    }
+
+    MN_SSL *ssl = s_ssl.SSL_new(ctx);
+    if (!ssl) {
+        s_ssl.SSL_CTX_free(ctx);
+        return NULL;
+    }
+
+    s_ssl.SSL_set_fd(ssl, (int)fd);
+
+    /* Set SNI hostname */
+    if (hostname) {
+        s_ssl.SSL_ctrl(ssl, MN_SSL_CTRL_SET_TLSEXT_HOSTNAME, 0, (void *)hostname);
+    }
+
+    if (s_ssl.SSL_connect(ssl) != 1) {
+        s_ssl.SSL_free(ssl);
+        s_ssl.SSL_CTX_free(ctx);
+        return NULL;
+    }
+
+    MnTlsCtx *tctx = (MnTlsCtx *)calloc(1, sizeof(MnTlsCtx));
+    if (!tctx) {
+        s_ssl.SSL_shutdown(ssl);
+        s_ssl.SSL_free(ssl);
+        s_ssl.SSL_CTX_free(ctx);
+        return NULL;
+    }
+    tctx->ctx = ctx;
+    tctx->ssl = ssl;
+    return tctx;
+}
+
+MN_IO_EXPORT int64_t __mn_tls_read(void *tls_ctx, void *buf, int64_t len) {
+    if (!tls_ctx || !s_ssl.available) return -1;
+    MnTlsCtx *tctx = (MnTlsCtx *)tls_ctx;
+    int result = s_ssl.SSL_read(tctx->ssl, buf, (int)len);
+    if (result <= 0) return (result == 0) ? 0 : -1;
+    return (int64_t)result;
+}
+
+MN_IO_EXPORT int64_t __mn_tls_write(void *tls_ctx, const void *buf, int64_t len) {
+    if (!tls_ctx || !s_ssl.available) return -1;
+    MnTlsCtx *tctx = (MnTlsCtx *)tls_ctx;
+    int result = s_ssl.SSL_write(tctx->ssl, buf, (int)len);
+    if (result <= 0) return -1;
+    return (int64_t)result;
+}
+
+MN_IO_EXPORT void __mn_tls_close(void *tls_ctx) {
+    if (!tls_ctx || !s_ssl.available) return;
+    MnTlsCtx *tctx = (MnTlsCtx *)tls_ctx;
+    s_ssl.SSL_shutdown(tctx->ssl);
+    s_ssl.SSL_free(tctx->ssl);
+    s_ssl.SSL_CTX_free(tctx->ctx);
+    free(tctx);
+}
+
+/* =======================================================================
+ * 3. File I/O (extended)
+ * ======================================================================= */
+
+MN_IO_EXPORT int64_t __mn_file_open(const char *path, int64_t mode) {
+#ifdef _WIN32
+    int flags = _O_BINARY;
+    int perm = _S_IREAD | _S_IWRITE;
+    switch (mode) {
+        case MN_FILE_READ:   flags |= _O_RDONLY; break;
+        case MN_FILE_WRITE:  flags |= _O_WRONLY | _O_CREAT | _O_TRUNC; break;
+        case MN_FILE_APPEND: flags |= _O_WRONLY | _O_CREAT | _O_APPEND; break;
+        case MN_FILE_CREATE: flags |= _O_WRONLY | _O_CREAT | _O_EXCL; break;
+        default: return -1;
+    }
+    int fd = _open(path, flags, perm);
+    return (fd < 0) ? -1 : (int64_t)fd;
+#else
+    int flags = 0;
+    mode_t perm = 0644;
+    switch (mode) {
+        case MN_FILE_READ:   flags = O_RDONLY; break;
+        case MN_FILE_WRITE:  flags = O_WRONLY | O_CREAT | O_TRUNC; break;
+        case MN_FILE_APPEND: flags = O_WRONLY | O_CREAT | O_APPEND; break;
+        case MN_FILE_CREATE: flags = O_WRONLY | O_CREAT | O_EXCL; break;
+        default: return -1;
+    }
+    int fd = open(path, flags, perm);
+    return (fd < 0) ? -1 : (int64_t)fd;
+#endif
+}
+
+MN_IO_EXPORT int64_t __mn_file_read_fd(int64_t fd, void *buf, int64_t len) {
+#ifdef _WIN32
+    int result = _read((int)fd, buf, (unsigned int)len);
+#else
+    ssize_t result = read((int)fd, buf, (size_t)len);
+#endif
+    if (result < 0) return -1;
+    return (int64_t)result;
+}
+
+MN_IO_EXPORT int64_t __mn_file_write_fd(int64_t fd, const void *buf, int64_t len) {
+#ifdef _WIN32
+    int result = _write((int)fd, buf, (unsigned int)len);
+#else
+    ssize_t result = write((int)fd, buf, (size_t)len);
+#endif
+    if (result < 0) return -1;
+    return (int64_t)result;
+}
+
+MN_IO_EXPORT void __mn_file_close(int64_t fd) {
+#ifdef _WIN32
+    _close((int)fd);
+#else
+    close((int)fd);
+#endif
+}
+
+MN_IO_EXPORT int64_t __mn_file_stat(const char *path, MnFileStat *out) {
+    if (!out) return -1;
+#ifdef _WIN32
+    struct _stat64 st;
+    if (_stat64(path, &st) != 0) return -1;
+    out->size = (int64_t)st.st_size;
+    out->mtime = (int64_t)st.st_mtime;
+    out->is_dir = (st.st_mode & _S_IFDIR) ? 1 : 0;
+#else
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+    out->size = (int64_t)st.st_size;
+    out->mtime = (int64_t)st.st_mtime;
+    out->is_dir = S_ISDIR(st.st_mode) ? 1 : 0;
+#endif
+    return 0;
+}
+
+MN_IO_EXPORT int64_t __mn_dir_list(const char *path, MnDirEntry *out, int64_t max_entries) {
+    if (!out || max_entries <= 0) return -1;
+    int64_t count = 0;
+
+#ifdef _WIN32
+    char pattern[512];
+    snprintf(pattern, sizeof(pattern), "%s\\*", path);
+
+    WIN32_FIND_DATAA fd;
+    HANDLE hFind = FindFirstFileA(pattern, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return -1;
+
+    do {
+        /* Skip . and .. */
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0)
+            continue;
+        if (count >= max_entries) break;
+
+        strncpy(out[count].name, fd.cFileName, sizeof(out[count].name) - 1);
+        out[count].name[sizeof(out[count].name) - 1] = '\0';
+        out[count].is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
+        count++;
+    } while (FindNextFileA(hFind, &fd));
+
+    FindClose(hFind);
+#else
+    DIR *dir = opendir(path);
+    if (!dir) return -1;
+
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != NULL) {
+        /* Skip . and .. */
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
+            continue;
+        if (count >= max_entries) break;
+
+        strncpy(out[count].name, ent->d_name, sizeof(out[count].name) - 1);
+        out[count].name[sizeof(out[count].name) - 1] = '\0';
+        out[count].is_dir = (ent->d_type == DT_DIR) ? 1 : 0;
+        count++;
+    }
+
+    closedir(dir);
+#endif
+
+    return count;
+}
+
+/* =======================================================================
+ * 4. Event Loop (I/O multiplexing)
+ * ======================================================================= */
+
+/* Maximum fds tracked per event loop */
+#define MN_MAX_EVENTS 256
+
+/* Per-fd registration entry */
+typedef struct {
+    int64_t         fd;
+    int64_t         events;    /* MN_EVENT_READ | MN_EVENT_WRITE */
+    MnEventCallback cb;
+    void           *user_data;
+    int             active;    /* 1 = registered, 0 = slot free */
+} MnEventEntry;
+
+struct MnEventLoop {
+    MnEventEntry entries[MN_MAX_EVENTS];
+    int          entry_count;
+    int          running;
+
+#if defined(MN_USE_EPOLL)
+    int epoll_fd;
+#elif defined(MN_USE_KQUEUE)
+    int kq_fd;
+#endif
+    /* select fallback uses no extra state */
+};
+
+MN_IO_EXPORT MnEventLoop *__mn_event_loop_new(void) {
+    MnEventLoop *loop = (MnEventLoop *)calloc(1, sizeof(MnEventLoop));
+    if (!loop) return NULL;
+
+    loop->entry_count = 0;
+    loop->running = 0;
+
+#if defined(MN_USE_EPOLL)
+    loop->epoll_fd = epoll_create1(0);
+    if (loop->epoll_fd < 0) {
+        free(loop);
+        return NULL;
+    }
+#elif defined(MN_USE_KQUEUE)
+    loop->kq_fd = kqueue();
+    if (loop->kq_fd < 0) {
+        free(loop);
+        return NULL;
+    }
+#endif
+
+    return loop;
+}
+
+/* Find entry by fd */
+static MnEventEntry *loop_find(MnEventLoop *loop, int64_t fd) {
+    for (int i = 0; i < MN_MAX_EVENTS; i++) {
+        if (loop->entries[i].active && loop->entries[i].fd == fd) {
+            return &loop->entries[i];
+        }
+    }
+    return NULL;
+}
+
+/* Find free slot */
+static MnEventEntry *loop_alloc(MnEventLoop *loop) {
+    for (int i = 0; i < MN_MAX_EVENTS; i++) {
+        if (!loop->entries[i].active) {
+            return &loop->entries[i];
+        }
+    }
+    return NULL;
+}
+
+MN_IO_EXPORT int64_t __mn_event_loop_add_fd(MnEventLoop *loop, int64_t fd,
+                                              int64_t events, MnEventCallback cb,
+                                              void *user_data) {
+    if (!loop || !cb) return -1;
+    if (loop_find(loop, fd)) return -1;  /* Already registered */
+
+    MnEventEntry *entry = loop_alloc(loop);
+    if (!entry) return -1;  /* Full */
+
+    entry->fd = fd;
+    entry->events = events;
+    entry->cb = cb;
+    entry->user_data = user_data;
+    entry->active = 1;
+    loop->entry_count++;
+
+#if defined(MN_USE_EPOLL)
+    struct epoll_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.data.fd = (int)fd;
+    if (events & MN_EVENT_READ)  ev.events |= EPOLLIN;
+    if (events & MN_EVENT_WRITE) ev.events |= EPOLLOUT;
+    if (epoll_ctl(loop->epoll_fd, EPOLL_CTL_ADD, (int)fd, &ev) < 0) {
+        entry->active = 0;
+        loop->entry_count--;
+        return -1;
+    }
+#elif defined(MN_USE_KQUEUE)
+    struct kevent kev[2];
+    int nev = 0;
+    if (events & MN_EVENT_READ) {
+        EV_SET(&kev[nev], (uintptr_t)fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, NULL);
+        nev++;
+    }
+    if (events & MN_EVENT_WRITE) {
+        EV_SET(&kev[nev], (uintptr_t)fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, NULL);
+        nev++;
+    }
+    if (nev > 0 && kevent(loop->kq_fd, kev, nev, NULL, 0, NULL) < 0) {
+        entry->active = 0;
+        loop->entry_count--;
+        return -1;
+    }
+#endif
+    /* select: no pre-registration needed */
+
+    return 0;
+}
+
+MN_IO_EXPORT int64_t __mn_event_loop_remove_fd(MnEventLoop *loop, int64_t fd) {
+    if (!loop) return -1;
+    MnEventEntry *entry = loop_find(loop, fd);
+    if (!entry) return -1;
+
+#if defined(MN_USE_EPOLL)
+    epoll_ctl(loop->epoll_fd, EPOLL_CTL_DEL, (int)fd, NULL);
+#elif defined(MN_USE_KQUEUE)
+    struct kevent kev[2];
+    int nev = 0;
+    if (entry->events & MN_EVENT_READ) {
+        EV_SET(&kev[nev], (uintptr_t)fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+        nev++;
+    }
+    if (entry->events & MN_EVENT_WRITE) {
+        EV_SET(&kev[nev], (uintptr_t)fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
+        nev++;
+    }
+    if (nev > 0) kevent(loop->kq_fd, kev, nev, NULL, 0, NULL);
+#endif
+
+    entry->active = 0;
+    loop->entry_count--;
+    return 0;
+}
+
+MN_IO_EXPORT int64_t __mn_event_loop_run_once(MnEventLoop *loop, int64_t timeout_ms) {
+    if (!loop) return -1;
+    int dispatched = 0;
+
+#if defined(MN_USE_EPOLL)
+    struct epoll_event events[64];
+    int n = epoll_wait(loop->epoll_fd, events, 64, (int)timeout_ms);
+    if (n < 0) return -1;
+    for (int i = 0; i < n; i++) {
+        int64_t fd = (int64_t)events[i].data.fd;
+        MnEventEntry *entry = loop_find(loop, fd);
+        if (!entry) continue;
+
+        int64_t ev = 0;
+        if (events[i].events & (EPOLLIN | EPOLLHUP | EPOLLERR)) ev |= MN_EVENT_READ;
+        if (events[i].events & EPOLLOUT) ev |= MN_EVENT_WRITE;
+        if (ev && entry->cb) {
+            entry->cb(fd, ev, entry->user_data);
+            dispatched++;
+        }
+    }
+
+#elif defined(MN_USE_KQUEUE)
+    struct kevent events[64];
+    struct timespec ts, *tsp = NULL;
+    if (timeout_ms >= 0) {
+        ts.tv_sec = timeout_ms / 1000;
+        ts.tv_nsec = (timeout_ms % 1000) * 1000000;
+        tsp = &ts;
+    }
+    int n = kevent(loop->kq_fd, NULL, 0, events, 64, tsp);
+    if (n < 0) return -1;
+    for (int i = 0; i < n; i++) {
+        int64_t fd = (int64_t)events[i].ident;
+        MnEventEntry *entry = loop_find(loop, fd);
+        if (!entry) continue;
+
+        int64_t ev = 0;
+        if (events[i].filter == EVFILT_READ)  ev |= MN_EVENT_READ;
+        if (events[i].filter == EVFILT_WRITE) ev |= MN_EVENT_WRITE;
+        if (ev && entry->cb) {
+            entry->cb(fd, ev, entry->user_data);
+            dispatched++;
+        }
+    }
+
+#else /* select fallback */
+    fd_set rfds, wfds;
+    FD_ZERO(&rfds);
+    FD_ZERO(&wfds);
+    int maxfd = -1;
+
+    for (int i = 0; i < MN_MAX_EVENTS; i++) {
+        if (!loop->entries[i].active) continue;
+        int fd = (int)loop->entries[i].fd;
+        if (loop->entries[i].events & MN_EVENT_READ)  FD_SET(fd, &rfds);
+        if (loop->entries[i].events & MN_EVENT_WRITE) FD_SET(fd, &wfds);
+        if (fd > maxfd) maxfd = fd;
+    }
+
+    if (maxfd < 0) return 0;  /* No fds registered */
+
+    struct timeval tv, *tvp = NULL;
+    if (timeout_ms >= 0) {
+        tv.tv_sec = (long)(timeout_ms / 1000);
+        tv.tv_usec = (long)((timeout_ms % 1000) * 1000);
+        tvp = &tv;
+    }
+
+    int n = select(maxfd + 1, &rfds, &wfds, NULL, tvp);
+    if (n < 0) return -1;
+
+    for (int i = 0; i < MN_MAX_EVENTS && dispatched < n; i++) {
+        if (!loop->entries[i].active) continue;
+        int fd = (int)loop->entries[i].fd;
+        int64_t ev = 0;
+        if ((loop->entries[i].events & MN_EVENT_READ) && FD_ISSET(fd, &rfds))
+            ev |= MN_EVENT_READ;
+        if ((loop->entries[i].events & MN_EVENT_WRITE) && FD_ISSET(fd, &wfds))
+            ev |= MN_EVENT_WRITE;
+        if (ev && loop->entries[i].cb) {
+            loop->entries[i].cb(loop->entries[i].fd, ev, loop->entries[i].user_data);
+            dispatched++;
+        }
+    }
+#endif
+
+    return (int64_t)dispatched;
+}
+
+MN_IO_EXPORT void __mn_event_loop_run(MnEventLoop *loop) {
+    if (!loop) return;
+    loop->running = 1;
+    while (loop->running && loop->entry_count > 0) {
+        int64_t n = __mn_event_loop_run_once(loop, 100);  /* 100ms poll */
+        if (n < 0) break;
+    }
+}
+
+MN_IO_EXPORT void __mn_event_loop_stop(MnEventLoop *loop) {
+    if (loop) loop->running = 0;
+}
+
+MN_IO_EXPORT void __mn_event_loop_free(MnEventLoop *loop) {
+    if (!loop) return;
+#if defined(MN_USE_EPOLL)
+    if (loop->epoll_fd >= 0) close(loop->epoll_fd);
+#elif defined(MN_USE_KQUEUE)
+    if (loop->kq_fd >= 0) close(loop->kq_fd);
+#endif
+    free(loop);
+}

@@ -24,8 +24,8 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-2983_passing-brightgreen.svg?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-3020_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
@@ -115,20 +115,19 @@ What works today vs. what's planned.
 | Structs, enums, pattern matching | Yes | Yes | Stable |
 | `if`/`else`, `for..in`, `while` | Yes | Yes | Stable |
 | Type inference, generics | Yes | Yes | Stable |
-| `Result`/`Option` + `?` operator | Yes | Partial | Stable |
-| `print`/`println`, `str`/`int`/`float`/`len` | Yes | Partial | Stable |
-| Lists: literals, indexing, `push`/`pop`/`length` | Yes | Partial | Stable |
-| String methods: `length`/`find`/`substring`/... | Yes | Partial | Stable |
-| Dictionaries/Maps | Yes | Partial | Stable |
+| `Result`/`Option` | Yes | Yes | Stable |
+| `print`/`println`, `str`/`int`/`float`/`len` | Yes | Yes | Stable |
+| Lists: literals, indexing, `push`/`pop`/`length` | Yes | Yes | Stable |
+| String methods: `length`/`find`/`substring`/`contains`/`split`/`trim`/`replace`/... | Yes | Yes | Stable |
+| Dictionaries/Maps | Yes | Yes | Stable |
 | Traits (`trait`, `impl Trait for Type`) | Yes | Yes | Stable |
 | Module imports (`import`, `pub`, multi-file) | Yes | Yes | Stable |
-| Agents (spawn, channels, sync) | Yes | Codegen | Experimental |
-| Signals (reactive state) | Yes | No | Experimental |
-| Streams + `\|>` pipe operator | Partial | No | Experimental |
-| Pipes (multi-agent composition) | Partial | No | Experimental |
-| Tensors (shape validation, `@` matmul) | No | Partial | Experimental (`experimental/`) |
-| REPL / interactive mode | Yes | — | Experimental |
-| Standard library modules | Partial | No | In Progress |
+| Agents (spawn, channels, sync) | Yes | Yes | Stable |
+| Signals (reactive state, computed, batched) | Yes | Yes | Stable |
+| Streams + `\|>` pipe operator | Yes | Yes | Stable |
+| Pipes (multi-agent composition) | Yes | Yes | Stable |
+| Tensors (shape validation, `@` matmul) | No | No | Experimental (`experimental/`) |
+| Standard library modules | Partial | No | In Progress (Python-only, native in v0.9.0) |
 | GPU dispatch (`@gpu`/`@cpu`) | No | No | Planned (`experimental/`) |
 
 ---
@@ -304,7 +303,6 @@ mapanare check <file>         Type-check only
 mapanare compile <file>       Transpile to Python
 mapanare emit-llvm <file>     Emit LLVM IR
 mapanare test [path]          Discover and run @test functions
-mapanare repl                 Start interactive REPL
 mapanare fmt <file>           Format source code
 mapanare lint <file>          Lint for code quality issues
 mapanare doc <file>           Generate HTML docs from doc comments
@@ -371,14 +369,14 @@ See the full [stdlib reference](docs/stdlib.md).
 
 ---
 
-## GPU & Tensors (Experimental — v0.5.0+)
+## GPU & Tensors (Experimental)
 
-Tensor types with compile-time shape validation exist in the LLVM backend. GPU dispatch and model loading are deferred to v0.5.0+. These modules live in `experimental/` and are **not** part of the default build.
+Tensor types exist as experimental prototypes in `experimental/`. They are **not** integrated into the language compiler or runtime — there is no compile-time shape validation or `@` matmul operator in practice. These modules are research code for future versions.
 
-- `Tensor<T>[shape]` type with shape checking (LLVM backend)
-- `@` matmul operator with dimensional compatibility verification (LLVM backend)
+- `Tensor<T>[shape]` type: **not yet integrated** into compiler pipeline
+- `@` matmul operator: **not yet implemented** in either backend
 - GPU dispatch (`@gpu`/`@cpu`), model loading (ONNX, safetensors): **not yet implemented**
-- Runtime code: `experimental/tensor.py`, `experimental/gpu.py`, `experimental/model.py`
+- Prototype code: `experimental/tensor.py`, `experimental/gpu.py`, `experimental/model.py`
 
 ---
 
@@ -448,7 +446,7 @@ mapanare/
 │   └── native/            Native C runtime (thread pool, ring buffers)
 ├── stdlib/                Standard library (io, http, time, math, text, log, pkg)
 ├── bootstrap/             Frozen Python compiler for bootstrapping
-├── tests/                 Test suite (2,983 tests)
+├── tests/                 Test suite (3,020 tests)
 ├── benchmarks/            Performance benchmarks
 ├── docs/                  Documentation
 │   ├── rfcs/              Language change proposals
@@ -489,6 +487,7 @@ Requires Python 3.11+.
 | **v0.5.0** | The Ecosystem — interpolation, linter, Python interop, playground, registry, docs | ✅ Released |
 | **v0.6.0** | Compiler Infrastructure — MIR pipeline, bootstrap frozen | ✅ Released |
 | **v0.7.0** | Self-Standing — self-hosting, observability, test runner, deployment | ✅ Released |
+| **v0.8.0** | Native Parity — LLVM backend completeness, C runtime expansion | ✅ Released |
 | **v1.0.0** | Stable — language spec frozen, backwards compatibility guarantees | Planned |
 
 See the full [ROADMAP](docs/roadmap/ROADMAP.md) for details.
