@@ -1404,7 +1404,7 @@ fn emit_format_constants(st: EmitState) -> EmitState {
 // Public API: emit_mir_module
 // ---------------------------------------------------------------------------
 
-fn emit_mir_module(module: MIRModule, module_name: String) -> String {
+pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     let mut st: EmitState = new_emit_state(module_name)
 
     // Module header

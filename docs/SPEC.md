@@ -1087,9 +1087,18 @@ The following sections are implemented but not yet formally specified here:
 - **Memory Model:** Arena allocation with scope-based cleanup, tag-bit string freeing. See [RFC 0002](rfcs/0002-memory-management.md).
 - **Trait System:** `trait` definitions, `impl Trait for Type`, trait bounds on generics, monomorphization in LLVM backend. See [RFC 0004](rfcs/0004-traits.md).
 
-The following sections are planned but not yet specified or implemented:
+The following sections are now implemented (v0.9.0) but not yet formally specified:
 
-- **Standard Library:** Built-in functions, collections API, I/O primitives (partial implementation in `stdlib/`).
+- **Standard Library (v0.9.0):** Seven native stdlib modules written in `.mn`, compiled via LLVM:
+  - `encoding/json.mn` — Recursive descent JSON parser/serializer. Types: `JsonValue` (enum: Null, Bool, Int, Float, Str, Array, Object), `JsonError`. Functions: `decode(String) -> Result<JsonValue, JsonError>`, `encode(JsonValue) -> String`, `encode_pretty(JsonValue, Int) -> String`, `stream_parse(String) -> Stream<JsonEvent>`, `validate(JsonValue, JsonSchema) -> Result<Bool, List<JsonError>>`.
+  - `encoding/csv.mn` — RFC 4180 CSV parser/writer. Types: `CsvTable` (headers + rows), `CsvError`, `CsvConfig`. Functions: `parse(String) -> Result<CsvTable, CsvError>`, `parse_with(String, CsvConfig) -> Result<CsvTable, CsvError>`, `to_string(CsvTable, String, String) -> String`, `write(CsvTable, String) -> Result<Bool, CsvError>`.
+  - `net/http.mn` — HTTP/1.1 client on C runtime TCP/TLS. Types: `HttpMethod` (enum), `HttpRequest`, `HttpResponse`, `HttpError`, `HttpConfig`. Functions: `get(String) -> Result<HttpResponse, HttpError>`, `post(String, String) -> Result<HttpResponse, HttpError>`, `put`, `delete`, `patch`, `head`, `options`. URL parsing, chunked transfer, redirect following, request fingerprinting.
+  - `net/http/server.mn` — HTTP server with routing. Types: `Route`, `Router`, `MatchResult`, `ServerConfig`. Functions: `new_router() -> Router`, `router_add_route(Router, String, String, String) -> Router`, `match_route(String, String, String, String) -> MatchResult`, `build_response(Int, Map<String, String>, String) -> String`. Path parameters, middleware (logging, CORS).
+  - `net/websocket.mn` — RFC 6455 WebSocket client + server. Types: `WsMessage` (enum: Text, Binary, Ping, Pong, Close), `WsConnection`, `WsError`, `WsFrame`. Functions: `ws_connect(String) -> Result<WsConnection, WsError>`, `ws_send(WsConnection, WsMessage)`, `ws_recv(WsConnection) -> Result<WsMessage, WsError>`, `ws_close(WsConnection)`, `is_websocket_upgrade(Map<String, String>) -> Bool`. Frame encoding/decoding, masking, fragmentation.
+  - `crypto.mn` — Cryptographic primitives via C runtime. SHA-1, SHA-256, HMAC, Base64 encode/decode, random bytes, JWT helpers. FFI to OpenSSL via `dlopen`.
+  - `text/regex.mn` — Regular expressions via PCRE2 FFI. `regex_match`, `regex_search`, `regex_replace`, `regex_split`. Character classes, quantifiers, capture groups.
+
+The following sections are planned but not yet specified or implemented:
 - **Error Model:** Error types, panic vs recoverable errors, stack traces.
 - **Concurrency Guarantees:** Ordering, fairness, deadlock prevention.
 - **Tensor Operations:** Full operator set, broadcasting rules, autodiff (LLVM backend has partial tensor codegen; Python backend does not yet support tensors).

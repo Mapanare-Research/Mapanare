@@ -380,7 +380,7 @@ class SemanticChecker:
                 self._infer_expr(a)
             return UNKNOWN_TYPE
         if isinstance(expr, FieldAccessExpr):
-            self._infer_expr(expr.object)
+            obj_type = self._infer_expr(expr.object)
             # Check agent inputs/outputs
             sym = None
             if isinstance(expr.object, Identifier):
@@ -393,6 +393,13 @@ class SemanticChecker:
                 for out in agent.outputs:
                     if out.name == expr.field_name:
                         return self._resolve_type_expr(out.type_annotation)
+            # Resolve struct field types
+            if obj_type.kind == TypeKind.STRUCT and obj_type.name:
+                struct_sym = self.current_scope.lookup(obj_type.name)
+                if struct_sym and struct_sym.node and isinstance(struct_sym.node, StructDef):
+                    for f in struct_sym.node.fields:
+                        if f.name == expr.field_name:
+                            return self._resolve_type_expr(f.type_annotation)
             return UNKNOWN_TYPE
         if isinstance(expr, IndexExpr):
             obj_type = self._infer_expr(expr.object)
@@ -615,6 +622,31 @@ class SemanticChecker:
     def _check_call(self, expr: CallExpr) -> TypeInfo:
         # Infer argument types
         arg_types = [self._infer_expr(a) for a in expr.args]
+
+        # Handle generic call intrinsics (turbofish syntax)
+        if isinstance(expr.callee, Identifier) and expr.type_args:
+            name = expr.callee.name
+            if name == "encode_struct":
+                if len(expr.type_args) != 1:
+                    self._error("encode_struct expects exactly one type argument", expr)
+                if len(expr.args) != 1:
+                    self._error("encode_struct expects exactly one argument", expr)
+                return STRING_TYPE
+            if name == "decode_to":
+                if len(expr.type_args) != 1:
+                    self._error("decode_to expects exactly one type argument", expr)
+                if len(expr.args) != 1:
+                    self._error("decode_to expects exactly one argument (JsonValue)", expr)
+                type_arg = expr.type_args[0]
+                type_name = type_arg.name if hasattr(type_arg, "name") else ""
+                return TypeInfo(
+                    kind=TypeKind.RESULT,
+                    name="Result",
+                    args=[
+                        TypeInfo(kind=TypeKind.STRUCT, name=type_name),
+                        TypeInfo(kind=TypeKind.STRUCT, name="JsonError"),
+                    ],
+                )
 
         if isinstance(expr.callee, Identifier):
             sym = self.current_scope.lookup(expr.callee.name)

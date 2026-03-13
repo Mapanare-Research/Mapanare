@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-03-13
+
+### Added
+
+- **Native stdlib in Mapanare**: Seven stdlib modules written in `.mn`, compiled to LLVM IR — no Python at runtime
+- **`encoding/json.mn`** (982 lines): Recursive descent JSON parser with escape handling, number parsing, arrays, objects; encoder + pretty-printer; SAX-style streaming parser (`stream_parse` → `Stream<JsonEvent>`); schema validation
+- **`encoding/csv.mn`** (330 lines): RFC 4180 compliant CSV parser/writer; configurable delimiter and quote character; header row support; `to_string` serialization; `collect_rows` convenience function
+- **`net/http.mn`** (1,103 lines): Full HTTP/1.1 client on C runtime TCP/TLS; URL parser (scheme, host, port, path, query); request builder; response parser (Content-Length + chunked transfer); redirect following; convenience wrappers (`get`/`post`/`put`/`delete`/`patch`/`head`/`options`); request fingerprinting
+- **`net/http/server.mn`** (~600 lines): HTTP server with route matching and path parameters; middleware pattern (logging + CORS); request parsing; response building; static file serving; server listen loop
+- **`net/websocket.mn`** (~1,120 lines): RFC 6455 WebSocket client + server; HTTP upgrade handshake; SHA-1 + Base64 accept key; frame encoding/decoding (7/16/64-bit payload length); client masking; ping/pong auto-respond; close handshake; message fragmentation
+- **`crypto.mn`** (283 lines): Cryptographic primitives via C runtime — SHA-1, SHA-256, HMAC, Base64 encode/decode, random bytes, JWT helpers
+- **`text/regex.mn`** (271 lines): Regular expressions via PCRE2 FFI (`dlopen`); match, search, replace, split operations
+- **Cross-module LLVM compilation** (`multi_module.py`): Dependency graph with topological sort, name mangling (`{module_path}__` prefix), MIR symbol renaming, import remapping, MIR merging into single LLVM IR module; `--stdlib-path` CLI flag; incremental compilation with source hashing
+- **Integration tests**: HTTP client↔server, JSON decode→encode round-trip, CSV parse→write pipeline, WebSocket frame encode/decode
+- **Stdlib compilation benchmarks** (`bench_stdlib.py`): 5,159 lines of `.mn` → LLVM IR in ~880ms (5,866 lines/s)
+
+### Changed
+
+- Dato package updated to use `encoding/csv.mn` and `encoding/json.mn` via cross-module imports
+- README feature status table updated: stdlib modules now Yes/Yes for LLVM backend
+- SPEC.md updated with stdlib module documentation
+- ROADMAP.md updated with v0.9.0 completion
+- 3,400+ tests passing (up from 3,020 in v0.8.0)
+
+### Fixed
+
+- `.value` field access incorrectly treated as `SignalGet` for non-signal types
+- Match arm payload types (`Ok(val)`) inferred as UNKNOWN — added `_infer_payload_type()` in lowerer
+- For-loop iteration variable types inferred as UNKNOWN — added `_infer_iterable_elem_type()`
+- `FieldGet` fallback extracting wrong struct field index when type is unknown
+- Auto-declared function parameter types using LLVM value types instead of MIR semantic types
+- Enum type resolution defaulting user-defined enums to STRUCT
+- Enum tag extraction crash on pointer-typed values
+- Switch on enum variants calling `int("GET")` instead of resolving variant tags
+- Multi-line `new Struct { ... }` struct literals not parsing correctly (tests updated to single-line)
+- Nullary enum variant `Null` treated as function type instead of value (use `Null()`)
+
 ## [0.8.0] - 2026-03-13
 
 ### Added
@@ -170,7 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Community governance**: `CODE_OF_CONDUCT.md`, `SECURITY.md`, `GOVERNANCE.md`, issue/PR templates
 - **110+ end-to-end tests**: correctness, cross-backend consistency, tutorial verification
 - **Memory stress tests** (`tests/native/test_memory_stress.py`)
-- **Agent-pipeline benchmark** (`test_vs/05_agent_pipeline`) with .mn/.py/.go/.rs versions
+- **Agent-pipeline benchmark** (`benchmarks/cross_language/05_agent_pipeline`) with .mn/.py/.go/.rs versions
 - **RFCs**: memory management (0002), module resolution (0003), traits (0004)
 - `CLAUDE.md` with repo guidance for AI-assisted development
 - 1968 total tests (up from ~1400 in v0.2.0)

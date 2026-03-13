@@ -203,4 +203,130 @@ MN_IO_EXPORT void __mn_event_loop_stop(MnEventLoop *loop);
 /** Destroy the event loop and free resources. */
 MN_IO_EXPORT void __mn_event_loop_free(MnEventLoop *loop);
 
+/* -----------------------------------------------------------------------
+ * 5. MnString-based TCP/TLS wrappers
+ *
+ * These wrappers accept and return MnString (the Mapanare { i8*, i64 }
+ * struct) so that .mn stdlib modules can call TCP/TLS functions directly
+ * without manual pointer extraction. Used by net/http.mn, etc.
+ * ----------------------------------------------------------------------- */
+
+#include "mapanare_core.h"
+
+/** Connect to host:port via TCP. host is an MnString.
+ *  Returns socket fd or -1 on error. */
+MN_IO_EXPORT int64_t __mn_tcp_connect_str(MnString host, int64_t port);
+
+/** Send data over a connected socket. data is an MnString.
+ *  Returns number of bytes sent, or -1 on error. */
+MN_IO_EXPORT int64_t __mn_tcp_send_str(int64_t fd, MnString data);
+
+/** Receive data from a connected socket into an MnString.
+ *  max_len is the maximum bytes to read.
+ *  Returns an MnString with the received data (empty on error/close). */
+MN_IO_EXPORT MnString __mn_tcp_recv_str(int64_t fd, int64_t max_len);
+
+/** Close a socket. Returns 0 always (void wrapper). */
+MN_IO_EXPORT int64_t __mn_tcp_close_fd(int64_t fd);
+
+/** Wrap a TCP socket with TLS. hostname is an MnString.
+ *  Returns opaque TLS context as int64_t, or 0 on failure. */
+MN_IO_EXPORT int64_t __mn_tls_connect_str(int64_t fd, MnString hostname);
+
+/** Write data to a TLS connection. data is an MnString.
+ *  tls_ctx is the opaque context from __mn_tls_connect_str.
+ *  Returns bytes written, or -1 on error. */
+MN_IO_EXPORT int64_t __mn_tls_write_str(int64_t tls_ctx, MnString data);
+
+/** Read decrypted data from a TLS connection into an MnString.
+ *  max_len is the maximum bytes to read.
+ *  Returns an MnString with the received data (empty on error/close). */
+MN_IO_EXPORT MnString __mn_tls_read_str(int64_t tls_ctx, int64_t max_len);
+
+/** Close a TLS connection and the underlying TCP socket.
+ *  tls_ctx is the opaque context from __mn_tls_connect_str.
+ *  Returns 0 always (void wrapper). */
+MN_IO_EXPORT int64_t __mn_tls_close_fd(int64_t tls_ctx, int64_t fd);
+
+/** Bind and listen on host:port. host is an MnString.
+ *  Returns listening socket fd or -1 on error. */
+MN_IO_EXPORT int64_t __mn_tcp_listen_str(MnString host, int64_t port, int64_t backlog);
+
+/* -----------------------------------------------------------------------
+ * 6. Crypto primitives (needed by WebSocket handshake, Phase 5/6)
+ *
+ * SHA-1 uses the already-loaded OpenSSL libcrypto (via dlopen).
+ * Base64 is a pure C implementation.
+ * Random bytes use /dev/urandom (POSIX) or CryptGenRandom (Windows).
+ * ----------------------------------------------------------------------- */
+
+/** SHA-1 hash of input data. Returns 20-byte raw hash as MnString.
+ *  Uses OpenSSL EVP API via the already-loaded libcrypto. */
+MN_IO_EXPORT MnString __mn_sha1_str(MnString data);
+
+/** SHA-256 hash of input data. Returns 32-byte raw hash as MnString. */
+MN_IO_EXPORT MnString __mn_sha256_str(MnString data);
+
+/** SHA-512 hash of input data. Returns 64-byte raw hash as MnString. */
+MN_IO_EXPORT MnString __mn_sha512_str(MnString data);
+
+/** HMAC-SHA256. Returns 32-byte raw HMAC as MnString. */
+MN_IO_EXPORT MnString __mn_hmac_sha256_str(MnString key, MnString data);
+
+/** Hex-encode a binary string. Returns hex MnString (2x input length). */
+MN_IO_EXPORT MnString __mn_hex_encode_str(MnString data);
+
+/** Hex-decode a hex string. Returns binary MnString (empty on invalid input). */
+MN_IO_EXPORT MnString __mn_hex_decode_str(MnString data);
+
+/** Base64-encode a binary string. Returns base64-encoded MnString. */
+MN_IO_EXPORT MnString __mn_base64_encode_str(MnString data);
+
+/** Base64-decode a base64 string. Returns decoded MnString (empty on error). */
+MN_IO_EXPORT MnString __mn_base64_decode_str(MnString data);
+
+/** Generate n cryptographically random bytes as an MnString. */
+MN_IO_EXPORT MnString __mn_random_bytes_str(int64_t n);
+
+/* -----------------------------------------------------------------------
+ * 7. Regular expressions (PCRE2 via dlopen)
+ *
+ * Handle-based API: compile a pattern, then execute matches, extract
+ * groups, replace, or split. PCRE2 is loaded dynamically (like OpenSSL
+ * for crypto). Returns 0/empty on failure if PCRE2 is not available.
+ * ----------------------------------------------------------------------- */
+
+/** Compile a regex pattern. Returns opaque handle (>0) or 0 on error. */
+MN_IO_EXPORT int64_t __mn_regex_compile_str(MnString pattern);
+
+/** Execute regex against subject starting at byte offset.
+ *  Returns 1 if match found, 0 if no match, -1 on error.
+ *  Match data is stored in the handle for group extraction. */
+MN_IO_EXPORT int64_t __mn_regex_exec_str(int64_t handle, MnString subject, int64_t start_offset);
+
+/** Get matched text for capture group (0 = full match).
+ *  subject must be the same MnString passed to __mn_regex_exec_str.
+ *  Returns empty string if group did not participate or index out of range. */
+MN_IO_EXPORT MnString __mn_regex_group_str(int64_t handle, MnString subject, int64_t group_idx);
+
+/** Get start byte offset of capture group in last match. Returns -1 if unset. */
+MN_IO_EXPORT int64_t __mn_regex_group_start(int64_t handle, int64_t group_idx);
+
+/** Get end byte offset (exclusive) of capture group. Returns -1 if unset. */
+MN_IO_EXPORT int64_t __mn_regex_group_end(int64_t handle, int64_t group_idx);
+
+/** Get number of capture groups (excluding group 0 = full match). */
+MN_IO_EXPORT int64_t __mn_regex_group_count(int64_t handle);
+
+/** Replace matches in subject. If replace_all != 0, replaces all occurrences.
+ *  Returns new string with replacements applied. */
+MN_IO_EXPORT MnString __mn_regex_replace_str(int64_t handle, MnString subject,
+                                              MnString replacement, int64_t replace_all);
+
+/** Free a compiled regex handle and its match data. Returns 0. */
+MN_IO_EXPORT int64_t __mn_regex_free(int64_t handle);
+
+/** Get error message from last failed compile. Returns empty if no error. */
+MN_IO_EXPORT MnString __mn_regex_error_str(int64_t handle);
+
 #endif /* MAPANARE_IO_H */

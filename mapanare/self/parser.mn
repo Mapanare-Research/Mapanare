@@ -401,7 +401,7 @@ fn has_explicit_main(defs: List<Definition>) -> Bool {
     return false
 }
 
-fn parse(source: String, filename: String) -> Program {
+pub fn parse(source: String, filename: String) -> Program {
     let tokens: List<Token> = tokenize(source, filename)
     let mut pos: Int = 0
     let mut defs: List<Definition> = []
@@ -611,7 +611,7 @@ fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, 
     if peek_type(tokens, p) == "ARROW" {
         p = p + 1
         let tr: TypeResult = parse_type_expr(tokens, p, filename)
-        ret_type = tr.type_expr
+        ret_type = Some(tr.type_expr)
         p = tr.pos
     }
 
@@ -628,7 +628,7 @@ fn parse_param(tokens: List<Token>, pos: Int, filename: String) -> ParamResult {
     let mut p: Int = pos + 1
     p = expect(tokens, p, "COLON")
     let tr: TypeResult = parse_type_expr(tokens, p, filename)
-    let param: Param = new_param(name, tr.type_expr)
+    let param: Param = new_param(name, Some(tr.type_expr))
     return new_param_result(param, tr.pos)
 }
 
@@ -1041,7 +1041,7 @@ fn parse_let_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult
     if peek_type(tokens, p) == "COLON" {
         p = p + 1
         let tr: TypeResult = parse_type_expr(tokens, p, filename)
-        type_ann = tr.type_expr
+        type_ann = Some(tr.type_expr)
         p = tr.pos
     }
 

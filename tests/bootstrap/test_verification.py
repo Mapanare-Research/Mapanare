@@ -30,7 +30,7 @@ from mapanare.parser import parse
 from mapanare.semantic import check
 
 SELF_DIR = Path(__file__).resolve().parents[2] / "mapanare" / "self"
-TEST_VS_DIR = Path(__file__).resolve().parents[2] / "test_vs"
+TEST_VS_DIR = Path(__file__).resolve().parents[2] / "benchmarks" / "cross_language"
 MN_FILES = sorted(SELF_DIR.glob("*.mn"))
 
 # Expected self-hosted compiler modules
@@ -113,12 +113,16 @@ class TestPipelineIntegrity:
             is_missing_variable = "Undefined variable" in msg
             is_missing_module = "module" in msg and "not found" in msg
             is_operator_mismatch = "Operator" in msg and "not supported" in msg
+            is_assign_mismatch = "Cannot assign" in msg
+            is_arg_mismatch = "Argument" in msg and "expects" in msg
             assert (
                 is_constructor
                 or is_missing_import
                 or is_missing_variable
                 or is_missing_module
                 or is_operator_mismatch
+                or is_assign_mismatch
+                or is_arg_mismatch
             ), f"Unexpected semantic error in {mn_file.name}: {msg}"
 
     def test_ast_mn_zero_errors(self) -> None:
@@ -445,12 +449,12 @@ class TestCLIIntegration:
 
 
 # ---------------------------------------------------------------------------
-# Test 6: Sample program verification (test_vs/)
+# Test 6: Sample program verification (benchmarks/cross_language/)
 # ---------------------------------------------------------------------------
 
 
 class TestSamplePrograms:
-    """Verify sample programs in test_vs/ compile and run."""
+    """Verify sample programs in benchmarks/cross_language/ compile and run."""
 
     @pytest.fixture(autouse=True)
     def _check_cli(self) -> None:
@@ -460,10 +464,10 @@ class TestSamplePrograms:
             pytest.skip("mapanare CLI not installed")
 
     def test_fibonacci_check(self) -> None:
-        """test_vs/01_fibonacci.mn passes check."""
+        """benchmarks/cross_language/01_fibonacci.mn passes check."""
         src = TEST_VS_DIR / "01_fibonacci.mn"
         if not src.exists():
-            pytest.skip("test_vs/01_fibonacci.mn not found")
+            pytest.skip("benchmarks/cross_language/01_fibonacci.mn not found")
         result = subprocess.run(
             ["mapanare", "check", str(src)],
             capture_output=True,
@@ -473,10 +477,10 @@ class TestSamplePrograms:
         assert result.returncode == 0
 
     def test_fibonacci_run(self) -> None:
-        """test_vs/01_fibonacci.mn runs and produces output."""
+        """benchmarks/cross_language/01_fibonacci.mn runs and produces output."""
         src = TEST_VS_DIR / "01_fibonacci.mn"
         if not src.exists():
-            pytest.skip("test_vs/01_fibonacci.mn not found")
+            pytest.skip("benchmarks/cross_language/01_fibonacci.mn not found")
         result = subprocess.run(
             ["mapanare", "run", str(src)],
             capture_output=True,

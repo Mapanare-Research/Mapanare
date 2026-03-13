@@ -277,14 +277,14 @@ fn add_error_msg(st: SemState, msg: String) -> SemState {
 
 fn push_scope(st: SemState) -> SemState {
     let child: Scope = new_scope(Some(st.scope))
-    let new_st: SemState = st.errors
+    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename }
     return new_st
 }
 
 fn pop_scope(st: SemState) -> SemState {
     match st.scope.parent {
         Some(parent) => {
-            let new_st: SemState = st.errors
+            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename }
             return new_st
         },
         _ => { return st }
@@ -293,7 +293,7 @@ fn pop_scope(st: SemState) -> SemState {
 
 fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState {
     let new_scope_val: Scope = scope_define(st.scope, name, sym)
-    let new_st: SemState = st.errors
+    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename }
     return new_st
 }
 
@@ -1576,7 +1576,7 @@ fn register_builtins(st: SemState) -> SemState {
 // Public API
 // ---------------------------------------------------------------------------
 
-fn check(program: Program, filename: String) -> List<SemanticError> {
+pub fn check(program: Program, filename: String) -> List<SemanticError> {
     // Create initial state with builtins
     let mut st: SemState = new_sem_state(filename)
     st = register_builtins(st)

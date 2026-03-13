@@ -24,8 +24,8 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-3020_passing-brightgreen.svg?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-0.9.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-3400+_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
@@ -127,7 +127,8 @@ What works today vs. what's planned.
 | Streams + `\|>` pipe operator | Yes | Yes | Stable |
 | Pipes (multi-agent composition) | Yes | Yes | Stable |
 | Tensors (shape validation, `@` matmul) | No | No | Experimental (`experimental/`) |
-| Standard library modules | Partial | No | In Progress (Python-only, native in v0.9.0) |
+| Standard library modules | Partial | Yes | 7 native `.mn` modules: JSON, CSV, HTTP, server, WebSocket, crypto, regex |
+| Cross-module LLVM compilation | Yes | Yes | Stable — `import` resolves across `.mn` files, links into single binary |
 | GPU dispatch (`@gpu`/`@cpu`) | No | No | Planned (`experimental/`) |
 
 ---
@@ -243,7 +244,7 @@ let result = data
 
 ## Benchmarks
 
-Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each benchmark runs 3 times; median wall time reported. Run `python -m test_vs.run_benchmarks` to reproduce.
+Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each benchmark runs 3 times; median wall time reported. Run `python -m benchmarks.cross_language.run_benchmarks` to reproduce.
 
 ### Performance (wall time, lower is better)
 
@@ -288,7 +289,7 @@ Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each 
 
 ```bash
 make benchmark                       # run all benchmarks
-python -m test_vs.run_benchmarks     # cross-language comparison suite
+python -m benchmarks.cross_language.run_benchmarks     # cross-language comparison suite
 ```
 
 ---

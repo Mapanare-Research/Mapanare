@@ -4,117 +4,128 @@
       "name": "single_agent",
       "messages": 10000,
       "agents": 1,
-      "elapsed_s": 0.17907700000796467,
-      "messages_per_sec": 55841.90040907117,
-      "avg_latency_us": 17.907700000796467
+      "elapsed_s": 0.22681229998124763,
+      "messages_per_sec": 44089.31967458017,
+      "avg_latency_us": 22.681229998124763,
+      "cv": 0.0
     },
     {
       "name": "agent_chain_3",
       "messages": 10000,
       "agents": 3,
-      "elapsed_s": 0.31982249999418855,
-      "messages_per_sec": 93802.03081567159,
-      "avg_latency_us": 31.98224999941886
+      "elapsed_s": 0.33162960002664477,
+      "messages_per_sec": 90462.37126477748,
+      "avg_latency_us": 33.16296000266448,
+      "cv": 0.0
     },
     {
       "name": "agent_chain_5",
       "messages": 10000,
       "agents": 5,
-      "elapsed_s": 0.5106302999774925,
-      "messages_per_sec": 97918.20031479505,
-      "avg_latency_us": 51.063029997749254
+      "elapsed_s": 0.4389103999710642,
+      "messages_per_sec": 113918.46719352361,
+      "avg_latency_us": 43.89103999710642,
+      "cv": 0.0
     },
     {
       "name": "fan_out_4",
       "messages": 4000,
       "agents": 4,
-      "elapsed_s": 0.034160699986387044,
-      "messages_per_sec": 117093.61932261313,
-      "avg_latency_us": 8.540174996596761
+      "elapsed_s": 0.03661509999074042,
+      "messages_per_sec": 109244.5466764138,
+      "avg_latency_us": 9.153774997685105,
+      "cv": 0.0
     }
   ],
   "streams": [
     {
       "name": "map_pipeline",
       "items": 1000000,
-      "elapsed_s": 0.20013010001275688,
-      "items_per_sec": 4996749.614057341,
-      "avg_latency_us": 0.20013010001275688
+      "elapsed_s": 0.2182052999851294,
+      "items_per_sec": 4582840.105479334,
+      "avg_latency_us": 0.2182052999851294,
+      "cv": 0.0
     },
     {
       "name": "filter_pipeline",
       "items": 1000000,
-      "elapsed_s": 0.20907400001306087,
-      "items_per_sec": 4782995.49411945,
-      "avg_latency_us": 0.20907400001306087
+      "elapsed_s": 0.23197200003778562,
+      "items_per_sec": 4310865.1037069615,
+      "avg_latency_us": 0.23197200003778562,
+      "cv": 0.0
     },
     {
       "name": "map_filter_pipeline",
       "items": 1000000,
-      "elapsed_s": 0.25075459998333827,
-      "items_per_sec": 3987962.733550836,
-      "avg_latency_us": 0.25075459998333827
+      "elapsed_s": 0.251268699998036,
+      "items_per_sec": 3979803.294273486,
+      "avg_latency_us": 0.251268699998036,
+      "cv": 0.0
     },
     {
       "name": "chained_maps_5",
       "items": 1000000,
-      "elapsed_s": 0.4366063000052236,
-      "items_per_sec": 2290392.9695655694,
-      "avg_latency_us": 0.4366063000052236
+      "elapsed_s": 0.43717829999513924,
+      "items_per_sec": 2287396.240872702,
+      "avg_latency_us": 0.43717829999513924,
+      "cv": 0.0
     },
     {
       "name": "chained_maps_10",
       "items": 1000000,
-      "elapsed_s": 0.7651808999944478,
-      "items_per_sec": 1306880.503691684,
-      "avg_latency_us": 0.7651808999944478
+      "elapsed_s": 0.8625059999758378,
+      "items_per_sec": 1159412.2244112086,
+      "avg_latency_us": 0.8625059999758378,
+      "cv": 0.0
     },
     {
       "name": "take_1000_from_1000000",
       "items": 1000000,
-      "elapsed_s": 0.00023140001576393843,
-      "items_per_sec": 4321520.881053634,
-      "avg_latency_us": 0.23140001576393843
+      "elapsed_s": 0.0005271999980323017,
+      "items_per_sec": 1896813.3606455927,
+      "avg_latency_us": 0.5271999980323017,
+      "cv": 0.0
     },
     {
       "name": "fold_sum",
       "items": 1000000,
-      "elapsed_s": 0.11018069996498525,
-      "items_per_sec": 9075999.701561106,
-      "avg_latency_us": 0.11018069996498525
+      "elapsed_s": 0.11176070000510663,
+      "items_per_sec": 8947689.124659272,
+      "avg_latency_us": 0.11176070000510663,
+      "cv": 0.0
     }
   ],
   "comparison": [
     {
       "workload": "message_passing",
-      "mapanare_elapsed_s": 0.017918900004588068,
-      "asyncio_elapsed_s": 0.013376299990341067,
+      "mapanare_elapsed_s": 0.01581900002202019,
+      "asyncio_elapsed_s": 0.013926399988122284,
       "rust_elapsed_s": null,
-      "mapanare_vs_asyncio": 0.7464911343283414,
+      "mapanare_vs_asyncio": 0.8803590599112845,
       "mapanare_vs_rust": null
     },
     {
       "workload": "stream_map",
-      "mapanare_elapsed_s": 0.22812410001643002,
-      "asyncio_elapsed_s": 0.032607999979518354,
+      "mapanare_elapsed_s": 0.20968379999976605,
+      "asyncio_elapsed_s": 0.049957400013227016,
       "rust_elapsed_s": null,
-      "mapanare_vs_asyncio": 0.14293974190876743,
+      "mapanare_vs_asyncio": 0.23825111912929256,
       "mapanare_vs_rust": null
     },
     {
       "workload": "stream_filter",
-      "mapanare_elapsed_s": 0.21249850001186132,
-      "asyncio_elapsed_s": 0.02685429999837652,
+      "mapanare_elapsed_s": 0.22530069999629632,
+      "asyncio_elapsed_s": 0.039447749993996695,
       "rust_elapsed_s": null,
-      "mapanare_vs_asyncio": 0.12637406850814267,
+      "mapanare_vs_asyncio": 0.1750893361389697,
       "mapanare_vs_rust": null
     },
     {
       "workload": "stream_map_filter",
-      "mapanare_elapsed_s": 0.29053539998130873,
-      "asyncio_elapsed_s": 0.05621489998884499,
+      "mapanare_elapsed_s": 0.31632829998852685,
+      "asyncio_elapsed_s": 0.07768360001500696,
       "rust_elapsed_s": null,
-      "mapanare_vs_asyncio": 0.19348726520920176,
+      "mapanare_vs_asyncio": 0.24557903930133512,
       "mapanare_vs_rust": null
     }
   ]

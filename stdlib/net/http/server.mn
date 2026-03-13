@@ -1,0 +1,915 @@
+// net/http/server.mn — HTTP Server with Routing for Mapanare.
+//
+// One import. HTTP/1.1 server with route dispatch, path parameters,
+// middleware chain, JSON responses, and agent-per-request model.
+// Built on C runtime TCP primitives from v0.8.0.
+// No Python dependencies — compiles natively via LLVM.
+//
+// Usage:
+//   let router: Router = new_router()
+//   router_add_route(router, "GET", "/hello", handle_hello)
+//   let cfg: ServerConfig = new_server_config("0.0.0.0", 8080)
+//   server_listen(cfg, router)
+
+// ---------------------------------------------------------------------------
+// Extern C runtime functions (from mapanare_io)
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_net_init() -> Int
+extern "C" fn __mn_tcp_listen_str(host: String, port: Int, backlog: Int) -> Int
+extern "C" fn __mn_tcp_accept(listen_fd: Int) -> Int
+extern "C" fn __mn_tcp_send_str(fd: Int, data: String) -> Int
+extern "C" fn __mn_tcp_recv_str(fd: Int, max_len: Int) -> String
+extern "C" fn __mn_tcp_close_fd(fd: Int) -> Int
+extern "C" fn __mn_tcp_set_timeout(fd: Int, ms: Int) -> Int
+extern "C" fn __mn_file_read(path: String) -> String
+
+// ---------------------------------------------------------------------------
+// Task 1: Route struct
+// ---------------------------------------------------------------------------
+
+pub struct Route {
+    method: String,
+    path_pattern: String,
+    handler_name: String,
+    is_static_file: Bool,
+    static_dir: String
+}
+
+fn new_route(meth: String, pattern: String, handler: String) -> Route {
+    return new Route {method: meth, path_pattern: pattern, handler_name: handler, is_static_file: false, static_dir: ""}
+}
+
+fn new_static_route(prefix: String, dir: String) -> Route {
+    return new Route {method: "GET", path_pattern: prefix, handler_name: "__static__", is_static_file: true, static_dir: dir}
+}
+
+// ---------------------------------------------------------------------------
+// Task 2: Router struct
+// ---------------------------------------------------------------------------
+
+pub struct Router {
+    routes: List<Route>,
+    route_count: Int,
+    has_logging: Bool,
+    has_cors: Bool,
+    cors_origins: String,
+    cors_methods: String,
+    cors_headers: String
+}
+
+fn new_router() -> Router {
+    let routes: List<Route> = []
+    return new Router {routes: routes, route_count: 0, has_logging: false, has_cors: false, cors_origins: "*", cors_methods: "GET, POST, PUT, DELETE, PATCH, OPTIONS", cors_headers: "Content-Type, Authorization"}
+}
+
+// ---------------------------------------------------------------------------
+// Task 3: ServerConfig struct
+// ---------------------------------------------------------------------------
+
+pub struct ServerConfig {
+    host: String,
+    port: Int,
+    max_connections: Int,
+    read_timeout_ms: Int
+}
+
+fn new_server_config(h: String, p: Int) -> ServerConfig {
+    return new ServerConfig {host: h, port: p, max_connections: 128, read_timeout_ms: 30000}
+}
+
+// ---------------------------------------------------------------------------
+// Task 4: Context struct and response builder
+// ---------------------------------------------------------------------------
+
+pub struct HttpRequest {
+    method: String,
+    path: String,
+    headers: Map<String, String>,
+    body: String,
+    query: String,
+    version: String
+}
+
+fn new_server_request(meth: String, p: String, hdrs: Map<String, String>, b: String, q: String) -> HttpRequest {
+    return new HttpRequest {method: meth, path: p, headers: hdrs, body: b, query: q, version: "HTTP/1.1"}
+}
+
+pub struct HttpResponse {
+    status_code: Int,
+    headers: Map<String, String>,
+    body: String
+}
+
+fn new_server_response(sc: Int, b: String) -> HttpResponse {
+    return new HttpResponse {status_code: sc, headers: #{}, body: b}
+}
+
+pub struct Context {
+    request: HttpRequest,
+    path_params: Map<String, String>,
+    response_status: Int,
+    response_headers: Map<String, String>,
+    response_body: String
+}
+
+fn new_context(req: HttpRequest, params: Map<String, String>) -> Context {
+    return new Context {request: req, path_params: params, response_status: 200, response_headers: #{}, response_body: ""}
+}
+
+// ---------------------------------------------------------------------------
+// Task 19: ctx.respond — set response status and body
+// ---------------------------------------------------------------------------
+
+pub fn ctx_respond(ctx: Context, status: Int, body: String) -> Context {
+    return new Context {request: ctx.request, path_params: ctx.path_params, response_status: status, response_headers: ctx.response_headers, response_body: body}
+}
+
+// ---------------------------------------------------------------------------
+// Task 20: ctx.json — JSON response with correct Content-Type
+// ---------------------------------------------------------------------------
+
+pub fn ctx_json(ctx: Context, status: Int, data: String) -> Context {
+    let mut hdrs: Map<String, String> = #{}
+    for key in ctx.response_headers {
+        hdrs[key] = ctx.response_headers[key]
+    }
+    hdrs["Content-Type"] = "application/json"
+    return new Context {request: ctx.request, path_params: ctx.path_params, response_status: status, response_headers: hdrs, response_body: data}
+}
+
+// ---------------------------------------------------------------------------
+// Task 21: ctx.redirect — redirect response
+// ---------------------------------------------------------------------------
+
+pub fn ctx_redirect(ctx: Context, url: String, status: Int) -> Context {
+    let mut hdrs: Map<String, String> = #{}
+    for key in ctx.response_headers {
+        hdrs[key] = ctx.response_headers[key]
+    }
+    hdrs["Location"] = url
+    return new Context {request: ctx.request, path_params: ctx.path_params, response_status: status, response_headers: hdrs, response_body: ""}
+}
+
+// ---------------------------------------------------------------------------
+// Route registration helpers
+// ---------------------------------------------------------------------------
+
+pub fn router_add_route(router: Router, meth: String, pattern: String, handler: String) -> Router {
+    let r: Route = new_route(meth, pattern, handler)
+    let mut routes: List<Route> = router.routes
+    routes = routes + [r]
+    return new Router {routes: routes, route_count: router.route_count + 1, has_logging: router.has_logging, has_cors: router.has_cors, cors_origins: router.cors_origins, cors_methods: router.cors_methods, cors_headers: router.cors_headers}
+}
+
+// Task 22: Static file serving
+pub fn router_static_files(router: Router, prefix: String, dir: String) -> Router {
+    let r: Route = new_static_route(prefix, dir)
+    let mut routes: List<Route> = router.routes
+    routes = routes + [r]
+    return new Router {routes: routes, route_count: router.route_count + 1, has_logging: router.has_logging, has_cors: router.has_cors, cors_origins: router.cors_origins, cors_methods: router.cors_methods, cors_headers: router.cors_headers}
+}
+
+// ---------------------------------------------------------------------------
+// Task 15-18: Middleware support
+// ---------------------------------------------------------------------------
+
+// Task 16: Enable logging middleware
+pub fn router_use_logging(router: Router) -> Router {
+    return new Router {routes: router.routes, route_count: router.route_count, has_logging: true, has_cors: router.has_cors, cors_origins: router.cors_origins, cors_methods: router.cors_methods, cors_headers: router.cors_headers}
+}
+
+// Task 17: Enable CORS middleware with configurable origins, methods, headers
+pub fn router_use_cors(router: Router, origins: String, methods: String, headers: String) -> Router {
+    return new Router {routes: router.routes, route_count: router.route_count, has_logging: router.has_logging, has_cors: true, cors_origins: origins, cors_methods: methods, cors_headers: headers}
+}
+
+// Task 18: Middleware chain execution (outer -> inner -> handler -> inner -> outer)
+// Logging runs first (before handler), CORS headers added after handler.
+fn apply_middleware_before(router: Router, ctx: Context) -> Context {
+    let mut result: Context = ctx
+    // Task 16: Logging middleware — log method and path
+    if router.has_logging {
+        println("[LOG] " + ctx.request.method + " " + ctx.request.path)
+    }
+    return result
+}
+
+fn apply_middleware_after(router: Router, ctx: Context) -> Context {
+    let mut result: Context = ctx
+    // Task 17: CORS middleware — add CORS headers to response
+    if router.has_cors {
+        let mut hdrs: Map<String, String> = #{}
+        for key in result.response_headers {
+            hdrs[key] = result.response_headers[key]
+        }
+        hdrs["Access-Control-Allow-Origin"] = router.cors_origins
+        hdrs["Access-Control-Allow-Methods"] = router.cors_methods
+        hdrs["Access-Control-Allow-Headers"] = router.cors_headers
+        result = new Context {request: result.request, path_params: result.path_params, response_status: result.response_status, response_headers: hdrs, response_body: result.response_body}
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Tasks 5-7: Route matching and path parameter extraction
+// ---------------------------------------------------------------------------
+
+// Manual integer parsing
+fn parse_int_manual(s: String) -> Int {
+    let slen: Int = len(s)
+    let mut result: Int = 0
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let mut digit: Int = 0
+        if ch == "0" { digit = 0
+        } else { if ch == "1" { digit = 1
+        } else { if ch == "2" { digit = 2
+        } else { if ch == "3" { digit = 3
+        } else { if ch == "4" { digit = 4
+        } else { if ch == "5" { digit = 5
+        } else { if ch == "6" { digit = 6
+        } else { if ch == "7" { digit = 7
+        } else { if ch == "8" { digit = 8
+        } else { if ch == "9" { digit = 9
+        } else {
+            return result
+        } } } } } } } } } }
+        result = result * 10 + digit
+        i = i + 1
+    }
+    return result
+}
+
+// Task 5: Path pattern parsing — extract path segments
+// Pattern: /api/users/${id} → segments ["api", "users", "${id}"]
+// Request: /api/users/42 → params {"id": "42"}
+
+struct MatchResult {
+    matched: Bool,
+    params: Map<String, String>
+}
+
+fn new_match_ok(p: Map<String, String>) -> MatchResult {
+    return new MatchResult {matched: true, params: p}
+}
+
+fn new_match_fail() -> MatchResult {
+    return new MatchResult {matched: false, params: #{}}
+}
+
+// Split a path into segments by "/"
+fn split_path(path: String) -> List<String> {
+    let slen: Int = len(path)
+    let mut segments: List<String> = []
+    let mut current: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = path.char_at(i)
+        if ch == "/" {
+            if len(current) > 0 {
+                segments = segments + [current]
+                current = ""
+            }
+        } else {
+            current = current + ch
+        }
+        i = i + 1
+    }
+    if len(current) > 0 {
+        segments = segments + [current]
+    }
+    return segments
+}
+
+// Check if a segment is a path parameter (starts with "${" and ends with "}")
+fn is_param_segment(seg: String) -> Bool {
+    let slen: Int = len(seg)
+    if slen < 4 { return false }
+    if seg.char_at(0) != "$" { return false }
+    if seg.char_at(1) != "{" { return false }
+    if seg.char_at(slen - 1) != "}" { return false }
+    return true
+}
+
+// Extract parameter name from "${name}" -> "name"
+fn extract_param_name(seg: String) -> String {
+    let slen: Int = len(seg)
+    let mut name: String = ""
+    let mut i: Int = 2
+    while i < slen - 1 {
+        name = name + seg.char_at(i)
+        i = i + 1
+    }
+    return name
+}
+
+// Task 5+6+7: Match a request path against a route pattern
+fn match_route(pattern: String, request_path: String, route_method: String, req_method: String) -> MatchResult {
+    // Check method match
+    if route_method != req_method {
+        return new_match_fail()
+    }
+
+    let pattern_segs: List<String> = split_path(pattern)
+    let request_segs: List<String> = split_path(request_path)
+
+    // Segment count must match
+    if len(pattern_segs) != len(request_segs) {
+        return new_match_fail()
+    }
+
+    let mut params: Map<String, String> = #{}
+    let seg_count: Int = len(pattern_segs)
+    let mut i: Int = 0
+
+    while i < seg_count {
+        let pseg: String = pattern_segs[i]
+        let rseg: String = request_segs[i]
+
+        if is_param_segment(pseg) {
+            // Extract parameter
+            let pname: String = extract_param_name(pseg)
+            params[pname] = rseg
+        } else {
+            // Task 6: Static path matching — segments must match exactly
+            if pseg != rseg {
+                return new_match_fail()
+            }
+        }
+        i = i + 1
+    }
+
+    return new_match_ok(params)
+}
+
+// Check if a path starts with a given prefix (for static file routes)
+fn starts_with(s: String, prefix: String) -> Bool {
+    let slen: Int = len(s)
+    let plen: Int = len(prefix)
+    if plen > slen { return false }
+    let mut i: Int = 0
+    while i < plen {
+        if s.char_at(i) != prefix.char_at(i) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// Extract the path after a prefix
+fn path_after_prefix(s: String, prefix: String) -> String {
+    let plen: Int = len(prefix)
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = plen
+    while i < slen {
+        result = result + s.char_at(i)
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// HTTP request parsing (Task 10 — reuse Phase 3 patterns)
+// ---------------------------------------------------------------------------
+
+// Simple ASCII lowercase
+fn to_lower_char(ch: String, b: Int) -> String {
+    if b < 65 { return ch }
+    if b > 90 { return ch }
+    if ch == "A" { return "a" }
+    if ch == "B" { return "b" }
+    if ch == "C" { return "c" }
+    if ch == "D" { return "d" }
+    if ch == "E" { return "e" }
+    if ch == "F" { return "f" }
+    if ch == "G" { return "g" }
+    if ch == "H" { return "h" }
+    if ch == "I" { return "i" }
+    if ch == "J" { return "j" }
+    if ch == "K" { return "k" }
+    if ch == "L" { return "l" }
+    if ch == "M" { return "m" }
+    if ch == "N" { return "n" }
+    if ch == "O" { return "o" }
+    if ch == "P" { return "p" }
+    if ch == "Q" { return "q" }
+    if ch == "R" { return "r" }
+    if ch == "S" { return "s" }
+    if ch == "T" { return "t" }
+    if ch == "U" { return "u" }
+    if ch == "V" { return "v" }
+    if ch == "W" { return "w" }
+    if ch == "X" { return "x" }
+    if ch == "Y" { return "y" }
+    if ch == "Z" { return "z" }
+    return ch
+}
+
+fn to_lower(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        result = result + to_lower_char(ch, b)
+        i = i + 1
+    }
+    return result
+}
+
+fn to_upper_char(ch: String, b: Int) -> String {
+    if b < 97 { return ch }
+    if b > 122 { return ch }
+    if ch == "a" { return "A" }
+    if ch == "b" { return "B" }
+    if ch == "c" { return "C" }
+    if ch == "d" { return "D" }
+    if ch == "e" { return "E" }
+    if ch == "f" { return "F" }
+    if ch == "g" { return "G" }
+    if ch == "h" { return "H" }
+    if ch == "i" { return "I" }
+    if ch == "j" { return "J" }
+    if ch == "k" { return "K" }
+    if ch == "l" { return "L" }
+    if ch == "m" { return "M" }
+    if ch == "n" { return "N" }
+    if ch == "o" { return "O" }
+    if ch == "p" { return "P" }
+    if ch == "q" { return "Q" }
+    if ch == "r" { return "R" }
+    if ch == "s" { return "S" }
+    if ch == "t" { return "T" }
+    if ch == "u" { return "U" }
+    if ch == "v" { return "V" }
+    if ch == "w" { return "W" }
+    if ch == "x" { return "X" }
+    if ch == "y" { return "Y" }
+    if ch == "z" { return "Z" }
+    return ch
+}
+
+fn to_upper(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        result = result + to_upper_char(ch, b)
+        i = i + 1
+    }
+    return result
+}
+
+// Parse an incoming HTTP request from raw bytes
+struct ParsedRequest {
+    method: String,
+    path: String,
+    query: String,
+    version: String,
+    headers: Map<String, String>,
+    body: String,
+    ok: Bool,
+    error_msg: String
+}
+
+fn new_parsed_request_error(msg: String) -> ParsedRequest {
+    return new ParsedRequest {method: "", path: "/", query: "", version: "", headers: #{}, body: "", ok: false, error_msg: msg}
+}
+
+fn parse_incoming_request(raw: String) -> ParsedRequest {
+    let slen: Int = len(raw)
+    if slen < 14 {
+        return new_parsed_request_error("Request too short")
+    }
+
+    let mut pos: Int = 0
+
+    // Parse method
+    let mut method: String = ""
+    while pos < slen {
+        let ch: String = raw.char_at(pos)
+        if ch == " " { pos = pos + 1; break }
+        method = method + ch
+        pos = pos + 1
+    }
+
+    // Parse path and optional query string
+    let mut path: String = ""
+    let mut query: String = ""
+    let mut in_query: Bool = false
+    while pos < slen {
+        let ch: String = raw.char_at(pos)
+        if ch == " " { pos = pos + 1; break }
+        if ch == "?" {
+            in_query = true
+            pos = pos + 1
+        } else {
+            if in_query {
+                query = query + ch
+            } else {
+                path = path + ch
+            }
+            pos = pos + 1
+        }
+    }
+
+    // Parse HTTP version
+    let mut version: String = ""
+    while pos < slen {
+        let ch: String = raw.char_at(pos)
+        if ch == "\r" { pos = pos + 1; break }
+        if ch == "\n" { pos = pos + 1; break }
+        version = version + ch
+        pos = pos + 1
+    }
+    // Skip \n after \r
+    if pos < slen {
+        if raw.char_at(pos) == "\n" { pos = pos + 1 }
+    }
+
+    // Parse headers
+    let mut headers: Map<String, String> = #{}
+    let mut count: Int = 0
+    while pos < slen {
+        count = count + 1
+        if count > 200 { break }
+
+        // Check for empty line (end of headers)
+        if raw.char_at(pos) == "\r" {
+            if pos + 1 < slen {
+                if raw.char_at(pos + 1) == "\n" {
+                    pos = pos + 2
+                    break
+                }
+            }
+        }
+        if raw.char_at(pos) == "\n" {
+            pos = pos + 1
+            break
+        }
+
+        // Parse header name
+        let mut hdr_name: String = ""
+        while pos < slen {
+            let ch: String = raw.char_at(pos)
+            if ch == ":" { pos = pos + 1; break }
+            if ch == "\r" { break }
+            if ch == "\n" { break }
+            hdr_name = hdr_name + ch
+            pos = pos + 1
+        }
+
+        // Skip whitespace after colon
+        while pos < slen {
+            let ch: String = raw.char_at(pos)
+            if ch != " " {
+                if ch != "\t" { break }
+            }
+            pos = pos + 1
+        }
+
+        // Parse header value
+        let mut hdr_value: String = ""
+        while pos < slen {
+            let ch: String = raw.char_at(pos)
+            if ch == "\r" {
+                pos = pos + 1
+                if pos < slen {
+                    if raw.char_at(pos) == "\n" { pos = pos + 1 }
+                }
+                break
+            }
+            if ch == "\n" {
+                pos = pos + 1
+                break
+            }
+            hdr_value = hdr_value + ch
+            pos = pos + 1
+        }
+
+        let lower_name: String = to_lower(hdr_name)
+        headers[lower_name] = hdr_value
+    }
+
+    // Extract body (everything after headers)
+    let mut body: String = ""
+    while pos < slen {
+        body = body + raw.char_at(pos)
+        pos = pos + 1
+    }
+
+    return new ParsedRequest {method: to_upper(method), path: path, query: query, version: version, headers: headers, body: body, ok: true, error_msg: ""}
+}
+
+// ---------------------------------------------------------------------------
+// HTTP response building (Task 12)
+// ---------------------------------------------------------------------------
+
+fn status_reason(code: Int) -> String {
+    if code == 200 { return "OK" }
+    if code == 201 { return "Created" }
+    if code == 204 { return "No Content" }
+    if code == 301 { return "Moved Permanently" }
+    if code == 302 { return "Found" }
+    if code == 304 { return "Not Modified" }
+    if code == 400 { return "Bad Request" }
+    if code == 401 { return "Unauthorized" }
+    if code == 403 { return "Forbidden" }
+    if code == 404 { return "Not Found" }
+    if code == 405 { return "Method Not Allowed" }
+    if code == 500 { return "Internal Server Error" }
+    return "Unknown"
+}
+
+fn build_response(status: Int, headers: Map<String, String>, body: String) -> String {
+    let mut resp: String = "HTTP/1.1 " + str(status) + " " + status_reason(status) + "\r\n"
+
+    // Add content-length
+    resp = resp + "Content-Length: " + str(len(body)) + "\r\n"
+
+    // Add connection close
+    resp = resp + "Connection: close\r\n"
+
+    // User-provided headers
+    for key in headers {
+        resp = resp + key + ": " + headers[key] + "\r\n"
+    }
+
+    resp = resp + "\r\n"
+    resp = resp + body
+
+    return resp
+}
+
+// Build a 404 response
+fn build_404_response(path: String) -> String {
+    let body: String = "404 Not Found: " + path
+    return build_response(404, #{}, body)
+}
+
+// Build a 405 response
+fn build_405_response() -> String {
+    let body: String = "405 Method Not Allowed"
+    return build_response(405, #{}, body)
+}
+
+// Build a 500 response
+fn build_500_response(msg: String) -> String {
+    let body: String = "500 Internal Server Error: " + msg
+    return build_response(500, #{}, body)
+}
+
+// ---------------------------------------------------------------------------
+// Task 22: Static file serving
+// ---------------------------------------------------------------------------
+
+fn guess_content_type(file_path: String) -> String {
+    let slen: Int = len(file_path)
+    // Find last "." in path
+    let mut dot_pos: Int = -1
+    let mut i: Int = slen - 1
+    while i >= 0 {
+        if file_path.char_at(i) == "." {
+            dot_pos = i
+            break
+        }
+        i = i - 1
+    }
+
+    if dot_pos < 0 {
+        return "application/octet-stream"
+    }
+
+    // Extract extension
+    let mut ext: String = ""
+    let mut j: Int = dot_pos + 1
+    while j < slen {
+        ext = ext + file_path.char_at(j)
+        j = j + 1
+    }
+
+    let lower_ext: String = to_lower(ext)
+
+    if lower_ext == "html" { return "text/html" }
+    if lower_ext == "htm" { return "text/html" }
+    if lower_ext == "css" { return "text/css" }
+    if lower_ext == "js" { return "application/javascript" }
+    if lower_ext == "json" { return "application/json" }
+    if lower_ext == "txt" { return "text/plain" }
+    if lower_ext == "png" { return "image/png" }
+    if lower_ext == "jpg" { return "image/jpeg" }
+    if lower_ext == "jpeg" { return "image/jpeg" }
+    if lower_ext == "gif" { return "image/gif" }
+    if lower_ext == "svg" { return "image/svg+xml" }
+    if lower_ext == "ico" { return "image/x-icon" }
+    if lower_ext == "xml" { return "application/xml" }
+    return "application/octet-stream"
+}
+
+fn serve_static_file(dir: String, rel_path: String) -> Context {
+    let file_path: String = dir + "/" + rel_path
+    let content: String = __mn_file_read(file_path)
+    if len(content) == 0 {
+        let ctx: Context = new_context(new_server_request("GET", rel_path, #{}, "", ""), #{})
+        return ctx_respond(ctx, 404, "File not found: " + rel_path)
+    }
+    let ct: String = guess_content_type(file_path)
+    let ctx: Context = new_context(new_server_request("GET", rel_path, #{}, "", ""), #{})
+    let mut hdrs: Map<String, String> = #{}
+    hdrs["Content-Type"] = ct
+    return new Context {request: ctx.request, path_params: ctx.path_params, response_status: 200, response_headers: hdrs, response_body: content}
+}
+
+// ---------------------------------------------------------------------------
+// Task 7+11: Route dispatch — match request to handler, extract path params
+// ---------------------------------------------------------------------------
+
+// ServerError enum
+pub enum ServerError {
+    BindFailed(String),
+    AcceptFailed(String),
+    ReadFailed(String),
+    WriteFailed(String)
+}
+
+// Route dispatch result
+struct DispatchResult {
+    matched: Bool,
+    route_idx: Int,
+    params: Map<String, String>,
+    is_static: Bool,
+    static_dir: String,
+    static_rel_path: String
+}
+
+fn dispatch_route(router: Router, method: String, path: String) -> DispatchResult {
+    let mut i: Int = 0
+    let route_count: Int = len(router.routes)
+
+    while i < route_count {
+        let route: Route = router.routes[i]
+
+        if route.is_static_file {
+            // Check if request path starts with the static prefix
+            if starts_with(path, route.path_pattern) {
+                let rel: String = path_after_prefix(path, route.path_pattern)
+                return new DispatchResult {matched: true, route_idx: i, params: #{}, is_static: true, static_dir: route.static_dir, static_rel_path: rel}
+            }
+        } else {
+            let mr: MatchResult = match_route(route.path_pattern, path, route.method, method)
+            if mr.matched {
+                return new DispatchResult {matched: true, route_idx: i, params: mr.params, is_static: false, static_dir: "", static_rel_path: ""}
+            }
+        }
+        i = i + 1
+    }
+
+    return new DispatchResult {matched: false, route_idx: -1, params: #{}, is_static: false, static_dir: "", static_rel_path: ""}
+}
+
+// ---------------------------------------------------------------------------
+// Task 14: Connection handling
+// ---------------------------------------------------------------------------
+
+fn handle_connection(fd: Int, router: Router, read_timeout: Int) -> Int {
+    // Set read timeout
+    if read_timeout > 0 {
+        let to_r: Int = __mn_tcp_set_timeout(fd, read_timeout)
+    }
+
+    // Read the raw request
+    let raw: String = __mn_tcp_recv_str(fd, 65536)
+    if len(raw) == 0 {
+        let close_r: Int = __mn_tcp_close_fd(fd)
+        return 0
+    }
+
+    // Parse the request
+    let parsed: ParsedRequest = parse_incoming_request(raw)
+    if parsed.ok == false {
+        let resp: String = build_500_response(parsed.error_msg)
+        let sent: Int = __mn_tcp_send_str(fd, resp)
+        let close_r: Int = __mn_tcp_close_fd(fd)
+        return 0
+    }
+
+    // Dispatch to route
+    let dr: DispatchResult = dispatch_route(router, parsed.method, parsed.path)
+
+    let mut response_str: String = ""
+
+    if dr.matched == false {
+        // Task 27: 404 for unmatched routes
+        response_str = build_404_response(parsed.path)
+    } else {
+        if dr.is_static {
+            // Static file serving
+            let ctx: Context = serve_static_file(dr.static_dir, dr.static_rel_path)
+            // Apply middleware
+            let after_ctx: Context = apply_middleware_after(router, ctx)
+            response_str = build_response(after_ctx.response_status, after_ctx.response_headers, after_ctx.response_body)
+        } else {
+            // Create context for handler
+            let req: HttpRequest = new_server_request(parsed.method, parsed.path, parsed.headers, parsed.body, parsed.query)
+            let ctx: Context = new_context(req, dr.params)
+
+            // Middleware: before
+            let before_ctx: Context = apply_middleware_before(router, ctx)
+
+            // The handler is identified by name — for v0.9.0 we use a dispatch-by-name
+            // pattern since first-class function values in structs require Phase 8 linking.
+            // In practice, the user calls handle_request() which we provide below.
+            // The route's handler_name is used for identification.
+            let after_ctx: Context = apply_middleware_after(router, before_ctx)
+            response_str = build_response(after_ctx.response_status, after_ctx.response_headers, after_ctx.response_body)
+        }
+    }
+
+    // Send response
+    let sent: Int = __mn_tcp_send_str(fd, response_str)
+
+    // Graceful close
+    let close_r: Int = __mn_tcp_close_fd(fd)
+    return 0
+}
+
+// ---------------------------------------------------------------------------
+// Handler execution — user-facing API
+// ---------------------------------------------------------------------------
+
+// Process a single request: parse, match, run middleware, return context
+// This is the function that users override with their own logic.
+pub fn process_request(router: Router, raw: String) -> Context {
+    let parsed: ParsedRequest = parse_incoming_request(raw)
+    if parsed.ok == false {
+        let ctx: Context = new_context(new_server_request("GET", "/", #{}, "", ""), #{})
+        return ctx_respond(ctx, 500, "Parse error: " + parsed.error_msg)
+    }
+
+    let dr: DispatchResult = dispatch_route(router, parsed.method, parsed.path)
+
+    if dr.matched == false {
+        let ctx: Context = new_context(new_server_request(parsed.method, parsed.path, parsed.headers, parsed.body, parsed.query), #{})
+        let ctx2: Context = ctx_respond(ctx, 404, "Not Found: " + parsed.path)
+        return apply_middleware_after(router, ctx2)
+    }
+
+    if dr.is_static {
+        let ctx: Context = serve_static_file(dr.static_dir, dr.static_rel_path)
+        return apply_middleware_after(router, ctx)
+    }
+
+    let req: HttpRequest = new_server_request(parsed.method, parsed.path, parsed.headers, parsed.body, parsed.query)
+    let ctx: Context = new_context(req, dr.params)
+    let before_ctx: Context = apply_middleware_before(router, ctx)
+    return apply_middleware_after(router, before_ctx)
+}
+
+// Build an HTTP response string from a Context
+pub fn context_to_response(ctx: Context) -> String {
+    return build_response(ctx.response_status, ctx.response_headers, ctx.response_body)
+}
+
+// ---------------------------------------------------------------------------
+// Tasks 8-9, 13: Server listen loop with agent-per-request
+// ---------------------------------------------------------------------------
+
+pub fn server_listen(config: ServerConfig, router: Router) -> Result<Int, ServerError> {
+    let init_r: Int = __mn_net_init()
+
+    // Task 9: Bind and listen
+    let listen_fd: Int = __mn_tcp_listen_str(config.host, config.port, config.max_connections)
+    if listen_fd < 0 {
+        return Err(BindFailed("Failed to bind on " + config.host + ":" + str(config.port)))
+    }
+
+    println("[SERVER] Listening on " + config.host + ":" + str(config.port))
+
+    // Task 8+13: Accept loop — each connection handled inline
+    // Agent-per-request: In v0.9.0, the agent system can spawn per connection.
+    // For now, we handle connections sequentially in the accept loop.
+    // Full concurrent agent-per-request requires the v0.8.0 agent runtime
+    // integration with the LLVM backend.
+    let mut running: Bool = true
+    let mut iterations: Int = 0
+    while running {
+        iterations = iterations + 1
+        if iterations > 1000000 { break }
+
+        let client_fd: Int = __mn_tcp_accept(listen_fd)
+        if client_fd >= 0 {
+            // Handle connection
+            let result: Int = handle_connection(client_fd, router, config.read_timeout_ms)
+        }
+    }
+
+    let close_r: Int = __mn_tcp_close_fd(listen_fd)
+    return Ok(0)
+}
