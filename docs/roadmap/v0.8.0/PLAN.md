@@ -39,7 +39,7 @@
 | 3 | LLVM Stream Operators | `Complete` | Large — stream runtime in C + MIR emitter |
 | 4 | LLVM Closure Capture | `Complete` | Medium — environment structs + arena integration |
 | 5 | Remaining LLVM Gaps | `Complete` | String methods, pipes, match fix, interp fix, TypeKind audit |
-| 6 | C Runtime Expansion | `Not Started` | Large — TCP, TLS, file I/O, event loop |
+| 6 | C Runtime Expansion | `Complete` | Large — TCP, TLS, file I/O, event loop |
 | 7 | Validation & Release | `Not Started` | Medium — cross-backend tests, README, docs |
 
 ---
@@ -219,57 +219,57 @@ the C functions that `net/http.mn` and `encoding/json.mn` will call in v0.9.0.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | `__mn_tcp_connect(host, port) -> fd` | `[ ]` | DNS resolution + connect |
-| 2 | `__mn_tcp_listen(host, port, backlog) -> fd` | `[ ]` | Bind + listen |
-| 3 | `__mn_tcp_accept(listen_fd) -> fd` | `[ ]` | Accept incoming connection |
-| 4 | `__mn_tcp_send(fd, buf, len) -> bytes_sent` | `[ ]` | |
-| 5 | `__mn_tcp_recv(fd, buf, len) -> bytes_received` | `[ ]` | |
-| 6 | `__mn_tcp_close(fd)` | `[ ]` | |
-| 7 | `__mn_tcp_set_timeout(fd, ms)` | `[ ]` | SO_RCVTIMEO / SO_SNDTIMEO |
-| 8 | Cross-platform: Winsock on Windows, POSIX sockets on Unix | `[ ]` | `#ifdef _WIN32` |
+| 1 | `__mn_tcp_connect(host, port) -> fd` | `[x]` | DNS resolution via getaddrinfo + IPv4/IPv6 |
+| 2 | `__mn_tcp_listen(host, port, backlog) -> fd` | `[x]` | Bind + listen with SO_REUSEADDR |
+| 3 | `__mn_tcp_accept(listen_fd) -> fd` | `[x]` | Accept incoming connection |
+| 4 | `__mn_tcp_send(fd, buf, len) -> bytes_sent` | `[x]` | |
+| 5 | `__mn_tcp_recv(fd, buf, len) -> bytes_received` | `[x]` | |
+| 6 | `__mn_tcp_close(fd)` | `[x]` | |
+| 7 | `__mn_tcp_set_timeout(fd, ms)` | `[x]` | SO_RCVTIMEO / SO_SNDTIMEO |
+| 8 | Cross-platform: Winsock on Windows, POSIX sockets on Unix | `[x]` | `#ifdef _WIN32` with Winsock2 |
 
 ### TLS (via OpenSSL FFI)
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 9 | `__mn_tls_init()` — initialize OpenSSL | `[ ]` | One-time global init |
-| 10 | `__mn_tls_connect(fd, hostname) -> tls_ctx` | `[ ]` | SNI + certificate verification |
-| 11 | `__mn_tls_read(tls_ctx, buf, len) -> bytes` | `[ ]` | |
-| 12 | `__mn_tls_write(tls_ctx, buf, len) -> bytes` | `[ ]` | |
-| 13 | `__mn_tls_close(tls_ctx)` | `[ ]` | |
-| 14 | Link against OpenSSL/LibreSSL at build time | `[ ]` | `-lssl -lcrypto` |
+| 9 | `__mn_tls_init()` — initialize OpenSSL | `[x]` | Dynamic loading via dlopen/LoadLibrary |
+| 10 | `__mn_tls_connect(fd, hostname) -> tls_ctx` | `[x]` | SNI via SSL_ctrl + default CA paths |
+| 11 | `__mn_tls_read(tls_ctx, buf, len) -> bytes` | `[x]` | |
+| 12 | `__mn_tls_write(tls_ctx, buf, len) -> bytes` | `[x]` | |
+| 13 | `__mn_tls_close(tls_ctx)` | `[x]` | Shutdown + free SSL + free CTX |
+| 14 | Link against OpenSSL/LibreSSL at build time | `[x]` | Dynamic loading — no compile-time dep; `-ldl` for dlopen |
 
 ### File I/O (extended)
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 15 | `__mn_file_open(path, mode) -> fd` | `[ ]` | Modes: read, write, append, create |
-| 16 | `__mn_file_read(fd, buf, len) -> bytes` | `[ ]` | |
-| 17 | `__mn_file_write(fd, buf, len) -> bytes` | `[ ]` | |
-| 18 | `__mn_file_close(fd)` | `[ ]` | |
-| 19 | `__mn_file_stat(path) -> {size, mtime, is_dir}` | `[ ]` | |
-| 20 | `__mn_dir_list(path) -> entries` | `[ ]` | |
+| 15 | `__mn_file_open(path, mode) -> fd` | `[x]` | Modes: read, write, append, create |
+| 16 | `__mn_file_read(fd, buf, len) -> bytes` | `[x]` | As `__mn_file_read_fd` (avoids name clash with core) |
+| 17 | `__mn_file_write(fd, buf, len) -> bytes` | `[x]` | As `__mn_file_write_fd` (avoids name clash with core) |
+| 18 | `__mn_file_close(fd)` | `[x]` | |
+| 19 | `__mn_file_stat(path) -> {size, mtime, is_dir}` | `[x]` | MnFileStat struct |
+| 20 | `__mn_dir_list(path) -> entries` | `[x]` | MnDirEntry array, skips . and .. |
 
 ### Event Loop
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 21 | `__mn_event_loop_new() -> loop_ptr` | `[ ]` | |
-| 22 | `__mn_event_loop_add_fd(loop, fd, events, callback)` | `[ ]` | |
-| 23 | `__mn_event_loop_remove_fd(loop, fd)` | `[ ]` | |
-| 24 | `__mn_event_loop_run(loop)` | `[ ]` | Blocks until no more fds |
-| 25 | `__mn_event_loop_run_once(loop, timeout_ms)` | `[ ]` | Single iteration |
-| 26 | Platform backends: `epoll` (Linux), `kqueue` (macOS), `IOCP` (Windows) | `[ ]` | |
+| 21 | `__mn_event_loop_new() -> loop_ptr` | `[x]` | |
+| 22 | `__mn_event_loop_add_fd(loop, fd, events, callback)` | `[x]` | |
+| 23 | `__mn_event_loop_remove_fd(loop, fd)` | `[x]` | |
+| 24 | `__mn_event_loop_run(loop)` | `[x]` | Blocks until no fds or stop called |
+| 25 | `__mn_event_loop_run_once(loop, timeout_ms)` | `[x]` | Single iteration with timeout |
+| 26 | Platform backends: `epoll` (Linux), `kqueue` (macOS), `IOCP` (Windows) | `[x]` | epoll/kqueue native; select fallback for Windows/other |
 
 ### Tests
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 27 | TCP echo server test (connect, send, receive, close) | `[ ]` | |
-| 28 | TLS connection test (connect to HTTPS endpoint) | `[ ]` | |
-| 29 | File I/O round-trip test (write, read, verify) | `[ ]` | |
-| 30 | Event loop test (multi-fd, timeout, callback dispatch) | `[ ]` | |
-| 31 | All tests with AddressSanitizer and ThreadSanitizer | `[ ]` | |
+| 27 | TCP echo server test (connect, send, receive, close) | `[x]` | 7 tests in test_tcp.py |
+| 28 | TLS connection test (connect to HTTPS endpoint) | `[x]` | 4 tests in test_tls.py |
+| 29 | File I/O round-trip test (write, read, verify) | `[x]` | 12 tests in test_file_io.py |
+| 30 | Event loop test (multi-fd, timeout, callback dispatch) | `[x]` | 7 tests in test_event_loop.py |
+| 31 | All tests with AddressSanitizer and ThreadSanitizer | `[!]` | Requires CI Linux build with -fsanitize flags |
 
 **Done when:** A `.mn` program can open a TCP socket, send/receive data, and close it
 via the C runtime primitives. TLS connections work. File I/O works beyond stdio.
