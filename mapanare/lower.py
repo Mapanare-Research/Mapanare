@@ -1143,6 +1143,14 @@ class MIRLowerer:
         """Lower a function call."""
         args = [self._lower_expr(a) for a in expr.args]
 
+        # Handle generic call intrinsics (turbofish syntax)
+        if isinstance(expr.callee, Identifier) and expr.type_args:
+            fn_name = expr.callee.name
+            if fn_name == "encode_struct" and len(args) == 1:
+                return self._lower_encode_struct(expr, args[0])
+            if fn_name == "decode_to" and len(args) == 1:
+                return self._lower_decode_to(expr, args[0])
+
         # Infer return type from function declaration or builtins
         _BUILTIN_RET: dict[str, MIRType] = {
             "str": mir_string(),
@@ -1230,6 +1238,293 @@ class MIRLowerer:
             self._emit(Call(dest=dest, fn_name=callee_val.name, args=args))
 
         return dest
+
+    # ------------------------------------------------------------------
+    # Compile-time struct intrinsics (turbofish generic calls)
+    # ------------------------------------------------------------------
+
+    def _lower_encode_struct(self, expr: CallExpr, struct_val: Value) -> Value:
+        """Lower encode_struct::<T>(value) — serialize struct to JSON string."""
+        type_arg = expr.type_args[0]
+        struct_name = type_arg.name if hasattr(type_arg, "name") else ""
+        fields = self._module.structs.get(struct_name, [])
+        if not fields:
+            # Fallback: just return empty object
+            dest = self._make_value(ty=mir_string())
+            self._emit(Const(dest=dest, ty=mir_string(), value="{}"))
+            return dest
+
+        # Build JSON string: {"field1": val1, "field2": val2, ...}
+        # Start with "{"
+        result = self._make_value(ty=mir_string())
+        self._emit(Const(dest=result, ty=mir_string(), value="{"))
+
+        for i, (fname, ftype) in enumerate(fields):
+            # Add comma separator after first field
+            if i > 0:
+                comma = self._make_value(ty=mir_string())
+                self._emit(Const(dest=comma, ty=mir_string(), value=", "))
+                new_result = self._make_value(ty=mir_string())
+                self._emit(BinOp(dest=new_result, op=BinOpKind.ADD, lhs=result, rhs=comma))
+                result = new_result
+
+            # Add "\"fieldname\": "
+            key_str = self._make_value(ty=mir_string())
+            self._emit(Const(dest=key_str, ty=mir_string(), value=f'"{fname}": '))
+            new_result = self._make_value(ty=mir_string())
+            self._emit(BinOp(dest=new_result, op=BinOpKind.ADD, lhs=result, rhs=key_str))
+            result = new_result
+
+            # Get field value
+            field_val = self._make_value(ty=ftype)
+            self._emit(FieldGet(dest=field_val, obj=struct_val, field_name=fname))
+
+            # Convert value to JSON string based on type
+            val_str = self._encode_field_to_json(field_val, ftype)
+            new_result = self._make_value(ty=mir_string())
+            self._emit(BinOp(dest=new_result, op=BinOpKind.ADD, lhs=result, rhs=val_str))
+            result = new_result
+
+        # Close with "}"
+        close = self._make_value(ty=mir_string())
+        self._emit(Const(dest=close, ty=mir_string(), value="}"))
+        final = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=final, op=BinOpKind.ADD, lhs=result, rhs=close))
+        return final
+
+    def _encode_field_to_json(self, field_val: Value, ftype: MIRType) -> Value:
+        """Generate MIR to convert a field value to its JSON string representation."""
+        kind = ftype.type_info.kind
+
+        if kind == TypeKind.STRING:
+            # Wrap in quotes: "\"" + value + "\""
+            q1 = self._make_value(ty=mir_string())
+            self._emit(Const(dest=q1, ty=mir_string(), value='"'))
+            q2 = self._make_value(ty=mir_string())
+            self._emit(Const(dest=q2, ty=mir_string(), value='"'))
+            t1 = self._make_value(ty=mir_string())
+            self._emit(BinOp(dest=t1, op=BinOpKind.ADD, lhs=q1, rhs=field_val))
+            t2 = self._make_value(ty=mir_string())
+            self._emit(BinOp(dest=t2, op=BinOpKind.ADD, lhs=t1, rhs=q2))
+            return t2
+
+        if kind in (TypeKind.INT, TypeKind.FLOAT):
+            # str(value)
+            dest = self._make_value(ty=mir_string())
+            self._emit(Call(dest=dest, fn_name="str", args=[field_val]))
+            return dest
+
+        if kind == TypeKind.BOOL:
+            # if value then "true" else "false"
+            true_bb = self._new_block("encode_true")
+            false_bb = self._new_block("encode_false")
+            merge_bb = self._new_block("encode_merge")
+            self._emit(Branch(cond=field_val, true_block=true_bb.label, false_block=false_bb.label))
+
+            self._set_block(true_bb)
+            true_str = self._make_value(ty=mir_string())
+            self._emit(Const(dest=true_str, ty=mir_string(), value="true"))
+            self._emit(Jump(target=merge_bb.label))
+            assert self._block is not None
+            true_exit = self._block.label
+
+            self._set_block(false_bb)
+            false_str = self._make_value(ty=mir_string())
+            self._emit(Const(dest=false_str, ty=mir_string(), value="false"))
+            self._emit(Jump(target=merge_bb.label))
+            assert self._block is not None
+            false_exit = self._block.label
+
+            self._set_block(merge_bb)
+            result = self._make_value(ty=mir_string())
+            self._emit(Phi(dest=result, incoming=[(true_exit, true_str), (false_exit, false_str)]))
+            return result
+
+        if kind == TypeKind.OPTION:
+            # Option: if Some, encode inner; if None, "null"
+            tag = self._make_value(ty=mir_int())
+            self._emit(EnumTag(dest=tag, enum_val=field_val))
+            some_bb = self._new_block("encode_some")
+            none_bb = self._new_block("encode_none")
+            merge_bb = self._new_block("encode_opt_merge")
+            self._emit(
+                Switch(tag=tag, cases=[("Some", some_bb.label)], default_block=none_bb.label)
+            )
+
+            self._set_block(some_bb)
+            inner = self._make_value(ty=mir_unknown())
+            self._emit(EnumPayload(dest=inner, enum_val=field_val, variant="Some", payload_idx=0))
+            # Determine inner type from Option type args
+            inner_type = MIRType(ftype.type_info.args[0]) if ftype.type_info.args else mir_unknown()
+            inner_str = self._encode_field_to_json(inner, inner_type)
+            self._emit(Jump(target=merge_bb.label))
+            assert self._block is not None
+            some_exit = self._block.label
+
+            self._set_block(none_bb)
+            null_str = self._make_value(ty=mir_string())
+            self._emit(Const(dest=null_str, ty=mir_string(), value="null"))
+            self._emit(Jump(target=merge_bb.label))
+            assert self._block is not None
+            none_exit = self._block.label
+
+            self._set_block(merge_bb)
+            result = self._make_value(ty=mir_string())
+            self._emit(Phi(dest=result, incoming=[(some_exit, inner_str), (none_exit, null_str)]))
+            return result
+
+        # Fallback: convert to string with str()
+        dest = self._make_value(ty=mir_string())
+        self._emit(Call(dest=dest, fn_name="str", args=[field_val]))
+        return dest
+
+    def _lower_decode_to(self, expr: CallExpr, json_val: Value) -> Value:
+        """Lower decode_to::<T>(json_value) — deserialize JsonValue to struct.
+
+        Takes a JsonValue (already parsed), extracts Object variant's map,
+        looks up each struct field by key, converts to proper type, constructs struct.
+        """
+        type_arg = expr.type_args[0]
+        struct_name = type_arg.name if hasattr(type_arg, "name") else ""
+        fields = self._module.structs.get(struct_name, [])
+
+        result_ty = MIRType(TypeInfo(kind=TypeKind.RESULT))
+        struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name=struct_name))
+        err_struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name="JsonError"))
+
+        # Step 1: Check if json_val is an Object variant
+        tag = self._make_value(ty=mir_int())
+        self._emit(EnumTag(dest=tag, enum_val=json_val))
+
+        obj_bb = self._new_block("decode_object")
+        err_bb = self._new_block("decode_type_err")
+        merge_bb = self._new_block("decode_merge")
+
+        self._emit(Switch(tag=tag, cases=[("Object", obj_bb.label)], default_block=err_bb.label))
+
+        # Error path: not an Object
+        self._set_block(err_bb)
+        err_msg = self._make_value(ty=mir_string())
+        self._emit(Const(dest=err_msg, ty=mir_string(), value="expected JSON object"))
+        err_line = self._make_value(ty=mir_int())
+        self._emit(Const(dest=err_line, ty=mir_int(), value=0))
+        err_col = self._make_value(ty=mir_int())
+        self._emit(Const(dest=err_col, ty=mir_int(), value=0))
+        err_struct = self._make_value(ty=err_struct_ty)
+        self._emit(
+            StructInit(
+                dest=err_struct,
+                struct_type=err_struct_ty,
+                fields=[("message", err_msg), ("line", err_line), ("col", err_col)],
+            )
+        )
+        err_result = self._make_value(ty=result_ty)
+        self._emit(WrapErr(dest=err_result, val=err_struct))
+        self._emit(Jump(target=merge_bb.label))
+        assert self._block is not None
+        err_exit = self._block.label
+
+        # Object path: extract the map
+        self._set_block(obj_bb)
+        entries = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.MAP)))
+        self._emit(EnumPayload(dest=entries, enum_val=json_val, variant="Object", payload_idx=0))
+
+        # Step 2: Extract each field from the map
+        field_values: list[tuple[str, Value]] = []
+        for fname, ftype in fields:
+            key = self._make_value(ty=mir_string())
+            self._emit(Const(dest=key, ty=mir_string(), value=fname))
+
+            # Get JsonValue from map by key
+            jval = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.ENUM, name="JsonValue")))
+            self._emit(IndexGet(dest=jval, obj=entries, index=key))
+
+            # Convert JsonValue to the field's type
+            converted = self._decode_json_field(jval, ftype)
+            field_values.append((fname, converted))
+
+        # Step 3: Construct the struct
+        struct_val = self._make_value(ty=struct_ty)
+        self._emit(StructInit(dest=struct_val, struct_type=struct_ty, fields=field_values))
+
+        # Wrap in Ok
+        ok_result = self._make_value(ty=result_ty)
+        self._emit(WrapOk(dest=ok_result, val=struct_val))
+        self._emit(Jump(target=merge_bb.label))
+        assert self._block is not None
+        ok_exit = self._block.label
+
+        # Merge block
+        self._set_block(merge_bb)
+        final = self._make_value(ty=result_ty)
+        self._emit(Phi(dest=final, incoming=[(err_exit, err_result), (ok_exit, ok_result)]))
+        return final
+
+    def _decode_json_field(self, jval: Value, target_type: MIRType) -> Value:
+        """Generate MIR to extract a typed value from a JsonValue enum."""
+        kind = target_type.type_info.kind
+
+        if kind == TypeKind.STRING:
+            dest = self._make_value(ty=mir_string())
+            self._emit(EnumPayload(dest=dest, enum_val=jval, variant="Str", payload_idx=0))
+            return dest
+
+        if kind == TypeKind.INT:
+            dest = self._make_value(ty=mir_int())
+            self._emit(EnumPayload(dest=dest, enum_val=jval, variant="Int", payload_idx=0))
+            return dest
+
+        if kind == TypeKind.FLOAT:
+            dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.FLOAT)))
+            self._emit(EnumPayload(dest=dest, enum_val=jval, variant="Float", payload_idx=0))
+            return dest
+
+        if kind == TypeKind.BOOL:
+            dest = self._make_value(ty=mir_bool())
+            self._emit(EnumPayload(dest=dest, enum_val=jval, variant="Bool", payload_idx=0))
+            return dest
+
+        if kind == TypeKind.OPTION:
+            # Check if Null → None, otherwise extract inner value
+            tag = self._make_value(ty=mir_int())
+            self._emit(EnumTag(dest=tag, enum_val=jval))
+            some_bb = self._new_block("field_some")
+            none_bb = self._new_block("field_none")
+            merge_bb = self._new_block("field_opt_merge")
+            self._emit(
+                Switch(tag=tag, cases=[("Null", none_bb.label)], default_block=some_bb.label)
+            )
+
+            # None path (JSON null)
+            self._set_block(none_bb)
+            none_val = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.OPTION)))
+            self._emit(WrapNone(dest=none_val))
+            self._emit(Jump(target=merge_bb.label))
+            assert self._block is not None
+            none_exit = self._block.label
+
+            # Some path: extract inner value
+            self._set_block(some_bb)
+            inner_type = (
+                MIRType(target_type.type_info.args[0])
+                if target_type.type_info.args
+                else mir_unknown()
+            )
+            inner = self._decode_json_field(jval, inner_type)
+            some_val = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.OPTION)))
+            self._emit(WrapSome(dest=some_val, val=inner))
+            self._emit(Jump(target=merge_bb.label))
+            assert self._block is not None
+            some_exit = self._block.label
+
+            # Merge
+            self._set_block(merge_bb)
+            result = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.OPTION)))
+            self._emit(Phi(dest=result, incoming=[(none_exit, none_val), (some_exit, some_val)]))
+            return result
+
+        # Fallback: just return the raw value
+        return jval
 
     def _lower_method_call(self, expr: MethodCallExpr) -> Value:
         """Lower a method call: `obj.method(args)`."""

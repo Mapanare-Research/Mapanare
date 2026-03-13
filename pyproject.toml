@@ -49,6 +49,7 @@ select = ["E", "F", "W", "I"]
 [tool.ruff.lint.per-file-ignores]
 "site_app.py" = ["E501"]
 "benchmarks/cross_language/run_benchmarks.py" = ["E741"]
+"tests/stdlib/*.py" = ["E501"]
 
 [tool.mypy]
 strict = true

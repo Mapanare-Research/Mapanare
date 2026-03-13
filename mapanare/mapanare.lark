@@ -240,6 +240,7 @@ arg_list: expr (COMMA expr)* COMMA?
           | if_expr
           | match_expr
           | construct_expr
+          | generic_call_expr
           | namespace_access
           | self_expr
           | ident
@@ -247,6 +248,9 @@ arg_list: expr (COMMA expr)* COMMA?
           | map_lit
           | paren_expr
           | tuple_expr
+
+// Generic call with turbofish: foo::<Type>(args)
+generic_call_expr: NAME DOUBLE_COLON LT type_expr (COMMA type_expr)* GT LPAREN arg_list? RPAREN
 
 // Struct construction: new Name { field: value, ... }
 // Uses `new` keyword prefix for LALR disambiguation (avoids

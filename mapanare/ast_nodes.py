@@ -166,10 +166,11 @@ class UnaryExpr(Expr):
 
 @dataclass
 class CallExpr(Expr):
-    """Function call: `foo(a, b)`."""
+    """Function call: `foo(a, b)` or generic call: `foo::<T>(a, b)`."""
 
     callee: Expr = field(default_factory=Expr)
     args: list[Expr] = field(default_factory=list)
+    type_args: list[TypeExpr] = field(default_factory=list)
 
 
 @dataclass

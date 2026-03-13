@@ -694,6 +694,25 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             object=obj, method=method, args=call_args, span=_span_from_children(children)
         )
 
+    def generic_call_expr(self, children: list[Any]) -> CallExpr:
+        items = _filter(children)
+        name = str(items[0])
+        type_args: list[TypeExpr] = []
+        call_args: list[Expr] = []
+        for item in items[1:]:
+            if isinstance(item, TypeExpr):
+                type_args.append(item)
+            elif isinstance(item, list):
+                call_args.extend(item)
+            elif isinstance(item, Expr):
+                call_args.append(item)
+        return CallExpr(
+            callee=Identifier(name=name, span=_span_from_children(children)),
+            type_args=type_args,
+            args=call_args,
+            span=_span_from_children(children),
+        )
+
     def field_access(self, children: list[Any]) -> FieldAccessExpr:
         items = _filter(children)
         return FieldAccessExpr(

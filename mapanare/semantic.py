@@ -623,6 +623,31 @@ class SemanticChecker:
         # Infer argument types
         arg_types = [self._infer_expr(a) for a in expr.args]
 
+        # Handle generic call intrinsics (turbofish syntax)
+        if isinstance(expr.callee, Identifier) and expr.type_args:
+            name = expr.callee.name
+            if name == "encode_struct":
+                if len(expr.type_args) != 1:
+                    self._error("encode_struct expects exactly one type argument", expr)
+                if len(expr.args) != 1:
+                    self._error("encode_struct expects exactly one argument", expr)
+                return STRING_TYPE
+            if name == "decode_to":
+                if len(expr.type_args) != 1:
+                    self._error("decode_to expects exactly one type argument", expr)
+                if len(expr.args) != 1:
+                    self._error("decode_to expects exactly one argument (JsonValue)", expr)
+                type_arg = expr.type_args[0]
+                type_name = type_arg.name if hasattr(type_arg, "name") else ""
+                return TypeInfo(
+                    kind=TypeKind.RESULT,
+                    name="Result",
+                    args=[
+                        TypeInfo(kind=TypeKind.STRUCT, name=type_name),
+                        TypeInfo(kind=TypeKind.STRUCT, name="JsonError"),
+                    ],
+                )
+
         if isinstance(expr.callee, Identifier):
             sym = self.current_scope.lookup(expr.callee.name)
             if sym is None:
