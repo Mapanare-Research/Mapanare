@@ -248,4 +248,32 @@ MN_IO_EXPORT MnString __mn_tls_read_str(int64_t tls_ctx, int64_t max_len);
  *  Returns 0 always (void wrapper). */
 MN_IO_EXPORT int64_t __mn_tls_close_fd(int64_t tls_ctx, int64_t fd);
 
+/** Bind and listen on host:port. host is an MnString.
+ *  Returns listening socket fd or -1 on error. */
+MN_IO_EXPORT int64_t __mn_tcp_listen_str(MnString host, int64_t port, int64_t backlog);
+
+/* -----------------------------------------------------------------------
+ * 6. Crypto primitives (needed by WebSocket handshake, Phase 5/6)
+ *
+ * SHA-1 uses the already-loaded OpenSSL libcrypto (via dlopen).
+ * Base64 is a pure C implementation.
+ * Random bytes use /dev/urandom (POSIX) or CryptGenRandom (Windows).
+ * ----------------------------------------------------------------------- */
+
+/** SHA-1 hash of input data. Returns 20-byte raw hash as MnString.
+ *  Uses OpenSSL EVP API via the already-loaded libcrypto. */
+MN_IO_EXPORT MnString __mn_sha1_str(MnString data);
+
+/** SHA-256 hash of input data. Returns 32-byte raw hash as MnString. */
+MN_IO_EXPORT MnString __mn_sha256_str(MnString data);
+
+/** Base64-encode a binary string. Returns base64-encoded MnString. */
+MN_IO_EXPORT MnString __mn_base64_encode_str(MnString data);
+
+/** Base64-decode a base64 string. Returns decoded MnString (empty on error). */
+MN_IO_EXPORT MnString __mn_base64_decode_str(MnString data);
+
+/** Generate n cryptographically random bytes as an MnString. */
+MN_IO_EXPORT MnString __mn_random_bytes_str(int64_t n);
+
 #endif /* MAPANARE_IO_H */

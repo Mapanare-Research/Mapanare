@@ -209,13 +209,13 @@ class LLVMMIREmitter:
         if self._debug:
             self._init_debug_info(mir_module)
 
-        # 1. Register struct types
-        for name, fields in mir_module.structs.items():
-            self._register_struct(name, fields)
-
-        # 2. Register enum types (tagged unions)
+        # 1. Register enum types first (structs may reference enum types as fields)
         for name, variants in mir_module.enums.items():
             self._register_enum(name, variants)
+
+        # 2. Register struct types (after enums so enum field types resolve)
+        for name, fields in mir_module.structs.items():
+            self._register_struct(name, fields)
 
         # 3. Declare extern functions
         for abi, mod, fn_name, param_types, ret_type in mir_module.extern_fns:
@@ -470,6 +470,11 @@ class LLVMMIREmitter:
             name = mir_type.type_info.name
             if name in self._struct_types:
                 return self._struct_types[name]
+            # Lowerer may tag user-defined enums as STRUCT (kind_from_name
+            # returns UNKNOWN for non-builtin names and _resolve_type_expr
+            # defaults to STRUCT).  Fall through to enum lookup.
+            if name in self._enum_types:
+                return self._enum_types[name][0]
             return LLVM_PTR
         if kind == TypeKind.ENUM:
             name = mir_type.type_info.name
@@ -517,6 +522,25 @@ class LLVMMIREmitter:
         if isinstance(ty, ir.LiteralStructType):
             return sum(self._llvm_type_size(e) for e in ty.elements)
         return 8
+
+    def _resolve_enum_variant_tag(self, variant_name: str) -> int:
+        """Look up the integer tag for an enum variant name across all enums."""
+        for _ename, (_, tag_map, _) in self._enum_types.items():
+            if variant_name in tag_map:
+                return tag_map[variant_name]
+        return 0
+
+    def _resolve_enum_type_from_value(self, mir_val: Value) -> Any:
+        """Resolve the LLVM struct type for an enum value from its MIR type info.
+
+        The lowerer may tag user-defined enums as STRUCT (because
+        kind_from_name returns UNKNOWN).  This helper checks both the
+        ENUM and STRUCT type kinds against the registered enum types.
+        """
+        name = mir_val.ty.type_info.name
+        if name in self._enum_types:
+            return self._enum_types[name][0]
+        return None
 
     def _map_key_type_tag(self, mir_type: MIRType) -> int:
         """Return MN_MAP_KEY_* tag for a MIR key type."""
@@ -1155,8 +1179,26 @@ class LLVMMIREmitter:
         name = self._val_name(inst.dest)
         lhs_kind = inst.lhs.ty.kind
 
+        # Detect string type from LLVM value when MIR type is UNKNOWN
+        if lhs_kind == TypeKind.UNKNOWN and lhs.type == LLVM_STRING:
+            lhs_kind = TypeKind.STRING
+        if lhs_kind == TypeKind.UNKNOWN and rhs.type == LLVM_STRING:
+            lhs_kind = TypeKind.STRING
+
         # String operations
         if lhs_kind == TypeKind.STRING:
+            # Ensure both operands are LLVM_STRING type
+            if lhs.type != LLVM_STRING and isinstance(lhs.type, ir.PointerType):
+                # i8* → {i8*, i64} with length 0 (fallback for UNKNOWN-typed values)
+                lhs_struct = ir.Constant(LLVM_STRING, ir.Undefined)
+                lhs_struct = builder.insert_value(lhs_struct, lhs, 0)
+                lhs_struct = builder.insert_value(lhs_struct, ir.Constant(LLVM_INT, 0), 1)
+                lhs = lhs_struct
+            if rhs.type != LLVM_STRING and isinstance(rhs.type, ir.PointerType):
+                rhs_struct = ir.Constant(LLVM_STRING, ir.Undefined)
+                rhs_struct = builder.insert_value(rhs_struct, rhs, 0)
+                rhs_struct = builder.insert_value(rhs_struct, ir.Constant(LLVM_INT, 0), 1)
+                rhs = rhs_struct
             if op == BinOpKind.ADD:
                 fn = self._rt_str_concat()
                 result = builder.call(fn, [lhs, rhs], name=name)
@@ -1501,6 +1543,28 @@ class LLVMMIREmitter:
         # --- User-defined function call ---
         if fn_name in self._functions:
             target_fn = self._functions[fn_name]
+            # Coerce argument types to match function signature
+            expected_types = list(target_fn.function_type.args)
+            for i in range(min(len(args), len(expected_types))):
+                if args[i].type != expected_types[i]:
+                    # Type mismatch — try bitcast for pointer types
+                    if isinstance(args[i].type, ir.PointerType) and isinstance(
+                        expected_types[i], ir.PointerType
+                    ):
+                        args[i] = builder.bitcast(args[i], expected_types[i])
+                    elif isinstance(args[i].type, ir.PointerType) and isinstance(
+                        expected_types[i], ir.LiteralStructType
+                    ):
+                        # Pointer to struct — load the value
+                        typed_ptr = builder.bitcast(args[i], expected_types[i].as_pointer())
+                        args[i] = builder.load(typed_ptr)
+                    elif isinstance(expected_types[i], ir.PointerType) and isinstance(
+                        args[i].type, ir.LiteralStructType
+                    ):
+                        # Struct to pointer — alloca, store, pass pointer
+                        tmp_ptr = builder.alloca(args[i].type)
+                        builder.store(args[i], tmp_ptr)
+                        args[i] = builder.bitcast(tmp_ptr, expected_types[i])
             # Check if return type is void
             if isinstance(target_fn.function_type.return_type, ir.VoidType):
                 builder.call(target_fn, args)
@@ -1607,7 +1671,13 @@ class LLVMMIREmitter:
         default_block = llvm_blocks[inst.default_block]
         switch = builder.switch(tag, default_block)
         for case_val, case_lbl in inst.cases:
-            case_const = ir.Constant(tag.type, int(case_val))
+            # case_val may be an integer (literal match) or a string
+            # (enum variant name).  Resolve variant names to tag ints.
+            if isinstance(case_val, str) and not case_val.lstrip("-").isdigit():
+                tag_int = self._resolve_enum_variant_tag(case_val)
+                case_const = ir.Constant(tag.type, tag_int)
+            else:
+                case_const = ir.Constant(tag.type, int(case_val))
             switch.add_case(case_const, llvm_blocks[case_lbl])
 
     # --- StructInit ---
@@ -1685,6 +1755,14 @@ class LLVMMIREmitter:
     def _emit_list_init(self, inst: ListInit, builder: Any, values: dict[str, Any]) -> None:
         name = self._val_name(inst.dest)
         elem_llvm_ty = self._resolve_mir_type(inst.elem_type)
+
+        # If MIR elem_type resolved to generic i8* but we have actual elements,
+        # use the concrete LLVM type of the first element instead.
+        if inst.elements and elem_llvm_ty == LLVM_PTR:
+            first_val = self._get_value(inst.elements[0], values)
+            if first_val.type != LLVM_PTR:
+                elem_llvm_ty = first_val.type
+
         elem_size = _approx_type_size(elem_llvm_ty)
 
         # Call __mn_list_new(elem_size)
@@ -1699,8 +1777,9 @@ class LLVMMIREmitter:
 
             for i, elem in enumerate(inst.elements):
                 elem_val = self._get_value(elem, values)
-                # Alloca element, store, bitcast to i8*
-                elem_alloca = builder.alloca(elem_llvm_ty, name=f"{name}.e{i}")
+                # Use the actual LLVM type of the element value for the alloca
+                actual_elem_ty = elem_val.type if elem_val.type != LLVM_PTR else elem_llvm_ty
+                elem_alloca = builder.alloca(actual_elem_ty, name=f"{name}.e{i}")
                 builder.store(elem_val, elem_alloca)
                 elem_ptr = builder.bitcast(elem_alloca, ir.IntType(8).as_pointer())
                 builder.call(fn_push, [list_ptr, elem_ptr])
@@ -1876,8 +1955,21 @@ class LLVMMIREmitter:
                     if enum_val.type.width > 32
                     else builder.zext(enum_val, LLVM_I32, name=name)
                 )
-        elif isinstance(enum_val.type, (ir.LiteralStructType,)):
+        elif isinstance(enum_val.type, ir.LiteralStructType):
             result = builder.extract_value(enum_val, 0, name=name)
+        elif isinstance(enum_val.type, ir.PointerType):
+            # Value is a pointer (i8*) — resolve the actual enum struct type
+            # from the MIR type info, bitcast, load, then extract tag.
+            enum_struct_ty = self._resolve_enum_type_from_value(inst.enum_val)
+            if enum_struct_ty is not None:
+                typed_ptr = builder.bitcast(
+                    enum_val, enum_struct_ty.as_pointer(), name=f"{name}.eptr"
+                )
+                loaded = builder.load(typed_ptr, name=f"{name}.loaded")
+                result = builder.extract_value(loaded, 0, name=name)
+            else:
+                # Last resort: treat pointer as opaque tag
+                result = builder.ptrtoint(enum_val, LLVM_I32, name=name)
         else:
             result = builder.extract_value(enum_val, 0, name=name)
         self._store_value(inst.dest, result, values)
@@ -1895,6 +1987,12 @@ class LLVMMIREmitter:
 
             # Alloca the enum, extract payload bytes, bitcast
             enum_ty = self._enum_types[enum_name][0]
+
+            # If enum_val is a pointer (i8*), load the actual struct first
+            if isinstance(enum_val.type, ir.PointerType):
+                typed_ptr = builder.bitcast(enum_val, enum_ty.as_pointer(), name=f"{name}.cast")
+                enum_val = builder.load(typed_ptr, name=f"{name}.loaded")
+
             enum_ptr = builder.alloca(enum_ty, name=f"{name}.eptr")
             builder.store(enum_val, enum_ptr)
             payload_ptr = builder.gep(

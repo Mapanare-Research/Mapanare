@@ -264,6 +264,8 @@ class MIRLowerer:
         self._current_span: SourceSpan | None = None
         # Loop exit label stack for break statements
         self._loop_exit_stack: list[str] = []
+        # Function return types: fn_name → MIRType (populated in first pass)
+        self._fn_return_types: dict[str, MIRType] = {}
 
     # -- Name generation ---------------------------------------------------
 
@@ -493,6 +495,9 @@ class MIRLowerer:
                 self._module.extern_fns.append(
                     (actual.abi, actual.module or "", actual.name, param_types, ret_type)
                 )
+                # Register extern return types for call-site type propagation
+                if actual.return_type is not None:
+                    self._fn_return_types[actual.name] = ret_type
 
             elif isinstance(actual, ImplDef):
                 for method in actual.methods:
@@ -511,6 +516,15 @@ class MIRLowerer:
                     if isinstance(s, Identifier):
                         stages.append(s.name)
                 self._module.pipes[actual.name] = MIRPipeInfo(name=actual.name, stages=stages)
+
+            # Collect function return types for call-site type propagation
+            if isinstance(actual, FnDef) and actual.return_type is not None:
+                self._fn_return_types[actual.name] = _resolve_type_expr(actual.return_type)
+            elif isinstance(actual, ImplDef):
+                for method in actual.methods:
+                    if method.return_type is not None:
+                        mir_name = f"{actual.target}_{method.name}"
+                        self._fn_return_types[mir_name] = _resolve_type_expr(method.return_type)
 
     def _lower_definition(self, defn: Definition) -> None:
         """Lower a single top-level definition."""
@@ -551,7 +565,15 @@ class MIRLowerer:
             )
             for p in fn_def.params
         ]
+        # Fix enum parameter types: _resolve_type_expr defaults unknown names
+        # to STRUCT, but if the name matches a registered enum, correct the kind.
+        for param in params:
+            if param.ty.kind == TypeKind.STRUCT and param.ty.type_info.name in self._enum_variants:
+                param.ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name=param.ty.type_info.name))
         ret_type = _resolve_type_expr(fn_def.return_type) if fn_def.return_type else mir_void()
+        # Fix enum return type too
+        if ret_type.kind == TypeKind.STRUCT and ret_type.type_info.name in self._enum_variants:
+            ret_type = MIRType(TypeInfo(kind=TypeKind.ENUM, name=ret_type.type_info.name))
         decorators = [d.name for d in fn_def.decorators]
 
         source_line = fn_def.span.line if fn_def.span else 0
@@ -1117,7 +1139,24 @@ class MIRLowerer:
     def _lower_call(self, expr: CallExpr) -> Value:
         """Lower a function call."""
         args = [self._lower_expr(a) for a in expr.args]
-        dest = self._make_value()
+
+        # Infer return type from function declaration or builtins
+        _BUILTIN_RET: dict[str, MIRType] = {
+            "str": mir_string(),
+            "toString": mir_string(),
+            "int": mir_int(),
+            "float": MIRType(TypeInfo(kind=TypeKind.FLOAT)),
+            "len": mir_int(),
+            "print": mir_void(),
+            "println": mir_void(),
+        }
+        _call_ret_ty = mir_unknown()
+        if isinstance(expr.callee, Identifier):
+            _call_ret_ty = self._fn_return_types.get(
+                expr.callee.name,
+                _BUILTIN_RET.get(expr.callee.name, mir_unknown()),
+            )
+        dest = self._make_value(ty=_call_ret_ty)
 
         if isinstance(expr.callee, Identifier):
             fn_name = expr.callee.name
@@ -1248,6 +1287,17 @@ class MIRLowerer:
         self._emit(Call(dest=dest, fn_name=expr.method, args=[obj] + args))
         return dest
 
+    def _infer_field_type(self, obj_ty: MIRType, field_name: str) -> MIRType:
+        """Look up the MIR type of a struct field from the module's struct registry."""
+        struct_name = obj_ty.type_info.name
+        if struct_name and self._module:
+            fields = self._module.structs.get(struct_name)
+            if fields:
+                for fname, fty in fields:
+                    if fname == field_name:
+                        return fty
+        return mir_unknown()
+
     def _lower_field_access(self, expr: FieldAccessExpr) -> Value:
         """Lower field access: `obj.field`."""
         obj = self._lower_expr(expr.object)
@@ -1258,7 +1308,9 @@ class MIRLowerer:
             self._emit(SignalGet(dest=dest, signal=obj))
             return dest
 
-        dest = self._make_value()
+        # Infer field type from struct definition
+        field_ty = self._infer_field_type(obj.ty, expr.field_name)
+        dest = self._make_value(ty=field_ty)
         self._emit(FieldGet(dest=dest, obj=obj, field_name=expr.field_name))
         return dest
 

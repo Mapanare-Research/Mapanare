@@ -1,0 +1,953 @@
+// net/websocket.mn — WebSocket Client + Server for Mapanare (RFC 6455).
+//
+// One import. Full WebSocket client and server. Built on C runtime TCP
+// primitives from v0.8.0 and crypto primitives (SHA-1, Base64, random).
+// No Python dependencies — compiles natively via LLVM.
+//
+// Usage (client):
+//   let conn_r: Result<WsConnection, WsError> = ws_connect("ws://echo.example.com/ws")
+//   match conn_r {
+//     Ok(conn) => {
+//       let send_r: Result<Int, WsError> = ws_send(conn, Text("hello"))
+//       let msg_r: Result<WsMessage, WsError> = ws_recv(conn)
+//       ws_close(conn, 1000, "bye")
+//     },
+//     Err(e) => { println("failed") }
+//   }
+//
+// Usage (server upgrade from HTTP):
+//   let upgrade_r: Result<WsConnection, WsError> = ws_accept_upgrade(client_fd, headers)
+
+// ---------------------------------------------------------------------------
+// Extern C runtime functions
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_net_init() -> Int
+extern "C" fn __mn_tcp_connect_str(host: String, port: Int) -> Int
+extern "C" fn __mn_tcp_send_str(fd: Int, data: String) -> Int
+extern "C" fn __mn_tcp_recv_str(fd: Int, max_len: Int) -> String
+extern "C" fn __mn_tcp_close_fd(fd: Int) -> Int
+extern "C" fn __mn_tcp_set_timeout(fd: Int, ms: Int) -> Int
+extern "C" fn __mn_tls_init() -> Int
+extern "C" fn __mn_tls_connect_str(fd: Int, hostname: String) -> Int
+extern "C" fn __mn_tls_write_str(tls_ctx: Int, data: String) -> Int
+extern "C" fn __mn_tls_read_str(tls_ctx: Int, max_len: Int) -> String
+extern "C" fn __mn_tls_close_fd(tls_ctx: Int, fd: Int) -> Int
+
+// Crypto primitives (Phase 5/6 C runtime additions)
+extern "C" fn __mn_sha1_str(data: String) -> String
+extern "C" fn __mn_base64_encode_str(data: String) -> String
+extern "C" fn __mn_base64_decode_str(data: String) -> String
+extern "C" fn __mn_random_bytes_str(n: Int) -> String
+
+// ---------------------------------------------------------------------------
+// Task 1: WsMessage enum
+// ---------------------------------------------------------------------------
+
+pub enum WsMessage {
+    Text(String),
+    Binary(String),
+    Ping(String),
+    Pong(String),
+    Close(Int, String)
+}
+
+// ---------------------------------------------------------------------------
+// Task 2: WsConnection struct
+// ---------------------------------------------------------------------------
+
+pub struct WsConnection {
+    fd: Int,
+    tls_ctx: Int,
+    is_tls: Bool,
+    is_server: Bool,
+    state: Int,
+    frag_buffer: String,
+    frag_opcode: Int
+}
+
+// Connection states: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED
+
+fn new_ws_connection(socket_fd: Int, tls: Int, use_tls: Bool, server: Bool) -> WsConnection {
+    return new WsConnection {fd: socket_fd, tls_ctx: tls, is_tls: use_tls, is_server: server, state: 1, frag_buffer: "", frag_opcode: 0}
+}
+
+// ---------------------------------------------------------------------------
+// Task 3: WsError enum
+// ---------------------------------------------------------------------------
+
+pub enum WsError {
+    HandshakeFailed(String),
+    ConnectionClosed(String),
+    InvalidFrame(String),
+    ProtocolError(String),
+    SendFailed(String),
+    RecvFailed(String)
+}
+
+// ---------------------------------------------------------------------------
+// Primitive helpers (must be defined before functions that use them)
+// ---------------------------------------------------------------------------
+
+fn digit_val(ch: String) -> Int {
+    if ch == "0" { return 0 }
+    if ch == "1" { return 1 }
+    if ch == "2" { return 2 }
+    if ch == "3" { return 3 }
+    if ch == "4" { return 4 }
+    if ch == "5" { return 5 }
+    if ch == "6" { return 6 }
+    if ch == "7" { return 7 }
+    if ch == "8" { return 8 }
+    if ch == "9" { return 9 }
+    return -1
+}
+
+fn hex_char(val: Int) -> String {
+    if val == 0 { return "0" }
+    if val == 1 { return "1" }
+    if val == 2 { return "2" }
+    if val == 3 { return "3" }
+    if val == 4 { return "4" }
+    if val == 5 { return "5" }
+    if val == 6 { return "6" }
+    if val == 7 { return "7" }
+    if val == 8 { return "8" }
+    if val == 9 { return "9" }
+    if val == 10 { return "a" }
+    if val == 11 { return "b" }
+    if val == 12 { return "c" }
+    if val == 13 { return "d" }
+    if val == 14 { return "e" }
+    if val == 15 { return "f" }
+    return "0"
+}
+
+fn ws_to_lower_char(ch: String, b: Int) -> String {
+    if b < 65 { return ch }
+    if b > 90 { return ch }
+    if ch == "A" { return "a" }
+    if ch == "B" { return "b" }
+    if ch == "C" { return "c" }
+    if ch == "D" { return "d" }
+    if ch == "E" { return "e" }
+    if ch == "F" { return "f" }
+    if ch == "G" { return "g" }
+    if ch == "H" { return "h" }
+    if ch == "I" { return "i" }
+    if ch == "J" { return "j" }
+    if ch == "K" { return "k" }
+    if ch == "L" { return "l" }
+    if ch == "M" { return "m" }
+    if ch == "N" { return "n" }
+    if ch == "O" { return "o" }
+    if ch == "P" { return "p" }
+    if ch == "Q" { return "q" }
+    if ch == "R" { return "r" }
+    if ch == "S" { return "s" }
+    if ch == "T" { return "t" }
+    if ch == "U" { return "u" }
+    if ch == "V" { return "v" }
+    if ch == "W" { return "w" }
+    if ch == "X" { return "x" }
+    if ch == "Y" { return "y" }
+    if ch == "Z" { return "z" }
+    return ch
+}
+
+fn ws_to_lower(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        result = result + ws_to_lower_char(ch, b)
+        i = i + 1
+    }
+    return result
+}
+
+// Bitwise XOR of two bytes (0-255)
+fn xor_bytes(a: Int, b: Int) -> Int {
+    let mut result: Int = 0
+    let mut bit: Int = 1
+    let mut i: Int = 0
+    while i < 8 {
+        let a_bit: Int = (a / bit) - (a / (bit * 2)) * 2
+        let b_bit: Int = (b / bit) - (b / (bit * 2)) * 2
+        if a_bit != b_bit {
+            result = result + bit
+        }
+        bit = bit * 2
+        i = i + 1
+    }
+    return result
+}
+
+// Bitwise OR of two integers
+fn bitor(a: Int, b: Int) -> Int {
+    let mut result: Int = 0
+    let mut bit: Int = 1
+    let mut i: Int = 0
+    while i < 16 {
+        let a_bit: Int = (a / bit) - (a / (bit * 2)) * 2
+        let b_bit: Int = (b / bit) - (b / (bit * 2)) * 2
+        if a_bit == 1 {
+            result = result + bit
+        } else { if b_bit == 1 {
+            result = result + bit
+        } }
+        bit = bit * 2
+        i = i + 1
+    }
+    return result
+}
+
+// Bitwise AND of two integers
+fn bitand(a: Int, b: Int) -> Int {
+    let mut result: Int = 0
+    let mut bit: Int = 1
+    let mut i: Int = 0
+    while i < 16 {
+        let a_bit: Int = (a / bit) - (a / (bit * 2)) * 2
+        let b_bit: Int = (b / bit) - (b / (bit * 2)) * 2
+        if a_bit == 1 {
+            if b_bit == 1 {
+                result = result + bit
+            }
+        }
+        bit = bit * 2
+        i = i + 1
+    }
+    return result
+}
+
+// Task 9: Client-side masking (RFC 6455 Section 5.3)
+fn apply_mask(data: String, mask: String) -> String {
+    let dlen: Int = len(data)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < dlen {
+        let data_byte: Int = data.byte_at(i)
+        let mask_byte: Int = mask.byte_at(i - (i / 4) * 4)
+        let xored: Int = xor_bytes(data_byte, mask_byte)
+        result = result + str(xored)
+        i = i + 1
+    }
+    return result
+}
+
+// The WebSocket GUID constant (RFC 6455 Section 4.2.2)
+fn ws_guid() -> String {
+    return "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+}
+
+// ---------------------------------------------------------------------------
+// TCP/TLS send/recv helpers
+// ---------------------------------------------------------------------------
+
+fn ws_raw_send(conn: WsConnection, data: String) -> Int {
+    if conn.is_tls {
+        return __mn_tls_write_str(conn.tls_ctx, data)
+    }
+    return __mn_tcp_send_str(conn.fd, data)
+}
+
+fn ws_raw_recv(conn: WsConnection, max_len: Int) -> String {
+    if conn.is_tls {
+        return __mn_tls_read_str(conn.tls_ctx, max_len)
+    }
+    return __mn_tcp_recv_str(conn.fd, max_len)
+}
+
+// ---------------------------------------------------------------------------
+// Task 5: Generate WebSocket key (16 random bytes, base64 encoded)
+// ---------------------------------------------------------------------------
+
+fn generate_ws_key() -> String {
+    let random_bytes: String = __mn_random_bytes_str(16)
+    return __mn_base64_encode_str(random_bytes)
+}
+
+// ---------------------------------------------------------------------------
+// Task 6: Compute expected Sec-WebSocket-Accept value
+// ---------------------------------------------------------------------------
+
+fn compute_accept_key(client_key: String) -> String {
+    let combined: String = client_key + ws_guid()
+    let sha1_hash: String = __mn_sha1_str(combined)
+    return __mn_base64_encode_str(sha1_hash)
+}
+
+// ---------------------------------------------------------------------------
+// URL parsing
+// ---------------------------------------------------------------------------
+
+struct WsUrl {
+    host: String,
+    port: Int,
+    path: String,
+    is_tls: Bool,
+    ok: Bool,
+    error_msg: String
+}
+
+fn parse_ws_url(url: String) -> WsUrl {
+    let slen: Int = len(url)
+    let mut scheme_end: Int = 0
+    let mut is_tls: Bool = false
+
+    if slen > 6 {
+        let s0: String = url.char_at(0)
+        let s1: String = url.char_at(1)
+        let s2: String = url.char_at(2)
+        if s0 == "w" {
+            if s1 == "s" {
+                if s2 == "s" {
+                    if slen > 6 {
+                        if url.char_at(3) == ":" {
+                            if url.char_at(4) == "/" {
+                                if url.char_at(5) == "/" {
+                                    scheme_end = 6
+                                    is_tls = true
+                                }
+                            }
+                        }
+                    }
+                } else { if s2 == ":" {
+                    if url.char_at(3) == "/" {
+                        if url.char_at(4) == "/" {
+                            scheme_end = 5
+                        }
+                    }
+                } else {
+                    return new WsUrl {host: "", port: 0, path: "/", is_tls: false, ok: false, error_msg: "Invalid scheme"}
+                } }
+            }
+        }
+    }
+
+    if scheme_end == 0 {
+        return new WsUrl {host: "", port: 0, path: "/", is_tls: false, ok: false, error_msg: "Invalid scheme: expected ws:// or wss://"}
+    }
+
+    let mut host: String = ""
+    let mut i: Int = scheme_end
+    while i < slen {
+        let ch: String = url.char_at(i)
+        if ch == ":" { i = i + 1; break }
+        if ch == "/" { break }
+        host = host + ch
+        i = i + 1
+    }
+
+    let mut port: Int = 0
+    let mut has_port: Bool = false
+    if i < slen {
+        let ch: String = url.char_at(i)
+        if ch != "/" {
+            has_port = true
+            while i < slen {
+                let pch: String = url.char_at(i)
+                if pch == "/" { break }
+                let d: Int = digit_val(pch)
+                if d < 0 { break }
+                port = port * 10 + d
+                i = i + 1
+            }
+        }
+    }
+
+    if has_port == false {
+        if is_tls { port = 443 } else { port = 80 }
+    }
+
+    let mut path: String = ""
+    while i < slen {
+        path = path + url.char_at(i)
+        i = i + 1
+    }
+    if len(path) == 0 {
+        path = "/"
+    }
+
+    return new WsUrl {host: host, port: port, path: path, is_tls: is_tls, ok: true, error_msg: ""}
+}
+
+// ---------------------------------------------------------------------------
+// Header extraction (needed before ws_connect)
+// ---------------------------------------------------------------------------
+
+fn extract_header(resp: String, header_name: String) -> String {
+    let rlen: Int = len(resp)
+    let hlen: Int = len(header_name)
+    let mut i: Int = 0
+
+    while i < rlen {
+        let mut name: String = ""
+        while i < rlen {
+            let ch: String = resp.char_at(i)
+            if ch == ":" { i = i + 1; break }
+            if ch == "\r" { break }
+            if ch == "\n" { break }
+            name = name + ch
+            i = i + 1
+        }
+
+        while i < rlen {
+            let ch: String = resp.char_at(i)
+            if ch != " " {
+                if ch != "\t" { break }
+            }
+            i = i + 1
+        }
+
+        let mut value: String = ""
+        while i < rlen {
+            let ch: String = resp.char_at(i)
+            if ch == "\r" {
+                i = i + 1
+                if i < rlen {
+                    if resp.char_at(i) == "\n" { i = i + 1 }
+                }
+                break
+            }
+            if ch == "\n" {
+                i = i + 1
+                break
+            }
+            value = value + ch
+            i = i + 1
+        }
+
+        if ws_to_lower(name) == header_name {
+            return value
+        }
+    }
+
+    return ""
+}
+
+// Task 6: Validate server upgrade response
+fn verify_upgrade_response(resp: String, client_key: String) -> Bool {
+    let rlen: Int = len(resp)
+
+    let mut has_101: Bool = false
+    if rlen > 12 {
+        if resp.char_at(9) == "1" {
+            if resp.char_at(10) == "0" {
+                if resp.char_at(11) == "1" {
+                    has_101 = true
+                }
+            }
+        }
+    }
+
+    if has_101 == false { return false }
+
+    let accept_val: String = extract_header(resp, "sec-websocket-accept")
+    if len(accept_val) == 0 { return false }
+
+    let expected: String = compute_accept_key(client_key)
+
+    if accept_val == expected { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Task 13: Frame encoding
+// ---------------------------------------------------------------------------
+
+struct WsFrame {
+    fin: Bool,
+    opcode: Int,
+    masked: Bool,
+    mask_key: String,
+    payload: String,
+    payload_len: Int
+}
+
+fn new_ws_frame(fin_flag: Bool, op: Int, msk: Bool, key: String, data: String) -> WsFrame {
+    return new WsFrame {fin: fin_flag, opcode: op, masked: msk, mask_key: key, payload: data, payload_len: len(data)}
+}
+
+fn encode_frame(frame: WsFrame) -> String {
+    let mut result: String = ""
+    let mut byte0: Int = frame.opcode
+    if frame.fin {
+        byte0 = byte0 + 128
+    }
+    let plen: Int = frame.payload_len
+    let mut byte1: Int = 0
+    if frame.masked { byte1 = 128 }
+
+    let mut ext_len: String = ""
+    if plen < 126 {
+        byte1 = byte1 + plen
+    } else { if plen < 65536 {
+        byte1 = byte1 + 126
+        let hi: Int = plen / 256
+        let lo: Int = plen - hi * 256
+        ext_len = str(hi) + str(lo)
+    } else {
+        byte1 = byte1 + 127
+        ext_len = str(0) + str(0) + str(0) + str(0) + str(0) + str(0) + str(0) + str(0)
+    } }
+
+    result = str(byte0) + str(byte1) + ext_len + frame.payload
+    return result
+}
+
+// Build a complete frame for sending
+fn build_send_frame(opcode: Int, payload: String, do_mask: Bool) -> String {
+    let plen: Int = len(payload)
+    let byte0: Int = bitor(128, opcode)
+    let mut byte1: Int = 0
+    if do_mask { byte1 = 128 }
+
+    let mut header_extra: String = ""
+    if plen < 126 {
+        byte1 = bitor(byte1, plen)
+    } else { if plen < 65536 {
+        byte1 = bitor(byte1, 126)
+        let hi: Int = plen / 256
+        let lo: Int = plen - hi * 256
+        header_extra = str(hi) + str(lo)
+    } else {
+        byte1 = bitor(byte1, 127)
+        let b4: Int = plen / 16777216
+        let rem3: Int = plen - b4 * 16777216
+        let b5: Int = rem3 / 65536
+        let rem2: Int = rem3 - b5 * 65536
+        let b6: Int = rem2 / 256
+        let b7: Int = rem2 - b6 * 256
+        header_extra = str(0) + str(0) + str(0) + str(0) + str(b4) + str(b5) + str(b6) + str(b7)
+    } }
+
+    let mut frame: String = str(byte0) + str(byte1) + header_extra
+
+    if do_mask {
+        let mask_key: String = __mn_random_bytes_str(4)
+        frame = frame + mask_key
+        let masked_payload: String = apply_mask(payload, mask_key)
+        frame = frame + masked_payload
+    } else {
+        frame = frame + payload
+    }
+
+    return frame
+}
+
+// ---------------------------------------------------------------------------
+// Task 14: Frame decoding
+// ---------------------------------------------------------------------------
+
+struct FrameDecodeResult {
+    frame: WsFrame,
+    bytes_consumed: Int,
+    ok: Bool,
+    error_msg: String
+}
+
+fn decode_frame(raw: String) -> FrameDecodeResult {
+    let rlen: Int = len(raw)
+    if rlen < 2 {
+        let empty_frame: WsFrame = new_ws_frame(false, 0, false, "", "")
+        return new FrameDecodeResult {frame: empty_frame, bytes_consumed: 0, ok: false, error_msg: "Frame too short"}
+    }
+
+    let byte0: Int = raw.byte_at(0)
+    let byte1: Int = raw.byte_at(1)
+
+    let fin: Bool = byte0 / 128 == 1
+    let opcode: Int = bitand(byte0, 15)
+    let masked: Bool = byte1 / 128 == 1
+    let mut payload_len: Int = bitand(byte1, 127)
+    let mut pos: Int = 2
+
+    if payload_len == 126 {
+        if rlen < 4 {
+            let empty_frame: WsFrame = new_ws_frame(false, 0, false, "", "")
+            return new FrameDecodeResult {frame: empty_frame, bytes_consumed: 0, ok: false, error_msg: "Frame too short for 16-bit length"}
+        }
+        payload_len = raw.byte_at(2) * 256 + raw.byte_at(3)
+        pos = 4
+    } else { if payload_len == 127 {
+        if rlen < 10 {
+            let empty_frame: WsFrame = new_ws_frame(false, 0, false, "", "")
+            return new FrameDecodeResult {frame: empty_frame, bytes_consumed: 0, ok: false, error_msg: "Frame too short for 64-bit length"}
+        }
+        payload_len = raw.byte_at(6) * 16777216 + raw.byte_at(7) * 65536 + raw.byte_at(8) * 256 + raw.byte_at(9)
+        pos = 10
+    } }
+
+    let mut mask_key: String = ""
+    if masked {
+        if rlen < pos + 4 {
+            let empty_frame: WsFrame = new_ws_frame(false, 0, false, "", "")
+            return new FrameDecodeResult {frame: empty_frame, bytes_consumed: 0, ok: false, error_msg: "Frame too short for mask key"}
+        }
+        let mut mk: String = ""
+        mk = mk + raw.char_at(pos)
+        mk = mk + raw.char_at(pos + 1)
+        mk = mk + raw.char_at(pos + 2)
+        mk = mk + raw.char_at(pos + 3)
+        mask_key = mk
+        pos = pos + 4
+    }
+
+    if rlen < pos + payload_len {
+        let empty_frame: WsFrame = new_ws_frame(false, 0, false, "", "")
+        return new FrameDecodeResult {frame: empty_frame, bytes_consumed: 0, ok: false, error_msg: "Frame too short for payload"}
+    }
+
+    let mut payload: String = ""
+    let mut pi: Int = 0
+    while pi < payload_len {
+        payload = payload + raw.char_at(pos + pi)
+        pi = pi + 1
+    }
+
+    if masked {
+        payload = apply_mask(payload, mask_key)
+    }
+
+    let frame: WsFrame = new_ws_frame(fin, opcode, masked, mask_key, payload)
+    return new FrameDecodeResult {frame: frame, bytes_consumed: pos + payload_len, ok: true, error_msg: ""}
+}
+
+// ---------------------------------------------------------------------------
+// Task 4: ws_connect — WebSocket client connect with HTTP upgrade
+// ---------------------------------------------------------------------------
+
+pub fn ws_connect(url: String) -> Result<WsConnection, WsError> {
+    let parsed: WsUrl = parse_ws_url(url)
+    if parsed.ok == false {
+        return Err(HandshakeFailed(parsed.error_msg))
+    }
+
+    let init_r: Int = __mn_net_init()
+
+    let fd: Int = __mn_tcp_connect_str(parsed.host, parsed.port)
+    if fd < 0 {
+        return Err(HandshakeFailed("TCP connection failed to " + parsed.host + ":" + str(parsed.port)))
+    }
+
+    let mut tls_ctx: Int = 0
+    if parsed.is_tls {
+        let tls_init_r: Int = __mn_tls_init()
+        tls_ctx = __mn_tls_connect_str(fd, parsed.host)
+        if tls_ctx == 0 {
+            let close_r: Int = __mn_tcp_close_fd(fd)
+            return Err(HandshakeFailed("TLS handshake failed"))
+        }
+    }
+
+    let ws_key: String = generate_ws_key()
+
+    let mut req: String = "GET " + parsed.path + " HTTP/1.1\r\n"
+    req = req + "Host: " + parsed.host
+    if parsed.port != 80 {
+        if parsed.port != 443 {
+            req = req + ":" + str(parsed.port)
+        }
+    }
+    req = req + "\r\n"
+    req = req + "Upgrade: websocket\r\n"
+    req = req + "Connection: Upgrade\r\n"
+    req = req + "Sec-WebSocket-Key: " + ws_key + "\r\n"
+    req = req + "Sec-WebSocket-Version: 13\r\n"
+    req = req + "Origin: " + url + "\r\n"
+    req = req + "\r\n"
+
+    let mut send_result: Int = 0
+    if parsed.is_tls {
+        send_result = __mn_tls_write_str(tls_ctx, req)
+    } else {
+        send_result = __mn_tcp_send_str(fd, req)
+    }
+
+    if send_result < 0 {
+        let close_r: Int = __mn_tcp_close_fd(fd)
+        return Err(HandshakeFailed("Failed to send upgrade request"))
+    }
+
+    let mut resp: String = ""
+    if parsed.is_tls {
+        resp = __mn_tls_read_str(tls_ctx, 4096)
+    } else {
+        resp = __mn_tcp_recv_str(fd, 4096)
+    }
+
+    if len(resp) == 0 {
+        let close_r: Int = __mn_tcp_close_fd(fd)
+        return Err(HandshakeFailed("No response from server"))
+    }
+
+    let resp_ok: Bool = verify_upgrade_response(resp, ws_key)
+    if resp_ok == false {
+        let close_r: Int = __mn_tcp_close_fd(fd)
+        return Err(HandshakeFailed("Server rejected WebSocket upgrade"))
+    }
+
+    let conn: WsConnection = new_ws_connection(fd, tls_ctx, parsed.is_tls, false)
+    return Ok(conn)
+}
+
+// ---------------------------------------------------------------------------
+// Task 7: ws_send — send a WebSocket message
+// ---------------------------------------------------------------------------
+
+pub fn ws_send(conn: WsConnection, msg: WsMessage) -> Result<Int, WsError> {
+    if conn.state != 1 {
+        return Err(SendFailed("Connection not open"))
+    }
+
+    let mut opcode: Int = 0
+    let mut payload: String = ""
+
+    match msg {
+        Text(data) => {
+            opcode = 1
+            payload = data
+        },
+        Binary(data) => {
+            opcode = 2
+            payload = data
+        },
+        Ping(data) => {
+            opcode = 9
+            payload = data
+        },
+        Pong(data) => {
+            opcode = 10
+            payload = data
+        },
+        Close(code, reason) => {
+            opcode = 8
+            let hi: Int = code / 256
+            let lo: Int = code - hi * 256
+            payload = str(hi) + str(lo) + reason
+        }
+    }
+
+    let frame_data: String = build_send_frame(opcode, payload, conn.is_server == false)
+
+    let sent: Int = ws_raw_send(conn, frame_data)
+    if sent < 0 {
+        return Err(SendFailed("Failed to send frame"))
+    }
+
+    return Ok(sent)
+}
+
+// ---------------------------------------------------------------------------
+// Task 8: ws_recv — receive a WebSocket message
+// ---------------------------------------------------------------------------
+
+pub fn ws_recv(conn: WsConnection) -> Result<WsMessage, WsError> {
+    if conn.state != 1 {
+        return Err(RecvFailed("Connection not open"))
+    }
+
+    let raw: String = ws_raw_recv(conn, 65536)
+    if len(raw) == 0 {
+        return Err(ConnectionClosed("Connection closed by peer"))
+    }
+
+    let dr: FrameDecodeResult = decode_frame(raw)
+    if dr.ok == false {
+        return Err(InvalidFrame(dr.error_msg))
+    }
+
+    let frame: WsFrame = dr.frame
+
+    // Task 16: Ping — auto-respond with Pong
+    if frame.opcode == 9 {
+        let pong_frame: String = build_send_frame(10, frame.payload, conn.is_server == false)
+        let sent: Int = ws_raw_send(conn, pong_frame)
+        return Ok(Ping(frame.payload))
+    }
+
+    if frame.opcode == 10 {
+        return Ok(Pong(frame.payload))
+    }
+
+    // Task 17: Close frame
+    if frame.opcode == 8 {
+        let mut close_code: Int = 1000
+        let mut close_reason: String = ""
+        if frame.payload_len >= 2 {
+            close_code = frame.payload.byte_at(0) * 256 + frame.payload.byte_at(1)
+            let mut ri: Int = 2
+            while ri < frame.payload_len {
+                close_reason = close_reason + frame.payload.char_at(ri)
+                ri = ri + 1
+            }
+        }
+        let close_resp: String = build_send_frame(8, frame.payload, conn.is_server == false)
+        let sent: Int = ws_raw_send(conn, close_resp)
+        return Ok(Close(close_code, close_reason))
+    }
+
+    // Task 15: Continuation frame (fragmentation)
+    if frame.opcode == 0 {
+        return Ok(Text(frame.payload))
+    }
+
+    if frame.opcode == 1 {
+        return Ok(Text(frame.payload))
+    }
+
+    if frame.opcode == 2 {
+        return Ok(Binary(frame.payload))
+    }
+
+    return Err(ProtocolError("Unknown opcode: " + str(frame.opcode)))
+}
+
+// ---------------------------------------------------------------------------
+// Task 10: WebSocket upgrade detection from HTTP request headers
+// ---------------------------------------------------------------------------
+
+pub fn is_websocket_upgrade(headers: Map<String, String>) -> Bool {
+    let mut has_upgrade: Bool = false
+    let mut has_key: Bool = false
+
+    for key in headers {
+        let lower_key: String = ws_to_lower(key)
+        let val: String = headers[key]
+        let lower_val: String = ws_to_lower(val)
+
+        if lower_key == "upgrade" {
+            if lower_val == "websocket" {
+                has_upgrade = true
+            }
+        }
+        if lower_key == "sec-websocket-key" {
+            has_key = true
+        }
+    }
+
+    if has_upgrade {
+        if has_key {
+            return true
+        }
+    }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Task 11: Server handshake — compute accept key, send 101 response
+// ---------------------------------------------------------------------------
+
+pub fn ws_accept_upgrade(client_fd: Int, headers: Map<String, String>) -> Result<WsConnection, WsError> {
+    let mut client_key: String = ""
+    for key in headers {
+        let lower_key: String = ws_to_lower(key)
+        if lower_key == "sec-websocket-key" {
+            client_key = headers[key]
+        }
+    }
+
+    if len(client_key) == 0 {
+        return Err(HandshakeFailed("Missing Sec-WebSocket-Key header"))
+    }
+
+    let accept_key: String = compute_accept_key(client_key)
+
+    let mut resp: String = "HTTP/1.1 101 Switching Protocols\r\n"
+    resp = resp + "Upgrade: websocket\r\n"
+    resp = resp + "Connection: Upgrade\r\n"
+    resp = resp + "Sec-WebSocket-Accept: " + accept_key + "\r\n"
+    resp = resp + "\r\n"
+
+    let sent: Int = __mn_tcp_send_str(client_fd, resp)
+    if sent < 0 {
+        return Err(HandshakeFailed("Failed to send 101 response"))
+    }
+
+    let conn: WsConnection = new_ws_connection(client_fd, 0, false, true)
+    return Ok(conn)
+}
+
+// ---------------------------------------------------------------------------
+// Task 12: Server-side frame handling
+// Handled by is_server flag: ws_send masks for clients, not servers.
+// ws_recv handles masked/unmasked via the MASK bit in frame header.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Task 17: Close handshake
+// ---------------------------------------------------------------------------
+
+pub fn ws_close(conn: WsConnection, code: Int, reason: String) -> Result<Int, WsError> {
+    if conn.state == 3 {
+        return Ok(0)
+    }
+
+    let hi: Int = code / 256
+    let lo: Int = code - hi * 256
+    let close_payload: String = str(hi) + str(lo) + reason
+
+    let frame: String = build_send_frame(8, close_payload, conn.is_server == false)
+    let sent: Int = ws_raw_send(conn, frame)
+
+    let resp: String = ws_raw_recv(conn, 256)
+
+    if conn.is_tls {
+        let close_r: Int = __mn_tls_close_fd(conn.tls_ctx, conn.fd)
+    } else {
+        let close_r: Int = __mn_tcp_close_fd(conn.fd)
+    }
+
+    return Ok(0)
+}
+
+// ---------------------------------------------------------------------------
+// Task 18: Channel integration — deferred to Phase 8
+// Task 19: Agent-per-connection — deferred to Phase 8
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Echo server loop (convenience pattern)
+// ---------------------------------------------------------------------------
+
+pub fn ws_echo_loop(conn: WsConnection) -> Result<Int, WsError> {
+    let mut running: Bool = true
+    let mut iterations: Int = 0
+    while running {
+        iterations = iterations + 1
+        if iterations > 100000 { break }
+
+        let msg_r: Result<WsMessage, WsError> = ws_recv(conn)
+        match msg_r {
+            Ok(msg) => {
+                match msg {
+                    Text(data) => {
+                        let send_r: Result<Int, WsError> = ws_send(conn, Text(data))
+                    },
+                    Binary(data) => {
+                        let send_r: Result<Int, WsError> = ws_send(conn, Binary(data))
+                    },
+                    Ping(data) => {
+                        let noop: Int = 0
+                    },
+                    Pong(data) => {
+                        let noop: Int = 0
+                    },
+                    Close(code, reason) => {
+                        running = false
+                    }
+                }
+            },
+            Err(e) => {
+                running = false
+            }
+        }
+    }
+
+    let close_r: Result<Int, WsError> = ws_close(conn, 1000, "echo done")
+    return Ok(0)
+}

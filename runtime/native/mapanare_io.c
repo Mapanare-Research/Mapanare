@@ -921,3 +921,227 @@ MN_IO_EXPORT int64_t __mn_tls_close_fd(int64_t tls_ctx, int64_t fd) {
     __mn_tcp_close(fd);
     return 0;
 }
+
+MN_IO_EXPORT int64_t __mn_tcp_listen_str(MnString host, int64_t port, int64_t backlog) {
+    char *chost = mnstr_to_cstr(host);
+    if (!chost) return -1;
+    int64_t fd = __mn_tcp_listen(chost, port, backlog);
+    free(chost);
+    return fd;
+}
+
+/* =======================================================================
+ * 6. Crypto primitives (SHA-1, SHA-256, Base64, random bytes)
+ *
+ * SHA-1/SHA-256 use the already-loaded OpenSSL libcrypto (EVP API).
+ * Base64 is pure C. Random uses /dev/urandom or CryptGenRandom.
+ * ======================================================================= */
+
+/* --- SHA-1 via OpenSSL EVP (dynamically loaded) --- */
+
+/* EVP function pointer types */
+typedef void* (*fn_EVP_MD_CTX_new)(void);
+typedef void  (*fn_EVP_MD_CTX_free)(void *ctx);
+typedef void* (*fn_EVP_sha1)(void);
+typedef void* (*fn_EVP_sha256)(void);
+typedef int   (*fn_EVP_DigestInit_ex)(void *ctx, const void *type, void *impl);
+typedef int   (*fn_EVP_DigestUpdate)(void *ctx, const void *d, size_t cnt);
+typedef int   (*fn_EVP_DigestFinal_ex)(void *ctx, unsigned char *md, unsigned int *s);
+
+static struct {
+    int loaded;
+    int available;
+    fn_EVP_MD_CTX_new     EVP_MD_CTX_new;
+    fn_EVP_MD_CTX_free    EVP_MD_CTX_free;
+    fn_EVP_sha1           EVP_sha1;
+    fn_EVP_sha256         EVP_sha256;
+    fn_EVP_DigestInit_ex  EVP_DigestInit_ex;
+    fn_EVP_DigestUpdate   EVP_DigestUpdate;
+    fn_EVP_DigestFinal_ex EVP_DigestFinal_ex;
+} s_evp = {0};
+
+static int evp_load(void) {
+    if (s_evp.loaded) return s_evp.available ? 0 : -1;
+    s_evp.loaded = 1;
+    s_evp.available = 0;
+
+    /* Ensure libcrypto is loaded (reuse TLS loader) */
+    if (!s_ssl.loaded) ssl_load_library();
+    if (!s_ssl.libcrypto) return -1;
+
+#ifdef _WIN32
+    #define EVP_SYM(name) s_evp.name = (fn_##name)GetProcAddress(s_ssl.libcrypto, #name)
+#else
+    #define EVP_SYM(name) s_evp.name = (fn_##name)dlsym(s_ssl.libcrypto, #name)
+#endif
+
+    EVP_SYM(EVP_MD_CTX_new);
+    EVP_SYM(EVP_MD_CTX_free);
+    EVP_SYM(EVP_sha1);
+    EVP_SYM(EVP_sha256);
+    EVP_SYM(EVP_DigestInit_ex);
+    EVP_SYM(EVP_DigestUpdate);
+    EVP_SYM(EVP_DigestFinal_ex);
+
+    #undef EVP_SYM
+
+    if (!s_evp.EVP_MD_CTX_new || !s_evp.EVP_MD_CTX_free ||
+        !s_evp.EVP_sha1 || !s_evp.EVP_sha256 ||
+        !s_evp.EVP_DigestInit_ex || !s_evp.EVP_DigestUpdate ||
+        !s_evp.EVP_DigestFinal_ex) {
+        return -1;
+    }
+
+    s_evp.available = 1;
+    return 0;
+}
+
+static MnString evp_hash(MnString data, void *(*md_fn)(void), int digest_len) {
+    if (evp_load() < 0) return __mn_str_empty();
+
+    void *ctx = s_evp.EVP_MD_CTX_new();
+    if (!ctx) return __mn_str_empty();
+
+    unsigned char md[64]; /* big enough for SHA-512 */
+    unsigned int md_len = 0;
+
+    const char *buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+
+    if (s_evp.EVP_DigestInit_ex(ctx, md_fn(), NULL) != 1 ||
+        s_evp.EVP_DigestUpdate(ctx, buf, (size_t)data.len) != 1 ||
+        s_evp.EVP_DigestFinal_ex(ctx, md, &md_len) != 1) {
+        s_evp.EVP_MD_CTX_free(ctx);
+        return __mn_str_empty();
+    }
+
+    s_evp.EVP_MD_CTX_free(ctx);
+    return __mn_str_from_parts((const char *)md, (int64_t)md_len);
+}
+
+MN_IO_EXPORT MnString __mn_sha1_str(MnString data) {
+    return evp_hash(data, s_evp.EVP_sha1, 20);
+}
+
+MN_IO_EXPORT MnString __mn_sha256_str(MnString data) {
+    return evp_hash(data, s_evp.EVP_sha256, 32);
+}
+
+/* --- Base64 (pure C) --- */
+
+static const char b64_table[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+MN_IO_EXPORT MnString __mn_base64_encode_str(MnString data) {
+    const unsigned char *src = (const unsigned char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    int64_t slen = data.len;
+    int64_t olen = 4 * ((slen + 2) / 3);
+    char *out = (char *)malloc((size_t)olen + 1);
+    if (!out) return __mn_str_empty();
+
+    int64_t i = 0, j = 0;
+    while (i < slen) {
+        uint32_t a = (i < slen) ? src[i++] : 0;
+        uint32_t b = (i < slen) ? src[i++] : 0;
+        uint32_t c = (i < slen) ? src[i++] : 0;
+        uint32_t triple = (a << 16) | (b << 8) | c;
+
+        out[j++] = b64_table[(triple >> 18) & 0x3F];
+        out[j++] = b64_table[(triple >> 12) & 0x3F];
+        out[j++] = b64_table[(triple >> 6)  & 0x3F];
+        out[j++] = b64_table[triple         & 0x3F];
+    }
+
+    /* Padding */
+    int64_t mod = slen % 3;
+    if (mod == 1) { out[j - 1] = '='; out[j - 2] = '='; }
+    else if (mod == 2) { out[j - 1] = '='; }
+    out[j] = '\0';
+
+    MnString result = __mn_str_from_parts(out, j);
+    free(out);
+    return result;
+}
+
+static int b64_decode_char(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+MN_IO_EXPORT MnString __mn_base64_decode_str(MnString data) {
+    const char *src = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    int64_t slen = data.len;
+    if (slen == 0 || slen % 4 != 0) return __mn_str_empty();
+
+    int64_t olen = (slen / 4) * 3;
+    if (slen >= 1 && src[slen - 1] == '=') olen--;
+    if (slen >= 2 && src[slen - 2] == '=') olen--;
+
+    char *out = (char *)malloc((size_t)olen + 1);
+    if (!out) return __mn_str_empty();
+
+    int64_t i = 0, j = 0;
+    while (i < slen) {
+        int a = (src[i] == '=') ? 0 : b64_decode_char(src[i]); i++;
+        int b = (src[i] == '=') ? 0 : b64_decode_char(src[i]); i++;
+        int c = (src[i] == '=') ? 0 : b64_decode_char(src[i]); i++;
+        int d = (src[i] == '=') ? 0 : b64_decode_char(src[i]); i++;
+
+        if (a < 0 || b < 0 || c < 0 || d < 0) { free(out); return __mn_str_empty(); }
+
+        uint32_t triple = ((uint32_t)a << 18) | ((uint32_t)b << 12) | ((uint32_t)c << 6) | (uint32_t)d;
+        if (j < olen) out[j++] = (char)((triple >> 16) & 0xFF);
+        if (j < olen) out[j++] = (char)((triple >> 8) & 0xFF);
+        if (j < olen) out[j++] = (char)(triple & 0xFF);
+    }
+    out[j] = '\0';
+
+    MnString result = __mn_str_from_parts(out, olen);
+    free(out);
+    return result;
+}
+
+/* --- Random bytes --- */
+
+MN_IO_EXPORT MnString __mn_random_bytes_str(int64_t n) {
+    if (n <= 0) return __mn_str_empty();
+    char *buf = (char *)malloc((size_t)n);
+    if (!buf) return __mn_str_empty();
+
+#ifdef _WIN32
+    /* Use BCryptGenRandom (Vista+) or CryptGenRandom */
+    typedef long (WINAPI *fn_BCryptGenRandom)(void*, unsigned char*, unsigned long, unsigned long);
+    HMODULE bcrypt = LoadLibraryA("bcrypt.dll");
+    if (bcrypt) {
+        fn_BCryptGenRandom gen = (fn_BCryptGenRandom)GetProcAddress(bcrypt, "BCryptGenRandom");
+        if (gen && gen(NULL, (unsigned char *)buf, (unsigned long)n, 2 /*BCRYPT_USE_SYSTEM_PREFERRED_RNG*/) == 0) {
+            MnString result = __mn_str_from_parts(buf, n);
+            free(buf);
+            return result;
+        }
+    }
+    /* Fallback: rand() seeded by time — NOT cryptographically secure */
+    srand((unsigned int)GetTickCount());
+    for (int64_t i = 0; i < n; i++) buf[i] = (char)(rand() & 0xFF);
+#else
+    FILE *f = fopen("/dev/urandom", "rb");
+    if (f) {
+        size_t read = fread(buf, 1, (size_t)n, f);
+        fclose(f);
+        if ((int64_t)read != n) {
+            free(buf);
+            return __mn_str_empty();
+        }
+    } else {
+        free(buf);
+        return __mn_str_empty();
+    }
+#endif
+
+    MnString result = __mn_str_from_parts(buf, n);
+    free(buf);
+    return result;
+}
