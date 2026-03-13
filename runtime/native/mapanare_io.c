@@ -1229,3 +1229,284 @@ MN_IO_EXPORT MnString __mn_random_bytes_str(int64_t n) {
     free(buf);
     return result;
 }
+
+/* =======================================================================
+ * 7. Regular Expressions (PCRE2 via dlopen)
+ *
+ * Dynamically loads libpcre2-8 and wraps compile/match/replace.
+ * Falls back gracefully (returns error) if PCRE2 is not available.
+ * ======================================================================= */
+
+/* PCRE2 constants (from pcre2.h) */
+#define MN_PCRE2_UNSET          (~(size_t)0)
+#define MN_PCRE2_UTF            0x00080000u
+#define MN_PCRE2_SUBSTITUTE_GLOBAL     0x00000100u
+#define MN_PCRE2_SUBSTITUTE_OVERFLOW_LENGTH 0x00001000u
+#define MN_PCRE2_ERROR_NOMEMORY (-48)
+#define MN_PCRE2_ERROR_NOMATCH  (-1)
+
+/* PCRE2 function pointer types (pcre2_*_8 variants) */
+typedef void* (*fn_pcre2_compile)(const unsigned char *pattern, size_t length,
+                                  uint32_t options, int *errorcode,
+                                  size_t *erroroffset, void *ccontext);
+typedef void  (*fn_pcre2_code_free)(void *code);
+typedef void* (*fn_pcre2_match_data_create_from_pattern)(const void *code, void *gcontext);
+typedef int   (*fn_pcre2_match)(const void *code, const unsigned char *subject,
+                                size_t length, size_t startoffset, uint32_t options,
+                                void *match_data, void *mcontext);
+typedef size_t* (*fn_pcre2_get_ovector_pointer)(void *match_data);
+typedef uint32_t (*fn_pcre2_get_ovector_count)(void *match_data);
+typedef void  (*fn_pcre2_match_data_free)(void *match_data);
+typedef int   (*fn_pcre2_get_error_message)(int errorcode, unsigned char *buffer, size_t bufflen);
+typedef int   (*fn_pcre2_substitute)(const void *code, const unsigned char *subject,
+                                     size_t length, size_t startoffset, uint32_t options,
+                                     void *match_data, void *mcontext,
+                                     const unsigned char *replacement, size_t rlength,
+                                     unsigned char *outputbuffer, size_t *outlengthptr);
+typedef int   (*fn_pcre2_pattern_info)(const void *code, uint32_t what, void *where);
+
+/* Cached PCRE2 function pointers */
+static struct {
+    int loaded;
+    int available;
+    fn_pcre2_compile              compile;
+    fn_pcre2_code_free            code_free;
+    fn_pcre2_match_data_create_from_pattern match_data_create;
+    fn_pcre2_match                match;
+    fn_pcre2_get_ovector_pointer  get_ovector_pointer;
+    fn_pcre2_get_ovector_count    get_ovector_count;
+    fn_pcre2_match_data_free      match_data_free;
+    fn_pcre2_get_error_message    get_error_message;
+    fn_pcre2_substitute           substitute;
+    fn_pcre2_pattern_info         pattern_info;
+} s_pcre2 = {0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+
+static int pcre2_load(void) {
+    if (s_pcre2.loaded) return s_pcre2.available ? 0 : -1;
+    s_pcre2.loaded = 1;
+    s_pcre2.available = 0;
+
+    void *lib = NULL;
+#ifdef _WIN32
+    lib = (void *)LoadLibraryA("pcre2-8.dll");
+    if (!lib) lib = (void *)LoadLibraryA("pcre2-8d.dll");
+    if (!lib) lib = (void *)LoadLibraryA("libpcre2-8.dll");
+    if (!lib) lib = (void *)LoadLibraryA("libpcre2-8-0.dll");
+    #define PCRE2_SYM(name) s_pcre2.name = (fn_pcre2_##name)GetProcAddress((HMODULE)lib, "pcre2_" #name "_8")
+#else
+    lib = dlopen("libpcre2-8.so", RTLD_NOW | RTLD_LOCAL);
+    if (!lib) lib = dlopen("libpcre2-8.so.0", RTLD_NOW | RTLD_LOCAL);
+    if (!lib) lib = dlopen("libpcre2-8.dylib", RTLD_NOW | RTLD_LOCAL);
+    #define PCRE2_SYM(name) s_pcre2.name = (fn_pcre2_##name)dlsym(lib, "pcre2_" #name "_8")
+#endif
+    if (!lib) return -1;
+
+    PCRE2_SYM(compile);
+    PCRE2_SYM(code_free);
+    PCRE2_SYM(match_data_create);
+    PCRE2_SYM(match);
+    PCRE2_SYM(get_ovector_pointer);
+    PCRE2_SYM(get_ovector_count);
+    PCRE2_SYM(match_data_free);
+    PCRE2_SYM(get_error_message);
+    PCRE2_SYM(substitute);
+    PCRE2_SYM(pattern_info);
+    #undef PCRE2_SYM
+
+    if (!s_pcre2.compile || !s_pcre2.match || !s_pcre2.code_free ||
+        !s_pcre2.match_data_create || !s_pcre2.get_ovector_pointer ||
+        !s_pcre2.match_data_free) {
+        return -1;
+    }
+
+    s_pcre2.available = 1;
+    return 0;
+}
+
+/* Per-handle state: compiled regex + last match data */
+typedef struct {
+    void   *code;        /* pcre2_code */
+    void   *match_data;  /* pcre2_match_data (from last exec) */
+    size_t *ovector;     /* ovector pointer from last exec */
+    int     rc;          /* pcre2_match return code from last exec */
+    int     errcode;     /* error code from failed compile */
+    size_t  erroffset;   /* error offset from failed compile */
+} MnRegexHandle;
+
+MN_IO_EXPORT int64_t __mn_regex_compile_str(MnString pattern) {
+    if (pcre2_load() < 0) return 0;
+
+    const char *pat = (const char *)((uintptr_t)pattern.data & ~(uintptr_t)1);
+
+    MnRegexHandle *h = (MnRegexHandle *)calloc(1, sizeof(MnRegexHandle));
+    if (!h) return 0;
+
+    h->code = s_pcre2.compile(
+        (const unsigned char *)pat, (size_t)pattern.len,
+        MN_PCRE2_UTF, &h->errcode, &h->erroffset, NULL
+    );
+
+    if (!h->code) {
+        /* Keep h alive so __mn_regex_error_str can retrieve the message */
+        return (int64_t)(uintptr_t)h;
+    }
+
+    h->match_data = s_pcre2.match_data_create(h->code, NULL);
+    if (!h->match_data) {
+        s_pcre2.code_free(h->code);
+        free(h);
+        return 0;
+    }
+
+    return (int64_t)(uintptr_t)h;
+}
+
+MN_IO_EXPORT int64_t __mn_regex_exec_str(int64_t handle, MnString subject, int64_t start_offset) {
+    if (!handle) return -1;
+    MnRegexHandle *h = (MnRegexHandle *)(uintptr_t)handle;
+    if (!h->code) return -1;
+
+    const char *subj = (const char *)((uintptr_t)subject.data & ~(uintptr_t)1);
+
+    h->rc = s_pcre2.match(
+        h->code,
+        (const unsigned char *)subj, (size_t)subject.len,
+        (size_t)start_offset, 0,
+        h->match_data, NULL
+    );
+
+    if (h->rc == MN_PCRE2_ERROR_NOMATCH) {
+        h->ovector = NULL;
+        return 0;
+    }
+    if (h->rc < 0) {
+        h->ovector = NULL;
+        return -1;
+    }
+
+    h->ovector = s_pcre2.get_ovector_pointer(h->match_data);
+    return 1;
+}
+
+MN_IO_EXPORT MnString __mn_regex_group_str(int64_t handle, MnString subject, int64_t group_idx) {
+    if (!handle) return __mn_str_empty();
+    MnRegexHandle *h = (MnRegexHandle *)(uintptr_t)handle;
+    if (!h->ovector || h->rc <= 0) return __mn_str_empty();
+    if (group_idx < 0 || group_idx >= h->rc) return __mn_str_empty();
+
+    size_t start = h->ovector[2 * group_idx];
+    size_t end   = h->ovector[2 * group_idx + 1];
+    if (start == MN_PCRE2_UNSET || end == MN_PCRE2_UNSET) return __mn_str_empty();
+
+    const char *subj = (const char *)((uintptr_t)subject.data & ~(uintptr_t)1);
+    return __mn_str_from_parts(subj + start, (int64_t)(end - start));
+}
+
+MN_IO_EXPORT int64_t __mn_regex_group_start(int64_t handle, int64_t group_idx) {
+    if (!handle) return -1;
+    MnRegexHandle *h = (MnRegexHandle *)(uintptr_t)handle;
+    if (!h->ovector || h->rc <= 0) return -1;
+    if (group_idx < 0 || group_idx >= h->rc) return -1;
+
+    size_t start = h->ovector[2 * group_idx];
+    if (start == MN_PCRE2_UNSET) return -1;
+    return (int64_t)start;
+}
+
+MN_IO_EXPORT int64_t __mn_regex_group_end(int64_t handle, int64_t group_idx) {
+    if (!handle) return -1;
+    MnRegexHandle *h = (MnRegexHandle *)(uintptr_t)handle;
+    if (!h->ovector || h->rc <= 0) return -1;
+    if (group_idx < 0 || group_idx >= h->rc) return -1;
+
+    size_t end = h->ovector[2 * group_idx + 1];
+    if (end == MN_PCRE2_UNSET) return -1;
+    return (int64_t)end;
+}
+
+MN_IO_EXPORT int64_t __mn_regex_group_count(int64_t handle) {
+    if (!handle) return 0;
+    MnRegexHandle *h = (MnRegexHandle *)(uintptr_t)handle;
+    if (!h->code || !s_pcre2.pattern_info) return 0;
+
+    uint32_t capture_count = 0;
+    /* PCRE2_INFO_CAPTURECOUNT = 4 */
+    s_pcre2.pattern_info(h->code, 4, &capture_count);
+    return (int64_t)capture_count;
+}
+
+MN_IO_EXPORT MnString __mn_regex_replace_str(int64_t handle, MnString subject,
+                                              MnString replacement, int64_t replace_all) {
+    if (!handle) return subject;
+    MnRegexHandle *h = (MnRegexHandle *)(uintptr_t)handle;
+    if (!h->code) return subject;
+
+    /* If substitute function not available, return subject unchanged */
+    if (!s_pcre2.substitute) return subject;
+
+    const char *subj = (const char *)((uintptr_t)subject.data & ~(uintptr_t)1);
+    const char *repl = (const char *)((uintptr_t)replacement.data & ~(uintptr_t)1);
+
+    uint32_t opts = MN_PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+    if (replace_all) opts |= MN_PCRE2_SUBSTITUTE_GLOBAL;
+
+    /* First call to get required output length */
+    size_t outlen = 0;
+    int rc = s_pcre2.substitute(
+        h->code,
+        (const unsigned char *)subj, (size_t)subject.len,
+        0, opts, h->match_data, NULL,
+        (const unsigned char *)repl, (size_t)replacement.len,
+        NULL, &outlen
+    );
+
+    if (rc == MN_PCRE2_ERROR_NOMATCH) return subject;
+    if (rc != MN_PCRE2_ERROR_NOMEMORY && rc < 0) return subject;
+
+    /* Allocate buffer and do actual substitution */
+    unsigned char *buf = (unsigned char *)malloc(outlen + 1);
+    if (!buf) return subject;
+
+    size_t actual_len = outlen + 1;
+    rc = s_pcre2.substitute(
+        h->code,
+        (const unsigned char *)subj, (size_t)subject.len,
+        0, opts & ~MN_PCRE2_SUBSTITUTE_OVERFLOW_LENGTH,
+        h->match_data, NULL,
+        (const unsigned char *)repl, (size_t)replacement.len,
+        buf, &actual_len
+    );
+
+    if (rc < 0) {
+        free(buf);
+        return subject;
+    }
+
+    MnString result = __mn_str_from_parts((const char *)buf, (int64_t)actual_len);
+    free(buf);
+    return result;
+}
+
+MN_IO_EXPORT int64_t __mn_regex_free(int64_t handle) {
+    if (!handle) return 0;
+    MnRegexHandle *h = (MnRegexHandle *)(uintptr_t)handle;
+    if (h->match_data && s_pcre2.match_data_free) s_pcre2.match_data_free(h->match_data);
+    if (h->code && s_pcre2.code_free) s_pcre2.code_free(h->code);
+    free(h);
+    return 0;
+}
+
+MN_IO_EXPORT MnString __mn_regex_error_str(int64_t handle) {
+    if (!handle) return __mn_str_from_cstr("PCRE2 not available");
+    MnRegexHandle *h = (MnRegexHandle *)(uintptr_t)handle;
+
+    if (h->code) return __mn_str_empty(); /* no error */
+
+    if (s_pcre2.get_error_message) {
+        unsigned char buf[256];
+        int len = s_pcre2.get_error_message(h->errcode, buf, sizeof(buf));
+        if (len > 0) return __mn_str_from_parts((const char *)buf, (int64_t)len);
+    }
+
+    return __mn_str_from_cstr("regex compilation failed");
+}

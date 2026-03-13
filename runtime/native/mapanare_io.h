@@ -288,4 +288,45 @@ MN_IO_EXPORT MnString __mn_base64_decode_str(MnString data);
 /** Generate n cryptographically random bytes as an MnString. */
 MN_IO_EXPORT MnString __mn_random_bytes_str(int64_t n);
 
+/* -----------------------------------------------------------------------
+ * 7. Regular expressions (PCRE2 via dlopen)
+ *
+ * Handle-based API: compile a pattern, then execute matches, extract
+ * groups, replace, or split. PCRE2 is loaded dynamically (like OpenSSL
+ * for crypto). Returns 0/empty on failure if PCRE2 is not available.
+ * ----------------------------------------------------------------------- */
+
+/** Compile a regex pattern. Returns opaque handle (>0) or 0 on error. */
+MN_IO_EXPORT int64_t __mn_regex_compile_str(MnString pattern);
+
+/** Execute regex against subject starting at byte offset.
+ *  Returns 1 if match found, 0 if no match, -1 on error.
+ *  Match data is stored in the handle for group extraction. */
+MN_IO_EXPORT int64_t __mn_regex_exec_str(int64_t handle, MnString subject, int64_t start_offset);
+
+/** Get matched text for capture group (0 = full match).
+ *  subject must be the same MnString passed to __mn_regex_exec_str.
+ *  Returns empty string if group did not participate or index out of range. */
+MN_IO_EXPORT MnString __mn_regex_group_str(int64_t handle, MnString subject, int64_t group_idx);
+
+/** Get start byte offset of capture group in last match. Returns -1 if unset. */
+MN_IO_EXPORT int64_t __mn_regex_group_start(int64_t handle, int64_t group_idx);
+
+/** Get end byte offset (exclusive) of capture group. Returns -1 if unset. */
+MN_IO_EXPORT int64_t __mn_regex_group_end(int64_t handle, int64_t group_idx);
+
+/** Get number of capture groups (excluding group 0 = full match). */
+MN_IO_EXPORT int64_t __mn_regex_group_count(int64_t handle);
+
+/** Replace matches in subject. If replace_all != 0, replaces all occurrences.
+ *  Returns new string with replacements applied. */
+MN_IO_EXPORT MnString __mn_regex_replace_str(int64_t handle, MnString subject,
+                                              MnString replacement, int64_t replace_all);
+
+/** Free a compiled regex handle and its match data. Returns 0. */
+MN_IO_EXPORT int64_t __mn_regex_free(int64_t handle);
+
+/** Get error message from last failed compile. Returns empty if no error. */
+MN_IO_EXPORT MnString __mn_regex_error_str(int64_t handle);
+
 #endif /* MAPANARE_IO_H */

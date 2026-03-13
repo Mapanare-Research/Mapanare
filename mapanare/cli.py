@@ -119,7 +119,29 @@ def _compile_to_llvm_ir(
     use_mir: bool = True,
     debug: bool = False,
 ) -> str:
-    """Parse, check, optimize, and emit LLVM IR from Mapanare source."""
+    """Parse, check, optimize, and emit LLVM IR from Mapanare source.
+
+    When the source contains ``import`` statements and ``use_mir=True``,
+    automatically uses multi-module compilation to resolve and link all
+    imported modules into a single LLVM IR module.
+    """
+    # Check for imports — if present and using MIR, use multi-module pipeline
+    if use_mir:
+        from mapanare.ast_nodes import ImportDef
+
+        ast_for_check = parse(source, filename=filename)
+        has_imports = any(isinstance(d, ImportDef) for d in ast_for_check.definitions)
+        if has_imports:
+            from mapanare.multi_module import compile_multi_module_mir
+
+            return compile_multi_module_mir(
+                root_source=source,
+                root_file=filename,
+                opt_level=opt_level.value,
+                target_name=target_name,
+                debug=debug,
+            )
+
     ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename, resolver=resolver)
 
@@ -685,7 +707,9 @@ def cmd_build(args: argparse.Namespace) -> None:
     target_name: str | None = getattr(args, "target", None)
     use_mir = not getattr(args, "no_mir", False)
     debug = getattr(args, "debug", False)
-    resolver = ModuleResolver()
+    stdlib_path: str | None = getattr(args, "stdlib_path", None)
+    search_paths = [stdlib_path] if stdlib_path else None
+    resolver = ModuleResolver(search_paths=search_paths)
     try:
         llvm_ir = _compile_to_llvm_ir(
             source,
@@ -1231,6 +1255,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="LIB",
         action="append",
         help="Link against a C library (e.g. --link-lib m for libm)",
+    )
+    p_build.add_argument(
+        "--stdlib-path",
+        metavar="PATH",
+        help="Path to stdlib directory (default: auto-detect from install)",
+        default=None,
     )
     _add_opt_level_args(p_build)
     _add_mir_flag(p_build)

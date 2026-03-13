@@ -35,9 +35,9 @@ from mapanare.cli import _compile_to_llvm_ir
 # ---------------------------------------------------------------------------
 
 # Read the JSON module source once
-_JSON_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "encoding" / "json.mn").read_text(
-    encoding="utf-8"
-)
+_JSON_MN = (
+    Path(__file__).resolve().parent.parent.parent / "stdlib" / "encoding" / "json.mn"
+).read_text(encoding="utf-8")
 
 
 def _compile_mir(source: str) -> str:
@@ -406,7 +406,7 @@ class TestEncode:
     def test_encode_null(self) -> None:
         """Encode null."""
         src = _json_source_with_main("""\
-            let s: String = encode(Null)
+            let s: String = encode(Null())
             println(s)
         """)
         ir_out = _compile_mir(src)
@@ -519,7 +519,7 @@ class TestRoundTrip:
     def test_round_trip_null(self) -> None:
         """Round-trip: encode then decode null."""
         src = _json_source_with_main("""\
-            let encoded: String = encode(Null)
+            let encoded: String = encode(Null())
             let decoded: Result<JsonValue, JsonError> = decode(encoded)
             println("ok")
         """)
@@ -563,14 +563,7 @@ class TestSchemaValidation:
     def test_validate_compiles(self) -> None:
         """Schema validation compiles."""
         src = _json_source_with_main("""\
-            let schema: JsonSchema = new JsonSchema {
-                schema_type: SInt,
-                required_fields: [],
-                min_value: 0,
-                max_value: 100,
-                has_min: true,
-                has_max: true
-            }
+            let schema: JsonSchema = new JsonSchema {schema_type: SInt(), required_fields: [], min_value: 0, max_value: 100, has_min: true, has_max: true}
             let value: JsonValue = Int(42)
             let r: Result<Bool, List<JsonError>> = validate(value, schema)
             println("ok")
@@ -584,7 +577,9 @@ class TestSchemaValidation:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="Typed deserialization requires compile-time struct introspection (not available yet)")
+@pytest.mark.skip(
+    reason="Typed deserialization requires compile-time struct introspection (not available yet)"
+)
 class TestTypedDeserialization:
     def test_decode_to_struct(self) -> None:
         """Typed deserialization into struct — deferred to v1.0+."""

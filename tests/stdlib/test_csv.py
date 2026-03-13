@@ -42,13 +42,11 @@ def _compile_mir(source: str) -> str:
 
 
 def _csv_with_main(main_body: str) -> str:
-    return _CSV_MN + "\n\n" + textwrap.dedent(
-        f"""\
+    return _CSV_MN + "\n\n" + textwrap.dedent(f"""\
         fn main() {{
         {textwrap.indent(textwrap.dedent(main_body), '    ')}
         }}
-    """
-    )
+    """)
 
 
 # ---------------------------------------------------------------------------

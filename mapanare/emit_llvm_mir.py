@@ -623,6 +623,9 @@ class LLVMMIREmitter:
         func = ir.Function(self.module, fn_ty, name=mir_fn.name)
         for i, param in enumerate(mir_fn.params):
             func.args[i].name = param.name
+        # Non-public functions get internal linkage (hidden from linker)
+        if not mir_fn.is_public and mir_fn.name != "main":
+            func.linkage = "internal"
         self._functions[mir_fn.name] = func
 
     # -----------------------------------------------------------------------

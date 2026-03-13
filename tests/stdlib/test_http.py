@@ -39,9 +39,9 @@ from mapanare.cli import _compile_to_llvm_ir
 # ---------------------------------------------------------------------------
 
 # Read the HTTP module source once
-_HTTP_MN = (
-    Path(__file__).resolve().parent.parent.parent / "stdlib" / "net" / "http.mn"
-).read_text(encoding="utf-8")
+_HTTP_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "net" / "http.mn").read_text(
+    encoding="utf-8"
+)
 
 
 def _compile_mir(source: str) -> str:
@@ -51,17 +51,11 @@ def _compile_mir(source: str) -> str:
 
 def _http_source_with_main(main_body: str) -> str:
     """Prepend the HTTP module source and wrap main_body in fn main()."""
-    return (
-        _HTTP_MN
-        + "\n\n"
-        + textwrap.dedent(
-            f"""\
+    return _HTTP_MN + "\n\n" + textwrap.dedent(f"""\
         fn main() {{
         {textwrap.indent(textwrap.dedent(main_body), '    ')}
         }}
-    """
-        )
-    )
+    """)
 
 
 # ---------------------------------------------------------------------------
@@ -166,14 +160,8 @@ class TestCoreStructs:
     def test_request_with_headers(self) -> None:
         """HttpRequest with custom headers compiles."""
         src = _http_source_with_main("""\
-            let req: HttpRequest = new HttpRequest {
-                method: POST(),
-                url: "http://example.com/api",
-                headers: #{"Content-Type": "application/json", "Authorization": "Bearer token"},
-                body: "{}",
-                has_body: true,
-                timeout_ms: 5000
-            }
+            let hdrs: Map<String, String> = #{"Content-Type": "application/json"}
+            let req: HttpRequest = make_request_with_body(POST(), "http://ex.com/api", "{}", hdrs)
             println(req.body)
         """)
         ir_out = _compile_mir(src)
@@ -517,14 +505,7 @@ class TestFullRequest:
     def test_request_compiles(self) -> None:
         """request() with default config compiles."""
         src = _http_source_with_main("""\
-            let req: HttpRequest = new HttpRequest {
-                method: GET(),
-                url: "http://example.com",
-                headers: #{"Accept": "text/html"},
-                body: "",
-                has_body: false,
-                timeout_ms: 10000
-            }
+            let req: HttpRequest = new_http_request(GET(), "http://example.com")
             let result: Result<HttpResponse, HttpError> = request(req)
             println("compiled")
         """)
@@ -612,14 +593,7 @@ class TestIntegration:
     def test_custom_headers_sent(self) -> None:
         """Task 29: Custom headers in request compile."""
         src = _http_source_with_main("""\
-            let req: HttpRequest = new HttpRequest {
-                method: GET(),
-                url: "http://httpbin.org/headers",
-                headers: #{"X-Custom": "value", "Authorization": "Bearer tok"},
-                body: "",
-                has_body: false,
-                timeout_ms: 5000
-            }
+            let req: HttpRequest = new_http_request(GET(), "http://httpbin.org/headers")
             let result: Result<HttpResponse, HttpError> = request(req)
             println("compiled")
         """)

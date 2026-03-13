@@ -1,0 +1,271 @@
+// regex.mn — Regular Expressions for Mapanare
+//
+// Provides pattern matching, search, replace, and split via PCRE2.
+// All heavy lifting delegates to C runtime (PCRE2 via dlopen).
+//
+// Usage:
+//   let m: Option<Match> = regex_match("(\\d+)-(\\d+)", "date: 2026-03")
+//   let all: List<Match> = find_all("[a-z]+", "hello world 123")
+//   let out: String = replace_all("\\d+", "abc 123 def 456", "NUM")
+//   let parts: List<String> = regex_split("[,;]\\s*", "a, b; c")
+//   let ok: Bool = is_match("^\\d{4}$", "2026")
+
+// ---------------------------------------------------------------------------
+// Extern C runtime functions (PCRE2 wrappers)
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_regex_compile_str(pattern: String) -> Int
+extern "C" fn __mn_regex_exec_str(handle: Int, subject: String, start_offset: Int) -> Int
+extern "C" fn __mn_regex_group_str(handle: Int, subject: String, group_idx: Int) -> String
+extern "C" fn __mn_regex_group_start(handle: Int, group_idx: Int) -> Int
+extern "C" fn __mn_regex_group_end(handle: Int, group_idx: Int) -> Int
+extern "C" fn __mn_regex_group_count(handle: Int) -> Int
+extern "C" fn __mn_regex_replace_str(handle: Int, subject: String, replacement: String, replace_all: Int) -> String
+extern "C" fn __mn_regex_free(handle: Int) -> Int
+extern "C" fn __mn_regex_error_str(handle: Int) -> String
+
+// ---------------------------------------------------------------------------
+// Error type
+// ---------------------------------------------------------------------------
+
+pub enum RegexError {
+    CompileError(String),
+    InvalidPattern(String),
+    RuntimeError(String)
+}
+
+fn new_compile_error(msg: String) -> RegexError {
+    return CompileError(msg)
+}
+
+fn new_invalid_pattern(msg: String) -> RegexError {
+    return InvalidPattern(msg)
+}
+
+fn new_runtime_error(msg: String) -> RegexError {
+    return RuntimeError(msg)
+}
+
+// ---------------------------------------------------------------------------
+// Match struct
+// ---------------------------------------------------------------------------
+
+pub struct Match {
+    start: Int,
+    end: Int,
+    text: String,
+    groups: List<Option<String>>
+}
+
+// ---------------------------------------------------------------------------
+// Regex struct (compiled pattern handle)
+// ---------------------------------------------------------------------------
+
+pub struct Regex {
+    handle: Int,
+    pattern: String
+}
+
+// ---------------------------------------------------------------------------
+// Task 9: regex.compile — Compile a pattern
+// ---------------------------------------------------------------------------
+
+fn compile(pattern: String) -> Result<Regex, RegexError> {
+    if len(pattern) == 0 {
+        return Err(new_invalid_pattern("empty pattern"))
+    }
+    let handle: Int = __mn_regex_compile_str(pattern)
+    if handle == 0 {
+        return Err(new_compile_error("PCRE2 not available"))
+    }
+    let err: String = __mn_regex_error_str(handle)
+    if len(err) > 0 {
+        let _: Int = __mn_regex_free(handle)
+        return Err(new_compile_error(err))
+    }
+    return Ok(new Regex { handle: handle, pattern: pattern })
+}
+
+// ---------------------------------------------------------------------------
+// Internal: build Match from last exec result
+// ---------------------------------------------------------------------------
+
+fn build_match(handle: Int, subject: String) -> Match {
+    let start: Int = __mn_regex_group_start(handle, 0)
+    let end_pos: Int = __mn_regex_group_end(handle, 0)
+    let text: String = __mn_regex_group_str(handle, subject, 0)
+    let count: Int = __mn_regex_group_count(handle)
+    let mut groups: List<Option<String>> = []
+    let mut i: Int = 1
+    while i <= count {
+        let gs: Int = __mn_regex_group_start(handle, i)
+        if gs < 0 {
+            groups = groups + [none]
+        } else {
+            let gt: String = __mn_regex_group_str(handle, subject, i)
+            groups = groups + [Some(gt)]
+        }
+        i = i + 1
+    }
+    return new Match { start: start, end: end_pos, text: text, groups: groups }
+}
+
+// ---------------------------------------------------------------------------
+// Task 10: regex.match — First match
+// ---------------------------------------------------------------------------
+
+fn regex_match(pattern: String, text: String) -> Option<Match> {
+    let handle: Int = __mn_regex_compile_str(pattern)
+    if handle == 0 {
+        return none
+    }
+    let err: String = __mn_regex_error_str(handle)
+    if len(err) > 0 {
+        let _: Int = __mn_regex_free(handle)
+        return none
+    }
+    let rc: Int = __mn_regex_exec_str(handle, text, 0)
+    if rc <= 0 {
+        let _: Int = __mn_regex_free(handle)
+        return none
+    }
+    let m: Match = build_match(handle, text)
+    let _: Int = __mn_regex_free(handle)
+    return Some(m)
+}
+
+// ---------------------------------------------------------------------------
+// Task 11: regex.find_all — All non-overlapping matches
+// ---------------------------------------------------------------------------
+
+fn find_all(pattern: String, text: String) -> List<Match> {
+    let handle: Int = __mn_regex_compile_str(pattern)
+    if handle == 0 {
+        let empty: List<Match> = []
+        return empty
+    }
+    let err: String = __mn_regex_error_str(handle)
+    if len(err) > 0 {
+        let _: Int = __mn_regex_free(handle)
+        let empty: List<Match> = []
+        return empty
+    }
+    let mut results: List<Match> = []
+    let mut offset: Int = 0
+    let text_len: Int = len(text)
+    while offset <= text_len {
+        let rc: Int = __mn_regex_exec_str(handle, text, offset)
+        if rc <= 0 {
+            let _: Int = __mn_regex_free(handle)
+            return results
+        }
+        let m: Match = build_match(handle, text)
+        results = results + [m]
+        let match_end: Int = __mn_regex_group_end(handle, 0)
+        if match_end <= offset {
+            offset = offset + 1
+        } else {
+            offset = match_end
+        }
+    }
+    let _: Int = __mn_regex_free(handle)
+    return results
+}
+
+// ---------------------------------------------------------------------------
+// Task 12: regex.replace — Replace first occurrence
+// ---------------------------------------------------------------------------
+
+fn replace(pattern: String, text: String, replacement: String) -> String {
+    let handle: Int = __mn_regex_compile_str(pattern)
+    if handle == 0 {
+        return text
+    }
+    let err: String = __mn_regex_error_str(handle)
+    if len(err) > 0 {
+        let _: Int = __mn_regex_free(handle)
+        return text
+    }
+    let result: String = __mn_regex_replace_str(handle, text, replacement, 0)
+    let _: Int = __mn_regex_free(handle)
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Task 13: regex.replace_all — Replace all occurrences
+// ---------------------------------------------------------------------------
+
+fn replace_all(pattern: String, text: String, replacement: String) -> String {
+    let handle: Int = __mn_regex_compile_str(pattern)
+    if handle == 0 {
+        return text
+    }
+    let err: String = __mn_regex_error_str(handle)
+    if len(err) > 0 {
+        let _: Int = __mn_regex_free(handle)
+        return text
+    }
+    let result: String = __mn_regex_replace_str(handle, text, replacement, 1)
+    let _: Int = __mn_regex_free(handle)
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Task 14: regex.split — Split by pattern
+// ---------------------------------------------------------------------------
+
+fn regex_split(pattern: String, text: String) -> List<String> {
+    let handle: Int = __mn_regex_compile_str(pattern)
+    if handle == 0 {
+        let fallback: List<String> = [text]
+        return fallback
+    }
+    let err: String = __mn_regex_error_str(handle)
+    if len(err) > 0 {
+        let _: Int = __mn_regex_free(handle)
+        let fallback: List<String> = [text]
+        return fallback
+    }
+    let mut parts: List<String> = []
+    let mut offset: Int = 0
+    let text_len: Int = len(text)
+    while offset <= text_len {
+        let rc: Int = __mn_regex_exec_str(handle, text, offset)
+        if rc <= 0 {
+            let remaining: String = text.substr(offset, text_len)
+            parts = parts + [remaining]
+            let _: Int = __mn_regex_free(handle)
+            return parts
+        }
+        let match_start: Int = __mn_regex_group_start(handle, 0)
+        let match_end: Int = __mn_regex_group_end(handle, 0)
+        let before: String = text.substr(offset, match_start)
+        parts = parts + [before]
+        if match_end <= offset {
+            offset = offset + 1
+        } else {
+            offset = match_end
+        }
+    }
+    let _: Int = __mn_regex_free(handle)
+    return parts
+}
+
+// ---------------------------------------------------------------------------
+// Task 15: regex.is_match — Quick boolean check
+// ---------------------------------------------------------------------------
+
+fn is_match(pattern: String, text: String) -> Bool {
+    let handle: Int = __mn_regex_compile_str(pattern)
+    if handle == 0 {
+        return false
+    }
+    let err: String = __mn_regex_error_str(handle)
+    if len(err) > 0 {
+        let _: Int = __mn_regex_free(handle)
+        return false
+    }
+    let rc: Int = __mn_regex_exec_str(handle, text, 0)
+    let _: Int = __mn_regex_free(handle)
+    return rc > 0
+}

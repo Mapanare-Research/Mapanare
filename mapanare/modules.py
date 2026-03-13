@@ -6,6 +6,7 @@ circular imports.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass, field
 
@@ -39,6 +40,7 @@ class ResolvedModule:
     filepath: str
     program: Program
     exports: dict[str, ModuleExport] = field(default_factory=dict)
+    source_hash: str = ""  # SHA-256 hex digest for change detection
 
 
 class ModuleResolutionError(Exception):
@@ -167,6 +169,8 @@ class ModuleResolver:
         with open(filepath, encoding="utf-8") as f:
             source = f.read()
 
+        source_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
+
         program = parse(source, filename=filepath)
 
         # Recursively resolve any imports in this module
@@ -179,7 +183,9 @@ class ModuleResolver:
         for defn in program.definitions:
             self._collect_exports(defn, exports)
 
-        return ResolvedModule(filepath=filepath, program=program, exports=exports)
+        return ResolvedModule(
+            filepath=filepath, program=program, exports=exports, source_hash=source_hash
+        )
 
     def _collect_exports(self, defn: Definition, exports: dict[str, ModuleExport]) -> None:
         """Collect exported symbols from a definition."""
@@ -218,6 +224,22 @@ class ModuleResolver:
     def is_cached(self, filepath: str) -> bool:
         """Check if a module is already cached."""
         return filepath in self._cache
+
+    def has_changed(self, filepath: str) -> bool:
+        """Check if a cached module's source file has changed on disk.
+
+        Returns True if the file's content hash differs from the cached hash,
+        or if the file is not cached. Used for incremental compilation.
+        """
+        abs_path = os.path.abspath(filepath)
+        cached = self._cache.get(abs_path)
+        if cached is None:
+            return True
+        if not os.path.isfile(abs_path):
+            return True
+        with open(abs_path, encoding="utf-8") as f:
+            current_hash = hashlib.sha256(f.read().encode("utf-8")).hexdigest()
+        return current_hash != cached.source_hash
 
     def all_modules(self) -> list[tuple[str, ResolvedModule]]:
         """Return all cached modules as (filepath, module) pairs."""

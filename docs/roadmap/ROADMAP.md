@@ -7,14 +7,14 @@
 
 ---
 
-## Where We Are (v0.8.0)
+## Where We Are (v0.9.0)
 
-Mapanare is real, compiled, and tested. The compiler is self-hosted (7 modules, 8,288+ lines
-of Mapanare), ships with a MIR-based pipeline, dual backends (Python transpiler + LLVM native),
-a built-in test runner, agent observability (tracing + metrics), DWARF debug info, and
-deployment infrastructure. **Every core feature now works on both backends.** The C runtime
-has been expanded with TCP sockets, TLS, file I/O, and an event loop — ready for v0.9.0
-native stdlib. **3,020 tests pass** across the full pipeline.
+Mapanare is real, compiled, and connected to the outside world. Seven stdlib modules written
+in `.mn` compile natively via LLVM — JSON, CSV, HTTP client, HTTP server, WebSocket, crypto,
+and regex. Cross-module LLVM compilation links imports across files into single binaries.
+The compiler is self-hosted (7 modules, 8,288+ lines of Mapanare), ships with a MIR-based
+pipeline, dual backends (Python transpiler + LLVM native), and a full native C runtime.
+**No Python required at runtime.** **3,400+ tests pass** across the full pipeline.
 
 ### What works today
 
@@ -65,7 +65,7 @@ native stdlib. **3,020 tests pass** across the full pipeline.
 | Streams + `\|>` pipe operator | Yes | Yes | map, filter, take, skip, collect, fold, backpressure |
 | Pipes (multi-agent composition) | Yes | Yes | Agent spawn chain compilation |
 | Tensors | No | No | Experimental only, no language integration |
-| Standard library modules | Partial | No | Python .py files only (native in v0.9.0) |
+| Standard library modules | Partial | Yes | 7 native `.mn` modules: JSON, CSV, HTTP, server, WebSocket, crypto, regex |
 
 ### Performance (LLVM native vs Python)
 
@@ -91,6 +91,7 @@ native stdlib. **3,020 tests pass** across the full pipeline.
 | **v0.6.0** ✅ | Compiler Infrastructure | MIR pipeline (SSA IR, lowering, optimizer, dual emitters), bootstrap frozen at v0.6.0, self-hosted semantic checker, 2,500+ tests |
 | **v0.7.0** ✅ | Self-Standing | Self-hosted MIR lowering (lower.mn), built-in test runner, agent observability (tracing + metrics), DWARF debug info, deployment infrastructure, 2,983 tests |
 | **v0.8.0** ✅ | Native Parity | LLVM backend parity (maps, signals, streams, closures), complete string methods, pipe definitions, C runtime expansion (TCP, TLS, file I/O, event loop), 3,020 tests |
+| **v0.9.0** ✅ | Connected | Native stdlib in `.mn` (JSON, CSV, HTTP, WebSocket, crypto, regex), cross-module LLVM compilation, integration tests, Dato updated, 3,400+ tests |
 
 ---
 
@@ -258,7 +259,7 @@ native stdlib. **3,020 tests pass** across the full pipeline.
 
 ---
 
-### v0.9.0 — "Connected"
+### v0.9.0 — "Connected" ✅
 
 > Mapanare can talk to the outside world. Stdlib modules are written in `.mn`,
 > compiled natively — no Python at runtime.
