@@ -298,13 +298,15 @@ class LLVMMIREmitter:
         if self._debug:
             self._init_debug_info(mir_module)
 
-        # 1. Register enum types first (structs may reference enum types as fields)
-        for name, variants in mir_module.enums.items():
-            self._register_enum(name, variants)
-
-        # 2. Register struct types (after enums so enum field types resolve)
-        for name, fields in mir_module.structs.items():
-            self._register_struct(name, fields)
+        # 1. Register types with iterative resolution.
+        #    Structs and enums cross-reference each other (e.g. Definition enum
+        #    contains FnDefData struct, which has Option<TypeExpr> enum fields).
+        #    Two full passes resolve all sizes correctly.
+        for _pass in range(2):
+            for name, fields in mir_module.structs.items():
+                self._register_struct(name, fields)
+            for name, variants in mir_module.enums.items():
+                self._register_enum(name, variants)
 
         # 3. Declare extern functions
         for abi, mod, fn_name, param_types, ret_type in mir_module.extern_fns:
@@ -687,11 +689,14 @@ class LLVMMIREmitter:
         for i, (vname, payload_types) in enumerate(variants):
             variant_tags[vname] = i
             variant_payloads[vname] = payload_types
-            # Estimate payload size: sum of field sizes (rough but sufficient)
-            size = 0
-            for pt in payload_types:
-                llvm_t = self._resolve_mir_type(pt)
-                size += _approx_type_size(llvm_t)
+            # Compute payload size as actual struct size (with alignment padding)
+            # since variants are bitcast to/from struct types.
+            if payload_types:
+                llvm_fields = [self._resolve_mir_type(pt) for pt in payload_types]
+                variant_struct = ir.LiteralStructType(llvm_fields)
+                size = _approx_type_size(variant_struct)
+            else:
+                size = 0
             if size > max_payload_size:
                 max_payload_size = size
 
@@ -2440,6 +2445,11 @@ class LLVMMIREmitter:
                 offset = 0
                 for i, pval in enumerate(inst.payload):
                     val = self._get_value(pval, values)
+                    # Align offset to field's natural alignment (matches struct layout)
+                    field_align = _type_alignment(val.type)
+                    rem = offset % field_align
+                    if rem != 0:
+                        offset += field_align - rem
                     dest_ptr = builder.gep(
                         payload_i8_ptr,
                         [ir.Constant(LLVM_INT, offset)],
@@ -2519,7 +2529,11 @@ class LLVMMIREmitter:
                 typed_ptr = builder.bitcast(enum_val, enum_ty.as_pointer(), name=f"{name}.cast")
                 enum_val = builder.load(typed_ptr, name=f"{name}.loaded")
 
-            enum_ptr = builder.alloca(enum_ty, name=f"{name}.eptr")
+            # Use the value's actual LLVM type for the alloca (may differ from
+            # the registered enum type when the value came from a function
+            # parameter or cross-module boundary with a different type resolution).
+            actual_ty = enum_val.type if isinstance(enum_val.type, ir.LiteralStructType) else enum_ty
+            enum_ptr = builder.alloca(actual_ty, name=f"{name}.eptr")
             builder.store(enum_val, enum_ptr)
             payload_ptr = builder.gep(
                 enum_ptr,
@@ -3125,8 +3139,38 @@ class LLVMMIREmitter:
 # ---------------------------------------------------------------------------
 
 
+def _type_alignment(llvm_ty: Any) -> int:
+    """Return the natural alignment in bytes of an LLVM type."""
+    if not _HAS_LLVMLITE:
+        return 8
+    if isinstance(llvm_ty, ir.IntType):
+        w = llvm_ty.width
+        if w <= 8:
+            return 1
+        if w <= 16:
+            return 2
+        if w <= 32:
+            return 4
+        return 8
+    if isinstance(llvm_ty, ir.DoubleType):
+        return 8
+    if isinstance(llvm_ty, ir.FloatType):
+        return 4
+    if isinstance(llvm_ty, ir.PointerType):
+        return 8
+    if isinstance(llvm_ty, ir.VoidType):
+        return 1
+    if isinstance(llvm_ty, ir.LiteralStructType):
+        if not llvm_ty.elements:
+            return 1
+        return max(_type_alignment(e) for e in llvm_ty.elements)
+    if isinstance(llvm_ty, ir.ArrayType):
+        return _type_alignment(llvm_ty.element)
+    return 8
+
+
 def _approx_type_size(llvm_ty: Any) -> int:
-    """Approximate the size in bytes of an LLVM type (for allocation sizing)."""
+    """Compute the ABI size in bytes of an LLVM type, including alignment padding."""
     if not _HAS_LLVMLITE:
         return 8
     if isinstance(llvm_ty, ir.IntType):
@@ -3140,7 +3184,22 @@ def _approx_type_size(llvm_ty: Any) -> int:
     if isinstance(llvm_ty, ir.VoidType):
         return 0
     if isinstance(llvm_ty, ir.LiteralStructType):
-        return sum(_approx_type_size(e) for e in llvm_ty.elements)
+        offset = 0
+        max_align = 1
+        for elem in llvm_ty.elements:
+            elem_align = _type_alignment(elem)
+            if elem_align > max_align:
+                max_align = elem_align
+            # Pad to element alignment
+            rem = offset % elem_align
+            if rem != 0:
+                offset += elem_align - rem
+            offset += _approx_type_size(elem)
+        # Pad struct to its alignment
+        rem = offset % max_align
+        if rem != 0:
+            offset += max_align - rem
+        return offset
     if isinstance(llvm_ty, ir.ArrayType):
         return int(llvm_ty.count) * _approx_type_size(llvm_ty.element)
     return 8  # Conservative default
