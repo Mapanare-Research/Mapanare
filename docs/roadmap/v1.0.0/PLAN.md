@@ -109,16 +109,16 @@ compiler is correct enough to sustain itself.
 |---|------|--------|-------|
 | 1 | Audit enum lowering gaps in self-hosted `emit_llvm.mn` | `[x]` | Gaps: hardcoded tag=0, no variant→tag map, payload always index 1, all .push() commented out |
 | 2 | Audit cross-module compilation for `self::` imports between the 7 compiler modules | `[x]` | multi_module.py handles self:: imports, topo sort, name mangling, MIR merge — verified |
-| 3 | Identify and fix any self-hosted codegen gaps (missing AST nodes, MIR ops, LLVM patterns) | `[~]` | Added ListPush MIR instruction, LLVM emit, lowering for .push(). Uncommented 68 push calls in self/*.mn. Stage 1 compile reaches LLVM emission but hits type mismatch in string method call args — needs arg coercion fix. |
+| 3 | Identify and fix any self-hosted codegen gaps (missing AST nodes, MIR ops, LLVM patterns) | `[x]` | ListPush, cross-module type coercion, alloca-based SSA dominance fix, phi-to-alloca conversion. All 7 modules compile to verified LLVM IR + object code. |
 
 ### Stage 1 — Bootstrap Compilation
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4 | Compile `mapanare/self/*.mn` (all 7 modules) using the Python bootstrap compiler → native binary | `[ ]` | `mapanare build mapanare/self/main.mn -o mnc-stage1` |
-| 5 | Verify `mnc-stage1` can lex, parse, and type-check a simple `.mn` program | `[ ]` | Smoke test: hello world, fibonacci, struct + enum |
-| 6 | Verify `mnc-stage1` can emit LLVM IR for a simple `.mn` program | `[ ]` | Output IR should match bootstrap emitter output |
-| 7 | Run the bootstrap test suite (264 tests) against `mnc-stage1` | `[ ]` | All must pass |
+| 4 | Compile `mapanare/self/*.mn` (all 7 modules) using the Python bootstrap compiler → native binary | `[~]` | LLVM IR verified + object code produced. Linking to native binary requires Linux/WSL (C runtime uses epoll). 5 tests in `tests/bootstrap/test_stage1_compile.py`. |
+| 5 | Verify `mnc-stage1` can lex, parse, and type-check a simple `.mn` program | `[ ]` | Blocked: needs linked binary (Task 4 on Linux/WSL) |
+| 6 | Verify `mnc-stage1` can emit LLVM IR for a simple `.mn` program | `[ ]` | Blocked: needs linked binary |
+| 7 | Run the bootstrap test suite (264 tests) against `mnc-stage1` | `[ ]` | Blocked: needs linked binary |
 
 ### Stage 2 — Self-Compilation
 
@@ -317,6 +317,7 @@ If context is interrupted mid-phase, add a handoff entry here:
 | Date | Phase | Last Completed Task | Next Task | Notes |
 |------|-------|--------------------:|-----------|-------|
 | 2026-03-13 | 2 | Task 3 (codegen gaps) in progress | Task 3 continued: fix LLVM string method arg type mismatch in emit_llvm_mir.py:1451, then Task 4 (Stage 1 build) | Added ListPush to MIR/lower/emit pipeline. Uncommented 68 .push() calls in self/*.mn. Multi-module compilation of self/main.mn reaches LLVM emission — type error on string method call (i64 vs i8* arg #2). |
+| 2026-03-13 | 2.2 | Task 4 (Stage 1 partial — object code) | Task 4 completion on Linux/WSL (link binary), then Tasks 5-7 | Fixed SSA dominance via pre_entry alloca block + lazy alloca creation. Replaced MIR phi nodes with alloca/store/load (LLVM mem2reg handles promotion). Self-hosted compiler (7 modules, 8288+ lines) compiles to verified LLVM IR + object code. Linking blocked on Windows — needs Linux for C runtime (epoll). |
 
 ---
 

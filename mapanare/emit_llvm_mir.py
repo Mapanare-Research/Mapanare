@@ -180,12 +180,18 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
         if isinstance(actual, ir.VoidType):
             return ir.Constant(expected_ty, ir.Undefined)
         tmp = builder.alloca(expected_ty, name=f"{name}.tmp")
-        src_ptr_ty = actual.as_pointer() if hasattr(actual, "as_pointer") and not isinstance(actual, ir.VoidType) else ir.IntType(8).as_pointer()
+        src_ptr_ty = (
+            actual.as_pointer()
+            if hasattr(actual, "as_pointer") and not isinstance(actual, ir.VoidType)
+            else ir.IntType(8).as_pointer()
+        )
         raw_ptr = builder.bitcast(tmp, src_ptr_ty, name=f"{name}.rptr")
         builder.store(arg, raw_ptr)
         return builder.load(tmp, name=name)
     # Struct/array → integer: store to memory, load as int
-    if isinstance(actual, (ir.LiteralStructType, ir.ArrayType)) and isinstance(expected_ty, ir.IntType):
+    if isinstance(actual, (ir.LiteralStructType, ir.ArrayType)) and isinstance(
+        expected_ty, ir.IntType
+    ):
         tmp = builder.alloca(actual, name=f"{name}.tmp")
         builder.store(arg, tmp)
         int_ptr = builder.bitcast(tmp, expected_ty.as_pointer(), name=f"{name}.iptr")
@@ -200,9 +206,7 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
         return builder.load(cast_ptr, name=name)
 
 
-def _coerce_args(
-    builder: Any, args: list[Any], expected_types: list[Any], name: str
-) -> list[Any]:
+def _coerce_args(builder: Any, args: list[Any], expected_types: list[Any], name: str) -> list[Any]:
     """Coerce LLVM args to match expected types (cross-module fix)."""
     return [
         _coerce_arg(builder, arg, exp_ty, f"{name}.c{i}")
@@ -275,6 +279,12 @@ class LLVMMIREmitter:
         self._di_compile_unit: Any = None  # DICompileUnit
         self._di_subprograms: dict[str, Any] = {}  # fn name -> DISubprogram
         self._di_type_cache: dict[str, Any] = {}  # type key -> DIType
+
+        # Per-function state for alloca-based dominance fix
+        self._fn_allocas: dict[str, Any] = {}
+        self._current_builder: Any = None
+        self._current_block_label: str = ""
+        self._value_blocks: dict[str, str] = {}  # value name -> defining block label
 
     # -----------------------------------------------------------------------
     # Public entry point
@@ -615,7 +625,9 @@ class LLVMMIREmitter:
         # Try scoped lookup first
         if enum_hint:
             for ename, (_, tag_map, _) in self._enum_types.items():
-                if (ename == enum_hint or ename.endswith("__" + enum_hint)) and variant_name in tag_map:
+                if (
+                    ename == enum_hint or ename.endswith("__" + enum_hint)
+                ) and variant_name in tag_map:
                     return tag_map[variant_name]
         # Fallback: global search
         for _ename, (_, tag_map, _) in self._enum_types.items():
@@ -993,7 +1005,11 @@ class LLVMMIREmitter:
             if di_sp is not None:
                 func.set_metadata("dbg", di_sp)
 
-        # 1. Create all LLVM basic blocks upfront
+        # 1. Create all LLVM basic blocks upfront.
+        #    A "pre_entry" block is prepended for lazy allocas — it becomes
+        #    the actual function entry point and jumps to the MIR entry block.
+        #    This avoids builder position interference when inserting allocas.
+        pre_entry = func.append_basic_block("pre_entry")
         llvm_blocks: dict[str, Any] = {}
         for bb in mir_fn.blocks:
             llvm_blocks[bb.label] = func.append_basic_block(bb.label)
@@ -1007,9 +1023,16 @@ class LLVMMIREmitter:
             # Also store without % prefix for flexibility
             values[param.name] = func.args[i]
 
-        # 4. First pass: emit phi nodes and collect deferred incoming edges
-        deferred_phis: list[tuple[Any, list[tuple[str, Value]], dict[str, Any]]] = []
+        # 4. Replace MIR phi nodes with alloca/store/load patterns.
+        #    This avoids LLVM phi predecessor mismatches and SSA dominance
+        #    violations.  LLVM's mem2reg pass (part of -O1+) will convert
+        #    these back into proper phi nodes automatically.
+        self._fn_allocas = {}
+        self._alloca_block = pre_entry
 
+        deferred_phi_stores: list[tuple[Any, list[tuple[str, Value]], dict[str, Any]]] = []
+
+        ab = ir.IRBuilder(pre_entry)
         for bb in mir_fn.blocks:
             builder = ir.IRBuilder(llvm_blocks[bb.label])
             for inst in bb.instructions:
@@ -1017,21 +1040,29 @@ class LLVMMIREmitter:
                     llvm_type = self._resolve_mir_type(inst.dest.ty)
                     if isinstance(llvm_type, ir.VoidType):
                         llvm_type = LLVM_PTR
-                    phi = builder.phi(llvm_type, name=self._val_name(inst.dest))
-                    values[inst.dest.name] = phi
-                    deferred_phis.append((phi, inst.incoming, llvm_blocks))
+                    # Create alloca in pre_entry for the phi dest
+                    ab.position_at_end(pre_entry)
+                    alloca = ab.alloca(llvm_type, name=f"phi.a.{self._val_name(inst.dest)}")
+                    self._fn_allocas[inst.dest.name] = alloca
+                    # Load at phi position — this is the "result" of the phi
+                    loaded = builder.load(alloca, name=self._val_name(inst.dest))
+                    values[inst.dest.name] = loaded
+                    # Defer stores until after all blocks are emitted
+                    deferred_phi_stores.append((alloca, inst.incoming, llvm_blocks))
                 else:
                     break  # Phi nodes must be at block start
 
         # 5. Emit all non-phi instructions block by block
         for bb in mir_fn.blocks:
             builder = ir.IRBuilder(llvm_blocks[bb.label])
-            # Position after any phi nodes already emitted
+            self._current_builder = builder
+            self._current_block_label = bb.label
+            # Position after any phi-replacement loads already emitted
             if builder.block.instructions:
                 builder.position_at_end(builder.block)
             for inst in bb.instructions:
                 if isinstance(inst, Phi):
-                    continue  # Already handled
+                    continue  # Handled above via alloca
                 # Track instruction count before emission for debug location
                 n_before = len(builder.block.instructions) if self._debug else 0
                 self._emit_instruction(inst, builder, values, llvm_blocks, func)
@@ -1055,33 +1086,41 @@ class LLVMMIREmitter:
                             mir_fn.name,
                         )
 
-        # 6. Resolve deferred phi incoming edges
-        for phi, incoming, blocks in deferred_phis:
-            added = False
+        # 6. Resolve deferred phi stores — store incoming values to allocas
+        #    in predecessor blocks (before terminators).
+        for alloca, incoming, blocks in deferred_phi_stores:
+            pointee = alloca.type.pointee
             for lbl, val in incoming:
-                if lbl in blocks and val.name in values:
-                    inc_val = values[val.name]
-                    # Coerce incoming value to match phi type
-                    if inc_val.type != phi.type:
-                        inc_builder = ir.IRBuilder(blocks[lbl])
-                        term = blocks[lbl].terminator
-                        if term:
-                            inc_builder.position_before(term)
-                        inc_val = _coerce_arg(
-                            inc_builder, inc_val, phi.type, "phi.c"
+                if lbl not in blocks:
+                    continue
+                pred_block = blocks[lbl]
+                inc_builder = ir.IRBuilder(pred_block)
+                term = pred_block.terminator
+                if term:
+                    inc_builder.position_before(term)
+                # Get incoming value — prefer alloca load for cross-block safety
+                def_block = self._value_blocks.get(val.name, "")
+                if def_block and def_block != lbl and val.name in self._fn_allocas:
+                    try:
+                        inc_val = inc_builder.load(
+                            self._fn_allocas[val.name],
+                            name=f"phi.l.{val.name.lstrip('%')}",
                         )
-                    phi.add_incoming(inc_val, blocks[lbl])
-                    added = True
-            # If no incoming edges were resolved, add a self-referencing
-            # dummy to keep the phi valid (dead code — will be optimized away)
-            if not added:
-                block = phi.parent
-                if isinstance(phi.type, ir.PointerType):
-                    phi.add_incoming(ir.Constant(phi.type, None), block)
-                elif isinstance(phi.type, ir.LiteralStructType):
-                    phi.add_incoming(ir.Constant(phi.type, ir.Undefined), block)
+                    except Exception:
+                        inc_val = values.get(val.name)
                 else:
-                    phi.add_incoming(ir.Constant(phi.type, 0), block)
+                    inc_val = values.get(val.name)
+                if inc_val is None:
+                    if isinstance(pointee, ir.PointerType):
+                        inc_val = ir.Constant(pointee, None)
+                    elif isinstance(pointee, ir.LiteralStructType):
+                        inc_val = ir.Constant(pointee, ir.Undefined)
+                    else:
+                        inc_val = ir.Constant(pointee, 0)
+                # Coerce to match alloca type
+                if inc_val.type != pointee:
+                    inc_val = _coerce_arg(inc_builder, inc_val, pointee, "phi.s")
+                inc_builder.store(inc_val, alloca)
 
         # 7. Ensure all blocks are properly terminated
         for bb in mir_fn.blocks:
@@ -1093,6 +1132,20 @@ class LLVMMIREmitter:
                     builder.ret_void()
                 else:
                     builder.unreachable()
+
+        # 8. Finalize pre_entry: jump to the real entry block
+        real_entry = llvm_blocks[mir_fn.blocks[0].label]
+        if not pre_entry.is_terminated:
+            ab = ir.IRBuilder(pre_entry)
+            ab.position_at_end(pre_entry)
+            ab.branch(real_entry)
+
+        # 9. Cleanup per-function state
+        self._fn_allocas = {}
+        self._current_builder = None
+        self._current_block_label = ""
+        self._value_blocks = {}
+        self._alloca_block = None
 
     # -----------------------------------------------------------------------
     # Value name helper
@@ -1214,7 +1267,28 @@ class LLVMMIREmitter:
     # -----------------------------------------------------------------------
 
     def _get_value(self, val: Value, values: dict[str, Any]) -> Any:
-        """Look up the LLVM value for a MIR Value."""
+        """Look up the LLVM value for a MIR Value.
+
+        For same-block values, returns the SSA value directly (preserves types).
+        For cross-block values, loads from the entry-block alloca (always
+        dominates, fixes SSA dominance violations in nested control flow).
+        """
+        # Check if the value was defined in a different block — needs alloca load
+        def_block = self._value_blocks.get(val.name, "")
+        builder = self._current_builder
+        if (
+            def_block
+            and def_block != self._current_block_label
+            and val.name in self._fn_allocas
+            and builder is not None
+        ):
+            try:
+                return builder.load(
+                    self._fn_allocas[val.name],
+                    name=f"l.{val.name.lstrip('%')}",
+                )
+            except Exception:
+                pass  # fall through to dict lookup
         if val.name in values:
             return values[val.name]
         # Try without % prefix
@@ -1236,6 +1310,33 @@ class LLVMMIREmitter:
     def _store_value(self, dest: Value, llvm_val: Any, values: dict[str, Any]) -> None:
         """Store an LLVM value in the value map under the MIR dest name."""
         values[dest.name] = llvm_val
+        # Track which block this value was defined in
+        self._value_blocks[dest.name] = self._current_block_label
+        # Also persist to an entry-block alloca so the value is accessible
+        # from any basic block (fixes SSA dominance for cross-block refs).
+        builder = self._current_builder
+        if builder is None:
+            return
+        try:
+            # Lazy alloca creation — use actual LLVM type to avoid mismatch.
+            # Allocas go in the dedicated pre_entry block (separate from
+            # instruction emission), so position interference is impossible.
+            if dest.name not in self._fn_allocas:
+                val_ty = llvm_val.type
+                if isinstance(val_ty, ir.VoidType):
+                    return
+                ab = ir.IRBuilder(self._alloca_block)
+                ab.position_at_end(self._alloca_block)
+                vname = dest.name.lstrip("%")
+                self._fn_allocas[dest.name] = ab.alloca(val_ty, name=f"a.{vname}")
+            alloca = self._fn_allocas[dest.name]
+            pointee = alloca.type.pointee
+            val = llvm_val
+            if val.type != pointee:
+                val = _coerce_arg(builder, val, pointee, "sv")
+            builder.store(val, alloca)
+        except Exception:
+            pass  # fallback: dict-only (value stays in SSA form)
 
     # --- Const ---
 
@@ -1595,26 +1696,26 @@ class LLVMMIREmitter:
         # Canonical LLVM type signatures for string methods.
         # MIR types are unreliable in cross-module compilation, so we
         # hardcode the expected types and coerce args to match.
-        S = LLVM_STRING  # {i8*, i64}
-        I = LLVM_INT  # i64
-        B = LLVM_BOOL  # i1
-        L = LLVM_LIST  # {i8*, i64, i64, i64}
+        ST = LLVM_STRING  # {i8*, i64}
+        IT = LLVM_INT  # i64
+        BT = LLVM_BOOL  # i1
+        LT = LLVM_LIST  # {i8*, i64, i64, i64}
         _str_method_sig: dict[str, tuple[str, list[Any], Any]] = {
             # method: (runtime_name, [param_types], return_type)
-            "char_at": ("__mn_str_char_at", [S, I], S),
-            "byte_at": ("__mn_str_byte_at", [S, I], I),
-            "substr": ("__mn_str_substr", [S, I, I], S),
-            "starts_with": ("__mn_str_starts_with", [S, S], B),
-            "ends_with": ("__mn_str_ends_with", [S, S], B),
-            "find": ("__mn_str_find", [S, S], I),
-            "contains": ("__mn_str_contains", [S, S], B),
-            "trim": ("__mn_str_trim", [S], S),
-            "trim_start": ("__mn_str_trim_start", [S], S),
-            "trim_end": ("__mn_str_trim_end", [S], S),
-            "to_upper": ("__mn_str_to_upper", [S], S),
-            "to_lower": ("__mn_str_to_lower", [S], S),
-            "split": ("__mn_str_split", [S, S], L),
-            "replace": ("__mn_str_replace", [S, S, S], S),
+            "char_at": ("__mn_str_char_at", [ST, IT], ST),
+            "byte_at": ("__mn_str_byte_at", [ST, IT], IT),
+            "substr": ("__mn_str_substr", [ST, IT, IT], ST),
+            "starts_with": ("__mn_str_starts_with", [ST, ST], BT),
+            "ends_with": ("__mn_str_ends_with", [ST, ST], BT),
+            "find": ("__mn_str_find", [ST, ST], IT),
+            "contains": ("__mn_str_contains", [ST, ST], BT),
+            "trim": ("__mn_str_trim", [ST], ST),
+            "trim_start": ("__mn_str_trim_start", [ST], ST),
+            "trim_end": ("__mn_str_trim_end", [ST], ST),
+            "to_upper": ("__mn_str_to_upper", [ST], ST),
+            "to_lower": ("__mn_str_to_lower", [ST], ST),
+            "split": ("__mn_str_split", [ST, ST], LT),
+            "replace": ("__mn_str_replace", [ST, ST, ST], ST),
         }
         if (
             fn_name in _str_method_sig
@@ -1739,7 +1840,7 @@ class LLVMMIREmitter:
             target_fn = self._functions[fn_name]
             # Coerce argument types to match function signature
             expected_types = list(target_fn.function_type.args)
-            args = _coerce_args(builder, args[:len(expected_types)], expected_types, name)
+            args = _coerce_args(builder, args[: len(expected_types)], expected_types, name)
             # Check if return type is void
             if isinstance(target_fn.function_type.return_type, ir.VoidType):
                 builder.call(target_fn, args)
@@ -1827,9 +1928,7 @@ class LLVMMIREmitter:
 
     # --- Return ---
 
-    def _emit_return(
-        self, inst: Return, builder: Any, values: dict[str, Any], func: Any
-    ) -> None:
+    def _emit_return(self, inst: Return, builder: Any, values: dict[str, Any], func: Any) -> None:
         if inst.val is not None:
             val = self._get_value(inst.val, values)
             # Coerce return value to match function return type
@@ -1939,9 +2038,7 @@ class LLVMMIREmitter:
 
         # Cross-module coercion: if obj is a pointer but should be a struct,
         # bitcast to struct pointer and load
-        if isinstance(obj.type, ir.PointerType) and not isinstance(
-            obj.type, ir.LiteralStructType
-        ):
+        if isinstance(obj.type, ir.PointerType) and not isinstance(obj.type, ir.LiteralStructType):
             struct_ty = self._struct_types.get(obj_type_name)
             # Try suffix match for finding the struct type
             if struct_ty is None:
@@ -1951,9 +2048,7 @@ class LLVMMIREmitter:
                         obj_type_name = sname
                         break
             if struct_ty is not None:
-                typed_ptr = builder.bitcast(
-                    obj, struct_ty.as_pointer(), name=f"{name}.sptr"
-                )
+                typed_ptr = builder.bitcast(obj, struct_ty.as_pointer(), name=f"{name}.sptr")
                 obj = builder.load(typed_ptr, name=f"{name}.sval")
 
         # Fallback 1: try suffix match for cross-module structs (e.g. "Token" → "lexer__Token")
@@ -2009,8 +2104,10 @@ class LLVMMIREmitter:
                     field_ty = obj.type.elements[idx]
                     if val.type != field_ty:
                         val = _coerce_arg(
-                            builder, val, field_ty,
-                            f"{inst.obj.ty.type_info.name}.{inst.field_name}.c"
+                            builder,
+                            val,
+                            field_ty,
+                            f"{inst.obj.ty.type_info.name}.{inst.field_name}.c",
                         )
                 result = builder.insert_value(obj, val, idx)
                 # Update the value in the map (functional update for SSA)

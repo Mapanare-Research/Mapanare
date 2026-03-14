@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import textwrap
 
-import pytest
-
 from mapanare.cli import _compile_to_llvm_ir
 
 
