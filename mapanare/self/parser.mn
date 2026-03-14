@@ -422,11 +422,14 @@ pub fn parse(source: String, filename: String) -> Program {
         }
 
         let tt: String = peek_type(tokens, pos)
+        println("DBG parse pos=" + str(pos) + " tt=" + tt + " val=" + peek_value(tokens, pos))
         if is_definition_start(tt) {
             let r: DefResult = parse_definition(tokens, pos, filename)
+            println("DBG parsed def, new pos=" + str(r.pos))
             defs = defs + [r.def_node]
             pos = r.pos
         } else {
+            println("DBG parsing as top-level stmt")
             let sr: StmtResult = parse_stmt(tokens, pos, filename)
             top_stmts = top_stmts + [sr.stmt]
             pos = sr.pos

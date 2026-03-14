@@ -47,6 +47,12 @@ fn compile(source: String, filename: String) -> CompileResult {
     // Stage 3: lower AST to MIR
     let mir_module: MIRModule = lower(program, filename)
 
+    // DEBUG: check what lowering produced
+    println("DBG definitions=" + str(len(program.definitions)))
+    println("DBG functions=" + str(len(mir_module.functions)))
+    println("DBG structs=" + str(len(mir_module.structs)))
+    println("DBG enums=" + str(len(mir_module.enums)))
+
     // Stage 4: emit LLVM IR from MIR
     let ir_text: String = emit_mir_module(mir_module, filename)
     let no_errors: List<SemanticError> = []

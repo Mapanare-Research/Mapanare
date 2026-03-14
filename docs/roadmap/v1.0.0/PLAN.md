@@ -127,6 +127,10 @@ This phase exists because the original plan assumed the emitter was correct and 
 | — | ListPush not writing back to root alloca | `_list_roots` tracking + write-back | `emit_llvm_mir.py` |
 | — | Range/iterator C runtime functions missing | Added `__range`, `__iter_has_next`, `__iter_next` | `mapanare_core.c` |
 | — | jit.py incompatible with newer llvmlite API | Updated API calls | `jit.py` |
+| — | `.value` field assignment treated as SignalSet for all types | Add `obj.ty.kind == TypeKind.SIGNAL` check before emitting SignalSet | `lower.py` |
+| — | Copy propagation unsafe through FieldSet/IndexSet mutation targets | Skip copy_map entries whose dest has FieldSet/IndexSet on it; prevents alloca mismatch on return/cross-block reads | `mir_opt.py` |
+| — | `emit_instr` stub in self-hosted lowerer (no-op) | Implemented using IndexSet on shared blocks buffer; extract→push→construct→IndexSet pattern | `lower.mn` |
+| — | Nested `state.module.X.push()` loses data (2-level field write-back) | Rewrite to extract→push→reassign at each level; 5 sites in lower.mn | `lower.mn` |
 
 ### Remaining Bugs
 
@@ -164,7 +168,7 @@ arbitrary `.mn` programs correctly.
 |---|------|--------|-------|
 | 1 | Compile `mapanare/self/*.mn` → LLVM IR → object code → `mnc-stage1` binary | `[x]` | 51K-line LLVM IR → 4.9MB ELF. Build script: `scripts/build_stage1.py`. `mnc_main.c` wrapper. |
 | 2 | Verify `mnc-stage1` can lex, parse, and type-check a simple `.mn` program | `[x]` | Exit code 0 on valid, 1 on errors. Full pipeline runs. |
-| 3 | Verify `mnc-stage1` emits correct LLVM IR for simple programs | `[~]` | Blocked on Phase 2 Task 1 (alloca write-back). Currently emits declarations but no function bodies. |
+| 3 | Verify `mnc-stage1` emits correct LLVM IR for simple programs | `[~]` | Unblocked: lowerer now generates MIR with function bodies (emit_instr + copy prop fixes). Emitter crashes in list_push — needs investigation of emit_llvm.mn patterns. |
 
 ### Validation
 

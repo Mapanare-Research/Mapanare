@@ -682,6 +682,11 @@ class LLVMMIREmitter:
 
         Prefers the enum matching enum_hint (exact or suffix match).
         """
+        # Option/Result use special {i1, T} layout where Some/Ok=1, None/Err=0
+        if variant_name == "Some" or variant_name == "Ok":
+            return 1
+        if variant_name == "None" or variant_name == "Err":
+            return 0
         # Try scoped lookup first
         if enum_hint:
             for ename, (_, tag_map, _) in self._enum_types.items():

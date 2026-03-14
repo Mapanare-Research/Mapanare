@@ -1990,7 +1990,7 @@ class MIRLowerer:
         if isinstance(expr.target, FieldAccessExpr):
             obj = self._lower_expr(expr.target.object)
             # Signal .value assignment → emit SignalSet for reactivity
-            if expr.target.field_name == "value":
+            if expr.target.field_name == "value" and obj.ty.kind == TypeKind.SIGNAL:
                 self._emit(SignalSet(signal=obj, val=val))
                 return val
             self._emit(FieldSet(obj=obj, field_name=expr.target.field_name, val=val))

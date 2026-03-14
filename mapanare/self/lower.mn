@@ -464,7 +464,9 @@ fn add_block(st: LowerState, label: String) -> LowerState {
     match st.current_fn {
         Some(f) => {
             let mut new_fn: MIRFunction = f
-            new_fn.blocks.push(bb)
+            let mut blk_list: List<BasicBlock> = new_fn.blocks
+            blk_list.push(bb)
+            new_fn.blocks = blk_list
             new_st.current_fn = Some(new_fn)
             new_st.current_block_idx = len(f.blocks)
         },
@@ -480,10 +482,27 @@ fn set_block(st: LowerState, idx: Int) -> LowerState {
 }
 
 fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
-    // Append instruction to current block in current function
+    // Append instruction to current block in current function.
+    // Uses IndexSet on the shared blocks buffer so the mutation is visible
+    // through any copy of the blocks list header (same ptr).
     let mut new_st: LowerState = st
-    // In the self-hosted compiler, this appends to the current block's
-    // instruction list. The actual mutation is handled by the runtime.
+    match st.current_fn {
+        Some(f) => {
+            if st.current_block_idx >= 0 {
+                if st.current_block_idx < len(f.blocks) {
+                    let bb: BasicBlock = f.blocks[st.current_block_idx]
+                    // Extract instructions to a local, push, build new block
+                    let mut instrs: List<Instruction> = bb.instructions
+                    instrs.push(instr)
+                    let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
+                    // IndexSet modifies the shared buffer in-place
+                    let mut blks: List<BasicBlock> = f.blocks
+                    blks[st.current_block_idx] = new_bb
+                }
+            }
+        },
+        _ => {}
+    }
     return new_st
 }
 
@@ -812,7 +831,11 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         ImportDef(path, items) => {
             let info: ImportInfo = new_import_info(path, items)
             let mut new_st: LowerState = st
-            new_st.module.imports.push(info)
+            let mut mod_tmp: MIRModule = new_st.module
+            let mut imp_list: List<ImportInfo> = mod_tmp.imports
+            imp_list.push(info)
+            mod_tmp.imports = imp_list
+            new_st.module = mod_tmp
             return new_st
         },
         ExportDef(inner_opt, _) => {
@@ -834,7 +857,11 @@ fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
     for _ in 0..1000 {
         if i >= len(data.fields) {
             let info: StructInfo = new_struct_info(data.name, fields)
-            s.module.structs.push(info)
+            let mut mod_s: MIRModule = s.module
+            let mut struct_list: List<StructInfo> = mod_s.structs
+            struct_list.push(info)
+            mod_s.structs = struct_list
+            s.module = mod_s
             let sfi: StructFieldInfo = new_struct_field_info(data.name, field_names)
             s.struct_fields.push(sfi)
             return s
@@ -858,7 +885,11 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
     for _ in 0..1000 {
         if i >= len(data.variants) {
             let info: EnumInfo = new_enum_info(data.name, variants)
-            s.module.enums.push(info)
+            let mut mod_e: MIRModule = s.module
+            let mut enum_list: List<EnumInfo> = mod_e.enums
+            enum_list.push(info)
+            mod_e.enums = enum_list
+            s.module = mod_e
             let evn: EnumVariantNames = new_enum_variant_names(data.name, variant_names)
             s.enum_variants.push(evn)
             return s
@@ -903,7 +934,9 @@ fn lower_definitions(st: LowerState, program: Program) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
     for _ in 0..100000 {
-        if i >= len(program.definitions) { return s }
+        if i >= len(program.definitions) {
+            return s
+        }
         let defn: Definition = program.definitions[i]
         s = lower_definition(s, defn)
         i = i + 1
@@ -926,13 +959,14 @@ fn lower_definition(st: LowerState, defn: Definition) -> LowerState {
             match inner_opt {
                 Some(inner) => {
                     let s: LowerState = lower_definition(st, inner)
-                    // Mark the lowered function as public
                     return s
                 },
                 _ => { return st }
             }
         },
-        _ => { return st }
+        _ => {
+            return st
+        }
     }
 }
 
@@ -1013,7 +1047,11 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     // Add function to module
     match s.current_fn {
         Some(f) => {
-            s.module.functions.push(f)
+            let mut mod_f: MIRModule = s.module
+            let mut fn_list: List<MIRFunction> = mod_f.functions
+            fn_list.push(f)
+            mod_f.functions = fn_list
+            s.module = mod_f
         },
         _ => {}
     }
@@ -1039,7 +1077,11 @@ fn lower_agent(st: LowerState, data: AgentDefData) -> LowerState {
             let inputs: List<String> = extract_agent_input_names(data)
             let outputs: List<String> = extract_agent_output_names(data)
             let info: AgentInfo = new_agent_info(data.name, inputs, outputs, method_names)
-            s.module.agents.push(info)
+            let mut mod_a: MIRModule = s.module
+            let mut agent_list: List<AgentInfo> = mod_a.agents
+            agent_list.push(info)
+            mod_a.agents = agent_list
+            s.module = mod_a
             return s
         }
         let method: FnDefData = data.methods[i]

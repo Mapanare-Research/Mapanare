@@ -499,10 +499,26 @@ def copy_propagation(fn: MIRFunction, stats: MIRPassStats) -> bool:
             dest = _get_dest(inst)
             if dest is not None and dest.name:
                 def_counts[dest.name] = def_counts.get(dest.name, 0) + 1
+    # Collect values that are used as mutation targets (FieldSet.obj, IndexSet.obj).
+    # Copy propagation must NOT replace these, because the emitter uses the MIR
+    # name to determine which alloca to write back to. Propagating would redirect
+    # the write-back to the copy source's alloca, losing mutations.
+    mutated_names: set[str] = set()
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            if isinstance(inst, FieldSet):
+                mutated_names.add(inst.obj.name)
+            elif isinstance(inst, IndexSet):
+                mutated_names.add(inst.obj.name)
+
     copy_map: dict[str, Value] = {}
     for bb in fn.blocks:
         for inst in bb.instructions:
-            if isinstance(inst, Copy) and def_counts.get(inst.dest.name, 0) <= 1:
+            if (
+                isinstance(inst, Copy)
+                and def_counts.get(inst.dest.name, 0) <= 1
+                and inst.dest.name not in mutated_names
+            ):
                 copy_map[inst.dest.name] = inst.src
 
     # Resolve chains: if %a = copy %b, %b = copy %c → %a maps to %c
