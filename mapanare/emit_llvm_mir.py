@@ -2214,9 +2214,23 @@ class LLVMMIREmitter:
 
     def _emit_list_push(self, inst: ListPush, builder: Any, values: dict[str, Any]) -> None:
         """Emit list.push(element) — stores list to alloca, pushes, loads back."""
-        list_val = self._get_value(inst.list_val, values)
         elem_val = self._get_value(inst.element, values)
         name = self._val_name(inst.dest)
+
+        # Read list from the ROOT alloca when available.  In if/else chains the
+        # MIR lowerer creates a push chain (t0→t95→t103→…) where each push's
+        # input is the previous push's output.  But only one branch executes per
+        # iteration, so intermediate allocas (a.t95, a.t103, …) may be stale or
+        # uninitialized.  The root alloca (a.t0) is always up-to-date because
+        # every push writes back to it.
+        src_name = inst.list_val.name
+        root_name = self._list_roots.get(src_name, src_name)
+        if root_name in self._fn_allocas:
+            list_val = builder.load(
+                self._fn_allocas[root_name], name=f"{name}.rl"
+            )
+        else:
+            list_val = self._get_value(inst.list_val, values)
 
         fn_push = self._rt_list_push()
 
