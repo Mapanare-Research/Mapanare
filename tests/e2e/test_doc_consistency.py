@@ -305,6 +305,6 @@ class TestNoStaleAspirations:
         assert "trait_def" in spec
 
     def test_spec_appendix_c_modules_implemented(self) -> None:
-        """SPEC Appendix C notes module system is implemented."""
+        """SPEC documents the module system (was Appendix C, now Section 8)."""
         spec = (ROOT / "docs" / "SPEC.md").read_text(encoding="utf-8")
-        assert "RFC 0003" in spec
+        assert "Module System" in spec

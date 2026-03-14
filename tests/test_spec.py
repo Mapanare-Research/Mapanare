@@ -247,7 +247,7 @@ class TestTypeSystem:
     def test_has_option_type(self) -> None:
         text = _spec_text()
         assert (
-            "### Option Type" in text or "Option Type" in text
+            "### Option Type" in text or "Option Type" in text or "Option and Result" in text
         ), "Type system must document Option<T>"
         assert "Some(" in text, "Option must show Some variant"
         assert "None" in text, "Option must show None variant"

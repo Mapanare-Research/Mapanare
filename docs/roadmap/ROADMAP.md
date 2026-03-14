@@ -20,7 +20,7 @@ pipeline, dual backends (Python transpiler + LLVM native), and a full native C r
 
 - **Full compiler pipeline** — Lexer, parser, semantic checker, MIR lowering, MIR optimizer (O0–O3), code emitter
 - **MIR pipeline** — Typed SSA-based intermediate representation with basic blocks and explicit terminators
-- **Two compilation targets** — Python transpilation and native binaries via LLVM IR (both AST-direct and MIR-based)
+- **Two compilation targets** — Native binaries via LLVM IR (production) and Python transpilation (legacy, for reference and bootstrapping only)
 - **Self-hosted compiler** — 8,288+ lines of `.mn` across 7 modules (lexer, ast, parser, semantic, lower, emit_llvm, main)
 - **Built-in test runner** — `mapanare test` discovers `@test` functions, `assert` statement, `--filter` flag
 - **Agent observability** — OpenTelemetry tracing (`--trace`), Prometheus metrics (`--metrics`), structured error codes (`MN-X0000`)

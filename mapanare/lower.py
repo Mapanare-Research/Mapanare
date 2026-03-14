@@ -104,6 +104,7 @@ from mapanare.mir import (
     InterpConcat,
     Jump,
     ListInit,
+    ListPush,
     MapInit,
     MIRAgentInfo,
     MIRFunction,
@@ -1557,6 +1558,24 @@ class MIRLowerer:
         if expr.method == "value" and not args:
             dest = self._make_value()
             self._emit(SignalGet(dest=dest, signal=obj))
+            return dest
+
+        # List .push() — emit ListPush instruction and update the variable binding
+        if expr.method == "push" and args and obj.ty.kind == TypeKind.LIST:
+            dest = self._make_value(ty=obj.ty)
+            self._emit(ListPush(dest=dest, list_val=obj, element=args[0]))
+            # Update the variable so subsequent reads see the modified list
+            if isinstance(expr.object, Identifier):
+                self._update_var(expr.object.name, dest)
+            elif isinstance(expr.object, FieldAccessExpr):
+                # s.field.push(x) → need to write updated list back to struct field
+                self._emit(
+                    FieldSet(
+                        obj=self._lower_expr(expr.object.object),
+                        field_name=expr.object.field_name,
+                        val=dest,
+                    )
+                )
             return dest
 
         # General method call → Call with self as first arg

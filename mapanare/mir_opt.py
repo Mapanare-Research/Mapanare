@@ -41,6 +41,7 @@ from mapanare.mir import (
     Instruction,
     InterpConcat,
     Jump,
+    ListPush,
     MIRFunction,
     MIRModule,
     MIRType,
@@ -148,6 +149,8 @@ def _get_uses(inst: Instruction) -> list[Value]:
         uses.extend([inst.obj, inst.index])
     elif isinstance(inst, IndexSet):
         uses.extend([inst.obj, inst.index, inst.val])
+    elif isinstance(inst, ListPush):
+        uses.extend([inst.list_val, inst.element])
     elif isinstance(inst, AgentSpawn):
         uses.extend(inst.args)
     elif isinstance(inst, AgentSend):
@@ -251,6 +254,13 @@ def _replace_use(inst: Instruction, old_name: str, new_val: Value) -> bool:
             changed = True
         if inst.val.name == old_name:
             inst.val = new_val
+            changed = True
+    elif isinstance(inst, ListPush):
+        if inst.list_val.name == old_name:
+            inst.list_val = new_val
+            changed = True
+        if inst.element.name == old_name:
+            inst.element = new_val
             changed = True
     elif isinstance(inst, AgentSpawn):
         for i, arg in enumerate(inst.args):
@@ -538,6 +548,7 @@ _SIDE_EFFECT_TYPES = (
     Switch,
     FieldSet,
     IndexSet,
+    ListPush,
     AgentSpawn,
     AgentSend,
     AgentSync,

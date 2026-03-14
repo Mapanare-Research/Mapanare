@@ -310,7 +310,7 @@ fn new_emit_state(module_name: String) -> EmitState {
 // ---------------------------------------------------------------------------
 
 fn emit_line(st: EmitState, line: String) -> EmitState {
-    // st.lines.push(line)
+    st.lines.push(line)
     return st
 }
 
@@ -438,7 +438,7 @@ fn register_mir_struct(st: EmitState, info: StructInfo) -> EmitState {
         if fi >= len(info.fields) {
             let ty: String = "{ " + llvm_fields + " }"
             let entry: StructEntry = new_struct_entry(info.name, field_names, field_types, ty)
-            // st.structs.push(entry)
+            st.structs.push(entry)
 
             // Emit named struct type definition
             let mut s: EmitState = emit_line(st, "%struct." + info.name + " = type " + ty)
@@ -446,8 +446,8 @@ fn register_mir_struct(st: EmitState, info: StructInfo) -> EmitState {
         }
         let fp: FieldPair = info.fields[fi]
         let fty: String = resolve_mir_type(fp.val.ty)
-        // field_names.push(fp.name)
-        // field_types.push(fty)
+        field_names.push(fp.name)
+        field_types.push(fty)
         if fi > 0 {
             llvm_fields = llvm_fields + ", " + fty
         } else {
@@ -1348,7 +1348,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         if pi >= len(f.params) { break }
         let p: MIRParam = f.params[pi]
         let pty: String = resolve_mir_type(p.ty)
-        // param_types.push(pty)
+        param_types.push(pty)
         if pi > 0 {
             params_str = params_str + ", " + pty + " %" + p.name
         } else {
@@ -1363,7 +1363,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     // Register function
     let entry: FnEntry = new_fn_entry(f.name, ret_ty, param_types)
     let mut s: EmitState = st
-    // s.functions.push(entry)
+    s.functions.push(entry)
 
     // Emit function header
     let visibility: String = if f.is_public { "define" } else { "define" }
@@ -1467,7 +1467,7 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
         }
         let fn_types: List<String> = []
         let fe: FnEntry = new_fn_entry(f.name, ret_ty, fn_types)
-        // st.functions.push(fe)
+        st.functions.push(fe)
         di = di + 1
     }
 

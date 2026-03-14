@@ -275,6 +275,19 @@ class IndexSet(Instruction):
 
 
 @dataclass
+class ListPush(Instruction):
+    """Push an element onto a list (mut only).
+
+    After this instruction, ``dest`` holds the updated list value.
+    The emitter stores back to the alloca so subsequent reads see the change.
+    """
+
+    dest: Value = field(default_factory=Value)
+    list_val: Value = field(default_factory=Value)
+    element: Value = field(default_factory=Value)
+
+
+@dataclass
 class MapInit(Instruction):
     """Construct a map."""
 
@@ -763,6 +776,9 @@ def pretty_print_instruction(inst: Instruction) -> str:  # noqa: C901
     if isinstance(inst, ListInit):
         elems = ", ".join(v.name for v in inst.elements)
         return f"{inst.dest.name} = list_init {_format_type(inst.elem_type)} [{elems}]"
+
+    if isinstance(inst, ListPush):
+        return f"{inst.dest.name} = list_push {inst.list_val.name}, {inst.element.name}"
 
     if isinstance(inst, IndexGet):
         return f"{inst.dest.name} = index_get {inst.obj.name}[{inst.index.name}]"

@@ -35,8 +35,8 @@
 
 | Phase | Name | Status | Estimated Effort |
 |-------|------|--------|-----------------|
-| 1 | Language Specification Freeze | `Not Started` | Large — audit and finalize SPEC.md |
-| 2 | Self-Hosted Fixed Point | `Not Started` | X-Large — cross-module native compilation, 3-stage verification |
+| 1 | Language Specification Freeze | `Complete` | Large — audit and finalize SPEC.md |
+| 2 | Self-Hosted Fixed Point | `In Progress` | X-Large — cross-module native compilation, 3-stage verification |
 | 3 | Formal Memory Model | `Not Started` | Large — document and verify arena, ownership, lifetimes |
 | 4 | Stability Guarantees & Policy | `Not Started` | Small — policy docs, semver contract |
 | 5 | Final Hardening | `Not Started` | Large — test coverage, security audit, perf sweep |
@@ -55,41 +55,41 @@ change requires an RFC.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Audit all grammar rules in `mapanare.lark` against SPEC.md — find undocumented syntax | `[ ]` | Turbofish `::<T>`, pipe definitions, namespace access, etc. |
-| 2 | Document all 25 `TypeKind` variants with semantics, constructors, and examples | `[ ]` | INT, FLOAT, BOOL, STRING, LIST, MAP, OPTION, RESULT, SIGNAL, STREAM, AGENT, TENSOR, FN, etc. |
-| 3 | Document type inference rules: what is inferred, what must be annotated | `[ ]` | Let bindings, function returns, generic instantiation, turbofish |
-| 4 | Document pattern matching: exhaustiveness rules, destructuring, guard clauses | `[ ]` | Enums, structs, literals, wildcards |
-| 5 | Document trait system: declaration, implementation, bounds, builtin traits | `[ ]` | `Display`, `Eq`, `Ord`, `Hash`, method resolution order |
-| 6 | Document generics: declaration, instantiation, constraints, monomorphization | `[ ]` | Including turbofish `::<T>` syntax |
-| 7 | Document module system: imports, `pub` visibility, circular dependency rules, `self::` | `[ ]` | Cross-module compilation from v0.9.0 Phase 8 |
-| 8 | Document agent lifecycle: spawn, channels, send/receive, sync, supervision | `[ ]` | Typed channels, `<-` operator, supervisor policies |
-| 9 | Document signal semantics: creation, computed, subscribers, batched updates | `[ ]` | Dependency tracking, propagation order |
-| 10 | Document stream operators: map, filter, take, skip, collect, fold, `\|>` pipe | `[ ]` | Backpressure, fusion, lazy vs eager |
-| 11 | Document control flow: if/else, for..in, while, match, early return, break/continue | `[ ]` | |
-| 12 | Document all builtin functions: `print`, `println`, `len`, `str`, `int`, `float`, `Some`, `Ok`, `Err`, `signal`, `stream` | `[ ]` | Signatures, return types, edge cases |
-| 13 | Document string methods: all 12+ methods with signatures and examples | `[ ]` | `length`, `find`, `substring`, `contains`, `split`, `trim`, `replace`, `to_upper`, `to_lower`, etc. |
-| 14 | Document list/map operations: literals, indexing, push, pop, length, iteration | `[ ]` | Map literal syntax `#{}`, key types |
-| 15 | Document `Result<T, E>` and `Option<T>`: construction, unwrapping, pattern matching | `[ ]` | `Ok`, `Err`, `Some`, `None`, `?` operator if applicable |
-| 16 | Document closures and lambdas: capture semantics, environment struct model | `[ ]` | Move vs borrow (arena model) |
-| 17 | Document FFI: `extern "C"`, `--link-lib`, calling conventions | `[ ]` | From v0.4.0 |
-| 18 | Document error model: structured diagnostics, error codes (`MN-X0000`), spans | `[ ]` | |
+| 1 | Audit all grammar rules in `mapanare.lark` against SPEC.md — find undocumented syntax | `[x]` | Found: `new` keyword, `while`, `break`, `assert`, `extern`, `trait`, turbofish, doc comments, char literals, tuple exprs. All now documented. |
+| 2 | Document all 25 `TypeKind` variants with semantics, constructors, and examples | `[x]` | Sections 3.1-3.4: Primitives, Generic Containers, Compound/User-Defined, Special types |
+| 3 | Document type inference rules: what is inferred, what must be annotated | `[x]` | Section 3.5: let bindings, list/map element types, lambdas, generics, turbofish |
+| 4 | Document pattern matching: exhaustiveness rules, destructuring, guard clauses | `[x]` | Section 5: constructor, literal, identifier, wildcard patterns; exhaustiveness rules; nested destructuring. Guard clauses not implemented — not documented. |
+| 5 | Document trait system: declaration, implementation, bounds, builtin traits | `[x]` | Section 7: Display, Eq, Ord, Hash; impl Trait for Type; trait bounds on generics |
+| 6 | Document generics: declaration, instantiation, constraints, monomorphization | `[x]` | Section 13: declaration, turbofish `::<T>`, trait bounds, monomorphization |
+| 7 | Document module system: imports, `pub` visibility, circular dependency rules, `self::` | `[x]` | Section 8: file-based modules, import syntax, pub visibility, export, self::, circular deps |
+| 8 | Document agent lifecycle: spawn, channels, send/receive, sync, supervision | `[x]` | Section 9: lifecycle states, typed channels, SPSC ring buffers, backpressure, supervision |
+| 9 | Document signal semantics: creation, computed, subscribers, batched updates | `[x]` | Section 10: signal(), signal{}, subscribers, batched updates, propagation order |
+| 10 | Document stream operators: map, filter, take, skip, collect, fold, `\|>` pipe | `[x]` | Section 11: 14 operators, backpressure strategies, fusion, lazy evaluation |
+| 11 | Document control flow: if/else, for..in, while, match, early return, break/continue | `[x]` | Section 4: if/else, for, while, break, return, match, assert |
+| 12 | Document all builtin functions: `print`, `println`, `len`, `str`, `int`, `float`, `Some`, `Ok`, `Err`, `signal`, `stream` | `[x]` | Section 14: all 12 builtins with signatures |
+| 13 | Document string methods: all 12+ methods with signatures and examples | `[x]` | Section 15: all 15 methods (len, char_at, byte_at, substr, find, contains, starts_with, ends_with, split, trim, trim_start, trim_end, to_upper, to_lower, replace) |
+| 14 | Document list/map operations: literals, indexing, push, pop, length, iteration | `[x]` | Sections 16-17: list literals, indexing, push, len, iteration; map #{}, indexing, contains, delete, iteration |
+| 15 | Document `Result<T, E>` and `Option<T>`: construction, unwrapping, pattern matching | `[x]` | Section 3.8: construction, pattern matching, ? operator, error propagation |
+| 16 | Document closures and lambdas: capture semantics, environment struct model | `[x]` | Section 6.3: lambda syntax, capture by value, environment struct, no-capture optimization |
+| 17 | Document FFI: `extern "C"`, `--link-lib`, calling conventions | `[x]` | Section 18: C FFI, Python interop (legacy), type mappings |
+| 18 | Document error model: structured diagnostics, error codes (`MN-X0000`), spans | `[x]` | Section 19 + Appendix D: error code format, categories, Rust-style reporting, error code registry | |
 
 ### Spec Finalization
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 19 | Update SPEC.md version to `1.0.0`, status to "1.0 Final" | `[ ]` | |
-| 20 | Add "Stability" section: what is frozen, what can still change (stdlib), RFC process | `[ ]` | |
-| 21 | Add "Reserved Keywords" section — list all keywords, reserved for future use | `[ ]` | Prevent user code from using future keywords |
-| 22 | Cross-reference SPEC.md against grammar, semantic checker, and emitters for consistency | `[ ]` | Automated: parse grammar rules and check spec coverage |
-| 23 | Mark Python backend as "legacy, for reference only" in all relevant docs | `[ ]` | SPEC.md, ROADMAP.md, CLAUDE.md, README |
+| 19 | Update SPEC.md version to `1.0.0`, status to "1.0 Final" | `[x]` | Header updated: Version 1.0.0, Status 1.0 Final |
+| 20 | Add "Stability" section: what is frozen, what can still change (stdlib), RFC process | `[x]` | Section 24: frozen areas, changeable areas, RFC/deprecation process |
+| 21 | Add "Reserved Keywords" section — list all keywords, reserved for future use | `[x]` | Appendix C: 20 reserved keywords (async, await, yield, macro, where, etc.) |
+| 22 | Cross-reference SPEC.md against grammar, semantic checker, and emitters for consistency | `[x]` | `tests/spec/test_spec_crossref.py`: 32 keywords, 25 TypeKinds, 28 operators, all sections validated |
+| 23 | Mark Python backend as "legacy, for reference only" in all relevant docs | `[x]` | SPEC.md, ROADMAP.md, README.md updated. CLAUDE.md already marks it. |
 
 ### Tests
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 24 | Spec compliance tests: one test per grammar rule verifying parse → compile → expected output | `[ ]` | Use LLVM backend |
-| 25 | Negative spec tests: one test per documented error case verifying correct diagnostic | `[ ]` | Error codes, spans, messages |
+| 24 | Spec compliance tests: one test per grammar rule verifying parse → compile → expected output | `[x]` | `tests/spec/test_spec_compliance.py`: 85 tests covering all grammar rules (parse + semantic + LLVM) |
+| 25 | Negative spec tests: one test per documented error case verifying correct diagnostic | `[x]` | `tests/spec/test_spec_negative.py`: 20 tests for undefined vars, type mismatch, immutable assign, parse errors, scope errors |
 
 **Done when:** SPEC.md is complete, version 1.0 Final, and every documented construct has a passing
 spec compliance test on the LLVM backend.
@@ -107,9 +107,9 @@ compiler is correct enough to sustain itself.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Audit enum lowering gaps in self-hosted `emit_llvm.mn` | `[ ]` | Known blocker from v0.9.0 |
-| 2 | Audit cross-module compilation for `self::` imports between the 7 compiler modules | `[ ]` | Phase 8 of v0.9.0 added cross-module; verify it works for `mapanare/self/*.mn` |
-| 3 | Identify and fix any self-hosted codegen gaps (missing AST nodes, MIR ops, LLVM patterns) | `[ ]` | Compare bootstrap Python emitter output vs self-hosted emitter output |
+| 1 | Audit enum lowering gaps in self-hosted `emit_llvm.mn` | `[x]` | Gaps: hardcoded tag=0, no variant→tag map, payload always index 1, all .push() commented out |
+| 2 | Audit cross-module compilation for `self::` imports between the 7 compiler modules | `[x]` | multi_module.py handles self:: imports, topo sort, name mangling, MIR merge — verified |
+| 3 | Identify and fix any self-hosted codegen gaps (missing AST nodes, MIR ops, LLVM patterns) | `[~]` | Added ListPush MIR instruction, LLVM emit, lowering for .push(). Uncommented 68 push calls in self/*.mn. Stage 1 compile reaches LLVM emission but hits type mismatch in string method call args — needs arg coercion fix. |
 
 ### Stage 1 — Bootstrap Compilation
 
@@ -316,7 +316,7 @@ If context is interrupted mid-phase, add a handoff entry here:
 
 | Date | Phase | Last Completed Task | Next Task | Notes |
 |------|-------|--------------------:|-----------|-------|
-| — | — | — | — | — |
+| 2026-03-13 | 2 | Task 3 (codegen gaps) in progress | Task 3 continued: fix LLVM string method arg type mismatch in emit_llvm_mir.py:1451, then Task 4 (Stage 1 build) | Added ListPush to MIR/lower/emit pipeline. Uncommented 68 .push() calls in self/*.mn. Multi-module compilation of self/main.mn reaches LLVM emission — type error on string method call (i64 vs i8* arg #2). |
 
 ---
 

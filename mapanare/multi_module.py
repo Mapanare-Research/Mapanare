@@ -30,6 +30,7 @@ from mapanare.mir import (
     FieldGet,
     FieldSet,
     Instruction,
+    ListPush,
     MIRModule,
     MIRType,
     SignalComputed,
@@ -215,6 +216,10 @@ def _rename_instruction(
     elif isinstance(inst, FieldSet):
         _rename_value_type(inst.obj, type_map)
         _rename_value_type(inst.val, type_map)
+    elif isinstance(inst, ListPush):
+        _rename_value_type(inst.dest, type_map)
+        _rename_value_type(inst.list_val, type_map)
+        _rename_value_type(inst.element, type_map)
     elif isinstance(inst, AgentSpawn):
         inst.agent_type = _rename_mir_type(inst.agent_type, type_map)
 

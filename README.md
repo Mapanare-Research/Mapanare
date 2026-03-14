@@ -12,7 +12,7 @@
 
 Built after years of hitting Python's limits in AI-native, concurrent, and tensor-heavy software.
 
-Mapanare compiles to Python (transpiler) and native binaries (LLVM), with a self-hosted compiler in progress.
+Mapanare compiles to native binaries via LLVM, with a self-hosted compiler in progress. A legacy Python transpiler backend exists for reference and bootstrapping only.
 
 English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [Português](docs/README.pt.md)
 

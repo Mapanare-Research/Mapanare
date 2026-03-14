@@ -50,6 +50,7 @@ from mapanare.mir import (
     InterpConcat,
     Jump,
     ListInit,
+    ListPush,
     MapInit,
     MIRFunction,
     MIRModule,
@@ -1008,6 +1009,8 @@ class LLVMMIREmitter:
             self._emit_field_set(inst, builder, values)
         elif isinstance(inst, ListInit):
             self._emit_list_init(inst, builder, values)
+        elif isinstance(inst, ListPush):
+            self._emit_list_push(inst, builder, values)
         elif isinstance(inst, IndexGet):
             self._emit_index_get(inst, builder, values)
         elif isinstance(inst, IndexSet):
@@ -1849,6 +1852,31 @@ class LLVMMIREmitter:
             list_val = builder.load(list_ptr, name=name)
 
         self._store_value(inst.dest, list_val, values)
+
+    # --- ListPush ---
+
+    def _emit_list_push(self, inst: ListPush, builder: Any, values: dict[str, Any]) -> None:
+        """Emit list.push(element) — stores list to alloca, pushes, loads back."""
+        list_val = self._get_value(inst.list_val, values)
+        elem_val = self._get_value(inst.element, values)
+        name = self._val_name(inst.dest)
+
+        fn_push = self._rt_list_push()
+
+        # Store list to alloca so push can mutate it
+        list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.lptr")
+        builder.store(list_val, list_ptr)
+
+        # Store element to alloca, bitcast to i8*
+        elem_alloca = builder.alloca(elem_val.type, name=f"{name}.eptr")
+        builder.store(elem_val, elem_alloca)
+        elem_ptr = builder.bitcast(elem_alloca, ir.IntType(8).as_pointer())
+
+        builder.call(fn_push, [list_ptr, elem_ptr])
+
+        # Load updated list
+        updated = builder.load(list_ptr, name=name)
+        self._store_value(inst.dest, updated, values)
 
     # --- IndexGet ---
 

@@ -35,6 +35,7 @@ from mapanare.mir import (
     InterpConcat,
     Jump,
     ListInit,
+    ListPush,
     MapInit,
     MIRFunction,
     MIRModule,
@@ -826,6 +827,13 @@ class PythonMIREmitter:
             dest = self._val(inst.dest)
             elems = ", ".join(self._val(e) for e in inst.elements)
             self._emit_line(f"{dest} = [{elems}]")
+
+        elif isinstance(inst, ListPush):
+            dest = self._val(inst.dest)
+            lst = self._val(inst.list_val)
+            elem = self._val(inst.element)
+            self._emit_line(f"{lst}.append({elem})")
+            self._emit_line(f"{dest} = {lst}")
 
         elif isinstance(inst, IndexGet):
             dest = self._val(inst.dest)
