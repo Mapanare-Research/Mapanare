@@ -403,8 +403,6 @@ fn has_explicit_main(defs: List<Definition>) -> Bool {
 
 pub fn parse(source: String, filename: String) -> Program {
     let tokens: List<Token> = tokenize(source, filename)
-    print("DBG tokens=")
-    println(len(tokens))
     let mut pos: Int = 0
     let mut defs: List<Definition> = []
     let mut top_stmts: List<Stmt> = []

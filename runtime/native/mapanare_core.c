@@ -168,10 +168,6 @@ MN_EXPORT MnString __mn_str_empty(void) {
 }
 
 MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
-    if ((a.len > 0 && a.data == NULL) || (b.len > 0 && b.data == NULL)) {
-        fprintf(stderr, "[DEBUG] __mn_str_concat: NULL ptr with non-zero len! a.data=%p a.len=%lld b.data=%p b.len=%lld\n",
-                (void*)a.data, (long long)a.len, (void*)b.data, (long long)b.len);
-    }
     const char *a_data = mn_untag(a.data);
     const char *b_data = mn_untag(b.data);
     int64_t total = a.len + b.len;
@@ -210,12 +206,6 @@ MN_EXPORT int64_t __mn_str_len(MnString s) {
 
 MN_EXPORT int64_t __mn_str_eq(MnString a, MnString b) {
     if (a.data == NULL || b.data == NULL) {
-        const char *b_show = (b.data && b.len > 0 && b.len < 256) ? mn_untag(b.data) : "(n/a)";
-        const char *a_show = (a.data && a.len > 0 && a.len < 256) ? mn_untag(a.data) : "(n/a)";
-        fprintf(stderr, "[DEBUG] __mn_str_eq: NULL! a={%p,%lld,\"%.*s\"} b={%p,%lld,\"%.*s\"} ret=%p\n",
-                (void*)a.data, (long long)a.len, (int)(a.data ? a.len : 4), a_show,
-                (void*)b.data, (long long)b.len, (int)(b.data ? b.len : 4), b_show,
-                __builtin_return_address(0));
         if (a.data == NULL && b.data == NULL) return a.len == b.len ? 1 : 0;
         return 0;
     }
@@ -469,10 +459,6 @@ MN_EXPORT void __mn_str_eprintln(MnString s) {
 #define MN_LIST_INITIAL_CAP 8
 
 MN_EXPORT MnList __mn_list_new(int64_t elem_size) {
-    if (elem_size > 100) {
-        fprintf(stderr, "[DEBUG] __mn_list_new: elem_size=%lld ret=%p\n",
-                (long long)elem_size, __builtin_return_address(0));
-    }
     MnList list;
     list.elem_size = elem_size;
     list.len = 0;

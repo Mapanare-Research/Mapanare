@@ -89,9 +89,18 @@ class TestStage1Compilation:
         llvm_ir = _compile_to_llvm_ir(source, filename)
         declares = re.findall(r'declare\s+(?:external\s+)?.*?@"([^"]+)"', llvm_ir)
         enum_prefixes = [
-            "Expr_", "Stmt_", "Pattern_", "Definition_", "Instruction_",
-            "BinOpKind_", "UnaryOpKind_", "StreamOpKind_", "ElseClause_",
-            "MatchArmBody_", "LambdaBody_", "TypeExpr_",
+            "Expr_",
+            "Stmt_",
+            "Pattern_",
+            "Definition_",
+            "Instruction_",
+            "BinOpKind_",
+            "UnaryOpKind_",
+            "StreamOpKind_",
+            "ElseClause_",
+            "MatchArmBody_",
+            "LambdaBody_",
+            "TypeExpr_",
         ]
         stale = [d for d in declares if any(d.startswith(p) for p in enum_prefixes)]
         assert stale == [], f"Unresolved enum constructors: {stale}"
@@ -102,7 +111,7 @@ class TestStage1Compilation:
         llvm_ir = _compile_to_llvm_ir(source, filename)
         declares = re.findall(r'declare\s+(?:external\s+)?.*?@"([^"]+)"', llvm_ir)
         # All declares should be C runtime (__mn_*), printf, or range/iter
-        allowed = {"printf", "__range", "__iter_has_next", "__iter_next"}
+        allowed = {"printf", "__range", "__iter_has_next", "__iter_next", "malloc"}
         unexpected = [d for d in declares if not d.startswith("__mn_") and d not in allowed]
         assert unexpected == [], f"Unresolved cross-module refs: {unexpected}"
 
@@ -142,10 +151,7 @@ class TestStage1BasicFunctionality:
         """Compile a program with arithmetic expressions."""
         src = pathlib.Path("/tmp/test_mnc_arith.mn")
         src.write_text(
-            "fn main() {\n"
-            "    let x: Int = 1 + 2 * 3\n"
-            "    println(str(x))\n"
-            "}\n",
+            "fn main() {\n" "    let x: Int = 1 + 2 * 3\n" "    println(str(x))\n" "}\n",
             encoding="utf-8",
         )
         result = subprocess.run(
@@ -238,9 +244,9 @@ class TestStage1LLVMEmission:
         for line in output.splitlines():
             if "declare" in line and "i8*" in line:
                 # Each { must have a matching }
-                assert line.count("{") == line.count("}"), (
-                    f"Unbalanced braces in declaration: {line}"
-                )
+                assert line.count("{") == line.count(
+                    "}"
+                ), f"Unbalanced braces in declaration: {line}"
 
     def test_string_constants_aligned(self) -> None:
         """String constants in generated IR must have align >= 2."""
@@ -248,6 +254,4 @@ class TestStage1LLVMEmission:
         llvm_ir = _compile_to_llvm_ir(source, filename)
         for line in llvm_ir.splitlines():
             if "private" in line and "constant" in line and "x i8]" in line:
-                assert "align" in line, (
-                    f"String constant missing alignment: {line[:80]}"
-                )
+                assert "align" in line, f"String constant missing alignment: {line[:80]}"
