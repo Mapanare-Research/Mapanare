@@ -459,4 +459,17 @@ MN_EXPORT void __mn_exit(int64_t code);
 /** Print an error and exit with code 1. */
 MN_EXPORT void __mn_panic(MnString message);
 
+/* -----------------------------------------------------------------------
+ * Range Iterator — used by `for i in start..end` loops
+ * ----------------------------------------------------------------------- */
+
+/** Create a range iterator from start (inclusive) to end (exclusive). */
+MN_EXPORT void *__range(int64_t start, int64_t end);
+
+/** Check if the iterator has more elements. Returns 1 or 0. */
+MN_EXPORT int8_t __iter_has_next(void *iter);
+
+/** Get the next element and advance. Returns value as i8* (inttoptr). */
+MN_EXPORT void *__iter_next(void *iter);
+
 #endif /* MAPANARE_CORE_H */

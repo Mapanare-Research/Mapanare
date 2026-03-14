@@ -752,6 +752,17 @@ class MIRLowerer:
                             self._lambda_vars[let.name] = inst.value
             return
         val = self._lower_expr(let.value)
+        # For empty lists/maps, propagate element type from the type annotation
+        # so the LLVM emitter uses the correct elem_size.
+        if let.type_annotation and isinstance(let.value, ListLiteral) and not let.value.elements:
+            declared = _resolve_type_expr(let.type_annotation)
+            if declared.type_info.args:
+                # Patch the ListInit instruction's elem_type
+                for bb in (self._fn.blocks if self._fn else []):
+                    for inst in bb.instructions:
+                        if isinstance(inst, ListInit) and inst.dest == val:
+                            inst.elem_type = MIRType(declared.type_info.args[0])
+                            break
         # Create a named copy for readability
         named = Value(name=f"%{let.name}", ty=val.ty)
         self._emit(Copy(dest=named, src=val))
@@ -1691,7 +1702,16 @@ class MIRLowerer:
         """Lower index access: `arr[i]`."""
         obj = self._lower_expr(expr.object)
         index = self._lower_expr(expr.index)
-        dest = self._make_value()
+        # Infer element type from the container's type args
+        elem_ty = mir_unknown()
+        obj_kind = obj.ty.kind
+        if obj_kind == TypeKind.LIST and obj.ty.type_info.args:
+            elem_ty = MIRType(obj.ty.type_info.args[0])
+        elif obj_kind == TypeKind.MAP and len(obj.ty.type_info.args) >= 2:
+            elem_ty = MIRType(obj.ty.type_info.args[1])
+        elif obj_kind == TypeKind.STRING:
+            elem_ty = MIRType(type_info=TypeInfo(name="String", kind=TypeKind.STRING))
+        dest = self._make_value(ty=elem_ty)
         self._emit(IndexGet(dest=dest, obj=obj, index=index))
         return dest
 

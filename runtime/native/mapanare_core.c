@@ -1498,3 +1498,39 @@ MN_EXPORT void __mn_panic(MnString message) {
     fputc('\n', stderr);
     exit(1);
 }
+
+/* -----------------------------------------------------------------------
+ * Range Iterator
+ *
+ * Used by `for i in start..end` loops.  The iterator is a heap-allocated
+ * struct holding {current, end}.  Values are returned as i8* (inttoptr)
+ * so the LLVM IR can ptrtoint them back to i64.
+ * ----------------------------------------------------------------------- */
+
+typedef struct {
+    int64_t current;
+    int64_t end;
+} MnRangeIter;
+
+MN_EXPORT void *__range(int64_t start, int64_t end) {
+    MnRangeIter *iter = (MnRangeIter *)malloc(sizeof(MnRangeIter));
+    if (!iter) {
+        fprintf(stderr, "mapanare: out of memory in __range\n");
+        exit(1);
+    }
+    iter->current = start;
+    iter->end = end;
+    return (void *)iter;
+}
+
+MN_EXPORT int8_t __iter_has_next(void *iter_ptr) {
+    MnRangeIter *iter = (MnRangeIter *)iter_ptr;
+    return iter->current < iter->end ? 1 : 0;
+}
+
+MN_EXPORT void *__iter_next(void *iter_ptr) {
+    MnRangeIter *iter = (MnRangeIter *)iter_ptr;
+    int64_t val = iter->current;
+    iter->current++;
+    return (void *)(intptr_t)val;
+}

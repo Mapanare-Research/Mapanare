@@ -18,6 +18,7 @@ from __future__ import annotations
 import copy
 import os
 from dataclasses import dataclass, field
+from typing import Any
 
 from mapanare.ast_nodes import ImportDef, Program
 from mapanare.mir import (
@@ -393,6 +394,11 @@ def build_import_remap(
                         mapping.fn_map[export_name] = fn_rename[export_name]
                     if export_name in type_rename:
                         mapping.type_map[export_name] = type_rename[export_name]
+                # Register namespace access patterns: {TypeName}_{fn} → mangled_fn
+                for type_name in type_rename:
+                    for fn_name, mangled_fn in fn_rename.items():
+                        ns_key = f"{type_name}_{fn_name}"
+                        mapping.fn_map[ns_key] = mangled_fn
 
     return mapping
 
@@ -411,6 +417,116 @@ def remap_mir_references(mir: MIRModule, mapping: ImportMapping) -> None:
 # ---------------------------------------------------------------------------
 # MIR merging
 # ---------------------------------------------------------------------------
+
+
+def resolve_cross_dep_references(
+    dep_mirs: list[MIRModule],
+    dep_renames: dict[str, tuple[dict[str, str], dict[str, str]]],
+    deps: list[tuple[str, Any]],
+    resolver: Any,
+) -> None:
+    """Fix cross-dependency references between imported modules.
+
+    When module A imports module B, A's calls to B's functions still use the
+    un-mangled names after A is renamed.  This pass builds a global rename map
+    from all dependency rename maps and applies it to every dependency module.
+
+    Also converts Call instructions that target known enum variant constructors
+    into proper EnumInit instructions.
+    """
+    # Build global fn_map and type_map across all deps
+    global_fn_map: dict[str, str] = {}
+    global_type_map: dict[str, str] = {}
+    for filepath, (fn_map, type_map) in dep_renames.items():
+        global_fn_map.update(fn_map)
+        global_type_map.update(type_map)
+
+    # Build call_key → (mangled_enum_name, variant_name, field_types) from all dep modules.
+    # Call targets use "{OriginalEnumName}_{VariantName}" format (e.g., "Expr_Ident").
+    # Enum names are mangled (e.g., "ast__Expr"), so invert type_map to get originals.
+    inv_type_map: dict[str, str] = {v: k for k, v in global_type_map.items()}
+    variant_call_map: dict[str, tuple[str, str, list[MIRType]]] = {}
+    for mir in dep_mirs:
+        for mangled_enum_name, variants in mir.enums.items():
+            orig_enum_name = inv_type_map.get(mangled_enum_name, mangled_enum_name)
+            for _idx, (vname, vtypes) in enumerate(variants):
+                call_key = f"{orig_enum_name}_{vname}"
+                variant_call_map[call_key] = (mangled_enum_name, vname, vtypes)
+                # Also try bare variant name (for non-namespace access patterns)
+                if vname not in variant_call_map:
+                    variant_call_map[vname] = (mangled_enum_name, vname, vtypes)
+
+    # Build namespace access map: {TypeName}_{fn} → mangled_fn
+    # Handles patterns like Program::start(defs) → Call(fn_name="Program_start")
+    # where Program is a struct from module X and start is a function in module X.
+    ns_fn_map: dict[str, str] = {}
+    for filepath, (fn_map, type_map) in dep_renames.items():
+        inv_tm = {v: k for k, v in type_map.items()}
+        inv_fm = {v: k for k, v in fn_map.items()}
+        for orig_fn, mangled_fn in fn_map.items():
+            for orig_type in type_map:
+                ns_key = f"{orig_type}_{orig_fn}"
+                ns_fn_map[ns_key] = mangled_fn
+
+    # Apply global renames and convert enum variant Calls to EnumInit
+    for mir in dep_mirs:
+        # Collect defined function names for this module
+        defined_fns = {fn.name for fn in mir.functions}
+
+        for fn in mir.functions:
+            for block in fn.blocks:
+                new_instructions: list[Instruction] = []
+                for inst in block.instructions:
+                    if isinstance(inst, Call):
+                        # Remap function name if it's an unresolved cross-dep reference
+                        if inst.fn_name not in defined_fns:
+                            if inst.fn_name in global_fn_map:
+                                inst.fn_name = global_fn_map[inst.fn_name]
+                            elif inst.fn_name in ns_fn_map:
+                                inst.fn_name = ns_fn_map[inst.fn_name]
+                            elif inst.fn_name in variant_call_map:
+                                # Convert to EnumInit
+                                ename, vname, _vtypes = variant_call_map[inst.fn_name]
+                                enum_ti = TypeInfo(kind=TypeKind.ENUM, name=ename)
+                                enum_mir_type = MIRType(type_info=enum_ti)
+                                new_inst = EnumInit(
+                                    dest=inst.dest,
+                                    enum_type=enum_mir_type,
+                                    variant=vname,
+                                    payload=inst.args,
+                                )
+                                inst.dest.ty = enum_mir_type
+                                new_instructions.append(new_inst)
+                                continue
+                        # Remap dest/arg types
+                        _rename_value_type(inst.dest, global_type_map)
+                        for arg in inst.args:
+                            _rename_value_type(arg, global_type_map)
+                    elif isinstance(inst, StructInit):
+                        inst.struct_type = _rename_mir_type(inst.struct_type, global_type_map)
+                        _rename_value_type(inst.dest, global_type_map)
+                    elif isinstance(inst, FieldGet):
+                        _rename_value_type(inst.dest, global_type_map)
+                        _rename_value_type(inst.obj, global_type_map)
+                    elif isinstance(inst, FieldSet):
+                        _rename_value_type(inst.obj, global_type_map)
+                        _rename_value_type(inst.val, global_type_map)
+                    elif isinstance(inst, EnumInit):
+                        inst.enum_type = _rename_mir_type(inst.enum_type, global_type_map)
+                        _rename_value_type(inst.dest, global_type_map)
+                    elif isinstance(inst, EnumTag):
+                        _rename_value_type(inst.dest, global_type_map)
+                        _rename_value_type(inst.enum_val, global_type_map)
+                    elif isinstance(inst, EnumPayload):
+                        _rename_value_type(inst.dest, global_type_map)
+                        _rename_value_type(inst.enum_val, global_type_map)
+                    new_instructions.append(inst)
+                block.instructions = new_instructions
+
+            # Also remap return type and param types
+            fn.return_type = _rename_mir_type(fn.return_type, global_type_map)
+            for param in fn.params:
+                param.ty = _rename_mir_type(param.ty, global_type_map)
 
 
 def merge_mir_modules(base: MIRModule, additions: list[MIRModule]) -> None:
@@ -539,6 +655,9 @@ def compile_multi_module_mir(
         dep_renames[filepath] = (fn_map, type_map)
         dep_mirs.append(dep_mir)
 
+    # 3.5. Resolve cross-dependency references (cross-module calls + enum variants)
+    resolve_cross_dep_references(dep_mirs, dep_renames, deps, resolver)
+
     # 4. Lower root module
     root_module_name = os.path.splitext(os.path.basename(root_file))[0]
     root_mir = build_mir(
@@ -551,6 +670,43 @@ def compile_multi_module_mir(
     # 5. Remap root module's references to imported symbols
     import_mapping = build_import_remap(ast, resolver, root_file, dep_renames)
     remap_mir_references(root_mir, import_mapping)
+
+    # 5.5. Convert any remaining enum variant Calls in root module to EnumInit
+    #   Build variant map using {OriginalEnumName}_{VariantName} call keys
+    root_variant_map: dict[str, tuple[str, str, list[MIRType]]] = {}
+    for dep_mir in dep_mirs:
+        for mangled_enum_name, variants in dep_mir.enums.items():
+            # Invert type renames to get original names
+            orig_name = mangled_enum_name
+            for filepath, (_, type_map) in dep_renames.items():
+                for k, v in type_map.items():
+                    if v == mangled_enum_name:
+                        orig_name = k
+                        break
+            for _idx, (vname, vtypes) in enumerate(variants):
+                call_key = f"{orig_name}_{vname}"
+                root_variant_map[call_key] = (mangled_enum_name, vname, vtypes)
+                if vname not in root_variant_map:
+                    root_variant_map[vname] = (mangled_enum_name, vname, vtypes)
+    for fn in root_mir.functions:
+        for block in fn.blocks:
+            new_insts: list[Instruction] = []
+            for inst in block.instructions:
+                if isinstance(inst, Call) and inst.fn_name in root_variant_map:
+                    ename, vname, _vtypes = root_variant_map[inst.fn_name]
+                    enum_ti = TypeInfo(kind=TypeKind.ENUM, name=ename)
+                    enum_mir_type = MIRType(type_info=enum_ti)
+                    new_inst = EnumInit(
+                        dest=inst.dest,
+                        enum_type=enum_mir_type,
+                        variant=vname,
+                        payload=inst.args,
+                    )
+                    inst.dest.ty = enum_mir_type
+                    new_insts.append(new_inst)
+                    continue
+                new_insts.append(inst)
+            block.instructions = new_insts
 
     # 6. Merge all modules (dependencies first, then root)
     merge_mir_modules(root_mir, dep_mirs)

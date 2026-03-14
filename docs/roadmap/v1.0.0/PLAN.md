@@ -115,18 +115,18 @@ compiler is correct enough to sustain itself.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4 | Compile `mapanare/self/*.mn` (all 7 modules) using the Python bootstrap compiler → native binary | `[~]` | LLVM IR verified + object code produced. Linking to native binary requires Linux/WSL (C runtime uses epoll). 5 tests in `tests/bootstrap/test_stage1_compile.py`. |
-| 5 | Verify `mnc-stage1` can lex, parse, and type-check a simple `.mn` program | `[ ]` | Blocked: needs linked binary (Task 4 on Linux/WSL) |
-| 6 | Verify `mnc-stage1` can emit LLVM IR for a simple `.mn` program | `[ ]` | Blocked: needs linked binary |
-| 7 | Run the bootstrap test suite (264 tests) against `mnc-stage1` | `[ ]` | Blocked: needs linked binary |
+| 4 | Compile `mapanare/self/*.mn` (all 7 modules) using the Python bootstrap compiler → native binary | `[x]` | 51K-line LLVM IR → 4.9MB ELF binary. Fixed: cross-module enum variant resolution (101 constructors), cross-dep function remapping, range/iterator C runtime. Build script: `scripts/build_stage1.py`. 15 tests in `tests/bootstrap/test_stage1_compile.py`. |
+| 5 | Verify `mnc-stage1` can lex, parse, and type-check a simple `.mn` program | `[x]` | Binary runs, reads files, completes full pipeline (lex→parse→check→lower→emit) for hello world, arithmetic, function calls. Exit code 0 on valid programs, 1 on missing files. |
+| 6 | Verify `mnc-stage1` can emit LLVM IR for a simple `.mn` program | `[~]` | Major progress: went from 88 bytes of garbled `n\` to 1949 bytes of structurally correct LLVM IR. Fixed 4 bugs: (1) List<String> elem_size=8→16 via type annotation propagation to ListInit, (2) IndexGet element type inference from container type args, (3) parser string escape processing for LLVM backend, (4) mnc_main.c pointer untagging. Remaining: character-level corruption in string concat (1-byte offset pattern) — likely string length off-by-one in concat chain. |
+| 7 | Run the bootstrap test suite (264 tests) against `mnc-stage1` | `[!]` | Blocked: Task 6 character-level corruption in emitted IR. |
 
 ### Stage 2 — Self-Compilation
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 8 | Use `mnc-stage1` to compile `mapanare/self/*.mn` → `mnc-stage2` | `[ ]` | The self-hosted compiler compiling itself |
-| 9 | Run the bootstrap test suite against `mnc-stage2` | `[ ]` | All must pass |
-| 10 | Diff LLVM IR output: `mnc-stage1` vs `mnc-stage2` for a corpus of test programs | `[ ]` | Must be identical (modulo metadata) |
+| 8 | Use `mnc-stage1` to compile `mapanare/self/*.mn` → `mnc-stage2` | `[ ]` | Blocked: Task 6 (IR output quality) |
+| 9 | Run the bootstrap test suite against `mnc-stage2` | `[ ]` | Blocked: Task 8 |
+| 10 | Diff LLVM IR output: `mnc-stage1` vs `mnc-stage2` for a corpus of test programs | `[ ]` | Blocked: Task 8 |
 
 ### Stage 3 — Fixed Point Verification
 
@@ -318,6 +318,8 @@ If context is interrupted mid-phase, add a handoff entry here:
 |------|-------|--------------------:|-----------|-------|
 | 2026-03-13 | 2 | Task 3 (codegen gaps) in progress | Task 3 continued: fix LLVM string method arg type mismatch in emit_llvm_mir.py:1451, then Task 4 (Stage 1 build) | Added ListPush to MIR/lower/emit pipeline. Uncommented 68 .push() calls in self/*.mn. Multi-module compilation of self/main.mn reaches LLVM emission — type error on string method call (i64 vs i8* arg #2). |
 | 2026-03-13 | 2.2 | Task 4 (Stage 1 partial — object code) | Task 4 completion on Linux/WSL (link binary), then Tasks 5-7 | Fixed SSA dominance via pre_entry alloca block + lazy alloca creation. Replaced MIR phi nodes with alloca/store/load (LLVM mem2reg handles promotion). Self-hosted compiler (7 modules, 8288+ lines) compiles to verified LLVM IR + object code. Linking blocked on Windows — needs Linux for C runtime (epoll). |
+| 2026-03-14 | 2.2 | Tasks 4-5 done, Task 6 in progress | Task 6: debug self-hosted emit_llvm.mn string output, then Tasks 7-10 | Fixed multi_module.py: cross-dep function remapping, 101 enum variant Call→EnumInit conversion, namespace access patterns. Added __range/__iter_has_next/__iter_next to C runtime. Built mnc-stage1 (4.9MB ELF). Binary runs full pipeline but emit_llvm.mn produces garbled IR text (string emitter bug). 15 tests pass. |
+| 2026-03-14 | 2.2 | Task 6 in progress (major fix) | Task 6: fix remaining char-level corruption in IR output, then Tasks 7-10 | **Fixed 4 bugs:** (1) `lower.py:_lower_let` — propagate type annotation args to ListInit elem_type for empty lists (elem_size 8→16 for List<String>). (2) `lower.py:_lower_index` — infer element type from container's type_info.args so IndexGet dest has correct type. (3) `parser.py:string_lit` — call `_unescape()` on all strings (not just interpolated) so LLVM backend stores `\n` as 0x0A. (4) `mnc_main.c` — untag heap string pointer (bit 0) before fwrite. (5) `emit_llvm_mir.py` — coerce i8*→LLVM_LIST in _emit_index_get and len() call. **Result:** Output went from 88 bytes of `n\` repeating to 1949 bytes of structurally correct LLVM IR. **Remaining:** Character-level corruption — 1-byte shifts in string content (e.g. `d{ i8*` instead of `{ i8*, i64 }`). Hypothesis: `__mn_str_concat` in C runtime returns tagged pointer (bit 0 set) which makes returned string data off by 1 byte. The concat internally untags before read, but the *returned* string has a tagged pointer. When the NEXT concat reads that string, it untags correctly. But the *length* might be off — concat allocates `total+1` bytes and sets `len=total`, but the tag bit might be causing a length miscalculation somewhere. Check: (a) whether `__mn_str_from_parts` or `__mn_str_concat` has an off-by-one, (b) whether the self-hosted emit_llvm.mn builds IR strings with correct lengths, (c) possible issue with how string constants are concatenated with heap strings. |
 
 ---
 

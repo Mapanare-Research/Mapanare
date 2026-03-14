@@ -25,6 +25,11 @@ struct Program {
     definitions: List<Definition>
 }
 
+fn start(defs: List<Definition>) -> Program {
+    let s: Span = new Span { line: 1, column: 0, end_line: 1, end_column: 0 }
+    return new Program { span: s, definitions: defs }
+}
+
 // ---------------------------------------------------------------------------
 // Type annotations
 // ---------------------------------------------------------------------------

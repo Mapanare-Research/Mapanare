@@ -414,8 +414,8 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         # Check for interpolation: ${...}
         parts = _split_interp(value)
         if parts is None:
-            # No interpolation found — preserve old behavior (no unescape)
-            return StringLiteral(value=value, span=span)
+            # Process escape sequences (\n, \t, etc.) for the LLVM backend
+            return StringLiteral(value=_unescape(value), span=span)
         # Build InterpString with mixed literal/expr parts
         interp_parts: list[Expr] = []
         for kind, text in parts:

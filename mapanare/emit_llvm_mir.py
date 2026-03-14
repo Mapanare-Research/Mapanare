@@ -1639,8 +1639,12 @@ class LLVMMIREmitter:
             elif inst.args and inst.args[0].ty.kind == TypeKind.LIST:
                 # Need a pointer for list_len — alloca + store + call
                 fn = self._rt_list_len()
+                list_val = args[0]
+                # Coerce i8* → LLVM_LIST if needed (cross-module type resolution)
+                if list_val.type != LLVM_LIST:
+                    list_val = _coerce_arg(builder, list_val, LLVM_LIST, f"{name}.lc")
                 list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.tmp")
-                builder.store(args[0], list_ptr)
+                builder.store(list_val, list_ptr)
                 result = builder.call(fn, [list_ptr], name=name)
             elif inst.args and inst.args[0].ty.kind == TypeKind.MAP:
                 fn = self._rt_map_len()
@@ -2126,6 +2130,13 @@ class LLVMMIREmitter:
             if first_val.type != LLVM_PTR:
                 elem_llvm_ty = first_val.type
 
+        # If still generic i8*, try inferring from the dest type's type args
+        # (e.g. List<String> has args=[TypeInfo(kind=STRING)] → elem is {i8*, i64})
+        if elem_llvm_ty == LLVM_PTR and inst.dest.ty.type_info.args:
+            inferred = self._resolve_mir_type(MIRType(inst.dest.ty.type_info.args[0]))
+            if inferred != LLVM_PTR:
+                elem_llvm_ty = inferred
+
         elem_size = _approx_type_size(elem_llvm_ty)
 
         # Call __mn_list_new(elem_size)
@@ -2190,8 +2201,12 @@ class LLVMMIREmitter:
 
         if obj_kind == TypeKind.LIST:
             fn_get = self._rt_list_get()
+            list_val = obj
+            # Coerce i8* → LLVM_LIST if needed (cross-module type resolution)
+            if list_val.type != LLVM_LIST:
+                list_val = _coerce_arg(builder, list_val, LLVM_LIST, f"{name}.lc")
             list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.lptr")
-            builder.store(obj, list_ptr)
+            builder.store(list_val, list_ptr)
             # Ensure index is i64 (cross-module lowering may resolve as i8*)
             if index.type != LLVM_INT:
                 index = builder.ptrtoint(index, LLVM_INT, name=f"{name}.idx")

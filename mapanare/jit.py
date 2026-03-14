@@ -40,11 +40,15 @@ def jit_compile_and_run(llvm_ir: str, opt_level: int = 2) -> int:
     mod.verify()
 
     # Run LLVM optimization passes
-    pmb = llvm.create_pass_manager_builder()
-    pmb.opt_level = opt_level
-    pm = llvm.create_module_pass_manager()
-    pmb.populate(pm)
-    pm.run(mod)
+    if hasattr(llvm, "create_pass_manager_builder"):
+        pmb = llvm.create_pass_manager_builder()
+        pmb.opt_level = opt_level
+        pm = llvm.create_module_pass_manager()
+        pmb.populate(pm)
+        pm.run(mod)
+    elif hasattr(llvm, "create_pass_builder"):
+        pb = llvm.create_pass_builder(target_machine)
+        pb.run(mod)
 
     engine = llvm.create_mcjit_compiler(mod, target_machine)
     engine.finalize_object()
@@ -72,10 +76,16 @@ def jit_compile_to_object(llvm_ir: str, opt_level: int = 2) -> bytes:
     target_machine = target.create_target_machine(opt=opt_level)
 
     # Run LLVM optimization passes
-    pmb = llvm.create_pass_manager_builder()
-    pmb.opt_level = opt_level
-    pm = llvm.create_module_pass_manager()
-    pmb.populate(pm)
-    pm.run(mod)
+    if hasattr(llvm, "create_pass_manager_builder"):
+        pmb = llvm.create_pass_manager_builder()
+        pmb.opt_level = opt_level
+        pm = llvm.create_module_pass_manager()
+        pmb.populate(pm)
+        pm.run(mod)
+    elif hasattr(llvm, "create_pass_builder"):
+        pto = llvm.PipelineTuningOptions(speed_level=opt_level, size_level=0)
+        pb = llvm.create_pass_builder(target_machine, pto)
+        pm = pb.getModulePassManager()
+        pm.run(mod, pb)
 
     return bytes(target_machine.emit_object(mod))
