@@ -290,6 +290,11 @@ class LLVMMIREmitter:
         # Track auto-boxed fields in recursive enums
         # enum_name -> set of (variant_name, field_index) that are heap-allocated pointers
         self._boxed_enum_fields: dict[str, set[tuple[str, int]]] = {}
+        # Track auto-boxed fields in recursive structs
+        # struct_name -> set of field indices that are heap-allocated pointers
+        self._boxed_struct_fields: dict[str, set[int]] = {}
+        # struct_name -> {field_idx: MIRType} for boxed fields (for unbox resolution)
+        self._boxed_struct_mir_fields: dict[str, dict[int, MIRType]] = {}
 
     # -----------------------------------------------------------------------
     # Public entry point
@@ -603,6 +608,10 @@ class LLVMMIREmitter:
             name = mir_type.type_info.name
             if name in self._enum_types:
                 return self._enum_types[name][0]
+            # Cross-module: try suffix match (e.g. "TypeExpr" → "ast__TypeExpr")
+            for ename, einfo in self._enum_types.items():
+                if ename.endswith("__" + name):
+                    return einfo[0]
             return LLVM_PTR
         if kind == TypeKind.OPTION:
             args = mir_type.type_info.args
@@ -628,6 +637,20 @@ class LLVMMIREmitter:
         if kind == TypeKind.FN:
             return LLVM_PTR
         # Fallback for UNKNOWN, TYPE_VAR, etc.
+        # Check struct and enum registries before giving up — kind_from_name
+        # returns UNKNOWN for user-defined types (e.g. TypeExpr, Pattern).
+        name = mir_type.type_info.name
+        if name:
+            if name in self._struct_types:
+                return self._struct_types[name]
+            for sname, stype in self._struct_types.items():
+                if sname.endswith("__" + name):
+                    return stype
+            if name in self._enum_types:
+                return self._enum_types[name][0]
+            for ename, einfo in self._enum_types.items():
+                if ename.endswith("__" + name):
+                    return einfo[0]
         return LLVM_PTR
 
     def _resolve_type_info_arg(self, ti: Any) -> Any:
@@ -694,12 +717,40 @@ class LLVMMIREmitter:
     # -----------------------------------------------------------------------
 
     def _register_struct(self, name: str, fields: list[tuple[str, MIRType]]) -> None:
-        """Register a named struct type."""
-        field_types = [self._resolve_mir_type(ft) for _, ft in fields]
+        """Register a named struct type.
+
+        Self-referential fields (e.g. Option<TypeInfo> inside TypeInfo) are
+        stored as opaque pointers (boxed) to prevent infinite type growth.
+        """
+        field_types: list[Any] = []
+        boxed_indices: set[int] = set()
+        for i, (_, ft) in enumerate(fields):
+            if self._is_self_ref_field(name, ft):
+                # Box self-referential field: use LLVM_PTR
+                field_types.append(LLVM_PTR)
+                boxed_indices.add(i)
+            else:
+                field_types.append(self._resolve_mir_type(ft))
         field_names = [fn for fn, _ in fields]
         llvm_ty = ir.LiteralStructType(field_types)
         self._struct_types[name] = llvm_ty
         self._struct_fields[name] = field_names
+        if boxed_indices:
+            self._boxed_struct_fields[name] = boxed_indices
+            # Store the MIR field types so we can resolve them during unboxing
+            self._boxed_struct_mir_fields[name] = {
+                i: ft for i, (_, ft) in enumerate(fields) if i in boxed_indices
+            }
+
+    def _resolve_field_type_for_unbox(self, struct_name: str, field_name: str) -> Any:
+        """Resolve the actual LLVM type for a boxed struct field (for unboxing)."""
+        mir_fields = self._boxed_struct_mir_fields.get(struct_name, {})
+        field_names = self._struct_fields.get(struct_name, [])
+        if field_name in field_names:
+            idx = field_names.index(field_name)
+            if idx in mir_fields:
+                return self._resolve_mir_type(mir_fields[idx])
+        return None
 
     def _is_self_ref_field(self, enum_name: str, mir_type: MIRType) -> bool:
         """Check if a MIR type refers (directly or via Option/Result) to the enum being registered.
@@ -1486,6 +1537,21 @@ class LLVMMIREmitter:
                 ab.position_at_end(self._alloca_block)
                 vname = dest.name.lstrip("%")
                 self._fn_allocas[dest.name] = ab.alloca(val_ty, name=f"a.{vname}")
+            else:
+                # If the new value is larger than the existing alloca (e.g.
+                # a None init created a {i1, i8*} alloca but the real value
+                # is {i1, {i32, [48 x i8]}}), recreate with the larger type
+                # to avoid stack buffer overflow from coerced stores.
+                existing = self._fn_allocas[dest.name]
+                existing_size = _approx_type_size(existing.type.pointee)
+                new_size = _approx_type_size(llvm_val.type)
+                if new_size > existing_size:
+                    ab = ir.IRBuilder(self._alloca_block)
+                    ab.position_at_end(self._alloca_block)
+                    vname = dest.name.lstrip("%")
+                    self._fn_allocas[dest.name] = ab.alloca(
+                        llvm_val.type, name=f"a.{vname}"
+                    )
             alloca = self._fn_allocas[dest.name]
             pointee = alloca.type.pointee
             val = llvm_val
@@ -2205,6 +2271,7 @@ class LLVMMIREmitter:
         if struct_name in self._struct_types:
             llvm_ty = self._struct_types[struct_name]
             field_names = self._struct_fields.get(struct_name, [])
+            boxed = self._boxed_struct_fields.get(struct_name, set())
             result = ir.Constant(llvm_ty, ir.Undefined)
             for field_name, field_val in inst.fields:
                 val = self._get_value(field_val, values)
@@ -2213,10 +2280,21 @@ class LLVMMIREmitter:
                 else:
                     # Positional fallback
                     idx = inst.fields.index((field_name, field_val))
-                # Coerce value type to match struct field type
-                expected_ty = llvm_ty.elements[idx]
-                if val.type != expected_ty:
-                    val = _coerce_arg(builder, val, expected_ty, f"{name}.c{idx}")
+                if idx in boxed:
+                    # Auto-boxed recursive field: heap-allocate and store pointer
+                    malloc_fn = self._rt_malloc()
+                    alloc_size = ir.Constant(LLVM_INT, _approx_type_size(val.type))
+                    raw_ptr = builder.call(malloc_fn, [alloc_size], name=f"{name}.box.{idx}")
+                    typed_box = builder.bitcast(
+                        raw_ptr, val.type.as_pointer(), name=f"{name}.box.{idx}.t"
+                    )
+                    builder.store(val, typed_box)
+                    val = raw_ptr  # Store the i8* pointer in the struct field
+                else:
+                    # Coerce value type to match struct field type
+                    expected_ty = llvm_ty.elements[idx]
+                    if val.type != expected_ty:
+                        val = _coerce_arg(builder, val, expected_ty, f"{name}.c{idx}")
                 result = builder.insert_value(result, val, idx, name=f"{name}.f{idx}")
         else:
             # Unknown struct — build a literal struct from fields
@@ -2273,6 +2351,18 @@ class LLVMMIREmitter:
             if inst.field_name in field_names:
                 idx = field_names.index(inst.field_name)
                 result = builder.extract_value(obj, idx, name=name)
+                # If this field is auto-boxed, dereference the pointer
+                boxed = self._boxed_struct_fields.get(obj_type_name, set())
+                if idx in boxed:
+                    # Resolve the actual type for the field from MIR type info
+                    actual_type = self._resolve_field_type_for_unbox(
+                        obj_type_name, inst.field_name
+                    )
+                    if actual_type is not None and actual_type != LLVM_PTR:
+                        typed_ptr = builder.bitcast(
+                            result, actual_type.as_pointer(), name=f"{name}.unbox"
+                        )
+                        result = builder.load(typed_ptr, name=f"{name}.val")
             else:
                 result = ir.Constant(LLVM_PTR, None)
         else:

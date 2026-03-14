@@ -13,6 +13,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <signal.h>
+#include <execinfo.h>
+
+static void crash_handler(int sig) {
+    void *frames[64];
+    int n = backtrace(frames, 64);
+    fprintf(stderr, "\n[CRASH] Signal %d at:\n", sig);
+    backtrace_symbols_fd(frames, n, 2);
+    _exit(128 + sig);
+}
 
 /* -----------------------------------------------------------------------
  * ABI types — must match the LLVM IR layout exactly
@@ -73,6 +83,8 @@ static void print_usage(const char *prog) {
 }
 
 int main(int argc, char *argv[]) {
+    signal(SIGSEGV, crash_handler);
+    signal(SIGABRT, crash_handler);
     if (argc < 2) {
         print_usage(argv[0]);
         return 1;

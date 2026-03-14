@@ -66,7 +66,7 @@ def build() -> pathlib.Path:
     core_c = NATIVE_DIR / "mapanare_core.c"
     core_o = SELF_DIR / "mapanare_core.o"
     subprocess.run(
-        ["gcc", "-c", "-O2", "-fPIC", "-I", str(NATIVE_DIR), str(core_c), "-o", str(core_o)],
+        ["gcc", "-c", "-O0", "-g", "-fPIC", "-I", str(NATIVE_DIR), str(core_c), "-o", str(core_o)],
         check=True,
     )
     print(f"  Runtime: {core_o}")
@@ -76,7 +76,7 @@ def build() -> pathlib.Path:
     main_c = SELF_DIR / "mnc_main.c"
     main_o = SELF_DIR / "mnc_main.o"
     subprocess.run(
-        ["gcc", "-c", "-O2", str(main_c), "-o", str(main_o)],
+        ["gcc", "-c", "-O0", "-g", str(main_c), "-o", str(main_o)],
         check=True,
     )
     print(f"  Wrapper: {main_o}")
@@ -92,6 +92,7 @@ def build() -> pathlib.Path:
             str(main_o),
             str(obj_path),
             str(core_o),
+            "-rdynamic",
             "-lm",
             "-lpthread",
         ],
