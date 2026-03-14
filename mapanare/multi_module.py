@@ -632,9 +632,15 @@ def compile_multi_module_mir(
         llvm_module = emitter.emit(mir_module)
         return str(llvm_module)
 
-    # 3. Lower each dependency, rename symbols
+    # 3. Lower each dependency, rename symbols.
+    #   Dependencies are in topological order, so when we lower module B that
+    #   imports module A, A's functions are already available.  We accumulate
+    #   return-type info from previously-lowered modules so each module's
+    #   lowerer knows the return types of functions it calls cross-module.
     dep_mirs: list[MIRModule] = []
     dep_renames: dict[str, tuple[dict[str, str], dict[str, str]]] = {}
+    # Accumulates orig_fn_name → MIRType across all lowered deps
+    cross_dep_ret_types: dict[str, MIRType] = {}
 
     for filepath, resolved in deps:
         dep_source: str
@@ -648,15 +654,41 @@ def compile_multi_module_mir(
             module_name=dep_module_name,
             source_file=os.path.basename(filepath),
             source_directory=os.path.dirname(filepath),
+            imported_return_types=cross_dep_ret_types if cross_dep_ret_types else None,
         )
+
+        # Record this module's function return types (by original name)
+        # BEFORE renaming, so subsequent modules can resolve cross-dep calls.
+        for fn in dep_mir.functions:
+            cross_dep_ret_types[fn.name] = fn.return_type
 
         prefix = module_prefix(filepath)
         fn_map, type_map = rename_mir_module(dep_mir, prefix)
         dep_renames[filepath] = (fn_map, type_map)
         dep_mirs.append(dep_mir)
 
+        # Also record mangled names for completeness
+        for fn in dep_mir.functions:
+            cross_dep_ret_types[fn.name] = fn.return_type
+
     # 3.5. Resolve cross-dependency references (cross-module calls + enum variants)
     resolve_cross_dep_references(dep_mirs, dep_renames, deps, resolver)
+
+    # 3.6. Build imported function return types for the root module lowerer.
+    #   The root module calls imported functions by their ORIGINAL names (before
+    #   mangling).  We invert the rename maps to build orig_name → return_type.
+    imported_ret_types: dict[str, MIRType] = {}
+    for dep_mir in dep_mirs:
+        for fn in dep_mir.functions:
+            imported_ret_types[fn.name] = fn.return_type
+    # Also map original (pre-mangled) names so the lowerer resolves them
+    for filepath, (fn_map, _type_map) in dep_renames.items():
+        inv_fn = {v: k for k, v in fn_map.items()}
+        for dep_mir_item in dep_mirs:
+            for fn in dep_mir_item.functions:
+                orig = inv_fn.get(fn.name)
+                if orig:
+                    imported_ret_types[orig] = fn.return_type
 
     # 4. Lower root module
     root_module_name = os.path.splitext(os.path.basename(root_file))[0]
@@ -665,6 +697,7 @@ def compile_multi_module_mir(
         module_name=root_module_name,
         source_file=os.path.basename(root_file),
         source_directory=os.path.dirname(os.path.abspath(root_file)),
+        imported_return_types=imported_ret_types,
     )
 
     # 5. Remap root module's references to imported symbols
@@ -707,6 +740,22 @@ def compile_multi_module_mir(
                     continue
                 new_insts.append(inst)
             block.instructions = new_insts
+
+    # 5.6. Propagate return types from dependency functions to root module Calls.
+    #   When the root module calls an imported function, the MIR lowerer doesn't
+    #   know the return type (it only sees the call, not the definition) so the
+    #   Call dest type defaults to UNKNOWN.  Fix that here using the actual
+    #   function signatures from the dependency modules.
+    dep_fn_ret: dict[str, MIRType] = {}
+    for dep_mir in dep_mirs:
+        for fn in dep_mir.functions:
+            dep_fn_ret[fn.name] = fn.return_type
+    for fn in root_mir.functions:
+        for block in fn.blocks:
+            for inst in block.instructions:
+                if isinstance(inst, Call) and inst.dest.ty.type_info.kind == TypeKind.UNKNOWN:
+                    if inst.fn_name in dep_fn_ret:
+                        inst.dest.ty = dep_fn_ret[inst.fn_name]
 
     # 6. Merge all modules (dependencies first, then root)
     merge_mir_modules(root_mir, dep_mirs)

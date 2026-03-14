@@ -237,7 +237,10 @@ class _VarInfo:
 class MIRLowerer:
     """Lowers a typed AST into MIR."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        imported_return_types: dict[str, "MIRType"] | None = None,
+    ) -> None:
         self._module = MIRModule()
         self._fn: MIRFunction | None = None
         self._block: BasicBlock | None = None
@@ -265,8 +268,10 @@ class MIRLowerer:
         self._current_span: SourceSpan | None = None
         # Loop exit label stack for break statements
         self._loop_exit_stack: list[str] = []
-        # Function return types: fn_name → MIRType (populated in first pass)
-        self._fn_return_types: dict[str, MIRType] = {}
+        # Function return types: fn_name → MIRType (populated in first pass).
+        # Pre-seed with imported function return types so cross-module calls
+        # get correct dest types during lowering.
+        self._fn_return_types: dict[str, MIRType] = dict(imported_return_types or {})
 
     # -- Name generation ---------------------------------------------------
 
@@ -2172,6 +2177,7 @@ def lower(
     module_name: str = "",
     source_file: str = "",
     source_directory: str = "",
+    imported_return_types: dict[str, MIRType] | None = None,
 ) -> MIRModule:
     """Lower an AST program to MIR.
 
@@ -2180,11 +2186,12 @@ def lower(
         module_name: Optional module name.
         source_file: Original source file name (for debug info).
         source_directory: Directory of the source file (for debug info).
+        imported_return_types: fn_name → MIRType for imported functions.
 
     Returns:
         A MIRModule containing the lowered MIR.
     """
-    return MIRLowerer().lower(
+    return MIRLowerer(imported_return_types=imported_return_types).lower(
         program,
         module_name,
         source_file=source_file,

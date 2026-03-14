@@ -1696,6 +1696,14 @@ class LLVMMIREmitter:
             elif inst.args and inst.args[0].ty.kind == TypeKind.MAP:
                 fn = self._rt_map_len()
                 result = builder.call(fn, [args[0]], name=name)
+            elif inst.args and hasattr(args[0], "type") and args[0].type == LLVM_LIST:
+                # Fallback: LLVM value type is list even though MIR type was lost
+                # (common in cross-module calls where return type info is UNKNOWN)
+                fn = self._rt_list_len()
+                list_val = args[0]
+                list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.tmp")
+                builder.store(list_val, list_ptr)
+                result = builder.call(fn, [list_ptr], name=name)
             else:
                 result = ir.Constant(LLVM_INT, 0)
             self._store_value(inst.dest, result, values)
