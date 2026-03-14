@@ -274,6 +274,8 @@ class LLVMMIREmitter:
         self._struct_types: dict[str, Any] = {}
         # Struct name -> ordered field names
         self._struct_fields: dict[str, list[str]] = {}
+        # Struct name -> {field_name: index} for O(1) field index lookup
+        self._struct_field_indices: dict[str, dict[str, int]] = {}
         # Enum name -> (LLVM type, variant->tag mapping, variant->payload types)
         self._enum_types: dict[str, tuple[Any, dict[str, int], dict[str, list[MIRType]]]] = {}
         # Function name -> LLVM function
@@ -307,6 +309,10 @@ class LLVMMIREmitter:
         self._boxed_struct_fields: dict[str, set[int]] = {}
         # struct_name -> {field_idx: MIRType} for boxed fields (for unbox resolution)
         self._boxed_struct_mir_fields: dict[str, dict[int, MIRType]] = {}
+
+        # Instruction dispatch table (type -> bound handler)
+        self._inst_dispatch_bound: dict[type, Any] = {}
+        self._init_dispatch()
 
     # -----------------------------------------------------------------------
     # Public entry point
@@ -748,6 +754,7 @@ class LLVMMIREmitter:
         llvm_ty = ir.LiteralStructType(field_types)
         self._struct_types[name] = llvm_ty
         self._struct_fields[name] = field_names
+        self._struct_field_indices[name] = {fn: i for i, fn in enumerate(field_names)}
         if boxed_indices:
             self._boxed_struct_fields[name] = boxed_indices
             # Store the MIR field types so we can resolve them during unboxing
@@ -758,9 +765,9 @@ class LLVMMIREmitter:
     def _resolve_field_type_for_unbox(self, struct_name: str, field_name: str) -> Any:
         """Resolve the actual LLVM type for a boxed struct field (for unboxing)."""
         mir_fields = self._boxed_struct_mir_fields.get(struct_name, {})
-        field_names = self._struct_fields.get(struct_name, [])
-        if field_name in field_names:
-            idx = field_names.index(field_name)
+        field_idx_map = self._struct_field_indices.get(struct_name, {})
+        if field_name in field_idx_map:
+            idx = field_idx_map[field_name]
             if idx in mir_fields:
                 return self._resolve_mir_type(mir_fields[idx])
         return None
@@ -1420,96 +1427,61 @@ class LLVMMIREmitter:
         llvm_blocks: dict[str, Any],
         func: Any,
     ) -> None:
-        """Emit a single MIR instruction as LLVM IR."""
-        if isinstance(inst, Const):
-            self._emit_const(inst, builder, values)
-        elif isinstance(inst, Copy):
-            self._emit_copy(inst, values)
-        elif isinstance(inst, Cast):
-            self._emit_cast(inst, builder, values)
-        elif isinstance(inst, BinOp):
-            self._emit_binop(inst, builder, values)
-        elif isinstance(inst, UnaryOp):
-            self._emit_unaryop(inst, builder, values)
-        elif isinstance(inst, Call):
-            self._emit_call(inst, builder, values, func)
-        elif isinstance(inst, ExternCall):
-            self._emit_extern_call(inst, builder, values)
-        elif isinstance(inst, Return):
-            self._emit_return(inst, builder, values, func)
-        elif isinstance(inst, Jump):
-            self._emit_jump(inst, builder, llvm_blocks)
-        elif isinstance(inst, Branch):
-            self._emit_branch(inst, builder, values, llvm_blocks)
-        elif isinstance(inst, Switch):
-            self._emit_switch(inst, builder, values, llvm_blocks)
-        elif isinstance(inst, StructInit):
-            self._emit_struct_init(inst, builder, values)
-        elif isinstance(inst, FieldGet):
-            self._emit_field_get(inst, builder, values)
-        elif isinstance(inst, FieldSet):
-            self._emit_field_set(inst, builder, values)
-        elif isinstance(inst, ListInit):
-            self._emit_list_init(inst, builder, values)
-        elif isinstance(inst, ListPush):
-            self._emit_list_push(inst, builder, values)
-        elif isinstance(inst, IndexGet):
-            self._emit_index_get(inst, builder, values)
-        elif isinstance(inst, IndexSet):
-            self._emit_index_set(inst, builder, values)
-        elif isinstance(inst, MapInit):
-            self._emit_map_init(inst, builder, values)
-        elif isinstance(inst, EnumInit):
-            self._emit_enum_init(inst, builder, values)
-        elif isinstance(inst, EnumTag):
-            self._emit_enum_tag(inst, builder, values)
-        elif isinstance(inst, EnumPayload):
-            self._emit_enum_payload(inst, builder, values)
-        elif isinstance(inst, WrapSome):
-            self._emit_wrap_some(inst, builder, values)
-        elif isinstance(inst, WrapNone):
-            self._emit_wrap_none(inst, builder, values)
-        elif isinstance(inst, WrapOk):
-            self._emit_wrap_ok(inst, builder, values)
-        elif isinstance(inst, WrapErr):
-            self._emit_wrap_err(inst, builder, values)
-        elif isinstance(inst, Unwrap):
-            self._emit_unwrap(inst, builder, values)
-        elif isinstance(inst, InterpConcat):
-            self._emit_interp_concat(inst, builder, values)
-        elif isinstance(inst, AgentSpawn):
-            self._emit_agent_spawn(inst, builder, values)
-        elif isinstance(inst, AgentSend):
-            self._emit_agent_send(inst, builder, values)
-        elif isinstance(inst, AgentSync):
-            self._emit_agent_sync(inst, builder, values, func)
-        elif isinstance(inst, SignalInit):
-            self._emit_signal_init(inst, builder, values)
-        elif isinstance(inst, SignalGet):
-            self._emit_signal_get(inst, builder, values)
-        elif isinstance(inst, SignalSet):
-            self._emit_signal_set(inst, builder, values)
-        elif isinstance(inst, SignalComputed):
-            self._emit_signal_computed(inst, builder, values)
-        elif isinstance(inst, SignalSubscribe):
-            self._emit_signal_subscribe(inst, builder, values)
-        elif isinstance(inst, StreamInit):
-            self._emit_stream_init(inst, builder, values)
-        elif isinstance(inst, StreamOp):
-            self._emit_stream_op(inst, builder, values)
-        elif isinstance(inst, ClosureCreate):
-            self._emit_closure_create(inst, builder, values)
-        elif isinstance(inst, ClosureCall):
-            self._emit_closure_call(inst, builder, values)
-        elif isinstance(inst, EnvLoad):
-            self._emit_env_load(inst, builder, values)
-        elif isinstance(inst, Assert):
-            self._emit_assert(inst, builder, values, func)
-        elif isinstance(inst, Phi):
-            pass  # Handled in the first pass
-        else:
-            # Unknown instruction — emit as unreachable for safety
-            pass
+        """Emit a single MIR instruction as LLVM IR.
+
+        Uses a dispatch dict for O(1) type lookup instead of isinstance chain.
+        """
+        handler = self._inst_dispatch_bound.get(type(inst))
+        if handler is not None:
+            handler(inst, builder, values, llvm_blocks, func)
+
+    def _init_dispatch(self) -> None:
+        """Build the bound dispatch table for instruction emission."""
+        # Each handler is a lambda that adapts the uniform signature to the
+        # method's actual parameter list, avoiding per-call branching.
+        d = self._inst_dispatch_bound
+        d[Const] = lambda i, b, v, bl, f: self._emit_const(i, b, v)
+        d[Copy] = lambda i, b, v, bl, f: self._emit_copy(i, v)
+        d[Cast] = lambda i, b, v, bl, f: self._emit_cast(i, b, v)
+        d[BinOp] = lambda i, b, v, bl, f: self._emit_binop(i, b, v)
+        d[UnaryOp] = lambda i, b, v, bl, f: self._emit_unaryop(i, b, v)
+        d[Call] = lambda i, b, v, bl, f: self._emit_call(i, b, v, f)
+        d[ExternCall] = lambda i, b, v, bl, f: self._emit_extern_call(i, b, v)
+        d[Return] = lambda i, b, v, bl, f: self._emit_return(i, b, v, f)
+        d[Jump] = lambda i, b, v, bl, f: self._emit_jump(i, b, bl)
+        d[Branch] = lambda i, b, v, bl, f: self._emit_branch(i, b, v, bl)
+        d[Switch] = lambda i, b, v, bl, f: self._emit_switch(i, b, v, bl)
+        d[StructInit] = lambda i, b, v, bl, f: self._emit_struct_init(i, b, v)
+        d[FieldGet] = lambda i, b, v, bl, f: self._emit_field_get(i, b, v)
+        d[FieldSet] = lambda i, b, v, bl, f: self._emit_field_set(i, b, v)
+        d[ListInit] = lambda i, b, v, bl, f: self._emit_list_init(i, b, v)
+        d[ListPush] = lambda i, b, v, bl, f: self._emit_list_push(i, b, v)
+        d[IndexGet] = lambda i, b, v, bl, f: self._emit_index_get(i, b, v)
+        d[IndexSet] = lambda i, b, v, bl, f: self._emit_index_set(i, b, v)
+        d[MapInit] = lambda i, b, v, bl, f: self._emit_map_init(i, b, v)
+        d[EnumInit] = lambda i, b, v, bl, f: self._emit_enum_init(i, b, v)
+        d[EnumTag] = lambda i, b, v, bl, f: self._emit_enum_tag(i, b, v)
+        d[EnumPayload] = lambda i, b, v, bl, f: self._emit_enum_payload(i, b, v)
+        d[WrapSome] = lambda i, b, v, bl, f: self._emit_wrap_some(i, b, v)
+        d[WrapNone] = lambda i, b, v, bl, f: self._emit_wrap_none(i, b, v)
+        d[WrapOk] = lambda i, b, v, bl, f: self._emit_wrap_ok(i, b, v)
+        d[WrapErr] = lambda i, b, v, bl, f: self._emit_wrap_err(i, b, v)
+        d[Unwrap] = lambda i, b, v, bl, f: self._emit_unwrap(i, b, v)
+        d[InterpConcat] = lambda i, b, v, bl, f: self._emit_interp_concat(i, b, v)
+        d[AgentSpawn] = lambda i, b, v, bl, f: self._emit_agent_spawn(i, b, v)
+        d[AgentSend] = lambda i, b, v, bl, f: self._emit_agent_send(i, b, v)
+        d[AgentSync] = lambda i, b, v, bl, f: self._emit_agent_sync(i, b, v, f)
+        d[SignalInit] = lambda i, b, v, bl, f: self._emit_signal_init(i, b, v)
+        d[SignalGet] = lambda i, b, v, bl, f: self._emit_signal_get(i, b, v)
+        d[SignalSet] = lambda i, b, v, bl, f: self._emit_signal_set(i, b, v)
+        d[SignalComputed] = lambda i, b, v, bl, f: self._emit_signal_computed(i, b, v)
+        d[SignalSubscribe] = lambda i, b, v, bl, f: self._emit_signal_subscribe(i, b, v)
+        d[StreamInit] = lambda i, b, v, bl, f: self._emit_stream_init(i, b, v)
+        d[StreamOp] = lambda i, b, v, bl, f: self._emit_stream_op(i, b, v)
+        d[ClosureCreate] = lambda i, b, v, bl, f: self._emit_closure_create(i, b, v)
+        d[ClosureCall] = lambda i, b, v, bl, f: self._emit_closure_call(i, b, v)
+        d[EnvLoad] = lambda i, b, v, bl, f: self._emit_env_load(i, b, v)
+        d[Assert] = lambda i, b, v, bl, f: self._emit_assert(i, b, v, f)
 
     # -----------------------------------------------------------------------
     # Instruction emitters
@@ -1522,31 +1494,31 @@ class LLVMMIREmitter:
         For cross-block values, loads from the entry-block alloca (always
         dominates, fixes SSA dominance violations in nested control flow).
         """
-        # Check if the value was defined in a different block — needs alloca load
-        def_block = self._value_blocks.get(val.name, "")
-        builder = self._current_builder
-        if (
-            def_block
-            and def_block != self._current_block_label
-            and val.name in self._fn_allocas
-            and builder is not None
-        ):
-            try:
-                return builder.load(
-                    self._fn_allocas[val.name],
-                    name=f"l.{val.name.lstrip('%')}",
-                )
-            except Exception:
-                pass  # fall through to dict lookup
-        if val.name in values:
-            return values[val.name]
+        name = val.name
+        # Fast path: same-block value (most common case)
+        result = values.get(name)
+        if result is not None:
+            def_block = self._value_blocks.get(name, "")
+            if not def_block or def_block == self._current_block_label:
+                return result
+            # Cross-block: load from alloca if available
+            alloca = self._fn_allocas.get(name)
+            builder = self._current_builder
+            if alloca is not None and builder is not None:
+                try:
+                    return builder.load(
+                        alloca,
+                        name=f"l.{name.lstrip('%')}",
+                    )
+                except Exception:
+                    pass
+            return result
         # Try without % prefix
-        stripped = val.name.lstrip("%")
-        if stripped in values:
-            return values[stripped]
+        stripped = name.lstrip("%")
+        result = values.get(stripped)
+        if result is not None:
+            return result
         # Fallback: return a zero constant of the appropriate type.
-        # This can happen when cross-module MIR merge creates references
-        # to values defined in unreachable branches.
         fallback_ty = self._resolve_mir_type(val.ty) if val.ty else LLVM_INT
         if isinstance(fallback_ty, ir.VoidType):
             fallback_ty = LLVM_INT
@@ -2309,16 +2281,16 @@ class LLVMMIREmitter:
 
         if struct_name in self._struct_types:
             llvm_ty = self._struct_types[struct_name]
-            field_names = self._struct_fields.get(struct_name, [])
+            field_idx_map = self._struct_field_indices.get(struct_name, {})
             boxed = self._boxed_struct_fields.get(struct_name, set())
             result = ir.Constant(llvm_ty, ir.Undefined)
-            for field_name, field_val in inst.fields:
+            for pos, (field_name, field_val) in enumerate(inst.fields):
                 val = self._get_value(field_val, values)
-                if field_name in field_names:
-                    idx = field_names.index(field_name)
+                if field_name in field_idx_map:
+                    idx = field_idx_map[field_name]
                 else:
                     # Positional fallback
-                    idx = inst.fields.index((field_name, field_val))
+                    idx = pos
                 if idx in boxed:
                     # Auto-boxed recursive field: heap-allocate and store pointer
                     malloc_fn = self._rt_malloc()
@@ -2385,10 +2357,10 @@ class LLVMMIREmitter:
                     obj_type_name = sname
                     break
 
-        if obj_type_name in self._struct_fields:
-            field_names = self._struct_fields[obj_type_name]
-            if inst.field_name in field_names:
-                idx = field_names.index(inst.field_name)
+        if obj_type_name in self._struct_field_indices:
+            field_idx_map = self._struct_field_indices[obj_type_name]
+            if inst.field_name in field_idx_map:
+                idx = field_idx_map[inst.field_name]
                 result = builder.extract_value(obj, idx, name=name)
                 # If this field is auto-boxed, dereference the pointer
                 boxed = self._boxed_struct_fields.get(obj_type_name, set())
@@ -2425,10 +2397,10 @@ class LLVMMIREmitter:
                     obj_type_name = sname
                     break
 
-        if obj_type_name in self._struct_fields:
-            field_names = self._struct_fields[obj_type_name]
-            if inst.field_name in field_names:
-                idx = field_names.index(inst.field_name)
+        if obj_type_name in self._struct_field_indices:
+            field_idx_map = self._struct_field_indices[obj_type_name]
+            if inst.field_name in field_idx_map:
+                idx = field_idx_map[inst.field_name]
                 boxed = self._boxed_struct_fields.get(obj_type_name, set())
                 if idx in boxed:
                     # Auto-boxed recursive field: heap-allocate and store pointer

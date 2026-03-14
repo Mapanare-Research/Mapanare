@@ -123,35 +123,51 @@ def _span_from_token(t: Token) -> Span:
     )
 
 
+def _child_span(child: Any) -> tuple[int, int, int, int] | None:
+    """Extract (start_line, start_col, end_line, end_col) from a child."""
+    if isinstance(child, Token):
+        sl = child.line or 0
+        if sl == 0:
+            return None
+        sc = child.column or 0
+        return (sl, sc, child.end_line or sl, child.end_column or (sc + len(str(child))))
+    if isinstance(child, ASTNode):
+        sl = child.span.line
+        if sl == 0:
+            return None
+        sc = child.span.column
+        return (sl, sc, child.span.end_line or sl, child.span.end_column or sc)
+    return None
+
+
 def _span_from_children(children: list[Any] | tuple[Any, ...]) -> Span:
-    """Build a Span covering all children (tokens + AST nodes)."""
+    """Build a Span covering all children (tokens + AST nodes).
+
+    Optimized: scans from the front for start position, from the back for
+    end position, avoiding full iteration when possible.
+    """
     first_line = 0
     first_col = 0
     last_line = 0
     last_col = 0
-    found = False
 
+    # Find first child with a valid span (start position)
     for child in children:
-        sl, sc, el, ec = 0, 0, 0, 0
-        if isinstance(child, Token):
-            sl = child.line or 0
-            sc = child.column or 0
-            el = child.end_line or sl
-            ec = child.end_column or (sc + len(str(child)))
-        elif isinstance(child, ASTNode):
-            sl = child.span.line
-            sc = child.span.column
-            el = child.span.end_line or sl
-            ec = child.span.end_column or sc
-        else:
-            continue
-        if sl == 0:
-            continue
-        if not found or (sl, sc) < (first_line, first_col):
-            first_line, first_col = sl, sc
-        if (el, ec) > (last_line, last_col):
-            last_line, last_col = el, ec
-        found = True
+        span = _child_span(child)
+        if span is not None:
+            first_line, first_col = span[0], span[1]
+            last_line, last_col = span[2], span[3]
+            break
+    else:
+        return Span()
+
+    # Find last child with a valid span (end position)
+    for child in reversed(children):
+        span = _child_span(child)
+        if span is not None:
+            if (span[2], span[3]) > (last_line, last_col):
+                last_line, last_col = span[2], span[3]
+            break
 
     return Span(
         line=first_line,

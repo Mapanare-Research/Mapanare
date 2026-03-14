@@ -125,12 +125,13 @@ def _compile_to_llvm_ir(
     automatically uses multi-module compilation to resolve and link all
     imported modules into a single LLVM IR module.
     """
+    ast = parse(source, filename=filename)
+
     # Check for imports — if present and using MIR, use multi-module pipeline
     if use_mir:
         from mapanare.ast_nodes import ImportDef
 
-        ast_for_check = parse(source, filename=filename)
-        has_imports = any(isinstance(d, ImportDef) for d in ast_for_check.definitions)
+        has_imports = any(isinstance(d, ImportDef) for d in ast.definitions)
         if has_imports:
             from mapanare.multi_module import compile_multi_module_mir
 
@@ -141,8 +142,6 @@ def _compile_to_llvm_ir(
                 target_name=target_name,
                 debug=debug,
             )
-
-    ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename, resolver=resolver)
 
     if use_mir:

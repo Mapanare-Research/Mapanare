@@ -367,15 +367,17 @@ def constant_folding(fn: MIRFunction, stats: MIRPassStats) -> bool:
     # Exclude values that are defined more than once (mutable variable SSA reuse)
     const_vals: dict[str, Any] = {}
     def_counts: dict[str, int] = {}
+    const_candidates: list[Const] = []
     for bb in fn.blocks:
         for inst in bb.instructions:
             dest = _get_dest(inst)
             if dest is not None and dest.name:
                 def_counts[dest.name] = def_counts.get(dest.name, 0) + 1
-    for bb in fn.blocks:
-        for inst in bb.instructions:
-            if isinstance(inst, Const) and def_counts.get(inst.dest.name, 0) <= 1:
-                const_vals[inst.dest.name] = inst.value
+            if isinstance(inst, Const):
+                const_candidates.append(inst)
+    for inst in const_candidates:
+        if def_counts.get(inst.dest.name, 0) <= 1:
+            const_vals[inst.dest.name] = inst.value
 
     changed = False
     for bb in fn.blocks:
@@ -459,21 +461,18 @@ def constant_propagation(fn: MIRFunction, stats: MIRPassStats) -> bool:
     # looks up const_vals by name. So propagation here means: if %x = copy %y
     # and %y is const, then %x is also const. Let's handle that case.
     for bb in fn.blocks:
-        for inst in bb.instructions:
+        for i, inst in enumerate(bb.instructions):
             if isinstance(inst, Copy) and inst.src.name in const_defs:
                 # This copy of a constant can be turned into a constant itself
                 src_const = const_defs[inst.src.name]
                 # Replace the Copy with a Const
-                bb.instructions[bb.instructions.index(inst)] = Const(
+                new_const = Const(
                     dest=inst.dest,
                     ty=src_const.ty,
                     value=src_const.value,
                 )
-                const_defs[inst.dest.name] = Const(
-                    dest=inst.dest,
-                    ty=src_const.ty,
-                    value=src_const.value,
-                )
+                bb.instructions[i] = new_const
+                const_defs[inst.dest.name] = new_const
                 stats.constants_propagated += 1
                 changed = True
 
@@ -491,35 +490,27 @@ def copy_propagation(fn: MIRFunction, stats: MIRPassStats) -> bool:
     If `%a = copy %b`, replace all uses of `%a` with `%b`.
     Returns True if any changes were made.
     """
-    # Build map: copy dest name -> source value
-    # Exclude multiply-defined values (mutable variable SSA reuse)
+    # Build map: copy dest name -> source value (single pass over all instructions)
+    # Exclude multiply-defined values and mutation targets
     def_counts: dict[str, int] = {}
+    mutated_names: set[str] = set()
+    copy_candidates: list[Copy] = []
     for bb in fn.blocks:
         for inst in bb.instructions:
             dest = _get_dest(inst)
             if dest is not None and dest.name:
                 def_counts[dest.name] = def_counts.get(dest.name, 0) + 1
-    # Collect values that are used as mutation targets (FieldSet.obj, IndexSet.obj).
-    # Copy propagation must NOT replace these, because the emitter uses the MIR
-    # name to determine which alloca to write back to. Propagating would redirect
-    # the write-back to the copy source's alloca, losing mutations.
-    mutated_names: set[str] = set()
-    for bb in fn.blocks:
-        for inst in bb.instructions:
-            if isinstance(inst, FieldSet):
+            if isinstance(inst, Copy):
+                copy_candidates.append(inst)
+            elif isinstance(inst, FieldSet):
                 mutated_names.add(inst.obj.name)
             elif isinstance(inst, IndexSet):
                 mutated_names.add(inst.obj.name)
 
     copy_map: dict[str, Value] = {}
-    for bb in fn.blocks:
-        for inst in bb.instructions:
-            if (
-                isinstance(inst, Copy)
-                and def_counts.get(inst.dest.name, 0) <= 1
-                and inst.dest.name not in mutated_names
-            ):
-                copy_map[inst.dest.name] = inst.src
+    for inst in copy_candidates:
+        if def_counts.get(inst.dest.name, 0) <= 1 and inst.dest.name not in mutated_names:
+            copy_map[inst.dest.name] = inst.src
 
     # Resolve chains: if %a = copy %b, %b = copy %c → %a maps to %c
     def resolve(name: str) -> Value:
@@ -540,16 +531,20 @@ def copy_propagation(fn: MIRFunction, stats: MIRPassStats) -> bool:
     if not copy_map:
         return False
 
+    # Pre-resolve all copy chains once
+    resolved_map: dict[str, Value] = {name: resolve(name) for name in copy_map}
+
     changed = False
     for bb in fn.blocks:
         for inst in bb.instructions:
             if isinstance(inst, Copy) and inst.dest.name in copy_map:
                 continue  # don't modify the Copy itself
-            for old_name in list(copy_map.keys()):
-                resolved = resolve(old_name)
-                if _replace_use(inst, old_name, resolved):
-                    stats.copies_propagated += 1
-                    changed = True
+            # Only check names that this instruction actually uses
+            for used_val in _get_uses(inst):
+                if used_val.name in resolved_map:
+                    if _replace_use(inst, used_val.name, resolved_map[used_val.name]):
+                        stats.copies_propagated += 1
+                        changed = True
     return changed
 
 
@@ -905,20 +900,20 @@ def optimize_function(fn: MIRFunction, level: MIROptLevel, stats: MIRPassStats) 
 
     # O2+: Copy propagation, DCE, unreachable blocks, branch simplification
     if level >= MIROptLevel.O2:
-        copy_propagation(fn, stats)
-        branch_simplification(fn, stats)
-        unreachable_block_elimination(fn, stats)
+        o2_changed = copy_propagation(fn, stats)
+        o2_changed |= branch_simplification(fn, stats)
+        o2_changed |= unreachable_block_elimination(fn, stats)
         # Run DCE after other passes have created dead code
         dead_code_elimination(fn, stats)
         # Agent inlining
-        agent_inlining(fn, stats)
+        o2_changed |= agent_inlining(fn, stats)
 
     # O3: Stream fusion
     if level >= MIROptLevel.O3:
-        stream_fusion(fn, stats)
+        o2_changed |= stream_fusion(fn, stats)
 
-    # Final cleanup: run DCE one more time after all passes
-    if level >= MIROptLevel.O2:
+    # Final cleanup: only re-run DCE if earlier passes created new dead code
+    if level >= MIROptLevel.O2 and o2_changed:
         dead_code_elimination(fn, stats)
         unreachable_block_elimination(fn, stats)
 
