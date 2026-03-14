@@ -240,6 +240,8 @@ class MIRLowerer:
     def __init__(
         self,
         imported_return_types: dict[str, "MIRType"] | None = None,
+        imported_struct_defs: dict[str, list[tuple[str, "MIRType"]]] | None = None,
+        imported_enum_defs: dict[str, list[tuple[str, list["MIRType"]]]] | None = None,
     ) -> None:
         self._module = MIRModule()
         self._fn: MIRFunction | None = None
@@ -272,6 +274,14 @@ class MIRLowerer:
         # Pre-seed with imported function return types so cross-module calls
         # get correct dest types during lowering.
         self._fn_return_types: dict[str, MIRType] = dict(imported_return_types or {})
+        # Imported struct definitions: struct_name → [(field_name, MIRType)]
+        self._imported_struct_defs: dict[str, list[tuple[str, MIRType]]] = dict(
+            imported_struct_defs or {}
+        )
+        # Imported enum definitions: enum_name → [(variant_name, [MIRType])]
+        self._imported_enum_defs: dict[str, list[tuple[str, list[MIRType]]]] = dict(
+            imported_enum_defs or {}
+        )
 
     # -- Name generation ---------------------------------------------------
 
@@ -768,6 +778,12 @@ class MIRLowerer:
                         if isinstance(inst, ListInit) and inst.dest == val:
                             inst.elem_type = MIRType(declared.type_info.args[0])
                             break
+        # When the expression type is unknown but a type annotation is provided,
+        # use the annotation to preserve type info (critical for cross-module types).
+        if let.type_annotation and val.ty.kind == TypeKind.UNKNOWN:
+            declared = _resolve_type_expr(let.type_annotation)
+            if declared.kind != TypeKind.UNKNOWN:
+                val = Value(name=val.name, ty=declared)
         # Create a named copy for readability
         named = Value(name=f"%{let.name}", ty=val.ty)
         self._emit(Copy(dest=named, src=val))
@@ -1656,6 +1672,19 @@ class MIRLowerer:
                     if vname == variant_name and payload_idx < len(payload_types):
                         return payload_types[payload_idx]
 
+        # Check imported enum definitions (cross-module types)
+        if enum_name and self._imported_enum_defs:
+            variants = self._imported_enum_defs.get(enum_name)
+            if not variants:
+                for ename, evariants in self._imported_enum_defs.items():
+                    if ename.endswith("__" + enum_name):
+                        variants = evariants
+                        break
+            if variants:
+                for vname, payload_types in variants:
+                    if vname == variant_name and payload_idx < len(payload_types):
+                        return payload_types[payload_idx]
+
         return mir_unknown()
 
     def _infer_iterable_elem_type(self, iter_ty: MIRType) -> MIRType:
@@ -1674,6 +1703,19 @@ class MIRLowerer:
         struct_name = obj_ty.type_info.name
         if struct_name and self._module:
             fields = self._module.structs.get(struct_name)
+            if fields:
+                for fname, fty in fields:
+                    if fname == field_name:
+                        return fty
+        # Check imported struct definitions (cross-module types)
+        if struct_name and self._imported_struct_defs:
+            fields = self._imported_struct_defs.get(struct_name)
+            if not fields:
+                # Try suffix match (e.g. "Program" → "parser__Program")
+                for sname, sfields in self._imported_struct_defs.items():
+                    if sname.endswith("__" + struct_name):
+                        fields = sfields
+                        break
             if fields:
                 for fname, fty in fields:
                     if fname == field_name:
@@ -2178,6 +2220,8 @@ def lower(
     source_file: str = "",
     source_directory: str = "",
     imported_return_types: dict[str, MIRType] | None = None,
+    imported_struct_defs: dict[str, list[tuple[str, MIRType]]] | None = None,
+    imported_enum_defs: dict[str, list[tuple[str, list[MIRType]]]] | None = None,
 ) -> MIRModule:
     """Lower an AST program to MIR.
 
@@ -2187,11 +2231,17 @@ def lower(
         source_file: Original source file name (for debug info).
         source_directory: Directory of the source file (for debug info).
         imported_return_types: fn_name → MIRType for imported functions.
+        imported_struct_defs: struct_name → [(field_name, MIRType)] for imported structs.
+        imported_enum_defs: enum_name → [(variant, [MIRType])] for imported enums.
 
     Returns:
         A MIRModule containing the lowered MIR.
     """
-    return MIRLowerer(imported_return_types=imported_return_types).lower(
+    return MIRLowerer(
+        imported_return_types=imported_return_types,
+        imported_struct_defs=imported_struct_defs,
+        imported_enum_defs=imported_enum_defs,
+    ).lower(
         program,
         module_name,
         source_file=source_file,

@@ -641,6 +641,10 @@ def compile_multi_module_mir(
     dep_renames: dict[str, tuple[dict[str, str], dict[str, str]]] = {}
     # Accumulates orig_fn_name → MIRType across all lowered deps
     cross_dep_ret_types: dict[str, MIRType] = {}
+    # Accumulates struct definitions across all lowered deps
+    cross_dep_struct_defs: dict[str, list[tuple[str, MIRType]]] = {}
+    # Accumulates enum definitions across all lowered deps
+    cross_dep_enum_defs: dict[str, list[tuple[str, list[MIRType]]]] = {}
 
     for filepath, resolved in deps:
         dep_source: str
@@ -655,12 +659,22 @@ def compile_multi_module_mir(
             source_file=os.path.basename(filepath),
             source_directory=os.path.dirname(filepath),
             imported_return_types=cross_dep_ret_types if cross_dep_ret_types else None,
+            imported_struct_defs=cross_dep_struct_defs if cross_dep_struct_defs else None,
+            imported_enum_defs=cross_dep_enum_defs if cross_dep_enum_defs else None,
         )
 
         # Record this module's function return types (by original name)
         # BEFORE renaming, so subsequent modules can resolve cross-dep calls.
         for fn in dep_mir.functions:
             cross_dep_ret_types[fn.name] = fn.return_type
+
+        # Record this module's struct definitions (by original name)
+        for sname, sfields in dep_mir.structs.items():
+            cross_dep_struct_defs[sname] = sfields
+
+        # Record this module's enum definitions (by original name)
+        for ename, evariants in dep_mir.enums.items():
+            cross_dep_enum_defs[ename] = evariants
 
         prefix = module_prefix(filepath)
         fn_map, type_map = rename_mir_module(dep_mir, prefix)
@@ -690,6 +704,35 @@ def compile_multi_module_mir(
                 if orig:
                     imported_ret_types[orig] = fn.return_type
 
+    # 3.7. Build imported struct definitions for the root module lowerer.
+    #   The root module references imported structs by their ORIGINAL names.
+    #   We collect both mangled and original names so field type inference works.
+    imported_struct_defs: dict[str, list[tuple[str, MIRType]]] = {}
+    for dep_mir in dep_mirs:
+        for sname, sfields in dep_mir.structs.items():
+            imported_struct_defs[sname] = sfields
+    # Also map original (pre-mangled) names
+    for filepath, (_fn_map, type_map) in dep_renames.items():
+        inv_type = {v: k for k, v in type_map.items()}
+        for dep_mir_item in dep_mirs:
+            for sname, sfields in dep_mir_item.structs.items():
+                orig = inv_type.get(sname)
+                if orig:
+                    imported_struct_defs[orig] = sfields
+
+    # 3.8. Build imported enum definitions for the root module lowerer.
+    imported_enum_defs: dict[str, list[tuple[str, list[MIRType]]]] = {}
+    for dep_mir in dep_mirs:
+        for ename, evariants in dep_mir.enums.items():
+            imported_enum_defs[ename] = evariants
+    for filepath, (_fn_map, type_map) in dep_renames.items():
+        inv_type = {v: k for k, v in type_map.items()}
+        for dep_mir_item in dep_mirs:
+            for ename, evariants in dep_mir_item.enums.items():
+                orig = inv_type.get(ename)
+                if orig:
+                    imported_enum_defs[orig] = evariants
+
     # 4. Lower root module
     root_module_name = os.path.splitext(os.path.basename(root_file))[0]
     root_mir = build_mir(
@@ -698,6 +741,8 @@ def compile_multi_module_mir(
         source_file=os.path.basename(root_file),
         source_directory=os.path.dirname(os.path.abspath(root_file)),
         imported_return_types=imported_ret_types,
+        imported_struct_defs=imported_struct_defs,
+        imported_enum_defs=imported_enum_defs,
     )
 
     # 5. Remap root module's references to imported symbols

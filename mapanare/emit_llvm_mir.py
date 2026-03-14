@@ -647,6 +647,11 @@ class LLVMMIREmitter:
         name = mir_val.ty.type_info.name
         if name in self._enum_types:
             return self._enum_types[name][0]
+        # Suffix match for cross-module enums (e.g., "Definition" → "ast__Definition")
+        if name:
+            for ename, einfo in self._enum_types.items():
+                if ename.endswith("__" + name):
+                    return einfo[0]
         return None
 
     def _map_key_type_tag(self, mir_type: MIRType) -> int:
@@ -2290,6 +2295,12 @@ class LLVMMIREmitter:
         name = self._val_name(inst.dest)
         obj_kind = inst.obj.ty.kind
 
+        # If the MIR type is UNKNOWN but the LLVM value is a list struct,
+        # treat it as a list access (cross-module FieldGet loses type info).
+        if obj_kind == TypeKind.UNKNOWN and hasattr(obj, "type") and obj.type == LLVM_LIST:
+            obj_kind = TypeKind.LIST
+
+
         if obj_kind == TypeKind.LIST:
             fn_get = self._rt_list_get()
             list_val = obj
@@ -2304,8 +2315,14 @@ class LLVMMIREmitter:
             raw_ptr = builder.call(fn_get, [list_ptr, index], name=f"{name}.raw")
             # Bitcast to element type pointer and load
             elem_ty = self._resolve_mir_type(inst.dest.ty)
-            typed_ptr = builder.bitcast(raw_ptr, elem_ty.as_pointer(), name=f"{name}.tptr")
-            result = builder.load(typed_ptr, name=name)
+            if elem_ty == LLVM_PTR and inst.dest.ty.kind == TypeKind.UNKNOWN:
+                # Unknown element type — return raw pointer for downstream coercion
+                result = raw_ptr
+            else:
+                typed_ptr = builder.bitcast(
+                    raw_ptr, elem_ty.as_pointer(), name=f"{name}.tptr"
+                )
+                result = builder.load(typed_ptr, name=name)
         elif obj_kind == TypeKind.STRING:
             # String indexing: __mn_str_byte_at or char access
             fn = self._declare_runtime_fn("__mn_str_byte_at", LLVM_INT, [LLVM_STRING, LLVM_INT])
@@ -2482,12 +2499,20 @@ class LLVMMIREmitter:
         name = self._val_name(inst.dest)
         enum_name = inst.enum_val.ty.type_info.name
 
-        if enum_name in self._enum_types:
-            _, _, variant_payloads = self._enum_types[enum_name]
+        # Look up enum type with suffix matching for cross-module enums
+        resolved_enum_name = enum_name
+        if enum_name not in self._enum_types:
+            for ename in self._enum_types:
+                if ename.endswith("__" + enum_name):
+                    resolved_enum_name = ename
+                    break
+
+        if resolved_enum_name in self._enum_types:
+            _, _, variant_payloads = self._enum_types[resolved_enum_name]
             payload_types = variant_payloads.get(inst.variant, [])
 
             # Alloca the enum, extract payload bytes, bitcast
-            enum_ty = self._enum_types[enum_name][0]
+            enum_ty = self._enum_types[resolved_enum_name][0]
 
             # If enum_val is a pointer (i8*), load the actual struct first
             if isinstance(enum_val.type, ir.PointerType):
