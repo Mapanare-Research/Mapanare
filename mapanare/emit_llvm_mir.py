@@ -287,6 +287,9 @@ class LLVMMIREmitter:
         self._value_blocks: dict[str, str] = {}  # value name -> defining block label
         # Track root list allocas for push write-back chains
         self._list_roots: dict[str, str] = {}  # value name -> root value name
+        # Track auto-boxed fields in recursive enums
+        # enum_name -> set of (variant_name, field_index) that are heap-allocated pointers
+        self._boxed_enum_fields: dict[str, set[tuple[str, int]]] = {}
 
     # -----------------------------------------------------------------------
     # Public entry point
@@ -298,15 +301,37 @@ class LLVMMIREmitter:
         if self._debug:
             self._init_debug_info(mir_module)
 
-        # 1. Register types with iterative resolution.
-        #    Structs and enums cross-reference each other (e.g. Definition enum
-        #    contains FnDefData struct, which has Option<TypeExpr> enum fields).
-        #    Two full passes resolve all sizes correctly.
-        for _pass in range(2):
+        # 1. Register types with iterative convergence.
+        #    Structs and enums may cross-reference and even mutually recurse
+        #    (e.g. Expr → ElseClause → Expr).  Direct self-recursion is handled
+        #    by auto-boxing in _register_enum.  Mutual recursion is detected by
+        #    iterating until sizes stabilize; any types whose sizes keep growing
+        #    have their enum-typed fields auto-boxed on the next iteration.
+        for _pass in range(10):
+            sizes_before = {
+                n: _approx_type_size(self._enum_types[n][0]) for n in self._enum_types
+            }
             for name, fields in mir_module.structs.items():
                 self._register_struct(name, fields)
             for name, variants in mir_module.enums.items():
                 self._register_enum(name, variants)
+            sizes_after = {
+                n: _approx_type_size(self._enum_types[n][0]) for n in self._enum_types
+            }
+            if sizes_before == sizes_after:
+                break
+            # Skip mutual-recursion detection on the first pass (all types are
+            # "new" so all sizes change — that's not mutual recursion, just
+            # initial registration).  Direct self-recursion is already handled
+            # by _is_self_ref_field inside _register_enum.
+            if not sizes_before:
+                continue
+            # Types whose sizes changed between two full passes are involved
+            # in mutual recursion.  Box their enum-typed fields to break the
+            # infinite growth cycle.
+            changed = {n for n in sizes_after if sizes_after[n] != sizes_before.get(n)}
+            if changed:
+                self._box_mutual_recursion(changed, mir_module.enums)
 
         # 3. Declare extern functions
         for abi, mod, fn_name, param_types, ret_type in mir_module.extern_fns:
@@ -676,14 +701,108 @@ class LLVMMIREmitter:
         self._struct_types[name] = llvm_ty
         self._struct_fields[name] = field_names
 
+    def _is_self_ref_field(self, enum_name: str, mir_type: MIRType) -> bool:
+        """Check if a MIR type refers (directly or via Option/Result) to the enum being registered.
+
+        Recursive enum fields must be heap-allocated (boxed) to avoid infinite type sizes.
+        """
+        base_name = enum_name.rsplit("__", 1)[-1]
+
+        def matches(type_name: str) -> bool:
+            if not type_name:
+                return False
+            return (
+                type_name == enum_name
+                or type_name == base_name
+                or (len(type_name) < len(enum_name) and enum_name.endswith("__" + type_name))
+            )
+
+        ti = mir_type.type_info
+        if not ti:
+            return False
+
+        # Direct: field type is the same enum
+        if mir_type.kind in (TypeKind.STRUCT, TypeKind.ENUM, TypeKind.UNKNOWN):
+            if matches(ti.name):
+                return True
+
+        # Option<SameEnum>
+        if mir_type.kind == TypeKind.OPTION and ti.args:
+            inner = ti.args[0]
+            if hasattr(inner, "name") and matches(inner.name):
+                return True
+
+        # Result<SameEnum, _> or Result<_, SameEnum>
+        if mir_type.kind == TypeKind.RESULT and ti.args:
+            for arg in ti.args:
+                if hasattr(arg, "name") and matches(arg.name):
+                    return True
+
+        return False
+
+    def _field_refs_enum_in_set(self, mir_type: MIRType, enum_set: set[str]) -> bool:
+        """Check if a MIR type references any enum in the given set (directly or via Option/Result)."""
+        ti = mir_type.type_info
+        if not ti:
+            return False
+
+        name = ti.name or ""
+
+        def in_set(type_name: str) -> bool:
+            for ename in enum_set:
+                base = ename.rsplit("__", 1)[-1]
+                if type_name == ename or type_name == base:
+                    return True
+            return False
+
+        # Direct enum reference
+        if mir_type.kind in (TypeKind.STRUCT, TypeKind.ENUM, TypeKind.UNKNOWN):
+            if in_set(name):
+                return True
+
+        # Option<Enum>
+        if mir_type.kind == TypeKind.OPTION and ti.args:
+            inner_name = ti.args[0].name if hasattr(ti.args[0], "name") and ti.args[0] else ""
+            if in_set(inner_name):
+                return True
+
+        # Result<Enum, _>
+        if mir_type.kind == TypeKind.RESULT and ti.args:
+            for arg in ti.args:
+                arg_name = arg.name if hasattr(arg, "name") and arg else ""
+                if in_set(arg_name):
+                    return True
+
+        return False
+
+    def _box_mutual_recursion(
+        self, changed: set[str], enums: dict[str, list[tuple[str, list[MIRType]]]]
+    ) -> None:
+        """Box enum-type fields in variants that reference any type in 'changed' set.
+
+        Called when iterative type registration detects sizes that keep growing,
+        indicating mutual recursion (e.g. Expr → ElseClause → Expr).
+        """
+        for ename, variants in enums.items():
+            for vname, payload_types in variants:
+                for j, pt in enumerate(payload_types):
+                    if self._field_refs_enum_in_set(pt, changed):
+                        self._boxed_enum_fields.setdefault(ename, set()).add((vname, j))
+
     def _register_enum(self, name: str, variants: list[tuple[str, list[MIRType]]]) -> None:
         """Register an enum as a tagged union.
 
         Layout: {i32 tag, [max_payload_bytes x i8]}
         The tag is i32; the payload is sized to the largest variant.
+
+        Recursive enums (where a variant field references the same enum) use
+        auto-boxing: self-referential fields are stored as heap-allocated
+        pointers (8 bytes) instead of inline values.  This prevents infinite
+        type sizes for types like ``Expr`` that contain ``Binary(Expr, String, Expr)``.
         """
         variant_tags: dict[str, int] = {}
         variant_payloads: dict[str, list[MIRType]] = {}
+        boxed_fields: set[tuple[str, int]] = set()
 
         max_payload_size = 0
         for i, (vname, payload_types) in enumerate(variants):
@@ -692,7 +811,16 @@ class LLVMMIREmitter:
             # Compute payload size as actual struct size (with alignment padding)
             # since variants are bitcast to/from struct types.
             if payload_types:
-                llvm_fields = [self._resolve_mir_type(pt) for pt in payload_types]
+                llvm_fields: list[Any] = []
+                pre_boxed = self._boxed_enum_fields.get(name, set())
+                for j, pt in enumerate(payload_types):
+                    if (vname, j) in pre_boxed or self._is_self_ref_field(name, pt):
+                        # Self- or mutually-referential field: store as
+                        # pointer to avoid infinite type size.
+                        llvm_fields.append(LLVM_PTR)
+                        boxed_fields.add((vname, j))
+                    else:
+                        llvm_fields.append(self._resolve_mir_type(pt))
                 variant_struct = ir.LiteralStructType(llvm_fields)
                 size = _approx_type_size(variant_struct)
             else:
@@ -707,6 +835,9 @@ class LLVMMIREmitter:
         payload_ty = ir.ArrayType(ir.IntType(8), max_payload_size)
         enum_ty = ir.LiteralStructType([LLVM_I32, payload_ty])
         self._enum_types[name] = (enum_ty, variant_tags, variant_payloads)
+
+        if boxed_fields:
+            self._boxed_enum_fields[name] = boxed_fields
 
     # -----------------------------------------------------------------------
     # Extern / function declarations
@@ -758,6 +889,9 @@ class LLVMMIREmitter:
         func.linkage = "external"
         self._runtime_fns[name] = func
         return func
+
+    def _rt_malloc(self) -> Any:
+        return self._declare_runtime_fn("malloc", LLVM_PTR, [LLVM_INT])
 
     def _rt_str_concat(self) -> Any:
         return self._declare_runtime_fn("__mn_str_concat", LLVM_STRING, [LLVM_STRING, LLVM_STRING])
@@ -2413,13 +2547,23 @@ class LLVMMIREmitter:
 
     # --- EnumInit ---
 
+    def _resolve_enum_name(self, raw_name: str) -> str:
+        """Resolve an enum name to its canonical key in _enum_types, handling cross-module prefixes."""
+        if raw_name in self._enum_types:
+            return raw_name
+        for ename in self._enum_types:
+            if ename.endswith("__" + raw_name):
+                return ename
+        return raw_name
+
     def _emit_enum_init(self, inst: EnumInit, builder: Any, values: dict[str, Any]) -> None:
         name = self._val_name(inst.dest)
-        enum_name = inst.enum_type.type_info.name
+        enum_name = self._resolve_enum_name(inst.enum_type.type_info.name)
 
         if enum_name in self._enum_types:
             enum_ty, tag_map, _ = self._enum_types[enum_name]
             tag_val = tag_map.get(inst.variant, 0)
+            boxed = self._boxed_enum_fields.get(enum_name, set())
 
             # Alloca the enum, store tag
             enum_ptr = builder.alloca(enum_ty, name=f"{name}.ptr")
@@ -2445,19 +2589,44 @@ class LLVMMIREmitter:
                 offset = 0
                 for i, pval in enumerate(inst.payload):
                     val = self._get_value(pval, values)
-                    # Align offset to field's natural alignment (matches struct layout)
-                    field_align = _type_alignment(val.type)
-                    rem = offset % field_align
-                    if rem != 0:
-                        offset += field_align - rem
-                    dest_ptr = builder.gep(
-                        payload_i8_ptr,
-                        [ir.Constant(LLVM_INT, offset)],
-                        name=f"{name}.pay.{i}",
-                    )
-                    typed_ptr = builder.bitcast(dest_ptr, val.type.as_pointer())
-                    builder.store(val, typed_ptr)
-                    offset += _approx_type_size(val.type)
+
+                    if (inst.variant, i) in boxed:
+                        # Auto-boxed recursive field: heap-allocate and store pointer
+                        field_align = 8  # pointer alignment
+                        rem = offset % field_align
+                        if rem != 0:
+                            offset += field_align - rem
+                        malloc_fn = self._rt_malloc()
+                        alloc_size = ir.Constant(LLVM_INT, _approx_type_size(val.type))
+                        raw_ptr = builder.call(
+                            malloc_fn, [alloc_size], name=f"{name}.box.{i}"
+                        )
+                        typed_box = builder.bitcast(
+                            raw_ptr, val.type.as_pointer(), name=f"{name}.box.{i}.t"
+                        )
+                        builder.store(val, typed_box)
+                        dest_ptr = builder.gep(
+                            payload_i8_ptr,
+                            [ir.Constant(LLVM_INT, offset)],
+                            name=f"{name}.pay.{i}",
+                        )
+                        ptr_dest = builder.bitcast(dest_ptr, LLVM_PTR.as_pointer())
+                        builder.store(raw_ptr, ptr_dest)
+                        offset += 8  # pointer size
+                    else:
+                        # Normal inline store
+                        field_align = _type_alignment(val.type)
+                        rem = offset % field_align
+                        if rem != 0:
+                            offset += field_align - rem
+                        dest_ptr = builder.gep(
+                            payload_i8_ptr,
+                            [ir.Constant(LLVM_INT, offset)],
+                            name=f"{name}.pay.{i}",
+                        )
+                        typed_ptr = builder.bitcast(dest_ptr, val.type.as_pointer())
+                        builder.store(val, typed_ptr)
+                        offset += _approx_type_size(val.type)
 
             result = builder.load(enum_ptr, name=name)
         else:
@@ -2510,16 +2679,12 @@ class LLVMMIREmitter:
         enum_name = inst.enum_val.ty.type_info.name
 
         # Look up enum type with suffix matching for cross-module enums
-        resolved_enum_name = enum_name
-        if enum_name not in self._enum_types:
-            for ename in self._enum_types:
-                if ename.endswith("__" + enum_name):
-                    resolved_enum_name = ename
-                    break
+        resolved_enum_name = self._resolve_enum_name(enum_name)
 
         if resolved_enum_name in self._enum_types:
             _, _, variant_payloads = self._enum_types[resolved_enum_name]
             payload_types = variant_payloads.get(inst.variant, [])
+            boxed = self._boxed_enum_fields.get(resolved_enum_name, set())
 
             # Alloca the enum, extract payload bytes, bitcast
             enum_ty = self._enum_types[resolved_enum_name][0]
@@ -2543,14 +2708,32 @@ class LLVMMIREmitter:
             )
 
             if len(payload_types) == 1:
-                target_ty = self._resolve_mir_type(payload_types[0])
-                payload_i8 = builder.bitcast(
-                    payload_ptr, target_ty.as_pointer(), name=f"{name}.tptr"
-                )
-                result = builder.load(payload_i8, name=name)
+                is_boxed = (inst.variant, 0) in boxed
+                if is_boxed:
+                    # Boxed single field: load the pointer, then dereference
+                    payload_i8 = builder.bitcast(
+                        payload_ptr, LLVM_PTR.as_pointer(), name=f"{name}.bptr"
+                    )
+                    raw_ptr = builder.load(payload_i8, name=f"{name}.boxptr")
+                    actual_type = self._resolve_mir_type(payload_types[0])
+                    typed_unbox = builder.bitcast(
+                        raw_ptr, actual_type.as_pointer(), name=f"{name}.unbox"
+                    )
+                    result = builder.load(typed_unbox, name=name)
+                else:
+                    target_ty = self._resolve_mir_type(payload_types[0])
+                    payload_i8 = builder.bitcast(
+                        payload_ptr, target_ty.as_pointer(), name=f"{name}.tptr"
+                    )
+                    result = builder.load(payload_i8, name=name)
             elif payload_types:
-                # Multi-field payload: build a struct, then extract the field at payload_idx
-                field_tys = [self._resolve_mir_type(pt) for pt in payload_types]
+                # Multi-field payload: build a struct using LLVM_PTR for boxed fields
+                field_tys: list[Any] = []
+                for j, pt in enumerate(payload_types):
+                    if (inst.variant, j) in boxed:
+                        field_tys.append(LLVM_PTR)
+                    else:
+                        field_tys.append(self._resolve_mir_type(pt))
                 payload_struct_ty = ir.LiteralStructType(field_tys)
                 typed_ptr = builder.bitcast(
                     payload_ptr, payload_struct_ty.as_pointer(), name=f"{name}.sptr"
@@ -2559,6 +2742,13 @@ class LLVMMIREmitter:
                 idx = inst.payload_idx
                 if idx < len(field_tys):
                     result = builder.extract_value(full_payload, idx, name=name)
+                    # If this field is boxed, dereference the pointer
+                    if (inst.variant, idx) in boxed:
+                        actual_type = self._resolve_mir_type(payload_types[idx])
+                        typed_unbox = builder.bitcast(
+                            result, actual_type.as_pointer(), name=f"{name}.unbox"
+                        )
+                        result = builder.load(typed_unbox, name=f"{name}.val")
                 else:
                     result = full_payload
             else:
