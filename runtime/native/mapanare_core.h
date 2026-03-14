@@ -169,6 +169,9 @@ MN_EXPORT void __mn_list_clear(MnList *list);
 /** Free the list's data buffer (does NOT free contained elements). */
 MN_EXPORT void __mn_list_free(MnList *list);
 
+/** Concatenate two lists into a new list. Both must have the same elem_size. */
+MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b);
+
 /** Free a list of strings: frees each contained string, then the buffer. */
 MN_EXPORT void __mn_list_free_strings(MnList *list);
 

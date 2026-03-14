@@ -1063,6 +1063,7 @@ class LLVMEmitter:
         global_str.global_constant = True
         global_str.initializer = str_const
         global_str.linkage = "private"
+        global_str.align = 2  # Ensure even address — mn_untag() clears bit 0
 
         # GEP to get i8* pointer
         zero = ir.Constant(LLVM_INT, 0)
@@ -1309,6 +1310,7 @@ class LLVMEmitter:
             gv.global_constant = True
             gv.initializer = str_const
             gv.linkage = "private"
+            gv.align = 2  # Ensure even address — mn_untag() clears bit 0
             self._fmt_strings[fmt] = gv
         zero = ir.Constant(LLVM_INT, 0)
         return self.builder.gep(gv, [zero, zero], inbounds=True, name="fmt_ptr")
@@ -1987,6 +1989,7 @@ class LLVMEmitter:
             gv.global_constant = True
             gv.initializer = name_const
             gv.linkage = "private"
+            gv.align = 2  # Ensure even address — mn_untag() clears bit 0
             zero = ir.Constant(LLVM_INT, 0)
             name_ptr = self.builder.gep(gv, [zero, zero], inbounds=True)
 
@@ -2022,6 +2025,7 @@ class LLVMEmitter:
         global_name.global_constant = True
         global_name.initializer = name_const
         global_name.linkage = "private"
+        global_name.align = 2  # Ensure even address — mn_untag() clears bit 0
         zero = ir.Constant(LLVM_INT, 0)
         name_ptr = self.builder.gep(global_name, [zero, zero], inbounds=True, name="name_ptr")
 

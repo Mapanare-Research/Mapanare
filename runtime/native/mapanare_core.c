@@ -514,6 +514,24 @@ MN_EXPORT void __mn_list_free(MnList *list) {
     list->cap = 0;
 }
 
+MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
+    int64_t es = a->elem_size;
+    MnList result = __mn_list_new(es);
+    int64_t total = a->len + b->len;
+    if (total > result.cap) {
+        result.cap = total;
+        result.data = (char *)__mn_realloc(result.data, result.cap * es);
+    }
+    if (a->len > 0) {
+        memcpy(result.data, a->data, (size_t)(a->len * es));
+    }
+    if (b->len > 0) {
+        memcpy(result.data + a->len * es, b->data, (size_t)(b->len * es));
+    }
+    result.len = total;
+    return result;
+}
+
 /* -----------------------------------------------------------------------
  * Convenience: MnList of MnString
  * ----------------------------------------------------------------------- */

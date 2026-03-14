@@ -220,3 +220,34 @@ class TestStage1LLVMEmission:
         # Note: the self-hosted emitter may have output quality issues (Task 5 milestone)
         # For now, we just verify it produces output without crashing
         assert len(result.stdout) > 0, "No IR output"
+
+    def test_no_string_corruption(self) -> None:
+        """IR output must not have character-level corruption from string untagging."""
+        src = pathlib.Path("/tmp/test_mnc_corruption.mn")
+        src.write_text('fn main() {\n    println("hello")\n}\n', encoding="utf-8")
+        result = subprocess.run(
+            [str(MNC_STAGE1), str(src)],
+            capture_output=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr.decode()}"
+        output = result.stdout.decode(errors="replace")
+        # Verify type signatures are not corrupted (e.g., "d{ i8*" instead of "{ i8*")
+        assert "d{ i8*" not in output, "String pointer corruption detected (d{ i8*)"
+        # Verify well-formed type signatures
+        for line in output.splitlines():
+            if "declare" in line and "i8*" in line:
+                # Each { must have a matching }
+                assert line.count("{") == line.count("}"), (
+                    f"Unbalanced braces in declaration: {line}"
+                )
+
+    def test_string_constants_aligned(self) -> None:
+        """String constants in generated IR must have align >= 2."""
+        source, filename = _read_self_hosted()
+        llvm_ir = _compile_to_llvm_ir(source, filename)
+        for line in llvm_ir.splitlines():
+            if "private" in line and "constant" in line and "x i8]" in line:
+                assert "align" in line, (
+                    f"String constant missing alignment: {line[:80]}"
+                )

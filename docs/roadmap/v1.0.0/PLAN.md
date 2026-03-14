@@ -33,18 +33,21 @@
 
 ## Phase Overview
 
-| Phase | Name | Status | Estimated Effort |
-|-------|------|--------|-----------------|
-| 1 | Language Specification Freeze | `Complete` | Large — audit and finalize SPEC.md |
-| 2 | Self-Hosted Fixed Point | `In Progress` | X-Large — cross-module native compilation, 3-stage verification |
-| 3 | Formal Memory Model | `Not Started` | Large — document and verify arena, ownership, lifetimes |
-| 4 | Stability Guarantees & Policy | `Not Started` | Small — policy docs, semver contract |
-| 5 | Final Hardening | `Not Started` | Large — test coverage, security audit, perf sweep |
-| 6 | Validation & Release | `Not Started` | Medium — CI, docs, changelog, release |
+| Phase | Name | Status | Effort | Platform |
+|-------|------|--------|--------|----------|
+| 1 | Language Specification Freeze | `Complete` | Large | Windows |
+| 2 | Emitter Hardening | `In Progress` | Large | Windows |
+| 3 | Stage 1 Native Compiler | `In Progress` | Large | WSL/Linux |
+| 4 | Self-Hosted Fixed Point | `Not Started` | X-Large | WSL/Linux |
+| 5 | Formal Memory Model | `Not Started` | Large | Windows + WSL |
+| 6 | Stability Guarantees & Policy | `Not Started` | Small | Windows |
+| 7 | Final Hardening | `Not Started` | Large | WSL/Linux |
+| 8 | Validation & Release | `Not Started` | Medium | Both |
 
 ---
 
 ## Phase 1 — Language Specification Freeze
+**Status:** `Complete`
 **Priority:** CRITICAL — the spec becomes the contract; everything else depends on a frozen language
 
 Audit every language construct, document it exhaustively in `SPEC.md`, and promote the
@@ -72,7 +75,7 @@ change requires an RFC.
 | 15 | Document `Result<T, E>` and `Option<T>`: construction, unwrapping, pattern matching | `[x]` | Section 3.8: construction, pattern matching, ? operator, error propagation |
 | 16 | Document closures and lambdas: capture semantics, environment struct model | `[x]` | Section 6.3: lambda syntax, capture by value, environment struct, no-capture optimization |
 | 17 | Document FFI: `extern "C"`, `--link-lib`, calling conventions | `[x]` | Section 18: C FFI, Python interop (legacy), type mappings |
-| 18 | Document error model: structured diagnostics, error codes (`MN-X0000`), spans | `[x]` | Section 19 + Appendix D: error code format, categories, Rust-style reporting, error code registry | |
+| 18 | Document error model: structured diagnostics, error codes (`MN-X0000`), spans | `[x]` | Section 19 + Appendix D: error code format, categories, Rust-style reporting, error code registry |
 
 ### Spec Finalization
 
@@ -96,68 +99,141 @@ spec compliance test on the LLVM backend.
 
 ---
 
-## Phase 2 — Self-Hosted Fixed Point
-**Priority:** CRITICAL — the compiler must compile itself
+## Phase 2 — Emitter Hardening
+**Status:** `In Progress`
+**Priority:** CRITICAL — the LLVM emitter must generate correct native code for any `.mn` program
+**Platform:** Windows (all Python code)
 
-The self-hosted compiler (8,288+ lines across 7 `.mn` modules) must compile itself
-via LLVM and produce identical output — the fixed-point property. This proves the
-compiler is correct enough to sustain itself.
+The Python bootstrap compiler's LLVM emitter (`emit_llvm_mir.py`) has fundamental bugs
+that prevent correct native code generation for complex programs — especially the 8,288-line
+self-hosted compiler. This phase fixes those bugs systematically.
 
-### Prerequisites
+This phase exists because the original plan assumed the emitter was correct and just needed
+"compilation + linking". Reality: 4 sessions, 12+ bugs found. Each fix reveals deeper issues.
 
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| 1 | Audit enum lowering gaps in self-hosted `emit_llvm.mn` | `[x]` | Gaps: hardcoded tag=0, no variant→tag map, payload always index 1, all .push() commented out |
-| 2 | Audit cross-module compilation for `self::` imports between the 7 compiler modules | `[x]` | multi_module.py handles self:: imports, topo sort, name mangling, MIR merge — verified |
-| 3 | Identify and fix any self-hosted codegen gaps (missing AST nodes, MIR ops, LLVM patterns) | `[x]` | ListPush, cross-module type coercion, alloca-based SSA dominance fix, phi-to-alloca conversion. All 7 modules compile to verified LLVM IR + object code. |
+### Already Fixed (from previous sessions)
 
-### Stage 1 — Bootstrap Compilation
+| # | Bug | Fix | Files |
+|---|-----|-----|-------|
+| — | Cross-module enum variant resolution (101 constructors) | Call→EnumInit conversion via `{Enum}_{Variant}` lookup | `multi_module.py` |
+| — | Cross-dep function refs (tokenize, mir_string, Program_start) | Namespace-aware remapping in multi_module.py | `multi_module.py` |
+| — | Empty `List<String>` elem_size 8 instead of 16 | Propagate type annotation args to ListInit.elem_type | `lower.py` |
+| — | IndexGet dest type always UNKNOWN | Infer element type from container's type_info.args | `lower.py` |
+| — | `_unescape()` not called on non-interpolated strings | Call on all strings so `\n` = 0x0A for LLVM backend | `parser.py` |
+| — | Heap string pointer tagging in mnc_main.c | Untag (clear bit 0) before fwrite | `mnc_main.c` |
+| — | i8* → LLVM_LIST coercion missing | Added in `_emit_index_get` and `len()` call paths | `emit_llvm_mir.py` |
+| — | String constants at byte alignment | `gv.align = 2` on all GlobalVariable string constants | `emit_llvm_mir.py`, `emit_llvm.py` |
+| — | `lexer.mn` missing `tokens.push(tok)` | Added in all 5 scan branches | `lexer.mn` |
+| — | ListPush not writing back to root alloca | `_list_roots` tracking + write-back | `emit_llvm_mir.py` |
+| — | Range/iterator C runtime functions missing | Added `__range`, `__iter_has_next`, `__iter_next` | `mapanare_core.c` |
+| — | jit.py incompatible with newer llvmlite API | Updated API calls | `jit.py` |
 
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| 4 | Compile `mapanare/self/*.mn` (all 7 modules) using the Python bootstrap compiler → native binary | `[x]` | 51K-line LLVM IR → 4.9MB ELF binary. Fixed: cross-module enum variant resolution (101 constructors), cross-dep function remapping, range/iterator C runtime. Build script: `scripts/build_stage1.py`. 15 tests in `tests/bootstrap/test_stage1_compile.py`. |
-| 5 | Verify `mnc-stage1` can lex, parse, and type-check a simple `.mn` program | `[x]` | Binary runs, reads files, completes full pipeline (lex→parse→check→lower→emit) for hello world, arithmetic, function calls. Exit code 0 on valid programs, 1 on missing files. |
-| 6 | Verify `mnc-stage1` can emit LLVM IR for a simple `.mn` program | `[~]` | Major progress: went from 88 bytes of garbled `n\` to 1949 bytes of structurally correct LLVM IR. Fixed 4 bugs: (1) List<String> elem_size=8→16 via type annotation propagation to ListInit, (2) IndexGet element type inference from container type args, (3) parser string escape processing for LLVM backend, (4) mnc_main.c pointer untagging. Remaining: character-level corruption in string concat (1-byte offset pattern) — likely string length off-by-one in concat chain. |
-| 7 | Run the bootstrap test suite (264 tests) against `mnc-stage1` | `[!]` | Blocked: Task 6 character-level corruption in emitted IR. |
-
-### Stage 2 — Self-Compilation
-
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| 8 | Use `mnc-stage1` to compile `mapanare/self/*.mn` → `mnc-stage2` | `[ ]` | Blocked: Task 6 (IR output quality) |
-| 9 | Run the bootstrap test suite against `mnc-stage2` | `[ ]` | Blocked: Task 8 |
-| 10 | Diff LLVM IR output: `mnc-stage1` vs `mnc-stage2` for a corpus of test programs | `[ ]` | Blocked: Task 8 |
-
-### Stage 3 — Fixed Point Verification
+### Remaining Bugs
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 11 | Use `mnc-stage2` to compile `mapanare/self/*.mn` → `mnc-stage3` | `[ ]` | |
-| 12 | Binary diff: `mnc-stage2` vs `mnc-stage3` | `[ ]` | Must be identical — this IS the fixed point |
-| 13 | Script the 3-stage pipeline: `scripts/verify_fixed_point.sh` | `[ ]` | Automate Stage 1→2→3 + diff |
-
-### CI Integration
-
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| 14 | Add fixed-point verification to CI (GitHub Actions) | `[ ]` | Runs on push to `dev`, Linux x64 |
-| 15 | Gate release on fixed-point passing | `[ ]` | CI must green before version bump |
+| 1 | Fix mutable variable alloca write-back in loops | `[ ]` | **CRITICAL.** The parser uses `defs = defs + [item]` (reassignment, not push). Each reassignment creates a new MIR value with a new alloca, but the loop header reads the stale original alloca. Need general mutable-variable write-back: track var→root_alloca mapping for all `_update_var` calls, or use single alloca per source variable. Same class of bug as ListPush fix but for ALL reassignment. |
+| 2 | Verify emitter output matches Python bootstrap for 10+ test programs | `[ ]` | Compare `mnc-stage1` IR output vs `mapanare emit-llvm` output for: hello, fib, factorial, if/else, for loop, match, struct, enum, list ops, string ops. |
+| 3 | Fix any additional emitter bugs surfaced by Task 2 | `[ ]` | Unknown unknowns — budget 2-5 more bugs based on rate so far. |
+| 4 | Verify all 7 self-hosted modules compile to correct IR after fixes | `[ ]` | Rebuild `main.ll`, verify with llvmlite, check function bodies present. |
 
 ### Tests
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 16 | Test: Stage 1 binary produces correct output for 10+ programs (hello, fib, agents, signals, streams) | `[ ]` | |
-| 17 | Test: Stage 2 IR matches Stage 1 IR for all test programs | `[ ]` | |
-| 18 | Test: Stage 3 binary is byte-identical to Stage 2 binary | `[ ]` | |
+| 5 | Test: mutable variable reassignment in loops produces correct values | `[ ]` | `let mut x = 0; for i in 0..5 { x = x + 1 }; assert x == 5` |
+| 6 | Test: list accumulation via reassignment in loops | `[ ]` | `let mut xs = []; for i in 0..3 { xs = xs + [i] }; assert len(xs) == 3` |
+| 7 | Test: emitter output comparison suite (10+ programs) | `[ ]` | Compare Python bootstrap vs mnc-stage1 IR output |
+
+**Done when:** The LLVM emitter generates correct native code for all test programs AND for
+the full self-hosted compiler (7 modules, 8,288+ lines). No known emitter bugs remain.
+
+---
+
+## Phase 3 — Stage 1 Native Compiler
+**Status:** `In Progress`
+**Priority:** CRITICAL — proves the self-hosted compiler actually works as a native binary
+**Platform:** WSL/Linux (C runtime + linking)
+
+Build `mnc-stage1` (Python bootstrap → native binary), then validate it can compile
+arbitrary `.mn` programs correctly.
+
+### Build
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Compile `mapanare/self/*.mn` → LLVM IR → object code → `mnc-stage1` binary | `[x]` | 51K-line LLVM IR → 4.9MB ELF. Build script: `scripts/build_stage1.py`. `mnc_main.c` wrapper. |
+| 2 | Verify `mnc-stage1` can lex, parse, and type-check a simple `.mn` program | `[x]` | Exit code 0 on valid, 1 on errors. Full pipeline runs. |
+| 3 | Verify `mnc-stage1` emits correct LLVM IR for simple programs | `[~]` | Blocked on Phase 2 Task 1 (alloca write-back). Currently emits declarations but no function bodies. |
+
+### Validation
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 4 | `mnc-stage1` produces correct IR for 10+ programs (hello, fib, agents, signals, streams) | `[ ]` | After Phase 2 fixes, rebuild and validate. |
+| 5 | Run bootstrap test suite (264 tests) against `mnc-stage1` | `[ ]` | All must pass. |
+| 6 | Rebuild `mnc-stage1` after every Phase 2 fix and re-test | `[ ]` | Iterative: fix on Windows → rebuild on WSL → test → repeat. |
+
+### Tests
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 7 | Bootstrap compilation tests (IR generation, verification, object code) | `[x]` | 17/17 pass in `tests/bootstrap/test_stage1_compile.py`. |
+| 8 | Stage 1 output correctness tests (compare mnc-stage1 vs Python bootstrap) | `[ ]` | For each test program: both produce identical IR (modulo metadata). |
+
+**Done when:** `mnc-stage1` is a working native compiler that produces correct output for
+the full test suite. 17+ bootstrap tests pass, 264+ validation tests pass.
+
+---
+
+## Phase 4 — Self-Hosted Fixed Point
+**Status:** `Not Started`
+**Priority:** HIGH — the compiler compiling itself proves correctness
+**Platform:** WSL/Linux
+
+The self-hosted compiler (`mnc-stage1`) compiles itself → `mnc-stage2`, which compiles
+itself → `mnc-stage3`. If `mnc-stage2 == mnc-stage3` (byte-identical), the compiler has
+reached a fixed point — it can sustain itself without Python.
+
+### Self-Compilation
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Use `mnc-stage1` to compile `mapanare/self/*.mn` → `mnc-stage2` | `[ ]` | The self-hosted compiler compiling itself. |
+| 2 | Run bootstrap test suite against `mnc-stage2` | `[ ]` | All must pass — stage 2 is as capable as stage 1. |
+| 3 | Diff LLVM IR: `mnc-stage1` vs `mnc-stage2` for test corpus | `[ ]` | Must be identical (modulo metadata). |
+
+### Fixed Point Verification
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 4 | Use `mnc-stage2` to compile `mapanare/self/*.mn` → `mnc-stage3` | `[ ]` | |
+| 5 | Binary diff: `mnc-stage2` vs `mnc-stage3` | `[ ]` | Must be byte-identical — THIS is the fixed point. |
+| 6 | Script the 3-stage pipeline: `scripts/verify_fixed_point.sh` | `[ ]` | Automate Stage 1→2→3 + diff. |
+
+### CI Integration
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 7 | Add fixed-point verification to CI (GitHub Actions, Linux x64) | `[ ]` | Runs on push to `dev`. |
+| 8 | Gate release on fixed-point passing | `[ ]` | CI must green before version bump. |
+
+### Tests
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 9 | Test: Stage 2 IR matches Stage 1 IR for all test programs | `[ ]` | |
+| 10 | Test: Stage 3 binary is byte-identical to Stage 2 binary | `[ ]` | |
 
 **Done when:** `mnc-stage2 == mnc-stage3` (byte-identical binaries) and CI enforces this
 on every push. The compiler can compile itself without Python.
 
 ---
 
-## Phase 3 — Formal Memory Model
+## Phase 5 — Formal Memory Model
+**Status:** `Not Started`
 **Priority:** HIGH — production users need guarantees about when memory is freed
+**Platform:** Windows (docs) + WSL/Linux (sanitizers)
 
 Document and verify the memory model. The C runtime uses arena-based allocation with
 scope-level cleanup — this phase turns implicit patterns into explicit guarantees.
@@ -176,12 +252,12 @@ scope-level cleanup — this phase turns implicit patterns into explicit guarant
 | 8 | Document closure environment lifecycle: when captured variables are freed | `[ ]` | Environment struct allocation, escape analysis |
 | 9 | Write `docs/MEMORY_MODEL.md` consolidating all of the above | `[ ]` | Single reference document |
 
-### Verification
+### Verification (WSL/Linux)
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 10 | Run AddressSanitizer on full test suite (Linux/WSL) | `[ ]` | Catch use-after-free, buffer overflow, double-free |
-| 11 | Run ThreadSanitizer on agent/concurrency tests (Linux/WSL) | `[ ]` | Catch data races in ring buffers, thread pool |
+| 10 | Run AddressSanitizer on full test suite | `[ ]` | Catch use-after-free, buffer overflow, double-free |
+| 11 | Run ThreadSanitizer on agent/concurrency tests | `[ ]` | Catch data races in ring buffers, thread pool |
 | 12 | Fix all ASan/TSan findings | `[ ]` | Zero tolerance for memory bugs at v1.0 |
 | 13 | Add runtime debug mode: arena bounds checking, double-free detection | `[ ]` | `mapanare build --debug-memory` flag |
 | 14 | Verify no leaks in long-running agent programs (spawn 10K agents, measure RSS) | `[ ]` | |
@@ -200,8 +276,10 @@ and every ownership rule has a test.
 
 ---
 
-## Phase 4 — Stability Guarantees & Policy
+## Phase 6 — Stability Guarantees & Policy
+**Status:** `Not Started`
 **Priority:** MEDIUM — defines the contract with users
+**Platform:** Windows
 
 ### Policy Documents
 
@@ -227,20 +305,22 @@ and semver contract is clear.
 
 ---
 
-## Phase 5 — Final Hardening
+## Phase 7 — Final Hardening
+**Status:** `Not Started`
 **Priority:** HIGH — production readiness gate
+**Platform:** WSL/Linux (native tests, sanitizers) + Windows (docs, benchmarks)
 
-### Test Coverage
+### Test Coverage (WSL/Linux)
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Build I/O runtime on Linux (WSL): `python runtime/native/build_io.py` | `[ ]` | Unlocks 30 skipped tests |
+| 1 | Build I/O runtime on Linux: `python runtime/native/build_io.py` | `[ ]` | Unlocks 30 skipped tests |
 | 2 | Pass all event loop tests (`tests/native/test_event_loop.py`) | `[ ]` | 7 tests |
 | 3 | Pass all file I/O tests (`tests/native/test_file_io.py`) | `[ ]` | 12 tests |
 | 4 | Pass all TCP tests (`tests/native/test_tcp.py`) | `[ ]` | 7 tests |
 | 5 | Pass all TLS tests (`tests/native/test_tls.py`) | `[ ]` | 4 tests |
 | 6 | Pass ASan hardening tests (`tests/native/test_c_hardening.py`) | `[ ]` | 2 tests, Linux-only |
-| 7 | Audit remaining skips — only platform-specific skips allowed (e.g., ASan on Windows) | `[ ]` | Target: ≤6 structural bootstrap skips |
+| 7 | Audit remaining skips — only platform-specific skips allowed | `[ ]` | Target: ≤6 structural bootstrap skips |
 | 8 | Add LLVM backend tests for every stdlib module: json, csv, http, server, websocket, crypto, regex | `[ ]` | End-to-end: compile `.mn` → run native binary → verify output |
 
 ### Performance
@@ -278,8 +358,10 @@ baselines established, documentation current.
 
 ---
 
-## Phase 6 — Validation & Release
+## Phase 8 — Validation & Release
+**Status:** `Not Started`
 **Priority:** GATE — nothing ships until this phase completes
+**Platform:** Both
 
 ### Pre-Release Checklist
 
@@ -287,11 +369,11 @@ baselines established, documentation current.
 |---|------|--------|-------|
 | 1 | Full test suite green: `make test` — target 3,500+ tests, ≤6 skips | `[ ]` | |
 | 2 | Lint clean: `make lint` (ruff + black + mypy) | `[ ]` | |
-| 3 | Fixed-point verification passing in CI | `[ ]` | From Phase 2 |
+| 3 | Fixed-point verification passing in CI | `[ ]` | From Phase 4 |
 | 4 | SPEC.md at "1.0 Final" | `[ ]` | From Phase 1 |
-| 5 | MEMORY_MODEL.md complete | `[ ]` | From Phase 3 |
-| 6 | STABILITY.md published | `[ ]` | From Phase 4 |
-| 7 | All security audit findings resolved | `[ ]` | From Phase 5 |
+| 5 | MEMORY_MODEL.md complete | `[ ]` | From Phase 5 |
+| 6 | STABILITY.md published | `[ ]` | From Phase 6 |
+| 7 | All security audit findings resolved | `[ ]` | From Phase 7 |
 | 8 | CHANGELOG.md updated with all v1.0.0 changes | `[ ]` | |
 | 9 | VERSION file bumped to `1.0.0` | `[ ]` | |
 
@@ -314,37 +396,44 @@ and the compiler can compile itself.
 
 If context is interrupted mid-phase, add a handoff entry here:
 
-| Date | Phase | Last Completed Task | Next Task | Notes |
-|------|-------|--------------------:|-----------|-------|
-| 2026-03-13 | 2 | Task 3 (codegen gaps) in progress | Task 3 continued: fix LLVM string method arg type mismatch in emit_llvm_mir.py:1451, then Task 4 (Stage 1 build) | Added ListPush to MIR/lower/emit pipeline. Uncommented 68 .push() calls in self/*.mn. Multi-module compilation of self/main.mn reaches LLVM emission — type error on string method call (i64 vs i8* arg #2). |
-| 2026-03-13 | 2.2 | Task 4 (Stage 1 partial — object code) | Task 4 completion on Linux/WSL (link binary), then Tasks 5-7 | Fixed SSA dominance via pre_entry alloca block + lazy alloca creation. Replaced MIR phi nodes with alloca/store/load (LLVM mem2reg handles promotion). Self-hosted compiler (7 modules, 8288+ lines) compiles to verified LLVM IR + object code. Linking blocked on Windows — needs Linux for C runtime (epoll). |
-| 2026-03-14 | 2.2 | Tasks 4-5 done, Task 6 in progress | Task 6: debug self-hosted emit_llvm.mn string output, then Tasks 7-10 | Fixed multi_module.py: cross-dep function remapping, 101 enum variant Call→EnumInit conversion, namespace access patterns. Added __range/__iter_has_next/__iter_next to C runtime. Built mnc-stage1 (4.9MB ELF). Binary runs full pipeline but emit_llvm.mn produces garbled IR text (string emitter bug). 15 tests pass. |
-| 2026-03-14 | 2.2 | Task 6 in progress (major fix) | Task 6: fix remaining char-level corruption in IR output, then Tasks 7-10 | **Fixed 4 bugs:** (1) `lower.py:_lower_let` — propagate type annotation args to ListInit elem_type for empty lists (elem_size 8→16 for List<String>). (2) `lower.py:_lower_index` — infer element type from container's type_info.args so IndexGet dest has correct type. (3) `parser.py:string_lit` — call `_unescape()` on all strings (not just interpolated) so LLVM backend stores `\n` as 0x0A. (4) `mnc_main.c` — untag heap string pointer (bit 0) before fwrite. (5) `emit_llvm_mir.py` — coerce i8*→LLVM_LIST in _emit_index_get and len() call. **Result:** Output went from 88 bytes of `n\` repeating to 1949 bytes of structurally correct LLVM IR. **Remaining:** Character-level corruption — 1-byte shifts in string content (e.g. `d{ i8*` instead of `{ i8*, i64 }`). Hypothesis: `__mn_str_concat` in C runtime returns tagged pointer (bit 0 set) which makes returned string data off by 1 byte. The concat internally untags before read, but the *returned* string has a tagged pointer. When the NEXT concat reads that string, it untags correctly. But the *length* might be off — concat allocates `total+1` bytes and sets `len=total`, but the tag bit might be causing a length miscalculation somewhere. Check: (a) whether `__mn_str_from_parts` or `__mn_str_concat` has an off-by-one, (b) whether the self-hosted emit_llvm.mn builds IR strings with correct lengths, (c) possible issue with how string constants are concatenated with heap strings. |
+| Date | Phase | Last Task | Next Task | Notes |
+|------|-------|-----------|-----------|-------|
+| 2026-03-14 | 2 | Phase 2 created (emitter hardening) | Phase 2 Task 1: mutable variable alloca write-back | **12+ bugs fixed across 4 sessions.** See 2026-03-14b entry. |
+| 2026-03-14b | 2 | Task 6: mnc-stage1 correct IR emission | Task 6 continued: fix double-free crash in tokenizer | **4 bugs fixed this session:** (1) List concat BinOp: `_emit_binop` had no LIST handler — `items + [x]` was `add i64` instead of `__mn_list_concat`. Added `__mn_list_concat` to C runtime and LIST handler in emitter. (2) Copy propagation type erasure: `mir_opt.py:resolve()` created `Value(name=current)` with UNKNOWN type when resolving chains ending at non-Copy defs. Fixed to preserve type from last Copy source. (3) FieldSet dominance: `_emit_field_set` used `values[]` dict only, not allocas — cross-block struct field sets caused SSA dominance violations. Fixed to use `_store_value`. (4) String comparison ops: `_emit_binop` only handled `==`/`!=` for strings, not `>=`/`<=`/`<`/`>`. Added `__mn_str_cmp`-based ordering comparisons. **Current state:** mnc-stage1 builds (5MB), lexer now correctly tokenizes (char_at returns string, is_alpha works). **Remaining blocker:** `free(): double free detected in tcache 2` crash during tokenization. Likely cause: `__mn_list_concat` creates new list allocations but old lists may be freed while still referenced, OR string temporaries from `char_at` are being double-freed. The arena allocator (`__mn_alloc`) may not handle the increased allocation pressure from correct list concat. Key files: `runtime/native/mapanare_core.c:__mn_list_concat`, `emit_llvm_mir.py:_emit_binop` (LIST/string cmp), `mir_opt.py:copy_propagation:resolve`. Debug prints removed from `main.mn`, `lexer.mn`, `parser.mn`. |
 
 ---
 
 ## Phase Dependencies
 
 ```
-Phase 1 (Spec Freeze) ──────┬──→ Phase 4 (Stability Policy)
-                             │
-Phase 2 (Fixed Point) ───────┤
-                             │
-Phase 3 (Memory Model) ──────┤
-                             │
-                             └──→ Phase 5 (Hardening) ──→ Phase 6 (Release)
+Phase 1 (Spec Freeze)  ─────────────────────────────────┐
+                                                         ├──→ Phase 6 (Stability Policy)
+Phase 2 (Emitter Hardening) ──→ Phase 3 (Stage 1) ──┐   │
+                                                     ├───┤
+                                                     │   ├──→ Phase 7 (Hardening) ──→ Phase 8 (Release)
+Phase 4 (Fixed Point) ←── Phase 3                    │   │
+                                                     │   │
+Phase 5 (Memory Model) ─────────────────────────────────┘
 ```
 
-- Phase 1, 2, 3 are independent — can run in parallel
-- Phase 4 depends on Phase 1 (need frozen spec to define stability)
-- Phase 5 depends on Phase 2 (need native binary for full test pass) and Phase 3 (need memory model for security audit)
-- Phase 6 depends on all other phases
+- **Phase 1** — Complete
+- **Phase 2 → 3** — sequential (fix emitter, then build/test binary)
+- **Phase 3 → 4** — sequential (need working stage 1 before self-compilation)
+- **Phase 5** — independent (can run in parallel with 2/3)
+- **Phase 6** — depends on Phase 1
+- **Phase 7** — depends on Phase 3 (need native binary) + Phase 5 (need memory model for security audit)
+- **Phase 8** — depends on all
 
 ### Priority order
 
-1. **Phase 2** — Fixed Point (highest risk, longest lead time, proves the compiler works)
-2. **Phase 1** — Spec Freeze (foundation for everything else)
-3. **Phase 3** — Memory Model (blocks security audit in Phase 5)
-4. **Phase 5** — Hardening (blocks release)
-5. **Phase 4** — Stability Policy (can be done while hardening)
-6. **Phase 6** — Release (ceremony, after everything else)
+1. **Phase 2** — Emitter Hardening (unblocks everything, active bugs)
+2. **Phase 3** — Stage 1 Compiler (validates Phase 2 fixes, needs WSL)
+3. **Phase 5** — Memory Model (independent, can parallel with 2/3)
+4. **Phase 4** — Fixed Point (high risk, depends on Phase 3)
+5. **Phase 6** — Stability Policy (small, can parallel with anything)
+6. **Phase 7** — Hardening (depends on 3 + 5)
+7. **Phase 8** — Release (after everything)
+
+### Workflow
+
+Phases 2 and 3 iterate together: fix bugs on Windows (Phase 2) → rebuild/test on WSL (Phase 3) → find new bugs → repeat. Phase 5 and 6 can run on Windows in parallel during WSL sessions.

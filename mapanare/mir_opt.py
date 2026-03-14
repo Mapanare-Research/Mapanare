@@ -509,13 +509,16 @@ def copy_propagation(fn: MIRFunction, stats: MIRPassStats) -> bool:
     def resolve(name: str) -> Value:
         visited: set[str] = set()
         current = name
+        last_val: Value | None = None
         while current in copy_map and current not in visited:
             visited.add(current)
-            current = copy_map[current].name
+            last_val = copy_map[current]
+            current = last_val.name
         if current in copy_map:
             return copy_map[current]
-        if current != name:
-            return copy_map.get(current, Value(name=current))
+        # Preserve the type from the last known copy source
+        if last_val is not None:
+            return Value(name=current, ty=last_val.ty)
         return copy_map.get(name, Value(name=name))
 
     if not copy_map:

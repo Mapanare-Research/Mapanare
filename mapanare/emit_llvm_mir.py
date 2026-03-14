@@ -285,6 +285,8 @@ class LLVMMIREmitter:
         self._current_builder: Any = None
         self._current_block_label: str = ""
         self._value_blocks: dict[str, str] = {}  # value name -> defining block label
+        # Track root list allocas for push write-back chains
+        self._list_roots: dict[str, str] = {}  # value name -> root value name
 
     # -----------------------------------------------------------------------
     # Public entry point
@@ -753,6 +755,9 @@ class LLVMMIREmitter:
     def _rt_str_eq(self) -> Any:
         return self._declare_runtime_fn("__mn_str_eq", LLVM_INT, [LLVM_STRING, LLVM_STRING])
 
+    def _rt_str_cmp(self) -> Any:
+        return self._declare_runtime_fn("__mn_str_cmp", LLVM_INT, [LLVM_STRING, LLVM_STRING])
+
     def _rt_str_len(self) -> Any:
         return self._declare_runtime_fn("__mn_str_len", LLVM_INT, [LLVM_STRING])
 
@@ -786,6 +791,11 @@ class LLVMMIREmitter:
 
     def _rt_list_len(self) -> Any:
         return self._declare_runtime_fn("__mn_list_len", LLVM_INT, [LLVM_LIST.as_pointer()])
+
+    def _rt_list_concat(self) -> Any:
+        return self._declare_runtime_fn(
+            "__mn_list_concat", LLVM_LIST, [LLVM_LIST.as_pointer(), LLVM_LIST.as_pointer()]
+        )
 
     def _rt_panic(self) -> Any:
         return self._declare_runtime_fn("__mn_panic", LLVM_VOID, [LLVM_STRING])
@@ -936,6 +946,7 @@ class LLVMMIREmitter:
         gv.global_constant = True
         gv.linkage = "private"
         gv.initializer = c_fmt
+        gv.align = 2  # Ensure even address — mn_untag() clears bit 0
         self._fmt_strings[fmt] = gv
         return gv
 
@@ -977,6 +988,7 @@ class LLVMMIREmitter:
         gv.global_constant = True
         gv.linkage = "private"
         gv.initializer = c_str
+        gv.align = 2  # Ensure even address — mn_untag() clears bit 0
         # GEP to get i8* to the first element
         zero = ir.Constant(LLVM_INT, 0)
         ptr = builder.gep(gv, [zero, zero], inbounds=True, name=f"{name}.ptr")
@@ -1028,6 +1040,7 @@ class LLVMMIREmitter:
         #    violations.  LLVM's mem2reg pass (part of -O1+) will convert
         #    these back into proper phi nodes automatically.
         self._fn_allocas = {}
+        self._list_roots = {}
         self._alloca_block = pre_entry
 
         deferred_phi_stores: list[tuple[Any, list[tuple[str, Value]], dict[str, Any]]] = []
@@ -1441,6 +1454,11 @@ class LLVMMIREmitter:
             lhs_kind = TypeKind.STRING
         if lhs_kind == TypeKind.UNKNOWN and rhs.type == LLVM_STRING:
             lhs_kind = TypeKind.STRING
+        # Detect list type from LLVM value when MIR type is UNKNOWN
+        if lhs_kind == TypeKind.UNKNOWN and lhs.type == LLVM_LIST:
+            lhs_kind = TypeKind.LIST
+        if lhs_kind == TypeKind.UNKNOWN and rhs.type == LLVM_LIST:
+            lhs_kind = TypeKind.LIST
 
         # Cross-module type coercion: if MIR says INT but LLVM value is i8*
         if lhs_kind == TypeKind.INT:
@@ -1464,8 +1482,37 @@ class LLVMMIREmitter:
                     result = builder.icmp_signed("!=", cmp_val, ir.Constant(LLVM_INT, 0), name=name)
                 else:
                     result = builder.icmp_signed("==", cmp_val, ir.Constant(LLVM_INT, 0), name=name)
+            elif op in (BinOpKind.LT, BinOpKind.GT, BinOpKind.LE, BinOpKind.GE):
+                fn = self._rt_str_cmp()
+                cmp_val = builder.call(fn, [lhs, rhs], name=f"{name}.cmp")
+                cmp_ops = {
+                    BinOpKind.LT: "<",
+                    BinOpKind.GT: ">",
+                    BinOpKind.LE: "<=",
+                    BinOpKind.GE: ">=",
+                }
+                result = builder.icmp_signed(
+                    cmp_ops[op], cmp_val, ir.Constant(LLVM_INT, 0), name=name
+                )
             else:
                 result = ir.Constant(LLVM_INT, 0)
+            self._store_value(inst.dest, result, values)
+            return
+
+        # List concatenation
+        if lhs_kind == TypeKind.LIST and op == BinOpKind.ADD:
+            fn_concat = self._rt_list_concat()
+            # Both operands must be LLVM_LIST; coerce if needed
+            if lhs.type != LLVM_LIST:
+                lhs = _coerce_arg(builder, lhs, LLVM_LIST, f"{name}.lc")
+            if rhs.type != LLVM_LIST:
+                rhs = _coerce_arg(builder, rhs, LLVM_LIST, f"{name}.rc")
+            # Pass both lists by pointer
+            lhs_ptr = builder.alloca(LLVM_LIST, name=f"{name}.lptr")
+            builder.store(lhs, lhs_ptr)
+            rhs_ptr = builder.alloca(LLVM_LIST, name=f"{name}.rptr")
+            builder.store(rhs, rhs_ptr)
+            result = builder.call(fn_concat, [lhs_ptr, rhs_ptr], name=name)
             self._store_value(inst.dest, result, values)
             return
 
@@ -2115,7 +2162,8 @@ class LLVMMIREmitter:
                         )
                 result = builder.insert_value(obj, val, idx)
                 # Update the value in the map (functional update for SSA)
-                values[inst.obj.name] = result
+                # Also persist to the alloca for cross-block dominance
+                self._store_value(inst.obj, result, values)
 
     # --- ListInit ---
 
@@ -2190,6 +2238,27 @@ class LLVMMIREmitter:
         # Load updated list
         updated = builder.load(list_ptr, name=name)
         self._store_value(inst.dest, updated, values)
+
+        # Write-back: store updated list to the ROOT list alloca so that
+        # loop back-edges and cross-branch reads see the mutation.
+        # The lowerer chains pushes (t0→t75→t83→...) via _update_var,
+        # so we track each push dest back to the original list variable.
+        src_name = inst.list_val.name
+        root_name = self._list_roots.get(src_name, src_name)
+        self._list_roots[inst.dest.name] = root_name
+        # Write back to root alloca and immediate source alloca
+        for target_name in {root_name, src_name}:
+            if target_name in self._fn_allocas:
+                target_alloca = self._fn_allocas[target_name]
+                try:
+                    val = updated
+                    if val.type != target_alloca.type.pointee:
+                        val = _coerce_arg(
+                            builder, val, target_alloca.type.pointee, f"{name}.wb"
+                        )
+                    builder.store(val, target_alloca)
+                except Exception:
+                    pass
 
     # --- IndexGet ---
 

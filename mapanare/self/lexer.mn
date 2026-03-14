@@ -461,12 +461,14 @@ fn tokenize(source: String, filename: String) -> List<Token> {
             let tok: Token = scan_ident(source, pos, line, col)
             pos = pos + len(tok.value)
             col = col + len(tok.value)
+            tokens.push(tok)
         } else {
             if is_digit(c) {
                 let tok: Token = scan_number(source, pos, line, col)
                 let width: Int = tok.end_column - tok.column
                 pos = pos + width
                 col = col + width
+                tokens.push(tok)
             } else {
                 if c == "\"" {
                     let tok: Token = scan_string(source, pos, line, col)
@@ -474,17 +476,20 @@ fn tokenize(source: String, filename: String) -> List<Token> {
                     pos = pos + width
                     col = col + width
                     line = tok.end_line
+                    tokens.push(tok)
                 } else {
                     if c == "'" {
                         let tok: Token = scan_char(source, pos, line, col)
                         let width: Int = tok.end_column - tok.column
                         pos = pos + width
                         col = col + width
+                        tokens.push(tok)
                     } else {
                         let tok: Token = scan_op(source, pos, line, col)
                         let width: Int = len(tok.value)
                         pos = pos + width
                         col = col + width
+                        tokens.push(tok)
                     }
                 }
             }
