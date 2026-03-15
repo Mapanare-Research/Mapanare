@@ -246,7 +246,7 @@ _ZEROINIT_MEMSET_THRESHOLD = 128
 # Size threshold above which struct parameters/returns are passed by pointer.
 # Structs larger than this are passed via hidden pointer args to avoid
 # pathological stack frame sizes that cause SIGSEGV in llvmlite/LLVM codegen.
-_LARGE_STRUCT_THRESHOLD = 128
+_LARGE_STRUCT_THRESHOLD = 64
 
 
 def _is_large_struct(llvm_ty: Any) -> bool:
@@ -3025,22 +3025,32 @@ class LLVMMIREmitter:
             payload_types = variant_payloads.get(inst.variant, [])
             boxed = self._boxed_enum_fields.get(resolved_enum_name, set())
 
-            # Alloca the enum, extract payload bytes, bitcast
+            # Extract payload bytes via GEP into the enum storage.
             enum_ty = self._enum_types[resolved_enum_name][0]
 
-            # If enum_val is a pointer (i8*), load the actual struct first
-            if isinstance(enum_val.type, ir.PointerType):
-                typed_ptr = builder.bitcast(enum_val, enum_ty.as_pointer(), name=f"{name}.cast")
-                enum_val = builder.load(typed_ptr, name=f"{name}.loaded")
+            # For large enum types (e.g. Instruction at 260 bytes), avoid
+            # loading the full value by-value — GEP directly into the existing
+            # alloca.  Loading/storing 260-byte structs triggers llvmlite codegen
+            # bugs that corrupt adjacent stack memory.
+            existing_alloca = self._fn_allocas.get(inst.enum_val.name)
+            if (
+                existing_alloca is not None
+                and hasattr(existing_alloca.type, "pointee")
+                and existing_alloca.type.pointee == enum_ty
+                and _approx_type_size(enum_ty) > _LARGE_STRUCT_THRESHOLD
+            ):
+                enum_ptr = existing_alloca
+            else:
+                # If enum_val is a pointer (i8*), load the actual struct first
+                if isinstance(enum_val.type, ir.PointerType):
+                    typed_ptr = builder.bitcast(enum_val, enum_ty.as_pointer(), name=f"{name}.cast")
+                    enum_val = builder.load(typed_ptr, name=f"{name}.loaded")
 
-            # Use the value's actual LLVM type for the alloca (may differ from
-            # the registered enum type when the value came from a function
-            # parameter or cross-module boundary with a different type resolution).
-            actual_ty = (
-                enum_val.type if isinstance(enum_val.type, ir.LiteralStructType) else enum_ty
-            )
-            enum_ptr = builder.alloca(actual_ty, name=f"{name}.eptr")
-            builder.store(enum_val, enum_ptr)
+                actual_ty = (
+                    enum_val.type if isinstance(enum_val.type, ir.LiteralStructType) else enum_ty
+                )
+                enum_ptr = builder.alloca(actual_ty, name=f"{name}.eptr")
+                builder.store(enum_val, enum_ptr)
             payload_ptr = builder.gep(
                 enum_ptr,
                 [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, 1)],
