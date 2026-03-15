@@ -1666,6 +1666,18 @@ class LLVMMIREmitter:
             return ir.Constant(fallback_ty, ir.Undefined)
         return ir.Constant(fallback_ty, 0)
 
+    def _get_value_ptr(self, val: Value) -> Any | None:
+        """Return the alloca pointer for a value, or None if unavailable.
+
+        For large struct types, callers can GEP directly into the alloca
+        instead of loading the full value by-value (which triggers llvmlite
+        codegen bugs for structs > 64 bytes).
+        """
+        alloca = self._fn_allocas.get(val.name)
+        if alloca is None:
+            alloca = self._fn_allocas.get(val.name.lstrip("%"))
+        return alloca
+
     def _store_value(self, dest: Value, llvm_val: Any, values: dict[str, Any]) -> None:
         """Store an LLVM value in the value map under the MIR dest name."""
         values[dest.name] = llvm_val
@@ -2927,6 +2939,13 @@ class LLVMMIREmitter:
                 payload_i8_ptr = builder.bitcast(
                     payload_ptr, ir.IntType(8).as_pointer(), name=f"{name}.pay.i8"
                 )
+                # Look up the registered payload types for this variant so
+                # offset calculation matches _emit_enum_payload's extraction.
+                # When the actual LLVM value type differs from the registered
+                # type (e.g. i8* fallback vs 64-byte struct), using val.type
+                # for the offset would cause a layout mismatch at extraction.
+                _, _, variant_payloads = self._enum_types[enum_name]
+                registered_types = variant_payloads.get(inst.variant, [])
                 offset = 0
                 for i, pval in enumerate(inst.payload):
                     val = self._get_value(pval, values)
@@ -2953,8 +2972,13 @@ class LLVMMIREmitter:
                         builder.store(raw_ptr, ptr_dest)
                         offset += 8  # pointer size
                     else:
-                        # Normal inline store
-                        field_align = _type_alignment(val.type)
+                        # Use registered type for alignment and size to ensure
+                        # layout matches _emit_enum_payload's extraction.
+                        if i < len(registered_types):
+                            reg_ty = self._resolve_mir_type(registered_types[i])
+                        else:
+                            reg_ty = val.type
+                        field_align = _type_alignment(reg_ty)
                         rem = offset % field_align
                         if rem != 0:
                             offset += field_align - rem
@@ -2965,7 +2989,7 @@ class LLVMMIREmitter:
                         )
                         typed_ptr = builder.bitcast(dest_ptr, val.type.as_pointer())
                         builder.store(val, typed_ptr)
-                        offset += _approx_type_size(val.type)
+                        offset += _approx_type_size(reg_ty)
 
             result = builder.load(enum_ptr, name=name)
         else:
@@ -2977,8 +3001,30 @@ class LLVMMIREmitter:
     # --- EnumTag ---
 
     def _emit_enum_tag(self, inst: EnumTag, builder: Any, values: dict[str, Any]) -> None:
-        enum_val = self._get_value(inst.enum_val, values)
         name = self._val_name(inst.dest)
+
+        # Large enum fast path: GEP directly into alloca for the tag
+        # instead of loading the full 260-byte value (avoids llvmlite
+        # codegen bugs that corrupt adjacent stack memory).
+        enum_ty = self._resolve_enum_type_from_value(inst.enum_val)
+        if enum_ty is not None and _approx_type_size(enum_ty) > _LARGE_STRUCT_THRESHOLD:
+            alloca = self._get_value_ptr(inst.enum_val)
+            if alloca is not None and hasattr(alloca.type, "pointee"):
+                ptr = alloca
+                if alloca.type.pointee != enum_ty:
+                    ptr = builder.bitcast(alloca, enum_ty.as_pointer(), name=f"{name}.ebc")
+                tag_ptr = builder.gep(
+                    ptr,
+                    [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, 0)],
+                    inbounds=True,
+                    name=f"{name}.tptr",
+                )
+                result = builder.load(tag_ptr, name=name)
+                self._store_value(inst.dest, result, values)
+                return
+
+        # Standard path: load enum by value
+        enum_val = self._get_value(inst.enum_val, values)
         # For non-struct types (e.g., Int in match expressions), use the value directly
         if isinstance(enum_val.type, ir.IntType) and not isinstance(
             enum_val.type, ir.LiteralStructType
@@ -3013,7 +3059,7 @@ class LLVMMIREmitter:
     # --- EnumPayload ---
 
     def _emit_enum_payload(self, inst: EnumPayload, builder: Any, values: dict[str, Any]) -> None:
-        enum_val = self._get_value(inst.enum_val, values)
+        enum_val = None  # lazy — only loaded for small enums
         name = self._val_name(inst.dest)
         enum_name = inst.enum_val.ty.type_info.name
 
@@ -3032,15 +3078,20 @@ class LLVMMIREmitter:
             # loading the full value by-value — GEP directly into the existing
             # alloca.  Loading/storing 260-byte structs triggers llvmlite codegen
             # bugs that corrupt adjacent stack memory.
-            existing_alloca = self._fn_allocas.get(inst.enum_val.name)
-            if (
-                existing_alloca is not None
-                and hasattr(existing_alloca.type, "pointee")
-                and existing_alloca.type.pointee == enum_ty
-                and _approx_type_size(enum_ty) > _LARGE_STRUCT_THRESHOLD
-            ):
-                enum_ptr = existing_alloca
-            else:
+            use_alloca_path = False
+            if _approx_type_size(enum_ty) > _LARGE_STRUCT_THRESHOLD:
+                existing_alloca = self._get_value_ptr(inst.enum_val)
+                if existing_alloca is not None and hasattr(existing_alloca.type, "pointee"):
+                    if existing_alloca.type.pointee == enum_ty:
+                        enum_ptr = existing_alloca
+                    else:
+                        enum_ptr = builder.bitcast(
+                            existing_alloca, enum_ty.as_pointer(), name=f"{name}.ebc"
+                        )
+                    use_alloca_path = True
+
+            if not use_alloca_path:
+                enum_val = self._get_value(inst.enum_val, values)
                 # If enum_val is a pointer (i8*), load the actual struct first
                 if isinstance(enum_val.type, ir.PointerType):
                     typed_ptr = builder.bitcast(enum_val, enum_ty.as_pointer(), name=f"{name}.cast")
@@ -3078,21 +3129,44 @@ class LLVMMIREmitter:
                     )
                     result = builder.load(payload_i8, name=name)
             elif payload_types:
-                # Multi-field payload: build a struct using LLVM_PTR for boxed fields
+                # Multi-field payload: use byte-offset GEP matching the
+                # layout used by _emit_enum_init.  This avoids bitcasting to
+                # a struct pointer (which triggers alignment assumptions —
+                # the payload is at offset 4 in {i32, [N x i8]} so it's only
+                # 4-byte aligned, but struct loads assume 8-byte alignment).
                 field_tys: list[Any] = []
                 for j, pt in enumerate(payload_types):
                     if (inst.variant, j) in boxed:
                         field_tys.append(LLVM_PTR)
                     else:
                         field_tys.append(self._resolve_mir_type(pt))
-                payload_struct_ty = ir.LiteralStructType(field_tys)
-                typed_ptr = builder.bitcast(
-                    payload_ptr, payload_struct_ty.as_pointer(), name=f"{name}.sptr"
-                )
-                full_payload = builder.load(typed_ptr, name=f"{name}.full")
                 idx = inst.payload_idx
                 if idx < len(field_tys):
-                    result = builder.extract_value(full_payload, idx, name=name)
+                    # Compute byte offset matching _emit_enum_init's layout
+                    offset = 0
+                    for fi in range(idx + 1):
+                        fty = field_tys[fi]
+                        fa = _type_alignment(fty)
+                        rem = offset % fa
+                        if rem != 0:
+                            offset += fa - rem
+                        if fi == idx:
+                            break
+                        offset += _approx_type_size(fty)
+
+                    payload_i8_ptr = builder.bitcast(
+                        payload_ptr, ir.IntType(8).as_pointer(), name=f"{name}.pi8"
+                    )
+                    field_byte_ptr = builder.gep(
+                        payload_i8_ptr,
+                        [ir.Constant(LLVM_INT, offset)],
+                        name=f"{name}.fbp",
+                    )
+                    target_fty = field_tys[idx]
+                    typed_fptr = builder.bitcast(
+                        field_byte_ptr, target_fty.as_pointer(), name=f"{name}.fptr"
+                    )
+                    result = builder.load(typed_fptr, name=name)
                     # If this field is boxed, dereference the pointer
                     if (inst.variant, idx) in boxed:
                         actual_type = self._resolve_mir_type(payload_types[idx])
@@ -3101,11 +3175,18 @@ class LLVMMIREmitter:
                         )
                         result = builder.load(typed_unbox, name=f"{name}.val")
                 else:
-                    result = full_payload
+                    # Fallback: load full payload struct
+                    payload_struct_ty = ir.LiteralStructType(field_tys)
+                    typed_ptr = builder.bitcast(
+                        payload_ptr, payload_struct_ty.as_pointer(), name=f"{name}.sptr"
+                    )
+                    result = builder.load(typed_ptr, name=f"{name}.full")
             else:
                 result = ir.Constant(LLVM_BOOL, 0)
         else:
             # Result/Option or unknown enum — extract payload by variant
+            if enum_val is None:
+                enum_val = self._get_value(inst.enum_val, values)
             try:
                 variant = inst.variant
                 if variant == "Ok":
