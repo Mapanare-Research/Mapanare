@@ -382,6 +382,8 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_byte_at", llvm_int(), llvm_string() + ", i64")
     s = declare_runtime_fn(s, "__mn_str_substr", llvm_string(), llvm_string() + ", i64, i64")
     s = declare_runtime_fn(s, "__mn_str_from_int", llvm_string(), "i64")
+    s = declare_runtime_fn(s, "__mn_str_to_int", llvm_int(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_to_float", llvm_float(), llvm_string())
     s = declare_runtime_fn(s, "__mn_str_println", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_print", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_starts_with", llvm_int(), llvm_string() + ", " + llvm_string())
@@ -1103,6 +1105,15 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "toString" {
         return emit_builtin_tostring(st, dest, args)
     }
+    if fn_name == "str" {
+        return emit_builtin_tostring(st, dest, args)
+    }
+    if fn_name == "int" {
+        return emit_builtin_int(st, dest, args)
+    }
+    if fn_name == "float" {
+        return emit_builtin_float(st, dest, args)
+    }
 
     // Build args string
     let mut args_str: String = ""
@@ -1185,6 +1196,36 @@ fn emit_builtin_tostring(st: EmitState, dest: Value, args: List<Value>) -> EmitS
         return emit_copy(st, dest, arg)
     }
     return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_int", "i64 " + arg.name))
+}
+
+fn emit_builtin_int(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
+    if len(args) == 0 { return st }
+    let arg: Value = args[0]
+    if arg.ty.kind == "float" {
+        return emit_line(st, "  " + dest.name + " =fptosi double " + arg.name + " to i64")
+    }
+    if arg.ty.kind == "int" {
+        return emit_copy(st, dest, arg)
+    }
+    if arg.ty.kind == "string" {
+        return emit_line(st, emit_call_ir(dest.name, llvm_int(), "__mn_str_to_int", llvm_string() + " " + arg.name))
+    }
+    return emit_line(st, emit_call_ir(dest.name, llvm_int(), "__mn_str_to_int", llvm_string() + " " + arg.name))
+}
+
+fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
+    if len(args) == 0 { return st }
+    let arg: Value = args[0]
+    if arg.ty.kind == "int" {
+        return emit_line(st, "  " + dest.name + " =sitofp i64 " + arg.name + " to double")
+    }
+    if arg.ty.kind == "float" {
+        return emit_copy(st, dest, arg)
+    }
+    if arg.ty.kind == "string" {
+        return emit_line(st, emit_call_ir(dest.name, llvm_float(), "__mn_str_to_float", llvm_string() + " " + arg.name))
+    }
+    return emit_line(st, emit_call_ir(dest.name, llvm_float(), "__mn_str_to_float", llvm_string() + " " + arg.name))
 }
 
 // ---------------------------------------------------------------------------

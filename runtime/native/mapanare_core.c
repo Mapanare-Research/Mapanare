@@ -428,6 +428,24 @@ MN_EXPORT MnString __mn_str_from_float(double value) {
     return __mn_str_from_parts(buf, (int64_t)n);
 }
 
+MN_EXPORT int64_t __mn_str_to_int(MnString s) {
+    const char *data = mn_untag(s.data);
+    if (!data || s.len <= 0) return 0;
+    /* Handle 0x, 0b, 0o prefixes */
+    if (s.len > 2 && data[0] == '0') {
+        if (data[1] == 'x' || data[1] == 'X') return strtoll(data, NULL, 16);
+        if (data[1] == 'b' || data[1] == 'B') return strtoll(data + 2, NULL, 2);
+        if (data[1] == 'o' || data[1] == 'O') return strtoll(data + 2, NULL, 8);
+    }
+    return strtoll(data, NULL, 10);
+}
+
+MN_EXPORT double __mn_str_to_float(MnString s) {
+    const char *data = mn_untag(s.data);
+    if (!data || s.len <= 0) return 0.0;
+    return strtod(data, NULL);
+}
+
 MN_EXPORT void __mn_str_free(MnString s) {
     if (s.data && mn_is_heap(s.data)) {
         __mn_free((void *)mn_untag(s.data));
@@ -474,14 +492,6 @@ static void mn_list_grow(MnList *list) {
 }
 
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
-#ifdef MN_DEBUG_LIST
-    fprintf(stderr, "[list_push] list=%p data=%p len=%ld cap=%ld elem_size=%ld\n",
-            (void*)list, (void*)list->data, list->len, list->cap, list->elem_size);
-    if (list->cap <= 0 || list->cap > 1000000000LL || list->elem_size <= 0 || list->elem_size > 1024) {
-        fprintf(stderr, "[list_push] CORRUPT LIST detected! Aborting.\n");
-        abort();
-    }
-#endif
     if (list->len >= list->cap) {
         mn_list_grow(list);
     }

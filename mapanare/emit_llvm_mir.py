@@ -1979,6 +1979,10 @@ class LLVMMIREmitter:
                 result = builder.zext(args[0], LLVM_INT, name=name)
             elif inst.args and inst.args[0].ty.kind == TypeKind.INT:
                 result = args[0]
+            elif inst.args and inst.args[0].ty.kind == TypeKind.STRING:
+                fn = self._declare_runtime_fn("__mn_str_to_int", LLVM_INT, [LLVM_STRING])
+                a = _coerce_arg(builder, args[0], LLVM_STRING, name)
+                result = builder.call(fn, [a], name=name)
             else:
                 result = ir.Constant(LLVM_INT, 0)
             self._store_value(inst.dest, result, values)
@@ -1990,6 +1994,10 @@ class LLVMMIREmitter:
                 result = builder.sitofp(args[0], LLVM_FLOAT, name=name)
             elif inst.args and inst.args[0].ty.kind == TypeKind.FLOAT:
                 result = args[0]
+            elif inst.args and inst.args[0].ty.kind == TypeKind.STRING:
+                fn = self._declare_runtime_fn("__mn_str_to_float", LLVM_FLOAT, [LLVM_STRING])
+                a = _coerce_arg(builder, args[0], LLVM_STRING, name)
+                result = builder.call(fn, [a], name=name)
             else:
                 result = ir.Constant(LLVM_FLOAT, 0.0)
             self._store_value(inst.dest, result, values)

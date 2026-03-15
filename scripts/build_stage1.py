@@ -64,8 +64,11 @@ def build() -> pathlib.Path:
     print("[4/6] Compiling C runtime ...")
     core_c = NATIVE_DIR / "mapanare_core.c"
     core_o = SELF_DIR / "mapanare_core.o"
+    asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
     subprocess.run(
-        ["gcc", "-c", "-O0", "-g", "-fPIC", "-I", str(NATIVE_DIR), str(core_c), "-o", str(core_o)],
+        ["gcc", "-c", "-O0", "-g", "-fPIC", "-I", str(NATIVE_DIR)]
+        + asan_flags
+        + [str(core_c), "-o", str(core_o)],
         check=True,
     )
     print(f"  Runtime: {core_o}")
@@ -75,7 +78,7 @@ def build() -> pathlib.Path:
     main_c = SELF_DIR / "mnc_main.c"
     main_o = SELF_DIR / "mnc_main.o"
     subprocess.run(
-        ["gcc", "-c", "-O0", "-g", str(main_c), "-o", str(main_o)],
+        ["gcc", "-c", "-O0", "-g"] + asan_flags + [str(main_c), "-o", str(main_o)],
         check=True,
     )
     print(f"  Wrapper: {main_o}")
@@ -94,7 +97,9 @@ def build() -> pathlib.Path:
             "-rdynamic",
             "-lm",
             "-lpthread",
-        ],
+        ]
+        + asan_flags
+        + [],
         check=True,
     )
     print(f"  Binary: {binary} ({binary.stat().st_size} bytes)")

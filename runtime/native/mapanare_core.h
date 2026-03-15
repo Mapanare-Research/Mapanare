@@ -108,6 +108,12 @@ MN_EXPORT MnString __mn_str_from_int(int64_t value);
 /** Convert a double to its string representation. */
 MN_EXPORT MnString __mn_str_from_float(double value);
 
+/** Parse a string to an integer. Handles decimal, 0x hex, 0b binary, 0o octal. */
+MN_EXPORT int64_t __mn_str_to_int(MnString s);
+
+/** Parse a string to a float. */
+MN_EXPORT double __mn_str_to_float(MnString s);
+
 /** Free a heap-allocated string. No-op for constant strings.
  *  Uses tag bit (LSB of data pointer) to distinguish heap from constant. */
 MN_EXPORT void __mn_str_free(MnString s);

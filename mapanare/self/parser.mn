@@ -1406,13 +1406,13 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     let val: String = peek_value(tokens, pos)
 
     // Integer literals
-    if tt == "DEC_INT" { return new_expr_result(Expr::IntLit(0), pos + 1) }
-    if tt == "HEX_INT" { return new_expr_result(Expr::IntLit(0), pos + 1) }
-    if tt == "BIN_INT" { return new_expr_result(Expr::IntLit(0), pos + 1) }
-    if tt == "OCT_INT" { return new_expr_result(Expr::IntLit(0), pos + 1) }
+    if tt == "DEC_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
+    if tt == "HEX_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
+    if tt == "BIN_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
+    if tt == "OCT_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
 
     // Float literal
-    if tt == "FLOAT_LIT" { return new_expr_result(Expr::FloatLit(0.0), pos + 1) }
+    if tt == "FLOAT_LIT" { return new_expr_result(Expr::FloatLit(float(val)), pos + 1) }
 
     // String literal — check for interpolation ${...}
     if tt == "STRING_LIT" {
@@ -1571,8 +1571,8 @@ fn parse_pattern(tokens: List<Token>, pos: Int, filename: String) -> PatternResu
         return new_pattern_result(Pattern::Wildcard, pos + 1)
     }
 
-    if tt == "DEC_INT" { return new_pattern_result(Pattern::LiteralPat(Expr::IntLit(0)), pos + 1) }
-    if tt == "FLOAT_LIT" { return new_pattern_result(Pattern::LiteralPat(Expr::FloatLit(0.0)), pos + 1) }
+    if tt == "DEC_INT" { return new_pattern_result(Pattern::LiteralPat(Expr::IntLit(int(val))), pos + 1) }
+    if tt == "FLOAT_LIT" { return new_pattern_result(Pattern::LiteralPat(Expr::FloatLit(float(val))), pos + 1) }
     if tt == "STRING_LIT" { return new_pattern_result(Pattern::LiteralPat(Expr::StringLit(val)), pos + 1) }
     if tt == "KW_TRUE" { return new_pattern_result(Pattern::LiteralPat(Expr::BoolLit(true)), pos + 1) }
     if tt == "KW_FALSE" { return new_pattern_result(Pattern::LiteralPat(Expr::BoolLit(false)), pos + 1) }
