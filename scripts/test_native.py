@@ -19,7 +19,6 @@ Benchmark table: tests/golden/BENCHMARKS.md
 from __future__ import annotations
 
 import argparse
-import os
 import pathlib
 import platform
 import re
@@ -126,7 +125,14 @@ def measure_compile(fn, *args) -> tuple[any, Metrics]:
 
 
 def count_defines(ir: str) -> int:
-    return len(re.findall(r"^define\s", ir, re.MULTILINE))
+    """Count define statements, excluding lambdas and internal helpers."""
+    return len(
+        [
+            m
+            for m in re.findall(r'^define\s+.*?@"?([^"(\s]+)', ir, re.MULTILINE)
+            if not m.startswith("%lambda") and not m.startswith("lambda")
+        ]
+    )
 
 
 def count_declares(ir: str) -> int:
@@ -617,9 +623,9 @@ def main():
     if failed == 0:
         print(f"{C.GREEN}{C.BOLD}All {passed} tests passed{C.RESET} in {elapsed:.1f}s")
     else:
-        print(
-            f"{C.RED}{C.BOLD}{failed} failed{C.RESET}, {C.GREEN}{passed} passed{C.RESET} in {elapsed:.1f}s"
-        )
+        f_str = f"{C.RED}{C.BOLD}{failed} failed{C.RESET}"
+        p_str = f"{C.GREEN}{passed} passed{C.RESET}"
+        print(f"{f_str}, {p_str} in {elapsed:.1f}s")
 
     # Write benchmark table
     if args.bench or True:  # Always write — it's cheap and useful

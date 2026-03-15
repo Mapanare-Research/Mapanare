@@ -238,6 +238,49 @@ def _coerce_args(builder: Any, args: list[Any], expected_types: list[Any], name:
     ]
 
 
+# Size threshold above which we use memset instead of store zeroinitializer.
+# llvmlite's codegen for store zeroinitializer on very large struct types
+# (e.g. 700+ byte LowerState) generates code that loads from address 0.
+_ZEROINIT_MEMSET_THRESHOLD = 128
+
+# Size threshold above which struct parameters/returns are passed by pointer.
+# Structs larger than this are passed via hidden pointer args to avoid
+# pathological stack frame sizes that cause SIGSEGV in llvmlite/LLVM codegen.
+_LARGE_STRUCT_THRESHOLD = 128
+
+
+def _is_large_struct(llvm_ty: Any) -> bool:
+    """Return True if *llvm_ty* is a struct type exceeding the by-pointer threshold."""
+    if not isinstance(llvm_ty, ir.LiteralStructType):
+        return False
+    return _approx_type_size(llvm_ty) > _LARGE_STRUCT_THRESHOLD
+
+
+def _zero_init_alloca(ab: Any, alloca_inst: Any, val_ty: Any) -> None:
+    """Zero-initialize an alloca, using memset for large types."""
+    size = _approx_type_size(val_ty)
+    if size > _ZEROINIT_MEMSET_THRESHOLD:
+        # Use llvm.memset for large types to avoid llvmlite codegen bug
+        i8p = ir.IntType(8).as_pointer()
+        ptr = ab.bitcast(alloca_inst, i8p, name="zinit.ptr")
+        fn_ty = ir.FunctionType(
+            ir.VoidType(),
+            [i8p, ir.IntType(8), ir.IntType(64), ir.IntType(1)],
+        )
+        memset_fn = ab.module.declare_intrinsic("llvm.memset", [i8p, ir.IntType(64)], fn_ty)
+        ab.call(
+            memset_fn,
+            [
+                ptr,
+                ir.Constant(ir.IntType(8), 0),
+                ir.Constant(ir.IntType(64), size),
+                ir.Constant(ir.IntType(1), 0),  # not volatile
+            ],
+        )
+    else:
+        ab.store(ir.Constant(val_ty, None), alloca_inst)
+
+
 def _option_llvm_type(inner: Any) -> Any:
     """Option<T> -> {i1, T}."""
     return ir.LiteralStructType([LLVM_BOOL, inner])
@@ -324,6 +367,14 @@ class LLVMMIREmitter:
         self._boxed_struct_fields: dict[str, set[int]] = {}
         # struct_name -> {field_idx: MIRType} for boxed fields (for unbox resolution)
         self._boxed_struct_mir_fields: dict[str, dict[int, MIRType]] = {}
+
+        # Pass-by-pointer state: large structs are passed/returned via pointers
+        # fn_name -> original return type (for sret-converted functions)
+        self._sret_functions: dict[str, Any] = {}
+        # fn_name -> set of param indices converted to pointer
+        self._byptr_params: dict[str, set[int]] = {}
+        # Per-function: the sret output pointer (set during _emit_function)
+        self._current_sret_ptr: Any = None
 
         # Instruction dispatch table (type -> bound handler)
         self._inst_dispatch_bound: dict[type, Any] = {}
@@ -960,8 +1011,23 @@ class LLVMMIREmitter:
         """Declare an external function."""
         llvm_params = [self._resolve_mir_type(p) for p in param_types]
         llvm_ret = self._resolve_mir_type(ret_type)
-        fn_ty = ir.FunctionType(llvm_ret, llvm_params)
         full_name = f"{mod}__{fn_name}" if mod else fn_name
+
+        # Pass-by-pointer transformation for large structs
+        byptr_indices: set[int] = set()
+        for i, pty in enumerate(llvm_params):
+            if _is_large_struct(pty):
+                llvm_params[i] = pty.as_pointer()
+                byptr_indices.add(i)
+        if byptr_indices:
+            self._byptr_params[full_name] = byptr_indices
+
+        if _is_large_struct(llvm_ret):
+            self._sret_functions[full_name] = llvm_ret
+            llvm_params.append(llvm_ret.as_pointer())
+            llvm_ret = ir.VoidType()
+
+        fn_ty = ir.FunctionType(llvm_ret, llvm_params)
         if full_name not in self._functions:
             func = ir.Function(self.module, fn_ty, name=full_name)
             func.linkage = "external"
@@ -973,10 +1039,30 @@ class LLVMMIREmitter:
             return
         param_types = [self._resolve_mir_type(p.ty) for p in mir_fn.params]
         ret_type = self._resolve_mir_type(mir_fn.return_type)
+
+        # Pass-by-pointer transformation for large structs (skip main — fixed C ABI)
+        if mir_fn.name != "main":
+            byptr_indices: set[int] = set()
+            for i, pty in enumerate(param_types):
+                if _is_large_struct(pty):
+                    param_types[i] = pty.as_pointer()
+                    byptr_indices.add(i)
+            if byptr_indices:
+                self._byptr_params[mir_fn.name] = byptr_indices
+
+            if _is_large_struct(ret_type):
+                self._sret_functions[mir_fn.name] = ret_type
+                param_types.append(ret_type.as_pointer())
+                ret_type = ir.VoidType()
+
         fn_ty = ir.FunctionType(ret_type, param_types)
         func = ir.Function(self.module, fn_ty, name=mir_fn.name)
         for i, param in enumerate(mir_fn.params):
-            func.args[i].name = param.name
+            if i < len(func.args):
+                func.args[i].name = param.name
+        # Name the sret parameter if present
+        if mir_fn.name in self._sret_functions and len(func.args) > len(mir_fn.params):
+            func.args[-1].name = "sret.out"
         # Non-public functions get internal linkage (hidden from linker)
         if not mir_fn.is_public and mir_fn.name != "main":
             func.linkage = "internal"
@@ -1282,10 +1368,22 @@ class LLVMMIREmitter:
         # 3. Bind function parameters — also store to allocas so they're
         #    accessible from any basic block (fixes cross-block dominance
         #    when field_set/assignment modifies a param in one branch only).
+        #    For byptr params, load the struct value from the pointer arg.
+        #    For sret functions, save the output pointer.
+        byptr_set = self._byptr_params.get(mir_fn.name, set())
+        self._current_sret_ptr = None
+        if mir_fn.name in self._sret_functions:
+            self._current_sret_ptr = func.args[-1]
+
         for i, param in enumerate(mir_fn.params):
-            values[f"%{param.name}"] = func.args[i]
+            arg_val = func.args[i]
+            if i in byptr_set:
+                # Large struct passed by pointer — load into a local value
+                load_builder = ir.IRBuilder(pre_entry)
+                arg_val = load_builder.load(arg_val, name=f"byptr.{param.name}")
+            values[f"%{param.name}"] = arg_val
             # Also store without % prefix for flexibility
-            values[param.name] = func.args[i]
+            values[param.name] = arg_val
 
         # 4. Replace MIR phi nodes with alloca/store/load patterns.
         #    This avoids LLVM phi predecessor mismatches and SSA dominance
@@ -1305,13 +1403,18 @@ class LLVMMIREmitter:
         # initial value readable from any other branch.
         entry_builder = ir.IRBuilder(llvm_blocks[mir_fn.blocks[0].label]) if mir_fn.blocks else None
         for i, param in enumerate(mir_fn.params):
-            arg_val = func.args[i]
+            # Use the (possibly byptr-loaded) value from values dict
+            arg_val = values.get(param.name, func.args[i])
             val_ty = arg_val.type
             if isinstance(val_ty, ir.VoidType):
                 continue
             ab.position_at_end(pre_entry)
             vname = param.name.lstrip("%")
             alloca = ab.alloca(val_ty, name=f"a.{vname}")
+            # Zero-init struct/array param allocas to prevent UB from
+            # reading uninitialized bytes through cross-type coercions
+            if isinstance(val_ty, (ir.LiteralStructType, ir.ArrayType)):
+                _zero_init_alloca(ab, alloca, val_ty)
             self._fn_allocas[f"%{param.name}"] = alloca
             self._fn_allocas[param.name] = alloca
             self._value_blocks[f"%{param.name}"] = "entry"
@@ -1588,7 +1691,7 @@ class LLVMMIREmitter:
                 # Zero-initialize struct allocas to prevent UB from
                 # reading uninitialized bytes through cross-type coercions
                 if isinstance(val_ty, (ir.LiteralStructType, ir.ArrayType)):
-                    ab.store(ir.Constant(val_ty, None), alloca_inst)
+                    _zero_init_alloca(ab, alloca_inst, val_ty)
                 self._fn_allocas[dest.name] = alloca_inst
             else:
                 # If the new value is larger than the existing alloca (e.g.
@@ -1604,7 +1707,7 @@ class LLVMMIREmitter:
                     vname = dest.name.lstrip("%")
                     new_alloca = ab.alloca(llvm_val.type, name=f"a.{vname}")
                     if isinstance(llvm_val.type, (ir.LiteralStructType, ir.ArrayType)):
-                        ab.store(ir.Constant(llvm_val.type, None), new_alloca)
+                        _zero_init_alloca(ab, new_alloca, llvm_val.type)
                     self._fn_allocas[dest.name] = new_alloca
             alloca = self._fn_allocas[dest.name]
             pointee = alloca.type.pointee
@@ -2169,11 +2272,37 @@ class LLVMMIREmitter:
         # --- User-defined function call ---
         if fn_name in self._functions:
             target_fn = self._functions[fn_name]
-            # Coerce argument types to match function signature
+
+            # Pass-by-pointer: wrap large struct args in alloca+store
+            byptr_set = self._byptr_params.get(fn_name, set())
+            is_sret = fn_name in self._sret_functions
+            # expected_types excludes the sret pointer (last param)
             expected_types = list(target_fn.function_type.args)
+            if is_sret:
+                expected_types = expected_types[:-1]  # exclude sret param from coercion
+
             args = _coerce_args(builder, args[: len(expected_types)], expected_types, name)
-            # Check if return type is void
-            if isinstance(target_fn.function_type.return_type, ir.VoidType):
+
+            # For byptr params, alloca+store the struct and pass the pointer
+            for idx in byptr_set:
+                if idx < len(args):
+                    a = args[idx]
+                    # a should already be coerced to the pointer type or struct
+                    if not isinstance(a.type, ir.PointerType):
+                        tmp = builder.alloca(a.type, name=f"{name}.byptr.{idx}")
+                        builder.store(a, tmp)
+                        args[idx] = tmp
+
+            if is_sret:
+                # Allocate result struct, zero-init, pass as last arg
+                orig_ret_ty = self._sret_functions[fn_name]
+                sret_alloca = builder.alloca(orig_ret_ty, name=f"{name}.sret")
+                _zero_init_alloca(builder, sret_alloca, orig_ret_ty)
+                args.append(sret_alloca)
+                builder.call(target_fn, args)
+                result = builder.load(sret_alloca, name=name)
+                self._store_value(inst.dest, result, values)
+            elif isinstance(target_fn.function_type.return_type, ir.VoidType):
                 builder.call(target_fn, args)
                 self._store_value(inst.dest, ir.Constant(LLVM_BOOL, 0), values)
             else:
@@ -2250,7 +2379,34 @@ class LLVMMIREmitter:
             target_fn.linkage = "external"
             self._functions[full_name] = target_fn
 
-        if isinstance(target_fn.function_type.return_type, ir.VoidType):
+        # Pass-by-pointer handling for extern calls
+        byptr_set = self._byptr_params.get(full_name, set())
+        is_sret = full_name in self._sret_functions
+
+        # Coerce args to match target signature (excluding sret param)
+        expected_types = list(target_fn.function_type.args)
+        if is_sret:
+            expected_types = expected_types[:-1]
+        args = _coerce_args(builder, args[: len(expected_types)], expected_types, name)
+
+        # Wrap byptr args in alloca+store
+        for idx in byptr_set:
+            if idx < len(args):
+                a = args[idx]
+                if not isinstance(a.type, ir.PointerType):
+                    tmp = builder.alloca(a.type, name=f"{name}.byptr.{idx}")
+                    builder.store(a, tmp)
+                    args[idx] = tmp
+
+        if is_sret:
+            orig_ret_ty = self._sret_functions[full_name]
+            sret_alloca = builder.alloca(orig_ret_ty, name=f"{name}.sret")
+            _zero_init_alloca(builder, sret_alloca, orig_ret_ty)
+            args.append(sret_alloca)
+            builder.call(target_fn, args)
+            result = builder.load(sret_alloca, name=name)
+            self._store_value(inst.dest, result, values)
+        elif isinstance(target_fn.function_type.return_type, ir.VoidType):
             builder.call(target_fn, args)
             self._store_value(inst.dest, ir.Constant(LLVM_BOOL, 0), values)
         else:
@@ -2260,7 +2416,17 @@ class LLVMMIREmitter:
     # --- Return ---
 
     def _emit_return(self, inst: Return, builder: Any, values: dict[str, Any], func: Any) -> None:
-        if inst.val is not None:
+        fn_name = func.name
+        if fn_name in self._sret_functions and self._current_sret_ptr is not None:
+            # sret: store return value into the output pointer, then ret void
+            if inst.val is not None:
+                val = self._get_value(inst.val, values)
+                orig_ret_ty = self._sret_functions[fn_name]
+                if val.type != orig_ret_ty:
+                    val = _coerce_arg(builder, val, orig_ret_ty, "ret.c")
+                builder.store(val, self._current_sret_ptr)
+            builder.ret_void()
+        elif inst.val is not None:
             val = self._get_value(inst.val, values)
             # Coerce return value to match function return type
             expected_ret = func.function_type.return_type

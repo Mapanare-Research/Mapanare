@@ -382,12 +382,14 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_byte_at", llvm_int(), llvm_string() + ", i64")
     s = declare_runtime_fn(s, "__mn_str_substr", llvm_string(), llvm_string() + ", i64, i64")
     s = declare_runtime_fn(s, "__mn_str_from_int", llvm_string(), "i64")
+    s = declare_runtime_fn(s, "__mn_str_from_bool", llvm_string(), "i1")
+    s = declare_runtime_fn(s, "__mn_str_from_float", llvm_string(), "double")
     s = declare_runtime_fn(s, "__mn_str_to_int", llvm_int(), llvm_string())
     s = declare_runtime_fn(s, "__mn_str_to_float", llvm_float(), llvm_string())
     s = declare_runtime_fn(s, "__mn_str_println", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_print", "void", llvm_string())
-    s = declare_runtime_fn(s, "__mn_str_starts_with", llvm_int(), llvm_string() + ", " + llvm_string())
-    s = declare_runtime_fn(s, "__mn_str_ends_with", llvm_int(), llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_starts_with", llvm_bool(), llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_ends_with", llvm_bool(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_find", llvm_int(), llvm_string() + ", " + llvm_string())
 
     // List runtime
@@ -395,6 +397,14 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_list_push", "void", llvm_list_rt() + "*, i8*")
     s = declare_runtime_fn(s, "__mn_list_get", "i8*", llvm_list_rt() + "*, i64")
     s = declare_runtime_fn(s, "__mn_list_len", "i64", llvm_list_rt() + "*")
+
+    // String methods
+    s = declare_runtime_fn(s, "__mn_str_to_upper", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_to_lower", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_replace", llvm_string(), llvm_string() + ", " + llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_split", llvm_list_rt(), llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_trim", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_contains", llvm_bool(), llvm_string() + ", " + llvm_string())
 
     // Panic
     s = declare_runtime_fn(s, "__mn_panic", "void", llvm_string())
@@ -862,6 +872,19 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
         if field_name == "len" {
             return emit_line(st, emit_extractvalue(dn, llvm_string(), obj.name, "1"))
         }
+        // String methods (contains, starts_with, etc.) — not struct fields.
+        // The actual call is handled by the Call instruction that follows.
+        // Just pass the object through as the "method reference".
+        return emit_copy(st, dest, obj)
+    }
+
+    // List .len
+    if obj.ty.kind == "list" {
+        if field_name == "len" {
+            return emit_line(st, emit_call_ir(dn, llvm_int(), "__mn_list_len", llvm_list_rt() + "* " + obj.name))
+        }
+        // List methods (push, etc.) — pass object through
+        return emit_copy(st, dest, obj)
     }
 
     // Look up field index from registered structs
@@ -1119,6 +1142,27 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_builtin_float(st, dest, args)
     }
 
+    // String methods: dispatched to __mn_str_<method> runtime functions
+    if len(args) >= 1 {
+        let first_arg: Value = args[0]
+        if first_arg.ty.kind == "string" {
+            if fn_name == "contains" { return emit_line(st, emit_call_ir(dn, llvm_bool(), "__mn_str_contains", llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name)) }
+            if fn_name == "starts_with" { return emit_line(st, emit_call_ir(dn, llvm_bool(), "__mn_str_starts_with", llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name)) }
+            if fn_name == "ends_with" { return emit_line(st, emit_call_ir(dn, llvm_bool(), "__mn_str_ends_with", llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name)) }
+            if fn_name == "find" { return emit_line(st, emit_call_ir(dn, llvm_int(), "__mn_str_find", llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name)) }
+            if fn_name == "char_at" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_char_at", llvm_string() + " " + args[0].name + ", i64 " + args[1].name)) }
+            if fn_name == "substr" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_substr", llvm_string() + " " + args[0].name + ", i64 " + args[1].name + ", i64 " + args[2].name)) }
+            if fn_name == "to_upper" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_to_upper", llvm_string() + " " + args[0].name)) }
+            if fn_name == "to_lower" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_to_lower", llvm_string() + " " + args[0].name)) }
+        }
+        // List methods: push handled by ListPush instruction, len by builtin
+        if first_arg.ty.kind == "list" {
+            if fn_name == "push" {
+                return st
+            }
+        }
+    }
+
     // Build args string
     let mut args_str: String = ""
     let mut i: Int = 0
@@ -1198,6 +1242,12 @@ fn emit_builtin_tostring(st: EmitState, dest: Value, args: List<Value>) -> EmitS
     if arg.ty.kind == "string" {
         // Already a string — just copy
         return emit_copy(st, dest, arg)
+    }
+    if arg.ty.kind == "bool" {
+        return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_bool", "i1 " + arg.name))
+    }
+    if arg.ty.kind == "float" {
+        return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_float", "double " + arg.name))
     }
     return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_int", "i64 " + arg.name))
 }
@@ -1420,8 +1470,19 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     s.functions.push(entry)
 
     // Emit function header
-    let visibility: String = if f.is_public { "define" } else { "define" }
-    s = emit_line(s, visibility + " " + ret_ty + " @" + f.name + "(" + params_str + ") {")
+    let mut fn_name: String = f.name
+    // Strip % prefix from function names (lambdas use %name in MIR)
+    let mut is_lambda: Bool = false
+    if len(fn_name) > 1 {
+        let first: String = fn_name.substr(0, 1)
+        if first == "%" {
+            fn_name = fn_name.substr(1, len(fn_name) - 1)
+            is_lambda = true
+        }
+    }
+    // Lambdas are internal, everything else is public
+    let visibility: String = if is_lambda { "define internal" } else { "define" }
+    s = emit_line(s, visibility + " " + ret_ty + " @" + fn_name + "(" + params_str + ") {")
 
     // Emit basic blocks
     let mut bi: Int = 0

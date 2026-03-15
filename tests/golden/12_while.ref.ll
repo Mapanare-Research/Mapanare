@@ -1,6 +1,6 @@
 ; ModuleID = "12_while"
-target triple = "x86_64-pc-windows-msvc"
-target datalayout = "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-unknown-linux-gnu"
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 
 define void @"main"()
 {
@@ -11,6 +11,7 @@ pre_entry:
   %"a.t3" = alloca i64
   %"a.t4" = alloca i64
   %"a.t5" = alloca {i8*, i64}
+  store {i8*, i64} zeroinitializer, {i8*, i64}* %"a.t5"
   %"a.t6" = alloca i1
   br label %"entry"
 entry:

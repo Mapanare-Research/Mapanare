@@ -1,6 +1,6 @@
 ; ModuleID = "10_result"
-target triple = "x86_64-pc-windows-msvc"
-target datalayout = "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-unknown-linux-gnu"
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 
 define internal {i1, {i64, {i8*, i64}}} @"divide"(i64 %"a", i64 %"b")
 {
@@ -10,9 +10,12 @@ pre_entry:
   %"a.t0" = alloca i64
   %"a.t1" = alloca i1
   %"a.t2" = alloca {i8*, i64}
+  store {i8*, i64} zeroinitializer, {i8*, i64}* %"a.t2"
   %"a.t4" = alloca {i1, {i8*, {i8*, i64}}}
+  store {i1, {i8*, {i8*, i64}}} zeroinitializer, {i1, {i8*, {i8*, i64}}}* %"a.t4"
   %"a.t6" = alloca i64
   %"a.t8" = alloca {i1, {i64, i8*}}
+  store {i1, {i64, i8*}} zeroinitializer, {i1, {i64, i8*}}* %"a.t8"
   br label %"entry"
 entry:
   store i64 %"a", i64* %"a.a"
@@ -58,12 +61,16 @@ pre_entry:
   %"a.t0" = alloca i64
   %"a.t1" = alloca i64
   %"a.t2" = alloca {i1, {i64, {i8*, i64}}}
+  store {i1, {i64, {i8*, i64}}} zeroinitializer, {i1, {i64, {i8*, i64}}}* %"a.t2"
   %"a.r" = alloca {i1, {i64, {i8*, i64}}}
+  store {i1, {i64, {i8*, i64}}} zeroinitializer, {i1, {i64, {i8*, i64}}}* %"a.r"
   %"a.tag3" = alloca i1
   %"a.v4" = alloca i64
   %"a.t5" = alloca {i8*, i64}
+  store {i8*, i64} zeroinitializer, {i8*, i64}* %"a.t5"
   %"a.t6" = alloca i1
   %"a.e7" = alloca {i8*, i64}
+  store {i8*, i64} zeroinitializer, {i8*, i64}* %"a.e7"
   %"a.t8" = alloca i1
   br label %"entry"
 entry:
