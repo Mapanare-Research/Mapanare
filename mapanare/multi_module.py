@@ -461,8 +461,6 @@ def resolve_cross_dep_references(
     # where Program is a struct from module X and start is a function in module X.
     ns_fn_map: dict[str, str] = {}
     for filepath, (fn_map, type_map) in dep_renames.items():
-        inv_tm = {v: k for k, v in type_map.items()}
-        inv_fm = {v: k for k, v in fn_map.items()}
         for orig_fn, mangled_fn in fn_map.items():
             for orig_type in type_map:
                 ns_key = f"{orig_type}_{orig_fn}"

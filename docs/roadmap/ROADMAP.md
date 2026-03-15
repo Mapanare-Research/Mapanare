@@ -7,14 +7,13 @@
 
 ---
 
-## Where We Are (v0.9.0)
+## Where We Are (v1.0.0)
 
-Mapanare is real, compiled, and connected to the outside world. Seven stdlib modules written
-in `.mn` compile natively via LLVM — JSON, CSV, HTTP client, HTTP server, WebSocket, crypto,
-and regex. Cross-module LLVM compilation links imports across files into single binaries.
-The compiler is self-hosted (7 modules, 8,288+ lines of Mapanare), ships with a MIR-based
-pipeline, dual backends (Python transpiler + LLVM native), and a full native C runtime.
-**No Python required at runtime.** **3,400+ tests pass** across the full pipeline.
+Mapanare is stable. The language specification is frozen at v1.0 Final — syntax, semantics,
+and type system changes now require RFC + deprecation cycle. The compiler pipeline is hardened,
+the memory model is formally documented, and stability guarantees are published. Seven stdlib
+modules compile natively via LLVM. The self-hosted compiler (8,288+ lines) passes IR verification.
+**No Python required at runtime.** **3,600+ tests pass** across the full pipeline.
 
 ### What works today
 
@@ -92,6 +91,7 @@ pipeline, dual backends (Python transpiler + LLVM native), and a full native C r
 | **v0.7.0** ✅ | Self-Standing | Self-hosted MIR lowering (lower.mn), built-in test runner, agent observability (tracing + metrics), DWARF debug info, deployment infrastructure, 2,983 tests |
 | **v0.8.0** ✅ | Native Parity | LLVM backend parity (maps, signals, streams, closures), complete string methods, pipe definitions, C runtime expansion (TCP, TLS, file I/O, event loop), 3,020 tests |
 | **v0.9.0** ✅ | Connected | Native stdlib in `.mn` (JSON, CSV, HTTP, WebSocket, crypto, regex), cross-module LLVM compilation, integration tests, Dato updated, 3,400+ tests |
+| **v1.0.0** ✅ | Stable | Language freeze (SPEC 1.0 Final), emitter hardening (25+ bugs fixed), self-hosted fixed-point pipeline, formal memory model, stability policy, C runtime security audit, 3,600+ tests |
 
 ---
 

@@ -270,6 +270,9 @@ class LLVMMIREmitter:
         if data_layout is not None:
             self.module.data_layout = data_layout
 
+        # Embed compiler version as LLVM named metadata
+        self._add_version_metadata()
+
         # Struct name -> LLVM named struct type
         self._struct_types: dict[str, Any] = {}
         # Struct name -> ordered field names
@@ -313,6 +316,26 @@ class LLVMMIREmitter:
         # Instruction dispatch table (type -> bound handler)
         self._inst_dispatch_bound: dict[type, Any] = {}
         self._init_dispatch()
+
+    # -----------------------------------------------------------------------
+    # Version metadata
+    # -----------------------------------------------------------------------
+
+    def _add_version_metadata(self) -> None:
+        """Embed compiler version as !mapanare.version named metadata."""
+        import os
+
+        version_file = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "VERSION"
+        )
+        version = "unknown"
+        try:
+            with open(version_file, encoding="utf-8") as f:
+                version = f.read().strip()
+        except OSError:
+            pass
+        version_md = self.module.add_metadata([ir.MetaDataString(self.module, version)])
+        self.module.add_named_metadata("mapanare.version", version_md)
 
     # -----------------------------------------------------------------------
     # Public entry point
@@ -773,7 +796,7 @@ class LLVMMIREmitter:
         return None
 
     def _is_self_ref_field(self, enum_name: str, mir_type: MIRType) -> bool:
-        """Check if a MIR type refers (directly or via Option/Result) to the enum being registered.
+        """Check if a MIR type refers to the enum being registered.
 
         Recursive enum fields must be heap-allocated (boxed) to avoid infinite type sizes.
         """
@@ -812,7 +835,7 @@ class LLVMMIREmitter:
         return False
 
     def _field_refs_enum_in_set(self, mir_type: MIRType, enum_set: set[str]) -> bool:
-        """Check if a MIR type references any enum in the given set (directly or via Option/Result)."""
+        """Check if a MIR type references any enum in the set."""
         ti = mir_type.type_info
         if not ti:
             return False
@@ -2653,7 +2676,7 @@ class LLVMMIREmitter:
     # --- EnumInit ---
 
     def _resolve_enum_name(self, raw_name: str) -> str:
-        """Resolve an enum name to its canonical key in _enum_types, handling cross-module prefixes."""
+        """Resolve an enum name to its canonical key in _enum_types."""
         if raw_name in self._enum_types:
             return raw_name
         for ename in self._enum_types:

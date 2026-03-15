@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-XX
+
+### Added
+
+- **Language specification freeze**: SPEC.md promoted to "1.0 Final" — syntax, semantics, and type system are frozen; future changes require RFC + deprecation cycle
+- **Spec compliance tests**: 85 tests covering all grammar rules (parse + semantic + LLVM); 20 negative tests for error diagnostics
+- **Spec cross-reference tests**: automated validation of 32 keywords, 25 TypeKinds, 28 operators against grammar, semantic checker, and emitters
+- **Formal memory model** (`docs/MEMORY_MODEL.md`): documents arena lifecycle, string ownership (tag-bit system), struct/enum/list/map ownership, agent message passing, signal/stream/closure lifecycle
+- **Stability policy** (`docs/STABILITY.md`): backwards compatibility guarantees, semantic versioning contract, deprecation cycle, what is and is not frozen
+- **RFC process** (`docs/rfcs/RFC_PROCESS.md`): when RFCs are required, template, review process, acceptance criteria
+- **Migration guide template** (`docs/MIGRATION_TEMPLATE.md`): standardized format for communicating breaking changes
+- **Fixed-point verification script** (`scripts/verify_fixed_point.sh`): automated 3-stage self-compilation pipeline (stage1 -> stage2 -> stage3, binary diff)
+- **Deprecation warning support**: `@deprecated("message")` decorator emits compiler warnings on function calls
+- **`--edition` flag**: future-proofing for language editions (default: `2026`, no-op for now)
+- **Version-stamped binaries**: compiler version embedded in LLVM IR metadata (`!mapanare.version`)
+- **Security audit**: C runtime audited for buffer overflows, use-after-free, integer overflows, thread safety, TLS security
+
+### Changed
+
+- SPEC.md version bumped to 1.0.0, status to "1.0 Final"
+- Python backend marked as "legacy, for reference only" in all documentation
+- Bootstrap verification tests updated to use MIR-based emitter pipeline
+- Stage 1 tests skip correctly on Windows (ELF binary detection)
+- Debug print statements removed from self-hosted compiler sources (parser.mn, emit_llvm.mn, main.mn)
+- Compiler pipeline optimized: 805ms -> 503ms (37% faster) for 7 stdlib modules
+- README updated with current test count (3,600+) and v1.0 status
+- 3,600+ tests passing (up from 3,400 in v0.9.0)
+
+### Fixed
+
+- Closure call crash when closure was `i8*` instead of `{i8*, i8*}` struct across basic blocks
+- Copy propagation unsafe through FieldSet/IndexSet mutation targets (alloca mismatch)
+- `.value` field assignment treated as SignalSet for all types (now checks `TypeKind.SIGNAL`)
+- Function parameters not stored to allocas causing uninitialized memory in conditional branches
+- Boxed struct field set (`_emit_field_set`) not handling heap allocation for recursive fields
+- `_coerce_arg` struct-to-struct case allocating wrong size (now uses `max(src, dest)` with zero-fill)
+- Nested `state.module.X.push()` losing data in self-hosted lowerer (2-level field write-back)
+- `emit_instr` in self-hosted lowerer was a no-op (now uses IndexSet on shared blocks buffer)
+
 ## [0.9.0] - 2026-03-13
 
 ### Added
@@ -284,7 +323,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.9.0...v1.0.0
+[0.9.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.5.0...v0.6.0

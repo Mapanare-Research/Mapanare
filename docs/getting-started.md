@@ -555,6 +555,62 @@ Available stream operators: `.map()`, `.filter()`, `.fold()`, `.take()`, `.colle
 
 ---
 
+## Using the Standard Library
+
+Mapanare ships with native stdlib modules written in `.mn`. Import them and compile to native binaries.
+
+### HTTP Client
+
+```mn
+import net/http
+
+fn main() {
+    let response: HttpResponse = http::get("https://httpbin.org/get")
+    if response.status == 200 {
+        println(response.body)
+    } else {
+        println("Request failed: " + str(response.status))
+    }
+}
+```
+
+### JSON Parsing
+
+```mn
+import encoding/json
+
+fn main() {
+    let text: String = "{\"name\": \"Mapanare\", \"version\": 1}"
+    let value: JsonValue = json::parse(text)
+
+    match value {
+        JsonValue::Object(obj) => {
+            let name: JsonValue = json::get(obj, "name")
+            println("Name: " + json::to_string(name))
+        },
+        _ => println("Expected object")
+    }
+}
+```
+
+### CSV Processing
+
+```mn
+import encoding/csv
+
+fn main() {
+    let data: String = "name,age\nAlice,30\nBob,25"
+    let rows: List<List<String>> = csv::parse(data)
+    for row in rows {
+        println(row[0] + " is " + row[1])
+    }
+}
+```
+
+Compile any of these with `mapanare build <file>.mn` to produce a native binary.
+
+---
+
 ## What's Next
 
 - Read the [Language Specification](SPEC.md) for full syntax details

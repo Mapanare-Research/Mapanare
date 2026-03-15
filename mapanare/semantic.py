@@ -128,9 +128,11 @@ class SemanticError:
     line: int = 0
     column: int = 0
     filename: str = "<input>"
+    severity: str = "error"
 
     def __str__(self) -> str:
-        return f"{self.filename}:{self.line}:{self.column}: {self.message}"
+        prefix = "warning" if self.severity == "warning" else "error"
+        return f"{self.filename}:{self.line}:{self.column}: {prefix}: {self.message}"
 
 
 class SemanticErrors(Exception):
@@ -283,6 +285,17 @@ class SemanticChecker:
                 line=line,
                 column=column,
                 filename=self.filename,
+            )
+        )
+
+    def _warning(self, message: str, node: ASTNode) -> None:
+        self.errors.append(
+            SemanticError(
+                message=message,
+                line=node.span.line,
+                column=node.span.column,
+                filename=self.filename,
+                severity="warning",
             )
         )
 
@@ -654,6 +667,18 @@ class SemanticChecker:
                 self._error(f"Undefined function '{expr.callee.name}'", expr.callee)
                 return UNKNOWN_TYPE
             if sym.kind == "function":
+                # Check for @deprecated decorator on the called function
+                if sym.node is not None and isinstance(sym.node, FnDef):
+                    for dec in sym.node.decorators:
+                        if dec.name == "deprecated":
+                            dep_msg = ""
+                            if dec.args and hasattr(dec.args[0], "value"):
+                                dep_msg = f": {dec.args[0].value}"
+                            self._warning(
+                                f"Function '{expr.callee.name}' is deprecated{dep_msg}",
+                                expr,
+                            )
+                            break
                 if sym.type_info.is_function and sym.type_info.return_type:
                     # Check argument count for non-builtin functions
                     if sym.type_info.param_types and len(arg_types) != len(
@@ -1623,6 +1648,7 @@ def check_or_raise(
     Raises:
         SemanticErrors: If any semantic errors are found.
     """
-    errors = check(program, filename=filename, resolver=resolver)
+    all_issues = check(program, filename=filename, resolver=resolver)
+    errors = [e for e in all_issues if e.severity != "warning"]
     if errors:
         raise SemanticErrors(errors)
