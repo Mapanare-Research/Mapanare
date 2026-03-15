@@ -41,6 +41,28 @@ MN_EXPORT void __mn_free(void *ptr) {
 }
 
 /* -----------------------------------------------------------------------
+ * Checked arithmetic — abort on integer overflow instead of wrapping.
+ * ----------------------------------------------------------------------- */
+
+static int64_t mn_checked_mul(int64_t a, int64_t b) {
+    if (a > 0 && b > 0 && a > INT64_MAX / b) {
+        fprintf(stderr, "mapanare: integer overflow in %lld * %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
+    return a * b;
+}
+
+static int64_t mn_checked_add(int64_t a, int64_t b) {
+    if (a > 0 && b > INT64_MAX - a) {
+        fprintf(stderr, "mapanare: integer overflow in %lld + %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
+    return a + b;
+}
+
+/* -----------------------------------------------------------------------
  * Tag-bit helpers for heap vs constant string distinction.
  *
  * We use the lowest bit of the data pointer as a tag:
@@ -170,7 +192,7 @@ MN_EXPORT MnString __mn_str_empty(void) {
 MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
     const char *a_data = mn_untag(a.data);
     const char *b_data = mn_untag(b.data);
-    int64_t total = a.len + b.len;
+    int64_t total = mn_checked_add(a.len, b.len);
     if (total == 0) {
         return __mn_str_empty();
     }
@@ -388,7 +410,7 @@ MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) 
         return __mn_str_from_parts(s_data, s.len);
     }
 
-    int64_t new_len = s.len + count * (new_s.len - old_s.len);
+    int64_t new_len = mn_checked_add(s.len, mn_checked_mul(count, new_s.len - old_s.len));
     char *buf = (char *)__mn_alloc(new_len + 1);
     int64_t out = 0;
     int64_t i = 0;
@@ -481,13 +503,13 @@ MN_EXPORT MnList __mn_list_new(int64_t elem_size) {
     list.elem_size = elem_size;
     list.len = 0;
     list.cap = MN_LIST_INITIAL_CAP;
-    list.data = (char *)__mn_alloc(list.cap * elem_size);
+    list.data = (char *)__mn_alloc(mn_checked_mul(list.cap, elem_size));
     return list;
 }
 
 static void mn_list_grow(MnList *list) {
     int64_t new_cap = list->cap * 2;
-    list->data = (char *)__mn_realloc(list->data, new_cap * list->elem_size);
+    list->data = (char *)__mn_realloc(list->data, mn_checked_mul(new_cap, list->elem_size));
     list->cap = new_cap;
 }
 
@@ -541,10 +563,10 @@ MN_EXPORT void __mn_list_free(MnList *list) {
 MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
     int64_t es = a->elem_size;
     MnList result = __mn_list_new(es);
-    int64_t total = a->len + b->len;
+    int64_t total = mn_checked_add(a->len, b->len);
     if (total > result.cap) {
         result.cap = total;
-        result.data = (char *)__mn_realloc(result.data, result.cap * es);
+        result.data = (char *)__mn_realloc(result.data, mn_checked_mul(result.cap, es));
     }
     if (a->len > 0) {
         memcpy(result.data, a->data, (size_t)(a->len * es));
@@ -780,7 +802,7 @@ MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_ty
     map->bucket_size = 2 + key_size + val_size;  /* status + psl + key + val */
     map->len = 0;
     map->cap = MN_MAP_INITIAL_CAP;
-    map->buckets = (char *)__mn_alloc(map->cap * map->bucket_size);
+    map->buckets = (char *)__mn_alloc(mn_checked_mul(map->cap, map->bucket_size));
     /* calloc zeros → all status bytes are MN_BUCKET_EMPTY (0) */
     return map;
 }
@@ -923,7 +945,7 @@ static void mn_map_grow(MnMap *map) {
     int64_t old_bucket_size = map->bucket_size;
 
     map->cap = old_cap * 2;
-    map->buckets = (char *)__mn_alloc(map->cap * map->bucket_size);
+    map->buckets = (char *)__mn_alloc(mn_checked_mul(map->cap, map->bucket_size));
     map->len = 0;
 
     /* Re-insert all occupied entries */

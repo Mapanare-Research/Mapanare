@@ -229,8 +229,8 @@ fn new_span(line: Int, col: Int, end_line: Int, end_col: Int) -> Span {
     return new Span { line: line, column: col, end_line: end_line, end_column: end_col }
 }
 
-fn new_block(stmts: List<Stmt>) -> Block {
-    return new Block { span: new_span(0, 0, 0, 0), stmts: stmts }
+fn new_block(span: Span, stmts: List<Stmt>) -> Block {
+    return new Block { span: span, stmts: stmts }
 }
 
 fn new_param(name: String, type_ann: Option<TypeExpr>) -> Param {
@@ -249,8 +249,8 @@ fn new_match_arm(pattern: Pattern, body: MatchArmBody) -> MatchArm {
     return new MatchArm { span: new_span(0, 0, 0, 0), pattern: pattern, body: body }
 }
 
-fn new_fn_def_data(name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
-    return new FnDefData { span: new_span(0, 0, 0, 0), name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
+fn new_fn_def_data(span: Span, name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
+    return new FnDefData { span: span, name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
 }
 
 fn new_struct_def_data(name: String, public: Bool, type_params: List<String>, fields: List<StructField>) -> StructDefData {
@@ -412,11 +412,11 @@ pub fn parse(source: String, filename: String) -> Program {
         if pos >= len(tokens) {
             if len(top_stmts) > 0 {
                 if !has_explicit_main(defs) {
-                    let body: Block = new_block(top_stmts)
+                    let body: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
                     let empty_tp: List<String> = []
                     let empty_params: List<Param> = []
                     let empty_decs: List<Decorator> = []
-                    let main_fn: FnDefData = new_fn_def_data("main", false, empty_tp, empty_params, none, body, empty_decs)
+                    let main_fn: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp, empty_params, none, body, empty_decs)
                     defs = defs + [Definition::FnDef(main_fn)]
                 }
             }
@@ -437,11 +437,11 @@ pub fn parse(source: String, filename: String) -> Program {
 
     if len(top_stmts) > 0 {
         if !has_explicit_main(defs) {
-            let body: Block = new_block(top_stmts)
+            let body: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
             let empty_tp2: List<String> = []
             let empty_params2: List<Param> = []
             let empty_decs2: List<Decorator> = []
-            let main_fn: FnDefData = new_fn_def_data("main", false, empty_tp2, empty_params2, none, body, empty_decs2)
+            let main_fn: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp2, empty_params2, none, body, empty_decs2)
             defs = defs + [Definition::FnDef(main_fn)]
         }
     }
@@ -629,7 +629,7 @@ fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, 
     p = br.pos
 
     let decorators: List<Decorator> = []
-    let fd: FnDefData = new_fn_def_data(name, is_pub, type_params, params, ret_type, br.block, decorators)
+    let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, br.block, decorators)
     return new_def_result(Definition::FnDef(fd), p)
 }
 
@@ -1005,12 +1005,12 @@ fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult {
     for _ in 0..100000 {
         p = skip_semis(tokens, p)
         if at_end(tokens, p) {
-            let blk: Block = new_block(stmts)
+            let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
             return new_block_result(blk, p)
         }
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            let blk: Block = new_block(stmts)
+            let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
             return new_block_result(blk, p)
         }
 
@@ -1019,7 +1019,7 @@ fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult {
         p = sr.pos
     }
 
-    let blk: Block = new_block(stmts)
+    let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
     return new_block_result(blk, p)
 }
 
@@ -1520,7 +1520,7 @@ fn parse_if_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
     if peek_type(tokens, p) == "KW_IF" {
         let elif_r: ExprResult = parse_if_expr(tokens, p, filename)
         let else_stmts: List<Stmt> = [Stmt::ExprStmt(elif_r.expr)]
-        let else_block: Block = new_block(else_stmts)
+        let else_block: Block = new_block(new_span(0, 0, 0, 0), else_stmts)
         let else_clause: ElseClause = ElseClause::ElseBlock(else_block)
         return new_expr_result(Expr::If(cond_r.expr, then_r.block, else_clause), elif_r.pos)
     }

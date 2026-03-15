@@ -12,8 +12,10 @@
 Mapanare is stable. The language specification is frozen at v1.0 Final — syntax, semantics,
 and type system changes now require RFC + deprecation cycle. The compiler pipeline is hardened,
 the memory model is formally documented, and stability guarantees are published. Seven stdlib
-modules compile natively via LLVM. The self-hosted compiler (8,288+ lines) passes IR verification.
-**No Python required at runtime.** **3,600+ tests pass** across the full pipeline.
+modules compile natively via LLVM. The self-hosted compiler (8,632 lines) compiles to a 7.2MB
+native binary that passes 15/15 golden tests. Self-compilation (fixed-point) is in progress
+via patch releases (v1.0.1–v1.0.2).
+**No Python required at runtime.** **3,628 tests pass** across the full pipeline.
 
 ### What works today
 
@@ -91,7 +93,10 @@ modules compile natively via LLVM. The self-hosted compiler (8,288+ lines) passe
 | **v0.7.0** ✅ | Self-Standing | Self-hosted MIR lowering (lower.mn), built-in test runner, agent observability (tracing + metrics), DWARF debug info, deployment infrastructure, 2,983 tests |
 | **v0.8.0** ✅ | Native Parity | LLVM backend parity (maps, signals, streams, closures), complete string methods, pipe definitions, C runtime expansion (TCP, TLS, file I/O, event loop), 3,020 tests |
 | **v0.9.0** ✅ | Connected | Native stdlib in `.mn` (JSON, CSV, HTTP, WebSocket, crypto, regex), cross-module LLVM compilation, integration tests, Dato updated, 3,400+ tests |
-| **v1.0.0** ✅ | Stable | Language freeze (SPEC 1.0 Final), emitter hardening (25+ bugs fixed), self-hosted fixed-point pipeline, formal memory model, stability policy, C runtime security audit, 3,600+ tests |
+| **v1.0.0** ✅ | Stable | Language freeze (SPEC 1.0 Final), emitter hardening (25+ bugs fixed), formal memory model, stability policy, C runtime security hardening, mnc-stage1 15/15 golden tests, 3,600+ tests |
+| **v1.0.1** 🔧 | Compiler Patches | Self-hosted emitter: ListPush instruction, string method dispatch, return-by-sret for large structs |
+| **v1.0.2** 🔧 | Self-Compilation | Fixed-point verification: mnc-stage1 compiles itself (Stage 2 → Stage 3 byte-identical) |
+| **v1.0.5** 🔧 | Hardening | ASan/TSan clean, native I/O tests on Linux, performance baselines, remaining security fixes |
 
 ---
 
@@ -345,44 +350,111 @@ everything `requests`, `urllib3`, and `httpx` do in Python — in a single, nati
 
 ---
 
-### v1.0.0 — "Stable"
+### v1.0.0 — "Stable" ✅
 
 > The language is frozen. Breaking changes require an RFC and deprecation cycle.
 > No new features — hardening, documentation, and guarantees only.
 
-#### Language Freeze
+#### Language Freeze ✅
 
 - Language specification promoted from "Working Draft" to "1.0 Final"
 - All syntax, semantics, and type rules documented and frozen
 - New features require RFC + deprecation cycle after this point
 
-#### Self-Hosted Fixed Point
+#### Self-Hosted Stage 1 ✅
 
-- Stage 1: Python bootstrap compiles self-hosted `.mn` → native binary
-- Stage 2: Native binary compiles self-hosted `.mn` → verify identical IR
-- Three-stage bootstrap verification in CI
-- The compiler can compile itself without Python
+- Python bootstrap compiles 8,632-line self-hosted compiler → 7.2MB native binary (`mnc-stage1`)
+- `mnc-stage1` passes 15/15 golden tests (every language feature)
+- Pointer-based enum dispatch, enum payload layout alignment, security-hardened C runtime
+- Concatenation pipeline for single-file self-compilation (Python bootstrap verified)
 
-#### Formal Memory Model
+#### Formal Memory Model ✅
 
-- Arena lifecycle documented (allocation, scope cleanup, free)
-- String ownership rules (tag-bit system for heap vs. constant)
-- Agent message passing ownership transfer
-- Signal/stream value lifecycle
+- `docs/MEMORY_MODEL.md` (854 lines) — arena lifecycle, string ownership, struct/enum ownership,
+  list/map lifecycle, agent message passing, signal/stream values, closure environments
 
-#### Stability Guarantees
+#### Stability Guarantees ✅
 
-- Backwards compatibility policy defined
-- Deprecation cycle: warn for one minor version, remove in next major
-- Semantic versioning contract published
-- Migration guide template for breaking changes
+- `docs/STABILITY.md` — backwards compatibility policy, deprecation cycle, semver contract
+- `docs/MIGRATION_TEMPLATE.md` — migration guide template
+- `docs/rfcs/RFC_PROCESS.md` — RFC process for language changes
+- Deprecation warnings in semantic checker (`@deprecated`)
+- `--edition` flag, version-stamped binaries
 
-#### Final Hardening
+#### Hardening ✅
 
-- Full test pass across both backends
-- Performance regression sweep
-- Security audit of C runtime (buffer overflows, use-after-free)
+- 3,628 tests pass, 0 failures
+- C runtime security audit completed (1 CRITICAL, 6 HIGH, 7 MEDIUM findings)
+- CRITICAL + HIGH integer overflow fixes applied (checked arithmetic in list/string/map)
+- Compiler pipeline optimized (805ms → 503ms, 37% faster)
 - All documentation current and cross-referenced
+
+---
+
+### v1.0.1 — "Compiler Patches"
+
+> Fix self-hosted emitter gaps so `mnc-stage1` can compile its own source code.
+> Each fix is small (20-30 lines of `.mn`) but there are many.
+
+#### Self-Hosted Emitter Completion
+
+- Add `ListPush` instruction to `Instruction` enum, lowerer, and emitter
+- Add string method dispatch in `emit_mir_call` (char_at, substr, contains, split, etc.)
+- Handle `return List<T>` from functions (list built with push in loops)
+- Handle large struct return-by-sret in self-hosted emitter
+- Fix remaining match expression lowering for complex patterns
+
+#### Validation
+
+- `mnc-stage1` compiles `lexer.mn` without crashing
+- `mnc-stage1` compiles all 7 modules individually
+- `mnc-stage1` compiles `mnc_all.mn` (concatenated 8,632-line source)
+
+---
+
+### v1.0.2 — "Self-Compilation"
+
+> The compiler compiles itself. Fixed-point verification passes.
+
+#### Fixed-Point Verification
+
+- Stage 2: `mnc-stage1` compiles `mnc_all.mn` → `mnc-stage2`
+- Stage 3: `mnc-stage2` compiles `mnc_all.mn` → `mnc-stage3`
+- Binary diff: `mnc-stage2 == mnc-stage3` (byte-identical — fixed point achieved)
+- `scripts/verify_fixed_point.sh` updated for concatenated source
+- Fixed-point job added to CI (gate for future releases)
+
+---
+
+### v1.0.5 — "Production Hardening"
+
+> Sanitizers clean, native tests passing, performance baselined.
+
+#### Memory Safety Verification
+
+- AddressSanitizer clean on full test suite
+- ThreadSanitizer clean on agent/concurrency tests
+- Runtime debug mode: `mapanare build --debug-memory` for bounds checking
+- Ownership rule tests (arena scoping, string tag-bit, agent message, closure environment)
+
+#### Native Test Coverage (Linux)
+
+- Build I/O runtime on Linux (`build_io.py`)
+- Event loop tests (7), file I/O tests (12), TCP tests (7), TLS tests (4)
+- C hardening tests (2)
+- Remaining skips audited — target ≤6 platform-specific skips
+
+#### Performance Baselines
+
+- Full benchmark suite results recorded as v1.0 baselines
+- No regression > 10% vs v0.8.0
+- Cross-module compilation overhead measured
+
+#### Remaining Security Fixes
+
+- Signal lifetime management (null subscriber pointers on free)
+- Thread-local signal state (or mutex protection)
+- Batch pending UAF prevention
 
 ---
 
@@ -574,8 +646,15 @@ v0.8.0 (Native Parity)
        │  Dato package starts working
        │
        └→ v1.0.0 (Stable)
-            │  Language freeze, self-hosted fixed point
+            │  Language freeze, 15/15 golden tests
             │  No new features — hardening only
+            │
+            ├→ v1.0.1 (Compiler Patches)
+            │    Self-hosted emitter: ListPush, string methods, sret
+            ├→ v1.0.2 (Self-Compilation)
+            │    Fixed-point: stage2 == stage3
+            ├→ v1.0.5 (Production Hardening)
+            │    ASan/TSan clean, native tests, benchmarks
             │
             ├→ v1.1.0 (AI Native)
             │    LLM drivers, embeddings, RAG
@@ -629,7 +708,7 @@ The compiler is written in Mapanare itself — 8,288+ lines across seven modules
 | LLVM IR emitter (`emit_llvm.mn`) | 1,497 | ✅ Complete (MIR-based rewrite) |
 | Compiler driver (`main.mn`) | 81 | ✅ Complete (MIR pipeline wired) |
 | Module resolution (`self::` imports) | — | ✅ Working |
-| Fixed-point verification | — | ⏳ Blocked by bootstrap emitter gaps (v1.0.0) |
+| Fixed-point verification | — | ⏳ In progress — emitter gaps being fixed (v1.0.1 → v1.0.2) |
 | Bootstrap test suite (264 tests) | — | ✅ All passing |
 
 ---

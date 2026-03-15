@@ -525,7 +525,7 @@ fn current_block_terminated(st: LowerState) -> Bool {
 // Scope management
 // ---------------------------------------------------------------------------
 
-fn push_scope(st: LowerState) -> LowerState {
+fn lower_push_scope(st: LowerState) -> LowerState {
     let mut new_st: LowerState = st
     // Copy current vars to scope stack
     let mut copy: List<VarInfo> = []
@@ -542,7 +542,7 @@ fn push_scope(st: LowerState) -> LowerState {
     return new_st
 }
 
-fn pop_scope(st: LowerState) -> LowerState {
+fn lower_pop_scope(st: LowerState) -> LowerState {
     let mut new_st: LowerState = st
     if len(st.scope_stack) > 0 {
         new_st.vars = st.scope_stack[len(st.scope_stack) - 1]
@@ -672,7 +672,7 @@ fn find_lambda(st: LowerState, name: String) -> Option<String> {
 // Type resolution: AST TypeExpr -> MIRType
 // ---------------------------------------------------------------------------
 
-fn resolve_type_expr(te: TypeExpr) -> MIRType {
+fn lower_resolve_type_expr(te: TypeExpr) -> MIRType {
     match te {
         Named(name) => {
             return resolve_type_name(name)
@@ -689,7 +689,7 @@ fn resolve_type_expr(te: TypeExpr) -> MIRType {
                     return new_mir_type_with_args(name, "struct", resolved_args)
                 }
                 let arg: TypeExpr = args[i]
-                let resolved: MIRType = resolve_type_expr(arg)
+                let resolved: MIRType = lower_resolve_type_expr(arg)
                 resolved_args.push(resolved)
                 i = i + 1
             }
@@ -736,16 +736,16 @@ fn kind_from_name(name: String) -> String {
     return "unknown"
 }
 
-fn resolve_type_opt(te: Option<TypeExpr>) -> MIRType {
+fn lower_resolve_type_opt(te: Option<TypeExpr>) -> MIRType {
     match te {
-        Some(t) => { return resolve_type_expr(t) },
+        Some(t) => { return lower_resolve_type_expr(t) },
         _ => { return mir_unknown() }
     }
 }
 
 fn resolve_return_type(te: Option<TypeExpr>) -> MIRType {
     match te {
-        Some(t) => { return resolve_type_expr(t) },
+        Some(t) => { return lower_resolve_type_expr(t) },
         _ => { return mir_void() }
     }
 }
@@ -892,7 +892,7 @@ fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
             return s
         }
         let field: StructField = data.fields[i]
-        let fty: MIRType = resolve_type_expr(field.type_annotation)
+        let fty: MIRType = lower_resolve_type_expr(field.type_annotation)
         let fp: FieldPair = new_field_pair(field.name, new_value("", fty))
         fields.push(fp)
         field_names.push(field.name)
@@ -924,7 +924,7 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
         let mut j: Int = 0
         for _ in 0..100 {
             if j >= len(variant.fields) { break }
-            let fty: MIRType = resolve_type_expr(variant.fields[j])
+            let fty: MIRType = lower_resolve_type_expr(variant.fields[j])
             payload_types.push(fty)
             j = j + 1
         }
@@ -1008,7 +1008,7 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     for _ in 0..1000 {
         if pi >= len(fn_def.params) { break }
         let p: Param = fn_def.params[pi]
-        let pty: MIRType = resolve_type_opt(p.type_annotation)
+        let pty: MIRType = lower_resolve_type_opt(p.type_annotation)
         let mp: MIRParam = new_mir_param(p.name, pty)
         params.push(mp)
         pi = pi + 1
@@ -1051,7 +1051,7 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     for _ in 0..1000 {
         if bi >= len(fn_def.params) { break }
         let p: Param = fn_def.params[bi]
-        let pty: MIRType = resolve_type_opt(p.type_annotation)
+        let pty: MIRType = lower_resolve_type_opt(p.type_annotation)
         let param_val: Value = new_value("%" + p.name, pty)
         s = define_var(s, p.name, param_val, false)
         bi = bi + 1
@@ -1160,16 +1160,16 @@ fn lower_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lower
 // ---------------------------------------------------------------------------
 
 fn lower_block(st: LowerState, block: Block) -> LowerResult {
-    let mut s: LowerState = push_scope(st)
+    let mut s: LowerState = lower_push_scope(st)
     let mut last_val: Value = void_value()
     let mut i: Int = 0
     for _ in 0..100000 {
         if i >= len(block.stmts) {
-            s = pop_scope(s)
+            s = lower_pop_scope(s)
             return new_lower_result(last_val, s)
         }
         if current_block_terminated(s) {
-            s = pop_scope(s)
+            s = lower_pop_scope(s)
             return new_lower_result(last_val, s)
         }
         let stmt: Stmt = block.stmts[i]
@@ -1178,7 +1178,7 @@ fn lower_block(st: LowerState, block: Block) -> LowerResult {
         last_val = r.value
         i = i + 1
     }
-    s = pop_scope(s)
+    s = lower_pop_scope(s)
     return new_lower_result(last_val, s)
 }
 
@@ -1293,10 +1293,10 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s = emit_instr(s, Instruction::Call(next_r.value, "__iter_next", next_args))
     s = define_var(s, var_name, next_r.value, false)
 
-    s = push_scope(s)
+    s = lower_push_scope(s)
     let body_result: LowerResult = lower_block(s, body)
     s = body_result.state
-    s = pop_scope(s)
+    s = lower_pop_scope(s)
 
     if !current_block_terminated(s) {
         s = emit_instr(s, Instruction::Jump(header_label))
@@ -1313,7 +1313,7 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
 
 fn lower_signal_decl(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState {
     let init_r: LowerResult = lower_expr(st, value)
-    let sig_type: MIRType = resolve_type_opt(type_ann)
+    let sig_type: MIRType = lower_resolve_type_opt(type_ann)
     let dest_r: LowerResult = make_value(init_r.state, mir_signal(), "sig")
     let mut s: LowerState = emit_instr(dest_r.state, Instruction::SignalInit(dest_r.value, sig_type, init_r.value))
     s = define_var(s, name, dest_r.value, mutable)
@@ -2272,7 +2272,7 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         let arm_idx: Int = arm_indices[ai]
 
         s = set_block(s, arm_idx)
-        s = push_scope(s)
+        s = lower_push_scope(s)
 
         // Bind pattern variables
         match arm.pattern {
@@ -2312,7 +2312,7 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         if !current_block_terminated(s) {
             s = emit_instr(s, Instruction::Jump(merge_label))
         }
-        s = pop_scope(s)
+        s = lower_pop_scope(s)
 
         let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
         arm_results.push(pe)
