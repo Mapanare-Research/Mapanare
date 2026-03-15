@@ -94,6 +94,7 @@ def build() -> pathlib.Path:
             str(main_o),
             str(obj_path),
             str(core_o),
+            "-no-pie",
             "-rdynamic",
             "-lm",
             "-lpthread",

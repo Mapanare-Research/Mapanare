@@ -266,6 +266,8 @@ class MIRLowerer:
         self._enum_variants: dict[str, list[str]] = {}
         # Decorator metadata for functions
         self._fn_decorators: dict[str, list[str]] = {}
+        # Function parameter types: fn_name → [MIRType] for patching empty list args
+        self._fn_param_types: dict[str, list[MIRType]] = {}
         # Current source span — set by _lower_expr/_lower_stmt for debug info
         self._current_span: SourceSpan | None = None
         # Loop exit label stack for break statements
@@ -534,8 +536,9 @@ class MIRLowerer:
                 self._module.pipes[actual.name] = MIRPipeInfo(name=actual.name, stages=stages)
 
             # Collect function return types for call-site type propagation
-            if isinstance(actual, FnDef) and actual.return_type is not None:
-                self._fn_return_types[actual.name] = _resolve_type_expr(actual.return_type)
+            if isinstance(actual, FnDef):
+                if actual.return_type is not None:
+                    self._fn_return_types[actual.name] = _resolve_type_expr(actual.return_type)
             elif isinstance(actual, ImplDef):
                 for method in actual.methods:
                     if method.return_type is not None:
@@ -1229,6 +1232,7 @@ class MIRLowerer:
                 return dest
 
             # Check if this is an enum variant constructor
+            # Check local enums
             for enum_name, variant_names in self._enum_variants.items():
                 if fn_name in variant_names:
                     enum_ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name=enum_name))
@@ -1236,7 +1240,19 @@ class MIRLowerer:
                     self._emit(
                         EnumInit(dest=dest, enum_type=enum_ty, variant=fn_name, payload=args)
                     )
+                    # self._patch_list_elem_types_for_enum(enum_name, fn_name, args)
                     return dest
+            # Check imported enums
+            for enum_name, variants in self._imported_enum_defs.items():
+                for vname, _ in variants:
+                    if vname == fn_name:
+                        enum_ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name=enum_name))
+                        dest = self._make_value(ty=enum_ty)
+                        self._emit(
+                            EnumInit(dest=dest, enum_type=enum_ty, variant=fn_name, payload=args)
+                        )
+                        # self._patch_list_elem_types_for_enum(enum_name, fn_name, args)
+                        return dest
 
             # Check if this is a struct constructor (Name(args) for a known struct)
             if fn_name in self._struct_fields:
@@ -1245,6 +1261,8 @@ class MIRLowerer:
                 fields = list(zip(field_names, args))
                 dest = self._make_value(ty=struct_ty)
                 self._emit(StructInit(dest=dest, struct_type=struct_ty, fields=fields))
+                # Patch empty list args with field types from struct definition
+                # self._patch_list_elem_types_for_struct(fn_name, field_names, args)
                 return dest
 
             # Check if this is a closure call (lambda with captures)
@@ -1257,15 +1275,20 @@ class MIRLowerer:
             # Resolve lambda variable names to actual function names
             resolved_name = self._lambda_vars.get(fn_name, fn_name)
             self._emit(Call(dest=dest, fn_name=resolved_name, args=args))
+            # Patch empty list args with parameter types from function declaration
+            # self._patch_list_elem_types_for_fn_call(fn_name, args)
         elif isinstance(expr.callee, FieldAccessExpr):
             # obj.method(args) that parsed as CallExpr(FieldAccessExpr, args)
             obj = self._lower_expr(expr.callee.object)
             method = expr.callee.field_name
             self._emit(Call(dest=dest, fn_name=method, args=[obj] + args))
         elif isinstance(expr.callee, NamespaceAccessExpr):
-            # Namespace::fn(args)
-            fn_name = f"{expr.callee.namespace}_{expr.callee.member}"
+            ns = expr.callee.namespace
+            member = expr.callee.member
+            # Emit as Namespace_Member call (enum constructors are resolved by emitter)
+            fn_name = f"{ns}_{member}"
             self._emit(Call(dest=dest, fn_name=fn_name, args=args))
+            # TODO: Patch empty list args in namespace-qualified enum constructors
         else:
             callee_val = self._lower_expr(expr.callee)
             self._emit(Call(dest=dest, fn_name=callee_val.name, args=args))
@@ -1944,6 +1967,62 @@ class MIRLowerer:
         self._emit(ListInit(dest=dest, elem_type=elem_type, elements=elements))
         return dest
 
+    def _patch_list_elem_types_for_struct(
+        self, struct_name: str, field_names: list[str], args: list[Value]
+    ) -> None:
+        """Patch empty ListInit elem_types using struct field type info."""
+        struct_def = self._module.structs.get(struct_name)
+        if not struct_def:
+            # Try imported struct defs
+            struct_def = self._imported_struct_defs.get(struct_name)
+        if not struct_def:
+            return
+        # struct_def is [(field_name, MIRType), ...]
+        field_type_map = {fname: ftype for fname, ftype in struct_def}
+        for i, (fname, arg_val) in enumerate(zip(field_names, args)):
+            ftype = field_type_map.get(fname)
+            if ftype and ftype.kind == TypeKind.LIST and ftype.type_info.args:
+                self._patch_listinit_for_value(arg_val, ftype.type_info.args[0])
+
+    def _patch_list_elem_types_for_enum(
+        self, enum_name: str, variant_name: str, args: list[Value]
+    ) -> None:
+        """Patch empty ListInit elem_types using enum payload type info."""
+        enum_def = self._module.enums.get(enum_name)
+        if not enum_def:
+            enum_def = self._imported_enum_defs.get(enum_name)
+        if not enum_def:
+            return
+        # enum_def is [(variant_name, [MIRType, ...]), ...]
+        for vname, payload_types in enum_def:
+            if vname == variant_name:
+                for i, (ptype, arg_val) in enumerate(zip(payload_types, args)):
+                    if ptype.kind == TypeKind.LIST and ptype.type_info.args:
+                        self._patch_listinit_for_value(arg_val, ptype.type_info.args[0])
+                break
+
+    def _patch_list_elem_types_for_fn_call(self, fn_name: str, args: list[Value]) -> None:
+        """Patch empty ListInit elem_types using function parameter type info."""
+        param_types = self._fn_param_types.get(fn_name)
+        if not param_types:
+            return
+        for i, (ptype, arg_val) in enumerate(zip(param_types, args)):
+            if ptype.kind == TypeKind.LIST and ptype.type_info.args:
+                self._patch_listinit_for_value(arg_val, ptype.type_info.args[0])
+
+    def _patch_listinit_for_value(self, val: Value, elem_type_info: TypeInfo) -> None:
+        """Find the ListInit instruction that produced `val` and patch its elem_type.
+
+        Only patches if the val was directly produced by a ListInit with UNKNOWN type.
+        Uses identity comparison (is) to avoid matching values with same name/type.
+        """
+        for bb in self._fn.blocks if self._fn else []:
+            for inst in bb.instructions:
+                if isinstance(inst, ListInit) and inst.dest is val and not inst.elements:
+                    if inst.elem_type.kind == TypeKind.UNKNOWN:
+                        inst.elem_type = MIRType(elem_type_info)
+                    return
+
     def _lower_map(self, expr: MapLiteral) -> Value:
         """Lower a map literal."""
         pairs = [(self._lower_expr(e.key), self._lower_expr(e.value)) for e in expr.entries]
@@ -2110,8 +2189,8 @@ class MIRLowerer:
             elif isinstance(pat, LiteralPattern):
                 lit_val = self._get_literal_value(pat.value)
                 cases.append((lit_val, arm_blocks[i].label))
-            elif isinstance(pat, IdentPattern) and self._is_enum_variant(pat.name):
-                # Bare enum variant name used as pattern (e.g., `Up => ...`)
+            elif isinstance(pat, IdentPattern) and self._is_enum_variant(pat.name, subject.ty):
+                # Bare enum variant name used as pattern (e.g., `Add => ...`)
                 cases.append((pat.name, arm_blocks[i].label))
             elif isinstance(pat, (WildcardPattern, IdentPattern)):
                 default_block = arm_blocks[i].label
@@ -2197,11 +2276,32 @@ class MIRLowerer:
 
     # -- Helpers -----------------------------------------------------------
 
-    def _is_enum_variant(self, name: str) -> bool:
-        """Check if a name matches a known enum variant."""
-        for variant_names in self._enum_variants.values():
+    def _is_enum_variant(self, name: str, subject_ty: MIRType | None = None) -> bool:
+        """Check if a name matches a known enum variant (local or imported).
+
+        When subject_ty is provided, only check variants of that specific enum
+        to avoid false matches with variant names from unrelated enums.
+        """
+        enum_filter = None
+        if subject_ty and subject_ty.type_info.name:
+            # Enums may be tagged as STRUCT by the lowerer (kind_from_name defaults
+            # unknown names to STRUCT). Accept both ENUM and STRUCT for filtering.
+            enum_filter = subject_ty.type_info.name
+
+        for enum_name, variant_names in self._enum_variants.items():
+            if enum_filter and enum_name != enum_filter:
+                continue
             if name in variant_names:
                 return True
+        # Also check imported enum defs
+        for enum_name, variants in self._imported_enum_defs.items():
+            if enum_filter:
+                bare = enum_name.rsplit("__", 1)[-1] if "__" in enum_name else enum_name
+                if bare != enum_filter:
+                    continue
+            for vname, _ in variants:
+                if vname == name:
+                    return True
         return False
 
     def _get_literal_value(self, expr: Expr) -> Any:

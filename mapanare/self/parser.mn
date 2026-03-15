@@ -415,7 +415,10 @@ pub fn parse(source: String, filename: String) -> Program {
                     print("error: cannot mix top-level statements with explicit fn main()")
                 }
                 let body: Block = new_block(top_stmts)
-                let main_fn: FnDefData = new_fn_def_data("main", false, [], [], none, body, [])
+                let empty_tp: List<String> = []
+                let empty_params: List<Param> = []
+                let empty_decs: List<Decorator> = []
+                let main_fn: FnDefData = new_fn_def_data("main", false, empty_tp, empty_params, none, body, empty_decs)
                 defs = defs + [Definition::FnDef(main_fn)]
             }
             return Program::start(defs)
@@ -438,7 +441,10 @@ pub fn parse(source: String, filename: String) -> Program {
             print("error: cannot mix top-level statements with explicit fn main()")
         }
         let body: Block = new_block(top_stmts)
-        let main_fn: FnDefData = new_fn_def_data("main", false, [], [], none, body, [])
+        let empty_tp2: List<String> = []
+        let empty_params2: List<Param> = []
+        let empty_decs2: List<Decorator> = []
+        let main_fn: FnDefData = new_fn_def_data("main", false, empty_tp2, empty_params2, none, body, empty_decs2)
         defs = defs + [Definition::FnDef(main_fn)]
     }
 
@@ -476,7 +482,9 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
     // Fallback: skip unknown token
-    let d: Definition = Definition::ImportDef([], [])
+    let empty_path: List<String> = []
+    let empty_items: List<String> = []
+    let d: Definition = Definition::ImportDef(empty_path, empty_items)
     return new_def_result(d, pos + 1)
 }
 
@@ -494,7 +502,8 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 
     for _ in 0..100 {
         if peek_type(tokens, p) != "DOUBLE_COLON" {
-            return new_def_result(Definition::ImportDef(path, []), p)
+            let imp_items: List<String> = []
+            return new_def_result(Definition::ImportDef(path, imp_items), p)
         }
         p = p + 1
         let seg: String = peek_value(tokens, p)
@@ -515,11 +524,13 @@ fn parse_export_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 
     if tt == "KW_FN" {
         let r: DefResult = parse_fn_def(tokens, p, filename)
-        return new_def_result(Definition::ExportDef(none, []), r.pos)
+        let exp_items: List<String> = []
+        return new_def_result(Definition::ExportDef(none, exp_items), r.pos)
     }
     if tt == "KW_STRUCT" {
         let r: DefResult = parse_struct_def(tokens, p, filename)
-        return new_def_result(Definition::ExportDef(none, []), r.pos)
+        let exp_items: List<String> = []
+        return new_def_result(Definition::ExportDef(none, exp_items), r.pos)
     }
 
     let mut names: List<String> = []

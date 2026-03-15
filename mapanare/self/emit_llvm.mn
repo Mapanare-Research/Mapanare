@@ -638,6 +638,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
         let slen: Int = len(val)
         let gname: String = next_str_name(st)
         let mut s: EmitState = st
+        s.str_counter = s.str_counter + 1
         let arr_ty: String = "[" + toString(slen) + " x i8]"
         s = emit_line(s, gname + " = private constant " + arr_ty + " c\"" + val + "\"")
         let ptr_name: String = dest_name + ".ptr"
@@ -1524,22 +1525,116 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     // Emit function bodies
     let mut fi: Int = 0
     for _ in 0..100000 {
-        if fi >= len(module.functions) {
-            // Join all lines
-            let mut result: String = ""
-            let mut li: Int = 0
-            for _ in 0..1000000 {
-                if li >= len(st.lines) { return result }
-                let line: String = st.lines[li]
-                result = result + line + "\n"
-                li = li + 1
-            }
-            return result
-        }
+        if fi >= len(module.functions) { break }
         let f: MIRFunction = module.functions[fi]
         st = emit_mir_function(st, f)
         fi = fi + 1
     }
 
-    return ""
+    // Join all lines into result string
+    let nlines: Int = len(st.lines)
+    let mut result: String = ""
+    let mut li: Int = 0
+    for _ in 0..1000000 {
+        if li >= nlines { return result }
+        let line: String = st.lines[li]
+        result = result + line + "\n"
+        li = li + 1
+    }
+    return result
+
+    // Module header
+    st = emit_line(st, "; ModuleID = '" + module_name + "'")
+    st = emit_line(st, "source_filename = \"" + module_name + "\"")
+    st = emit_blank(st)
+    println("[E] header done")
+
+    // Format string constants
+    st = emit_format_constants(st)
+    println("[E] format constants done")
+
+    // Runtime declarations
+    st = declare_all_runtime(st)
+    println("[E] runtime decls done, lines=" + str(len(st.lines)))
+
+    // Register struct types
+    let mut si: Int = 0
+    for _ in 0..1000 {
+        if si >= len(module.structs) { break }
+        st = register_mir_struct(st, module.structs[si])
+        si = si + 1
+    }
+
+    // Register enum types
+    let mut ei: Int = 0
+    for _ in 0..1000 {
+        if ei >= len(module.enums) { break }
+        st = register_mir_enum(st, module.enums[ei])
+        ei = ei + 1
+    }
+
+    if len(module.structs) > 0 { st = emit_blank(st) }
+    if len(module.enums) > 0 { st = emit_blank(st) }
+
+    // Declare extern functions
+    let mut xi: Int = 0
+    for _ in 0..1000 {
+        if xi >= len(module.extern_fns) { break }
+        st = declare_mir_extern(st, module.extern_fns[xi])
+        xi = xi + 1
+    }
+    if len(module.extern_fns) > 0 { st = emit_blank(st) }
+
+    // Forward-declare all functions (for mutual recursion)
+    let mut di: Int = 0
+    for _ in 0..100000 {
+        if di >= len(module.functions) { break }
+        let f: MIRFunction = module.functions[di]
+        let ret_ty: String = resolve_mir_type(f.return_type)
+        let mut fparams: String = ""
+        let mut fpi: Int = 0
+        for _ in 0..1000 {
+            if fpi >= len(f.params) { break }
+            let fp: MIRParam = f.params[fpi]
+            let fpty: String = resolve_mir_type(fp.ty)
+            if fpi > 0 {
+                fparams = fparams + ", " + fpty
+            } else {
+                fparams = fpty
+            }
+            fpi = fpi + 1
+        }
+        let fn_types: List<String> = []
+        let fe: FnEntry = new_fn_entry(f.name, ret_ty, fn_types)
+        st.functions.push(fe)
+        di = di + 1
+    }
+
+    // Emit function bodies
+    let mut fi: Int = 0
+    for _ in 0..100000 {
+        if fi >= len(module.functions) { break }
+        println("[EMT] emitting function " + str(fi))
+        let f: MIRFunction = module.functions[fi]
+        println("[EMT] name=" + f.name)
+        st = emit_mir_function(st, f)
+        println("[EMT] done function " + str(fi) + " lines=" + str(len(st.lines)))
+        fi = fi + 1
+    }
+
+    println("[EMT] joining " + str(len(st.lines)) + " lines")
+    // TEMP: return early to test if the function can return
+    return "; early return test\n"
+
+    // Join all lines into result string
+    let nlines: Int = len(st.lines)
+    let mut result: String = ""
+    let mut li: Int = 0
+    for _ in 0..1000000 {
+        if li >= nlines { return result }
+        let line: String = st.lines[li]
+        result = result + line + "\n"
+        li = li + 1
+    }
+    return result
 }

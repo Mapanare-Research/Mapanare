@@ -23,6 +23,7 @@ import os
 import pathlib
 import platform
 import re
+
 try:
     import resource
 except ImportError:
@@ -45,6 +46,7 @@ BENCH_PLATFORM_FILE = GOLDEN_DIR / f"BENCHMARKS-{PLATFORM_TAG}.md"
 # Colors
 # ---------------------------------------------------------------------------
 
+
 class C:
     GREEN = "\033[32m"
     RED = "\033[31m"
@@ -62,6 +64,7 @@ class C:
 # Resource measurement
 # ---------------------------------------------------------------------------
 
+
 def _get_rusage():
     """Get resource usage (Unix only)."""
     try:
@@ -74,6 +77,7 @@ def _rss_mb() -> float:
     """Current process RSS in MB."""
     try:
         import psutil
+
         return psutil.Process().memory_info().rss / (1024 * 1024)
     except ImportError:
         pass
@@ -90,6 +94,7 @@ def _rss_mb() -> float:
 
 class Metrics:
     """Timing and resource metrics for a compilation."""
+
     def __init__(self):
         self.time_ms: float = 0.0
         self.peak_rss_mb: float = 0.0
@@ -118,6 +123,7 @@ def measure_compile(fn, *args) -> tuple[any, Metrics]:
 # ---------------------------------------------------------------------------
 # IR analysis
 # ---------------------------------------------------------------------------
+
 
 def count_defines(ir: str) -> int:
     return len(re.findall(r"^define\s", ir, re.MULTILINE))
@@ -150,9 +156,11 @@ def ir_fingerprint(ir: str) -> dict:
 # Compilers
 # ---------------------------------------------------------------------------
 
+
 def compile_bootstrap(mn_file: pathlib.Path) -> tuple[str, str]:
     try:
         from mapanare.cli import _compile_to_llvm_ir
+
         ir = _compile_to_llvm_ir(mn_file.read_text(encoding="utf-8"), str(mn_file))
         return ir, ""
     except Exception as e:
@@ -163,7 +171,8 @@ def compile_stage1(mn_file: pathlib.Path, stage1: pathlib.Path) -> tuple[str, st
     try:
         result = subprocess.run(
             [str(stage1), str(mn_file)],
-            capture_output=True, timeout=30,
+            capture_output=True,
+            timeout=30,
         )
         stdout = result.stdout.decode(errors="replace")
         stderr = result.stderr.decode(errors="replace")
@@ -184,7 +193,9 @@ def run_ir(ir: str, test_name: str) -> tuple[str, str]:
         return "", "lli not found"
     try:
         result = subprocess.run(
-            [lli, str(ir_path)], capture_output=True, timeout=10,
+            [lli, str(ir_path)],
+            capture_output=True,
+            timeout=10,
         )
         stdout = result.stdout.decode(errors="replace")
         stderr = result.stderr.decode(errors="replace")
@@ -200,6 +211,7 @@ def run_ir(ir: str, test_name: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 # Test result
 # ---------------------------------------------------------------------------
+
 
 class TestResult:
     def __init__(self, name: str):
@@ -238,6 +250,7 @@ class TestResult:
 # Test runner
 # ---------------------------------------------------------------------------
 
+
 def run_test(
     mn_file: pathlib.Path,
     stage1: pathlib.Path | None,
@@ -249,7 +262,8 @@ def run_test(
 
     # Bootstrap
     (r.bootstrap_ir, r.bootstrap_err), r.bootstrap_metrics = measure_compile(
-        compile_bootstrap, mn_file,
+        compile_bootstrap,
+        mn_file,
     )
     if r.bootstrap_err:
         return r
@@ -268,7 +282,9 @@ def run_test(
     # Stage 1
     if stage1:
         (r.stage1_ir, r.stage1_err), r.stage1_metrics = measure_compile(
-            compile_stage1, mn_file, stage1,
+            compile_stage1,
+            mn_file,
+            stage1,
         )
         if r.stage1_err:
             r.stage1_ok = False
@@ -308,6 +324,7 @@ def run_test(
 # Benchmark table
 # ---------------------------------------------------------------------------
 
+
 def _get_env_info() -> dict:
     """Collect environment metadata."""
     version = "unknown"
@@ -318,7 +335,9 @@ def _get_env_info() -> dict:
     try:
         r = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, cwd=ROOT, timeout=5,
+            capture_output=True,
+            cwd=ROOT,
+            timeout=5,
         )
         if r.returncode == 0:
             commit = r.stdout.decode().strip()
@@ -336,7 +355,10 @@ def _get_env_info() -> dict:
 
 
 def _build_platform_table(
-    results: list[TestResult], stage1: pathlib.Path | None, elapsed: float, env: dict,
+    results: list[TestResult],
+    stage1: pathlib.Path | None,
+    elapsed: float,
+    env: dict,
 ) -> str:
     """Build the platform-specific benchmark markdown."""
     tag = env["tag"].capitalize()
@@ -482,6 +504,7 @@ def write_benchmarks(results: list[TestResult], stage1: pathlib.Path | None, ela
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Golden test harness for Mapanare compiler",
@@ -572,7 +595,7 @@ def main():
         if r.run_ok is not None:
             out = r.run_output.strip()[:30]
             if r.run_ok:
-                parts.append(f" run:{C.GREEN}\"{out}\"{C.RESET}")
+                parts.append(f' run:{C.GREEN}"{out}"{C.RESET}')
             else:
                 parts.append(f" run:{C.RED}{r.run_err[:30]}{C.RESET}")
 
@@ -594,7 +617,9 @@ def main():
     if failed == 0:
         print(f"{C.GREEN}{C.BOLD}All {passed} tests passed{C.RESET} in {elapsed:.1f}s")
     else:
-        print(f"{C.RED}{C.BOLD}{failed} failed{C.RESET}, {C.GREEN}{passed} passed{C.RESET} in {elapsed:.1f}s")
+        print(
+            f"{C.RED}{C.BOLD}{failed} failed{C.RESET}, {C.GREEN}{passed} passed{C.RESET} in {elapsed:.1f}s"
+        )
 
     # Write benchmark table
     if args.bench or True:  # Always write — it's cheap and useful

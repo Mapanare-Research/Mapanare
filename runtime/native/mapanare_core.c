@@ -500,9 +500,11 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
     list->len++;
 }
 
+
 MN_EXPORT void *__mn_list_get(MnList *list, int64_t i) {
     if (i < 0 || i >= list->len) return NULL;
-    return list->data + i * list->elem_size;
+    void *result = list->data + i * list->elem_size;
+    return result;
 }
 
 MN_EXPORT void __mn_list_set(MnList *list, int64_t i, const void *elem_ptr) {
