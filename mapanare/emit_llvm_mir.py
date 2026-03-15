@@ -3185,6 +3185,11 @@ class LLVMMIREmitter:
         closure = self._get_value(inst.closure, values)
         args = [self._get_value(a, values) for a in inst.args]
 
+        # Coerce closure to {i8*, i8*} struct if it's a raw pointer (e.g.
+        # from cross-block alloca load that lost struct type information).
+        if closure.type != LLVM_CLOSURE:
+            closure = _coerce_arg(builder, closure, LLVM_CLOSURE, f"{name}.cc")
+
         # Extract fn_ptr and env_ptr from closure struct
         fn_raw = builder.extract_value(closure, 0, name=f"{name}.fn")
         env_ptr = builder.extract_value(closure, 1, name=f"{name}.env")

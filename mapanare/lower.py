@@ -2115,7 +2115,10 @@ class MIRLowerer:
 
         # Emit switch or branch
         if cases:
-            tag = self._make_value(ty=mir_unknown(), prefix="tag")
+            # Preserve the subject's type on the tag so the LLVM emitter can
+            # resolve variant names to the correct enum (avoids collisions when
+            # multiple enums share variant names like "Call" or "Return").
+            tag = self._make_value(ty=subject.ty, prefix="tag")
             self._emit(EnumTag(dest=tag, enum_val=subject))
             self._emit(Switch(tag=tag, cases=cases, default_block=default_block))
         elif arm_blocks:

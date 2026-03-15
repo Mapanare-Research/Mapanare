@@ -474,6 +474,14 @@ static void mn_list_grow(MnList *list) {
 }
 
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
+#ifdef MN_DEBUG_LIST
+    fprintf(stderr, "[list_push] list=%p data=%p len=%ld cap=%ld elem_size=%ld\n",
+            (void*)list, (void*)list->data, list->len, list->cap, list->elem_size);
+    if (list->cap <= 0 || list->cap > 1000000000LL || list->elem_size <= 0 || list->elem_size > 1024) {
+        fprintf(stderr, "[list_push] CORRUPT LIST detected! Aborting.\n");
+        abort();
+    }
+#endif
     if (list->len >= list->cap) {
         mn_list_grow(list);
     }
