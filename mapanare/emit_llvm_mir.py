@@ -192,6 +192,8 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
         if isinstance(actual, ir.VoidType):
             return ir.Constant(expected_ty, ir.Undefined)
         tmp = builder.alloca(expected_ty, name=f"{name}.tmp")
+        # Zero-fill first to avoid reading garbage bytes
+        builder.store(ir.Constant(expected_ty, None), tmp)
         src_ptr_ty = (
             actual.as_pointer()
             if hasattr(actual, "as_pointer") and not isinstance(actual, ir.VoidType)
@@ -212,10 +214,20 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
     try:
         return builder.bitcast(arg, expected_ty, name=name)
     except Exception:
-        tmp = builder.alloca(actual, name=f"{name}.tmp")
-        builder.store(arg, tmp)
-        cast_ptr = builder.bitcast(tmp, expected_ty.as_pointer(), name=f"{name}.cptr")
-        return builder.load(cast_ptr, name=name)
+        # Allocate the LARGER of the two types to avoid reading beyond the alloca
+        actual_size = _approx_type_size(actual)
+        expected_size = _approx_type_size(expected_ty)
+        if expected_size > actual_size:
+            tmp = builder.alloca(expected_ty, name=f"{name}.tmp")
+            builder.store(ir.Constant(expected_ty, None), tmp)  # zero-fill
+            src_ptr = builder.bitcast(tmp, actual.as_pointer(), name=f"{name}.sptr")
+            builder.store(arg, src_ptr)
+            return builder.load(tmp, name=name)
+        else:
+            tmp = builder.alloca(actual, name=f"{name}.tmp")
+            builder.store(arg, tmp)
+            cast_ptr = builder.bitcast(tmp, expected_ty.as_pointer(), name=f"{name}.cptr")
+            return builder.load(cast_ptr, name=name)
 
 
 def _coerce_args(builder: Any, args: list[Any], expected_types: list[Any], name: str) -> list[Any]:

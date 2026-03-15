@@ -731,72 +731,75 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     let dn: String = dest.name
     let ln: String = lhs.name
     let rn: String = rhs.name
+    // Use binop_kind_to_str (defined in lower.mn where BinOpKind is local)
+    // to convert the enum tag to a string, then dispatch with if/else
+    let op_str: String = binop_kind_to_str(op)
 
-    match op {
-        Add => {
-            if is_string {
-                return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_concat", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            }
-            if is_float { return emit_line(st, emit_fadd(dn, ln, rn)) }
-            return emit_line(st, emit_add(dn, llvm_int(), ln, rn))
-        },
-        Sub => {
-            if is_float { return emit_line(st, emit_fsub(dn, ln, rn)) }
-            return emit_line(st, emit_sub(dn, llvm_int(), ln, rn))
-        },
-        Mul => {
-            if is_float { return emit_line(st, emit_fmul(dn, ln, rn)) }
-            return emit_line(st, emit_mul(dn, llvm_int(), ln, rn))
-        },
-        Div => {
-            if is_float { return emit_line(st, emit_fdiv(dn, ln, rn)) }
-            return emit_line(st, emit_sdiv(dn, llvm_int(), ln, rn))
-        },
-        Mod => {
-            if is_float { return emit_line(st, emit_frem(dn, ln, rn)) }
-            return emit_line(st, emit_srem(dn, llvm_int(), ln, rn))
-        },
-        Eq => {
-            if is_string {
-                return emit_line(st, emit_call_ir(dn, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            }
-            if is_float { return emit_line(st, emit_fcmp(dn, "eq", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "eq", llvm_int(), ln, rn))
-        },
-        Ne => {
-            if is_string {
-                let mut s: EmitState = st
-                let eq_name: String = dn + ".eq"
-                s = emit_line(s, emit_call_ir(eq_name, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-                s = emit_line(s, emit_not(dn, eq_name))
-                return s
-            }
-            if is_float { return emit_line(st, emit_fcmp(dn, "ne", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "ne", llvm_int(), ln, rn))
-        },
-        Lt => {
-            if is_float { return emit_line(st, emit_fcmp(dn, "lt", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "slt", llvm_int(), ln, rn))
-        },
-        Gt => {
-            if is_float { return emit_line(st, emit_fcmp(dn, "gt", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "sgt", llvm_int(), ln, rn))
-        },
-        Le => {
-            if is_float { return emit_line(st, emit_fcmp(dn, "le", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "sle", llvm_int(), ln, rn))
-        },
-        Ge => {
-            if is_float { return emit_line(st, emit_fcmp(dn, "ge", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "sge", llvm_int(), ln, rn))
-        },
-        And => {
-            return emit_line(st, emit_and_instr(dn, ln, rn))
-        },
-        Or => {
-            return emit_line(st, emit_or_instr(dn, ln, rn))
+    if op_str == "add" {
+        if is_string {
+            return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_concat", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
         }
+        if is_float { return emit_line(st, emit_fadd(dn, ln, rn)) }
+        return emit_line(st, emit_add(dn, llvm_int(), ln, rn))
     }
+    if op_str == "sub" {
+        if is_float { return emit_line(st, emit_fsub(dn, ln, rn)) }
+        return emit_line(st, emit_sub(dn, llvm_int(), ln, rn))
+    }
+    if op_str == "mul" {
+        if is_float { return emit_line(st, emit_fmul(dn, ln, rn)) }
+        return emit_line(st, emit_mul(dn, llvm_int(), ln, rn))
+    }
+    if op_str == "div" {
+        if is_float { return emit_line(st, emit_fdiv(dn, ln, rn)) }
+        return emit_line(st, emit_sdiv(dn, llvm_int(), ln, rn))
+    }
+    if op_str == "mod" {
+        if is_float { return emit_line(st, emit_frem(dn, ln, rn)) }
+        return emit_line(st, emit_srem(dn, llvm_int(), ln, rn))
+    }
+    if op_str == "eq" {
+        if is_string {
+            return emit_line(st, emit_call_ir(dn, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+        }
+        if is_float { return emit_line(st, emit_fcmp(dn, "eq", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "eq", llvm_int(), ln, rn))
+    }
+    if op_str == "ne" {
+        if is_string {
+            let mut s: EmitState = st
+            let eq_name: String = dn + ".eq"
+            s = emit_line(s, emit_call_ir(eq_name, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_not(dn, eq_name))
+            return s
+        }
+        if is_float { return emit_line(st, emit_fcmp(dn, "ne", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "ne", llvm_int(), ln, rn))
+    }
+    if op_str == "lt" {
+        if is_float { return emit_line(st, emit_fcmp(dn, "lt", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "slt", llvm_int(), ln, rn))
+    }
+    if op_str == "gt" {
+        if is_float { return emit_line(st, emit_fcmp(dn, "gt", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "sgt", llvm_int(), ln, rn))
+    }
+    if op_str == "le" {
+        if is_float { return emit_line(st, emit_fcmp(dn, "le", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "sle", llvm_int(), ln, rn))
+    }
+    if op_str == "ge" {
+        if is_float { return emit_line(st, emit_fcmp(dn, "ge", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "sge", llvm_int(), ln, rn))
+    }
+    if op_str == "and" {
+        return emit_line(st, emit_and_instr(dn, ln, rn))
+    }
+    if op_str == "or" {
+        return emit_line(st, emit_or_instr(dn, ln, rn))
+    }
+    // Fallback: add
+    return emit_line(st, emit_add(dn, llvm_int(), ln, rn))
 }
 
 // ---------------------------------------------------------------------------
@@ -806,18 +809,18 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
 fn emit_unaryop(st: EmitState, dest: Value, op: UnaryOpKind, operand: Value) -> EmitState {
     let dn: String = dest.name
     let on: String = operand.name
+    let op_str: String = unaryop_kind_to_str(op)
 
-    match op {
-        Neg => {
-            if operand.ty.kind == "float" {
-                return emit_line(st, emit_fneg(dn, on))
-            }
-            return emit_line(st, emit_neg(dn, llvm_int(), on))
-        },
-        Not => {
-            return emit_line(st, emit_not(dn, on))
+    if op_str == "neg" {
+        if operand.ty.kind == "float" {
+            return emit_line(st, emit_fneg(dn, on))
         }
+        return emit_line(st, emit_neg(dn, llvm_int(), on))
     }
+    if op_str == "not" {
+        return emit_line(st, emit_not(dn, on))
+    }
+    return st
 }
 
 // ---------------------------------------------------------------------------
@@ -1614,17 +1617,10 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     let mut fi: Int = 0
     for _ in 0..100000 {
         if fi >= len(module.functions) { break }
-        println("[EMT] emitting function " + str(fi))
         let f: MIRFunction = module.functions[fi]
-        println("[EMT] name=" + f.name)
         st = emit_mir_function(st, f)
-        println("[EMT] done function " + str(fi) + " lines=" + str(len(st.lines)))
         fi = fi + 1
     }
-
-    println("[EMT] joining " + str(len(st.lines)) + " lines")
-    // TEMP: return early to test if the function can return
-    return "; early return test\n"
 
     // Join all lines into result string
     let nlines: Int = len(st.lines)

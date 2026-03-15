@@ -168,7 +168,8 @@ struct Scope {
 }
 
 fn new_scope(parent: Option<Scope>) -> Scope {
-    return new Scope { parent: parent, symbols: [] }
+    let syms: List<Symbol> = []
+    return new Scope { parent: parent, symbols: syms }
 }
 
 fn scope_define(scope: Scope, name: String, sym: Symbol) -> Scope {
@@ -222,7 +223,8 @@ struct SemanticChecker {
 
 fn new_checker(filename: String) -> SemanticChecker {
     let scope: Scope = new_scope(none)
-    return new SemanticChecker { filename: filename, errors: [], global_scope: scope, current_scope: scope }
+    let errs: List<SemanticError> = []
+    return new SemanticChecker { filename: filename, errors: errs, global_scope: scope, current_scope: scope }
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +248,8 @@ struct CheckResult {
 
 fn new_sem_state(filename: String) -> SemState {
     let scope: Scope = new_scope(none)
-    return new SemState { errors: [], scope: scope, filename: filename }
+    let sem_errs: List<SemanticError> = []
+    return new SemState { errors: sem_errs, scope: scope, filename: filename }
 }
 
 fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult {

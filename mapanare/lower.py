@@ -2277,31 +2277,10 @@ class MIRLowerer:
     # -- Helpers -----------------------------------------------------------
 
     def _is_enum_variant(self, name: str, subject_ty: MIRType | None = None) -> bool:
-        """Check if a name matches a known enum variant (local or imported).
-
-        When subject_ty is provided, only check variants of that specific enum
-        to avoid false matches with variant names from unrelated enums.
-        """
-        enum_filter = None
-        if subject_ty and subject_ty.type_info.name:
-            # Enums may be tagged as STRUCT by the lowerer (kind_from_name defaults
-            # unknown names to STRUCT). Accept both ENUM and STRUCT for filtering.
-            enum_filter = subject_ty.type_info.name
-
-        for enum_name, variant_names in self._enum_variants.items():
-            if enum_filter and enum_name != enum_filter:
-                continue
+        """Check if a name matches a known enum variant (local only for now)."""
+        for variant_names in self._enum_variants.values():
             if name in variant_names:
                 return True
-        # Also check imported enum defs
-        for enum_name, variants in self._imported_enum_defs.items():
-            if enum_filter:
-                bare = enum_name.rsplit("__", 1)[-1] if "__" in enum_name else enum_name
-                if bare != enum_filter:
-                    continue
-            for vname, _ in variants:
-                if vname == name:
-                    return True
         return False
 
     def _get_literal_value(self, expr: Expr) -> Any:

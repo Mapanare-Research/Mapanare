@@ -411,15 +411,14 @@ pub fn parse(source: String, filename: String) -> Program {
         pos = skip_semis(tokens, pos)
         if pos >= len(tokens) {
             if len(top_stmts) > 0 {
-                if has_explicit_main(defs) {
-                    print("error: cannot mix top-level statements with explicit fn main()")
+                if !has_explicit_main(defs) {
+                    let body: Block = new_block(top_stmts)
+                    let empty_tp: List<String> = []
+                    let empty_params: List<Param> = []
+                    let empty_decs: List<Decorator> = []
+                    let main_fn: FnDefData = new_fn_def_data("main", false, empty_tp, empty_params, none, body, empty_decs)
+                    defs = defs + [Definition::FnDef(main_fn)]
                 }
-                let body: Block = new_block(top_stmts)
-                let empty_tp: List<String> = []
-                let empty_params: List<Param> = []
-                let empty_decs: List<Decorator> = []
-                let main_fn: FnDefData = new_fn_def_data("main", false, empty_tp, empty_params, none, body, empty_decs)
-                defs = defs + [Definition::FnDef(main_fn)]
             }
             return Program::start(defs)
         }
@@ -437,15 +436,14 @@ pub fn parse(source: String, filename: String) -> Program {
     }
 
     if len(top_stmts) > 0 {
-        if has_explicit_main(defs) {
-            print("error: cannot mix top-level statements with explicit fn main()")
+        if !has_explicit_main(defs) {
+            let body: Block = new_block(top_stmts)
+            let empty_tp2: List<String> = []
+            let empty_params2: List<Param> = []
+            let empty_decs2: List<Decorator> = []
+            let main_fn: FnDefData = new_fn_def_data("main", false, empty_tp2, empty_params2, none, body, empty_decs2)
+            defs = defs + [Definition::FnDef(main_fn)]
         }
-        let body: Block = new_block(top_stmts)
-        let empty_tp2: List<String> = []
-        let empty_params2: List<Param> = []
-        let empty_decs2: List<Decorator> = []
-        let main_fn: FnDefData = new_fn_def_data("main", false, empty_tp2, empty_params2, none, body, empty_decs2)
-        defs = defs + [Definition::FnDef(main_fn)]
     }
 
     return Program::start(defs)
@@ -511,7 +509,8 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
         p = p + 1
     }
 
-    return new_def_result(Definition::ImportDef(path, []), p)
+    let trail_items: List<String> = []
+    return new_def_result(Definition::ImportDef(path, trail_items), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -888,6 +887,12 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
 // ---------------------------------------------------------------------------
 
 fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+    // Pre-create typed empty lists for AgentDefData constructor
+    let no_inputs: List<AgentInput> = []
+    let no_outputs: List<AgentOutput> = []
+    let no_state: List<Stmt> = []
+    let no_methods: List<FnDefData> = []
+    let no_adecs: List<Decorator> = []
     let mut p: Int = pos
     let mut is_pub: Bool = false
     if peek_type(tokens, p) == "KW_PUB" {
@@ -901,7 +906,7 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
     let mut depth: Int = 1
     for _ in 0..100000 {
         if p >= len(tokens) {
-            let ad: AgentDefData = new_agent_def_data(name, is_pub, [], [], [], [], [])
+            let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
             return new_def_result(Definition::AgentDef(ad), p)
         }
         let tt: String = peek_type(tokens, p)
@@ -910,13 +915,13 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
             depth = depth - 1
             if depth == 0 {
                 p = p + 1
-                let ad: AgentDefData = new_agent_def_data(name, is_pub, [], [], [], [], [])
+                let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
                 return new_def_result(Definition::AgentDef(ad), p)
             }
         }
         p = p + 1
     }
-    let ad: AgentDefData = new_agent_def_data(name, is_pub, [], [], [], [], [])
+    let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
     return new_def_result(Definition::AgentDef(ad), p)
 }
 
@@ -925,6 +930,7 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
 // ---------------------------------------------------------------------------
 
 fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+    let no_stages: List<Expr> = []
     let mut p: Int = pos
     let mut is_pub: Bool = false
     if peek_type(tokens, p) == "KW_PUB" {
@@ -938,7 +944,7 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
     let mut depth: Int = 1
     for _ in 0..100000 {
         if p >= len(tokens) {
-            let pd: PipeDefData = new_pipe_def_data(name, is_pub, [])
+            let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
             return new_def_result(Definition::PipeDef(pd), p)
         }
         let tt: String = peek_type(tokens, p)
@@ -947,13 +953,13 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
             depth = depth - 1
             if depth == 0 {
                 p = p + 1
-                let pd: PipeDefData = new_pipe_def_data(name, is_pub, [])
+                let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
                 return new_def_result(Definition::PipeDef(pd), p)
             }
         }
         p = p + 1
     }
-    let pd: PipeDefData = new_pipe_def_data(name, is_pub, [])
+    let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
     return new_def_result(Definition::PipeDef(pd), p)
 }
 
