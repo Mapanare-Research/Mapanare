@@ -623,7 +623,6 @@ fn emit_mir_instruction(st: EmitState, inst: Instruction) -> EmitState {
 // ---------------------------------------------------------------------------
 
 fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState {
-    println("DBG const kind=" + ty.kind + " val=" + val + " dest=" + dest.name)
     let dest_name: String = dest.name
     let llvm_ty: String = resolve_mir_type(ty)
 
@@ -1336,10 +1335,8 @@ fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitSta
 fn emit_mir_basic_block(st: EmitState, bb: BasicBlock) -> EmitState {
     let mut s: EmitState = emit_line(st, bb.label + ":")
     let mut i: Int = 0
-    println("DBG bb_loop instrs=" + str(len(bb.instructions)))
     for _ in 0..100000 {
         if i >= len(bb.instructions) { return s }
-        println("DBG bb_loop i=" + str(i))
         let inst: Instruction = bb.instructions[i]
         s = emit_mir_instruction(s, inst)
         i = i + 1

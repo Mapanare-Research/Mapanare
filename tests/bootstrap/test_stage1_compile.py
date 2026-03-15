@@ -26,7 +26,15 @@ MNC_STAGE1 = pathlib.Path("mapanare/self/mnc-stage1")
 
 
 def _has_mnc_stage1() -> bool:
-    return MNC_STAGE1.exists()
+    """Check if mnc-stage1 exists and is executable on this platform."""
+    import sys
+
+    if not MNC_STAGE1.exists():
+        return False
+    # ELF binaries can't run on Windows
+    if sys.platform == "win32":
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -116,11 +124,20 @@ class TestStage1Compilation:
         assert unexpected == [], f"Unresolved cross-module refs: {unexpected}"
 
     def test_linux_target_triple(self) -> None:
-        """Generated IR targets Linux x86-64."""
+        """Generated IR contains a valid target triple."""
         source, filename = _read_self_hosted()
         llvm_ir = _compile_to_llvm_ir(source, filename)
-        assert "x86_64-unknown-linux-gnu" in llvm_ir
+        import sys
 
+        if sys.platform == "linux":
+            assert "x86_64-unknown-linux-gnu" in llvm_ir
+        else:
+            assert "target triple" in llvm_ir
+
+    @pytest.mark.skipif(
+        __import__("sys").platform == "win32",
+        reason="ELF binary cannot run on Windows",
+    )
     def test_mnc_stage1_binary_exists(self) -> None:
         """mnc-stage1 binary exists after build."""
         assert _has_mnc_stage1(), f"Binary not found at {MNC_STAGE1}"
@@ -220,9 +237,6 @@ class TestStage1LLVMEmission:
         )
         if result.returncode != 0:
             pytest.skip(f"Compiler returned error: {result.stderr.decode()}")
-        output = result.stdout.decode(errors="replace")
-        # The self-hosted emitter should produce IR with 'define' and 'target'
-        has_ir = "define" in output or "target" in output or "declare" in output
         # Note: the self-hosted emitter may have output quality issues (Task 5 milestone)
         # For now, we just verify it produces output without crashing
         assert len(result.stdout) > 0, "No IR output"

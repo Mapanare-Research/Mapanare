@@ -47,16 +47,6 @@ fn compile(source: String, filename: String) -> CompileResult {
     // Stage 3: lower AST to MIR
     let mir_module: MIRModule = lower(program, filename)
 
-    // Debug: check MIR
-    if len(mir_module.functions) > 0 {
-        let f0: MIRFunction = mir_module.functions[0]
-        println("DBG fn0=" + f0.name + " blocks=" + str(len(f0.blocks)))
-        if len(f0.blocks) > 0 {
-            let b0: BasicBlock = f0.blocks[0]
-            println("DBG b0=" + b0.label + " instrs=" + str(len(b0.instructions)))
-        }
-    }
-
     // Stage 4: emit LLVM IR from MIR
     let ir_text: String = emit_mir_module(mir_module, filename)
     let no_errors: List<SemanticError> = []
