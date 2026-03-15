@@ -118,9 +118,13 @@ class TestStage1Compilation:
         source, filename = _read_self_hosted()
         llvm_ir = _compile_to_llvm_ir(source, filename)
         declares = re.findall(r'declare\s+(?:external\s+)?.*?@"([^"]+)"', llvm_ir)
-        # All declares should be C runtime (__mn_*), printf, or range/iter
+        # All declares should be C runtime (__mn_*), printf, range/iter, or LLVM intrinsics
         allowed = {"printf", "__range", "__iter_has_next", "__iter_next", "malloc"}
-        unexpected = [d for d in declares if not d.startswith("__mn_") and d not in allowed]
+        unexpected = [
+            d
+            for d in declares
+            if not d.startswith("__mn_") and not d.startswith("llvm.") and d not in allowed
+        ]
         assert unexpected == [], f"Unresolved cross-module refs: {unexpected}"
 
     def test_linux_target_triple(self) -> None:
