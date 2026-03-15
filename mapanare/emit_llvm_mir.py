@@ -1584,7 +1584,12 @@ class LLVMMIREmitter:
                 ab = ir.IRBuilder(self._alloca_block)
                 ab.position_at_end(self._alloca_block)
                 vname = dest.name.lstrip("%")
-                self._fn_allocas[dest.name] = ab.alloca(val_ty, name=f"a.{vname}")
+                alloca_inst = ab.alloca(val_ty, name=f"a.{vname}")
+                # Zero-initialize struct allocas to prevent UB from
+                # reading uninitialized bytes through cross-type coercions
+                if isinstance(val_ty, (ir.LiteralStructType, ir.ArrayType)):
+                    ab.store(ir.Constant(val_ty, None), alloca_inst)
+                self._fn_allocas[dest.name] = alloca_inst
             else:
                 # If the new value is larger than the existing alloca (e.g.
                 # a None init created a {i1, i8*} alloca but the real value
@@ -1597,7 +1602,10 @@ class LLVMMIREmitter:
                     ab = ir.IRBuilder(self._alloca_block)
                     ab.position_at_end(self._alloca_block)
                     vname = dest.name.lstrip("%")
-                    self._fn_allocas[dest.name] = ab.alloca(llvm_val.type, name=f"a.{vname}")
+                    new_alloca = ab.alloca(llvm_val.type, name=f"a.{vname}")
+                    if isinstance(llvm_val.type, (ir.LiteralStructType, ir.ArrayType)):
+                        ab.store(ir.Constant(llvm_val.type, None), new_alloca)
+                    self._fn_allocas[dest.name] = new_alloca
             alloca = self._fn_allocas[dest.name]
             pointee = alloca.type.pointee
             val = llvm_val
