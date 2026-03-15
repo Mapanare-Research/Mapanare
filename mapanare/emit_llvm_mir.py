@@ -2480,6 +2480,25 @@ class LLVMMIREmitter:
             if inferred != LLVM_PTR:
                 elem_llvm_ty = inferred
 
+        # If still generic i8*, try looking up the elem type NAME in struct/enum types
+        # This handles cross-module types where kind=UNKNOWN but name is known
+        if elem_llvm_ty == LLVM_PTR:
+            elem_name = inst.elem_type.type_info.name if inst.elem_type.type_info else ""
+            if not elem_name and inst.dest.ty.type_info.args:
+                elem_name = inst.dest.ty.type_info.args[0].name
+            if elem_name:
+                # Try struct types (exact and suffix match)
+                for sname, stype in self._struct_types.items():
+                    if sname == elem_name or sname.endswith("__" + elem_name):
+                        elem_llvm_ty = stype
+                        break
+                # Try enum types
+                if elem_llvm_ty == LLVM_PTR:
+                    for ename, (etype, _, _) in self._enum_types.items():
+                        if ename == elem_name or ename.endswith("__" + elem_name):
+                            elem_llvm_ty = etype
+                            break
+
         elem_size = _approx_type_size(elem_llvm_ty)
 
         # Call __mn_list_new(elem_size)

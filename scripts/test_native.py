@@ -37,6 +37,8 @@ from datetime import datetime, timezone
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 GOLDEN_DIR = ROOT / "tests" / "golden"
 BENCH_FILE = GOLDEN_DIR / "BENCHMARKS.md"
+PLATFORM_TAG = "linux" if sys.platform == "linux" else "windows"
+BENCH_PLATFORM_FILE = GOLDEN_DIR / f"BENCHMARKS-{PLATFORM_TAG}.md"
 
 
 # ---------------------------------------------------------------------------
@@ -306,20 +308,12 @@ def run_test(
 # Benchmark table
 # ---------------------------------------------------------------------------
 
-def write_benchmarks(results: list[TestResult], stage1: pathlib.Path | None, elapsed: float):
-    """Write tests/golden/BENCHMARKS.md with metrics table."""
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    py_ver = platform.python_version()
-    os_name = platform.system()
-    arch = platform.machine()
-
-    # Get compiler version
+def _get_env_info() -> dict:
+    """Collect environment metadata."""
     version = "unknown"
     vf = ROOT / "VERSION"
     if vf.exists():
         version = vf.read_text(encoding="utf-8").strip()
-
-    # Get git commit
     commit = "unknown"
     try:
         r = subprocess.run(
@@ -330,29 +324,38 @@ def write_benchmarks(results: list[TestResult], stage1: pathlib.Path | None, ela
             commit = r.stdout.decode().strip()
     except Exception:
         pass
+    return {
+        "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "version": version,
+        "commit": commit,
+        "os": platform.system(),
+        "arch": platform.machine(),
+        "python": platform.python_version(),
+        "tag": PLATFORM_TAG,
+    }
 
-    lines = []
-    lines.append("# Mapanare Compiler Benchmarks")
-    lines.append("")
-    lines.append(f"Generated: {now}  ")
-    lines.append(f"Version: {version} (`{commit}`)  ")
-    lines.append(f"Platform: {os_name} {arch}, Python {py_ver}  ")
-    lines.append(f"Total time: {elapsed:.1f}s  ")
-    lines.append("")
 
-    # Bootstrap table
-    lines.append("## Bootstrap Compiler (Python)")
-    lines.append("")
-    lines.append("| Test | Source | IR Lines | IR KB | Fns | Time (ms) | Status |")
-    lines.append("|------|-------:|---------:|------:|----:|----------:|--------|")
+def _build_platform_table(
+    results: list[TestResult], stage1: pathlib.Path | None, elapsed: float, env: dict,
+) -> str:
+    """Build the platform-specific benchmark markdown."""
+    tag = env["tag"].capitalize()
+    lines = [
+        f"# Mapanare Benchmarks - {tag}",
+        "",
+        f"Generated: {env['now']}  ",
+        f"Version: {env['version']} (`{env['commit']}`)  ",
+        f"Platform: {env['os']} {env['arch']}, Python {env['python']}  ",
+        f"Total time: {elapsed:.1f}s  ",
+        "",
+        "## Bootstrap Compiler (Python)",
+        "",
+        "| Test | Source | IR Lines | IR KB | Fns | Time (ms) | Status |",
+        "|------|-------:|---------:|------:|----:|----------:|--------|",
+    ]
 
-    total_src = 0
-    total_ir = 0
-    total_kb = 0
-    total_fns = 0
-    total_ms = 0.0
-    passed = 0
-
+    total_src = total_ir = total_fns = passed = 0
+    total_kb = total_ms = 0.0
     for r in results:
         m = r.bootstrap_metrics
         status = "PASS" if r.bootstrap_ok else "FAIL"
@@ -375,17 +378,13 @@ def write_benchmarks(results: list[TestResult], stage1: pathlib.Path | None, ela
     )
     lines.append("")
 
-    # Stage 1 table (if available)
     if stage1 and any(r.stage1_ok is not None for r in results):
         lines.append("## Native Compiler (mnc-stage1)")
         lines.append("")
         lines.append("| Test | IR Lines | IR KB | Fns | Time (ms) | Match | Status |")
         lines.append("|------|---------:|------:|----:|----------:|-------|--------|")
-
-        s1_passed = 0
-        s1_matched = 0
+        s1_passed = s1_matched = 0
         s1_total_ms = 0.0
-
         for r in results:
             if r.stage1_ok is None:
                 continue
@@ -402,14 +401,12 @@ def write_benchmarks(results: list[TestResult], stage1: pathlib.Path | None, ela
             if r.compare_ok:
                 s1_matched += 1
             s1_total_ms += m.time_ms
-
         lines.append(
             f"| **Total** | | | | **{s1_total_ms:.0f}** | "
             f"**{s1_matched}/{len(results)}** | **{s1_passed}/{len(results)}** |"
         )
         lines.append("")
 
-    # Speed comparison (if both compilers ran)
     if stage1 and any(r.stage1_ok for r in results):
         lines.append("## Speed Comparison")
         lines.append("")
@@ -424,8 +421,61 @@ def write_benchmarks(results: list[TestResult], stage1: pathlib.Path | None, ela
             lines.append(f"| {r.name} | {bms:.0f} | {sms:.0f} | {speedup:.1f}x |")
         lines.append("")
 
+    return "\n".join(lines) + "\n"
+
+
+def _merge_benchmarks():
+    """Merge platform files into BENCHMARKS.md."""
+    win_file = GOLDEN_DIR / "BENCHMARKS-windows.md"
+    lin_file = GOLDEN_DIR / "BENCHMARKS-linux.md"
+
+    if not win_file.exists() and not lin_file.exists():
+        return
+
+    lines = [
+        "# Mapanare Compiler Benchmarks",
+        "",
+        "Cross-platform benchmark results. Each platform file is auto-generated",
+        "by `python scripts/test_native.py`. Commit both to track regressions.",
+        "",
+        "---",
+        "",
+    ]
+
+    if win_file.exists():
+        content = win_file.read_text(encoding="utf-8")
+        # Strip the H1 title, re-add as H2
+        content = re.sub(r"^# .+\n", "", content)
+        lines.append("## Windows")
+        lines.append("")
+        lines.append(content.strip())
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+    if lin_file.exists():
+        content = lin_file.read_text(encoding="utf-8")
+        content = re.sub(r"^# .+\n", "", content)
+        lines.append("## Linux")
+        lines.append("")
+        lines.append(content.strip())
+        lines.append("")
+
     BENCH_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return str(BENCH_FILE.relative_to(ROOT))
+
+
+def write_benchmarks(results: list[TestResult], stage1: pathlib.Path | None, elapsed: float):
+    """Write platform-specific file + merged BENCHMARKS.md."""
+    env = _get_env_info()
+
+    # 1. Write platform-specific file
+    platform_content = _build_platform_table(results, stage1, elapsed, env)
+    BENCH_PLATFORM_FILE.write_text(platform_content, encoding="utf-8")
+
+    # 2. Merge into combined BENCHMARKS.md
+    _merge_benchmarks()
+
+    return str(BENCH_PLATFORM_FILE.relative_to(ROOT))
 
 
 # ---------------------------------------------------------------------------

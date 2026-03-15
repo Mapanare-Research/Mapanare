@@ -1931,10 +1931,15 @@ class MIRLowerer:
         self._emit(Unwrap(dest=dest, val=val))
         return dest
 
-    def _lower_list(self, expr: ListLiteral) -> Value:
+    def _lower_list(self, expr: ListLiteral, expected_elem_type: MIRType | None = None) -> Value:
         """Lower a list literal."""
         elements = [self._lower_expr(e) for e in expr.elements]
-        elem_type = elements[0].ty if elements else mir_unknown()
+        if elements:
+            elem_type = elements[0].ty
+        elif expected_elem_type is not None:
+            elem_type = expected_elem_type
+        else:
+            elem_type = mir_unknown()
         dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.LIST)))
         self._emit(ListInit(dest=dest, elem_type=elem_type, elements=elements))
         return dest
