@@ -1,0 +1,7 @@
+fn main() {
+    let mut sum: Int = 0
+    for i in 0..10 {
+        sum = sum + i
+    }
+    println(str(sum))
+}

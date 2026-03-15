@@ -32,7 +32,31 @@ pytest tests/parser/ -v              # Parser tests only
 pytest tests/semantic/test_types.py  # Single test file
 pytest tests/llvm/ -v                # LLVM emitter tests
 pytest tests/bootstrap/ -v           # Self-hosted compiler tests
+
+# Golden test harness (native compiler validation)
+python scripts/test_native.py                                    # Bootstrap-only (Windows)
+python scripts/test_native.py --stage1 mapanare/self/mnc-stage1  # Compare with native (WSL)
+python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 --run  # Also run IR via lli
+python scripts/test_native.py --bless                            # Regenerate reference files
+python scripts/test_native.py --filter fib -v                    # One test, verbose
+
+# Self-hosted compiler build + fixed-point (WSL/Linux only)
+python scripts/build_stage1.py                   # Build mnc-stage1 from Python bootstrap
+bash scripts/verify_fixed_point.sh               # 3-stage self-compilation verification
+bash scripts/verify_fixed_point.sh --keep        # Keep intermediate IR for debugging
 ```
+
+## Testing the Native Compiler
+
+Golden test corpus lives in `tests/golden/*.mn` (15 programs covering all features). Reference IR in `tests/golden/*.ref.ll`.
+
+**Workflow for debugging mnc-stage1:**
+1. Make changes to `mapanare/self/*.mn` or `mapanare/emit_llvm_mir.py`
+2. Rebuild: `python scripts/build_stage1.py`
+3. Test: `python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 -v`
+4. The harness compares mnc-stage1 output against the Python bootstrap — shows exactly which functions are missing or different.
+
+Every run auto-updates `tests/golden/BENCHMARKS.md` with per-test metrics (source lines, IR lines, IR size, function count, compile time). Commit this file to track regressions over time.
 
 ## Code Style
 

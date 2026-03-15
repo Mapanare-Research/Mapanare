@@ -1014,7 +1014,8 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     s.current_fn = Some(mir_fn)
     s.tmp_counter = 0
     s.block_counter = 0
-    s.vars = []
+    let fresh_vars: List<VarInfo> = []
+    s.vars = fresh_vars
 
     // Create entry block
     s = add_block(s, "entry")
