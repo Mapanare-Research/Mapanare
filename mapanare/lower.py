@@ -1062,6 +1062,28 @@ class MIRLowerer:
         lhs = self._lower_expr(expr.left)
         rhs = self._lower_expr(expr.right)
 
+        # Trait dispatch: if the semantic checker annotated this expression with
+        # a trait method, emit a method call instead of a primitive BinOp.
+        trait = getattr(expr, "trait_dispatch", None)
+        if trait == "eq":
+            dest = self._make_value(ty=mir_bool())
+            self._emit(Call(dest=dest, fn_name="eq", args=[lhs, rhs]))
+            if expr.op == "!=":
+                # Negate the eq result for !=
+                neg = self._make_value(ty=mir_bool())
+                self._emit(UnaryOp(dest=neg, op=UnaryOpKind.NOT, operand=dest))
+                return neg
+            return dest
+        if trait == "cmp":
+            cmp_val = self._make_value(ty=mir_int())
+            self._emit(Call(dest=cmp_val, fn_name="cmp", args=[lhs, rhs]))
+            dest = self._make_value(ty=mir_bool())
+            zero = self._make_value(ty=mir_int())
+            self._emit(Const(dest=zero, value=0, ty=mir_int()))
+            cmp_op = {"<": BinOpKind.LT, ">": BinOpKind.GT, "<=": BinOpKind.LE, ">=": BinOpKind.GE}
+            self._emit(BinOp(dest=dest, op=cmp_op[expr.op], lhs=cmp_val, rhs=zero))
+            return dest
+
         op = _BINOP_MAP.get(expr.op)
         if op is None:
             # Unknown operator — emit as call

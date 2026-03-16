@@ -127,6 +127,12 @@ MN_EXPORT void __mn_str_println(MnString s);
 /** Print a string to stderr with newline (for diagnostics). */
 MN_EXPORT void __mn_str_eprintln(MnString s);
 
+/** Return the ASCII/byte value of the first character. Returns -1 if empty. */
+MN_EXPORT int64_t __mn_str_ord(MnString s);
+
+/** Return a single-character string from an ASCII/byte code. */
+MN_EXPORT MnString __mn_str_chr(int64_t code);
+
 /* -----------------------------------------------------------------------
  * MnList — type-erased growable array
  *
@@ -149,6 +155,9 @@ typedef struct MnList {
 
 /** Split `s` by `delim`. Returns a List<String>. */
 MN_EXPORT MnList __mn_str_split(MnString s, MnString delim);
+
+/** Join a list of strings with a separator. */
+MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts);
 
 /** Create an empty list for elements of `elem_size` bytes. */
 MN_EXPORT MnList __mn_list_new(int64_t elem_size);

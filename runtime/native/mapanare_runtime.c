@@ -1036,7 +1036,8 @@ MAPANARE_EXPORT mapanare_tensor_t *mapanare_tensor_matmul_dispatch(
  * ======================================================================= */
 
 static mapanare_agent_registry_t *s_shutdown_registry = NULL;
-static volatile int s_shutdown_requested = 0;
+static volatile sig_atomic_t s_shutdown_requested = 0;
+static volatile sig_atomic_t s_shutdown_signal = 0;
 
 #ifdef _WIN32
 static BOOL WINAPI mapanare_console_handler(DWORD sig) {
@@ -1051,23 +1052,14 @@ static BOOL WINAPI mapanare_console_handler(DWORD sig) {
 }
 #else
 static void mapanare_signal_handler(int sig) {
+    /*
+     * Async-signal-safe: only set flags. Do NOT call mutex-protected
+     * functions (mapanare_registry_stop_all) from within a signal handler.
+     * The main event loop or mapanare_shutdown_requested() caller is
+     * responsible for calling mapanare_shutdown_drain() to stop agents.
+     */
     s_shutdown_requested = 1;
-    if (s_shutdown_registry) {
-        /*
-         * Note: mapanare_registry_stop_all acquires a mutex, which is not
-         * strictly async-signal-safe. However, in practice the only signals
-         * we handle (SIGTERM, SIGINT) arrive from the terminal or process
-         * manager, and the program is about to exit. We accept this trade-off
-         * to ensure agents shut down cleanly (flush outbox, call on_stop).
-         *
-         * After stopping agents, re-raise with default disposition so the
-         * process exits with the correct signal status.
-         */
-        mapanare_registry_stop_all(s_shutdown_registry);
-    }
-    /* Re-raise with default handler so the exit code reflects the signal */
-    signal(sig, SIG_DFL);
-    raise(sig);
+    s_shutdown_signal = sig;
 }
 #endif
 
@@ -1088,7 +1080,28 @@ MAPANARE_EXPORT void mapanare_shutdown_init(mapanare_agent_registry_t *reg) {
 }
 
 MAPANARE_EXPORT int mapanare_shutdown_requested(void) {
+    if (s_shutdown_requested && s_shutdown_registry) {
+        /* Drain agents safely outside the signal handler context */
+        mapanare_registry_stop_all(s_shutdown_registry);
+        s_shutdown_registry = NULL;  /* Only drain once */
+    }
     return s_shutdown_requested;
+}
+
+MAPANARE_EXPORT void mapanare_shutdown_drain(void) {
+    if (s_shutdown_requested && s_shutdown_registry) {
+        mapanare_registry_stop_all(s_shutdown_registry);
+        s_shutdown_registry = NULL;
+    }
+#ifndef _WIN32
+    if (s_shutdown_signal != 0) {
+        /* Re-raise with default handler so the exit code reflects the signal */
+        int sig = s_shutdown_signal;
+        s_shutdown_signal = 0;
+        signal(sig, SIG_DFL);
+        raise(sig);
+    }
+#endif
 }
 
 /* =======================================================================

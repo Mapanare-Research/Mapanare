@@ -1058,6 +1058,11 @@ class PythonEmitter:
 
     def _emit_call(self, expr: CallExpr) -> str:
         callee = self._emit_expr(expr.callee)
+        # join(sep, parts) → sep.join(parts)
+        if callee == "join" and len(expr.args) == 2:
+            sep = self._emit_expr(expr.args[0])
+            parts = self._emit_expr(expr.args[1])
+            return f"{sep}.join({parts})"
         # Map Mapanare builtins to Python equivalents
         mapped = self._BUILTIN_CALL_MAP.get(callee, callee)
         args = ", ".join(self._emit_expr(a) for a in expr.args)

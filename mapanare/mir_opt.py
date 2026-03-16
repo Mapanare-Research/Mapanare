@@ -746,6 +746,115 @@ def _compute_reachable(fn: MIRFunction) -> set[str]:
     return reachable
 
 
+# ---------------------------------------------------------------------------
+# Dominance tree (iterative dataflow algorithm — Cooper, Harvey, Kennedy)
+# ---------------------------------------------------------------------------
+
+
+def _compute_predecessors(fn: MIRFunction) -> dict[str, list[str]]:
+    """Build predecessor map: block label -> list of predecessor labels."""
+    preds: dict[str, list[str]] = {bb.label: [] for bb in fn.blocks}
+    for bb in fn.blocks:
+        term = bb.terminator
+        if isinstance(term, Jump):
+            if term.target in preds:
+                preds[term.target].append(bb.label)
+        elif isinstance(term, Branch):
+            if term.true_block in preds:
+                preds[term.true_block].append(bb.label)
+            if term.false_block in preds:
+                preds[term.false_block].append(bb.label)
+        elif isinstance(term, Switch):
+            for _, lbl in term.cases:
+                if lbl in preds:
+                    preds[lbl].append(bb.label)
+            if term.default_block and term.default_block in preds:
+                preds[term.default_block].append(bb.label)
+    return preds
+
+
+def compute_dominance_tree(fn: MIRFunction) -> dict[str, str | None]:
+    """Compute the immediate dominator tree using the iterative algorithm.
+
+    Returns a dict mapping each block label to its immediate dominator label.
+    The entry block maps to None.
+
+    Algorithm: Cooper, Harvey, Kennedy — "A Simple, Fast Dominance Algorithm"
+    (2001). Iterates to a fixed point. O(n^2) worst case but fast in practice
+    for the small CFGs produced by Mapanare.
+    """
+    if not fn.blocks:
+        return {}
+
+    labels = [bb.label for bb in fn.blocks]
+    label_to_idx = {lbl: i for i, lbl in enumerate(labels)}
+    preds = _compute_predecessors(fn)
+
+    # idom[i] = index of immediate dominator of block i, or -1 for undefined
+    n = len(labels)
+    idom = [-1] * n
+    idom[0] = 0  # entry dominates itself
+
+    def intersect(b1: int, b2: int) -> int:
+        finger1, finger2 = b1, b2
+        while finger1 != finger2:
+            while finger1 > finger2:
+                finger1 = idom[finger1]
+            while finger2 > finger1:
+                finger2 = idom[finger2]
+        return finger1
+
+    changed = True
+    while changed:
+        changed = False
+        # Process all blocks in reverse postorder (skip entry)
+        for i in range(1, n):
+            lbl = labels[i]
+            pred_labels = preds.get(lbl, [])
+
+            # Find first processed predecessor
+            new_idom = -1
+            for p in pred_labels:
+                pi = label_to_idx.get(p, -1)
+                if pi >= 0 and idom[pi] != -1:
+                    new_idom = pi
+                    break
+
+            if new_idom == -1:
+                continue
+
+            # Intersect with remaining processed predecessors
+            for p in pred_labels:
+                pi = label_to_idx.get(p, -1)
+                if pi >= 0 and idom[pi] != -1 and pi != new_idom:
+                    new_idom = intersect(pi, new_idom)
+
+            if idom[i] != new_idom:
+                idom[i] = new_idom
+                changed = True
+
+    # Build result dict: label -> immediate dominator label (None for entry)
+    result: dict[str, str | None] = {}
+    for i, lbl in enumerate(labels):
+        if i == 0:
+            result[lbl] = None
+        elif idom[i] >= 0:
+            result[lbl] = labels[idom[i]]
+        else:
+            result[lbl] = None
+    return result
+
+
+def dominates(dom_tree: dict[str, str | None], a: str, b: str) -> bool:
+    """Return True if block `a` dominates block `b` in the given dominance tree."""
+    current: str | None = b
+    while current is not None:
+        if current == a:
+            return True
+        current = dom_tree.get(current)
+    return False
+
+
 def unreachable_block_elimination(fn: MIRFunction, stats: MIRPassStats) -> bool:
     """Remove basic blocks with no predecessors (except entry).
 

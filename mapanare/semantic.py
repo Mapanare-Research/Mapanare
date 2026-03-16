@@ -388,9 +388,31 @@ class SemanticChecker:
         if isinstance(expr, CallExpr):
             return self._check_call(expr)
         if isinstance(expr, MethodCallExpr):
-            self._infer_expr(expr.object)
+            obj_type = self._infer_expr(expr.object)
             for a in expr.args:
                 self._infer_expr(a)
+            # Return known types for string methods
+            if obj_type.kind == TypeKind.STRING:
+                _str_method_types: dict[str, TypeInfo] = {
+                    "starts_with": BOOL_TYPE,
+                    "ends_with": BOOL_TYPE,
+                    "contains": BOOL_TYPE,
+                    "find": INT_TYPE,
+                    "byte_at": INT_TYPE,
+                    "char_at": STRING_TYPE,
+                    "substr": STRING_TYPE,
+                    "trim": STRING_TYPE,
+                    "trim_start": STRING_TYPE,
+                    "trim_end": STRING_TYPE,
+                    "to_upper": STRING_TYPE,
+                    "to_lower": STRING_TYPE,
+                    "replace": STRING_TYPE,
+                    "split": TypeInfo(kind=TypeKind.LIST, args=[STRING_TYPE]),
+                    "length": INT_TYPE,
+                }
+                ret = _str_method_types.get(expr.method)
+                if ret is not None:
+                    return ret
             return UNKNOWN_TYPE
         if isinstance(expr, FieldAccessExpr):
             obj_type = self._infer_expr(expr.object)
@@ -565,6 +587,13 @@ class SemanticChecker:
             return UNKNOWN_TYPE
 
         if expr.op in comparison_ops or expr.op in equality_ops:
+            # Annotate trait dispatch: if the operand type implements Eq or Ord,
+            # emitters can use the trait method instead of direct comparison.
+            if left.kind in (TypeKind.STRUCT, TypeKind.ENUM) and left.name:
+                if expr.op in equality_ops and self._type_implements_trait(left.name, "Eq"):
+                    expr.trait_dispatch = "eq"  # type: ignore[attr-defined]
+                elif expr.op in comparison_ops and self._type_implements_trait(left.name, "Ord"):
+                    expr.trait_dispatch = "cmp"  # type: ignore[attr-defined]
             return BOOL_TYPE
 
         if expr.op in logical_ops:

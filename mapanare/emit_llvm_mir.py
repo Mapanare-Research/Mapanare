@@ -399,8 +399,12 @@ class LLVMMIREmitter:
 
         # Per-function drop glue: track heap-allocated strings and closure envs
         # so they can be freed before every ret instruction.
+        # _local_strings stores allocas (in the pre_entry block) that hold
+        # heap-allocated string values.  Using allocas avoids LLVM dominance
+        # errors: allocas in the entry block dominate all other blocks.
         self._local_strings: list[Any] = []
         self._local_closures: list[Any] = []
+        self._str_tmp_count: int = 0
 
         # Instruction dispatch table (type -> bound handler)
         self._inst_dispatch_bound: dict[type, Any] = {}
@@ -475,6 +479,10 @@ class LLVMMIREmitter:
         # 5. Emit function bodies
         for mir_fn in mir_module.functions:
             self._emit_function(mir_fn)
+
+        # 5a. Emit agent handler wrappers (after all MIR functions are available)
+        for agent_name, agent_info in mir_module.agents.items():
+            self._emit_agent_handler_wrapper(agent_name, agent_info)
 
         # 5b. Emit pipe definitions as pipeline functions
         for pipe_name, pipe_info in mir_module.pipes.items():
@@ -1415,22 +1423,20 @@ class LLVMMIREmitter:
         # 2. Value map: MIR value name -> LLVM value
         values: dict[str, Any] = {}
 
-        # 2b. Create a per-function arena for scoped allocations.
-        #     The arena is created in the pre_entry block and destroyed
-        #     before every ret instruction (see _emit_return).
-        pe_builder = ir.IRBuilder(pre_entry)
-        arena_ptr = pe_builder.call(
-            self._rt_arena_create(),
-            [ir.Constant(LLVM_INT, 8192)],
-            name="scope_arena",
-        )
-        arena_alloca = pe_builder.alloca(LLVM_PTR, name="arena_ptr")
-        pe_builder.store(arena_ptr, arena_alloca)
-        self._arena_ptr = arena_alloca
+        # 2b. Per-function arena for scoped allocations.
+        #     Arena lifecycle is available but disabled by default — it causes
+        #     use-after-free when returned values (especially strings built via
+        #     concatenation) are allocated on the callee's arena and then freed
+        #     before the caller can use them. The arena helpers remain declared
+        #     so the infrastructure is ready when the return-value escape
+        #     analysis is implemented.
+        ir.IRBuilder(pre_entry)  # pre_entry builder (unused — arena disabled)
+        self._arena_ptr = None
 
         # 2c. Reset per-function drop glue tracking lists.
         self._local_strings = []
         self._local_closures = []
+        self._str_tmp_count = 0
 
         # 3. Bind function parameters — also store to allocas so they're
         #    accessible from any basic block (fixes cross-block dominance
@@ -1589,8 +1595,8 @@ class LLVMMIREmitter:
             block = llvm_blocks[bb.label]
             if not block.is_terminated:
                 builder = ir.IRBuilder(block)
-                self._emit_arena_destroy(builder)
                 self._emit_drop_glue(builder, None)
+                self._emit_arena_destroy(builder)
                 ret_ty = self._resolve_mir_type(mir_fn.return_type)
                 if isinstance(ret_ty, ir.VoidType):
                     builder.ret_void()
@@ -1613,6 +1619,7 @@ class LLVMMIREmitter:
         self._arena_ptr = None
         self._local_strings = []
         self._local_closures = []
+        self._str_tmp_count = 0
 
     # -----------------------------------------------------------------------
     # Value name helper
@@ -1873,15 +1880,15 @@ class LLVMMIREmitter:
         elif src_kind == TypeKind.INT and tgt_kind == TypeKind.STRING:
             fn = self._rt_str_from_int()
             result = builder.call(fn, [src], name=name)
-            self._local_strings.append(result)
+            self._track_string(builder, result)
         elif src_kind == TypeKind.FLOAT and tgt_kind == TypeKind.STRING:
             fn = self._rt_str_from_float()
             result = builder.call(fn, [src], name=name)
-            self._local_strings.append(result)
+            self._track_string(builder, result)
         elif src_kind == TypeKind.BOOL and tgt_kind == TypeKind.STRING:
             fn = self._rt_str_from_bool()
             result = builder.call(fn, [src], name=name)
-            self._local_strings.append(result)
+            self._track_string(builder, result)
         elif src_kind == TypeKind.INT and tgt_kind == TypeKind.CHAR:
             result = builder.trunc(src, LLVM_CHAR, name=name)
         elif src_kind == TypeKind.CHAR and tgt_kind == TypeKind.INT:
@@ -1932,7 +1939,7 @@ class LLVMMIREmitter:
             if op == BinOpKind.ADD:
                 fn = self._rt_str_concat()
                 result = builder.call(fn, [lhs, rhs], name=name)
-                self._local_strings.append(result)
+                self._track_string(builder, result)
             elif op in (BinOpKind.EQ, BinOpKind.NE):
                 fn = self._rt_str_eq()
                 cmp_val = builder.call(fn, [lhs, rhs], name=f"{name}.cmp")
@@ -2039,11 +2046,11 @@ class LLVMMIREmitter:
             else:
                 rhs = operand
         if op == BinOpKind.ADD:
-            result = builder.add(lhs, rhs, name=name)
+            result = builder.add(lhs, rhs, name=name, flags=("nsw",))
         elif op == BinOpKind.SUB:
-            result = builder.sub(lhs, rhs, name=name)
+            result = builder.sub(lhs, rhs, name=name, flags=("nsw",))
         elif op == BinOpKind.MUL:
-            result = builder.mul(lhs, rhs, name=name)
+            result = builder.mul(lhs, rhs, name=name, flags=("nsw",))
         elif op == BinOpKind.DIV:
             result = builder.sdiv(lhs, rhs, name=name)
         elif op == BinOpKind.MOD:
@@ -2080,7 +2087,7 @@ class LLVMMIREmitter:
             if kind == TypeKind.FLOAT:
                 result = builder.fsub(ir.Constant(LLVM_FLOAT, 0.0), operand, name=name)
             else:
-                result = builder.sub(ir.Constant(LLVM_INT, 0), operand, name=name)
+                result = builder.sub(ir.Constant(LLVM_INT, 0), operand, name=name, flags=("nsw",))
         elif inst.op == UnaryOpKind.NOT:
             if kind == TypeKind.BOOL:
                 result = builder.xor(operand, ir.Constant(LLVM_BOOL, 1), name=name)
@@ -2125,7 +2132,7 @@ class LLVMMIREmitter:
                 # Convert bool to string then print
                 str_fn = self._rt_str_from_bool()
                 str_val = builder.call(str_fn, [args[0]], name=f"{name}.bstr")
-                self._local_strings.append(str_val)
+                self._track_string(builder, str_val)
                 rt_fn = self._rt_str_println() if fn_name == "println" else self._rt_str_print()
                 builder.call(rt_fn, [str_val])
             else:
@@ -2173,15 +2180,15 @@ class LLVMMIREmitter:
             if inst.args and inst.args[0].ty.kind == TypeKind.INT:
                 fn = self._rt_str_from_int()
                 result = builder.call(fn, [args[0]], name=name)
-                self._local_strings.append(result)
+                self._track_string(builder, result)
             elif inst.args and inst.args[0].ty.kind == TypeKind.FLOAT:
                 fn = self._rt_str_from_float()
                 result = builder.call(fn, [args[0]], name=name)
-                self._local_strings.append(result)
+                self._track_string(builder, result)
             elif inst.args and inst.args[0].ty.kind == TypeKind.BOOL:
                 fn = self._rt_str_from_bool()
                 result = builder.call(fn, [args[0]], name=name)
-                self._local_strings.append(result)
+                self._track_string(builder, result)
             elif inst.args and inst.args[0].ty.kind == TypeKind.STRING:
                 result = args[0]  # Already a string
             else:
@@ -2218,6 +2225,49 @@ class LLVMMIREmitter:
                 result = builder.call(fn, [a], name=name)
             else:
                 result = ir.Constant(LLVM_FLOAT, 0.0)
+            self._store_value(inst.dest, result, values)
+            return
+
+        # ord(ch) -> Int
+        if fn_name == "ord":
+            if inst.args and inst.args[0].ty.kind == TypeKind.STRING:
+                fn = self._declare_runtime_fn("__mn_str_ord", LLVM_INT, [LLVM_STRING])
+                a = _coerce_arg(builder, args[0], LLVM_STRING, name)
+                result = builder.call(fn, [a], name=name)
+            else:
+                result = ir.Constant(LLVM_INT, -1)
+            self._store_value(inst.dest, result, values)
+            return
+
+        # chr(code) -> String
+        if fn_name == "chr":
+            if inst.args:
+                fn = self._declare_runtime_fn("__mn_str_chr", LLVM_STRING, [LLVM_INT])
+                a = _coerce_arg(builder, args[0], LLVM_INT, name)
+                result = builder.call(fn, [a], name=name)
+                self._local_strings.append(result)
+            else:
+                result = self._make_string_constant(builder, "")
+            self._store_value(inst.dest, result, values)
+            return
+
+        # join(sep, parts) -> String
+        if fn_name == "join":
+            if len(inst.args) >= 2:
+                fn = self._declare_runtime_fn(
+                    "__mn_str_join", LLVM_STRING, [LLVM_STRING, LLVM_LIST.as_pointer()]
+                )
+                sep = _coerce_arg(builder, args[0], LLVM_STRING, name)
+                # parts is a List — alloca + store to get pointer
+                list_val = args[1]
+                if list_val.type != LLVM_LIST:
+                    list_val = _coerce_arg(builder, list_val, LLVM_LIST, f"{name}.lc")
+                list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.list.ptr")
+                builder.store(list_val, list_ptr)
+                result = builder.call(fn, [sep, list_ptr], name=name)
+                self._local_strings.append(result)
+            else:
+                result = self._make_string_constant(builder, "")
             self._store_value(inst.dest, result, values)
             return
 
@@ -2260,7 +2310,7 @@ class LLVMMIREmitter:
                 result = builder.call(rt_fn, coerced, name=name)
                 # Track string-returning methods for drop glue
                 if ret_type == ST:
-                    self._local_strings.append(result)
+                    self._track_string(builder, result)
                 self._store_value(inst.dest, result, values)
                 return
 
@@ -2556,18 +2606,60 @@ class LLVMMIREmitter:
             arena = builder.load(self._arena_ptr, name="arena")
             builder.call(self._rt_arena_destroy(), [arena])
 
+    def _track_string(self, builder: Any, val: Any) -> None:
+        """Track a heap-allocated string for drop glue cleanup.
+
+        Currently disabled: adding allocas to the pre_entry block after
+        the terminator was placed corrupts the IR. Drop glue will be
+        re-implemented with a proper alloca insertion strategy (before the
+        terminator) in a future patch.
+        """
+        return
+
     def _emit_drop_glue(self, builder: Any, ret_val: Any) -> None:
         """Free locally-allocated strings and closure environments.
 
         Called before every ret instruction. Values that are being returned
         are excluded from cleanup to avoid use-after-free.
-        """
-        # Drop glue for strings is deferred — tracking heap strings across
-        # basic blocks causes LLVM dominance errors. The arena lifecycle
-        # handles cleanup at function exit instead.
 
-        # Closure environment cleanup deferred — same dominance issue.
-        # Arena handles cleanup at function exit.
+        Each entry in _local_strings is an alloca (in pre_entry) holding a
+        heap string {i8*, i64}.  We load each one and call __mn_str_free.
+        The C runtime's __mn_str_free is null-safe (checks s.data before
+        freeing), so zero-initialized allocas that were never written to
+        are harmless.
+        """
+        if not self._local_strings:
+            return
+        str_free = self._rt_str_free()
+
+        # Extract the return value's data pointer once (if it's a string)
+        # so we can skip freeing the returned string.
+        ret_ptr: Any = None
+        if ret_val is not None and hasattr(ret_val, "type") and ret_val.type == LLVM_STRING:
+            try:
+                ret_ptr = builder.extract_value(ret_val, 0, name="drop.retptr")
+            except (TypeError, AttributeError):
+                pass
+
+        for alloca in self._local_strings:
+            loaded = builder.load(alloca, name="drop.str")
+            if ret_ptr is not None:
+                # Compare data pointers to skip the returned string
+                try:
+                    drop_ptr = builder.extract_value(loaded, 0, name="drop.dptr")
+                    is_same = builder.icmp_unsigned("==", drop_ptr, ret_ptr, name="drop.same")
+                    fn_block = builder.function
+                    free_bb = fn_block.append_basic_block(name="drop.free")
+                    skip_bb = fn_block.append_basic_block(name="drop.skip")
+                    builder.cbranch(is_same, skip_bb, free_bb)
+                    builder.position_at_end(free_bb)
+                    builder.call(str_free, [loaded])
+                    builder.branch(skip_bb)
+                    builder.position_at_end(skip_bb)
+                    continue
+                except (TypeError, AttributeError):
+                    pass
+            builder.call(str_free, [loaded])
 
     # --- Jump ---
 
@@ -3387,23 +3479,23 @@ class LLVMMIREmitter:
             elif part_kind == TypeKind.INT:
                 fn = self._rt_str_from_int()
                 s = builder.call(fn, [val], name=f"{name}.i2s")
-                self._local_strings.append(s)
+                self._track_string(builder, s)
                 str_parts.append(s)
             elif part_kind == TypeKind.FLOAT:
                 fn = self._rt_str_from_float()
                 s = builder.call(fn, [val], name=f"{name}.f2s")
-                self._local_strings.append(s)
+                self._track_string(builder, s)
                 str_parts.append(s)
             elif part_kind == TypeKind.BOOL:
                 fn = self._rt_str_from_bool()
                 s = builder.call(fn, [val], name=f"{name}.b2s")
-                self._local_strings.append(s)
+                self._track_string(builder, s)
                 str_parts.append(s)
             else:
                 # Fallback: treat as int
                 fn = self._rt_str_from_int()
                 s = builder.call(fn, [val], name=f"{name}.x2s")
-                self._local_strings.append(s)
+                self._track_string(builder, s)
                 str_parts.append(s)
 
         # Chain concatenation
@@ -3411,42 +3503,127 @@ class LLVMMIREmitter:
         concat_fn = self._rt_str_concat()
         for i, part in enumerate(str_parts[1:], 1):
             result = builder.call(concat_fn, [result, part], name=f"{name}.c{i}")
-            self._local_strings.append(result)
+            self._track_string(builder, result)
 
         self._store_value(inst.dest, result, values)
 
     # --- Agent operations ---
     #
-    # [!] Deferred — handler wrapper emission requires significant MIR restructuring.
-    #
-    # The AST-based emitter (emit_llvm.py) generates __mn_handler_<Agent> wrapper
-    # functions with signature (i8*, i8*, i8**) -> i32 that:
-    #   1. Unbox the incoming message (cast void* -> typed ptr, load)
-    #   2. Call the actual handler method function
-    #   3. Box the result (alloc, store, write to out_msg pointer)
-    #
-    # To port this to the MIR emitter, we need:
-    #   - MIRAgentInfo.inputs/outputs to carry MIRType (not just string names)
-    #   - A post-emit phase that generates the handler wrapper after all MIR
-    #     functions have been emitted (so the method function is available)
-    #   - AgentSpawn emission to look up the handler wrapper and pass its
-    #     function pointer to mapanare_agent_new() instead of null
-    #
-    # Currently agents spawn with null handler, which means the C runtime
-    # processes messages but cannot dispatch to Mapanare handler methods.
+    # Handler wrapper emission: generates __mn_handler_<Agent> functions with
+    # C-compatible signature (i8*, i8*, i8**) -> i32 matching the runtime's
+    # mapanare_handler_fn typedef.  When a MIR handler method is available,
+    # the wrapper unboxes the message, calls the method, and boxes the result.
+    # Otherwise a no-op wrapper (returns 0, sets out_msg to null) is emitted
+    # to prevent null-handler crashes in the C runtime.
+
+    def _emit_agent_handler_wrapper(self, agent_name: str, info: Any) -> None:
+        """Emit a C-compatible handler wrapper for an agent.
+
+        Signature: int handler(void *agent_data, void *msg, void **out_msg)
+        If a handler method is found in _functions, it unboxes msg, calls the
+        method, and boxes the result.  Otherwise emits a no-op returning 0.
+        """
+        handler_name = f"__mn_handler_{agent_name}"
+        fn_ty = ir.FunctionType(LLVM_I32, [LLVM_PTR, LLVM_PTR, LLVM_PTR.as_pointer()])
+        func = ir.Function(self.module, fn_ty, name=handler_name)
+        func.args[0].name = "agent_data"
+        func.args[1].name = "msg"
+        func.args[2].name = "out_msg"
+
+        block = func.append_basic_block("entry")
+        hb = ir.IRBuilder(block)
+
+        # Try to find the handler method: prefer "handle", fall back to first method
+        handler_fn = None
+        for mname in info.method_names:
+            fn = self._functions.get(mname)
+            if fn is None:
+                continue
+            if handler_fn is None:
+                handler_fn = fn
+            # Prefer method named *_handle
+            if mname.endswith("_handle") or mname == f"{agent_name}_handle":
+                handler_fn = fn
+                break
+
+        has_input = len(info.inputs) > 0
+        has_output = len(info.outputs) > 0
+
+        if handler_fn is not None and has_input:
+            # Determine input type from the handler method's first parameter
+            handler_params = list(handler_fn.type.pointee.args)
+            if handler_params:
+                input_type = handler_params[0]
+                # Handle pass-by-pointer: if the first param is a pointer to a
+                # struct (large struct convention), dereference one level
+                is_byptr = (
+                    isinstance(input_type, ir.PointerType)
+                    and handler_fn.name in self._byptr_params
+                    and 0 in self._byptr_params[handler_fn.name]
+                )
+                load_type = input_type.pointee if is_byptr else input_type
+
+                # Unbox: cast void* msg to typed pointer, load value
+                msg_typed = hb.bitcast(func.args[1], load_type.as_pointer(), name="msg_typed")
+                msg_val = hb.load(msg_typed, name="msg_val")
+
+                # Free the message box
+                hb.call(self._rt_free(), [func.args[1]])
+
+                # Call the handler method
+                if is_byptr:
+                    # Handler expects a pointer — pass msg_typed directly
+                    result = hb.call(handler_fn, [msg_typed], name="result")
+                else:
+                    result = hb.call(handler_fn, [msg_val], name="result")
+
+                # Check for sret convention on the handler
+                handler_ret_ty = handler_fn.type.pointee.return_type
+                is_sret = handler_fn.name in self._sret_functions
+
+                if has_output and not isinstance(handler_ret_ty, ir.VoidType) and not is_sret:
+                    # Box the result: allocate, store, write to out_msg
+                    type_size = _approx_type_size(result.type)
+                    out_box = hb.call(
+                        self._rt_alloc(),
+                        [ir.Constant(LLVM_INT, type_size)],
+                        name="out_box",
+                    )
+                    out_typed = hb.bitcast(out_box, result.type.as_pointer(), name="out_typed")
+                    hb.store(result, out_typed)
+                    hb.store(out_box, func.args[2])
+                else:
+                    hb.store(ir.Constant(LLVM_PTR, None), func.args[2])
+            else:
+                # No parameters — no-op wrapper
+                hb.store(ir.Constant(LLVM_PTR, None), func.args[2])
+        else:
+            # No handler method or no inputs — no-op wrapper
+            hb.store(ir.Constant(LLVM_PTR, None), func.args[2])
+
+        hb.ret(ir.Constant(LLVM_I32, 0))
+        self._functions[handler_name] = func
 
     def _emit_agent_spawn(self, inst: AgentSpawn, builder: Any, values: dict[str, Any]) -> None:
         name = self._val_name(inst.dest)
+        agent_type_name = inst.agent_type.type_info.name or "agent"
         # Create agent: mapanare_agent_new(name, handler, data, inbox_cap, outbox_cap)
-        agent_name_str = self._make_string_constant(
-            builder, inst.agent_type.type_info.name or "agent"
-        )
+        agent_name_str = self._make_string_constant(builder, agent_type_name)
         agent_name_ptr = builder.extract_value(agent_name_str, 0)
+
+        # Look up handler wrapper; fall back to null if not emitted
+        handler_name = f"__mn_handler_{agent_type_name}"
+        handler_fn = self._functions.get(handler_name)
+        if handler_fn is not None:
+            handler_ptr = builder.bitcast(handler_fn, LLVM_PTR, name=f"{name}.handler")
+        else:
+            handler_ptr = ir.Constant(LLVM_PTR, None)
+
         null_ptr = ir.Constant(LLVM_PTR, None)
         cap = ir.Constant(LLVM_I32, 256)
         fn_new = self._rt_agent_new()
         agent_ptr = builder.call(
-            fn_new, [agent_name_ptr, null_ptr, null_ptr, cap, cap], name=f"{name}.new"
+            fn_new, [agent_name_ptr, handler_ptr, null_ptr, cap, cap], name=f"{name}.new"
         )
         # Spawn
         fn_spawn = self._rt_agent_spawn()
@@ -3902,7 +4079,16 @@ class LLVMMIREmitter:
         for i, stage in enumerate(pipe_info.stages):
             stage_name = self._make_string_constant(builder, stage)
             name_ptr = builder.extract_value(stage_name, 0)
-            agent = builder.call(fn_new, [name_ptr, null_ptr, null_ptr, cap, cap], name=f"stage{i}")
+            # Use handler wrapper if available, otherwise null
+            handler_name = f"__mn_handler_{stage}"
+            stage_handler_fn = self._functions.get(handler_name)
+            if stage_handler_fn is not None:
+                handler_ptr = builder.bitcast(stage_handler_fn, LLVM_PTR, name=f"stage{i}.handler")
+            else:
+                handler_ptr = null_ptr
+            agent = builder.call(
+                fn_new, [name_ptr, handler_ptr, null_ptr, cap, cap], name=f"stage{i}"
+            )
             builder.call(fn_spawn, [agent])
             builder.call(fn_send, [agent, current_val])
             out_ptr = builder.alloca(LLVM_PTR, name=f"stage{i}.out")

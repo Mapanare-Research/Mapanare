@@ -357,11 +357,14 @@
 
 ## Final Results
 
-- **Test count:** 3,697 passed, 6 skipped, 0 failed
-- **Golden tests:** 15/15 pass (Python bootstrap), 14/15 pass (mnc-stage1, only `11_closure` crashes)
+- **Test count:** 3,698 passed, 6 skipped, 0 failed
+- **Golden tests:** 15/15 pass (Python bootstrap), 13/15 pass (mnc-stage1; `08_list` and `09_string_methods` crash in self-hosted emitter)
 - **C runtime:** 52/52 pass (plain, ASan, TSan clean)
 - **Lint:** ruff, black, mypy all pass clean
-- **Self-hosted:** mnc-stage1 builds (opt_level=1, 1.97 MB). Compiles ast.mn, lexer.mn (opt0), main.mn (opt0). Crashes on parser/semantic/lower/emit_llvm (SIGSEGV in __mn_str_concat — arena lifetime issue for returned strings)
-- **Fixed-point:** Blocked by v1.0.5 (self-hosted compiler crashes on 4 of 7 modules)
+- **Self-hosted:** mnc-stage1 builds (opt_level=1, 1.89 MB). Compiles ast.mn, lexer.mn, main.mn individually. Crashes on parser/semantic/lower/emit_llvm (OOM — self-hosted semantic checker has O(n^2+) memory behavior with 40+ functions using complex types)
+- **Fixed-point:** Blocked by self-hosted OOM on complex modules
 - **Benchmarks:** Recorded in `benchmarks/results_all.json`
+- **Completed in 2nd pass:** nsw integer flags, dominance tree, operator trait dispatch annotation, string primitives wiring, signal security (mutex, null cleanup, batch overflow, async-safety)
+- **Arena lifecycle:** Implemented but disabled — causes use-after-free when returned values (strings) are allocated on callee's arena. Needs return-value escape analysis.
+- **Drop glue (alloca-based):** Implemented but disabled — inserting allocas after pre_entry terminator corrupts IR. Needs alloca reservation before terminator placement.
 - **VERSION:** 1.0.10

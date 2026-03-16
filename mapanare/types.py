@@ -262,6 +262,9 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "Err": TypeInfo(kind=TypeKind.RESULT),
     "signal": TypeInfo(kind=TypeKind.SIGNAL),
     "stream": TypeInfo(kind=TypeKind.STREAM),
+    "ord": INT_TYPE,
+    "chr": STRING_TYPE,
+    "join": STRING_TYPE,
 }
 
 # Builtin call name mapping (Mapanare name -> Python name) for emit_python.py
@@ -270,6 +273,8 @@ BUILTIN_CALL_MAP: dict[str, str] = {
     "toString": "str",
     "int": "int",
     "float": "float",
+    "ord": "ord",
+    "chr": "chr",
 }
 
 # Mapanare type name -> Python type name for emit_python.py

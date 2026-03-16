@@ -1055,6 +1055,17 @@ class PythonMIREmitter:
 
         # Map builtins (strip % prefix from MIR names)
         raw_name = inst.fn_name.lstrip("%")
+
+        # join(sep, parts) → sep.join(parts)
+        if raw_name == "join" and len(inst.args) == 2:
+            sep = self._val(inst.args[0])
+            parts = self._val(inst.args[1])
+            if dest and inst.dest.name:
+                self._emit_line(f"{dest} = {sep}.join({parts})")
+            else:
+                self._emit_line(f"{sep}.join({parts})")
+            return
+
         fn_name = BUILTIN_CALL_MAP.get(raw_name, raw_name)
 
         # Check if the called function is async

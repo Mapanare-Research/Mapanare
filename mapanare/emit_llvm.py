@@ -1391,6 +1391,38 @@ class LLVMEmitter:
                     return val
             return ir.Constant(ir.DoubleType(), 0.0)
 
+        # ord(ch) -> Int
+        if isinstance(node.callee, Identifier) and node.callee.name == "ord":
+            if node.args:
+                val = self._emit_expr(node.args[0])
+                if self._is_string_type(val):
+                    fn = self._declare_runtime_fn("__mn_str_ord", LLVM_INT, [LLVM_STRING])
+                    return self.builder.call(fn, [val], name="ord")
+            return ir.Constant(LLVM_INT, -1)
+
+        # chr(code) -> String
+        if isinstance(node.callee, Identifier) and node.callee.name == "chr":
+            if node.args:
+                val = self._emit_expr(node.args[0])
+                fn = self._declare_runtime_fn("__mn_str_chr", LLVM_STRING, [LLVM_INT])
+                return self.builder.call(fn, [val], name="chr")
+            fn = self._declare_runtime_fn("__mn_str_empty", LLVM_STRING, [])
+            return self.builder.call(fn, [], name="chr.empty")
+
+        # join(sep, parts) -> String
+        if isinstance(node.callee, Identifier) and node.callee.name == "join":
+            if len(node.args) >= 2:
+                sep = self._emit_expr(node.args[0])
+                parts = self._emit_expr(node.args[1])
+                fn = self._declare_runtime_fn(
+                    "__mn_str_join", LLVM_STRING, [LLVM_STRING, LLVM_LIST.as_pointer()]
+                )
+                list_ptr = self.builder.alloca(LLVM_LIST, name="join.list.ptr")
+                self.builder.store(parts, list_ptr)
+                return self.builder.call(fn, [sep, list_ptr], name="join")
+            fn = self._declare_runtime_fn("__mn_str_empty", LLVM_STRING, [])
+            return self.builder.call(fn, [], name="join.empty")
+
         # Enum variant construction: Some(x), Ok(x), MyEnum::Variant(x), etc.
         if isinstance(node.callee, Identifier) and node.callee.name in self._variant_to_enum:
             return self._emit_enum_construct(node.callee.name, list(node.args))
