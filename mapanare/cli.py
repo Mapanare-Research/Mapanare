@@ -118,6 +118,7 @@ def _compile_to_llvm_ir(
     resolver: ModuleResolver | None = None,
     use_mir: bool = True,
     debug: bool = False,
+    werror: bool = False,
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source.
 
@@ -142,7 +143,7 @@ def _compile_to_llvm_ir(
                 target_name=target_name,
                 debug=debug,
             )
-    check_or_raise(ast, filename=filename, resolver=resolver)
+    check_or_raise(ast, filename=filename, resolver=resolver, werror=werror)
 
     if use_mir:
         from mapanare.emit_llvm_mir import LLVMMIREmitter
@@ -297,6 +298,7 @@ def cmd_check(args: argparse.Namespace) -> None:
         )
 
     # Run semantic analysis even if there were parse errors (on partial AST)
+    werror = getattr(args, "werror", False)
     if ast.definitions:
         from mapanare.semantic import check
 
@@ -304,6 +306,9 @@ def cmd_check(args: argparse.Namespace) -> None:
         for err in sem_errors:
             from mapanare.ast_nodes import Span
 
+            # With --werror, promote warnings to errors
+            if err.severity == "warning" and not werror:
+                continue
             span = Span(
                 line=err.line, column=err.column, end_line=err.line, end_column=err.column + 1
             )
@@ -709,6 +714,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     stdlib_path: str | None = getattr(args, "stdlib_path", None)
     search_paths = [stdlib_path] if stdlib_path else None
     resolver = ModuleResolver(search_paths=search_paths)
+    werror = getattr(args, "werror", False)
     try:
         llvm_ir = _compile_to_llvm_ir(
             source,
@@ -718,6 +724,7 @@ def cmd_build(args: argparse.Namespace) -> None:
             resolver=resolver,
             use_mir=use_mir,
             debug=debug,
+            werror=werror,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -1128,6 +1135,12 @@ def build_parser() -> argparse.ArgumentParser:
     # check
     p_check = subparsers.add_parser("check", help="Type-check .mn source")
     p_check.add_argument("source", help="Path to .mn source file")
+    p_check.add_argument(
+        "--werror",
+        action="store_true",
+        default=False,
+        help="Treat warnings as errors",
+    )
     p_check.set_defaults(func=cmd_check)
 
     # run
@@ -1272,6 +1285,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Path to stdlib directory (default: auto-detect from install)",
         default=None,
+    )
+    p_build.add_argument(
+        "--werror",
+        action="store_true",
+        default=False,
+        help="Treat warnings as errors",
     )
     _add_opt_level_args(p_build)
     _add_mir_flag(p_build)

@@ -10,6 +10,15 @@ Design goals:
 - Explicit control flow: basic blocks with terminators
 - Flat: three-address form (dest = op(args))
 - Backend-agnostic: no Python-isms or LLVM-isms
+
+Relaxed SSA
+-----------
+MIR uses a relaxed SSA form: immutable values follow strict SSA (single
+definition), but mutable variables (declared with ``let mut``) may be
+redefined within the same block. The MIRVerifier enforces this relaxed
+invariant by default. Pass ``strict_ssa=True`` to opt into standard SSA
+verification (rejects mutable redefinitions -- useful for testing optimizer
+output).
 """
 
 from __future__ import annotations
@@ -174,6 +183,15 @@ class Instruction:
 
     span: SourceSpan | None = field(default=None, repr=False, compare=False)
 
+    @property
+    def has_side_effects(self) -> bool:
+        """Whether this instruction has observable side effects.
+
+        Side-effecting instructions must not be removed by DCE even if
+        their result is unused.  Subclasses override to return ``True``.
+        """
+        return False
+
 
 # --- Values ---
 
@@ -255,6 +273,10 @@ class FieldSet(Instruction):
     field_name: str = ""
     val: Value = field(default_factory=Value)
 
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
 
 @dataclass(slots=True)
 class ListInit(Instruction):
@@ -282,6 +304,10 @@ class IndexSet(Instruction):
     index: Value = field(default_factory=Value)
     val: Value = field(default_factory=Value)
 
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
 
 @dataclass(slots=True)
 class ListPush(Instruction):
@@ -294,6 +320,10 @@ class ListPush(Instruction):
     dest: Value = field(default_factory=Value)
     list_val: Value = field(default_factory=Value)
     element: Value = field(default_factory=Value)
+
+    @property
+    def has_side_effects(self) -> bool:
+        return True
 
 
 @dataclass(slots=True)
@@ -391,12 +421,20 @@ class Call(Instruction):
     fn_name: str = ""
     args: list[Value] = field(default_factory=list)
 
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
 
 @dataclass(slots=True)
 class Return(Instruction):
     """Return from function."""
 
     val: Value | None = None
+
+    @property
+    def has_side_effects(self) -> bool:
+        return True
 
 
 @dataclass(slots=True)
@@ -409,6 +447,10 @@ class ExternCall(Instruction):
     fn_name: str = ""
     args: list[Value] = field(default_factory=list)
 
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
 
 # --- Control Flow (terminators) ---
 
@@ -419,6 +461,10 @@ class Jump(Instruction):
 
     target: str = ""  # block label
 
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
 
 @dataclass(slots=True)
 class Branch(Instruction):
@@ -428,6 +474,10 @@ class Branch(Instruction):
     true_block: str = ""
     false_block: str = ""
 
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
 
 @dataclass(slots=True)
 class Switch(Instruction):
@@ -436,6 +486,10 @@ class Switch(Instruction):
     tag: Value = field(default_factory=Value)
     cases: list[tuple[Any, str]] = field(default_factory=list)  # (value, block_label)
     default_block: str = ""
+
+    @property
+    def has_side_effects(self) -> bool:
+        return True
 
 
 # --- Agents / Signals / Streams ---
@@ -449,6 +503,10 @@ class AgentSpawn(Instruction):
     agent_type: MIRType = field(default_factory=mir_unknown)
     args: list[Value] = field(default_factory=list)
 
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
 
 @dataclass(slots=True)
 class AgentSend(Instruction):
@@ -458,6 +516,10 @@ class AgentSend(Instruction):
     channel: str = ""
     val: Value = field(default_factory=Value)
 
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
 
 @dataclass(slots=True)
 class AgentSync(Instruction):
@@ -466,6 +528,10 @@ class AgentSync(Instruction):
     dest: Value = field(default_factory=Value)
     agent: Value = field(default_factory=Value)
     channel: str = ""
+
+    @property
+    def has_side_effects(self) -> bool:
+        return True
 
 
 @dataclass(slots=True)
@@ -492,6 +558,10 @@ class SignalSet(Instruction):
     signal: Value = field(default_factory=Value)
     val: Value = field(default_factory=Value)
 
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
 
 @dataclass(slots=True)
 class SignalComputed(Instruction):
@@ -509,6 +579,10 @@ class SignalSubscribe(Instruction):
 
     signal: Value = field(default_factory=Value)
     subscriber: Value = field(default_factory=Value)
+
+    @property
+    def has_side_effects(self) -> bool:
+        return True
 
 
 @dataclass(slots=True)
@@ -556,6 +630,10 @@ class ClosureCall(Instruction):
     closure: Value = field(default_factory=Value)  # The closure {fn_ptr, env_ptr}
     args: list[Value] = field(default_factory=list)
 
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
 
 @dataclass(slots=True)
 class EnvLoad(Instruction):
@@ -589,6 +667,10 @@ class Assert(Instruction):
     message: Value | None = None
     filename: str = ""
     line: int = 0
+
+    @property
+    def has_side_effects(self) -> bool:
+        return True
 
 
 # --- Phi ---
@@ -1027,8 +1109,9 @@ class MIRVerifier:
     - Entry block is the first block
     """
 
-    def __init__(self) -> None:
+    def __init__(self, strict_ssa: bool = False) -> None:
         self.errors: list[VerifyError] = []
+        self.strict_ssa = strict_ssa
 
     def verify_module(self, module: MIRModule) -> list[VerifyError]:
         """Verify an entire module. Returns list of errors (empty = valid)."""
@@ -1094,9 +1177,16 @@ class MIRVerifier:
 
         # Check definitions and target labels
         for inst in bb.instructions:
-            # Track definitions (relaxed SSA: mutable variables may be redefined)
+            # Track definitions — in strict SSA mode, reject any redefinition
             dest = self._get_dest(inst)
             if dest is not None and dest.name:
+                if self.strict_ssa and dest.name in all_defs:
+                    prev_block = all_defs[dest.name]
+                    self._error(
+                        fn_name,
+                        bb.label,
+                        f"SSA violation: '{dest.name}' already defined in block '{prev_block}'",
+                    )
                 all_defs[dest.name] = bb.label
 
             # Check branch targets

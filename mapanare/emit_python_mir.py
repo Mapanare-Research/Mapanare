@@ -144,8 +144,6 @@ class PythonMIREmitter:
 
     def _fn_needs_async(self, fn: MIRFunction) -> bool:
         """Return True if the function should be emitted as async def."""
-        if fn.name == "main":
-            return True
         for bb in fn.blocks:
             for inst in bb.instructions:
                 if isinstance(inst, (AgentSpawn, AgentSend, AgentSync)):
@@ -462,7 +460,7 @@ class PythonMIREmitter:
             self._indent -= 1
             self._emit_line("except _EarlyReturn as _er:")
             self._indent += 1
-            self._emit_line("return _er.value")
+            self._emit_line("return _er.err")
             self._indent -= 1
 
         self._indent -= 1
@@ -1112,12 +1110,16 @@ class PythonMIREmitter:
         """Emit the if __name__ == '__main__' guard if a main function exists."""
         has_main = any(fn.name == "main" for fn in module.functions)
         if has_main:
+            main_is_async = "main" in self._async_fns
             self._emit_line("")
             self._emit_line('if __name__ == "__main__":')
             self._indent += 1
-            self._emit_line("import asyncio")
-            self._emit_line("")
-            self._emit_line("asyncio.run(main())")
+            if main_is_async:
+                self._emit_line("import asyncio")
+                self._emit_line("")
+                self._emit_line("asyncio.run(main())")
+            else:
+                self._emit_line("main()")
             self._indent -= 1
 
     # ------------------------------------------------------------------

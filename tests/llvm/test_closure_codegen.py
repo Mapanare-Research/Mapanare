@@ -195,14 +195,14 @@ class TestClosureLLVMEmission:
     """Closure MIR instructions emit correct LLVM IR."""
 
     def test_closure_create_emits_alloc_and_store(self):
-        """ClosureCreate should call __mn_alloc and store captures into env struct."""
+        """ClosureCreate should allocate env via arena and store captures into env struct."""
         module = _make_closure_module()
         emitter = LLVMMIREmitter(module_name="test_closure")
         llvm_module = emitter.emit(module)
         ir_str = str(llvm_module)
 
-        # Should declare __mn_alloc
-        assert "__mn_alloc" in ir_str
+        # Should declare mn_arena_alloc (arena-based allocation for closure env)
+        assert "mn_arena_alloc" in ir_str
         # Should have the lambda function
         assert "lambda_0" in ir_str
         # Should have main function
@@ -282,7 +282,7 @@ class TestClosureLLVMEmission:
         llvm_module = emitter.emit(module)
         ir_str = str(llvm_module)
 
-        assert "__mn_alloc" in ir_str
+        assert "mn_arena_alloc" in ir_str
         assert "lambda_multi" in ir_str
 
 
@@ -527,8 +527,8 @@ fn main() -> Int {
 }
 """
         ir_str = self._to_llvm_ir(source)
-        # Should have __mn_alloc for env allocation
-        assert "__mn_alloc" in ir_str
+        # Should have mn_arena_alloc for env allocation
+        assert "mn_arena_alloc" in ir_str
         # Should have the main function and lambda
         assert "define" in ir_str
 
@@ -543,5 +543,5 @@ fn main() -> Int {
 }
 """
         ir_str = self._to_llvm_ir(source)
-        assert "__mn_alloc" in ir_str
+        assert "mn_arena_alloc" in ir_str
         assert "define" in ir_str

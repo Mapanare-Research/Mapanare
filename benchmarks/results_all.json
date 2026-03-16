@@ -4,36 +4,36 @@
       "name": "single_agent",
       "messages": 10000,
       "agents": 1,
-      "elapsed_s": 0.22681229998124763,
-      "messages_per_sec": 44089.31967458017,
-      "avg_latency_us": 22.681229998124763,
+      "elapsed_s": 0.04217654399690218,
+      "messages_per_sec": 237098.6110368476,
+      "avg_latency_us": 4.217654399690218,
       "cv": 0.0
     },
     {
       "name": "agent_chain_3",
       "messages": 10000,
       "agents": 3,
-      "elapsed_s": 0.33162960002664477,
-      "messages_per_sec": 90462.37126477748,
-      "avg_latency_us": 33.16296000266448,
+      "elapsed_s": 0.0851005900040036,
+      "messages_per_sec": 352523.995410474,
+      "avg_latency_us": 8.51005900040036,
       "cv": 0.0
     },
     {
       "name": "agent_chain_5",
       "messages": 10000,
       "agents": 5,
-      "elapsed_s": 0.4389103999710642,
-      "messages_per_sec": 113918.46719352361,
-      "avg_latency_us": 43.89103999710642,
+      "elapsed_s": 0.1327003699989291,
+      "messages_per_sec": 376788.70074291056,
+      "avg_latency_us": 13.270036999892909,
       "cv": 0.0
     },
     {
       "name": "fan_out_4",
       "messages": 4000,
       "agents": 4,
-      "elapsed_s": 0.03661509999074042,
-      "messages_per_sec": 109244.5466764138,
-      "avg_latency_us": 9.153774997685105,
+      "elapsed_s": 0.00899892100278521,
+      "messages_per_sec": 444497.73464640713,
+      "avg_latency_us": 2.2497302506963024,
       "cv": 0.0
     }
   ],
@@ -41,91 +41,91 @@
     {
       "name": "map_pipeline",
       "items": 1000000,
-      "elapsed_s": 0.2182052999851294,
-      "items_per_sec": 4582840.105479334,
-      "avg_latency_us": 0.2182052999851294,
+      "elapsed_s": 0.27466318400547607,
+      "items_per_sec": 3640822.863176532,
+      "avg_latency_us": 0.27466318400547607,
       "cv": 0.0
     },
     {
       "name": "filter_pipeline",
       "items": 1000000,
-      "elapsed_s": 0.23197200003778562,
-      "items_per_sec": 4310865.1037069615,
-      "avg_latency_us": 0.23197200003778562,
+      "elapsed_s": 0.24424737500521587,
+      "items_per_sec": 4094209.814859403,
+      "avg_latency_us": 0.24424737500521584,
       "cv": 0.0
     },
     {
       "name": "map_filter_pipeline",
       "items": 1000000,
-      "elapsed_s": 0.251268699998036,
-      "items_per_sec": 3979803.294273486,
-      "avg_latency_us": 0.251268699998036,
+      "elapsed_s": 0.2752529939971282,
+      "items_per_sec": 3633021.3360383403,
+      "avg_latency_us": 0.2752529939971282,
       "cv": 0.0
     },
     {
       "name": "chained_maps_5",
       "items": 1000000,
-      "elapsed_s": 0.43717829999513924,
-      "items_per_sec": 2287396.240872702,
-      "avg_latency_us": 0.43717829999513924,
+      "elapsed_s": 0.42559040000196546,
+      "items_per_sec": 2349677.0603739694,
+      "avg_latency_us": 0.42559040000196546,
       "cv": 0.0
     },
     {
       "name": "chained_maps_10",
       "items": 1000000,
-      "elapsed_s": 0.8625059999758378,
-      "items_per_sec": 1159412.2244112086,
-      "avg_latency_us": 0.8625059999758378,
+      "elapsed_s": 0.6469028150022496,
+      "items_per_sec": 1545827.2507231594,
+      "avg_latency_us": 0.6469028150022496,
       "cv": 0.0
     },
     {
       "name": "take_1000_from_1000000",
       "items": 1000000,
-      "elapsed_s": 0.0005271999980323017,
-      "items_per_sec": 1896813.3606455927,
-      "avg_latency_us": 0.5271999980323017,
+      "elapsed_s": 0.0003918389993486926,
+      "items_per_sec": 2552068.58342886,
+      "avg_latency_us": 0.3918389993486926,
       "cv": 0.0
     },
     {
       "name": "fold_sum",
       "items": 1000000,
-      "elapsed_s": 0.11176070000510663,
-      "items_per_sec": 8947689.124659272,
-      "avg_latency_us": 0.11176070000510663,
+      "elapsed_s": 0.13024006799969357,
+      "items_per_sec": 7678128.669299779,
+      "avg_latency_us": 0.13024006799969357,
       "cv": 0.0
     }
   ],
   "comparison": [
     {
       "workload": "message_passing",
-      "mapanare_elapsed_s": 0.01581900002202019,
-      "asyncio_elapsed_s": 0.013926399988122284,
+      "mapanare_elapsed_s": 0.010616010993544478,
+      "asyncio_elapsed_s": 0.00845185299840523,
       "rust_elapsed_s": null,
-      "mapanare_vs_asyncio": 0.8803590599112845,
+      "mapanare_vs_asyncio": 0.7961420729071157,
       "mapanare_vs_rust": null
     },
     {
       "workload": "stream_map",
-      "mapanare_elapsed_s": 0.20968379999976605,
-      "asyncio_elapsed_s": 0.049957400013227016,
+      "mapanare_elapsed_s": 0.25515924699720927,
+      "asyncio_elapsed_s": 0.047924297003191896,
       "rust_elapsed_s": null,
-      "mapanare_vs_asyncio": 0.23825111912929256,
+      "mapanare_vs_asyncio": 0.1878211256976944,
       "mapanare_vs_rust": null
     },
     {
       "workload": "stream_filter",
-      "mapanare_elapsed_s": 0.22530069999629632,
-      "asyncio_elapsed_s": 0.039447749993996695,
+      "mapanare_elapsed_s": 0.24162445299589308,
+      "asyncio_elapsed_s": 0.033514901995658875,
       "rust_elapsed_s": null,
-      "mapanare_vs_asyncio": 0.1750893361389697,
+      "mapanare_vs_asyncio": 0.13870658197094204,
       "mapanare_vs_rust": null
     },
     {
       "workload": "stream_map_filter",
-      "mapanare_elapsed_s": 0.31632829998852685,
-      "asyncio_elapsed_s": 0.07768360001500696,
+      "mapanare_elapsed_s": 0.2692105719979736,
+      "asyncio_elapsed_s": 0.06219408299511997,
       "rust_elapsed_s": null,
-      "mapanare_vs_asyncio": 0.24557903930133512,
+      "mapanare_vs_asyncio": 0.23102392500242566,
       "mapanare_vs_rust": null
     }
   ]

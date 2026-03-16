@@ -89,6 +89,8 @@ class PythonEmitter:
         self._python_path: list[str] = python_path or []
         # Python interop: extern "Python" fn declarations
         self._extern_python_fns: list[ExternFnDef] = []
+        # Track whether main() was emitted as async
+        self._main_is_async = False
 
     def emit(self, program: Program) -> str:
         """Emit the full program and return Python source."""
@@ -117,9 +119,12 @@ class PythonEmitter:
             self._emit_line("")
             self._emit_line('if __name__ == "__main__":')
             self._indent += 1
-            self._emit_line("import asyncio")
-            self._emit_line("")
-            self._emit_line("asyncio.run(main())")
+            if self._main_is_async:
+                self._emit_line("import asyncio")
+                self._emit_line("")
+                self._emit_line("asyncio.run(main())")
+            else:
+                self._emit_line("main()")
             self._indent -= 1
         return "\n".join(self._lines) + "\n"
 
@@ -451,7 +456,9 @@ class PythonEmitter:
         ret = ""
         if fn.return_type:
             ret = f" -> {self._emit_type(fn.return_type)}"
-        is_async = is_agent_method or fn.name == "main" or self._fn_needs_async(fn)
+        is_async = is_agent_method or self._fn_needs_async(fn)
+        if fn.name == "main":
+            self._main_is_async = is_async
         prefix = "async def" if is_async else "def"
         self._emit_line(f"{prefix} {fn.name}({params}){ret}:")
         self._indent += 1

@@ -400,6 +400,80 @@ def constant_folding(fn: MIRFunction, stats: MIRPassStats) -> bool:
                         stats.constants_folded += 1
                         changed = True
                         continue
+
+                # --- Identity / annihilator rules (one operand constant) ---
+                # x + 0 = x, 0 + x = x
+                if inst.op == BinOpKind.ADD:
+                    if rv == 0 and isinstance(rv, (int, float)):
+                        new_insts.append(Copy(dest=inst.dest, src=inst.lhs))
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+                    if lv == 0 and isinstance(lv, (int, float)):
+                        new_insts.append(Copy(dest=inst.dest, src=inst.rhs))
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+
+                # x * 1 = x, 1 * x = x
+                if inst.op == BinOpKind.MUL:
+                    if rv == 1 and isinstance(rv, (int, float)):
+                        new_insts.append(Copy(dest=inst.dest, src=inst.lhs))
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+                    if lv == 1 and isinstance(lv, (int, float)):
+                        new_insts.append(Copy(dest=inst.dest, src=inst.rhs))
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+                    # x * 0 = 0, 0 * x = 0
+                    if rv == 0 and isinstance(rv, (int, float)):
+                        tk = TypeKind.INT if isinstance(rv, int) else TypeKind.FLOAT
+                        new_insts.append(
+                            Const(
+                                dest=inst.dest,
+                                ty=MIRType(TypeInfo(kind=tk)),
+                                value=type(rv)(0),
+                            )
+                        )
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+                    if lv == 0 and isinstance(lv, (int, float)):
+                        tk = TypeKind.INT if isinstance(lv, int) else TypeKind.FLOAT
+                        new_insts.append(
+                            Const(
+                                dest=inst.dest,
+                                ty=MIRType(TypeInfo(kind=tk)),
+                                value=type(lv)(0),
+                            )
+                        )
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+
+                # x - 0 = x
+                if inst.op == BinOpKind.SUB:
+                    if rv == 0 and isinstance(rv, (int, float)):
+                        new_insts.append(Copy(dest=inst.dest, src=inst.lhs))
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+
+                # x - x = 0 (same operand)
+                if inst.op == BinOpKind.SUB and inst.lhs.name == inst.rhs.name:
+                    new_insts.append(
+                        Const(
+                            dest=inst.dest,
+                            ty=MIRType(TypeInfo(kind=TypeKind.INT)),
+                            value=0,
+                        )
+                    )
+                    stats.constants_folded += 1
+                    changed = True
+                    continue
+
             elif isinstance(inst, UnaryOp):
                 val = const_vals.get(inst.operand.name)
                 if val is not None:
@@ -553,7 +627,9 @@ def copy_propagation(fn: MIRFunction, stats: MIRPassStats) -> bool:
 # ---------------------------------------------------------------------------
 
 
-# Instructions that have side effects and cannot be removed even if unused
+# Instructions that have side effects and cannot be removed even if unused.
+# NOTE: Kept for backwards compatibility; prefer ``inst.has_side_effects``
+# (property defined on the Instruction base class in mir.py).
 _SIDE_EFFECT_TYPES = (
     Call,
     Return,
@@ -591,7 +667,7 @@ def dead_code_elimination(fn: MIRFunction, stats: MIRPassStats) -> bool:
                 dest is not None
                 and dest.name
                 and dest.name not in used_names
-                and not isinstance(inst, _SIDE_EFFECT_TYPES)
+                and not inst.has_side_effects
             ):
                 stats.dead_instructions_removed += 1
                 changed = True

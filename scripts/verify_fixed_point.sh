@@ -20,6 +20,8 @@
 
 set -euo pipefail
 
+CC="${CC:-gcc}"
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SELF_DIR="$ROOT/mapanare/self"
 NATIVE_DIR="$ROOT/runtime/native"
@@ -67,15 +69,15 @@ compile_with_native() {
 
     # Compile C runtime
     local core_o="${ir_path%.ll}_core.o"
-    gcc -c -O0 -g -fPIC -I "$NATIVE_DIR" "$NATIVE_DIR/mapanare_core.c" -o "$core_o"
+    "$CC" -c -O0 -g -fPIC -I "$NATIVE_DIR" "$NATIVE_DIR/mapanare_core.c" -o "$core_o"
 
     # Compile main wrapper
     local main_o="${ir_path%.ll}_main.o"
-    gcc -c -O0 -g "$SELF_DIR/mnc_main.c" -o "$main_o"
+    "$CC" -c -O0 -g "$SELF_DIR/mnc_main.c" -o "$main_o"
 
     # Link
     info "  Linking -> $output ..."
-    gcc -o "$output" "$main_o" "$obj_path" "$core_o" -rdynamic -lm -lpthread
+    "$CC" -o "$output" "$main_o" "$obj_path" "$core_o" -rdynamic -lm -lpthread
 
     local size
     size=$(stat -c%s "$output" 2>/dev/null || stat -f%z "$output" 2>/dev/null)

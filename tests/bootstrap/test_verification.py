@@ -108,6 +108,8 @@ class TestPipelineIntegrity:
         errors = check(program, filename=mn_file.name)
         for err in errors:
             msg = str(err)
+            # Skip warnings (e.g., exhaustiveness checks) — they are advisory
+            is_warning = getattr(err, "severity", "error") == "warning"
             is_constructor = "Type mismatch: declared type" in msg
             is_missing_import = "Undefined function" in msg
             is_missing_variable = "Undefined variable" in msg
@@ -116,7 +118,8 @@ class TestPipelineIntegrity:
             is_assign_mismatch = "Cannot assign" in msg
             is_arg_mismatch = "Argument" in msg and "expects" in msg
             assert (
-                is_constructor
+                is_warning
+                or is_constructor
                 or is_missing_import
                 or is_missing_variable
                 or is_missing_module

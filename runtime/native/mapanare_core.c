@@ -1011,6 +1011,9 @@ struct MnSignal {
     void       *value;         /* Heap-allocated value buffer */
     int64_t     val_size;      /* Size of value in bytes */
 
+    /* Optional destructor for value cleanup (NULL = no-op) */
+    void      (*dtor)(void *value);
+
     /* Subscriber list (dependent signals notified on change) */
     MnSignal  **subscribers;
     int64_t     sub_len;
@@ -1064,6 +1067,7 @@ MN_EXPORT MnSignal *__mn_signal_new(const void *initial_value, int64_t val_size)
     sig->cb_len = 0;
     sig->cb_cap = MN_SIGNAL_MAX_CB;
 
+    sig->dtor = NULL;
     sig->compute_fn = NULL;
     sig->compute_user_data = NULL;
     sig->dependencies = NULL;
@@ -1099,6 +1103,8 @@ MN_EXPORT void __mn_signal_set(MnSignal *signal, const void *value) {
         return;  /* No change, skip propagation */
     }
 
+    /* Call destructor on old value before overwriting */
+    if (signal->dtor) signal->dtor(signal->value);
     memcpy(signal->value, value, (size_t)signal->val_size);
 
     if (mn_signal_batch_depth > 0) {
@@ -1255,7 +1261,10 @@ MN_EXPORT void __mn_signal_free(MnSignal *signal) {
     if (signal->dependencies) __mn_free(signal->dependencies);
     if (signal->subscribers) __mn_free(signal->subscribers);
     if (signal->callbacks) __mn_free(signal->callbacks);
-    if (signal->value) __mn_free(signal->value);
+    if (signal->value) {
+        if (signal->dtor) signal->dtor(signal->value);
+        __mn_free(signal->value);
+    }
     __mn_free(signal);
 }
 

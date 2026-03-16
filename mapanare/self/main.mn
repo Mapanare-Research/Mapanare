@@ -26,7 +26,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 0.8.0"
+    return "mapanare 1.0.0"
 }
 
 // ---------------------------------------------------------------------------

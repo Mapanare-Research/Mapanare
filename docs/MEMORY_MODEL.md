@@ -259,9 +259,10 @@ Reading a boxed field requires an unbox (pointer dereference + bitcast to the ac
 
 Mapanare uses value semantics for structs at the LLVM level. Assigning a struct copies
 all fields (including any boxed pointers). This means two variables can hold the same
-boxed-field pointer, creating the same double-free risk as with strings. The semantic
-checker enforces move semantics at the language level to prevent this, but the runtime
-itself has no enforcement mechanism.
+boxed-field pointer, creating a potential double-free risk. The current implementation
+relies on arena-scoped allocation to mitigate this — when the arena is destroyed at
+function exit, all allocations are freed together regardless of aliasing. A future
+version may add ownership tracking or move semantics to the semantic checker.
 
 ---
 

@@ -8,9 +8,12 @@ This module is the single source of truth for:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional
+
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Type kind enum
@@ -118,7 +121,7 @@ class TypeInfo:
         if not isinstance(other, TypeInfo):
             return NotImplemented
         if self.kind == TypeKind.UNKNOWN or other.kind == TypeKind.UNKNOWN:
-            return True  # unknown is compatible with everything
+            return False
         if self.is_function and other.is_function:
             return (
                 self.return_type == other.return_type
@@ -132,7 +135,7 @@ class TypeInfo:
             if self.name != other.name:
                 return False
         if len(self.args) != len(other.args):
-            return True  # allow partial generic matching for now
+            return False
         return all(a == b for a, b in zip(self.args, other.args))
 
     def __hash__(self) -> int:
@@ -158,6 +161,29 @@ class TypeInfo:
         if self.kind in _USER_DEFINED_KINDS and self.name:
             return self.name
         return _KIND_TO_NAME.get(self.kind, "<unknown>")
+
+    def is_compatible_with(self, other: "TypeInfo") -> bool:
+        """Permissive matching: UNKNOWN is compatible with anything (recursive).
+        Use for inference contexts where UNKNOWN means 'not yet resolved'.
+        Use __eq__ for strict equality.
+        """
+        if self.kind == TypeKind.UNKNOWN or other.kind == TypeKind.UNKNOWN:
+            return True
+        if self.is_function and other.is_function:
+            if self.return_type and other.return_type:
+                if not self.return_type.is_compatible_with(other.return_type):
+                    return False
+            if len(self.param_types) != len(other.param_types):
+                return False
+            return all(a.is_compatible_with(b) for a, b in zip(self.param_types, other.param_types))
+        if self.kind != other.kind:
+            return False
+        if self.kind in _USER_DEFINED_KINDS:
+            if self.name != other.name:
+                return False
+        if len(self.args) != len(other.args):
+            return True  # partial generic matching ok for compatibility
+        return all(a.is_compatible_with(b) for a, b in zip(self.args, other.args))
 
     def is_numeric(self) -> bool:
         """Return True if this is Int or Float."""

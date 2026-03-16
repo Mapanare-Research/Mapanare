@@ -12,9 +12,12 @@ Pipeline:
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 import sys
+
+CC = os.environ.get("CC", "gcc")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SELF_DIR = ROOT / "mapanare" / "self"
@@ -55,7 +58,7 @@ def build() -> pathlib.Path:
     print("[3/6] Compiling LLVM IR → object code ...")
     from mapanare.jit import jit_compile_to_object
 
-    obj_bytes = jit_compile_to_object(ir, opt_level=0)
+    obj_bytes = jit_compile_to_object(ir, opt_level=1)
     obj_path = SELF_DIR / "main.o"
     obj_path.write_bytes(obj_bytes)
     print(f"  Object: {len(obj_bytes)} bytes → {obj_path}")
@@ -66,7 +69,7 @@ def build() -> pathlib.Path:
     core_o = SELF_DIR / "mapanare_core.o"
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
     subprocess.run(
-        ["gcc", "-c", "-O0", "-g", "-fPIC", "-I", str(NATIVE_DIR)]
+        [CC, "-c", "-O0", "-g", "-fPIC", "-I", str(NATIVE_DIR)]
         + asan_flags
         + [str(core_c), "-o", str(core_o)],
         check=True,
@@ -78,7 +81,7 @@ def build() -> pathlib.Path:
     main_c = SELF_DIR / "mnc_main.c"
     main_o = SELF_DIR / "mnc_main.o"
     subprocess.run(
-        ["gcc", "-c", "-O0", "-g"] + asan_flags + [str(main_c), "-o", str(main_o)],
+        [CC, "-c", "-O0", "-g"] + asan_flags + [str(main_c), "-o", str(main_o)],
         check=True,
     )
     print(f"  Wrapper: {main_o}")
@@ -88,7 +91,7 @@ def build() -> pathlib.Path:
     binary = SELF_DIR / "mnc-stage1"
     subprocess.run(
         [
-            "gcc",
+            CC,
             "-o",
             str(binary),
             str(main_o),

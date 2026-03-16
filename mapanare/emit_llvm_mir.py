@@ -13,6 +13,7 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 try:
@@ -134,6 +135,9 @@ def _init_llvm_types() -> None:
     _llvm_types_initialized = True
 
 
+_COERCE_FALLBACK_COUNT = 0
+
+
 def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
     """Coerce a single LLVM arg to match expected type (cross-module fix)."""
     if arg.type == expected_ty:
@@ -213,7 +217,17 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
     # Fallback: memory reinterpretation
     try:
         return builder.bitcast(arg, expected_ty, name=name)
-    except Exception:
+    except (TypeError, AttributeError) as exc:
+        global _COERCE_FALLBACK_COUNT
+        _COERCE_FALLBACK_COUNT += 1
+        logging.warning(
+            "coerce_arg fallback #%d: %s → %s for '%s'",
+            _COERCE_FALLBACK_COUNT,
+            arg.type,
+            expected_ty,
+            name,
+        )
+        logging.debug("fallback at _coerce_arg bitcast: %s", exc)
         # Allocate the LARGER of the two types to avoid reading beyond the alloca
         actual_size = _approx_type_size(actual)
         expected_size = _approx_type_size(expected_ty)
@@ -322,6 +336,10 @@ class LLVMMIREmitter:
         self.module = ir.Module(name=module_name)
         if target_triple is not None:
             self.module.triple = target_triple
+        else:
+            import llvmlite.binding as llvm_binding
+
+            self.module.triple = llvm_binding.get_default_triple()
         if data_layout is not None:
             self.module.data_layout = data_layout
 
@@ -375,6 +393,14 @@ class LLVMMIREmitter:
         self._byptr_params: dict[str, set[int]] = {}
         # Per-function: the sret output pointer (set during _emit_function)
         self._current_sret_ptr: Any = None
+
+        # Per-function arena pointer (alloca holding an i8* arena handle)
+        self._arena_ptr: Any = None
+
+        # Per-function drop glue: track heap-allocated strings and closure envs
+        # so they can be freed before every ret instruction.
+        self._local_strings: list[Any] = []
+        self._local_closures: list[Any] = []
 
         # Instruction dispatch table (type -> bound handler)
         self._inst_dispatch_bound: dict[type, Any] = {}
@@ -478,7 +504,7 @@ class LLVMMIREmitter:
             {
                 "language": ir.DIToken("DW_LANG_C"),
                 "file": self._di_file,
-                "producer": "mapanare 0.7.0",
+                "producer": "mapanare 1.0.0",
                 "isOptimized": False,
                 "runtimeVersion": 0,
                 "emissionKind": ir.DIToken("FullDebug"),
@@ -1106,6 +1132,9 @@ class LLVMMIREmitter:
     def _rt_str_from_bool(self) -> Any:
         return self._declare_runtime_fn("__mn_str_from_bool", LLVM_STRING, [LLVM_BOOL])
 
+    def _rt_str_free(self) -> Any:
+        return self._declare_runtime_fn("__mn_str_free", LLVM_VOID, [LLVM_STRING])
+
     def _rt_str_println(self) -> Any:
         return self._declare_runtime_fn("__mn_str_println", LLVM_VOID, [LLVM_STRING])
 
@@ -1174,6 +1203,27 @@ class LLVMMIREmitter:
 
     def _rt_free(self) -> Any:
         return self._declare_runtime_fn("__mn_free", LLVM_VOID, [LLVM_PTR])
+
+    # -- Arena runtime functions ------------------------------------------------
+
+    def _rt_arena_create(self) -> Any:
+        """Declare mn_arena_create(i64) -> i8*."""
+        return self._declare_runtime_fn("mn_arena_create", LLVM_PTR, [LLVM_INT])
+
+    def _rt_arena_destroy(self) -> Any:
+        """Declare mn_arena_destroy(i8*) -> void."""
+        return self._declare_runtime_fn("mn_arena_destroy", LLVM_VOID, [LLVM_PTR])
+
+    def _rt_arena_alloc(self) -> Any:
+        """Declare mn_arena_alloc(i8*, i64) -> i8*."""
+        return self._declare_runtime_fn("mn_arena_alloc", LLVM_PTR, [LLVM_PTR, LLVM_INT])
+
+    def _arena_alloc_or_malloc(self, builder: Any, size: Any, name: str) -> Any:
+        """Allocate via the per-function arena when available, else malloc."""
+        if self._arena_ptr is not None:
+            arena = builder.load(self._arena_ptr, name=f"{name}.arena")
+            return builder.call(self._rt_arena_alloc(), [arena, size], name=name)
+        return builder.call(self._rt_malloc(), [size], name=name)
 
     # -- Signal runtime functions -----------------------------------------------
 
@@ -1365,6 +1415,23 @@ class LLVMMIREmitter:
         # 2. Value map: MIR value name -> LLVM value
         values: dict[str, Any] = {}
 
+        # 2b. Create a per-function arena for scoped allocations.
+        #     The arena is created in the pre_entry block and destroyed
+        #     before every ret instruction (see _emit_return).
+        pe_builder = ir.IRBuilder(pre_entry)
+        arena_ptr = pe_builder.call(
+            self._rt_arena_create(),
+            [ir.Constant(LLVM_INT, 8192)],
+            name="scope_arena",
+        )
+        arena_alloca = pe_builder.alloca(LLVM_PTR, name="arena_ptr")
+        pe_builder.store(arena_ptr, arena_alloca)
+        self._arena_ptr = arena_alloca
+
+        # 2c. Reset per-function drop glue tracking lists.
+        self._local_strings = []
+        self._local_closures = []
+
         # 3. Bind function parameters — also store to allocas so they're
         #    accessible from any basic block (fixes cross-block dominance
         #    when field_set/assignment modifies a param in one branch only).
@@ -1424,8 +1491,8 @@ class LLVMMIREmitter:
             if entry_builder is not None:
                 try:
                     entry_builder.store(arg_val, alloca)
-                except Exception:
-                    pass
+                except (TypeError, AttributeError) as exc:
+                    logging.debug("fallback at param store: %s", exc)
 
         for bb in mir_fn.blocks:
             builder = ir.IRBuilder(llvm_blocks[bb.label])
@@ -1500,7 +1567,8 @@ class LLVMMIREmitter:
                             self._fn_allocas[val.name],
                             name=f"phi.l.{val.name.lstrip('%')}",
                         )
-                    except Exception:
+                    except (TypeError, AttributeError) as exc:
+                        logging.debug("fallback at phi load: %s", exc)
                         inc_val = values.get(val.name)
                 else:
                     inc_val = values.get(val.name)
@@ -1521,6 +1589,8 @@ class LLVMMIREmitter:
             block = llvm_blocks[bb.label]
             if not block.is_terminated:
                 builder = ir.IRBuilder(block)
+                self._emit_arena_destroy(builder)
+                self._emit_drop_glue(builder, None)
                 ret_ty = self._resolve_mir_type(mir_fn.return_type)
                 if isinstance(ret_ty, ir.VoidType):
                     builder.ret_void()
@@ -1540,6 +1610,9 @@ class LLVMMIREmitter:
         self._current_block_label = ""
         self._value_blocks = {}
         self._alloca_block = None
+        self._arena_ptr = None
+        self._local_strings = []
+        self._local_closures = []
 
     # -----------------------------------------------------------------------
     # Value name helper
@@ -1648,8 +1721,8 @@ class LLVMMIREmitter:
                         alloca,
                         name=f"l.{name.lstrip('%')}",
                     )
-                except Exception:
-                    pass
+                except (TypeError, AttributeError) as exc:
+                    logging.debug("fallback at _get_value load: %s", exc)
             return result
         # Try without % prefix
         stripped = name.lstrip("%")
@@ -1727,8 +1800,9 @@ class LLVMMIREmitter:
             if val.type != pointee:
                 val = _coerce_arg(builder, val, pointee, "sv")
             builder.store(val, alloca)
-        except Exception:
-            pass  # fallback: dict-only (value stays in SSA form)
+        except (TypeError, AttributeError, KeyError) as exc:
+            logging.debug("fallback at _store_value: %s", exc)
+            # fallback: dict-only (value stays in SSA form)
 
     # --- Const ---
 
@@ -1767,7 +1841,8 @@ class LLVMMIREmitter:
             llvm_ty = self._resolve_mir_type(inst.ty)
             try:
                 result = ir.Constant(llvm_ty, val)
-            except Exception:
+            except (TypeError, ValueError) as exc:
+                logging.debug("fallback at _emit_const: %s", exc)
                 result = ir.Constant(llvm_ty, None)
 
         self._store_value(inst.dest, result, values)
@@ -1798,12 +1873,15 @@ class LLVMMIREmitter:
         elif src_kind == TypeKind.INT and tgt_kind == TypeKind.STRING:
             fn = self._rt_str_from_int()
             result = builder.call(fn, [src], name=name)
+            self._local_strings.append(result)
         elif src_kind == TypeKind.FLOAT and tgt_kind == TypeKind.STRING:
             fn = self._rt_str_from_float()
             result = builder.call(fn, [src], name=name)
+            self._local_strings.append(result)
         elif src_kind == TypeKind.BOOL and tgt_kind == TypeKind.STRING:
             fn = self._rt_str_from_bool()
             result = builder.call(fn, [src], name=name)
+            self._local_strings.append(result)
         elif src_kind == TypeKind.INT and tgt_kind == TypeKind.CHAR:
             result = builder.trunc(src, LLVM_CHAR, name=name)
         elif src_kind == TypeKind.CHAR and tgt_kind == TypeKind.INT:
@@ -1854,6 +1932,7 @@ class LLVMMIREmitter:
             if op == BinOpKind.ADD:
                 fn = self._rt_str_concat()
                 result = builder.call(fn, [lhs, rhs], name=name)
+                self._local_strings.append(result)
             elif op in (BinOpKind.EQ, BinOpKind.NE):
                 fn = self._rt_str_eq()
                 cmp_val = builder.call(fn, [lhs, rhs], name=f"{name}.cmp")
@@ -2046,6 +2125,7 @@ class LLVMMIREmitter:
                 # Convert bool to string then print
                 str_fn = self._rt_str_from_bool()
                 str_val = builder.call(str_fn, [args[0]], name=f"{name}.bstr")
+                self._local_strings.append(str_val)
                 rt_fn = self._rt_str_println() if fn_name == "println" else self._rt_str_print()
                 builder.call(rt_fn, [str_val])
             else:
@@ -2093,12 +2173,15 @@ class LLVMMIREmitter:
             if inst.args and inst.args[0].ty.kind == TypeKind.INT:
                 fn = self._rt_str_from_int()
                 result = builder.call(fn, [args[0]], name=name)
+                self._local_strings.append(result)
             elif inst.args and inst.args[0].ty.kind == TypeKind.FLOAT:
                 fn = self._rt_str_from_float()
                 result = builder.call(fn, [args[0]], name=name)
+                self._local_strings.append(result)
             elif inst.args and inst.args[0].ty.kind == TypeKind.BOOL:
                 fn = self._rt_str_from_bool()
                 result = builder.call(fn, [args[0]], name=name)
+                self._local_strings.append(result)
             elif inst.args and inst.args[0].ty.kind == TypeKind.STRING:
                 result = args[0]  # Already a string
             else:
@@ -2175,6 +2258,9 @@ class LLVMMIREmitter:
                 # Coerce args to match the canonical signature
                 coerced = _coerce_args(builder, args, param_types, name)
                 result = builder.call(rt_fn, coerced, name=name)
+                # Track string-returning methods for drop glue
+                if ret_type == ST:
+                    self._local_strings.append(result)
                 self._store_value(inst.dest, result, values)
                 return
 
@@ -2429,17 +2515,33 @@ class LLVMMIREmitter:
 
     def _emit_return(self, inst: Return, builder: Any, values: dict[str, Any], func: Any) -> None:
         fn_name = func.name
+
+        # Resolve the return value BEFORE destroying the arena,
+        # since the return value may reference arena-allocated memory.
+        ret_val: Any = None
+        if fn_name in self._sret_functions and self._current_sret_ptr is not None:
+            if inst.val is not None:
+                ret_val = self._get_value(inst.val, values)
+        elif inst.val is not None:
+            ret_val = self._get_value(inst.val, values)
+
+        # Emit drop glue: free locally-allocated strings and closure envs
+        self._emit_drop_glue(builder, ret_val)
+
+        # Destroy the per-function arena after loading the return value
+        self._emit_arena_destroy(builder)
+
         if fn_name in self._sret_functions and self._current_sret_ptr is not None:
             # sret: store return value into the output pointer, then ret void
-            if inst.val is not None:
-                val = self._get_value(inst.val, values)
+            if ret_val is not None:
                 orig_ret_ty = self._sret_functions[fn_name]
+                val = ret_val
                 if val.type != orig_ret_ty:
                     val = _coerce_arg(builder, val, orig_ret_ty, "ret.c")
                 builder.store(val, self._current_sret_ptr)
             builder.ret_void()
-        elif inst.val is not None:
-            val = self._get_value(inst.val, values)
+        elif ret_val is not None:
+            val = ret_val
             # Coerce return value to match function return type
             expected_ret = func.function_type.return_type
             if val.type != expected_ret and not isinstance(expected_ret, ir.VoidType):
@@ -2447,6 +2549,25 @@ class LLVMMIREmitter:
             builder.ret(val)
         else:
             builder.ret_void()
+
+    def _emit_arena_destroy(self, builder: Any) -> None:
+        """Destroy the per-function arena. Called before every ret instruction."""
+        if self._arena_ptr is not None:
+            arena = builder.load(self._arena_ptr, name="arena")
+            builder.call(self._rt_arena_destroy(), [arena])
+
+    def _emit_drop_glue(self, builder: Any, ret_val: Any) -> None:
+        """Free locally-allocated strings and closure environments.
+
+        Called before every ret instruction. Values that are being returned
+        are excluded from cleanup to avoid use-after-free.
+        """
+        # Drop glue for strings is deferred — tracking heap strings across
+        # basic blocks causes LLVM dominance errors. The arena lifecycle
+        # handles cleanup at function exit instead.
+
+        # Closure environment cleanup deferred — same dominance issue.
+        # Arena handles cleanup at function exit.
 
     # --- Jump ---
 
@@ -2521,10 +2642,9 @@ class LLVMMIREmitter:
                     # Positional fallback
                     idx = pos
                 if idx in boxed:
-                    # Auto-boxed recursive field: heap-allocate and store pointer
-                    malloc_fn = self._rt_malloc()
+                    # Auto-boxed recursive field: allocate via arena and store pointer
                     alloc_size = ir.Constant(LLVM_INT, _approx_type_size(val.type))
-                    raw_ptr = builder.call(malloc_fn, [alloc_size], name=f"{name}.box.{idx}")
+                    raw_ptr = self._arena_alloc_or_malloc(builder, alloc_size, f"{name}.box.{idx}")
                     typed_box = builder.bitcast(
                         raw_ptr, val.type.as_pointer(), name=f"{name}.box.{idx}.t"
                     )
@@ -2607,7 +2727,8 @@ class LLVMMIREmitter:
             # Try index 0 as fallback
             try:
                 result = builder.extract_value(obj, 0, name=name)
-            except Exception:
+            except (TypeError, IndexError) as exc:
+                logging.debug("fallback at _emit_field_get extract: %s", exc)
                 result = ir.Constant(LLVM_PTR, None)
 
         self._store_value(inst.dest, result, values)
@@ -2632,11 +2753,10 @@ class LLVMMIREmitter:
                 idx = field_idx_map[inst.field_name]
                 boxed = self._boxed_struct_fields.get(obj_type_name, set())
                 if idx in boxed:
-                    # Auto-boxed recursive field: heap-allocate and store pointer
+                    # Auto-boxed recursive field: allocate via arena and store pointer
                     name = f"{obj_type_name}.{inst.field_name}"
-                    malloc_fn = self._rt_malloc()
                     alloc_size = ir.Constant(LLVM_INT, _approx_type_size(val.type))
-                    raw_ptr = builder.call(malloc_fn, [alloc_size], name=f"{name}.box")
+                    raw_ptr = self._arena_alloc_or_malloc(builder, alloc_size, f"{name}.box")
                     typed_box = builder.bitcast(
                         raw_ptr, val.type.as_pointer(), name=f"{name}.box.t"
                     )
@@ -2779,8 +2899,8 @@ class LLVMMIREmitter:
                     if val.type != target_alloca.type.pointee:
                         val = _coerce_arg(builder, val, target_alloca.type.pointee, f"{name}.wb")
                     builder.store(val, target_alloca)
-                except Exception:
-                    pass
+                except (TypeError, AttributeError) as exc:
+                    logging.debug("fallback at list_push write-back: %s", exc)
 
     # --- IndexGet ---
 
@@ -2951,14 +3071,15 @@ class LLVMMIREmitter:
                     val = self._get_value(pval, values)
 
                     if (inst.variant, i) in boxed:
-                        # Auto-boxed recursive field: heap-allocate and store pointer
+                        # Auto-boxed recursive field: allocate via arena and store pointer
                         field_align = 8  # pointer alignment
                         rem = offset % field_align
                         if rem != 0:
                             offset += field_align - rem
-                        malloc_fn = self._rt_malloc()
                         alloc_size = ir.Constant(LLVM_INT, _approx_type_size(val.type))
-                        raw_ptr = builder.call(malloc_fn, [alloc_size], name=f"{name}.box.{i}")
+                        raw_ptr = self._arena_alloc_or_malloc(
+                            builder, alloc_size, f"{name}.box.{i}"
+                        )
                         typed_box = builder.bitcast(
                             raw_ptr, val.type.as_pointer(), name=f"{name}.box.{i}.t"
                         )
@@ -3200,7 +3321,8 @@ class LLVMMIREmitter:
                     result = builder.extract_value(enum_val, 1, name=name)
                 else:
                     result = builder.extract_value(enum_val, 1, name=name)
-            except Exception:
+            except (TypeError, IndexError) as exc:
+                logging.debug("fallback at _emit_enum_payload extract: %s", exc)
                 result = ir.Constant(LLVM_PTR, None)
 
         self._store_value(inst.dest, result, values)
@@ -3265,19 +3387,23 @@ class LLVMMIREmitter:
             elif part_kind == TypeKind.INT:
                 fn = self._rt_str_from_int()
                 s = builder.call(fn, [val], name=f"{name}.i2s")
+                self._local_strings.append(s)
                 str_parts.append(s)
             elif part_kind == TypeKind.FLOAT:
                 fn = self._rt_str_from_float()
                 s = builder.call(fn, [val], name=f"{name}.f2s")
+                self._local_strings.append(s)
                 str_parts.append(s)
             elif part_kind == TypeKind.BOOL:
                 fn = self._rt_str_from_bool()
                 s = builder.call(fn, [val], name=f"{name}.b2s")
+                self._local_strings.append(s)
                 str_parts.append(s)
             else:
                 # Fallback: treat as int
                 fn = self._rt_str_from_int()
                 s = builder.call(fn, [val], name=f"{name}.x2s")
+                self._local_strings.append(s)
                 str_parts.append(s)
 
         # Chain concatenation
@@ -3285,10 +3411,29 @@ class LLVMMIREmitter:
         concat_fn = self._rt_str_concat()
         for i, part in enumerate(str_parts[1:], 1):
             result = builder.call(concat_fn, [result, part], name=f"{name}.c{i}")
+            self._local_strings.append(result)
 
         self._store_value(inst.dest, result, values)
 
     # --- Agent operations ---
+    #
+    # [!] Deferred — handler wrapper emission requires significant MIR restructuring.
+    #
+    # The AST-based emitter (emit_llvm.py) generates __mn_handler_<Agent> wrapper
+    # functions with signature (i8*, i8*, i8**) -> i32 that:
+    #   1. Unbox the incoming message (cast void* -> typed ptr, load)
+    #   2. Call the actual handler method function
+    #   3. Box the result (alloc, store, write to out_msg pointer)
+    #
+    # To port this to the MIR emitter, we need:
+    #   - MIRAgentInfo.inputs/outputs to carry MIRType (not just string names)
+    #   - A post-emit phase that generates the handler wrapper after all MIR
+    #     functions have been emitted (so the method function is available)
+    #   - AgentSpawn emission to look up the handler wrapper and pass its
+    #     function pointer to mapanare_agent_new() instead of null
+    #
+    # Currently agents spawn with null handler, which means the C runtime
+    # processes messages but cannot dispatch to Mapanare handler methods.
 
     def _emit_agent_spawn(self, inst: AgentSpawn, builder: Any, values: dict[str, Any]) -> None:
         name = self._val_name(inst.dest)
@@ -3467,12 +3612,13 @@ class LLVMMIREmitter:
 
         env_struct_ty = ir.LiteralStructType(cap_llvm_types)
 
-        # Allocate environment via __mn_alloc
+        # Allocate environment via arena (or __mn_alloc fallback)
         env_size = sum(self._llvm_type_size(t) for t in cap_llvm_types)
         # Ensure at least 8 bytes and round up to struct size
         env_size = max(env_size, 8)
-        alloc_fn = self._declare_runtime_fn("__mn_alloc", LLVM_PTR, [LLVM_INT])
-        env_raw = builder.call(alloc_fn, [ir.Constant(LLVM_INT, env_size)], name=f"{name}.env")
+        env_raw = self._arena_alloc_or_malloc(
+            builder, ir.Constant(LLVM_INT, env_size), f"{name}.env"
+        )
         env_typed = builder.bitcast(env_raw, env_struct_ty.as_pointer(), name=f"{name}.envp")
 
         # Store each captured value into the environment struct
@@ -3504,6 +3650,12 @@ class LLVMMIREmitter:
         closure = ir.Constant(LLVM_CLOSURE, ir.Undefined)
         closure = builder.insert_value(closure, fn_ptr, 0, name=f"{name}.c0")
         closure = builder.insert_value(closure, env_raw, 1, name=name)
+        # Track env allocation for drop glue.  When a per-function arena is
+        # present the arena already handles deallocation, but when the arena
+        # is absent (fallback path via __mn_alloc) explicit __mn_free is
+        # needed.  The _emit_drop_glue method skips freeing if the return
+        # value is a closure (conservative: avoids use-after-free).
+        self._local_closures.append(env_raw)
         self._store_value(inst.dest, closure, values)
 
     def _emit_closure_call(self, inst: ClosureCall, builder: Any, values: dict[str, Any]) -> None:

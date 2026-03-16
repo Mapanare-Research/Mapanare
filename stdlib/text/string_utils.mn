@@ -1,0 +1,250 @@
+// text/string_utils.mn — Shared string utility functions for Mapanare stdlib.
+//
+// Extracted from encoding/json.mn, net/http.mn, and net/http/server.mn to
+// eliminate code duplication across stdlib modules.
+
+// ---------------------------------------------------------------------------
+// Hex digit value — converts a single hex character to its integer value.
+// Returns 0 for invalid hex digits (json.mn convention) or -1 (http.mn
+// convention).  We return -1 for invalid digits here (the stricter contract).
+// Callers that want 0-on-invalid should clamp: if val < 0 { val = 0 }.
+// ---------------------------------------------------------------------------
+
+pub fn hex_digit_value(ch: String) -> Int {
+    if ch == "0" { return 0 }
+    if ch == "1" { return 1 }
+    if ch == "2" { return 2 }
+    if ch == "3" { return 3 }
+    if ch == "4" { return 4 }
+    if ch == "5" { return 5 }
+    if ch == "6" { return 6 }
+    if ch == "7" { return 7 }
+    if ch == "8" { return 8 }
+    if ch == "9" { return 9 }
+    if ch == "a" { return 10 }
+    if ch == "b" { return 11 }
+    if ch == "c" { return 12 }
+    if ch == "d" { return 13 }
+    if ch == "e" { return 14 }
+    if ch == "f" { return 15 }
+    if ch == "A" { return 10 }
+    if ch == "B" { return 11 }
+    if ch == "C" { return 12 }
+    if ch == "D" { return 13 }
+    if ch == "E" { return 14 }
+    if ch == "F" { return 15 }
+    return -1
+}
+
+// ---------------------------------------------------------------------------
+// Hex digit value (zero-default) — same as hex_digit_value but returns 0
+// for invalid hex digits.  Used by json.mn's unicode escape parser.
+// ---------------------------------------------------------------------------
+
+pub fn hex_digit_value_or_zero(ch: String) -> Int {
+    let v: Int = hex_digit_value(ch)
+    if v < 0 { return 0 }
+    return v
+}
+
+// ---------------------------------------------------------------------------
+// to_lower_char — convert a single ASCII uppercase character to lowercase.
+// Takes the character and its byte value (from byte_at).
+// ---------------------------------------------------------------------------
+
+pub fn to_lower_char(ch: String, b: Int) -> String {
+    if b < 65 { return ch }
+    if b > 90 { return ch }
+    if ch == "A" { return "a" }
+    if ch == "B" { return "b" }
+    if ch == "C" { return "c" }
+    if ch == "D" { return "d" }
+    if ch == "E" { return "e" }
+    if ch == "F" { return "f" }
+    if ch == "G" { return "g" }
+    if ch == "H" { return "h" }
+    if ch == "I" { return "i" }
+    if ch == "J" { return "j" }
+    if ch == "K" { return "k" }
+    if ch == "L" { return "l" }
+    if ch == "M" { return "m" }
+    if ch == "N" { return "n" }
+    if ch == "O" { return "o" }
+    if ch == "P" { return "p" }
+    if ch == "Q" { return "q" }
+    if ch == "R" { return "r" }
+    if ch == "S" { return "s" }
+    if ch == "T" { return "t" }
+    if ch == "U" { return "u" }
+    if ch == "V" { return "v" }
+    if ch == "W" { return "w" }
+    if ch == "X" { return "x" }
+    if ch == "Y" { return "y" }
+    if ch == "Z" { return "z" }
+    return ch
+}
+
+// ---------------------------------------------------------------------------
+// to_lower — convert an entire ASCII string to lowercase.
+// ---------------------------------------------------------------------------
+
+pub fn to_lower(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        result = result + to_lower_char(ch, b)
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// to_upper_char — convert a single ASCII lowercase character to uppercase.
+// Takes the character and its byte value (from byte_at).
+// ---------------------------------------------------------------------------
+
+pub fn to_upper_char(ch: String, b: Int) -> String {
+    if b < 97 { return ch }
+    if b > 122 { return ch }
+    if ch == "a" { return "A" }
+    if ch == "b" { return "B" }
+    if ch == "c" { return "C" }
+    if ch == "d" { return "D" }
+    if ch == "e" { return "E" }
+    if ch == "f" { return "F" }
+    if ch == "g" { return "G" }
+    if ch == "h" { return "H" }
+    if ch == "i" { return "I" }
+    if ch == "j" { return "J" }
+    if ch == "k" { return "K" }
+    if ch == "l" { return "L" }
+    if ch == "m" { return "M" }
+    if ch == "n" { return "N" }
+    if ch == "o" { return "O" }
+    if ch == "p" { return "P" }
+    if ch == "q" { return "Q" }
+    if ch == "r" { return "R" }
+    if ch == "s" { return "S" }
+    if ch == "t" { return "T" }
+    if ch == "u" { return "U" }
+    if ch == "v" { return "V" }
+    if ch == "w" { return "W" }
+    if ch == "x" { return "X" }
+    if ch == "y" { return "Y" }
+    if ch == "z" { return "Z" }
+    return ch
+}
+
+// ---------------------------------------------------------------------------
+// to_upper — convert an entire ASCII string to uppercase.
+// ---------------------------------------------------------------------------
+
+pub fn to_upper(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        result = result + to_upper_char(ch, b)
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// parse_int_manual — parse a decimal integer from a string of digits.
+// Stops at the first non-digit character.
+// ---------------------------------------------------------------------------
+
+pub fn parse_int_manual(s: String) -> Int {
+    let slen: Int = len(s)
+    let mut result: Int = 0
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let mut digit: Int = 0
+        if ch == "0" { digit = 0
+        } else { if ch == "1" { digit = 1
+        } else { if ch == "2" { digit = 2
+        } else { if ch == "3" { digit = 3
+        } else { if ch == "4" { digit = 4
+        } else { if ch == "5" { digit = 5
+        } else { if ch == "6" { digit = 6
+        } else { if ch == "7" { digit = 7
+        } else { if ch == "8" { digit = 8
+        } else { if ch == "9" { digit = 9
+        } else {
+            return result
+        } } } } } } } } } }
+        result = result * 10 + digit
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// digit_value — convert a single decimal digit character to its integer value.
+// Returns 0 for non-digit characters.
+// ---------------------------------------------------------------------------
+
+pub fn digit_value(ch: String) -> Int {
+    if ch == "0" { return 0 }
+    if ch == "1" { return 1 }
+    if ch == "2" { return 2 }
+    if ch == "3" { return 3 }
+    if ch == "4" { return 4 }
+    if ch == "5" { return 5 }
+    if ch == "6" { return 6 }
+    if ch == "7" { return 7 }
+    if ch == "8" { return 8 }
+    if ch == "9" { return 9 }
+    return 0
+}
+
+// ---------------------------------------------------------------------------
+// is_digit — check if a character is an ASCII decimal digit.
+// ---------------------------------------------------------------------------
+
+pub fn is_digit(ch: String) -> Bool {
+    if ch >= "0" { if ch <= "9" { return true } }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// is_hex — check if a character is a hexadecimal digit.
+// ---------------------------------------------------------------------------
+
+pub fn is_hex(ch: String) -> Bool {
+    if is_digit(ch) { return true }
+    if ch >= "a" { if ch <= "f" { return true } }
+    if ch >= "A" { if ch <= "F" { return true } }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// hex_char — convert an integer 0-15 to its hex character (uppercase).
+// ---------------------------------------------------------------------------
+
+pub fn hex_char(n: Int) -> String {
+    if n == 0 { return "0" }
+    if n == 1 { return "1" }
+    if n == 2 { return "2" }
+    if n == 3 { return "3" }
+    if n == 4 { return "4" }
+    if n == 5 { return "5" }
+    if n == 6 { return "6" }
+    if n == 7 { return "7" }
+    if n == 8 { return "8" }
+    if n == 9 { return "9" }
+    if n == 10 { return "A" }
+    if n == 11 { return "B" }
+    if n == 12 { return "C" }
+    if n == 13 { return "D" }
+    if n == 14 { return "E" }
+    if n == 15 { return "F" }
+    return "0"
+}
