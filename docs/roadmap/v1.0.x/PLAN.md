@@ -361,8 +361,9 @@
 - **Golden tests:** 15/15 pass (Python bootstrap), 13/15 pass (mnc-stage1; `08_list` and `09_string_methods` crash in self-hosted emitter)
 - **C runtime:** 52/52 pass (plain, ASan, TSan clean)
 - **Lint:** ruff, black, mypy all pass clean
-- **Self-hosted:** mnc-stage1 builds (opt_level=1, 1.89 MB). Compiles ast.mn, lexer.mn, main.mn individually. Crashes on parser/semantic/lower/emit_llvm (OOM — self-hosted semantic checker has O(n^2+) memory behavior with 40+ functions using complex types)
-- **Fixed-point:** Blocked by self-hosted OOM on complex modules
+- **Self-hosted:** mnc-stage1 builds (opt_level=1, 1.89 MB). Compiles ast.mn, lexer.mn (opt0), main.mn (opt0) individually. Crashes on parser/semantic/lower/emit_llvm.
+- **Root cause identified:** `emit_llvm.mn:485` computes enum payload as `len(variant.payload_types)` (field COUNT = 1 for `FnDef(FnDefData)`) instead of actual i64 slots needed (e.g., 5 for a 5-field struct). This creates undersized enum buffers causing buffer overflows. Fix requires adding `mir_type_i64_slots()` helper to self-hosted emitter, but additional string operations in .mn code trigger native OOM (entangled with missing per-function memory cleanup in generated native code).
+- **Fixed-point:** Blocked — self-hosted compiler needs both enum sizing fix AND memory management fix simultaneously
 - **Benchmarks:** Recorded in `benchmarks/results_all.json`
 - **Completed in 2nd pass:** nsw integer flags, dominance tree, operator trait dispatch annotation, string primitives wiring, signal security (mutex, null cleanup, batch overflow, async-safety)
 - **Arena lifecycle:** Implemented but disabled — causes use-after-free when returned values (strings) are allocated on callee's arena. Needs return-value escape analysis.

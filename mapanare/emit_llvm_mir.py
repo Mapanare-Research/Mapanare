@@ -260,7 +260,7 @@ _ZEROINIT_MEMSET_THRESHOLD = 128
 # Size threshold above which struct parameters/returns are passed by pointer.
 # Structs larger than this are passed via hidden pointer args to avoid
 # pathological stack frame sizes that cause SIGSEGV in llvmlite/LLVM codegen.
-_LARGE_STRUCT_THRESHOLD = 64
+_LARGE_STRUCT_THRESHOLD = 56
 
 
 def _is_large_struct(llvm_ty: Any) -> bool:

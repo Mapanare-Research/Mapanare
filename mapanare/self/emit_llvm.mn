@@ -476,19 +476,20 @@ fn register_mir_struct(st: EmitState, info: StructInfo) -> EmitState {
 
 fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
     // Tagged union: { i64 tag, payload... }
-    // Find max payload size across variants
+    // Count max payload slots: each payload type gets 8 i64 slots (conservative)
+    // to handle struct payloads that expand to multiple fields.
     let mut max_payload: Int = 0
     let mut vi: Int = 0
     for _ in 0..1000 {
         if vi >= len(info.variants) { break }
         let variant: EnumVariantInfo = info.variants[vi]
-        if len(variant.payload_types) > max_payload {
-            max_payload = len(variant.payload_types)
+        let count: Int = len(variant.payload_types) * 8
+        if count > max_payload {
+            max_payload = count
         }
         vi = vi + 1
     }
 
-    // Emit as { i64, [max_payload x i64] } for simplicity
     let mut s: EmitState = st
     if max_payload == 0 {
         s = emit_line(s, "%enum." + info.name + " = type { i64 }")
