@@ -27,12 +27,16 @@ MNC_STAGE1 = pathlib.Path("mapanare/self/mnc-stage1")
 
 def _has_mnc_stage1() -> bool:
     """Check if mnc-stage1 exists and is executable on this platform."""
+    import os
     import sys
 
     if not MNC_STAGE1.exists():
         return False
     # ELF binaries can't run on Windows
     if sys.platform == "win32":
+        return False
+    # Must have execute permission (git may store as 644 on Windows/WSL)
+    if not os.access(MNC_STAGE1, os.X_OK):
         return False
     return True
 
