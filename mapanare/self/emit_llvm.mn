@@ -113,7 +113,7 @@ fn resolve_mir_type(t: MIRType) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_alloca(name: String, ty: String) -> String {
-    return "  %" + name + " = alloca " + ty
+    return "  " + name + " =alloca " + ty
 }
 
 fn emit_store(ty: String, value: String, ptr: String) -> String {
@@ -121,59 +121,59 @@ fn emit_store(ty: String, value: String, ptr: String) -> String {
 }
 
 fn emit_load(name: String, ty: String, ptr: String) -> String {
-    return "  %" + name + " = load " + ty + ", " + ty + "* " + ptr
+    return "  " + name + " =load " + ty + ", " + ty + "* " + ptr
 }
 
 fn emit_add(name: String, ty: String, left: String, right: String) -> String {
-    return "  %" + name + " = add " + ty + " " + left + ", " + right
+    return "  " + name + " =add " + ty + " " + left + ", " + right
 }
 
 fn emit_sub(name: String, ty: String, left: String, right: String) -> String {
-    return "  %" + name + " = sub " + ty + " " + left + ", " + right
+    return "  " + name + " =sub " + ty + " " + left + ", " + right
 }
 
 fn emit_mul(name: String, ty: String, left: String, right: String) -> String {
-    return "  %" + name + " = mul " + ty + " " + left + ", " + right
+    return "  " + name + " =mul " + ty + " " + left + ", " + right
 }
 
 fn emit_sdiv(name: String, ty: String, left: String, right: String) -> String {
-    return "  %" + name + " = sdiv " + ty + " " + left + ", " + right
+    return "  " + name + " =sdiv " + ty + " " + left + ", " + right
 }
 
 fn emit_srem(name: String, ty: String, left: String, right: String) -> String {
-    return "  %" + name + " = srem " + ty + " " + left + ", " + right
+    return "  " + name + " =srem " + ty + " " + left + ", " + right
 }
 
 fn emit_fadd(name: String, left: String, right: String) -> String {
-    return "  %" + name + " = fadd double " + left + ", " + right
+    return "  " + name + " =fadd double " + left + ", " + right
 }
 
 fn emit_fsub(name: String, left: String, right: String) -> String {
-    return "  %" + name + " = fsub double " + left + ", " + right
+    return "  " + name + " =fsub double " + left + ", " + right
 }
 
 fn emit_fmul(name: String, left: String, right: String) -> String {
-    return "  %" + name + " = fmul double " + left + ", " + right
+    return "  " + name + " =fmul double " + left + ", " + right
 }
 
 fn emit_fdiv(name: String, left: String, right: String) -> String {
-    return "  %" + name + " = fdiv double " + left + ", " + right
+    return "  " + name + " =fdiv double " + left + ", " + right
 }
 
 fn emit_frem(name: String, left: String, right: String) -> String {
-    return "  %" + name + " = frem double " + left + ", " + right
+    return "  " + name + " =frem double " + left + ", " + right
 }
 
 fn emit_fneg(name: String, operand: String) -> String {
-    return "  %" + name + " = fneg double " + operand
+    return "  " + name + " =fneg double " + operand
 }
 
 fn emit_neg(name: String, ty: String, operand: String) -> String {
-    return "  %" + name + " = sub " + ty + " 0, " + operand
+    return "  " + name + " =sub " + ty + " 0, " + operand
 }
 
 fn emit_not(name: String, operand: String) -> String {
-    return "  %" + name + " = xor i1 " + operand + ", true"
+    return "  " + name + " =xor i1 " + operand + ", true"
 }
 
 // ---------------------------------------------------------------------------
@@ -181,11 +181,11 @@ fn emit_not(name: String, operand: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_icmp(name: String, cmp: String, ty: String, left: String, right: String) -> String {
-    return "  %" + name + " = icmp " + cmp + " " + ty + " " + left + ", " + right
+    return "  " + name + " =icmp " + cmp + " " + ty + " " + left + ", " + right
 }
 
 fn emit_fcmp(name: String, cmp: String, left: String, right: String) -> String {
-    return "  %" + name + " = fcmp o" + cmp + " double " + left + ", " + right
+    return "  " + name + " =fcmp o" + cmp + " double " + left + ", " + right
 }
 
 // ---------------------------------------------------------------------------
@@ -193,11 +193,11 @@ fn emit_fcmp(name: String, cmp: String, left: String, right: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_and_instr(name: String, left: String, right: String) -> String {
-    return "  %" + name + " = and i1 " + left + ", " + right
+    return "  " + name + " =and i1 " + left + ", " + right
 }
 
 fn emit_or_instr(name: String, left: String, right: String) -> String {
-    return "  %" + name + " = or i1 " + left + ", " + right
+    return "  " + name + " =or i1 " + left + ", " + right
 }
 
 // ---------------------------------------------------------------------------
@@ -213,7 +213,7 @@ fn emit_cbranch(cond: String, true_label: String, false_label: String) -> String
 }
 
 fn emit_phi_instr(name: String, ty: String, val1: String, bb1: String, val2: String, bb2: String) -> String {
-    return "  %" + name + " = phi " + ty + " [ " + val1 + ", %" + bb1 + " ], [ " + val2 + ", %" + bb2 + " ]"
+    return "  " + name + " =phi " + ty + " [ " + val1 + ", %" + bb1 + " ], [ " + val2 + ", %" + bb2 + " ]"
 }
 
 fn emit_switch_hdr(subject: String, default_label: String) -> String {
@@ -229,7 +229,7 @@ fn emit_switch_case(value: String, label: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_call_ir(name: String, ret_ty: String, callee: String, args: String) -> String {
-    return "  %" + name + " = call " + ret_ty + " @" + callee + "(" + args + ")"
+    return "  " + name + " =call " + ret_ty + " @" + callee + "(" + args + ")"
 }
 
 fn emit_call_void(callee: String, args: String) -> String {
@@ -249,19 +249,19 @@ fn emit_ret_void() -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_gep(name: String, ty: String, ptr: String, idx: String) -> String {
-    return "  %" + name + " = getelementptr " + ty + ", " + ty + "* " + ptr + ", i64 0, i64 " + idx
+    return "  " + name + " =getelementptr " + ty + ", " + ty + "* " + ptr + ", i64 0, i64 " + idx
 }
 
 fn emit_insertvalue(name: String, struct_ty: String, agg: String, val: String, val_ty: String, idx: String) -> String {
-    return "  %" + name + " = insertvalue " + struct_ty + " " + agg + ", " + val_ty + " " + val + ", " + idx
+    return "  " + name + " =insertvalue " + struct_ty + " " + agg + ", " + val_ty + " " + val + ", " + idx
 }
 
 fn emit_extractvalue(name: String, struct_ty: String, agg: String, idx: String) -> String {
-    return "  %" + name + " = extractvalue " + struct_ty + " " + agg + ", " + idx
+    return "  " + name + " =extractvalue " + struct_ty + " " + agg + ", " + idx
 }
 
 fn emit_bitcast(name: String, src_ty: String, val: String, dst_ty: String) -> String {
-    return "  %" + name + " = bitcast " + src_ty + " " + val + " to " + dst_ty
+    return "  " + name + " =bitcast " + src_ty + " " + val + " to " + dst_ty
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +310,7 @@ fn new_emit_state(module_name: String) -> EmitState {
 // ---------------------------------------------------------------------------
 
 fn emit_line(st: EmitState, line: String) -> EmitState {
-    // st.lines.push(line)
+    st.lines.push(line)
     return st
 }
 
@@ -382,10 +382,14 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_byte_at", llvm_int(), llvm_string() + ", i64")
     s = declare_runtime_fn(s, "__mn_str_substr", llvm_string(), llvm_string() + ", i64, i64")
     s = declare_runtime_fn(s, "__mn_str_from_int", llvm_string(), "i64")
+    s = declare_runtime_fn(s, "__mn_str_from_bool", llvm_string(), "i1")
+    s = declare_runtime_fn(s, "__mn_str_from_float", llvm_string(), "double")
+    s = declare_runtime_fn(s, "__mn_str_to_int", llvm_int(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_to_float", llvm_float(), llvm_string())
     s = declare_runtime_fn(s, "__mn_str_println", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_print", "void", llvm_string())
-    s = declare_runtime_fn(s, "__mn_str_starts_with", llvm_int(), llvm_string() + ", " + llvm_string())
-    s = declare_runtime_fn(s, "__mn_str_ends_with", llvm_int(), llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_starts_with", llvm_bool(), llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_ends_with", llvm_bool(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_find", llvm_int(), llvm_string() + ", " + llvm_string())
 
     // List runtime
@@ -393,6 +397,14 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_list_push", "void", llvm_list_rt() + "*, i8*")
     s = declare_runtime_fn(s, "__mn_list_get", "i8*", llvm_list_rt() + "*, i64")
     s = declare_runtime_fn(s, "__mn_list_len", "i64", llvm_list_rt() + "*")
+
+    // String methods
+    s = declare_runtime_fn(s, "__mn_str_to_upper", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_to_lower", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_replace", llvm_string(), llvm_string() + ", " + llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_split", llvm_list_rt(), llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_trim", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_contains", llvm_bool(), llvm_string() + ", " + llvm_string())
 
     // Panic
     s = declare_runtime_fn(s, "__mn_panic", "void", llvm_string())
@@ -438,7 +450,7 @@ fn register_mir_struct(st: EmitState, info: StructInfo) -> EmitState {
         if fi >= len(info.fields) {
             let ty: String = "{ " + llvm_fields + " }"
             let entry: StructEntry = new_struct_entry(info.name, field_names, field_types, ty)
-            // st.structs.push(entry)
+            st.structs.push(entry)
 
             // Emit named struct type definition
             let mut s: EmitState = emit_line(st, "%struct." + info.name + " = type " + ty)
@@ -446,8 +458,8 @@ fn register_mir_struct(st: EmitState, info: StructInfo) -> EmitState {
         }
         let fp: FieldPair = info.fields[fi]
         let fty: String = resolve_mir_type(fp.val.ty)
-        // field_names.push(fp.name)
-        // field_types.push(fty)
+        field_names.push(fp.name)
+        field_types.push(fty)
         if fi > 0 {
             llvm_fields = llvm_fields + ", " + fty
         } else {
@@ -636,26 +648,36 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
         let slen: Int = len(val)
         let gname: String = next_str_name(st)
         let mut s: EmitState = st
+        s.str_counter = s.str_counter + 1
         let arr_ty: String = "[" + toString(slen) + " x i8]"
         s = emit_line(s, gname + " = private constant " + arr_ty + " c\"" + val + "\"")
         let ptr_name: String = dest_name + ".ptr"
-        s = emit_line(s, "  %" + ptr_name + " = getelementptr " + arr_ty + ", " + arr_ty + "* " + gname + ", i64 0, i64 0")
+        s = emit_line(s, "  " + ptr_name + " = getelementptr " + arr_ty + ", " + arr_ty + "* " + gname + ", i64 0, i64 0")
         let s1_name: String = dest_name + ".s1"
-        s = emit_line(s, emit_insertvalue(s1_name, llvm_string(), "undef", "%" + ptr_name, "i8*", "0"))
-        s = emit_line(s, emit_insertvalue(dest_name, llvm_string(), "%" + s1_name, toString(slen), "i64", "1"))
+        s = emit_line(s, emit_insertvalue(s1_name, llvm_string(), "undef", ptr_name, "i8*", "0"))
+        s = emit_line(s, emit_insertvalue(dest_name, llvm_string(), s1_name, toString(slen), "i64", "1"))
         return s
     }
 
     // Bool constant
     if ty.kind == "bool" {
         if val == "true" {
-            return emit_line(st, "  %" + dest_name + " = add i1 0, 1")
+            return emit_line(st, "  " + dest_name + " = add i1 0, 1")
         }
-        return emit_line(st, "  %" + dest_name + " = add i1 0, 0")
+        return emit_line(st, "  " + dest_name + " = add i1 0, 0")
     }
 
-    // Int/Float constant — just reference directly (MIR values carry literal values)
-    // The dest_name serves as the SSA register; in LLVM IR, we just use the literal
+    // Int constant: emit `%dest = add i64 0, <val>` to define the SSA value
+    if ty.kind == "int" {
+        return emit_line(st, "  " + dest_name + " = add i64 0, " + val)
+    }
+
+    // Float constant: emit `%dest = fadd double 0.0, <val>`
+    if ty.kind == "float" {
+        return emit_line(st, "  " + dest_name + " = fadd double 0.0, " + val)
+    }
+
+    // Unknown type — no-op
     return st
 }
 
@@ -671,17 +693,17 @@ fn emit_copy(st: EmitState, dest: Value, src: Value) -> EmitState {
         return emit_line(st, emit_add(dest.name, ty, src.name, "0"))
     }
     if ty == llvm_float() {
-        return emit_line(st, "  %" + dest.name + " = fadd double " + src.name + ", 0.0")
+        return emit_line(st, "  " + dest.name + " =fadd double " + src.name + ", 0.0")
     }
     if ty == llvm_bool() {
-        return emit_line(st, "  %" + dest.name + " = or i1 " + src.name + ", false")
+        return emit_line(st, "  " + dest.name + " =or i1 " + src.name + ", false")
     }
     // For aggregate types, use alloca + store + load
     let mut s: EmitState = st
     let alloca_name: String = dest.name + ".addr"
     s = emit_line(s, emit_alloca(alloca_name, ty))
-    s = emit_line(s, emit_store(ty, src.name, "%" + alloca_name))
-    s = emit_line(s, emit_load(dest.name, ty, "%" + alloca_name))
+    s = emit_line(s, emit_store(ty, src.name, alloca_name))
+    s = emit_line(s, emit_load(dest.name, ty, alloca_name))
     return s
 }
 
@@ -696,13 +718,13 @@ fn emit_cast(st: EmitState, dest: Value, src: Value, target_ty: MIRType) -> Emit
     // Int → Float
     if src.ty.kind == "int" {
         if target_ty.kind == "float" {
-            return emit_line(st, "  %" + dest.name + " = sitofp i64 " + src.name + " to double")
+            return emit_line(st, "  " + dest.name + " =sitofp i64 " + src.name + " to double")
         }
     }
     // Float → Int
     if src.ty.kind == "float" {
         if target_ty.kind == "int" {
-            return emit_line(st, "  %" + dest.name + " = fptosi double " + src.name + " to i64")
+            return emit_line(st, "  " + dest.name + " =fptosi double " + src.name + " to i64")
         }
     }
     // Fallback: bitcast
@@ -719,72 +741,75 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     let dn: String = dest.name
     let ln: String = lhs.name
     let rn: String = rhs.name
+    // Use binop_kind_to_str (defined in lower.mn where BinOpKind is local)
+    // to convert the enum tag to a string, then dispatch with if/else
+    let op_str: String = binop_kind_to_str(op)
 
-    match op {
-        Add => {
-            if is_string {
-                return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_concat", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            }
-            if is_float { return emit_line(st, emit_fadd(dn, ln, rn)) }
-            return emit_line(st, emit_add(dn, llvm_int(), ln, rn))
-        },
-        Sub => {
-            if is_float { return emit_line(st, emit_fsub(dn, ln, rn)) }
-            return emit_line(st, emit_sub(dn, llvm_int(), ln, rn))
-        },
-        Mul => {
-            if is_float { return emit_line(st, emit_fmul(dn, ln, rn)) }
-            return emit_line(st, emit_mul(dn, llvm_int(), ln, rn))
-        },
-        Div => {
-            if is_float { return emit_line(st, emit_fdiv(dn, ln, rn)) }
-            return emit_line(st, emit_sdiv(dn, llvm_int(), ln, rn))
-        },
-        Mod => {
-            if is_float { return emit_line(st, emit_frem(dn, ln, rn)) }
-            return emit_line(st, emit_srem(dn, llvm_int(), ln, rn))
-        },
-        Eq => {
-            if is_string {
-                return emit_line(st, emit_call_ir(dn, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            }
-            if is_float { return emit_line(st, emit_fcmp(dn, "eq", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "eq", llvm_int(), ln, rn))
-        },
-        Ne => {
-            if is_string {
-                let mut s: EmitState = st
-                let eq_name: String = dn + ".eq"
-                s = emit_line(s, emit_call_ir(eq_name, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-                s = emit_line(s, emit_not(dn, "%" + eq_name))
-                return s
-            }
-            if is_float { return emit_line(st, emit_fcmp(dn, "ne", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "ne", llvm_int(), ln, rn))
-        },
-        Lt => {
-            if is_float { return emit_line(st, emit_fcmp(dn, "lt", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "slt", llvm_int(), ln, rn))
-        },
-        Gt => {
-            if is_float { return emit_line(st, emit_fcmp(dn, "gt", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "sgt", llvm_int(), ln, rn))
-        },
-        Le => {
-            if is_float { return emit_line(st, emit_fcmp(dn, "le", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "sle", llvm_int(), ln, rn))
-        },
-        Ge => {
-            if is_float { return emit_line(st, emit_fcmp(dn, "ge", ln, rn)) }
-            return emit_line(st, emit_icmp(dn, "sge", llvm_int(), ln, rn))
-        },
-        And => {
-            return emit_line(st, emit_and_instr(dn, ln, rn))
-        },
-        Or => {
-            return emit_line(st, emit_or_instr(dn, ln, rn))
+    if op_str == "add" {
+        if is_string {
+            return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_concat", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
         }
+        if is_float { return emit_line(st, emit_fadd(dn, ln, rn)) }
+        return emit_line(st, emit_add(dn, llvm_int(), ln, rn))
     }
+    if op_str == "sub" {
+        if is_float { return emit_line(st, emit_fsub(dn, ln, rn)) }
+        return emit_line(st, emit_sub(dn, llvm_int(), ln, rn))
+    }
+    if op_str == "mul" {
+        if is_float { return emit_line(st, emit_fmul(dn, ln, rn)) }
+        return emit_line(st, emit_mul(dn, llvm_int(), ln, rn))
+    }
+    if op_str == "div" {
+        if is_float { return emit_line(st, emit_fdiv(dn, ln, rn)) }
+        return emit_line(st, emit_sdiv(dn, llvm_int(), ln, rn))
+    }
+    if op_str == "mod" {
+        if is_float { return emit_line(st, emit_frem(dn, ln, rn)) }
+        return emit_line(st, emit_srem(dn, llvm_int(), ln, rn))
+    }
+    if op_str == "eq" {
+        if is_string {
+            return emit_line(st, emit_call_ir(dn, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+        }
+        if is_float { return emit_line(st, emit_fcmp(dn, "eq", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "eq", llvm_int(), ln, rn))
+    }
+    if op_str == "ne" {
+        if is_string {
+            let mut s: EmitState = st
+            let eq_name: String = dn + ".eq"
+            s = emit_line(s, emit_call_ir(eq_name, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_not(dn, eq_name))
+            return s
+        }
+        if is_float { return emit_line(st, emit_fcmp(dn, "ne", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "ne", llvm_int(), ln, rn))
+    }
+    if op_str == "lt" {
+        if is_float { return emit_line(st, emit_fcmp(dn, "lt", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "slt", llvm_int(), ln, rn))
+    }
+    if op_str == "gt" {
+        if is_float { return emit_line(st, emit_fcmp(dn, "gt", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "sgt", llvm_int(), ln, rn))
+    }
+    if op_str == "le" {
+        if is_float { return emit_line(st, emit_fcmp(dn, "le", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "sle", llvm_int(), ln, rn))
+    }
+    if op_str == "ge" {
+        if is_float { return emit_line(st, emit_fcmp(dn, "ge", ln, rn)) }
+        return emit_line(st, emit_icmp(dn, "sge", llvm_int(), ln, rn))
+    }
+    if op_str == "and" {
+        return emit_line(st, emit_and_instr(dn, ln, rn))
+    }
+    if op_str == "or" {
+        return emit_line(st, emit_or_instr(dn, ln, rn))
+    }
+    // Fallback: add
+    return emit_line(st, emit_add(dn, llvm_int(), ln, rn))
 }
 
 // ---------------------------------------------------------------------------
@@ -794,18 +819,18 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
 fn emit_unaryop(st: EmitState, dest: Value, op: UnaryOpKind, operand: Value) -> EmitState {
     let dn: String = dest.name
     let on: String = operand.name
+    let op_str: String = unaryop_kind_to_str(op)
 
-    match op {
-        Neg => {
-            if operand.ty.kind == "float" {
-                return emit_line(st, emit_fneg(dn, on))
-            }
-            return emit_line(st, emit_neg(dn, llvm_int(), on))
-        },
-        Not => {
-            return emit_line(st, emit_not(dn, on))
+    if op_str == "neg" {
+        if operand.ty.kind == "float" {
+            return emit_line(st, emit_fneg(dn, on))
         }
+        return emit_line(st, emit_neg(dn, llvm_int(), on))
     }
+    if op_str == "not" {
+        return emit_line(st, emit_not(dn, on))
+    }
+    return st
 }
 
 // ---------------------------------------------------------------------------
@@ -828,7 +853,7 @@ fn emit_struct_init(st: EmitState, dest: Value, ty: MIRType, fields: List<FieldP
         let fty: String = resolve_mir_type(fp.val.ty)
         let tmp_name: String = dn + ".f" + toString(i)
         s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, agg, fp.val.name, fty, toString(i)))
-        agg = "%" + tmp_name
+        agg = tmp_name
         i = i + 1
     }
     return s
@@ -847,6 +872,19 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
         if field_name == "len" {
             return emit_line(st, emit_extractvalue(dn, llvm_string(), obj.name, "1"))
         }
+        // String methods (contains, starts_with, etc.) — not struct fields.
+        // The actual call is handled by the Call instruction that follows.
+        // Just pass the object through as the "method reference".
+        return emit_copy(st, dest, obj)
+    }
+
+    // List .len
+    if obj.ty.kind == "list" {
+        if field_name == "len" {
+            return emit_line(st, emit_call_ir(dn, llvm_int(), "__mn_list_len", llvm_list_rt() + "* " + obj.name))
+        }
+        // List methods (push, etc.) — pass object through
+        return emit_copy(st, dest, obj)
     }
 
     // Look up field index from registered structs
@@ -909,23 +947,23 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     // Alloca for push
     let alloca_name: String = dn + ".addr"
     s = emit_line(s, emit_alloca(alloca_name, llvm_list_rt()))
-    s = emit_line(s, emit_store(llvm_list_rt(), "%" + list_name, "%" + alloca_name))
+    s = emit_line(s, emit_store(llvm_list_rt(), list_name, alloca_name))
 
     // Push each element
     let mut i: Int = 0
     for _ in 0..100000 {
         if i >= len(elements) {
             // Load final list
-            s = emit_line(s, emit_load(dn, llvm_list_rt(), "%" + alloca_name))
+            s = emit_line(s, emit_load(dn, llvm_list_rt(), alloca_name))
             return s
         }
         let elem: Value = elements[i]
         let ety: String = resolve_mir_type(elem.ty)
         let elem_alloca: String = dn + ".e" + toString(i)
         s = emit_line(s, emit_alloca(elem_alloca, ety))
-        s = emit_line(s, emit_store(ety, elem.name, "%" + elem_alloca))
+        s = emit_line(s, emit_store(ety, elem.name, elem_alloca))
         let cast_name: String = dn + ".c" + toString(i)
-        s = emit_line(s, emit_bitcast(cast_name, ety + "*", "%" + elem_alloca, "i8*"))
+        s = emit_line(s, emit_bitcast(cast_name, ety + "*", elem_alloca, "i8*"))
         s = emit_line(s, emit_call_void("__mn_list_push", llvm_list_rt() + "* %" + alloca_name + ", i8* %" + cast_name))
         i = i + 1
     }
@@ -963,7 +1001,7 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
 
 fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, pairs: List<KVPair>) -> EmitState {
     // Maps are pointer-based; minimal implementation
-    return emit_line(st, "  %" + dest.name + " = insertvalue " + llvm_map_type() + " undef, i8* null, 0")
+    return emit_line(st, "  " + dest.name + " =insertvalue " + llvm_map_type() + " undef, i8* null, 0")
 }
 
 // ---------------------------------------------------------------------------
@@ -981,7 +1019,7 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
     s = emit_line(s, emit_insertvalue(tag_name, enum_ty, "undef", "0", "i64", "0"))
 
     // Insert payload values
-    let mut agg: String = "%" + tag_name
+    let mut agg: String = tag_name
     let mut i: Int = 0
     for _ in 0..100 {
         if i >= len(payload) {
@@ -996,7 +1034,7 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
         let tmp: String = dn + ".p" + toString(i)
         let pty: String = resolve_mir_type(p.ty)
         s = emit_line(s, emit_insertvalue(tmp, enum_ty, agg, p.name, pty, toString(i + 1)))
-        agg = "%" + tmp
+        agg = tmp
         i = i + 1
     }
     return s
@@ -1030,7 +1068,7 @@ fn emit_wrap_some(st: EmitState, dest: Value, val: Value) -> EmitState {
     let mut s: EmitState = st
     let tag_name: String = dest.name + ".tag"
     s = emit_line(s, emit_insertvalue(tag_name, opt_ty, "undef", "1", "i1", "0"))
-    s = emit_line(s, emit_insertvalue(dest.name, opt_ty, "%" + tag_name, val.name, val_ty, "1"))
+    s = emit_line(s, emit_insertvalue(dest.name, opt_ty, tag_name, val.name, val_ty, "1"))
     return s
 }
 
@@ -1048,7 +1086,7 @@ fn emit_wrap_ok(st: EmitState, dest: Value, val: Value) -> EmitState {
     s = emit_line(s, emit_insertvalue(tag_name, res_ty, "undef", "1", "i1", "0"))
     let inner_name: String = dest.name + ".inner"
     s = emit_line(s, emit_insertvalue(inner_name, "{ " + val_ty + ", " + llvm_ptr() + " }", "undef", val.name, val_ty, "0"))
-    s = emit_line(s, emit_insertvalue(dest.name, res_ty, "%" + tag_name, "%" + inner_name, "{ " + val_ty + ", " + llvm_ptr() + " }", "1"))
+    s = emit_line(s, emit_insertvalue(dest.name, res_ty, tag_name, inner_name, "{ " + val_ty + ", " + llvm_ptr() + " }", "1"))
     return s
 }
 
@@ -1060,7 +1098,7 @@ fn emit_wrap_err(st: EmitState, dest: Value, val: Value) -> EmitState {
     s = emit_line(s, emit_insertvalue(tag_name, res_ty, "undef", "0", "i1", "0"))
     let inner_name: String = dest.name + ".inner"
     s = emit_line(s, emit_insertvalue(inner_name, "{ " + llvm_ptr() + ", " + val_ty + " }", "undef", val.name, val_ty, "1"))
-    s = emit_line(s, emit_insertvalue(dest.name, res_ty, "%" + tag_name, "%" + inner_name, "{ " + llvm_ptr() + ", " + val_ty + " }", "1"))
+    s = emit_line(s, emit_insertvalue(dest.name, res_ty, tag_name, inner_name, "{ " + llvm_ptr() + ", " + val_ty + " }", "1"))
     return s
 }
 
@@ -1093,6 +1131,36 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     }
     if fn_name == "toString" {
         return emit_builtin_tostring(st, dest, args)
+    }
+    if fn_name == "str" {
+        return emit_builtin_tostring(st, dest, args)
+    }
+    if fn_name == "int" {
+        return emit_builtin_int(st, dest, args)
+    }
+    if fn_name == "float" {
+        return emit_builtin_float(st, dest, args)
+    }
+
+    // String methods: dispatched to __mn_str_<method> runtime functions
+    if len(args) >= 1 {
+        let first_arg: Value = args[0]
+        if first_arg.ty.kind == "string" {
+            if fn_name == "contains" { return emit_line(st, emit_call_ir(dn, llvm_bool(), "__mn_str_contains", llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name)) }
+            if fn_name == "starts_with" { return emit_line(st, emit_call_ir(dn, llvm_bool(), "__mn_str_starts_with", llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name)) }
+            if fn_name == "ends_with" { return emit_line(st, emit_call_ir(dn, llvm_bool(), "__mn_str_ends_with", llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name)) }
+            if fn_name == "find" { return emit_line(st, emit_call_ir(dn, llvm_int(), "__mn_str_find", llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name)) }
+            if fn_name == "char_at" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_char_at", llvm_string() + " " + args[0].name + ", i64 " + args[1].name)) }
+            if fn_name == "substr" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_substr", llvm_string() + " " + args[0].name + ", i64 " + args[1].name + ", i64 " + args[2].name)) }
+            if fn_name == "to_upper" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_to_upper", llvm_string() + " " + args[0].name)) }
+            if fn_name == "to_lower" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_to_lower", llvm_string() + " " + args[0].name)) }
+        }
+        // List methods: push handled by ListPush instruction, len by builtin
+        if first_arg.ty.kind == "list" {
+            if fn_name == "push" {
+                return st
+            }
+        }
     }
 
     // Build args string
@@ -1175,7 +1243,43 @@ fn emit_builtin_tostring(st: EmitState, dest: Value, args: List<Value>) -> EmitS
         // Already a string — just copy
         return emit_copy(st, dest, arg)
     }
+    if arg.ty.kind == "bool" {
+        return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_bool", "i1 " + arg.name))
+    }
+    if arg.ty.kind == "float" {
+        return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_float", "double " + arg.name))
+    }
     return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_int", "i64 " + arg.name))
+}
+
+fn emit_builtin_int(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
+    if len(args) == 0 { return st }
+    let arg: Value = args[0]
+    if arg.ty.kind == "float" {
+        return emit_line(st, "  " + dest.name + " =fptosi double " + arg.name + " to i64")
+    }
+    if arg.ty.kind == "int" {
+        return emit_copy(st, dest, arg)
+    }
+    if arg.ty.kind == "string" {
+        return emit_line(st, emit_call_ir(dest.name, llvm_int(), "__mn_str_to_int", llvm_string() + " " + arg.name))
+    }
+    return emit_line(st, emit_call_ir(dest.name, llvm_int(), "__mn_str_to_int", llvm_string() + " " + arg.name))
+}
+
+fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
+    if len(args) == 0 { return st }
+    let arg: Value = args[0]
+    if arg.ty.kind == "int" {
+        return emit_line(st, "  " + dest.name + " =sitofp i64 " + arg.name + " to double")
+    }
+    if arg.ty.kind == "float" {
+        return emit_copy(st, dest, arg)
+    }
+    if arg.ty.kind == "string" {
+        return emit_line(st, emit_call_ir(dest.name, llvm_float(), "__mn_str_to_float", llvm_string() + " " + arg.name))
+    }
+    return emit_line(st, emit_call_ir(dest.name, llvm_float(), "__mn_str_to_float", llvm_string() + " " + arg.name))
 }
 
 // ---------------------------------------------------------------------------
@@ -1258,7 +1362,7 @@ fn emit_signal_set(st: EmitState, sig: Value, val: Value) -> EmitState {
 
 fn emit_stream_op(st: EmitState, dest: Value, kind: StreamOpKind, source: Value, args: List<Value>) -> EmitState {
     // Stream operations are runtime-dispatched; minimal LLVM lowering
-    return emit_line(st, "  %" + dest.name + " = bitcast i8* " + source.name + " to i8*")
+    return emit_line(st, "  " + dest.name + " =bitcast i8* " + source.name + " to i8*")
 }
 
 // ---------------------------------------------------------------------------
@@ -1285,7 +1389,7 @@ fn emit_interp_concat(st: EmitState, dest: Value, parts: List<Value>) -> EmitSta
         let p: Value = parts[i]
         let tmp: String = dest.name + ".c" + toString(i)
         s = emit_line(s, emit_call_ir(tmp, llvm_string(), "__mn_str_concat", llvm_string() + " " + acc + ", " + llvm_string() + " " + p.name))
-        acc = "%" + tmp
+        acc = tmp
         i = i + 1
     }
     return s
@@ -1304,7 +1408,7 @@ fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitSta
     }
 
     // Build phi instruction string
-    let mut phi_str: String = "  %" + dn + " = phi " + ty + " "
+    let mut phi_str: String = "  " + dn + " = phi " + ty + " "
     let mut i: Int = 0
     for _ in 0..1000 {
         if i >= len(incoming) { break }
@@ -1348,7 +1452,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         if pi >= len(f.params) { break }
         let p: MIRParam = f.params[pi]
         let pty: String = resolve_mir_type(p.ty)
-        // param_types.push(pty)
+        param_types.push(pty)
         if pi > 0 {
             params_str = params_str + ", " + pty + " %" + p.name
         } else {
@@ -1363,11 +1467,22 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     // Register function
     let entry: FnEntry = new_fn_entry(f.name, ret_ty, param_types)
     let mut s: EmitState = st
-    // s.functions.push(entry)
+    s.functions.push(entry)
 
     // Emit function header
-    let visibility: String = if f.is_public { "define" } else { "define" }
-    s = emit_line(s, visibility + " " + ret_ty + " @" + f.name + "(" + params_str + ") {")
+    let mut fn_name: String = f.name
+    // Strip % prefix from function names (lambdas use %name in MIR)
+    let mut is_lambda: Bool = false
+    if len(fn_name) > 1 {
+        let first: String = fn_name.substr(0, 1)
+        if first == "%" {
+            fn_name = fn_name.substr(1, len(fn_name) - 1)
+            is_lambda = true
+        }
+    }
+    // Lambdas are internal, everything else is public
+    let visibility: String = if is_lambda { "define internal" } else { "define" }
+    s = emit_line(s, visibility + " " + ret_ty + " @" + fn_name + "(" + params_str + ") {")
 
     // Emit basic blocks
     let mut bi: Int = 0
@@ -1467,29 +1582,116 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
         }
         let fn_types: List<String> = []
         let fe: FnEntry = new_fn_entry(f.name, ret_ty, fn_types)
-        // st.functions.push(fe)
+        st.functions.push(fe)
         di = di + 1
     }
 
     // Emit function bodies
     let mut fi: Int = 0
     for _ in 0..100000 {
-        if fi >= len(module.functions) {
-            // Join all lines
-            let mut result: String = ""
-            let mut li: Int = 0
-            for _ in 0..1000000 {
-                if li >= len(st.lines) { return result }
-                let line: String = st.lines[li]
-                result = result + line + "\n"
-                li = li + 1
-            }
-            return result
-        }
+        if fi >= len(module.functions) { break }
         let f: MIRFunction = module.functions[fi]
         st = emit_mir_function(st, f)
         fi = fi + 1
     }
 
-    return ""
+    // Join all lines into result string
+    let nlines: Int = len(st.lines)
+    let mut result: String = ""
+    let mut li: Int = 0
+    for _ in 0..1000000 {
+        if li >= nlines { return result }
+        let line: String = st.lines[li]
+        result = result + line + "\n"
+        li = li + 1
+    }
+    return result
+
+    // Module header
+    st = emit_line(st, "; ModuleID = '" + module_name + "'")
+    st = emit_line(st, "source_filename = \"" + module_name + "\"")
+    st = emit_blank(st)
+    println("[E] header done")
+
+    // Format string constants
+    st = emit_format_constants(st)
+    println("[E] format constants done")
+
+    // Runtime declarations
+    st = declare_all_runtime(st)
+    println("[E] runtime decls done, lines=" + str(len(st.lines)))
+
+    // Register struct types
+    let mut si: Int = 0
+    for _ in 0..1000 {
+        if si >= len(module.structs) { break }
+        st = register_mir_struct(st, module.structs[si])
+        si = si + 1
+    }
+
+    // Register enum types
+    let mut ei: Int = 0
+    for _ in 0..1000 {
+        if ei >= len(module.enums) { break }
+        st = register_mir_enum(st, module.enums[ei])
+        ei = ei + 1
+    }
+
+    if len(module.structs) > 0 { st = emit_blank(st) }
+    if len(module.enums) > 0 { st = emit_blank(st) }
+
+    // Declare extern functions
+    let mut xi: Int = 0
+    for _ in 0..1000 {
+        if xi >= len(module.extern_fns) { break }
+        st = declare_mir_extern(st, module.extern_fns[xi])
+        xi = xi + 1
+    }
+    if len(module.extern_fns) > 0 { st = emit_blank(st) }
+
+    // Forward-declare all functions (for mutual recursion)
+    let mut di: Int = 0
+    for _ in 0..100000 {
+        if di >= len(module.functions) { break }
+        let f: MIRFunction = module.functions[di]
+        let ret_ty: String = resolve_mir_type(f.return_type)
+        let mut fparams: String = ""
+        let mut fpi: Int = 0
+        for _ in 0..1000 {
+            if fpi >= len(f.params) { break }
+            let fp: MIRParam = f.params[fpi]
+            let fpty: String = resolve_mir_type(fp.ty)
+            if fpi > 0 {
+                fparams = fparams + ", " + fpty
+            } else {
+                fparams = fpty
+            }
+            fpi = fpi + 1
+        }
+        let fn_types: List<String> = []
+        let fe: FnEntry = new_fn_entry(f.name, ret_ty, fn_types)
+        st.functions.push(fe)
+        di = di + 1
+    }
+
+    // Emit function bodies
+    let mut fi: Int = 0
+    for _ in 0..100000 {
+        if fi >= len(module.functions) { break }
+        let f: MIRFunction = module.functions[fi]
+        st = emit_mir_function(st, f)
+        fi = fi + 1
+    }
+
+    // Join all lines into result string
+    let nlines: Int = len(st.lines)
+    let mut result: String = ""
+    let mut li: Int = 0
+    for _ in 0..1000000 {
+        if li >= nlines { return result }
+        let line: String = st.lines[li]
+        result = result + line + "\n"
+        li = li + 1
+    }
+    return result
 }

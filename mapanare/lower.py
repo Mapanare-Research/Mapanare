@@ -104,6 +104,7 @@ from mapanare.mir import (
     InterpConcat,
     Jump,
     ListInit,
+    ListPush,
     MapInit,
     MIRAgentInfo,
     MIRFunction,
@@ -236,7 +237,12 @@ class _VarInfo:
 class MIRLowerer:
     """Lowers a typed AST into MIR."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        imported_return_types: dict[str, "MIRType"] | None = None,
+        imported_struct_defs: dict[str, list[tuple[str, "MIRType"]]] | None = None,
+        imported_enum_defs: dict[str, list[tuple[str, list["MIRType"]]]] | None = None,
+    ) -> None:
         self._module = MIRModule()
         self._fn: MIRFunction | None = None
         self._block: BasicBlock | None = None
@@ -260,12 +266,24 @@ class MIRLowerer:
         self._enum_variants: dict[str, list[str]] = {}
         # Decorator metadata for functions
         self._fn_decorators: dict[str, list[str]] = {}
+        # Function parameter types: fn_name → [MIRType] for patching empty list args
+        self._fn_param_types: dict[str, list[MIRType]] = {}
         # Current source span — set by _lower_expr/_lower_stmt for debug info
         self._current_span: SourceSpan | None = None
         # Loop exit label stack for break statements
         self._loop_exit_stack: list[str] = []
-        # Function return types: fn_name → MIRType (populated in first pass)
-        self._fn_return_types: dict[str, MIRType] = {}
+        # Function return types: fn_name → MIRType (populated in first pass).
+        # Pre-seed with imported function return types so cross-module calls
+        # get correct dest types during lowering.
+        self._fn_return_types: dict[str, MIRType] = dict(imported_return_types or {})
+        # Imported struct definitions: struct_name → [(field_name, MIRType)]
+        self._imported_struct_defs: dict[str, list[tuple[str, MIRType]]] = dict(
+            imported_struct_defs or {}
+        )
+        # Imported enum definitions: enum_name → [(variant_name, [MIRType])]
+        self._imported_enum_defs: dict[str, list[tuple[str, list[MIRType]]]] = dict(
+            imported_enum_defs or {}
+        )
 
     # -- Name generation ---------------------------------------------------
 
@@ -518,8 +536,9 @@ class MIRLowerer:
                 self._module.pipes[actual.name] = MIRPipeInfo(name=actual.name, stages=stages)
 
             # Collect function return types for call-site type propagation
-            if isinstance(actual, FnDef) and actual.return_type is not None:
-                self._fn_return_types[actual.name] = _resolve_type_expr(actual.return_type)
+            if isinstance(actual, FnDef):
+                if actual.return_type is not None:
+                    self._fn_return_types[actual.name] = _resolve_type_expr(actual.return_type)
             elif isinstance(actual, ImplDef):
                 for method in actual.methods:
                     if method.return_type is not None:
@@ -751,6 +770,23 @@ class MIRLowerer:
                             self._lambda_vars[let.name] = inst.value
             return
         val = self._lower_expr(let.value)
+        # For empty lists/maps, propagate element type from the type annotation
+        # so the LLVM emitter uses the correct elem_size.
+        if let.type_annotation and isinstance(let.value, ListLiteral) and not let.value.elements:
+            declared = _resolve_type_expr(let.type_annotation)
+            if declared.type_info.args:
+                # Patch the ListInit instruction's elem_type
+                for bb in (self._fn.blocks if self._fn else []):
+                    for inst in bb.instructions:
+                        if isinstance(inst, ListInit) and inst.dest == val:
+                            inst.elem_type = MIRType(declared.type_info.args[0])
+                            break
+        # When the expression type is unknown but a type annotation is provided,
+        # use the annotation to preserve type info (critical for cross-module types).
+        if let.type_annotation and val.ty.kind == TypeKind.UNKNOWN:
+            declared = _resolve_type_expr(let.type_annotation)
+            if declared.kind != TypeKind.UNKNOWN:
+                val = Value(name=val.name, ty=declared)
         # Create a named copy for readability
         named = Value(name=f"%{let.name}", ty=val.ty)
         self._emit(Copy(dest=named, src=val))
@@ -1196,6 +1232,7 @@ class MIRLowerer:
                 return dest
 
             # Check if this is an enum variant constructor
+            # Check local enums
             for enum_name, variant_names in self._enum_variants.items():
                 if fn_name in variant_names:
                     enum_ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name=enum_name))
@@ -1203,7 +1240,19 @@ class MIRLowerer:
                     self._emit(
                         EnumInit(dest=dest, enum_type=enum_ty, variant=fn_name, payload=args)
                     )
+                    # self._patch_list_elem_types_for_enum(enum_name, fn_name, args)
                     return dest
+            # Check imported enums
+            for enum_name, variants in self._imported_enum_defs.items():
+                for vname, _ in variants:
+                    if vname == fn_name:
+                        enum_ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name=enum_name))
+                        dest = self._make_value(ty=enum_ty)
+                        self._emit(
+                            EnumInit(dest=dest, enum_type=enum_ty, variant=fn_name, payload=args)
+                        )
+                        # self._patch_list_elem_types_for_enum(enum_name, fn_name, args)
+                        return dest
 
             # Check if this is a struct constructor (Name(args) for a known struct)
             if fn_name in self._struct_fields:
@@ -1212,6 +1261,8 @@ class MIRLowerer:
                 fields = list(zip(field_names, args))
                 dest = self._make_value(ty=struct_ty)
                 self._emit(StructInit(dest=dest, struct_type=struct_ty, fields=fields))
+                # Patch empty list args with field types from struct definition
+                # self._patch_list_elem_types_for_struct(fn_name, field_names, args)
                 return dest
 
             # Check if this is a closure call (lambda with captures)
@@ -1224,15 +1275,20 @@ class MIRLowerer:
             # Resolve lambda variable names to actual function names
             resolved_name = self._lambda_vars.get(fn_name, fn_name)
             self._emit(Call(dest=dest, fn_name=resolved_name, args=args))
+            # Patch empty list args with parameter types from function declaration
+            # self._patch_list_elem_types_for_fn_call(fn_name, args)
         elif isinstance(expr.callee, FieldAccessExpr):
             # obj.method(args) that parsed as CallExpr(FieldAccessExpr, args)
             obj = self._lower_expr(expr.callee.object)
             method = expr.callee.field_name
             self._emit(Call(dest=dest, fn_name=method, args=[obj] + args))
         elif isinstance(expr.callee, NamespaceAccessExpr):
-            # Namespace::fn(args)
-            fn_name = f"{expr.callee.namespace}_{expr.callee.member}"
+            ns = expr.callee.namespace
+            member = expr.callee.member
+            # Emit as Namespace_Member call (enum constructors are resolved by emitter)
+            fn_name = f"{ns}_{member}"
             self._emit(Call(dest=dest, fn_name=fn_name, args=args))
+            # TODO: Patch empty list args in namespace-qualified enum constructors
         else:
             callee_val = self._lower_expr(expr.callee)
             self._emit(Call(dest=dest, fn_name=callee_val.name, args=args))
@@ -1559,6 +1615,24 @@ class MIRLowerer:
             self._emit(SignalGet(dest=dest, signal=obj))
             return dest
 
+        # List .push() — emit ListPush instruction and update the variable binding
+        if expr.method == "push" and args and obj.ty.kind == TypeKind.LIST:
+            dest = self._make_value(ty=obj.ty)
+            self._emit(ListPush(dest=dest, list_val=obj, element=args[0]))
+            # Update the variable so subsequent reads see the modified list
+            if isinstance(expr.object, Identifier):
+                self._update_var(expr.object.name, dest)
+            elif isinstance(expr.object, FieldAccessExpr):
+                # s.field.push(x) → need to write updated list back to struct field
+                self._emit(
+                    FieldSet(
+                        obj=self._lower_expr(expr.object.object),
+                        field_name=expr.object.field_name,
+                        val=dest,
+                    )
+                )
+            return dest
+
         # General method call → Call with self as first arg
         # Infer return type for known string methods so LLVM codegen uses correct types
         _str_method_ret: dict[str, TypeKind] = {
@@ -1621,6 +1695,19 @@ class MIRLowerer:
                     if vname == variant_name and payload_idx < len(payload_types):
                         return payload_types[payload_idx]
 
+        # Check imported enum definitions (cross-module types)
+        if enum_name and self._imported_enum_defs:
+            variants = self._imported_enum_defs.get(enum_name)
+            if not variants:
+                for ename, evariants in self._imported_enum_defs.items():
+                    if ename.endswith("__" + enum_name):
+                        variants = evariants
+                        break
+            if variants:
+                for vname, payload_types in variants:
+                    if vname == variant_name and payload_idx < len(payload_types):
+                        return payload_types[payload_idx]
+
         return mir_unknown()
 
     def _infer_iterable_elem_type(self, iter_ty: MIRType) -> MIRType:
@@ -1639,6 +1726,19 @@ class MIRLowerer:
         struct_name = obj_ty.type_info.name
         if struct_name and self._module:
             fields = self._module.structs.get(struct_name)
+            if fields:
+                for fname, fty in fields:
+                    if fname == field_name:
+                        return fty
+        # Check imported struct definitions (cross-module types)
+        if struct_name and self._imported_struct_defs:
+            fields = self._imported_struct_defs.get(struct_name)
+            if not fields:
+                # Try suffix match (e.g. "Program" → "parser__Program")
+                for sname, sfields in self._imported_struct_defs.items():
+                    if sname.endswith("__" + struct_name):
+                        fields = sfields
+                        break
             if fields:
                 for fname, fty in fields:
                     if fname == field_name:
@@ -1672,7 +1772,16 @@ class MIRLowerer:
         """Lower index access: `arr[i]`."""
         obj = self._lower_expr(expr.object)
         index = self._lower_expr(expr.index)
-        dest = self._make_value()
+        # Infer element type from the container's type args
+        elem_ty = mir_unknown()
+        obj_kind = obj.ty.kind
+        if obj_kind == TypeKind.LIST and obj.ty.type_info.args:
+            elem_ty = MIRType(obj.ty.type_info.args[0])
+        elif obj_kind == TypeKind.MAP and len(obj.ty.type_info.args) >= 2:
+            elem_ty = MIRType(obj.ty.type_info.args[1])
+        elif obj_kind == TypeKind.STRING:
+            elem_ty = MIRType(type_info=TypeInfo(name="String", kind=TypeKind.STRING))
+        dest = self._make_value(ty=elem_ty)
         self._emit(IndexGet(dest=dest, obj=obj, index=index))
         return dest
 
@@ -1845,13 +1954,74 @@ class MIRLowerer:
         self._emit(Unwrap(dest=dest, val=val))
         return dest
 
-    def _lower_list(self, expr: ListLiteral) -> Value:
+    def _lower_list(self, expr: ListLiteral, expected_elem_type: MIRType | None = None) -> Value:
         """Lower a list literal."""
         elements = [self._lower_expr(e) for e in expr.elements]
-        elem_type = elements[0].ty if elements else mir_unknown()
+        if elements:
+            elem_type = elements[0].ty
+        elif expected_elem_type is not None:
+            elem_type = expected_elem_type
+        else:
+            elem_type = mir_unknown()
         dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.LIST)))
         self._emit(ListInit(dest=dest, elem_type=elem_type, elements=elements))
         return dest
+
+    def _patch_list_elem_types_for_struct(
+        self, struct_name: str, field_names: list[str], args: list[Value]
+    ) -> None:
+        """Patch empty ListInit elem_types using struct field type info."""
+        struct_def = self._module.structs.get(struct_name)
+        if not struct_def:
+            # Try imported struct defs
+            struct_def = self._imported_struct_defs.get(struct_name)
+        if not struct_def:
+            return
+        # struct_def is [(field_name, MIRType), ...]
+        field_type_map = {fname: ftype for fname, ftype in struct_def}
+        for i, (fname, arg_val) in enumerate(zip(field_names, args)):
+            ftype = field_type_map.get(fname)
+            if ftype and ftype.kind == TypeKind.LIST and ftype.type_info.args:
+                self._patch_listinit_for_value(arg_val, ftype.type_info.args[0])
+
+    def _patch_list_elem_types_for_enum(
+        self, enum_name: str, variant_name: str, args: list[Value]
+    ) -> None:
+        """Patch empty ListInit elem_types using enum payload type info."""
+        enum_def = self._module.enums.get(enum_name)
+        if not enum_def:
+            enum_def = self._imported_enum_defs.get(enum_name)
+        if not enum_def:
+            return
+        # enum_def is [(variant_name, [MIRType, ...]), ...]
+        for vname, payload_types in enum_def:
+            if vname == variant_name:
+                for i, (ptype, arg_val) in enumerate(zip(payload_types, args)):
+                    if ptype.kind == TypeKind.LIST and ptype.type_info.args:
+                        self._patch_listinit_for_value(arg_val, ptype.type_info.args[0])
+                break
+
+    def _patch_list_elem_types_for_fn_call(self, fn_name: str, args: list[Value]) -> None:
+        """Patch empty ListInit elem_types using function parameter type info."""
+        param_types = self._fn_param_types.get(fn_name)
+        if not param_types:
+            return
+        for i, (ptype, arg_val) in enumerate(zip(param_types, args)):
+            if ptype.kind == TypeKind.LIST and ptype.type_info.args:
+                self._patch_listinit_for_value(arg_val, ptype.type_info.args[0])
+
+    def _patch_listinit_for_value(self, val: Value, elem_type_info: TypeInfo) -> None:
+        """Find the ListInit instruction that produced `val` and patch its elem_type.
+
+        Only patches if the val was directly produced by a ListInit with UNKNOWN type.
+        Uses identity comparison (is) to avoid matching values with same name/type.
+        """
+        for bb in self._fn.blocks if self._fn else []:
+            for inst in bb.instructions:
+                if isinstance(inst, ListInit) and inst.dest is val and not inst.elements:
+                    if inst.elem_type.kind == TypeKind.UNKNOWN:
+                        inst.elem_type = MIRType(elem_type_info)
+                    return
 
     def _lower_map(self, expr: MapLiteral) -> Value:
         """Lower a map literal."""
@@ -1904,7 +2074,7 @@ class MIRLowerer:
         if isinstance(expr.target, FieldAccessExpr):
             obj = self._lower_expr(expr.target.object)
             # Signal .value assignment → emit SignalSet for reactivity
-            if expr.target.field_name == "value":
+            if expr.target.field_name == "value" and obj.ty.kind == TypeKind.SIGNAL:
                 self._emit(SignalSet(signal=obj, val=val))
                 return val
             self._emit(FieldSet(obj=obj, field_name=expr.target.field_name, val=val))
@@ -2019,8 +2189,8 @@ class MIRLowerer:
             elif isinstance(pat, LiteralPattern):
                 lit_val = self._get_literal_value(pat.value)
                 cases.append((lit_val, arm_blocks[i].label))
-            elif isinstance(pat, IdentPattern) and self._is_enum_variant(pat.name):
-                # Bare enum variant name used as pattern (e.g., `Up => ...`)
+            elif isinstance(pat, IdentPattern) and self._is_enum_variant(pat.name, subject.ty):
+                # Bare enum variant name used as pattern (e.g., `Add => ...`)
                 cases.append((pat.name, arm_blocks[i].label))
             elif isinstance(pat, (WildcardPattern, IdentPattern)):
                 default_block = arm_blocks[i].label
@@ -2029,7 +2199,10 @@ class MIRLowerer:
 
         # Emit switch or branch
         if cases:
-            tag = self._make_value(ty=mir_unknown(), prefix="tag")
+            # Preserve the subject's type on the tag so the LLVM emitter can
+            # resolve variant names to the correct enum (avoids collisions when
+            # multiple enums share variant names like "Call" or "Return").
+            tag = self._make_value(ty=subject.ty, prefix="tag")
             self._emit(EnumTag(dest=tag, enum_val=subject))
             self._emit(Switch(tag=tag, cases=cases, default_block=default_block))
         elif arm_blocks:
@@ -2103,8 +2276,8 @@ class MIRLowerer:
 
     # -- Helpers -----------------------------------------------------------
 
-    def _is_enum_variant(self, name: str) -> bool:
-        """Check if a name matches a known enum variant."""
+    def _is_enum_variant(self, name: str, subject_ty: MIRType | None = None) -> bool:
+        """Check if a name matches a known enum variant (local only for now)."""
         for variant_names in self._enum_variants.values():
             if name in variant_names:
                 return True
@@ -2133,6 +2306,9 @@ def lower(
     module_name: str = "",
     source_file: str = "",
     source_directory: str = "",
+    imported_return_types: dict[str, MIRType] | None = None,
+    imported_struct_defs: dict[str, list[tuple[str, MIRType]]] | None = None,
+    imported_enum_defs: dict[str, list[tuple[str, list[MIRType]]]] | None = None,
 ) -> MIRModule:
     """Lower an AST program to MIR.
 
@@ -2141,11 +2317,18 @@ def lower(
         module_name: Optional module name.
         source_file: Original source file name (for debug info).
         source_directory: Directory of the source file (for debug info).
+        imported_return_types: fn_name → MIRType for imported functions.
+        imported_struct_defs: struct_name → [(field_name, MIRType)] for imported structs.
+        imported_enum_defs: enum_name → [(variant, [MIRType])] for imported enums.
 
     Returns:
         A MIRModule containing the lowered MIR.
     """
-    return MIRLowerer().lower(
+    return MIRLowerer(
+        imported_return_types=imported_return_types,
+        imported_struct_defs=imported_struct_defs,
+        imported_enum_defs=imported_enum_defs,
+    ).lower(
         program,
         module_name,
         source_file=source_file,

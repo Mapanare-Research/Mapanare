@@ -7,20 +7,25 @@
 
 ---
 
-## Where We Are (v0.9.0)
+## Where We Are (v1.0.0)
 
-Mapanare is real, compiled, and connected to the outside world. Seven stdlib modules written
-in `.mn` compile natively via LLVM — JSON, CSV, HTTP client, HTTP server, WebSocket, crypto,
-and regex. Cross-module LLVM compilation links imports across files into single binaries.
-The compiler is self-hosted (7 modules, 8,288+ lines of Mapanare), ships with a MIR-based
-pipeline, dual backends (Python transpiler + LLVM native), and a full native C runtime.
-**No Python required at runtime.** **3,400+ tests pass** across the full pipeline.
+Mapanare v1.0.0 is published. The language specification is frozen at v1.0 Final — syntax,
+semantics, and type system changes now require RFC + deprecation cycle. The compiler pipeline
+is hardened, the memory model is formally documented, and stability guarantees are published.
+
+A [7-reviewer code review](.reviews/v1.0.0/README.md) scored the release at **7.8/10 median**
+(unanimous PASS WITH NOTES, up from 6.6 at v0.3.0). The review identified 34 issues across
+type soundness, memory leaks, codegen gaps, and missing primitives. These are being addressed
+across **10 patch releases** (v1.0.1–v1.0.10) before any new features. The goal: make the
+language rock-solid before building the ecosystem on top of it.
+
+**No Python required at runtime.** **3,628 tests pass** across the full pipeline.
 
 ### What works today
 
 - **Full compiler pipeline** — Lexer, parser, semantic checker, MIR lowering, MIR optimizer (O0–O3), code emitter
 - **MIR pipeline** — Typed SSA-based intermediate representation with basic blocks and explicit terminators
-- **Two compilation targets** — Python transpilation and native binaries via LLVM IR (both AST-direct and MIR-based)
+- **Two compilation targets** — Native binaries via LLVM IR (production) and Python transpilation (legacy, for reference and bootstrapping only)
 - **Self-hosted compiler** — 8,288+ lines of `.mn` across 7 modules (lexer, ast, parser, semantic, lower, emit_llvm, main)
 - **Built-in test runner** — `mapanare test` discovers `@test` functions, `assert` statement, `--filter` flag
 - **Agent observability** — OpenTelemetry tracing (`--trace`), Prometheus metrics (`--metrics`), structured error codes (`MN-X0000`)
@@ -92,6 +97,17 @@ pipeline, dual backends (Python transpiler + LLVM native), and a full native C r
 | **v0.7.0** ✅ | Self-Standing | Self-hosted MIR lowering (lower.mn), built-in test runner, agent observability (tracing + metrics), DWARF debug info, deployment infrastructure, 2,983 tests |
 | **v0.8.0** ✅ | Native Parity | LLVM backend parity (maps, signals, streams, closures), complete string methods, pipe definitions, C runtime expansion (TCP, TLS, file I/O, event loop), 3,020 tests |
 | **v0.9.0** ✅ | Connected | Native stdlib in `.mn` (JSON, CSV, HTTP, WebSocket, crypto, regex), cross-module LLVM compilation, integration tests, Dato updated, 3,400+ tests |
+| **v1.0.0** ✅ | Stable | Language freeze (SPEC 1.0 Final), emitter hardening (25+ bugs fixed), formal memory model, stability policy, C runtime security hardening, mnc-stage1 15/15 golden tests, 3,600+ tests |
+| **v1.0.1** 🔧 | Critical Bug Fixes | `_EarlyReturn.err` fix, `AssertionError` typo, DWARF/version strings, C runtime data races, SPSC acquire/release |
+| **v1.0.2** 🔧 | Type System Soundness | `UNKNOWN == X` → `False`, partial generic matching fix, blanket exception removal, `_coerce_arg` diagnostics |
+| **v1.0.3** 🔧 | MIR Emitter Memory | Arena integration for MIR path, agent queue drain on destroy, signal type-aware cleanup |
+| **v1.0.4** 🔧 | Drop Glue | String drop glue at function exit, closure environment cleanup, range iterator cleanup on break/return |
+| **v1.0.5** 🔧 | Self-Hosted Emitter | ListPush instruction, string method dispatch, return-by-sret for large structs |
+| **v1.0.6** 🔧 | Self-Compilation | Fixed-point verification: mnc-stage1 compiles itself (Stage 2 → Stage 3 byte-identical) |
+| **v1.0.7** 🔧 | Codegen Improvements | MIR agent handler emission, phi node improvements, `nsw` flags, MIR verifier hardening |
+| **v1.0.8** 🔧 | Optimizer & Toolchain | Dominance tree, algebraic simplification, `$CC` support, `--werror`, `-O1` release builds |
+| **v1.0.9** 🔧 | Stdlib & Language Polish | String builder, char arithmetic, match exhaustiveness, operator dispatch, stdlib dedup |
+| **v1.0.10** 🔧 | Production Hardening | ASan/TSan clean, native I/O tests on Linux, performance baselines, remaining security fixes |
 
 ---
 
@@ -345,44 +361,298 @@ everything `requests`, `urllib3`, and `httpx` do in Python — in a single, nati
 
 ---
 
-### v1.0.0 — "Stable"
+### v1.0.0 — "Stable" ✅
 
 > The language is frozen. Breaking changes require an RFC and deprecation cycle.
 > No new features — hardening, documentation, and guarantees only.
 
-#### Language Freeze
+#### Language Freeze ✅
 
 - Language specification promoted from "Working Draft" to "1.0 Final"
 - All syntax, semantics, and type rules documented and frozen
 - New features require RFC + deprecation cycle after this point
 
-#### Self-Hosted Fixed Point
+#### Self-Hosted Stage 1 ✅
 
-- Stage 1: Python bootstrap compiles self-hosted `.mn` → native binary
-- Stage 2: Native binary compiles self-hosted `.mn` → verify identical IR
-- Three-stage bootstrap verification in CI
-- The compiler can compile itself without Python
+- Python bootstrap compiles 8,632-line self-hosted compiler → 7.2MB native binary (`mnc-stage1`)
+- `mnc-stage1` passes 15/15 golden tests (every language feature)
+- Pointer-based enum dispatch, enum payload layout alignment, security-hardened C runtime
+- Concatenation pipeline for single-file self-compilation (Python bootstrap verified)
 
-#### Formal Memory Model
+#### Formal Memory Model ✅
 
-- Arena lifecycle documented (allocation, scope cleanup, free)
-- String ownership rules (tag-bit system for heap vs. constant)
-- Agent message passing ownership transfer
-- Signal/stream value lifecycle
+- `docs/MEMORY_MODEL.md` (854 lines) — arena lifecycle, string ownership, struct/enum ownership,
+  list/map lifecycle, agent message passing, signal/stream values, closure environments
 
-#### Stability Guarantees
+#### Stability Guarantees ✅
 
-- Backwards compatibility policy defined
-- Deprecation cycle: warn for one minor version, remove in next major
-- Semantic versioning contract published
-- Migration guide template for breaking changes
+- `docs/STABILITY.md` — backwards compatibility policy, deprecation cycle, semver contract
+- `docs/MIGRATION_TEMPLATE.md` — migration guide template
+- `docs/rfcs/RFC_PROCESS.md` — RFC process for language changes
+- Deprecation warnings in semantic checker (`@deprecated`)
+- `--edition` flag, version-stamped binaries
 
-#### Final Hardening
+#### Hardening ✅
 
-- Full test pass across both backends
-- Performance regression sweep
-- Security audit of C runtime (buffer overflows, use-after-free)
+- 3,628 tests pass, 0 failures
+- C runtime security audit completed (1 CRITICAL, 6 HIGH, 7 MEDIUM findings)
+- CRITICAL + HIGH integer overflow fixes applied (checked arithmetic in list/string/map)
+- Compiler pipeline optimized (805ms → 503ms, 37% faster)
 - All documentation current and cross-referenced
+
+---
+
+### v1.0.1 — "Critical Bug Fixes"
+
+> Trivial fixes that should have shipped with v1.0.0.
+> Every item here is a one-liner or search-and-replace.
+> Driven by [v1.0.0 code review](.reviews/v1.0.0/README.md) items #5, #6, #11, #12, #15, #22, #23.
+
+#### Correctness Bugs
+
+- Fix `_EarlyReturn.value` → `_EarlyReturn.err` in `emit_python_mir.py:465` (crashes every MIR `?` error path)
+- Fix `AssertionError` typo → `AssertionError` in `emit_python_mir.py:959,964`, `bootstrap/emit_python_mir.py`, `docs/SPEC.md`, `test_test_runner.py`
+- Fix MEMORY_MODEL.md lines 260-264 claiming "semantic checker enforces move semantics" (it does not — update docs to match reality)
+
+#### Stale Version Strings
+
+- DWARF producer string: `"mapanare 0.7.0"` → `"mapanare 1.0.0"` in `emit_llvm_mir.py:483`
+- Self-hosted compiler: `"mapanare 0.8.0"` → `"mapanare 1.0.0"` in `mapanare/self/main.mn:29`
+
+#### C Runtime Data Races
+
+- Make `s_next_agent_id` atomic (`_Atomic uint64_t`) in `mapanare_runtime.c:441`
+- Make `s_trace_hook` atomic (`_Atomic` function pointer) in `mapanare_runtime.c:165,1093`
+- Use `memory_order_acquire`/`memory_order_release` in SPSC ring buffer instead of default `seq_cst` (`mapanare_runtime.c:96-113`)
+
+---
+
+### v1.0.2 — "Type System Soundness"
+
+> Fix the type system holes that let incorrect programs compile silently.
+> The single highest-impact change for compiler correctness.
+> Driven by review items #1, #8, #14.
+
+#### `TypeInfo.__eq__` Overhaul
+
+- `UNKNOWN == X` must return `False`, not `True` (`types.py:121`)
+- Add `TypeInfo.is_compatible_with(other)` for permissive matching where needed
+- Fix partial generic matching: `len(self.args) != len(other.args)` must return `False` (`types.py:135-136`)
+- Fix `make_type()` defaulting unknown types to `TypeKind.STRUCT` — should error instead (`types.py:338`)
+- Audit and fix all call sites that relied on UNKNOWN compatibility (MethodCallExpr, SyncExpr, ErrorPropExpr, FieldAccessExpr, for-loop variables)
+
+#### Emitter Safety
+
+- Replace blanket `except Exception: pass` in `emit_llvm_mir.py` (lines 1503, 1728, 1730, 2782) with specific guards and DEBUG logging
+- Add diagnostic counter to `_coerce_arg` fallback path — log warnings when memory reinterpretation fires
+
+---
+
+### v1.0.3 — "MIR Emitter Memory"
+
+> The MIR emitter is the "preferred" path but ignores arenas entirely.
+> Fix this so the preferred pipeline doesn't leak worse than the legacy one.
+> Driven by review items #7, #10, #9.
+
+#### Arena Integration for MIR Emitter
+
+- Port `mn_arena_create`/`mn_arena_destroy` per-function lifecycle from AST emitter (`emit_llvm.py:844-891`) to MIR emitter (`emit_llvm_mir.py`)
+- Route boxed field allocations (`emit_llvm_mir.py:2525, 2637, 2959`) through arena instead of raw `malloc`
+- Route closure environment allocations (`emit_llvm_mir.py:3470`) through arena
+
+#### Agent Message Queue Drain
+
+- `mapanare_agent_destroy` must drain inbox/outbox and free remaining messages (match pool destroy behavior at `mapanare_runtime.c:405-408`)
+
+#### Signal Type-Aware Cleanup
+
+- Add destructor callback `void (*dtor)(void *value)` to `MnSignal` struct
+- Call destructor on value overwrite and on `__mn_signal_free`
+- Zero runtime cost when callback is NULL
+
+---
+
+### v1.0.4 — "Drop Glue"
+
+> Stop leaking compound values. This is the most impactful change for practical memory safety.
+> Driven by review items #3, #26.
+
+#### String Drop Glue
+
+- At function exit, emit `__mn_str_free` for all locally-created heap strings that are not returned
+- Handle early return paths (break, return from nested scope)
+- Struct fields containing strings: recursive cleanup on struct drop
+
+#### Closure Environment Cleanup
+
+- Emit `__mn_free(env_ptr)` when closure goes out of scope (simple case: non-escaping closures)
+- For escaping closures: reference counting (increment on copy, decrement on scope exit)
+- Track closure escape analysis in MIR lowerer
+
+#### Range Iterator Cleanup
+
+- Emit `free()` for range iterators on all exit paths (normal, break, return)
+- Compiler must emit cleanup — runtime provides no safety net
+
+#### Validation
+
+- Add leak-detection tests: create closures in a loop, verify RSS does not grow unboundedly
+- Add drop-glue tests for struct-containing-string patterns
+- All existing tests must still pass (drop glue must not double-free)
+
+---
+
+### v1.0.5 — "Self-Hosted Emitter Completion"
+
+> Fix self-hosted emitter gaps so `mnc-stage1` can compile its own source code.
+> Each fix is small (20-30 lines of `.mn`) but there are many.
+
+#### Self-Hosted Emitter Gaps
+
+- Add `ListPush` instruction to `Instruction` enum, lowerer, and emitter
+- Add string method dispatch in `emit_mir_call` (char_at, substr, contains, split, etc.)
+- Handle `return List<T>` from functions (list built with push in loops)
+- Handle large struct return-by-sret in self-hosted emitter
+- Fix remaining match expression lowering for complex patterns
+
+#### Validation
+
+- `mnc-stage1` compiles `lexer.mn` without crashing
+- `mnc-stage1` compiles all 7 modules individually
+- `mnc-stage1` compiles `mnc_all.mn` (concatenated 8,632-line source)
+
+---
+
+### v1.0.6 — "Self-Compilation"
+
+> The compiler compiles itself. Fixed-point verification passes.
+
+#### Fixed-Point Verification
+
+- Stage 2: `mnc-stage1` compiles `mnc_all.mn` → `mnc-stage2`
+- Stage 3: `mnc-stage2` compiles `mnc_all.mn` → `mnc-stage3`
+- Binary diff: `mnc-stage2 == mnc-stage3` (byte-identical — fixed point achieved)
+- `scripts/verify_fixed_point.sh` updated for concatenated source
+- Fixed-point job added to CI (gate for future releases)
+
+---
+
+### v1.0.7 — "Codegen Improvements"
+
+> Fix MIR-path agent codegen gap, improve LLVM IR quality, harden the verifier.
+> Driven by review items #13, #16, #21, #27, #30.
+
+#### MIR Agent Handler Emission
+
+- Emit `__mn_handler_{AgentName}` wrapper function in MIR emitter (currently only AST emitter does this)
+- Pass handler function pointer to `mapanare_agent_new` instead of `null` (`emit_llvm_mir.py:3293`)
+- Agents spawned via MIR path must process messages
+
+#### Phi Node Improvements
+
+- For clean SSA values (not mutated via field_set), emit proper LLVM phi nodes instead of alloca/load/store
+- Keep alloca demotion only for genuinely mutable variables
+- Add `nsw` (no signed wrap) flags to integer add/sub/mul for better LLVM optimization
+
+#### MIR Verifier Hardening
+
+- Document "relaxed SSA" invariant in `mir.py` module docstring (mutable variables may be redefined)
+- Add optional `--strict-ssa` verification mode
+- Integrate `MIRVerifier.verify_module()` into standard test suite — run on all 15 golden tests after lowering and after optimization
+
+---
+
+### v1.0.8 — "Optimizer & Toolchain"
+
+> Improve the MIR optimizer and build infrastructure.
+> Driven by review items #17, #24, #29.
+
+#### Optimizer Improvements
+
+- Implement dominance tree computation (Lengauer-Tarjan, ~100 lines)
+- Add algebraic simplification to constant folder: `x + 0 = x`, `x * 1 = x`, `x * 0 = 0`, `x - x = 0`
+- Improve constant propagation to work across basic blocks (not just Copy-of-Const)
+- Add `has_side_effects` property to `Instruction` base class (replace fragile `_SIDE_EFFECT_TYPES` tuple)
+
+#### Build System
+
+- Build scripts respect `$CC` environment variable: `os.environ.get("CC", "gcc")` in `build_stage1.py`, `${CC:-gcc}` in `verify_fixed_point.sh`
+- Add `--werror` flag to `mapanare check` and `mapanare build` (treat warnings as errors)
+- Default to host target triple via `llvm.get_default_triple()` when none specified
+
+#### Optimization Levels
+
+- Use `opt_level=1` (not 0) for release builds in `build_stage1.py` — enables mem2reg, instcombine, simplifycfg, sroa
+
+---
+
+### v1.0.9 — "Stdlib & Language Polish"
+
+> Fix the missing primitives that the stdlib revealed.
+> Make the language comfortable for real-world code.
+> Driven by review items #19, #20, #28, #33.
+
+#### Missing String Primitives
+
+- `starts_with(prefix)` and `ends_with(suffix)` string methods
+- `StringBuilder` type or `join(separator, parts: List<String>)` builtin (eliminate O(n^2) concat)
+- Character arithmetic: `ord(ch) -> Int` and `chr(code) -> String` builtins
+- `byte_at(index)` → integer value for byte-level operations
+
+#### Match Exhaustiveness
+
+- Implement compile-time exhaustiveness checking for `match` on enums (spec promises this)
+- Enumerate all variants, verify all covered, emit error for missing arms
+
+#### Operator Dispatch Through Traits
+
+- `==` calls `Eq::eq`, `<` calls `Ord::cmp` when trait is implemented
+- Makes user-defined types work with generic algorithms
+
+#### Async-Only-When-Needed
+
+- Only make `main()` async when function body uses `spawn`/`sync`/`send`
+- Simple programs skip asyncio overhead (~1-2ms startup savings)
+
+#### Stdlib Deduplication
+
+- Extract shared utilities (`to_lower_char`, `hex_digit_value`, `parse_int_manual`, `to_upper`) into `text/string_utils.mn`
+- Update `net/http.mn`, `net/http/server.mn`, `encoding/json.mn` to import shared module
+
+---
+
+### v1.0.10 — "Production Hardening"
+
+> Sanitizers clean, native tests passing, performance baselined, match exhaustiveness verified.
+> The language is fully polished and ready for ecosystem development.
+
+#### Memory Safety Verification
+
+- AddressSanitizer clean on full test suite
+- ThreadSanitizer clean on agent/concurrency tests
+- Runtime debug mode: `mapanare build --debug-memory` for bounds checking
+- Ownership rule tests (arena scoping, string tag-bit, agent message, closure environment, drop glue)
+
+#### Native Test Coverage (Linux)
+
+- Build I/O runtime on Linux (`build_io.py`)
+- Event loop tests (7), file I/O tests (12), TCP tests (7), TLS tests (4)
+- C hardening tests (2)
+- Remaining skips audited — target ≤6 platform-specific skips
+
+#### Performance Baselines
+
+- Full benchmark suite results recorded as v1.0 baselines
+- No regression > 10% vs v0.8.0
+- Cross-module compilation overhead measured
+- Measure impact of drop glue on common patterns
+
+#### Remaining Security Fixes
+
+- Signal lifetime management (null subscriber pointers on free)
+- Thread-local signal state (or mutex protection)
+- Batch pending array overflow prevention (grow beyond 256, or error on overflow)
+- Signal handler async-signal-safety (set flag, handle in main thread)
 
 ---
 
@@ -574,8 +844,21 @@ v0.8.0 (Native Parity)
        │  Dato package starts working
        │
        └→ v1.0.0 (Stable)
-            │  Language freeze, self-hosted fixed point
+            │  Language freeze, 15/15 golden tests
             │  No new features — hardening only
+            │
+            ├→ v1.0.1  Critical Bug Fixes (trivial: typos, version strings, data races)
+            ├→ v1.0.2  Type System Soundness (UNKNOWN equality, partial generics)
+            ├→ v1.0.3  MIR Emitter Memory (arena integration, agent drain, signal dtor)
+            ├→ v1.0.4  Drop Glue (strings, closures, iterators)
+            ├→ v1.0.5  Self-Hosted Emitter (ListPush, string methods, sret)
+            ├→ v1.0.6  Self-Compilation (fixed-point: stage2 == stage3)
+            ├→ v1.0.7  Codegen Improvements (MIR agent handler, phi nodes, nsw, verifier)
+            ├→ v1.0.8  Optimizer & Toolchain (dominance tree, $CC, --werror, -O1)
+            ├→ v1.0.9  Stdlib & Language Polish (string builder, exhaustiveness, trait ops)
+            ├→ v1.0.10 Production Hardening (ASan/TSan clean, benchmarks, security)
+            │
+            │  ── language is fully polished after v1.0.10 ──
             │
             ├→ v1.1.0 (AI Native)
             │    LLM drivers, embeddings, RAG
@@ -629,7 +912,7 @@ The compiler is written in Mapanare itself — 8,288+ lines across seven modules
 | LLVM IR emitter (`emit_llvm.mn`) | 1,497 | ✅ Complete (MIR-based rewrite) |
 | Compiler driver (`main.mn`) | 81 | ✅ Complete (MIR pipeline wired) |
 | Module resolution (`self::` imports) | — | ✅ Working |
-| Fixed-point verification | — | ⏳ Blocked by bootstrap emitter gaps (v1.0.0) |
+| Fixed-point verification | — | ⏳ In progress — emitter gaps being fixed (v1.0.1 → v1.0.2) |
 | Bootstrap test suite (264 tests) | — | ✅ All passing |
 
 ---
@@ -710,8 +993,9 @@ multiple PRs and version bumps for every change. Only split when a component has
 
 ## Review Panel Response
 
-In March 2026, a panel of 7 expert reviewers scored Mapanare at **6.6/10** (range: 5.5–8.2).
-Their top concerns and what we did about them:
+### v0.3.0 Review (March 9, 2026) — Aggregate **6.6/10** (range: 5.5–8.2)
+
+7 expert reviewers. Their top concerns and what we did about them:
 
 | Concern | Severity | Resolution |
 |---------|----------|------------|
@@ -730,6 +1014,40 @@ Their top concerns and what we did about them:
 | No intermediate representation | MEDIUM | ✅ MIR in v0.6.0 |
 | No metrics / tracing | MEDIUM | ✅ v0.7.0 observability (tracing + metrics) |
 | No browser playground | MEDIUM | ✅ v0.5.0 playground |
+
+**All 15 items resolved.** Score rose from 6.6 → ~7.8 at v1.0.0.
+
+### v1.0.0 Review (March 15, 2026) — Median **7.8/10** (range: 7.0–8.2)
+
+7 reviewers, all issued **PASS WITH NOTES**. Full report: [`.reviews/v1.0.0/README.md`](../../.reviews/v1.0.0/README.md)
+
+| Concern | Severity | Target |
+|---------|----------|--------|
+| `TypeInfo.__eq__` UNKNOWN == anything returns True | CRITICAL | 🔧 v1.0.2 |
+| No ownership/borrowing enforcement (docs claim it exists) | CRITICAL | 🔧 v1.0.1 (doc fix) |
+| Closure environments unconditionally leaked | CRITICAL | 🔧 v1.0.4 |
+| Generics parsed but not monomorphized | CRITICAL | 📋 v1.1.0+ |
+| `_EarlyReturn.value` should be `.err` (MIR emitter bug) | HIGH | 🔧 v1.0.1 |
+| `AssertionError` typo across 4 files | HIGH | 🔧 v1.0.1 |
+| MIR emitter does not use arenas | HIGH | 🔧 v1.0.3 |
+| `_coerce_arg` 95-line type system bypass | HIGH | 🔧 v1.0.2 |
+| Signal leaks string values on update | HIGH | 🔧 v1.0.3 |
+| Agent destroy doesn't drain message queues | HIGH | 🔧 v1.0.3 |
+| SPSC ring buffer uses seq_cst (perf) | HIGH | 🔧 v1.0.1 |
+| Trace hook not atomic (data race) | HIGH | 🔧 v1.0.1 |
+| Phi nodes demoted to alloca | MEDIUM | 🔧 v1.0.7 |
+| Blanket `except Exception: pass` in emitter | MEDIUM | 🔧 v1.0.2 |
+| `s_next_agent_id` not atomic | MEDIUM | 🔧 v1.0.1 |
+| MIR verifier SSA relaxation undocumented | MEDIUM | 🔧 v1.0.7 |
+| Optimizer lacks dominance-based analysis | MEDIUM | 🔧 v1.0.8 |
+| Tensors specified but unimplemented | MEDIUM | 📋 v1.1.0+ |
+| Stdlib missing primitives (char arith, string builder) | MEDIUM | 🔧 v1.0.9 |
+| No match exhaustiveness checking | MEDIUM | 🔧 v1.0.9 |
+| MIR agent handler passes null pointer | MEDIUM | 🔧 v1.0.7 |
+
+**Strategic advice:** Reframe from "AI-native" to "agent-native" — the agent model is the real and unique contribution. Tensors and LLM integration are aspirational until they ship.
+
+All 21 actionable items are mapped to v1.0.1–v1.0.10 patch releases. Generics monomorphization and tensors are deferred to v1.1.0+.
 
 ---
 

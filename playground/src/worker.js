@@ -17,10 +17,15 @@
 
 let pyodide = null;
 
+const PYODIDE_VERSION = "0.26.4";
+const PYODIDE_CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full`;
+
 async function initPyodide() {
-  importScripts("https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js");
+  // Load Pyodide script — importScripts works in classic workers
+  importScripts(`${PYODIDE_CDN}/pyodide.js`);
 
   pyodide = await loadPyodide({
+    indexURL: PYODIDE_CDN,
     stdout: (text) => self.postMessage({ type: "stdout", text }),
     stderr: (text) => self.postMessage({ type: "stderr", text }),
   });
@@ -168,7 +173,7 @@ async function runCode(code) {
     self.postMessage({ type: "done", ok: result.ok, elapsed });
   } catch (err) {
     const elapsed = performance.now() - t0;
-    self.postMessage({ type: "stderr", text: `Internal error: ${err.message}` });
+    self.postMessage({ type: "stderr", text: `Internal error: ${err.message || err}` });
     self.postMessage({ type: "done", ok: false, elapsed });
   }
 }
@@ -181,7 +186,7 @@ self.onmessage = async (e) => {
     } catch (err) {
       self.postMessage({
         type: "error",
-        message: `Failed to initialize Pyodide: ${err.message}`,
+        message: `Failed to initialize Pyodide: ${err.message || String(err)}`,
       });
     }
   } else if (msg.type === "run") {

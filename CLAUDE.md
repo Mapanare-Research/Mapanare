@@ -4,19 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language (v0.8.0) with first-class agents, signals, streams, and tensors. It compiles to Python (transpiler, legacy) and LLVM IR (native backend via llvmlite). The self-hosted compiler is 8,288+ lines of `.mn` across 7 modules in `mapanare/self/`. The project is on a path to full Python independence — stdlib modules will be rewritten in `.mn` and compiled natively.
+Mapanare is an AI-native compiled programming language (v1.0.0) with first-class agents, signals, streams, and tensors. It compiles to Python (transpiler, legacy) and LLVM IR (native backend via llvmlite). The self-hosted compiler is 8,288+ lines of `.mn` across 7 modules in `mapanare/self/`. The language is frozen at v1.0 — syntax and semantics changes require RFC + deprecation cycle.
 
 ## Current Version & Roadmap
 
-- **v0.8.0** (current) — LLVM backend parity: maps, signals, streams, closures + C runtime expansion (TCP, TLS, file I/O, event loop)
-- **v0.9.0** — Native stdlib in `.mn`: HTTP client/server, JSON, WebSocket, regex, crypto
-- **v1.0.0** — Language freeze, self-hosted fixed-point, formal memory model
+- **v1.0.0** (current) — Language freeze, self-hosted fixed-point, formal memory model, stability guarantees
 - **v1.1.0** — AI native: LLM drivers, embeddings, RAG as stdlib
 - **v1.2.0** — Data & storage: SQL drivers, Dato v1.0, YAML/TOML
 - **v1.3.0** — Web platform & security: crawler, vulnerability scanner, web framework
 - **v2.0.0** — GPU, WASM, mobile, Python backend deprecated
 
-See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v0.8.0/PLAN.md` for the current execution plan.
+See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v1.0.0/PLAN.md` for the current execution plan.
 
 ## Commands
 
@@ -34,7 +32,31 @@ pytest tests/parser/ -v              # Parser tests only
 pytest tests/semantic/test_types.py  # Single test file
 pytest tests/llvm/ -v                # LLVM emitter tests
 pytest tests/bootstrap/ -v           # Self-hosted compiler tests
+
+# Golden test harness (native compiler validation)
+python scripts/test_native.py                                    # Bootstrap-only (Windows)
+python scripts/test_native.py --stage1 mapanare/self/mnc-stage1  # Compare with native (WSL)
+python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 --run  # Also run IR via lli
+python scripts/test_native.py --bless                            # Regenerate reference files
+python scripts/test_native.py --filter fib -v                    # One test, verbose
+
+# Self-hosted compiler build + fixed-point (WSL/Linux only)
+python scripts/build_stage1.py                   # Build mnc-stage1 from Python bootstrap
+bash scripts/verify_fixed_point.sh               # 3-stage self-compilation verification
+bash scripts/verify_fixed_point.sh --keep        # Keep intermediate IR for debugging
 ```
+
+## Testing the Native Compiler
+
+Golden test corpus lives in `tests/golden/*.mn` (15 programs covering all features). Reference IR in `tests/golden/*.ref.ll`.
+
+**Workflow for debugging mnc-stage1:**
+1. Make changes to `mapanare/self/*.mn` or `mapanare/emit_llvm_mir.py`
+2. Rebuild: `python scripts/build_stage1.py`
+3. Test: `python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 -v`
+4. The harness compares mnc-stage1 output against the Python bootstrap — shows exactly which functions are missing or different.
+
+Every run auto-updates `tests/golden/BENCHMARKS.md` with per-test metrics (source lines, IR lines, IR size, function count, compile time). Commit this file to track regressions over time.
 
 ## Code Style
 

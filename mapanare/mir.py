@@ -25,7 +25,7 @@ from mapanare.types import UNKNOWN_TYPE, TypeInfo, TypeKind
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(slots=True)
 class MIRType:
     """Type representation in MIR. Wraps the semantic TypeInfo."""
 
@@ -55,29 +55,38 @@ class MIRType:
         return MIRType(type_info=ti)
 
 
-# Convenience factories
+# Cached singleton types — these are immutable, so sharing is safe.
+_MIR_INT = MIRType(TypeInfo(kind=TypeKind.INT))
+_MIR_FLOAT = MIRType(TypeInfo(kind=TypeKind.FLOAT))
+_MIR_BOOL = MIRType(TypeInfo(kind=TypeKind.BOOL))
+_MIR_STRING = MIRType(TypeInfo(kind=TypeKind.STRING))
+_MIR_VOID = MIRType(TypeInfo(kind=TypeKind.VOID))
+_MIR_UNKNOWN = MIRType(TypeInfo(kind=TypeKind.UNKNOWN))
+
+
+# Convenience factories (return cached singletons)
 def mir_int() -> MIRType:
-    return MIRType(TypeInfo(kind=TypeKind.INT))
+    return _MIR_INT
 
 
 def mir_float() -> MIRType:
-    return MIRType(TypeInfo(kind=TypeKind.FLOAT))
+    return _MIR_FLOAT
 
 
 def mir_bool() -> MIRType:
-    return MIRType(TypeInfo(kind=TypeKind.BOOL))
+    return _MIR_BOOL
 
 
 def mir_string() -> MIRType:
-    return MIRType(TypeInfo(kind=TypeKind.STRING))
+    return _MIR_STRING
 
 
 def mir_void() -> MIRType:
-    return MIRType(TypeInfo(kind=TypeKind.VOID))
+    return _MIR_VOID
 
 
 def mir_unknown() -> MIRType:
-    return MIRType(TypeInfo(kind=TypeKind.UNKNOWN))
+    return _MIR_UNKNOWN
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +94,7 @@ def mir_unknown() -> MIRType:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(slots=True)
 class Value:
     """An SSA value (virtual register)."""
 
@@ -149,7 +158,7 @@ class StreamOpKind(Enum):
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(slots=True)
 class SourceSpan:
     """Source location for debug info. Attached to MIR instructions and functions."""
 
@@ -159,7 +168,7 @@ class SourceSpan:
     end_column: int = 0
 
 
-@dataclass
+@dataclass(slots=True)
 class Instruction:
     """Base class for all MIR instructions."""
 
@@ -169,7 +178,7 @@ class Instruction:
 # --- Values ---
 
 
-@dataclass
+@dataclass(slots=True)
 class Const(Instruction):
     """Load a constant value."""
 
@@ -178,7 +187,7 @@ class Const(Instruction):
     value: Any = None  # int, float, bool, str, None
 
 
-@dataclass
+@dataclass(slots=True)
 class Copy(Instruction):
     """Copy a value."""
 
@@ -186,7 +195,7 @@ class Copy(Instruction):
     src: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class Cast(Instruction):
     """Type conversion."""
 
@@ -198,7 +207,7 @@ class Cast(Instruction):
 # --- Arithmetic / Logic ---
 
 
-@dataclass
+@dataclass(slots=True)
 class BinOp(Instruction):
     """Binary operation."""
 
@@ -208,7 +217,7 @@ class BinOp(Instruction):
     rhs: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class UnaryOp(Instruction):
     """Unary operation."""
 
@@ -220,7 +229,7 @@ class UnaryOp(Instruction):
 # --- Memory / Aggregates ---
 
 
-@dataclass
+@dataclass(slots=True)
 class StructInit(Instruction):
     """Construct a struct."""
 
@@ -229,7 +238,7 @@ class StructInit(Instruction):
     fields: list[tuple[str, Value]] = field(default_factory=list)  # (field_name, value)
 
 
-@dataclass
+@dataclass(slots=True)
 class FieldGet(Instruction):
     """Read a struct field."""
 
@@ -238,7 +247,7 @@ class FieldGet(Instruction):
     field_name: str = ""
 
 
-@dataclass
+@dataclass(slots=True)
 class FieldSet(Instruction):
     """Write a struct field (mut only)."""
 
@@ -247,7 +256,7 @@ class FieldSet(Instruction):
     val: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class ListInit(Instruction):
     """Construct a list."""
 
@@ -256,7 +265,7 @@ class ListInit(Instruction):
     elements: list[Value] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class IndexGet(Instruction):
     """Read list[i]."""
 
@@ -265,7 +274,7 @@ class IndexGet(Instruction):
     index: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class IndexSet(Instruction):
     """Write list[i] (mut only)."""
 
@@ -274,7 +283,20 @@ class IndexSet(Instruction):
     val: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
+class ListPush(Instruction):
+    """Push an element onto a list (mut only).
+
+    After this instruction, ``dest`` holds the updated list value.
+    The emitter stores back to the alloca so subsequent reads see the change.
+    """
+
+    dest: Value = field(default_factory=Value)
+    list_val: Value = field(default_factory=Value)
+    element: Value = field(default_factory=Value)
+
+
+@dataclass(slots=True)
 class MapInit(Instruction):
     """Construct a map."""
 
@@ -287,7 +309,7 @@ class MapInit(Instruction):
 # --- Enum / Tagged Union ---
 
 
-@dataclass
+@dataclass(slots=True)
 class EnumInit(Instruction):
     """Construct an enum variant."""
 
@@ -297,7 +319,7 @@ class EnumInit(Instruction):
     payload: list[Value] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class EnumTag(Instruction):
     """Extract tag for matching."""
 
@@ -305,7 +327,7 @@ class EnumTag(Instruction):
     enum_val: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class EnumPayload(Instruction):
     """Extract payload after tag check."""
 
@@ -318,7 +340,7 @@ class EnumPayload(Instruction):
 # --- Option / Result ---
 
 
-@dataclass
+@dataclass(slots=True)
 class WrapSome(Instruction):
     """Some(val)."""
 
@@ -326,7 +348,7 @@ class WrapSome(Instruction):
     val: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class WrapNone(Instruction):
     """None."""
 
@@ -334,7 +356,7 @@ class WrapNone(Instruction):
     ty: MIRType = field(default_factory=mir_unknown)
 
 
-@dataclass
+@dataclass(slots=True)
 class WrapOk(Instruction):
     """Ok(val)."""
 
@@ -342,7 +364,7 @@ class WrapOk(Instruction):
     val: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class WrapErr(Instruction):
     """Err(val)."""
 
@@ -350,7 +372,7 @@ class WrapErr(Instruction):
     val: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class Unwrap(Instruction):
     """Extract inner value (after tag check)."""
 
@@ -361,7 +383,7 @@ class Unwrap(Instruction):
 # --- Functions ---
 
 
-@dataclass
+@dataclass(slots=True)
 class Call(Instruction):
     """Call a function."""
 
@@ -370,14 +392,14 @@ class Call(Instruction):
     args: list[Value] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class Return(Instruction):
     """Return from function."""
 
     val: Value | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class ExternCall(Instruction):
     """FFI call (C or Python)."""
 
@@ -391,14 +413,14 @@ class ExternCall(Instruction):
 # --- Control Flow (terminators) ---
 
 
-@dataclass
+@dataclass(slots=True)
 class Jump(Instruction):
     """Unconditional jump."""
 
     target: str = ""  # block label
 
 
-@dataclass
+@dataclass(slots=True)
 class Branch(Instruction):
     """Conditional branch."""
 
@@ -407,7 +429,7 @@ class Branch(Instruction):
     false_block: str = ""
 
 
-@dataclass
+@dataclass(slots=True)
 class Switch(Instruction):
     """Multi-way branch (match)."""
 
@@ -419,7 +441,7 @@ class Switch(Instruction):
 # --- Agents / Signals / Streams ---
 
 
-@dataclass
+@dataclass(slots=True)
 class AgentSpawn(Instruction):
     """Spawn an agent."""
 
@@ -428,7 +450,7 @@ class AgentSpawn(Instruction):
     args: list[Value] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class AgentSend(Instruction):
     """Send a value to an agent channel."""
 
@@ -437,7 +459,7 @@ class AgentSend(Instruction):
     val: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class AgentSync(Instruction):
     """Sync (await) an agent channel."""
 
@@ -446,7 +468,7 @@ class AgentSync(Instruction):
     channel: str = ""
 
 
-@dataclass
+@dataclass(slots=True)
 class SignalInit(Instruction):
     """Initialize a signal."""
 
@@ -455,7 +477,7 @@ class SignalInit(Instruction):
     initial_val: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class SignalGet(Instruction):
     """Read a signal's value."""
 
@@ -463,7 +485,7 @@ class SignalGet(Instruction):
     signal: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class SignalSet(Instruction):
     """Write a signal's value."""
 
@@ -471,7 +493,7 @@ class SignalSet(Instruction):
     val: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class SignalComputed(Instruction):
     """Create a computed signal with a compute function and dependencies."""
 
@@ -481,7 +503,7 @@ class SignalComputed(Instruction):
     val_size: int = 8  # Size of the result value
 
 
-@dataclass
+@dataclass(slots=True)
 class SignalSubscribe(Instruction):
     """Subscribe one signal to another (add as dependent)."""
 
@@ -489,7 +511,7 @@ class SignalSubscribe(Instruction):
     subscriber: Value = field(default_factory=Value)
 
 
-@dataclass
+@dataclass(slots=True)
 class StreamInit(Instruction):
     """Create a stream from a list source."""
 
@@ -498,7 +520,7 @@ class StreamInit(Instruction):
     elem_type: MIRType = field(default_factory=mir_unknown)
 
 
-@dataclass
+@dataclass(slots=True)
 class StreamOp(Instruction):
     """Stream operation (map, filter, fold, etc.)."""
 
@@ -512,7 +534,7 @@ class StreamOp(Instruction):
 # --- Closures ---
 
 
-@dataclass
+@dataclass(slots=True)
 class ClosureCreate(Instruction):
     """Create a closure: bundle a function pointer with a captured environment.
 
@@ -526,7 +548,7 @@ class ClosureCreate(Instruction):
     capture_types: list[MIRType] = field(default_factory=list)  # Types of captured values
 
 
-@dataclass
+@dataclass(slots=True)
 class ClosureCall(Instruction):
     """Call a closure value (indirect call through fn_ptr with env_ptr)."""
 
@@ -535,7 +557,7 @@ class ClosureCall(Instruction):
     args: list[Value] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class EnvLoad(Instruction):
     """Load a captured variable from a closure environment struct."""
 
@@ -548,7 +570,7 @@ class EnvLoad(Instruction):
 # --- Strings ---
 
 
-@dataclass
+@dataclass(slots=True)
 class InterpConcat(Instruction):
     """String interpolation concatenation."""
 
@@ -559,7 +581,7 @@ class InterpConcat(Instruction):
 # --- Assert ---
 
 
-@dataclass
+@dataclass(slots=True)
 class Assert(Instruction):
     """Runtime assertion: fails with message if condition is false."""
 
@@ -572,7 +594,7 @@ class Assert(Instruction):
 # --- Phi ---
 
 
-@dataclass
+@dataclass(slots=True)
 class Phi(Instruction):
     """SSA phi node at block entry."""
 
@@ -597,7 +619,7 @@ def is_terminator(inst: Instruction) -> bool:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(slots=True)
 class BasicBlock:
     """A basic block: a sequence of instructions ending with a terminator."""
 
@@ -627,7 +649,7 @@ class BasicBlock:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(slots=True)
 class MIRParam:
     """A function parameter in MIR."""
 
@@ -635,7 +657,7 @@ class MIRParam:
     ty: MIRType = field(default_factory=mir_unknown)
 
 
-@dataclass
+@dataclass(slots=True)
 class MIRFunction:
     """A function in MIR: params, return type, and basic blocks."""
 
@@ -662,7 +684,7 @@ class MIRFunction:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(slots=True)
 class MIRAgentInfo:
     """Agent class metadata for backend emission."""
 
@@ -673,7 +695,7 @@ class MIRAgentInfo:
     method_names: list[str] = field(default_factory=list)  # MIR function names
 
 
-@dataclass
+@dataclass(slots=True)
 class MIRPipeInfo:
     """Pipe definition metadata."""
 
@@ -681,7 +703,7 @@ class MIRPipeInfo:
     stages: list[str] = field(default_factory=list)  # agent type names
 
 
-@dataclass
+@dataclass(slots=True)
 class MIRModule:
     """Top-level MIR module: a collection of functions and type definitions."""
 
@@ -763,6 +785,9 @@ def pretty_print_instruction(inst: Instruction) -> str:  # noqa: C901
     if isinstance(inst, ListInit):
         elems = ", ".join(v.name for v in inst.elements)
         return f"{inst.dest.name} = list_init {_format_type(inst.elem_type)} [{elems}]"
+
+    if isinstance(inst, ListPush):
+        return f"{inst.dest.name} = list_push {inst.list_val.name}, {inst.element.name}"
 
     if isinstance(inst, IndexGet):
         return f"{inst.dest.name} = index_get {inst.obj.name}[{inst.index.name}]"
@@ -972,7 +997,7 @@ def pretty_print_module(module: MIRModule) -> str:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(slots=True)
 class VerifyError:
     """A single verification error."""
 

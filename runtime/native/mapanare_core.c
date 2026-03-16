@@ -41,6 +41,28 @@ MN_EXPORT void __mn_free(void *ptr) {
 }
 
 /* -----------------------------------------------------------------------
+ * Checked arithmetic — abort on integer overflow instead of wrapping.
+ * ----------------------------------------------------------------------- */
+
+static int64_t mn_checked_mul(int64_t a, int64_t b) {
+    if (a > 0 && b > 0 && a > INT64_MAX / b) {
+        fprintf(stderr, "mapanare: integer overflow in %lld * %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
+    return a * b;
+}
+
+static int64_t mn_checked_add(int64_t a, int64_t b) {
+    if (a > 0 && b > INT64_MAX - a) {
+        fprintf(stderr, "mapanare: integer overflow in %lld + %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
+    return a + b;
+}
+
+/* -----------------------------------------------------------------------
  * Tag-bit helpers for heap vs constant string distinction.
  *
  * We use the lowest bit of the data pointer as a tag:
@@ -170,7 +192,7 @@ MN_EXPORT MnString __mn_str_empty(void) {
 MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
     const char *a_data = mn_untag(a.data);
     const char *b_data = mn_untag(b.data);
-    int64_t total = a.len + b.len;
+    int64_t total = mn_checked_add(a.len, b.len);
     if (total == 0) {
         return __mn_str_empty();
     }
@@ -205,6 +227,10 @@ MN_EXPORT int64_t __mn_str_len(MnString s) {
 }
 
 MN_EXPORT int64_t __mn_str_eq(MnString a, MnString b) {
+    if (a.data == NULL || b.data == NULL) {
+        if (a.data == NULL && b.data == NULL) return a.len == b.len ? 1 : 0;
+        return 0;
+    }
     if (a.len != b.len) return 0;
     if (a.len == 0) return 1;
     return memcmp(mn_untag(a.data), mn_untag(b.data), (size_t)a.len) == 0 ? 1 : 0;
@@ -384,7 +410,7 @@ MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) 
         return __mn_str_from_parts(s_data, s.len);
     }
 
-    int64_t new_len = s.len + count * (new_s.len - old_s.len);
+    int64_t new_len = mn_checked_add(s.len, mn_checked_mul(count, new_s.len - old_s.len));
     char *buf = (char *)__mn_alloc(new_len + 1);
     int64_t out = 0;
     int64_t i = 0;
@@ -424,6 +450,24 @@ MN_EXPORT MnString __mn_str_from_float(double value) {
     return __mn_str_from_parts(buf, (int64_t)n);
 }
 
+MN_EXPORT int64_t __mn_str_to_int(MnString s) {
+    const char *data = mn_untag(s.data);
+    if (!data || s.len <= 0) return 0;
+    /* Handle 0x, 0b, 0o prefixes */
+    if (s.len > 2 && data[0] == '0') {
+        if (data[1] == 'x' || data[1] == 'X') return strtoll(data, NULL, 16);
+        if (data[1] == 'b' || data[1] == 'B') return strtoll(data + 2, NULL, 2);
+        if (data[1] == 'o' || data[1] == 'O') return strtoll(data + 2, NULL, 8);
+    }
+    return strtoll(data, NULL, 10);
+}
+
+MN_EXPORT double __mn_str_to_float(MnString s) {
+    const char *data = mn_untag(s.data);
+    if (!data || s.len <= 0) return 0.0;
+    return strtod(data, NULL);
+}
+
 MN_EXPORT void __mn_str_free(MnString s) {
     if (s.data && mn_is_heap(s.data)) {
         __mn_free((void *)mn_untag(s.data));
@@ -459,13 +503,13 @@ MN_EXPORT MnList __mn_list_new(int64_t elem_size) {
     list.elem_size = elem_size;
     list.len = 0;
     list.cap = MN_LIST_INITIAL_CAP;
-    list.data = (char *)__mn_alloc(list.cap * elem_size);
+    list.data = (char *)__mn_alloc(mn_checked_mul(list.cap, elem_size));
     return list;
 }
 
 static void mn_list_grow(MnList *list) {
     int64_t new_cap = list->cap * 2;
-    list->data = (char *)__mn_realloc(list->data, new_cap * list->elem_size);
+    list->data = (char *)__mn_realloc(list->data, mn_checked_mul(new_cap, list->elem_size));
     list->cap = new_cap;
 }
 
@@ -478,9 +522,11 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
     list->len++;
 }
 
+
 MN_EXPORT void *__mn_list_get(MnList *list, int64_t i) {
     if (i < 0 || i >= list->len) return NULL;
-    return list->data + i * list->elem_size;
+    void *result = list->data + i * list->elem_size;
+    return result;
 }
 
 MN_EXPORT void __mn_list_set(MnList *list, int64_t i, const void *elem_ptr) {
@@ -512,6 +558,24 @@ MN_EXPORT void __mn_list_free(MnList *list) {
     }
     list->len = 0;
     list->cap = 0;
+}
+
+MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
+    int64_t es = a->elem_size;
+    MnList result = __mn_list_new(es);
+    int64_t total = mn_checked_add(a->len, b->len);
+    if (total > result.cap) {
+        result.cap = total;
+        result.data = (char *)__mn_realloc(result.data, mn_checked_mul(result.cap, es));
+    }
+    if (a->len > 0) {
+        memcpy(result.data, a->data, (size_t)(a->len * es));
+    }
+    if (b->len > 0) {
+        memcpy(result.data + a->len * es, b->data, (size_t)(b->len * es));
+    }
+    result.len = total;
+    return result;
 }
 
 /* -----------------------------------------------------------------------
@@ -738,7 +802,7 @@ MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_ty
     map->bucket_size = 2 + key_size + val_size;  /* status + psl + key + val */
     map->len = 0;
     map->cap = MN_MAP_INITIAL_CAP;
-    map->buckets = (char *)__mn_alloc(map->cap * map->bucket_size);
+    map->buckets = (char *)__mn_alloc(mn_checked_mul(map->cap, map->bucket_size));
     /* calloc zeros → all status bytes are MN_BUCKET_EMPTY (0) */
     return map;
 }
@@ -881,7 +945,7 @@ static void mn_map_grow(MnMap *map) {
     int64_t old_bucket_size = map->bucket_size;
 
     map->cap = old_cap * 2;
-    map->buckets = (char *)__mn_alloc(map->cap * map->bucket_size);
+    map->buckets = (char *)__mn_alloc(mn_checked_mul(map->cap, map->bucket_size));
     map->len = 0;
 
     /* Re-insert all occupied entries */
@@ -1497,4 +1561,40 @@ MN_EXPORT void __mn_panic(MnString message) {
     }
     fputc('\n', stderr);
     exit(1);
+}
+
+/* -----------------------------------------------------------------------
+ * Range Iterator
+ *
+ * Used by `for i in start..end` loops.  The iterator is a heap-allocated
+ * struct holding {current, end}.  Values are returned as i8* (inttoptr)
+ * so the LLVM IR can ptrtoint them back to i64.
+ * ----------------------------------------------------------------------- */
+
+typedef struct {
+    int64_t current;
+    int64_t end;
+} MnRangeIter;
+
+MN_EXPORT void *__range(int64_t start, int64_t end) {
+    MnRangeIter *iter = (MnRangeIter *)malloc(sizeof(MnRangeIter));
+    if (!iter) {
+        fprintf(stderr, "mapanare: out of memory in __range\n");
+        exit(1);
+    }
+    iter->current = start;
+    iter->end = end;
+    return (void *)iter;
+}
+
+MN_EXPORT int8_t __iter_has_next(void *iter_ptr) {
+    MnRangeIter *iter = (MnRangeIter *)iter_ptr;
+    return iter->current < iter->end ? 1 : 0;
+}
+
+MN_EXPORT void *__iter_next(void *iter_ptr) {
+    MnRangeIter *iter = (MnRangeIter *)iter_ptr;
+    int64_t val = iter->current;
+    iter->current++;
+    return (void *)(intptr_t)val;
 }

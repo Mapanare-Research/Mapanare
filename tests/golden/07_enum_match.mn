@@ -1,0 +1,13 @@
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+fn main() {
+    let c: Color = Color::Green
+    match c {
+        Green => { println("green") },
+        _ => { println("other") }
+    }
+}

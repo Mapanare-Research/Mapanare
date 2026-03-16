@@ -427,46 +427,52 @@ fn tokenize(source: String, filename: String) -> List<Token> {
     for _ in 0..1000000 {
         if pos >= slen { return tokens }
 
-        let ch: String = source.char_at(pos)
-
-        // Skip whitespace
-        if ch == " " { pos = pos + 1 }
-        if ch == "\t" { pos = pos + 1 }
-        if ch == "\r" { pos = pos + 1 }
-        if ch == "\n" { pos = pos + 1 }
-
-        // Skip line comments
-        if ch == "/" {
-            if lexer_peek(source, pos + 1) == "/" {
-                pos = pos + 2
-                for _ in 0..100000 {
-                    if pos >= slen { return tokens }
-                    if source.char_at(pos) == "\n" {
+        // Skip whitespace and comments
+        let mut skipped: Bool = true
+        for _ in 0..1000000 {
+            if pos >= slen { return tokens }
+            if !skipped { break }
+            skipped = false
+            let ws: String = source.char_at(pos)
+            if ws == " " { pos = pos + 1; col = col + 1; skipped = true }
+            if ws == "\t" { pos = pos + 1; col = col + 1; skipped = true }
+            if ws == "\r" { pos = pos + 1; skipped = true }
+            if ws == "\n" { pos = pos + 1; line = line + 1; col = 1; skipped = true }
+            // Skip line comments
+            if ws == "/" {
+                if lexer_peek(source, pos + 1) == "/" {
+                    pos = pos + 2
+                    skipped = true
+                    for _ in 0..100000 {
+                        if pos >= slen { return tokens }
+                        if source.char_at(pos) == "\n" {
+                            pos = pos + 1
+                            line = line + 1
+                            col = 1
+                            break
+                        }
                         pos = pos + 1
-                        line = line + 1
-                        col = 1
-                        return tokens
                     }
-                    pos = pos + 1
                 }
             }
         }
 
         if pos >= slen { return tokens }
 
-        // Rescan after skipping
         let c: String = source.char_at(pos)
 
         if is_alpha(c) {
             let tok: Token = scan_ident(source, pos, line, col)
             pos = pos + len(tok.value)
             col = col + len(tok.value)
+            tokens.push(tok)
         } else {
             if is_digit(c) {
                 let tok: Token = scan_number(source, pos, line, col)
                 let width: Int = tok.end_column - tok.column
                 pos = pos + width
                 col = col + width
+                tokens.push(tok)
             } else {
                 if c == "\"" {
                     let tok: Token = scan_string(source, pos, line, col)
@@ -474,17 +480,20 @@ fn tokenize(source: String, filename: String) -> List<Token> {
                     pos = pos + width
                     col = col + width
                     line = tok.end_line
+                    tokens.push(tok)
                 } else {
                     if c == "'" {
                         let tok: Token = scan_char(source, pos, line, col)
                         let width: Int = tok.end_column - tok.column
                         pos = pos + width
                         col = col + width
+                        tokens.push(tok)
                     } else {
                         let tok: Token = scan_op(source, pos, line, col)
                         let width: Int = len(tok.value)
                         pos = pos + width
                         col = col + width
+                        tokens.push(tok)
                     }
                 }
             }

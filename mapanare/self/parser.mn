@@ -229,8 +229,8 @@ fn new_span(line: Int, col: Int, end_line: Int, end_col: Int) -> Span {
     return new Span { line: line, column: col, end_line: end_line, end_column: end_col }
 }
 
-fn new_block(stmts: List<Stmt>) -> Block {
-    return new Block { span: new_span(0, 0, 0, 0), stmts: stmts }
+fn new_block(span: Span, stmts: List<Stmt>) -> Block {
+    return new Block { span: span, stmts: stmts }
 }
 
 fn new_param(name: String, type_ann: Option<TypeExpr>) -> Param {
@@ -249,8 +249,8 @@ fn new_match_arm(pattern: Pattern, body: MatchArmBody) -> MatchArm {
     return new MatchArm { span: new_span(0, 0, 0, 0), pattern: pattern, body: body }
 }
 
-fn new_fn_def_data(name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
-    return new FnDefData { span: new_span(0, 0, 0, 0), name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
+fn new_fn_def_data(span: Span, name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
+    return new FnDefData { span: span, name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
 }
 
 fn new_struct_def_data(name: String, public: Bool, type_params: List<String>, fields: List<StructField>) -> StructDefData {
@@ -411,12 +411,14 @@ pub fn parse(source: String, filename: String) -> Program {
         pos = skip_semis(tokens, pos)
         if pos >= len(tokens) {
             if len(top_stmts) > 0 {
-                if has_explicit_main(defs) {
-                    print("error: cannot mix top-level statements with explicit fn main()")
+                if !has_explicit_main(defs) {
+                    let body: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
+                    let empty_tp: List<String> = []
+                    let empty_params: List<Param> = []
+                    let empty_decs: List<Decorator> = []
+                    let main_fn: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp, empty_params, none, body, empty_decs)
+                    defs = defs + [Definition::FnDef(main_fn)]
                 }
-                let body: Block = new_block(top_stmts)
-                let main_fn: FnDefData = new_fn_def_data("main", false, [], [], none, body, [])
-                defs = defs + [Definition::FnDef(main_fn)]
             }
             return Program::start(defs)
         }
@@ -434,12 +436,14 @@ pub fn parse(source: String, filename: String) -> Program {
     }
 
     if len(top_stmts) > 0 {
-        if has_explicit_main(defs) {
-            print("error: cannot mix top-level statements with explicit fn main()")
+        if !has_explicit_main(defs) {
+            let body: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
+            let empty_tp2: List<String> = []
+            let empty_params2: List<Param> = []
+            let empty_decs2: List<Decorator> = []
+            let main_fn: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp2, empty_params2, none, body, empty_decs2)
+            defs = defs + [Definition::FnDef(main_fn)]
         }
-        let body: Block = new_block(top_stmts)
-        let main_fn: FnDefData = new_fn_def_data("main", false, [], [], none, body, [])
-        defs = defs + [Definition::FnDef(main_fn)]
     }
 
     return Program::start(defs)
@@ -476,7 +480,9 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
     // Fallback: skip unknown token
-    let d: Definition = Definition::ImportDef([], [])
+    let empty_path: List<String> = []
+    let empty_items: List<String> = []
+    let d: Definition = Definition::ImportDef(empty_path, empty_items)
     return new_def_result(d, pos + 1)
 }
 
@@ -494,7 +500,8 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 
     for _ in 0..100 {
         if peek_type(tokens, p) != "DOUBLE_COLON" {
-            return new_def_result(Definition::ImportDef(path, []), p)
+            let imp_items: List<String> = []
+            return new_def_result(Definition::ImportDef(path, imp_items), p)
         }
         p = p + 1
         let seg: String = peek_value(tokens, p)
@@ -502,7 +509,8 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
         p = p + 1
     }
 
-    return new_def_result(Definition::ImportDef(path, []), p)
+    let trail_items: List<String> = []
+    return new_def_result(Definition::ImportDef(path, trail_items), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -515,11 +523,13 @@ fn parse_export_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 
     if tt == "KW_FN" {
         let r: DefResult = parse_fn_def(tokens, p, filename)
-        return new_def_result(Definition::ExportDef(none, []), r.pos)
+        let exp_items: List<String> = []
+        return new_def_result(Definition::ExportDef(none, exp_items), r.pos)
     }
     if tt == "KW_STRUCT" {
         let r: DefResult = parse_struct_def(tokens, p, filename)
-        return new_def_result(Definition::ExportDef(none, []), r.pos)
+        let exp_items: List<String> = []
+        return new_def_result(Definition::ExportDef(none, exp_items), r.pos)
     }
 
     let mut names: List<String> = []
@@ -619,7 +629,7 @@ fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, 
     p = br.pos
 
     let decorators: List<Decorator> = []
-    let fd: FnDefData = new_fn_def_data(name, is_pub, type_params, params, ret_type, br.block, decorators)
+    let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, br.block, decorators)
     return new_def_result(Definition::FnDef(fd), p)
 }
 
@@ -877,6 +887,12 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
 // ---------------------------------------------------------------------------
 
 fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+    // Pre-create typed empty lists for AgentDefData constructor
+    let no_inputs: List<AgentInput> = []
+    let no_outputs: List<AgentOutput> = []
+    let no_state: List<Stmt> = []
+    let no_methods: List<FnDefData> = []
+    let no_adecs: List<Decorator> = []
     let mut p: Int = pos
     let mut is_pub: Bool = false
     if peek_type(tokens, p) == "KW_PUB" {
@@ -890,7 +906,7 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
     let mut depth: Int = 1
     for _ in 0..100000 {
         if p >= len(tokens) {
-            let ad: AgentDefData = new_agent_def_data(name, is_pub, [], [], [], [], [])
+            let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
             return new_def_result(Definition::AgentDef(ad), p)
         }
         let tt: String = peek_type(tokens, p)
@@ -899,13 +915,13 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
             depth = depth - 1
             if depth == 0 {
                 p = p + 1
-                let ad: AgentDefData = new_agent_def_data(name, is_pub, [], [], [], [], [])
+                let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
                 return new_def_result(Definition::AgentDef(ad), p)
             }
         }
         p = p + 1
     }
-    let ad: AgentDefData = new_agent_def_data(name, is_pub, [], [], [], [], [])
+    let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
     return new_def_result(Definition::AgentDef(ad), p)
 }
 
@@ -914,6 +930,7 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
 // ---------------------------------------------------------------------------
 
 fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+    let no_stages: List<Expr> = []
     let mut p: Int = pos
     let mut is_pub: Bool = false
     if peek_type(tokens, p) == "KW_PUB" {
@@ -927,7 +944,7 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
     let mut depth: Int = 1
     for _ in 0..100000 {
         if p >= len(tokens) {
-            let pd: PipeDefData = new_pipe_def_data(name, is_pub, [])
+            let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
             return new_def_result(Definition::PipeDef(pd), p)
         }
         let tt: String = peek_type(tokens, p)
@@ -936,13 +953,13 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
             depth = depth - 1
             if depth == 0 {
                 p = p + 1
-                let pd: PipeDefData = new_pipe_def_data(name, is_pub, [])
+                let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
                 return new_def_result(Definition::PipeDef(pd), p)
             }
         }
         p = p + 1
     }
-    let pd: PipeDefData = new_pipe_def_data(name, is_pub, [])
+    let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
     return new_def_result(Definition::PipeDef(pd), p)
 }
 
@@ -988,12 +1005,12 @@ fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult {
     for _ in 0..100000 {
         p = skip_semis(tokens, p)
         if at_end(tokens, p) {
-            let blk: Block = new_block(stmts)
+            let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
             return new_block_result(blk, p)
         }
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            let blk: Block = new_block(stmts)
+            let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
             return new_block_result(blk, p)
         }
 
@@ -1002,7 +1019,7 @@ fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult {
         p = sr.pos
     }
 
-    let blk: Block = new_block(stmts)
+    let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
     return new_block_result(blk, p)
 }
 
@@ -1406,13 +1423,13 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     let val: String = peek_value(tokens, pos)
 
     // Integer literals
-    if tt == "DEC_INT" { return new_expr_result(Expr::IntLit(0), pos + 1) }
-    if tt == "HEX_INT" { return new_expr_result(Expr::IntLit(0), pos + 1) }
-    if tt == "BIN_INT" { return new_expr_result(Expr::IntLit(0), pos + 1) }
-    if tt == "OCT_INT" { return new_expr_result(Expr::IntLit(0), pos + 1) }
+    if tt == "DEC_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
+    if tt == "HEX_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
+    if tt == "BIN_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
+    if tt == "OCT_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
 
     // Float literal
-    if tt == "FLOAT_LIT" { return new_expr_result(Expr::FloatLit(0.0), pos + 1) }
+    if tt == "FLOAT_LIT" { return new_expr_result(Expr::FloatLit(float(val)), pos + 1) }
 
     // String literal — check for interpolation ${...}
     if tt == "STRING_LIT" {
@@ -1503,7 +1520,7 @@ fn parse_if_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
     if peek_type(tokens, p) == "KW_IF" {
         let elif_r: ExprResult = parse_if_expr(tokens, p, filename)
         let else_stmts: List<Stmt> = [Stmt::ExprStmt(elif_r.expr)]
-        let else_block: Block = new_block(else_stmts)
+        let else_block: Block = new_block(new_span(0, 0, 0, 0), else_stmts)
         let else_clause: ElseClause = ElseClause::ElseBlock(else_block)
         return new_expr_result(Expr::If(cond_r.expr, then_r.block, else_clause), elif_r.pos)
     }
@@ -1571,8 +1588,8 @@ fn parse_pattern(tokens: List<Token>, pos: Int, filename: String) -> PatternResu
         return new_pattern_result(Pattern::Wildcard, pos + 1)
     }
 
-    if tt == "DEC_INT" { return new_pattern_result(Pattern::LiteralPat(Expr::IntLit(0)), pos + 1) }
-    if tt == "FLOAT_LIT" { return new_pattern_result(Pattern::LiteralPat(Expr::FloatLit(0.0)), pos + 1) }
+    if tt == "DEC_INT" { return new_pattern_result(Pattern::LiteralPat(Expr::IntLit(int(val))), pos + 1) }
+    if tt == "FLOAT_LIT" { return new_pattern_result(Pattern::LiteralPat(Expr::FloatLit(float(val))), pos + 1) }
     if tt == "STRING_LIT" { return new_pattern_result(Pattern::LiteralPat(Expr::StringLit(val)), pos + 1) }
     if tt == "KW_TRUE" { return new_pattern_result(Pattern::LiteralPat(Expr::BoolLit(true)), pos + 1) }
     if tt == "KW_FALSE" { return new_pattern_result(Pattern::LiteralPat(Expr::BoolLit(false)), pos + 1) }

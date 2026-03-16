@@ -108,6 +108,12 @@ MN_EXPORT MnString __mn_str_from_int(int64_t value);
 /** Convert a double to its string representation. */
 MN_EXPORT MnString __mn_str_from_float(double value);
 
+/** Parse a string to an integer. Handles decimal, 0x hex, 0b binary, 0o octal. */
+MN_EXPORT int64_t __mn_str_to_int(MnString s);
+
+/** Parse a string to a float. */
+MN_EXPORT double __mn_str_to_float(MnString s);
+
 /** Free a heap-allocated string. No-op for constant strings.
  *  Uses tag bit (LSB of data pointer) to distinguish heap from constant. */
 MN_EXPORT void __mn_str_free(MnString s);
@@ -168,6 +174,9 @@ MN_EXPORT void __mn_list_clear(MnList *list);
 
 /** Free the list's data buffer (does NOT free contained elements). */
 MN_EXPORT void __mn_list_free(MnList *list);
+
+/** Concatenate two lists into a new list. Both must have the same elem_size. */
+MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b);
 
 /** Free a list of strings: frees each contained string, then the buffer. */
 MN_EXPORT void __mn_list_free_strings(MnList *list);
@@ -458,5 +467,18 @@ MN_EXPORT void __mn_exit(int64_t code);
 
 /** Print an error and exit with code 1. */
 MN_EXPORT void __mn_panic(MnString message);
+
+/* -----------------------------------------------------------------------
+ * Range Iterator — used by `for i in start..end` loops
+ * ----------------------------------------------------------------------- */
+
+/** Create a range iterator from start (inclusive) to end (exclusive). */
+MN_EXPORT void *__range(int64_t start, int64_t end);
+
+/** Check if the iterator has more elements. Returns 1 or 0. */
+MN_EXPORT int8_t __iter_has_next(void *iter);
+
+/** Get the next element and advance. Returns value as i8* (inttoptr). */
+MN_EXPORT void *__iter_next(void *iter);
 
 #endif /* MAPANARE_CORE_H */

@@ -275,8 +275,8 @@ class TestEmitLlvmMnBinOpCoverage:
 
     @pytest.mark.parametrize(
         "variant",
-        ["Add", "Sub", "Mul", "Div", "Mod", "Eq", "Ne", "Lt", "Gt", "Le", "Ge", "And", "Or"],
+        ["add", "sub", "mul", "div", "mod", "eq", "ne", "lt", "gt", "le", "ge", "and", "or"],
     )
     def test_binop_variant(self, emit_llvm_source: str, variant: str) -> None:
-        # Check that the variant appears in emit_binop's match
-        assert variant in emit_llvm_source
+        # Check that the variant appears in emit_binop's string dispatch
+        assert f'op_str == "{variant}"' in emit_llvm_source

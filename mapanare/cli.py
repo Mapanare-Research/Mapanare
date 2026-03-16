@@ -125,12 +125,13 @@ def _compile_to_llvm_ir(
     automatically uses multi-module compilation to resolve and link all
     imported modules into a single LLVM IR module.
     """
+    ast = parse(source, filename=filename)
+
     # Check for imports — if present and using MIR, use multi-module pipeline
     if use_mir:
         from mapanare.ast_nodes import ImportDef
 
-        ast_for_check = parse(source, filename=filename)
-        has_imports = any(isinstance(d, ImportDef) for d in ast_for_check.definitions)
+        has_imports = any(isinstance(d, ImportDef) for d in ast.definitions)
         if has_imports:
             from mapanare.multi_module import compile_multi_module_mir
 
@@ -141,8 +142,6 @@ def _compile_to_llvm_ir(
                 target_name=target_name,
                 debug=debug,
             )
-
-    ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename, resolver=resolver)
 
     if use_mir:
@@ -1053,6 +1052,16 @@ def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_edition_flag(parser: argparse.ArgumentParser) -> None:
+    """Add --edition flag for language edition selection."""
+    parser.add_argument(
+        "--edition",
+        metavar="YEAR",
+        default="2026",
+        help="Language edition (default: 2026)",
+    )
+
+
 def _add_opt_level_args(parser: argparse.ArgumentParser) -> None:
     """Add -O0 through -O3 optimization level flags to a subcommand parser."""
     opt_group = parser.add_mutually_exclusive_group()
@@ -1113,6 +1122,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_opt_level_args(p_compile)
     _add_mir_flag(p_compile)
+    _add_edition_flag(p_compile)
     p_compile.set_defaults(func=cmd_compile)
 
     # check
@@ -1147,6 +1157,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_opt_level_args(p_run)
     _add_mir_flag(p_run)
+    _add_edition_flag(p_run)
     p_run.set_defaults(func=cmd_run)
 
     # repl
@@ -1265,6 +1276,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_opt_level_args(p_build)
     _add_mir_flag(p_build)
     _add_debug_flag(p_build)
+    _add_edition_flag(p_build)
     p_build.set_defaults(func=cmd_build)
 
     # emit-llvm
@@ -1280,6 +1292,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_opt_level_args(p_emit_llvm)
     _add_mir_flag(p_emit_llvm)
     _add_debug_flag(p_emit_llvm)
+    _add_edition_flag(p_emit_llvm)
     p_emit_llvm.set_defaults(func=cmd_emit_llvm)
 
     # emit-mir
