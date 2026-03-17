@@ -1056,7 +1056,17 @@ fn emit_enum_tag(st: EmitState, dest: Value, val: Value) -> EmitState {
 
 fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) -> EmitState {
     let enum_ty: String = resolve_mir_type(val.ty)
-    return emit_line(st, emit_extractvalue(dest.name, enum_ty, val.name, "1"))
+    let dest_ty: String = resolve_mir_type(dest.ty)
+    let dn: String = dest.name
+    let mut s: EmitState = st
+    // Alloca the enum, store it, bitcast past the tag, load as dest type
+    s = emit_line(s, "  " + dn + ".ea = alloca " + enum_ty)
+    s = emit_line(s, "  store " + enum_ty + " " + val.name + ", " + enum_ty + "* " + dn + ".ea")
+    s = emit_line(s, "  " + dn + ".bp = bitcast " + enum_ty + "* " + dn + ".ea to i8*")
+    s = emit_line(s, "  " + dn + ".pp = getelementptr inbounds i8, i8* " + dn + ".bp, i64 8")
+    s = emit_line(s, "  " + dn + ".tp = bitcast i8* " + dn + ".pp to " + dest_ty + "*")
+    s = emit_line(s, "  " + dn + " = load " + dest_ty + ", " + dest_ty + "* " + dn + ".tp")
+    return s
 }
 
 // ---------------------------------------------------------------------------
