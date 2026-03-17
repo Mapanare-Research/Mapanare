@@ -1153,6 +1153,13 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_builtin_float(st, dest, args)
     }
 
+    // List push: handled by ListPush instruction in MIR, skip in emitter.
+    // Check by method name first (before accessing args) since the type kind
+    // may be "unknown" for List<Int> due to type inference gaps.
+    if fn_name == "push" {
+        return st
+    }
+
     // String methods: dispatched to __mn_str_<method> runtime functions
     if len(args) >= 1 {
         let first_arg: Value = args[0]
@@ -1165,12 +1172,6 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
             if fn_name == "substr" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_substr", llvm_string() + " " + args[0].name + ", i64 " + args[1].name + ", i64 " + args[2].name)) }
             if fn_name == "to_upper" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_to_upper", llvm_string() + " " + args[0].name)) }
             if fn_name == "to_lower" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_to_lower", llvm_string() + " " + args[0].name)) }
-        }
-        // List methods: push handled by ListPush instruction, len by builtin
-        if first_arg.ty.kind == "list" {
-            if fn_name == "push" {
-                return st
-            }
         }
     }
 

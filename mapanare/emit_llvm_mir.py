@@ -295,6 +295,31 @@ def _zero_init_alloca(ab: Any, alloca_inst: Any, val_ty: Any) -> None:
         ab.store(ir.Constant(val_ty, None), alloca_inst)
 
 
+def _memcpy_alloca(builder: Any, dst: Any, src: Any, size: int) -> None:
+    """Copy *size* bytes from *src* alloca to *dst* alloca using llvm.memcpy.
+
+    This avoids the llvmlite codegen bug where large by-value load/store
+    instructions (> ~128 bytes) silently truncate the copy on x86-64.
+    """
+    i8p = ir.IntType(8).as_pointer()
+    dst_i8 = builder.bitcast(dst, i8p, name="mcpy.dst")
+    src_i8 = builder.bitcast(src, i8p, name="mcpy.src")
+    fn_ty = ir.FunctionType(
+        ir.VoidType(),
+        [i8p, i8p, ir.IntType(64), ir.IntType(1)],
+    )
+    memcpy_fn = builder.module.declare_intrinsic("llvm.memcpy", [i8p, i8p, ir.IntType(64)], fn_ty)
+    builder.call(
+        memcpy_fn,
+        [
+            dst_i8,
+            src_i8,
+            ir.Constant(ir.IntType(64), size),
+            ir.Constant(ir.IntType(1), 0),  # not volatile
+        ],
+    )
+
+
 def _option_llvm_type(inner: Any) -> Any:
     """Option<T> -> {i1, T}."""
     return ir.LiteralStructType([LLVM_BOOL, inner])
@@ -1749,6 +1774,18 @@ class LLVMMIREmitter:
                     )
                 except (TypeError, AttributeError) as exc:
                     logging.debug("fallback at _get_value load: %s", exc)
+        elif name in values:
+            # values[name] is None — sentinel from large-type memcpy path.
+            # Load from alloca to get the value.
+            alloca = self._fn_allocas.get(name)
+            builder = self._current_builder
+            if alloca is not None and builder is not None:
+                try:
+                    loaded = builder.load(alloca, name=f"l.{name.lstrip('%')}")
+                    values[name] = loaded  # cache for future same-block uses
+                    return loaded
+                except (TypeError, AttributeError) as exc:
+                    logging.debug("fallback at _get_value None load: %s", exc)
             return result
         # Try without % prefix
         stripped = name.lstrip("%")
@@ -2455,14 +2492,36 @@ class LLVMMIREmitter:
 
             args = _coerce_args(builder, args[: len(expected_types)], expected_types, name)
 
-            # For byptr params, alloca+store the struct and pass the pointer
+            # For byptr params, alloca+store the struct and pass the pointer.
+            # For large types, use memcpy from the source alloca to avoid
+            # the llvmlite codegen bug where by-value load/store of large
+            # structs (> ~128 bytes) silently truncates the copy.
             for idx in byptr_set:
                 if idx < len(args):
                     a = args[idx]
                     # a should already be coerced to the pointer type or struct
                     if not isinstance(a.type, ir.PointerType):
+                        asize = _approx_type_size(a.type)
                         tmp = builder.alloca(a.type, name=f"{name}.byptr.{idx}")
-                        builder.store(a, tmp)
+                        if asize > _LARGE_STRUCT_THRESHOLD and idx < len(inst.args):
+                            # Try to memcpy directly from the source alloca
+                            arg_name = inst.args[idx].name
+                            src_alloca = self._fn_allocas.get(arg_name)
+                            if src_alloca is None:
+                                src_alloca = self._fn_allocas.get(arg_name.lstrip("%"))
+                            if src_alloca is None:
+                                src_alloca = self._fn_allocas.get(f"%{arg_name}")
+                            if src_alloca is not None:
+                                # Ensure matching pointer type
+                                if src_alloca.type.pointee != a.type:
+                                    src_alloca = builder.bitcast(
+                                        src_alloca, a.type.as_pointer(), name=f"{name}.src.{idx}"
+                                    )
+                                _memcpy_alloca(builder, tmp, src_alloca, asize)
+                            else:
+                                builder.store(a, tmp)
+                        else:
+                            builder.store(a, tmp)
                         args[idx] = tmp
 
             if is_sret:
@@ -3351,12 +3410,39 @@ class LLVMMIREmitter:
                         builder.store(val, typed_ptr)
                         offset += _approx_type_size(reg_ty)
 
-            result = builder.load(enum_ptr, name=name)
+            enum_size = _approx_type_size(enum_ty)
+            if enum_size > _LARGE_STRUCT_THRESHOLD:
+                # Large enum: use memcpy instead of load+store to avoid
+                # llvmlite codegen bug that truncates large by-value ops.
+                # The load {i64, [264 x i8]} generates x86 code that may
+                # not copy all bytes, losing fields past ~96 bytes.
+                dest_name = inst.dest.name.lstrip("%")
+                if inst.dest.name not in self._fn_allocas:
+                    ab = ir.IRBuilder(self._alloca_block)
+                    ab.position_at_end(self._alloca_block)
+                    dest_alloca = ab.alloca(enum_ty, name=f"a.{dest_name}")
+                    _zero_init_alloca(ab, dest_alloca, enum_ty)
+                    self._fn_allocas[inst.dest.name] = dest_alloca
+                dest_alloca = self._fn_allocas[inst.dest.name]
+                # Bitcast to matching pointer type if needed
+                if dest_alloca.type.pointee != enum_ty:
+                    dst_bc = builder.bitcast(dest_alloca, enum_ty.as_pointer(), name=f"{name}.dbc")
+                else:
+                    dst_bc = dest_alloca
+                _memcpy_alloca(builder, dst_bc, enum_ptr, enum_size)
+                # Don't load the full struct by value.  Store a pointer-
+                # based sentinel so _get_value falls through to the alloca
+                # load path, which is fine for subsequent uses (the memcpy
+                # ensures the alloca has correct data).
+                values[inst.dest.name] = None  # force alloca load path
+                self._value_blocks[inst.dest.name] = self._current_block_label
+            else:
+                result = builder.load(enum_ptr, name=name)
+                self._store_value(inst.dest, result, values)
         else:
             # Fallback: tag-only i64
             result = ir.Constant(LLVM_INT, 0)
-
-        self._store_value(inst.dest, result, values)
+            self._store_value(inst.dest, result, values)
 
     # --- EnumTag ---
 
