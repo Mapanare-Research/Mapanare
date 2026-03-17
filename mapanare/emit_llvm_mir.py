@@ -3108,8 +3108,28 @@ class LLVMMIREmitter:
                 # Unknown element type — return raw pointer for downstream coercion
                 result = raw_ptr
             else:
-                typed_ptr = builder.bitcast(raw_ptr, elem_ty.as_pointer(), name=f"{name}.tptr")
-                result = builder.load(typed_ptr, name=name)
+                elem_size = _approx_type_size(elem_ty)
+                if elem_size > _LARGE_STRUCT_THRESHOLD:
+                    # Large element: memcpy from list buffer to dest alloca
+                    dest_name = inst.dest.name.lstrip("%")
+                    if inst.dest.name not in self._fn_allocas:
+                        ab = ir.IRBuilder(self._alloca_block)
+                        ab.position_at_end(self._alloca_block)
+                        dest_alloca = ab.alloca(elem_ty, name=f"a.{dest_name}")
+                        _zero_init_alloca(ab, dest_alloca, elem_ty)
+                        self._fn_allocas[inst.dest.name] = dest_alloca
+                    dest_alloca = self._fn_allocas[inst.dest.name]
+                    src_ptr = builder.bitcast(raw_ptr, elem_ty.as_pointer(), name=f"{name}.src")
+                    dst = dest_alloca
+                    if dst.type.pointee != elem_ty:
+                        dst = builder.bitcast(dst, elem_ty.as_pointer(), name=f"{name}.dbc")
+                    _memcpy_alloca(builder, dst, src_ptr, elem_size)
+                    values[inst.dest.name] = None
+                    self._value_blocks[inst.dest.name] = self._current_block_label
+                    return
+                else:
+                    typed_ptr = builder.bitcast(raw_ptr, elem_ty.as_pointer(), name=f"{name}.tptr")
+                    result = builder.load(typed_ptr, name=name)
         elif obj_kind == TypeKind.STRING:
             # String indexing: __mn_str_byte_at or char access
             fn = self._declare_runtime_fn("__mn_str_byte_at", LLVM_INT, [LLVM_STRING, LLVM_INT])

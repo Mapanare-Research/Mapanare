@@ -358,12 +358,12 @@
 ## Final Results
 
 - **Test count:** 3,698 passed, 6 skipped, 0 failed
-- **Golden tests:** 15/15 pass (Python bootstrap), 13/15 pass (mnc-stage1; `08_list` and `09_string_methods` crash in self-hosted emitter)
+- **Golden tests:** 15/15 pass (Python bootstrap), **15/15 pass (mnc-stage1)**
 - **C runtime:** 52/52 pass (plain, ASan, TSan clean)
 - **Lint:** ruff, black, mypy all pass clean
-- **Self-hosted:** mnc-stage1 builds (opt_level=1, 1.89 MB). Compiles ast.mn, lexer.mn (opt0), main.mn (opt0) individually. Crashes on parser/semantic/lower/emit_llvm.
-- **Root cause identified:** `emit_llvm.mn:485` computes enum payload as `len(variant.payload_types)` (field COUNT = 1 for `FnDef(FnDefData)`) instead of actual i64 slots needed (e.g., 5 for a 5-field struct). This creates undersized enum buffers causing buffer overflows. Fix requires adding `mir_type_i64_slots()` helper to self-hosted emitter, but additional string operations in .mn code trigger native OOM (entangled with missing per-function memory cleanup in generated native code).
-- **Fixed-point:** Blocked — self-hosted compiler needs both enum sizing fix AND memory management fix simultaneously
+- **Self-hosted:** mnc-stage1 builds (opt_level=1, 1.84 MB). All 15 golden tests pass. Compiles ast.mn, lexer.mn (opt0), main.mn (opt0) individually. Crashes on parser/semantic/lower/emit_llvm (large-struct codegen issues at scale).
+- **Root causes fixed (v1.0.11):** (1) llvmlite truncates large by-value load/store (>128 bytes) — fixed with `llvm.memcpy` in `_emit_enum_init` for large enums. (2) Self-hosted emitter's `emit_mir_call` only handled `push` when `ty.kind=="list"`, but `List<Int>` had kind `"unknown"` — fixed by checking method name before type kind.
+- **Fixed-point:** Blocked — mnc-stage1 can compile all golden tests but still crashes on its own large modules (parser.mn, semantic.mn, lower.mn, emit_llvm.mn) due to remaining large-struct codegen issues at the 680-byte LowerState scale
 - **Benchmarks:** Recorded in `benchmarks/results_all.json`
 - **Completed in 2nd pass:** nsw integer flags, dominance tree, operator trait dispatch annotation, string primitives wiring, signal security (mutex, null cleanup, batch overflow, async-safety)
 - **Arena lifecycle:** Implemented but disabled — causes use-after-free when returned values (strings) are allocated on callee's arena. Needs return-value escape analysis.
