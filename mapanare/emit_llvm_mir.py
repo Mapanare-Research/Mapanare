@@ -397,6 +397,7 @@ class LLVMMIREmitter:
 
         # Per-function state for alloca-based dominance fix
         self._fn_allocas: dict[str, Any] = {}
+        self._skip_zero_init: set[str] = set()
         self._current_builder: Any = None
         self._current_block_label: str = ""
         self._value_blocks: dict[str, str] = {}  # value name -> defining block label
@@ -1611,12 +1612,32 @@ class LLVMMIREmitter:
                 else:
                     inc_val = values.get(val.name)
                 if inc_val is None:
-                    if isinstance(pointee, ir.PointerType):
-                        inc_val = ir.Constant(pointee, None)
-                    elif isinstance(pointee, ir.LiteralStructType):
-                        inc_val = ir.Constant(pointee, ir.Undefined)
-                    else:
-                        inc_val = ir.Constant(pointee, 0)
+                    src_alloca = self._fn_allocas.get(val.name)
+                    if src_alloca is None:
+                        src_alloca = self._fn_allocas.get(val.name.lstrip("%"))
+                    if src_alloca is not None and _is_large_struct(pointee):
+                        src = src_alloca
+                        if src.type.pointee != pointee:
+                            src = inc_builder.bitcast(src, pointee.as_pointer(), name="phi.msrc")
+                        dst = alloca
+                        if dst.type.pointee != pointee:
+                            dst = inc_builder.bitcast(dst, pointee.as_pointer(), name="phi.mdst")
+                        _memcpy_alloca(inc_builder, dst, src, _approx_type_size(pointee))
+                        continue
+                    elif src_alloca is not None:
+                        try:
+                            inc_val = inc_builder.load(
+                                src_alloca, name=f"phi.l.{val.name.lstrip('%')}"
+                            )
+                        except (TypeError, AttributeError):
+                            inc_val = None
+                    if inc_val is None:
+                        if isinstance(pointee, ir.PointerType):
+                            inc_val = ir.Constant(pointee, None)
+                        elif isinstance(pointee, ir.LiteralStructType):
+                            inc_val = ir.Constant(pointee, ir.Undefined)
+                        else:
+                            inc_val = ir.Constant(pointee, 0)
                 # Coerce to match alloca type
                 if inc_val.type != pointee:
                     inc_val = _coerce_arg(inc_builder, inc_val, pointee, "phi.s")
@@ -1638,7 +1659,9 @@ class LLVMMIREmitter:
         # 7b. Zero-initialize ALL allocas to prevent uninitialized reads.
         ab = ir.IRBuilder(pre_entry)
         ab.position_at_end(pre_entry)
-        for alloca_inst in self._fn_allocas.values():
+        for aname, alloca_inst in self._fn_allocas.items():
+            if aname in self._skip_zero_init:
+                continue
             try:
                 pointee = alloca_inst.type.pointee
                 if isinstance(pointee, ir.VoidType):
@@ -1656,6 +1679,7 @@ class LLVMMIREmitter:
 
         # 9. Cleanup per-function state
         self._fn_allocas = {}
+        self._skip_zero_init = set()
         self._current_builder = None
         self._current_block_label = ""
         self._value_blocks = {}
@@ -1782,7 +1806,7 @@ class LLVMMIREmitter:
             if alloca is not None and builder is not None:
                 try:
                     loaded = builder.load(alloca, name=f"l.{name.lstrip('%')}")
-                    values[name] = loaded  # cache for future same-block uses
+                    # Do NOT cache: each call produces a fresh load in current block
                     return loaded
                 except (TypeError, AttributeError) as exc:
                     logging.debug("fallback at _get_value None load: %s", exc)
@@ -1918,7 +1942,41 @@ class LLVMMIREmitter:
     # --- Copy ---
 
     def _emit_copy(self, inst: Copy, values: dict[str, Any]) -> None:
-        """Copy is a no-op in SSA — just alias the value."""
+        """Copy is a no-op in SSA — just alias the value.
+
+        For large struct types, use memcpy to avoid full-struct load/store.
+        """
+        mir_ty = self._resolve_mir_type(inst.src.ty) if inst.src.ty else None
+        if (
+            mir_ty is not None
+            and isinstance(mir_ty, ir.LiteralStructType)
+            and _is_large_struct(mir_ty)
+        ):
+            src_alloca = self._get_value_ptr(inst.src)
+            if src_alloca is not None and isinstance(src_alloca.type, ir.PointerType):
+                pointee = src_alloca.type.pointee
+                if _is_large_struct(pointee):
+                    builder = self._current_builder
+                    if builder is not None:
+                        size = _approx_type_size(pointee)
+                        dest_name = inst.dest.name
+                        if dest_name not in self._fn_allocas:
+                            ab = ir.IRBuilder(self._alloca_block)
+                            ab.position_at_end(self._alloca_block)
+                            vname = dest_name.lstrip("%")
+                            dst_alloca = ab.alloca(pointee, name=f"a.{vname}")
+                            _zero_init_alloca(ab, dst_alloca, pointee)
+                            self._fn_allocas[dest_name] = dst_alloca
+                        dst_alloca = self._fn_allocas[dest_name]
+                        src_ptr = src_alloca
+                        if src_alloca.type.pointee != dst_alloca.type.pointee:
+                            src_ptr = builder.bitcast(
+                                src_alloca, dst_alloca.type.pointee.as_pointer(), name="cpy.src"
+                            )
+                        _memcpy_alloca(builder, dst_alloca, src_ptr, size)
+                        values[dest_name] = None
+                        self._value_blocks[dest_name] = self._current_block_label
+                        return
         src = self._get_value(inst.src, values)
         self._store_value(inst.dest, src, values)
 
@@ -2525,14 +2583,25 @@ class LLVMMIREmitter:
                         args[idx] = tmp
 
             if is_sret:
-                # Allocate result struct, zero-init, pass as last arg
                 orig_ret_ty = self._sret_functions[fn_name]
-                sret_alloca = builder.alloca(orig_ret_ty, name=f"{name}.sret")
-                _zero_init_alloca(builder, sret_alloca, orig_ret_ty)
-                args.append(sret_alloca)
-                builder.call(target_fn, args)
-                result = builder.load(sret_alloca, name=name)
-                self._store_value(inst.dest, result, values)
+                if _is_large_struct(orig_ret_ty):
+                    ab = ir.IRBuilder(self._alloca_block)
+                    ab.position_at_end(self._alloca_block)
+                    sret_alloca = ab.alloca(orig_ret_ty, name=f"{name}.sret")
+                    _zero_init_alloca(ab, sret_alloca, orig_ret_ty)
+                    args.append(sret_alloca)
+                    builder.call(target_fn, args)
+                    self._fn_allocas[inst.dest.name] = sret_alloca
+                    self._skip_zero_init.add(inst.dest.name)
+                    values[inst.dest.name] = None
+                    self._value_blocks[inst.dest.name] = self._current_block_label
+                else:
+                    sret_alloca = builder.alloca(orig_ret_ty, name=f"{name}.sret")
+                    _zero_init_alloca(builder, sret_alloca, orig_ret_ty)
+                    args.append(sret_alloca)
+                    builder.call(target_fn, args)
+                    result = builder.load(sret_alloca, name=name)
+                    self._store_value(inst.dest, result, values)
             elif isinstance(target_fn.function_type.return_type, ir.VoidType):
                 builder.call(target_fn, args)
                 self._store_value(inst.dest, ir.Constant(LLVM_BOOL, 0), values)
@@ -2631,12 +2700,24 @@ class LLVMMIREmitter:
 
         if is_sret:
             orig_ret_ty = self._sret_functions[full_name]
-            sret_alloca = builder.alloca(orig_ret_ty, name=f"{name}.sret")
-            _zero_init_alloca(builder, sret_alloca, orig_ret_ty)
-            args.append(sret_alloca)
-            builder.call(target_fn, args)
-            result = builder.load(sret_alloca, name=name)
-            self._store_value(inst.dest, result, values)
+            if _is_large_struct(orig_ret_ty):
+                ab = ir.IRBuilder(self._alloca_block)
+                ab.position_at_end(self._alloca_block)
+                sret_alloca = ab.alloca(orig_ret_ty, name=f"{name}.sret")
+                _zero_init_alloca(ab, sret_alloca, orig_ret_ty)
+                args.append(sret_alloca)
+                builder.call(target_fn, args)
+                self._fn_allocas[inst.dest.name] = sret_alloca
+                self._skip_zero_init.add(inst.dest.name)
+                values[inst.dest.name] = None
+                self._value_blocks[inst.dest.name] = self._current_block_label
+            else:
+                sret_alloca = builder.alloca(orig_ret_ty, name=f"{name}.sret")
+                _zero_init_alloca(builder, sret_alloca, orig_ret_ty)
+                args.append(sret_alloca)
+                builder.call(target_fn, args)
+                result = builder.load(sret_alloca, name=name)
+                self._store_value(inst.dest, result, values)
         elif isinstance(target_fn.function_type.return_type, ir.VoidType):
             builder.call(target_fn, args)
             self._store_value(inst.dest, ir.Constant(LLVM_BOOL, 0), values)
@@ -2649,8 +2730,26 @@ class LLVMMIREmitter:
     def _emit_return(self, inst: Return, builder: Any, values: dict[str, Any], func: Any) -> None:
         fn_name = func.name
 
-        # Resolve the return value BEFORE destroying the arena,
-        # since the return value may reference arena-allocated memory.
+        # For large sret returns, try the memcpy path FIRST to avoid
+        # generating a full-struct load (llvmlite codegen bug > 56 bytes).
+        if fn_name in self._sret_functions and self._current_sret_ptr is not None:
+            orig_ret_ty = self._sret_functions[fn_name]
+            if _is_large_struct(orig_ret_ty) and inst.val is not None:
+                src_alloca = self._get_value_ptr(inst.val)
+                if src_alloca is not None:
+                    self._emit_drop_glue(builder, None)
+                    self._emit_arena_destroy(builder)
+                    dst = self._current_sret_ptr
+                    src = src_alloca
+                    if src.type.pointee != orig_ret_ty:
+                        src = builder.bitcast(src, orig_ret_ty.as_pointer(), name="ret.src")
+                    if dst.type.pointee != orig_ret_ty:
+                        dst = builder.bitcast(dst, orig_ret_ty.as_pointer(), name="ret.dst")
+                    _memcpy_alloca(builder, dst, src, _approx_type_size(orig_ret_ty))
+                    builder.ret_void()
+                    return
+
+        # Resolve the return value BEFORE destroying the arena.
         ret_val: Any = None
         if fn_name in self._sret_functions and self._current_sret_ptr is not None:
             if inst.val is not None:
@@ -2658,14 +2757,10 @@ class LLVMMIREmitter:
         elif inst.val is not None:
             ret_val = self._get_value(inst.val, values)
 
-        # Emit drop glue: free locally-allocated strings and closure envs
         self._emit_drop_glue(builder, ret_val)
-
-        # Destroy the per-function arena after loading the return value
         self._emit_arena_destroy(builder)
 
         if fn_name in self._sret_functions and self._current_sret_ptr is not None:
-            # sret: store return value into the output pointer, then ret void
             if ret_val is not None:
                 orig_ret_ty = self._sret_functions[fn_name]
                 val = ret_val
@@ -2848,33 +2943,62 @@ class LLVMMIREmitter:
     # --- FieldGet ---
 
     def _emit_field_get(self, inst: FieldGet, builder: Any, values: dict[str, Any]) -> None:
-        obj = self._get_value(inst.obj, values)
         name = self._val_name(inst.dest)
         obj_type_name = inst.obj.ty.type_info.name
 
-        # Cross-module coercion: if obj is a pointer but should be a struct,
-        # bitcast to struct pointer and load
-        if isinstance(obj.type, ir.PointerType) and not isinstance(obj.type, ir.LiteralStructType):
-            struct_ty = self._struct_types.get(obj_type_name)
-            # Try suffix match for finding the struct type
-            if struct_ty is None:
-                for sname, stype in self._struct_types.items():
-                    if sname.endswith("__" + obj_type_name):
-                        struct_ty = stype
-                        obj_type_name = sname
-                        break
-            if struct_ty is not None:
-                typed_ptr = builder.bitcast(obj, struct_ty.as_pointer(), name=f"{name}.sptr")
-                obj = builder.load(typed_ptr, name=f"{name}.sval")
-
-        # Fallback 1: try suffix match for cross-module structs (e.g. "Token" → "lexer__Token")
         if obj_type_name not in self._struct_fields:
             for sname in self._struct_fields:
                 if sname.endswith("__" + obj_type_name) or sname == obj_type_name:
                     obj_type_name = sname
                     break
 
-        # Fallback 2: reverse-lookup struct by LLVM type identity
+        # --- GEP path for large structs ---
+        struct_ty = self._struct_types.get(obj_type_name)
+        if struct_ty is not None and _is_large_struct(struct_ty):
+            if obj_type_name in self._struct_field_indices:
+                field_idx_map = self._struct_field_indices[obj_type_name]
+                if inst.field_name in field_idx_map:
+                    idx = field_idx_map[inst.field_name]
+                    obj_alloca = self._get_value_ptr(inst.obj)
+                    if obj_alloca is not None:
+                        if obj_alloca.type.pointee != struct_ty:
+                            obj_alloca = builder.bitcast(
+                                obj_alloca, struct_ty.as_pointer(), name=f"{name}.sptr"
+                            )
+                        zero = ir.Constant(ir.IntType(32), 0)
+                        idx_c = ir.Constant(ir.IntType(32), idx)
+                        field_ptr = builder.gep(
+                            obj_alloca, [zero, idx_c], inbounds=True, name=f"{name}.fptr"
+                        )
+                        result = builder.load(field_ptr, name=name)
+                        boxed = self._boxed_struct_fields.get(obj_type_name, set())
+                        if idx in boxed:
+                            actual_type = self._resolve_field_type_for_unbox(
+                                obj_type_name, inst.field_name
+                            )
+                            if actual_type is not None and actual_type != LLVM_PTR:
+                                typed_ptr = builder.bitcast(
+                                    result, actual_type.as_pointer(), name=f"{name}.unbox"
+                                )
+                                result = builder.load(typed_ptr, name=f"{name}.val")
+                        self._store_value(inst.dest, result, values)
+                        return
+
+        # --- Small struct: original extract_value path ---
+        obj = self._get_value(inst.obj, values)
+
+        if isinstance(obj.type, ir.PointerType) and not isinstance(obj.type, ir.LiteralStructType):
+            coerce_ty = self._struct_types.get(obj_type_name)
+            if coerce_ty is None:
+                for sname, stype in self._struct_types.items():
+                    if sname.endswith("__" + obj_type_name):
+                        coerce_ty = stype
+                        obj_type_name = sname
+                        break
+            if coerce_ty is not None:
+                typed_ptr = builder.bitcast(obj, coerce_ty.as_pointer(), name=f"{name}.sptr")
+                obj = builder.load(typed_ptr, name=f"{name}.sval")
+
         if obj_type_name not in self._struct_fields:
             for sname, stype in self._struct_types.items():
                 if stype == obj.type and sname in self._struct_fields:
@@ -2886,10 +3010,8 @@ class LLVMMIREmitter:
             if inst.field_name in field_idx_map:
                 idx = field_idx_map[inst.field_name]
                 result = builder.extract_value(obj, idx, name=name)
-                # If this field is auto-boxed, dereference the pointer
                 boxed = self._boxed_struct_fields.get(obj_type_name, set())
                 if idx in boxed:
-                    # Resolve the actual type for the field from MIR type info
                     actual_type = self._resolve_field_type_for_unbox(obj_type_name, inst.field_name)
                     if actual_type is not None and actual_type != LLVM_PTR:
                         typed_ptr = builder.bitcast(
@@ -2899,7 +3021,6 @@ class LLVMMIREmitter:
             else:
                 result = ir.Constant(LLVM_PTR, None)
         else:
-            # Try index 0 as fallback
             try:
                 result = builder.extract_value(obj, 0, name=name)
             except (TypeError, IndexError) as exc:
@@ -2911,16 +3032,61 @@ class LLVMMIREmitter:
     # --- FieldSet ---
 
     def _emit_field_set(self, inst: FieldSet, builder: Any, values: dict[str, Any]) -> None:
-        obj = self._get_value(inst.obj, values)
         val = self._get_value(inst.val, values)
         obj_type_name = inst.obj.ty.type_info.name
 
-        # Suffix match for cross-module structs
         if obj_type_name not in self._struct_fields:
             for sname in self._struct_fields:
                 if sname.endswith("__" + obj_type_name) or sname == obj_type_name:
                     obj_type_name = sname
                     break
+
+        # --- GEP path for large structs ---
+        struct_ty = self._struct_types.get(obj_type_name)
+        if struct_ty is not None and _is_large_struct(struct_ty):
+            if obj_type_name in self._struct_field_indices:
+                field_idx_map = self._struct_field_indices[obj_type_name]
+                if inst.field_name in field_idx_map:
+                    idx = field_idx_map[inst.field_name]
+                    obj_alloca = self._get_value_ptr(inst.obj)
+                    if obj_alloca is not None:
+                        if obj_alloca.type.pointee != struct_ty:
+                            obj_alloca = builder.bitcast(
+                                obj_alloca, struct_ty.as_pointer(), name="fset.sptr"
+                            )
+                        boxed = self._boxed_struct_fields.get(obj_type_name, set())
+                        if idx in boxed:
+                            fname = f"{obj_type_name}.{inst.field_name}"
+                            alloc_size = ir.Constant(LLVM_INT, _approx_type_size(val.type))
+                            raw_ptr = self._arena_alloc_or_malloc(
+                                builder, alloc_size, f"{fname}.box"
+                            )
+                            typed_box = builder.bitcast(
+                                raw_ptr, val.type.as_pointer(), name=f"{fname}.box.t"
+                            )
+                            builder.store(val, typed_box)
+                            val = raw_ptr
+                        else:
+                            field_ty = struct_ty.elements[idx]
+                            if val.type != field_ty:
+                                val = _coerce_arg(
+                                    builder,
+                                    val,
+                                    field_ty,
+                                    f"{inst.obj.ty.type_info.name}.{inst.field_name}.c",
+                                )
+                        zero = ir.Constant(ir.IntType(32), 0)
+                        idx_c = ir.Constant(ir.IntType(32), idx)
+                        field_ptr = builder.gep(
+                            obj_alloca, [zero, idx_c], inbounds=True, name="fset.fptr"
+                        )
+                        builder.store(val, field_ptr)
+                        values[inst.obj.name] = None
+                        self._value_blocks[inst.obj.name] = self._current_block_label
+                        return
+
+        # --- Small struct: original insert_value path ---
+        obj = self._get_value(inst.obj, values)
 
         if obj_type_name in self._struct_field_indices:
             field_idx_map = self._struct_field_indices[obj_type_name]
@@ -2928,7 +3094,6 @@ class LLVMMIREmitter:
                 idx = field_idx_map[inst.field_name]
                 boxed = self._boxed_struct_fields.get(obj_type_name, set())
                 if idx in boxed:
-                    # Auto-boxed recursive field: allocate via arena and store pointer
                     name = f"{obj_type_name}.{inst.field_name}"
                     alloc_size = ir.Constant(LLVM_INT, _approx_type_size(val.type))
                     raw_ptr = self._arena_alloc_or_malloc(builder, alloc_size, f"{name}.box")
@@ -2936,9 +3101,8 @@ class LLVMMIREmitter:
                         raw_ptr, val.type.as_pointer(), name=f"{name}.box.t"
                     )
                     builder.store(val, typed_box)
-                    val = raw_ptr  # Store the i8* pointer in the struct field
+                    val = raw_ptr
                 else:
-                    # Coerce value type to match the struct field type
                     if isinstance(obj.type, ir.LiteralStructType) and idx < len(obj.type.elements):
                         field_ty = obj.type.elements[idx]
                         if val.type != field_ty:
@@ -2949,8 +3113,6 @@ class LLVMMIREmitter:
                                 f"{inst.obj.ty.type_info.name}.{inst.field_name}.c",
                             )
                 result = builder.insert_value(obj, val, idx)
-                # Update the value in the map (functional update for SSA)
-                # Also persist to the alloca for cross-block dominance
                 self._store_value(inst.obj, result, values)
 
     # --- ListInit ---
