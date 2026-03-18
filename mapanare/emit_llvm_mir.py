@@ -2025,7 +2025,13 @@ class LLVMMIREmitter:
                     if builder is not None:
                         size = _approx_type_size(pointee)
                         dest_name = inst.dest.name
-                        if dest_name not in self._fn_allocas:
+                        need_new = dest_name not in self._fn_allocas
+                        if not need_new:
+                            # Check if existing alloca is large enough
+                            existing = self._fn_allocas[dest_name]
+                            if _approx_type_size(existing.type.pointee) < size:
+                                need_new = True
+                        if need_new:
                             ab = ir.IRBuilder(self._alloca_block)
                             ab.position_at_end(self._alloca_block)
                             vname = dest_name.lstrip("%")
@@ -3061,7 +3067,13 @@ class LLVMMIREmitter:
                             and isinstance(field_ty, ir.LiteralStructType)
                             and _is_large_struct(field_ty)
                         ):
-                            if inst.dest.name not in self._fn_allocas:
+                            fld_size = _approx_type_size(field_ty)
+                            need_alloc = inst.dest.name not in self._fn_allocas
+                            if not need_alloc:
+                                ex = self._fn_allocas[inst.dest.name]
+                                if _approx_type_size(ex.type.pointee) < fld_size:
+                                    need_alloc = True
+                            if need_alloc:
                                 ab3 = ir.IRBuilder(self._alloca_block)
                                 ab3.position_at_end(self._alloca_block)
                                 vname = inst.dest.name.lstrip("%")
@@ -3408,7 +3420,12 @@ class LLVMMIREmitter:
                 if elem_size > _LARGE_STRUCT_THRESHOLD:
                     # Large element: memcpy from list buffer to dest alloca
                     dest_name = inst.dest.name.lstrip("%")
-                    if inst.dest.name not in self._fn_allocas:
+                    need_alloc = inst.dest.name not in self._fn_allocas
+                    if not need_alloc:
+                        ex = self._fn_allocas[inst.dest.name]
+                        if _approx_type_size(ex.type.pointee) < elem_size:
+                            need_alloc = True
+                    if need_alloc:
                         ab = ir.IRBuilder(self._alloca_block)
                         ab.position_at_end(self._alloca_block)
                         dest_alloca = ab.alloca(elem_ty, name=f"a.{dest_name}")
