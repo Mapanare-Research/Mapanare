@@ -270,6 +270,38 @@ def _is_large_struct(llvm_ty: Any) -> bool:
     return _approx_type_size(llvm_ty) > _LARGE_STRUCT_THRESHOLD
 
 
+def _store_struct_fields(
+    builder: Any, val: Any, alloca: Any, ty: Any, skip_large: bool = False
+) -> None:
+    """Store a large struct value to an alloca field-by-field via GEP.
+
+    Recursively decomposes nested large structs so every leaf ``store``
+    operates on a type small enough to avoid the llvmlite/LLVM codegen
+    truncation bug (> 56 bytes).
+
+    If *skip_large* is True, large sub-struct fields are skipped entirely
+    (caller already populated them via GEP+memcpy).
+    """
+    zero = ir.Constant(ir.IntType(32), 0)
+    for i in range(len(ty.elements)):
+        field_ty = ty.elements[i]
+        if isinstance(field_ty, ir.LiteralStructType) and _is_large_struct(field_ty):
+            if skip_large:
+                continue  # Already memcpy'd by caller
+            # Recursively decompose nested large structs
+            field = builder.extract_value(val, i, name=f"sv.f{i}")
+            idx_c = ir.Constant(ir.IntType(32), i)
+            fld_ptr = builder.gep(alloca, [zero, idx_c], inbounds=True, name=f"sv.gf{i}")
+            _store_struct_fields(builder, field, fld_ptr, field_ty)
+        else:
+            field = builder.extract_value(val, i, name=f"sv.f{i}")
+            idx_c = ir.Constant(ir.IntType(32), i)
+            fld_ptr = builder.gep(alloca, [zero, idx_c], inbounds=True, name=f"sv.gf{i}")
+            if field.type != field_ty:
+                field = _coerce_arg(builder, field, field_ty, f"sv.c{i}")
+            builder.store(field, fld_ptr)
+
+
 def _zero_init_alloca(ab: Any, alloca_inst: Any, val_ty: Any) -> None:
     """Zero-initialize an alloca, using memset for large types."""
     size = _approx_type_size(val_ty)
@@ -1919,7 +1951,12 @@ class LLVMMIREmitter:
             val = llvm_val
             if val.type != pointee:
                 val = _coerce_arg(builder, val, pointee, "sv")
-            builder.store(val, alloca)
+            # For large structs, decompose into per-field GEP+store to
+            # avoid the by-value store truncation bug in llvmlite/LLVM.
+            if isinstance(pointee, ir.LiteralStructType) and _is_large_struct(pointee):
+                _store_struct_fields(builder, val, alloca, pointee)
+            else:
+                builder.store(val, alloca)
         except (TypeError, AttributeError, KeyError) as exc:
             logging.debug("fallback at _store_value: %s", exc)
             # fallback: dict-only (value stays in SSA form)
@@ -2957,19 +2994,16 @@ class LLVMMIREmitter:
                 if field_name in field_idx_map:
                     idx = field_idx_map[field_name]
                 else:
-                    # Positional fallback
                     idx = pos
                 if idx in boxed:
-                    # Auto-boxed recursive field: allocate via arena and store pointer
                     alloc_size = ir.Constant(LLVM_INT, _approx_type_size(val.type))
                     raw_ptr = self._arena_alloc_or_malloc(builder, alloc_size, f"{name}.box.{idx}")
                     typed_box = builder.bitcast(
                         raw_ptr, val.type.as_pointer(), name=f"{name}.box.{idx}.t"
                     )
                     builder.store(val, typed_box)
-                    val = raw_ptr  # Store the i8* pointer in the struct field
+                    val = raw_ptr
                 else:
-                    # Coerce value type to match struct field type
                     expected_ty = llvm_ty.elements[idx]
                     if val.type != expected_ty:
                         val = _coerce_arg(builder, val, expected_ty, f"{name}.c{idx}")
