@@ -1483,10 +1483,20 @@ class LLVMMIREmitter:
         if mir_fn.name in self._sret_functions:
             self._current_sret_ptr = func.args[-1]
 
+        _large_byptr_params: set[int] = set()
         for i, param in enumerate(mir_fn.params):
             arg_val = func.args[i]
             if i in byptr_set:
-                # Large struct passed by pointer — load into a local value
+                param_ty = arg_val.type.pointee
+                if _is_large_struct(param_ty):
+                    # Large struct by pointer — DON'T load by value (LLVM
+                    # truncation bug > 56 bytes).  Use pointer-only sentinel;
+                    # the alloca+memcpy is done in the param-alloca loop below.
+                    _large_byptr_params.add(i)
+                    values[f"%{param.name}"] = None
+                    values[param.name] = None
+                    continue
+                # Small struct — safe to load by value
                 load_builder = ir.IRBuilder(pre_entry)
                 arg_val = load_builder.load(arg_val, name=f"byptr.{param.name}")
             values[f"%{param.name}"] = arg_val
@@ -1511,6 +1521,22 @@ class LLVMMIREmitter:
         # initial value readable from any other branch.
         entry_builder = ir.IRBuilder(llvm_blocks[mir_fn.blocks[0].label]) if mir_fn.blocks else None
         for i, param in enumerate(mir_fn.params):
+            # Large byptr params: memcpy from param pointer → local alloca.
+            # Never load the full struct by value (LLVM truncation > 56 bytes).
+            if i in _large_byptr_params:
+                param_ptr = func.args[i]
+                param_ty = param_ptr.type.pointee
+                ab.position_at_end(pre_entry)
+                vname = param.name.lstrip("%")
+                alloca = ab.alloca(param_ty, name=f"a.{vname}")
+                _zero_init_alloca(ab, alloca, param_ty)
+                self._fn_allocas[f"%{param.name}"] = alloca
+                self._fn_allocas[param.name] = alloca
+                self._value_blocks[f"%{param.name}"] = "entry"
+                self._value_blocks[param.name] = "entry"
+                if entry_builder is not None:
+                    _memcpy_alloca(entry_builder, alloca, param_ptr, _approx_type_size(param_ty))
+                continue
             # Use the (possibly byptr-loaded) value from values dict
             arg_val = values.get(param.name, func.args[i])
             val_ty = arg_val.type
@@ -1836,6 +1862,8 @@ class LLVMMIREmitter:
         alloca = self._fn_allocas.get(val.name)
         if alloca is None:
             alloca = self._fn_allocas.get(val.name.lstrip("%"))
+        if alloca is None:
+            alloca = self._fn_allocas.get(f"%{val.name}")
         return alloca
 
     def _store_value(self, dest: Value, llvm_val: Any, values: dict[str, Any]) -> None:
@@ -2548,38 +2576,39 @@ class LLVMMIREmitter:
             if is_sret:
                 expected_types = expected_types[:-1]  # exclude sret param from coercion
 
+            # Pre-coerce: for large byptr args, replace the loaded struct value
+            # with an alloca pointer populated via memcpy.  This MUST happen
+            # before _coerce_args because _coerce_arg's struct→pointer path
+            # stores the (potentially truncated) loaded value to a tmp alloca.
+            for idx in byptr_set:
+                if idx < len(args) and idx < len(inst.args):
+                    a = args[idx]
+                    if isinstance(a.type, ir.LiteralStructType) and _is_large_struct(a.type):
+                        src_alloca = self._get_value_ptr(inst.args[idx])
+                        if src_alloca is not None:
+                            # Allocate in current block (not pre_entry) so the
+                            # stack space is only consumed when this call path
+                            # is reached, avoiding stack overflow from many
+                            # 680-byte allocas all in pre_entry.
+                            tmp = builder.alloca(a.type, name=f"{name}.bp.{idx}")
+                            src = src_alloca
+                            if src.type.pointee != a.type:
+                                src = builder.bitcast(
+                                    src, a.type.as_pointer(), name=f"{name}.bps.{idx}"
+                                )
+                            _memcpy_alloca(builder, tmp, src, _approx_type_size(a.type))
+                            args[idx] = tmp  # pointer — coerce will see ptr→ptr
+
             args = _coerce_args(builder, args[: len(expected_types)], expected_types, name)
 
-            # For byptr params, alloca+store the struct and pass the pointer.
-            # For large types, use memcpy from the source alloca to avoid
-            # the llvmlite codegen bug where by-value load/store of large
-            # structs (> ~128 bytes) silently truncates the copy.
+            # Post-coerce: handle remaining byptr args (small structs, or
+            # cases where the pre-coerce path didn't fire).
             for idx in byptr_set:
                 if idx < len(args):
                     a = args[idx]
-                    # a should already be coerced to the pointer type or struct
                     if not isinstance(a.type, ir.PointerType):
-                        asize = _approx_type_size(a.type)
                         tmp = builder.alloca(a.type, name=f"{name}.byptr.{idx}")
-                        if asize > _LARGE_STRUCT_THRESHOLD and idx < len(inst.args):
-                            # Try to memcpy directly from the source alloca
-                            arg_name = inst.args[idx].name
-                            src_alloca = self._fn_allocas.get(arg_name)
-                            if src_alloca is None:
-                                src_alloca = self._fn_allocas.get(arg_name.lstrip("%"))
-                            if src_alloca is None:
-                                src_alloca = self._fn_allocas.get(f"%{arg_name}")
-                            if src_alloca is not None:
-                                # Ensure matching pointer type
-                                if src_alloca.type.pointee != a.type:
-                                    src_alloca = builder.bitcast(
-                                        src_alloca, a.type.as_pointer(), name=f"{name}.src.{idx}"
-                                    )
-                                _memcpy_alloca(builder, tmp, src_alloca, asize)
-                            else:
-                                builder.store(a, tmp)
-                        else:
-                            builder.store(a, tmp)
+                        builder.store(a, tmp)
                         args[idx] = tmp
 
             if is_sret:
@@ -2687,9 +2716,27 @@ class LLVMMIREmitter:
         expected_types = list(target_fn.function_type.args)
         if is_sret:
             expected_types = expected_types[:-1]
+
+        # Pre-coerce: for large byptr args, replace loaded struct with
+        # alloca pointer populated via memcpy (avoids truncated load+store).
+        for idx in byptr_set:
+            if idx < len(args) and idx < len(inst.args):
+                a = args[idx]
+                if isinstance(a.type, ir.LiteralStructType) and _is_large_struct(a.type):
+                    src_alloca = self._get_value_ptr(inst.args[idx])
+                    if src_alloca is not None:
+                        tmp = builder.alloca(a.type, name=f"{name}.bp.{idx}")
+                        src = src_alloca
+                        if src.type.pointee != a.type:
+                            src = builder.bitcast(
+                                src, a.type.as_pointer(), name=f"{name}.bps.{idx}"
+                            )
+                        _memcpy_alloca(builder, tmp, src, _approx_type_size(a.type))
+                        args[idx] = tmp
+
         args = _coerce_args(builder, args[: len(expected_types)], expected_types, name)
 
-        # Wrap byptr args in alloca+store
+        # Post-coerce: remaining byptr args (small structs or no alloca found)
         for idx in byptr_set:
             if idx < len(args):
                 a = args[idx]
@@ -2903,6 +2950,7 @@ class LLVMMIREmitter:
             llvm_ty = self._struct_types[struct_name]
             field_idx_map = self._struct_field_indices.get(struct_name, {})
             boxed = self._boxed_struct_fields.get(struct_name, set())
+
             result = ir.Constant(llvm_ty, ir.Undefined)
             for pos, (field_name, field_val) in enumerate(inst.fields):
                 val = self._get_value(field_val, values)
@@ -2970,8 +3018,29 @@ class LLVMMIREmitter:
                         field_ptr = builder.gep(
                             obj_alloca, [zero, idx_c], inbounds=True, name=f"{name}.fptr"
                         )
-                        result = builder.load(field_ptr, name=name)
                         boxed = self._boxed_struct_fields.get(obj_type_name, set())
+                        field_ty = field_ptr.type.pointee
+                        # If the field itself is a large struct (and not boxed),
+                        # use memcpy instead of by-value load (LLVM truncation bug).
+                        if (
+                            idx not in boxed
+                            and isinstance(field_ty, ir.LiteralStructType)
+                            and _is_large_struct(field_ty)
+                        ):
+                            if inst.dest.name not in self._fn_allocas:
+                                ab3 = ir.IRBuilder(self._alloca_block)
+                                ab3.position_at_end(self._alloca_block)
+                                vname = inst.dest.name.lstrip("%")
+                                dst = ab3.alloca(field_ty, name=f"a.{vname}")
+                                _zero_init_alloca(ab3, dst, field_ty)
+                                self._fn_allocas[inst.dest.name] = dst
+                            dst = self._fn_allocas[inst.dest.name]
+                            _memcpy_alloca(builder, dst, field_ptr, _approx_type_size(field_ty))
+                            values[inst.dest.name] = None
+                            self._value_blocks[inst.dest.name] = self._current_block_label
+                            return
+
+                        result = builder.load(field_ptr, name=name)
                         if idx in boxed:
                             actual_type = self._resolve_field_type_for_unbox(
                                 obj_type_name, inst.field_name
@@ -3068,6 +3137,37 @@ class LLVMMIREmitter:
                             val = raw_ptr
                         else:
                             field_ty = struct_ty.elements[idx]
+                            # Large struct field: use memcpy from source alloca
+                            # to the GEP field pointer (avoids by-value store).
+                            if isinstance(field_ty, ir.LiteralStructType) and _is_large_struct(
+                                field_ty
+                            ):
+                                src_alloca = self._get_value_ptr(inst.val)
+                                if src_alloca is not None:
+                                    zero = ir.Constant(ir.IntType(32), 0)
+                                    idx_c = ir.Constant(ir.IntType(32), idx)
+                                    field_ptr = builder.gep(
+                                        obj_alloca,
+                                        [zero, idx_c],
+                                        inbounds=True,
+                                        name="fset.fptr",
+                                    )
+                                    src = src_alloca
+                                    if src.type.pointee != field_ty:
+                                        src = builder.bitcast(
+                                            src,
+                                            field_ty.as_pointer(),
+                                            name="fset.src",
+                                        )
+                                    _memcpy_alloca(
+                                        builder,
+                                        field_ptr,
+                                        src,
+                                        _approx_type_size(field_ty),
+                                    )
+                                    values[inst.obj.name] = None
+                                    self._value_blocks[inst.obj.name] = self._current_block_label
+                                    return
                             if val.type != field_ty:
                                 val = _coerce_arg(
                                     builder,
