@@ -138,8 +138,40 @@ def _init_llvm_types() -> None:
 _COERCE_FALLBACK_COUNT = 0
 
 
-def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
-    """Coerce a single LLVM arg to match expected type (cross-module fix)."""
+# Thread-local reference to the current function's alloca block (pre_entry).
+# Set by the emitter before processing each function, used by _aligned_alloca
+# to place temporaries in the entry block instead of the current block.
+_current_alloca_block: Any = None
+
+
+def _aligned_alloca(builder: Any, ty: Any, name: str = "") -> Any:
+    """Create an alloca in the entry block with 16-byte alignment.
+
+    Dynamic allocas in non-entry blocks adjust RSP at runtime, which can
+    misalign the stack for SSE ``movaps`` instructions.  By placing all
+    temporaries in the pre_entry block, LLVM includes them in the static
+    frame size, maintaining proper 16-byte RSP alignment.
+    """
+    global _current_alloca_block
+    if _current_alloca_block is not None:
+        ab = ir.IRBuilder(_current_alloca_block)
+        ab.position_at_end(_current_alloca_block)
+        inst = ab.alloca(ty, name=name)
+    else:
+        inst = builder.alloca(ty, name=name)
+    inst.align = 16
+    return inst
+
+
+def _coerce_arg(
+    builder: Any, arg: Any, expected_ty: Any, name: str, alloca_block: Any = None
+) -> Any:
+    """Coerce a single LLVM arg to match expected type (cross-module fix).
+
+    If *alloca_block* is given, temporaries are allocated there (pre_entry)
+    instead of in the current block, to avoid misaligning RSP with dynamic
+    allocas in loop bodies.
+    """
     if arg.type == expected_ty:
         return arg
     actual = arg.type
@@ -158,13 +190,13 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
         return builder.load(typed_ptr, name=name)
     # Array → pointer: alloca, store, GEP
     if isinstance(actual, ir.ArrayType) and isinstance(expected_ty, ir.PointerType):
-        tmp = builder.alloca(actual, name=f"{name}.tmp")
+        tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp")
         builder.store(arg, tmp)
         zero = ir.Constant(ir.IntType(64), 0)
         return builder.gep(tmp, [zero, zero], inbounds=True, name=name)
     # Struct → pointer: alloca, store, bitcast
     if isinstance(actual, ir.LiteralStructType) and isinstance(expected_ty, ir.PointerType):
-        tmp = builder.alloca(actual, name=f"{name}.tmp")
+        tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp")
         builder.store(arg, tmp)
         return builder.bitcast(tmp, expected_ty, name=name)
     # Struct → struct: reinterpret via memory
@@ -173,7 +205,7 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
         expected_size = _approx_type_size(expected_ty)
         if actual_size >= expected_size:
             # Source >= dest: safe to reinterpret directly
-            tmp = builder.alloca(actual, name=f"{name}.tmp")
+            tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp")
             if _is_large_struct(actual):
                 _store_struct_fields(builder, arg, tmp, actual)
             else:
@@ -185,7 +217,7 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
         else:
             # Source < dest (e.g. None {i1, i8*} → Option<BigStruct>):
             # allocate the larger type, zero it, overlay the source
-            tmp = builder.alloca(expected_ty, name=f"{name}.tmp")
+            tmp = _aligned_alloca(builder, expected_ty, name=f"{name}.tmp")
             _zero_init_alloca(builder, tmp, expected_ty)
             src_ptr = builder.bitcast(tmp, actual.as_pointer(), name=f"{name}.src")
             if _is_large_struct(actual):
@@ -205,7 +237,7 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
     if isinstance(expected_ty, (ir.LiteralStructType, ir.ArrayType)):
         if isinstance(actual, ir.VoidType):
             return ir.Constant(expected_ty, ir.Undefined)
-        tmp = builder.alloca(expected_ty, name=f"{name}.tmp")
+        tmp = _aligned_alloca(builder, expected_ty, name=f"{name}.tmp")
         # Zero-fill first to avoid reading garbage bytes
         builder.store(ir.Constant(expected_ty, None), tmp)
         src_ptr_ty = (
@@ -220,7 +252,7 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
     if isinstance(actual, (ir.LiteralStructType, ir.ArrayType)) and isinstance(
         expected_ty, ir.IntType
     ):
-        tmp = builder.alloca(actual, name=f"{name}.tmp")
+        tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp")
         builder.store(arg, tmp)
         int_ptr = builder.bitcast(tmp, expected_ty.as_pointer(), name=f"{name}.iptr")
         return builder.load(int_ptr, name=name)
@@ -242,13 +274,13 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
         actual_size = _approx_type_size(actual)
         expected_size = _approx_type_size(expected_ty)
         if expected_size > actual_size:
-            tmp = builder.alloca(expected_ty, name=f"{name}.tmp")
+            tmp = _aligned_alloca(builder, expected_ty, name=f"{name}.tmp")
             builder.store(ir.Constant(expected_ty, None), tmp)  # zero-fill
             src_ptr = builder.bitcast(tmp, actual.as_pointer(), name=f"{name}.sptr")
             builder.store(arg, src_ptr)
             return builder.load(tmp, name=name)
         else:
-            tmp = builder.alloca(actual, name=f"{name}.tmp")
+            tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp")
             builder.store(arg, tmp)
             cast_ptr = builder.bitcast(tmp, expected_ty.as_pointer(), name=f"{name}.cptr")
             return builder.load(cast_ptr, name=name)
@@ -1461,7 +1493,7 @@ class LLVMMIREmitter:
             # [N x i8] → GEP to i8*, then wrap in string struct
             zero = ir.Constant(LLVM_INT, 0)
             # Need to store array in alloca for GEP
-            tmp = builder.alloca(val.type, name=f"{name}.arr")
+            tmp = _aligned_alloca(builder, val.type, name=f"{name}.arr")
             builder.store(val, tmp)
             ptr = builder.gep(tmp, [zero, zero], inbounds=True, name=f"{name}.ptr")
             length = ir.Constant(LLVM_INT, val.type.count)
@@ -1575,6 +1607,8 @@ class LLVMMIREmitter:
         self._fn_allocas = {}
         self._list_roots = {}
         self._alloca_block = pre_entry
+        global _current_alloca_block
+        _current_alloca_block = pre_entry
 
         deferred_phi_stores: list[tuple[Any, list[tuple[str, Value]], dict[str, Any]]] = []
 
@@ -1594,6 +1628,7 @@ class LLVMMIREmitter:
                 ab.position_at_end(pre_entry)
                 vname = param.name.lstrip("%")
                 alloca = ab.alloca(param_ty, name=f"a.{vname}")
+                alloca.align = 16
                 _zero_init_alloca(ab, alloca, param_ty)
                 self._fn_allocas[f"%{param.name}"] = alloca
                 self._fn_allocas[param.name] = alloca
@@ -1610,6 +1645,7 @@ class LLVMMIREmitter:
             ab.position_at_end(pre_entry)
             vname = param.name.lstrip("%")
             alloca = ab.alloca(val_ty, name=f"a.{vname}")
+            alloca.align = 16
             _zero_init_alloca(ab, alloca, val_ty)
             self._fn_allocas[f"%{param.name}"] = alloca
             self._fn_allocas[param.name] = alloca
@@ -1633,6 +1669,7 @@ class LLVMMIREmitter:
                     # Create alloca in pre_entry for the phi dest
                     ab.position_at_end(pre_entry)
                     alloca = ab.alloca(llvm_type, name=f"phi.a.{self._val_name(inst.dest)}")
+                    alloca.align = 16
                     _zero_init_alloca(ab, alloca, llvm_type)
                     self._fn_allocas[inst.dest.name] = alloca
                     # Load at phi position — this is the "result" of the phi
@@ -1961,6 +1998,7 @@ class LLVMMIREmitter:
                 ab.position_at_end(self._alloca_block)
                 vname = dest.name.lstrip("%")
                 alloca_inst = ab.alloca(val_ty, name=f"a.{vname}")
+                alloca_inst.align = 16
                 # Zero-initialize ALL allocas to prevent UB from reading
                 # uninitialized values in cross-block control flow
                 if isinstance(val_ty, (ir.LiteralStructType, ir.ArrayType)):
@@ -1984,6 +2022,7 @@ class LLVMMIREmitter:
                     ab.position_at_end(self._alloca_block)
                     vname = dest.name.lstrip("%")
                     new_alloca = ab.alloca(llvm_val.type, name=f"a.{vname}")
+                    new_alloca.align = 16
                     if isinstance(llvm_val.type, (ir.LiteralStructType, ir.ArrayType)):
                         _zero_init_alloca(ab, new_alloca, llvm_val.type)
                     self._fn_allocas[dest.name] = new_alloca
@@ -2077,6 +2116,7 @@ class LLVMMIREmitter:
                             ab.position_at_end(self._alloca_block)
                             vname = dest_name.lstrip("%")
                             dst_alloca = ab.alloca(pointee, name=f"a.{vname}")
+                            dst_alloca.align = 16
                             _zero_init_alloca(ab, dst_alloca, pointee)
                             self._fn_allocas[dest_name] = dst_alloca
                         dst_alloca = self._fn_allocas[dest_name]
@@ -2204,9 +2244,9 @@ class LLVMMIREmitter:
             if rhs.type != LLVM_LIST:
                 rhs = _coerce_arg(builder, rhs, LLVM_LIST, f"{name}.rc")
             # Pass both lists by pointer
-            lhs_ptr = builder.alloca(LLVM_LIST, name=f"{name}.lptr")
+            lhs_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.lptr")
             builder.store(lhs, lhs_ptr)
-            rhs_ptr = builder.alloca(LLVM_LIST, name=f"{name}.rptr")
+            rhs_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.rptr")
             builder.store(rhs, rhs_ptr)
             result = builder.call(fn_concat, [lhs_ptr, rhs_ptr], name=name)
             self._store_value(inst.dest, result, values)
@@ -2258,12 +2298,12 @@ class LLVMMIREmitter:
                 operand = builder.ptrtoint(operand, LLVM_INT, name=f"{name}.{tag}")
             elif isinstance(operand.type, ir.LiteralStructType):
                 # Struct → i64 via memory reinterpretation
-                tmp = builder.alloca(operand.type, name=f"{name}.{tag}.tmp")
+                tmp = _aligned_alloca(builder, operand.type, name=f"{name}.{tag}.tmp")
                 builder.store(operand, tmp)
                 int_ptr = builder.bitcast(tmp, LLVM_INT.as_pointer(), name=f"{name}.{tag}.ptr")
                 operand = builder.load(int_ptr, name=f"{name}.{tag}")
             elif isinstance(operand.type, ir.ArrayType):
-                tmp = builder.alloca(operand.type, name=f"{name}.{tag}.tmp")
+                tmp = _aligned_alloca(builder, operand.type, name=f"{name}.{tag}.tmp")
                 builder.store(operand, tmp)
                 int_ptr = builder.bitcast(tmp, LLVM_INT.as_pointer(), name=f"{name}.{tag}.ptr")
                 operand = builder.load(int_ptr, name=f"{name}.{tag}")
@@ -2387,7 +2427,7 @@ class LLVMMIREmitter:
                 # Coerce i8* → LLVM_LIST if needed (cross-module type resolution)
                 if list_val.type != LLVM_LIST:
                     list_val = _coerce_arg(builder, list_val, LLVM_LIST, f"{name}.lc")
-                list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.tmp")
+                list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.tmp")
                 builder.store(list_val, list_ptr)
                 result = builder.call(fn, [list_ptr], name=name)
             elif inst.args and inst.args[0].ty.kind == TypeKind.MAP:
@@ -2398,7 +2438,7 @@ class LLVMMIREmitter:
                 # (common in cross-module calls where return type info is UNKNOWN)
                 fn = self._rt_list_len()
                 list_val = args[0]
-                list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.tmp")
+                list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.tmp")
                 builder.store(list_val, list_ptr)
                 result = builder.call(fn, [list_ptr], name=name)
             else:
@@ -2493,7 +2533,7 @@ class LLVMMIREmitter:
                 list_val = args[1]
                 if list_val.type != LLVM_LIST:
                     list_val = _coerce_arg(builder, list_val, LLVM_LIST, f"{name}.lc")
-                list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.list.ptr")
+                list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.list.ptr")
                 builder.store(list_val, list_ptr)
                 result = builder.call(fn, [sep, list_ptr], name=name)
                 self._local_strings.append(result)
@@ -2585,8 +2625,8 @@ class LLVMMIREmitter:
                 map_iter = builder.call(self._rt_map_iter_new(), [map_val], name=iter_name)
                 values[iter_name] = map_iter
                 # Allocate key/val output pointers
-                key_out = builder.alloca(LLVM_PTR, name=f"{iter_name}.kout")
-                val_out = builder.alloca(LLVM_PTR, name=f"{iter_name}.vout")
+                key_out = _aligned_alloca(builder, LLVM_PTR, name=f"{iter_name}.kout")
+                val_out = _aligned_alloca(builder, LLVM_PTR, name=f"{iter_name}.vout")
                 values[f"{iter_name}.kout"] = key_out
                 values[f"{iter_name}.vout"] = val_out
             map_iter = values[iter_name]
@@ -2620,7 +2660,7 @@ class LLVMMIREmitter:
             iter_name = f"_stream_iter_{inst.args[0].name}"
             if f"{iter_name}.out" not in values:
                 # Allocate output buffer for stream_next
-                out_alloca = builder.alloca(LLVM_INT, name=f"{iter_name}.out")
+                out_alloca = _aligned_alloca(builder, LLVM_INT, name=f"{iter_name}.out")
                 values[f"{iter_name}.out"] = out_alloca
             out_alloca = values[f"{iter_name}.out"]
             out_ptr = builder.bitcast(out_alloca, LLVM_PTR)
@@ -2674,7 +2714,10 @@ class LLVMMIREmitter:
                             # stack space is only consumed when this call path
                             # is reached, avoiding stack overflow from many
                             # 680-byte allocas all in pre_entry.
-                            tmp = builder.alloca(a.type, name=f"{name}.bp.{idx}")
+                            ab_bp = ir.IRBuilder(self._alloca_block)
+                            ab_bp.position_at_end(self._alloca_block)
+                            tmp = ab_bp.alloca(a.type, name=f"{name}.bp.{idx}")
+                            tmp.align = 16
                             src = src_alloca
                             if src.type.pointee != a.type:
                                 src = builder.bitcast(
@@ -2691,7 +2734,7 @@ class LLVMMIREmitter:
                 if idx < len(args):
                     a = args[idx]
                     if not isinstance(a.type, ir.PointerType):
-                        tmp = builder.alloca(a.type, name=f"{name}.byptr.{idx}")
+                        tmp = _aligned_alloca(builder, a.type, name=f"{name}.byptr.{idx}")
                         builder.store(a, tmp)
                         args[idx] = tmp
 
@@ -2701,6 +2744,7 @@ class LLVMMIREmitter:
                     ab = ir.IRBuilder(self._alloca_block)
                     ab.position_at_end(self._alloca_block)
                     sret_alloca = ab.alloca(orig_ret_ty, name=f"{name}.sret")
+                    sret_alloca.align = 16
                     _zero_init_alloca(ab, sret_alloca, orig_ret_ty)
                     args.append(sret_alloca)
                     builder.call(target_fn, args)
@@ -2709,7 +2753,7 @@ class LLVMMIREmitter:
                     values[inst.dest.name] = None
                     self._value_blocks[inst.dest.name] = self._current_block_label
                 else:
-                    sret_alloca = builder.alloca(orig_ret_ty, name=f"{name}.sret")
+                    sret_alloca = _aligned_alloca(builder, orig_ret_ty, name=f"{name}.sret")
                     _zero_init_alloca(builder, sret_alloca, orig_ret_ty)
                     args.append(sret_alloca)
                     builder.call(target_fn, args)
@@ -2809,7 +2853,10 @@ class LLVMMIREmitter:
                 if isinstance(a.type, ir.LiteralStructType) and _is_large_struct(a.type):
                     src_alloca = self._get_value_ptr(inst.args[idx])
                     if src_alloca is not None:
-                        tmp = builder.alloca(a.type, name=f"{name}.bp.{idx}")
+                        ab_bp = ir.IRBuilder(self._alloca_block)
+                        ab_bp.position_at_end(self._alloca_block)
+                        tmp = ab_bp.alloca(a.type, name=f"{name}.bp.{idx}")
+                        tmp.align = 16
                         src = src_alloca
                         if src.type.pointee != a.type:
                             src = builder.bitcast(
@@ -2825,7 +2872,7 @@ class LLVMMIREmitter:
             if idx < len(args):
                 a = args[idx]
                 if not isinstance(a.type, ir.PointerType):
-                    tmp = builder.alloca(a.type, name=f"{name}.byptr.{idx}")
+                    tmp = _aligned_alloca(builder, a.type, name=f"{name}.byptr.{idx}")
                     builder.store(a, tmp)
                     args[idx] = tmp
 
@@ -2835,6 +2882,7 @@ class LLVMMIREmitter:
                 ab = ir.IRBuilder(self._alloca_block)
                 ab.position_at_end(self._alloca_block)
                 sret_alloca = ab.alloca(orig_ret_ty, name=f"{name}.sret")
+                sret_alloca.align = 16
                 _zero_init_alloca(ab, sret_alloca, orig_ret_ty)
                 args.append(sret_alloca)
                 builder.call(target_fn, args)
@@ -2843,7 +2891,7 @@ class LLVMMIREmitter:
                 values[inst.dest.name] = None
                 self._value_blocks[inst.dest.name] = self._current_block_label
             else:
-                sret_alloca = builder.alloca(orig_ret_ty, name=f"{name}.sret")
+                sret_alloca = _aligned_alloca(builder, orig_ret_ty, name=f"{name}.sret")
                 _zero_init_alloca(builder, sret_alloca, orig_ret_ty)
                 args.append(sret_alloca)
                 builder.call(target_fn, args)
@@ -2988,7 +3036,7 @@ class LLVMMIREmitter:
         if hasattr(cond, "type") and cond.type != LLVM_BOOL:
             if isinstance(cond.type, (ir.LiteralStructType, ir.ArrayType)):
                 # Struct/array → i64 via memory, then compare != 0
-                tmp = builder.alloca(cond.type, name="br.cond.tmp")
+                tmp = _aligned_alloca(builder, cond.type, name="br.cond.tmp")
                 builder.store(cond, tmp)
                 int_ptr = builder.bitcast(tmp, LLVM_INT.as_pointer(), name="br.cond.iptr")
                 cond = builder.load(int_ptr, name="br.cond.ival")
@@ -3119,6 +3167,7 @@ class LLVMMIREmitter:
                                 ab3.position_at_end(self._alloca_block)
                                 vname = inst.dest.name.lstrip("%")
                                 dst = ab3.alloca(field_ty, name=f"a.{vname}")
+                                dst.align = 16
                                 _zero_init_alloca(ab3, dst, field_ty)
                                 self._fn_allocas[inst.dest.name] = dst
                             dst = self._fn_allocas[inst.dest.name]
@@ -3350,14 +3399,14 @@ class LLVMMIREmitter:
         if inst.elements:
             fn_push = self._rt_list_push()
             # Alloca for the list struct (push needs a pointer)
-            list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.ptr")
+            list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.ptr")
             builder.store(list_val, list_ptr)
 
             for i, elem in enumerate(inst.elements):
                 elem_val = self._get_value(elem, values)
                 # Use the actual LLVM type of the element value for the alloca
                 actual_elem_ty = elem_val.type if elem_val.type != LLVM_PTR else elem_llvm_ty
-                elem_alloca = builder.alloca(actual_elem_ty, name=f"{name}.e{i}")
+                elem_alloca = _aligned_alloca(builder, actual_elem_ty, name=f"{name}.e{i}")
                 builder.store(elem_val, elem_alloca)
                 elem_ptr = builder.bitcast(elem_alloca, ir.IntType(8).as_pointer())
                 builder.call(fn_push, [list_ptr, elem_ptr])
@@ -3393,11 +3442,11 @@ class LLVMMIREmitter:
             list_val = _coerce_arg(builder, list_val, LLVM_LIST, f"{name}.lc")
 
         # Store list to alloca so push can mutate it
-        list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.lptr")
+        list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.lptr")
         builder.store(list_val, list_ptr)
 
         # Store element to alloca, bitcast to i8*
-        elem_alloca = builder.alloca(elem_val.type, name=f"{name}.eptr")
+        elem_alloca = _aligned_alloca(builder, elem_val.type, name=f"{name}.eptr")
         builder.store(elem_val, elem_alloca)
         elem_ptr = builder.bitcast(elem_alloca, ir.IntType(8).as_pointer())
 
@@ -3445,7 +3494,7 @@ class LLVMMIREmitter:
             # Coerce i8* → LLVM_LIST if needed (cross-module type resolution)
             if list_val.type != LLVM_LIST:
                 list_val = _coerce_arg(builder, list_val, LLVM_LIST, f"{name}.lc")
-            list_ptr = builder.alloca(LLVM_LIST, name=f"{name}.lptr")
+            list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.lptr")
             builder.store(list_val, list_ptr)
             # Ensure index is i64 (cross-module lowering may resolve as i8*)
             if index.type != LLVM_INT:
@@ -3470,6 +3519,7 @@ class LLVMMIREmitter:
                         ab = ir.IRBuilder(self._alloca_block)
                         ab.position_at_end(self._alloca_block)
                         dest_alloca = ab.alloca(elem_ty, name=f"a.{dest_name}")
+                        dest_alloca.align = 16
                         _zero_init_alloca(ab, dest_alloca, elem_ty)
                         self._fn_allocas[inst.dest.name] = dest_alloca
                     dest_alloca = self._fn_allocas[inst.dest.name]
@@ -3490,7 +3540,7 @@ class LLVMMIREmitter:
             result = builder.call(fn, [obj, index], name=name)
         elif obj_kind == TypeKind.MAP:
             # Map indexing: __mn_map_get(map, &key) -> val_ptr
-            key_alloca = builder.alloca(index.type, name=f"{name}.key")
+            key_alloca = _aligned_alloca(builder, index.type, name=f"{name}.key")
             builder.store(index, key_alloca)
             key_ptr = builder.bitcast(key_alloca, LLVM_PTR)
             raw_ptr = builder.call(self._rt_map_get(), [obj, key_ptr], name=f"{name}.raw")
@@ -3511,7 +3561,7 @@ class LLVMMIREmitter:
 
         if inst.obj.ty.kind == TypeKind.LIST:
             fn_get = self._rt_list_get()
-            list_ptr = builder.alloca(LLVM_LIST, name="idxset.lptr")
+            list_ptr = _aligned_alloca(builder, LLVM_LIST, name="idxset.lptr")
             builder.store(obj, list_ptr)
             raw_ptr = builder.call(fn_get, [list_ptr, index], name="idxset.raw")
             elem_ty = val.type
@@ -3519,10 +3569,10 @@ class LLVMMIREmitter:
             builder.store(val, typed_ptr)
         elif inst.obj.ty.kind == TypeKind.MAP:
             # Map assignment: __mn_map_set(map, &key, &val)
-            key_alloca = builder.alloca(index.type, name="idxset.key")
+            key_alloca = _aligned_alloca(builder, index.type, name="idxset.key")
             builder.store(index, key_alloca)
             key_ptr = builder.bitcast(key_alloca, LLVM_PTR)
-            val_alloca = builder.alloca(val.type, name="idxset.val")
+            val_alloca = _aligned_alloca(builder, val.type, name="idxset.val")
             builder.store(val, val_alloca)
             val_ptr = builder.bitcast(val_alloca, LLVM_PTR)
             builder.call(self._rt_map_set(), [obj, key_ptr, val_ptr])
@@ -3557,10 +3607,10 @@ class LLVMMIREmitter:
         for k_val, v_val in inst.pairs:
             k = self._get_value(k_val, values)
             v = self._get_value(v_val, values)
-            k_alloca = builder.alloca(k.type, name=f"{name}.k")
+            k_alloca = _aligned_alloca(builder, k.type, name=f"{name}.k")
             builder.store(k, k_alloca)
             k_ptr = builder.bitcast(k_alloca, LLVM_PTR)
-            v_alloca = builder.alloca(v.type, name=f"{name}.v")
+            v_alloca = _aligned_alloca(builder, v.type, name=f"{name}.v")
             builder.store(v, v_alloca)
             v_ptr = builder.bitcast(v_alloca, LLVM_PTR)
             builder.call(self._rt_map_set(), [map_ptr, k_ptr, v_ptr])
@@ -3634,7 +3684,7 @@ class LLVMMIREmitter:
 
                 # Build the result via alloca: zero-init, store tag,
                 # conditionally store the inner value.
-                tmp = builder.alloca(reg_ty, name=f"{prefix}.opt")
+                tmp = _aligned_alloca(builder, reg_ty, name=f"{prefix}.opt")
                 _zero_init_alloca(builder, tmp, reg_ty)
                 tag_ptr = builder.gep(
                     tmp,
@@ -3692,7 +3742,7 @@ class LLVMMIREmitter:
             boxed = self._boxed_enum_fields.get(enum_name, set())
 
             # Alloca the enum, store tag
-            enum_ptr = builder.alloca(enum_ty, name=f"{name}.ptr")
+            enum_ptr = _aligned_alloca(builder, enum_ty, name=f"{name}.ptr")
             tag_ptr = builder.gep(
                 enum_ptr,
                 [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, 0)],
@@ -3795,6 +3845,7 @@ class LLVMMIREmitter:
                     ab = ir.IRBuilder(self._alloca_block)
                     ab.position_at_end(self._alloca_block)
                     dest_alloca = ab.alloca(enum_ty, name=f"a.{dest_name}")
+                    dest_alloca.align = 16
                     _zero_init_alloca(ab, dest_alloca, enum_ty)
                     self._fn_allocas[inst.dest.name] = dest_alloca
                 dest_alloca = self._fn_allocas[inst.dest.name]
@@ -3933,7 +3984,7 @@ class LLVMMIREmitter:
                         if isinstance(enum_val.type, ir.LiteralStructType)
                         else enum_ty
                     )
-                    enum_ptr = builder.alloca(actual_ty, name=f"{name}.eptr")
+                    enum_ptr = _aligned_alloca(builder, actual_ty, name=f"{name}.eptr")
                     builder.store(enum_val, enum_ptr)
             payload_ptr = builder.gep(
                 enum_ptr,
@@ -4254,7 +4305,7 @@ class LLVMMIREmitter:
         agent = self._get_value(inst.agent, values)
         val = self._get_value(inst.val, values)
         # Box the value: alloca, store, bitcast to i8*
-        val_alloca = builder.alloca(val.type, name="send.box")
+        val_alloca = _aligned_alloca(builder, val.type, name="send.box")
         builder.store(val, val_alloca)
         val_ptr = builder.bitcast(val_alloca, LLVM_PTR)
         fn_send = self._rt_agent_send()
@@ -4266,7 +4317,7 @@ class LLVMMIREmitter:
         agent = self._get_value(inst.agent, values)
         name = self._val_name(inst.dest)
         # Alloca a pointer for the result
-        out_ptr = builder.alloca(LLVM_PTR, name=f"{name}.out")
+        out_ptr = _aligned_alloca(builder, LLVM_PTR, name=f"{name}.out")
         fn_recv = self._rt_agent_recv_blocking()
         builder.call(fn_recv, [agent, out_ptr])
         raw_ptr = builder.load(out_ptr, name=f"{name}.raw")
@@ -4287,7 +4338,7 @@ class LLVMMIREmitter:
         val_size = _approx_type_size(initial.type)
 
         # Alloca the initial value so we can pass a pointer to __mn_signal_new
-        val_alloca = builder.alloca(initial.type, name=f"{name}.init")
+        val_alloca = _aligned_alloca(builder, initial.type, name=f"{name}.init")
         builder.store(initial, val_alloca)
         val_ptr = builder.bitcast(val_alloca, LLVM_PTR)
 
@@ -4319,7 +4370,7 @@ class LLVMMIREmitter:
         val = self._get_value(inst.val, values)
 
         # Alloca value and pass pointer to __mn_signal_set
-        val_alloca = builder.alloca(val.type, name="sig.set.val")
+        val_alloca = _aligned_alloca(builder, val.type, name="sig.set.val")
         builder.store(val, val_alloca)
         val_ptr = builder.bitcast(val_alloca, LLVM_PTR)
 
@@ -4348,7 +4399,7 @@ class LLVMMIREmitter:
         n_deps = len(inst.deps)
         if n_deps > 0:
             deps_array_ty = ir.ArrayType(LLVM_PTR, n_deps)
-            deps_alloca = builder.alloca(deps_array_ty, name=f"{name}.deps")
+            deps_alloca = _aligned_alloca(builder, deps_array_ty, name=f"{name}.deps")
             for i, dep_val in enumerate(inst.deps):
                 dep = self._get_value(dep_val, values)
                 gep = builder.gep(
@@ -4561,7 +4612,7 @@ class LLVMMIREmitter:
                 elem_size = _approx_type_size(inner_ty)
 
         # Store list in alloca so we can pass a pointer
-        list_alloca = builder.alloca(LLVM_LIST, name=f"{name}.lptr")
+        list_alloca = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.lptr")
         builder.store(source, list_alloca)
 
         fn = self._rt_stream_from_list()
@@ -4616,10 +4667,10 @@ class LLVMMIREmitter:
             if len(inst.args) >= 2:
                 init_val = self._get_value(inst.args[0], values)
                 fn_ptr = self._get_stream_fn_ptr(inst, builder, values, fn_arg_idx=1)
-                init_alloca = builder.alloca(init_val.type, name=f"{name}.init")
+                init_alloca = _aligned_alloca(builder, init_val.type, name=f"{name}.init")
                 builder.store(init_val, init_alloca)
                 init_ptr = builder.bitcast(init_alloca, LLVM_PTR)
-                out_alloca = builder.alloca(init_val.type, name=f"{name}.out")
+                out_alloca = _aligned_alloca(builder, init_val.type, name=f"{name}.out")
                 out_ptr = builder.bitcast(out_alloca, LLVM_PTR)
                 acc_size = _approx_type_size(init_val.type)
                 builder.call(
@@ -4711,7 +4762,7 @@ class LLVMMIREmitter:
             )
             builder.call(fn_spawn, [agent])
             builder.call(fn_send, [agent, current_val])
-            out_ptr = builder.alloca(LLVM_PTR, name=f"stage{i}.out")
+            out_ptr = _aligned_alloca(builder, LLVM_PTR, name=f"stage{i}.out")
             builder.call(fn_recv, [agent, out_ptr])
             current_val = builder.load(out_ptr, name=f"stage{i}.result")
             builder.call(fn_stop, [agent])

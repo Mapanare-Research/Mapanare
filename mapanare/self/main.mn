@@ -43,7 +43,6 @@ fn compile(source: String, filename: String) -> CompileResult {
     if len(errors) > 0 {
         return new_compile_result(false, "", errors)
     }
-
     // Stage 3: lower AST to MIR
     let mir_module: MIRModule = lower(program, filename)
 
