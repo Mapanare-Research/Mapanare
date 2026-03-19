@@ -17,6 +17,7 @@
 #include <execinfo.h>
 
 static void crash_handler(int sig) {
+    fflush(stdout);
     void *frames[64];
     int n = backtrace(frames, 64);
     fprintf(stderr, "\n[CRASH] Signal %d at:\n", sig);

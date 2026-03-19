@@ -174,16 +174,26 @@ def _coerce_arg(builder: Any, arg: Any, expected_ty: Any, name: str) -> Any:
         if actual_size >= expected_size:
             # Source >= dest: safe to reinterpret directly
             tmp = builder.alloca(actual, name=f"{name}.tmp")
-            builder.store(arg, tmp)
+            if _is_large_struct(actual):
+                _store_struct_fields(builder, arg, tmp, actual)
+            else:
+                builder.store(arg, tmp)
             typed_ptr = builder.bitcast(tmp, expected_ty.as_pointer(), name=f"{name}.ptr")
+            if _is_large_struct(expected_ty):
+                return _load_struct_fields(builder, typed_ptr, expected_ty)
             return builder.load(typed_ptr, name=name)
         else:
             # Source < dest (e.g. None {i1, i8*} → Option<BigStruct>):
             # allocate the larger type, zero it, overlay the source
             tmp = builder.alloca(expected_ty, name=f"{name}.tmp")
-            builder.store(ir.Constant(expected_ty, None), tmp)
+            _zero_init_alloca(builder, tmp, expected_ty)
             src_ptr = builder.bitcast(tmp, actual.as_pointer(), name=f"{name}.src")
-            builder.store(arg, src_ptr)
+            if _is_large_struct(actual):
+                _store_struct_fields(builder, arg, src_ptr, actual)
+            else:
+                builder.store(arg, src_ptr)
+            if _is_large_struct(expected_ty):
+                return _load_struct_fields(builder, tmp, expected_ty)
             return builder.load(tmp, name=name)
     # Integer → integer (size mismatch)
     if isinstance(actual, ir.IntType) and isinstance(expected_ty, ir.IntType):
@@ -255,7 +265,9 @@ def _coerce_args(builder: Any, args: list[Any], expected_types: list[Any], name:
 # Size threshold above which we use memset instead of store zeroinitializer.
 # llvmlite's codegen for store zeroinitializer on very large struct types
 # (e.g. 700+ byte LowerState) generates code that loads from address 0.
-_ZEROINIT_MEMSET_THRESHOLD = 128
+# Must match _LARGE_STRUCT_THRESHOLD — store zeroinitializer is also
+# truncated by the llvmlite codegen bug for structs > 56 bytes.
+_ZEROINIT_MEMSET_THRESHOLD = 56
 
 # Size threshold above which struct parameters/returns are passed by pointer.
 # Structs larger than this are passed via hidden pointer args to avoid
@@ -268,6 +280,27 @@ def _is_large_struct(llvm_ty: Any) -> bool:
     if not isinstance(llvm_ty, ir.LiteralStructType):
         return False
     return _approx_type_size(llvm_ty) > _LARGE_STRUCT_THRESHOLD
+
+
+def _load_struct_fields(builder: Any, alloca: Any, ty: Any) -> Any:
+    """Load a large struct from an alloca field-by-field via GEP.
+
+    Inverse of ``_store_struct_fields``.  Reconstructs the SSA value via
+    ``insert_value`` so that every leaf ``load`` operates on a type small
+    enough to avoid the llvmlite/LLVM codegen truncation bug (> 56 bytes).
+    """
+    zero = ir.Constant(ir.IntType(32), 0)
+    result = ir.Constant(ty, ir.Undefined)
+    for i in range(len(ty.elements)):
+        idx_c = ir.Constant(ir.IntType(32), i)
+        fld_ptr = builder.gep(alloca, [zero, idx_c], inbounds=True, name=f"lv.gf{i}")
+        field_ty = ty.elements[i]
+        if isinstance(field_ty, ir.LiteralStructType) and _is_large_struct(field_ty):
+            field = _load_struct_fields(builder, fld_ptr, field_ty)
+        else:
+            field = builder.load(fld_ptr, name=f"lv.f{i}")
+        result = builder.insert_value(result, field, i, name=f"lv.iv{i}")
+    return result
 
 
 def _store_struct_fields(
@@ -1603,7 +1636,10 @@ class LLVMMIREmitter:
                     _zero_init_alloca(ab, alloca, llvm_type)
                     self._fn_allocas[inst.dest.name] = alloca
                     # Load at phi position — this is the "result" of the phi
-                    loaded = builder.load(alloca, name=self._val_name(inst.dest))
+                    if isinstance(llvm_type, ir.LiteralStructType) and _is_large_struct(llvm_type):
+                        loaded = _load_struct_fields(builder, alloca, llvm_type)
+                    else:
+                        loaded = builder.load(alloca, name=self._val_name(inst.dest))
                     values[inst.dest.name] = loaded
                     # Defer stores until after all blocks are emitted
                     deferred_phi_stores.append((alloca, inst.incoming, llvm_blocks))
@@ -1850,6 +1886,9 @@ class LLVMMIREmitter:
             builder = self._current_builder
             if alloca is not None and builder is not None:
                 try:
+                    pointee = alloca.type.pointee
+                    if isinstance(pointee, ir.LiteralStructType) and _is_large_struct(pointee):
+                        return _load_struct_fields(builder, alloca, pointee)
                     return builder.load(
                         alloca,
                         name=f"l.{name.lstrip('%')}",
@@ -1863,8 +1902,10 @@ class LLVMMIREmitter:
             builder = self._current_builder
             if alloca is not None and builder is not None:
                 try:
+                    pointee = alloca.type.pointee
+                    if isinstance(pointee, ir.LiteralStructType) and _is_large_struct(pointee):
+                        return _load_struct_fields(builder, alloca, pointee)
                     loaded = builder.load(alloca, name=f"l.{name.lstrip('%')}")
-                    # Do NOT cache: each call produces a fresh load in current block
                     return loaded
                 except (TypeError, AttributeError) as exc:
                     logging.debug("fallback at _get_value None load: %s", exc)
