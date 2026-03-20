@@ -3419,7 +3419,6 @@ class LLVMMIREmitter:
 
     def _emit_list_push(self, inst: ListPush, builder: Any, values: dict[str, Any]) -> None:
         """Emit list.push(element) — stores list to alloca, pushes, loads back."""
-        elem_val = self._get_value(inst.element, values)
         name = self._val_name(inst.dest)
 
         # Read list from the ROOT alloca when available.  In if/else chains the
@@ -3445,7 +3444,38 @@ class LLVMMIREmitter:
         list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.lptr")
         builder.store(list_val, list_ptr)
 
-        # Store element to alloca, bitcast to i8*
+        # For large struct/enum elements, pass the existing alloca pointer
+        # DIRECTLY to __mn_list_push, avoiding by-value load of the full
+        # struct/enum which triggers llvmlite codegen truncation bugs.
+        existing_alloca = self._get_value_ptr(inst.element)
+        if existing_alloca is not None:
+            existing_size = _approx_type_size(existing_alloca.type.pointee)
+            if existing_size > _LARGE_STRUCT_THRESHOLD:
+                elem_ptr = builder.bitcast(
+                    existing_alloca, ir.IntType(8).as_pointer(), name=f"{name}.ep"
+                )
+                builder.call(fn_push, [list_ptr, elem_ptr])
+                updated = builder.load(list_ptr, name=name)
+                self._store_value(inst.dest, updated, values)
+                src_name = inst.list_val.name
+                root_name = self._list_roots.get(src_name, src_name)
+                self._list_roots[inst.dest.name] = root_name
+                for target_name in {root_name, src_name}:
+                    if target_name in self._fn_allocas:
+                        target_alloca = self._fn_allocas[target_name]
+                        try:
+                            val = updated
+                            if val.type != target_alloca.type.pointee:
+                                val = _coerce_arg(
+                                    builder, val, target_alloca.type.pointee, f"{name}.wb"
+                                )
+                            builder.store(val, target_alloca)
+                        except (TypeError, AttributeError) as exc:
+                            logging.debug("fallback at list_push write-back: %s", exc)
+                return
+
+        # Small element or no existing alloca: load + store
+        elem_val = self._get_value(inst.element, values)
         elem_alloca = _aligned_alloca(builder, elem_val.type, name=f"{name}.eptr")
         builder.store(elem_val, elem_alloca)
         elem_ptr = builder.bitcast(elem_alloca, ir.IntType(8).as_pointer())

@@ -55,8 +55,8 @@ def build() -> pathlib.Path:
     print("[3/6] Compiling LLVM IR → object code ...")
     from mapanare.jit import jit_compile_to_object
 
-    obj_bytes = jit_compile_to_object(ir, opt_level=1)
     obj_path = SELF_DIR / "main.o"
+    obj_bytes = jit_compile_to_object(ir, opt_level=1)
     obj_path.write_bytes(obj_bytes)
     print(f"  Object: {len(obj_bytes)} bytes → {obj_path}")
 
@@ -98,6 +98,7 @@ def build() -> pathlib.Path:
             "-rdynamic",
             "-lm",
             "-lpthread",
+            "-Wl,-z,stacksize=67108864",  # 64MB stack for deep recursion
         ]
         + asan_flags
         + [],
