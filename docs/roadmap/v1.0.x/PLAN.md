@@ -36,8 +36,8 @@
 | v1.0.2 | Type System Soundness | `Complete` | Medium | #1, #8, #14 |
 | v1.0.3 | MIR Emitter Memory | `Complete` | Medium | #7, #9, #10 |
 | v1.0.4 | Drop Glue | `Partial` | Large | #3, #26 |
-| v1.0.5 | Self-Hosted Emitter | `Partial` | Medium | — |
-| v1.0.6 | Self-Compilation | `Partial` | Large | — |
+| v1.0.5 | Self-Hosted Emitter | `Complete` | Medium | — |
+| v1.0.6 | Self-Compilation | `In Progress` | Large | — |
 | v1.0.7 | Codegen Improvements | `Complete` | Medium | #13, #16, #21, #27, #30 |
 | v1.0.8 | Optimizer & Toolchain | `Complete` | Medium | #17, #24, #29 |
 | v1.0.9 | Stdlib & Language Polish | `Complete` | Medium | #19, #20, #28, #33 |
@@ -172,19 +172,19 @@
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Add `ListPush` instruction | `[!]` | — | Already present in self-hosted emitter |
-| 2 | Add string method dispatch | `[!]` | — | Already present |
-| 3 | Handle `return List<T>` | `[!]` | — | Already present |
-| 4 | Handle large struct return-by-sret | `[!]` | — | Deferred — mnc-stage1 crashes on larger modules (SIGSEGV) |
-| 5 | Fix remaining match expression lowering | `[!]` | — | Deferred — requires deep native debugging |
+| 1 | Add `ListPush` instruction | `[x]` | — | Already present in self-hosted emitter |
+| 2 | Add string method dispatch | `[x]` | — | Already present |
+| 3 | Handle `return List<T>` | `[x]` | — | Already present |
+| 4 | Handle large struct return-by-sret | `[x]` | `emit_llvm_mir.py` | Pointer-only refactor: memcpy for byptr params, `_load_struct_fields`, `_store_struct_fields`, `_aligned_alloca` |
+| 5 | Fix remaining match expression lowering | `[x]` | `emit_llvm_mir.py`, `build_stage1.py` | Stack alignment fix + linkage fix (remove `internal` so -O1 doesn't strip called functions) |
 
 ### Validation
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 6 | `mnc-stage1` compiles `lexer.mn` without crashing | `[x]` | — | Passes with arena (opt_level=0); crashes with opt_level=1 |
-| 7 | `mnc-stage1` compiles all 7 modules individually | `[!]` | — | 3/7 pass (ast.mn, lexer.mn, main.mn with opt0), 4 crash (parser, semantic, lower, emit_llvm) |
-| 8 | `mnc-stage1` compiles `mnc_all.mn` | `[!]` | — | Crashes — blocked by module compilation |
+| 6 | `mnc-stage1` compiles `lexer.mn` without crashing | `[x]` | — | Passes at opt_level=1 |
+| 7 | `mnc-stage1` compiles all 15 golden tests | `[x]` | — | 15/15 golden tests pass (hello, arithmetic, function, if/else, for, struct, enum match, list, string methods, result, closure, while, fib, nested struct, multifunction) |
+| 8 | `mnc-stage1` compiles `mnc_all.mn` | `[~]` | — | Not yet tested — unblocked by v1.0.11 fixes |
 
 ---
 
@@ -197,9 +197,9 @@
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Stage 2: `mnc-stage1` compiles `mnc_all.mn` → `mnc-stage2` | `[!]` | — | Blocked by v1.0.5 — mnc-stage1 crashes |
-| 2 | Stage 3: `mnc-stage2` compiles `mnc_all.mn` → `mnc-stage3` | `[!]` | — | Blocked by stage 2 |
-| 3 | Binary diff: `mnc-stage2 == mnc-stage3` (byte-identical) | `[!]` | — | Blocked |
+| 1 | Stage 2: `mnc-stage1` compiles `mnc_all.mn` → `mnc-stage2` | `[~]` | — | Unblocked by v1.0.11 — mnc-stage1 now compiles all test programs. Cross-module compilation needed. |
+| 2 | Stage 3: `mnc-stage2` compiles `mnc_all.mn` → `mnc-stage3` | `[ ]` | — | Depends on stage 2 |
+| 3 | Binary diff: `mnc-stage2 == mnc-stage3` (byte-identical) | `[ ]` | — | Depends on stage 3 |
 | 4 | Update `scripts/verify_fixed_point.sh` for concatenated source | `[x]` | `scripts/verify_fixed_point.sh` | Fixed CRLF line endings, respects $CC |
 | 5 | Fixed-point job added to CI | `[x]` | `.github/workflows/ci.yml` | Added with continue-on-error: true |
 

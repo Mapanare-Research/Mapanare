@@ -41,14 +41,11 @@ def build() -> pathlib.Path:
 
     # 2. Post-process: make compile() and format_error() externally visible
     print("[2/6] Post-processing IR (external linkage for entry points) ...")
-    ir = ir.replace(
-        'define internal {i1, {i8*, i64}, {i8*, i64, i64, i64}} @"compile"',
-        'define {i1, {i8*, i64}, {i8*, i64, i64, i64}} @"compile"',
-    )
-    ir = ir.replace(
-        'define internal {i8*, i64} @"format_error"',
-        'define {i8*, i64} @"format_error"',
-    )
+    # Remove 'internal' linkage from ALL function definitions.
+    # LLVM -O1 dead-code-eliminates internal functions it considers
+    # unreachable, but with sret calling conventions it sometimes
+    # misjudges reachability, stripping functions that ARE called.
+    ir = ir.replace("define internal ", "define ")
 
     ir_path = SELF_DIR / "main.ll"
     ir_path.write_text(ir, encoding="utf-8")

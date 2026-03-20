@@ -108,6 +108,7 @@ language rock-solid before building the ecosystem on top of it.
 | **v1.0.8** ✅ | Optimizer & Toolchain | Algebraic simplification (5 rules), `$CC` support, `--werror`, host triple, `-O1` release builds |
 | **v1.0.9** ✅ | Stdlib & Language Polish | Match exhaustiveness checking, async-only-when-needed, stdlib dedup (`string_utils.mn`) |
 | **v1.0.10** ✅ | Production Hardening | ASan/TSan clean (52/52), C hardening pass, 3,697 tests, VERSION 1.0.10 |
+| **v1.0.11** ✅ | Self-Hosted Compiler Fixes | Pointer-only large struct refactor, stack alignment fix, linkage fix, alloca size mismatch fix; **15/15 golden at -O1**, 3,698 tests, self-compilation unblocked |
 
 ---
 
