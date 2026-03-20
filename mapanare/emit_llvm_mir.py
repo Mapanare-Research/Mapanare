@@ -314,6 +314,21 @@ def _is_large_struct(llvm_ty: Any) -> bool:
     return _approx_type_size(llvm_ty) > _LARGE_STRUCT_THRESHOLD
 
 
+def _has_large_array_field(llvm_ty: Any) -> bool:
+    """Return True if *llvm_ty* is a struct containing a large array field.
+
+    These are typically enum types ``{i64, [N x i8]}`` where the payload
+    is a large byte array.  By-value load/store of such arrays triggers
+    llvmlite's codegen truncation bug at -O1.
+    """
+    if not isinstance(llvm_ty, ir.LiteralStructType):
+        return False
+    for elem in llvm_ty.elements:
+        if isinstance(elem, ir.ArrayType) and _approx_type_size(elem) > _LARGE_STRUCT_THRESHOLD:
+            return True
+    return False
+
+
 def _load_struct_fields(builder: Any, alloca: Any, ty: Any) -> Any:
     """Load a large struct from an alloca field-by-field via GEP.
 
@@ -498,6 +513,8 @@ class LLVMMIREmitter:
         self._current_builder: Any = None
         self._current_block_label: str = ""
         self._value_blocks: dict[str, str] = {}  # value name -> defining block label
+        # Track source alloca for each SSA value (for alloca-to-alloca memcpy)
+        self._value_src_alloca: dict[str, Any] = {}
         # Track root list allocas for push write-back chains
         self._list_roots: dict[str, str] = {}  # value name -> root value name
         # Track auto-boxed fields in recursive enums
@@ -1605,6 +1622,7 @@ class LLVMMIREmitter:
         #    violations.  LLVM's mem2reg pass (part of -O1+) will convert
         #    these back into proper phi nodes automatically.
         self._fn_allocas = {}
+        self._value_src_alloca = {}
         self._list_roots = {}
         self._alloca_block = pre_entry
         global _current_alloca_block
@@ -1810,6 +1828,7 @@ class LLVMMIREmitter:
 
         # 9. Cleanup per-function state
         self._fn_allocas = {}
+        self._value_src_alloca = {}
         self._skip_zero_init = set()
         self._current_builder = None
         self._current_block_label = ""
@@ -1925,7 +1944,10 @@ class LLVMMIREmitter:
                 try:
                     pointee = alloca.type.pointee
                     if isinstance(pointee, ir.LiteralStructType) and _is_large_struct(pointee):
-                        return _load_struct_fields(builder, alloca, pointee)
+                        loaded = _load_struct_fields(builder, alloca, pointee)
+                        # Track source alloca by MIR name for alloca-to-alloca memcpy
+                        self._value_src_alloca[name] = alloca
+                        return loaded
                     return builder.load(
                         alloca,
                         name=f"l.{name.lstrip('%')}",
@@ -1941,7 +1963,9 @@ class LLVMMIREmitter:
                 try:
                     pointee = alloca.type.pointee
                     if isinstance(pointee, ir.LiteralStructType) and _is_large_struct(pointee):
-                        return _load_struct_fields(builder, alloca, pointee)
+                        loaded = _load_struct_fields(builder, alloca, pointee)
+                        self._value_src_alloca[name] = alloca
+                        return loaded
                     loaded = builder.load(alloca, name=f"l.{name.lstrip('%')}")
                     return loaded
                 except (TypeError, AttributeError) as exc:
@@ -1976,7 +2000,13 @@ class LLVMMIREmitter:
             alloca = self._fn_allocas.get(f"%{val.name}")
         return alloca
 
-    def _store_value(self, dest: Value, llvm_val: Any, values: dict[str, Any]) -> None:
+    def _store_value(
+        self,
+        dest: Value,
+        llvm_val: Any,
+        values: dict[str, Any],
+        src_mir_val: Value | None = None,
+    ) -> None:
         """Store an LLVM value in the value map under the MIR dest name."""
         values[dest.name] = llvm_val
         # Track which block this value was defined in
@@ -2034,7 +2064,29 @@ class LLVMMIREmitter:
             # For large structs, decompose into per-field GEP+store to
             # avoid the by-value store truncation bug in llvmlite/LLVM.
             if isinstance(pointee, ir.LiteralStructType) and _is_large_struct(pointee):
-                _store_struct_fields(builder, val, alloca, pointee)
+                # For structs with large array fields (enum types), prefer
+                # alloca-to-alloca memcpy over field-by-field decomposition.
+                # The decomposition creates [N x i8] SSA values that trigger
+                # llvmlite's -O1 codegen truncation bug.
+                src_a = None
+                if _has_large_array_field(pointee):
+                    # Try source alloca from the MIR value that produced this SSA val
+                    if src_mir_val is not None:
+                        src_a = self._value_src_alloca.get(src_mir_val.name)
+                        if src_a is None:
+                            src_a = self._get_value_ptr(src_mir_val)
+                if src_a is not None:
+                    if src_a.type.pointee != pointee:
+                        try:
+                            src_a = builder.bitcast(src_a, pointee.as_pointer(), name="sv.sbc")
+                        except (TypeError, AttributeError):
+                            src_a = None
+                    if src_a is not None:
+                        _memcpy_alloca(builder, alloca, src_a, _approx_type_size(pointee))
+                    else:
+                        _store_struct_fields(builder, val, alloca, pointee)
+                else:
+                    _store_struct_fields(builder, val, alloca, pointee)
             else:
                 builder.store(val, alloca)
         except (TypeError, AttributeError, KeyError) as exc:
@@ -2130,7 +2182,7 @@ class LLVMMIREmitter:
                         self._value_blocks[dest_name] = self._current_block_label
                         return
         src = self._get_value(inst.src, values)
-        self._store_value(inst.dest, src, values)
+        self._store_value(inst.dest, src, values, src_mir_val=inst.src)
 
     # --- Cast ---
 
@@ -3860,8 +3912,15 @@ class LLVMMIREmitter:
                             [ir.Constant(LLVM_INT, offset)],
                             name=f"{name}.pay.{i}",
                         )
-                        typed_ptr = builder.bitcast(dest_ptr, val.type.as_pointer())
-                        builder.store(val, typed_ptr)
+                        fld_size = _approx_type_size(val.type)
+                        # For large payload fields, use memcpy from the source
+                        # alloca to avoid by-value store truncation.
+                        src_alloca = self._get_value_ptr(pval)
+                        if fld_size > _LARGE_STRUCT_THRESHOLD and src_alloca is not None:
+                            _memcpy_alloca(builder, dest_ptr, src_alloca, fld_size)
+                        else:
+                            typed_ptr = builder.bitcast(dest_ptr, val.type.as_pointer())
+                            builder.store(val, typed_ptr)
                         offset += _approx_type_size(reg_ty)
 
             enum_size = _approx_type_size(enum_ty)
