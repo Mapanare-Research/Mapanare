@@ -1253,6 +1253,9 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     let iter_r: LowerResult = lower_expr(st, iterable)
     let mut s: LowerState = iter_r.state
 
+    // Save current (entry) block index
+    let entry_idx: Int = s.current_block_idx
+
     // Create blocks
     let header_r: LowerResult = fresh_block_label(s, "for_header")
     s = header_r.state
@@ -1272,7 +1275,8 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s = add_block(s, exit_label)
     let exit_idx: Int = s.current_block_idx
 
-    // Jump from current block to header
+    // Jump from entry block to header
+    s = set_block(s, entry_idx)
     if !current_block_terminated(s) {
         s = emit_instr(s, Instruction::Jump(header_label))
     }
@@ -2100,6 +2104,9 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     let cond_r: LowerResult = lower_expr(st, cond)
     let mut s: LowerState = cond_r.state
 
+    // Save the current (entry) block index for the branch
+    let entry_idx: Int = s.current_block_idx
+
     // Create blocks
     let then_label_r: LowerResult = fresh_block_label(s, "if_then")
     s = then_label_r.state
@@ -2119,7 +2126,8 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     s = add_block(s, merge_label)
     let merge_idx: Int = s.current_block_idx
 
-    // Branch
+    // Branch (emitted in the entry block, not the merge block)
+    s = set_block(s, entry_idx)
     s = emit_instr(s, Instruction::Branch(cond_r.value, then_label, else_label))
 
     // Then block
@@ -2205,6 +2213,9 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     let subject_r: LowerResult = lower_expr(st, subject)
     let mut s: LowerState = subject_r.state
 
+    // Save entry block for switch/branch emission
+    let match_entry_idx: Int = s.current_block_idx
+
     // Create merge block
     let merge_label_r: LowerResult = fresh_block_label(s, "match_merge")
     s = merge_label_r.state
@@ -2260,7 +2271,8 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         ci = ci + 1
     }
 
-    // Emit switch or branch
+    // Emit switch or branch (in the entry block, not the last arm block)
+    s = set_block(s, match_entry_idx)
     if len(cases) > 0 {
         let tag_r: LowerResult = make_value(s, mir_unknown(), "tag")
         s = tag_r.state

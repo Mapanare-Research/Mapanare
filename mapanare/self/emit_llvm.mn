@@ -295,14 +295,21 @@ struct EmitState {
     functions: List<FnEntry>,
     structs: List<StructEntry>,
     module_name: String,
-    str_counter: Int
+    str_counter: Int,
+    str_globals: List<String>
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
     let lines: List<String> = []
     let functions: List<FnEntry> = []
     let structs: List<StructEntry> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0 }
+    let str_globals: List<String> = []
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals }
+}
+
+fn emit_global(st: EmitState, line: String) -> EmitState {
+    st.str_globals.push(line)
+    return st
 }
 
 // ---------------------------------------------------------------------------
@@ -644,14 +651,14 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
         return st
     }
 
-    // String constant: emit global + build struct
+    // String constant: emit global at module level, build struct inline
     if ty.kind == "string" {
         let slen: Int = len(val)
         let gname: String = next_str_name(st)
         let mut s: EmitState = st
         s.str_counter = s.str_counter + 1
         let arr_ty: String = "[" + toString(slen) + " x i8]"
-        s = emit_line(s, gname + " = private constant " + arr_ty + " c\"" + val + "\"")
+        s = emit_global(s, gname + " = private constant " + arr_ty + " c\"" + val + "\"")
         let ptr_name: String = dest_name + ".ptr"
         s = emit_line(s, "  " + ptr_name + " = getelementptr " + arr_ty + ", " + arr_ty + "* " + gname + ", i64 0, i64 0")
         let s1_name: String = dest_name + ".s1"
@@ -845,14 +852,18 @@ fn emit_struct_init(st: EmitState, dest: Value, ty: MIRType, fields: List<FieldP
     let mut agg: String = "undef"
     let mut i: Int = 0
 
+    let nfields: Int = len(fields)
     for _ in 0..1000 {
-        if i >= len(fields) {
-            // The last insertvalue result IS the dest
+        if i >= nfields {
             return s
         }
         let fp: FieldPair = fields[i]
         let fty: String = resolve_mir_type(fp.val.ty)
-        let tmp_name: String = dn + ".f" + toString(i)
+        // Last field uses dest name directly so the SSA value is defined
+        let mut tmp_name: String = dn
+        if i < nfields - 1 {
+            tmp_name = dn + ".f" + toString(i)
+        }
         s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, agg, fp.val.name, fty, toString(i)))
         agg = tmp_name
         i = i + 1
@@ -893,7 +904,9 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
     match struct_opt {
         Some(se) => {
             let idx: Int = find_field_index(se.field_names, field_name)
-            return emit_line(st, emit_extractvalue(dn, se.llvm_type, obj.name, toString(idx)))
+            // Use the resolved type (named struct form like %struct.Point)
+            // to match the value type from load instructions
+            return emit_line(st, emit_extractvalue(dn, obj_ty, obj.name, toString(idx)))
         },
         _ => {
             // Default: extract index 0
@@ -939,7 +952,13 @@ fn emit_field_set(st: EmitState, obj: Value, field_name: String, val: Value) -> 
 
 fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<Value>) -> EmitState {
     let mut s: EmitState = st
-    let dn: String = dest.name
+    let mut dn: String = dest.name
+    // Strip leading % to avoid double-% in register names
+    if len(dn) > 0 {
+        if dn.substr(0, 1) == "%" {
+            dn = dn.substr(1, len(dn) - 1)
+        }
+    }
 
     // Create empty list
     let list_name: String = dn + ".new"
@@ -1221,7 +1240,17 @@ fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
     if arg.ty.kind == "string" {
         return emit_line(st, emit_call_void("__mn_str_print", llvm_string() + " " + arg.name))
     }
-    return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_int, i64 " + arg.name + ")")
+    if arg.ty.kind == "float" {
+        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_float, double " + arg.name + ")")
+    }
+    if arg.ty.kind == "int" {
+        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_int, i64 " + arg.name + ")")
+    }
+    if arg.ty.kind == "bool" {
+        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_int, i64 " + arg.name + ")")
+    }
+    // Unknown type: assume string
+    return emit_line(st, emit_call_void("__mn_str_print", llvm_string() + " " + arg.name))
 }
 
 fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
@@ -1232,7 +1261,17 @@ fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
     if arg.ty.kind == "string" {
         return emit_line(st, emit_call_void("__mn_str_println", llvm_string() + " " + arg.name))
     }
-    return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_int_nl, i64 " + arg.name + ")")
+    if arg.ty.kind == "float" {
+        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_float_nl, double " + arg.name + ")")
+    }
+    if arg.ty.kind == "int" {
+        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_int_nl, i64 " + arg.name + ")")
+    }
+    if arg.ty.kind == "bool" {
+        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_int_nl, i64 " + arg.name + ")")
+    }
+    // Unknown type: assume string (common from str()/toString() calls)
+    return emit_line(st, emit_call_void("__mn_str_println", llvm_string() + " " + arg.name))
 }
 
 fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
@@ -1607,9 +1646,46 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
         fi = fi + 1
     }
 
-    // Join all lines into result string
+    // Record how many lines were emitted BEFORE function bodies.
+    // String globals go right before the function definitions.
+    let header_lines: Int = len(st.lines)
+
+    // Now emit function bodies (appends to st.lines)
+    // Wait — functions were already emitted above. header_lines captures
+    // the line count AFTER functions. We need the count BEFORE functions.
+    // Solution: track it before the function loop.
+    // But we already passed that point. So let's just emit globals after
+    // all declarations (right before functions) by using a simpler approach:
+    // output all lines, then insert globals at the right spot.
+
+    // Actually the simplest fix: just append globals to the st.lines list
+    // right before functions. Since we can't "insert", we output:
+    // 1) header + decl lines (everything in st.lines)
+    // 2) But we need globals between decls and functions...
+    //
+    // Cleanest approach: just add globals to the end of the output.
+    // LLVM doesn't care about declaration order — globals can appear anywhere
+    // at the top level, even after functions.
+
     let nlines: Int = len(st.lines)
     let mut result: String = ""
+    let mut li: Int = 0
+    for _ in 0..1000000 {
+        if li >= nlines { break }
+        result = result + st.lines[li] + "\n"
+        li = li + 1
+    }
+    // Append string globals at end of module (valid LLVM IR)
+    let mut gi: Int = 0
+    for _ in 0..1000000 {
+        if gi >= len(st.str_globals) { break }
+        result = result + st.str_globals[gi] + "\n"
+        gi = gi + 1
+    }
+    return result
+
+    // Dead code below (kept for reference)
+    let nlines2: Int = len(st.lines)
     let mut li: Int = 0
     for _ in 0..1000000 {
         if li >= nlines { return result }
