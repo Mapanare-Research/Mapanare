@@ -558,6 +558,23 @@ fn emit_mir_instruction(st: EmitState, inst: Instruction) -> EmitState {
             return emit_field_set(st, obj, field_name, val)
         },
         ListInit(dest, elem_ty, elements) => {
+            // Check if this is a struct init by looking up dest type name
+            // in the struct registry. Enum payload types get corrupted, so
+            // we check elem_ty.name and dest.ty.name against known structs.
+            let struct_check: Option<StructEntry> = find_struct_entry(st, dest.ty.name)
+            let struct_check2: Option<StructEntry> = find_struct_entry(st, elem_ty.name)
+            match struct_check {
+                Some(_) => {
+                    return emit_struct_init_from_values(st, dest, dest.ty, elements)
+                },
+                _ => {}
+            }
+            match struct_check2 {
+                Some(_) => {
+                    return emit_struct_init_from_values(st, dest, elem_ty, elements)
+                },
+                _ => {}
+            }
             return emit_list_init(st, dest, elem_ty, elements)
         },
         IndexGet(dest, obj, idx) => {
@@ -956,6 +973,29 @@ fn strip_percent(name: String) -> String {
     let starts: Bool = name.starts_with("%")
     let result: String = if starts { name.substr(1, len(name) - 1) } else { name }
     return result
+}
+
+fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values: List<Value>) -> EmitState {
+    // Build struct from a list of values (field order matches struct definition)
+    let struct_ty: String = resolve_mir_type(ty)
+    let dn: String = strip_percent(dest.name)
+    let mut s: EmitState = st
+    let mut agg: String = "undef"
+    let nfields: Int = len(values)
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= nfields { break }
+        let v: Value = values[i]
+        let fty: String = resolve_mir_type(v.ty)
+        let mut tmp_name: String = dn
+        if i < nfields - 1 {
+            tmp_name = dn + ".f" + toString(i)
+        }
+        s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, agg, v.name, fty, toString(i)))
+        agg = tmp_name
+        i = i + 1
+    }
+    return s
 }
 
 fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<Value>) -> EmitState {
