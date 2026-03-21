@@ -106,6 +106,30 @@ This is the same approach we used for enums — change `_register_struct` to pro
 3. All 7 self-hosted modules
 4. 3697 pytest tests
 
+## Progress (2026-03-20)
+
+Prototype implemented and tested. Results:
+- `_register_struct` → `{i8*}` for 42 large structs: ✅ works
+- `_emit_struct_init` → malloc + GEP stores: ✅ works
+- `_emit_field_get` → extract ptr, bitcast, GEP, load: ✅ works
+- `_emit_field_set` → extract ptr, bitcast, GEP, store: ✅ works
+- Binary shrinks from 1.5MB to 453KB
+- `main.mn` compiled successfully! (first time ever with boxed approach)
+- **BUT**: `_emit_copy` needs deep copy (malloc+memcpy) to prevent aliasing.
+  Shallow copy of `{i8*}` causes `let mut new_st = st; new_st.field = val` to
+  modify BOTH `st` and `new_st` (they share the same heap pointer).
+  Deep copy prototype had edge cases with `i8*` vs `{i8*}` type mismatches.
+
+### Known Issues to Fix
+1. **Deep copy in `_emit_copy`**: when source value is `i8*` (not `{i8*}`), `extract_value` fails. Need pointer-type check before extraction.
+2. **3 golden test regressions** (07_enum_match, 08_list, 10_result): all crash in `lower_list` — same aliasing issue from shallow copy.
+3. Prototype changes were NOT committed (lost in git stash). Need to re-apply.
+
+### Next Session
+1. Re-apply struct boxing (`_register_struct`, `_emit_struct_init`, `_emit_field_get`, `_emit_field_set`)
+2. Implement robust deep copy with proper `i8*` vs `{i8*}` handling
+3. Test full golden suite + module compilation
+
 ## Success Criteria
 
 - [ ] `let x = 1; let xs = []` compiles without crash
