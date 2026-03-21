@@ -77,6 +77,16 @@ This is the SAME class of bug as the enum truncation — but for regular structs
 - [ ] `mnc_all.mn` compiles (self-compilation)
 - [x] 3697 pytest tests pass
 
+## Issue C: Int-parameter function + list literal crash (clang -O0)
+
+With clang -O0 (correct codegen), a new pattern emerged:
+- `fn foo(x: Int) -> Int { ... }` THEN `let xs: List<Int> = []` → CRASH
+- `fn foo(x: String) -> String { ... }` THEN `let xs: List<Int> = []` → OK
+- `fn foo(x: Bool) -> Bool { ... }` THEN `let xs: List<Int> = []` → OK
+- Functions with Int params corrupt the LowerState during lowering
+
+This suggests the self-hosted parser or lowerer has a bug specifically with `Int` type parameter handling that corrupts the MIR function registration, which then affects subsequent lowering of list literals.
+
 ## Priority
 
-HIGH — but blocked by Issue B. The parser fix alone is insufficient. The LowerState corruption must be fixed first.
+HIGH — blocked by Issue C (with clang) or Issue B (with llvmlite). The clang -O0 path gives better results (lexer.mn compiles!) but needs Issue C fixed for full module compilation.
