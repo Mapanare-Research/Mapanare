@@ -56,14 +56,12 @@ declare void @__mn_signal_set(i8*, i8*)
 
 define %struct.CompileResult @new_compile_result(i1 %success, { i8*, i64 } %ir_text, { i8*, i64, i64, i64 } %errors) {
 entry:
-  %t0 = add i64 0, 6019782
-  ret i64 %t0
+  ret void
 }
 
 define { i8*, i64 } @version() {
 entry:
-  %t0 =insertvalue { i1, i8* } undef, i1 0, 0
-  ret { i1, i8* } %t0
+  ret void
 }
 
 define %struct.CompileResult @compile({ i8*, i64 } %source, { i8*, i64 } %filename) {
@@ -77,30 +75,39 @@ entry:
   %t4 =icmp sgt i64 %t2, %t3
 if_then0:
   %t5 =insertvalue { i1, i8* } undef, i1 0, 0
-  ret { i1, i8* } %t5
+  %ret6.addr =alloca { i1, i8* }
+  store { i1, i8* } %t5, { i1, i8* }* %ret6.addr
+  %ret6 =load { i1, i8* }, { i1, i8* }* %ret6.addr
+  ret { i1, i8* } %ret6
 if_else1:
   br label %if_merge2
 if_merge2:
   br i1 %t4, label %if_then0, label %if_else1
-  %t7 =call i64 @lower(i64 %program, { i8*, i64 } %filename)
-  %mir_module =add i64 %t7, 0
-  %t8 =call i64 @emit_mir_module(i64 %mir_module, { i8*, i64 } %filename)
-  %ir_text =add i64 %t8, 0
-  %t9.new =call { i8*, i64, i64, i64 } @__mn_list_new(i64 8)
-  %t9.addr =alloca { i8*, i64, i64, i64 }
-  store { i8*, i64, i64, i64 } %t9.new, { i8*, i64, i64, i64 }* %t9.addr
-  %t9 =load { i8*, i64, i64, i64 }, { i8*, i64, i64, i64 }* %t9.addr
+  %t8 =call i64 @lower(i64 %program, { i8*, i64 } %filename)
+  %mir_module =add i64 %t8, 0
+  %t9 =call i64 @emit_mir_module(i64 %mir_module, { i8*, i64 } %filename)
+  %ir_text =add i64 %t9, 0
+  %t10.new =call { i8*, i64, i64, i64 } @__mn_list_new(i64 8)
+  %t10.addr =alloca { i8*, i64, i64, i64 }
+  store { i8*, i64, i64, i64 } %t10.new, { i8*, i64, i64, i64 }* %t10.addr
+  %t10 =load { i8*, i64, i64, i64 }, { i8*, i64, i64, i64 }* %t10.addr
   %no_errors.addr =alloca { i8*, i64, i64, i64 }
-  store { i8*, i64, i64, i64 } %t9, { i8*, i64, i64, i64 }* %no_errors.addr
+  store { i8*, i64, i64, i64 } %t10, { i8*, i64, i64, i64 }* %no_errors.addr
   %no_errors =load { i8*, i64, i64, i64 }, { i8*, i64, i64, i64 }* %no_errors.addr
-  %t10 =insertvalue { i1, i8* } undef, i1 0, 0
-  ret { i1, i8* } %t10
+  %t11 =insertvalue { i1, i8* } undef, i1 0, 0
+  %ret12.addr =alloca { i1, i8* }
+  store { i1, i8* } %t11, { i1, i8* }* %ret12.addr
+  %ret12 =load { i1, i8* }, { i1, i8* }* %ret12.addr
+  ret { i1, i8* } %ret12
 }
 
 define { i8*, i64 } @format_error(%struct.SemanticError %err) {
 entry:
   %t0 =insertvalue { i1, i8* } undef, i1 0, 0
-  ret { i1, i8* } %t0
+  %ret1.addr =alloca { i1, i8* }
+  store { i1, i8* } %t0, { i1, i8* }* %ret1.addr
+  %ret1 =load { i1, i8* }, { i1, i8* }* %ret1.addr
+  ret { i1, i8* } %ret1
 }
 
 define %struct.CompileResult @compile_and_print({ i8*, i64 } %source, { i8*, i64 } %filename) {
@@ -117,13 +124,6 @@ if_else1:
 if_merge2:
   br i1 %t1, label %if_then0, label %if_else1
   %if_result4 = phi i64 [ %t3, %if_then0 ], [ %void, %if_else1 ]
-  %t5 =insertvalue { i1, i8* } undef, i1 0, 0
-  ret { i1, i8* } %t5
-}
-
-define void @main() {
-entry:
-  %t0 =insertvalue { i1, i8* } undef, i1 0, 0
   ret void
 }
 
