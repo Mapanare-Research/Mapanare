@@ -37,72 +37,31 @@ Total time: 0.7s
 
 ## Linux
 
-Generated: 2026-03-21 04:47 UTC  
-Version: 1.0.11 (`f62152b`)  
+Generated: 2026-03-21 05:01 UTC  
+Version: 1.0.11 (`53aa425`)  
 Platform: Linux x86_64, Python 3.12.3  
-Total time: 2.0s  
+Total time: 0.8s  
 
 ## Bootstrap Compiler (Python)
 
 | Test | Src | IR | KB | Fns | BBs | Stk | ms | Trend | Status |
 |------|----:|---:|---:|----:|----:|----:|---:|-------|--------|
-| 01_hello | 3 | 28 | 1.0 | 1 | 2 | 9 | 446 | ` _______ ^` | PASS |
-| 02_arithmetic | 4 | 31 | 0.9 | 1 | 2 | 17 | 6 | `       * ^` | PASS |
-| 03_function | 8 | 63 | 1.7 | 2 | 4 | 57 | 5 | `       * ^` | PASS |
-| 04_if_else | 8 | 32 | 1.0 | 1 | 4 | 9 | 4 | `       * ^` | PASS |
-| 05_for_loop | 7 | 77 | 2.4 | 1 | 5 | 58 | 5 | `       * ^` | PASS |
-| 06_struct | 9 | 46 | 1.5 | 1 | 2 | 41 | 5 | `       * ^` | PASS |
-| 07_enum_match | 13 | 65 | 2.4 | 1 | 5 | 42 | 5 | `         ^` | PASS |
-| 08_list | 5 | 89 | 3.6 | 1 | 2 | 121 | 5 | `         ^` | PASS |
-| 09_string_methods | 5 | 62 | 2.5 | 1 | 2 | 35 | 4 | `         ^` | PASS |
+| 01_hello | 3 | 28 | 1.0 | 1 | 2 | 9 | 437 | `_____._  v` | PASS |
+| 02_arithmetic | 4 | 31 | 0.9 | 1 | 2 | 17 | 5 | `   *    ` | PASS |
+| 03_function | 8 | 63 | 1.7 | 2 | 4 | 57 | 4 | `   *     ^` | PASS |
+| 04_if_else | 8 | 32 | 1.0 | 1 | 4 | 9 | 4 | `   *    ` | PASS |
+| 05_for_loop | 7 | 77 | 2.4 | 1 | 5 | 58 | 4 | `   *     ^` | PASS |
+| 06_struct | 9 | 46 | 1.5 | 1 | 2 | 41 | 5 | `   *    ` | PASS |
+| 07_enum_match | 13 | 65 | 2.4 | 1 | 5 | 42 | 6 | `        ` | PASS |
+| 08_list | 5 | 89 | 3.6 | 1 | 2 | 121 | 6 | `        ` | PASS |
+| 09_string_methods | 5 | 62 | 2.5 | 1 | 2 | 35 | 4 | `        ` | PASS |
 | 10_result | 14 | 141 | 5.7 | 2 | 10 | 132 | 6 | `         ^` | PASS |
-| 11_closure | 5 | 54 | 2.0 | 1 | 2 | 33 | 5 | `       * ^` | PASS |
-| 12_while | 7 | 59 | 1.7 | 1 | 5 | 42 | 5 | `       * ^` | PASS |
-| 13_fib | 10 | 100 | 2.8 | 2 | 7 | 98 | 4 | `       * ^` | PASS |
-| 14_nested_struct | 9 | 46 | 1.5 | 1 | 2 | 41 | 4 | `       * ^` | PASS |
-| 15_multifunction | 12 | 99 | 2.8 | 3 | 6 | 98 | 4 | `       * ^` | PASS |
-| **Total** | **119** | **992** | **33.6** | **20** | **60** | **833** | **513** | | **15/15** |
-
-## Native Compiler (mnc-stage1)
-
-| Test | IR | KB | Fns | ms | Match | Status |
-|------|---:|---:|----:|---:|-------|--------|
-| 01_hello | 64 | 2.8 | 1 | 92 | YES | PASS |
-| 02_arithmetic | 67 | 2.8 | 1 | 89 | YES | PASS |
-| 03_function | 74 | 3.0 | 2 | 93 | YES | PASS |
-| 04_if_else | 75 | 3.1 | 1 | 97 | YES | PASS |
-| 05_for_loop | 73 | 3.0 | 1 | 94 | YES | PASS |
-| 06_struct | 67 | 2.9 | 1 | 99 | YES | PASS |
-| 07_enum_match | 67 | 2.8 | 1 | 93 | YES | PASS |
-| 08_list | 85 | 3.7 | 1 | 100 | YES | PASS |
-| 09_string_methods | 75 | 3.4 | 1 | 93 | YES | PASS |
-| 10_result | 88 | 3.4 | 2 | 105 | YES | PASS |
-| 11_closure | 75 | 3.0 | 1 | 98 | YES | PASS |
-| 12_while | 67 | 2.8 | 1 | 93 | YES | PASS |
-| 13_fib | 80 | 3.1 | 2 | 91 | YES | PASS |
-| 14_nested_struct | 67 | 2.9 | 1 | 105 | YES | PASS |
-| 15_multifunction | 85 | 3.4 | 3 | 83 | YES | PASS |
-| **Total** | | | | **1425** | **15/15** | **15/15** |
-
-## Speed Comparison
-
-| Test | Bootstrap (ms) | Stage1 (ms) | Speedup |
-|------|---------------:|------------:|--------:|
-| 01_hello | 446 | 92 | 4.8x |
-| 02_arithmetic | 6 | 89 | 0.1x |
-| 03_function | 5 | 93 | 0.0x |
-| 04_if_else | 4 | 97 | 0.0x |
-| 05_for_loop | 5 | 94 | 0.1x |
-| 06_struct | 5 | 99 | 0.0x |
-| 07_enum_match | 5 | 93 | 0.1x |
-| 08_list | 5 | 100 | 0.1x |
-| 09_string_methods | 4 | 93 | 0.0x |
-| 10_result | 6 | 105 | 0.1x |
-| 11_closure | 5 | 98 | 0.1x |
-| 12_while | 5 | 93 | 0.1x |
-| 13_fib | 4 | 91 | 0.0x |
-| 14_nested_struct | 4 | 105 | 0.0x |
-| 15_multifunction | 4 | 83 | 0.1x |
+| 11_closure | 5 | 54 | 2.0 | 1 | 2 | 33 | 4 | `   *    ` | PASS |
+| 12_while | 7 | 59 | 1.7 | 1 | 5 | 42 | 5 | `   *    ` | PASS |
+| 13_fib | 10 | 100 | 2.8 | 2 | 7 | 98 | 4 | `   *     v` | PASS |
+| 14_nested_struct | 9 | 46 | 1.5 | 1 | 2 | 41 | 4 | `   *     v` | PASS |
+| 15_multifunction | 12 | 99 | 2.8 | 3 | 6 | 98 | 4 | `   *     ^` | PASS |
+| **Total** | **119** | **992** | **33.6** | **20** | **60** | **833** | **502** | | **15/15** |
 
 ---
 
