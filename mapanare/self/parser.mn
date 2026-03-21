@@ -1484,6 +1484,28 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     // Parenthesized expression
     if tt == "LPAREN" { return parse_paren_expr(tokens, pos, filename) }
 
+    // Struct constructor: new Name { field: val, ... }
+    if tt == "KW_NEW" {
+        let struct_name: String = peek_value(tokens, pos + 1)
+        let mut p: Int = pos + 2
+        p = expect(tokens, p, "LBRACE")
+        let mut fields: List<FieldInit> = []
+        for _ in 0..1000 {
+            if peek_type(tokens, p) == "RBRACE" {
+                p = p + 1
+                return new_expr_result(Expr::Construct(struct_name, fields), p)
+            }
+            let fname: String = peek_value(tokens, p)
+            p = p + 1
+            p = expect(tokens, p, "COLON")
+            let fexpr: ExprResult = parse_expr(tokens, p, filename, 0)
+            p = fexpr.pos
+            fields.push(new FieldInit { span: new_span(0, 0, 0, 0), name: fname, value: fexpr.expr })
+            if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+        }
+        return new_expr_result(Expr::Construct(struct_name, fields), p)
+    }
+
     // Identifier or namespace access
     if tt == "NAME" {
         let name: String = val
