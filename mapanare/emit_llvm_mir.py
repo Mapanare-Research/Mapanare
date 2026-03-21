@@ -2983,7 +2983,20 @@ class LLVMMIREmitter:
                 val = ret_val
                 if val.type != orig_ret_ty:
                     val = _coerce_arg(builder, val, orig_ret_ty, "ret.c")
-                builder.store(val, self._current_sret_ptr)
+                # Use temp alloca + memcpy for large sret stores to avoid
+                # the truncation bug with direct by-value stores > ~200B.
+                if _is_large_struct(orig_ret_ty):
+                    tmp = builder.alloca(orig_ret_ty, name="ret.tmp")
+                    tmp.align = 16
+                    builder.store(val, tmp)
+                    _memcpy_alloca(
+                        builder,
+                        self._current_sret_ptr,
+                        tmp,
+                        _approx_type_size(orig_ret_ty),
+                    )
+                else:
+                    builder.store(val, self._current_sret_ptr)
             builder.ret_void()
         elif ret_val is not None:
             val = ret_val

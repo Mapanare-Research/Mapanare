@@ -87,7 +87,11 @@ Most of the infrastructure is ALREADY in place from previous work:
 - `_emit_return` has memcpy path for sret
 - `_emit_struct_init` has GEP path for large structs (from enum refactor)
 
-The ONE missing piece: `_get_value` still creates full SSA values via `_load_struct_fields` for cross-block references. The fix is to make it NEVER create large SSA values — always return from the alloca GEP path.
+**The problem is fundamental**: ANY `builder.load` or `builder.store` of >~200 byte structs gets truncated. The memcpy+load approach (tried and failed) doesn't help because the LOAD itself creates a huge SSA value that gets truncated downstream.
+
+**The fix**: Apply the same heap-allocation approach as enums to ALL large structs. Represent `LowerResult`, `LowerState`, `MIRFunction`, `MIRModule`, etc. as `{i8* ptr}` with heap-allocated payload. This makes every SSA value ≤16 bytes.
+
+This is the same approach we used for enums — change `_register_struct` to produce `{i8* ptr}` for large structs, and update `_emit_struct_init`, `_emit_field_get`, `_emit_field_set`, `_emit_copy` to work through heap pointers.
 
 ## Files to Modify
 
