@@ -1666,48 +1666,26 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
 // ---------------------------------------------------------------------------
 
 fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<Expr>) -> LowerResult {
+    // Lower as Call(method, [obj, args...]) directly.
+    // Stream/signal dispatch handled by the emitter.
     let obj_r: LowerResult = lower_expr(st, obj)
     let mut s: LowerState = obj_r.state
-    let mut args: List<Value> = []
+
+    // Build arg list: [obj_value, arg_values...]
+    // Use lower_call_args helper to build the list in one pass
+    let mut all_args: List<Value> = []
+    all_args.push(obj_r.value)
+    let nae: Int = len(arg_exprs)
     let mut i: Int = 0
     for _ in 0..1000 {
-        if i >= len(arg_exprs) { break }
+        if i >= nae { break }
         let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
         s = arg_r.state
-        args.push(arg_r.value)
+        all_args.push(arg_r.value)
         i = i + 1
     }
 
-    // Check if stream operation
-    let stream_opt: Option<StreamOpKind> = stream_op_from_str(method)
-    match stream_opt {
-        Some(op_kind) => {
-            let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
-            let new_s: LowerState = emit_instr(dest_r.state, Instruction::StreamOp(dest_r.value, op_kind, obj_r.value, args))
-            return new_lower_result(dest_r.value, new_s)
-        },
-        _ => {}
-    }
-
-    // Check if signal .value access
-    if method == "value" {
-        if len(args) == 0 {
-            let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
-            let new_s: LowerState = emit_instr(dest_r.state, Instruction::SignalGet(dest_r.value, obj_r.value))
-            return new_lower_result(dest_r.value, new_s)
-        }
-    }
-
-    // General method call → Call with self as first arg
     let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
-    let mut all_args: List<Value> = []
-    all_args.push(obj_r.value)
-    let mut j: Int = 0
-    for _ in 0..1000 {
-        if j >= len(args) { break }
-        all_args.push(args[j])
-        j = j + 1
-    }
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
     return new_lower_result(dest_r.value, new_s)
 }

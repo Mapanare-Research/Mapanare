@@ -552,17 +552,25 @@ class LLVMTextEmitter:
         if ty == VOID:
             return
         nm = dest.name
+        # Normalize name: check both %name and name variants
         if nm not in self._alloc:
-            s = self._san(nm)
-            a = f"%{s}.addr"
+            alt = nm.lstrip("%")
+            alt2 = "%" + alt
+            if alt in self._alloc:
+                nm = alt
+            elif alt2 in self._alloc:
+                nm = alt2
+        if nm not in self._alloc:
+            # Use counter-based unique names to avoid collisions when
+            # the self-hosted lowerer reuses MIR names across scopes
+            a = self._f(f"{self._san(nm)}.a")
             self._alloc[nm] = (a, ty)
             self._ent.append(f"  {a} = alloca {ty}, align 8")
             self._ent.append(f"  store {ty} {_zero(ty)}, {ty}* {a}")
         a, aty = self._alloc[nm]
         # If new value is larger, upgrade the alloca to avoid truncation
         if ty != aty and _tsz(ty) > _tsz(aty):
-            s = self._san(nm)
-            a = self._f(f"{s}.up")
+            a = self._f(f"{self._san(nm)}.up")
             self._alloc[nm] = (a, ty)
             self._ent.append(f"  {a} = alloca {ty}, align 8")
             self._ent.append(f"  store {ty} {_zero(ty)}, {ty}* {a}")
