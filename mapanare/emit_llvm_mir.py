@@ -295,16 +295,15 @@ def _coerce_args(builder: Any, args: list[Any], expected_types: list[Any], name:
 
 
 # Size threshold above which we use memset instead of store zeroinitializer.
-# llvmlite's codegen for store zeroinitializer on very large struct types
-# (e.g. 700+ byte LowerState) generates code that loads from address 0.
-# Must match _LARGE_STRUCT_THRESHOLD — store zeroinitializer is also
-# truncated by the llvmlite codegen bug for structs > 56 bytes.
-_ZEROINIT_MEMSET_THRESHOLD = 56
+# With clang -O0 as the backend, this can be much higher than the original
+# 56-byte limit that was set for llvmlite's truncation bug.
+_ZEROINIT_MEMSET_THRESHOLD = 1024
 
 # Size threshold above which struct parameters/returns are passed by pointer.
-# Structs larger than this are passed via hidden pointer args to avoid
-# pathological stack frame sizes that cause SIGSEGV in llvmlite/LLVM codegen.
-_LARGE_STRUCT_THRESHOLD = 56
+# With clang -O0, direct load/store of structs up to ~500 bytes works
+# correctly.  The original 56-byte threshold was for llvmlite's -O1 which
+# truncated large struct operations.  clang -O0 does not have this bug.
+_LARGE_STRUCT_THRESHOLD = 1024
 
 
 def _is_large_struct(llvm_ty: Any) -> bool:

@@ -963,7 +963,8 @@ fn lower_definitions(st: LowerState, program: Program) -> LowerState {
             return s
         }
         let defn: Definition = program.definitions[i]
-        s = lower_definition(s, defn)
+        let new_s: LowerState = lower_definition(s, defn)
+        s = new_s
         i = i + 1
     }
     return s
