@@ -1068,13 +1068,25 @@ class LLVMTextEmitter:
 
         # str / toString
         if fn in ("str", "toString"):
-            if i.args and i.args[0].ty.kind == TypeKind.INT:
+            ak = i.args[0].ty.kind if i.args else TypeKind.UNKNOWN
+            at = args[0][1] if args else PTR
+            # Infer from LLVM type when MIR type is UNKNOWN
+            if ak == TypeKind.UNKNOWN:
+                if at == I64:
+                    ak = TypeKind.INT
+                elif at == DBL:
+                    ak = TypeKind.FLOAT
+                elif at == I1:
+                    ak = TypeKind.BOOL
+                elif at == STR:
+                    ak = TypeKind.STRING
+            if ak == TypeKind.INT:
                 r = self._rt("__mn_str_from_int", STR, [I64], [args[0]])
-            elif i.args and i.args[0].ty.kind == TypeKind.FLOAT:
+            elif ak == TypeKind.FLOAT:
                 r = self._rt("__mn_str_from_float", STR, [DBL], [args[0]])
-            elif i.args and i.args[0].ty.kind == TypeKind.BOOL:
+            elif ak == TypeKind.BOOL:
                 r = self._rt("__mn_str_from_bool", STR, [I1], [args[0]])
-            elif i.args and i.args[0].ty.kind == TypeKind.STRING:
+            elif ak == TypeKind.STRING:
                 self._put(i.dest, args[0][0], args[0][1])
                 return
             else:
@@ -1979,8 +1991,11 @@ class LLVMTextEmitter:
         self._L(f"{envr} = extractvalue {{i8*, i8*}} {cv}, 1")
         atypes = [t for _, t in args]
         rty = self._rty(i.dest.ty)
-        if rty == VOID:
-            rty = I64
+        if rty == VOID or rty == PTR:
+            # Try to infer return type from the lambda function signature
+            # by scanning the current function for ClosureCreate that produced this closure
+            inferred = self._infer_closure_ret(i.closure.name)
+            rty = inferred if inferred else I64
         ft = f"{rty} (i8*, {', '.join(atypes)})*" if atypes else f"{rty} (i8*)*"
         ftp = self._f("cftp")
         self._L(f"{ftp} = bitcast i8* {fnr} to {ft}")
@@ -1989,6 +2004,20 @@ class LLVMTextEmitter:
         r = self._f("ccr")
         self._L(f"{r} = call {rty} {ftp}({astr})")
         self._put(i.dest, r, rty)
+
+    def _infer_closure_ret(self, closure_name: str) -> str | None:
+        """Find the return type of a closure by tracing ClosureCreate → fn signature."""
+        if self._fn is None:
+            return None
+        for bb in self._fn.blocks:
+            for inst in bb.instructions:
+                if isinstance(inst, ClosureCreate) and inst.dest.name == closure_name:
+                    fn_name = inst.fn_name.lstrip("%")
+                    if fn_name in self._sigs:
+                        ret, _, _ = self._sigs[fn_name]
+                        if ret != VOID and ret != PTR:
+                            return ret
+        return None
 
     def _do_env_load(self, i: EnvLoad) -> None:
         ev, et = self._get(i.env)

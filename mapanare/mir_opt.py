@@ -32,6 +32,8 @@ from mapanare.mir import (
     BinOpKind,
     Branch,
     Call,
+    ClosureCall,
+    ClosureCreate,
     Const,
     Copy,
     FieldGet,
@@ -47,6 +49,7 @@ from mapanare.mir import (
     MIRType,
     Phi,
     Return,
+    SignalComputed,
     StreamOp,
     StreamOpKind,
     Switch,
@@ -151,6 +154,11 @@ def _get_uses(inst: Instruction) -> list[Value]:
         uses.extend([inst.obj, inst.index, inst.val])
     elif isinstance(inst, ListPush):
         uses.extend([inst.list_val, inst.element])
+    elif isinstance(inst, ClosureCall):
+        uses.append(inst.closure)
+        uses.extend(inst.args)
+    elif isinstance(inst, ClosureCreate):
+        uses.extend(inst.captures)
     elif isinstance(inst, AgentSpawn):
         uses.extend(inst.args)
     elif isinstance(inst, AgentSend):
@@ -262,6 +270,19 @@ def _replace_use(inst: Instruction, old_name: str, new_val: Value) -> bool:
         if inst.element.name == old_name:
             inst.element = new_val
             changed = True
+    elif isinstance(inst, ClosureCall):
+        if inst.closure.name == old_name:
+            inst.closure = new_val
+            changed = True
+        for i, arg in enumerate(inst.args):
+            if arg.name == old_name:
+                inst.args[i] = new_val
+                changed = True
+    elif isinstance(inst, ClosureCreate):
+        for i, cap in enumerate(inst.captures):
+            if cap.name == old_name:
+                inst.captures[i] = new_val
+                changed = True
     elif isinstance(inst, AgentSpawn):
         for i, arg in enumerate(inst.args):
             if arg.name == old_name:
@@ -688,13 +709,19 @@ def dead_function_elimination(module: MIRModule, stats: MIRPassStats) -> bool:
     Keeps `main` and public functions. Builds a call graph from Call instructions.
     Returns True if any changes were removed.
     """
-    # Build set of all called function names
+    # Build set of all referenced function names
     called: set[str] = set()
     for fn in module.functions:
         for bb in fn.blocks:
             for inst in bb.instructions:
                 if isinstance(inst, Call):
                     called.add(inst.fn_name)
+                elif isinstance(inst, ClosureCreate):
+                    called.add(inst.fn_name)
+                elif isinstance(inst, StreamOp) and inst.fn_name:
+                    called.add(inst.fn_name)
+                elif isinstance(inst, SignalComputed) and inst.compute_fn:
+                    called.add(inst.compute_fn)
 
     new_fns: list[MIRFunction] = []
     changed = False

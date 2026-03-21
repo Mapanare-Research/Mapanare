@@ -646,13 +646,76 @@ class MIRLowerer:
         last_val = self._lower_block(fn_def.body)
 
         # Add implicit return if block isn't terminated
+        is_lambda = fn_name.startswith("%lambda") or fn_name.startswith("lambda")
         if not self._block_terminated():
-            if ret_type.kind == TypeKind.VOID:
+            if is_lambda and last_val is not None and ret_type.kind == TypeKind.VOID:
+                # Infer return type from last expression for lambdas
+                if last_val.ty.kind != TypeKind.VOID and last_val.ty.kind != TypeKind.UNKNOWN:
+                    mir_fn.return_type = last_val.ty
+                self._emit(Return(val=last_val))
+            elif ret_type.kind == TypeKind.VOID:
                 self._emit(Return())
             elif last_val is not None:
                 self._emit(Return(val=last_val))
             else:
                 self._emit(Return())
+
+        # Infer unknown param types for lambdas only.
+        # Lambda params lack type annotations; infer from BinOp partners,
+        # then propagate to BinOp results and Return values.
+        unknown_params: set[str] = set()
+        if is_lambda:
+            unknown_params = {
+                p.name
+                for p in mir_fn.params
+                if p.ty.kind == TypeKind.UNKNOWN and p.name != "__env_ptr"
+            }
+        if unknown_params:
+            from mapanare.mir import BinOp as MIRBinOp
+
+            # Pass 1: infer param types from BinOp partners
+            for bb in mir_fn.blocks:
+                for inst in bb.instructions:
+                    if isinstance(inst, MIRBinOp):
+                        if (
+                            inst.lhs.name.lstrip("%") in unknown_params
+                            and inst.rhs.ty.kind != TypeKind.UNKNOWN
+                        ):
+                            for mp in mir_fn.params:
+                                if mp.name == inst.lhs.name.lstrip("%"):
+                                    mp.ty = inst.rhs.ty
+                                    inst.lhs.ty = inst.rhs.ty
+                                    unknown_params.discard(mp.name)
+                        if (
+                            inst.rhs.name.lstrip("%") in unknown_params
+                            and inst.lhs.ty.kind != TypeKind.UNKNOWN
+                        ):
+                            for mp in mir_fn.params:
+                                if mp.name == inst.rhs.name.lstrip("%"):
+                                    mp.ty = inst.lhs.ty
+                                    inst.rhs.ty = inst.lhs.ty
+                                    unknown_params.discard(mp.name)
+
+            # Pass 2: propagate to BinOp dest types and Return values
+            for bb in mir_fn.blocks:
+                for inst in bb.instructions:
+                    if isinstance(inst, MIRBinOp) and inst.dest.ty.kind == TypeKind.UNKNOWN:
+                        if inst.lhs.ty.kind != TypeKind.UNKNOWN:
+                            inst.dest.ty = inst.lhs.ty
+                        elif inst.rhs.ty.kind != TypeKind.UNKNOWN:
+                            inst.dest.ty = inst.rhs.ty
+            # Pass 3: update return type from return value
+            from mapanare.mir import Return as MIRReturn
+
+            for bb in mir_fn.blocks:
+                for inst in bb.instructions:
+                    if (
+                        isinstance(inst, MIRReturn)
+                        and inst.val is not None
+                        and inst.val.ty.kind != TypeKind.UNKNOWN
+                        and mir_fn.return_type.kind == TypeKind.VOID
+                    ):
+                        mir_fn.return_type = inst.val.ty
 
         self._module.functions.append(mir_fn)
 
