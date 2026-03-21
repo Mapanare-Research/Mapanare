@@ -2173,7 +2173,7 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     let then_exit_label: String = get_block_label(s, then_exit_idx)
     let else_exit_label: String = get_block_label(s, else_exit_idx)
 
-    if then_val.name != "%void" {
+    if then_val.ty.kind != "void" && then_val.ty.kind != "unknown" && then_val.name != "%void" {
         let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
         s = result_r.state
         let mut incoming: List<PhiEntry> = []
