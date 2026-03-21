@@ -55,11 +55,24 @@ def build() -> pathlib.Path:
     print("[3/6] Compiling LLVM IR → object code ...")
     obj_path = SELF_DIR / "main.o"
 
-    from mapanare.jit import jit_compile_to_object
+    # Prefer clang for IR→object compilation: it produces correct code for
+    # large struct operations that llvmlite's -O1 miscompiles.
+    import shutil
 
-    obj_bytes = jit_compile_to_object(ir, opt_level=1)
-    obj_path.write_bytes(obj_bytes)
-    print(f"  Object: {len(obj_bytes)} bytes → {obj_path}")
+    clang_bin = shutil.which("clang")
+    if clang_bin:
+        subprocess.run(
+            [clang_bin, "-c", "-O0", str(ir_path), "-o", str(obj_path)],
+            check=True,
+            capture_output=True,
+        )
+        print(f"  Object: {obj_path.stat().st_size} bytes → {obj_path} (clang -O0)")
+    else:
+        from mapanare.jit import jit_compile_to_object
+
+        obj_bytes = jit_compile_to_object(ir, opt_level=1)
+        obj_path.write_bytes(obj_bytes)
+        print(f"  Object: {len(obj_bytes)} bytes → {obj_path} (llvmlite -O1)")
 
     # 4. Compile C runtime
     print("[4/6] Compiling C runtime ...")
