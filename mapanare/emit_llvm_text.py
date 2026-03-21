@@ -1352,6 +1352,26 @@ class LLVMTextEmitter:
                 self._put(i.dest, r, ret)
             return
 
+        # Check if this is a struct constructor (__new_StructName)
+        if fn.startswith("__new_") and len(fn) > 6:
+            sn = self._res_struct(fn[6:])
+            if sn in self._struct_ty:
+                sty = self._struct_ty[sn]
+                cur = "undef"
+                fields_info = self._structs.get(sn, [])
+                for j, (av, at) in enumerate(args):
+                    ft = fields_info[j][1] if j < len(fields_info) else at
+                    if at != ft:
+                        av = self._coerce(av, at, ft)
+                    nm = self._san(i.dest.name)
+                    tmp = nm if j == len(args) - 1 else f"{nm}.f{j}"
+                    self._L(f"  %{tmp} = insertvalue {sty} {cur}, {ft} {av}, {j}")
+                    cur = f"%{tmp}"
+                if not args:
+                    cur = _zero(sty)
+                self._put(i.dest, cur, sty)
+                return
+
         # Check if this is an enum variant constructor call
         for en, (tags, pays, _) in self._enums.items():
             base = en.rsplit("__", 1)[-1]

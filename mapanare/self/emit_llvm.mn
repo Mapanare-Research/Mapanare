@@ -702,6 +702,11 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
         return emit_line(st, "  " + dest_name + " = fadd double 0.0, " + val)
     }
 
+    // Struct constant (undef initializer for struct construction)
+    if ty.kind == "struct" {
+        return emit_line(st, "  " + dest_name + " = insertvalue " + llvm_ty + " undef, " + llvm_ty + " undef, 0")
+    }
+
     // Unknown type — no-op
     return st
 }
@@ -975,6 +980,25 @@ fn strip_percent(name: String) -> String {
     return result
 }
 
+fn has_struct(st: EmitState, name: String) -> Bool {
+    let opt: Option<StructEntry> = find_struct_entry(st, name)
+    match opt {
+        Some(_) => { return true },
+        _ => { return false }
+    }
+}
+
+fn try_emit_struct_construct(st: EmitState, dest: Value, fn_name: String, args: List<Value>) -> EmitState {
+    // Check if fn_name is "__new_<StructName>" and emit struct construction.
+    // Uses ternary expressions to avoid early returns inside if/match.
+    let is_new: Bool = len(fn_name) > 6
+    let prefix: String = if is_new { fn_name.substr(0, 6) } else { "" }
+    let struct_name: String = if prefix == "__new_" { fn_name.substr(6, len(fn_name) - 6) } else { "" }
+    let found: Bool = if struct_name != "" { has_struct(st, struct_name) } else { false }
+    let result: EmitState = if found { emit_struct_init_from_values(st, dest, dest.ty, args) } else { st }
+    return result
+}
+
 fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values: List<Value>) -> EmitState {
     // Build struct from a list of values (field order matches struct definition)
     let struct_ty: String = resolve_mir_type(ty)
@@ -1190,6 +1214,15 @@ fn emit_unwrap(st: EmitState, dest: Value, val: Value) -> EmitState {
 
 fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>) -> EmitState {
     let dn: String = dest.name
+
+    // Synthetic struct constructor: __new_<StructName>
+    // Extract struct name and try struct init. Uses a dedicated function
+    // to avoid nested if+return control flow issues.
+    let struct_result: EmitState = try_emit_struct_construct(st, dest, fn_name, args)
+    // If struct_result has more lines than st, the struct init was emitted
+    if len(struct_result.lines) > len(st.lines) {
+        return struct_result
+    }
 
     // Built-in: print / println
     if fn_name == "print" {

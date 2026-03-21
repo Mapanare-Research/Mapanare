@@ -1418,6 +1418,69 @@ fn split_interp_parts(s: String) -> List<Expr> {
 // Atom expressions
 // ---------------------------------------------------------------------------
 
+fn parse_struct_fields_to_list(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+    // Parse field values: name: expr, name: expr, ...
+    // Returns a ListLit of the field values (ignoring field names)
+    let mut p: Int = pos
+    let mut vals: List<Expr> = []
+    // Field 1
+    p = p + 1  // skip field name
+    p = expect(tokens, p, "COLON")
+    let e1: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = e1.pos
+    vals.push(e1.expr)
+    if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+    if peek_type(tokens, p) == "RBRACE" {
+        return new_expr_result(Expr::ListLit(vals), p + 1)
+    }
+    // Field 2
+    p = p + 1
+    p = expect(tokens, p, "COLON")
+    let e2: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = e2.pos
+    vals.push(e2.expr)
+    if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+    if peek_type(tokens, p) == "RBRACE" {
+        return new_expr_result(Expr::ListLit(vals), p + 1)
+    }
+    // Field 3+
+    p = p + 1
+    p = expect(tokens, p, "COLON")
+    let e3: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = e3.pos
+    vals.push(e3.expr)
+    if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+    if peek_type(tokens, p) == "RBRACE" {
+        return new_expr_result(Expr::ListLit(vals), p + 1)
+    }
+    return new_expr_result(Expr::ListLit(vals), p)
+}
+
+fn parse_struct_construct(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+    // Parse: new Name { field1: val1, field2: val2 }
+    // Returns Call(Ident("__new_Name"), [val1, val2])
+    let struct_name: String = peek_value(tokens, pos + 1)
+    let mut p: Int = pos + 2
+    p = expect(tokens, p, "LBRACE")
+
+    // Parse field values (returns ListLit wrapping the values)
+    let fields_r: ExprResult = parse_struct_fields_to_list(tokens, p, filename)
+    p = fields_r.pos
+
+    // Extract the values from ListLit
+    // The lowerer will handle Call("__new_Name", args) as struct construction
+    let callee: Expr = Expr::Ident("__new_" + struct_name)
+    match fields_r.expr {
+        ListLit(vals) => {
+            return new_expr_result(Expr::Call(callee, vals), p)
+        },
+        _ => {
+            let empty: List<Expr> = []
+            return new_expr_result(Expr::Call(callee, empty), p)
+        }
+    }
+}
+
 fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     let tt: String = peek_type(tokens, pos)
     let val: String = peek_value(tokens, pos)
@@ -1485,25 +1548,10 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     if tt == "LPAREN" { return parse_paren_expr(tokens, pos, filename) }
 
     // Struct constructor: new Name { field: val, ... }
+    // Emits as Call(Ident("__new_Name"), [val1, val2, ...]).
+    // The emitter handles __new_ calls as struct construction.
     if tt == "KW_NEW" {
-        let struct_name: String = peek_value(tokens, pos + 1)
-        let mut p: Int = pos + 2
-        p = expect(tokens, p, "LBRACE")
-        let mut fields: List<FieldInit> = []
-        for _ in 0..1000 {
-            if peek_type(tokens, p) == "RBRACE" {
-                p = p + 1
-                return new_expr_result(Expr::Construct(struct_name, fields), p)
-            }
-            let fname: String = peek_value(tokens, p)
-            p = p + 1
-            p = expect(tokens, p, "COLON")
-            let fexpr: ExprResult = parse_expr(tokens, p, filename, 0)
-            p = fexpr.pos
-            fields.push(new FieldInit { span: new_span(0, 0, 0, 0), name: fname, value: fexpr.expr })
-            if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-        }
-        return new_expr_result(Expr::Construct(struct_name, fields), p)
+        return parse_struct_construct(tokens, pos, filename)
     }
 
     // Identifier or namespace access
