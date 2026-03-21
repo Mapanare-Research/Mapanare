@@ -1229,8 +1229,13 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, value: Expr) -> LowerS
 fn lower_return(st: LowerState, value_opt: Option<Expr>) -> LowerState {
     match value_opt {
         Some(expr) => {
+            // Lower the expression to a temp, then return the temp.
+            // This avoids deeply nested LowerResult chains that corrupt
+            // the LowerState during self-compilation.
             let r: LowerResult = lower_expr(st, expr)
-            return emit_instr(r.state, Instruction::Return(Some(r.value)))
+            let tmp: LowerResult = make_value(r.state, r.value.ty, "ret")
+            let s: LowerState = emit_instr(tmp.state, Instruction::Copy(tmp.value, r.value))
+            return emit_instr(s, Instruction::Return(Some(tmp.value)))
         },
         _ => {
             return emit_instr(st, Instruction::Return(none))
