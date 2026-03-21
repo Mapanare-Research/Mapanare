@@ -1,28 +1,55 @@
 # Mapanare Benchmarks - Linux
 
-Generated: 2026-03-21 05:01 UTC  
-Version: 1.0.11 (`53aa425`)  
+Generated: 2026-03-21 07:33 UTC  
+Version: 1.0.11 (`7a0b322`)  
 Platform: Linux x86_64, Python 3.12.3  
-Total time: 0.8s  
+Total time: 1.0s  
 
 ## Bootstrap Compiler (Python)
 
 | Test | Src | IR | KB | Fns | BBs | Stk | ms | Trend | Status |
 |------|----:|---:|---:|----:|----:|----:|---:|-------|--------|
-| 01_hello | 3 | 28 | 1.0 | 1 | 2 | 9 | 437 | `_____._  v` | PASS |
-| 02_arithmetic | 4 | 31 | 0.9 | 1 | 2 | 17 | 5 | `   *    ` | PASS |
-| 03_function | 8 | 63 | 1.7 | 2 | 4 | 57 | 4 | `   *     ^` | PASS |
-| 04_if_else | 8 | 32 | 1.0 | 1 | 4 | 9 | 4 | `   *    ` | PASS |
-| 05_for_loop | 7 | 77 | 2.4 | 1 | 5 | 58 | 4 | `   *     ^` | PASS |
-| 06_struct | 9 | 46 | 1.5 | 1 | 2 | 41 | 5 | `   *    ` | PASS |
-| 07_enum_match | 13 | 65 | 2.4 | 1 | 5 | 42 | 6 | `        ` | PASS |
+| 01_hello | 3 | 28 | 1.0 | 1 | 2 | 9 | 447 | ` _______ v` | PASS |
+| 02_arithmetic | 4 | 31 | 0.9 | 1 | 2 | 17 | 6 | `        ` | PASS |
+| 03_function | 8 | 63 | 1.7 | 2 | 4 | 57 | 5 | `         ^` | PASS |
+| 04_if_else | 8 | 32 | 1.0 | 1 | 4 | 9 | 4 | `        ` | PASS |
+| 05_for_loop | 7 | 77 | 2.4 | 1 | 5 | 58 | 5 | `         ^` | PASS |
+| 06_struct | 9 | 46 | 1.5 | 1 | 2 | 41 | 5 | `        ` | PASS |
+| 07_enum_match | 13 | 65 | 2.4 | 1 | 5 | 42 | 6 | `         v` | PASS |
 | 08_list | 5 | 89 | 3.6 | 1 | 2 | 121 | 6 | `        ` | PASS |
 | 09_string_methods | 5 | 62 | 2.5 | 1 | 2 | 35 | 4 | `        ` | PASS |
-| 10_result | 14 | 141 | 5.7 | 2 | 10 | 132 | 6 | `         ^` | PASS |
-| 11_closure | 5 | 54 | 2.0 | 1 | 2 | 33 | 4 | `   *    ` | PASS |
-| 12_while | 7 | 59 | 1.7 | 1 | 5 | 42 | 5 | `   *    ` | PASS |
-| 13_fib | 10 | 100 | 2.8 | 2 | 7 | 98 | 4 | `   *     v` | PASS |
-| 14_nested_struct | 9 | 46 | 1.5 | 1 | 2 | 41 | 4 | `   *     v` | PASS |
-| 15_multifunction | 12 | 99 | 2.8 | 3 | 6 | 98 | 4 | `   *     ^` | PASS |
-| **Total** | **119** | **992** | **33.6** | **20** | **60** | **833** | **502** | | **15/15** |
+| 10_result | 14 | 141 | 5.7 | 2 | 10 | 132 | 7 | `         v` | PASS |
+| 11_closure | 5 | 87 | 3.0 | 1 | 4 | 73 | 5 | `        ` | PASS |
+| 12_while | 7 | 59 | 1.7 | 1 | 5 | 42 | 4 | `        ` | PASS |
+| 13_fib | 10 | 100 | 2.8 | 2 | 7 | 98 | 5 | `         ^` | PASS |
+| 14_nested_struct | 9 | 46 | 1.5 | 1 | 2 | 41 | 4 | `        ` | PASS |
+| 15_multifunction | 12 | 99 | 2.8 | 3 | 6 | 98 | 4 | `        ` | PASS |
+| **Total** | **119** | **1025** | **34.5** | **20** | **62** | **873** | **516** | | **15/15** |
+
+## Native Compiler (mnc-stage1)
+
+| Test | IR | KB | Fns | ms | Match | Status |
+|------|---:|---:|----:|---:|-------|--------|
+| 01_hello | 64 | 2.8 | 1 | 68 | YES | PASS |
+| 02_arithmetic | 0 | 0.0 | 0 | 26 | - | FAIL |
+| 03_function | 0 | 0.0 | 0 | 20 | - | FAIL |
+| 04_if_else | 0 | 0.0 | 0 | 21 | - | FAIL |
+| 05_for_loop | 0 | 0.0 | 0 | 23 | - | FAIL |
+| 06_struct | 0 | 0.0 | 0 | 26 | - | FAIL |
+| 07_enum_match | 0 | 0.0 | 0 | 21 | - | FAIL |
+| 08_list | 0 | 0.0 | 0 | 23 | - | FAIL |
+| 09_string_methods | 0 | 0.0 | 0 | 23 | - | FAIL |
+| 10_result | 0 | 0.0 | 0 | 27 | - | FAIL |
+| 11_closure | 0 | 0.0 | 0 | 26 | - | FAIL |
+| 12_while | 0 | 0.0 | 0 | 24 | - | FAIL |
+| 13_fib | 0 | 0.0 | 0 | 20 | - | FAIL |
+| 14_nested_struct | 0 | 0.0 | 0 | 24 | - | FAIL |
+| 15_multifunction | 0 | 0.0 | 0 | 21 | - | FAIL |
+| **Total** | | | | **394** | **1/15** | **1/15** |
+
+## Speed Comparison
+
+| Test | Bootstrap (ms) | Stage1 (ms) | Speedup |
+|------|---------------:|------------:|--------:|
+| 01_hello | 447 | 68 | 6.6x |
 

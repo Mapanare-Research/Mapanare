@@ -111,11 +111,37 @@ def _split_fields(s: str) -> list[str]:
     return fields
 
 
-def _tsz(ty: str) -> int:
-    """Approximate byte size of an LLVM type string."""
+def _talign(ty: str) -> int:
+    """Natural alignment of an LLVM type in bytes."""
     t = ty.strip()
     if t in ("i1", "i8"):
         return 1
+    if t == "i16":
+        return 2
+    if t == "i32":
+        return 4
+    if t in ("i64", "double"):
+        return 8
+    if t.endswith("*"):
+        return 8
+    if t.startswith("{") and t.endswith("}"):
+        inner = t[1:-1].strip()
+        if not inner:
+            return 1
+        return max(_talign(f) for f in _split_fields(inner))
+    if t.startswith("[") and "x" in t:
+        inner = t[1:].rstrip("]")
+        return _talign(inner.split("x", 1)[1].strip())
+    return 8
+
+
+def _tsz(ty: str) -> int:
+    """ABI byte size of an LLVM type, including alignment padding."""
+    t = ty.strip()
+    if t in ("i1", "i8"):
+        return 1
+    if t == "i16":
+        return 2
     if t == "i32":
         return 4
     if t in ("i64", "double"):
@@ -126,7 +152,23 @@ def _tsz(ty: str) -> int:
         return 8
     if t.startswith("{") and t.endswith("}"):
         inner = t[1:-1].strip()
-        return sum(_tsz(f) for f in _split_fields(inner)) if inner else 0
+        if not inner:
+            return 0
+        fields = _split_fields(inner)
+        offset = 0
+        max_align = 1
+        for f in fields:
+            fa = _talign(f)
+            if fa > max_align:
+                max_align = fa
+            rem = offset % fa
+            if rem != 0:
+                offset += fa - rem
+            offset += _tsz(f)
+        rem = offset % max_align
+        if rem != 0:
+            offset += max_align - rem
+        return offset
     if t.startswith("[") and "x" in t:
         inner = t[1:].rstrip("]")
         parts = inner.split("x", 1)
@@ -407,14 +449,15 @@ class LLVMTextEmitter:
             tags[vn] = i
             pays[vn] = pts
             if pts:
-                sz = 0
+                fld_types: list[str] = []
                 for j, pt in enumerate(pts):
                     if (vn, j) in pre or self._is_self_ref(nm, pt):
-                        sz += 8
+                        fld_types.append(PTR)
                         boxed.add((vn, j))
                     else:
-                        sz += _tsz(self._rty(pt))
-                sizes[vn] = sz
+                        fld_types.append(self._rty(pt))
+                # Compute aligned struct size
+                sizes[vn] = _tsz("{" + ", ".join(fld_types) + "}")
             else:
                 sizes[vn] = 0
         self._enums[nm] = (tags, pays, sizes)
@@ -471,6 +514,12 @@ class LLVMTextEmitter:
         n = self._c
         self._c += 1
         return f"%{pfx}.{n}"
+
+    def _alloca(self, ty: str, name: str = "") -> str:
+        """Create an alloca in the entry block (avoids stack growth in loops)."""
+        a = self._f(name or "a")
+        self._ent.append(f"  {a} = alloca {ty}, align 8")
+        return a
 
     def _L(self, txt: str) -> None:  # noqa: N802
         self._blk[self._cb].append(f"  {txt}")
@@ -543,11 +592,11 @@ class LLVMTextEmitter:
             t = self._f("zx")
             self._L(f"{t} = zext i1 {val} to i8")
             return t
-        # memory reinterpret
+        # memory reinterpret — alloca in entry block to avoid stack growth in loops
         fs, ts = _tsz(fr), _tsz(to)
         if fs >= ts:
             a = self._f("rc")
-            self._L(f"{a} = alloca {fr}, align 8")
+            self._ent.append(f"  {a} = alloca {fr}, align 8")
             self._L(f"store {fr} {val}, {fr}* {a}")
             p = self._f("rp")
             self._L(f"{p} = bitcast {fr}* {a} to {to}*")
@@ -556,7 +605,7 @@ class LLVMTextEmitter:
             return v
         else:
             a = self._f("rc")
-            self._L(f"{a} = alloca {to}, align 8")
+            self._ent.append(f"  {a} = alloca {to}, align 8")
             self._L(f"store {to} {_zero(to)}, {to}* {a}")
             p = self._f("rp")
             self._L(f"{p} = bitcast {to}* {a} to {fr}*")
@@ -692,8 +741,10 @@ class LLVMTextEmitter:
                         break
                 if not done:
                     ins.append(f"  store {ty} {_zero(ty)}, {ty}* {addr}")
-                for ln in reversed(ins):
-                    lines.insert(max(len(lines) - 1, 0), ln)
+                # Insert before the terminator (last line)
+                pos = max(len(lines) - 1, 0)
+                for idx_ins, ln in enumerate(ins):
+                    lines.insert(pos + idx_ins, ln)
 
         # ensure terminated
         for bb in fn.blocks:
@@ -879,11 +930,9 @@ class LLVMTextEmitter:
         if lk == TypeKind.LIST and op == BinOpKind.ADD:
             lv = self._coerce(lv, lt, LIST) if lt != LIST else lv
             rv = self._coerce(rv, rt_, LIST) if rt_ != LIST else rv
-            la = self._f("lp")
-            self._L(f"{la} = alloca {LIST}, align 8")
+            la = self._alloca(LIST, "lp")
             self._L(f"store {LIST} {lv}, {LIST}* {la}")
-            ra = self._f("rp")
-            self._L(f"{ra} = alloca {LIST}, align 8")
+            ra = self._alloca(LIST, "rp")
             self._L(f"store {LIST} {rv}, {LIST}* {ra}")
             r = self._rt(
                 "__mn_list_concat",
@@ -1054,8 +1103,7 @@ class LLVMTextEmitter:
                 lv = (
                     self._coerce(args[0][0], args[0][1], LIST) if args[0][1] != LIST else args[0][0]
                 )
-                la = self._f("ll")
-                self._L(f"{la} = alloca {LIST}, align 8")
+                la = self._alloca(LIST, "ll")
                 self._L(f"store {LIST} {lv}, {LIST}* {la}")
                 r = self._rt("__mn_list_len", I64, [f"{LIST}*"], [(la, f"{LIST}*")])
                 self._put(i.dest, r, I64)
@@ -1135,8 +1183,7 @@ class LLVMTextEmitter:
         if fn == "join" and len(i.args) >= 2:
             sep = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             lv = self._coerce(args[1][0], args[1][1], LIST) if args[1][1] != LIST else args[1][0]
-            la = self._f("jl")
-            self._L(f"{la} = alloca {LIST}, align 8")
+            la = self._alloca(LIST, "jl")
             self._L(f"store {LIST} {lv}, {LIST}* {la}")
             r = self._rt("__mn_str_join", STR, [STR, f"{LIST}*"], [(sep, STR), (la, f"{LIST}*")])
             self._put(i.dest, r, STR)
@@ -1209,11 +1256,9 @@ class LLVMTextEmitter:
                 self._alloc[itn] = (f"%{self._san(itn)}.addr", PTR)
                 self._ent.append(f"  %{self._san(itn)}.addr = alloca i8*, align 8")
                 self._L(f"store i8* {mi}, i8** %{self._san(itn)}.addr")
-                ko = self._f("ko")
-                self._L(f"{ko} = alloca i8*, align 8")
+                ko = self._alloca(PTR, "ko")
                 self._alloc[f"{itn}.kout"] = (ko, PTR)
-                vo = self._f("vo")
-                self._L(f"{vo} = alloca i8*, align 8")
+                vo = self._alloca(PTR, "vo")
                 self._alloc[f"{itn}.vout"] = (vo, PTR)
             ia, _ = self._alloc[itn]
             iv = self._f("mi")
@@ -1251,8 +1296,7 @@ class LLVMTextEmitter:
             sv, st = args[0]
             itn = f"_stream_iter_{i.args[0].name}"
             if f"{itn}.out" not in self._alloc:
-                oa = self._f("so")
-                self._L(f"{oa} = alloca i64, align 8")
+                oa = self._alloca(I64, "so")
                 self._alloc[f"{itn}.out"] = (oa, I64)
             oa, _ = self._alloc[f"{itn}.out"]
             op = self._f("sop")
@@ -1497,16 +1541,33 @@ class LLVMTextEmitter:
             return
         # fallback: extractvalue
         ov, ot = self._get(i.obj)
+        # If value is a pointer, dereference through the struct type
+        if ot.endswith("*") and sn in self._struct_ty:
+            sty = self._struct_ty[sn]
+            tp = self._f("fbc")
+            self._L(f"{tp} = bitcast {ot} {ov} to {sty}*")
+            sv = self._f("fld")
+            self._L(f"{sv} = load {sty}, {sty}* {tp}")
+            ov, ot = sv, sty
         if sn in self._struct_idx and i.field_name in self._struct_idx[sn]:
             idx = self._struct_idx[sn][i.field_name]
             ft = self._structs[sn][idx][1] if sn in self._structs else PTR
-            r = self._f("ev")
-            self._L(f"{r} = extractvalue {ot} {ov}, {idx}")
-            self._put(i.dest, r, ft)
+            if ot.endswith("*"):
+                # Still a pointer — can't extractvalue, return as-is
+                self._put(i.dest, ov, ot)
+            else:
+                r = self._f("ev")
+                self._L(f"{r} = extractvalue {ot} {ov}, {idx}")
+                self._put(i.dest, r, ft)
         else:
-            r = self._f("ev")
-            self._L(f"{r} = extractvalue {ot} {ov}, 0")
-            self._put(i.dest, r, PTR)
+            if ot.endswith("*"):
+                self._put(i.dest, ov, ot)
+            elif ot.startswith("{"):
+                r = self._f("ev")
+                self._L(f"{r} = extractvalue {ot} {ov}, 0")
+                self._put(i.dest, r, PTR)
+            else:
+                self._put(i.dest, ov, ot)
 
     # --- FieldSet ---
     def _do_field_set(self, i: FieldSet) -> None:
@@ -1558,14 +1619,12 @@ class LLVMTextEmitter:
         esz = _tsz(ety)
         lv = self._rt("__mn_list_new", LIST, [I64], [(str(esz), I64)], "ln")
         if i.elements:
-            la = self._f("lp")
-            self._L(f"{la} = alloca {LIST}, align 8")
+            la = self._alloca(LIST, "lp")
             self._L(f"store {LIST} {lv}, {LIST}* {la}")
             self._ensure("__mn_list_push", VOID, [f"{LIST}*", PTR])
             for j, elem in enumerate(i.elements):
                 ev, et = self._get(elem)
-                ea = self._f("ea")
-                self._L(f"{ea} = alloca {et}, align 8")
+                ea = self._alloca(et, "ea")
                 self._L(f"store {et} {ev}, {et}* {ea}")
                 ep = self._f("ep")
                 self._L(f"{ep} = bitcast {et}* {ea} to i8*")
@@ -1589,12 +1648,10 @@ class LLVMTextEmitter:
         else:
             lv, lt = self._get(i.list_val)
         lv = self._coerce(lv, lt, LIST) if lt != LIST else lv
-        la = self._f("lp")
-        self._L(f"{la} = alloca {LIST}, align 8")
+        la = self._alloca(LIST, "lp")
         self._L(f"store {LIST} {lv}, {LIST}* {la}")
         ev, et = self._get(i.element)
-        ea = self._f("ea")
-        self._L(f"{ea} = alloca {et}, align 8")
+        ea = self._alloca(et, "ea")
         self._L(f"store {et} {ev}, {et}* {ea}")
         ep = self._f("ep")
         self._L(f"{ep} = bitcast {et}* {ea} to i8*")
@@ -1620,8 +1677,7 @@ class LLVMTextEmitter:
             ok = TypeKind.LIST
         if ok == TypeKind.LIST:
             ov = self._coerce(ov, ot, LIST) if ot != LIST else ov
-            la = self._f("lp")
-            self._L(f"{la} = alloca {LIST}, align 8")
+            la = self._alloca(LIST, "lp")
             self._L(f"store {LIST} {ov}, {LIST}* {la}")
             iv = self._coerce(iv, it, I64) if it != I64 else iv
             raw = self._rt("__mn_list_get", PTR, [f"{LIST}*", I64], [(la, f"{LIST}*"), (iv, I64)])
@@ -1638,8 +1694,7 @@ class LLVMTextEmitter:
             r = self._rt("__mn_str_byte_at", I64, [STR, I64], [(ov, ot), (iv, it)])
             self._put(i.dest, r, I64)
         elif ok == TypeKind.MAP:
-            ka = self._f("ka")
-            self._L(f"{ka} = alloca {it}, align 8")
+            ka = self._alloca(it, "ka")
             self._L(f"store {it} {iv}, {it}* {ka}")
             kp = self._f("kp")
             self._L(f"{kp} = bitcast {it}* {ka} to i8*")
@@ -1659,21 +1714,18 @@ class LLVMTextEmitter:
         iv, it = self._get(i.index)
         vv, vt = self._get(i.val)
         if i.obj.ty.kind == TypeKind.LIST:
-            la = self._f("lp")
-            self._L(f"{la} = alloca {LIST}, align 8")
+            la = self._alloca(LIST, "lp")
             self._L(f"store {LIST} {ov}, {LIST}* {la}")
             raw = self._rt("__mn_list_get", PTR, [f"{LIST}*", I64], [(la, f"{LIST}*"), (iv, it)])
             tp = self._f("tp")
             self._L(f"{tp} = bitcast i8* {raw} to {vt}*")
             self._L(f"store {vt} {vv}, {vt}* {tp}")
         elif i.obj.ty.kind == TypeKind.MAP:
-            ka = self._f("ka")
-            self._L(f"{ka} = alloca {it}, align 8")
+            ka = self._alloca(it, "ka")
             self._L(f"store {it} {iv}, {it}* {ka}")
             kp = self._f("kp")
             self._L(f"{kp} = bitcast {it}* {ka} to i8*")
-            va = self._f("va")
-            self._L(f"{va} = alloca {vt}, align 8")
+            va = self._alloca(vt, "va")
             self._L(f"store {vt} {vv}, {vt}* {va}")
             vp = self._f("vp")
             self._L(f"{vp} = bitcast {vt}* {va} to i8*")
@@ -1702,13 +1754,11 @@ class LLVMTextEmitter:
         for kv, vv in i.pairs:
             k, kt = self._get(kv)
             v, vt = self._get(vv)
-            ka = self._f("mk")
-            self._L(f"{ka} = alloca {kt}, align 8")
+            ka = self._alloca(kt, "mk")
             self._L(f"store {kt} {k}, {kt}* {ka}")
             kp = self._f("mkp")
             self._L(f"{kp} = bitcast {kt}* {ka} to i8*")
-            va = self._f("mv")
-            self._L(f"{va} = alloca {vt}, align 8")
+            va = self._alloca(vt, "mv")
             self._L(f"store {vt} {v}, {vt}* {va}")
             vp = self._f("mvp")
             self._L(f"{vp} = bitcast {vt}* {va} to i8*")
@@ -2061,8 +2111,7 @@ class LLVMTextEmitter:
     def _do_agent_send(self, i: AgentSend) -> None:
         av, at = self._get(i.agent)
         vv, vt = self._get(i.val)
-        va = self._f("as")
-        self._L(f"{va} = alloca {vt}, align 8")
+        va = self._alloca(vt, "as")
         self._L(f"store {vt} {vv}, {vt}* {va}")
         vp = self._f("asp")
         self._L(f"{vp} = bitcast {vt}* {va} to i8*")
@@ -2071,8 +2120,7 @@ class LLVMTextEmitter:
 
     def _do_agent_sync(self, i: AgentSync) -> None:
         av, at = self._get(i.agent)
-        op = self._f("ao")
-        self._L(f"{op} = alloca i8*, align 8")
+        op = self._alloca(PTR, "ao")
         self._ensure("mapanare_agent_recv_blocking", I32, [PTR, f"{PTR}*"])
         self._rt("mapanare_agent_recv_blocking", I32, [PTR, f"{PTR}*"], [(av, at), (op, f"{PTR}*")])
         raw = self._f("ar")
@@ -2091,8 +2139,7 @@ class LLVMTextEmitter:
     def _do_sig_init(self, i: SignalInit) -> None:
         v, t = self._get(i.initial_val)
         vsz = _tsz(t)
-        va = self._f("sv")
-        self._L(f"{va} = alloca {t}, align 8")
+        va = self._alloca(t, "sv")
         self._L(f"store {t} {v}, {t}* {va}")
         vp = self._f("svp")
         self._L(f"{vp} = bitcast {t}* {va} to i8*")
@@ -2115,8 +2162,7 @@ class LLVMTextEmitter:
     def _do_sig_set(self, i: SignalSet) -> None:
         sv, st = self._get(i.signal)
         vv, vt = self._get(i.val)
-        va = self._f("ssv")
-        self._L(f"{va} = alloca {vt}, align 8")
+        va = self._alloca(vt, "ssv")
         self._L(f"store {vt} {vv}, {vt}* {va}")
         vp = self._f("ssp")
         self._L(f"{vp} = bitcast {vt}* {va} to i8*")
@@ -2132,8 +2178,7 @@ class LLVMTextEmitter:
         nd = len(i.deps)
         if nd > 0:
             dat = f"[{nd} x i8*]"
-            da = self._f("sda")
-            self._L(f"{da} = alloca {dat}, align 8")
+            da = self._alloca(dat, "sda")
             for j, dv in enumerate(i.deps):
                 d, dt = self._get(dv)
                 gp = self._f("sdg")
@@ -2161,8 +2206,7 @@ class LLVMTextEmitter:
     def _do_stream_init(self, i: StreamInit) -> None:
         sv, st = self._get(i.source)
         sv = self._coerce(sv, st, LIST) if st != LIST else sv
-        la = self._f("slp")
-        self._L(f"{la} = alloca {LIST}, align 8")
+        la = self._alloca(LIST, "slp")
         self._L(f"store {LIST} {sv}, {LIST}* {la}")
         r = self._rt(
             "__mn_stream_from_list", PTR, [f"{LIST}*", I64], [(la, f"{LIST}*"), ("8", I64)]
@@ -2201,13 +2245,11 @@ class LLVMTextEmitter:
             if len(i.args) >= 2:
                 iv, it = self._get(i.args[0])
                 fp = self._stream_fn(i, 1)
-                ia = self._f("fi")
-                self._L(f"{ia} = alloca {it}, align 8")
+                ia = self._alloca(it, "fi")
                 self._L(f"store {it} {iv}, {it}* {ia}")
                 ip = self._f("fip")
                 self._L(f"{ip} = bitcast {it}* {ia} to i8*")
-                oa = self._f("fo")
-                self._L(f"{oa} = alloca {it}, align 8")
+                oa = self._alloca(it, "fo")
                 op = self._f("fop")
                 self._L(f"{op} = bitcast {it}* {oa} to i8*")
                 self._rt(
