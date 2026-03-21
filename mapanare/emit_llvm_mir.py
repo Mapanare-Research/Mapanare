@@ -1930,8 +1930,16 @@ class LLVMMIREmitter:
                 try:
                     pointee = alloca.type.pointee
                     if isinstance(pointee, ir.LiteralStructType) and _is_large_struct(pointee):
-                        loaded = _load_struct_fields(builder, alloca, pointee)
-                        # Track source alloca by MIR name for alloca-to-alloca memcpy
+                        # For large structs, memcpy to a fresh alloca then
+                        # do a single whole-struct load.  This avoids the
+                        # field-by-field _load_struct_fields decomposition
+                        # that creates 34+ insertvalue chains which both
+                        # llvmlite and clang miscompile for structs > ~200B.
+                        vn = name.lstrip("%")
+                        tmp = builder.alloca(pointee, name=f"l.{vn}.cp")
+                        tmp.align = 16
+                        _memcpy_alloca(builder, tmp, alloca, _approx_type_size(pointee))
+                        loaded = builder.load(tmp, name=f"l.{vn}")
                         self._value_src_alloca[name] = alloca
                         return loaded
                     return builder.load(
@@ -1949,7 +1957,11 @@ class LLVMMIREmitter:
                 try:
                     pointee = alloca.type.pointee
                     if isinstance(pointee, ir.LiteralStructType) and _is_large_struct(pointee):
-                        loaded = _load_struct_fields(builder, alloca, pointee)
+                        vn = name.lstrip("%")
+                        tmp = builder.alloca(pointee, name=f"l.{vn}.cp")
+                        tmp.align = 16
+                        _memcpy_alloca(builder, tmp, alloca, _approx_type_size(pointee))
+                        loaded = builder.load(tmp, name=f"l.{vn}")
                         self._value_src_alloca[name] = alloca
                         return loaded
                     loaded = builder.load(alloca, name=f"l.{name.lstrip('%')}")
@@ -2052,27 +2064,15 @@ class LLVMMIREmitter:
             if isinstance(pointee, ir.LiteralStructType) and _is_large_struct(pointee):
                 # For structs with large array fields (enum types), prefer
                 # alloca-to-alloca memcpy over field-by-field decomposition.
-                # The decomposition creates [N x i8] SSA values that trigger
-                # llvmlite's -O1 codegen truncation bug.
-                src_a = None
-                if _has_large_array_field(pointee):
-                    # Try source alloca from the MIR value that produced this SSA val
-                    if src_mir_val is not None:
-                        src_a = self._value_src_alloca.get(src_mir_val.name)
-                        if src_a is None:
-                            src_a = self._get_value_ptr(src_mir_val)
-                if src_a is not None:
-                    if src_a.type.pointee != pointee:
-                        try:
-                            src_a = builder.bitcast(src_a, pointee.as_pointer(), name="sv.sbc")
-                        except (TypeError, AttributeError):
-                            src_a = None
-                    if src_a is not None:
-                        _memcpy_alloca(builder, alloca, src_a, _approx_type_size(pointee))
-                    else:
-                        _store_struct_fields(builder, val, alloca, pointee)
-                else:
-                    _store_struct_fields(builder, val, alloca, pointee)
+                # For ALL large structs, store via temp alloca + memcpy
+                # instead of field-by-field decomposition.  The decomposition
+                # creates 34+ extract_value/insert_value chains that both
+                # llvmlite -O1 and clang -O0 miscompile for structs > ~200B.
+                # A single whole-struct store + memcpy avoids this entirely.
+                tmp = builder.alloca(pointee, name="sv.tmp")
+                tmp.align = 16
+                builder.store(val, tmp)
+                _memcpy_alloca(builder, alloca, tmp, _approx_type_size(pointee))
             else:
                 builder.store(val, alloca)
         except (TypeError, AttributeError, KeyError) as exc:

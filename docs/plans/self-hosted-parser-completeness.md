@@ -6,9 +6,19 @@ The self-hosted parser (`mapanare/self/parser.mn`) is missing handlers for sever
 
 **Blocked**: All 7 self-hosted modules fail to compile themselves. The `ast.mn` module (structs/enums only, no complex expressions) is the only one that compiles.
 
-## Root Cause
+## Root Causes
 
+**Two distinct issues blocking self-compilation:**
+
+### Issue A: Parser — Missing expression handlers
 `parse_atom` in `parser.mn` (line ~1421) handles token types and returns `Expr` nodes. Missing handlers fall through to line 1498: `return new_expr_result(Expr::NoneLit, pos + 1)` — silently producing a `None` literal instead of the correct AST node.
+
+### Issue B: Codegen — LowerState/LowerResult struct corruption
+The pattern `let x = 1; let xs = []` crashes — even though parsing is correct — because `LowerResult` (760 bytes) and `LowerState` (680 bytes) get corrupted when threaded through lowering functions via sret returns. The `_store_struct_fields` / `_load_struct_fields` field-by-field decomposition produces valid IR, but BOTH llvmlite -O1 AND clang -O0 generate incorrect x86 code for the 34+ extract_value/insert_value chain on these huge structs.
+
+This is the SAME class of bug as the enum truncation — but for regular structs, not enums. The boxed enum refactor fixed enums (all 16 bytes now), but LowerState/LowerResult are still 680/760 bytes.
+
+**Fix approach for Issue B**: Apply the same heap-allocation strategy — store `LowerResult` as `{i8* ptr}` with heap-allocated payload, just like enums. This would make ALL large return types fit in ≤16 bytes. Requires a new plan: `boxed-large-structs-refactor.md`.
 
 ## Missing Handlers (discovered so far)
 
@@ -17,11 +27,11 @@ The self-hosted parser (`mapanare/self/parser.mn`) is missing handlers for sever
 - Was: fell through to `NoneLit`
 - Fix: added `KW_NEW` handler in `parse_atom` (committed)
 
-### 2. List literal `[]` in certain contexts — TO INVESTIGATE
-- `let xs: List<T> = []` works in isolation
-- Crashes when many functions precede it in the same file
-- May be a different issue (MIR lowering or cross-module type resolution)
-- Need to create minimal reproducer and trace
+### 2. List literal `[]` after any `let` statement — BLOCKED by Issue B
+- `let xs: List<T> = []` works in isolation (single statement)
+- `let x = 1; let xs = []` crashes — NOT a parser bug
+- Root cause: LowerState corruption during state threading (Issue B)
+- Cannot fix with parser changes alone
 
 ### 3. Enum variant constructors — TO INVESTIGATE
 - Pattern: `Enum::Variant(args)` — parsed as `NamespaceAccess` then `Call`
@@ -36,42 +46,37 @@ The self-hosted parser (`mapanare/self/parser.mn`) is missing handlers for sever
 - `send` / signal expressions
 - String interpolation `"${expr}"`
 
-## Diagnosis Steps
+## Status
 
-For each module that crashes:
+- **Issue A (parser)**: `KW_NEW` fixed. Other handlers may still be missing but can't be tested until Issue B is resolved.
+- **Issue B (LowerState)**: Diagnosis complete. Root cause is identical to the enum truncation bug but for structs. Needs a new refactor (heap-allocate LowerResult like we did for enums).
 
-1. Binary search for the crash line: `head -N module.mn > test.mn; echo 'fn main(){}' >> test.mn`
-2. Check crash backtrace: `gdb -batch -ex run -ex 'bt 5' --args ./mnc-stage1 test.mn`
-3. Identify the expression type that produces wrong AST
-4. Add handler to `parse_atom` or the relevant parse function
-5. Rebuild mnc-stage1 and re-test
+## Next Steps
+
+1. **Create `boxed-large-structs-refactor.md`** — plan to heap-allocate LowerResult/LowerState
+2. Implement the struct boxing (same pattern as enum boxing)
+3. Once Issue B is fixed, return to parser completeness testing
+4. Fix remaining missing parser handlers as they're discovered
 
 ## Files to Modify
 
 | File | Changes |
 |------|---------|
-| `mapanare/self/parser.mn` | Add missing expression handlers in `parse_atom` and other parse functions |
-
-## Test Strategy
-
-After each parser fix:
-1. `python scripts/build_stage1.py` — rebuild mnc-stage1
-2. `python scripts/test_native.py --stage1 mapanare/self/mnc-stage1` — 15/15 golden tests
-3. Test each module: `./mnc-stage1 mapanare/self/{ast,main,lexer,...}.mn`
-4. `python -m pytest tests/ -x -q` — 3697 tests
+| `mapanare/self/parser.mn` | Add missing expression handlers (Issue A) |
+| `mapanare/emit_llvm_mir.py` | Heap-allocate large struct returns (Issue B — separate plan) |
 
 ## Success Criteria
 
-- [ ] All 15 golden tests pass (currently ✅)
-- [ ] `main.mn` compiles
-- [ ] `lexer.mn` compiles
-- [ ] `semantic.mn` compiles
-- [ ] `parser.mn` compiles
-- [ ] `lower.mn` compiles
-- [ ] `emit_llvm.mn` compiles
+- [x] All 15 golden tests pass
+- [ ] `main.mn` compiles — BLOCKED by Issue B
+- [ ] `lexer.mn` compiles — BLOCKED by Issue B
+- [ ] `semantic.mn` compiles — BLOCKED by Issue B
+- [ ] `parser.mn` compiles — BLOCKED by Issue B
+- [ ] `lower.mn` compiles — BLOCKED by Issue B
+- [ ] `emit_llvm.mn` compiles — BLOCKED by Issue B
 - [ ] `mnc_all.mn` compiles (self-compilation)
-- [ ] 3697 pytest tests pass (currently ✅)
+- [x] 3697 pytest tests pass
 
 ## Priority
 
-HIGH — this is the remaining blocker for self-compilation (v1.0.6 milestone). The boxed enum refactor eliminated the llvmlite codegen bug. The parser is the last piece.
+HIGH — but blocked by Issue B. The parser fix alone is insufficient. The LowerState corruption must be fixed first.
