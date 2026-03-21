@@ -125,10 +125,21 @@ Prototype implemented and tested. Results:
 2. **3 golden test regressions** (07_enum_match, 08_list, 10_result): all crash in `lower_list` — same aliasing issue from shallow copy.
 3. Prototype changes were NOT committed (lost in git stash). Need to re-apply.
 
-### Next Session
-1. Re-apply struct boxing (`_register_struct`, `_emit_struct_init`, `_emit_field_get`, `_emit_field_set`)
-2. Implement robust deep copy with proper `i8*` vs `{i8*}` handling
-3. Test full golden suite + module compilation
+### Analysis (2026-03-21)
+
+The root cause is NOT struct size but **by-value parameter passing of 680-byte LowerState**.
+
+At byptr threshold 56 (LowerState by pointer): `let+list` works but `match` crashes (aliasing).
+At byptr threshold 1024 (LowerState by value): `match` works but `let+list` crashes (stale registers).
+These are CONTRADICTORY requirements — no single threshold fixes both.
+
+The `println` call between statements "fixes" things by forcing full state materialization (function call barrier). Field access barriers don't help — only real function calls work.
+
+### Next Steps
+The remaining blocker requires one of:
+1. **Boxed LowerState** — represent as `{i8*}` to eliminate large by-value passing entirely
+2. **Deep copy at function entry** — memcpy byptr parameters AND set values to None (force alloca path)
+3. **Compiler barrier intrinsic** — emit `asm volatile("")` or similar to force materialization
 
 ## Success Criteria
 
