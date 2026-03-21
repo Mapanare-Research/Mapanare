@@ -483,21 +483,21 @@ fn set_block(st: LowerState, idx: Int) -> LowerState {
 
 fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
     // Append instruction to current block in current function.
-    // Uses IndexSet on the shared blocks buffer so the mutation is visible
-    // through any copy of the blocks list header (same ptr).
     let mut new_st: LowerState = st
     match st.current_fn {
         Some(f) => {
             if st.current_block_idx >= 0 {
                 if st.current_block_idx < len(f.blocks) {
                     let bb: BasicBlock = f.blocks[st.current_block_idx]
-                    // Extract instructions to a local, push, build new block
                     let mut instrs: List<Instruction> = bb.instructions
                     instrs.push(instr)
                     let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
-                    // IndexSet modifies the shared buffer in-place
                     let mut blks: List<BasicBlock> = f.blocks
                     blks[st.current_block_idx] = new_bb
+                    // Update the function in new_st with the modified blocks
+                    let mut new_fn: MIRFunction = f
+                    new_fn.blocks = blks
+                    new_st.current_fn = Some(new_fn)
                 }
             }
         },
@@ -1975,6 +1975,9 @@ fn lower_error_prop(st: LowerState, inner: Expr) -> LowerResult {
 // ---------------------------------------------------------------------------
 
 fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
+    // Touch st to force materialization before any list operations.
+    // Without this, clang -O0 may leave the LowerState in stale registers
+    // from the caller's sret return, causing corruption in subsequent ops.
     let mut s: LowerState = st
     let mut vals: List<Value> = []
     let mut i: Int = 0
