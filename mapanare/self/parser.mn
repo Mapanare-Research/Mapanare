@@ -1081,7 +1081,7 @@ fn parse_return_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtRes
     if at_end(tokens, p) { return new_stmt_result(Stmt::Return(none), p) }
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
-    return new_stmt_result(Stmt::Return(er.expr), er.pos)
+    return new_stmt_result(Stmt::Return(Some(er.expr)), er.pos)
 }
 
 // ---------------------------------------------------------------------------

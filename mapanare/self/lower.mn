@@ -1825,7 +1825,8 @@ fn lower_range(st: LowerState, start: Expr, end: Expr, inclusive: Bool) -> Lower
 
 fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerResult {
     let name_r: LowerResult = fresh_tmp(st, "lambda")
-    let lambda_name: String = name_r.value.name
+    // Lambda function names should not have % prefix (it becomes @%lambda in IR)
+    let lambda_name: String = "lambda" + toString(st.tmp_counter)
 
     // Build the body block
     let body_block: Block = match body {

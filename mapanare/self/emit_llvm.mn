@@ -951,12 +951,11 @@ fn emit_field_set(st: EmitState, obj: Value, field_name: String, val: Value) -> 
 // ---------------------------------------------------------------------------
 
 fn strip_percent(name: String) -> String {
-    if len(name) > 0 {
-        if name.substr(0, 1) == "%" {
-            return name.substr(1, len(name) - 1)
-        }
-    }
-    return name
+    // Strip leading % from name. Uses starts_with + substr.
+    // NOTE: Can't use early return inside if (self-hosted control flow limitation).
+    let starts: Bool = name.starts_with("%")
+    let result: String = if starts { name.substr(1, len(name) - 1) } else { name }
+    return result
 }
 
 fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<Value>) -> EmitState {
@@ -987,7 +986,7 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
         s = emit_line(s, emit_store(ety, elem.name, elem_alloca))
         let cast_name: String = dn + ".c" + toString(i)
         s = emit_line(s, emit_bitcast(cast_name, ety + "*", elem_alloca, "i8*"))
-        s = emit_line(s, emit_call_void("__mn_list_push", llvm_list_rt() + "* %" + alloca_name + ", i8* %" + cast_name))
+        s = emit_line(s, emit_call_void("__mn_list_push", llvm_list_rt() + "* " + alloca_name + ", i8* " + cast_name))
         i = i + 1
     }
     return s
