@@ -119,7 +119,7 @@ def _compile_to_llvm_ir(
     use_mir: bool = True,
     debug: bool = False,
     werror: bool = False,
-    emitter_backend: str = "llvmlite",
+    emitter_backend: str = "text",
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source.
 
@@ -1330,9 +1330,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_emit_llvm.add_argument(
         "--emitter",
-        choices=["llvmlite", "text"],
-        default="llvmlite",
-        help="LLVM emitter backend: llvmlite (default) or text (no llvmlite dependency)",
+        choices=["text", "llvmlite"],
+        default="text",
+        help="LLVM emitter backend: text (default, no llvmlite dependency) or llvmlite (legacy)",
     )
     _add_opt_level_args(p_emit_llvm)
     _add_mir_flag(p_emit_llvm)

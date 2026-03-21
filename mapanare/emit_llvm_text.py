@@ -2334,5 +2334,38 @@ class LLVMTextEmitter:
             return (
                 f"define internal i8* @{pipe_name}(i8* %input) {{\nentry:\n  ret i8* %input\n}}\n"
             )
-        # Simple pass-through for now
-        return f"define internal i8* @{pipe_name}(i8* %input) {{\nentry:\n  ret i8* %input\n}}\n"
+        # Emit agent spawn chain: spawn each stage, send data through, recv result
+        self._ensure("mapanare_agent_new", PTR, [PTR, PTR, PTR, I32, I32])
+        self._ensure("mapanare_agent_spawn", I32, [PTR])
+        self._ensure("mapanare_agent_send", I32, [PTR, PTR])
+        self._ensure("mapanare_agent_recv_blocking", I32, [PTR, f"{PTR}*"])
+        self._ensure("mapanare_agent_stop", VOID, [PTR])
+        lines = [
+            f"define internal i8* @{pipe_name}(i8* %input) {{",
+            "entry:",
+        ]
+        cur = "%input"
+        for i, stage in enumerate(pipe_info.stages):
+            hn = f"__mn_handler_{stage}"
+            hp = "null"
+            if hn in self._sigs:
+                rt, pts, _ = self._sigs[hn]
+                ft = f"{rt} ({', '.join(pts)})*"
+                hp = f"bitcast ({ft} @{hn} to i8*)"
+            lines.append(f"  %name.{i} = alloca [1 x i8], align 1")
+            lines.append(f"  %np.{i} = getelementptr [1 x i8], [1 x i8]* %name.{i}, i64 0, i64 0")
+            lines.append(
+                f"  %ag.{i} = call i8* @mapanare_agent_new(i8* %np.{i}, i8* {hp},"
+                f" i8* null, i32 256, i32 256)"
+            )
+            lines.append(f"  call i32 @mapanare_agent_spawn(i8* %ag.{i})")
+            lines.append(f"  call i32 @mapanare_agent_send(i8* %ag.{i}, i8* {cur})")
+            lines.append(f"  %outp.{i} = alloca i8*, align 8")
+            lines.append(f"  call i32 @mapanare_agent_recv_blocking(i8* %ag.{i}, i8** %outp.{i})")
+            lines.append(f"  %out.{i} = load i8*, i8** %outp.{i}")
+            lines.append(f"  call void @mapanare_agent_stop(i8* %ag.{i})")
+            cur = f"%out.{i}"
+        lines.append(f"  ret i8* {cur}")
+        lines.append("}")
+        lines.append("")
+        return "\n".join(lines)

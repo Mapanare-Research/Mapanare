@@ -607,7 +607,7 @@ def compile_multi_module_mir(
     opt_level: int = 2,
     target_name: str | None = None,
     debug: bool = False,
-    emitter_backend: str = "llvmlite",
+    emitter_backend: str = "text",
 ) -> str:
     """Compile a root .mn file and all its imports into a single LLVM IR string.
 
