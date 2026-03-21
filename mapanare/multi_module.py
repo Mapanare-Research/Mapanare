@@ -575,12 +575,39 @@ def merge_mir_modules(base: MIRModule, additions: list[MIRModule]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _emit_with_backend(
+    backend: str, module_name: str, target: Any, mir_module: MIRModule, debug: bool
+) -> str:
+    """Emit LLVM IR using the selected backend."""
+    if backend == "text":
+        from mapanare.emit_llvm_text import LLVMTextEmitter
+
+        emitter = LLVMTextEmitter(
+            module_name=module_name,
+            target_triple=target.triple,
+            data_layout=target.data_layout,
+            debug=debug,
+        )
+        return emitter.emit(mir_module)
+    from mapanare.emit_llvm_mir import LLVMMIREmitter
+
+    emitter_mir = LLVMMIREmitter(
+        module_name=module_name,
+        target_triple=target.triple,
+        data_layout=target.data_layout,
+        debug=debug,
+    )
+    llvm_module = emitter_mir.emit(mir_module)
+    return str(llvm_module)
+
+
 def compile_multi_module_mir(
     root_source: str,
     root_file: str,
     opt_level: int = 2,
     target_name: str | None = None,
     debug: bool = False,
+    emitter_backend: str = "llvmlite",
 ) -> str:
     """Compile a root .mn file and all its imports into a single LLVM IR string.
 
@@ -594,7 +621,6 @@ def compile_multi_module_mir(
         7. Optimize merged MIR
         8. Emit LLVM IR via LLVMMIREmitter
     """
-    from mapanare.emit_llvm_mir import LLVMMIREmitter
     from mapanare.lower import lower as build_mir
     from mapanare.mir_opt import MIROptLevel
     from mapanare.mir_opt import optimize_module as mir_optimize
@@ -621,14 +647,7 @@ def compile_multi_module_mir(
         mir_opt_level = MIROptLevel(opt_level)
         mir_module, _ = mir_optimize(mir_module, mir_opt_level)
         target = get_target(target_name)
-        emitter = LLVMMIREmitter(
-            module_name=module_name,
-            target_triple=target.triple,
-            data_layout=target.data_layout,
-            debug=debug,
-        )
-        llvm_module = emitter.emit(mir_module)
-        return str(llvm_module)
+        return _emit_with_backend(emitter_backend, module_name, target, mir_module, debug)
 
     # 3. Lower each dependency, rename symbols.
     #   Dependencies are in topological order, so when we lower module B that
@@ -809,11 +828,4 @@ def compile_multi_module_mir(
 
     # 8. Emit LLVM IR
     target = get_target(target_name)
-    emitter = LLVMMIREmitter(
-        module_name=root_module_name,
-        target_triple=target.triple,
-        data_layout=target.data_layout,
-        debug=debug,
-    )
-    llvm_module = emitter.emit(root_mir)
-    return str(llvm_module)
+    return _emit_with_backend(emitter_backend, root_module_name, target, root_mir, debug)

@@ -29,7 +29,8 @@ def build() -> pathlib.Path:
     print("=== Stage 1: Building self-hosted compiler ===")
 
     # 1. Generate LLVM IR
-    print("[1/6] Generating LLVM IR from mapanare/self/*.mn ...")
+    emitter = "text" if "--text" in sys.argv else "llvmlite"
+    print(f"[1/6] Generating LLVM IR from mapanare/self/*.mn (emitter={emitter}) ...")
     from mapanare.multi_module import compile_multi_module_mir
 
     source = (SELF_DIR / "main.mn").read_text(encoding="utf-8")
@@ -37,6 +38,7 @@ def build() -> pathlib.Path:
         root_source=source,
         root_file=str(SELF_DIR / "main.mn"),
         opt_level=2,
+        emitter_backend=emitter,
     )
 
     # 2. Post-process: make compile() and format_error() externally visible
