@@ -861,6 +861,12 @@ class LLVMTextEmitter:
     def _do_copy(self, i: Copy) -> None:
         v, t = self._get(i.src)
         self._put(i.dest, v, t)
+        # Track list aliases: when a list is copied, the dest should see
+        # future push write-backs to the source. Record the alias so
+        # _do_list_push can write back to all copies.
+        if t == LIST:
+            root = self._lroots.get(i.src.name, i.src.name)
+            self._lroots[i.dest.name] = root
 
     # --- Cast ---
     def _do_cast(self, i: Cast) -> None:
@@ -1709,12 +1715,12 @@ class LLVMTextEmitter:
             self._L(f"{r} = load {LIST}, {LIST}* {a}" if t == LIST else f"{r} = load {t}, {t}* {a}")
             self._put(i.dest, r, LIST)
             self._lroots[i.dest.name] = root
-            # Write-back to ALL known aliases
+            # Write-back to source and root aliases
             for tn in {root, src, i.list_val.name}:
                 for k in (tn, tn.lstrip("%"), "%" + tn.lstrip("%")):
                     if k in self._alloc and k != i.dest.name:
                         ta, tt = self._alloc[k]
-                        if ta != a:  # Don't write back to the same alloca
+                        if ta != a:
                             wv = self._coerce(r, LIST, tt) if LIST != tt else r
                             self._L(f"store {tt} {wv}, {tt}* {ta}")
         else:
