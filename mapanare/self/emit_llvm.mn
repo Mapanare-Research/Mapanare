@@ -1308,7 +1308,11 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
             if fn_name == "ends_with" { return emit_line(st, emit_call_ir(dn, llvm_bool(), "__mn_str_ends_with", llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name)) }
             if fn_name == "find" { return emit_line(st, emit_call_ir(dn, llvm_int(), "__mn_str_find", llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name)) }
             if fn_name == "char_at" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_char_at", llvm_string() + " " + args[0].name + ", i64 " + args[1].name)) }
-            if fn_name == "substr" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_substr", llvm_string() + " " + args[0].name + ", i64 " + args[1].name + ", i64 " + args[2].name)) }
+            if fn_name == "substr" {
+                if len(args) >= 3 {
+                    return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_substr", llvm_string() + " " + args[0].name + ", i64 " + args[1].name + ", i64 " + args[2].name))
+                }
+            }
             if fn_name == "to_upper" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_to_upper", llvm_string() + " " + args[0].name)) }
             if fn_name == "to_lower" { return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_to_lower", llvm_string() + " " + args[0].name)) }
         }
