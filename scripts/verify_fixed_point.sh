@@ -63,6 +63,9 @@ compile_with_native() {
     sed -i 's/define internal {i1, {i8\*, i64}, {i8\*, i64, i64, i64}} @"compile"/define {i1, {i8*, i64}, {i8*, i64, i64, i64}} @"compile"/' "$ir_path"
     sed -i 's/define internal {i8\*, i64} @"format_error"/define {i8*, i64} @"format_error"/' "$ir_path"
 
+    # Fix duplicate SSA names from relaxed SSA in self-hosted compiler
+    python3 "$ROOT/scripts/fix_ssa.py" "$ir_path" -o "$ir_path"
+
     # Compile IR to object code
     info "  Compiling IR -> object code ..."
     local obj_path="${ir_path%.ll}.o"
