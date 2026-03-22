@@ -289,30 +289,22 @@ fn new_fn_entry(name: String, ret: String, params: List<String>) -> FnEntry {
     return new FnEntry { name: name, ret_type: ret, param_types: params }
 }
 
-struct EmitContext {
+struct EmitState {
     lines: List<String>,
+    counter: Int,
     functions: List<FnEntry>,
     structs: List<StructEntry>,
+    module_name: String,
+    str_counter: Int,
     str_globals: List<String>,
     pre_entry: List<String>,
     alloca_names: List<String>,
     copy_names: List<String>
 }
 
-struct EmitState {
-    ctx: List<EmitContext>,
-    counter: Int,
-    str_counter: Int,
-    module_name: String
-}
-
 struct ResolvedValue {
     st: EmitState,
     name: String
-}
-
-fn get_ctx(st: EmitState) -> EmitContext {
-    return st.ctx[0]
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
@@ -323,26 +315,12 @@ fn new_emit_state(module_name: String) -> EmitState {
     let pre_entry: List<String> = []
     let alloca_names: List<String> = []
     let copy_names: List<String> = []
-    let ctx: EmitContext = new EmitContext { lines: lines, functions: functions, structs: structs, str_globals: str_globals, pre_entry: pre_entry, alloca_names: alloca_names, copy_names: copy_names }
-    let ctx_list: List<EmitContext> = []
-    ctx_list.push(ctx)
-    return new EmitState { ctx: ctx_list, counter: 0, str_counter: 0, module_name: module_name }
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, pre_entry: pre_entry, alloca_names: alloca_names, copy_names: copy_names }
 }
 
 fn emit_global(st: EmitState, line: String) -> EmitState {
-    let c: EmitContext = get_ctx(st)
-    c.str_globals.push(line)
+    st.str_globals.push(line)
     return st
-}
-
-fn emit_line(st: EmitState, line: String) -> EmitState {
-    let c: EmitContext = get_ctx(st)
-    c.lines.push(line)
-    return st
-}
-
-fn emit_blank(st: EmitState) -> EmitState {
-    return emit_line(st, "")
 }
 
 fn is_variable(name: String) -> Bool {
