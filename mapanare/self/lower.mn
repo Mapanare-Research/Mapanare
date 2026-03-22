@@ -148,6 +148,9 @@ enum Instruction {
     ListInit(Value, MIRType, List<Value>),
     IndexGet(Value, Value, Value),
     IndexSet(Value, Value, Value),
+    Alloca(Value, MIRType),
+    Load(Value, Value),
+    Store(Value, Value),
     MapInit(Value, MIRType, MIRType, List<KVPair>),
     // Enum
     EnumInit(Value, MIRType, String, List<Value>),
@@ -1053,8 +1056,14 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
         if bi >= len(fn_def.params) { break }
         let p: Param = fn_def.params[bi]
         let pty: MIRType = lower_resolve_type_opt(p.type_annotation)
+        
+        let addr_name: String = "%" + p.name + ".addr"
+        let addr: Value = new_value(addr_name, pty)
         let param_val: Value = new_value("%" + p.name, pty)
-        s = define_var(s, p.name, param_val, false)
+        
+        s = emit_instr(s, Instruction::Alloca(addr, pty))
+        s = emit_instr(s, Instruction::Store(addr, param_val))
+        s = define_var(s, p.name, addr, false)
         bi = bi + 1
     }
 
@@ -1217,9 +1226,21 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
 
 fn lower_let(st: LowerState, name: String, mutable: Bool, value: Expr) -> LowerState {
     let r: LowerResult = lower_expr(st, value)
-    let named: Value = new_value("%" + name, r.value.ty)
-    let mut s: LowerState = emit_instr(r.state, Instruction::Copy(named, r.value))
-    s = define_var(s, name, named, mutable)
+    let mut s: LowerState = r.state
+
+    // Find or create alloca for this variable
+    let addr_name: String = "%" + name + ".addr"
+    let addr: Value = new_value(addr_name, r.value.ty)
+
+    // Only emit Alloca if not already present in this function
+    // (In a more robust implementation, we'd collect all locals first)
+    s = emit_instr(s, Instruction::Alloca(addr, r.value.ty))
+
+    // Store value to alloca
+    s = emit_instr(s, Instruction::Store(addr, r.value))
+
+    // Track the alloca address in our variable map
+    s = define_var(s, name, addr, mutable)
     return s
 }
 
@@ -1464,7 +1485,12 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult {
     // Check variable scope
     let var_opt: Option<Value> = lookup_var(st, name)
     match var_opt {
-        Some(val) => { return new_lower_result(val, st) },
+        Some(addr) => {
+            // var_opt now returns the alloca address. Emit a Load to get the value.
+            let r: LowerResult = make_value(st, addr.ty, name + "_val")
+            let s: LowerState = emit_instr(r.state, Instruction::Load(r.value, addr))
+            return new_lower_result(r.value, s)
+        },
         _ => {}
     }
 
@@ -2041,19 +2067,29 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
                     Some(binop) => {
                         let result_r: LowerResult = make_value(s, old_r.value.ty, "t")
                         s = emit_instr(result_r.state, Instruction::BinOp(result_r.value, binop, old_r.value, val_r.value))
-                        let new_val: Value = new_value("%" + name, result_r.value.ty)
-                        s = emit_instr(s, Instruction::Copy(new_val, result_r.value))
-                        s = update_var(s, name, new_val)
-                        return new_lower_result(new_val, s)
+                        
+                        let var_opt: Option<Value> = lookup_var(s, name)
+                        match var_opt {
+                            Some(addr) => {
+                                s = emit_instr(s, Instruction::Store(addr, result_r.value))
+                                return new_lower_result(result_r.value, s)
+                            },
+                            _ => {}
+                        }
                     },
                     _ => {}
                 }
             }
 
-            let new_val: Value = new_value("%" + name, val_r.value.ty)
-            s = emit_instr(s, Instruction::Copy(new_val, val_r.value))
-            s = update_var(s, name, new_val)
-            return new_lower_result(new_val, s)
+            let var_opt: Option<Value> = lookup_var(s, name)
+            match var_opt {
+                Some(addr) => {
+                    s = emit_instr(s, Instruction::Store(addr, val_r.value))
+                    return new_lower_result(val_r.value, s)
+                },
+                _ => {}
+            }
+            return new_lower_result(val_r.value, s)
         },
         FieldAccess(obj, field_name) => {
             let obj_r: LowerResult = lower_expr(s, obj)
@@ -2397,6 +2433,15 @@ fn format_instruction(inst: Instruction) -> String {
         },
         IndexSet(obj, idx, val) => {
             return "index_set " + obj.name + "[" + idx.name + "] = " + val.name
+        },
+        Alloca(dest, ty) => {
+            return dest.name + " = alloca " + format_type(ty)
+        },
+        Load(dest, ptr) => {
+            return dest.name + " = load " + ptr.name
+        },
+        Store(ptr, val) => {
+            return "store " + val.name + " to " + ptr.name
         },
         MapInit(dest, kt, vt, pairs) => {
             return dest.name + " = map_init"
