@@ -1902,7 +1902,7 @@ class MIRLowerer:
         start = self._lower_expr(expr.start)
         end = self._lower_expr(expr.end)
         dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.RANGE)))
-        fn_name = "__range_inclusive" if expr.inclusive else "__range"
+        fn_name = "__mn_range_inclusive" if expr.inclusive else "__mn_range"
         self._emit(Call(dest=dest, fn_name=fn_name, args=[start, end]))
         return dest
 

@@ -1,0 +1,63 @@
+struct EmitContext {
+    lines: List<String>,
+    functions: List<FnEntry>,
+    structs: List<StructEntry>,
+    str_globals: List<String>,
+    pre_entry: List<String>,
+    alloca_names: List<String>,
+    copy_names: List<String>
+}
+
+struct EmitState {
+    ctx: List<EmitContext>,
+    counter: Int,
+    str_counter: Int,
+    module_name: String
+}
+
+struct ResolvedValue {
+    st: EmitState,
+    name: String
+}
+
+fn get_ctx(st: EmitState) -> EmitContext {
+    return st.ctx[0]
+}
+
+fn new_emit_state(module_name: String) -> EmitState {
+    let ctx_list: List<EmitContext> = []
+    let lines: List<String> = []
+    let functions: List<FnEntry> = []
+    let structs: List<StructEntry> = []
+    let str_globals: List<String> = []
+    let pre_entry: List<String> = []
+    let alloca_names: List<String> = []
+    let copy_names: List<String> = []
+    let ctx: EmitContext = new EmitContext {
+        lines: lines,
+        functions: functions,
+        structs: structs,
+        str_globals: str_globals,
+        pre_entry: pre_entry,
+        alloca_names: alloca_names,
+        copy_names: copy_names
+    }
+    ctx_list.push(ctx)
+    return new EmitState { ctx: ctx_list, counter: 0, str_counter: 0, module_name: module_name }
+}
+
+fn emit_global(st: EmitState, line: String) -> EmitState {
+    let c: EmitContext = get_ctx(st)
+    c.str_globals.push(line)
+    return st
+}
+
+fn emit_line(st: EmitState, line: String) -> EmitState {
+    let c: EmitContext = get_ctx(st)
+    c.lines.push(line)
+    return st
+}
+
+fn emit_blank(st: EmitState) -> EmitState {
+    return emit_line(st, "")
+}

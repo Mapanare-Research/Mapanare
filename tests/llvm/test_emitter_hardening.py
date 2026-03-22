@@ -275,7 +275,7 @@ class TestEmitterOutputSuite:
         """)
         ir_text = _to_ir(source)
         assert "define" in ir_text
-        assert "__range" in ir_text or "__iter" in ir_text
+        assert "__mn_range" in ir_text or "__iter" in ir_text
 
     def test_match_expression(self) -> None:
         """Match expression with patterns."""

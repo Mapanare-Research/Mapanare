@@ -20,7 +20,7 @@ entry:
   store i64 0, i64* %"a.sum"
   store i64 0, i64* %"a.t1"
   store i64 10, i64* %"a.t2"
-  %"t3" = call i8* @"__range"(i64 0, i64 10)
+  %"t3" = call i8* @"__mn_range"(i64 0, i64 10)
   store i8* %"t3", i8** %"a.t3"
   br label %"for_header0"
 for_header0:
@@ -47,7 +47,7 @@ for_exit2:
   ret void
 }
 
-declare i8* @"__range"(i64 %".1", i64 %".2")
+declare i8* @"__mn_range"(i64 %".1", i64 %".2")
 
 declare i1 @"__iter_has_next"(i8* %".1")
 

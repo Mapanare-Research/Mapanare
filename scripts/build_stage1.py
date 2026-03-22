@@ -104,6 +104,20 @@ def build() -> pathlib.Path:
     # 6. Link
     print("[6/6] Linking mnc-stage1 ...")
     binary = SELF_DIR / "mnc-stage1"
+    if sys.platform == "win32":
+        link_flags = [
+            "-lm",
+            "-Wl,--stack,67108864",  # 64MB stack for deep recursion on Windows
+        ]
+    else:
+        link_flags = [
+            "-no-pie",
+            "-rdynamic",
+            "-lm",
+            "-lpthread",
+            "-Wl,-z,stacksize=67108864",  # 64MB stack for deep recursion on Linux
+        ]
+
     subprocess.run(
         [
             CC,
@@ -112,12 +126,8 @@ def build() -> pathlib.Path:
             str(main_o),
             str(obj_path),
             str(core_o),
-            "-no-pie",
-            "-rdynamic",
-            "-lm",
-            "-lpthread",
-            "-Wl,-z,stacksize=67108864",  # 64MB stack for deep recursion
         ]
+        + link_flags
         + asan_flags
         + [],
         check=True,

@@ -482,7 +482,7 @@ MN_EXPORT void __mn_panic(MnString message);
  * ----------------------------------------------------------------------- */
 
 /** Create a range iterator from start (inclusive) to end (exclusive). */
-MN_EXPORT void *__range(int64_t start, int64_t end);
+MN_EXPORT void *__mn_range(int64_t start, int64_t end);
 
 /** Check if the iterator has more elements. Returns 1 or 0. */
 MN_EXPORT int8_t __iter_has_next(void *iter);

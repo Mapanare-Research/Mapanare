@@ -14,15 +14,23 @@
 #include <string.h>
 #include <stdint.h>
 #include <signal.h>
+#ifndef _WIN32
 #include <execinfo.h>
+#include <unistd.h>
+#endif
 
 static void crash_handler(int sig) {
     fflush(stdout);
+#ifndef _WIN32
     void *frames[64];
     int n = backtrace(frames, 64);
     fprintf(stderr, "\n[CRASH] Signal %d at:\n", sig);
     backtrace_symbols_fd(frames, n, 2);
     _exit(128 + sig);
+#else
+    fprintf(stderr, "\n[CRASH] Signal %d\n", sig);
+    exit(128 + sig);
+#endif
 }
 
 /* -----------------------------------------------------------------------

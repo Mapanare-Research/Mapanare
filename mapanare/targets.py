@@ -53,6 +53,18 @@ TARGET_AARCH64_APPLE_MACOS = Target(
     linker="clang",
 )
 
+TARGET_X86_64_WINDOWS_GNU = Target(
+    triple="x86_64-w64-windows-gnu",
+    data_layout=(
+        "e-m:w-p270:32:32-p271:32:32-p272:64:64-" "i64:64-i128:128-f80:128-n8:16:32:64-S128"
+    ),
+    description="Windows x86-64 (MinGW/GNU)",
+    obj_ext=".o",
+    exe_ext=".exe",
+    lib_ext=".dll",
+    linker="gcc",
+)
+
 TARGET_X86_64_WINDOWS_MSVC = Target(
     triple="x86_64-pc-windows-msvc",
     data_layout=(
@@ -70,6 +82,7 @@ TARGETS: dict[str, Target] = {
     "x86_64-linux-gnu": TARGET_X86_64_LINUX_GNU,
     "aarch64-apple-macos": TARGET_AARCH64_APPLE_MACOS,
     "x86_64-windows-msvc": TARGET_X86_64_WINDOWS_MSVC,
+    "x86_64-windows-gnu": TARGET_X86_64_WINDOWS_GNU,
 }
 
 
@@ -86,7 +99,7 @@ def host_target_name() -> str:
         # Fall back to x86_64 macOS using the linux layout (close enough for IR)
         return "x86_64-linux-gnu"
     if system == "Windows" and machine in ("x86_64", "amd64", "x86"):
-        return "x86_64-windows-msvc"
+        return "x86_64-windows-gnu"
 
     # Default fallback
     return "x86_64-linux-gnu"

@@ -1034,7 +1034,7 @@ class PythonMIREmitter:
             return
 
         # Handle internal MIR range calls
-        if inst.fn_name == "__range" and len(inst.args) == 2:
+        if inst.fn_name == "__mn_range" and len(inst.args) == 2:
             start = self._val(inst.args[0])
             end = self._val(inst.args[1])
             if dest and inst.dest.name:
@@ -1042,7 +1042,7 @@ class PythonMIREmitter:
             else:
                 self._emit_line(f"range({start}, {end})")
             return
-        if inst.fn_name == "__range_inclusive" and len(inst.args) == 2:
+        if inst.fn_name == "__mn_range_inclusive" and len(inst.args) == 2:
             start = self._val(inst.args[0])
             end = self._val(inst.args[1])
             if dest and inst.dest.name:

@@ -1691,10 +1691,10 @@ typedef struct {
     int64_t end;
 } MnRangeIter;
 
-MN_EXPORT void *__range(int64_t start, int64_t end) {
+MN_EXPORT void *__mn_range(int64_t start, int64_t end) {
     MnRangeIter *iter = (MnRangeIter *)malloc(sizeof(MnRangeIter));
     if (!iter) {
-        fprintf(stderr, "mapanare: out of memory in __range\n");
+        fprintf(stderr, "mapanare: out of memory in __mn_range\n");
         exit(1);
     }
     iter->current = start;

@@ -125,7 +125,7 @@ class TestStage1Compilation:
         # All declares should be C runtime (__mn_*), printf, range/iter, or LLVM intrinsics
         allowed = {
             "printf",
-            "__range",
+            "__mn_range",
             "__iter_has_next",
             "__iter_next",
             "malloc",
