@@ -731,6 +731,71 @@ class LLVMTextEmitter:
                 self._ent.append(f"  store {ty} {_zero(ty)}, {ty}* {a}")
                 self._dphi.append((a, ty, inst.incoming))
 
+        # Pre-allocate values used before definition (cross-block forward refs).
+        # Without this, _get for a value defined in a later block returns
+        # zeroinitializer instead of emitting a load instruction.
+        defined: set[str] = set()
+        used_before_def: set[str] = set()
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                # Collect uses
+                for attr in (
+                    "src",
+                    "val",
+                    "signal",
+                    "enum_val",
+                    "initial_val",
+                    "operand",
+                    "lhs",
+                    "rhs",
+                    "cond",
+                    "tag",
+                    "obj",
+                    "list_val",
+                    "element",
+                    "index",
+                    "closure",
+                    "env",
+                    "agent",
+                    "source",
+                    "subscriber",
+                ):
+                    v = getattr(inst, attr, None)
+                    if isinstance(v, Value) and v.name and v.name not in defined:
+                        used_before_def.add(v.name)
+                for attr in ("args", "parts", "elements", "payload", "captures", "deps"):
+                    vs = getattr(inst, attr, None)
+                    if isinstance(vs, list):
+                        for v in vs:
+                            if isinstance(v, Value) and v.name and v.name not in defined:
+                                used_before_def.add(v.name)
+                # Collect defs
+                dest = getattr(inst, "dest", None)
+                if dest is not None and hasattr(dest, "name") and dest.name:
+                    defined.add(dest.name)
+        # Create allocas for forward-referenced values
+        pre_idx = 0
+        for nm in used_before_def:
+            if nm not in self._alloc and not nm.startswith("%void"):
+                # Find the type from any instruction that defines this value
+                ty = PTR  # fallback
+                for bb2 in fn.blocks:
+                    for inst2 in bb2.instructions:
+                        d2 = getattr(inst2, "dest", None)
+                        if d2 is not None and hasattr(d2, "name") and d2.name == nm:
+                            ty = self._rty(d2.ty) if hasattr(d2, "ty") else PTR
+                            if ty == VOID:
+                                ty = PTR
+                            break
+                    else:
+                        continue
+                    break
+                a = f"%pre.{self._san(nm)}.{pre_idx}"
+                pre_idx += 1
+                self._alloc[nm] = (a, ty)
+                self._ent.append(f"  {a} = alloca {ty}, align 8")
+                self._ent.append(f"  store {ty} {_zero(ty)}, {ty}* {a}")
+
         # emit blocks
         for bb in fn.blocks:
             self._cb = bb.label
