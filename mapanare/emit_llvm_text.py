@@ -1862,7 +1862,16 @@ class LLVMTextEmitter:
                 tp = self._f("ept")
                 self._L(f"{tp} = bitcast i8* {raw} to {psty}*")
                 for j, pval in enumerate(i.payload):
-                    v, t = self._get(pval)
+                    # For list values, check if there's a root alloca from push
+                    # write-backs (the copy alias may be stale)
+                    root_name = self._lroots.get(pval.name)
+                    if root_name and root_name in self._alloc:
+                        a_root, t_root = self._alloc[root_name]
+                        v = self._f("rl")
+                        self._L(f"{v} = load {t_root}, {t_root}* {a_root}")
+                        t = t_root
+                    else:
+                        v, t = self._get(pval)
                     fp = self._f("ef")
                     self._L(f"{fp} = getelementptr inbounds {psty}, {psty}* {tp}, i32 0, i32 {j}")
                     if (i.variant, j) in boxed:
