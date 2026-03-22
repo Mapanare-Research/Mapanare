@@ -561,12 +561,22 @@ class LLVMTextEmitter:
             elif alt2 in self._alloc:
                 nm = alt2
         if nm not in self._alloc:
-            # Use counter-based unique names to avoid collisions when
-            # the self-hosted lowerer reuses MIR names across scopes
             a = self._f(f"{self._san(nm)}.a")
             self._alloc[nm] = (a, ty)
             self._ent.append(f"  {a} = alloca {ty}, align 8")
             self._ent.append(f"  store {ty} {_zero(ty)}, {ty}* {a}")
+        elif ty != self._alloc[nm][1] and _tsz(ty) <= _tsz(self._alloc[nm][1]):
+            # Same name, smaller or equal type: DON'T overwrite the existing
+            # larger alloca. Create a separate alloca for this use.
+            a = self._f(f"{self._san(nm)}.a")
+            # Use a DIFFERENT key to avoid overwriting the original
+            alt_nm = f"{nm}#{self._c}"
+            self._alloc[alt_nm] = (a, ty)
+            self._ent.append(f"  {a} = alloca {ty}, align 8")
+            self._ent.append(f"  store {ty} {_zero(ty)}, {ty}* {a}")
+            # Store to the new alloca, not the original
+            self._L(f"store {ty} {val}, {ty}* {a}")
+            return
         a, aty = self._alloc[nm]
         # If new value is larger, upgrade the alloca to avoid truncation
         if ty != aty and _tsz(ty) > _tsz(aty):
@@ -1672,37 +1682,58 @@ class LLVMTextEmitter:
 
     # --- ListPush ---
     def _do_list_push(self, i: ListPush) -> None:
-        # Load from root alloca if available
+        # Get the source list's alloca and push directly to it
         src = i.list_val.name
         root = self._lroots.get(src, src)
-        pi = self._get_ptr(Value(name=root, ty=i.list_val.ty)) if root in self._alloc else None
+        pi = self._get_ptr(Value(name=root, ty=i.list_val.ty))
+        if pi is None:
+            pi = self._get_ptr(i.list_val)
         if pi:
             a, t = pi
-            lv = self._f("rl")
-            self._L(f"{lv} = load {t}, {t}* {a}")
-            lt = t
+            # Push directly to the source alloca (modifies in-place)
+            ev, et = self._get(i.element)
+            ea = self._alloca(et, "ea")
+            self._L(f"store {et} {ev}, {et}* {ea}")
+            ep = self._f("ep")
+            self._L(f"{ep} = bitcast {et}* {ea} to i8*")
+            self._ensure("__mn_list_push", VOID, [f"{LIST}*", PTR])
+            # Use the SOURCE alloca directly for push (not a copy)
+            if t != LIST:
+                bc = self._f("lbc")
+                self._L(f"{bc} = bitcast {t}* {a} to {LIST}*")
+                self._L(f"call void @__mn_list_push({LIST}* {bc}, i8* {ep})")
+            else:
+                self._L(f"call void @__mn_list_push({LIST}* {a}, i8* {ep})")
+            # Load updated list
+            r = self._f("ul")
+            self._L(f"{r} = load {LIST}, {LIST}* {a}" if t == LIST else f"{r} = load {t}, {t}* {a}")
+            self._put(i.dest, r, LIST)
+            self._lroots[i.dest.name] = root
+            # Write-back to ALL known aliases
+            for tn in {root, src, i.list_val.name}:
+                for k in (tn, tn.lstrip("%"), "%" + tn.lstrip("%")):
+                    if k in self._alloc and k != i.dest.name:
+                        ta, tt = self._alloc[k]
+                        if ta != a:  # Don't write back to the same alloca
+                            wv = self._coerce(r, LIST, tt) if LIST != tt else r
+                            self._L(f"store {tt} {wv}, {tt}* {ta}")
         else:
+            # Fallback: original approach with temp alloca
             lv, lt = self._get(i.list_val)
-        lv = self._coerce(lv, lt, LIST) if lt != LIST else lv
-        la = self._alloca(LIST, "lp")
-        self._L(f"store {LIST} {lv}, {LIST}* {la}")
-        ev, et = self._get(i.element)
-        ea = self._alloca(et, "ea")
-        self._L(f"store {et} {ev}, {et}* {ea}")
-        ep = self._f("ep")
-        self._L(f"{ep} = bitcast {et}* {ea} to i8*")
-        self._ensure("__mn_list_push", VOID, [f"{LIST}*", PTR])
-        self._L(f"call void @__mn_list_push({LIST}* {la}, i8* {ep})")
-        r = self._f("ul")
-        self._L(f"{r} = load {LIST}, {LIST}* {la}")
-        self._put(i.dest, r, LIST)
-        # Write-back to root
-        self._lroots[i.dest.name] = root
-        for tn in {root, src}:
-            if tn in self._alloc:
-                ta, tt = self._alloc[tn]
-                wv = self._coerce(r, LIST, tt) if LIST != tt else r
-                self._L(f"store {tt} {wv}, {tt}* {ta}")
+            lv = self._coerce(lv, lt, LIST) if lt != LIST else lv
+            la = self._alloca(LIST, "lp")
+            self._L(f"store {LIST} {lv}, {LIST}* {la}")
+            ev, et = self._get(i.element)
+            ea = self._alloca(et, "ea")
+            self._L(f"store {et} {ev}, {et}* {ea}")
+            ep = self._f("ep")
+            self._L(f"{ep} = bitcast {et}* {ea} to i8*")
+            self._ensure("__mn_list_push", VOID, [f"{LIST}*", PTR])
+            self._L(f"call void @__mn_list_push({LIST}* {la}, i8* {ep})")
+            r = self._f("ul")
+            self._L(f"{r} = load {LIST}, {LIST}* {la}")
+            self._put(i.dest, r, LIST)
+            self._lroots[i.dest.name] = root
 
     # --- IndexGet ---
     def _do_idx_get(self, i: IndexGet) -> None:
