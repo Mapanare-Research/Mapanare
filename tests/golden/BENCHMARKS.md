@@ -37,8 +37,8 @@ Total time: 0.7s
 
 ## Linux
 
-Generated: 2026-03-22 17:48 UTC  
-Version: 1.0.11 (`22576fc`)  
+Generated: 2026-03-22 17:59 UTC  
+Version: 1.0.11 (`983e546`)  
 Platform: Linux x86_64, Python 3.12.3  
 Total time: 0.9s  
 
@@ -46,63 +46,63 @@ Total time: 0.9s
 
 | Test | Src | IR | KB | Fns | BBs | Stk | ms | Trend | Status |
 |------|----:|---:|---:|----:|----:|----:|---:|-------|--------|
-| 01_hello | 3 | 30 | 0.9 | 1 | 2 | 9 | 434 | `_   __   v` | PASS |
-| 02_arithmetic | 4 | 31 | 0.9 | 1 | 2 | 17 | 5 | `         ^` | PASS |
+| 01_hello | 3 | 30 | 0.9 | 1 | 2 | 9 | 433 | ` __      ^` | PASS |
+| 02_arithmetic | 4 | 31 | 0.9 | 1 | 2 | 17 | 5 | `        ` | PASS |
 | 03_function | 8 | 58 | 1.6 | 2 | 4 | 57 | 4 | `        ` | PASS |
 | 04_if_else | 8 | 34 | 0.9 | 1 | 4 | 9 | 4 | `        ` | PASS |
 | 05_for_loop | 7 | 72 | 2.2 | 1 | 5 | 58 | 4 | `        ` | PASS |
 | 06_struct | 9 | 46 | 1.5 | 1 | 2 | 41 | 4 | `        ` | PASS |
-| 07_enum_match | 13 | 65 | 2.2 | 1 | 5 | 42 | 5 | `        ` | PASS |
+| 07_enum_match | 13 | 65 | 2.2 | 1 | 5 | 42 | 6 | `        ` | PASS |
 | 08_list | 5 | 81 | 3.1 | 1 | 2 | 113 | 5 | `        ` | PASS |
-| 09_string_methods | 5 | 61 | 2.3 | 1 | 2 | 35 | 3 | `        ` | PASS |
-| 10_result | 14 | 139 | 5.4 | 2 | 10 | 139 | 7 | `        ` | PASS |
+| 09_string_methods | 5 | 61 | 2.3 | 1 | 2 | 35 | 4 | `         ^` | PASS |
+| 10_result | 14 | 139 | 5.4 | 2 | 10 | 139 | 5 | `        ` | PASS |
 | 11_closure | 5 | 80 | 2.6 | 1 | 4 | 73 | 3 | `         v` | PASS |
-| 12_while | 7 | 58 | 1.7 | 1 | 5 | 42 | 4 | `         v` | PASS |
-| 13_fib | 10 | 97 | 2.7 | 2 | 7 | 98 | 5 | `         ^` | PASS |
+| 12_while | 7 | 58 | 1.7 | 1 | 5 | 42 | 4 | `         ^` | PASS |
+| 13_fib | 10 | 97 | 2.7 | 2 | 7 | 98 | 4 | `        ` | PASS |
 | 14_nested_struct | 9 | 46 | 1.5 | 1 | 2 | 41 | 4 | `        ` | PASS |
-| 15_multifunction | 12 | 92 | 2.6 | 3 | 6 | 98 | 5 | `         v` | PASS |
-| **Total** | **119** | **990** | **32.0** | **20** | **62** | **872** | **494** | | **15/15** |
+| 15_multifunction | 12 | 92 | 2.6 | 3 | 6 | 98 | 4 | `         v` | PASS |
+| **Total** | **119** | **990** | **32.0** | **20** | **62** | **872** | **492** | | **15/15** |
 
 ## Native Compiler (mnc-stage1)
 
 | Test | IR | KB | Fns | ms | Match | Status |
 |------|---:|---:|----:|---:|-------|--------|
-| 01_hello | 73 | 3.1 | 1 | 20 | YES | PASS |
+| 01_hello | 73 | 3.1 | 1 | 23 | YES | PASS |
 | 02_arithmetic | 89 | 3.5 | 1 | 22 | YES | PASS |
-| 03_function | 100 | 3.7 | 2 | 20 | YES | PASS |
-| 04_if_else | 94 | 3.7 | 1 | 21 | YES | PASS |
-| 05_for_loop | 103 | 4.0 | 1 | 21 | YES | PASS |
-| 06_struct | 88 | 3.5 | 1 | 21 | YES | PASS |
-| 07_enum_match | 76 | 3.1 | 1 | 22 | YES | PASS |
-| 08_list | 95 | 4.1 | 1 | 22 | YES | PASS |
-| 09_string_methods | 95 | 4.1 | 1 | 20 | YES | PASS |
-| 10_result | 131 | 5.4 | 2 | 22 | YES | PASS |
-| 11_closure | 107 | 4.0 | 1 | 21 | YES | PASS |
-| 12_while | 90 | 3.5 | 1 | 22 | YES | PASS |
-| 13_fib | 129 | 4.6 | 2 | 23 | YES | PASS |
-| 14_nested_struct | 88 | 3.5 | 1 | 26 | YES | PASS |
-| 15_multifunction | 128 | 4.5 | 3 | 23 | YES | PASS |
-| **Total** | | | | **326** | **15/15** | **15/15** |
+| 03_function | 100 | 3.8 | 2 | 21 | YES | PASS |
+| 04_if_else | 92 | 3.6 | 1 | 23 | YES | PASS |
+| 05_for_loop | 103 | 4.0 | 1 | 22 | YES | PASS |
+| 06_struct | 88 | 3.5 | 1 | 22 | YES | PASS |
+| 07_enum_match | 74 | 3.0 | 1 | 25 | YES | PASS |
+| 08_list | 95 | 4.1 | 1 | 25 | YES | PASS |
+| 09_string_methods | 95 | 4.1 | 1 | 28 | YES | PASS |
+| 10_result | 127 | 5.2 | 2 | 21 | YES | PASS |
+| 11_closure | 107 | 4.0 | 1 | 22 | YES | PASS |
+| 12_while | 90 | 3.5 | 1 | 23 | YES | PASS |
+| 13_fib | 127 | 4.5 | 2 | 21 | YES | PASS |
+| 14_nested_struct | 88 | 3.5 | 1 | 23 | YES | PASS |
+| 15_multifunction | 128 | 4.5 | 3 | 22 | YES | PASS |
+| **Total** | | | | **343** | **15/15** | **15/15** |
 
 ## Speed Comparison
 
 | Test | Bootstrap (ms) | Stage1 (ms) | Speedup |
 |------|---------------:|------------:|--------:|
-| 01_hello | 434 | 20 | 21.2x |
+| 01_hello | 433 | 23 | 19.1x |
 | 02_arithmetic | 5 | 22 | 0.2x |
-| 03_function | 4 | 20 | 0.2x |
-| 04_if_else | 4 | 21 | 0.2x |
-| 05_for_loop | 4 | 21 | 0.2x |
-| 06_struct | 4 | 21 | 0.2x |
-| 07_enum_match | 5 | 22 | 0.2x |
-| 08_list | 5 | 22 | 0.2x |
-| 09_string_methods | 3 | 20 | 0.2x |
-| 10_result | 7 | 22 | 0.3x |
-| 11_closure | 3 | 21 | 0.2x |
-| 12_while | 4 | 22 | 0.2x |
-| 13_fib | 5 | 23 | 0.2x |
-| 14_nested_struct | 4 | 26 | 0.1x |
-| 15_multifunction | 5 | 23 | 0.2x |
+| 03_function | 4 | 21 | 0.2x |
+| 04_if_else | 4 | 23 | 0.2x |
+| 05_for_loop | 4 | 22 | 0.2x |
+| 06_struct | 4 | 22 | 0.2x |
+| 07_enum_match | 6 | 25 | 0.2x |
+| 08_list | 5 | 25 | 0.2x |
+| 09_string_methods | 4 | 28 | 0.1x |
+| 10_result | 5 | 21 | 0.2x |
+| 11_closure | 3 | 22 | 0.1x |
+| 12_while | 4 | 23 | 0.2x |
+| 13_fib | 4 | 21 | 0.2x |
+| 14_nested_struct | 4 | 23 | 0.2x |
+| 15_multifunction | 4 | 22 | 0.2x |
 
 ---
 

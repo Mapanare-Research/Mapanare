@@ -565,20 +565,11 @@ class LLVMTextEmitter:
             self._alloc[nm] = (a, ty)
             self._ent.append(f"  {a} = alloca {ty}, align 8")
             self._ent.append(f"  store {ty} {_zero(ty)}, {ty}* {a}")
-        elif ty != self._alloc[nm][1] and _tsz(ty) <= _tsz(self._alloc[nm][1]):
-            # Same name, smaller or equal type: DON'T overwrite the existing
-            # larger alloca. Create a separate alloca for this use.
-            a = self._f(f"{self._san(nm)}.a")
-            # Use a DIFFERENT key to avoid overwriting the original
-            alt_nm = f"{nm}#{self._c}"
-            self._alloc[alt_nm] = (a, ty)
-            self._ent.append(f"  {a} = alloca {ty}, align 8")
-            self._ent.append(f"  store {ty} {_zero(ty)}, {ty}* {a}")
-            # Store to the new alloca, not the original
-            self._L(f"store {ty} {val}, {ty}* {a}")
-            return
         a, aty = self._alloc[nm]
-        # If new value is larger, upgrade the alloca to avoid truncation
+        # If new value is larger, upgrade the alloca BUT keep the old one
+        # accessible. Create a new alloca sized for the larger type, but
+        # DON'T discard the old alloca mapping — instead, keep BOTH and
+        # store the larger value in the new alloca.
         if ty != aty and _tsz(ty) > _tsz(aty):
             a = self._f(f"{self._san(nm)}.up")
             self._alloc[nm] = (a, ty)

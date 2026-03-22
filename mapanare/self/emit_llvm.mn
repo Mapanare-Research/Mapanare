@@ -326,6 +326,8 @@ fn addr_of(name: String) -> String {
 }
 
 fn ensure_alloca(st: EmitState, name: String, ty: String) -> EmitState {
+    // Skip void types (can't alloca void)
+    if ty == "void" { return st }
     // Create alloca in pre_entry block if not already created
     let addr: String = addr_of(name)
     // Check if already allocated (linear scan, acceptable for function-local scope)
@@ -1655,12 +1657,18 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     s.pre_entry = fresh_pre
     s.alloca_names = fresh_names
 
-    // Pre-scan: create allocas for ALL instruction dests and params
+    // Pre-scan: create allocas for params (manually, since addr_of
+    // doesn't work for names without % prefix in the self-hosted compiler).
     let mut pj: Int = 0
     for _ in 0..1000 {
         if pj >= len(f.params) { break }
         let pp: MIRParam = f.params[pj]
-        s = ensure_alloca(s, pp.name, resolve_mir_type(pp.ty))
+        let pty: String = resolve_mir_type(pp.ty)
+        // Params don't have % prefix, so use pp.name + ".addr" directly
+        let paddr: String = "%" + pp.name + ".addr"
+        s.alloca_names.push(paddr)
+        s.pre_entry.push("  " + paddr + " =alloca " + pty)
+        s.pre_entry.push("  store " + pty + " zeroinitializer, " + pty + "* " + paddr)
         pj = pj + 1
     }
     let mut bj: Int = 0
@@ -1692,7 +1700,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         if pk >= len(f.params) { break }
         let pp: MIRParam = f.params[pk]
         let pty: String = resolve_mir_type(pp.ty)
-        s = emit_line(s, "  store " + pty + " %" + pp.name + ", " + pty + "* " + addr_of(pp.name))
+        s = emit_line(s, "  store " + pty + " %" + pp.name + ", " + pty + "* %" + pp.name + ".addr")
         pk = pk + 1
     }
 
