@@ -298,7 +298,8 @@ struct EmitState {
     str_counter: Int,
     str_globals: List<String>,
     pre_entry: List<String>,
-    alloca_names: List<String>
+    alloca_names: List<String>,
+    copy_names: List<String>
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
@@ -308,7 +309,8 @@ fn new_emit_state(module_name: String) -> EmitState {
     let str_globals: List<String> = []
     let pre_entry: List<String> = []
     let alloca_names: List<String> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, pre_entry: pre_entry, alloca_names: alloca_names }
+    let copy_names: List<String> = []
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, pre_entry: pre_entry, alloca_names: alloca_names, copy_names: copy_names }
 }
 
 fn emit_global(st: EmitState, line: String) -> EmitState {
@@ -370,6 +372,28 @@ fn val_addr(name: String) -> String {
 fn fresh_tmp(st: EmitState, prefix: String) -> String {
     // Generate a fresh temporary name
     return prefix + "." + toString(st.counter)
+}
+
+// ---------------------------------------------------------------------------
+// Operand resolution for alloca-backed values
+// ---------------------------------------------------------------------------
+
+fn is_copy_target(st: EmitState, name: String) -> Bool {
+    // Check if a value is a Copy destination (safe to load from alloca).
+    let sname: String = strip_percent(name)
+    let n: Int = len(st.copy_names)
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= n { break }
+        if st.copy_names[i] == sname { return true }
+        i = i + 1
+    }
+    return false
+}
+
+fn loaded_name(val: Value, counter: Int) -> String {
+    // Reconstruct the temp name that load_val produces for a given counter value.
+    return strip_percent(val.name) + ".l" + toString(counter)
 }
 
 // ---------------------------------------------------------------------------
@@ -685,6 +709,13 @@ fn emit_mir_instruction(st: EmitState, inst: Instruction) -> EmitState {
             return emit_line(st, emit_br(target))
         },
         Branch(cond, true_bb, false_bb) => {
+            // Load condition from alloca if it has one
+            if is_copy_target(st, cond.name) {
+                let mut s: EmitState = st
+                let c: Int = s.counter
+                s = load_val(s, cond)
+                return emit_line(s, emit_cbranch(loaded_name(cond, c), true_bb, false_bb))
+            }
             return emit_line(st, emit_cbranch(cond.name, true_bb, false_bb))
         },
         Switch(tag, cases, default_bb) => {
@@ -784,12 +815,19 @@ fn emit_copy(st: EmitState, dest: Value, src: Value) -> EmitState {
     let ty: String = resolve_mir_type(dest.ty)
     let src_ty: String = resolve_mir_type(src.ty)
     let use_ty: String = if ty == "i8*" { src_ty } else { ty }
-    // Use alloca for copy: store to dest's alloca and load back.
-    // The pre_entry alloca handles loop variable redefinition.
+    // Store-only copy: store src to dest's alloca. DO NOT load back.
+    // Consumers use load_val to load from the alloca with unique SSA names,
+    // which prevents duplicate SSA definitions in loops.
     let mut s: EmitState = st
+    // Resolve src through its alloca if it has one
+    let mut src_n: String = src.name
+    if is_copy_target(s, src.name) {
+        let c: Int = s.counter
+        s = load_val(s, src)
+        src_n = loaded_name(src, c)
+    }
     let addr: String = addr_of(dest.name)
-    s = emit_line(s, "  store " + use_ty + " " + src.name + ", " + use_ty + "* " + addr)
-    s = emit_line(s, emit_load(dest.name, use_ty, addr))
+    s = emit_line(s, "  store " + use_ty + " " + src_n + ", " + use_ty + "* " + addr)
     return s
 }
 
@@ -825,8 +863,20 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     let is_float: Bool = lhs.ty.kind == "float"
     let is_string: Bool = lhs.ty.kind == "string"
     let dn: String = dest.name
-    let ln: String = lhs.name
-    let rn: String = rhs.name
+    // Load operands from allocas if they have them (unique names per load)
+    let mut st: EmitState = st
+    let mut ln: String = lhs.name
+    if is_copy_target(st, lhs.name) {
+        let c: Int = st.counter
+        st = load_val(st, lhs)
+        ln = loaded_name(lhs, c)
+    }
+    let mut rn: String = rhs.name
+    if is_copy_target(st, rhs.name) {
+        let c: Int = st.counter
+        st = load_val(st, rhs)
+        rn = loaded_name(rhs, c)
+    }
     // Use binop_kind_to_str (defined in lower.mn where BinOpKind is local)
     // to convert the enum tag to a string, then dispatch with if/else
     let op_str: String = binop_kind_to_str(op)
@@ -1301,6 +1351,15 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return st
     }
 
+    // Synthetic struct constructor: __new_<StructName>(field_values...)
+    // Use replace to remove the "__new_" prefix instead of substr
+    // (substr has off-by-one issues in the compiled binary)
+    if fn_name.contains("__new_") {
+        let struct_name: String = fn_name.replace("__new_", "")
+        let struct_ty: MIRType = mir_struct(struct_name)
+        return emit_struct_init_from_values(st, dest, struct_ty, args)
+    }
+
     // String methods: dispatched to __mn_str_<method> runtime functions
     if len(args) >= 1 {
         let first_arg: Value = args[0]
@@ -1320,36 +1379,43 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         }
     }
 
-    // Build args string
+    // Build args string — resolve through allocas if needed
     let mut args_str: String = ""
+    let mut s: EmitState = st
     let mut i: Int = 0
     for _ in 0..1000 {
         if i >= len(args) { break }
         let arg: Value = args[i]
         let aty: String = resolve_mir_type(arg.ty)
+        let mut an: String = arg.name
+        if is_copy_target(s, arg.name) {
+            let c: Int = s.counter
+            s = load_val(s, arg)
+            an = loaded_name(arg, c)
+        }
         if i > 0 {
-            args_str = args_str + ", " + aty + " " + arg.name
+            args_str = args_str + ", " + aty + " " + an
         } else {
-            args_str = aty + " " + arg.name
+            args_str = aty + " " + an
         }
         i = i + 1
     }
 
     // Look up return type
-    let fn_opt: Option<FnEntry> = find_function(st, fn_name)
+    let fn_opt: Option<FnEntry> = find_function(s, fn_name)
     match fn_opt {
         Some(fe) => {
             if fe.ret_type == "void" {
-                return emit_line(st, emit_call_void(fn_name, args_str))
+                return emit_line(s, emit_call_void(fn_name, args_str))
             }
-            return emit_line(st, emit_call_ir(dn, fe.ret_type, fn_name, args_str))
+            return emit_line(s, emit_call_ir(dn, fe.ret_type, fn_name, args_str))
         },
         _ => {
             let ret_ty: String = resolve_mir_type(dest.ty)
             if ret_ty == "void" {
-                return emit_line(st, emit_call_void(fn_name, args_str))
+                return emit_line(s, emit_call_void(fn_name, args_str))
             }
-            return emit_line(st, emit_call_ir(dn, ret_ty, fn_name, args_str))
+            return emit_line(s, emit_call_ir(dn, ret_ty, fn_name, args_str))
         }
     }
 }
@@ -1363,20 +1429,28 @@ fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
         return emit_line(st, emit_call_void("printf", "i8* @.newline"))
     }
     let arg: Value = args[0]
+    // Resolve arg through alloca if it has one
+    let mut s: EmitState = st
+    let mut an: String = arg.name
+    if is_copy_target(s, arg.name) {
+        let c: Int = s.counter
+        s = load_val(s, arg)
+        an = loaded_name(arg, c)
+    }
     if arg.ty.kind == "string" {
-        return emit_line(st, emit_call_void("__mn_str_print", llvm_string() + " " + arg.name))
+        return emit_line(s, emit_call_void("__mn_str_print", llvm_string() + " " + an))
     }
     if arg.ty.kind == "float" {
-        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_float, double " + arg.name + ")")
+        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_float, double " + an + ")")
     }
     if arg.ty.kind == "int" {
-        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_int, i64 " + arg.name + ")")
+        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_int, i64 " + an + ")")
     }
     if arg.ty.kind == "bool" {
-        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_int, i64 " + arg.name + ")")
+        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_int, i64 " + an + ")")
     }
     // Unknown type: assume string
-    return emit_line(st, emit_call_void("__mn_str_print", llvm_string() + " " + arg.name))
+    return emit_line(s, emit_call_void("__mn_str_print", llvm_string() + " " + an))
 }
 
 fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
@@ -1384,54 +1458,70 @@ fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
         return emit_line(st, emit_call_void("printf", "i8* @.newline"))
     }
     let arg: Value = args[0]
+    // Resolve arg through alloca if it has one
+    let mut s: EmitState = st
+    let mut an: String = arg.name
+    if is_copy_target(s, arg.name) {
+        let c: Int = s.counter
+        s = load_val(s, arg)
+        an = loaded_name(arg, c)
+    }
     if arg.ty.kind == "string" {
-        return emit_line(st, emit_call_void("__mn_str_println", llvm_string() + " " + arg.name))
+        return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
     }
     if arg.ty.kind == "float" {
-        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_float_nl, double " + arg.name + ")")
+        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_float_nl, double " + an + ")")
     }
     if arg.ty.kind == "int" {
-        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_int_nl, i64 " + arg.name + ")")
+        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_int_nl, i64 " + an + ")")
     }
     if arg.ty.kind == "bool" {
-        return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_int_nl, i64 " + arg.name + ")")
+        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_int_nl, i64 " + an + ")")
     }
     // Unknown type: assume string (common from str()/toString() calls)
-    return emit_line(st, emit_call_void("__mn_str_println", llvm_string() + " " + arg.name))
+    return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
 }
 
 fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
-    if len(args) == 0 {
-        return st
-    }
+    if len(args) == 0 { return st }
     let arg: Value = args[0]
-    if arg.ty.kind == "string" {
-        return emit_line(st, emit_call_ir(dest.name, llvm_int(), "__mn_str_len", llvm_string() + " " + arg.name))
+    let mut s: EmitState = st
+    let mut an: String = arg.name
+    if is_copy_target(s, arg.name) {
+        let c: Int = s.counter
+        s = load_val(s, arg)
+        an = loaded_name(arg, c)
     }
-    return emit_line(st, emit_call_ir(dest.name, llvm_int(), "__mn_list_len", llvm_list_rt() + "* " + arg.name))
+    if arg.ty.kind == "string" {
+        return emit_line(s, emit_call_ir(dest.name, llvm_int(), "__mn_str_len", llvm_string() + " " + an))
+    }
+    return emit_line(s, emit_call_ir(dest.name, llvm_int(), "__mn_list_len", llvm_list_rt() + "* " + an))
 }
 
 fn emit_builtin_tostring(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
-    if len(args) == 0 {
-        return st
-    }
+    if len(args) == 0 { return st }
     let arg: Value = args[0]
+    let mut s: EmitState = st
+    let mut an: String = arg.name
+    if is_copy_target(s, arg.name) {
+        let c: Int = s.counter
+        s = load_val(s, arg)
+        an = loaded_name(arg, c)
+    }
     if arg.ty.kind == "string" {
-        // Already a string — just copy
-        return emit_copy(st, dest, arg)
+        return emit_copy(s, dest, arg)
     }
     if arg.ty.kind == "bool" {
-        return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_bool", "i1 " + arg.name))
+        return emit_line(s, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_bool", "i1 " + an))
     }
     if arg.ty.kind == "float" {
-        return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_float", "double " + arg.name))
+        return emit_line(s, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_float", "double " + an))
     }
-    // Check resolved LLVM type for bool (i1) when MIR type is unknown
     let resolved: String = resolve_mir_type(arg.ty)
     if resolved == "i1" {
-        return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_bool", "i1 " + arg.name))
+        return emit_line(s, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_bool", "i1 " + an))
     }
-    return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_int", "i64 " + arg.name))
+    return emit_line(s, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_int", "i64 " + an))
 }
 
 fn emit_builtin_int(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
@@ -1474,6 +1564,13 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
             let ty: String = resolve_mir_type(val.ty)
             if ty == "void" {
                 return emit_line(st, emit_ret_void())
+            }
+            // Load from alloca if the value has one
+            if is_copy_target(st, val.name) {
+                let mut s: EmitState = st
+                let c: Int = s.counter
+                s = load_val(s, val)
+                return emit_line(s, emit_ret(ty, loaded_name(val, c)))
             }
             return emit_line(st, emit_ret(ty, val.name))
         },
@@ -1743,7 +1840,10 @@ fn collect_inst_alloca(st: EmitState, inst: Instruction) -> EmitState {
     // Create alloca for the instruction's dest value (if any)
     match inst {
         Const(dest, ty, _) => { return ensure_alloca(st, dest.name, resolve_mir_type(ty)) },
-        Copy(dest, src) => { return ensure_alloca(st, dest.name, resolve_mir_type(dest.ty)) },
+        Copy(dest, src) => {
+            st.copy_names.push(strip_percent(dest.name))
+            return ensure_alloca(st, dest.name, resolve_mir_type(dest.ty))
+        },
         Cast(dest, _, target_ty) => { return ensure_alloca(st, dest.name, resolve_mir_type(target_ty)) },
         BinOp(dest, _, _, _) => { return ensure_alloca(st, dest.name, resolve_mir_type(dest.ty)) },
         UnaryOp(dest, _, _) => { return ensure_alloca(st, dest.name, resolve_mir_type(dest.ty)) },
