@@ -1090,6 +1090,29 @@ class LLVMTextEmitter:
     # --- Call (builtin dispatch + user) ---
     def _do_call(self, i: Call) -> None:  # noqa: C901
         fn = i.fn_name
+
+        # __mn_list_push: pass list alloca pointer directly (not a copy)
+        # to ensure the push modifies the original list struct in-place.
+        if fn == "__mn_list_push" and len(i.args) >= 2:
+            list_val = i.args[0]
+            elem_val = i.args[1]
+            pi = self._get_ptr(list_val)
+            if pi:
+                la, lt = pi
+                if lt != LIST:
+                    bc = self._f("lbc")
+                    self._L(f"{bc} = bitcast {lt}* {la} to {LIST}*")
+                    la = bc
+                ev, et = self._get(elem_val)
+                ea = self._alloca(et, "pea")
+                self._L(f"store {et} {ev}, {et}* {ea}")
+                ep = self._f("pep")
+                self._L(f"{ep} = bitcast {et}* {ea} to i8*")
+                self._ensure("__mn_list_push", VOID, [f"{LIST}*", PTR])
+                self._L(f"call void @__mn_list_push({LIST}* {la}, i8* {ep})")
+                self._put(i.dest, "0", I1)  # push returns void
+                return
+
         args = [(self._get(a)) for a in i.args]  # [(val, ty)]
         self._san(i.dest.name)
 

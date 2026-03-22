@@ -1213,16 +1213,6 @@ fn emit_unwrap(st: EmitState, dest: Value, val: Value) -> EmitState {
 // ---------------------------------------------------------------------------
 
 fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>) -> EmitState {
-    // Check for struct constructor FIRST. try_emit_struct_construct returns
-    // either the struct init result OR the original st (unchanged).
-    // We use the result directly — if unchanged, fall through to inner.
-    let sr: EmitState = try_emit_struct_construct(st, dest, fn_name, args)
-    // Use ternary to pick result without conditional return (control flow bug)
-    let result: EmitState = if len(sr.lines) > len(st.lines) { sr } else { emit_mir_call_inner(st, dest, fn_name, args) }
-    return result
-}
-
-fn emit_mir_call_inner(st: EmitState, dest: Value, fn_name: String, args: List<Value>) -> EmitState {
     let dn: String = dest.name
 
     // Built-in: print / println

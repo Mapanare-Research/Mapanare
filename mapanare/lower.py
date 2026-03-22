@@ -1317,15 +1317,25 @@ class MIRLowerer:
                 return dest
 
             # Check if this is an enum variant constructor
-            # Check local enums
+            # Check local enums — match by variant name AND field count
             for enum_name, variant_names in self._enum_variants.items():
                 if fn_name in variant_names:
+                    # Verify field count matches to avoid ambiguity when
+                    # multiple enums have variants with the same name (e.g. Call)
+                    enum_variants = self._module.enums.get(enum_name, [])
+                    if not enum_variants:
+                        # Try imported enums
+                        enum_variants = self._imported_enum_defs.get(enum_name, [])
+                    variant_fields = next(
+                        (vtypes for vn, vtypes in enum_variants if vn == fn_name), None
+                    )
+                    if variant_fields is not None and len(variant_fields) != len(args):
+                        continue  # field count mismatch, try next enum
                     enum_ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name=enum_name))
                     dest = self._make_value(ty=enum_ty)
                     self._emit(
                         EnumInit(dest=dest, enum_type=enum_ty, variant=fn_name, payload=args)
                     )
-                    # self._patch_list_elem_types_for_enum(enum_name, fn_name, args)
                     return dest
             # Check imported enums
             for enum_name, variants in self._imported_enum_defs.items():
@@ -1701,7 +1711,7 @@ class MIRLowerer:
             return dest
 
         # List .push() — emit ListPush instruction and update the variable binding
-        if expr.method == "push" and args and obj.ty.kind == TypeKind.LIST:
+        if expr.method == "push" and args and obj.ty.kind in (TypeKind.LIST, TypeKind.UNKNOWN):
             dest = self._make_value(ty=obj.ty)
             self._emit(ListPush(dest=dest, list_val=obj, element=args[0]))
             # Update the variable so subsequent reads see the modified list
