@@ -717,20 +717,11 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
 
 fn emit_copy(st: EmitState, dest: Value, src: Value) -> EmitState {
     let ty: String = resolve_mir_type(dest.ty)
-    // In MIR, copy is: dest = src. In LLVM IR, we alloca + store + load
-    // But since we're in SSA, just emit a bitcast or use directly
-    if ty == llvm_int() {
-        return emit_line(st, emit_add(dest.name, ty, src.name, "0"))
-    }
-    if ty == llvm_float() {
-        return emit_line(st, "  " + dest.name + " =fadd double " + src.name + ", 0.0")
-    }
-    if ty == llvm_bool() {
-        return emit_line(st, "  " + dest.name + " =or i1 " + src.name + ", false")
-    }
-    // For aggregate types, use alloca + store + load
+    // Use alloca + store + load for all copies to avoid duplicate SSA
+    // names when loop variables are reassigned (relaxed SSA).
     let mut s: EmitState = st
-    let alloca_name: String = dest.name + ".addr"
+    let alloca_name: String = dest.name + ".cp" + toString(s.counter)
+    s.counter = s.counter + 1
     s = emit_line(s, emit_alloca(alloca_name, ty))
     s = emit_line(s, emit_store(ty, src.name, alloca_name))
     s = emit_line(s, emit_load(dest.name, ty, alloca_name))
@@ -1365,6 +1356,11 @@ fn emit_builtin_tostring(st: EmitState, dest: Value, args: List<Value>) -> EmitS
     }
     if arg.ty.kind == "float" {
         return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_float", "double " + arg.name))
+    }
+    // Check resolved LLVM type for bool (i1) when MIR type is unknown
+    let resolved: String = resolve_mir_type(arg.ty)
+    if resolved == "i1" {
+        return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_bool", "i1 " + arg.name))
     }
     return emit_line(st, emit_call_ir(dest.name, llvm_string(), "__mn_str_from_int", "i64 " + arg.name))
 }
