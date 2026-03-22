@@ -399,6 +399,15 @@ def run_ir(ir: str, test_name: str) -> tuple[str, str]:
     lli = shutil.which("lli")
     if not lli:
         return "", "lli not found"
+
+    # Find core runtime library to load
+    runtime_dir = ROOT / "runtime" / "native"
+    ext = ".dll" if sys.platform == "win32" else ".so"
+    lib_path = runtime_dir / f"libmapanare_core{ext}"
+    load_args = []
+    if lib_path.exists():
+        load_args = ["-load", str(lib_path)]
+
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".ll", prefix=f"mn_{test_name}_", delete=False, encoding="utf-8"
     ) as f:
@@ -406,7 +415,7 @@ def run_ir(ir: str, test_name: str) -> tuple[str, str]:
         ir_path = f.name
     try:
         result = subprocess.run(
-            [lli, ir_path],
+            [lli] + load_args + [ir_path],
             capture_output=True,
             timeout=10,
         )
