@@ -405,6 +405,11 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_list_get", "i8*", llvm_list_rt() + "*, i64")
     s = declare_runtime_fn(s, "__mn_list_len", "i64", llvm_list_rt() + "*")
 
+    // Iterator runtime
+    s = declare_runtime_fn(s, "__iter_has_next", llvm_bool(), "{ i64, i64 }")
+    s = declare_runtime_fn(s, "__iter_next", llvm_int(), "{ i64, i64 }")
+    s = declare_runtime_fn(s, "__range", "{ i64, i64 }", "i64, i64")
+
     // String methods
     s = declare_runtime_fn(s, "__mn_str_to_upper", llvm_string(), llvm_string())
     s = declare_runtime_fn(s, "__mn_str_to_lower", llvm_string(), llvm_string())
@@ -717,14 +722,18 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
 
 fn emit_copy(st: EmitState, dest: Value, src: Value) -> EmitState {
     let ty: String = resolve_mir_type(dest.ty)
-    // Use alloca + store + load for all copies to avoid duplicate SSA
-    // names when loop variables are reassigned (relaxed SSA).
+    let src_ty: String = resolve_mir_type(src.ty)
+    let use_ty: String = if ty == "i8*" { src_ty } else { ty }
+    // Alloca-based copy to handle relaxed SSA (variable redefinition).
+    // Uses dest.name as the load target — if the name was already defined,
+    // LLVM will reject it. The build_stage1.py post-processor can handle
+    // this by renaming duplicate SSA values.
     let mut s: EmitState = st
-    let alloca_name: String = dest.name + ".cp" + toString(s.counter)
+    let alloca_name: String = strip_percent(dest.name) + ".cp" + toString(s.counter)
     s.counter = s.counter + 1
-    s = emit_line(s, emit_alloca(alloca_name, ty))
-    s = emit_line(s, emit_store(ty, src.name, alloca_name))
-    s = emit_line(s, emit_load(dest.name, ty, alloca_name))
+    s = emit_line(s, emit_alloca(alloca_name, use_ty))
+    s = emit_line(s, emit_store(use_ty, src.name, alloca_name))
+    s = emit_line(s, emit_load(dest.name, use_ty, alloca_name))
     return s
 }
 
