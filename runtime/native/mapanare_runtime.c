@@ -19,29 +19,29 @@
 #endif
 
 /* -----------------------------------------------------------------------
- * Platform atomic helpers
+ * Platform atomic helpers (using GCC built-ins for portability)
  * ----------------------------------------------------------------------- */
 
-#ifdef _WIN32
-
 static inline int64_t atomic_load_i64(mapanare_atomic_i64 *p) {
-    return InterlockedCompareExchange64(p, 0, 0);
+    return __atomic_load_n(p, __ATOMIC_ACQUIRE);
 }
 static inline void atomic_store_i64(mapanare_atomic_i64 *p, int64_t v) {
-    InterlockedExchange64(p, v);
+    __atomic_store_n(p, v, __ATOMIC_RELEASE);
 }
 static inline int64_t atomic_add_i64(mapanare_atomic_i64 *p, int64_t v) {
-    return InterlockedExchangeAdd64(p, v);
+    return __atomic_fetch_add(p, v, __ATOMIC_ACQ_REL);
 }
 static inline int32_t atomic_load_i32(mapanare_atomic_i32 *p) {
-    return InterlockedCompareExchange(p, 0, 0);
+    return __atomic_load_n(p, __ATOMIC_ACQUIRE);
 }
 static inline void atomic_store_i32(mapanare_atomic_i32 *p, int32_t v) {
-    InterlockedExchange(p, v);
+    __atomic_store_n(p, v, __ATOMIC_RELEASE);
 }
 static inline int32_t atomic_add_i32(mapanare_atomic_i32 *p, int32_t v) {
-    return InterlockedExchangeAdd(p, v);
+    return __atomic_fetch_add(p, v, __ATOMIC_ACQ_REL);
 }
+
+#ifdef _WIN32
 
 static inline void mapanare_mutex_init(mapanare_mutex_t *m) {
     InitializeCriticalSection(m);
@@ -93,25 +93,6 @@ static inline void mapanare_thread_join(mapanare_thread_t t) {
 
 #else /* POSIX */
 
-static inline int64_t atomic_load_i64(mapanare_atomic_i64 *p) {
-    return atomic_load_explicit(p, memory_order_acquire);
-}
-static inline void atomic_store_i64(mapanare_atomic_i64 *p, int64_t v) {
-    atomic_store_explicit(p, v, memory_order_release);
-}
-static inline int64_t atomic_add_i64(mapanare_atomic_i64 *p, int64_t v) {
-    return atomic_fetch_add_explicit(p, v, memory_order_acq_rel);
-}
-static inline int32_t atomic_load_i32(mapanare_atomic_i32 *p) {
-    return atomic_load_explicit(p, memory_order_acquire);
-}
-static inline void atomic_store_i32(mapanare_atomic_i32 *p, int32_t v) {
-    atomic_store_explicit(p, v, memory_order_release);
-}
-static inline int32_t atomic_add_i32(mapanare_atomic_i32 *p, int32_t v) {
-    return atomic_fetch_add_explicit(p, v, memory_order_acq_rel);
-}
-
 static inline void mapanare_mutex_init(mapanare_mutex_t *m) {
     pthread_mutex_init(m, NULL);
 }
@@ -162,7 +143,7 @@ static inline void mapanare_thread_join(mapanare_thread_t t) {
 #endif
 
 /* Trace hook — declared early so agent_thread_fn can call trace_emit */
-static _Atomic(mapanare_trace_hook_fn) s_trace_hook = NULL;
+static mapanare_trace_hook_fn volatile s_trace_hook = NULL;
 
 static inline void trace_emit(
     mapanare_trace_event_t event,
@@ -170,7 +151,7 @@ static inline void trace_emit(
     void *data,
     int64_t duration_us
 ) {
-    mapanare_trace_hook_fn hook = atomic_load_explicit(&s_trace_hook, memory_order_acquire);
+    mapanare_trace_hook_fn hook = __atomic_load_n(&s_trace_hook, __ATOMIC_ACQUIRE);
     if (hook) {
         hook(event, agent, data, duration_us);
     }
@@ -438,7 +419,7 @@ MAPANARE_EXPORT uint32_t mapanare_pool_thread_count(mapanare_thread_pool_t *pool
  * Task 1: Agent scheduler — port to C (called via FFI)
  * ======================================================================= */
 
-static _Atomic uint64_t s_next_agent_id = 1;
+static uint64_t volatile s_next_agent_id = 1;
 
 #ifdef _WIN32
 static DWORD WINAPI agent_thread_fn(LPVOID arg) {
@@ -523,7 +504,7 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
                                  mapanare_handler_fn handler, void *agent_data,
                                  uint32_t inbox_cap, uint32_t outbox_cap) {
     memset(agent, 0, sizeof(*agent));
-    agent->id = atomic_fetch_add_explicit(&s_next_agent_id, 1, memory_order_relaxed);
+    agent->id = __atomic_fetch_add(&s_next_agent_id, 1, __ATOMIC_RELAXED);
     if (name) {
         strncpy(agent->name, name, sizeof(agent->name) - 1);
         agent->name[sizeof(agent->name) - 1] = '\0';
@@ -1109,9 +1090,9 @@ MAPANARE_EXPORT void mapanare_shutdown_drain(void) {
  * ======================================================================= */
 
 MAPANARE_EXPORT void mapanare_trace_set_hook(mapanare_trace_hook_fn hook) {
-    atomic_store_explicit(&s_trace_hook, hook, memory_order_release);
+    __atomic_store_n(&s_trace_hook, hook, __ATOMIC_RELEASE);
 }
 
 MAPANARE_EXPORT mapanare_trace_hook_fn mapanare_trace_get_hook(void) {
-    return s_trace_hook;
+    return __atomic_load_n(&s_trace_hook, __ATOMIC_ACQUIRE);
 }

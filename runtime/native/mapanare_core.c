@@ -17,8 +17,9 @@
  * ----------------------------------------------------------------------- */
 
 MN_EXPORT void *__mn_alloc(int64_t size) {
+    if (size < 0) return NULL;
     void *ptr = calloc(1, (size_t)size);
-    if (!ptr) {
+    if (!ptr && size > 0) {
         fprintf(stderr, "mapanare: out of memory (requested %lld bytes)\n",
                 (long long)size);
         exit(1);
@@ -27,6 +28,7 @@ MN_EXPORT void *__mn_alloc(int64_t size) {
 }
 
 MN_EXPORT void *__mn_realloc(void *ptr, int64_t new_size) {
+    if (new_size < 0) return NULL;
     void *p = realloc(ptr, (size_t)new_size);
     if (!p && new_size > 0) {
         fprintf(stderr, "mapanare: realloc failed (%lld bytes)\n",

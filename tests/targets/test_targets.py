@@ -87,7 +87,7 @@ class TestTargetDefinitions:
             target.triple = "changed"  # type: ignore[misc]
 
     def test_three_targets_registered(self) -> None:
-        assert len(TARGETS) == 3
+        assert len(TARGETS) == 4
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ class TestGetTarget:
 class TestListTargets:
     def test_list_targets_returns_all(self) -> None:
         targets = list_targets()
-        assert len(targets) == 3
+        assert len(targets) == 4
         names = [name for name, _ in targets]
         assert "x86_64-linux-gnu" in names
         assert "aarch64-apple-macos" in names

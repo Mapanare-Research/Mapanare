@@ -594,13 +594,13 @@ fn emit_mir_instruction(st: EmitState, inst: Instruction) -> EmitState {
             return emit_index_set(st, obj, idx, val)
         },
         Alloca(dest, ty) => {
-            return emit_mir_alloca(st, dest, ty)
+            return emit_alloca(st, dest, ty)
         },
         Load(dest, ptr) => {
-            return emit_mir_load(st, dest, ptr)
+            return emit_load(st, dest, ptr)
         },
         Store(ptr, val) => {
-            return emit_mir_store(st, ptr, val)
+            return emit_store(st, ptr, val)
         },
         MapInit(dest, key_ty, val_ty, pairs) => {
             return emit_map_init(st, dest, key_ty, val_ty, pairs)
@@ -1097,16 +1097,16 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
 // Alloca/Load/Store instructions
 // ---------------------------------------------------------------------------
 
-fn emit_mir_alloca(st: EmitState, dest: Value, ty: MIRType) -> EmitState {
+fn emit_alloca(st: EmitState, dest: Value, ty: MIRType) -> EmitState {
     return emit_line(st, llvm_alloca(dest.name, resolve_mir_type(ty)))
 }
 
-fn emit_mir_load(st: EmitState, dest: Value, ptr: Value) -> EmitState {
+fn emit_load(st: EmitState, dest: Value, ptr: Value) -> EmitState {
     let ty: String = resolve_mir_type(dest.ty)
     return emit_line(st, llvm_load(dest.name, ty, ptr.name))
 }
 
-fn emit_mir_store(st: EmitState, ptr: Value, val: Value) -> EmitState {
+fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState {
     let ty: String = resolve_mir_type(val.ty)
     return emit_line(st, llvm_store(ty, val.name, ptr.name))
 }
