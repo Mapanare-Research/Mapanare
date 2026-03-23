@@ -143,7 +143,7 @@ static inline void mapanare_thread_join(mapanare_thread_t t) {
 #endif
 
 /* Trace hook — declared early so agent_thread_fn can call trace_emit */
-static mapanare_trace_hook_fn volatile s_trace_hook = NULL;
+static mapanare_trace_hook_fn s_trace_hook = NULL;
 
 static inline void trace_emit(
     mapanare_trace_event_t event,
@@ -419,7 +419,7 @@ MAPANARE_EXPORT uint32_t mapanare_pool_thread_count(mapanare_thread_pool_t *pool
  * Task 1: Agent scheduler — port to C (called via FFI)
  * ======================================================================= */
 
-static uint64_t volatile s_next_agent_id = 1;
+static uint64_t s_next_agent_id = 1;
 
 #ifdef _WIN32
 static DWORD WINAPI agent_thread_fn(LPVOID arg) {
