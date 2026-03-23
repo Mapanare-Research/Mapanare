@@ -55,7 +55,8 @@ class RingBuffer(ctypes.Structure):
         ("slots", ctypes.POINTER(ctypes.c_void_p)),
         ("capacity", ctypes.c_uint32),
         ("mask", ctypes.c_uint32),
-        ("_pad0", ctypes.c_char * (CACHE_LINE - ctypes.sizeof(ctypes.c_void_p) - 8)),
+        # Pad to CACHE_LINE. Header size: ptr(8) + 2*u32(8) = 16.
+        ("_pad0", ctypes.c_char * (CACHE_LINE - 16)),
         ("head", ctypes.c_int64),
         ("_pad1", ctypes.c_char * (CACHE_LINE - 8)),
         ("tail", ctypes.c_int64),
@@ -68,6 +69,7 @@ class Backpressure(ctypes.Structure):
         ("pending", ctypes.c_int64),
         ("capacity", ctypes.c_int64),
         ("overloaded", ctypes.c_int32),
+        ("_pad", ctypes.c_int32),  # Align to 8 bytes / total 24 bytes
     ]
 
 
