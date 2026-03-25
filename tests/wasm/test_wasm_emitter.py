@@ -58,18 +58,25 @@ pytestmark = pytest.mark.skipif(
 
 
 def _emit(source: str) -> str:
-    """Parse, type-check, and emit WASM/WAT text for a Mapanare source."""
+    """Parse, type-check, lower to MIR, and emit WASM/WAT text."""
+    from mapanare.lower import lower as build_mir
+
     ast = parse(source, filename="test.mn")
     check_or_raise(ast, filename="test.mn")
+    mir_module = build_mir(ast, module_name="test")
     emitter = WasmEmitter()  # type: ignore[possibly-undefined]
-    return emitter.emit(ast)
+    return emitter.emit(mir_module)
 
 
 def _emit_unchecked(source: str) -> str:
-    """Parse and emit WASM without semantic checking (for codegen-only tests)."""
+    """Parse, lower to MIR, and emit WASM without semantic checking."""
+    from mapanare.lower import lower as build_mir
+
     ast = parse(source, filename="test.mn")
+    check_or_raise(ast, filename="test.mn")
+    mir_module = build_mir(ast, module_name="test")
     emitter = WasmEmitter()  # type: ignore[possibly-undefined]
-    return emitter.emit(ast)
+    return emitter.emit(mir_module)
 
 
 def _fn(
