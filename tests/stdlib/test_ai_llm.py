@@ -41,9 +41,9 @@ from mapanare.cli import _compile_to_llvm_ir
 # Helpers
 # ---------------------------------------------------------------------------
 
-_LLM_MN = (
-    Path(__file__).resolve().parent.parent.parent / "stdlib" / "ai" / "llm.mn"
-).read_text(encoding="utf-8")
+_LLM_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "ai" / "llm.mn").read_text(
+    encoding="utf-8"
+)
 
 
 def _compile_mir(source: str) -> str:

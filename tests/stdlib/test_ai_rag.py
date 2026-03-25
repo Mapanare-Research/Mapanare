@@ -33,9 +33,9 @@ from mapanare.cli import _compile_to_llvm_ir
 # Helpers
 # ---------------------------------------------------------------------------
 
-_RAG_MN = (
-    Path(__file__).resolve().parent.parent.parent / "stdlib" / "ai" / "rag.mn"
-).read_text(encoding="utf-8")
+_RAG_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "ai" / "rag.mn").read_text(
+    encoding="utf-8"
+)
 
 
 def _compile_mir(source: str) -> str:
