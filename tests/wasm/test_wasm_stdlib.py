@@ -21,8 +21,10 @@ from pathlib import Path
 import pytest
 
 from mapanare.ast_nodes import (
+    DocComment,
     EnumDef,
     ExportDef,
+    ExternFnDef,
     FnDef,
     GenericType,
     NamedType,
@@ -47,26 +49,30 @@ def _parse_file(path: Path) -> Program:
     return parse(source, filename=str(path))
 
 
+def _unwrap(defn):
+    """Unwrap DocComment and ExportDef wrappers to get the inner definition."""
+    if isinstance(defn, DocComment):
+        return _unwrap(defn.definition)
+    if isinstance(defn, ExportDef):
+        return _unwrap(defn.definition)
+    return defn
+
+
 def _find_fn(prog: Program, name: str) -> FnDef | None:
     """Find a function definition by name in a program."""
     for defn in prog.definitions:
-        if isinstance(defn, FnDef) and defn.name == name:
-            return defn
-        # Functions may be wrapped in ExportDef
-        if isinstance(defn, ExportDef) and isinstance(defn.definition, FnDef):
-            if defn.definition.name == name:
-                return defn.definition
+        inner = _unwrap(defn)
+        if isinstance(inner, FnDef) and inner.name == name:
+            return inner
     return None
 
 
 def _find_enum(prog: Program, name: str) -> EnumDef | None:
     """Find an enum definition by name in a program."""
     for defn in prog.definitions:
-        if isinstance(defn, EnumDef) and defn.name == name:
-            return defn
-        if isinstance(defn, ExportDef) and isinstance(defn.definition, EnumDef):
-            if defn.definition.name == name:
-                return defn.definition
+        inner = _unwrap(defn)
+        if isinstance(inner, EnumDef) and inner.name == name:
+            return inner
     return None
 
 
@@ -74,21 +80,17 @@ def _all_fn_names(prog: Program) -> set[str]:
     """Collect all top-level function names from a program."""
     names: set[str] = set()
     for defn in prog.definitions:
-        if isinstance(defn, FnDef):
-            names.add(defn.name)
-        if isinstance(defn, ExportDef) and isinstance(defn.definition, FnDef):
-            names.add(defn.definition.name)
+        inner = _unwrap(defn)
+        if isinstance(inner, (FnDef, ExternFnDef)):
+            names.add(inner.name)
     return names
 
 
 def _all_definitions(prog: Program) -> list:
-    """Unwrap ExportDef wrappers and return all definitions."""
+    """Unwrap DocComment/ExportDef wrappers and return all definitions."""
     result = []
     for defn in prog.definitions:
-        if isinstance(defn, ExportDef):
-            result.append(defn.definition)
-        else:
-            result.append(defn)
+        result.append(_unwrap(defn))
     return result
 
 
@@ -502,40 +504,37 @@ class TestWASIFunctions:
 
 
 class TestExternAnnotations:
-    """Test that bridge functions use @extern for JS/WASI imports."""
+    """Test that bridge functions use extern declarations for JS/WASI imports."""
 
     @pytest.mark.skipif(not _bridge_exists, reason="stdlib/wasm/bridge.mn not yet created")
-    def test_bridge_has_extern_annotation(self) -> None:
+    def test_bridge_has_extern_declarations(self) -> None:
         source = _bridge_path.read_text(encoding="utf-8")
-        assert "@extern" in source, "bridge.mn should use @extern annotations for JS imports"
+        assert 'extern "C" fn' in source, "bridge.mn should use extern declarations for JS imports"
 
     @pytest.mark.skipif(not _bridge_exists, reason="stdlib/wasm/bridge.mn not yet created")
-    def test_extern_specifies_module(self) -> None:
+    def test_extern_specifies_abi(self) -> None:
         source = _bridge_path.read_text(encoding="utf-8")
-        # @extern should specify the JS module, e.g., @extern("env") or @extern("js")
-        assert '@extern("' in source or "@extern(" in source
+        # extern should specify the ABI, e.g., extern "C" fn
+        assert 'extern "C"' in source
 
     @pytest.mark.skipif(not _bridge_exists, reason="stdlib/wasm/bridge.mn not yet created")
-    def test_bridge_extern_functions_have_no_body(self) -> None:
-        """Extern-declared functions should have empty or marker bodies."""
-        source = _bridge_path.read_text(encoding="utf-8")
-        # Look for @extern followed by fn declarations
-        # The pattern should appear in the source
-        assert "@extern" in source
-        # The file should still parse
+    def test_bridge_extern_functions_parsed(self) -> None:
+        """Extern-declared functions should parse as ExternFnDef nodes."""
         prog = _parse_file(_bridge_path)
         assert isinstance(prog, Program)
+        extern_fns = [d for d in prog.definitions if isinstance(d, ExternFnDef)]
+        assert len(extern_fns) > 0, "bridge.mn should have ExternFnDef nodes"
 
     @pytest.mark.skipif(not _runtime_exists, reason="stdlib/wasm/runtime.mn not yet created")
     def test_runtime_has_extern_for_wasi(self) -> None:
         source = _runtime_path.read_text(encoding="utf-8")
         assert (
-            "@extern" in source or "@wasi" in source
-        ), "runtime.mn should use @extern or @wasi for WASI imports"
+            'extern "C" fn' in source
+        ), "runtime.mn should use extern declarations for WASI imports"
 
     @pytest.mark.skipif(not _bridge_exists, reason="stdlib/wasm/bridge.mn not yet created")
     def test_extern_count_minimum(self) -> None:
         """Bridge module should have at least 5 extern declarations."""
-        source = _bridge_path.read_text(encoding="utf-8")
-        extern_count = source.count("@extern")
-        assert extern_count >= 5, f"Expected at least 5 @extern declarations, found {extern_count}"
+        prog = _parse_file(_bridge_path)
+        extern_count = sum(1 for d in prog.definitions if isinstance(d, ExternFnDef))
+        assert extern_count >= 5, f"Expected at least 5 extern declarations, found {extern_count}"

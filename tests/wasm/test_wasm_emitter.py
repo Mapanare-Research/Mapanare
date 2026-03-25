@@ -43,7 +43,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # Skip all tests if the WASM emitter module is not yet available
 _wasm_emitter_available = True
 try:
-    from mapanare.emit_wasm import WASMEmitter  # type: ignore[import-not-found]
+    from mapanare.emit_wasm import WasmEmitter  # type: ignore[import-not-found]
 except ImportError:
     _wasm_emitter_available = False
 
@@ -61,14 +61,14 @@ def _emit(source: str) -> str:
     """Parse, type-check, and emit WASM/WAT text for a Mapanare source."""
     ast = parse(source, filename="test.mn")
     check_or_raise(ast, filename="test.mn")
-    emitter = WASMEmitter()  # type: ignore[possibly-undefined]
+    emitter = WasmEmitter()  # type: ignore[possibly-undefined]
     return emitter.emit(ast)
 
 
 def _emit_unchecked(source: str) -> str:
     """Parse and emit WASM without semantic checking (for codegen-only tests)."""
     ast = parse(source, filename="test.mn")
-    emitter = WASMEmitter()  # type: ignore[possibly-undefined]
+    emitter = WasmEmitter()  # type: ignore[possibly-undefined]
     return emitter.emit(ast)
 
 

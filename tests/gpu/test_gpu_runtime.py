@@ -73,7 +73,7 @@ class TestGPURuntimeHeader:
     @pytest.mark.skipif(not _gpu_header_exists, reason="mapanare_gpu.h not yet created")
     def test_gpu_context_struct_declared(self) -> None:
         content = _GPU_HEADER.read_text(encoding="utf-8")
-        assert "mapanare_gpu_context" in content
+        assert "mn_gpu_ctx" in content
 
     @pytest.mark.skipif(not _gpu_header_exists, reason="mapanare_gpu.h not yet created")
     def test_gpu_buffer_struct_declared(self) -> None:
@@ -83,7 +83,7 @@ class TestGPURuntimeHeader:
     @pytest.mark.skipif(not _gpu_header_exists, reason="mapanare_gpu.h not yet created")
     def test_gpu_kernel_struct_declared(self) -> None:
         content = _GPU_HEADER.read_text(encoding="utf-8")
-        assert "mapanare_gpu_kernel" in content
+        assert "mn_cuda_kernel" in content
 
     @pytest.mark.skipif(not _gpu_header_exists, reason="mapanare_gpu.h not yet created")
     def test_gpu_init_function_declared(self) -> None:
@@ -93,7 +93,7 @@ class TestGPURuntimeHeader:
     @pytest.mark.skipif(not _gpu_header_exists, reason="mapanare_gpu.h not yet created")
     def test_gpu_destroy_function_declared(self) -> None:
         content = _GPU_HEADER.read_text(encoding="utf-8")
-        assert "mapanare_gpu_destroy" in content
+        assert "mapanare_gpu_shutdown" in content
 
 
 # ===========================================================================
@@ -266,12 +266,12 @@ class TestGPUMemoryAPI:
     @pytest.mark.skipif(not _gpu_header_exists, reason="mapanare_gpu.h not yet created")
     def test_gpu_alloc_declared(self) -> None:
         content = _GPU_HEADER.read_text(encoding="utf-8")
-        assert "mapanare_gpu_alloc" in content
+        assert "mapanare_gpu_buffer_alloc" in content
 
     @pytest.mark.skipif(not _gpu_header_exists, reason="mapanare_gpu.h not yet created")
     def test_gpu_free_declared(self) -> None:
         content = _GPU_HEADER.read_text(encoding="utf-8")
-        assert "mapanare_gpu_free" in content
+        assert "mapanare_gpu_buffer_free" in content
 
     @pytest.mark.skipif(not _gpu_header_exists, reason="mapanare_gpu.h not yet created")
     def test_gpu_copy_host_to_device_declared(self) -> None:
@@ -295,7 +295,7 @@ class TestCUDAPTXCompilation:
     @pytest.mark.skipif(not _gpu_header_exists, reason="mapanare_gpu.h not yet created")
     def test_ptx_compile_function_declared(self) -> None:
         content = _GPU_HEADER.read_text(encoding="utf-8")
-        assert "compile_ptx" in content.lower() or "ptx_module" in content.lower()
+        assert "mapanare_cuda_kernel_load" in content
 
     def test_cuda_kernels_have_ptx_source(self) -> None:
         for name, ptx in CUDA_KERNELS.items():
