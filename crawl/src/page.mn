@@ -1,0 +1,146 @@
+// crawl/src/page.mn — Page, Error, and Stats Types for Mapanare Crawler
+//
+// Defines the core data types returned by the crawler: Page (fetched content),
+// CrawlError (failure variants), and CrawlStats (aggregate metrics).
+
+// ---------------------------------------------------------------------------
+// Page struct — represents a fetched web page
+// ---------------------------------------------------------------------------
+
+pub struct Page {
+    url: String,
+    status: Int,
+    headers: Map<String, String>,
+    body: String,
+    title: String,
+    links: List<String>,
+    depth: Int,
+    elapsed_ms: Int
+}
+
+/// Construct a Page with all fields.
+pub fn new_page(u: String, st: Int, hdrs: Map<String, String>, b: String, t: String, lnks: List<String>, d: Int, ms: Int) -> Page {
+    return new Page {
+        url: u,
+        status: st,
+        headers: hdrs,
+        body: b,
+        title: t,
+        links: lnks,
+        depth: d,
+        elapsed_ms: ms
+    }
+}
+
+/// Construct a minimal Page (no headers, no links).
+fn new_simple_page(u: String, st: Int, b: String, d: Int) -> Page {
+    return new Page {
+        url: u,
+        status: st,
+        headers: #{},
+        body: b,
+        title: "",
+        links: [],
+        depth: d,
+        elapsed_ms: 0
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CrawlError enum — all failure modes
+// ---------------------------------------------------------------------------
+
+pub enum CrawlError {
+    FetchFailed(String),
+    ParseFailed(String),
+    RobotsBlocked(String),
+    Timeout(String),
+    MaxDepth(String)
+}
+
+fn new_fetch_error(msg: String) -> CrawlError {
+    return FetchFailed(msg)
+}
+
+fn new_parse_error(msg: String) -> CrawlError {
+    return ParseFailed(msg)
+}
+
+fn new_robots_error(msg: String) -> CrawlError {
+    return RobotsBlocked(msg)
+}
+
+fn new_timeout_error(msg: String) -> CrawlError {
+    return Timeout(msg)
+}
+
+fn new_max_depth_error(msg: String) -> CrawlError {
+    return MaxDepth(msg)
+}
+
+// ---------------------------------------------------------------------------
+// CrawlStats struct — aggregate crawl metrics
+// ---------------------------------------------------------------------------
+
+pub struct CrawlStats {
+    pages_crawled: Int,
+    pages_failed: Int,
+    pages_skipped: Int,
+    total_bytes: Int,
+    elapsed_ms: Int
+}
+
+/// Construct an empty CrawlStats.
+pub fn empty_stats() -> CrawlStats {
+    return new CrawlStats {
+        pages_crawled: 0,
+        pages_failed: 0,
+        pages_skipped: 0,
+        total_bytes: 0,
+        elapsed_ms: 0
+    }
+}
+
+/// Increment crawled count and add bytes.
+pub fn stats_add_success(s: CrawlStats, bytes: Int) -> CrawlStats {
+    return new CrawlStats {
+        pages_crawled: s.pages_crawled + 1,
+        pages_failed: s.pages_failed,
+        pages_skipped: s.pages_skipped,
+        total_bytes: s.total_bytes + bytes,
+        elapsed_ms: s.elapsed_ms
+    }
+}
+
+/// Increment failed count.
+pub fn stats_add_failure(s: CrawlStats) -> CrawlStats {
+    return new CrawlStats {
+        pages_crawled: s.pages_crawled,
+        pages_failed: s.pages_failed + 1,
+        pages_skipped: s.pages_skipped,
+        total_bytes: s.total_bytes,
+        elapsed_ms: s.elapsed_ms
+    }
+}
+
+/// Increment skipped count.
+pub fn stats_add_skip(s: CrawlStats) -> CrawlStats {
+    return new CrawlStats {
+        pages_crawled: s.pages_crawled,
+        pages_failed: s.pages_failed,
+        pages_skipped: s.pages_skipped + 1,
+        total_bytes: s.total_bytes,
+        elapsed_ms: s.elapsed_ms
+    }
+}
+
+/// Set the total elapsed time.
+pub fn stats_set_elapsed(s: CrawlStats, ms: Int) -> CrawlStats {
+    return new CrawlStats {
+        pages_crawled: s.pages_crawled,
+        pages_failed: s.pages_failed,
+        pages_skipped: s.pages_skipped,
+        total_bytes: s.total_bytes,
+        elapsed_ms: ms
+    }
+}

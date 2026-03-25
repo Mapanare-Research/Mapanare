@@ -1,0 +1,26 @@
+id: server-header-detect
+info:
+  name: Server Header Technology Detection
+  severity: INFO
+  tags:
+    - tech-detect
+  author: mapanare
+requests:
+  - method: GET
+    path: /
+matchers:
+  - type: header
+    condition: or
+    values:
+      - "Server: Apache"
+      - "Server: nginx"
+      - "Server: Microsoft-IIS"
+      - "X-Powered-By: PHP"
+      - "X-Powered-By: ASP.NET"
+extractors:
+  - type: header
+    name: server_tech
+    pattern: Server
+  - type: header
+    name: powered_by
+    pattern: X-Powered-By

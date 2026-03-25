@@ -1,0 +1,87 @@
+// crawl/src/config.mn — Crawler Configuration for Mapanare v1.3.0
+//
+// Defines the CrawlConfig struct with sensible defaults for web crawling.
+// Controls depth, concurrency, politeness (robots.txt, delay), domain scope,
+// and request timeouts.
+
+// ---------------------------------------------------------------------------
+// CrawlConfig struct
+// ---------------------------------------------------------------------------
+
+pub struct CrawlConfig {
+    seed_urls: List<String>,
+    max_depth: Int,
+    concurrency: Int,
+    delay_ms: Int,
+    user_agent: String,
+    respect_robots: Bool,
+    max_pages: Int,
+    allowed_domains: List<String>,
+    timeout_ms: Int
+}
+
+// ---------------------------------------------------------------------------
+// Constructor helpers
+// ---------------------------------------------------------------------------
+
+/// Create a CrawlConfig with sensible defaults for a single seed URL.
+/// max_depth=3, concurrency=10, delay_ms=1000, respect_robots=true,
+/// max_pages=1000, timeout_ms=30000.
+pub fn default_config(seed: String) -> CrawlConfig {
+    return new CrawlConfig {
+        seed_urls: [seed],
+        max_depth: 3,
+        concurrency: 10,
+        delay_ms: 1000,
+        user_agent: "Mapanare-Crawler/1.3.0",
+        respect_robots: true,
+        max_pages: 1000,
+        allowed_domains: [],
+        timeout_ms: 30000
+    }
+}
+
+/// Create a CrawlConfig with a custom depth limit.
+pub fn config_with_depth(seed: String, depth: Int) -> CrawlConfig {
+    return new CrawlConfig {
+        seed_urls: [seed],
+        max_depth: depth,
+        concurrency: 10,
+        delay_ms: 1000,
+        user_agent: "Mapanare-Crawler/1.3.0",
+        respect_robots: true,
+        max_pages: 1000,
+        allowed_domains: [],
+        timeout_ms: 30000
+    }
+}
+
+/// Create a CrawlConfig with multiple seed URLs.
+pub fn config_with_seeds(seeds: List<String>, depth: Int, max_pages: Int) -> CrawlConfig {
+    return new CrawlConfig {
+        seed_urls: seeds,
+        max_depth: depth,
+        concurrency: 10,
+        delay_ms: 1000,
+        user_agent: "Mapanare-Crawler/1.3.0",
+        respect_robots: true,
+        max_pages: max_pages,
+        allowed_domains: [],
+        timeout_ms: 30000
+    }
+}
+
+/// Create a CrawlConfig restricted to specific domains.
+pub fn config_with_domains(seed: String, domains: List<String>) -> CrawlConfig {
+    return new CrawlConfig {
+        seed_urls: [seed],
+        max_depth: 3,
+        concurrency: 10,
+        delay_ms: 1000,
+        user_agent: "Mapanare-Crawler/1.3.0",
+        respect_robots: true,
+        max_pages: 1000,
+        allowed_domains: domains,
+        timeout_ms: 30000
+    }
+}

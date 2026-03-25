@@ -1,0 +1,45 @@
+id: sensitive-files-exposure
+info:
+  name: Sensitive File Exposure Detection
+  severity: HIGH
+  tags:
+    - exposure
+    - sensitive-files
+  author: mapanare
+requests:
+  - method: GET
+    path: /.env
+  - method: GET
+    path: /.git/config
+  - method: GET
+    path: /wp-config.php.bak
+  - method: GET
+    path: /.DS_Store
+  - method: GET
+    path: /backup.sql
+  - method: GET
+    path: /.htpasswd
+  - method: GET
+    path: /phpinfo.php
+  - method: GET
+    path: /server-status
+matchers:
+  - type: status
+    values:
+      - "200"
+  - type: body
+    condition: or
+    values:
+      - "DB_PASSWORD"
+      - "[core]"
+      - "define("
+      - "Bud1"
+      - "INSERT INTO"
+      - "AuthUserFile"
+      - "phpinfo()"
+      - "Apache Server Status"
+extractors:
+  - type: regex
+    name: secrets_found
+    pattern: "(DB_PASSWORD|DB_HOST|SECRET_KEY|API_KEY)\\s*="
+    group: 1

@@ -1,0 +1,37 @@
+id: missing-security-headers
+info:
+  name: Missing Security Headers Detection
+  severity: INFO
+  tags:
+    - headers
+    - security
+    - best-practice
+  author: mapanare
+requests:
+  - method: GET
+    path: /
+matchers:
+  - type: header
+    condition: or
+    negative: true
+    values:
+      - "Content-Security-Policy:"
+      - "Strict-Transport-Security:"
+      - "X-Frame-Options:"
+      - "X-Content-Type-Options:"
+      - "X-XSS-Protection:"
+      - "Referrer-Policy:"
+      - "Permissions-Policy:"
+extractors:
+  - type: header
+    name: csp
+    pattern: Content-Security-Policy
+  - type: header
+    name: hsts
+    pattern: Strict-Transport-Security
+  - type: header
+    name: x_frame
+    pattern: X-Frame-Options
+  - type: header
+    name: x_content_type
+    pattern: X-Content-Type-Options

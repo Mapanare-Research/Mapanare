@@ -1,0 +1,189 @@
+// net/http/auth.mn — Authentication middleware for Mapanare HTTP Server
+//
+// Provides Basic Auth parsing, Bearer token extraction, JWT verification,
+// and session-based authentication checks.
+//
+// Depends on crypto (Base64 decoding, JWT) and session (session store lookup).
+
+import crypto
+import net::http::session
+
+// ---------------------------------------------------------------------------
+// Auth result enum
+// ---------------------------------------------------------------------------
+
+pub enum AuthResult {
+    Authenticated(String),
+    Denied(String)
+}
+
+// ---------------------------------------------------------------------------
+// Extract message from AuthResult
+// ---------------------------------------------------------------------------
+
+pub fn auth_result_message(r: AuthResult) -> String {
+    match r {
+        Authenticated(msg) => { return msg },
+        Denied(msg) => { return msg }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Check if auth result is authenticated
+// ---------------------------------------------------------------------------
+
+pub fn is_authenticated(r: AuthResult) -> Bool {
+    match r {
+        Authenticated(msg) => { return true },
+        Denied(msg) => { return false }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Parse Basic Auth header — "Basic base64(user:pass)"
+// Returns [user, pass] or None
+// ---------------------------------------------------------------------------
+
+pub fn parse_basic_auth(header: String) -> Option<List<String>> {
+    let slen: Int = len(header)
+    if slen < 7 { return None }
+
+    // Check "Basic " prefix
+    let prefix: String = header.substr(0, 6)
+    if prefix != "Basic " { return None }
+
+    let encoded: String = header.substr(6, slen)
+    let decoded_result: Result<String, crypto.CryptoError> = crypto.base64_decode(encoded)
+    match decoded_result {
+        Ok(decoded) => {
+            // Find the colon separator
+            let colon_pos: Int = decoded.find(":")
+            if colon_pos < 0 { return None }
+            let user: String = decoded.substr(0, colon_pos)
+            let pass: String = decoded.substr(colon_pos + 1, len(decoded))
+            let mut parts: List<String> = []
+            parts = parts + [user]
+            parts = parts + [pass]
+            return Some(parts)
+        },
+        Err(e) => {
+            return None
+        }
+    }
+    return None
+}
+
+// ---------------------------------------------------------------------------
+// Extract Bearer token — "Bearer xxx"
+// ---------------------------------------------------------------------------
+
+pub fn bearer_token(header: String) -> Option<String> {
+    let slen: Int = len(header)
+    if slen < 8 { return None }
+
+    // Check "Bearer " prefix
+    let prefix: String = header.substr(0, 7)
+    if prefix != "Bearer " { return None }
+
+    let token: String = header.substr(7, slen)
+    if len(token) == 0 { return None }
+    return Some(token)
+}
+
+// ---------------------------------------------------------------------------
+// JWT authentication — verify JWT and return claims or Denied
+// ---------------------------------------------------------------------------
+
+pub fn jwt_auth(auth_header: String, secret: String) -> AuthResult {
+    // Extract Bearer token
+    let token_opt: Option<String> = bearer_token(auth_header)
+    match token_opt {
+        Some(token) => {
+            // Verify and decode JWT
+            let result: Result<String, crypto.CryptoError> = crypto.jwt_decode(token, secret)
+            match result {
+                Ok(claims) => {
+                    return Authenticated(claims)
+                },
+                Err(e) => {
+                    return Denied("JWT verification failed")
+                }
+            }
+            return Denied("unreachable")
+        },
+        None => {
+            return Denied("Missing or invalid Bearer token")
+        }
+    }
+    return Denied("unreachable")
+}
+
+// ---------------------------------------------------------------------------
+// Verify a JWT token directly (without Bearer prefix extraction)
+// ---------------------------------------------------------------------------
+
+pub fn jwt_verify_token(token: String, secret: String) -> AuthResult {
+    let result: Result<String, crypto.CryptoError> = crypto.jwt_decode(token, secret)
+    match result {
+        Ok(claims) => {
+            return Authenticated(claims)
+        },
+        Err(e) => {
+            return Denied("JWT verification failed")
+        }
+    }
+    return Denied("unreachable")
+}
+
+// ---------------------------------------------------------------------------
+// Session-based authentication check
+// ---------------------------------------------------------------------------
+
+pub fn check_session_auth(store: session.SessionStore, session_id: String, required_key: String) -> AuthResult {
+    let session_opt: Option<session.Session> = session.get_session(store, session_id)
+    match session_opt {
+        Some(sess) => {
+            let val_opt: Option<String> = session.get_value(sess, required_key)
+            match val_opt {
+                Some(val) => {
+                    return Authenticated(val)
+                },
+                None => {
+                    return Denied("Session missing required key: " + required_key)
+                }
+            }
+            return Denied("unreachable")
+        },
+        None => {
+            return Denied("Session not found: " + session_id)
+        }
+    }
+    return Denied("unreachable")
+}
+
+// ---------------------------------------------------------------------------
+// Basic auth verification against expected credentials
+// ---------------------------------------------------------------------------
+
+pub fn verify_basic_auth(header: String, expected_user: String, expected_pass: String) -> AuthResult {
+    let parts_opt: Option<List<String>> = parse_basic_auth(header)
+    match parts_opt {
+        Some(parts) => {
+            if len(parts) < 2 {
+                return Denied("Malformed Basic auth credentials")
+            }
+            let user: String = parts[0]
+            let pass: String = parts[1]
+            if user == expected_user {
+                if pass == expected_pass {
+                    return Authenticated(user)
+                }
+            }
+            return Denied("Invalid credentials")
+        },
+        None => {
+            return Denied("Missing or invalid Basic auth header")
+        }
+    }
+    return Denied("unreachable")
+}
