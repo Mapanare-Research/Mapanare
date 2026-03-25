@@ -814,6 +814,9 @@ class WasmEmitter:
                 param_parts.append(f"(param ${local_name} {wasm_ty})")
                 self._locals[p.name] = wasm_ty
                 self._local_indices[p.name] = len(self._local_indices)
+                # Also register with % prefix so MIR instruction references resolve
+                pct_name = p.name if p.name.startswith("%") else f"%{p.name}"
+                self._locals[pct_name] = wasm_ty
 
         ret_type = self._mir_type_to_wasm_ret(mir_fn.return_type)
         result_part = f" (result {ret_type})" if ret_type else ""

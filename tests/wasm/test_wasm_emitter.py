@@ -256,21 +256,22 @@ class TestStringConstants:
     """Test that string literals are placed in the WASM data section."""
 
     def test_string_in_data_section(self) -> None:
-        src = 'fn greet() -> String { return "hello"; }'
+        src = 'fn greet() -> String { return "hello" }'
         wat = _emit(src)
         assert "(data" in wat
-        # The string bytes should appear in the data section
-        assert "hello" in wat
+        # The string bytes should appear in the data section (hex-encoded)
+        assert "\\68\\65\\6c\\6c\\6f" in wat or "hello" in wat
 
     def test_multiple_strings_distinct_offsets(self) -> None:
         src = """fn msgs() -> String {
-            let a: String = "foo";
-            let b: String = "bar";
-            return a;
+            let a: String = "foo"
+            let b: String = "bar"
+            return a
         }"""
         wat = _emit(src)
-        assert "foo" in wat
-        assert "bar" in wat
+        # Strings are hex-encoded in the data section
+        assert "\\66\\6f\\6f" in wat or "foo" in wat
+        assert "\\62\\61\\72" in wat or "bar" in wat
 
     def test_empty_string(self) -> None:
         src = 'fn empty() -> String { return ""; }'
@@ -352,11 +353,11 @@ fn abs(x: Int) -> Int {
     def test_while_loop_uses_loop(self) -> None:
         src = """
 fn count(n: Int) -> Int {
-    let i: Int = 0;
+    let mut i: Int = 0
     while i < n {
-        i = i + 1;
+        i = i + 1
     }
-    return i;
+    return i
 }
 """
         wat = _emit(src)
@@ -366,11 +367,11 @@ fn count(n: Int) -> Int {
     def test_for_loop_compiles(self) -> None:
         src = """
 fn sum_to(n: Int) -> Int {
-    let total: Int = 0;
+    let mut total: Int = 0
     for i in 0..n {
-        total = total + i;
+        total = total + i
     }
-    return total;
+    return total
 }
 """
         wat = _emit(src)
@@ -422,9 +423,9 @@ class TestLocals:
     def test_local_get_set(self) -> None:
         src = """
 fn f() -> Int {
-    let x: Int = 5;
-    x = x + 1;
-    return x;
+    let mut x: Int = 5
+    x = x + 1
+    return x
 }
 """
         wat = _emit(src)
@@ -463,11 +464,11 @@ class TestStructMemory:
         src = """
 struct Point {
     x: Int,
-    y: Int,
+    y: Int
 }
 
 fn make_point() -> Point {
-    return Point { x: 1, y: 2 };
+    return new Point { x: 1, y: 2 }
 }
 """
         wat = _emit(src)
@@ -492,11 +493,11 @@ fn get_x(p: Point) -> Int {
     def test_struct_field_store(self) -> None:
         src = """
 struct Counter {
-    value: Int,
+    value: Int
 }
 
 fn increment(c: Counter) -> Counter {
-    return Counter { value: c.value + 1 };
+    return new Counter { value: c.value + 1 }
 }
 """
         wat = _emit(src)
@@ -514,8 +515,8 @@ class TestBumpAllocator:
     def test_alloc_function_exists(self) -> None:
         """The emitter should include a bump allocator function."""
         src = """
-struct Box { value: Int, }
-fn make() -> Box { return Box { value: 42 }; }
+struct Box { value: Int }
+fn make() -> Box { return new Box { value: 42 } }
 """
         wat = _emit(src)
         # Allocator function or global bump pointer should be present
@@ -524,8 +525,8 @@ fn make() -> Box { return Box { value: 42 }; }
     def test_global_heap_pointer(self) -> None:
         """A global mutable i32 should serve as the heap bump pointer."""
         src = """
-struct Pair { a: Int, b: Int, }
-fn make() -> Pair { return Pair { a: 1, b: 2 }; }
+struct Pair { a: Int, b: Int }
+fn make() -> Pair { return new Pair { a: 1, b: 2 } }
 """
         wat = _emit(src)
         # Should have a mutable global for the heap pointer
@@ -644,13 +645,13 @@ class TestEnumMatch:
 enum Color {
     Red,
     Green,
-    Blue,
+    Blue
 }
 
 fn is_red(c: Color) -> Bool {
     match c {
-        Color::Red => { return true; }
-        _ => { return false; }
+        Red => { return true },
+        _ => { return false }
     }
 }
 """
@@ -660,14 +661,14 @@ fn is_red(c: Color) -> Bool {
 
     def test_match_arms_branch(self) -> None:
         src = """
-enum Dir { Up, Down, Left, Right, }
+enum Dir { Up, Down, Left, Right }
 
 fn to_int(d: Dir) -> Int {
     match d {
-        Dir::Up => { return 0; }
-        Dir::Down => { return 1; }
-        Dir::Left => { return 2; }
-        Dir::Right => { return 3; }
+        Up => { return 0 },
+        Down => { return 1 },
+        Left => { return 2 },
+        Right => { return 3 }
     }
 }
 """
@@ -679,13 +680,13 @@ fn to_int(d: Dir) -> Int {
         src = """
 enum Shape {
     Circle(Float),
-    Rect(Float, Float),
+    Rect(Float, Float)
 }
 
 fn area(s: Shape) -> Float {
     match s {
-        Shape::Circle(r) => { return 3.14 * r * r; }
-        Shape::Rect(w, h) => { return w * h; }
+        Circle(r) => { return 3.14 * r * r },
+        Rect(w, h) => { return w * h }
     }
 }
 """
@@ -719,9 +720,9 @@ fn safe_div(a: Int, b: Int) -> Result<Int, String> {
         src = """
 fn find(x: Int) -> Option<Int> {
     if x > 0 {
-        return Some(x);
+        return Some(x)
     }
-    return None;
+    return none
 }
 """
         wat = _emit(src)
@@ -731,8 +732,8 @@ fn find(x: Int) -> Option<Int> {
         src = """
 fn unwrap_or(opt: Option<Int>, default: Int) -> Int {
     match opt {
-        Some(v) => { return v; }
-        None => { return default; }
+        Some(v) => { return v },
+        _ => { return default }
     }
 }
 """
