@@ -3,13 +3,25 @@
 Reconstructs structured control flow from basic blocks and emits
 idiomatic Python source with asyncio agents, reactive signals, and
 async streams.
+
+.. deprecated:: 2.0.0
+    The Python transpiler backend is deprecated. Use the LLVM or WASM backend.
 """
 
 from __future__ import annotations
 
-from typing import Any
+import warnings
 
-from mapanare.mir import (
+warnings.warn(
+    "mapanare.emit_python_mir is deprecated since v2.0.0. "
+    "Use the LLVM backend (mapanare build) or WASM backend (mapanare emit-wasm) instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+from typing import Any  # noqa: E402
+
+from mapanare.mir import (  # noqa: E402
     TERMINATOR_TYPES,
     AgentSend,
     AgentSpawn,
@@ -57,7 +69,7 @@ from mapanare.mir import (
     WrapOk,
     WrapSome,
 )
-from mapanare.types import BUILTIN_CALL_MAP, PYTHON_TYPE_MAP, TypeKind
+from mapanare.types import BUILTIN_CALL_MAP, PYTHON_TYPE_MAP, TypeKind  # noqa: E402
 
 
 class PythonMIREmitter:

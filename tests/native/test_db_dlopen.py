@@ -75,6 +75,11 @@ def _compile_and_load(tmp_path: str) -> ctypes.CDLL:
     return _compiled_lib
 
 
+def _fn(lib: ctypes.CDLL, name: str) -> ctypes.CDLL:
+    """Get a C function by name, avoiding Python name mangling of __mn_ prefix."""
+    return getattr(lib, name)
+
+
 # ---------------------------------------------------------------------------
 # Test class: shared library import and symbol verification
 # ---------------------------------------------------------------------------
@@ -180,26 +185,26 @@ class TestDlopenSQLiteAvailability:
     def _setup(self, tmp_path: object) -> None:
         self.lib = _compile_and_load(str(tmp_path))
         # Set up minimal bindings
-        self.lib.__mn_str_from_cstr.restype = MnString
-        self.lib.__mn_str_from_cstr.argtypes = [ctypes.c_char_p]
+        _fn(self.lib, "__mn_str_from_cstr").restype = MnString
+        _fn(self.lib, "__mn_str_from_cstr").argtypes = [ctypes.c_char_p]
 
-        self.lib.__mn_sqlite3_open.restype = ctypes.c_int64
-        self.lib.__mn_sqlite3_open.argtypes = [MnString]
+        _fn(self.lib, "__mn_sqlite3_open").restype = ctypes.c_int64
+        _fn(self.lib, "__mn_sqlite3_open").argtypes = [MnString]
 
-        self.lib.__mn_sqlite3_close.restype = None
-        self.lib.__mn_sqlite3_close.argtypes = [ctypes.c_int64]
+        _fn(self.lib, "__mn_sqlite3_close").restype = None
+        _fn(self.lib, "__mn_sqlite3_close").argtypes = [ctypes.c_int64]
 
     def test_sqlite3_open_returns_valid_handle_when_available(self) -> None:
         """If libsqlite3 is installed, __mn_sqlite3_open returns a valid handle.
 
         If libsqlite3 is not installed, __mn_sqlite3_open returns 0 (graceful fallback).
         """
-        path = self.lib.__mn_str_from_cstr(b":memory:")
-        handle = self.lib.__mn_sqlite3_open(path)
+        path = _fn(self.lib, "__mn_str_from_cstr")(b":memory:")
+        handle = _fn(self.lib, "__mn_sqlite3_open")(path)
 
         if handle > 0:
             # libsqlite3 is available — handle should be valid
-            self.lib.__mn_sqlite3_close(handle)
+            _fn(self.lib, "__mn_sqlite3_close")(handle)
         else:
             # libsqlite3 is not available — 0 is the expected graceful fallback
             assert handle == 0
@@ -207,9 +212,9 @@ class TestDlopenSQLiteAvailability:
     def test_sqlite3_close_on_invalid_handle_does_not_crash(self) -> None:
         """Calling close with handle 0 or invalid handle does not crash."""
         # Should be a no-op
-        self.lib.__mn_sqlite3_close(0)
-        self.lib.__mn_sqlite3_close(-1)
-        self.lib.__mn_sqlite3_close(999)
+        _fn(self.lib, "__mn_sqlite3_close")(0)
+        _fn(self.lib, "__mn_sqlite3_close")(-1)
+        _fn(self.lib, "__mn_sqlite3_close")(999)
 
 
 @pytest.mark.skipif(_CC is None, reason="No C compiler available")
@@ -220,41 +225,41 @@ class TestDlopenGracefulFallback:
     def _setup(self, tmp_path: object) -> None:
         self.lib = _compile_and_load(str(tmp_path))
 
-        self.lib.__mn_str_from_cstr.restype = MnString
-        self.lib.__mn_str_from_cstr.argtypes = [ctypes.c_char_p]
+        _fn(self.lib, "__mn_str_from_cstr").restype = MnString
+        _fn(self.lib, "__mn_str_from_cstr").argtypes = [ctypes.c_char_p]
 
-        self.lib.__mn_pg_connect.restype = ctypes.c_int64
-        self.lib.__mn_pg_connect.argtypes = [MnString]
+        _fn(self.lib, "__mn_pg_connect").restype = ctypes.c_int64
+        _fn(self.lib, "__mn_pg_connect").argtypes = [MnString]
 
-        self.lib.__mn_redis_connect.restype = ctypes.c_int64
-        self.lib.__mn_redis_connect.argtypes = [MnString, ctypes.c_int64]
+        _fn(self.lib, "__mn_redis_connect").restype = ctypes.c_int64
+        _fn(self.lib, "__mn_redis_connect").argtypes = [MnString, ctypes.c_int64]
 
-        self.lib.__mn_pg_errmsg.restype = MnString
-        self.lib.__mn_pg_errmsg.argtypes = [ctypes.c_int64]
+        _fn(self.lib, "__mn_pg_errmsg").restype = MnString
+        _fn(self.lib, "__mn_pg_errmsg").argtypes = [ctypes.c_int64]
 
-        self.lib.__mn_redis_errmsg.restype = MnString
-        self.lib.__mn_redis_errmsg.argtypes = [ctypes.c_int64]
+        _fn(self.lib, "__mn_redis_errmsg").restype = MnString
+        _fn(self.lib, "__mn_redis_errmsg").argtypes = [ctypes.c_int64]
 
     def test_pg_connect_returns_zero_without_libpq(self) -> None:
         """If libpq is not available, __mn_pg_connect returns 0 without crashing."""
-        conninfo = self.lib.__mn_str_from_cstr(b"host=localhost dbname=test")
-        handle = self.lib.__mn_pg_connect(conninfo)
+        conninfo = _fn(self.lib, "__mn_str_from_cstr")(b"host=localhost dbname=test")
+        handle = _fn(self.lib, "__mn_pg_connect")(conninfo)
         # Returns 0 if libpq not installed, or a valid handle if it is
         assert handle >= 0
 
     def test_pg_errmsg_on_invalid_handle(self) -> None:
         """__mn_pg_errmsg on invalid handle returns a fallback message."""
-        msg = self.lib.__mn_pg_errmsg(0)
+        msg = _fn(self.lib, "__mn_pg_errmsg")(0)
         assert msg.len > 0, "Should return a non-empty fallback error message"
 
     def test_redis_connect_returns_zero_without_hiredis(self) -> None:
         """If hiredis is not available, __mn_redis_connect returns 0 without crashing."""
-        host = self.lib.__mn_str_from_cstr(b"localhost")
-        handle = self.lib.__mn_redis_connect(host, 6379)
+        host = _fn(self.lib, "__mn_str_from_cstr")(b"localhost")
+        handle = _fn(self.lib, "__mn_redis_connect")(host, 6379)
         # Returns 0 if hiredis not installed or no Redis server running
         assert handle >= 0
 
     def test_redis_errmsg_on_invalid_handle(self) -> None:
         """__mn_redis_errmsg on invalid handle returns a fallback message."""
-        msg = self.lib.__mn_redis_errmsg(0)
+        msg = _fn(self.lib, "__mn_redis_errmsg")(0)
         assert msg.len > 0, "Should return a non-empty fallback error message"

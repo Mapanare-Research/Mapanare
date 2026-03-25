@@ -880,6 +880,61 @@ def cmd_emit_mir(args: argparse.Namespace) -> None:
         print(output, end="")
 
 
+def cmd_emit_wasm(args: argparse.Namespace) -> None:
+    """Emit WebAssembly (WAT) for an .mn source file."""
+    from mapanare.emit_wasm import WasmEmitter
+    from mapanare.lower import lower as build_mir
+    from mapanare.mir_opt import MIROptLevel
+    from mapanare.mir_opt import optimize_module as mir_optimize
+
+    source = _read_source(args.source)
+    opt_level = _parse_opt_level(args)
+    resolver = ModuleResolver()
+    try:
+        ast = parse(source, filename=args.source)
+        check_or_raise(ast, filename=args.source, resolver=resolver)
+        module_name = os.path.splitext(os.path.basename(args.source))[0]
+        mir_module = build_mir(ast, module_name=module_name)
+        mir_opt_level = MIROptLevel(opt_level.value)
+        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+
+        emitter = WasmEmitter()
+        wat_output = emitter.emit(mir_module)
+    except ParseError as e:
+        _emit_parse_error(e, source, args.source)
+        sys.exit(1)
+    except SemanticErrors as e:
+        _emit_semantic_errors(e, source)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    out_path = args.o or args.source.replace(".mn", ".wat")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(wat_output)
+    print(f"emitted {args.source} -> {out_path} (WebAssembly text format)")
+
+    # Optionally compile to .wasm binary if wat2wasm is available
+    if getattr(args, "binary", False):
+        import shutil
+
+        wat2wasm = shutil.which("wat2wasm")
+        if wat2wasm:
+            wasm_path = out_path.replace(".wat", ".wasm")
+            result = subprocess.run(
+                [wat2wasm, out_path, "-o", wasm_path],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                print(f"compiled {out_path} -> {wasm_path} (binary)")
+            else:
+                print(f"wat2wasm failed: {result.stderr}", file=sys.stderr)
+        else:
+            print("warning: wat2wasm not found, skipping binary compilation", file=sys.stderr)
+
+
 def cmd_lint(args: argparse.Namespace) -> None:
     """Lint an .mn source file for code quality issues."""
     source = _read_source(args.source)
@@ -1352,6 +1407,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_opt_level_args(p_emit_mir)
     p_emit_mir.set_defaults(func=cmd_emit_mir)
+
+    # emit-wasm
+    p_emit_wasm = subparsers.add_parser(
+        "emit-wasm", help="Emit WebAssembly (WAT/WASM) for .mn source"
+    )
+    p_emit_wasm.add_argument("source", help="Path to .mn source file")
+    p_emit_wasm.add_argument("-o", metavar="OUTPUT", help="Output .wat file path", default=None)
+    p_emit_wasm.add_argument(
+        "--binary",
+        action="store_true",
+        default=False,
+        help="Also compile to .wasm binary (requires wat2wasm)",
+    )
+    _add_opt_level_args(p_emit_wasm)
+    p_emit_wasm.set_defaults(func=cmd_emit_wasm)
 
     # lint
     p_lint = subparsers.add_parser("lint", help="Lint .mn source for code quality issues")

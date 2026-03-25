@@ -28,12 +28,12 @@ extern "C" fn __mn_redis_errmsg(ctx: Int) -> String
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-fn new_redis_store(handle: Int, host: String, port: Int) -> kv.RedisStore {
-    return new kv.RedisStore { handle: handle, host: host, port: port }
+fn new_redis_store(handle: Int, host: String, port: Int) -> RedisStore {
+    return new RedisStore { handle: handle, host: host, port: port }
 }
 
-fn new_redis_error(msg: String) -> kv.KVError {
-    return new kv.KVError { message: msg }
+fn new_redis_error(msg: String) -> KVError {
+    return new KVError { message: msg }
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ fn quote_value(val: String) -> String {
 // connect — establish a Redis connection
 // ---------------------------------------------------------------------------
 
-pub fn connect(host: String, port: Int) -> Result<kv.KVStore, kv.KVError> {
+pub fn redis_connect(host: String, port: Int) -> Result<KVStore, KVError> {
     let handle: Int = __mn_redis_connect(host, port)
     if handle < 0 {
         return Err(new_redis_error("Failed to connect to Redis at " + host + ":" + str(port)))
@@ -95,7 +95,7 @@ pub fn connect(host: String, port: Int) -> Result<kv.KVStore, kv.KVError> {
         return Err(new_redis_error("Redis connection error: " + errmsg))
     }
 
-    let store: kv.RedisStore = new_redis_store(handle, host, port)
+    let store: RedisStore = new_redis_store(handle, host, port)
     return Ok(Redis(store))
 }
 
@@ -103,13 +103,13 @@ pub fn connect(host: String, port: Int) -> Result<kv.KVStore, kv.KVError> {
 // get — GET key
 // ---------------------------------------------------------------------------
 
-pub fn get(store: kv.RedisStore, key: String) -> Option<String> {
+pub fn redis_get(store: RedisStore, key: String) -> Option<String> {
     let cmd: String = build_command(["GET", quote_value(key)])
     let reply: String = __mn_redis_command(store.handle, cmd)
 
     // Redis returns empty string for nil (key not found)
     if len(reply) == 0 {
-        return None
+        return none
     }
     return Some(reply)
 }
@@ -118,7 +118,7 @@ pub fn get(store: kv.RedisStore, key: String) -> Option<String> {
 // set — SET key value
 // ---------------------------------------------------------------------------
 
-pub fn set(store: kv.RedisStore, key: String, value: String) -> Result<Bool, kv.KVError> {
+pub fn redis_set(store: RedisStore, key: String, value: String) -> Result<Bool, KVError> {
     let cmd: String = build_command(["SET", quote_value(key), quote_value(value)])
     let status: Int = __mn_redis_command_status(store.handle, cmd)
 
@@ -133,7 +133,7 @@ pub fn set(store: kv.RedisStore, key: String, value: String) -> Result<Bool, kv.
 // set_ex — SET key value EX ttl (with expiration in seconds)
 // ---------------------------------------------------------------------------
 
-pub fn set_ex(store: kv.RedisStore, key: String, value: String, ttl: Int) -> Result<Bool, kv.KVError> {
+pub fn redis_set_ex(store: RedisStore, key: String, value: String, ttl: Int) -> Result<Bool, KVError> {
     let cmd: String = build_command(["SET", quote_value(key), quote_value(value), "EX", str(ttl)])
     let status: Int = __mn_redis_command_status(store.handle, cmd)
 
@@ -148,7 +148,7 @@ pub fn set_ex(store: kv.RedisStore, key: String, value: String, ttl: Int) -> Res
 // del — DEL key
 // ---------------------------------------------------------------------------
 
-pub fn del(store: kv.RedisStore, key: String) -> Result<Bool, kv.KVError> {
+pub fn redis_del(store: RedisStore, key: String) -> Result<Bool, KVError> {
     let cmd: String = build_command(["DEL", quote_value(key)])
     let status: Int = __mn_redis_command_status(store.handle, cmd)
 
@@ -163,7 +163,7 @@ pub fn del(store: kv.RedisStore, key: String) -> Result<Bool, kv.KVError> {
 // exists — EXISTS key (returns Bool)
 // ---------------------------------------------------------------------------
 
-pub fn exists(store: kv.RedisStore, key: String) -> Bool {
+pub fn redis_exists(store: RedisStore, key: String) -> Bool {
     let cmd: String = build_command(["EXISTS", quote_value(key)])
     let status: Int = __mn_redis_command_status(store.handle, cmd)
     return status > 0
@@ -173,7 +173,7 @@ pub fn exists(store: kv.RedisStore, key: String) -> Bool {
 // incr — INCR key (atomic increment, returns new value)
 // ---------------------------------------------------------------------------
 
-pub fn incr(store: kv.RedisStore, key: String) -> Result<Int, kv.KVError> {
+pub fn redis_incr(store: RedisStore, key: String) -> Result<Int, KVError> {
     let cmd: String = build_command(["INCR", quote_value(key)])
     let reply: String = __mn_redis_command(store.handle, cmd)
 
@@ -190,7 +190,7 @@ pub fn incr(store: kv.RedisStore, key: String) -> Result<Int, kv.KVError> {
 // decr — DECR key (atomic decrement, returns new value)
 // ---------------------------------------------------------------------------
 
-pub fn decr(store: kv.RedisStore, key: String) -> Result<Int, kv.KVError> {
+pub fn redis_decr(store: RedisStore, key: String) -> Result<Int, KVError> {
     let cmd: String = build_command(["DECR", quote_value(key)])
     let reply: String = __mn_redis_command(store.handle, cmd)
 
@@ -207,7 +207,7 @@ pub fn decr(store: kv.RedisStore, key: String) -> Result<Int, kv.KVError> {
 // keys — KEYS pattern (returns list of matching keys)
 // ---------------------------------------------------------------------------
 
-pub fn keys(store: kv.RedisStore, pattern: String) -> List<String> {
+pub fn redis_keys(store: RedisStore, pattern: String) -> List<String> {
     let cmd: String = build_command(["KEYS", quote_value(pattern)])
     let reply: String = __mn_redis_command(store.handle, cmd)
 
@@ -223,7 +223,7 @@ pub fn keys(store: kv.RedisStore, pattern: String) -> List<String> {
 // close — close the Redis connection
 // ---------------------------------------------------------------------------
 
-pub fn close(store: kv.RedisStore) -> Result<Bool, kv.KVError> {
+pub fn redis_close(store: RedisStore) -> Result<Bool, KVError> {
     __mn_redis_close(store.handle)
     return Ok(true)
 }

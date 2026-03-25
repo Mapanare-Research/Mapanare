@@ -2,7 +2,7 @@
 //
 // Version-based schema migrations with up/down support. Tracks applied
 // migrations in a `__mn_migrations` table. Works with any SQL driver
-// (SQLite, PostgreSQL) via the common sql.Connection interface.
+// (SQLite, PostgreSQL) via the common Connection interface.
 //
 // Usage:
 //   let m1 = migrate.new_migration(1, "create_users",
@@ -45,9 +45,9 @@ pub fn new_migration(version: Int, name: String, up: String, down: String) -> Mi
 // Internal: Create the migrations tracking table if it doesn't exist
 // ---------------------------------------------------------------------------
 
-pub fn ensure_table(conn: sql.Connection) -> Result<Bool, sql.SqlError> {
+pub fn ensure_table(conn: Connection) -> Result<Bool, SqlError> {
     let create_sql: String = "CREATE TABLE IF NOT EXISTS __mn_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT DEFAULT CURRENT_TIMESTAMP)"
-    let result: Result<Int, sql.SqlError> = sqlite.execute_simple(conn, create_sql)
+    let result: Result<Int, SqlError> = execute_simple(conn, create_sql)
     match result {
         Err(e) => { return Err(e) },
         Ok(n) => { return Ok(true) }
@@ -59,9 +59,9 @@ pub fn ensure_table(conn: sql.Connection) -> Result<Bool, sql.SqlError> {
 // Internal: Get list of already-applied migration versions
 // ---------------------------------------------------------------------------
 
-fn get_applied_versions(conn: sql.Connection) -> Result<List<Int>, sql.SqlError> {
+fn get_applied_versions(conn: Connection) -> Result<List<Int>, SqlError> {
     let query_sql: String = "SELECT version FROM __mn_migrations ORDER BY version ASC"
-    let result: Result<sql.QueryResult, sql.SqlError> = sqlite.query_simple(conn, query_sql)
+    let result: Result<QueryResult, SqlError> = query_simple(conn, query_sql)
 
     match result {
         Err(e) => { return Err(e) },
@@ -70,13 +70,13 @@ fn get_applied_versions(conn: sql.Connection) -> Result<List<Int>, sql.SqlError>
             let row_count: Int = len(qr.rows)
             let mut i: Int = 0
             while i < row_count {
-                let row: sql.Row = qr.rows[i]
-                let ver_opt: Option<Int> = sql.row_get_int(row, "version")
+                let row: Row = qr.rows[i]
+                let ver_opt: Option<Int> = row_get_int(row, "version")
                 match ver_opt {
                     Some(v) => {
                         versions = versions + [v]
                     },
-                    None => {}
+                    _ => {}
                 }
                 i = i + 1
             }
@@ -161,16 +161,16 @@ fn sort_migrations(migrations: List<Migration>) -> List<Migration> {
 // Migrate Up: Apply all pending migrations in version order
 // ---------------------------------------------------------------------------
 
-pub fn migrate_up(conn: sql.Connection, migrations: List<Migration>) -> Result<Int, sql.SqlError> {
+pub fn migrate_up(conn: Connection, migrations: List<Migration>) -> Result<Int, SqlError> {
     // Ensure tracking table exists
-    let table_result: Result<Bool, sql.SqlError> = ensure_table(conn)
+    let table_result: Result<Bool, SqlError> = ensure_table(conn)
     match table_result {
         Err(e) => { return Err(e) },
         Ok(ok) => {}
     }
 
     // Get already-applied versions
-    let applied_result: Result<List<Int>, sql.SqlError> = get_applied_versions(conn)
+    let applied_result: Result<List<Int>, SqlError> = get_applied_versions(conn)
     let mut applied_versions: List<Int> = []
     match applied_result {
         Err(e) => { return Err(e) },
@@ -190,20 +190,20 @@ pub fn migrate_up(conn: sql.Connection, migrations: List<Migration>) -> Result<I
 
         if version_is_applied(applied_versions, m.version) == false {
             // Execute the UP migration
-            let exec_result: Result<Int, sql.SqlError> = sqlite.execute_simple(conn, m.up)
+            let exec_result: Result<Int, SqlError> = execute_simple(conn, m.up)
             match exec_result {
                 Err(e) => {
-                    return Err(QueryFailed("Migration " + str(m.version) + " (" + m.name + ") failed: " + sql.error_message(e)))
+                    return Err(QueryFailed("Migration " + str(m.version) + " (" + m.name + ") failed: " + error_message(e)))
                 },
                 Ok(n) => {}
             }
 
             // Record it in the tracking table
             let insert_sql: String = "INSERT INTO __mn_migrations (version, name) VALUES (" + str(m.version) + ", '" + m.name + "')"
-            let insert_result: Result<Int, sql.SqlError> = sqlite.execute_simple(conn, insert_sql)
+            let insert_result: Result<Int, SqlError> = execute_simple(conn, insert_sql)
             match insert_result {
                 Err(e) => {
-                    return Err(QueryFailed("Failed to record migration " + str(m.version) + ": " + sql.error_message(e)))
+                    return Err(QueryFailed("Failed to record migration " + str(m.version) + ": " + error_message(e)))
                 },
                 Ok(n) => {}
             }
@@ -221,16 +221,16 @@ pub fn migrate_up(conn: sql.Connection, migrations: List<Migration>) -> Result<I
 // Migrate Down: Rollback to a target version (exclusive)
 // ---------------------------------------------------------------------------
 
-pub fn migrate_down(conn: sql.Connection, migrations: List<Migration>, target: Int) -> Result<Int, sql.SqlError> {
+pub fn migrate_down(conn: Connection, migrations: List<Migration>, target: Int) -> Result<Int, SqlError> {
     // Ensure tracking table exists
-    let table_result: Result<Bool, sql.SqlError> = ensure_table(conn)
+    let table_result: Result<Bool, SqlError> = ensure_table(conn)
     match table_result {
         Err(e) => { return Err(e) },
         Ok(ok) => {}
     }
 
     // Get applied versions
-    let applied_result: Result<List<Int>, sql.SqlError> = get_applied_versions(conn)
+    let applied_result: Result<List<Int>, SqlError> = get_applied_versions(conn)
     let mut applied_versions: List<Int> = []
     match applied_result {
         Err(e) => { return Err(e) },
@@ -261,20 +261,20 @@ pub fn migrate_down(conn: sql.Connection, migrations: List<Migration>, target: I
         if m.version > target {
             if version_is_applied(applied_versions, m.version) {
                 // Execute the DOWN migration
-                let exec_result: Result<Int, sql.SqlError> = sqlite.execute_simple(conn, m.down)
+                let exec_result: Result<Int, SqlError> = execute_simple(conn, m.down)
                 match exec_result {
                     Err(e) => {
-                        return Err(QueryFailed("Rollback of migration " + str(m.version) + " (" + m.name + ") failed: " + sql.error_message(e)))
+                        return Err(QueryFailed("Rollback of migration " + str(m.version) + " (" + m.name + ") failed: " + error_message(e)))
                     },
                     Ok(n) => {}
                 }
 
                 // Remove from tracking table
                 let delete_sql: String = "DELETE FROM __mn_migrations WHERE version = " + str(m.version)
-                let delete_result: Result<Int, sql.SqlError> = sqlite.execute_simple(conn, delete_sql)
+                let delete_result: Result<Int, SqlError> = execute_simple(conn, delete_sql)
                 match delete_result {
                     Err(e) => {
-                        return Err(QueryFailed("Failed to remove migration record " + str(m.version) + ": " + sql.error_message(e)))
+                        return Err(QueryFailed("Failed to remove migration record " + str(m.version) + ": " + error_message(e)))
                     },
                     Ok(n) => {}
                 }
@@ -293,16 +293,16 @@ pub fn migrate_down(conn: sql.Connection, migrations: List<Migration>, target: I
 // Migration status: show which migrations are applied and which are pending
 // ---------------------------------------------------------------------------
 
-pub fn migration_status(conn: sql.Connection, migrations: List<Migration>) -> Result<List<MigrationInfo>, sql.SqlError> {
+pub fn migration_status(conn: Connection, migrations: List<Migration>) -> Result<List<MigrationInfo>, SqlError> {
     // Ensure tracking table exists
-    let table_result: Result<Bool, sql.SqlError> = ensure_table(conn)
+    let table_result: Result<Bool, SqlError> = ensure_table(conn)
     match table_result {
         Err(e) => { return Err(e) },
         Ok(ok) => {}
     }
 
     // Get applied versions
-    let applied_result: Result<List<Int>, sql.SqlError> = get_applied_versions(conn)
+    let applied_result: Result<List<Int>, SqlError> = get_applied_versions(conn)
     let mut applied_versions: List<Int> = []
     match applied_result {
         Err(e) => { return Err(e) },

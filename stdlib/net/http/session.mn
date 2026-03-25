@@ -108,7 +108,7 @@ pub fn get_session(store: SessionStore, id: String) -> Option<Session> {
         }
     }
     if found == false {
-        return None
+        return none
     }
     let session: Session = store.sessions[id]
     return Some(session)
@@ -144,7 +144,7 @@ pub fn get_value(session: Session, key: String) -> Option<String> {
         }
     }
     if found == false {
-        return None
+        return none
     }
     let val: String = session.data[key]
     return Some(val)

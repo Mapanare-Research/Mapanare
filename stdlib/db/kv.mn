@@ -68,7 +68,7 @@ pub fn kv_get(store: KVStore, key: String) -> Option<String> {
             return embedded_get(es, key)
         }
     }
-    return None
+    return none
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ pub fn kv_exists(store: KVStore, key: String) -> Bool {
 pub fn kv_keys(store: KVStore) -> List<String> {
     match store {
         Redis(rs) => {
-            return redis_keys_all(rs)
+            return redis_keys(rs, "*")
         },
         Embedded(es) => {
             let mut result: List<String> = []
@@ -193,7 +193,7 @@ pub fn error_message(err: KVError) -> String {
 // ---------------------------------------------------------------------------
 
 fn redis_get(rs: RedisStore, key: String) -> Option<String> {
-    return None
+    return none
 }
 
 fn redis_set(rs: RedisStore, key: String, value: String) -> Result<Bool, KVError> {
@@ -208,7 +208,7 @@ fn redis_exists(rs: RedisStore, key: String) -> Bool {
     return false
 }
 
-fn redis_keys_all(rs: RedisStore) -> List<String> {
+fn redis_keys(rs: RedisStore, pattern: String) -> List<String> {
     return []
 }
 

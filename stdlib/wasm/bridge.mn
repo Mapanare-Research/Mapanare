@@ -1,0 +1,487 @@
+// wasm/bridge.mn — WebAssembly JavaScript Interop for Mapanare
+//
+// Provides a bridge between Mapanare code compiled to WASM and the
+// host JavaScript environment. Supports JS evaluation, function calls,
+// DOM manipulation, event handling, and the Fetch API.
+//
+// All host calls delegate to WASM imports (mapanare_wasm_bridge).
+//
+// Usage:
+//   bridge.console_log("Hello from Mapanare!")
+//   let el = bridge.dom_query("#app")
+//   bridge.dom_set_text(el, "It works!")
+//   let resp = bridge.fetch_url("https://api.example.com/data")
+
+// ---------------------------------------------------------------------------
+// Extern WASM import functions (provided by the JS host)
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_wasm_js_eval(code: String) -> Int
+extern "C" fn __mn_wasm_js_eval_str(code: String) -> String
+extern "C" fn __mn_wasm_js_eval_num(code: String) -> Float
+extern "C" fn __mn_wasm_js_eval_bool(code: String) -> Int
+extern "C" fn __mn_wasm_js_call(func: String, args_json: String) -> Int
+extern "C" fn __mn_wasm_js_call_str(func: String, args_json: String) -> String
+extern "C" fn __mn_wasm_js_get_type(handle: Int) -> Int
+extern "C" fn __mn_wasm_js_get_str(handle: Int) -> String
+extern "C" fn __mn_wasm_js_get_num(handle: Int) -> Float
+extern "C" fn __mn_wasm_js_get_bool(handle: Int) -> Int
+extern "C" fn __mn_wasm_js_get_prop(handle: Int, key: String) -> Int
+extern "C" fn __mn_wasm_js_set_prop(handle: Int, key: String, val_handle: Int) -> Int
+extern "C" fn __mn_wasm_js_set_prop_str(handle: Int, key: String, val: String) -> Int
+extern "C" fn __mn_wasm_js_set_prop_num(handle: Int, key: String, val: Float) -> Int
+extern "C" fn __mn_wasm_js_free(handle: Int) -> Int
+extern "C" fn __mn_wasm_dom_query(selector: String) -> Int
+extern "C" fn __mn_wasm_dom_query_all(selector: String) -> Int
+extern "C" fn __mn_wasm_dom_create(tag: String) -> Int
+extern "C" fn __mn_wasm_dom_set_text(handle: Int, text: String) -> Int
+extern "C" fn __mn_wasm_dom_get_text(handle: Int) -> String
+extern "C" fn __mn_wasm_dom_set_html(handle: Int, html: String) -> Int
+extern "C" fn __mn_wasm_dom_get_html(handle: Int) -> String
+extern "C" fn __mn_wasm_dom_set_attr(handle: Int, key: String, val: String) -> Int
+extern "C" fn __mn_wasm_dom_get_attr(handle: Int, key: String) -> String
+extern "C" fn __mn_wasm_dom_append(parent: Int, child: Int) -> Int
+extern "C" fn __mn_wasm_dom_remove(handle: Int) -> Int
+extern "C" fn __mn_wasm_dom_on(handle: Int, event: String, cb_id: Int) -> Int
+extern "C" fn __mn_wasm_console_log(msg: String) -> Int
+extern "C" fn __mn_wasm_console_warn(msg: String) -> Int
+extern "C" fn __mn_wasm_console_error(msg: String) -> Int
+extern "C" fn __mn_wasm_fetch(url: String, method: String, body: String, headers_json: String) -> Int
+extern "C" fn __mn_wasm_fetch_status(fetch_handle: Int) -> Int
+extern "C" fn __mn_wasm_fetch_body(fetch_handle: Int) -> String
+extern "C" fn __mn_wasm_set_timeout(ms: Int, cb_id: Int) -> Int
+extern "C" fn __mn_wasm_set_interval(ms: Int, cb_id: Int) -> Int
+extern "C" fn __mn_wasm_clear_interval(timer_id: Int) -> Int
+extern "C" fn __mn_wasm_register_callback(cb_ptr: Int) -> Int
+
+// ---------------------------------------------------------------------------
+// BridgeError enum
+// ---------------------------------------------------------------------------
+
+pub enum BridgeError {
+    JsError(String),
+    NullReference(String),
+    TypeMismatch(String),
+    FetchFailed(String),
+    DomError(String)
+}
+
+fn new_js_error(msg: String) -> BridgeError {
+    return JsError(msg)
+}
+
+fn new_null_ref(msg: String) -> BridgeError {
+    return NullReference(msg)
+}
+
+fn new_type_mismatch(msg: String) -> BridgeError {
+    return TypeMismatch(msg)
+}
+
+fn new_fetch_failed(msg: String) -> BridgeError {
+    return FetchFailed(msg)
+}
+
+fn new_dom_error(msg: String) -> BridgeError {
+    return DomError(msg)
+}
+
+// ---------------------------------------------------------------------------
+// JsValue enum — represents a JavaScript value
+// ---------------------------------------------------------------------------
+
+pub enum JsValue {
+    Null,
+    Bool(Bool),
+    Number(Float),
+    JsString(String),
+    Object(Int),
+    Array(Int)
+}
+
+/// JS type codes returned by __mn_wasm_js_get_type:
+///   0 = null/undefined, 1 = boolean, 2 = number, 3 = string, 4 = object, 5 = array
+fn jsvalue_from_handle(handle: Int) -> JsValue {
+    if handle == 0 {
+        return Null
+    }
+    let type_code: Int = __mn_wasm_js_get_type(handle)
+    if type_code == 0 {
+        return Null
+    }
+    if type_code == 1 {
+        let b: Int = __mn_wasm_js_get_bool(handle)
+        return Bool(b != 0)
+    }
+    if type_code == 2 {
+        let n: Float = __mn_wasm_js_get_num(handle)
+        return Number(n)
+    }
+    if type_code == 3 {
+        let s: String = __mn_wasm_js_get_str(handle)
+        return JsString(s)
+    }
+    if type_code == 5 {
+        return Array(handle)
+    }
+    // Default: object
+    return Object(handle)
+}
+
+/// Extract the internal handle from an Object or Array JsValue.
+fn handle_of(val: JsValue) -> Int {
+    match val {
+        Null => { return 0 },
+        Bool(b) => { return 0 },
+        Number(n) => { return 0 },
+        JsString(s) => { return 0 },
+        Object(h) => { return h },
+        Array(h) => { return h }
+    }
+    return 0
+}
+
+// ---------------------------------------------------------------------------
+// JavaScript evaluation
+// ---------------------------------------------------------------------------
+
+/// Evaluate arbitrary JavaScript code and return the result.
+pub fn js_eval(code: String) -> JsValue {
+    let handle: Int = __mn_wasm_js_eval(code)
+    return jsvalue_from_handle(handle)
+}
+
+/// Evaluate JavaScript and return the result as a String.
+pub fn js_eval_str(code: String) -> String {
+    return __mn_wasm_js_eval_str(code)
+}
+
+/// Evaluate JavaScript and return the result as a Float.
+pub fn js_eval_num(code: String) -> Float {
+    return __mn_wasm_js_eval_num(code)
+}
+
+// ---------------------------------------------------------------------------
+// JavaScript function calls
+// ---------------------------------------------------------------------------
+
+/// Call a JavaScript function by name with a JSON-encoded argument list.
+pub fn js_call(func: String, args: List<JsValue>) -> JsValue {
+    let args_json: String = jsvalues_to_json(args)
+    let handle: Int = __mn_wasm_js_call(func, args_json)
+    return jsvalue_from_handle(handle)
+}
+
+/// Call a JavaScript function and return the result as a String.
+pub fn js_call_str(func: String, args: List<JsValue>) -> String {
+    let args_json: String = jsvalues_to_json(args)
+    return __mn_wasm_js_call_str(func, args_json)
+}
+
+// ---------------------------------------------------------------------------
+// Property access
+// ---------------------------------------------------------------------------
+
+/// Get a property from a JS object.
+pub fn js_get_property(obj: JsValue, key: String) -> JsValue {
+    let h: Int = handle_of(obj)
+    if h == 0 {
+        return Null
+    }
+    let prop_handle: Int = __mn_wasm_js_get_prop(h, key)
+    return jsvalue_from_handle(prop_handle)
+}
+
+/// Set a property on a JS object to a string value.
+pub fn js_set_property(obj: JsValue, key: String, val: JsValue) -> JsValue {
+    let h: Int = handle_of(obj)
+    if h == 0 {
+        return Null
+    }
+    match val {
+        JsString(s) => {
+            __mn_wasm_js_set_prop_str(h, key, s)
+        },
+        Number(n) => {
+            __mn_wasm_js_set_prop_num(h, key, n)
+        },
+        Object(vh) => {
+            __mn_wasm_js_set_prop(h, key, vh)
+        },
+        Array(vh) => {
+            __mn_wasm_js_set_prop(h, key, vh)
+        },
+        _ => {}
+    }
+    return obj
+}
+
+// ---------------------------------------------------------------------------
+// DOM manipulation
+// ---------------------------------------------------------------------------
+
+/// Query the DOM using a CSS selector (document.querySelector).
+pub fn dom_query(selector: String) -> JsValue {
+    let handle: Int = __mn_wasm_dom_query(selector)
+    if handle == 0 {
+        return Null
+    }
+    return Object(handle)
+}
+
+/// Query all matching DOM elements (document.querySelectorAll).
+pub fn dom_query_all(selector: String) -> JsValue {
+    let handle: Int = __mn_wasm_dom_query_all(selector)
+    if handle == 0 {
+        return Null
+    }
+    return Array(handle)
+}
+
+/// Create a new DOM element.
+pub fn dom_create(tag: String) -> JsValue {
+    let handle: Int = __mn_wasm_dom_create(tag)
+    if handle == 0 {
+        return Null
+    }
+    return Object(handle)
+}
+
+/// Set the text content of a DOM element.
+pub fn dom_set_text(el: JsValue, text: String) -> Result<Int, BridgeError> {
+    let h: Int = handle_of(el)
+    if h == 0 {
+        return Err(new_null_ref("dom_set_text: null element"))
+    }
+    let rc: Int = __mn_wasm_dom_set_text(h, text)
+    if rc < 0 {
+        return Err(new_dom_error("failed to set text content"))
+    }
+    return Ok(0)
+}
+
+/// Get the text content of a DOM element.
+pub fn dom_get_text(el: JsValue) -> Result<String, BridgeError> {
+    let h: Int = handle_of(el)
+    if h == 0 {
+        return Err(new_null_ref("dom_get_text: null element"))
+    }
+    let text: String = __mn_wasm_dom_get_text(h)
+    return Ok(text)
+}
+
+/// Set the innerHTML of a DOM element.
+pub fn dom_set_html(el: JsValue, html: String) -> Result<Int, BridgeError> {
+    let h: Int = handle_of(el)
+    if h == 0 {
+        return Err(new_null_ref("dom_set_html: null element"))
+    }
+    let rc: Int = __mn_wasm_dom_set_html(h, html)
+    if rc < 0 {
+        return Err(new_dom_error("failed to set innerHTML"))
+    }
+    return Ok(0)
+}
+
+/// Get the innerHTML of a DOM element.
+pub fn dom_get_html(el: JsValue) -> Result<String, BridgeError> {
+    let h: Int = handle_of(el)
+    if h == 0 {
+        return Err(new_null_ref("dom_get_html: null element"))
+    }
+    let html: String = __mn_wasm_dom_get_html(h)
+    return Ok(html)
+}
+
+/// Set an attribute on a DOM element.
+pub fn dom_set_attr(el: JsValue, key: String, val: String) -> Result<Int, BridgeError> {
+    let h: Int = handle_of(el)
+    if h == 0 {
+        return Err(new_null_ref("dom_set_attr: null element"))
+    }
+    let rc: Int = __mn_wasm_dom_set_attr(h, key, val)
+    if rc < 0 {
+        return Err(new_dom_error("failed to set attribute"))
+    }
+    return Ok(0)
+}
+
+/// Get an attribute from a DOM element.
+pub fn dom_get_attr(el: JsValue, key: String) -> Result<String, BridgeError> {
+    let h: Int = handle_of(el)
+    if h == 0 {
+        return Err(new_null_ref("dom_get_attr: null element"))
+    }
+    let val: String = __mn_wasm_dom_get_attr(h, key)
+    return Ok(val)
+}
+
+/// Append a child element to a parent element.
+pub fn dom_append(parent: JsValue, child: JsValue) -> Result<Int, BridgeError> {
+    let ph: Int = handle_of(parent)
+    let ch: Int = handle_of(child)
+    if ph == 0 {
+        return Err(new_null_ref("dom_append: null parent"))
+    }
+    if ch == 0 {
+        return Err(new_null_ref("dom_append: null child"))
+    }
+    let rc: Int = __mn_wasm_dom_append(ph, ch)
+    if rc < 0 {
+        return Err(new_dom_error("failed to append child"))
+    }
+    return Ok(0)
+}
+
+/// Remove a DOM element from the document.
+pub fn dom_remove(el: JsValue) -> Result<Int, BridgeError> {
+    let h: Int = handle_of(el)
+    if h == 0 {
+        return Err(new_null_ref("dom_remove: null element"))
+    }
+    let rc: Int = __mn_wasm_dom_remove(h)
+    if rc < 0 {
+        return Err(new_dom_error("failed to remove element"))
+    }
+    return Ok(0)
+}
+
+/// Register an event listener on a DOM element.
+/// The handler receives the event as a JsValue and should return a JsValue.
+pub fn dom_on(el: JsValue, event: String, handler: fn(JsValue) -> JsValue) -> Result<Int, BridgeError> {
+    let h: Int = handle_of(el)
+    if h == 0 {
+        return Err(new_null_ref("dom_on: null element"))
+    }
+    // Register the callback in the WASM callback table and get its ID
+    let cb_id: Int = __mn_wasm_register_callback(0)
+    let rc: Int = __mn_wasm_dom_on(h, event, cb_id)
+    if rc < 0 {
+        return Err(new_dom_error("failed to register event listener for '" + event + "'"))
+    }
+    return Ok(cb_id)
+}
+
+// ---------------------------------------------------------------------------
+// Console
+// ---------------------------------------------------------------------------
+
+/// Log a message to the browser console (console.log).
+pub fn console_log(msg: String) {
+    __mn_wasm_console_log(msg)
+}
+
+/// Log a warning to the browser console (console.warn).
+pub fn console_warn(msg: String) {
+    __mn_wasm_console_warn(msg)
+}
+
+/// Log an error to the browser console (console.error).
+pub fn console_error(msg: String) {
+    __mn_wasm_console_error(msg)
+}
+
+// ---------------------------------------------------------------------------
+// Fetch API
+// ---------------------------------------------------------------------------
+
+/// Perform an HTTP GET request via the browser Fetch API.
+pub fn fetch_url(url: String) -> Result<String, BridgeError> {
+    let handle: Int = __mn_wasm_fetch(url, "GET", "", "{}")
+    if handle < 0 {
+        return Err(new_fetch_failed("fetch failed for URL: " + url))
+    }
+    let status: Int = __mn_wasm_fetch_status(handle)
+    if status < 200 {
+        return Err(new_fetch_failed("fetch returned status " + str(status)))
+    }
+    if status >= 400 {
+        return Err(new_fetch_failed("fetch returned status " + str(status)))
+    }
+    let body: String = __mn_wasm_fetch_body(handle)
+    return Ok(body)
+}
+
+/// Perform an HTTP request with method, body, and headers via the Fetch API.
+pub fn fetch(url: String, method: String, body: String, headers_json: String) -> Result<String, BridgeError> {
+    let handle: Int = __mn_wasm_fetch(url, method, body, headers_json)
+    if handle < 0 {
+        return Err(new_fetch_failed("fetch failed for URL: " + url))
+    }
+    let status: Int = __mn_wasm_fetch_status(handle)
+    if status < 200 {
+        return Err(new_fetch_failed("fetch returned status " + str(status)))
+    }
+    if status >= 400 {
+        return Err(new_fetch_failed("fetch returned status " + str(status)))
+    }
+    let resp_body: String = __mn_wasm_fetch_body(handle)
+    return Ok(resp_body)
+}
+
+// ---------------------------------------------------------------------------
+// Timers
+// ---------------------------------------------------------------------------
+
+/// Schedule a callback after a delay in milliseconds (setTimeout).
+pub fn set_timeout(ms: Int, cb_id: Int) -> Int {
+    return __mn_wasm_set_timeout(ms, cb_id)
+}
+
+/// Schedule a repeating callback at an interval in milliseconds (setInterval).
+pub fn set_interval(ms: Int, cb_id: Int) -> Int {
+    return __mn_wasm_set_interval(ms, cb_id)
+}
+
+/// Cancel a repeating interval (clearInterval).
+pub fn clear_interval(timer_id: Int) {
+    __mn_wasm_clear_interval(timer_id)
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Serialize a list of JsValues to a JSON array string for FFI.
+fn jsvalues_to_json(values: List<JsValue>) -> String {
+    let mut result: String = "["
+    let mut i: Int = 0
+    while i < len(values) {
+        if i > 0 {
+            result = result + ","
+        }
+        let v: JsValue = values[i]
+        match v {
+            Null => { result = result + "null" },
+            Bool(b) => {
+                if b {
+                    result = result + "true"
+                } else {
+                    result = result + "false"
+                }
+            },
+            Number(n) => { result = result + str(n) },
+            JsString(s) => {
+                result = result + "\"" + s + "\""
+            },
+            Object(h) => { result = result + "{\"__handle\":" + str(h) + "}" },
+            Array(h) => { result = result + "{\"__handle\":" + str(h) + "}" }
+        }
+        i = i + 1
+    }
+    result = result + "]"
+    return result
+}
+
+/// Release a JavaScript object handle.
+pub fn free_handle(val: JsValue) -> Result<Int, BridgeError> {
+    let h: Int = handle_of(val)
+    if h == 0 {
+        return Ok(0)
+    }
+    let rc: Int = __mn_wasm_js_free(h)
+    if rc < 0 {
+        return Err(new_js_error("failed to free JS handle"))
+    }
+    return Ok(0)
+}

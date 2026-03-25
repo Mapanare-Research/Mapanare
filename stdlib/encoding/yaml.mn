@@ -54,7 +54,7 @@ fn new_yaml_entry(key: String, value: YamlValue) -> YamlEntry {
 // ---------------------------------------------------------------------------
 
 struct ParseState {
-    input: String,
+    src: String,
     slen: Int,
     pos: Int,
     line: Int,
@@ -63,16 +63,8 @@ struct ParseState {
     depth: Int
 }
 
-fn new_parse_state(input: String) -> ParseState {
-    return new ParseState {
-        input: input,
-        slen: len(input),
-        pos: 0,
-        line: 1,
-        col: 1,
-        anchors: #{},
-        depth: 0
-    }
+fn new_parse_state(src: String) -> ParseState {
+    return new ParseState { src: src, slen: len(src), pos: 0, line: 1, col: 1, anchors: #{}, depth: 0 }
 }
 
 // Result of parsing a value — carries updated position
@@ -158,15 +150,15 @@ struct PosInfo {
     col: Int
 }
 
-fn skip_newline(input: String, slen: Int, pos: Int, line: Int) -> PosInfo {
+fn skip_newline(src: String, slen: Int, pos: Int, line: Int) -> PosInfo {
     if pos >= slen { return new PosInfo { pos: pos, line: line, col: 1 } }
-    let ch: String = input.char_at(pos)
+    let ch: String = src.char_at(pos)
     if ch == "\n" {
         return new PosInfo { pos: pos + 1, line: line + 1, col: 1 }
     }
     if ch == "\r" {
         if pos + 1 < slen {
-            if input.char_at(pos + 1) == "\n" {
+            if src.char_at(pos + 1) == "\n" {
                 return new PosInfo { pos: pos + 2, line: line + 1, col: 1 }
             }
         }
@@ -176,11 +168,11 @@ fn skip_newline(input: String, slen: Int, pos: Int, line: Int) -> PosInfo {
 }
 
 // Skip spaces only (not tabs for indentation)
-fn skip_spaces(input: String, slen: Int, pos: Int, col: Int) -> PosInfo {
+fn skip_spaces(src: String, slen: Int, pos: Int, col: Int) -> PosInfo {
     let mut p: Int = pos
     let mut c: Int = col
     while p < slen {
-        if input.char_at(p) == " " {
+        if src.char_at(p) == " " {
             p = p + 1
             c = c + 1
         } else {
@@ -191,11 +183,11 @@ fn skip_spaces(input: String, slen: Int, pos: Int, col: Int) -> PosInfo {
 }
 
 // Skip inline whitespace (spaces and tabs)
-fn skip_inline_ws(input: String, slen: Int, pos: Int, col: Int) -> PosInfo {
+fn skip_inline_ws(src: String, slen: Int, pos: Int, col: Int) -> PosInfo {
     let mut p: Int = pos
     let mut c: Int = col
     while p < slen {
-        let ch: String = input.char_at(p)
+        let ch: String = src.char_at(p)
         if ch == " " { p = p + 1; c = c + 1
         } else { if ch == "\t" { p = p + 1; c = c + 1
         } else {
@@ -206,13 +198,13 @@ fn skip_inline_ws(input: String, slen: Int, pos: Int, col: Int) -> PosInfo {
 }
 
 // Skip a comment (# to end of line), does not consume the newline
-fn skip_comment(input: String, slen: Int, pos: Int, col: Int) -> PosInfo {
+fn skip_comment(src: String, slen: Int, pos: Int, col: Int) -> PosInfo {
     let mut p: Int = pos
     let mut c: Int = col
     if p < slen {
-        if input.char_at(p) == "#" {
+        if src.char_at(p) == "#" {
             while p < slen {
-                let ch: String = input.char_at(p)
+                let ch: String = src.char_at(p)
                 if ch == "\n" { return new PosInfo { pos: p, line: 0, col: c } }
                 if ch == "\r" { return new PosInfo { pos: p, line: 0, col: c } }
                 p = p + 1
@@ -224,22 +216,22 @@ fn skip_comment(input: String, slen: Int, pos: Int, col: Int) -> PosInfo {
 }
 
 // Skip whitespace, newlines, and comments — full blank-line skipper
-fn skip_ws_and_comments(input: String, slen: Int, pos: Int, line: Int, col: Int) -> PosInfo {
+fn skip_ws_and_comments(src: String, slen: Int, pos: Int, line: Int, col: Int) -> PosInfo {
     let mut p: Int = pos
     let mut ln: Int = line
     let mut c: Int = col
     while p < slen {
-        let ch: String = input.char_at(p)
+        let ch: String = src.char_at(p)
         if ch == " " { p = p + 1; c = c + 1
         } else { if ch == "\t" { p = p + 1; c = c + 1
         } else { if ch == "\n" { p = p + 1; ln = ln + 1; c = 1
         } else { if ch == "\r" {
-            let nl: PosInfo = skip_newline(input, slen, p, ln)
+            let nl: PosInfo = skip_newline(src, slen, p, ln)
             p = nl.pos
             ln = nl.line
             c = 1
         } else { if ch == "#" {
-            let cr: PosInfo = skip_comment(input, slen, p, c)
+            let cr: PosInfo = skip_comment(src, slen, p, c)
             p = cr.pos
             c = cr.col
         } else {
@@ -250,24 +242,24 @@ fn skip_ws_and_comments(input: String, slen: Int, pos: Int, line: Int, col: Int)
 }
 
 // Skip rest of line (inline whitespace + optional comment + newline)
-fn skip_rest_of_line(input: String, slen: Int, pos: Int, line: Int, col: Int) -> PosInfo {
-    let ws: PosInfo = skip_inline_ws(input, slen, pos, col)
+fn skip_rest_of_line(src: String, slen: Int, pos: Int, line: Int, col: Int) -> PosInfo {
+    let ws: PosInfo = skip_inline_ws(src, slen, pos, col)
     let mut p: Int = ws.pos
     let mut c: Int = ws.col
     let mut ln: Int = line
     // optional comment
     if p < slen {
-        if input.char_at(p) == "#" {
-            let cr: PosInfo = skip_comment(input, slen, p, c)
+        if src.char_at(p) == "#" {
+            let cr: PosInfo = skip_comment(src, slen, p, c)
             p = cr.pos
             c = cr.col
         }
     }
     // consume newline
     if p < slen {
-        let ch: String = input.char_at(p)
+        let ch: String = src.char_at(p)
         if is_newline(ch) {
-            let nl: PosInfo = skip_newline(input, slen, p, ln)
+            let nl: PosInfo = skip_newline(src, slen, p, ln)
             p = nl.pos
             ln = nl.line
             c = nl.col
@@ -277,11 +269,11 @@ fn skip_rest_of_line(input: String, slen: Int, pos: Int, line: Int, col: Int) ->
 }
 
 // Measure indentation at current line start — count leading spaces
-fn measure_indent(input: String, slen: Int, pos: Int) -> Int {
+fn measure_indent(src: String, slen: Int, pos: Int) -> Int {
     let mut p: Int = pos
     let mut indent: Int = 0
     while p < slen {
-        if input.char_at(p) == " " {
+        if src.char_at(p) == " " {
             indent = indent + 1
             p = p + 1
         } else {
@@ -302,11 +294,11 @@ struct EscResult {
     err_msg: String
 }
 
-fn handle_yaml_escape(input: String, pos: Int, slen: Int) -> EscResult {
+fn handle_yaml_escape(src: String, pos: Int, slen: Int) -> EscResult {
     if pos >= slen {
         return new EscResult { value: "", advance: 0, ok: false, err_msg: "Unexpected end in escape" }
     }
-    let esc: String = input.char_at(pos)
+    let esc: String = src.char_at(pos)
     if esc == "\"" { return new EscResult { value: "\"", advance: 1, ok: true, err_msg: "" } }
     if esc == "\\" { return new EscResult { value: "\\", advance: 1, ok: true, err_msg: "" } }
     if esc == "/" { return new EscResult { value: "/", advance: 1, ok: true, err_msg: "" } }
@@ -324,8 +316,8 @@ fn handle_yaml_escape(input: String, pos: Int, slen: Int) -> EscResult {
         if pos + 2 >= slen {
             return new EscResult { value: "", advance: 0, ok: false, err_msg: "Incomplete \\x escape" }
         }
-        let h0: String = input.char_at(pos + 1)
-        let h1: String = input.char_at(pos + 2)
+        let h0: String = src.char_at(pos + 1)
+        let h1: String = src.char_at(pos + 2)
         if is_yaml_hex(h0) == false { return new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex in \\x escape" } }
         if is_yaml_hex(h1) == false { return new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex in \\x escape" } }
         let cp: Int = hex_val(h0) * 16 + hex_val(h1)
@@ -339,10 +331,10 @@ fn handle_yaml_escape(input: String, pos: Int, slen: Int) -> EscResult {
         if pos + 4 >= slen {
             return new EscResult { value: "", advance: 0, ok: false, err_msg: "Incomplete \\u escape" }
         }
-        let u0: String = input.char_at(pos + 1)
-        let u1: String = input.char_at(pos + 2)
-        let u2: String = input.char_at(pos + 3)
-        let u3: String = input.char_at(pos + 4)
+        let u0: String = src.char_at(pos + 1)
+        let u1: String = src.char_at(pos + 2)
+        let u2: String = src.char_at(pos + 3)
+        let u3: String = src.char_at(pos + 4)
         if is_yaml_hex(u0) == false { return new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex in \\u escape" } }
         if is_yaml_hex(u1) == false { return new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex in \\u escape" } }
         if is_yaml_hex(u2) == false { return new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex in \\u escape" } }
@@ -358,7 +350,7 @@ fn handle_yaml_escape(input: String, pos: Int, slen: Int) -> EscResult {
     if esc == "\n" { return new EscResult { value: "", advance: 1, ok: true, err_msg: "" } }
     if esc == "\r" {
         if pos + 1 < slen {
-            if input.char_at(pos + 1) == "\n" {
+            if src.char_at(pos + 1) == "\n" {
                 return new EscResult { value: "", advance: 2, ok: true, err_msg: "" }
             }
         }
@@ -380,7 +372,7 @@ struct StrResult {
     err_msg: String
 }
 
-fn parse_double_quoted(input: String, slen: Int, pos: Int, line: Int, col: Int) -> StrResult {
+fn parse_double_quoted(src: String, slen: Int, pos: Int, line: Int, col: Int) -> StrResult {
     // pos points at the opening "
     let mut p: Int = pos + 1
     let mut c: Int = col + 1
@@ -388,12 +380,12 @@ fn parse_double_quoted(input: String, slen: Int, pos: Int, line: Int, col: Int) 
     let mut result: String = ""
 
     while p < slen {
-        let ch: String = input.char_at(p)
+        let ch: String = src.char_at(p)
         if ch == "\"" {
             return new StrResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, err_msg: "" }
         }
         if ch == "\\" {
-            let er: EscResult = handle_yaml_escape(input, p + 1, slen)
+            let er: EscResult = handle_yaml_escape(src, p + 1, slen)
             if er.ok == false {
                 return new StrResult { value: "", pos: p, line: ln, col: c, ok: false, err_msg: er.err_msg }
             }
@@ -407,16 +399,16 @@ fn parse_double_quoted(input: String, slen: Int, pos: Int, line: Int, col: Int) 
             ln = ln + 1
             c = 1
             // Skip leading whitespace on next line
-            let ws: PosInfo = skip_spaces(input, slen, p, c)
+            let ws: PosInfo = skip_spaces(src, slen, p, c)
             p = ws.pos
             c = ws.col
         } else { if ch == "\r" {
             result = result + " "
-            let nl: PosInfo = skip_newline(input, slen, p, ln)
+            let nl: PosInfo = skip_newline(src, slen, p, ln)
             p = nl.pos
             ln = nl.line
             c = 1
-            let ws2: PosInfo = skip_spaces(input, slen, p, c)
+            let ws2: PosInfo = skip_spaces(src, slen, p, c)
             p = ws2.pos
             c = ws2.col
         } else {
@@ -432,7 +424,7 @@ fn parse_double_quoted(input: String, slen: Int, pos: Int, line: Int, col: Int) 
 // Single-quoted string parser
 // ---------------------------------------------------------------------------
 
-fn parse_single_quoted(input: String, slen: Int, pos: Int, line: Int, col: Int) -> StrResult {
+fn parse_single_quoted(src: String, slen: Int, pos: Int, line: Int, col: Int) -> StrResult {
     // pos points at the opening '
     let mut p: Int = pos + 1
     let mut c: Int = col + 1
@@ -440,11 +432,11 @@ fn parse_single_quoted(input: String, slen: Int, pos: Int, line: Int, col: Int) 
     let mut result: String = ""
 
     while p < slen {
-        let ch: String = input.char_at(p)
+        let ch: String = src.char_at(p)
         if ch == "'" {
             // Escaped single quote ''
             if p + 1 < slen {
-                if input.char_at(p + 1) == "'" {
+                if src.char_at(p + 1) == "'" {
                     result = result + "'"
                     p = p + 2
                     c = c + 2
@@ -459,16 +451,16 @@ fn parse_single_quoted(input: String, slen: Int, pos: Int, line: Int, col: Int) 
             p = p + 1
             ln = ln + 1
             c = 1
-            let ws: PosInfo = skip_spaces(input, slen, p, c)
+            let ws: PosInfo = skip_spaces(src, slen, p, c)
             p = ws.pos
             c = ws.col
         } else { if ch == "\r" {
             result = result + " "
-            let nl: PosInfo = skip_newline(input, slen, p, ln)
+            let nl: PosInfo = skip_newline(src, slen, p, ln)
             p = nl.pos
             ln = nl.line
             c = 1
-            let ws2: PosInfo = skip_spaces(input, slen, p, c)
+            let ws2: PosInfo = skip_spaces(src, slen, p, c)
             p = ws2.pos
             c = ws2.col
         } else {
@@ -484,7 +476,7 @@ fn parse_single_quoted(input: String, slen: Int, pos: Int, line: Int, col: Int) 
 // Plain scalar parser
 // ---------------------------------------------------------------------------
 
-fn parse_plain_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int, in_flow: Bool) -> StrResult {
+fn parse_plain_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int, in_flow: Bool) -> StrResult {
     let mut p: Int = pos
     let mut c: Int = col
     let mut ln: Int = line
@@ -492,7 +484,7 @@ fn parse_plain_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int, i
     let mut had_newline: Bool = false
 
     while p < slen {
-        let ch: String = input.char_at(p)
+        let ch: String = src.char_at(p)
 
         // End at newline
         if ch == "\n" { break }
@@ -501,7 +493,7 @@ fn parse_plain_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int, i
         // End at comment preceded by space
         if ch == "#" {
             if p > pos {
-                if input.char_at(p - 1) == " " { break }
+                if src.char_at(p - 1) == " " { break }
             }
         }
 
@@ -517,7 +509,7 @@ fn parse_plain_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int, i
         // Colon followed by space or newline or end-of-input terminates
         if ch == ":" {
             if p + 1 >= slen { break }
-            let next: String = input.char_at(p + 1)
+            let next: String = src.char_at(p + 1)
             if next == " " { break }
             if next == "\t" { break }
             if next == "\n" { break }
@@ -784,9 +776,9 @@ struct BlockScalarResult {
     err_msg: String
 }
 
-fn parse_block_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int) -> BlockScalarResult {
+fn parse_block_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int) -> BlockScalarResult {
     // pos points at | or >
-    let indicator: String = input.char_at(pos)
+    let indicator: String = src.char_at(pos)
     let mut is_literal: Bool = false
     if indicator == "|" { is_literal = true }
     // > means folded
@@ -802,12 +794,12 @@ fn parse_block_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int) -
 
     // Parse optional chomp and indent indicators
     if p < slen {
-        let ci: String = input.char_at(p)
+        let ci: String = src.char_at(p)
         if ci == "-" { chomp = 1; p = p + 1; c = c + 1
         } else { if ci == "+" { chomp = 2; p = p + 1; c = c + 1 } }
     }
     if p < slen {
-        let di: String = input.char_at(p)
+        let di: String = src.char_at(p)
         if is_yaml_digit(di) {
             if di != "0" {
                 explicit_indent = digit_val(di)
@@ -820,14 +812,14 @@ fn parse_block_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int) -
     // Check for chomp after indent
     if has_explicit_indent {
         if p < slen {
-            let ci2: String = input.char_at(p)
+            let ci2: String = src.char_at(p)
             if ci2 == "-" { chomp = 1; p = p + 1; c = c + 1
             } else { if ci2 == "+" { chomp = 2; p = p + 1; c = c + 1 } }
         }
     }
 
     // Skip rest of header line (whitespace + comment)
-    let rl: PosInfo = skip_rest_of_line(input, slen, p, ln, c)
+    let rl: PosInfo = skip_rest_of_line(src, slen, p, ln, c)
     p = rl.pos
     ln = rl.line
     c = rl.col
@@ -839,22 +831,22 @@ fn parse_block_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int) -
     let mut blank_save_ln: Int = ln
 
     while p < slen {
-        let ind: Int = measure_indent(input, slen, p)
+        let ind: Int = measure_indent(src, slen, p)
         if p + ind >= slen {
             // blank line at end
             p = p + ind
-            let nl2: PosInfo = skip_newline(input, slen, p, ln)
+            let nl2: PosInfo = skip_newline(src, slen, p, ln)
             p = nl2.pos
             ln = nl2.line
             c = nl2.col
         } else {
-            let after_ind: String = input.char_at(p + ind)
+            let after_ind: String = src.char_at(p + ind)
             if after_ind == "\n" {
                 p = p + ind + 1
                 ln = ln + 1
                 c = 1
             } else { if after_ind == "\r" {
-                let nl3: PosInfo = skip_newline(input, slen, p + ind, ln)
+                let nl3: PosInfo = skip_newline(src, slen, p + ind, ln)
                 p = nl3.pos
                 ln = nl3.line
                 c = nl3.col
@@ -884,7 +876,7 @@ fn parse_block_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int) -
     let mut trailing_newlines: Int = 0
 
     while p < slen {
-        let line_indent: Int = measure_indent(input, slen, p)
+        let line_indent: Int = measure_indent(src, slen, p)
 
         // Check for blank line
         if p + line_indent >= slen {
@@ -892,13 +884,13 @@ fn parse_block_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int) -
             trailing_newlines = trailing_newlines + 1
             p = p + line_indent
             if p < slen {
-                let nlb: PosInfo = skip_newline(input, slen, p, ln)
+                let nlb: PosInfo = skip_newline(src, slen, p, ln)
                 p = nlb.pos
                 ln = nlb.line
                 c = nlb.col
             }
         } else {
-            let peek_ch: String = input.char_at(p + line_indent)
+            let peek_ch: String = src.char_at(p + line_indent)
             if peek_ch == "\n" {
                 lines = lines + [""]
                 trailing_newlines = trailing_newlines + 1
@@ -908,7 +900,7 @@ fn parse_block_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int) -
             } else { if peek_ch == "\r" {
                 lines = lines + [""]
                 trailing_newlines = trailing_newlines + 1
-                let nlc: PosInfo = skip_newline(input, slen, p + line_indent, ln)
+                let nlc: PosInfo = skip_newline(src, slen, p + line_indent, ln)
                 p = nlc.pos
                 ln = nlc.line
                 c = nlc.col
@@ -924,7 +916,7 @@ fn parse_block_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int) -
                 let mut line_str: String = ""
                 let mut li: Int = p + content_indent
                 while li < slen {
-                    let lc: String = input.char_at(li)
+                    let lc: String = src.char_at(li)
                     if lc == "\n" { break }
                     if lc == "\r" { break }
                     line_str = line_str + lc
@@ -934,7 +926,7 @@ fn parse_block_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int) -
 
                 p = li
                 if p < slen {
-                    let nld: PosInfo = skip_newline(input, slen, p, ln)
+                    let nld: PosInfo = skip_newline(src, slen, p, ln)
                     p = nld.pos
                     ln = nld.line
                     c = nld.col
@@ -1004,11 +996,11 @@ fn parse_block_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int) -
 // Anchor name parser
 // ---------------------------------------------------------------------------
 
-fn parse_anchor_name(input: String, slen: Int, pos: Int) -> StrResult {
+fn parse_anchor_name(src: String, slen: Int, pos: Int) -> StrResult {
     let mut p: Int = pos
     let mut name: String = ""
     while p < slen {
-        let ch: String = input.char_at(p)
+        let ch: String = src.char_at(p)
         if is_ws_or_newline(ch) { break }
         if is_flow_indicator(ch) { break }
         if ch == ":" { break }
@@ -1026,12 +1018,12 @@ fn parse_anchor_name(input: String, slen: Int, pos: Int) -> StrResult {
 // ---------------------------------------------------------------------------
 
 // Parse any YAML value (block or flow) at the given position and minimum indent
-fn parse_value(input: String, slen: Int, pos: Int, line: Int, col: Int, min_indent: Int, in_flow: Bool, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+fn parse_value(src: String, slen: Int, pos: Int, line: Int, col: Int, min_indent: Int, in_flow: Bool, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
     if depth > 100 {
         return err_result("Maximum nesting depth exceeded (100)", line, col)
     }
 
-    let ws: PosInfo = skip_ws_and_comments(input, slen, pos, line, col)
+    let ws: PosInfo = skip_ws_and_comments(src, slen, pos, line, col)
     let mut p: Int = ws.pos
     let mut ln: Int = ws.line
     let mut c: Int = ws.col
@@ -1040,11 +1032,11 @@ fn parse_value(input: String, slen: Int, pos: Int, line: Int, col: Int, min_inde
         return ok_result(Null(), p, ln, c)
     }
 
-    let ch: String = input.char_at(p)
+    let ch: String = src.char_at(p)
 
     // Alias *name
     if ch == "*" {
-        let anr: StrResult = parse_anchor_name(input, slen, p + 1)
+        let anr: StrResult = parse_anchor_name(src, slen, p + 1)
         if anr.ok == false {
             return err_result("Invalid alias: " + anr.err_msg, ln, c)
         }
@@ -1066,15 +1058,15 @@ fn parse_value(input: String, slen: Int, pos: Int, line: Int, col: Int, min_inde
 
     // Anchor &name — parse it, then parse the value and store
     if ch == "&" {
-        let anr2: StrResult = parse_anchor_name(input, slen, p + 1)
+        let anr2: StrResult = parse_anchor_name(src, slen, p + 1)
         if anr2.ok == false {
             return err_result("Invalid anchor: " + anr2.err_msg, ln, c)
         }
         let anchor_name: String = anr2.value
         let new_c: Int = c + 1 + len(anchor_name)
         // Skip whitespace after anchor name
-        let aws: PosInfo = skip_inline_ws(input, slen, anr2.pos, new_c)
-        let val_r: ParseResult = parse_value(input, slen, aws.pos, ln, aws.col, min_indent, in_flow, anchors, depth)
+        let aws: PosInfo = skip_inline_ws(src, slen, anr2.pos, new_c)
+        let val_r: ParseResult = parse_value(src, slen, aws.pos, ln, aws.col, min_indent, in_flow, anchors, depth)
         if val_r.ok == false { return val_r }
         anchors[anchor_name] = val_r.value
         return ok_result(val_r.value, val_r.pos, val_r.line, val_r.col)
@@ -1082,36 +1074,36 @@ fn parse_value(input: String, slen: Int, pos: Int, line: Int, col: Int, min_inde
 
     // Flow sequence [...]
     if ch == "[" {
-        return parse_flow_seq(input, slen, p, ln, c, anchors, depth)
+        return parse_flow_seq(src, slen, p, ln, c, anchors, depth)
     }
 
     // Flow mapping {...}
     if ch == "{" {
-        return parse_flow_map(input, slen, p, ln, c, anchors, depth)
+        return parse_flow_map(src, slen, p, ln, c, anchors, depth)
     }
 
     // Double-quoted string
     if ch == "\"" {
-        let dq: StrResult = parse_double_quoted(input, slen, p, ln, c)
+        let dq: StrResult = parse_double_quoted(src, slen, p, ln, c)
         if dq.ok == false { return err_result(dq.err_msg, ln, c) }
         return ok_result(Str(dq.value), dq.pos, dq.line, dq.col)
     }
 
     // Single-quoted string
     if ch == "'" {
-        let sq: StrResult = parse_single_quoted(input, slen, p, ln, c)
+        let sq: StrResult = parse_single_quoted(src, slen, p, ln, c)
         if sq.ok == false { return err_result(sq.err_msg, ln, c) }
         return ok_result(Str(sq.value), sq.pos, sq.line, sq.col)
     }
 
     // Block scalar | or >
     if ch == "|" {
-        let bs: BlockScalarResult = parse_block_scalar(input, slen, p, ln, c)
+        let bs: BlockScalarResult = parse_block_scalar(src, slen, p, ln, c)
         if bs.ok == false { return err_result(bs.err_msg, ln, c) }
         return ok_result(Str(bs.value), bs.pos, bs.line, bs.col)
     }
     if ch == ">" {
-        let bs2: BlockScalarResult = parse_block_scalar(input, slen, p, ln, c)
+        let bs2: BlockScalarResult = parse_block_scalar(src, slen, p, ln, c)
         if bs2.ok == false { return err_result(bs2.err_msg, ln, c) }
         return ok_result(Str(bs2.value), bs2.pos, bs2.line, bs2.col)
     }
@@ -1119,37 +1111,37 @@ fn parse_value(input: String, slen: Int, pos: Int, line: Int, col: Int, min_inde
     // Block sequence — starts with "- " at this indent
     if ch == "-" {
         if p + 1 < slen {
-            let after_dash: String = input.char_at(p + 1)
+            let after_dash: String = src.char_at(p + 1)
             if after_dash == " " {
                 let cur_indent: Int = c - 1
-                return parse_block_seq(input, slen, p, ln, c, cur_indent, anchors, depth)
+                return parse_block_seq(src, slen, p, ln, c, cur_indent, anchors, depth)
             }
             if after_dash == "\n" {
                 let cur_indent2: Int = c - 1
-                return parse_block_seq(input, slen, p, ln, c, cur_indent2, anchors, depth)
+                return parse_block_seq(src, slen, p, ln, c, cur_indent2, anchors, depth)
             }
             if after_dash == "\r" {
                 let cur_indent3: Int = c - 1
-                return parse_block_seq(input, slen, p, ln, c, cur_indent3, anchors, depth)
+                return parse_block_seq(src, slen, p, ln, c, cur_indent3, anchors, depth)
             }
         } else {
             // lone dash at end of input — empty sequence item
             let cur_indent4: Int = c - 1
-            return parse_block_seq(input, slen, p, ln, c, cur_indent4, anchors, depth)
+            return parse_block_seq(src, slen, p, ln, c, cur_indent4, anchors, depth)
         }
     }
 
     // Check for block mapping — look ahead for "key:" pattern
     if in_flow == false {
-        let is_map: Bool = looks_like_block_map(input, slen, p, ln, c)
+        let is_map: Bool = looks_like_block_map(src, slen, p, ln, c)
         if is_map {
             let cur_indent5: Int = c - 1
-            return parse_block_map(input, slen, p, ln, c, cur_indent5, anchors, depth)
+            return parse_block_map(src, slen, p, ln, c, cur_indent5, anchors, depth)
         }
     }
 
     // Plain scalar
-    let ps: StrResult = parse_plain_scalar(input, slen, p, ln, c, in_flow)
+    let ps: StrResult = parse_plain_scalar(src, slen, p, ln, c, in_flow)
     if ps.ok == false { return err_result(ps.err_msg, ln, c) }
     let resolved: YamlValue = resolve_plain_scalar(ps.value)
     return ok_result(resolved, ps.pos, ps.line, ps.col)
@@ -1159,17 +1151,17 @@ fn parse_value(input: String, slen: Int, pos: Int, line: Int, col: Int, min_inde
 // Look-ahead: does the current position start a block mapping?
 // ---------------------------------------------------------------------------
 
-fn looks_like_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int) -> Bool {
+fn looks_like_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int) -> Bool {
     let mut p: Int = pos
-    let ch: String = input.char_at(p)
+    let ch: String = src.char_at(p)
 
     // Quoted key followed by ':'
     if ch == "\"" {
-        let dq: StrResult = parse_double_quoted(input, slen, p, line, col)
+        let dq: StrResult = parse_double_quoted(src, slen, p, line, col)
         if dq.ok {
-            let ws: PosInfo = skip_inline_ws(input, slen, dq.pos, dq.col)
+            let ws: PosInfo = skip_inline_ws(src, slen, dq.pos, dq.col)
             if ws.pos < slen {
-                if input.char_at(ws.pos) == ":" {
+                if src.char_at(ws.pos) == ":" {
                     return true
                 }
             }
@@ -1177,11 +1169,11 @@ fn looks_like_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int)
         return false
     }
     if ch == "'" {
-        let sq: StrResult = parse_single_quoted(input, slen, p, line, col)
+        let sq: StrResult = parse_single_quoted(src, slen, p, line, col)
         if sq.ok {
-            let ws2: PosInfo = skip_inline_ws(input, slen, sq.pos, sq.col)
+            let ws2: PosInfo = skip_inline_ws(src, slen, sq.pos, sq.col)
             if ws2.pos < slen {
-                if input.char_at(ws2.pos) == ":" {
+                if src.char_at(ws2.pos) == ":" {
                     return true
                 }
             }
@@ -1191,17 +1183,17 @@ fn looks_like_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int)
 
     // Plain key: scan for unquoted "key:" where : is followed by space/newline/eof
     while p < slen {
-        let sc: String = input.char_at(p)
+        let sc: String = src.char_at(p)
         if sc == "\n" { return false }
         if sc == "\r" { return false }
         if sc == "#" {
             if p > pos {
-                if input.char_at(p - 1) == " " { return false }
+                if src.char_at(p - 1) == " " { return false }
             }
         }
         if sc == ":" {
             if p + 1 >= slen { return true }
-            let after: String = input.char_at(p + 1)
+            let after: String = src.char_at(p + 1)
             if after == " " { return true }
             if after == "\t" { return true }
             if after == "\n" { return true }
@@ -1216,19 +1208,19 @@ fn looks_like_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int)
 // Flow sequence parser [item, item, ...]
 // ---------------------------------------------------------------------------
 
-fn parse_flow_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+fn parse_flow_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
     let mut p: Int = pos + 1
     let mut ln: Int = line
     let mut c: Int = col + 1
     let mut items: List<YamlValue> = []
 
-    let ws1: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+    let ws1: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
     p = ws1.pos
     ln = ws1.line
     c = ws1.col
 
     if p < slen {
-        if input.char_at(p) == "]" {
+        if src.char_at(p) == "]" {
             return ok_result(Seq(items), p + 1, ln, c + 1)
         }
     }
@@ -1237,32 +1229,32 @@ fn parse_flow_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, ancho
     while count < 1000000 {
         count = count + 1
 
-        let val_r: ParseResult = parse_value(input, slen, p, ln, c, 0, true, anchors, depth + 1)
+        let val_r: ParseResult = parse_value(src, slen, p, ln, c, 0, true, anchors, depth + 1)
         if val_r.ok == false { return val_r }
         items = items + [val_r.value]
         p = val_r.pos
         ln = val_r.line
         c = val_r.col
 
-        let ws2: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        let ws2: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
         p = ws2.pos
         ln = ws2.line
         c = ws2.col
 
         if p >= slen { return err_result("Unterminated flow sequence", ln, c) }
 
-        let next: String = input.char_at(p)
+        let next: String = src.char_at(p)
         if next == "]" { return ok_result(Seq(items), p + 1, ln, c + 1) }
         if next == "," {
             p = p + 1
             c = c + 1
             // Handle trailing comma before ]
-            let ws3: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+            let ws3: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
             p = ws3.pos
             ln = ws3.line
             c = ws3.col
             if p < slen {
-                if input.char_at(p) == "]" {
+                if src.char_at(p) == "]" {
                     return ok_result(Seq(items), p + 1, ln, c + 1)
                 }
             }
@@ -1277,19 +1269,19 @@ fn parse_flow_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, ancho
 // Flow mapping parser {key: value, key: value, ...}
 // ---------------------------------------------------------------------------
 
-fn parse_flow_map(input: String, slen: Int, pos: Int, line: Int, col: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+fn parse_flow_map(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
     let mut p: Int = pos + 1
     let mut ln: Int = line
     let mut c: Int = col + 1
     let mut entries: List<YamlEntry> = []
 
-    let ws1: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+    let ws1: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
     p = ws1.pos
     ln = ws1.line
     c = ws1.col
 
     if p < slen {
-        if input.char_at(p) == "}" {
+        if src.char_at(p) == "}" {
             return ok_result(Map(entries), p + 1, ln, c + 1)
         }
     }
@@ -1298,7 +1290,7 @@ fn parse_flow_map(input: String, slen: Int, pos: Int, line: Int, col: Int, ancho
     while count < 1000000 {
         count = count + 1
 
-        let ws_k: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        let ws_k: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
         p = ws_k.pos
         ln = ws_k.line
         c = ws_k.col
@@ -1307,16 +1299,16 @@ fn parse_flow_map(input: String, slen: Int, pos: Int, line: Int, col: Int, ancho
 
         // Parse key
         let mut key_str: String = ""
-        let kch: String = input.char_at(p)
+        let kch: String = src.char_at(p)
         if kch == "\"" {
-            let dq: StrResult = parse_double_quoted(input, slen, p, ln, c)
+            let dq: StrResult = parse_double_quoted(src, slen, p, ln, c)
             if dq.ok == false { return err_result(dq.err_msg, ln, c) }
             key_str = dq.value
             p = dq.pos
             ln = dq.line
             c = dq.col
         } else { if kch == "'" {
-            let sq: StrResult = parse_single_quoted(input, slen, p, ln, c)
+            let sq: StrResult = parse_single_quoted(src, slen, p, ln, c)
             if sq.ok == false { return err_result(sq.err_msg, ln, c) }
             key_str = sq.value
             p = sq.pos
@@ -1324,7 +1316,7 @@ fn parse_flow_map(input: String, slen: Int, pos: Int, line: Int, col: Int, ancho
             c = sq.col
         } else {
             // Plain key — read up to ':'
-            let ps: StrResult = parse_plain_scalar(input, slen, p, ln, c, true)
+            let ps: StrResult = parse_plain_scalar(src, slen, p, ln, c, true)
             key_str = ps.value
             p = ps.pos
             ln = ps.line
@@ -1332,43 +1324,43 @@ fn parse_flow_map(input: String, slen: Int, pos: Int, line: Int, col: Int, ancho
         } }
 
         // Skip whitespace and expect ':'
-        let ws_c: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        let ws_c: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
         p = ws_c.pos
         ln = ws_c.line
         c = ws_c.col
 
         if p >= slen { return err_result("Expected ':' in flow mapping", ln, c) }
-        if input.char_at(p) != ":" { return err_result("Expected ':' after key in flow mapping", ln, c) }
+        if src.char_at(p) != ":" { return err_result("Expected ':' after key in flow mapping", ln, c) }
         p = p + 1
         c = c + 1
 
         // Parse value
-        let val_r: ParseResult = parse_value(input, slen, p, ln, c, 0, true, anchors, depth + 1)
+        let val_r: ParseResult = parse_value(src, slen, p, ln, c, 0, true, anchors, depth + 1)
         if val_r.ok == false { return val_r }
         entries = entries + [new_yaml_entry(key_str, val_r.value)]
         p = val_r.pos
         ln = val_r.line
         c = val_r.col
 
-        let ws2: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        let ws2: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
         p = ws2.pos
         ln = ws2.line
         c = ws2.col
 
         if p >= slen { return err_result("Unterminated flow mapping", ln, c) }
 
-        let next: String = input.char_at(p)
+        let next: String = src.char_at(p)
         if next == "}" { return ok_result(Map(entries), p + 1, ln, c + 1) }
         if next == "," {
             p = p + 1
             c = c + 1
             // Handle trailing comma before }
-            let ws3: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+            let ws3: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
             p = ws3.pos
             ln = ws3.line
             c = ws3.col
             if p < slen {
-                if input.char_at(p) == "}" {
+                if src.char_at(p) == "}" {
                     return ok_result(Map(entries), p + 1, ln, c + 1)
                 }
             }
@@ -1383,7 +1375,7 @@ fn parse_flow_map(input: String, slen: Int, pos: Int, line: Int, col: Int, ancho
 // Block sequence parser
 // ---------------------------------------------------------------------------
 
-fn parse_block_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, seq_indent: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_indent: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
     if depth > 100 {
         return err_result("Maximum nesting depth exceeded (100)", line, col)
     }
@@ -1398,7 +1390,7 @@ fn parse_block_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, seq_
         count = count + 1
 
         // Skip blank lines and comments
-        let ws: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        let ws: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
         p = ws.pos
         ln = ws.line
         c = ws.col
@@ -1410,11 +1402,11 @@ fn parse_block_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, seq_
         if cur_indent != seq_indent { break }
 
         // Expect '-'
-        if input.char_at(p) != "-" { break }
+        if src.char_at(p) != "-" { break }
 
         // Verify it's a sequence indicator (followed by space, newline, or eof)
         if p + 1 < slen {
-            let after: String = input.char_at(p + 1)
+            let after: String = src.char_at(p + 1)
             if after != " " {
                 if after != "\n" {
                     if after != "\r" {
@@ -1429,7 +1421,7 @@ fn parse_block_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, seq_
 
         // Skip space after dash
         if p < slen {
-            if input.char_at(p) == " " {
+            if src.char_at(p) == " " {
                 p = p + 1
                 c = c + 1
             }
@@ -1439,14 +1431,14 @@ fn parse_block_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, seq_
         if p >= slen {
             items = items + [Null()]
         } else {
-            let item_ch: String = input.char_at(p)
+            let item_ch: String = src.char_at(p)
             if item_ch == "\n" {
-                let nl: PosInfo = skip_newline(input, slen, p, ln)
+                let nl: PosInfo = skip_newline(src, slen, p, ln)
                 p = nl.pos
                 ln = nl.line
                 c = nl.col
                 // Blank value or nested structure on next line
-                let ws2: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+                let ws2: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
                 p = ws2.pos
                 ln = ws2.line
                 c = ws2.col
@@ -1457,7 +1449,7 @@ fn parse_block_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, seq_
                     if child_indent <= seq_indent {
                         items = items + [Null()]
                     } else {
-                        let val_r: ParseResult = parse_value(input, slen, p, ln, c, child_indent, false, anchors, depth + 1)
+                        let val_r: ParseResult = parse_value(src, slen, p, ln, c, child_indent, false, anchors, depth + 1)
                         if val_r.ok == false { return val_r }
                         items = items + [val_r.value]
                         p = val_r.pos
@@ -1466,11 +1458,11 @@ fn parse_block_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, seq_
                     }
                 }
             } else { if item_ch == "\r" {
-                let nl2: PosInfo = skip_newline(input, slen, p, ln)
+                let nl2: PosInfo = skip_newline(src, slen, p, ln)
                 p = nl2.pos
                 ln = nl2.line
                 c = nl2.col
-                let ws3: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+                let ws3: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
                 p = ws3.pos
                 ln = ws3.line
                 c = ws3.col
@@ -1481,7 +1473,7 @@ fn parse_block_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, seq_
                     if child_indent2 <= seq_indent {
                         items = items + [Null()]
                     } else {
-                        let val_r2: ParseResult = parse_value(input, slen, p, ln, c, child_indent2, false, anchors, depth + 1)
+                        let val_r2: ParseResult = parse_value(src, slen, p, ln, c, child_indent2, false, anchors, depth + 1)
                         if val_r2.ok == false { return val_r2 }
                         items = items + [val_r2.value]
                         p = val_r2.pos
@@ -1491,7 +1483,7 @@ fn parse_block_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, seq_
                 }
             } else {
                 // Inline value after "- "
-                let val_r3: ParseResult = parse_value(input, slen, p, ln, c, seq_indent + 2, false, anchors, depth + 1)
+                let val_r3: ParseResult = parse_value(src, slen, p, ln, c, seq_indent + 2, false, anchors, depth + 1)
                 if val_r3.ok == false { return val_r3 }
                 items = items + [val_r3.value]
                 p = val_r3.pos
@@ -1508,7 +1500,7 @@ fn parse_block_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, seq_
 // Block mapping parser
 // ---------------------------------------------------------------------------
 
-fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_indent: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_indent: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
     if depth > 100 {
         return err_result("Maximum nesting depth exceeded (100)", line, col)
     }
@@ -1523,7 +1515,7 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
         count = count + 1
 
         // Skip blank lines and comments
-        let ws: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        let ws: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
         p = ws.pos
         ln = ws.line
         c = ws.col
@@ -1534,12 +1526,12 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
         let cur_indent: Int = c - 1
         if cur_indent != map_indent { break }
 
-        let kch: String = input.char_at(p)
+        let kch: String = src.char_at(p)
 
         // Sequence indicator means we're done (sibling seq at same indent)
         if kch == "-" {
             if p + 1 < slen {
-                let da: String = input.char_at(p + 1)
+                let da: String = src.char_at(p + 1)
                 if da == " " { break }
                 if da == "\n" { break }
                 if da == "\r" { break }
@@ -1551,14 +1543,14 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
         // Parse key
         let mut key_str: String = ""
         if kch == "\"" {
-            let dq: StrResult = parse_double_quoted(input, slen, p, ln, c)
+            let dq: StrResult = parse_double_quoted(src, slen, p, ln, c)
             if dq.ok == false { return err_result(dq.err_msg, ln, c) }
             key_str = dq.value
             p = dq.pos
             ln = dq.line
             c = dq.col
         } else { if kch == "'" {
-            let sq: StrResult = parse_single_quoted(input, slen, p, ln, c)
+            let sq: StrResult = parse_single_quoted(src, slen, p, ln, c)
             if sq.ok == false { return err_result(sq.err_msg, ln, c) }
             key_str = sq.value
             p = sq.pos
@@ -1568,10 +1560,10 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
             // Plain key — collect until ':'
             let mut key_buf: String = ""
             while p < slen {
-                let pc: String = input.char_at(p)
+                let pc: String = src.char_at(p)
                 if pc == ":" {
                     if p + 1 >= slen { break }
-                    let ac: String = input.char_at(p + 1)
+                    let ac: String = src.char_at(p + 1)
                     if ac == " " { break }
                     if ac == "\t" { break }
                     if ac == "\n" { break }
@@ -1591,17 +1583,17 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
         } }
 
         // Expect ':'
-        let ws_c: PosInfo = skip_inline_ws(input, slen, p, c)
+        let ws_c: PosInfo = skip_inline_ws(src, slen, p, c)
         p = ws_c.pos
         c = ws_c.col
 
         if p >= slen { return err_result("Expected ':' after mapping key", ln, c) }
-        if input.char_at(p) != ":" { return err_result("Expected ':' after mapping key", ln, c) }
+        if src.char_at(p) != ":" { return err_result("Expected ':' after mapping key", ln, c) }
         p = p + 1
         c = c + 1
 
         // Skip inline whitespace after ':'
-        let ws2: PosInfo = skip_inline_ws(input, slen, p, c)
+        let ws2: PosInfo = skip_inline_ws(src, slen, p, c)
         p = ws2.pos
         c = ws2.col
 
@@ -1609,15 +1601,15 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
         if p >= slen {
             entries = entries + [new_yaml_entry(key_str, Null())]
         } else {
-            let vch: String = input.char_at(p)
+            let vch: String = src.char_at(p)
             if vch == "\n" {
                 // Value on next line(s)
-                let nl: PosInfo = skip_newline(input, slen, p, ln)
+                let nl: PosInfo = skip_newline(src, slen, p, ln)
                 p = nl.pos
                 ln = nl.line
                 c = nl.col
                 // Skip blank lines / comments
-                let ws3: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+                let ws3: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
                 p = ws3.pos
                 ln = ws3.line
                 c = ws3.col
@@ -1628,7 +1620,7 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
                     if child_indent <= map_indent {
                         entries = entries + [new_yaml_entry(key_str, Null())]
                     } else {
-                        let val_r: ParseResult = parse_value(input, slen, p, ln, c, child_indent, false, anchors, depth + 1)
+                        let val_r: ParseResult = parse_value(src, slen, p, ln, c, child_indent, false, anchors, depth + 1)
                         if val_r.ok == false { return val_r }
                         entries = entries + [new_yaml_entry(key_str, val_r.value)]
                         p = val_r.pos
@@ -1637,11 +1629,11 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
                     }
                 }
             } else { if vch == "\r" {
-                let nl2: PosInfo = skip_newline(input, slen, p, ln)
+                let nl2: PosInfo = skip_newline(src, slen, p, ln)
                 p = nl2.pos
                 ln = nl2.line
                 c = nl2.col
-                let ws4: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+                let ws4: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
                 p = ws4.pos
                 ln = ws4.line
                 c = ws4.col
@@ -1652,7 +1644,7 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
                     if child_indent2 <= map_indent {
                         entries = entries + [new_yaml_entry(key_str, Null())]
                     } else {
-                        let val_r2: ParseResult = parse_value(input, slen, p, ln, c, child_indent2, false, anchors, depth + 1)
+                        let val_r2: ParseResult = parse_value(src, slen, p, ln, c, child_indent2, false, anchors, depth + 1)
                         if val_r2.ok == false { return val_r2 }
                         entries = entries + [new_yaml_entry(key_str, val_r2.value)]
                         p = val_r2.pos
@@ -1662,11 +1654,11 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
                 }
             } else { if vch == "#" {
                 // Comment after colon — value is null
-                let cr: PosInfo = skip_comment(input, slen, p, c)
+                let cr: PosInfo = skip_comment(src, slen, p, c)
                 p = cr.pos
                 c = cr.col
                 if p < slen {
-                    let nl3: PosInfo = skip_newline(input, slen, p, ln)
+                    let nl3: PosInfo = skip_newline(src, slen, p, ln)
                     p = nl3.pos
                     ln = nl3.line
                     c = nl3.col
@@ -1674,7 +1666,7 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
                 entries = entries + [new_yaml_entry(key_str, Null())]
             } else {
                 // Inline value
-                let val_r3: ParseResult = parse_value(input, slen, p, ln, c, map_indent + 1, false, anchors, depth + 1)
+                let val_r3: ParseResult = parse_value(src, slen, p, ln, c, map_indent + 1, false, anchors, depth + 1)
                 if val_r3.ok == false { return val_r3 }
                 entries = entries + [new_yaml_entry(key_str, val_r3.value)]
                 p = val_r3.pos
@@ -1691,14 +1683,14 @@ fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_
 // Document marker handling
 // ---------------------------------------------------------------------------
 
-fn is_doc_start(input: String, slen: Int, pos: Int) -> Bool {
+fn is_doc_start(src: String, slen: Int, pos: Int) -> Bool {
     if pos + 2 >= slen { return false }
-    if input.char_at(pos) != "-" { return false }
-    if input.char_at(pos + 1) != "-" { return false }
-    if input.char_at(pos + 2) != "-" { return false }
+    if src.char_at(pos) != "-" { return false }
+    if src.char_at(pos + 1) != "-" { return false }
+    if src.char_at(pos + 2) != "-" { return false }
     // Must be followed by whitespace, newline, or eof
     if pos + 3 >= slen { return true }
-    let after: String = input.char_at(pos + 3)
+    let after: String = src.char_at(pos + 3)
     if after == " " { return true }
     if after == "\t" { return true }
     if after == "\n" { return true }
@@ -1706,13 +1698,13 @@ fn is_doc_start(input: String, slen: Int, pos: Int) -> Bool {
     return false
 }
 
-fn is_doc_end(input: String, slen: Int, pos: Int) -> Bool {
+fn is_doc_end(src: String, slen: Int, pos: Int) -> Bool {
     if pos + 2 >= slen { return false }
-    if input.char_at(pos) != "." { return false }
-    if input.char_at(pos + 1) != "." { return false }
-    if input.char_at(pos + 2) != "." { return false }
+    if src.char_at(pos) != "." { return false }
+    if src.char_at(pos + 1) != "." { return false }
+    if src.char_at(pos + 2) != "." { return false }
     if pos + 3 >= slen { return true }
-    let after: String = input.char_at(pos + 3)
+    let after: String = src.char_at(pos + 3)
     if after == " " { return true }
     if after == "\t" { return true }
     if after == "\n" { return true }
@@ -1721,24 +1713,24 @@ fn is_doc_end(input: String, slen: Int, pos: Int) -> Bool {
 }
 
 // Parse a single document — stops at next --- or ... or EOF
-fn parse_document(input: String, slen: Int, pos: Int, line: Int, col: Int) -> ParseResult {
+fn parse_document(src: String, slen: Int, pos: Int, line: Int, col: Int) -> ParseResult {
     let mut p: Int = pos
     let mut ln: Int = line
     let mut c: Int = col
     let mut anchors: Map<String, YamlValue> = #{}
 
     // Skip leading whitespace/comments/blank lines
-    let ws: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+    let ws: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
     p = ws.pos
     ln = ws.line
     c = ws.col
 
     // Skip --- if present
     if p < slen {
-        if is_doc_start(input, slen, p) {
+        if is_doc_start(src, slen, p) {
             p = p + 3
             c = c + 3
-            let rl: PosInfo = skip_rest_of_line(input, slen, p, ln, c)
+            let rl: PosInfo = skip_rest_of_line(src, slen, p, ln, c)
             p = rl.pos
             ln = rl.line
             c = rl.col
@@ -1746,7 +1738,7 @@ fn parse_document(input: String, slen: Int, pos: Int, line: Int, col: Int) -> Pa
     }
 
     // Skip whitespace after ---
-    let ws2: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+    let ws2: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
     p = ws2.pos
     ln = ws2.line
     c = ws2.col
@@ -1756,34 +1748,34 @@ fn parse_document(input: String, slen: Int, pos: Int, line: Int, col: Int) -> Pa
     }
 
     // Check for immediate ... (empty document)
-    if is_doc_end(input, slen, p) {
+    if is_doc_end(src, slen, p) {
         p = p + 3
         c = c + 3
-        let rl2: PosInfo = skip_rest_of_line(input, slen, p, ln, c)
+        let rl2: PosInfo = skip_rest_of_line(src, slen, p, ln, c)
         return ok_result(Null(), rl2.pos, rl2.line, rl2.col)
     }
 
     // Check for immediate --- (empty document before next)
-    if is_doc_start(input, slen, p) {
+    if is_doc_start(src, slen, p) {
         return ok_result(Null(), p, ln, c)
     }
 
     // Parse document content
-    let val_r: ParseResult = parse_value(input, slen, p, ln, c, 0, false, anchors, 0)
+    let val_r: ParseResult = parse_value(src, slen, p, ln, c, 0, false, anchors, 0)
     if val_r.ok == false { return val_r }
 
     // Skip trailing whitespace/comments
-    let ws3: PosInfo = skip_ws_and_comments(input, slen, val_r.pos, val_r.line, val_r.col)
+    let ws3: PosInfo = skip_ws_and_comments(src, slen, val_r.pos, val_r.line, val_r.col)
     p = ws3.pos
     ln = ws3.line
     c = ws3.col
 
     // Consume ... if present
     if p < slen {
-        if is_doc_end(input, slen, p) {
+        if is_doc_end(src, slen, p) {
             p = p + 3
             c = c + 3
-            let rl3: PosInfo = skip_rest_of_line(input, slen, p, ln, c)
+            let rl3: PosInfo = skip_rest_of_line(src, slen, p, ln, c)
             p = rl3.pos
             ln = rl3.line
             c = rl3.col
@@ -1797,9 +1789,9 @@ fn parse_document(input: String, slen: Int, pos: Int, line: Int, col: Int) -> Pa
 // Public API — decode (single document)
 // ---------------------------------------------------------------------------
 
-pub fn decode(input: String) -> Result<YamlValue, YamlError> {
-    let slen: Int = len(input)
-    let result: ParseResult = parse_document(input, slen, 0, 1, 1)
+pub fn decode(src: String) -> Result<YamlValue, YamlError> {
+    let slen: Int = len(src)
+    let result: ParseResult = parse_document(src, slen, 0, 1, 1)
     if result.ok == false { return Err(result.error) }
     return Ok(result.value)
 }
@@ -1808,8 +1800,8 @@ pub fn decode(input: String) -> Result<YamlValue, YamlError> {
 // Public API — decode_all (multi-document)
 // ---------------------------------------------------------------------------
 
-pub fn decode_all(input: String) -> Result<List<YamlValue>, YamlError> {
-    let slen: Int = len(input)
+pub fn decode_all(src: String) -> Result<List<YamlValue>, YamlError> {
+    let slen: Int = len(src)
     let mut docs: List<YamlValue> = []
     let mut p: Int = 0
     let mut ln: Int = 1
@@ -1820,14 +1812,14 @@ pub fn decode_all(input: String) -> Result<List<YamlValue>, YamlError> {
         count = count + 1
 
         // Skip whitespace
-        let ws: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        let ws: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
         p = ws.pos
         ln = ws.line
         c = ws.col
 
         if p >= slen { break }
 
-        let result: ParseResult = parse_document(input, slen, p, ln, c)
+        let result: ParseResult = parse_document(src, slen, p, ln, c)
         if result.ok == false { return Err(result.error) }
         docs = docs + [result.value]
         p = result.pos

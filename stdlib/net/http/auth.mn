@@ -46,11 +46,11 @@ pub fn is_authenticated(r: AuthResult) -> Bool {
 
 pub fn parse_basic_auth(header: String) -> Option<List<String>> {
     let slen: Int = len(header)
-    if slen < 7 { return None }
+    if slen < 7 { return none }
 
     // Check "Basic " prefix
     let prefix: String = header.substr(0, 6)
-    if prefix != "Basic " { return None }
+    if prefix != "Basic " { return none }
 
     let encoded: String = header.substr(6, slen)
     let decoded_result: Result<String, crypto.CryptoError> = crypto.base64_decode(encoded)
@@ -58,7 +58,7 @@ pub fn parse_basic_auth(header: String) -> Option<List<String>> {
         Ok(decoded) => {
             // Find the colon separator
             let colon_pos: Int = decoded.find(":")
-            if colon_pos < 0 { return None }
+            if colon_pos < 0 { return none }
             let user: String = decoded.substr(0, colon_pos)
             let pass: String = decoded.substr(colon_pos + 1, len(decoded))
             let mut parts: List<String> = []
@@ -67,10 +67,10 @@ pub fn parse_basic_auth(header: String) -> Option<List<String>> {
             return Some(parts)
         },
         Err(e) => {
-            return None
+            return none
         }
     }
-    return None
+    return none
 }
 
 // ---------------------------------------------------------------------------
@@ -79,14 +79,14 @@ pub fn parse_basic_auth(header: String) -> Option<List<String>> {
 
 pub fn bearer_token(header: String) -> Option<String> {
     let slen: Int = len(header)
-    if slen < 8 { return None }
+    if slen < 8 { return none }
 
     // Check "Bearer " prefix
     let prefix: String = header.substr(0, 7)
-    if prefix != "Bearer " { return None }
+    if prefix != "Bearer " { return none }
 
     let token: String = header.substr(7, slen)
-    if len(token) == 0 { return None }
+    if len(token) == 0 { return none }
     return Some(token)
 }
 
@@ -111,7 +111,7 @@ pub fn jwt_auth(auth_header: String, secret: String) -> AuthResult {
             }
             return Denied("unreachable")
         },
-        None => {
+        _ => {
             return Denied("Missing or invalid Bearer token")
         }
     }
@@ -148,13 +148,13 @@ pub fn check_session_auth(store: session.SessionStore, session_id: String, requi
                 Some(val) => {
                     return Authenticated(val)
                 },
-                None => {
+                _ => {
                     return Denied("Session missing required key: " + required_key)
                 }
             }
             return Denied("unreachable")
         },
-        None => {
+        _ => {
             return Denied("Session not found: " + session_id)
         }
     }
@@ -181,7 +181,7 @@ pub fn verify_basic_auth(header: String, expected_user: String, expected_pass: S
             }
             return Denied("Invalid credentials")
         },
-        None => {
+        _ => {
             return Denied("Missing or invalid Basic auth header")
         }
     }

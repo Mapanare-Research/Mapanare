@@ -84,14 +84,8 @@ class TestTomlConfigParseline:
         """Parse TOML-like sections [section] and extract nested config."""
         source = textwrap.dedent("""\
             fn main() {
-                let lines: List<String> = [
-                    "[server]",
-                    "host=localhost",
-                    "port=3000",
-                    "[database]",
-                    "driver=sqlite",
-                    "path=data.db"
-                ]
+                let mut lines: List<String> = ["[server]", "host=localhost", "port=3000"]
+                lines = lines + ["[database]", "driver=sqlite", "path=data.db"]
 
                 let mut section: String = ""
                 let mut config: Map<String, String> = #{}
@@ -177,21 +171,14 @@ class TestYamlConfigParseline:
         """Parse YAML-like indented structure into dot-notation keys."""
         source = textwrap.dedent("""\
             fn main() {
-                let lines: List<String> = [
-                    "server:",
-                    "  host: 0.0.0.0",
-                    "  port: 9090",
-                    "logging:",
-                    "  level: info",
-                    "  file: app.log"
-                ]
+                let mut lines: List<String> = ["server:", "  host: 0.0.0.0", "  port: 9090"]
+                lines = lines + ["logging:", "  level: info", "  file: app.log"]
 
                 let mut section: String = ""
                 let mut config: Map<String, String> = #{}
 
                 for line in lines {
-                    if len(line) == 0 { }
-                    else if line.starts_with("  ") {
+                    if line.starts_with("  ") {
                         let trimmed = line.substr(2, len(line))
                         let colon_pos = trimmed.find(": ")
                         if colon_pos >= 0 {
@@ -245,11 +232,8 @@ class TestFileRoundtrip:
             }
 
             fn main() {
-                let original: List<String> = [
-                    "first line of content",
-                    "second line has data",
-                    "third line is the end"
-                ]
+                let mut original: List<String> = ["first line of content"]
+                original = original + ["second line has data", "third line is the end"]
                 let written = write_content(original)
                 let read_back = read_lines(written)
 
@@ -546,13 +530,8 @@ class TestEmbeddedKVPipeline:
         """Bulk-load key-value pairs and perform lookups."""
         source = textwrap.dedent("""\
             fn main() {
-                let data: List<String> = [
-                    "user:1=Alice",
-                    "user:2=Bob",
-                    "user:3=Carla",
-                    "user:4=Diana",
-                    "user:5=Eve"
-                ]
+                let mut data: List<String> = ["user:1=Alice", "user:2=Bob", "user:3=Carla"]
+                data = data + ["user:4=Diana", "user:5=Eve"]
 
                 let mut store: Map<String, String> = #{}
                 for entry in data {

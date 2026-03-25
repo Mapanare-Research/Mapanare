@@ -33,24 +33,24 @@ extern "C" fn __mn_pg_clear(result: Int)
 // Connection
 // ---------------------------------------------------------------------------
 
-pub fn pg_connect(conninfo: String) -> Result<sql.Connection, sql.SqlError> {
+pub fn pg_connect(conninfo: String) -> Result<Connection, SqlError> {
     let handle: Int = __mn_pg_connect(conninfo)
     if handle == 0 {
         return Err(ConnectionFailed("Failed to connect to PostgreSQL: " + conninfo))
     }
-    return Ok(new sql.Connection { handle: handle, driver: "postgres", url: conninfo })
+    return Ok(new Connection { handle: handle, driver: "postgres", url: conninfo })
 }
 
 // ---------------------------------------------------------------------------
 // Internal: Convert SqlValue list to list of string representations
 // ---------------------------------------------------------------------------
 
-fn params_to_strings(params: List<sql.SqlValue>) -> List<String> {
+fn params_to_strings(params: List<SqlValue>) -> List<String> {
     let count: Int = len(params)
     let mut result: List<String> = []
     let mut i: Int = 0
     while i < count {
-        let val: sql.SqlValue = params[i]
+        let val: SqlValue = params[i]
         match val {
             Null => {
                 result = result + ["NULL"]
@@ -151,7 +151,7 @@ fn escape_string_literal(s: String) -> String {
     return result
 }
 
-fn inline_params(sql_str: String, params: List<sql.SqlValue>) -> String {
+fn inline_params(sql_str: String, params: List<SqlValue>) -> String {
     let slen: Int = len(sql_str)
     let param_count: Int = len(params)
     let mut result: String = ""
@@ -184,7 +184,7 @@ fn inline_params(sql_str: String, params: List<sql.SqlValue>) -> String {
             }
         } else { if ch == "?" {
             if param_idx < param_count {
-                let val: sql.SqlValue = params[param_idx]
+                let val: SqlValue = params[param_idx]
                 match val {
                     Null => {
                         result = result + "NULL"
@@ -311,7 +311,7 @@ fn parse_int_manual(s: String) -> Int {
     return result
 }
 
-fn parse_pg_value(s: String) -> sql.SqlValue {
+fn parse_pg_value(s: String) -> SqlValue {
     // Check for boolean
     if s == "t" { return Bool(true) }
     if s == "f" { return Bool(false) }
@@ -338,7 +338,7 @@ fn parse_pg_value(s: String) -> sql.SqlValue {
 // Internal: Collect rows from a PG result
 // ---------------------------------------------------------------------------
 
-fn collect_pg_rows(pg_result: Int) -> List<sql.Row> {
+fn collect_pg_rows(pg_result: Int) -> List<Row> {
     let nrows: Int = __mn_pg_ntuples(pg_result)
     let ncols: Int = __mn_pg_nfields(pg_result)
 
@@ -352,18 +352,18 @@ fn collect_pg_rows(pg_result: Int) -> List<sql.Row> {
     }
 
     // Read all rows
-    let mut rows: List<sql.Row> = []
+    let mut rows: List<Row> = []
     let mut r: Int = 0
     while r < nrows {
-        let mut values: List<sql.SqlValue> = []
+        let mut values: List<SqlValue> = []
         let mut col: Int = 0
         while col < ncols {
             let raw_val: String = __mn_pg_getvalue(pg_result, r, col)
-            let val: sql.SqlValue = parse_pg_value(raw_val)
+            let val: SqlValue = parse_pg_value(raw_val)
             values = values + [val]
             col = col + 1
         }
-        let row: sql.Row = sql.new_row(columns, values)
+        let row: Row = new_row(columns, values)
         rows = rows + [row]
         r = r + 1
     }
@@ -375,7 +375,7 @@ fn collect_pg_rows(pg_result: Int) -> List<sql.Row> {
 // Public API: Query (SELECT — returns rows)
 // ---------------------------------------------------------------------------
 
-pub fn query(conn: sql.Connection, sql_str: String, params: List<sql.SqlValue>) -> Result<sql.QueryResult, sql.SqlError> {
+pub fn query(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<QueryResult, SqlError> {
     let final_sql: String = inline_params(sql_str, params)
     let pg_result: Int = __mn_pg_exec(conn.handle, final_sql)
 
@@ -392,18 +392,18 @@ pub fn query(conn: sql.Connection, sql_str: String, params: List<sql.SqlValue>) 
         return Err(QueryFailed("Query returned error status: " + errmsg))
     }
 
-    let rows: List<sql.Row> = collect_pg_rows(pg_result)
+    let rows: List<Row> = collect_pg_rows(pg_result)
     let nrows: Int = __mn_pg_ntuples(pg_result)
     __mn_pg_clear(pg_result)
 
-    return Ok(new sql.QueryResult { rows: rows, affected: nrows })
+    return Ok(new QueryResult { rows: rows, affected: nrows })
 }
 
 // ---------------------------------------------------------------------------
 // Public API: Execute (INSERT/UPDATE/DELETE — returns affected count)
 // ---------------------------------------------------------------------------
 
-pub fn execute(conn: sql.Connection, sql_str: String, params: List<sql.SqlValue>) -> Result<Int, sql.SqlError> {
+pub fn execute(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<Int, SqlError> {
     let final_sql: String = inline_params(sql_str, params)
     let pg_result: Int = __mn_pg_exec(conn.handle, final_sql)
 
@@ -433,13 +433,13 @@ pub fn execute(conn: sql.Connection, sql_str: String, params: List<sql.SqlValue>
 // Public API: Simple query/execute (no parameters)
 // ---------------------------------------------------------------------------
 
-pub fn query_simple(conn: sql.Connection, sql_str: String) -> Result<sql.QueryResult, sql.SqlError> {
-    let empty_params: List<sql.SqlValue> = []
+pub fn query_simple(conn: Connection, sql_str: String) -> Result<QueryResult, SqlError> {
+    let empty_params: List<SqlValue> = []
     return query(conn, sql_str, empty_params)
 }
 
-pub fn execute_simple(conn: sql.Connection, sql_str: String) -> Result<Int, sql.SqlError> {
-    let empty_params: List<sql.SqlValue> = []
+pub fn execute_simple(conn: Connection, sql_str: String) -> Result<Int, SqlError> {
+    let empty_params: List<SqlValue> = []
     return execute(conn, sql_str, empty_params)
 }
 
@@ -447,7 +447,7 @@ pub fn execute_simple(conn: sql.Connection, sql_str: String) -> Result<Int, sql.
 // Transaction helpers
 // ---------------------------------------------------------------------------
 
-pub fn begin(conn: sql.Connection) -> Result<Bool, sql.SqlError> {
+pub fn begin(conn: Connection) -> Result<Bool, SqlError> {
     let pg_result: Int = __mn_pg_exec(conn.handle, "BEGIN")
     if pg_result == 0 {
         let errmsg: String = __mn_pg_errmsg(conn.handle)
@@ -457,7 +457,7 @@ pub fn begin(conn: sql.Connection) -> Result<Bool, sql.SqlError> {
     return Ok(true)
 }
 
-pub fn commit(conn: sql.Connection) -> Result<Bool, sql.SqlError> {
+pub fn commit(conn: Connection) -> Result<Bool, SqlError> {
     let pg_result: Int = __mn_pg_exec(conn.handle, "COMMIT")
     if pg_result == 0 {
         let errmsg: String = __mn_pg_errmsg(conn.handle)
@@ -467,7 +467,7 @@ pub fn commit(conn: sql.Connection) -> Result<Bool, sql.SqlError> {
     return Ok(true)
 }
 
-pub fn rollback(conn: sql.Connection) -> Result<Bool, sql.SqlError> {
+pub fn rollback(conn: Connection) -> Result<Bool, SqlError> {
     let pg_result: Int = __mn_pg_exec(conn.handle, "ROLLBACK")
     if pg_result == 0 {
         let errmsg: String = __mn_pg_errmsg(conn.handle)

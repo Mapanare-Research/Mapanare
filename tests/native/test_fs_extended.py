@@ -160,18 +160,18 @@ class TestFileExists:
             f.write("hello")
 
         path_s = _mn_str(self.lib, fpath)
-        assert self.lib.__mn_file_exists(path_s) == 1
+        assert getattr(self.lib, "__mn_file_exists")(path_s) == 1
 
     def test_nonexistent_file(self) -> None:
         """__mn_file_exists returns 0 for a file that does not exist."""
         fpath = os.path.join(self.tmp, "does_not_exist_12345.txt")
         path_s = _mn_str(self.lib, fpath)
-        assert self.lib.__mn_file_exists(path_s) == 0
+        assert getattr(self.lib, "__mn_file_exists")(path_s) == 0
 
     def test_existing_directory(self) -> None:
         """__mn_file_exists returns 1 for a directory that exists."""
         path_s = _mn_str(self.lib, self.tmp)
-        assert self.lib.__mn_file_exists(path_s) == 1
+        assert getattr(self.lib, "__mn_file_exists")(path_s) == 1
 
 
 @pytest.mark.skipif(_CC is None, reason="No C compiler available")
@@ -192,7 +192,7 @@ class TestFileRemove:
         assert os.path.exists(fpath)
 
         path_s = _mn_str(self.lib, fpath)
-        rc = self.lib.__mn_file_remove(path_s)
+        rc = getattr(self.lib, "__mn_file_remove")(path_s)
         assert rc == 0
         assert not os.path.exists(fpath)
 
@@ -200,7 +200,7 @@ class TestFileRemove:
         """__mn_file_remove on a nonexistent file returns -1."""
         fpath = os.path.join(self.tmp, "ghost_file.txt")
         path_s = _mn_str(self.lib, fpath)
-        rc = self.lib.__mn_file_remove(path_s)
+        rc = getattr(self.lib, "__mn_file_remove")(path_s)
         assert rc == -1
 
 
@@ -218,7 +218,7 @@ class TestDirCreateRemove:
         dpath = os.path.join(self.tmp, "newdir")
         path_s = _mn_str(self.lib, dpath)
 
-        rc = self.lib.__mn_dir_create(path_s, 0)
+        rc = getattr(self.lib, "__mn_dir_create")(path_s, 0)
         assert rc == 0
         assert os.path.isdir(dpath)
 
@@ -227,7 +227,7 @@ class TestDirCreateRemove:
         dpath = os.path.join(self.tmp, "a", "b", "c")
         path_s = _mn_str(self.lib, dpath)
 
-        rc = self.lib.__mn_dir_create(path_s, 1)
+        rc = getattr(self.lib, "__mn_dir_create")(path_s, 1)
         assert rc == 0
         assert os.path.isdir(dpath)
 
@@ -238,7 +238,7 @@ class TestDirCreateRemove:
         assert os.path.isdir(dpath)
 
         path_s = _mn_str(self.lib, dpath)
-        rc = self.lib.__mn_dir_remove(path_s)
+        rc = getattr(self.lib, "__mn_dir_remove")(path_s)
         assert rc == 0
         assert not os.path.exists(dpath)
 
@@ -246,7 +246,7 @@ class TestDirCreateRemove:
         """__mn_dir_remove on a nonexistent directory returns -1."""
         dpath = os.path.join(self.tmp, "no_such_dir")
         path_s = _mn_str(self.lib, dpath)
-        rc = self.lib.__mn_dir_remove(path_s)
+        rc = getattr(self.lib, "__mn_dir_remove")(path_s)
         assert rc == -1
 
 
@@ -268,7 +268,7 @@ class TestFileRename:
 
         old_s = _mn_str(self.lib, old)
         new_s = _mn_str(self.lib, new)
-        rc = self.lib.__mn_file_rename(old_s, new_s)
+        rc = getattr(self.lib, "__mn_file_rename")(old_s, new_s)
         assert rc == 0
         assert not os.path.exists(old)
         assert os.path.exists(new)
@@ -281,7 +281,7 @@ class TestFileRename:
         new = os.path.join(self.tmp, "target.txt")
         old_s = _mn_str(self.lib, old)
         new_s = _mn_str(self.lib, new)
-        rc = self.lib.__mn_file_rename(old_s, new_s)
+        rc = getattr(self.lib, "__mn_file_rename")(old_s, new_s)
         assert rc == -1
 
 
@@ -303,7 +303,7 @@ class TestFileCopy:
 
         src_s = _mn_str(self.lib, src)
         dst_s = _mn_str(self.lib, dst)
-        rc = self.lib.__mn_file_copy(src_s, dst_s)
+        rc = getattr(self.lib, "__mn_file_copy")(src_s, dst_s)
         assert rc == 0
 
         # Both files should exist with same content
@@ -318,7 +318,7 @@ class TestFileCopy:
         dst = os.path.join(self.tmp, "dest.txt")
         src_s = _mn_str(self.lib, src)
         dst_s = _mn_str(self.lib, dst)
-        rc = self.lib.__mn_file_copy(src_s, dst_s)
+        rc = getattr(self.lib, "__mn_file_copy")(src_s, dst_s)
         assert rc == -1
 
 
@@ -332,7 +332,7 @@ class TestTmpfilePath:
 
     def test_returns_valid_path(self) -> None:
         """__mn_tmpfile_path returns a non-empty path string."""
-        result = self.lib.__mn_tmpfile_path()
+        result = getattr(self.lib, "__mn_tmpfile_path")()
         assert result.len > 0, "tmpfile_path should return a non-empty string"
         path_str = _read_mnstring(result)
         assert len(path_str) > 0
@@ -348,7 +348,7 @@ class TestTmpfilePath:
         """__mn_tmpfile_path returns unique paths on consecutive calls."""
         paths = []
         for _ in range(5):
-            result = self.lib.__mn_tmpfile_path()
+            result = getattr(self.lib, "__mn_tmpfile_path")()
             path_str = _read_mnstring(result)
             paths.append(path_str)
 
@@ -377,7 +377,7 @@ class TestRealpath:
             f.write("test")
 
         path_s = _mn_str(self.lib, fpath)
-        result = self.lib.__mn_realpath(path_s)
+        result = getattr(self.lib, "__mn_realpath")(path_s)
         resolved = _read_mnstring(result)
         assert len(resolved) > 0
 
@@ -387,7 +387,7 @@ class TestRealpath:
     def test_resolves_relative_path(self) -> None:
         """__mn_realpath resolves '.' to an absolute path."""
         dot_s = _mn_str(self.lib, ".")
-        result = self.lib.__mn_realpath(dot_s)
+        result = getattr(self.lib, "__mn_realpath")(dot_s)
         resolved = _read_mnstring(result)
         assert os.path.isabs(resolved), f"Expected absolute path, got: {resolved}"
 
@@ -395,7 +395,7 @@ class TestRealpath:
         """__mn_realpath on a nonexistent path returns an empty string."""
         bad = os.path.join(self.tmp, "no", "such", "deeply", "nested", "path.txt")
         path_s = _mn_str(self.lib, bad)
-        result = self.lib.__mn_realpath(path_s)
+        result = getattr(self.lib, "__mn_realpath")(path_s)
         assert result.len == 0
 
 
@@ -416,7 +416,7 @@ class TestFileSize:
             f.write(content)
 
         path_s = _mn_str(self.lib, fpath)
-        size = self.lib.__mn_file_size(path_s)
+        size = getattr(self.lib, "__mn_file_size")(path_s)
         assert size == len(content)
 
     def test_empty_file(self) -> None:
@@ -426,14 +426,14 @@ class TestFileSize:
             pass
 
         path_s = _mn_str(self.lib, fpath)
-        size = self.lib.__mn_file_size(path_s)
+        size = getattr(self.lib, "__mn_file_size")(path_s)
         assert size == 0
 
     def test_nonexistent_returns_negative(self) -> None:
         """__mn_file_size returns -1 for a nonexistent file."""
         fpath = os.path.join(self.tmp, "nope.txt")
         path_s = _mn_str(self.lib, fpath)
-        size = self.lib.__mn_file_size(path_s)
+        size = getattr(self.lib, "__mn_file_size")(path_s)
         assert size == -1
 
 
@@ -453,7 +453,7 @@ class TestFileMtime:
             f.write("mtime test")
 
         path_s = _mn_str(self.lib, fpath)
-        mtime = self.lib.__mn_file_mtime(path_s)
+        mtime = getattr(self.lib, "__mn_file_mtime")(path_s)
 
         # Should be after 2020-01-01 (1577836800) and before 2040-01-01 (2208988800)
         assert mtime > 1577836800, f"mtime {mtime} is too old"
@@ -467,5 +467,5 @@ class TestFileMtime:
         """__mn_file_mtime returns -1 for a nonexistent file."""
         fpath = os.path.join(self.tmp, "no_file.txt")
         path_s = _mn_str(self.lib, fpath)
-        mtime = self.lib.__mn_file_mtime(path_s)
+        mtime = getattr(self.lib, "__mn_file_mtime")(path_s)
         assert mtime == -1

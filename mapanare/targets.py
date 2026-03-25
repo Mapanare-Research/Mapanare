@@ -77,12 +77,69 @@ TARGET_X86_64_WINDOWS_MSVC = Target(
     linker="link.exe",
 )
 
+TARGET_WASM32 = Target(
+    triple="wasm32-unknown-unknown",
+    data_layout="e-m:e-p:32:32-i64:64-n32:64-S128",
+    description="WebAssembly (32-bit)",
+    obj_ext=".o",
+    exe_ext=".wasm",
+    lib_ext=".wasm",
+    linker="wasm-ld",
+)
+
+TARGET_WASM32_WASI = Target(
+    triple="wasm32-wasi",
+    data_layout="e-m:e-p:32:32-i64:64-n32:64-S128",
+    description="WebAssembly + WASI",
+    obj_ext=".o",
+    exe_ext=".wasm",
+    lib_ext=".wasm",
+    linker="wasm-ld",
+)
+
+TARGET_AARCH64_APPLE_IOS = Target(
+    triple="aarch64-apple-ios17.0",
+    data_layout="e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32",
+    description="iOS (ARM64)",
+    obj_ext=".o",
+    exe_ext="",
+    lib_ext=".dylib",
+    linker="clang",
+)
+
+TARGET_AARCH64_LINUX_ANDROID = Target(
+    triple="aarch64-linux-android34",
+    data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128",
+    description="Android (ARM64)",
+    obj_ext=".o",
+    exe_ext="",
+    lib_ext=".so",
+    linker="aarch64-linux-android34-clang",
+)
+
+TARGET_X86_64_LINUX_ANDROID = Target(
+    triple="x86_64-linux-android34",
+    data_layout=(
+        "e-m:e-p270:32:32-p271:32:32-p272:64:64-" "i64:64-i128:128-f80:128-n8:16:32:64-S128"
+    ),
+    description="Android (x86_64, emulator)",
+    obj_ext=".o",
+    exe_ext="",
+    lib_ext=".so",
+    linker="x86_64-linux-android34-clang",
+)
+
 # Registry of all supported targets
 TARGETS: dict[str, Target] = {
     "x86_64-linux-gnu": TARGET_X86_64_LINUX_GNU,
     "aarch64-apple-macos": TARGET_AARCH64_APPLE_MACOS,
     "x86_64-windows-msvc": TARGET_X86_64_WINDOWS_MSVC,
     "x86_64-windows-gnu": TARGET_X86_64_WINDOWS_GNU,
+    "wasm32": TARGET_WASM32,
+    "wasm32-wasi": TARGET_WASM32_WASI,
+    "aarch64-apple-ios": TARGET_AARCH64_APPLE_IOS,
+    "aarch64-linux-android": TARGET_AARCH64_LINUX_ANDROID,
+    "x86_64-linux-android": TARGET_X86_64_LINUX_ANDROID,
 }
 
 

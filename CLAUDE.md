@@ -12,9 +12,9 @@ Mapanare is an AI-native compiled programming language (v1.0.0) with first-class
 - **v1.1.0** — AI native: LLM drivers, embeddings, RAG as stdlib
 - **v1.2.0** — Data & storage: SQL drivers, Dato v1.0, YAML/TOML
 - **v1.3.0** — Web platform & security: crawler, vulnerability scanner, web framework
-- **v2.0.0** — GPU, WASM, mobile, Python backend deprecated
+- **v2.0.0** (in progress) — GPU compute (CUDA/Vulkan via dlopen), WebAssembly backend, mobile targets, Python backend deprecated
 
-See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v1.0.0/PLAN.md` for the current execution plan.
+See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v2.0.0/PLAN.md` for the current execution plan.
 
 ## Commands
 
@@ -68,14 +68,15 @@ Every run auto-updates `tests/golden/BENCHMARKS.md` with per-test metrics (sourc
 
 ```
 .mn source → Lark LALR parser → AST (dataclasses) → Semantic checker → MIR lowering → MIR optimizer (O0-O3) → Emitter
-                                                                                                                 ├→ emit_python.py     → Python source (legacy)
-                                                                                                                 ├→ emit_python_mir.py → Python source (MIR-based)
+                                                                                                                 ├→ emit_python.py     → Python source (DEPRECATED)
+                                                                                                                 ├→ emit_python_mir.py → Python source (DEPRECATED)
                                                                                                                  ├→ emit_llvm.py       → LLVM IR (AST-based)
-                                                                                                                 └→ emit_llvm_mir.py   → LLVM IR (MIR-based, preferred)
+                                                                                                                 ├→ emit_llvm_mir.py   → LLVM IR (MIR-based, preferred)
+                                                                                                                 └→ emit_wasm.py       → WebAssembly (WAT/WASM, v2.0.0)
 ```
 
 Key modules in `mapanare/`:
-- `cli.py` — Entry point, command dispatch (run, build, jit, check, compile, emit-llvm, emit-mir, fmt, test, lint, doc, deploy, init)
+- `cli.py` — Entry point, command dispatch (run, build, jit, check, compile, emit-llvm, emit-mir, emit-wasm, fmt, test, lint, doc, deploy, init)
 - `parser.py` — Lark transformer: parse tree → AST dataclass nodes
 - `ast_nodes.py` — All AST node definitions
 - `semantic.py` — Two-pass type checker and scope resolver
@@ -83,10 +84,11 @@ Key modules in `mapanare/`:
 - `lower.py` — AST → MIR lowering (1,397 lines)
 - `mir_opt.py` — MIR optimizer passes (constant folding, DCE, copy propagation, block merging)
 - `optimizer.py` — AST-level optimizer (constant folding, DCE, agent inlining, stream fusion)
-- `emit_python.py` — Python transpiler (agents→asyncio, signals→reactive, streams→async generators)
-- `emit_python_mir.py` — MIR-based Python transpiler
+- `emit_python.py` — Python transpiler (DEPRECATED in v2.0.0)
+- `emit_python_mir.py` — MIR-based Python transpiler (DEPRECATED in v2.0.0)
 - `emit_llvm.py` — LLVM IR generation via llvmlite (AST-based)
 - `emit_llvm_mir.py` — LLVM IR generation via llvmlite (MIR-based, preferred for new features)
+- `emit_wasm.py` — WebAssembly (WAT) generation from MIR (v2.0.0)
 - `types.py` — **Single source of truth** for the type system (TypeKind enum, TypeInfo, builtin registries)
 - `mapanare.lark` — LALR grammar with 13-level precedence climbing
 - `tracing.py` — OpenTelemetry-compatible tracing
@@ -141,7 +143,7 @@ All type definitions, builtin registries, and type-name mappings live in `types.
 - Builtins are dispatched via `BUILTIN_CALL_MAP` in both emitters
 - Self-hosted compiler sources are in `mapanare/self/*.mn`
 - Language spec: `docs/SPEC.md` | Design philosophy: `docs/manifesto.md` | RFCs: `docs/rfcs/`
-- Roadmap: `docs/roadmap/ROADMAP.md` | Current plan: `docs/roadmap/v0.8.0/PLAN.md`
+- Roadmap: `docs/roadmap/ROADMAP.md` | Current plan: `docs/roadmap/v2.0.0/PLAN.md`
 - Version tracked in `VERSION` file
 - Bootstrap frozen at v0.6.0 in `bootstrap/`
 
@@ -153,10 +155,37 @@ Starting with v0.8.0, the project moves toward Python independence:
 - **Test on LLVM:** Every test should run on the LLVM backend, not just Python.
 - **Python backend = legacy:** Kept for reference and bootstrapping, but not the target for new features.
 
+## GPU Backend (v2.0.0)
+
+GPU compute via CUDA and Vulkan, loaded dynamically at runtime (no compile-time SDK dependency):
+- **C runtime** (`runtime/native/mapanare_gpu.h/.c`): CUDA Driver API + Vulkan compute via dlopen
+- **Python layer** (`experimental/gpu.py`): Device detection, kernel dispatch abstractions
+- **Stdlib** (`stdlib/gpu/`): `device.mn` (GPU detection), `tensor.mn` (GPU-accelerated tensors), `kernel.mn` (kernel management)
+- **Annotations**: `@gpu`, `@cuda`, `@metal`, `@vulkan` on functions for automatic dispatch
+- **Built-in kernels**: PTX for CUDA, GLSL/SPIR-V for Vulkan (tensor add/sub/mul/div/matmul)
+
+## WebAssembly Backend (v2.0.0)
+
+Compile Mapanare to WebAssembly for browser and server-side execution:
+- **Emitter** (`mapanare/emit_wasm.py`): MIR → WAT text format
+- **CLI**: `mapanare emit-wasm [--binary] source.mn`
+- **Targets**: `wasm32-unknown-unknown` (browser), `wasm32-wasi` (server)
+- **JS runtime** (`playground/src/wasm-runtime.js`): Browser host for WASM modules
+- **Stdlib** (`stdlib/wasm/`): `bridge.mn` (JS interop), `runtime.mn` (WASI + memory)
+- **WASI support**: File I/O, environment, clock, random via WASI preview 1
+
+## Mobile Targets (v2.0.0)
+
+Cross-compilation targets for mobile platforms:
+- `aarch64-apple-ios` — iOS ARM64
+- `aarch64-linux-android` — Android ARM64
+- `x86_64-linux-android` — Android emulator
+
 ## Ecosystem Packages
 
 - **Dato** (`github.com/Mapanare-Research/dato`) — DataFrame/data analysis package (pandas+numpy replacement), written in .mn
-- Future packages: `net/crawl` (web crawler), `security/scan` (vulnerability scanner), AI/LLM drivers
+- `net/crawl` (web crawler), `security/scan` (vulnerability scanner), `security/fuzz` (fuzzer) — all agents-based
+- AI/LLM drivers (`stdlib/ai/`): LLM, embeddings, RAG
 
 ## CI
 

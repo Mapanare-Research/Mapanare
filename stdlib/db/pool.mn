@@ -25,7 +25,7 @@ pub struct PoolConfig {
 }
 
 pub struct Pool {
-    connections: List<sql.Connection>,
+    connections: List<Connection>,
     in_use: List<Bool>,
     config: PoolConfig
 }
@@ -42,19 +42,19 @@ pub fn new_pool_config(url: String, min_conns: Int, max_conns: Int, idle_timeout
 // Pool creation
 // ---------------------------------------------------------------------------
 
-pub fn new_pool(config: PoolConfig) -> Result<Pool, sql.SqlError> {
-    let mut connections: List<sql.Connection> = []
+pub fn new_pool(config: PoolConfig) -> Result<Pool, SqlError> {
+    let mut connections: List<Connection> = []
     let mut in_use: List<Bool> = []
     let mut i: Int = 0
 
     while i < config.min_conns {
-        let conn_result: Result<sql.Connection, sql.SqlError> = sql.connect(config.url)
+        let conn_result: Result<Connection, SqlError> = connect(config.url)
         match conn_result {
             Err(e) => {
                 // Close already-opened connections before returning error
                 let mut j: Int = 0
                 while j < len(connections) {
-                    let close_r: Result<Bool, sql.SqlError> = sql.close(connections[j])
+                    let close_r: Result<Bool, SqlError> = close(connections[j])
                     j = j + 1
                 }
                 return Err(e)
@@ -74,7 +74,7 @@ pub fn new_pool(config: PoolConfig) -> Result<Pool, sql.SqlError> {
 // Checkout: acquire an idle connection from the pool
 // ---------------------------------------------------------------------------
 
-pub fn checkout(pool: Pool) -> Result<sql.Connection, sql.SqlError> {
+pub fn checkout(pool: Pool) -> Result<Connection, SqlError> {
     let count: Int = len(pool.connections)
 
     // Find first idle connection
@@ -105,7 +105,7 @@ pub fn checkout(pool: Pool) -> Result<sql.Connection, sql.SqlError> {
 
     // All connections in use — try to grow the pool
     if count < pool.config.max_conns {
-        let conn_result: Result<sql.Connection, sql.SqlError> = sql.connect(pool.config.url)
+        let conn_result: Result<Connection, SqlError> = connect(pool.config.url)
         match conn_result {
             Err(e) => { return Err(e) },
             Ok(conn) => { return Ok(conn) }
@@ -120,14 +120,14 @@ pub fn checkout(pool: Pool) -> Result<sql.Connection, sql.SqlError> {
 // ---------------------------------------------------------------------------
 
 struct CheckoutResult {
-    conn: sql.Connection,
+    conn: Connection,
     pool: Pool,
     ok: Bool,
-    error: sql.SqlError
+    error: SqlError
 }
 
-fn new_checkout_error(e: sql.SqlError) -> CheckoutResult {
-    let dummy_conn: sql.Connection = new sql.Connection { handle: 0, driver: "", url: "" }
+fn new_checkout_error(e: SqlError) -> CheckoutResult {
+    let dummy_conn: Connection = new Connection { handle: 0, driver: "", url: "" }
     let dummy_pool: Pool = new Pool { connections: [], in_use: [], config: new PoolConfig { url: "", min_conns: 0, max_conns: 0, idle_timeout: 0 } }
     return new CheckoutResult { conn: dummy_conn, pool: dummy_pool, ok: false, error: e }
 }
@@ -157,13 +157,13 @@ pub fn checkout_with_pool(pool: Pool) -> CheckoutResult {
 
     // Try to grow
     if count < pool.config.max_conns {
-        let conn_result: Result<sql.Connection, sql.SqlError> = sql.connect(pool.config.url)
+        let conn_result: Result<Connection, SqlError> = connect(pool.config.url)
         match conn_result {
             Err(e) => {
                 return new_checkout_error(e)
             },
             Ok(conn) => {
-                let new_conns: List<sql.Connection> = pool.connections + [conn]
+                let new_conns: List<Connection> = pool.connections + [conn]
                 let new_in_use: List<Bool> = pool.in_use + [true]
                 let new_pool: Pool = new Pool { connections: new_conns, in_use: new_in_use, config: pool.config }
                 return new CheckoutResult { conn: conn, pool: new_pool, ok: true, error: ConnectionFailed("") }
@@ -178,7 +178,7 @@ pub fn checkout_with_pool(pool: Pool) -> CheckoutResult {
 // Checkin: return a connection to the pool (mark idle)
 // ---------------------------------------------------------------------------
 
-pub fn checkin(pool: Pool, conn: sql.Connection) -> Pool {
+pub fn checkin(pool: Pool, conn: Connection) -> Pool {
     let count: Int = len(pool.connections)
     let mut new_in_use: List<Bool> = []
     let mut i: Int = 0
@@ -199,16 +199,16 @@ pub fn checkin(pool: Pool, conn: sql.Connection) -> Pool {
 // Close all pool connections
 // ---------------------------------------------------------------------------
 
-pub fn close_pool(pool: Pool) -> Result<Bool, sql.SqlError> {
+pub fn close_pool(pool: Pool) -> Result<Bool, SqlError> {
     let count: Int = len(pool.connections)
     let mut i: Int = 0
     let mut last_err: String = ""
 
     while i < count {
-        let close_result: Result<Bool, sql.SqlError> = sql.close(pool.connections[i])
+        let close_result: Result<Bool, SqlError> = close(pool.connections[i])
         match close_result {
             Err(e) => {
-                last_err = sql.error_message(e)
+                last_err = error_message(e)
             },
             Ok(ok) => {}
         }

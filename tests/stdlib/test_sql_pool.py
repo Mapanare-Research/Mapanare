@@ -40,23 +40,27 @@ _POOL_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "p
     encoding="utf-8"
 )
 
+
 # Combine both modules. Strip import and extern lines from pool.mn since
 # we inline sql.mn directly. Also strip extern/connect/close from sql.mn
 # that reference C FFI — pool logic is testable without actual connections.
-_SQL_PURE = "\n".join(
-    line
-    for line in _SQL_MN.splitlines()
-    if not line.startswith("extern ")
-    and "fn connect(" not in line
-    and "fn close(" not in line
-    and "__mn_sqlite3_" not in line
-    and "__mn_pg_" not in line
-)
+def _stub_externs(src: str) -> str:
+    """Replace extern declarations with stub functions returning 0."""
+    lines = src.splitlines()
+    result: list[str] = []
+    for line in lines:
+        if line.startswith("extern "):
+            stub = line.replace('extern "C" ', "")
+            result.append(stub.rstrip() + " { return 0 }")
+        else:
+            result.append(line)
+    return "\n".join(result)
 
-_POOL_PURE = "\n".join(
-    line
-    for line in _POOL_MN.splitlines()
-    if not line.startswith("import ") and "sql.connect(" not in line and "sql.close(" not in line
+
+_SQL_PURE = _stub_externs(_SQL_MN)
+
+_POOL_PURE = _stub_externs(
+    "\n".join(line for line in _POOL_MN.splitlines() if not line.startswith("import "))
 )
 
 _POOL_COMBINED = _SQL_PURE + "\n\n" + _POOL_PURE

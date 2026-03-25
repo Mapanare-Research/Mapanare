@@ -1,8 +1,24 @@
-"""Python code emitter -- transpiles Mapanare AST to runnable Python."""
+"""Python code emitter -- transpiles Mapanare AST to runnable Python.
+
+.. deprecated:: 2.0.0
+    The Python transpiler backend is deprecated and will be removed in a future
+    release. Use the LLVM backend (``mapanare build``) or WASM backend
+    (``mapanare emit-wasm``) instead. The Python emitter is retained only for
+    bootstrapping and reference purposes.
+"""
 
 from __future__ import annotations
 
-from mapanare.ast_nodes import (
+import warnings
+
+warnings.warn(
+    "mapanare.emit_python is deprecated since v2.0.0. "
+    "Use the LLVM backend (mapanare build) or WASM backend (mapanare emit-wasm) instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+from mapanare.ast_nodes import (  # noqa: E402
     AgentDef,
     AssertStmt,
     AssignExpr,
@@ -70,7 +86,7 @@ from mapanare.ast_nodes import (
     UnaryExpr,
     WhileLoop,
 )
-from mapanare.types import BUILTIN_CALL_MAP, PYTHON_TYPE_MAP
+from mapanare.types import BUILTIN_CALL_MAP, PYTHON_TYPE_MAP  # noqa: E402
 
 
 class PythonEmitter:
@@ -1136,8 +1152,8 @@ class PythonEmitter:
                 return f"{obj}.__setitem__({', '.join(arg_list)})"
             return f"{obj}.{mapped}({args})"
 
-        # substring(start, end) → Python slicing
-        if method == "substring":
+        # substring/substr(start, end) → Python slicing
+        if method in ("substring", "substr"):
             arg_list = [self._emit_expr(a) for a in expr.args]
             if len(arg_list) == 2:
                 return f"{obj}[{arg_list[0]}:{arg_list[1]}]"

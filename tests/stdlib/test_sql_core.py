@@ -36,17 +36,24 @@ _SQL_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "sq
     encoding="utf-8"
 )
 
-# Strip out extern declarations and connect/close functions that reference
-# C FFI symbols — we only test pure-logic helpers here.
-_SQL_PURE = "\n".join(
-    line
-    for line in _SQL_MN.splitlines()
-    if not line.startswith("extern ")
-    and "fn connect(" not in line
-    and "fn close(" not in line
-    and "__mn_sqlite3_" not in line
-    and "__mn_pg_" not in line
-)
+# Strip out extern declarations and entire connect/close functions that
+# reference C FFI symbols — we only test pure-logic helpers here.
+
+
+def _stub_externs(src: str) -> str:
+    """Replace extern declarations with stub functions returning 0."""
+    lines = src.splitlines()
+    result: list[str] = []
+    for line in lines:
+        if line.startswith("extern "):
+            stub = line.replace('extern "C" ', "")
+            result.append(stub.rstrip() + " { return 0 }")
+        else:
+            result.append(line)
+    return "\n".join(result)
+
+
+_SQL_PURE = _stub_externs(_SQL_MN)
 
 
 def _compile_mir(source: str) -> str:

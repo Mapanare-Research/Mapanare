@@ -45,13 +45,34 @@ _MIGRATE_MN = (
     Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "migrate.mn"
 ).read_text(encoding="utf-8")
 
-# Combine all three modules, stripping import statements since we inline everything.
+
+def _strip_imports(src: str) -> str:
+    return "\n".join(line for line in src.splitlines() if not line.startswith("import "))
+
+
+def _stub_externs(src: str) -> str:
+    """Replace extern declarations with stub functions returning 0."""
+    lines = src.splitlines()
+    result: list[str] = []
+    for line in lines:
+        if line.startswith("extern "):
+            # Convert: extern "C" fn name(args) -> RetType
+            # To:      fn name(args) -> RetType { return 0 }
+            stub = line.replace('extern "C" ', "")
+            # Add a dummy body
+            result.append(stub.rstrip() + " { return 0 }")
+        else:
+            result.append(line)
+    return "\n".join(result)
+
+
+# Combine all three modules, stripping imports and stubbing externs.
 _MIGRATE_COMBINED = (
-    _SQL_MN
+    _stub_externs(_SQL_MN)
     + "\n\n"
-    + "\n".join(line for line in _SQLITE_MN.splitlines() if not line.startswith("import "))
+    + _stub_externs(_strip_imports(_SQLITE_MN))
     + "\n\n"
-    + "\n".join(line for line in _MIGRATE_MN.splitlines() if not line.startswith("import "))
+    + _strip_imports(_MIGRATE_MN)
 )
 
 

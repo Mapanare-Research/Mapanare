@@ -129,11 +129,11 @@ class TestEmbeddedSetGet:
         src = _kv_source_with_main("""\
             let data: Map<String, String> = #{}
             let store: EmbeddedStore = new_embedded_store(data)
-            let s2: EmbeddedStore = set(store, "hello", "world")
-            let val: Option<String> = get(s2, "hello")
+            let s2: EmbeddedStore = embedded_set(store, "hello", "world")
+            let val: Option<String> = embedded_get(s2, "hello")
             match val {
                 Some(v) => { println(v) },
-                None => { println("not found") }
+                _ => { println("not found") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -144,10 +144,10 @@ class TestEmbeddedSetGet:
         src = _kv_source_with_main("""\
             let data: Map<String, String> = #{}
             let store: EmbeddedStore = new_embedded_store(data)
-            let val: Option<String> = get(store, "missing")
+            let val: Option<String> = embedded_get(store, "missing")
             match val {
                 Some(v) => { println("unexpected: " + v) },
-                None => { println("none") }
+                _ => { println("none") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -166,13 +166,13 @@ class TestEmbeddedDel:
         src = _kv_source_with_main("""\
             let data: Map<String, String> = #{}
             let store: EmbeddedStore = new_embedded_store(data)
-            let s2: EmbeddedStore = set(store, "a", "1")
-            let s3: EmbeddedStore = set(s2, "b", "2")
-            let s4: EmbeddedStore = del(s3, "a")
-            let val: Option<String> = get(s4, "a")
+            let s2: EmbeddedStore = embedded_set(store, "a", "1")
+            let s3: EmbeddedStore = embedded_set(s2, "b", "2")
+            let s4: EmbeddedStore = embedded_del(s3, "a")
+            let val: Option<String> = embedded_get(s4, "a")
             match val {
                 Some(v) => { println("unexpected: " + v) },
-                None => { println("deleted") }
+                _ => { println("deleted") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -191,9 +191,9 @@ class TestEmbeddedExists:
         src = _kv_source_with_main("""\
             let data: Map<String, String> = #{}
             let store: EmbeddedStore = new_embedded_store(data)
-            let s2: EmbeddedStore = set(store, "x", "42")
-            let found: Bool = exists(s2, "x")
-            let missing: Bool = exists(s2, "y")
+            let s2: EmbeddedStore = embedded_set(store, "x", "42")
+            let found: Bool = embedded_exists(s2, "x")
+            let missing: Bool = embedded_exists(s2, "y")
             println(str(found))
             println(str(missing))
         """)
@@ -213,10 +213,10 @@ class TestEmbeddedKeys:
         src = _kv_source_with_main("""\
             let data: Map<String, String> = #{}
             let store: EmbeddedStore = new_embedded_store(data)
-            let s2: EmbeddedStore = set(store, "a", "1")
-            let s3: EmbeddedStore = set(s2, "b", "2")
-            let s4: EmbeddedStore = set(s3, "c", "3")
-            let all_keys: List<String> = keys(s4)
+            let s2: EmbeddedStore = embedded_set(store, "a", "1")
+            let s3: EmbeddedStore = embedded_set(s2, "b", "2")
+            let s4: EmbeddedStore = embedded_set(s3, "c", "3")
+            let all_keys: List<String> = embedded_keys(s4)
             println(str(len(all_keys)))
         """)
         ir_out = _compile_mir(src)
@@ -235,9 +235,9 @@ class TestEmbeddedSize:
         src = _kv_source_with_main("""\
             let data: Map<String, String> = #{}
             let store: EmbeddedStore = new_embedded_store(data)
-            let s2: EmbeddedStore = set(store, "a", "1")
-            let s3: EmbeddedStore = set(s2, "b", "2")
-            let count: Int = size(s3)
+            let s2: EmbeddedStore = embedded_set(store, "a", "1")
+            let s3: EmbeddedStore = embedded_set(s2, "b", "2")
+            let count: Int = embedded_size(s3)
             println(str(count))
         """)
         ir_out = _compile_mir(src)
@@ -256,8 +256,8 @@ class TestEmbeddedPersistence:
         src = _kv_source_with_main("""\
             let data: Map<String, String> = #{}
             let store: EmbeddedStore = new_embedded_store(data)
-            let s2: EmbeddedStore = set(store, "key1", "val1")
-            let r: Result<Bool, KVError> = save(s2, "/tmp/test_kv.json")
+            let s2: EmbeddedStore = embedded_set(store, "key1", "val1")
+            let r: Result<Bool, KVError> = embedded_save(s2, "/tmp/test_kv.json")
             match r {
                 Ok(b) => { println("saved") },
                 Err(e) => { println(e.message) }
@@ -269,7 +269,7 @@ class TestEmbeddedPersistence:
     def test_load_compiles(self) -> None:
         """EmbeddedKV: load from file compiles."""
         src = _kv_source_with_main("""\
-            let r: Result<KVStore, KVError> = load("/tmp/test_kv.json")
+            let r: Result<KVStore, KVError> = embedded_load("/tmp/test_kv.json")
             match r {
                 Ok(s) => { println("loaded") },
                 Err(e) => { println(e.message) }
@@ -283,10 +283,10 @@ class TestEmbeddedPersistence:
         src = _kv_source_with_main("""\
             let data: Map<String, String> = #{}
             let store: EmbeddedStore = new_embedded_store(data)
-            let s2: EmbeddedStore = set(store, "name", "mapanare")
-            let s3: EmbeddedStore = set(s2, "version", "1.0")
-            let save_result: Result<Bool, KVError> = save(s3, "/tmp/test_roundtrip.json")
-            let load_result: Result<KVStore, KVError> = load("/tmp/test_roundtrip.json")
+            let s2: EmbeddedStore = embedded_set(store, "name", "mapanare")
+            let s3: EmbeddedStore = embedded_set(s2, "version", "1.0")
+            let save_result: Result<Bool, KVError> = embedded_save(s3, "/tmp/test_roundtrip.json")
+            let load_result: Result<KVStore, KVError> = embedded_load("/tmp/test_roundtrip.json")
             println("ok")
         """)
         ir_out = _compile_mir(src)
@@ -324,7 +324,7 @@ class TestKVStoreDispatch:
             let val: Option<String> = kv_get(store, "missing")
             match val {
                 Some(v) => { println(v) },
-                None => { println("none") }
+                _ => { println("none") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -397,12 +397,12 @@ class TestOverwriteKey:
         src = _kv_source_with_main("""\
             let data: Map<String, String> = #{}
             let store: EmbeddedStore = new_embedded_store(data)
-            let s2: EmbeddedStore = set(store, "color", "red")
-            let s3: EmbeddedStore = set(s2, "color", "blue")
-            let val: Option<String> = get(s3, "color")
+            let s2: EmbeddedStore = embedded_set(store, "color", "red")
+            let s3: EmbeddedStore = embedded_set(s2, "color", "blue")
+            let val: Option<String> = embedded_get(s3, "color")
             match val {
                 Some(v) => { println(v) },
-                None => { println("not found") }
+                _ => { println("not found") }
             }
         """)
         ir_out = _compile_mir(src)

@@ -42,24 +42,24 @@ extern "C" fn __mn_sqlite3_errmsg(handle: Int) -> String
 // Connection
 // ---------------------------------------------------------------------------
 
-pub fn sqlite_connect(path: String) -> Result<sql.Connection, sql.SqlError> {
+pub fn sqlite_connect(path: String) -> Result<Connection, SqlError> {
     let handle: Int = __mn_sqlite3_open(path)
     if handle == 0 {
         return Err(ConnectionFailed("Failed to open SQLite database: " + path))
     }
-    return Ok(new sql.Connection { handle: handle, driver: "sqlite", url: "sqlite:///" + path })
+    return Ok(new Connection { handle: handle, driver: "sqlite", url: "sqlite:///" + path })
 }
 
 // ---------------------------------------------------------------------------
 // Internal: Bind parameters to a prepared statement
 // ---------------------------------------------------------------------------
 
-fn bind_params(stmt: Int, params: List<sql.SqlValue>) -> Result<Bool, sql.SqlError> {
+fn bind_params(stmt: Int, params: List<SqlValue>) -> Result<Bool, SqlError> {
     let count: Int = len(params)
     let mut i: Int = 0
     while i < count {
         let idx: Int = i + 1
-        let val: sql.SqlValue = params[i]
+        let val: SqlValue = params[i]
         let mut rc: Int = 0
 
         match val {
@@ -97,7 +97,7 @@ fn bind_params(stmt: Int, params: List<sql.SqlValue>) -> Result<Bool, sql.SqlErr
 // Internal: Read a single column value by type
 // ---------------------------------------------------------------------------
 
-fn read_column_value(stmt: Int, col: Int) -> sql.SqlValue {
+fn read_column_value(stmt: Int, col: Int) -> SqlValue {
     let col_type: Int = __mn_sqlite3_column_type(stmt, col)
 
     // SQLITE_NULL = 5
@@ -132,8 +132,8 @@ fn read_column_value(stmt: Int, col: Int) -> sql.SqlValue {
 // Internal: Collect all result rows from a stepped statement
 // ---------------------------------------------------------------------------
 
-fn collect_rows(stmt: Int) -> List<sql.Row> {
-    let mut rows: List<sql.Row> = []
+fn collect_rows(stmt: Int) -> List<Row> {
+    let mut rows: List<Row> = []
     let col_count: Int = __mn_sqlite3_column_count(stmt)
 
     // Build column name list
@@ -156,15 +156,15 @@ fn collect_rows(stmt: Int) -> List<sql.Row> {
         }
 
         // Read values for this row
-        let mut values: List<sql.SqlValue> = []
+        let mut values: List<SqlValue> = []
         let mut col: Int = 0
         while col < col_count {
-            let val: sql.SqlValue = read_column_value(stmt, col)
+            let val: SqlValue = read_column_value(stmt, col)
             values = values + [val]
             col = col + 1
         }
 
-        let row: sql.Row = sql.new_row(columns, values)
+        let row: Row = new_row(columns, values)
         rows = rows + [row]
     }
 
@@ -175,7 +175,7 @@ fn collect_rows(stmt: Int) -> List<sql.Row> {
 // Public API: Query (SELECT — returns rows)
 // ---------------------------------------------------------------------------
 
-pub fn query(conn: sql.Connection, sql_str: String, params: List<sql.SqlValue>) -> Result<sql.QueryResult, sql.SqlError> {
+pub fn query(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<QueryResult, SqlError> {
     let stmt: Int = __mn_sqlite3_prepare(conn.handle, sql_str)
     if stmt == 0 {
         let errmsg: String = __mn_sqlite3_errmsg(conn.handle)
@@ -183,7 +183,7 @@ pub fn query(conn: sql.Connection, sql_str: String, params: List<sql.SqlValue>) 
     }
 
     // Bind parameters
-    let bind_result: Result<Bool, sql.SqlError> = bind_params(stmt, params)
+    let bind_result: Result<Bool, SqlError> = bind_params(stmt, params)
     match bind_result {
         Err(e) => {
             let fin_rc: Int = __mn_sqlite3_finalize(stmt)
@@ -193,17 +193,17 @@ pub fn query(conn: sql.Connection, sql_str: String, params: List<sql.SqlValue>) 
     }
 
     // Collect results
-    let rows: List<sql.Row> = collect_rows(stmt)
+    let rows: List<Row> = collect_rows(stmt)
     let fin_rc: Int = __mn_sqlite3_finalize(stmt)
 
-    return Ok(new sql.QueryResult { rows: rows, affected: len(rows) })
+    return Ok(new QueryResult { rows: rows, affected: len(rows) })
 }
 
 // ---------------------------------------------------------------------------
 // Public API: Execute (INSERT/UPDATE/DELETE — returns affected count)
 // ---------------------------------------------------------------------------
 
-pub fn execute(conn: sql.Connection, sql_str: String, params: List<sql.SqlValue>) -> Result<Int, sql.SqlError> {
+pub fn execute(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<Int, SqlError> {
     let stmt: Int = __mn_sqlite3_prepare(conn.handle, sql_str)
     if stmt == 0 {
         let errmsg: String = __mn_sqlite3_errmsg(conn.handle)
@@ -211,7 +211,7 @@ pub fn execute(conn: sql.Connection, sql_str: String, params: List<sql.SqlValue>
     }
 
     // Bind parameters
-    let bind_result: Result<Bool, sql.SqlError> = bind_params(stmt, params)
+    let bind_result: Result<Bool, SqlError> = bind_params(stmt, params)
     match bind_result {
         Err(e) => {
             let fin_rc: Int = __mn_sqlite3_finalize(stmt)
@@ -240,13 +240,13 @@ pub fn execute(conn: sql.Connection, sql_str: String, params: List<sql.SqlValue>
 // Public API: Simple query/execute (no parameters)
 // ---------------------------------------------------------------------------
 
-pub fn query_simple(conn: sql.Connection, sql_str: String) -> Result<sql.QueryResult, sql.SqlError> {
-    let empty_params: List<sql.SqlValue> = []
+pub fn query_simple(conn: Connection, sql_str: String) -> Result<QueryResult, SqlError> {
+    let empty_params: List<SqlValue> = []
     return query(conn, sql_str, empty_params)
 }
 
-pub fn execute_simple(conn: sql.Connection, sql_str: String) -> Result<Int, sql.SqlError> {
-    let empty_params: List<sql.SqlValue> = []
+pub fn execute_simple(conn: Connection, sql_str: String) -> Result<Int, SqlError> {
+    let empty_params: List<SqlValue> = []
     return execute(conn, sql_str, empty_params)
 }
 
@@ -254,7 +254,7 @@ pub fn execute_simple(conn: sql.Connection, sql_str: String) -> Result<Int, sql.
 // Quick exec via sqlite3_exec (no prepared statement, no results)
 // ---------------------------------------------------------------------------
 
-pub fn exec(conn: sql.Connection, sql_str: String) -> Result<Bool, sql.SqlError> {
+pub fn exec(conn: Connection, sql_str: String) -> Result<Bool, SqlError> {
     let rc: Int = __mn_sqlite3_exec(conn.handle, sql_str)
     if rc != 0 {
         let errmsg: String = __mn_sqlite3_errmsg(conn.handle)
@@ -267,14 +267,14 @@ pub fn exec(conn: sql.Connection, sql_str: String) -> Result<Bool, sql.SqlError>
 // Transaction helpers
 // ---------------------------------------------------------------------------
 
-pub fn begin(conn: sql.Connection) -> Result<Bool, sql.SqlError> {
+pub fn begin(conn: Connection) -> Result<Bool, SqlError> {
     return exec(conn, "BEGIN TRANSACTION")
 }
 
-pub fn commit(conn: sql.Connection) -> Result<Bool, sql.SqlError> {
+pub fn commit(conn: Connection) -> Result<Bool, SqlError> {
     return exec(conn, "COMMIT")
 }
 
-pub fn rollback(conn: sql.Connection) -> Result<Bool, sql.SqlError> {
+pub fn rollback(conn: Connection) -> Result<Bool, SqlError> {
     return exec(conn, "ROLLBACK")
 }

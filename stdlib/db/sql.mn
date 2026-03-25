@@ -85,7 +85,7 @@ fn find_column_index(r: Row, name: String) -> Int {
 pub fn row_get(r: Row, name: String) -> Option<SqlValue> {
     let idx: Int = find_column_index(r, name)
     if idx < 0 {
-        return None
+        return none
     }
     return Some(r.values[idx])
 }
@@ -93,7 +93,7 @@ pub fn row_get(r: Row, name: String) -> Option<SqlValue> {
 pub fn row_get_string(r: Row, name: String) -> Option<String> {
     let idx: Int = find_column_index(r, name)
     if idx < 0 {
-        return None
+        return none
     }
     let val: SqlValue = r.values[idx]
     match val {
@@ -104,47 +104,47 @@ pub fn row_get_string(r: Row, name: String) -> Option<String> {
             if b { return Some("true") }
             return Some("false")
         },
-        Null => { return None }
+        Null => { return none }
     }
-    return None
+    return none
 }
 
 pub fn row_get_int(r: Row, name: String) -> Option<Int> {
     let idx: Int = find_column_index(r, name)
     if idx < 0 {
-        return None
+        return none
     }
     let val: SqlValue = r.values[idx]
     match val {
         Int(n) => { return Some(n) },
-        Null => { return None },
-        Str(s) => { return None },
-        Float(f) => { return None },
-        Bool(b) => { return None }
+        Null => { return none },
+        Str(s) => { return none },
+        Float(f) => { return none },
+        Bool(b) => { return none }
     }
-    return None
+    return none
 }
 
 pub fn row_get_float(r: Row, name: String) -> Option<Float> {
     let idx: Int = find_column_index(r, name)
     if idx < 0 {
-        return None
+        return none
     }
     let val: SqlValue = r.values[idx]
     match val {
         Float(f) => { return Some(f) },
         Int(n) => { return Some(float(n)) },
-        Null => { return None },
-        Str(s) => { return None },
-        Bool(b) => { return None }
+        Null => { return none },
+        Str(s) => { return none },
+        Bool(b) => { return none }
     }
-    return None
+    return none
 }
 
 pub fn row_get_bool(r: Row, name: String) -> Option<Bool> {
     let idx: Int = find_column_index(r, name)
     if idx < 0 {
-        return None
+        return none
     }
     let val: SqlValue = r.values[idx]
     match val {
@@ -153,11 +153,11 @@ pub fn row_get_bool(r: Row, name: String) -> Option<Bool> {
             if n != 0 { return Some(true) }
             return Some(false)
         },
-        Null => { return None },
-        Str(s) => { return None },
-        Float(f) => { return None }
+        Null => { return none },
+        Str(s) => { return none },
+        Float(f) => { return none }
     }
-    return None
+    return none
 }
 
 // ---------------------------------------------------------------------------
@@ -269,12 +269,12 @@ pub fn connect(url: String) -> Result<Connection, SqlError> {
         // Handle sqlite::memory: special case
         if rest == ":memory:" {
             path = ":memory:"
-        } else { if len(rest) > 0 {
+        } else if len(rest) > 0 {
             // rest is the file path (e.g., "/path/to/db" from "sqlite:///path/to/db")
             path = rest
         } else {
             return Err(new_connection_failed("SQLite URL missing path: " + url))
-        } }
+        }
 
         let handle: Int = __mn_sqlite3_open(path)
         if handle == 0 {

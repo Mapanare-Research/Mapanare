@@ -297,10 +297,10 @@ pub fn extract_boundary(content_type: String) -> Option<String> {
     let nlen: Int = len(needle)
 
     let pos: Int = content_type.find(needle)
-    if pos < 0 { return None }
+    if pos < 0 { return none }
 
     let start: Int = pos + nlen
-    if start >= slen { return None }
+    if start >= slen { return none }
 
     // Extract boundary value (up to end of string or semicolon)
     let mut boundary: String = ""
@@ -313,7 +313,7 @@ pub fn extract_boundary(content_type: String) -> Option<String> {
         i = i + 1
     }
 
-    if len(boundary) == 0 { return None }
+    if len(boundary) == 0 { return none }
     return Some(boundary)
 }
 

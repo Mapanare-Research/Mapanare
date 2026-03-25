@@ -187,8 +187,8 @@ class TestSQLite3Bindings:
 
     def _open_memory_db(self) -> int:
         """Open an in-memory SQLite3 database. Returns the handle."""
-        path = self.lib.__mn_str_from_cstr(b":memory:")
-        handle = self.lib.__mn_sqlite3_open(path)
+        path = getattr(self.lib, "__mn_str_from_cstr")(b":memory:")
+        handle = getattr(self.lib, "__mn_sqlite3_open")(path)
         assert handle > 0, "Failed to open :memory: database"
         return handle
 
@@ -196,150 +196,154 @@ class TestSQLite3Bindings:
         """__mn_sqlite3_open with :memory: returns a nonzero handle."""
         handle = self._open_memory_db()
         assert handle > 0
-        self.lib.__mn_sqlite3_close(handle)
+        getattr(self.lib, "__mn_sqlite3_close")(handle)
 
     def test_close(self) -> None:
         """__mn_sqlite3_close releases the handle without errors."""
         handle = self._open_memory_db()
         # Close should not crash or raise
-        self.lib.__mn_sqlite3_close(handle)
+        getattr(self.lib, "__mn_sqlite3_close")(handle)
 
     def test_exec_create_table(self) -> None:
         """__mn_sqlite3_exec CREATE TABLE returns 0 (SQLITE_OK)."""
         handle = self._open_memory_db()
-        sql = self.lib.__mn_str_from_cstr(
+        sql = getattr(self.lib, "__mn_str_from_cstr")(
             b"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER)"
         )
-        rc = self.lib.__mn_sqlite3_exec(handle, sql)
+        rc = getattr(self.lib, "__mn_sqlite3_exec")(handle, sql)
         assert rc == SQLITE_OK, f"exec returned {rc}"
-        self.lib.__mn_sqlite3_close(handle)
+        getattr(self.lib, "__mn_sqlite3_close")(handle)
 
     def test_prepare_bind_int_step_column_int_roundtrip(self) -> None:
         """Prepare + bind_int + step + column_int roundtrip."""
         handle = self._open_memory_db()
 
         # Create table and insert data
-        create_sql = self.lib.__mn_str_from_cstr(
+        create_sql = getattr(self.lib, "__mn_str_from_cstr")(
             b"CREATE TABLE nums (id INTEGER PRIMARY KEY, val INTEGER)"
         )
-        assert self.lib.__mn_sqlite3_exec(handle, create_sql) == SQLITE_OK
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, create_sql) == SQLITE_OK
 
-        insert_sql = self.lib.__mn_str_from_cstr(b"INSERT INTO nums (val) VALUES (?1)")
-        stmt = self.lib.__mn_sqlite3_prepare(handle, insert_sql)
+        insert_sql = getattr(self.lib, "__mn_str_from_cstr")(b"INSERT INTO nums (val) VALUES (?1)")
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, insert_sql)
         assert stmt > 0, "Failed to prepare INSERT statement"
 
         # Bind integer value 42 at index 1
-        rc = self.lib.__mn_sqlite3_bind_int(stmt, 1, 42)
+        rc = getattr(self.lib, "__mn_sqlite3_bind_int")(stmt, 1, 42)
         assert rc == SQLITE_OK
 
         # Step to execute INSERT
-        rc = self.lib.__mn_sqlite3_step(stmt)
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
         assert rc == SQLITE_DONE, f"INSERT step returned {rc}, expected {SQLITE_DONE}"
 
-        self.lib.__mn_sqlite3_finalize(stmt)
+        getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
 
         # Query back the value
-        select_sql = self.lib.__mn_str_from_cstr(b"SELECT val FROM nums WHERE val = 42")
-        stmt = self.lib.__mn_sqlite3_prepare(handle, select_sql)
+        select_sql = getattr(self.lib, "__mn_str_from_cstr")(b"SELECT val FROM nums WHERE val = 42")
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, select_sql)
         assert stmt > 0
 
-        rc = self.lib.__mn_sqlite3_step(stmt)
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
         assert rc == SQLITE_ROW, f"SELECT step returned {rc}, expected {SQLITE_ROW}"
 
-        val = self.lib.__mn_sqlite3_column_int(stmt, 0)
+        val = getattr(self.lib, "__mn_sqlite3_column_int")(stmt, 0)
         assert val == 42
 
-        self.lib.__mn_sqlite3_finalize(stmt)
-        self.lib.__mn_sqlite3_close(handle)
+        getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
+        getattr(self.lib, "__mn_sqlite3_close")(handle)
 
     def test_bind_str_parameterized_query(self) -> None:
         """__mn_sqlite3_bind_str parameterized query stores and retrieves text."""
         handle = self._open_memory_db()
 
-        create_sql = self.lib.__mn_str_from_cstr(
+        create_sql = getattr(self.lib, "__mn_str_from_cstr")(
             b"CREATE TABLE names (id INTEGER PRIMARY KEY, name TEXT)"
         )
-        assert self.lib.__mn_sqlite3_exec(handle, create_sql) == SQLITE_OK
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, create_sql) == SQLITE_OK
 
         # Insert with parameterized string
-        insert_sql = self.lib.__mn_str_from_cstr(b"INSERT INTO names (name) VALUES (?1)")
-        stmt = self.lib.__mn_sqlite3_prepare(handle, insert_sql)
+        insert_sql = getattr(self.lib, "__mn_str_from_cstr")(
+            b"INSERT INTO names (name) VALUES (?1)"
+        )
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, insert_sql)
         assert stmt > 0
 
-        name_val = self.lib.__mn_str_from_cstr(b"Mapanare")
-        rc = self.lib.__mn_sqlite3_bind_str(stmt, 1, name_val)
+        name_val = getattr(self.lib, "__mn_str_from_cstr")(b"Mapanare")
+        rc = getattr(self.lib, "__mn_sqlite3_bind_str")(stmt, 1, name_val)
         assert rc == SQLITE_OK
 
-        rc = self.lib.__mn_sqlite3_step(stmt)
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
         assert rc == SQLITE_DONE
 
-        self.lib.__mn_sqlite3_finalize(stmt)
+        getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
 
         # Query back
-        select_sql = self.lib.__mn_str_from_cstr(b"SELECT name FROM names LIMIT 1")
-        stmt = self.lib.__mn_sqlite3_prepare(handle, select_sql)
+        select_sql = getattr(self.lib, "__mn_str_from_cstr")(b"SELECT name FROM names LIMIT 1")
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, select_sql)
         assert stmt > 0
 
-        rc = self.lib.__mn_sqlite3_step(stmt)
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
         assert rc == SQLITE_ROW
 
-        result = self.lib.__mn_sqlite3_column_str(stmt, 0)
+        result = getattr(self.lib, "__mn_sqlite3_column_str")(stmt, 0)
         result_bytes = ctypes.string_at(result.data, result.len)
         assert result_bytes == b"Mapanare"
 
-        self.lib.__mn_sqlite3_finalize(stmt)
-        self.lib.__mn_sqlite3_close(handle)
+        getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
+        getattr(self.lib, "__mn_sqlite3_close")(handle)
 
     def test_column_count_and_column_name(self) -> None:
         """__mn_sqlite3_column_count and __mn_sqlite3_column_name return correct metadata."""
         handle = self._open_memory_db()
 
-        create_sql = self.lib.__mn_str_from_cstr(
+        create_sql = getattr(self.lib, "__mn_str_from_cstr")(
             b"CREATE TABLE meta (alpha TEXT, beta INTEGER, gamma REAL)"
         )
-        assert self.lib.__mn_sqlite3_exec(handle, create_sql) == SQLITE_OK
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, create_sql) == SQLITE_OK
 
         # Insert a row so SELECT has results
-        insert_sql = self.lib.__mn_str_from_cstr(b"INSERT INTO meta VALUES ('a', 1, 2.5)")
-        assert self.lib.__mn_sqlite3_exec(handle, insert_sql) == SQLITE_OK
+        insert_sql = getattr(self.lib, "__mn_str_from_cstr")(
+            b"INSERT INTO meta VALUES ('a', 1, 2.5)"
+        )
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, insert_sql) == SQLITE_OK
 
-        select_sql = self.lib.__mn_str_from_cstr(b"SELECT alpha, beta, gamma FROM meta")
-        stmt = self.lib.__mn_sqlite3_prepare(handle, select_sql)
+        select_sql = getattr(self.lib, "__mn_str_from_cstr")(b"SELECT alpha, beta, gamma FROM meta")
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, select_sql)
         assert stmt > 0
 
         # Column count should be 3
-        count = self.lib.__mn_sqlite3_column_count(stmt)
+        count = getattr(self.lib, "__mn_sqlite3_column_count")(stmt)
         assert count == 3
 
         # Step to first row so column names are available
-        rc = self.lib.__mn_sqlite3_step(stmt)
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
         assert rc == SQLITE_ROW
 
         # Check column names
-        col0 = self.lib.__mn_sqlite3_column_name(stmt, 0)
+        col0 = getattr(self.lib, "__mn_sqlite3_column_name")(stmt, 0)
         col0_str = ctypes.string_at(col0.data, col0.len).decode("utf-8")
         assert col0_str == "alpha"
 
-        col1 = self.lib.__mn_sqlite3_column_name(stmt, 1)
+        col1 = getattr(self.lib, "__mn_sqlite3_column_name")(stmt, 1)
         col1_str = ctypes.string_at(col1.data, col1.len).decode("utf-8")
         assert col1_str == "beta"
 
-        col2 = self.lib.__mn_sqlite3_column_name(stmt, 2)
+        col2 = getattr(self.lib, "__mn_sqlite3_column_name")(stmt, 2)
         col2_str = ctypes.string_at(col2.data, col2.len).decode("utf-8")
         assert col2_str == "gamma"
 
-        self.lib.__mn_sqlite3_finalize(stmt)
-        self.lib.__mn_sqlite3_close(handle)
+        getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
+        getattr(self.lib, "__mn_sqlite3_close")(handle)
 
     def test_errmsg_on_invalid_sql(self) -> None:
         """__mn_sqlite3_errmsg returns a meaningful error on invalid SQL."""
         handle = self._open_memory_db()
 
-        bad_sql = self.lib.__mn_str_from_cstr(b"NOT VALID SQL AT ALL ;;;")
-        rc = self.lib.__mn_sqlite3_exec(handle, bad_sql)
+        bad_sql = getattr(self.lib, "__mn_str_from_cstr")(b"NOT VALID SQL AT ALL ;;;")
+        rc = getattr(self.lib, "__mn_sqlite3_exec")(handle, bad_sql)
         assert rc != SQLITE_OK, "Invalid SQL should not return SQLITE_OK"
 
-        errmsg = self.lib.__mn_sqlite3_errmsg(handle)
+        errmsg = getattr(self.lib, "__mn_sqlite3_errmsg")(handle)
         assert errmsg.len > 0, "Error message should be non-empty"
         msg_str = ctypes.string_at(errmsg.data, errmsg.len).decode("utf-8", errors="replace")
         # SQLite error messages typically contain words like "error" or "syntax"
@@ -348,7 +352,7 @@ class TestSQLite3Bindings:
             "error" in msg_lower or "syntax" in msg_lower or "near" in msg_lower
         ), f"Expected error-related message, got: {msg_str}"
 
-        self.lib.__mn_sqlite3_close(handle)
+        getattr(self.lib, "__mn_sqlite3_close")(handle)
 
     def test_sql_injection_with_parameterized_query(self) -> None:
         """SQL injection attempt with parameterized query fails safely.
@@ -357,74 +361,78 @@ class TestSQLite3Bindings:
         """
         handle = self._open_memory_db()
 
-        create_sql = self.lib.__mn_str_from_cstr(
+        create_sql = getattr(self.lib, "__mn_str_from_cstr")(
             b"CREATE TABLE safe (id INTEGER PRIMARY KEY, input TEXT)"
         )
-        assert self.lib.__mn_sqlite3_exec(handle, create_sql) == SQLITE_OK
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, create_sql) == SQLITE_OK
 
         # Attempt SQL injection via parameterized query
-        insert_sql = self.lib.__mn_str_from_cstr(b"INSERT INTO safe (input) VALUES (?1)")
-        stmt = self.lib.__mn_sqlite3_prepare(handle, insert_sql)
+        insert_sql = getattr(self.lib, "__mn_str_from_cstr")(
+            b"INSERT INTO safe (input) VALUES (?1)"
+        )
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, insert_sql)
         assert stmt > 0
 
         # The injection payload: this should be stored as literal text, not executed
-        injection = self.lib.__mn_str_from_cstr(b"'; DROP TABLE safe; --")
-        rc = self.lib.__mn_sqlite3_bind_str(stmt, 1, injection)
+        injection = getattr(self.lib, "__mn_str_from_cstr")(b"'; DROP TABLE safe; --")
+        rc = getattr(self.lib, "__mn_sqlite3_bind_str")(stmt, 1, injection)
         assert rc == SQLITE_OK
 
-        rc = self.lib.__mn_sqlite3_step(stmt)
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
         assert rc == SQLITE_DONE
-        self.lib.__mn_sqlite3_finalize(stmt)
+        getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
 
         # Verify the table still exists and the injection payload is stored as text
-        select_sql = self.lib.__mn_str_from_cstr(b"SELECT input FROM safe LIMIT 1")
-        stmt = self.lib.__mn_sqlite3_prepare(handle, select_sql)
+        select_sql = getattr(self.lib, "__mn_str_from_cstr")(b"SELECT input FROM safe LIMIT 1")
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, select_sql)
         assert stmt > 0, "Table 'safe' should still exist (injection did not drop it)"
 
-        rc = self.lib.__mn_sqlite3_step(stmt)
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
         assert rc == SQLITE_ROW
 
-        result = self.lib.__mn_sqlite3_column_str(stmt, 0)
+        result = getattr(self.lib, "__mn_sqlite3_column_str")(stmt, 0)
         result_bytes = ctypes.string_at(result.data, result.len)
         assert result_bytes == b"'; DROP TABLE safe; --"
 
-        self.lib.__mn_sqlite3_finalize(stmt)
-        self.lib.__mn_sqlite3_close(handle)
+        getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
+        getattr(self.lib, "__mn_sqlite3_close")(handle)
 
     def test_multiple_inserts_and_select_all(self) -> None:
         """Insert multiple rows and verify all are retrievable."""
         handle = self._open_memory_db()
 
-        create_sql = self.lib.__mn_str_from_cstr(
+        create_sql = getattr(self.lib, "__mn_str_from_cstr")(
             b"CREATE TABLE items (id INTEGER PRIMARY KEY, value INTEGER)"
         )
-        assert self.lib.__mn_sqlite3_exec(handle, create_sql) == SQLITE_OK
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, create_sql) == SQLITE_OK
 
         # Insert 10 rows
         for i in range(10):
-            insert_sql = self.lib.__mn_str_from_cstr(b"INSERT INTO items (value) VALUES (?1)")
-            stmt = self.lib.__mn_sqlite3_prepare(handle, insert_sql)
+            insert_sql = getattr(self.lib, "__mn_str_from_cstr")(
+                b"INSERT INTO items (value) VALUES (?1)"
+            )
+            stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, insert_sql)
             assert stmt > 0
-            self.lib.__mn_sqlite3_bind_int(stmt, 1, (i + 1) * 100)
-            rc = self.lib.__mn_sqlite3_step(stmt)
+            getattr(self.lib, "__mn_sqlite3_bind_int")(stmt, 1, (i + 1) * 100)
+            rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
             assert rc == SQLITE_DONE
-            self.lib.__mn_sqlite3_finalize(stmt)
+            getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
 
         # Query back all rows
-        select_sql = self.lib.__mn_str_from_cstr(b"SELECT value FROM items ORDER BY id")
-        stmt = self.lib.__mn_sqlite3_prepare(handle, select_sql)
+        select_sql = getattr(self.lib, "__mn_str_from_cstr")(b"SELECT value FROM items ORDER BY id")
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, select_sql)
         assert stmt > 0
 
         values = []
         while True:
-            rc = self.lib.__mn_sqlite3_step(stmt)
+            rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
             if rc == SQLITE_DONE:
                 break
             assert rc == SQLITE_ROW
-            values.append(self.lib.__mn_sqlite3_column_int(stmt, 0))
+            values.append(getattr(self.lib, "__mn_sqlite3_column_int")(stmt, 0))
 
-        self.lib.__mn_sqlite3_finalize(stmt)
-        self.lib.__mn_sqlite3_close(handle)
+        getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
+        getattr(self.lib, "__mn_sqlite3_close")(handle)
 
         assert values == [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
 
@@ -432,22 +440,26 @@ class TestSQLite3Bindings:
         """__mn_sqlite3_column_type returns correct type codes."""
         handle = self._open_memory_db()
 
-        create_sql = self.lib.__mn_str_from_cstr(b"CREATE TABLE typed (i INTEGER, f REAL, t TEXT)")
-        assert self.lib.__mn_sqlite3_exec(handle, create_sql) == SQLITE_OK
+        create_sql = getattr(self.lib, "__mn_str_from_cstr")(
+            b"CREATE TABLE typed (i INTEGER, f REAL, t TEXT)"
+        )
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, create_sql) == SQLITE_OK
 
-        insert_sql = self.lib.__mn_str_from_cstr(b"INSERT INTO typed VALUES (42, 3.14, 'hello')")
-        assert self.lib.__mn_sqlite3_exec(handle, insert_sql) == SQLITE_OK
+        insert_sql = getattr(self.lib, "__mn_str_from_cstr")(
+            b"INSERT INTO typed VALUES (42, 3.14, 'hello')"
+        )
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, insert_sql) == SQLITE_OK
 
-        select_sql = self.lib.__mn_str_from_cstr(b"SELECT i, f, t FROM typed")
-        stmt = self.lib.__mn_sqlite3_prepare(handle, select_sql)
+        select_sql = getattr(self.lib, "__mn_str_from_cstr")(b"SELECT i, f, t FROM typed")
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, select_sql)
         assert stmt > 0
 
-        rc = self.lib.__mn_sqlite3_step(stmt)
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
         assert rc == SQLITE_ROW
 
-        assert self.lib.__mn_sqlite3_column_type(stmt, 0) == SQLITE_INTEGER
-        assert self.lib.__mn_sqlite3_column_type(stmt, 1) == SQLITE_FLOAT
-        assert self.lib.__mn_sqlite3_column_type(stmt, 2) == SQLITE_TEXT
+        assert getattr(self.lib, "__mn_sqlite3_column_type")(stmt, 0) == SQLITE_INTEGER
+        assert getattr(self.lib, "__mn_sqlite3_column_type")(stmt, 1) == SQLITE_FLOAT
+        assert getattr(self.lib, "__mn_sqlite3_column_type")(stmt, 2) == SQLITE_TEXT
 
-        self.lib.__mn_sqlite3_finalize(stmt)
-        self.lib.__mn_sqlite3_close(handle)
+        getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
+        getattr(self.lib, "__mn_sqlite3_close")(handle)
