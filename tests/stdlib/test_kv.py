@@ -32,9 +32,9 @@ from mapanare.cli import _compile_to_llvm_ir
 # Helpers
 # ---------------------------------------------------------------------------
 
-_KV_MN = (
-    Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "kv.mn"
-).read_text(encoding="utf-8")
+_KV_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "kv.mn").read_text(
+    encoding="utf-8"
+)
 
 _EMBEDDED_KV_MN = (
     Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "embedded_kv.mn"
@@ -53,10 +53,7 @@ def _compile_mir(source: str) -> str:
 
 def _strip_imports(source: str) -> str:
     """Remove import lines since we inline all module sources."""
-    return "\n".join(
-        line for line in source.splitlines()
-        if not line.strip().startswith("import ")
-    )
+    return "\n".join(line for line in source.splitlines() if not line.strip().startswith("import "))
 
 
 def _kv_source() -> str:

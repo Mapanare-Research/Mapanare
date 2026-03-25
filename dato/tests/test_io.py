@@ -45,11 +45,7 @@ def _strip_imports(src: str) -> str:
 
 
 _BASE_SRC = (
-    _strip_imports(_COL_MN)
-    + "\n\n"
-    + _strip_imports(_TABLE_MN)
-    + "\n\n"
-    + _strip_imports(_IO_MN)
+    _strip_imports(_COL_MN) + "\n\n" + _strip_imports(_TABLE_MN) + "\n\n" + _strip_imports(_IO_MN)
 )
 
 

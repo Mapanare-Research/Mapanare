@@ -32,9 +32,9 @@ from mapanare.cli import _compile_to_llvm_ir
 # Helpers
 # ---------------------------------------------------------------------------
 
-_SQL_MN = (
-    Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "sql.mn"
-).read_text(encoding="utf-8")
+_SQL_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "sql.mn").read_text(
+    encoding="utf-8"
+)
 
 # Strip out extern declarations and connect/close functions that reference
 # C FFI symbols — we only test pure-logic helpers here.

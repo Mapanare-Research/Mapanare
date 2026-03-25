@@ -32,13 +32,13 @@ from mapanare.cli import _compile_to_llvm_ir
 # Helpers
 # ---------------------------------------------------------------------------
 
-_SQL_MN = (
-    Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "sql.mn"
-).read_text(encoding="utf-8")
+_SQL_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "sql.mn").read_text(
+    encoding="utf-8"
+)
 
-_POOL_MN = (
-    Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "pool.mn"
-).read_text(encoding="utf-8")
+_POOL_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "pool.mn").read_text(
+    encoding="utf-8"
+)
 
 # Combine both modules. Strip import and extern lines from pool.mn since
 # we inline sql.mn directly. Also strip extern/connect/close from sql.mn
@@ -56,9 +56,7 @@ _SQL_PURE = "\n".join(
 _POOL_PURE = "\n".join(
     line
     for line in _POOL_MN.splitlines()
-    if not line.startswith("import ")
-    and "sql.connect(" not in line
-    and "sql.close(" not in line
+    if not line.startswith("import ") and "sql.connect(" not in line and "sql.close(" not in line
 )
 
 _POOL_COMBINED = _SQL_PURE + "\n\n" + _POOL_PURE

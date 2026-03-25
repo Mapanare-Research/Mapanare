@@ -150,7 +150,7 @@ class TestYamlConfigParseline:
             }
 
             fn main() {
-                let yaml: String = "app: mapanare\\nversion: 2.0\\nenvironment: production\\ndebug: false"
+                let yaml: String = "app: mapanare\\nver: 2\\nenv: prod\\ndebug: false"
                 let lines = yaml.split("\\n")
                 let mut config: Map<String, String> = #{}
                 for line in lines {
@@ -160,8 +160,8 @@ class TestYamlConfigParseline:
                     }
                 }
                 print(config["app"])
-                print(config["version"])
-                print(config["environment"])
+                print(config["ver"])
+                print(config["env"])
                 print(config["debug"])
             }
         """)
@@ -169,8 +169,8 @@ class TestYamlConfigParseline:
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
         assert "mapanare" in lines[0]
-        assert "2.0" in lines[1]
-        assert "production" in lines[2]
+        assert "2" in lines[1]
+        assert "prod" in lines[2]
         assert "false" in lines[3]
 
     def test_yaml_indented_sections(self) -> None:
@@ -325,7 +325,7 @@ class TestCsvPipeline:
             }
 
             fn main() {
-                let csv_input: String = "name,age,city\\nAlice,30,Caracas\\nBob,25,Maracaibo\\nCarla,35,Barquisimeto"
+                let csv_input: String = "name,age,city\\nAlice,30,CCS\\nBob,25,MAR\\nCarla,35,BQT"
                 let lines = csv_input.split("\\n")
 
                 let header = lines[0]
@@ -352,16 +352,16 @@ class TestCsvPipeline:
         assert result.returncode == 0, f"stderr: {result.stderr}"
         lines = result.stdout.strip().split("\n")
         assert "name,age,city" in lines[0]
-        assert "Alice,31,Caracas" in lines[1]
-        assert "Bob,26,Maracaibo" in lines[2]
-        assert "Carla,36,Barquisimeto" in lines[3]
+        assert "Alice,31,CCS" in lines[1]
+        assert "Bob,26,MAR" in lines[2]
+        assert "Carla,36,BQT" in lines[3]
 
     def test_csv_filter_and_aggregate(self) -> None:
         """Parse CSV, filter rows by condition, compute aggregate."""
         source = textwrap.dedent("""\
             fn main() {
-                let csv: String = "product,price,qty\\nApple,2,10\\nBanana,1,20\\nMango,3,5\\nOrange,2,15"
-                let lines = csv.split("\\n")
+                let d = "item,price,qty\\nApple,2,10\\nBanana,1,20\\nMango,3,5\\nOrange,2,15"
+                let lines = d.split("\\n")
 
                 let mut total_value: Int = 0
                 let mut expensive_count: Int = 0

@@ -422,7 +422,7 @@ class TestFileSize:
     def test_empty_file(self) -> None:
         """__mn_file_size returns 0 for an empty file."""
         fpath = os.path.join(self.tmp, "empty.txt")
-        with open(fpath, "w") as f:
+        with open(fpath, "w"):
             pass
 
         path_s = _mn_str(self.lib, fpath)

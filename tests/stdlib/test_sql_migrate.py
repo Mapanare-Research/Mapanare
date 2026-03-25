@@ -33,9 +33,9 @@ from mapanare.cli import _compile_to_llvm_ir
 # Helpers
 # ---------------------------------------------------------------------------
 
-_SQL_MN = (
-    Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "sql.mn"
-).read_text(encoding="utf-8")
+_SQL_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "sql.mn").read_text(
+    encoding="utf-8"
+)
 
 _SQLITE_MN = (
     Path(__file__).resolve().parent.parent.parent / "stdlib" / "db" / "sqlite.mn"

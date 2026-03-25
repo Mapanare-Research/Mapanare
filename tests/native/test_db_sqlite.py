@@ -300,9 +300,7 @@ class TestSQLite3Bindings:
         assert self.lib.__mn_sqlite3_exec(handle, create_sql) == SQLITE_OK
 
         # Insert a row so SELECT has results
-        insert_sql = self.lib.__mn_str_from_cstr(
-            b"INSERT INTO meta VALUES ('a', 1, 2.5)"
-        )
+        insert_sql = self.lib.__mn_str_from_cstr(b"INSERT INTO meta VALUES ('a', 1, 2.5)")
         assert self.lib.__mn_sqlite3_exec(handle, insert_sql) == SQLITE_OK
 
         select_sql = self.lib.__mn_str_from_cstr(b"SELECT alpha, beta, gamma FROM meta")
@@ -346,9 +344,9 @@ class TestSQLite3Bindings:
         msg_str = ctypes.string_at(errmsg.data, errmsg.len).decode("utf-8", errors="replace")
         # SQLite error messages typically contain words like "error" or "syntax"
         msg_lower = msg_str.lower()
-        assert "error" in msg_lower or "syntax" in msg_lower or "near" in msg_lower, (
-            f"Expected error-related message, got: {msg_str}"
-        )
+        assert (
+            "error" in msg_lower or "syntax" in msg_lower or "near" in msg_lower
+        ), f"Expected error-related message, got: {msg_str}"
 
         self.lib.__mn_sqlite3_close(handle)
 
@@ -370,9 +368,7 @@ class TestSQLite3Bindings:
         assert stmt > 0
 
         # The injection payload: this should be stored as literal text, not executed
-        injection = self.lib.__mn_str_from_cstr(
-            b"'; DROP TABLE safe; --"
-        )
+        injection = self.lib.__mn_str_from_cstr(b"'; DROP TABLE safe; --")
         rc = self.lib.__mn_sqlite3_bind_str(stmt, 1, injection)
         assert rc == SQLITE_OK
 
@@ -436,14 +432,10 @@ class TestSQLite3Bindings:
         """__mn_sqlite3_column_type returns correct type codes."""
         handle = self._open_memory_db()
 
-        create_sql = self.lib.__mn_str_from_cstr(
-            b"CREATE TABLE typed (i INTEGER, f REAL, t TEXT)"
-        )
+        create_sql = self.lib.__mn_str_from_cstr(b"CREATE TABLE typed (i INTEGER, f REAL, t TEXT)")
         assert self.lib.__mn_sqlite3_exec(handle, create_sql) == SQLITE_OK
 
-        insert_sql = self.lib.__mn_str_from_cstr(
-            b"INSERT INTO typed VALUES (42, 3.14, 'hello')"
-        )
+        insert_sql = self.lib.__mn_str_from_cstr(b"INSERT INTO typed VALUES (42, 3.14, 'hello')")
         assert self.lib.__mn_sqlite3_exec(handle, insert_sql) == SQLITE_OK
 
         select_sql = self.lib.__mn_str_from_cstr(b"SELECT i, f, t FROM typed")
