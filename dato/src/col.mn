@@ -1,0 +1,162 @@
+// dato/src/col.mn — Column types for the Dato data engine.
+//
+// A column stores homogeneous data of a single Dtype. Only one data list
+// is active per dtype; the others remain empty. The `mask` list tracks
+// null/present status (true = present, false = null).
+
+// ---------------------------------------------------------------------------
+// Core Types
+// ---------------------------------------------------------------------------
+
+pub enum Dtype {
+    I64,
+    F64,
+    Str,
+    Bool,
+    Null
+}
+
+pub struct Col {
+    name: String,
+    dtype: Dtype,
+    ints: List<Int>,
+    floats: List<Float>,
+    strs: List<String>,
+    bools: List<Bool>,
+    mask: List<Bool>
+}
+
+// ---------------------------------------------------------------------------
+// Dtype helpers
+// ---------------------------------------------------------------------------
+
+pub fn dtype_name(d: Dtype) -> String {
+    match d {
+        I64 => { return "I64" },
+        F64 => { return "F64" },
+        Str => { return "Str" },
+        Bool => { return "Bool" },
+        Null => { return "Null" }
+    }
+}
+
+pub fn dtype_eq(a: Dtype, b: Dtype) -> Bool {
+    return dtype_name(a) == dtype_name(b)
+}
+
+// ---------------------------------------------------------------------------
+// Internal: build a mask of all true for a given length
+// ---------------------------------------------------------------------------
+
+fn all_true_mask(n: Int) -> List<Bool> {
+    let mut result: List<Bool> = []
+    let mut i: Int = 0
+    while i < n {
+        result = result + [true]
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Constructors — non-nullable
+// ---------------------------------------------------------------------------
+
+pub fn col_i64(name: String, data: List<Int>) -> Col {
+    let m: List<Bool> = all_true_mask(len(data))
+    return new Col { name: name, dtype: I64(), ints: data, floats: [], strs: [], bools: [], mask: m }
+}
+
+pub fn col_f64(name: String, data: List<Float>) -> Col {
+    let m: List<Bool> = all_true_mask(len(data))
+    return new Col { name: name, dtype: F64(), ints: [], floats: data, strs: [], bools: [], mask: m }
+}
+
+pub fn col_str(name: String, data: List<String>) -> Col {
+    let m: List<Bool> = all_true_mask(len(data))
+    return new Col { name: name, dtype: Str(), ints: [], floats: [], strs: data, bools: [], mask: m }
+}
+
+pub fn col_bool(name: String, data: List<Bool>) -> Col {
+    let m: List<Bool> = all_true_mask(len(data))
+    return new Col { name: name, dtype: Bool(), ints: [], floats: [], strs: [], bools: data, mask: m }
+}
+
+// ---------------------------------------------------------------------------
+// Constructors — nullable (user-supplied mask)
+// ---------------------------------------------------------------------------
+
+pub fn col_i64_masked(name: String, data: List<Int>, mask: List<Bool>) -> Col {
+    return new Col { name: name, dtype: I64(), ints: data, floats: [], strs: [], bools: [], mask: mask }
+}
+
+pub fn col_f64_masked(name: String, data: List<Float>, mask: List<Bool>) -> Col {
+    return new Col { name: name, dtype: F64(), ints: [], floats: data, strs: [], bools: [], mask: mask }
+}
+
+pub fn col_str_masked(name: String, data: List<String>, mask: List<Bool>) -> Col {
+    return new Col { name: name, dtype: Str(), ints: [], floats: [], strs: data, bools: [], mask: mask }
+}
+
+pub fn col_bool_masked(name: String, data: List<Bool>, mask: List<Bool>) -> Col {
+    return new Col { name: name, dtype: Bool(), ints: [], floats: [], strs: [], bools: data, mask: mask }
+}
+
+// ---------------------------------------------------------------------------
+// Column length
+// ---------------------------------------------------------------------------
+
+pub fn col_len(c: Col) -> Int {
+    return len(c.mask)
+}
+
+// ---------------------------------------------------------------------------
+// Value accessors (return default if null or out of range)
+// ---------------------------------------------------------------------------
+
+pub fn get_int(c: Col, i: Int) -> Int {
+    if i < 0 { return 0 }
+    if i >= len(c.mask) { return 0 }
+    if c.mask[i] == false { return 0 }
+    return c.ints[i]
+}
+
+pub fn get_float(c: Col, i: Int) -> Float {
+    if i < 0 { return 0.0 }
+    if i >= len(c.mask) { return 0.0 }
+    if c.mask[i] == false { return 0.0 }
+    return c.floats[i]
+}
+
+pub fn get_str(c: Col, i: Int) -> String {
+    if i < 0 { return "" }
+    if i >= len(c.mask) { return "" }
+    if c.mask[i] == false { return "" }
+    return c.strs[i]
+}
+
+pub fn get_bool(c: Col, i: Int) -> Bool {
+    if i < 0 { return false }
+    if i >= len(c.mask) { return false }
+    if c.mask[i] == false { return false }
+    return c.bools[i]
+}
+
+// ---------------------------------------------------------------------------
+// Value to string (for display)
+// ---------------------------------------------------------------------------
+
+pub fn value_to_string(c: Col, i: Int) -> String {
+    if i < 0 { return "null" }
+    if i >= len(c.mask) { return "null" }
+    if c.mask[i] == false { return "null" }
+    match c.dtype {
+        I64 => { return str(c.ints[i]) },
+        F64 => { return str(c.floats[i]) },
+        Str => { return c.strs[i] },
+        Bool => {
+            if c.bools[i] { return "true" } else { return "false" }
+        },
+        Null => { return "null" }
+    }
+}

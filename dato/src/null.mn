@@ -1,0 +1,288 @@
+// dato/src/null.mn — Null handling for the Dato data engine.
+//
+// Provides functions to drop, fill, and count null values in table columns.
+// Null values are tracked by the mask in each Col (true = present, false = null).
+
+import dato::src::col
+import dato::src::table
+
+// ---------------------------------------------------------------------------
+// drop_nulls — remove rows where a given column is null
+// ---------------------------------------------------------------------------
+
+pub fn drop_nulls(t: table.Table, col_name: String) -> table.Table {
+    let ci: Int = table.col_index(t, col_name)
+    if ci < 0 { return t }
+
+    let c: col.Col = t.cols[ci]
+    let n: Int = t.nrows
+    let mut indices: List<Int> = []
+
+    let mut i: Int = 0
+    while i < n {
+        if c.mask[i] {
+            indices = indices + [i]
+        }
+        i = i + 1
+    }
+
+    // Gather rows
+    let nc: Int = len(t.cols)
+    let mut new_cols: List<col.Col> = []
+    let mut cj: Int = 0
+    while cj < nc {
+        new_cols = new_cols + [gather_col(t.cols[cj], indices)]
+        cj = cj + 1
+    }
+    return table.table_unchecked(new_cols, len(indices))
+}
+
+// ---------------------------------------------------------------------------
+// Internal: gather a column by index list
+// ---------------------------------------------------------------------------
+
+fn gather_col(c: col.Col, indices: List<Int>) -> col.Col {
+    let n: Int = len(indices)
+    let mut new_mask: List<Bool> = []
+    let mut new_ints: List<Int> = []
+    let mut new_floats: List<Float> = []
+    let mut new_strs: List<String> = []
+    let mut new_bools: List<Bool> = []
+
+    let mut i: Int = 0
+    while i < n {
+        let idx: Int = indices[i]
+        new_mask = new_mask + [c.mask[idx]]
+        match c.dtype {
+            I64 => { new_ints = new_ints + [c.ints[idx]] },
+            F64 => { new_floats = new_floats + [c.floats[idx]] },
+            Str => { new_strs = new_strs + [c.strs[idx]] },
+            Bool => { new_bools = new_bools + [c.bools[idx]] },
+            Null => {}
+        }
+        i = i + 1
+    }
+
+    return new col.Col { name: c.name, dtype: c.dtype, ints: new_ints, floats: new_floats, strs: new_strs, bools: new_bools, mask: new_mask }
+}
+
+// ---------------------------------------------------------------------------
+// fill_null_int — replace nulls in an Int column with a default value
+// ---------------------------------------------------------------------------
+
+pub fn fill_null_int(t: table.Table, col_name: String, value: Int) -> table.Table {
+    let ci: Int = table.col_index(t, col_name)
+    if ci < 0 { return t }
+
+    let c: col.Col = t.cols[ci]
+    let n: Int = col.col_len(c)
+    let mut new_ints: List<Int> = []
+    let mut new_mask: List<Bool> = []
+
+    let mut i: Int = 0
+    while i < n {
+        if c.mask[i] {
+            new_ints = new_ints + [c.ints[i]]
+            new_mask = new_mask + [true]
+        } else {
+            new_ints = new_ints + [value]
+            new_mask = new_mask + [true]
+        }
+        i = i + 1
+    }
+
+    let new_col: col.Col = new col.Col { name: c.name, dtype: c.dtype, ints: new_ints, floats: c.floats, strs: c.strs, bools: c.bools, mask: new_mask }
+    return replace_col_at(t, ci, new_col)
+}
+
+// ---------------------------------------------------------------------------
+// fill_null_str — replace nulls in a Str column with a default value
+// ---------------------------------------------------------------------------
+
+pub fn fill_null_str(t: table.Table, col_name: String, value: String) -> table.Table {
+    let ci: Int = table.col_index(t, col_name)
+    if ci < 0 { return t }
+
+    let c: col.Col = t.cols[ci]
+    let n: Int = col.col_len(c)
+    let mut new_strs: List<String> = []
+    let mut new_mask: List<Bool> = []
+
+    let mut i: Int = 0
+    while i < n {
+        if c.mask[i] {
+            new_strs = new_strs + [c.strs[i]]
+            new_mask = new_mask + [true]
+        } else {
+            new_strs = new_strs + [value]
+            new_mask = new_mask + [true]
+        }
+        i = i + 1
+    }
+
+    let new_col: col.Col = new col.Col { name: c.name, dtype: c.dtype, ints: c.ints, floats: c.floats, strs: new_strs, bools: c.bools, mask: new_mask }
+    return replace_col_at(t, ci, new_col)
+}
+
+// ---------------------------------------------------------------------------
+// fill_null_float — replace nulls in a Float column with a default value
+// ---------------------------------------------------------------------------
+
+pub fn fill_null_float(t: table.Table, col_name: String, value: Float) -> table.Table {
+    let ci: Int = table.col_index(t, col_name)
+    if ci < 0 { return t }
+
+    let c: col.Col = t.cols[ci]
+    let n: Int = col.col_len(c)
+    let mut new_floats: List<Float> = []
+    let mut new_mask: List<Bool> = []
+
+    let mut i: Int = 0
+    while i < n {
+        if c.mask[i] {
+            new_floats = new_floats + [c.floats[i]]
+            new_mask = new_mask + [true]
+        } else {
+            new_floats = new_floats + [value]
+            new_mask = new_mask + [true]
+        }
+        i = i + 1
+    }
+
+    let new_col: col.Col = new col.Col { name: c.name, dtype: c.dtype, ints: c.ints, floats: new_floats, strs: c.strs, bools: c.bools, mask: new_mask }
+    return replace_col_at(t, ci, new_col)
+}
+
+// ---------------------------------------------------------------------------
+// fill_forward — forward-fill nulls (carry last non-null value forward)
+// ---------------------------------------------------------------------------
+
+pub fn fill_forward(t: table.Table, col_name: String) -> table.Table {
+    let ci: Int = table.col_index(t, col_name)
+    if ci < 0 { return t }
+
+    let c: col.Col = t.cols[ci]
+    let n: Int = col.col_len(c)
+
+    match c.dtype {
+        I64 => {
+            let mut new_ints: List<Int> = []
+            let mut new_mask: List<Bool> = []
+            let mut last_val: Int = 0
+            let mut has_last: Bool = false
+            let mut i: Int = 0
+            while i < n {
+                if c.mask[i] {
+                    last_val = c.ints[i]
+                    has_last = true
+                    new_ints = new_ints + [c.ints[i]]
+                    new_mask = new_mask + [true]
+                } else {
+                    if has_last {
+                        new_ints = new_ints + [last_val]
+                        new_mask = new_mask + [true]
+                    } else {
+                        new_ints = new_ints + [0]
+                        new_mask = new_mask + [false]
+                    }
+                }
+                i = i + 1
+            }
+            let new_col: col.Col = new col.Col { name: c.name, dtype: c.dtype, ints: new_ints, floats: c.floats, strs: c.strs, bools: c.bools, mask: new_mask }
+            return replace_col_at(t, ci, new_col)
+        },
+        F64 => {
+            let mut new_floats: List<Float> = []
+            let mut new_mask: List<Bool> = []
+            let mut last_val: Float = 0.0
+            let mut has_last: Bool = false
+            let mut i: Int = 0
+            while i < n {
+                if c.mask[i] {
+                    last_val = c.floats[i]
+                    has_last = true
+                    new_floats = new_floats + [c.floats[i]]
+                    new_mask = new_mask + [true]
+                } else {
+                    if has_last {
+                        new_floats = new_floats + [last_val]
+                        new_mask = new_mask + [true]
+                    } else {
+                        new_floats = new_floats + [0.0]
+                        new_mask = new_mask + [false]
+                    }
+                }
+                i = i + 1
+            }
+            let new_col: col.Col = new col.Col { name: c.name, dtype: c.dtype, ints: c.ints, floats: new_floats, strs: c.strs, bools: c.bools, mask: new_mask }
+            return replace_col_at(t, ci, new_col)
+        },
+        Str => {
+            let mut new_strs: List<String> = []
+            let mut new_mask: List<Bool> = []
+            let mut last_val: String = ""
+            let mut has_last: Bool = false
+            let mut i: Int = 0
+            while i < n {
+                if c.mask[i] {
+                    last_val = c.strs[i]
+                    has_last = true
+                    new_strs = new_strs + [c.strs[i]]
+                    new_mask = new_mask + [true]
+                } else {
+                    if has_last {
+                        new_strs = new_strs + [last_val]
+                        new_mask = new_mask + [true]
+                    } else {
+                        new_strs = new_strs + [""]
+                        new_mask = new_mask + [false]
+                    }
+                }
+                i = i + 1
+            }
+            let new_col: col.Col = new col.Col { name: c.name, dtype: c.dtype, ints: c.ints, floats: c.floats, strs: new_strs, bools: c.bools, mask: new_mask }
+            return replace_col_at(t, ci, new_col)
+        },
+        _ => { return t }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// null_count — count null values in a column
+// ---------------------------------------------------------------------------
+
+pub fn null_count(t: table.Table, col_name: String) -> Int {
+    let ci: Int = table.col_index(t, col_name)
+    if ci < 0 { return 0 }
+
+    let c: col.Col = t.cols[ci]
+    let n: Int = col.col_len(c)
+    let mut count: Int = 0
+    let mut i: Int = 0
+    while i < n {
+        if c.mask[i] == false {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+// ---------------------------------------------------------------------------
+// Internal: replace a column at a given index in the table
+// ---------------------------------------------------------------------------
+
+fn replace_col_at(t: table.Table, idx: Int, new_col: col.Col) -> table.Table {
+    let nc: Int = len(t.cols)
+    let mut new_cols: List<col.Col> = []
+    let mut i: Int = 0
+    while i < nc {
+        if i == idx {
+            new_cols = new_cols + [new_col]
+        } else {
+            new_cols = new_cols + [t.cols[i]]
+        }
+        i = i + 1
+    }
+    return table.table_unchecked(new_cols, t.nrows)
+}

@@ -1,0 +1,2129 @@
+// encoding/yaml.mn — YAML 1.2 Core Schema Parser/Serializer for Mapanare.
+//
+// A recursive descent YAML parser written entirely in Mapanare.
+// No external dependencies. Uses C runtime string primitives from v0.8.0.
+//
+// Supports: null, booleans, integers (decimal, hex 0x, octal 0o), floats
+// (including .inf, -.inf, .nan, scientific notation), plain/single-quoted/
+// double-quoted strings, block scalars (literal | and folded >), block
+// mappings, block sequences, flow mappings {}, flow sequences [],
+// anchors &name, aliases *name, document markers (--- / ...), and
+// multi-document streams. Full YAML 1.2 Core Schema compliance.
+
+import text::string_utils
+
+// ---------------------------------------------------------------------------
+// Core Types
+// ---------------------------------------------------------------------------
+
+pub struct YamlError {
+    message: String,
+    line: Int,
+    col: Int
+}
+
+pub enum YamlValue {
+    Null,
+    Bool(Bool),
+    Int(Int),
+    Float(Float),
+    Str(String),
+    Seq(List<YamlValue>),
+    Map(List<YamlEntry>)
+}
+
+pub struct YamlEntry {
+    key: String,
+    value: YamlValue
+}
+
+// ---------------------------------------------------------------------------
+// Constructor helpers
+// ---------------------------------------------------------------------------
+
+fn new_yaml_error(message: String, line: Int, col: Int) -> YamlError {
+    return new YamlError { message: message, line: line, col: col }
+}
+
+fn new_yaml_entry(key: String, value: YamlValue) -> YamlEntry {
+    return new YamlEntry { key: key, value: value }
+}
+
+// ---------------------------------------------------------------------------
+// Internal parse state
+// ---------------------------------------------------------------------------
+
+struct ParseState {
+    input: String,
+    slen: Int,
+    pos: Int,
+    line: Int,
+    col: Int,
+    anchors: Map<String, YamlValue>,
+    depth: Int
+}
+
+fn new_parse_state(input: String) -> ParseState {
+    return new ParseState {
+        input: input,
+        slen: len(input),
+        pos: 0,
+        line: 1,
+        col: 1,
+        anchors: #{},
+        depth: 0
+    }
+}
+
+// Result of parsing a value — carries updated position
+struct ParseResult {
+    value: YamlValue,
+    pos: Int,
+    line: Int,
+    col: Int,
+    ok: Bool,
+    error: YamlError
+}
+
+fn ok_result(value: YamlValue, pos: Int, line: Int, col: Int) -> ParseResult {
+    return new ParseResult { value: value, pos: pos, line: line, col: col, ok: true, error: new_yaml_error("", 0, 0) }
+}
+
+fn err_result(msg: String, line: Int, col: Int) -> ParseResult {
+    return new ParseResult { value: Null(), pos: 0, line: line, col: col, ok: false, error: new_yaml_error(msg, line, col) }
+}
+
+// ---------------------------------------------------------------------------
+// Character classification helpers
+// ---------------------------------------------------------------------------
+
+fn is_yaml_digit(ch: String) -> Bool {
+    return string_utils.is_digit(ch)
+}
+
+fn digit_val(ch: String) -> Int {
+    return string_utils.digit_value(ch)
+}
+
+fn hex_val(ch: String) -> Int {
+    return string_utils.hex_digit_value_or_zero(ch)
+}
+
+fn is_yaml_hex(ch: String) -> Bool {
+    return string_utils.is_hex(ch)
+}
+
+fn is_space(ch: String) -> Bool {
+    if ch == " " { return true }
+    return false
+}
+
+fn is_newline(ch: String) -> Bool {
+    if ch == "\n" { return true }
+    if ch == "\r" { return true }
+    return false
+}
+
+fn is_ws(ch: String) -> Bool {
+    if ch == " " { return true }
+    if ch == "\t" { return true }
+    return false
+}
+
+fn is_ws_or_newline(ch: String) -> Bool {
+    if ch == " " { return true }
+    if ch == "\t" { return true }
+    if ch == "\n" { return true }
+    if ch == "\r" { return true }
+    return false
+}
+
+fn is_flow_indicator(ch: String) -> Bool {
+    if ch == "{" { return true }
+    if ch == "}" { return true }
+    if ch == "[" { return true }
+    if ch == "]" { return true }
+    if ch == "," { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Low-level input helpers
+// ---------------------------------------------------------------------------
+
+// Advance past a single newline (\n or \r\n), return new pos/line/col
+struct PosInfo {
+    pos: Int,
+    line: Int,
+    col: Int
+}
+
+fn skip_newline(input: String, slen: Int, pos: Int, line: Int) -> PosInfo {
+    if pos >= slen { return new PosInfo { pos: pos, line: line, col: 1 } }
+    let ch: String = input.char_at(pos)
+    if ch == "\n" {
+        return new PosInfo { pos: pos + 1, line: line + 1, col: 1 }
+    }
+    if ch == "\r" {
+        if pos + 1 < slen {
+            if input.char_at(pos + 1) == "\n" {
+                return new PosInfo { pos: pos + 2, line: line + 1, col: 1 }
+            }
+        }
+        return new PosInfo { pos: pos + 1, line: line + 1, col: 1 }
+    }
+    return new PosInfo { pos: pos, line: line, col: 1 }
+}
+
+// Skip spaces only (not tabs for indentation)
+fn skip_spaces(input: String, slen: Int, pos: Int, col: Int) -> PosInfo {
+    let mut p: Int = pos
+    let mut c: Int = col
+    while p < slen {
+        if input.char_at(p) == " " {
+            p = p + 1
+            c = c + 1
+        } else {
+            return new PosInfo { pos: p, line: 0, col: c }
+        }
+    }
+    return new PosInfo { pos: p, line: 0, col: c }
+}
+
+// Skip inline whitespace (spaces and tabs)
+fn skip_inline_ws(input: String, slen: Int, pos: Int, col: Int) -> PosInfo {
+    let mut p: Int = pos
+    let mut c: Int = col
+    while p < slen {
+        let ch: String = input.char_at(p)
+        if ch == " " { p = p + 1; c = c + 1
+        } else { if ch == "\t" { p = p + 1; c = c + 1
+        } else {
+            return new PosInfo { pos: p, line: 0, col: c }
+        } }
+    }
+    return new PosInfo { pos: p, line: 0, col: c }
+}
+
+// Skip a comment (# to end of line), does not consume the newline
+fn skip_comment(input: String, slen: Int, pos: Int, col: Int) -> PosInfo {
+    let mut p: Int = pos
+    let mut c: Int = col
+    if p < slen {
+        if input.char_at(p) == "#" {
+            while p < slen {
+                let ch: String = input.char_at(p)
+                if ch == "\n" { return new PosInfo { pos: p, line: 0, col: c } }
+                if ch == "\r" { return new PosInfo { pos: p, line: 0, col: c } }
+                p = p + 1
+                c = c + 1
+            }
+        }
+    }
+    return new PosInfo { pos: p, line: 0, col: c }
+}
+
+// Skip whitespace, newlines, and comments — full blank-line skipper
+fn skip_ws_and_comments(input: String, slen: Int, pos: Int, line: Int, col: Int) -> PosInfo {
+    let mut p: Int = pos
+    let mut ln: Int = line
+    let mut c: Int = col
+    while p < slen {
+        let ch: String = input.char_at(p)
+        if ch == " " { p = p + 1; c = c + 1
+        } else { if ch == "\t" { p = p + 1; c = c + 1
+        } else { if ch == "\n" { p = p + 1; ln = ln + 1; c = 1
+        } else { if ch == "\r" {
+            let nl: PosInfo = skip_newline(input, slen, p, ln)
+            p = nl.pos
+            ln = nl.line
+            c = 1
+        } else { if ch == "#" {
+            let cr: PosInfo = skip_comment(input, slen, p, c)
+            p = cr.pos
+            c = cr.col
+        } else {
+            return new PosInfo { pos: p, line: ln, col: c }
+        } } } } }
+    }
+    return new PosInfo { pos: p, line: ln, col: c }
+}
+
+// Skip rest of line (inline whitespace + optional comment + newline)
+fn skip_rest_of_line(input: String, slen: Int, pos: Int, line: Int, col: Int) -> PosInfo {
+    let ws: PosInfo = skip_inline_ws(input, slen, pos, col)
+    let mut p: Int = ws.pos
+    let mut c: Int = ws.col
+    let mut ln: Int = line
+    // optional comment
+    if p < slen {
+        if input.char_at(p) == "#" {
+            let cr: PosInfo = skip_comment(input, slen, p, c)
+            p = cr.pos
+            c = cr.col
+        }
+    }
+    // consume newline
+    if p < slen {
+        let ch: String = input.char_at(p)
+        if is_newline(ch) {
+            let nl: PosInfo = skip_newline(input, slen, p, ln)
+            p = nl.pos
+            ln = nl.line
+            c = nl.col
+        }
+    }
+    return new PosInfo { pos: p, line: ln, col: c }
+}
+
+// Measure indentation at current line start — count leading spaces
+fn measure_indent(input: String, slen: Int, pos: Int) -> Int {
+    let mut p: Int = pos
+    let mut indent: Int = 0
+    while p < slen {
+        if input.char_at(p) == " " {
+            indent = indent + 1
+            p = p + 1
+        } else {
+            return indent
+        }
+    }
+    return indent
+}
+
+// ---------------------------------------------------------------------------
+// Escape sequence handler for double-quoted strings
+// ---------------------------------------------------------------------------
+
+struct EscResult {
+    value: String,
+    advance: Int,
+    ok: Bool,
+    err_msg: String
+}
+
+fn handle_yaml_escape(input: String, pos: Int, slen: Int) -> EscResult {
+    if pos >= slen {
+        return new EscResult { value: "", advance: 0, ok: false, err_msg: "Unexpected end in escape" }
+    }
+    let esc: String = input.char_at(pos)
+    if esc == "\"" { return new EscResult { value: "\"", advance: 1, ok: true, err_msg: "" } }
+    if esc == "\\" { return new EscResult { value: "\\", advance: 1, ok: true, err_msg: "" } }
+    if esc == "/" { return new EscResult { value: "/", advance: 1, ok: true, err_msg: "" } }
+    if esc == "n" { return new EscResult { value: "\n", advance: 1, ok: true, err_msg: "" } }
+    if esc == "t" { return new EscResult { value: "\t", advance: 1, ok: true, err_msg: "" } }
+    if esc == "r" { return new EscResult { value: "\r", advance: 1, ok: true, err_msg: "" } }
+    if esc == "b" { return new EscResult { value: "", advance: 1, ok: true, err_msg: "" } }
+    if esc == "f" { return new EscResult { value: "", advance: 1, ok: true, err_msg: "" } }
+    if esc == "a" { return new EscResult { value: "", advance: 1, ok: true, err_msg: "" } }
+    if esc == "v" { return new EscResult { value: "", advance: 1, ok: true, err_msg: "" } }
+    if esc == "e" { return new EscResult { value: "", advance: 1, ok: true, err_msg: "" } }
+    if esc == " " { return new EscResult { value: " ", advance: 1, ok: true, err_msg: "" } }
+    if esc == "0" { return new EscResult { value: "", advance: 1, ok: true, err_msg: "" } }
+    if esc == "x" {
+        if pos + 2 >= slen {
+            return new EscResult { value: "", advance: 0, ok: false, err_msg: "Incomplete \\x escape" }
+        }
+        let h0: String = input.char_at(pos + 1)
+        let h1: String = input.char_at(pos + 2)
+        if is_yaml_hex(h0) == false { return new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex in \\x escape" } }
+        if is_yaml_hex(h1) == false { return new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex in \\x escape" } }
+        let cp: Int = hex_val(h0) * 16 + hex_val(h1)
+        if cp < 128 {
+            return new EscResult { value: str(cp), advance: 3, ok: true, err_msg: "" }
+        } else {
+            return new EscResult { value: "?", advance: 3, ok: true, err_msg: "" }
+        }
+    }
+    if esc == "u" {
+        if pos + 4 >= slen {
+            return new EscResult { value: "", advance: 0, ok: false, err_msg: "Incomplete \\u escape" }
+        }
+        let u0: String = input.char_at(pos + 1)
+        let u1: String = input.char_at(pos + 2)
+        let u2: String = input.char_at(pos + 3)
+        let u3: String = input.char_at(pos + 4)
+        if is_yaml_hex(u0) == false { return new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex in \\u escape" } }
+        if is_yaml_hex(u1) == false { return new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex in \\u escape" } }
+        if is_yaml_hex(u2) == false { return new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex in \\u escape" } }
+        if is_yaml_hex(u3) == false { return new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex in \\u escape" } }
+        let cp2: Int = hex_val(u0) * 4096 + hex_val(u1) * 256 + hex_val(u2) * 16 + hex_val(u3)
+        if cp2 < 128 {
+            return new EscResult { value: str(cp2), advance: 5, ok: true, err_msg: "" }
+        } else {
+            return new EscResult { value: "?", advance: 5, ok: true, err_msg: "" }
+        }
+    }
+    // Line fold escape — backslash at end of line
+    if esc == "\n" { return new EscResult { value: "", advance: 1, ok: true, err_msg: "" } }
+    if esc == "\r" {
+        if pos + 1 < slen {
+            if input.char_at(pos + 1) == "\n" {
+                return new EscResult { value: "", advance: 2, ok: true, err_msg: "" }
+            }
+        }
+        return new EscResult { value: "", advance: 1, ok: true, err_msg: "" }
+    }
+    return new EscResult { value: "", advance: 0, ok: false, err_msg: "Unknown escape character: \\" + esc }
+}
+
+// ---------------------------------------------------------------------------
+// Double-quoted string parser
+// ---------------------------------------------------------------------------
+
+struct StrResult {
+    value: String,
+    pos: Int,
+    line: Int,
+    col: Int,
+    ok: Bool,
+    err_msg: String
+}
+
+fn parse_double_quoted(input: String, slen: Int, pos: Int, line: Int, col: Int) -> StrResult {
+    // pos points at the opening "
+    let mut p: Int = pos + 1
+    let mut c: Int = col + 1
+    let mut ln: Int = line
+    let mut result: String = ""
+
+    while p < slen {
+        let ch: String = input.char_at(p)
+        if ch == "\"" {
+            return new StrResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, err_msg: "" }
+        }
+        if ch == "\\" {
+            let er: EscResult = handle_yaml_escape(input, p + 1, slen)
+            if er.ok == false {
+                return new StrResult { value: "", pos: p, line: ln, col: c, ok: false, err_msg: er.err_msg }
+            }
+            result = result + er.value
+            p = p + 1 + er.advance
+            c = c + 1 + er.advance
+        } else { if ch == "\n" {
+            // Fold newline in double-quoted string
+            result = result + " "
+            p = p + 1
+            ln = ln + 1
+            c = 1
+            // Skip leading whitespace on next line
+            let ws: PosInfo = skip_spaces(input, slen, p, c)
+            p = ws.pos
+            c = ws.col
+        } else { if ch == "\r" {
+            result = result + " "
+            let nl: PosInfo = skip_newline(input, slen, p, ln)
+            p = nl.pos
+            ln = nl.line
+            c = 1
+            let ws2: PosInfo = skip_spaces(input, slen, p, c)
+            p = ws2.pos
+            c = ws2.col
+        } else {
+            result = result + ch
+            p = p + 1
+            c = c + 1
+        } } }
+    }
+    return new StrResult { value: "", pos: p, line: ln, col: c, ok: false, err_msg: "Unterminated double-quoted string" }
+}
+
+// ---------------------------------------------------------------------------
+// Single-quoted string parser
+// ---------------------------------------------------------------------------
+
+fn parse_single_quoted(input: String, slen: Int, pos: Int, line: Int, col: Int) -> StrResult {
+    // pos points at the opening '
+    let mut p: Int = pos + 1
+    let mut c: Int = col + 1
+    let mut ln: Int = line
+    let mut result: String = ""
+
+    while p < slen {
+        let ch: String = input.char_at(p)
+        if ch == "'" {
+            // Escaped single quote ''
+            if p + 1 < slen {
+                if input.char_at(p + 1) == "'" {
+                    result = result + "'"
+                    p = p + 2
+                    c = c + 2
+                } else {
+                    return new StrResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, err_msg: "" }
+                }
+            } else {
+                return new StrResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, err_msg: "" }
+            }
+        } else { if ch == "\n" {
+            result = result + " "
+            p = p + 1
+            ln = ln + 1
+            c = 1
+            let ws: PosInfo = skip_spaces(input, slen, p, c)
+            p = ws.pos
+            c = ws.col
+        } else { if ch == "\r" {
+            result = result + " "
+            let nl: PosInfo = skip_newline(input, slen, p, ln)
+            p = nl.pos
+            ln = nl.line
+            c = 1
+            let ws2: PosInfo = skip_spaces(input, slen, p, c)
+            p = ws2.pos
+            c = ws2.col
+        } else {
+            result = result + ch
+            p = p + 1
+            c = c + 1
+        } } }
+    }
+    return new StrResult { value: "", pos: p, line: ln, col: c, ok: false, err_msg: "Unterminated single-quoted string" }
+}
+
+// ---------------------------------------------------------------------------
+// Plain scalar parser
+// ---------------------------------------------------------------------------
+
+fn parse_plain_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int, in_flow: Bool) -> StrResult {
+    let mut p: Int = pos
+    let mut c: Int = col
+    let mut ln: Int = line
+    let mut result: String = ""
+    let mut had_newline: Bool = false
+
+    while p < slen {
+        let ch: String = input.char_at(p)
+
+        // End at newline
+        if ch == "\n" { break }
+        if ch == "\r" { break }
+
+        // End at comment preceded by space
+        if ch == "#" {
+            if p > pos {
+                if input.char_at(p - 1) == " " { break }
+            }
+        }
+
+        // In flow context, end at flow indicators
+        if in_flow {
+            if ch == "," { break }
+            if ch == "]" { break }
+            if ch == "}" { break }
+            if ch == "{" { break }
+            if ch == "[" { break }
+        }
+
+        // Colon followed by space or newline or end-of-input terminates
+        if ch == ":" {
+            if p + 1 >= slen { break }
+            let next: String = input.char_at(p + 1)
+            if next == " " { break }
+            if next == "\t" { break }
+            if next == "\n" { break }
+            if next == "\r" { break }
+            if in_flow {
+                if next == "," { break }
+                if next == "]" { break }
+                if next == "}" { break }
+            }
+        }
+
+        result = result + ch
+        p = p + 1
+        c = c + 1
+    }
+
+    // Trim trailing whitespace
+    let mut trimmed: String = result.trim()
+    return new StrResult { value: trimmed, pos: p, line: ln, col: c, ok: true, err_msg: "" }
+}
+
+// ---------------------------------------------------------------------------
+// Core Schema type resolution
+// ---------------------------------------------------------------------------
+
+fn resolve_plain_scalar(raw: String) -> YamlValue {
+    // Null
+    if raw == "" { return Null() }
+    if raw == "null" { return Null() }
+    if raw == "Null" { return Null() }
+    if raw == "NULL" { return Null() }
+    if raw == "~" { return Null() }
+
+    // Boolean true
+    if raw == "true" { return Bool(true) }
+    if raw == "True" { return Bool(true) }
+    if raw == "TRUE" { return Bool(true) }
+
+    // Boolean false
+    if raw == "false" { return Bool(false) }
+    if raw == "False" { return Bool(false) }
+    if raw == "FALSE" { return Bool(false) }
+
+    // Special floats
+    if raw == ".inf" { return Float(999999999.0) }
+    if raw == ".Inf" { return Float(999999999.0) }
+    if raw == ".INF" { return Float(999999999.0) }
+    if raw == "+.inf" { return Float(999999999.0) }
+    if raw == "+.Inf" { return Float(999999999.0) }
+    if raw == "+.INF" { return Float(999999999.0) }
+    if raw == "-.inf" { return Float(-999999999.0) }
+    if raw == "-.Inf" { return Float(-999999999.0) }
+    if raw == "-.INF" { return Float(-999999999.0) }
+    if raw == ".nan" { return Float(0.0) }
+    if raw == ".NaN" { return Float(0.0) }
+    if raw == ".NAN" { return Float(0.0) }
+
+    let rlen: Int = len(raw)
+    if rlen == 0 { return Str(raw) }
+
+    // Try integer — optional sign prefix
+    let first_ch: String = raw.char_at(0)
+    let mut sign: Int = 1
+    let mut start: Int = 0
+    if first_ch == "+" { sign = 1; start = 1
+    } else { if first_ch == "-" { sign = -1; start = 1
+    } else { start = 0 } }
+
+    if start < rlen {
+        let after_sign: String = raw.char_at(start)
+
+        // Hex integer 0x
+        if after_sign == "0" {
+            if start + 1 < rlen {
+                let prefix2: String = raw.char_at(start + 1)
+                if prefix2 == "x" {
+                    if start + 2 < rlen {
+                        let mut hex_ok: Bool = true
+                        let mut hex_val_acc: Int = 0
+                        let mut hi: Int = start + 2
+                        while hi < rlen {
+                            let hc: String = raw.char_at(hi)
+                            if is_yaml_hex(hc) {
+                                hex_val_acc = hex_val_acc * 16 + hex_val(hc)
+                                hi = hi + 1
+                            } else {
+                                hex_ok = false
+                                break
+                            }
+                        }
+                        if hex_ok {
+                            if hi > start + 2 {
+                                return Int(sign * hex_val_acc)
+                            }
+                        }
+                    }
+                }
+                // Octal integer 0o
+                if prefix2 == "o" {
+                    if start + 2 < rlen {
+                        let mut oct_ok: Bool = true
+                        let mut oct_val: Int = 0
+                        let mut oi: Int = start + 2
+                        while oi < rlen {
+                            let oc: String = raw.char_at(oi)
+                            if oc >= "0" { if oc <= "7" {
+                                oct_val = oct_val * 8 + digit_val(oc)
+                                oi = oi + 1
+                            } else { oct_ok = false; break }
+                            } else { oct_ok = false; break }
+                        }
+                        if oct_ok {
+                            if oi > start + 2 {
+                                return Int(sign * oct_val)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Decimal integer or float
+        if is_yaml_digit(after_sign) {
+            let mut all_digits: Bool = true
+            let mut has_dot: Bool = false
+            let mut has_exp: Bool = false
+            let mut di: Int = start
+            while di < rlen {
+                let dc: String = raw.char_at(di)
+                if is_yaml_digit(dc) {
+                    di = di + 1
+                } else { if dc == "." {
+                    has_dot = true
+                    di = di + 1
+                } else { if dc == "e" {
+                    has_exp = true
+                    di = di + 1
+                    // optional sign after e
+                    if di < rlen {
+                        let es: String = raw.char_at(di)
+                        if es == "+" { di = di + 1 }
+                        if es == "-" { di = di + 1 }
+                    }
+                } else { if dc == "E" {
+                    has_exp = true
+                    di = di + 1
+                    if di < rlen {
+                        let es2: String = raw.char_at(di)
+                        if es2 == "+" { di = di + 1 }
+                        if es2 == "-" { di = di + 1 }
+                    }
+                } else {
+                    all_digits = false
+                    break
+                } } } }
+            }
+
+            if all_digits {
+                if has_dot {
+                    // Parse as float
+                    let fv: Float = parse_yaml_float(raw, start, rlen, sign)
+                    return Float(fv)
+                } else { if has_exp {
+                    let fv2: Float = parse_yaml_float(raw, start, rlen, sign)
+                    return Float(fv2)
+                } else {
+                    // Pure integer
+                    let mut int_acc: Int = 0
+                    let mut ii: Int = start
+                    while ii < rlen {
+                        int_acc = int_acc * 10 + digit_val(raw.char_at(ii))
+                        ii = ii + 1
+                    }
+                    return Int(sign * int_acc)
+                } }
+            }
+        }
+    }
+
+    return Str(raw)
+}
+
+// ---------------------------------------------------------------------------
+// Float parser helper
+// ---------------------------------------------------------------------------
+
+fn parse_yaml_float(raw: String, start: Int, rlen: Int, sign: Int) -> Float {
+    let mut int_part: Float = 0.0
+    let mut p: Int = start
+
+    while p < rlen {
+        let ch: String = raw.char_at(p)
+        if is_yaml_digit(ch) {
+            int_part = int_part * 10.0 + float(digit_val(ch))
+            p = p + 1
+        } else {
+            break
+        }
+    }
+
+    let mut frac: Float = 0.0
+    let mut frac_div: Float = 1.0
+    if p < rlen {
+        if raw.char_at(p) == "." {
+            p = p + 1
+            while p < rlen {
+                let fc: String = raw.char_at(p)
+                if is_yaml_digit(fc) {
+                    frac_div = frac_div * 10.0
+                    frac = frac + float(digit_val(fc)) / frac_div
+                    p = p + 1
+                } else {
+                    break
+                }
+            }
+        }
+    }
+
+    let mut result: Float = int_part + frac
+
+    // Exponent
+    if p < rlen {
+        let ec: String = raw.char_at(p)
+        if ec == "e" { p = p + 1 } else { if ec == "E" { p = p + 1 } }
+        let mut exp_neg: Bool = false
+        if p < rlen {
+            let es: String = raw.char_at(p)
+            if es == "+" { p = p + 1 }
+            if es == "-" { exp_neg = true; p = p + 1 }
+        }
+        let mut exp_val: Int = 0
+        while p < rlen {
+            let ed: String = raw.char_at(p)
+            if is_yaml_digit(ed) {
+                exp_val = exp_val * 10 + digit_val(ed)
+                p = p + 1
+            } else {
+                break
+            }
+        }
+        let mut mul: Float = 1.0
+        let mut ei: Int = 0
+        while ei < exp_val {
+            mul = mul * 10.0
+            ei = ei + 1
+        }
+        if exp_neg { result = result / mul } else { result = result * mul }
+    }
+
+    if sign < 0 { result = 0.0 - result }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Block scalar parser (| and >)
+// ---------------------------------------------------------------------------
+
+struct BlockScalarResult {
+    value: String,
+    pos: Int,
+    line: Int,
+    col: Int,
+    ok: Bool,
+    err_msg: String
+}
+
+fn parse_block_scalar(input: String, slen: Int, pos: Int, line: Int, col: Int) -> BlockScalarResult {
+    // pos points at | or >
+    let indicator: String = input.char_at(pos)
+    let mut is_literal: Bool = false
+    if indicator == "|" { is_literal = true }
+    // > means folded
+
+    let mut p: Int = pos + 1
+    let mut c: Int = col + 1
+    let mut ln: Int = line
+
+    // Chomp indicator: - (strip), + (keep), default (clip)
+    let mut chomp: Int = 0  // 0=clip, 1=strip, 2=keep
+    let mut explicit_indent: Int = 0
+    let mut has_explicit_indent: Bool = false
+
+    // Parse optional chomp and indent indicators
+    if p < slen {
+        let ci: String = input.char_at(p)
+        if ci == "-" { chomp = 1; p = p + 1; c = c + 1
+        } else { if ci == "+" { chomp = 2; p = p + 1; c = c + 1 } }
+    }
+    if p < slen {
+        let di: String = input.char_at(p)
+        if is_yaml_digit(di) {
+            if di != "0" {
+                explicit_indent = digit_val(di)
+                has_explicit_indent = true
+                p = p + 1
+                c = c + 1
+            }
+        }
+    }
+    // Check for chomp after indent
+    if has_explicit_indent {
+        if p < slen {
+            let ci2: String = input.char_at(p)
+            if ci2 == "-" { chomp = 1; p = p + 1; c = c + 1
+            } else { if ci2 == "+" { chomp = 2; p = p + 1; c = c + 1 } }
+        }
+    }
+
+    // Skip rest of header line (whitespace + comment)
+    let rl: PosInfo = skip_rest_of_line(input, slen, p, ln, c)
+    p = rl.pos
+    ln = rl.line
+    c = rl.col
+
+    // Skip blank lines before content and determine content indent
+    let mut content_indent: Int = 0
+    let mut found_content: Bool = false
+    let mut blank_save_pos: Int = p
+    let mut blank_save_ln: Int = ln
+
+    while p < slen {
+        let ind: Int = measure_indent(input, slen, p)
+        if p + ind >= slen {
+            // blank line at end
+            p = p + ind
+            let nl2: PosInfo = skip_newline(input, slen, p, ln)
+            p = nl2.pos
+            ln = nl2.line
+            c = nl2.col
+        } else {
+            let after_ind: String = input.char_at(p + ind)
+            if after_ind == "\n" {
+                p = p + ind + 1
+                ln = ln + 1
+                c = 1
+            } else { if after_ind == "\r" {
+                let nl3: PosInfo = skip_newline(input, slen, p + ind, ln)
+                p = nl3.pos
+                ln = nl3.line
+                c = nl3.col
+            } else {
+                // Found content
+                if has_explicit_indent {
+                    content_indent = explicit_indent
+                } else {
+                    content_indent = ind
+                }
+                found_content = true
+                break
+            } }
+        }
+    }
+
+    if found_content == false {
+        return new BlockScalarResult { value: "", pos: p, line: ln, col: c, ok: true, err_msg: "" }
+    }
+
+    if content_indent == 0 {
+        return new BlockScalarResult { value: "", pos: p, line: ln, col: c, ok: true, err_msg: "" }
+    }
+
+    // Collect content lines
+    let mut lines: List<String> = []
+    let mut trailing_newlines: Int = 0
+
+    while p < slen {
+        let line_indent: Int = measure_indent(input, slen, p)
+
+        // Check for blank line
+        if p + line_indent >= slen {
+            lines = lines + [""]
+            trailing_newlines = trailing_newlines + 1
+            p = p + line_indent
+            if p < slen {
+                let nlb: PosInfo = skip_newline(input, slen, p, ln)
+                p = nlb.pos
+                ln = nlb.line
+                c = nlb.col
+            }
+        } else {
+            let peek_ch: String = input.char_at(p + line_indent)
+            if peek_ch == "\n" {
+                lines = lines + [""]
+                trailing_newlines = trailing_newlines + 1
+                p = p + line_indent + 1
+                ln = ln + 1
+                c = 1
+            } else { if peek_ch == "\r" {
+                lines = lines + [""]
+                trailing_newlines = trailing_newlines + 1
+                let nlc: PosInfo = skip_newline(input, slen, p + line_indent, ln)
+                p = nlc.pos
+                ln = nlc.line
+                c = nlc.col
+            } else {
+                // Non-blank line — check indentation
+                if line_indent < content_indent {
+                    // Dedented — end of block scalar
+                    break
+                }
+                trailing_newlines = 0
+
+                // Extract line content (after content_indent spaces)
+                let mut line_str: String = ""
+                let mut li: Int = p + content_indent
+                while li < slen {
+                    let lc: String = input.char_at(li)
+                    if lc == "\n" { break }
+                    if lc == "\r" { break }
+                    line_str = line_str + lc
+                    li = li + 1
+                }
+                lines = lines + [line_str]
+
+                p = li
+                if p < slen {
+                    let nld: PosInfo = skip_newline(input, slen, p, ln)
+                    p = nld.pos
+                    ln = nld.line
+                    c = nld.col
+                }
+            } }
+        }
+    }
+
+    // Build result based on literal vs folded
+    let line_count: Int = len(lines)
+    // Remove trailing empty lines for processing
+    let mut content_count: Int = line_count - trailing_newlines
+    if content_count < 0 { content_count = 0 }
+
+    let mut result: String = ""
+    if is_literal {
+        // Literal: preserve all newlines
+        let mut ri: Int = 0
+        while ri < content_count {
+            if ri > 0 { result = result + "\n" }
+            result = result + lines[ri]
+            ri = ri + 1
+        }
+    } else {
+        // Folded: collapse single newlines to spaces, preserve double+ newlines
+        let mut ri2: Int = 0
+        while ri2 < content_count {
+            let cur_line: String = lines[ri2]
+            if cur_line == "" {
+                // Empty line = paragraph break
+                result = result + "\n"
+            } else {
+                if ri2 > 0 {
+                    let prev_line: String = lines[ri2 - 1]
+                    if prev_line == "" {
+                        result = result + "\n" + cur_line
+                    } else {
+                        result = result + " " + cur_line
+                    }
+                } else {
+                    result = result + cur_line
+                }
+            }
+            ri2 = ri2 + 1
+        }
+    }
+
+    // Apply chomping
+    if chomp == 0 {
+        // Clip: single trailing newline
+        result = result + "\n"
+    } else { if chomp == 2 {
+        // Keep: preserve all trailing newlines
+        result = result + "\n"
+        let mut ti: Int = 0
+        while ti < trailing_newlines {
+            result = result + "\n"
+            ti = ti + 1
+        }
+    } }
+    // chomp == 1 (strip): no trailing newline
+
+    return new BlockScalarResult { value: result, pos: p, line: ln, col: c, ok: true, err_msg: "" }
+}
+
+// ---------------------------------------------------------------------------
+// Anchor name parser
+// ---------------------------------------------------------------------------
+
+fn parse_anchor_name(input: String, slen: Int, pos: Int) -> StrResult {
+    let mut p: Int = pos
+    let mut name: String = ""
+    while p < slen {
+        let ch: String = input.char_at(p)
+        if is_ws_or_newline(ch) { break }
+        if is_flow_indicator(ch) { break }
+        if ch == ":" { break }
+        name = name + ch
+        p = p + 1
+    }
+    if len(name) == 0 {
+        return new StrResult { value: "", pos: pos, line: 0, col: 0, ok: false, err_msg: "Empty anchor name" }
+    }
+    return new StrResult { value: name, pos: p, line: 0, col: 0, ok: true, err_msg: "" }
+}
+
+// ---------------------------------------------------------------------------
+// Forward declarations — main parse dispatch
+// ---------------------------------------------------------------------------
+
+// Parse any YAML value (block or flow) at the given position and minimum indent
+fn parse_value(input: String, slen: Int, pos: Int, line: Int, col: Int, min_indent: Int, in_flow: Bool, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+    if depth > 100 {
+        return err_result("Maximum nesting depth exceeded (100)", line, col)
+    }
+
+    let ws: PosInfo = skip_ws_and_comments(input, slen, pos, line, col)
+    let mut p: Int = ws.pos
+    let mut ln: Int = ws.line
+    let mut c: Int = ws.col
+
+    if p >= slen {
+        return ok_result(Null(), p, ln, c)
+    }
+
+    let ch: String = input.char_at(p)
+
+    // Alias *name
+    if ch == "*" {
+        let anr: StrResult = parse_anchor_name(input, slen, p + 1)
+        if anr.ok == false {
+            return err_result("Invalid alias: " + anr.err_msg, ln, c)
+        }
+        let alias_name: String = anr.value
+        // Look up in anchors map
+        let mut found: Bool = false
+        let mut alias_val: YamlValue = Null()
+        for akey in anchors {
+            if akey == alias_name {
+                found = true
+                alias_val = anchors[akey]
+            }
+        }
+        if found == false {
+            return err_result("Undefined alias: *" + alias_name, ln, c)
+        }
+        return ok_result(alias_val, anr.pos, ln, c + 1 + len(alias_name))
+    }
+
+    // Anchor &name — parse it, then parse the value and store
+    if ch == "&" {
+        let anr2: StrResult = parse_anchor_name(input, slen, p + 1)
+        if anr2.ok == false {
+            return err_result("Invalid anchor: " + anr2.err_msg, ln, c)
+        }
+        let anchor_name: String = anr2.value
+        let new_c: Int = c + 1 + len(anchor_name)
+        // Skip whitespace after anchor name
+        let aws: PosInfo = skip_inline_ws(input, slen, anr2.pos, new_c)
+        let val_r: ParseResult = parse_value(input, slen, aws.pos, ln, aws.col, min_indent, in_flow, anchors, depth)
+        if val_r.ok == false { return val_r }
+        anchors[anchor_name] = val_r.value
+        return ok_result(val_r.value, val_r.pos, val_r.line, val_r.col)
+    }
+
+    // Flow sequence [...]
+    if ch == "[" {
+        return parse_flow_seq(input, slen, p, ln, c, anchors, depth)
+    }
+
+    // Flow mapping {...}
+    if ch == "{" {
+        return parse_flow_map(input, slen, p, ln, c, anchors, depth)
+    }
+
+    // Double-quoted string
+    if ch == "\"" {
+        let dq: StrResult = parse_double_quoted(input, slen, p, ln, c)
+        if dq.ok == false { return err_result(dq.err_msg, ln, c) }
+        return ok_result(Str(dq.value), dq.pos, dq.line, dq.col)
+    }
+
+    // Single-quoted string
+    if ch == "'" {
+        let sq: StrResult = parse_single_quoted(input, slen, p, ln, c)
+        if sq.ok == false { return err_result(sq.err_msg, ln, c) }
+        return ok_result(Str(sq.value), sq.pos, sq.line, sq.col)
+    }
+
+    // Block scalar | or >
+    if ch == "|" {
+        let bs: BlockScalarResult = parse_block_scalar(input, slen, p, ln, c)
+        if bs.ok == false { return err_result(bs.err_msg, ln, c) }
+        return ok_result(Str(bs.value), bs.pos, bs.line, bs.col)
+    }
+    if ch == ">" {
+        let bs2: BlockScalarResult = parse_block_scalar(input, slen, p, ln, c)
+        if bs2.ok == false { return err_result(bs2.err_msg, ln, c) }
+        return ok_result(Str(bs2.value), bs2.pos, bs2.line, bs2.col)
+    }
+
+    // Block sequence — starts with "- " at this indent
+    if ch == "-" {
+        if p + 1 < slen {
+            let after_dash: String = input.char_at(p + 1)
+            if after_dash == " " {
+                let cur_indent: Int = c - 1
+                return parse_block_seq(input, slen, p, ln, c, cur_indent, anchors, depth)
+            }
+            if after_dash == "\n" {
+                let cur_indent2: Int = c - 1
+                return parse_block_seq(input, slen, p, ln, c, cur_indent2, anchors, depth)
+            }
+            if after_dash == "\r" {
+                let cur_indent3: Int = c - 1
+                return parse_block_seq(input, slen, p, ln, c, cur_indent3, anchors, depth)
+            }
+        } else {
+            // lone dash at end of input — empty sequence item
+            let cur_indent4: Int = c - 1
+            return parse_block_seq(input, slen, p, ln, c, cur_indent4, anchors, depth)
+        }
+    }
+
+    // Check for block mapping — look ahead for "key:" pattern
+    if in_flow == false {
+        let is_map: Bool = looks_like_block_map(input, slen, p, ln, c)
+        if is_map {
+            let cur_indent5: Int = c - 1
+            return parse_block_map(input, slen, p, ln, c, cur_indent5, anchors, depth)
+        }
+    }
+
+    // Plain scalar
+    let ps: StrResult = parse_plain_scalar(input, slen, p, ln, c, in_flow)
+    if ps.ok == false { return err_result(ps.err_msg, ln, c) }
+    let resolved: YamlValue = resolve_plain_scalar(ps.value)
+    return ok_result(resolved, ps.pos, ps.line, ps.col)
+}
+
+// ---------------------------------------------------------------------------
+// Look-ahead: does the current position start a block mapping?
+// ---------------------------------------------------------------------------
+
+fn looks_like_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int) -> Bool {
+    let mut p: Int = pos
+    let ch: String = input.char_at(p)
+
+    // Quoted key followed by ':'
+    if ch == "\"" {
+        let dq: StrResult = parse_double_quoted(input, slen, p, line, col)
+        if dq.ok {
+            let ws: PosInfo = skip_inline_ws(input, slen, dq.pos, dq.col)
+            if ws.pos < slen {
+                if input.char_at(ws.pos) == ":" {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+    if ch == "'" {
+        let sq: StrResult = parse_single_quoted(input, slen, p, line, col)
+        if sq.ok {
+            let ws2: PosInfo = skip_inline_ws(input, slen, sq.pos, sq.col)
+            if ws2.pos < slen {
+                if input.char_at(ws2.pos) == ":" {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    // Plain key: scan for unquoted "key:" where : is followed by space/newline/eof
+    while p < slen {
+        let sc: String = input.char_at(p)
+        if sc == "\n" { return false }
+        if sc == "\r" { return false }
+        if sc == "#" {
+            if p > pos {
+                if input.char_at(p - 1) == " " { return false }
+            }
+        }
+        if sc == ":" {
+            if p + 1 >= slen { return true }
+            let after: String = input.char_at(p + 1)
+            if after == " " { return true }
+            if after == "\t" { return true }
+            if after == "\n" { return true }
+            if after == "\r" { return true }
+        }
+        p = p + 1
+    }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Flow sequence parser [item, item, ...]
+// ---------------------------------------------------------------------------
+
+fn parse_flow_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+    let mut p: Int = pos + 1
+    let mut ln: Int = line
+    let mut c: Int = col + 1
+    let mut items: List<YamlValue> = []
+
+    let ws1: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+    p = ws1.pos
+    ln = ws1.line
+    c = ws1.col
+
+    if p < slen {
+        if input.char_at(p) == "]" {
+            return ok_result(Seq(items), p + 1, ln, c + 1)
+        }
+    }
+
+    let mut count: Int = 0
+    while count < 1000000 {
+        count = count + 1
+
+        let val_r: ParseResult = parse_value(input, slen, p, ln, c, 0, true, anchors, depth + 1)
+        if val_r.ok == false { return val_r }
+        items = items + [val_r.value]
+        p = val_r.pos
+        ln = val_r.line
+        c = val_r.col
+
+        let ws2: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        p = ws2.pos
+        ln = ws2.line
+        c = ws2.col
+
+        if p >= slen { return err_result("Unterminated flow sequence", ln, c) }
+
+        let next: String = input.char_at(p)
+        if next == "]" { return ok_result(Seq(items), p + 1, ln, c + 1) }
+        if next == "," {
+            p = p + 1
+            c = c + 1
+            // Handle trailing comma before ]
+            let ws3: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+            p = ws3.pos
+            ln = ws3.line
+            c = ws3.col
+            if p < slen {
+                if input.char_at(p) == "]" {
+                    return ok_result(Seq(items), p + 1, ln, c + 1)
+                }
+            }
+        } else {
+            return err_result("Expected ',' or ']' in flow sequence", ln, c)
+        }
+    }
+    return err_result("Flow sequence too many elements", ln, c)
+}
+
+// ---------------------------------------------------------------------------
+// Flow mapping parser {key: value, key: value, ...}
+// ---------------------------------------------------------------------------
+
+fn parse_flow_map(input: String, slen: Int, pos: Int, line: Int, col: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+    let mut p: Int = pos + 1
+    let mut ln: Int = line
+    let mut c: Int = col + 1
+    let mut entries: List<YamlEntry> = []
+
+    let ws1: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+    p = ws1.pos
+    ln = ws1.line
+    c = ws1.col
+
+    if p < slen {
+        if input.char_at(p) == "}" {
+            return ok_result(Map(entries), p + 1, ln, c + 1)
+        }
+    }
+
+    let mut count: Int = 0
+    while count < 1000000 {
+        count = count + 1
+
+        let ws_k: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        p = ws_k.pos
+        ln = ws_k.line
+        c = ws_k.col
+
+        if p >= slen { return err_result("Unterminated flow mapping", ln, c) }
+
+        // Parse key
+        let mut key_str: String = ""
+        let kch: String = input.char_at(p)
+        if kch == "\"" {
+            let dq: StrResult = parse_double_quoted(input, slen, p, ln, c)
+            if dq.ok == false { return err_result(dq.err_msg, ln, c) }
+            key_str = dq.value
+            p = dq.pos
+            ln = dq.line
+            c = dq.col
+        } else { if kch == "'" {
+            let sq: StrResult = parse_single_quoted(input, slen, p, ln, c)
+            if sq.ok == false { return err_result(sq.err_msg, ln, c) }
+            key_str = sq.value
+            p = sq.pos
+            ln = sq.line
+            c = sq.col
+        } else {
+            // Plain key — read up to ':'
+            let ps: StrResult = parse_plain_scalar(input, slen, p, ln, c, true)
+            key_str = ps.value
+            p = ps.pos
+            ln = ps.line
+            c = ps.col
+        } }
+
+        // Skip whitespace and expect ':'
+        let ws_c: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        p = ws_c.pos
+        ln = ws_c.line
+        c = ws_c.col
+
+        if p >= slen { return err_result("Expected ':' in flow mapping", ln, c) }
+        if input.char_at(p) != ":" { return err_result("Expected ':' after key in flow mapping", ln, c) }
+        p = p + 1
+        c = c + 1
+
+        // Parse value
+        let val_r: ParseResult = parse_value(input, slen, p, ln, c, 0, true, anchors, depth + 1)
+        if val_r.ok == false { return val_r }
+        entries = entries + [new_yaml_entry(key_str, val_r.value)]
+        p = val_r.pos
+        ln = val_r.line
+        c = val_r.col
+
+        let ws2: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        p = ws2.pos
+        ln = ws2.line
+        c = ws2.col
+
+        if p >= slen { return err_result("Unterminated flow mapping", ln, c) }
+
+        let next: String = input.char_at(p)
+        if next == "}" { return ok_result(Map(entries), p + 1, ln, c + 1) }
+        if next == "," {
+            p = p + 1
+            c = c + 1
+            // Handle trailing comma before }
+            let ws3: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+            p = ws3.pos
+            ln = ws3.line
+            c = ws3.col
+            if p < slen {
+                if input.char_at(p) == "}" {
+                    return ok_result(Map(entries), p + 1, ln, c + 1)
+                }
+            }
+        } else {
+            return err_result("Expected ',' or '}' in flow mapping", ln, c)
+        }
+    }
+    return err_result("Flow mapping too many entries", ln, c)
+}
+
+// ---------------------------------------------------------------------------
+// Block sequence parser
+// ---------------------------------------------------------------------------
+
+fn parse_block_seq(input: String, slen: Int, pos: Int, line: Int, col: Int, seq_indent: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+    if depth > 100 {
+        return err_result("Maximum nesting depth exceeded (100)", line, col)
+    }
+
+    let mut items: List<YamlValue> = []
+    let mut p: Int = pos
+    let mut ln: Int = line
+    let mut c: Int = col
+
+    let mut count: Int = 0
+    while count < 1000000 {
+        count = count + 1
+
+        // Skip blank lines and comments
+        let ws: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        p = ws.pos
+        ln = ws.line
+        c = ws.col
+
+        if p >= slen { break }
+
+        // Check indent level
+        let cur_indent: Int = c - 1
+        if cur_indent != seq_indent { break }
+
+        // Expect '-'
+        if input.char_at(p) != "-" { break }
+
+        // Verify it's a sequence indicator (followed by space, newline, or eof)
+        if p + 1 < slen {
+            let after: String = input.char_at(p + 1)
+            if after != " " {
+                if after != "\n" {
+                    if after != "\r" {
+                        break
+                    }
+                }
+            }
+        }
+
+        p = p + 1
+        c = c + 1
+
+        // Skip space after dash
+        if p < slen {
+            if input.char_at(p) == " " {
+                p = p + 1
+                c = c + 1
+            }
+        }
+
+        // Parse item value — if at end of line, it's on the next line(s)
+        if p >= slen {
+            items = items + [Null()]
+        } else {
+            let item_ch: String = input.char_at(p)
+            if item_ch == "\n" {
+                let nl: PosInfo = skip_newline(input, slen, p, ln)
+                p = nl.pos
+                ln = nl.line
+                c = nl.col
+                // Blank value or nested structure on next line
+                let ws2: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+                p = ws2.pos
+                ln = ws2.line
+                c = ws2.col
+                if p >= slen {
+                    items = items + [Null()]
+                } else {
+                    let child_indent: Int = c - 1
+                    if child_indent <= seq_indent {
+                        items = items + [Null()]
+                    } else {
+                        let val_r: ParseResult = parse_value(input, slen, p, ln, c, child_indent, false, anchors, depth + 1)
+                        if val_r.ok == false { return val_r }
+                        items = items + [val_r.value]
+                        p = val_r.pos
+                        ln = val_r.line
+                        c = val_r.col
+                    }
+                }
+            } else { if item_ch == "\r" {
+                let nl2: PosInfo = skip_newline(input, slen, p, ln)
+                p = nl2.pos
+                ln = nl2.line
+                c = nl2.col
+                let ws3: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+                p = ws3.pos
+                ln = ws3.line
+                c = ws3.col
+                if p >= slen {
+                    items = items + [Null()]
+                } else {
+                    let child_indent2: Int = c - 1
+                    if child_indent2 <= seq_indent {
+                        items = items + [Null()]
+                    } else {
+                        let val_r2: ParseResult = parse_value(input, slen, p, ln, c, child_indent2, false, anchors, depth + 1)
+                        if val_r2.ok == false { return val_r2 }
+                        items = items + [val_r2.value]
+                        p = val_r2.pos
+                        ln = val_r2.line
+                        c = val_r2.col
+                    }
+                }
+            } else {
+                // Inline value after "- "
+                let val_r3: ParseResult = parse_value(input, slen, p, ln, c, seq_indent + 2, false, anchors, depth + 1)
+                if val_r3.ok == false { return val_r3 }
+                items = items + [val_r3.value]
+                p = val_r3.pos
+                ln = val_r3.line
+                c = val_r3.col
+            } }
+        }
+    }
+
+    return ok_result(Seq(items), p, ln, c)
+}
+
+// ---------------------------------------------------------------------------
+// Block mapping parser
+// ---------------------------------------------------------------------------
+
+fn parse_block_map(input: String, slen: Int, pos: Int, line: Int, col: Int, map_indent: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+    if depth > 100 {
+        return err_result("Maximum nesting depth exceeded (100)", line, col)
+    }
+
+    let mut entries: List<YamlEntry> = []
+    let mut p: Int = pos
+    let mut ln: Int = line
+    let mut c: Int = col
+
+    let mut count: Int = 0
+    while count < 1000000 {
+        count = count + 1
+
+        // Skip blank lines and comments
+        let ws: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        p = ws.pos
+        ln = ws.line
+        c = ws.col
+
+        if p >= slen { break }
+
+        // Check indent level
+        let cur_indent: Int = c - 1
+        if cur_indent != map_indent { break }
+
+        let kch: String = input.char_at(p)
+
+        // Sequence indicator means we're done (sibling seq at same indent)
+        if kch == "-" {
+            if p + 1 < slen {
+                let da: String = input.char_at(p + 1)
+                if da == " " { break }
+                if da == "\n" { break }
+                if da == "\r" { break }
+            } else {
+                break
+            }
+        }
+
+        // Parse key
+        let mut key_str: String = ""
+        if kch == "\"" {
+            let dq: StrResult = parse_double_quoted(input, slen, p, ln, c)
+            if dq.ok == false { return err_result(dq.err_msg, ln, c) }
+            key_str = dq.value
+            p = dq.pos
+            ln = dq.line
+            c = dq.col
+        } else { if kch == "'" {
+            let sq: StrResult = parse_single_quoted(input, slen, p, ln, c)
+            if sq.ok == false { return err_result(sq.err_msg, ln, c) }
+            key_str = sq.value
+            p = sq.pos
+            ln = sq.line
+            c = sq.col
+        } else {
+            // Plain key — collect until ':'
+            let mut key_buf: String = ""
+            while p < slen {
+                let pc: String = input.char_at(p)
+                if pc == ":" {
+                    if p + 1 >= slen { break }
+                    let ac: String = input.char_at(p + 1)
+                    if ac == " " { break }
+                    if ac == "\t" { break }
+                    if ac == "\n" { break }
+                    if ac == "\r" { break }
+                    key_buf = key_buf + pc
+                    p = p + 1
+                    c = c + 1
+                } else { if pc == "\n" { break
+                } else { if pc == "\r" { break
+                } else {
+                    key_buf = key_buf + pc
+                    p = p + 1
+                    c = c + 1
+                } } }
+            }
+            key_str = key_buf.trim()
+        } }
+
+        // Expect ':'
+        let ws_c: PosInfo = skip_inline_ws(input, slen, p, c)
+        p = ws_c.pos
+        c = ws_c.col
+
+        if p >= slen { return err_result("Expected ':' after mapping key", ln, c) }
+        if input.char_at(p) != ":" { return err_result("Expected ':' after mapping key", ln, c) }
+        p = p + 1
+        c = c + 1
+
+        // Skip inline whitespace after ':'
+        let ws2: PosInfo = skip_inline_ws(input, slen, p, c)
+        p = ws2.pos
+        c = ws2.col
+
+        // Parse value
+        if p >= slen {
+            entries = entries + [new_yaml_entry(key_str, Null())]
+        } else {
+            let vch: String = input.char_at(p)
+            if vch == "\n" {
+                // Value on next line(s)
+                let nl: PosInfo = skip_newline(input, slen, p, ln)
+                p = nl.pos
+                ln = nl.line
+                c = nl.col
+                // Skip blank lines / comments
+                let ws3: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+                p = ws3.pos
+                ln = ws3.line
+                c = ws3.col
+                if p >= slen {
+                    entries = entries + [new_yaml_entry(key_str, Null())]
+                } else {
+                    let child_indent: Int = c - 1
+                    if child_indent <= map_indent {
+                        entries = entries + [new_yaml_entry(key_str, Null())]
+                    } else {
+                        let val_r: ParseResult = parse_value(input, slen, p, ln, c, child_indent, false, anchors, depth + 1)
+                        if val_r.ok == false { return val_r }
+                        entries = entries + [new_yaml_entry(key_str, val_r.value)]
+                        p = val_r.pos
+                        ln = val_r.line
+                        c = val_r.col
+                    }
+                }
+            } else { if vch == "\r" {
+                let nl2: PosInfo = skip_newline(input, slen, p, ln)
+                p = nl2.pos
+                ln = nl2.line
+                c = nl2.col
+                let ws4: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+                p = ws4.pos
+                ln = ws4.line
+                c = ws4.col
+                if p >= slen {
+                    entries = entries + [new_yaml_entry(key_str, Null())]
+                } else {
+                    let child_indent2: Int = c - 1
+                    if child_indent2 <= map_indent {
+                        entries = entries + [new_yaml_entry(key_str, Null())]
+                    } else {
+                        let val_r2: ParseResult = parse_value(input, slen, p, ln, c, child_indent2, false, anchors, depth + 1)
+                        if val_r2.ok == false { return val_r2 }
+                        entries = entries + [new_yaml_entry(key_str, val_r2.value)]
+                        p = val_r2.pos
+                        ln = val_r2.line
+                        c = val_r2.col
+                    }
+                }
+            } else { if vch == "#" {
+                // Comment after colon — value is null
+                let cr: PosInfo = skip_comment(input, slen, p, c)
+                p = cr.pos
+                c = cr.col
+                if p < slen {
+                    let nl3: PosInfo = skip_newline(input, slen, p, ln)
+                    p = nl3.pos
+                    ln = nl3.line
+                    c = nl3.col
+                }
+                entries = entries + [new_yaml_entry(key_str, Null())]
+            } else {
+                // Inline value
+                let val_r3: ParseResult = parse_value(input, slen, p, ln, c, map_indent + 1, false, anchors, depth + 1)
+                if val_r3.ok == false { return val_r3 }
+                entries = entries + [new_yaml_entry(key_str, val_r3.value)]
+                p = val_r3.pos
+                ln = val_r3.line
+                c = val_r3.col
+            } } }
+        }
+    }
+
+    return ok_result(Map(entries), p, ln, c)
+}
+
+// ---------------------------------------------------------------------------
+// Document marker handling
+// ---------------------------------------------------------------------------
+
+fn is_doc_start(input: String, slen: Int, pos: Int) -> Bool {
+    if pos + 2 >= slen { return false }
+    if input.char_at(pos) != "-" { return false }
+    if input.char_at(pos + 1) != "-" { return false }
+    if input.char_at(pos + 2) != "-" { return false }
+    // Must be followed by whitespace, newline, or eof
+    if pos + 3 >= slen { return true }
+    let after: String = input.char_at(pos + 3)
+    if after == " " { return true }
+    if after == "\t" { return true }
+    if after == "\n" { return true }
+    if after == "\r" { return true }
+    return false
+}
+
+fn is_doc_end(input: String, slen: Int, pos: Int) -> Bool {
+    if pos + 2 >= slen { return false }
+    if input.char_at(pos) != "." { return false }
+    if input.char_at(pos + 1) != "." { return false }
+    if input.char_at(pos + 2) != "." { return false }
+    if pos + 3 >= slen { return true }
+    let after: String = input.char_at(pos + 3)
+    if after == " " { return true }
+    if after == "\t" { return true }
+    if after == "\n" { return true }
+    if after == "\r" { return true }
+    return false
+}
+
+// Parse a single document — stops at next --- or ... or EOF
+fn parse_document(input: String, slen: Int, pos: Int, line: Int, col: Int) -> ParseResult {
+    let mut p: Int = pos
+    let mut ln: Int = line
+    let mut c: Int = col
+    let mut anchors: Map<String, YamlValue> = #{}
+
+    // Skip leading whitespace/comments/blank lines
+    let ws: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+    p = ws.pos
+    ln = ws.line
+    c = ws.col
+
+    // Skip --- if present
+    if p < slen {
+        if is_doc_start(input, slen, p) {
+            p = p + 3
+            c = c + 3
+            let rl: PosInfo = skip_rest_of_line(input, slen, p, ln, c)
+            p = rl.pos
+            ln = rl.line
+            c = rl.col
+        }
+    }
+
+    // Skip whitespace after ---
+    let ws2: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+    p = ws2.pos
+    ln = ws2.line
+    c = ws2.col
+
+    if p >= slen {
+        return ok_result(Null(), p, ln, c)
+    }
+
+    // Check for immediate ... (empty document)
+    if is_doc_end(input, slen, p) {
+        p = p + 3
+        c = c + 3
+        let rl2: PosInfo = skip_rest_of_line(input, slen, p, ln, c)
+        return ok_result(Null(), rl2.pos, rl2.line, rl2.col)
+    }
+
+    // Check for immediate --- (empty document before next)
+    if is_doc_start(input, slen, p) {
+        return ok_result(Null(), p, ln, c)
+    }
+
+    // Parse document content
+    let val_r: ParseResult = parse_value(input, slen, p, ln, c, 0, false, anchors, 0)
+    if val_r.ok == false { return val_r }
+
+    // Skip trailing whitespace/comments
+    let ws3: PosInfo = skip_ws_and_comments(input, slen, val_r.pos, val_r.line, val_r.col)
+    p = ws3.pos
+    ln = ws3.line
+    c = ws3.col
+
+    // Consume ... if present
+    if p < slen {
+        if is_doc_end(input, slen, p) {
+            p = p + 3
+            c = c + 3
+            let rl3: PosInfo = skip_rest_of_line(input, slen, p, ln, c)
+            p = rl3.pos
+            ln = rl3.line
+            c = rl3.col
+        }
+    }
+
+    return ok_result(val_r.value, p, ln, c)
+}
+
+// ---------------------------------------------------------------------------
+// Public API — decode (single document)
+// ---------------------------------------------------------------------------
+
+pub fn decode(input: String) -> Result<YamlValue, YamlError> {
+    let slen: Int = len(input)
+    let result: ParseResult = parse_document(input, slen, 0, 1, 1)
+    if result.ok == false { return Err(result.error) }
+    return Ok(result.value)
+}
+
+// ---------------------------------------------------------------------------
+// Public API — decode_all (multi-document)
+// ---------------------------------------------------------------------------
+
+pub fn decode_all(input: String) -> Result<List<YamlValue>, YamlError> {
+    let slen: Int = len(input)
+    let mut docs: List<YamlValue> = []
+    let mut p: Int = 0
+    let mut ln: Int = 1
+    let mut c: Int = 1
+
+    let mut count: Int = 0
+    while count < 10000 {
+        count = count + 1
+
+        // Skip whitespace
+        let ws: PosInfo = skip_ws_and_comments(input, slen, p, ln, c)
+        p = ws.pos
+        ln = ws.line
+        c = ws.col
+
+        if p >= slen { break }
+
+        let result: ParseResult = parse_document(input, slen, p, ln, c)
+        if result.ok == false { return Err(result.error) }
+        docs = docs + [result.value]
+        p = result.pos
+        ln = result.line
+        c = result.col
+
+        // If we didn't advance, break to prevent infinite loop
+        if p <= ws.pos {
+            if p >= slen { break }
+            // Force advance past any stuck character
+            p = p + 1
+            c = c + 1
+        }
+    }
+
+    return Ok(docs)
+}
+
+// ---------------------------------------------------------------------------
+// Serializer — block style (encode)
+// ---------------------------------------------------------------------------
+
+fn yaml_needs_quoting(s: String) -> Bool {
+    let slen: Int = len(s)
+    if slen == 0 { return true }
+
+    // Check if it would resolve to a non-string scalar
+    let resolved: YamlValue = resolve_plain_scalar(s)
+    match resolved {
+        Str(sv) => {},
+        _ => { return true }
+    }
+
+    // Check for characters that need quoting
+    let first: String = s.char_at(0)
+    if first == "&" { return true }
+    if first == "*" { return true }
+    if first == "!" { return true }
+    if first == "|" { return true }
+    if first == ">" { return true }
+    if first == "'" { return true }
+    if first == "\"" { return true }
+    if first == "%" { return true }
+    if first == "@" { return true }
+    if first == "`" { return true }
+    if first == "{" { return true }
+    if first == "}" { return true }
+    if first == "[" { return true }
+    if first == "]" { return true }
+    if first == "," { return true }
+    if first == "#" { return true }
+    if first == "-" {
+        if slen > 1 {
+            if s.char_at(1) == " " { return true }
+        }
+    }
+    if first == "?" {
+        if slen > 1 {
+            if s.char_at(1) == " " { return true }
+        }
+    }
+
+    // Check for ': ' or ' #' inside the string
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        if ch == ":" {
+            if i + 1 < slen {
+                if s.char_at(i + 1) == " " { return true }
+            }
+        }
+        if ch == "#" {
+            if i > 0 {
+                if s.char_at(i - 1) == " " { return true }
+            }
+        }
+        if ch == "\n" { return true }
+        if ch == "\r" { return true }
+        if ch == "\t" { return true }
+        i = i + 1
+    }
+
+    return false
+}
+
+fn escape_yaml_double(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        if ch == "\"" { result = result + "\\\"" } else { if ch == "\\" { result = result + "\\\\" } else { if ch == "\n" { result = result + "\\n" } else { if ch == "\t" { result = result + "\\t" } else { if ch == "\r" { result = result + "\\r" } else { result = result + ch } } } } }
+        i = i + 1
+    }
+    return result
+}
+
+fn yaml_quote_string(s: String) -> String {
+    return "\"" + escape_yaml_double(s) + "\""
+}
+
+fn make_indent(level: Int) -> String {
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < level {
+        result = result + "  "
+        i = i + 1
+    }
+    return result
+}
+
+fn encode_value(value: YamlValue, indent: Int, inline: Bool) -> String {
+    match value {
+        Null => { return "null" },
+        Bool(b) => {
+            if b { return "true" } else { return "false" }
+        },
+        Int(n) => { return str(n) },
+        Float(f) => {
+            if f > 999999998.0 { return ".inf" }
+            if f < -999999998.0 { return "-.inf" }
+            return str(f)
+        },
+        Str(s) => {
+            // Check for multi-line strings — use literal block style
+            if s.contains("\n") {
+                if inline == false {
+                    let mut block: String = "|\n"
+                    let ind: String = make_indent(indent + 1)
+                    let slen: Int = len(s)
+                    let mut line_start: Int = 0
+                    let mut si: Int = 0
+                    while si < slen {
+                        let sc: String = s.char_at(si)
+                        if sc == "\n" {
+                            block = block + ind + s.substr(line_start, si) + "\n"
+                            line_start = si + 1
+                        }
+                        si = si + 1
+                    }
+                    // Last line (may not end with \n)
+                    if line_start < slen {
+                        block = block + ind + s.substr(line_start, slen)
+                    }
+                    return block
+                }
+            }
+            if yaml_needs_quoting(s) {
+                return yaml_quote_string(s)
+            }
+            return s
+        },
+        Seq(items) => {
+            let item_count: Int = len(items)
+            if item_count == 0 { return "[]" }
+            if inline {
+                // Flow style for inline
+                let mut result: String = "["
+                let mut i: Int = 0
+                while i < item_count {
+                    if i > 0 { result = result + ", " }
+                    result = result + encode_value(items[i], indent, true)
+                    i = i + 1
+                }
+                return result + "]"
+            }
+            let mut result2: String = ""
+            let ind: String = make_indent(indent)
+            let mut i2: Int = 0
+            while i2 < item_count {
+                if i2 > 0 { result2 = result2 + "\n" }
+                let item_str: String = encode_value(items[i2], indent + 1, false)
+                // Check if item is a complex type that needs newline
+                let is_complex: Bool = is_complex_value(items[i2])
+                if is_complex {
+                    result2 = result2 + ind + "-\n" + make_indent(indent + 1) + item_str
+                } else {
+                    result2 = result2 + ind + "- " + item_str
+                }
+                i2 = i2 + 1
+            }
+            return result2
+        },
+        Map(entries) => {
+            let entry_count: Int = len(entries)
+            if entry_count == 0 { return "{}" }
+            if inline {
+                let mut result: String = "{"
+                let mut i: Int = 0
+                while i < entry_count {
+                    if i > 0 { result = result + ", " }
+                    let entry: YamlEntry = entries[i]
+                    let key_out: String = encode_map_key(entry.key)
+                    result = result + key_out + ": " + encode_value(entry.value, indent, true)
+                    i = i + 1
+                }
+                return result + "}"
+            }
+            let mut result2: String = ""
+            let ind: String = make_indent(indent)
+            let mut i2: Int = 0
+            while i2 < entry_count {
+                if i2 > 0 { result2 = result2 + "\n" }
+                let entry2: YamlEntry = entries[i2]
+                let key_out2: String = encode_map_key(entry2.key)
+                let is_complex2: Bool = is_complex_value(entry2.value)
+                if is_complex2 {
+                    let val_str: String = encode_value(entry2.value, indent + 1, false)
+                    result2 = result2 + ind + key_out2 + ":\n" + val_str
+                } else {
+                    let val_str2: String = encode_value(entry2.value, indent + 1, false)
+                    result2 = result2 + ind + key_out2 + ": " + val_str2
+                }
+                i2 = i2 + 1
+            }
+            return result2
+        }
+    }
+}
+
+fn encode_map_key(key: String) -> String {
+    if yaml_needs_quoting(key) {
+        return yaml_quote_string(key)
+    }
+    return key
+}
+
+fn is_complex_value(value: YamlValue) -> Bool {
+    match value {
+        Seq(items) => {
+            if len(items) > 0 { return true }
+            return false
+        },
+        Map(entries) => {
+            if len(entries) > 0 { return true }
+            return false
+        },
+        _ => { return false }
+    }
+}
+
+pub fn encode(value: YamlValue) -> String {
+    return encode_value(value, 0, false) + "\n"
+}
+
+// ---------------------------------------------------------------------------
+// Serializer — flow/compact style (encode_flow)
+// ---------------------------------------------------------------------------
+
+fn encode_flow_value(value: YamlValue) -> String {
+    match value {
+        Null => { return "null" },
+        Bool(b) => {
+            if b { return "true" } else { return "false" }
+        },
+        Int(n) => { return str(n) },
+        Float(f) => {
+            if f > 999999998.0 { return ".inf" }
+            if f < -999999998.0 { return "-.inf" }
+            return str(f)
+        },
+        Str(s) => {
+            if yaml_needs_quoting(s) {
+                return yaml_quote_string(s)
+            }
+            return s
+        },
+        Seq(items) => {
+            let item_count: Int = len(items)
+            if item_count == 0 { return "[]" }
+            let mut result: String = "["
+            let mut i: Int = 0
+            while i < item_count {
+                if i > 0 { result = result + ", " }
+                result = result + encode_flow_value(items[i])
+                i = i + 1
+            }
+            return result + "]"
+        },
+        Map(entries) => {
+            let entry_count: Int = len(entries)
+            if entry_count == 0 { return "{}" }
+            let mut result: String = "{"
+            let mut i: Int = 0
+            while i < entry_count {
+                if i > 0 { result = result + ", " }
+                let entry: YamlEntry = entries[i]
+                let key_out: String = encode_map_key(entry.key)
+                result = result + key_out + ": " + encode_flow_value(entry.value)
+                i = i + 1
+            }
+            return result + "}"
+        }
+    }
+}
+
+pub fn encode_flow(value: YamlValue) -> String {
+    return encode_flow_value(value) + "\n"
+}

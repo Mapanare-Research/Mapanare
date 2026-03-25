@@ -501,114 +501,233 @@ Embedded KV can persist to/from disk. Trait polymorphism verified.
 
 ---
 
-## Phase 7 — Dato v1.0 — DataFrame Library
+## Phase 7 — Dato v1.0 — Compiled Data Engine
 **Status:** `Not Started`
-**Priority:** HIGH — flagship data analysis package, proves Mapanare can replace Python pandas
+**Priority:** CRITICAL — this is why Mapanare exists; the proof that a compiled language with agents and streams eats Python for breakfast
 **Platform:** Both (separate repository: `github.com/Mapanare-Research/dato`)
-**Effort:** X-Large (2+ weeks)
+**Effort:** X-Large (3+ weeks)
 
-Dato is an **external package**, not part of the stdlib monolith. This phase defines the
-design and acceptance criteria. Implementation lives in the Dato repo.
+Dato is **not a DataFrame library**. It's a compiled data engine. No `DataFrame`. The
+core type is `Table` — a typed, columnar, stream-native data structure that compiles to
+native code and parallelizes across agents without you asking.
 
-### Core DataFrame
+**What pandas can't do that Dato does natively:**
+
+- **Compiled** — no Python GIL, no C extension bridge, no interpreter overhead. A `filter |> group |> mean` pipeline compiles to a tight LLVM IR loop.
+- **Agent-parallel** — `table |> parallel(4, transform)` splits across 4 supervised agents. Natural Mapanare concurrency, not bolt-on multiprocessing.
+- **Stream-native** — process 100GB with constant memory. `stream("huge.csv") |> filter(pred) |> fold(acc, reducer)` never loads the whole file.
+- **Typed columns at compile time** — `sum("name_column")` is a compile error, not a runtime `TypeError` buried in a stack trace.
+- **Zero-copy views** — `t.slice(0, 1000)` returns a view into the same column buffers, not a copy.
+- **Reactive** — `Signal<Table>` auto-recomputes derived tables when source data changes. Live dashboards, not batch scripts.
+- **SQL pushdown** — `from_sql(conn, query) |> filter(pred)` pushes the predicate into the SQL WHERE clause when possible, fetching less data.
+- **Pipe-first** — no method chain soup creating 47 intermediate copies. `t |> select(cols) |> filter(pred) |> group("col") |> mean("val")` is one compiled pipeline.
+
+Dato is an **external package** (`github.com/Mapanare-Research/dato`). This phase defines
+the design, architecture, and acceptance criteria. Implementation lives in the Dato repo.
+
+### Design Philosophy
+
+```
+# This is NOT pandas. This is what happens when data meets a compiled language
+# with first-class agents, streams, and pipes.
+
+// pandas: 47 intermediate copies, GIL-locked, pray the C extension handles it
+// df = pd.read_csv("sales.csv")
+// result = df[df["amount"] > 100].groupby("region")["amount"].mean()
+
+// Dato: one compiled pipeline, zero copies, parallel if you want
+let sales = csv("sales.csv")
+let result = sales
+    |> filter(fn(r) -> r.amount > 100)
+    |> group("region")
+    |> mean("amount")
+
+// Dato: stream 100GB without blinking
+stream("massive.csv", chunk: 50000)
+    |> filter(fn(r) -> r.status == "active")
+    |> parallel(8, fn(chunk) -> chunk |> group("region") |> sum("revenue"))
+    |> merge()
+    |> to_csv("output.csv")
+
+// Dato: reactive — source changes, derived table auto-updates
+let live_data: Signal<Table> = signal(from_sql(conn, "SELECT * FROM events"))
+let dashboard = live_data |> computed(fn(t) -> t |> group("type") |> count())
+// dashboard recomputes whenever live_data changes
+
+// Dato: federated — query two databases, join natively
+let users = from_sql(pg_conn, "SELECT * FROM users")
+let orders = from_sql(sqlite_conn, "SELECT * FROM orders")
+let report = join(users, orders, on: "user_id") |> group("name") |> sum("total")
+```
+
+### Core: `Table` Type
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Define `struct DataFrame { columns: List<Column>, nrows: Int }` | `[ ]` | `dato/src/frame.mn` | Columnar storage: each column is a typed vector |
-| 2 | Define `enum ColumnType { IntCol, FloatCol, StringCol, BoolCol }` | `[ ]` | `dato/src/column.mn` | Typed columns — not string-erased like Python pandas |
-| 3 | Define `struct Column { name: String, dtype: ColumnType, data_int: List<Int>, data_float: List<Float>, data_str: List<String>, data_bool: List<Bool>, nulls: List<Bool> }` | `[ ]` | `dato/src/column.mn` | Only one data field is active per dtype; `nulls` tracks missing values |
-| 4 | Implement `DataFrame.from_rows(columns: List<String>, rows: List<List<SqlValue>>) -> DataFrame` | `[ ]` | `dato/src/frame.mn` | Constructor from SQL results |
-| 5 | Implement `DataFrame.from_csv(path: String) -> Result<DataFrame, DatoError>` | `[ ]` | `dato/src/io_csv.mn` | Uses `encoding/csv.mn` + `fs.mn` |
-| 6 | Implement `DataFrame.from_json(path: String) -> Result<DataFrame, DatoError>` | `[ ]` | `dato/src/io_json.mn` | Uses `encoding/json.mn` |
-| 7 | Implement `DataFrame.from_sql(conn, query, params) -> Result<DataFrame, DatoError>` | `[ ]` | `dato/src/io_sql.mn` | Uses `db/sql.mn` |
+| 1 | Define `struct Table { cols: List<Col>, nrows: Int, view: Bool }` | `[ ]` | `dato/src/table.mn` | `view: Bool` — true means this is a zero-copy view into another table's buffers |
+| 2 | Define `enum Dtype { I64, F64, Str, Bool, Null }` | `[ ]` | `dato/src/col.mn` | 5 types. That's it. No object dtype, no category, no timedelta mess. |
+| 3 | Define `struct Col { name: String, dtype: Dtype, ints: List<Int>, floats: List<Float>, strs: List<String>, bools: List<Bool>, mask: List<Bool> }` | `[ ]` | `dato/src/col.mn` | Only one data field active per dtype. `mask` = null bitmap (true = present, false = null). |
+| 4 | Implement `col_i64(name: String, data: List<Int>) -> Col` — typed column constructor | `[ ]` | `dato/src/col.mn` | No nulls by default; use `col_i64_masked` for nullable |
+| 5 | Implement `col_f64`, `col_str`, `col_bool` — same pattern | `[ ]` | `dato/src/col.mn` | |
+| 6 | Implement `col_i64_masked(name, data, mask) -> Col` — nullable column | `[ ]` | `dato/src/col.mn` | |
+| 7 | Implement `table(cols: List<Col>) -> Result<Table, DatoError>` — construct, validate equal lengths | `[ ]` | `dato/src/table.mn` | THE constructor. Not `Table.new()`. Just `table()`. |
+| 8 | Implement `Table.ncols() -> Int`, `Table.nrows() -> Int` | `[ ]` | `dato/src/table.mn` | |
+| 9 | Implement `Table.col(name: String) -> Option<Col>` — get column by name | `[ ]` | `dato/src/table.mn` | |
+| 10 | Implement `Table.dtypes() -> List<(String, Dtype)>` — schema inspection | `[ ]` | `dato/src/table.mn` | |
+| 11 | Implement `Table.row(i: Int) -> Option<Row>` — get single row as `Map<String, SqlValue>` | `[ ]` | `dato/src/table.mn` | For inspection, not iteration (use streams for that) |
 
-### Column Operations
-
-| # | Task | Status | Files | Notes |
-|---|------|--------|-------|-------|
-| 8 | Implement `DataFrame.select(cols: List<String>) -> DataFrame` — column subset | `[ ]` | `dato/src/ops.mn` | |
-| 9 | Implement `DataFrame.drop(cols: List<String>) -> DataFrame` — remove columns | `[ ]` | `dato/src/ops.mn` | |
-| 10 | Implement `DataFrame.rename(old: String, new: String) -> DataFrame` | `[ ]` | `dato/src/ops.mn` | |
-| 11 | Implement `DataFrame.add_column(name: String, col: Column) -> DataFrame` | `[ ]` | `dato/src/ops.mn` | |
-| 12 | Implement `DataFrame.cast(col: String, dtype: ColumnType) -> Result<DataFrame, DatoError>` | `[ ]` | `dato/src/ops.mn` | Type conversion with validation |
-
-### Row Operations
+### I/O: Sources & Sinks
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 13 | Implement `DataFrame.filter(pred: fn(Row) -> Bool) -> DataFrame` | `[ ]` | `dato/src/ops.mn` | Predicate filtering |
-| 14 | Implement `DataFrame.head(n: Int) -> DataFrame` — first N rows | `[ ]` | `dato/src/ops.mn` | |
-| 15 | Implement `DataFrame.tail(n: Int) -> DataFrame` — last N rows | `[ ]` | `dato/src/ops.mn` | |
-| 16 | Implement `DataFrame.slice(start: Int, end: Int) -> DataFrame` | `[ ]` | `dato/src/ops.mn` | |
-| 17 | Implement `DataFrame.sort(col: String, ascending: Bool) -> DataFrame` | `[ ]` | `dato/src/ops.mn` | |
-| 18 | Implement `DataFrame.unique(col: String) -> DataFrame` — distinct rows by column | `[ ]` | `dato/src/ops.mn` | |
+| 12 | Implement `csv(path: String) -> Result<Table, DatoError>` — load CSV | `[ ]` | `dato/src/io.mn` | Uses `encoding/csv.mn` + `fs.mn`. Auto-infers column types. |
+| 13 | Implement `json(path: String) -> Result<Table, DatoError>` — load JSON (array of objects) | `[ ]` | `dato/src/io.mn` | Uses `encoding/json.mn` |
+| 14 | Implement `from_sql(conn, query: String) -> Result<Table, DatoError>` — load from SQL query | `[ ]` | `dato/src/io.mn` | Uses `db/sql.mn` |
+| 15 | Implement `from_sql_params(conn, query, params: List<SqlValue>) -> Result<Table, DatoError>` | `[ ]` | `dato/src/io.mn` | Parameterized — safe by default |
+| 16 | Implement `from_rows(cols: List<String>, rows: List<List<SqlValue>>) -> Table` | `[ ]` | `dato/src/io.mn` | Manual construction from row data |
+| 17 | Implement `to_csv(t: Table, path: String) -> Result<(), DatoError>` | `[ ]` | `dato/src/io.mn` | |
+| 18 | Implement `to_json(t: Table, path: String) -> Result<(), DatoError>` | `[ ]` | `dato/src/io.mn` | |
+| 19 | Implement `to_sql(t: Table, conn, table_name: String) -> Result<(), DatoError>` | `[ ]` | `dato/src/io.mn` | Batch INSERT with parameterized queries |
+| 20 | Implement `show(t: Table, max_rows: Int)` — pretty-print to stdout | `[ ]` | `dato/src/display.mn` | Aligned columns, type header row, truncated strings, `...` for overflow |
+| 21 | Implement `show(t: Table)` — default: show first 20 rows | `[ ]` | `dato/src/display.mn` | |
+
+### Core Transforms (all pipe-friendly: `Table -> Table`)
+
+| # | Task | Status | Files | Notes |
+|---|------|--------|-------|-------|
+| 22 | Implement `select(t: Table, cols: List<String>) -> Table` — keep columns | `[ ]` | `dato/src/ops.mn` | Zero-copy: returns view into same column buffers |
+| 23 | Implement `drop(t: Table, cols: List<String>) -> Table` — remove columns | `[ ]` | `dato/src/ops.mn` | Zero-copy view |
+| 24 | Implement `rename(t: Table, old: String, new: String) -> Table` | `[ ]` | `dato/src/ops.mn` | |
+| 25 | Implement `filter(t: Table, pred: fn(Row) -> Bool) -> Table` — predicate filtering | `[ ]` | `dato/src/ops.mn` | Compiles pred to native code — no interpreter dispatch per row |
+| 26 | Implement `head(t: Table, n: Int) -> Table` — first N rows | `[ ]` | `dato/src/ops.mn` | Zero-copy view |
+| 27 | Implement `tail(t: Table, n: Int) -> Table` — last N rows | `[ ]` | `dato/src/ops.mn` | Zero-copy view |
+| 28 | Implement `slice(t: Table, start: Int, end: Int) -> Table` — row range | `[ ]` | `dato/src/ops.mn` | Zero-copy view |
+| 29 | Implement `sort(t: Table, col: String, asc: Bool) -> Table` | `[ ]` | `dato/src/ops.mn` | Timsort on column, permute all columns by index array |
+| 30 | Implement `unique(t: Table, col: String) -> Table` — deduplicate by column | `[ ]` | `dato/src/ops.mn` | Keep first occurrence |
+| 31 | Implement `add_col(t: Table, c: Col) -> Table` — append column | `[ ]` | `dato/src/ops.mn` | |
+| 32 | Implement `cast(t: Table, col: String, dtype: Dtype) -> Result<Table, DatoError>` — type conversion | `[ ]` | `dato/src/ops.mn` | Int→Float, Float→Int (truncate), *→Str, Str→Int/Float with validation |
+| 33 | Implement `map_col(t: Table, col: String, f: fn(SqlValue) -> SqlValue) -> Table` — transform a column in-place | `[ ]` | `dato/src/ops.mn` | Like pandas `apply` but compiled |
+| 34 | Implement `with_col(t: Table, name: String, f: fn(Row) -> SqlValue) -> Table` — derived column | `[ ]` | `dato/src/ops.mn` | `t \|> with_col("total", fn(r) -> r.price * r.qty)` |
+| 35 | Implement `sample(t: Table, n: Int) -> Table` — random sample of N rows | `[ ]` | `dato/src/ops.mn` | |
+| 36 | Implement `shuffle(t: Table) -> Table` — random row permutation | `[ ]` | `dato/src/ops.mn` | |
 
 ### Aggregation
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 19 | Implement `DataFrame.group_by(col: String) -> GroupedFrame` | `[ ]` | `dato/src/agg.mn` | Returns grouped structure for chaining |
-| 20 | Implement `GroupedFrame.sum(col: String) -> DataFrame` | `[ ]` | `dato/src/agg.mn` | |
-| 21 | Implement `GroupedFrame.mean(col: String) -> DataFrame` | `[ ]` | `dato/src/agg.mn` | |
-| 22 | Implement `GroupedFrame.count() -> DataFrame` | `[ ]` | `dato/src/agg.mn` | |
-| 23 | Implement `GroupedFrame.min(col: String)`, `max(col: String)` | `[ ]` | `dato/src/agg.mn` | |
-| 24 | Implement `DataFrame.describe() -> DataFrame` — summary statistics | `[ ]` | `dato/src/agg.mn` | count, mean, std, min, 25%, 50%, 75%, max |
+| 37 | Define `struct Grouped { key_col: String, groups: Map<SqlValue, Table> }` | `[ ]` | `dato/src/agg.mn` | Grouped tables — each group is a sub-Table (view) |
+| 38 | Implement `group(t: Table, col: String) -> Grouped` | `[ ]` | `dato/src/agg.mn` | Hash-partition rows by column value |
+| 39 | Implement `sum(g: Grouped, col: String) -> Table` | `[ ]` | `dato/src/agg.mn` | Result: `[key_col, col]` with one row per group |
+| 40 | Implement `mean(g: Grouped, col: String) -> Table` | `[ ]` | `dato/src/agg.mn` | |
+| 41 | Implement `count(g: Grouped) -> Table` | `[ ]` | `dato/src/agg.mn` | Result: `[key_col, "count"]` |
+| 42 | Implement `min(g: Grouped, col: String) -> Table`, `max(g: Grouped, col: String) -> Table` | `[ ]` | `dato/src/agg.mn` | |
+| 43 | Implement `agg(g: Grouped, specs: List<(String, String)>) -> Table` — multi-aggregation | `[ ]` | `dato/src/agg.mn` | `agg(g, [("amount", "sum"), ("count", "count"), ("price", "mean")])` — one pass |
+| 44 | Implement `describe(t: Table) -> Table` — summary stats per numeric column | `[ ]` | `dato/src/agg.mn` | count, mean, std, min, 25%, 50%, 75%, max |
+| 45 | Implement whole-table aggregates: `sum_col(t, col)`, `mean_col(t, col)`, `min_col`, `max_col`, `count_col` → `SqlValue` | `[ ]` | `dato/src/agg.mn` | No grouping — just the number. `sales \|> sum_col("revenue")` → `Int` |
 
 ### Joins
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 25 | Implement `join(left, right, on: String, how: String) -> DataFrame` | `[ ]` | `dato/src/join.mn` | `how`: "inner", "left", "right", "outer" |
-| 26 | Implement hash-join strategy (build hash map on smaller table) | `[ ]` | `dato/src/join.mn` | Uses `Map<String, List<Int>>` for row indices |
+| 46 | Implement `join(left: Table, right: Table, on: String, how: String) -> Table` | `[ ]` | `dato/src/join.mn` | `how`: `"inner"`, `"left"`, `"right"`, `"outer"` |
+| 47 | Implement hash-join strategy: build hash index on smaller table | `[ ]` | `dato/src/join.mn` | `Map<SqlValue, List<Int>>` for row indices |
+| 48 | Implement `cross(left: Table, right: Table) -> Table` — cartesian product | `[ ]` | `dato/src/join.mn` | Useful for parameter sweeps |
+| 49 | Implement `concat(tables: List<Table>) -> Result<Table, DatoError>` — vertical stack | `[ ]` | `dato/src/join.mn` | All tables must have same schema |
 
 ### Reshape
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 27 | Implement `pivot(df, index, columns, values) -> DataFrame` | `[ ]` | `dato/src/reshape.mn` | Wide format |
-| 28 | Implement `melt(df, id_vars, value_vars) -> DataFrame` | `[ ]` | `dato/src/reshape.mn` | Long format |
+| 50 | Implement `pivot(t: Table, index: String, columns: String, values: String) -> Table` | `[ ]` | `dato/src/reshape.mn` | Wide format: one column per unique value in `columns` |
+| 51 | Implement `melt(t: Table, id_vars: List<String>, value_vars: List<String>) -> Table` | `[ ]` | `dato/src/reshape.mn` | Long format: unpivot |
+| 52 | Implement `transpose(t: Table) -> Table` — rows ↔ columns | `[ ]` | `dato/src/reshape.mn` | All columns must be same dtype (or coerce to Str) |
 
-### I/O
-
-| # | Task | Status | Files | Notes |
-|---|------|--------|-------|-------|
-| 29 | Implement `DataFrame.to_csv(path: String) -> Result<(), DatoError>` | `[ ]` | `dato/src/io_csv.mn` | |
-| 30 | Implement `DataFrame.to_json(path: String) -> Result<(), DatoError>` | `[ ]` | `dato/src/io_json.mn` | |
-| 31 | Implement `DataFrame.to_sql(conn, table: String) -> Result<(), DatoError>` | `[ ]` | `dato/src/io_sql.mn` | Batch INSERT |
-| 32 | Implement `DataFrame.print(max_rows: Int)` — pretty-print table to stdout | `[ ]` | `dato/src/display.mn` | Aligned columns, truncated strings |
-
-### Stream-Based Large File Processing
+### Agent-Parallel Processing (THE differentiator)
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 33 | Implement `stream_csv(path: String, chunk_size: Int) -> Stream<DataFrame>` | `[ ]` | `dato/src/io_csv.mn` | Read CSV in chunks, each chunk is a DataFrame |
-| 34 | Implement `stream_sql(conn, query, batch: Int) -> Stream<DataFrame>` | `[ ]` | `dato/src/io_sql.mn` | Cursor-based SQL streaming in batches |
+| 53 | Implement `parallel(t: Table, n: Int, f: fn(Table) -> Table) -> Table` | `[ ]` | `dato/src/parallel.mn` | Split table into N chunks, spawn N agents, each runs `f`, merge results. This is the killer feature. |
+| 54 | Implement chunk splitting: `split(t: Table, n: Int) -> List<Table>` | `[ ]` | `dato/src/parallel.mn` | Split into N roughly equal sub-tables (zero-copy views) |
+| 55 | Implement result merging: `merge(tables: List<Table>) -> Table` | `[ ]` | `dato/src/parallel.mn` | Vertical concat of agent results |
+| 56 | Implement `parallel_map(t: Table, col: String, n: Int, f: fn(SqlValue) -> SqlValue) -> Table` | `[ ]` | `dato/src/parallel.mn` | Parallel column transform — split column across N agents |
+| 57 | Implement agent supervision for parallel tasks — auto-restart failed workers | `[ ]` | `dato/src/parallel.mn` | Uses Mapanare's native agent supervision |
+| 58 | Implement `parallel_reduce(t: Table, n: Int, map_fn: fn(Table) -> Table, reduce_fn: fn(Table, Table) -> Table) -> Table` | `[ ]` | `dato/src/parallel.mn` | MapReduce in 3 lines. Map across agents, reduce results. |
 
-### Pipe Composition
+### Stream Processing (process files bigger than RAM)
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 35 | Verify pipe `\|>` works with DataFrame methods: `df \|> filter(pred) \|> group_by("col") \|> mean("val")` | `[ ]` | `dato/src/ops.mn` | Should work naturally with Mapanare's pipe operator |
+| 59 | Implement `stream(path: String, chunk: Int) -> Stream<Table>` — stream CSV in chunks | `[ ]` | `dato/src/stream.mn` | Each chunk is a `Table` with `chunk` rows. Backpressure-aware. |
+| 60 | Implement `stream_sql(conn, query: String, batch: Int) -> Stream<Table>` | `[ ]` | `dato/src/stream.mn` | Cursor-based SQL streaming |
+| 61 | Implement stream transforms: `stream \|> filter(pred)` applies filter per chunk | `[ ]` | `dato/src/stream.mn` | Reuse `filter`, `select`, etc. — they work on `Table`, stream maps over chunks |
+| 62 | Implement `stream \|> fold(init, reducer) -> Table` — terminal: fold all chunks into one result | `[ ]` | `dato/src/stream.mn` | `stream("huge.csv", chunk: 50000) \|> fold(empty_table(), concat)` |
+| 63 | Implement `stream \|> collect() -> Table` — terminal: materialize entire stream | `[ ]` | `dato/src/stream.mn` | For when you know it fits in memory |
+| 64 | Implement `stream \|> sink_csv(path)` — terminal: stream results directly to file | `[ ]` | `dato/src/stream.mn` | Never holds full output in memory |
+| 65 | Implement `stream \|> sink_sql(conn, table_name)` — terminal: stream into database | `[ ]` | `dato/src/stream.mn` | Batch INSERT per chunk |
+| 66 | Implement `stream \|> parallel(n, transform)` — parallel stream processing | `[ ]` | `dato/src/stream.mn` | N agents process chunks concurrently from the stream. Bounded buffer between producer and consumer agents. |
+
+### Reactive Tables (Signal integration)
+
+| # | Task | Status | Files | Notes |
+|---|------|--------|-------|-------|
+| 67 | Implement `reactive(source: fn() -> Table) -> Signal<Table>` — create reactive table source | `[ ]` | `dato/src/reactive.mn` | Wraps a table-producing function as a Signal |
+| 68 | Implement `derived(source: Signal<Table>, transform: fn(Table) -> Table) -> Signal<Table>` | `[ ]` | `dato/src/reactive.mn` | Auto-recomputes when source changes. `let dashboard = derived(live_data, fn(t) -> t \|> group("type") \|> count())` |
+| 69 | Implement `on_change(source: Signal<Table>, callback: fn(Table))` — subscribe to table changes | `[ ]` | `dato/src/reactive.mn` | For push notifications, live displays |
+| 70 | Implement `refresh(source: Signal<Table>)` — manually trigger re-evaluation | `[ ]` | `dato/src/reactive.mn` | For poll-based sources (re-query SQL every N seconds) |
+
+### SQL Pushdown (smart query optimization)
+
+| # | Task | Status | Files | Notes |
+|---|------|--------|-------|-------|
+| 71 | Implement lazy `SqlQuery` builder: `from_sql_lazy(conn, table) -> SqlQuery` | `[ ]` | `dato/src/pushdown.mn` | Doesn't execute immediately — builds query plan |
+| 72 | Implement `SqlQuery.filter(pred)` → appends WHERE clause | `[ ]` | `dato/src/pushdown.mn` | Translates simple predicates: `r.age > 18` → `WHERE age > 18` |
+| 73 | Implement `SqlQuery.select(cols)` → set SELECT columns | `[ ]` | `dato/src/pushdown.mn` | Only fetch needed columns |
+| 74 | Implement `SqlQuery.sort(col, asc)` → append ORDER BY | `[ ]` | `dato/src/pushdown.mn` | |
+| 75 | Implement `SqlQuery.limit(n)` → append LIMIT | `[ ]` | `dato/src/pushdown.mn` | |
+| 76 | Implement `SqlQuery.collect() -> Result<Table, DatoError>` — terminal: execute the built query | `[ ]` | `dato/src/pushdown.mn` | Sends one optimized SQL query, not "SELECT * then filter in Mapanare" |
+
+### Null Handling
+
+| # | Task | Status | Files | Notes |
+|---|------|--------|-------|-------|
+| 77 | Implement null propagation in arithmetic: `null + 5 = null` | `[ ]` | `dato/src/null.mn` | |
+| 78 | Implement `drop_nulls(t: Table, col: String) -> Table` — remove rows where col is null | `[ ]` | `dato/src/null.mn` | |
+| 79 | Implement `fill_null(t: Table, col: String, value: SqlValue) -> Table` — replace nulls | `[ ]` | `dato/src/null.mn` | |
+| 80 | Implement `fill_forward(t: Table, col: String) -> Table` — forward-fill nulls | `[ ]` | `dato/src/null.mn` | Each null takes the value of the previous non-null row |
+| 81 | Implement `null_count(t: Table, col: String) -> Int` — count nulls in column | `[ ]` | `dato/src/null.mn` | |
+| 82 | Implement null-aware aggregations: `sum` skips nulls, `count` counts non-nulls | `[ ]` | `dato/src/agg.mn` | Default behavior — no `skipna=True` kwarg needed |
 
 ### Tests
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 36 | Test: DataFrame from CSV — load, inspect, column types | `[ ]` | `dato/tests/test_frame.py` | |
-| 37 | Test: select, drop, rename, add_column, cast | `[ ]` | `dato/tests/test_ops.py` | |
-| 38 | Test: filter, head, tail, slice, sort, unique | `[ ]` | `dato/tests/test_ops.py` | |
-| 39 | Test: group_by + sum/mean/count/min/max | `[ ]` | `dato/tests/test_agg.py` | |
-| 40 | Test: describe() produces correct statistics | `[ ]` | `dato/tests/test_agg.py` | |
-| 41 | Test: inner/left/right/outer join | `[ ]` | `dato/tests/test_join.py` | |
-| 42 | Test: pivot and melt roundtrip | `[ ]` | `dato/tests/test_reshape.py` | |
-| 43 | Test: CSV → DataFrame → SQL → DataFrame roundtrip | `[ ]` | `dato/tests/test_io.py` | End-to-end integration |
-| 44 | Test: stream_csv processes 1M-row file in bounded memory | `[ ]` | `dato/tests/test_stream.py` | |
-| 45 | Test: pipe composition: `df \|> filter \|> group_by \|> mean` | `[ ]` | `dato/tests/test_pipe.py` | |
-| 46 | Test: null handling — filter, aggregate, join with missing values | `[ ]` | `dato/tests/test_null.py` | |
+| 83 | Test: `table()` construction — valid, mismatched lengths, empty | `[ ]` | `dato/tests/test_table.py` | |
+| 84 | Test: `csv()` — load, inspect schema, verify column types auto-inferred | `[ ]` | `dato/tests/test_io.py` | |
+| 85 | Test: `from_sql()` + `to_sql()` roundtrip | `[ ]` | `dato/tests/test_io.py` | |
+| 86 | Test: `select`, `drop`, `rename`, `add_col`, `cast` | `[ ]` | `dato/tests/test_ops.py` | |
+| 87 | Test: `filter`, `head`, `tail`, `slice`, `sort`, `unique` | `[ ]` | `dato/tests/test_ops.py` | |
+| 88 | Test: `map_col`, `with_col` — derived column computation | `[ ]` | `dato/tests/test_ops.py` | |
+| 89 | Test: `group \|> sum`, `group \|> mean`, `group \|> count`, `group \|> min/max` | `[ ]` | `dato/tests/test_agg.py` | |
+| 90 | Test: `agg()` multi-aggregation in one pass | `[ ]` | `dato/tests/test_agg.py` | |
+| 91 | Test: `describe()` — verify count, mean, std, min, quartiles, max | `[ ]` | `dato/tests/test_agg.py` | |
+| 92 | Test: `join` — inner, left, right, outer; verify null handling in outer join | `[ ]` | `dato/tests/test_join.py` | |
+| 93 | Test: `concat` — vertical stack, schema mismatch error | `[ ]` | `dato/tests/test_join.py` | |
+| 94 | Test: `pivot` and `melt` roundtrip | `[ ]` | `dato/tests/test_reshape.py` | |
+| 95 | Test: `parallel(4, transform)` — same result as sequential, but faster | `[ ]` | `dato/tests/test_parallel.py` | Verify correctness first, then benchmark |
+| 96 | Test: `parallel_reduce` — MapReduce word count on 1M rows | `[ ]` | `dato/tests/test_parallel.py` | |
+| 97 | Test: `stream("huge.csv") \|> filter \|> fold` — bounded memory on 1M-row file | `[ ]` | `dato/tests/test_stream.py` | RSS must stay below 2x chunk size |
+| 98 | Test: `stream \|> parallel(4, transform) \|> sink_csv` — end-to-end streaming pipeline | `[ ]` | `dato/tests/test_stream.py` | |
+| 99 | Test: `reactive` + `derived` — source change triggers derived recomputation | `[ ]` | `dato/tests/test_reactive.py` | |
+| 100 | Test: SQL pushdown — verify generated SQL includes WHERE, SELECT, ORDER BY, LIMIT | `[ ]` | `dato/tests/test_pushdown.py` | Inspect query string, not just results |
+| 101 | Test: null handling — `drop_nulls`, `fill_null`, `fill_forward`, null-aware aggregations | `[ ]` | `dato/tests/test_null.py` | |
+| 102 | Test: zero-copy views — `slice` doesn't allocate new column buffers (memory check) | `[ ]` | `dato/tests/test_views.py` | |
+| 103 | Test: pipe composition — `t \|> filter(pred) \|> group("col") \|> mean("val") \|> sort("val", false)` | `[ ]` | `dato/tests/test_pipe.py` | |
+| 104 | Test: full pipeline — `csv("input.csv") \|> filter \|> parallel(4, group \|> sum) \|> merge \|> to_sql(conn, "results")` | `[ ]` | `dato/tests/test_pipeline.py` | The money test |
 
-**Done when:** Dato v1.0 can load CSV/JSON/SQL data into typed DataFrames, transform
-(filter, group, aggregate, join, pivot), and write results back. Stream-based processing
-handles files larger than memory. Pipe composition works naturally.
+**Done when:** Dato v1.0 is a compiled data engine that loads from CSV/JSON/SQL, transforms
+with typed columns and zero-copy views, parallelizes across agents, streams files larger than
+RAM, reacts to source changes via signals, and pushes predicates down to SQL. The API is
+pipe-first, minimalist, and compiles to native LLVM IR. No `DataFrame` anywhere.
 
 ---
 
@@ -743,16 +862,19 @@ Week 7-8:  Phase 8 (Both, integration + release)
 - `stdlib/db/embedded_kv.mn` — In-process KV store implementing KVStore
 
 ### Dato (External Package)
-- `dato/src/frame.mn` — DataFrame core
-- `dato/src/column.mn` — Column types
-- `dato/src/ops.mn` — Column and row operations
-- `dato/src/agg.mn` — Aggregation and group_by
-- `dato/src/join.mn` — Join operations
-- `dato/src/reshape.mn` — Pivot and melt
-- `dato/src/io_csv.mn` — CSV I/O + streaming
-- `dato/src/io_json.mn` — JSON I/O
-- `dato/src/io_sql.mn` — SQL I/O + streaming
+- `dato/src/table.mn` — Table type, core constructors
+- `dato/src/col.mn` — Column types, typed constructors
+- `dato/src/ops.mn` — Core transforms (select, filter, sort, map_col, with_col, etc.)
+- `dato/src/agg.mn` — Aggregation (group, sum, mean, count, describe, etc.)
+- `dato/src/join.mn` — Join, cross, concat
+- `dato/src/reshape.mn` — Pivot, melt, transpose
+- `dato/src/io.mn` — All I/O: csv, json, from_sql, to_csv, to_json, to_sql
 - `dato/src/display.mn` — Pretty-print tables
+- `dato/src/parallel.mn` — Agent-parallel: parallel, split, merge, parallel_map, parallel_reduce
+- `dato/src/stream.mn` — Stream processing: stream, stream_sql, sink_csv, sink_sql
+- `dato/src/reactive.mn` — Reactive tables: reactive, derived, on_change, refresh
+- `dato/src/pushdown.mn` — SQL pushdown: lazy query builder
+- `dato/src/null.mn` — Null handling: drop_nulls, fill_null, fill_forward
 
 ### Tests
 - `tests/native/test_db_sqlite.py`
@@ -779,6 +901,20 @@ Week 7-8:  Phase 8 (Both, integration + release)
 - `tests/e2e/test_sql_native.py`
 - `tests/e2e/test_kv_native.py`
 - `tests/e2e/test_data_pipeline.py`
+- `dato/tests/test_table.py`
+- `dato/tests/test_io.py`
+- `dato/tests/test_ops.py`
+- `dato/tests/test_agg.py`
+- `dato/tests/test_join.py`
+- `dato/tests/test_reshape.py`
+- `dato/tests/test_parallel.py`
+- `dato/tests/test_stream.py`
+- `dato/tests/test_reactive.py`
+- `dato/tests/test_pushdown.py`
+- `dato/tests/test_null.py`
+- `dato/tests/test_views.py`
+- `dato/tests/test_pipe.py`
+- `dato/tests/test_pipeline.py`
 
 ---
 
@@ -802,6 +938,6 @@ If context is interrupted mid-phase, add a handoff entry here:
 | 4: Filesystem | 27 | 7 | 34 |
 | 5: SQL Drivers | 33 | 12 | 45 |
 | 6: KV Stores | 14 | 6 | 20 |
-| 7: Dato v1.0 | 35 | 11 | 46 |
+| 7: Dato v1.0 | 82 | 22 | 104 |
 | 8: Integration | 15 | 15 | 30 |
-| **Total** | **206** | **74** | **280** |
+| **Total** | **253** | **85** | **338** |

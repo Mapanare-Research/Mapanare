@@ -1,0 +1,257 @@
+// db/embedded_kv.mn — In-Process Key-Value Store for Mapanare
+//
+// A simple Map<String, String> backed KV store. Data lives in memory.
+// Can persist to disk as JSON and load back.
+//
+// Usage:
+//   import db::embedded_kv
+//   import db::kv
+//   let store = embedded_kv.create()
+//   let s2 = embedded_kv.set(store, "hello", "world")
+//   let val = embedded_kv.get(s2, "hello")
+
+import db::kv
+import encoding::json
+
+// ---------------------------------------------------------------------------
+// Extern C runtime functions (file I/O from v0.8.0)
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_file_read(path: String) -> String
+extern "C" fn __mn_file_write(path: String, content: String) -> Int
+
+// ---------------------------------------------------------------------------
+// Constructor helpers
+// ---------------------------------------------------------------------------
+
+fn new_embedded_store(data: Map<String, String>) -> kv.EmbeddedStore {
+    return new kv.EmbeddedStore { data: data }
+}
+
+fn new_kv_error(msg: String) -> kv.KVError {
+    return new kv.KVError { message: msg }
+}
+
+// ---------------------------------------------------------------------------
+// create — create a new empty in-process KV store
+// ---------------------------------------------------------------------------
+
+pub fn create() -> kv.KVStore {
+    let data: Map<String, String> = #{}
+    let store: kv.EmbeddedStore = new_embedded_store(data)
+    return Embedded(store)
+}
+
+// ---------------------------------------------------------------------------
+// get — retrieve a value by key
+// ---------------------------------------------------------------------------
+
+pub fn get(store: kv.EmbeddedStore, key: String) -> Option<String> {
+    let mut found: Bool = false
+    for k in store.data {
+        if k == key { found = true }
+    }
+    if found == false {
+        return None
+    }
+    return Some(store.data[key])
+}
+
+// ---------------------------------------------------------------------------
+// set — returns a new EmbeddedStore with the key set (functional update)
+// ---------------------------------------------------------------------------
+
+pub fn set(store: kv.EmbeddedStore, key: String, value: String) -> kv.EmbeddedStore {
+    let mut new_data: Map<String, String> = #{}
+    for k in store.data {
+        new_data[k] = store.data[k]
+    }
+    new_data[key] = value
+    return new_embedded_store(new_data)
+}
+
+// ---------------------------------------------------------------------------
+// del — returns a new EmbeddedStore with the key removed
+// ---------------------------------------------------------------------------
+
+pub fn del(store: kv.EmbeddedStore, key: String) -> kv.EmbeddedStore {
+    let mut new_data: Map<String, String> = #{}
+    for k in store.data {
+        if k != key {
+            new_data[k] = store.data[k]
+        }
+    }
+    return new_embedded_store(new_data)
+}
+
+// ---------------------------------------------------------------------------
+// exists — check if a key is present
+// ---------------------------------------------------------------------------
+
+pub fn exists(store: kv.EmbeddedStore, key: String) -> Bool {
+    for k in store.data {
+        if k == key { return true }
+    }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// keys — return all keys as a list
+// ---------------------------------------------------------------------------
+
+pub fn keys(store: kv.EmbeddedStore) -> List<String> {
+    let mut result: List<String> = []
+    for k in store.data {
+        result = result + [k]
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// size — return the number of entries
+// ---------------------------------------------------------------------------
+
+pub fn size(store: kv.EmbeddedStore) -> Int {
+    let mut count: Int = 0
+    for k in store.data {
+        count = count + 1
+    }
+    return count
+}
+
+// ---------------------------------------------------------------------------
+// save — serialize the store to a JSON file on disk
+// ---------------------------------------------------------------------------
+
+pub fn save(store: kv.EmbeddedStore, path: String) -> Result<Bool, kv.KVError> {
+    let json_str: String = map_to_json(store.data)
+    let wresult: Int = __mn_file_write(path, json_str)
+    if wresult == 0 {
+        return Err(new_kv_error("Failed to write KV store to file: " + path))
+    }
+    return Ok(true)
+}
+
+// ---------------------------------------------------------------------------
+// load — deserialize a JSON file from disk into a KVStore
+// ---------------------------------------------------------------------------
+
+pub fn load(path: String) -> Result<kv.KVStore, kv.KVError> {
+    let content: String = __mn_file_read(path)
+    if len(content) == 0 {
+        return Err(new_kv_error("Failed to read file or file is empty: " + path))
+    }
+
+    let parse_result: Result<Map<String, String>, kv.KVError> = json_to_map(content)
+    match parse_result {
+        Ok(data) => {
+            let store: kv.EmbeddedStore = new_embedded_store(data)
+            return Ok(Embedded(store))
+        },
+        Err(e) => {
+            return Err(e)
+        }
+    }
+    return Err(new_kv_error("unreachable"))
+}
+
+// ---------------------------------------------------------------------------
+// Internal: map_to_json — serialize Map<String, String> to JSON string
+//
+// Output: {"key1":"value1","key2":"value2"}
+// Escapes quotes and backslashes in keys and values.
+// ---------------------------------------------------------------------------
+
+fn map_to_json(data: Map<String, String>) -> String {
+    let mut result: String = "{"
+    let mut first: Bool = true
+
+    for key in data {
+        if first {
+            first = false
+        } else {
+            result = result + ","
+        }
+        result = result + "\"" + escape_json_str(key) + "\":\"" + escape_json_str(data[key]) + "\""
+    }
+
+    result = result + "}"
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Internal: escape_json_str — escape special characters for JSON strings
+// ---------------------------------------------------------------------------
+
+fn escape_json_str(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        if ch == "\"" {
+            result = result + "\\\""
+        } else { if ch == "\\" {
+            result = result + "\\\\"
+        } else { if ch == "\n" {
+            result = result + "\\n"
+        } else { if ch == "\t" {
+            result = result + "\\t"
+        } else { if ch == "\r" {
+            result = result + "\\r"
+        } else {
+            result = result + ch
+        } } } } }
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Internal: json_to_map — parse a JSON object of string values
+//
+// Expects: {"key1":"value1","key2":"value2"}
+// Only supports string values (not nested objects/arrays).
+// Uses encoding::json for robust parsing, then extracts string values.
+// ---------------------------------------------------------------------------
+
+fn json_to_map(input: String) -> Result<Map<String, String>, kv.KVError> {
+    let decode_result: Result<json.JsonValue, json.JsonError> = json.decode(input)
+    match decode_result {
+        Ok(value) => {
+            return extract_string_map(value)
+        },
+        Err(je) => {
+            return Err(new_kv_error("JSON parse error: " + je.message))
+        }
+    }
+    return Err(new_kv_error("unreachable"))
+}
+
+// ---------------------------------------------------------------------------
+// Internal: extract_string_map — extract Map<String, String> from JsonValue
+// ---------------------------------------------------------------------------
+
+fn extract_string_map(value: json.JsonValue) -> Result<Map<String, String>, kv.KVError> {
+    match value {
+        Object(entries) => {
+            let mut result: Map<String, String> = #{}
+            for key in entries {
+                let entry_val: json.JsonValue = entries[key]
+                match entry_val {
+                    Str(s) => {
+                        result[key] = s
+                    },
+                    _ => {
+                        return Err(new_kv_error("Expected string value for key: " + key))
+                    }
+                }
+            }
+            return Ok(result)
+        },
+        _ => {
+            return Err(new_kv_error("Expected JSON object at top level"))
+        }
+    }
+    return Err(new_kv_error("unreachable"))
+}
