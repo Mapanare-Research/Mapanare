@@ -5996,7 +5996,7 @@ fn lower_range(st: LowerState, start: Expr, end: Expr, inclusive: Bool) -> Lower
     let start_r: LowerResult = lower_expr(st, start)
     let end_r: LowerResult = lower_expr(start_r.state, end)
     let dest_r: LowerResult = make_value(end_r.state, mir_range(), "t")
-    let fn_name: String = if inclusive { "__range_inclusive" } else { "__range" }
+    let fn_name: String = if inclusive { "__mn_range_inclusive" } else { "__mn_range" }
     let mut args: List<Value> = []
     args.push(start_r.value)
     args.push(end_r.value)
@@ -8583,7 +8583,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 0.8.0"
+    return "mapanare 1.0.0"
 }
 
 // ---------------------------------------------------------------------------

@@ -646,13 +646,76 @@ class MIRLowerer:
         last_val = self._lower_block(fn_def.body)
 
         # Add implicit return if block isn't terminated
+        is_lambda = fn_name.startswith("%lambda") or fn_name.startswith("lambda")
         if not self._block_terminated():
-            if ret_type.kind == TypeKind.VOID:
+            if is_lambda and last_val is not None and ret_type.kind == TypeKind.VOID:
+                # Infer return type from last expression for lambdas
+                if last_val.ty.kind != TypeKind.VOID and last_val.ty.kind != TypeKind.UNKNOWN:
+                    mir_fn.return_type = last_val.ty
+                self._emit(Return(val=last_val))
+            elif ret_type.kind == TypeKind.VOID:
                 self._emit(Return())
             elif last_val is not None:
                 self._emit(Return(val=last_val))
             else:
                 self._emit(Return())
+
+        # Infer unknown param types for lambdas only.
+        # Lambda params lack type annotations; infer from BinOp partners,
+        # then propagate to BinOp results and Return values.
+        unknown_params: set[str] = set()
+        if is_lambda:
+            unknown_params = {
+                p.name
+                for p in mir_fn.params
+                if p.ty.kind == TypeKind.UNKNOWN and p.name != "__env_ptr"
+            }
+        if unknown_params:
+            from mapanare.mir import BinOp as MIRBinOp
+
+            # Pass 1: infer param types from BinOp partners
+            for bb in mir_fn.blocks:
+                for inst in bb.instructions:
+                    if isinstance(inst, MIRBinOp):
+                        if (
+                            inst.lhs.name.lstrip("%") in unknown_params
+                            and inst.rhs.ty.kind != TypeKind.UNKNOWN
+                        ):
+                            for mp in mir_fn.params:
+                                if mp.name == inst.lhs.name.lstrip("%"):
+                                    mp.ty = inst.rhs.ty
+                                    inst.lhs.ty = inst.rhs.ty
+                                    unknown_params.discard(mp.name)
+                        if (
+                            inst.rhs.name.lstrip("%") in unknown_params
+                            and inst.lhs.ty.kind != TypeKind.UNKNOWN
+                        ):
+                            for mp in mir_fn.params:
+                                if mp.name == inst.rhs.name.lstrip("%"):
+                                    mp.ty = inst.lhs.ty
+                                    inst.rhs.ty = inst.lhs.ty
+                                    unknown_params.discard(mp.name)
+
+            # Pass 2: propagate to BinOp dest types and Return values
+            for bb in mir_fn.blocks:
+                for inst in bb.instructions:
+                    if isinstance(inst, MIRBinOp) and inst.dest.ty.kind == TypeKind.UNKNOWN:
+                        if inst.lhs.ty.kind != TypeKind.UNKNOWN:
+                            inst.dest.ty = inst.lhs.ty
+                        elif inst.rhs.ty.kind != TypeKind.UNKNOWN:
+                            inst.dest.ty = inst.rhs.ty
+            # Pass 3: update return type from return value
+            from mapanare.mir import Return as MIRReturn
+
+            for bb in mir_fn.blocks:
+                for inst in bb.instructions:
+                    if (
+                        isinstance(inst, MIRReturn)
+                        and inst.val is not None
+                        and inst.val.ty.kind != TypeKind.UNKNOWN
+                        and mir_fn.return_type.kind == TypeKind.VOID
+                    ):
+                        mir_fn.return_type = inst.val.ty
 
         self._module.functions.append(mir_fn)
 
@@ -1062,6 +1125,28 @@ class MIRLowerer:
         lhs = self._lower_expr(expr.left)
         rhs = self._lower_expr(expr.right)
 
+        # Trait dispatch: if the semantic checker annotated this expression with
+        # a trait method, emit a method call instead of a primitive BinOp.
+        trait = getattr(expr, "trait_dispatch", None)
+        if trait == "eq":
+            dest = self._make_value(ty=mir_bool())
+            self._emit(Call(dest=dest, fn_name="eq", args=[lhs, rhs]))
+            if expr.op == "!=":
+                # Negate the eq result for !=
+                neg = self._make_value(ty=mir_bool())
+                self._emit(UnaryOp(dest=neg, op=UnaryOpKind.NOT, operand=dest))
+                return neg
+            return dest
+        if trait == "cmp":
+            cmp_val = self._make_value(ty=mir_int())
+            self._emit(Call(dest=cmp_val, fn_name="cmp", args=[lhs, rhs]))
+            dest = self._make_value(ty=mir_bool())
+            zero = self._make_value(ty=mir_int())
+            self._emit(Const(dest=zero, value=0, ty=mir_int()))
+            cmp_op = {"<": BinOpKind.LT, ">": BinOpKind.GT, "<=": BinOpKind.LE, ">=": BinOpKind.GE}
+            self._emit(BinOp(dest=dest, op=cmp_op[expr.op], lhs=cmp_val, rhs=zero))
+            return dest
+
         op = _BINOP_MAP.get(expr.op)
         if op is None:
             # Unknown operator — emit as call
@@ -1232,15 +1317,25 @@ class MIRLowerer:
                 return dest
 
             # Check if this is an enum variant constructor
-            # Check local enums
+            # Check local enums — match by variant name AND field count
             for enum_name, variant_names in self._enum_variants.items():
                 if fn_name in variant_names:
+                    # Verify field count matches to avoid ambiguity when
+                    # multiple enums have variants with the same name (e.g. Call)
+                    enum_variants = self._module.enums.get(enum_name, [])
+                    if not enum_variants:
+                        # Try imported enums
+                        enum_variants = self._imported_enum_defs.get(enum_name, [])
+                    variant_fields = next(
+                        (vtypes for vn, vtypes in enum_variants if vn == fn_name), None
+                    )
+                    if variant_fields is not None and len(variant_fields) != len(args):
+                        continue  # field count mismatch, try next enum
                     enum_ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name=enum_name))
                     dest = self._make_value(ty=enum_ty)
                     self._emit(
                         EnumInit(dest=dest, enum_type=enum_ty, variant=fn_name, payload=args)
                     )
-                    # self._patch_list_elem_types_for_enum(enum_name, fn_name, args)
                     return dest
             # Check imported enums
             for enum_name, variants in self._imported_enum_defs.items():
@@ -1616,7 +1711,7 @@ class MIRLowerer:
             return dest
 
         # List .push() — emit ListPush instruction and update the variable binding
-        if expr.method == "push" and args and obj.ty.kind == TypeKind.LIST:
+        if expr.method == "push" and args and obj.ty.kind in (TypeKind.LIST, TypeKind.UNKNOWN):
             dest = self._make_value(ty=obj.ty)
             self._emit(ListPush(dest=dest, list_val=obj, element=args[0]))
             # Update the variable so subsequent reads see the modified list
@@ -1807,7 +1902,7 @@ class MIRLowerer:
         start = self._lower_expr(expr.start)
         end = self._lower_expr(expr.end)
         dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.RANGE)))
-        fn_name = "__range_inclusive" if expr.inclusive else "__range"
+        fn_name = "__mn_range_inclusive" if expr.inclusive else "__mn_range"
         self._emit(Call(dest=dest, fn_name=fn_name, args=[start, end]))
         return dest
 

@@ -19,29 +19,29 @@
 #endif
 
 /* -----------------------------------------------------------------------
- * Platform atomic helpers
+ * Platform atomic helpers (using GCC built-ins for portability)
  * ----------------------------------------------------------------------- */
 
-#ifdef _WIN32
-
 static inline int64_t atomic_load_i64(mapanare_atomic_i64 *p) {
-    return InterlockedCompareExchange64(p, 0, 0);
+    return __atomic_load_n(p, __ATOMIC_ACQUIRE);
 }
 static inline void atomic_store_i64(mapanare_atomic_i64 *p, int64_t v) {
-    InterlockedExchange64(p, v);
+    __atomic_store_n(p, v, __ATOMIC_RELEASE);
 }
 static inline int64_t atomic_add_i64(mapanare_atomic_i64 *p, int64_t v) {
-    return InterlockedExchangeAdd64(p, v);
+    return __atomic_fetch_add(p, v, __ATOMIC_ACQ_REL);
 }
 static inline int32_t atomic_load_i32(mapanare_atomic_i32 *p) {
-    return InterlockedCompareExchange(p, 0, 0);
+    return __atomic_load_n(p, __ATOMIC_ACQUIRE);
 }
 static inline void atomic_store_i32(mapanare_atomic_i32 *p, int32_t v) {
-    InterlockedExchange(p, v);
+    __atomic_store_n(p, v, __ATOMIC_RELEASE);
 }
 static inline int32_t atomic_add_i32(mapanare_atomic_i32 *p, int32_t v) {
-    return InterlockedExchangeAdd(p, v);
+    return __atomic_fetch_add(p, v, __ATOMIC_ACQ_REL);
 }
+
+#ifdef _WIN32
 
 static inline void mapanare_mutex_init(mapanare_mutex_t *m) {
     InitializeCriticalSection(m);
@@ -92,25 +92,6 @@ static inline void mapanare_thread_join(mapanare_thread_t t) {
 }
 
 #else /* POSIX */
-
-static inline int64_t atomic_load_i64(mapanare_atomic_i64 *p) {
-    return atomic_load(p);
-}
-static inline void atomic_store_i64(mapanare_atomic_i64 *p, int64_t v) {
-    atomic_store(p, v);
-}
-static inline int64_t atomic_add_i64(mapanare_atomic_i64 *p, int64_t v) {
-    return atomic_fetch_add(p, v);
-}
-static inline int32_t atomic_load_i32(mapanare_atomic_i32 *p) {
-    return atomic_load(p);
-}
-static inline void atomic_store_i32(mapanare_atomic_i32 *p, int32_t v) {
-    atomic_store(p, v);
-}
-static inline int32_t atomic_add_i32(mapanare_atomic_i32 *p, int32_t v) {
-    return atomic_fetch_add(p, v);
-}
 
 static inline void mapanare_mutex_init(mapanare_mutex_t *m) {
     pthread_mutex_init(m, NULL);
@@ -170,7 +151,7 @@ static inline void trace_emit(
     void *data,
     int64_t duration_us
 ) {
-    mapanare_trace_hook_fn hook = s_trace_hook;
+    mapanare_trace_hook_fn hook = __atomic_load_n(&s_trace_hook, __ATOMIC_ACQUIRE);
     if (hook) {
         hook(event, agent, data, duration_us);
     }
@@ -523,7 +504,7 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
                                  mapanare_handler_fn handler, void *agent_data,
                                  uint32_t inbox_cap, uint32_t outbox_cap) {
     memset(agent, 0, sizeof(*agent));
-    agent->id = s_next_agent_id++;
+    agent->id = __atomic_fetch_add(&s_next_agent_id, 1, __ATOMIC_RELAXED);
     if (name) {
         strncpy(agent->name, name, sizeof(agent->name) - 1);
         agent->name[sizeof(agent->name) - 1] = '\0';
@@ -622,6 +603,12 @@ MAPANARE_EXPORT double mapanare_agent_avg_latency_us(mapanare_agent_t *agent) {
 }
 
 MAPANARE_EXPORT void mapanare_agent_destroy(mapanare_agent_t *agent) {
+    /* Drain inbox/outbox — discard remaining messages.
+     * Messages are void* and may not be heap-allocated,
+     * so we cannot free them here. Callers own message lifetime. */
+    void *msg = NULL;
+    while (mapanare_ring_pop(&agent->inbox, &msg) == 0) { (void)msg; }
+    while (mapanare_ring_pop(&agent->outbox, &msg) == 0) { (void)msg; }
     mapanare_ring_destroy(&agent->inbox);
     mapanare_ring_destroy(&agent->outbox);
     mapanare_sem_destroy(&agent->inbox_ready);
@@ -1030,7 +1017,8 @@ MAPANARE_EXPORT mapanare_tensor_t *mapanare_tensor_matmul_dispatch(
  * ======================================================================= */
 
 static mapanare_agent_registry_t *s_shutdown_registry = NULL;
-static volatile int s_shutdown_requested = 0;
+static volatile sig_atomic_t s_shutdown_requested = 0;
+static volatile sig_atomic_t s_shutdown_signal = 0;
 
 #ifdef _WIN32
 static BOOL WINAPI mapanare_console_handler(DWORD sig) {
@@ -1045,23 +1033,14 @@ static BOOL WINAPI mapanare_console_handler(DWORD sig) {
 }
 #else
 static void mapanare_signal_handler(int sig) {
+    /*
+     * Async-signal-safe: only set flags. Do NOT call mutex-protected
+     * functions (mapanare_registry_stop_all) from within a signal handler.
+     * The main event loop or mapanare_shutdown_requested() caller is
+     * responsible for calling mapanare_shutdown_drain() to stop agents.
+     */
     s_shutdown_requested = 1;
-    if (s_shutdown_registry) {
-        /*
-         * Note: mapanare_registry_stop_all acquires a mutex, which is not
-         * strictly async-signal-safe. However, in practice the only signals
-         * we handle (SIGTERM, SIGINT) arrive from the terminal or process
-         * manager, and the program is about to exit. We accept this trade-off
-         * to ensure agents shut down cleanly (flush outbox, call on_stop).
-         *
-         * After stopping agents, re-raise with default disposition so the
-         * process exits with the correct signal status.
-         */
-        mapanare_registry_stop_all(s_shutdown_registry);
-    }
-    /* Re-raise with default handler so the exit code reflects the signal */
-    signal(sig, SIG_DFL);
-    raise(sig);
+    s_shutdown_signal = sig;
 }
 #endif
 
@@ -1082,7 +1061,28 @@ MAPANARE_EXPORT void mapanare_shutdown_init(mapanare_agent_registry_t *reg) {
 }
 
 MAPANARE_EXPORT int mapanare_shutdown_requested(void) {
+    if (s_shutdown_requested && s_shutdown_registry) {
+        /* Drain agents safely outside the signal handler context */
+        mapanare_registry_stop_all(s_shutdown_registry);
+        s_shutdown_registry = NULL;  /* Only drain once */
+    }
     return s_shutdown_requested;
+}
+
+MAPANARE_EXPORT void mapanare_shutdown_drain(void) {
+    if (s_shutdown_requested && s_shutdown_registry) {
+        mapanare_registry_stop_all(s_shutdown_registry);
+        s_shutdown_registry = NULL;
+    }
+#ifndef _WIN32
+    if (s_shutdown_signal != 0) {
+        /* Re-raise with default handler so the exit code reflects the signal */
+        int sig = s_shutdown_signal;
+        s_shutdown_signal = 0;
+        signal(sig, SIG_DFL);
+        raise(sig);
+    }
+#endif
 }
 
 /* =======================================================================
@@ -1090,9 +1090,9 @@ MAPANARE_EXPORT int mapanare_shutdown_requested(void) {
  * ======================================================================= */
 
 MAPANARE_EXPORT void mapanare_trace_set_hook(mapanare_trace_hook_fn hook) {
-    s_trace_hook = hook;
+    __atomic_store_n(&s_trace_hook, hook, __ATOMIC_RELEASE);
 }
 
 MAPANARE_EXPORT mapanare_trace_hook_fn mapanare_trace_get_hook(void) {
-    return s_trace_hook;
+    return __atomic_load_n(&s_trace_hook, __ATOMIC_ACQUIRE);
 }

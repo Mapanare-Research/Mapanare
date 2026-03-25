@@ -118,12 +118,17 @@ def _compile_to_llvm_ir(
     resolver: ModuleResolver | None = None,
     use_mir: bool = True,
     debug: bool = False,
+    werror: bool = False,
+    emitter_backend: str = "text",
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source.
 
     When the source contains ``import`` statements and ``use_mir=True``,
     automatically uses multi-module compilation to resolve and link all
     imported modules into a single LLVM IR module.
+
+    *emitter_backend* selects the LLVM emitter: ``"llvmlite"`` (default)
+    or ``"text"`` (pure-text, no llvmlite dependency).
     """
     ast = parse(source, filename=filename)
 
@@ -141,11 +146,11 @@ def _compile_to_llvm_ir(
                 opt_level=opt_level.value,
                 target_name=target_name,
                 debug=debug,
+                emitter_backend=emitter_backend,
             )
-    check_or_raise(ast, filename=filename, resolver=resolver)
+    check_or_raise(ast, filename=filename, resolver=resolver, werror=werror)
 
     if use_mir:
-        from mapanare.emit_llvm_mir import LLVMMIREmitter
         from mapanare.lower import lower as build_mir
         from mapanare.mir_opt import MIROptLevel
         from mapanare.mir_opt import optimize_module as mir_optimize
@@ -162,13 +167,27 @@ def _compile_to_llvm_ir(
         mir_opt_level = MIROptLevel(opt_level.value)
         mir_module, _ = mir_optimize(mir_module, mir_opt_level)
         target = get_target(target_name)
-        emitter = LLVMMIREmitter(
+
+        if emitter_backend == "text":
+            from mapanare.emit_llvm_text import LLVMTextEmitter
+
+            emitter = LLVMTextEmitter(
+                module_name=module_name,
+                target_triple=target.triple,
+                data_layout=target.data_layout,
+                debug=debug,
+            )
+            return emitter.emit(mir_module)
+
+        from mapanare.emit_llvm_mir import LLVMMIREmitter
+
+        emitter_mir = LLVMMIREmitter(
             module_name=module_name,
             target_triple=target.triple,
             data_layout=target.data_layout,
             debug=debug,
         )
-        llvm_module = emitter.emit(mir_module)
+        llvm_module = emitter_mir.emit(mir_module)
         return str(llvm_module)
 
     from mapanare.emit_llvm import LLVMEmitter
@@ -297,6 +316,7 @@ def cmd_check(args: argparse.Namespace) -> None:
         )
 
     # Run semantic analysis even if there were parse errors (on partial AST)
+    werror = getattr(args, "werror", False)
     if ast.definitions:
         from mapanare.semantic import check
 
@@ -304,6 +324,9 @@ def cmd_check(args: argparse.Namespace) -> None:
         for err in sem_errors:
             from mapanare.ast_nodes import Span
 
+            # With --werror, promote warnings to errors
+            if err.severity == "warning" and not werror:
+                continue
             span = Span(
                 line=err.line, column=err.column, end_line=err.line, end_column=err.column + 1
             )
@@ -709,6 +732,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     stdlib_path: str | None = getattr(args, "stdlib_path", None)
     search_paths = [stdlib_path] if stdlib_path else None
     resolver = ModuleResolver(search_paths=search_paths)
+    werror = getattr(args, "werror", False)
     try:
         llvm_ir = _compile_to_llvm_ir(
             source,
@@ -718,6 +742,7 @@ def cmd_build(args: argparse.Namespace) -> None:
             resolver=resolver,
             use_mir=use_mir,
             debug=debug,
+            werror=werror,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -788,6 +813,7 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     target_name: str | None = getattr(args, "target", None)
     use_mir = not getattr(args, "no_mir", False)
     debug = getattr(args, "debug", False)
+    emitter_backend = getattr(args, "emitter", "llvmlite")
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -798,6 +824,7 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
             resolver=resolver,
             use_mir=use_mir,
             debug=debug,
+            emitter_backend=emitter_backend,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -1128,6 +1155,12 @@ def build_parser() -> argparse.ArgumentParser:
     # check
     p_check = subparsers.add_parser("check", help="Type-check .mn source")
     p_check.add_argument("source", help="Path to .mn source file")
+    p_check.add_argument(
+        "--werror",
+        action="store_true",
+        default=False,
+        help="Treat warnings as errors",
+    )
     p_check.set_defaults(func=cmd_check)
 
     # run
@@ -1273,6 +1306,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to stdlib directory (default: auto-detect from install)",
         default=None,
     )
+    p_build.add_argument(
+        "--werror",
+        action="store_true",
+        default=False,
+        help="Treat warnings as errors",
+    )
     _add_opt_level_args(p_build)
     _add_mir_flag(p_build)
     _add_debug_flag(p_build)
@@ -1288,6 +1327,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="TARGET",
         help="Target triple (e.g. x86_64-linux-gnu, aarch64-apple-macos, x86_64-windows-msvc)",
         default=None,
+    )
+    p_emit_llvm.add_argument(
+        "--emitter",
+        choices=["text", "llvmlite"],
+        default="text",
+        help="LLVM emitter backend: text (default, no llvmlite dependency) or llvmlite (legacy)",
     )
     _add_opt_level_args(p_emit_llvm)
     _add_mir_flag(p_emit_llvm)

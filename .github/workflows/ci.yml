@@ -75,7 +75,6 @@ jobs:
             -o test_c_runtime_tsan
           TSAN_OPTIONS=halt_on_error=1 ./test_c_runtime_tsan
 
-  # fixed-point:
-  #   name: Fixed-Point Verification
-  #   Disabled until v1.0.6 — self-hosted emitter gaps (v1.0.5) must be fixed first.
-  #   Re-enable once mnc-stage1 can compile its own source to valid LLVM IR.
+  # Fixed-point verification (manual milestone check, not per-PR).
+  # Run locally: bash scripts/verify_fixed_point.sh
+  # Blocked until emit_llvm.mn handles all IR constructs.

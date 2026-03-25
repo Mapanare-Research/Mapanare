@@ -128,6 +128,9 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "Err" { return true }
     if name == "signal" { return true }
     if name == "stream" { return true }
+    if name == "ord" { return true }
+    if name == "chr" { return true }
+    if name == "join" { return true }
     return false
 }
 
@@ -144,6 +147,9 @@ fn builtin_return_type(name: String) -> String {
     if name == "Err" { return "Result" }
     if name == "signal" { return "Signal" }
     if name == "stream" { return "Stream" }
+    if name == "ord" { return "Int" }
+    if name == "chr" { return "String" }
+    if name == "join" { return "String" }
     return "Void"
 }
 
@@ -1571,6 +1577,18 @@ fn register_builtins(st: SemState) -> SemState {
     // stream -> Stream
     let stream_sym: Symbol = new_symbol("stream", "function", make_builtin_fn_type(make_type("Stream")), false)
     st2 = define_in_scope(st2, "stream", stream_sym)
+
+    // ord -> Int
+    let ord_sym: Symbol = new_symbol("ord", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "ord", ord_sym)
+
+    // chr -> String
+    let chr_sym: Symbol = new_symbol("chr", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "chr", chr_sym)
+
+    // join -> String
+    let join_sym: Symbol = new_symbol("join", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "join", join_sym)
 
     return st2
 }

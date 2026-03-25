@@ -123,7 +123,16 @@ class TestStage1Compilation:
         llvm_ir = _compile_to_llvm_ir(source, filename)
         declares = re.findall(r'declare\s+(?:external\s+)?.*?@"([^"]+)"', llvm_ir)
         # All declares should be C runtime (__mn_*), printf, range/iter, or LLVM intrinsics
-        allowed = {"printf", "__range", "__iter_has_next", "__iter_next", "malloc"}
+        allowed = {
+            "printf",
+            "__mn_range",
+            "__iter_has_next",
+            "__iter_next",
+            "malloc",
+            "mn_arena_create",
+            "mn_arena_destroy",
+            "mn_arena_alloc",
+        }
         unexpected = [
             d
             for d in declares

@@ -24,6 +24,8 @@ extern "C" fn __mn_tls_write_str(tls_ctx: Int, data: String) -> Int
 extern "C" fn __mn_tls_read_str(tls_ctx: Int, max_len: Int) -> String
 extern "C" fn __mn_tls_close_fd(tls_ctx: Int, fd: Int) -> Int
 
+import text::string_utils
+
 // ---------------------------------------------------------------------------
 // Task 1: HttpMethod enum
 // ---------------------------------------------------------------------------
@@ -275,31 +277,9 @@ pub fn parse_url(url: String) -> ParsedUrl {
     return new_parsed_url_ok(scheme, host, port, path, query, is_https)
 }
 
-// Manual integer parsing from string digits
+// Manual integer parsing — delegated to text::string_utils
 fn parse_int_manual(s: String) -> Int {
-    let slen: Int = len(s)
-    let mut result: Int = 0
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let mut digit: Int = 0
-        if ch == "0" { digit = 0
-        } else { if ch == "1" { digit = 1
-        } else { if ch == "2" { digit = 2
-        } else { if ch == "3" { digit = 3
-        } else { if ch == "4" { digit = 4
-        } else { if ch == "5" { digit = 5
-        } else { if ch == "6" { digit = 6
-        } else { if ch == "7" { digit = 7
-        } else { if ch == "8" { digit = 8
-        } else { if ch == "9" { digit = 9
-        } else {
-            return result
-        } } } } } } } } } }
-        result = result * 10 + digit
-        i = i + 1
-    }
-    return result
+    return string_utils.parse_int_manual(s)
 }
 
 // Task 7: URL percent-encoding
@@ -315,49 +295,11 @@ fn is_unreserved(ch: String) -> Bool {
 }
 
 fn hex_char(n: Int) -> String {
-    if n == 0 { return "0" }
-    if n == 1 { return "1" }
-    if n == 2 { return "2" }
-    if n == 3 { return "3" }
-    if n == 4 { return "4" }
-    if n == 5 { return "5" }
-    if n == 6 { return "6" }
-    if n == 7 { return "7" }
-    if n == 8 { return "8" }
-    if n == 9 { return "9" }
-    if n == 10 { return "A" }
-    if n == 11 { return "B" }
-    if n == 12 { return "C" }
-    if n == 13 { return "D" }
-    if n == 14 { return "E" }
-    if n == 15 { return "F" }
-    return "0"
+    return string_utils.hex_char(n)
 }
 
 fn hex_digit_value(ch: String) -> Int {
-    if ch == "0" { return 0 }
-    if ch == "1" { return 1 }
-    if ch == "2" { return 2 }
-    if ch == "3" { return 3 }
-    if ch == "4" { return 4 }
-    if ch == "5" { return 5 }
-    if ch == "6" { return 6 }
-    if ch == "7" { return 7 }
-    if ch == "8" { return 8 }
-    if ch == "9" { return 9 }
-    if ch == "A" { return 10 }
-    if ch == "a" { return 10 }
-    if ch == "B" { return 11 }
-    if ch == "b" { return 11 }
-    if ch == "C" { return 12 }
-    if ch == "c" { return 12 }
-    if ch == "D" { return 13 }
-    if ch == "d" { return 13 }
-    if ch == "E" { return 14 }
-    if ch == "e" { return 14 }
-    if ch == "F" { return 15 }
-    if ch == "f" { return 15 }
-    return -1
+    return string_utils.hex_digit_value(ch)
 }
 
 pub fn url_encode(s: String) -> String {
@@ -603,50 +545,13 @@ fn parse_response_headers(raw: String) -> HeaderParseResult {
     return new_hdr_ok(status_code, headers, pos)
 }
 
-// Simple ASCII lowercase — uses byte_at to detect A-Z range
+// ASCII lowercase — delegated to text::string_utils
 fn to_lower_char(ch: String, b: Int) -> String {
-    if b < 65 { return ch }
-    if b > 90 { return ch }
-    if ch == "A" { return "a" }
-    if ch == "B" { return "b" }
-    if ch == "C" { return "c" }
-    if ch == "D" { return "d" }
-    if ch == "E" { return "e" }
-    if ch == "F" { return "f" }
-    if ch == "G" { return "g" }
-    if ch == "H" { return "h" }
-    if ch == "I" { return "i" }
-    if ch == "J" { return "j" }
-    if ch == "K" { return "k" }
-    if ch == "L" { return "l" }
-    if ch == "M" { return "m" }
-    if ch == "N" { return "n" }
-    if ch == "O" { return "o" }
-    if ch == "P" { return "p" }
-    if ch == "Q" { return "q" }
-    if ch == "R" { return "r" }
-    if ch == "S" { return "s" }
-    if ch == "T" { return "t" }
-    if ch == "U" { return "u" }
-    if ch == "V" { return "v" }
-    if ch == "W" { return "w" }
-    if ch == "X" { return "x" }
-    if ch == "Y" { return "y" }
-    if ch == "Z" { return "z" }
-    return ch
+    return string_utils.to_lower_char(ch, b)
 }
 
 fn to_lower(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = s.byte_at(i)
-        result = result + to_lower_char(ch, b)
-        i = i + 1
-    }
-    return result
+    return string_utils.to_lower(s)
 }
 
 // Task 15: Content-Length body reading

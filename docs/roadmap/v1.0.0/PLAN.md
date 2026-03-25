@@ -125,7 +125,7 @@ This phase exists because the original plan assumed the emitter was correct and 
 | — | String constants at byte alignment | `gv.align = 2` on all GlobalVariable string constants | `emit_llvm_mir.py`, `emit_llvm.py` |
 | — | `lexer.mn` missing `tokens.push(tok)` | Added in all 5 scan branches | `lexer.mn` |
 | — | ListPush not writing back to root alloca | `_list_roots` tracking + write-back | `emit_llvm_mir.py` |
-| — | Range/iterator C runtime functions missing | Added `__range`, `__iter_has_next`, `__iter_next` | `mapanare_core.c` |
+| — | Range/iterator C runtime functions missing | Added `__mn_range`, `__iter_has_next`, `__iter_next` | `mapanare_core.c` |
 | — | jit.py incompatible with newer llvmlite API | Updated API calls | `jit.py` |
 | — | `.value` field assignment treated as SignalSet for all types | Add `obj.ty.kind == TypeKind.SIGNAL` check before emitting SignalSet | `lower.py` |
 | — | Copy propagation unsafe through FieldSet/IndexSet mutation targets | Skip copy_map entries whose dest has FieldSet/IndexSet on it; prevents alloca mismatch on return/cross-block reads | `mir_opt.py` |

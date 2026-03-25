@@ -17,8 +17,9 @@
  * ----------------------------------------------------------------------- */
 
 MN_EXPORT void *__mn_alloc(int64_t size) {
+    if (size < 0) return NULL;
     void *ptr = calloc(1, (size_t)size);
-    if (!ptr) {
+    if (!ptr && size > 0) {
         fprintf(stderr, "mapanare: out of memory (requested %lld bytes)\n",
                 (long long)size);
         exit(1);
@@ -27,6 +28,7 @@ MN_EXPORT void *__mn_alloc(int64_t size) {
 }
 
 MN_EXPORT void *__mn_realloc(void *ptr, int64_t new_size) {
+    if (new_size < 0) return NULL;
     void *p = realloc(ptr, (size_t)new_size);
     if (!p && new_size > 0) {
         fprintf(stderr, "mapanare: realloc failed (%lld bytes)\n",
@@ -490,6 +492,52 @@ MN_EXPORT void __mn_str_eprintln(MnString s) {
         fwrite(mn_untag(s.data), 1, (size_t)s.len, stderr);
     }
     fputc('\n', stderr);
+}
+
+MN_EXPORT int64_t __mn_str_ord(MnString s) {
+    if (s.len <= 0) return -1;
+    return (int64_t)(unsigned char)mn_untag(s.data)[0];
+}
+
+MN_EXPORT MnString __mn_str_chr(int64_t code) {
+    if (code < 0 || code > 127) {
+        return __mn_str_empty();
+    }
+    char buf[2] = { (char)code, '\0' };
+    return __mn_str_from_cstr(buf);
+}
+
+MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts) {
+    if (parts->len == 0) return __mn_str_empty();
+
+    /* Calculate total length. */
+    const char *sep_data = mn_untag(sep.data);
+    int64_t total = 0;
+    for (int64_t i = 0; i < parts->len; i++) {
+        MnString *s = (MnString *)(parts->data + i * parts->elem_size);
+        total += s->len;
+    }
+    total += sep.len * (parts->len - 1);
+
+    char *buf = (char *)__mn_alloc(total + 1);
+    int64_t pos = 0;
+    for (int64_t i = 0; i < parts->len; i++) {
+        if (i > 0 && sep.len > 0) {
+            memcpy(buf + pos, sep_data, (size_t)sep.len);
+            pos += sep.len;
+        }
+        MnString *s = (MnString *)(parts->data + i * parts->elem_size);
+        if (s->len > 0) {
+            memcpy(buf + pos, mn_untag(s->data), (size_t)s->len);
+            pos += s->len;
+        }
+    }
+    buf[total] = '\0';
+
+    MnString r;
+    r.data = mn_tag_heap(buf);
+    r.len = total;
+    return r;
 }
 
 /* -----------------------------------------------------------------------
@@ -1011,6 +1059,9 @@ struct MnSignal {
     void       *value;         /* Heap-allocated value buffer */
     int64_t     val_size;      /* Size of value in bytes */
 
+    /* Optional destructor for value cleanup (NULL = no-op) */
+    void      (*dtor)(void *value);
+
     /* Subscriber list (dependent signals notified on change) */
     MnSignal  **subscribers;
     int64_t     sub_len;
@@ -1029,11 +1080,32 @@ struct MnSignal {
     int64_t            dirty;          /* 1 if needs recomputation */
 };
 
-/* --- Batching state (global) --- */
+/* --- Batching state (global, mutex-protected for thread safety) --- */
 
 static int64_t    mn_signal_batch_depth = 0;
 static MnSignal  *mn_signal_batch_pending[MN_SIGNAL_MAX_PENDING];
 static int64_t    mn_signal_batch_pending_len = 0;
+
+/* --- Mutex protection for global signal state --- */
+
+#ifdef _WIN32
+#include <windows.h>
+static CRITICAL_SECTION mn_signal_mutex;
+static int mn_signal_mutex_initialized = 0;
+static void mn_signal_ensure_mutex(void) {
+    if (!mn_signal_mutex_initialized) {
+        InitializeCriticalSection(&mn_signal_mutex);
+        mn_signal_mutex_initialized = 1;
+    }
+}
+static inline void mn_signal_lock(void)   { mn_signal_ensure_mutex(); EnterCriticalSection(&mn_signal_mutex); }
+static inline void mn_signal_unlock(void) { LeaveCriticalSection(&mn_signal_mutex); }
+#else
+#include <pthread.h>
+static pthread_mutex_t mn_signal_mutex = PTHREAD_MUTEX_INITIALIZER;
+static inline void mn_signal_lock(void)   { pthread_mutex_lock(&mn_signal_mutex); }
+static inline void mn_signal_unlock(void) { pthread_mutex_unlock(&mn_signal_mutex); }
+#endif
 
 /* --- Dependency tracking context (for auto-tracking) --- */
 
@@ -1064,6 +1136,7 @@ MN_EXPORT MnSignal *__mn_signal_new(const void *initial_value, int64_t val_size)
     sig->cb_len = 0;
     sig->cb_cap = MN_SIGNAL_MAX_CB;
 
+    sig->dtor = NULL;
     sig->compute_fn = NULL;
     sig->compute_user_data = NULL;
     sig->dependencies = NULL;
@@ -1099,21 +1172,34 @@ MN_EXPORT void __mn_signal_set(MnSignal *signal, const void *value) {
         return;  /* No change, skip propagation */
     }
 
+    /* Call destructor on old value before overwriting */
+    if (signal->dtor) signal->dtor(signal->value);
     memcpy(signal->value, value, (size_t)signal->val_size);
 
+    mn_signal_lock();
     if (mn_signal_batch_depth > 0) {
         /* Defer propagation: add to pending list */
-        if (mn_signal_batch_pending_len < MN_SIGNAL_MAX_PENDING) {
-            /* Avoid duplicates */
-            int64_t found = 0;
-            for (int64_t i = 0; i < mn_signal_batch_pending_len; i++) {
-                if (mn_signal_batch_pending[i] == signal) { found = 1; break; }
+        if (mn_signal_batch_pending_len >= MN_SIGNAL_MAX_PENDING) {
+            /* Overflow: flush the batch immediately, then restart */
+            int64_t count = mn_signal_batch_pending_len;
+            mn_signal_batch_pending_len = 0;
+            mn_signal_unlock();
+            for (int64_t i = 0; i < count; i++) {
+                mn_signal_propagate(mn_signal_batch_pending[i]);
             }
-            if (!found) {
-                mn_signal_batch_pending[mn_signal_batch_pending_len++] = signal;
-            }
+            mn_signal_lock();
         }
+        /* Avoid duplicates */
+        int64_t found = 0;
+        for (int64_t i = 0; i < mn_signal_batch_pending_len; i++) {
+            if (mn_signal_batch_pending[i] == signal) { found = 1; break; }
+        }
+        if (!found) {
+            mn_signal_batch_pending[mn_signal_batch_pending_len++] = signal;
+        }
+        mn_signal_unlock();
     } else {
+        mn_signal_unlock();
         mn_signal_propagate(signal);
     }
 }
@@ -1186,6 +1272,8 @@ MN_EXPORT void __mn_signal_unsubscribe(MnSignal *signal, MnSignal *subscriber) {
                 signal->subscribers[j] = signal->subscribers[j + 1];
             }
             signal->sub_len--;
+            /* Null out the vacated slot to prevent dangling references */
+            signal->subscribers[signal->sub_len] = NULL;
             return;
         }
     }
@@ -1228,19 +1316,33 @@ static void mn_signal_propagate(MnSignal *signal) {
 /* --- Batching --- */
 
 MN_EXPORT void __mn_signal_batch_begin(void) {
+    mn_signal_lock();
     mn_signal_batch_depth++;
+    mn_signal_unlock();
 }
 
 MN_EXPORT void __mn_signal_batch_end(void) {
-    if (mn_signal_batch_depth <= 0) return;
+    mn_signal_lock();
+    if (mn_signal_batch_depth <= 0) {
+        mn_signal_unlock();
+        return;
+    }
     mn_signal_batch_depth--;
     if (mn_signal_batch_depth == 0) {
-        /* Propagate all pending signals */
+        /* Snapshot and clear pending list under the lock */
         int64_t count = mn_signal_batch_pending_len;
-        mn_signal_batch_pending_len = 0;
+        MnSignal *local_pending[MN_SIGNAL_MAX_PENDING];
         for (int64_t i = 0; i < count; i++) {
-            mn_signal_propagate(mn_signal_batch_pending[i]);
+            local_pending[i] = mn_signal_batch_pending[i];
         }
+        mn_signal_batch_pending_len = 0;
+        mn_signal_unlock();
+        /* Propagate outside the lock to avoid deadlock */
+        for (int64_t i = 0; i < count; i++) {
+            mn_signal_propagate(local_pending[i]);
+        }
+    } else {
+        mn_signal_unlock();
     }
 }
 
@@ -1253,9 +1355,24 @@ MN_EXPORT void __mn_signal_free(MnSignal *signal) {
         __mn_signal_unsubscribe(signal->dependencies[i], signal);
     }
     if (signal->dependencies) __mn_free(signal->dependencies);
+    signal->dependencies = NULL;
+    signal->dep_len = 0;
+
     if (signal->subscribers) __mn_free(signal->subscribers);
+    /* Null out subscriber pointers to prevent dangling references */
+    signal->subscribers = NULL;
+    signal->sub_len = 0;
+
     if (signal->callbacks) __mn_free(signal->callbacks);
-    if (signal->value) __mn_free(signal->value);
+    /* Null out callback pointers to prevent dangling references */
+    signal->callbacks = NULL;
+    signal->cb_len = 0;
+
+    if (signal->value) {
+        if (signal->dtor) signal->dtor(signal->value);
+        __mn_free(signal->value);
+    }
+    signal->value = NULL;
     __mn_free(signal);
 }
 
@@ -1576,10 +1693,10 @@ typedef struct {
     int64_t end;
 } MnRangeIter;
 
-MN_EXPORT void *__range(int64_t start, int64_t end) {
+MN_EXPORT void *__mn_range(int64_t start, int64_t end) {
     MnRangeIter *iter = (MnRangeIter *)malloc(sizeof(MnRangeIter));
     if (!iter) {
-        fprintf(stderr, "mapanare: out of memory in __range\n");
+        fprintf(stderr, "mapanare: out of memory in __mn_range\n");
         exit(1);
     }
     iter->current = start;

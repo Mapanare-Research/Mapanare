@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-03-19
+
+### Added
+
+- `_load_struct_fields()` — reconstructs large structs from allocas field-by-field via GEP+load+insert_value, eliminating all by-value loads of structs > 56 bytes
+- `_store_struct_fields()` — decomposes large struct stores into per-field GEP+store, eliminating all by-value stores of structs > 56 bytes
+- `_aligned_alloca()` — routes all temporary allocas through the pre_entry block to maintain 16-byte RSP alignment (prevents SSE `movaps` crashes)
+- Alloca size mismatch detection in `_emit_copy`, `_emit_field_get`, `_emit_index_get` — prevents stack buffer overflow when MIR temp names collide with user variable names
+- `fflush(stdout)` in crash handler for reliable debug output
+
+### Changed
+
+- `_ZEROINIT_MEMSET_THRESHOLD` lowered from 128 to 56 to match `_LARGE_STRUCT_THRESHOLD` — `store zeroinitializer` is also truncated by the llvmlite codegen bug
+- Self-hosted compiler build (`build_stage1.py`): removed `internal` linkage from all function definitions — LLVM `-O1` was incorrectly stripping called functions as dead code due to sret calling convention confusion
+- `_coerce_arg` struct-to-struct reinterpretation now uses `_store_struct_fields`/`_load_struct_fields` for large types instead of by-value store+load
+- `_get_value_ptr()` now also checks `%`-prefixed name variant for alloca lookup
+- Binary size: 1.50MB (down from 1.71MB — 12% smaller)
+- 3,698 tests passing
+
+### Fixed
+
+- **Self-hosted compiler 15/15 golden tests** (was 12/15) — all features now compile correctly including enum match, Result types, string methods
+- **Pointer-only large struct refactor**: LLVM 20.1.8 / llvmlite codegen truncates by-value load/store of structs > 56 bytes; all paths now use memcpy via alloca pointers
+- **Stack alignment crash**: dynamic allocas in non-entry blocks (from `_coerce_arg`, list ops, etc.) misaligned RSP; SSE `movaps` in libc `snprintf` crashed with SIGSEGV. Fixed by routing all temporaries through pre_entry block.
+- **Function stripping at -O1**: LLVM dead-code-eliminated `internal`-linkage functions that were actually called (sret convention confused reachability analysis). Fixed by removing `internal` linkage in post-processing.
+- **Alloca size mismatch (stack buffer overflow)**: MIR temp names (t0, t1, ...) colliding with user variable names (e.g., `let t0: TypeResult`) caused 64-byte memcpy into 16-byte alloca. Fixed by checking alloca size before reuse.
+- **Generic type parsing in self-hosted compiler**: `Result<Int, String>` parsing failed ("Expected GT but got EOF") because the alloca overflow corrupted the `pos` field of TypeResult
+- **Byptr parameter loading**: large struct parameters passed by pointer were loaded by value in the callee prologue — now use memcpy from param pointer to local alloca
+- **Field extraction of large sub-fields**: `_emit_field_get` loaded large struct fields by value from parent struct — now uses memcpy to local alloca via GEP
+
 ## [1.0.0] - 2026-03-XX
 
 ### Added
@@ -323,7 +353,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.11...HEAD
+[1.0.11]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.0...v1.0.11
 [1.0.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.7.0...v0.8.0

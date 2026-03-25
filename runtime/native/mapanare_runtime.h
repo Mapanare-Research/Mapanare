@@ -25,20 +25,18 @@
   typedef CRITICAL_SECTION  mapanare_mutex_t;
   typedef HANDLE            mapanare_semaphore_t;
   typedef HANDLE            mapanare_event_t;
-  typedef volatile LONG     mapanare_atomic_i32;
-  typedef volatile LONG64   mapanare_atomic_i64;
 #else
   #define MAPANARE_EXPORT __attribute__((visibility("default")))
   #include <pthread.h>
   #include <semaphore.h>
-  #include <stdatomic.h>
   typedef pthread_t         mapanare_thread_t;
   typedef pthread_mutex_t   mapanare_mutex_t;
   typedef sem_t             mapanare_semaphore_t;
   typedef struct { pthread_mutex_t m; pthread_cond_t c; int flag; } mapanare_event_t;
-  typedef _Atomic int32_t   mapanare_atomic_i32;
-  typedef _Atomic int64_t   mapanare_atomic_i64;
 #endif
+
+typedef int32_t   mapanare_atomic_i32;
+typedef int64_t   mapanare_atomic_i64;
 
 /* -----------------------------------------------------------------------
  * Cache line size for padding
@@ -418,8 +416,14 @@ MAPANARE_EXPORT mapanare_tensor_t *mapanare_tensor_matmul_dispatch(
  *  in the given registry. Call once at startup. */
 MAPANARE_EXPORT void mapanare_shutdown_init(mapanare_agent_registry_t *reg);
 
-/** Check if a shutdown signal has been received. Returns 1 if so. */
+/** Check if a shutdown signal has been received. Returns 1 if so.
+ *  On first call after signal, automatically drains (stops) all registered agents. */
 MAPANARE_EXPORT int mapanare_shutdown_requested(void);
+
+/** Drain shutdown: stop all registered agents and re-raise the signal
+ *  with default disposition. Safe to call from non-signal context.
+ *  Idempotent — only drains once. */
+MAPANARE_EXPORT void mapanare_shutdown_drain(void);
 
 /* -----------------------------------------------------------------------
  * 8. Trace hooks — observability for native agent operations

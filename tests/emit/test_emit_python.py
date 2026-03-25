@@ -1013,7 +1013,8 @@ class TestDefinitionEmission:
         assert "def add(a: int, b: int) -> int:" in code
         assert "return (a + b)" in code
 
-    def test_main_is_async(self) -> None:
+    def test_main_sync_when_no_agents(self) -> None:
+        """main() without async features is emitted as a regular function."""
         fn = FnDef(
             name="main",
             params=[],
@@ -1023,6 +1024,29 @@ class TestDefinitionEmission:
                         expr=CallExpr(
                             callee=Identifier(name="print"),
                             args=[StringLiteral(value="hello")],
+                        )
+                    )
+                ]
+            ),
+        )
+        code = emit_with([fn])
+        assert "def main():" in code
+        assert "async def main():" not in code
+        assert 'if __name__ == "__main__":' in code
+        assert "main()" in code
+        assert "asyncio.run" not in code
+
+    def test_main_async_with_spawn(self) -> None:
+        """main() with spawn is emitted as async def."""
+        fn = FnDef(
+            name="main",
+            params=[],
+            body=Block(
+                stmts=[
+                    ExprStmt(
+                        expr=SpawnExpr(
+                            callee=Identifier(name="worker"),
+                            args=[],
                         )
                     )
                 ]

@@ -26,7 +26,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 0.8.0"
+    return "mapanare 1.0.0"
 }
 
 // ---------------------------------------------------------------------------
@@ -43,7 +43,6 @@ fn compile(source: String, filename: String) -> CompileResult {
     if len(errors) > 0 {
         return new_compile_result(false, "", errors)
     }
-
     // Stage 3: lower AST to MIR
     let mir_module: MIRModule = lower(program, filename)
 

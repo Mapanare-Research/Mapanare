@@ -34,3 +34,13 @@ error.log
 docs/roadmap/*/prompt.md
 
 sprint_runner.py
+
+# Native build artifacts (platform-specific, should not be tracked)
+runtime/native/*.so
+runtime/native/*.dll
+runtime/native/*.dylib
+runtime/native/*.o
+mapanare/self/*.o
+mapanare/self/mnc-stage1
+mapanare/self/mnc-stage1.exe
+mapanare/self/mnc-stage1-*

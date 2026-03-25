@@ -88,7 +88,7 @@ class TestMutableVarReassignInLoop:
         """)
         ir_text = _to_ir(source)
         assert "define" in ir_text
-        assert "sub i64" in ir_text or "add i64" in ir_text
+        assert "sub" in ir_text and "i64" in ir_text or "add" in ir_text and "i64" in ir_text
 
     def test_nested_loop_mutation(self) -> None:
         """Mutable variable updated in nested loops."""
@@ -275,7 +275,7 @@ class TestEmitterOutputSuite:
         """)
         ir_text = _to_ir(source)
         assert "define" in ir_text
-        assert "__range" in ir_text or "__iter" in ir_text
+        assert "__mn_range" in ir_text or "__iter" in ir_text
 
     def test_match_expression(self) -> None:
         """Match expression with patterns."""

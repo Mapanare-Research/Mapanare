@@ -137,14 +137,17 @@ class TestImplicitMain:
         assert p.definitions[1].name == "main"
 
     # ------------------------------------------------------------------
-    # 10. PythonEmitter: implicit main → async def main + asyncio.run
+    # 10. PythonEmitter: implicit main → sync def main (no async needed)
     # ------------------------------------------------------------------
     def test_emit_python_implicit_main(self) -> None:
         p = parse('print("hello")')
         emitter = PythonEmitter()
         output = emitter.emit(p)
-        assert "async def main()" in output
-        assert "asyncio.run(main())" in output
+        assert "def main()" in output
+        assert "main()" in output
+        # No async needed for a simple print
+        assert "async def main()" not in output
+        assert "asyncio.run" not in output
 
     # ------------------------------------------------------------------
     # 11. PythonEmitter: library (no main) → no asyncio.run

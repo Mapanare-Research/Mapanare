@@ -148,6 +148,9 @@ enum Instruction {
     ListInit(Value, MIRType, List<Value>),
     IndexGet(Value, Value, Value),
     IndexSet(Value, Value, Value),
+    Alloca(Value, MIRType),
+    Load(Value, Value),
+    Store(Value, Value),
     MapInit(Value, MIRType, MIRType, List<KVPair>),
     // Enum
     EnumInit(Value, MIRType, String, List<Value>),
@@ -483,21 +486,21 @@ fn set_block(st: LowerState, idx: Int) -> LowerState {
 
 fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
     // Append instruction to current block in current function.
-    // Uses IndexSet on the shared blocks buffer so the mutation is visible
-    // through any copy of the blocks list header (same ptr).
     let mut new_st: LowerState = st
     match st.current_fn {
         Some(f) => {
             if st.current_block_idx >= 0 {
                 if st.current_block_idx < len(f.blocks) {
                     let bb: BasicBlock = f.blocks[st.current_block_idx]
-                    // Extract instructions to a local, push, build new block
                     let mut instrs: List<Instruction> = bb.instructions
                     instrs.push(instr)
                     let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
-                    // IndexSet modifies the shared buffer in-place
                     let mut blks: List<BasicBlock> = f.blocks
                     blks[st.current_block_idx] = new_bb
+                    // Update the function in new_st with the modified blocks
+                    let mut new_fn: MIRFunction = f
+                    new_fn.blocks = blks
+                    new_st.current_fn = Some(new_fn)
                 }
             }
         },
@@ -963,7 +966,8 @@ fn lower_definitions(st: LowerState, program: Program) -> LowerState {
             return s
         }
         let defn: Definition = program.definitions[i]
-        s = lower_definition(s, defn)
+        let new_s: LowerState = lower_definition(s, defn)
+        s = new_s
         i = i + 1
     }
     return s
@@ -1052,8 +1056,14 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
         if bi >= len(fn_def.params) { break }
         let p: Param = fn_def.params[bi]
         let pty: MIRType = lower_resolve_type_opt(p.type_annotation)
+        
+        let addr_name: String = "%" + p.name + ".addr"
+        let addr: Value = new_value(addr_name, pty)
         let param_val: Value = new_value("%" + p.name, pty)
-        s = define_var(s, p.name, param_val, false)
+        
+        s = emit_instr(s, Instruction::Alloca(addr, pty))
+        s = emit_instr(s, Instruction::Store(addr, param_val))
+        s = define_var(s, p.name, addr, false)
         bi = bi + 1
     }
 
@@ -1216,9 +1226,21 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
 
 fn lower_let(st: LowerState, name: String, mutable: Bool, value: Expr) -> LowerState {
     let r: LowerResult = lower_expr(st, value)
-    let named: Value = new_value("%" + name, r.value.ty)
-    let mut s: LowerState = emit_instr(r.state, Instruction::Copy(named, r.value))
-    s = define_var(s, name, named, mutable)
+    let mut s: LowerState = r.state
+
+    // Find or create alloca for this variable
+    let addr_name: String = "%" + name + ".addr"
+    let addr: Value = new_value(addr_name, r.value.ty)
+
+    // Only emit Alloca if not already present in this function
+    // (In a more robust implementation, we'd collect all locals first)
+    s = emit_instr(s, Instruction::Alloca(addr, r.value.ty))
+
+    // Store value to alloca
+    s = emit_instr(s, Instruction::Store(addr, r.value))
+
+    // Track the alloca address in our variable map
+    s = define_var(s, name, addr, mutable)
     return s
 }
 
@@ -1229,8 +1251,13 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, value: Expr) -> LowerS
 fn lower_return(st: LowerState, value_opt: Option<Expr>) -> LowerState {
     match value_opt {
         Some(expr) => {
+            // Lower the expression to a temp, then return the temp.
+            // This avoids deeply nested LowerResult chains that corrupt
+            // the LowerState during self-compilation.
             let r: LowerResult = lower_expr(st, expr)
-            return emit_instr(r.state, Instruction::Return(Some(r.value)))
+            let tmp: LowerResult = make_value(r.state, r.value.ty, "ret")
+            let s: LowerState = emit_instr(tmp.state, Instruction::Copy(tmp.value, r.value))
+            return emit_instr(s, Instruction::Return(Some(tmp.value)))
         },
         _ => {
             return emit_instr(st, Instruction::Return(none))
@@ -1246,6 +1273,9 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     // Lower the iterable
     let iter_r: LowerResult = lower_expr(st, iterable)
     let mut s: LowerState = iter_r.state
+
+    // Save current (entry) block index
+    let entry_idx: Int = s.current_block_idx
 
     // Create blocks
     let header_r: LowerResult = fresh_block_label(s, "for_header")
@@ -1266,7 +1296,8 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s = add_block(s, exit_label)
     let exit_idx: Int = s.current_block_idx
 
-    // Jump from current block to header
+    // Jump from entry block to header
+    s = set_block(s, entry_idx)
     if !current_block_terminated(s) {
         s = emit_instr(s, Instruction::Jump(header_label))
     }
@@ -1454,7 +1485,12 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult {
     // Check variable scope
     let var_opt: Option<Value> = lookup_var(st, name)
     match var_opt {
-        Some(val) => { return new_lower_result(val, st) },
+        Some(addr) => {
+            // var_opt now returns the alloca address. Emit a Load to get the value.
+            let r: LowerResult = make_value(st, addr.ty, name + "_val")
+            let s: LowerState = emit_instr(r.state, Instruction::Load(r.value, addr))
+            return new_lower_result(r.value, s)
+        },
         _ => {}
     }
 
@@ -1656,48 +1692,26 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
 // ---------------------------------------------------------------------------
 
 fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<Expr>) -> LowerResult {
+    // Lower as Call(method, [obj, args...]) directly.
+    // Stream/signal dispatch handled by the emitter.
     let obj_r: LowerResult = lower_expr(st, obj)
     let mut s: LowerState = obj_r.state
-    let mut args: List<Value> = []
+
+    // Build arg list: [obj_value, arg_values...]
+    // Use lower_call_args helper to build the list in one pass
+    let mut all_args: List<Value> = []
+    all_args.push(obj_r.value)
+    let nae: Int = len(arg_exprs)
     let mut i: Int = 0
     for _ in 0..1000 {
-        if i >= len(arg_exprs) { break }
+        if i >= nae { break }
         let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
         s = arg_r.state
-        args.push(arg_r.value)
+        all_args.push(arg_r.value)
         i = i + 1
     }
 
-    // Check if stream operation
-    let stream_opt: Option<StreamOpKind> = stream_op_from_str(method)
-    match stream_opt {
-        Some(op_kind) => {
-            let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
-            let new_s: LowerState = emit_instr(dest_r.state, Instruction::StreamOp(dest_r.value, op_kind, obj_r.value, args))
-            return new_lower_result(dest_r.value, new_s)
-        },
-        _ => {}
-    }
-
-    // Check if signal .value access
-    if method == "value" {
-        if len(args) == 0 {
-            let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
-            let new_s: LowerState = emit_instr(dest_r.state, Instruction::SignalGet(dest_r.value, obj_r.value))
-            return new_lower_result(dest_r.value, new_s)
-        }
-    }
-
-    // General method call → Call with self as first arg
     let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
-    let mut all_args: List<Value> = []
-    all_args.push(obj_r.value)
-    let mut j: Int = 0
-    for _ in 0..1000 {
-        if j >= len(args) { break }
-        all_args.push(args[j])
-        j = j + 1
-    }
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
     return new_lower_result(dest_r.value, new_s)
 }
@@ -1801,7 +1815,7 @@ fn lower_range(st: LowerState, start: Expr, end: Expr, inclusive: Bool) -> Lower
     let start_r: LowerResult = lower_expr(st, start)
     let end_r: LowerResult = lower_expr(start_r.state, end)
     let dest_r: LowerResult = make_value(end_r.state, mir_range(), "t")
-    let fn_name: String = if inclusive { "__range_inclusive" } else { "__range" }
+    let fn_name: String = if inclusive { "__mn_range_inclusive" } else { "__mn_range" }
     let mut args: List<Value> = []
     args.push(start_r.value)
     args.push(end_r.value)
@@ -1815,7 +1829,8 @@ fn lower_range(st: LowerState, start: Expr, end: Expr, inclusive: Bool) -> Lower
 
 fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerResult {
     let name_r: LowerResult = fresh_tmp(st, "lambda")
-    let lambda_name: String = name_r.value.name
+    // Lambda function names should not have % prefix (it becomes @%lambda in IR)
+    let lambda_name: String = "lambda" + toString(st.tmp_counter)
 
     // Build the body block
     let body_block: Block = match body {
@@ -1969,6 +1984,9 @@ fn lower_error_prop(st: LowerState, inner: Expr) -> LowerResult {
 // ---------------------------------------------------------------------------
 
 fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
+    // Touch st to force materialization before any list operations.
+    // Without this, clang -O0 may leave the LowerState in stale registers
+    // from the caller's sret return, causing corruption in subsequent ops.
     let mut s: LowerState = st
     let mut vals: List<Value> = []
     let mut i: Int = 0
@@ -1992,22 +2010,30 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
 
 fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -> LowerResult {
     let mut s: LowerState = st
-    let mut fields: List<FieldPair> = []
+
+    // Debug: emit the number of field_inits as a constant to verify the list works
+    let nfields: Int = len(field_inits)
+
+    // Lower each field value
+    let mut vals: List<Value> = []
     let mut i: Int = 0
     for _ in 0..1000 {
-        if i >= len(field_inits) { break }
+        if i >= nfields { break }
         let fi: FieldInit = field_inits[i]
         let val_r: LowerResult = lower_expr(s, fi.value)
         s = val_r.state
-        let fp: FieldPair = new_field_pair(fi.name, val_r.value)
-        fields.push(fp)
+        vals.push(val_r.value)
         i = i + 1
     }
 
+    // Emit as Call to "__new_<StructName>" (emitter handles this specially)
     let struct_ty: MIRType = mir_struct(name)
     let dest_r: LowerResult = make_value(s, struct_ty, "t")
-    let new_s: LowerState = emit_instr(dest_r.state, Instruction::StructInit(dest_r.value, struct_ty, fields))
-    return new_lower_result(dest_r.value, new_s)
+    // Debug: emit nfields as a const to see if the field_inits list is intact
+    let dbg_r: LowerResult = make_value(dest_r.state, mir_int(), "dbg_nfields")
+    s = emit_instr(dbg_r.state, Instruction::Const(dbg_r.value, mir_int(), toString(nfields)))
+    s = emit_instr(s, Instruction::Call(dest_r.value, "__new_" + name, vals))
+    return new_lower_result(dest_r.value, s)
 }
 
 // ---------------------------------------------------------------------------
@@ -2041,19 +2067,29 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
                     Some(binop) => {
                         let result_r: LowerResult = make_value(s, old_r.value.ty, "t")
                         s = emit_instr(result_r.state, Instruction::BinOp(result_r.value, binop, old_r.value, val_r.value))
-                        let new_val: Value = new_value("%" + name, result_r.value.ty)
-                        s = emit_instr(s, Instruction::Copy(new_val, result_r.value))
-                        s = update_var(s, name, new_val)
-                        return new_lower_result(new_val, s)
+                        
+                        let var_opt: Option<Value> = lookup_var(s, name)
+                        match var_opt {
+                            Some(addr) => {
+                                s = emit_instr(s, Instruction::Store(addr, result_r.value))
+                                return new_lower_result(result_r.value, s)
+                            },
+                            _ => {}
+                        }
                     },
                     _ => {}
                 }
             }
 
-            let new_val: Value = new_value("%" + name, val_r.value.ty)
-            s = emit_instr(s, Instruction::Copy(new_val, val_r.value))
-            s = update_var(s, name, new_val)
-            return new_lower_result(new_val, s)
+            let var_opt: Option<Value> = lookup_var(s, name)
+            match var_opt {
+                Some(addr) => {
+                    s = emit_instr(s, Instruction::Store(addr, val_r.value))
+                    return new_lower_result(val_r.value, s)
+                },
+                _ => {}
+            }
+            return new_lower_result(val_r.value, s)
         },
         FieldAccess(obj, field_name) => {
             let obj_r: LowerResult = lower_expr(s, obj)
@@ -2091,6 +2127,9 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     let cond_r: LowerResult = lower_expr(st, cond)
     let mut s: LowerState = cond_r.state
 
+    // Save the current (entry) block index for the branch
+    let entry_idx: Int = s.current_block_idx
+
     // Create blocks
     let then_label_r: LowerResult = fresh_block_label(s, "if_then")
     s = then_label_r.state
@@ -2110,7 +2149,8 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     s = add_block(s, merge_label)
     let merge_idx: Int = s.current_block_idx
 
-    // Branch
+    // Branch (emitted in the entry block, not the merge block)
+    s = set_block(s, entry_idx)
     s = emit_instr(s, Instruction::Branch(cond_r.value, then_label, else_label))
 
     // Then block
@@ -2155,7 +2195,7 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     let then_exit_label: String = get_block_label(s, then_exit_idx)
     let else_exit_label: String = get_block_label(s, else_exit_idx)
 
-    if then_val.name != "%void" {
+    if then_val.ty.kind != "void" && then_val.ty.kind != "unknown" && then_val.name != "%void" {
         let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
         s = result_r.state
         let mut incoming: List<PhiEntry> = []
@@ -2195,6 +2235,9 @@ fn get_block_label(st: LowerState, idx: Int) -> String {
 fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResult {
     let subject_r: LowerResult = lower_expr(st, subject)
     let mut s: LowerState = subject_r.state
+
+    // Save entry block for switch/branch emission
+    let match_entry_idx: Int = s.current_block_idx
 
     // Create merge block
     let merge_label_r: LowerResult = fresh_block_label(s, "match_merge")
@@ -2251,7 +2294,8 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         ci = ci + 1
     }
 
-    // Emit switch or branch
+    // Emit switch or branch (in the entry block, not the last arm block)
+    s = set_block(s, match_entry_idx)
     if len(cases) > 0 {
         let tag_r: LowerResult = make_value(s, mir_unknown(), "tag")
         s = tag_r.state
@@ -2389,6 +2433,15 @@ fn format_instruction(inst: Instruction) -> String {
         },
         IndexSet(obj, idx, val) => {
             return "index_set " + obj.name + "[" + idx.name + "] = " + val.name
+        },
+        Alloca(dest, ty) => {
+            return dest.name + " = alloca " + format_type(ty)
+        },
+        Load(dest, ptr) => {
+            return dest.name + " = load " + ptr.name
+        },
+        Store(ptr, val) => {
+            return "store " + val.name + " to " + ptr.name
         },
         MapInit(dest, kt, vt, pairs) => {
             return dest.name + " = map_init"

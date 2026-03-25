@@ -72,8 +72,14 @@ def jit_compile_to_object(llvm_ir: str, opt_level: int = 2) -> bytes:
     mod = llvm.parse_assembly(llvm_ir)
     mod.verify()
 
-    target = llvm.Target.from_default_triple()
-    target_machine = target.create_target_machine(opt=opt_level)
+    # Use triple from module if present, otherwise default to host
+    triple = mod.triple if mod.triple else llvm.get_process_triple()
+    target = llvm.Target.from_triple(triple)
+
+    # Use 'static' relocation model on Windows to avoid _GLOBAL_OFFSET_TABLE_
+    # and other Linux-specific symbols that confuse MinGW.
+    reloc = "static" if "windows" in triple else "default"
+    target_machine = target.create_target_machine(opt=opt_level, reloc=reloc)
 
     # Run LLVM optimization passes
     if hasattr(llvm, "create_pass_manager_builder"):

@@ -32,6 +32,8 @@ from mapanare.mir import (
     BinOpKind,
     Branch,
     Call,
+    ClosureCall,
+    ClosureCreate,
     Const,
     Copy,
     FieldGet,
@@ -47,6 +49,7 @@ from mapanare.mir import (
     MIRType,
     Phi,
     Return,
+    SignalComputed,
     StreamOp,
     StreamOpKind,
     Switch,
@@ -151,6 +154,11 @@ def _get_uses(inst: Instruction) -> list[Value]:
         uses.extend([inst.obj, inst.index, inst.val])
     elif isinstance(inst, ListPush):
         uses.extend([inst.list_val, inst.element])
+    elif isinstance(inst, ClosureCall):
+        uses.append(inst.closure)
+        uses.extend(inst.args)
+    elif isinstance(inst, ClosureCreate):
+        uses.extend(inst.captures)
     elif isinstance(inst, AgentSpawn):
         uses.extend(inst.args)
     elif isinstance(inst, AgentSend):
@@ -262,6 +270,19 @@ def _replace_use(inst: Instruction, old_name: str, new_val: Value) -> bool:
         if inst.element.name == old_name:
             inst.element = new_val
             changed = True
+    elif isinstance(inst, ClosureCall):
+        if inst.closure.name == old_name:
+            inst.closure = new_val
+            changed = True
+        for i, arg in enumerate(inst.args):
+            if arg.name == old_name:
+                inst.args[i] = new_val
+                changed = True
+    elif isinstance(inst, ClosureCreate):
+        for i, cap in enumerate(inst.captures):
+            if cap.name == old_name:
+                inst.captures[i] = new_val
+                changed = True
     elif isinstance(inst, AgentSpawn):
         for i, arg in enumerate(inst.args):
             if arg.name == old_name:
@@ -400,6 +421,80 @@ def constant_folding(fn: MIRFunction, stats: MIRPassStats) -> bool:
                         stats.constants_folded += 1
                         changed = True
                         continue
+
+                # --- Identity / annihilator rules (one operand constant) ---
+                # x + 0 = x, 0 + x = x
+                if inst.op == BinOpKind.ADD:
+                    if rv == 0 and isinstance(rv, (int, float)):
+                        new_insts.append(Copy(dest=inst.dest, src=inst.lhs))
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+                    if lv == 0 and isinstance(lv, (int, float)):
+                        new_insts.append(Copy(dest=inst.dest, src=inst.rhs))
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+
+                # x * 1 = x, 1 * x = x
+                if inst.op == BinOpKind.MUL:
+                    if rv == 1 and isinstance(rv, (int, float)):
+                        new_insts.append(Copy(dest=inst.dest, src=inst.lhs))
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+                    if lv == 1 and isinstance(lv, (int, float)):
+                        new_insts.append(Copy(dest=inst.dest, src=inst.rhs))
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+                    # x * 0 = 0, 0 * x = 0
+                    if rv == 0 and isinstance(rv, (int, float)):
+                        tk = TypeKind.INT if isinstance(rv, int) else TypeKind.FLOAT
+                        new_insts.append(
+                            Const(
+                                dest=inst.dest,
+                                ty=MIRType(TypeInfo(kind=tk)),
+                                value=type(rv)(0),
+                            )
+                        )
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+                    if lv == 0 and isinstance(lv, (int, float)):
+                        tk = TypeKind.INT if isinstance(lv, int) else TypeKind.FLOAT
+                        new_insts.append(
+                            Const(
+                                dest=inst.dest,
+                                ty=MIRType(TypeInfo(kind=tk)),
+                                value=type(lv)(0),
+                            )
+                        )
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+
+                # x - 0 = x
+                if inst.op == BinOpKind.SUB:
+                    if rv == 0 and isinstance(rv, (int, float)):
+                        new_insts.append(Copy(dest=inst.dest, src=inst.lhs))
+                        stats.constants_folded += 1
+                        changed = True
+                        continue
+
+                # x - x = 0 (same operand)
+                if inst.op == BinOpKind.SUB and inst.lhs.name == inst.rhs.name:
+                    new_insts.append(
+                        Const(
+                            dest=inst.dest,
+                            ty=MIRType(TypeInfo(kind=TypeKind.INT)),
+                            value=0,
+                        )
+                    )
+                    stats.constants_folded += 1
+                    changed = True
+                    continue
+
             elif isinstance(inst, UnaryOp):
                 val = const_vals.get(inst.operand.name)
                 if val is not None:
@@ -553,7 +648,9 @@ def copy_propagation(fn: MIRFunction, stats: MIRPassStats) -> bool:
 # ---------------------------------------------------------------------------
 
 
-# Instructions that have side effects and cannot be removed even if unused
+# Instructions that have side effects and cannot be removed even if unused.
+# NOTE: Kept for backwards compatibility; prefer ``inst.has_side_effects``
+# (property defined on the Instruction base class in mir.py).
 _SIDE_EFFECT_TYPES = (
     Call,
     Return,
@@ -591,7 +688,7 @@ def dead_code_elimination(fn: MIRFunction, stats: MIRPassStats) -> bool:
                 dest is not None
                 and dest.name
                 and dest.name not in used_names
-                and not isinstance(inst, _SIDE_EFFECT_TYPES)
+                and not inst.has_side_effects
             ):
                 stats.dead_instructions_removed += 1
                 changed = True
@@ -612,13 +709,19 @@ def dead_function_elimination(module: MIRModule, stats: MIRPassStats) -> bool:
     Keeps `main` and public functions. Builds a call graph from Call instructions.
     Returns True if any changes were removed.
     """
-    # Build set of all called function names
+    # Build set of all referenced function names
     called: set[str] = set()
     for fn in module.functions:
         for bb in fn.blocks:
             for inst in bb.instructions:
                 if isinstance(inst, Call):
                     called.add(inst.fn_name)
+                elif isinstance(inst, ClosureCreate):
+                    called.add(inst.fn_name)
+                elif isinstance(inst, StreamOp) and inst.fn_name:
+                    called.add(inst.fn_name)
+                elif isinstance(inst, SignalComputed) and inst.compute_fn:
+                    called.add(inst.compute_fn)
 
     new_fns: list[MIRFunction] = []
     changed = False
@@ -668,6 +771,115 @@ def _compute_reachable(fn: MIRFunction) -> set[str]:
                 worklist.append(term.default_block)
 
     return reachable
+
+
+# ---------------------------------------------------------------------------
+# Dominance tree (iterative dataflow algorithm — Cooper, Harvey, Kennedy)
+# ---------------------------------------------------------------------------
+
+
+def _compute_predecessors(fn: MIRFunction) -> dict[str, list[str]]:
+    """Build predecessor map: block label -> list of predecessor labels."""
+    preds: dict[str, list[str]] = {bb.label: [] for bb in fn.blocks}
+    for bb in fn.blocks:
+        term = bb.terminator
+        if isinstance(term, Jump):
+            if term.target in preds:
+                preds[term.target].append(bb.label)
+        elif isinstance(term, Branch):
+            if term.true_block in preds:
+                preds[term.true_block].append(bb.label)
+            if term.false_block in preds:
+                preds[term.false_block].append(bb.label)
+        elif isinstance(term, Switch):
+            for _, lbl in term.cases:
+                if lbl in preds:
+                    preds[lbl].append(bb.label)
+            if term.default_block and term.default_block in preds:
+                preds[term.default_block].append(bb.label)
+    return preds
+
+
+def compute_dominance_tree(fn: MIRFunction) -> dict[str, str | None]:
+    """Compute the immediate dominator tree using the iterative algorithm.
+
+    Returns a dict mapping each block label to its immediate dominator label.
+    The entry block maps to None.
+
+    Algorithm: Cooper, Harvey, Kennedy — "A Simple, Fast Dominance Algorithm"
+    (2001). Iterates to a fixed point. O(n^2) worst case but fast in practice
+    for the small CFGs produced by Mapanare.
+    """
+    if not fn.blocks:
+        return {}
+
+    labels = [bb.label for bb in fn.blocks]
+    label_to_idx = {lbl: i for i, lbl in enumerate(labels)}
+    preds = _compute_predecessors(fn)
+
+    # idom[i] = index of immediate dominator of block i, or -1 for undefined
+    n = len(labels)
+    idom = [-1] * n
+    idom[0] = 0  # entry dominates itself
+
+    def intersect(b1: int, b2: int) -> int:
+        finger1, finger2 = b1, b2
+        while finger1 != finger2:
+            while finger1 > finger2:
+                finger1 = idom[finger1]
+            while finger2 > finger1:
+                finger2 = idom[finger2]
+        return finger1
+
+    changed = True
+    while changed:
+        changed = False
+        # Process all blocks in reverse postorder (skip entry)
+        for i in range(1, n):
+            lbl = labels[i]
+            pred_labels = preds.get(lbl, [])
+
+            # Find first processed predecessor
+            new_idom = -1
+            for p in pred_labels:
+                pi = label_to_idx.get(p, -1)
+                if pi >= 0 and idom[pi] != -1:
+                    new_idom = pi
+                    break
+
+            if new_idom == -1:
+                continue
+
+            # Intersect with remaining processed predecessors
+            for p in pred_labels:
+                pi = label_to_idx.get(p, -1)
+                if pi >= 0 and idom[pi] != -1 and pi != new_idom:
+                    new_idom = intersect(pi, new_idom)
+
+            if idom[i] != new_idom:
+                idom[i] = new_idom
+                changed = True
+
+    # Build result dict: label -> immediate dominator label (None for entry)
+    result: dict[str, str | None] = {}
+    for i, lbl in enumerate(labels):
+        if i == 0:
+            result[lbl] = None
+        elif idom[i] >= 0:
+            result[lbl] = labels[idom[i]]
+        else:
+            result[lbl] = None
+    return result
+
+
+def dominates(dom_tree: dict[str, str | None], a: str, b: str) -> bool:
+    """Return True if block `a` dominates block `b` in the given dominance tree."""
+    current: str | None = b
+    while current is not None:
+        if current == a:
+            return True
+        current = dom_tree.get(current)
+    return False
 
 
 def unreachable_block_elimination(fn: MIRFunction, stats: MIRPassStats) -> bool:

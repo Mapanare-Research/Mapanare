@@ -24,6 +24,8 @@ extern "C" fn __mn_tcp_close_fd(fd: Int) -> Int
 extern "C" fn __mn_tcp_set_timeout(fd: Int, ms: Int) -> Int
 extern "C" fn __mn_file_read(path: String) -> String
 
+import text::string_utils
+
 // ---------------------------------------------------------------------------
 // Task 1: Route struct
 // ---------------------------------------------------------------------------
@@ -215,31 +217,9 @@ fn apply_middleware_after(router: Router, ctx: Context) -> Context {
 // Tasks 5-7: Route matching and path parameter extraction
 // ---------------------------------------------------------------------------
 
-// Manual integer parsing
+// Manual integer parsing — delegated to text::string_utils
 fn parse_int_manual(s: String) -> Int {
-    let slen: Int = len(s)
-    let mut result: Int = 0
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let mut digit: Int = 0
-        if ch == "0" { digit = 0
-        } else { if ch == "1" { digit = 1
-        } else { if ch == "2" { digit = 2
-        } else { if ch == "3" { digit = 3
-        } else { if ch == "4" { digit = 4
-        } else { if ch == "5" { digit = 5
-        } else { if ch == "6" { digit = 6
-        } else { if ch == "7" { digit = 7
-        } else { if ch == "8" { digit = 8
-        } else { if ch == "9" { digit = 9
-        } else {
-            return result
-        } } } } } } } } } }
-        result = result * 10 + digit
-        i = i + 1
-    }
-    return result
+    return string_utils.parse_int_manual(s)
 }
 
 // Task 5: Path pattern parsing — extract path segments
@@ -376,95 +356,21 @@ fn path_after_prefix(s: String, prefix: String) -> String {
 // HTTP request parsing (Task 10 — reuse Phase 3 patterns)
 // ---------------------------------------------------------------------------
 
-// Simple ASCII lowercase
+// ASCII case conversion — delegated to text::string_utils
 fn to_lower_char(ch: String, b: Int) -> String {
-    if b < 65 { return ch }
-    if b > 90 { return ch }
-    if ch == "A" { return "a" }
-    if ch == "B" { return "b" }
-    if ch == "C" { return "c" }
-    if ch == "D" { return "d" }
-    if ch == "E" { return "e" }
-    if ch == "F" { return "f" }
-    if ch == "G" { return "g" }
-    if ch == "H" { return "h" }
-    if ch == "I" { return "i" }
-    if ch == "J" { return "j" }
-    if ch == "K" { return "k" }
-    if ch == "L" { return "l" }
-    if ch == "M" { return "m" }
-    if ch == "N" { return "n" }
-    if ch == "O" { return "o" }
-    if ch == "P" { return "p" }
-    if ch == "Q" { return "q" }
-    if ch == "R" { return "r" }
-    if ch == "S" { return "s" }
-    if ch == "T" { return "t" }
-    if ch == "U" { return "u" }
-    if ch == "V" { return "v" }
-    if ch == "W" { return "w" }
-    if ch == "X" { return "x" }
-    if ch == "Y" { return "y" }
-    if ch == "Z" { return "z" }
-    return ch
+    return string_utils.to_lower_char(ch, b)
 }
 
 fn to_lower(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = s.byte_at(i)
-        result = result + to_lower_char(ch, b)
-        i = i + 1
-    }
-    return result
+    return string_utils.to_lower(s)
 }
 
 fn to_upper_char(ch: String, b: Int) -> String {
-    if b < 97 { return ch }
-    if b > 122 { return ch }
-    if ch == "a" { return "A" }
-    if ch == "b" { return "B" }
-    if ch == "c" { return "C" }
-    if ch == "d" { return "D" }
-    if ch == "e" { return "E" }
-    if ch == "f" { return "F" }
-    if ch == "g" { return "G" }
-    if ch == "h" { return "H" }
-    if ch == "i" { return "I" }
-    if ch == "j" { return "J" }
-    if ch == "k" { return "K" }
-    if ch == "l" { return "L" }
-    if ch == "m" { return "M" }
-    if ch == "n" { return "N" }
-    if ch == "o" { return "O" }
-    if ch == "p" { return "P" }
-    if ch == "q" { return "Q" }
-    if ch == "r" { return "R" }
-    if ch == "s" { return "S" }
-    if ch == "t" { return "T" }
-    if ch == "u" { return "U" }
-    if ch == "v" { return "V" }
-    if ch == "w" { return "W" }
-    if ch == "x" { return "X" }
-    if ch == "y" { return "Y" }
-    if ch == "z" { return "Z" }
-    return ch
+    return string_utils.to_upper_char(ch, b)
 }
 
 fn to_upper(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = s.byte_at(i)
-        result = result + to_upper_char(ch, b)
-        i = i + 1
-    }
-    return result
+    return string_utils.to_upper(s)
 }
 
 // Parse an incoming HTTP request from raw bytes

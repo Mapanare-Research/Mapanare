@@ -104,10 +104,17 @@ class TestTypeInfoEquality:
         assert INT_TYPE != STRING_TYPE
         assert not (INT_TYPE == STRING_TYPE)
 
-    def test_unknown_matches_anything(self) -> None:
-        assert UNKNOWN_TYPE == INT_TYPE
-        assert INT_TYPE == UNKNOWN_TYPE
-        assert UNKNOWN_TYPE == STRING_TYPE
+    def test_unknown_strict_eq_rejects(self) -> None:
+        """UNKNOWN != concrete type under strict equality."""
+        assert UNKNOWN_TYPE != INT_TYPE
+        assert INT_TYPE != UNKNOWN_TYPE
+        assert UNKNOWN_TYPE != STRING_TYPE
+
+    def test_unknown_is_compatible_with(self) -> None:
+        """UNKNOWN is compatible with anything under permissive matching."""
+        assert UNKNOWN_TYPE.is_compatible_with(INT_TYPE)
+        assert INT_TYPE.is_compatible_with(UNKNOWN_TYPE)
+        assert UNKNOWN_TYPE.is_compatible_with(STRING_TYPE)
 
     def test_user_defined_same_name(self) -> None:
         a = TypeInfo(kind=TypeKind.STRUCT, name="Point")

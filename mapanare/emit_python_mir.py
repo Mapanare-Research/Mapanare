@@ -144,8 +144,6 @@ class PythonMIREmitter:
 
     def _fn_needs_async(self, fn: MIRFunction) -> bool:
         """Return True if the function should be emitted as async def."""
-        if fn.name == "main":
-            return True
         for bb in fn.blocks:
             for inst in bb.instructions:
                 if isinstance(inst, (AgentSpawn, AgentSend, AgentSync)):
@@ -462,7 +460,7 @@ class PythonMIREmitter:
             self._indent -= 1
             self._emit_line("except _EarlyReturn as _er:")
             self._indent += 1
-            self._emit_line("return _er.value")
+            self._emit_line("return _er.err")
             self._indent -= 1
 
         self._indent -= 1
@@ -1036,7 +1034,7 @@ class PythonMIREmitter:
             return
 
         # Handle internal MIR range calls
-        if inst.fn_name == "__range" and len(inst.args) == 2:
+        if inst.fn_name == "__mn_range" and len(inst.args) == 2:
             start = self._val(inst.args[0])
             end = self._val(inst.args[1])
             if dest and inst.dest.name:
@@ -1044,7 +1042,7 @@ class PythonMIREmitter:
             else:
                 self._emit_line(f"range({start}, {end})")
             return
-        if inst.fn_name == "__range_inclusive" and len(inst.args) == 2:
+        if inst.fn_name == "__mn_range_inclusive" and len(inst.args) == 2:
             start = self._val(inst.args[0])
             end = self._val(inst.args[1])
             if dest and inst.dest.name:
@@ -1057,6 +1055,17 @@ class PythonMIREmitter:
 
         # Map builtins (strip % prefix from MIR names)
         raw_name = inst.fn_name.lstrip("%")
+
+        # join(sep, parts) → sep.join(parts)
+        if raw_name == "join" and len(inst.args) == 2:
+            sep = self._val(inst.args[0])
+            parts = self._val(inst.args[1])
+            if dest and inst.dest.name:
+                self._emit_line(f"{dest} = {sep}.join({parts})")
+            else:
+                self._emit_line(f"{sep}.join({parts})")
+            return
+
         fn_name = BUILTIN_CALL_MAP.get(raw_name, raw_name)
 
         # Check if the called function is async
@@ -1112,12 +1121,16 @@ class PythonMIREmitter:
         """Emit the if __name__ == '__main__' guard if a main function exists."""
         has_main = any(fn.name == "main" for fn in module.functions)
         if has_main:
+            main_is_async = "main" in self._async_fns
             self._emit_line("")
             self._emit_line('if __name__ == "__main__":')
             self._indent += 1
-            self._emit_line("import asyncio")
-            self._emit_line("")
-            self._emit_line("asyncio.run(main())")
+            if main_is_async:
+                self._emit_line("import asyncio")
+                self._emit_line("")
+                self._emit_line("asyncio.run(main())")
+            else:
+                self._emit_line("main()")
             self._indent -= 1
 
     # ------------------------------------------------------------------

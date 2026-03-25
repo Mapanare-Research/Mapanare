@@ -388,9 +388,31 @@ class SemanticChecker:
         if isinstance(expr, CallExpr):
             return self._check_call(expr)
         if isinstance(expr, MethodCallExpr):
-            self._infer_expr(expr.object)
+            obj_type = self._infer_expr(expr.object)
             for a in expr.args:
                 self._infer_expr(a)
+            # Return known types for string methods
+            if obj_type.kind == TypeKind.STRING:
+                _str_method_types: dict[str, TypeInfo] = {
+                    "starts_with": BOOL_TYPE,
+                    "ends_with": BOOL_TYPE,
+                    "contains": BOOL_TYPE,
+                    "find": INT_TYPE,
+                    "byte_at": INT_TYPE,
+                    "char_at": STRING_TYPE,
+                    "substr": STRING_TYPE,
+                    "trim": STRING_TYPE,
+                    "trim_start": STRING_TYPE,
+                    "trim_end": STRING_TYPE,
+                    "to_upper": STRING_TYPE,
+                    "to_lower": STRING_TYPE,
+                    "replace": STRING_TYPE,
+                    "split": TypeInfo(kind=TypeKind.LIST, args=[STRING_TYPE]),
+                    "length": INT_TYPE,
+                }
+                ret = _str_method_types.get(expr.method)
+                if ret is not None:
+                    return ret
             return UNKNOWN_TYPE
         if isinstance(expr, FieldAccessExpr):
             obj_type = self._infer_expr(expr.object)
@@ -565,6 +587,13 @@ class SemanticChecker:
             return UNKNOWN_TYPE
 
         if expr.op in comparison_ops or expr.op in equality_ops:
+            # Annotate trait dispatch: if the operand type implements Eq or Ord,
+            # emitters can use the trait method instead of direct comparison.
+            if left.kind in (TypeKind.STRUCT, TypeKind.ENUM) and left.name:
+                if expr.op in equality_ops and self._type_implements_trait(left.name, "Eq"):
+                    expr.trait_dispatch = "eq"  # type: ignore[attr-defined]
+                elif expr.op in comparison_ops and self._type_implements_trait(left.name, "Ord"):
+                    expr.trait_dispatch = "cmp"  # type: ignore[attr-defined]
             return BOOL_TYPE
 
         if expr.op in logical_ops:
@@ -695,7 +724,7 @@ class SemanticChecker:
                     for i, (expected, actual) in enumerate(
                         zip(sym.type_info.param_types, arg_types)
                     ):
-                        if expected != actual:
+                        if not expected.is_compatible_with(actual):
                             fname = expr.callee.name
                             exp_s = _type_display(expected)
                             act_s = _type_display(actual)
@@ -735,7 +764,7 @@ class SemanticChecker:
             if (
                 sym.type_info.kind != TypeKind.UNKNOWN
                 and value_type.kind != TypeKind.UNKNOWN
-                and sym.type_info != value_type
+                and not sym.type_info.is_compatible_with(value_type)
             ):
                 val_s = _type_display(value_type)
                 var_s = _type_display(sym.type_info)
@@ -769,7 +798,7 @@ class SemanticChecker:
         return UNKNOWN_TYPE
 
     def _check_match(self, expr: MatchExpr) -> TypeInfo:
-        self._infer_expr(expr.subject)
+        subject_type = self._infer_expr(expr.subject)
         for arm in expr.arms:
             self._push_scope()
             self._bind_pattern(arm.pattern)
@@ -778,7 +807,47 @@ class SemanticChecker:
             elif isinstance(arm.body, Expr):
                 self._infer_expr(arm.body)
             self._pop_scope()
+
+        # Exhaustiveness check for enum subjects
+        self._check_match_exhaustiveness(expr, subject_type)
+
         return UNKNOWN_TYPE
+
+    def _check_match_exhaustiveness(self, expr: MatchExpr, subject_type: TypeInfo) -> None:
+        """Warn if a match on an enum type does not cover all variants."""
+        from mapanare.ast_nodes import ConstructorPattern, WildcardPattern
+
+        if subject_type.kind != TypeKind.ENUM or not subject_type.name:
+            return
+
+        # Look up the enum definition to get all variant names
+        sym = self.current_scope.lookup(subject_type.name)
+        if sym is None or sym.node is None or not isinstance(sym.node, EnumDef):
+            return
+
+        all_variants = {v.name for v in sym.node.variants}
+
+        # Check for wildcard patterns — if any arm has a wildcard, the match
+        # is trivially exhaustive
+        has_wildcard = False
+        covered_variants: set[str] = set()
+        for arm in expr.arms:
+            if isinstance(arm.pattern, WildcardPattern):
+                has_wildcard = True
+                break
+            if isinstance(arm.pattern, ConstructorPattern):
+                covered_variants.add(arm.pattern.name)
+
+        if has_wildcard:
+            return
+
+        missing = all_variants - covered_variants
+        if missing:
+            names = ", ".join(sorted(missing))
+            self._warning(
+                f"Non-exhaustive match on '{subject_type.name}': " f"missing variant(s) {names}",
+                expr,
+            )
 
     def _bind_pattern(self, pattern: object) -> None:
         """Bind names introduced by a pattern into the current scope."""
@@ -915,7 +984,7 @@ class SemanticChecker:
                             if (
                                 expected.kind != TypeKind.UNKNOWN
                                 and value_type.kind != TypeKind.UNKNOWN
-                                and expected != value_type
+                                and not expected.is_compatible_with(value_type)
                             ):
                                 val_s = _type_display(value_type)
                                 exp_s = _type_display(expected)
@@ -1061,7 +1130,7 @@ class SemanticChecker:
         if (
             ann_type.kind != TypeKind.UNKNOWN
             and value_type.kind != TypeKind.UNKNOWN
-            and ann_type != value_type
+            and not ann_type.is_compatible_with(value_type)
         ):
             ann_s = _type_display(ann_type)
             val_s = _type_display(value_type)
@@ -1289,7 +1358,7 @@ class SemanticChecker:
         sub_checker = SemanticChecker(filename=resolved.filepath, resolver=self.resolver)
         sub_errors = sub_checker.check(resolved.program)
         self.errors.extend(sub_errors)
-        if sub_errors:
+        if any(e.severity != "warning" for e in sub_errors):
             return
 
         mod_name = defn.path[-1] if defn.path else ""
@@ -1637,6 +1706,7 @@ def check_or_raise(
     *,
     filename: str = "<input>",
     resolver: ModuleResolver | None = None,
+    werror: bool = False,
 ) -> None:
     """Run semantic analysis and raise if there are errors.
 
@@ -1644,11 +1714,29 @@ def check_or_raise(
         program: The AST Program node to check.
         filename: Filename used in error messages.
         resolver: Optional module resolver for multi-file compilation.
+        werror: If True, treat warnings as errors.
 
     Raises:
         SemanticErrors: If any semantic errors are found.
     """
     all_issues = check(program, filename=filename, resolver=resolver)
-    errors = [e for e in all_issues if e.severity != "warning"]
+    if werror:
+        # Promote warnings to errors
+        errors = [
+            (
+                SemanticError(
+                    message=e.message,
+                    line=e.line,
+                    column=e.column,
+                    filename=e.filename,
+                    severity="error",
+                )
+                if e.severity == "warning"
+                else e
+            )
+            for e in all_issues
+        ]
+    else:
+        errors = [e for e in all_issues if e.severity != "warning"]
     if errors:
         raise SemanticErrors(errors)

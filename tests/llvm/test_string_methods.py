@@ -32,7 +32,7 @@ class TestStringContains:
             fn main() {
                 let s: String = "hello world"
                 let needle: String = "world"
-                let r: Int = s.contains(needle)
+                let r: Bool = s.contains(needle)
                 println(r)
             }
         """)
@@ -44,7 +44,7 @@ class TestStringContains:
             fn main() {
                 let s: String = "hello world"
                 let needle: String = "world"
-                let r: Int = s.contains(needle)
+                let r: Bool = s.contains(needle)
                 println(r)
             }
         """)
