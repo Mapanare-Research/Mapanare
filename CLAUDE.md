@@ -4,15 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language (v1.0.0) with first-class agents, signals, streams, and tensors. It compiles to Python (transpiler, legacy) and LLVM IR (native backend via llvmlite). The self-hosted compiler is 8,288+ lines of `.mn` across 7 modules in `mapanare/self/`. The language is frozen at v1.0 — syntax and semantics changes require RFC + deprecation cycle.
+Mapanare is an AI-native compiled programming language (v2.0.0) with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (native backend via llvmlite) and WebAssembly (WAT/WASM). A legacy Python transpiler backend exists for reference and bootstrapping only. The self-hosted compiler is 8,288+ lines of `.mn` across 7 modules in `mapanare/self/`. The language is frozen at v1.0 — syntax and semantics changes require RFC + deprecation cycle.
 
 ## Current Version & Roadmap
 
-- **v1.0.0** (current) — Language freeze, self-hosted fixed-point, formal memory model, stability guarantees
+- **v1.0.0** — Language freeze, self-hosted fixed-point, formal memory model, stability guarantees
 - **v1.1.0** — AI native: LLM drivers, embeddings, RAG as stdlib
 - **v1.2.0** — Data & storage: SQL drivers, Dato v1.0, YAML/TOML
 - **v1.3.0** — Web platform & security: crawler, vulnerability scanner, web framework
-- **v2.0.0** (in progress) — GPU compute (CUDA/Vulkan via dlopen), WebAssembly backend, mobile targets, Python backend deprecated
+- **v2.0.0** (current) — GPU compute (CUDA/Vulkan via dlopen), WebAssembly backend, mobile targets, Python backend deprecated
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v2.0.0/PLAN.md` for the current execution plan.
 

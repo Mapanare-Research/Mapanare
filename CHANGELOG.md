@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-03-25
+
+### Added
+
+- **WebAssembly backend** (`mapanare/emit_wasm.py`): Full MIR-to-WAT emitter with linear memory, bump allocation, string constants, JS bridge imports, and structured control flow
+- **CLI `emit-wasm` command** with `--binary` flag for optional `wat2wasm` compilation
+- **Cross-compilation targets** (`mapanare/targets.py`): `wasm32-unknown-unknown`, `wasm32-wasi`, `aarch64-apple-ios`, `aarch64-linux-android`, `x86_64-linux-android`
+- **GPU compute runtime** (`runtime/native/mapanare_gpu.c/.h`): CUDA Driver API and Vulkan compute via `dlopen` with built-in PTX/GLSL kernels for tensor ops
+- **GPU stdlib** (`stdlib/gpu/`): `device.mn`, `kernel.mn`, `tensor.mn` for device detection, kernel management, and GPU-accelerated tensor operations
+- **WASM stdlib** (`stdlib/wasm/`): `bridge.mn` (JS interop), `runtime.mn` (WASI preview 1 bindings)
+- **AI stdlib** (`stdlib/ai/`): `llm.mn` (LLM driver with provider abstraction), `embedding.mn` (batched embeddings with caching), `rag.mn` (RAG pipeline)
+- **Dato data engine** (`dato/src/`): Table, column, aggregation, join, reshape, null handling, I/O, and display modules
+- **Database layer** (`stdlib/db/`): `sql.mn`, `sqlite.mn`, `postgres.mn`, `redis.mn`, `kv.mn`, `embedded_kv.mn`, `pool.mn`, `migrate.mn`
+- **Database C runtime** (`runtime/native/mapanare_db.c/.h`): SQLite3 and PostgreSQL via `dlopen`, connection pooling, prepared statements
+- **Encoding stdlib**: `stdlib/encoding/toml.mn` (1,902 lines), `stdlib/encoding/yaml.mn` (2,121 lines) — full TOML and YAML parsers/serializers
+- **Filesystem stdlib** (`stdlib/fs.mn`): read, write, walk, glob, metadata, temp files
+- **Web crawler** (`crawl/src/`): URL parser, robots.txt, frontier queue, content extractor, persistence, crawl engine
+- **Vulnerability scanner** (`scan/src/`): Template-driven scanner with fingerprinting, pattern matching, YAML templates, report generation
+- **HTTP fuzzer** (`fuzz/src/`): Mutation engine, wordlist generation, HTTP fuzzing
+- **HTTP server toolkit** (`stdlib/net/http/`): auth, body parsing, config, cookies, rate limiting, sessions, SSE, template rendering
+- **HTML parser C runtime** (`runtime/native/mapanare_html.c/.h`): Streaming HTML parser for crawler/scanner
+- **Playground WASM runtime** (`playground/src/`): Browser runtime and Web Worker for WASM module execution
+- **GPU and WASM examples** (`examples/gpu/`, `examples/wasm/`)
+- **Roadmap plans**: `v1.2.0/PLAN.md`, `v1.3.0/PLAN.md`, `v2.0.0/PLAN.md`, `v2.0.0/SUMMARY.md`
+
+### Changed
+
+- Python emitters (`emit_python.py`, `emit_python_mir.py`) now emit `DeprecationWarning` at import time
+- `emit_python.py`: `substr` added as alias for `substring` method
+- `semantic.py`: `_bind_pattern` now receives `subject_type` for richer pattern binding in match expressions
+
+### Deprecated
+
+- **Python transpiler backends** (`emit_python.py`, `emit_python_mir.py`): Use the LLVM or WASM backend instead
+
 ## [1.0.11] - 2026-03-19
 
 ### Added
@@ -353,7 +388,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.11...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.11...v2.0.0
 [1.0.11]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.0...v1.0.11
 [1.0.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.8.0...v0.9.0
