@@ -1075,6 +1075,11 @@ MN_DB_EXPORT MnString __mn_realpath(MnString path) {
     DWORD len = GetFullPathNameA(cpath, MAX_PATH, resolved, NULL);
     free(cpath);
     if (len == 0 || len >= MAX_PATH) return __mn_str_empty();
+    
+    // POSIX realpath fails if the file doesn't exist.
+    // GetFullPathNameA always succeeds for valid paths even if they don't exist.
+    if (GetFileAttributesA(resolved) == INVALID_FILE_ATTRIBUTES) return __mn_str_empty();
+    
     return __mn_str_from_cstr(resolved);
 #else
     char *resolved = realpath(cpath, NULL);

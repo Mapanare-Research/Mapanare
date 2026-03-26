@@ -40,7 +40,7 @@ _DB_C = os.path.join(_RUNTIME_DIR, "mapanare_db.c")
 
 class MnString(ctypes.Structure):
     _fields_ = [
-        ("data", ctypes.c_char_p),
+        ("data", ctypes.c_void_p),
         ("len", ctypes.c_int64),
     ]
 
@@ -133,10 +133,11 @@ def _mn_str(lib: ctypes.CDLL, text: str) -> MnString:
 
 
 def _read_mnstring(s: MnString) -> str:
-    """Read an MnString back to a Python string."""
+    """Read an MnString back to a Python string, untagging the pointer if needed."""
     if s.len <= 0 or not s.data:
         return ""
-    return ctypes.string_at(s.data, s.len).decode("utf-8", errors="replace")
+    ptr = s.data & ~1
+    return ctypes.string_at(ptr, s.len).decode("utf-8", errors="replace")
 
 
 # ---------------------------------------------------------------------------

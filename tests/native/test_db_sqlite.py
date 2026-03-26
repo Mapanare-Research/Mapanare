@@ -50,9 +50,25 @@ SQLITE_TEXT = 3
 
 class MnString(ctypes.Structure):
     _fields_ = [
-        ("data", ctypes.c_char_p),
+        ("data", ctypes.c_void_p),
         ("len", ctypes.c_int64),
     ]
+
+
+def _read_mnstring(s: MnString) -> str:
+    """Read an MnString back to a Python string, untagging the pointer if needed."""
+    if s.len <= 0 or not s.data:
+        return ""
+    ptr = s.data & ~1
+    return ctypes.string_at(ptr, s.len).decode("utf-8", errors="replace")
+
+
+def _read_mnbytes(s: MnString) -> bytes:
+    """Read an MnString back to Python bytes, untagging the pointer if needed."""
+    if s.len <= 0 or not s.data:
+        return b""
+    ptr = s.data & ~1
+    return ctypes.string_at(ptr, s.len)
 
 
 def _make_mnstring(text: str) -> MnString:
@@ -286,7 +302,7 @@ class TestSQLite3Bindings:
         assert rc == SQLITE_ROW
 
         result = getattr(self.lib, "__mn_sqlite3_column_str")(stmt, 0)
-        result_bytes = ctypes.string_at(result.data, result.len)
+        result_bytes = _read_mnbytes(result)
         assert result_bytes == b"Mapanare"
 
         getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
@@ -321,15 +337,15 @@ class TestSQLite3Bindings:
 
         # Check column names
         col0 = getattr(self.lib, "__mn_sqlite3_column_name")(stmt, 0)
-        col0_str = ctypes.string_at(col0.data, col0.len).decode("utf-8")
+        col0_str = _read_mnstring(col0)
         assert col0_str == "alpha"
 
         col1 = getattr(self.lib, "__mn_sqlite3_column_name")(stmt, 1)
-        col1_str = ctypes.string_at(col1.data, col1.len).decode("utf-8")
+        col1_str = _read_mnstring(col1)
         assert col1_str == "beta"
 
         col2 = getattr(self.lib, "__mn_sqlite3_column_name")(stmt, 2)
-        col2_str = ctypes.string_at(col2.data, col2.len).decode("utf-8")
+        col2_str = _read_mnstring(col2)
         assert col2_str == "gamma"
 
         getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
@@ -345,7 +361,7 @@ class TestSQLite3Bindings:
 
         errmsg = getattr(self.lib, "__mn_sqlite3_errmsg")(handle)
         assert errmsg.len > 0, "Error message should be non-empty"
-        msg_str = ctypes.string_at(errmsg.data, errmsg.len).decode("utf-8", errors="replace")
+        msg_str = _read_mnstring(errmsg)
         # SQLite error messages typically contain words like "error" or "syntax"
         msg_lower = msg_str.lower()
         assert (
@@ -391,7 +407,7 @@ class TestSQLite3Bindings:
         assert rc == SQLITE_ROW
 
         result = getattr(self.lib, "__mn_sqlite3_column_str")(stmt, 0)
-        result_bytes = ctypes.string_at(result.data, result.len)
+        result_bytes = _read_mnbytes(result)
         assert result_bytes == b"'; DROP TABLE safe; --"
 
         getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
