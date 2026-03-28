@@ -1,0 +1,57 @@
+// scan/src/fingerprint.mn — Request/response fingerprinting for deduplication.
+//
+// Generates deterministic SHA-256 fingerprints for HTTP requests and
+// responses.  Used to deduplicate scan results when the same target
+// is tested by overlapping templates, or to cache responses.
+
+import crypto
+
+// ---------------------------------------------------------------------------
+// Request fingerprint: SHA-256 of method + url + body
+//
+// Two requests with the same method, URL, and body will produce the
+// same fingerprint, regardless of header ordering or whitespace.
+// ---------------------------------------------------------------------------
+
+pub fn fingerprint_request(method: String, url: String, body: String) -> String {
+    let input: String = method + "|" + url + "|" + body
+    return crypto.sha256(input)
+}
+
+// ---------------------------------------------------------------------------
+// Response fingerprint: SHA-256 of status + body
+//
+// Ignores headers (which may vary between requests due to cookies,
+// timestamps, etc.) to focus on the semantic content of the response.
+// ---------------------------------------------------------------------------
+
+pub fn fingerprint_response(status: Int, body: String) -> String {
+    let input: String = str(status) + "|" + body
+    return crypto.sha256(input)
+}
+
+// ---------------------------------------------------------------------------
+// Combined fingerprint: request + response together
+//
+// Useful for caching: if both the request and response fingerprint
+// match, the scan result can be reused without re-sending the request.
+// ---------------------------------------------------------------------------
+
+pub fn fingerprint_combined(method: String, url: String, body: String, status: Int, resp_body: String) -> String {
+    let req_fp: String = fingerprint_request(method, url, body)
+    let resp_fp: String = fingerprint_response(status, resp_body)
+    let combined: String = req_fp + "|" + resp_fp
+    return crypto.sha256(combined)
+}
+
+// ---------------------------------------------------------------------------
+// Short fingerprint: first 16 hex chars (64 bits) for display purposes
+// ---------------------------------------------------------------------------
+
+pub fn fingerprint_short(full_hash: String) -> String {
+    let hash_len: Int = len(full_hash)
+    if hash_len >= 16 {
+        return full_hash.substr(0, 16)
+    }
+    return full_hash
+}

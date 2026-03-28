@@ -1,0 +1,219 @@
+// dato/src/reshape.mn — Pivot/Melt for the Dato data engine.
+//
+// Provides wide-format (pivot) and long-format (melt) transforms.
+
+import dato::src::col
+import dato::src::table
+
+// ---------------------------------------------------------------------------
+// Internal: collect unique string values from a column
+// ---------------------------------------------------------------------------
+
+fn unique_values(c: col.Col, nrows: Int) -> List<String> {
+    let mut seen: List<String> = []
+    let mut i: Int = 0
+    while i < nrows {
+        let val: String = c.strs[i]
+        let mut found: Bool = false
+        let nseen: Int = len(seen)
+        let mut j: Int = 0
+        while j < nseen {
+            if seen[j] == val { found = true }
+            j = j + 1
+        }
+        if found == false {
+            seen = seen + [val]
+        }
+        i = i + 1
+    }
+    return seen
+}
+
+// ---------------------------------------------------------------------------
+// pivot — wide format
+//
+// Given a table with columns [index_col, columns_col, values_col],
+// produce a table where unique values of columns_col become new columns,
+// index_col becomes the row key, and values_col fills the cells.
+//
+// Only supports Int values_col for now.
+// ---------------------------------------------------------------------------
+
+pub fn pivot(t: table.Table, index_col: String, columns_col: String, values_col: String) -> Result<table.Table, table.DatoError> {
+    let idx_ci: Int = table.col_index(t, index_col)
+    if idx_ci < 0 { return Err(ColumnNotFound("Pivot index column '" + index_col + "' not found")) }
+    let col_ci: Int = table.col_index(t, columns_col)
+    if col_ci < 0 { return Err(ColumnNotFound("Pivot columns column '" + columns_col + "' not found")) }
+    let val_ci: Int = table.col_index(t, values_col)
+    if val_ci < 0 { return Err(ColumnNotFound("Pivot values column '" + values_col + "' not found")) }
+
+    let idx_c: col.Col = t.cols[idx_ci]
+    let col_c: col.Col = t.cols[col_ci]
+    let val_c: col.Col = t.cols[val_ci]
+
+    // Get unique index values (row keys) and column values (new column names)
+    let row_keys: List<String> = unique_values(idx_c, t.nrows)
+    let col_keys: List<String> = unique_values(col_c, t.nrows)
+    let nrow_keys: Int = len(row_keys)
+    let ncol_keys: Int = len(col_keys)
+
+    // Build index column
+    let index_out: col.Col = col.col_str(index_col, row_keys)
+
+    // Build value columns (one per unique column key)
+    let mut value_cols: List<col.Col> = []
+    let mut cci: Int = 0
+    while cci < ncol_keys {
+        // Initialize with zeros and null mask
+        let mut data: List<Int> = []
+        let mut mask: List<Bool> = []
+        let mut ri: Int = 0
+        while ri < nrow_keys {
+            data = data + [0]
+            mask = mask + [false]
+            ri = ri + 1
+        }
+
+        // Fill in values from source rows
+        let mut si: Int = 0
+        while si < t.nrows {
+            let src_col_val: String = col_c.strs[si]
+            if src_col_val == col_keys[cci] {
+                let src_idx_val: String = idx_c.strs[si]
+                // Find row index
+                let mut rki: Int = 0
+                while rki < nrow_keys {
+                    if row_keys[rki] == src_idx_val {
+                        data[rki] = col.get_int(val_c, si)
+                        mask[rki] = true
+                    }
+                    rki = rki + 1
+                }
+            }
+            si = si + 1
+        }
+
+        value_cols = value_cols + [col.col_i64_masked(col_keys[cci], data, mask)]
+        cci = cci + 1
+    }
+
+    // Combine: index column + value columns
+    let mut out_cols: List<col.Col> = [index_out]
+    let mut vi: Int = 0
+    while vi < ncol_keys {
+        out_cols = out_cols + [value_cols[vi]]
+        vi = vi + 1
+    }
+
+    return Ok(table.table_unchecked(out_cols, nrow_keys))
+}
+
+// ---------------------------------------------------------------------------
+// melt — long format
+//
+// Given id_vars (columns to keep) and value_vars (columns to unpivot),
+// produce a table with id_vars + "variable" (String) + "value" columns.
+//
+// Only supports Int value columns for now.
+// ---------------------------------------------------------------------------
+
+pub fn melt(t: table.Table, id_vars: List<String>, value_vars: List<String>) -> Result<table.Table, table.DatoError> {
+    let n_id: Int = len(id_vars)
+    let n_val: Int = len(value_vars)
+
+    // Validate all columns exist
+    let mut vi: Int = 0
+    while vi < n_id {
+        if table.col_index(t, id_vars[vi]) < 0 {
+            return Err(ColumnNotFound("Melt id column '" + id_vars[vi] + "' not found"))
+        }
+        vi = vi + 1
+    }
+    let mut vvi: Int = 0
+    while vvi < n_val {
+        if table.col_index(t, value_vars[vvi]) < 0 {
+            return Err(ColumnNotFound("Melt value column '" + value_vars[vvi] + "' not found"))
+        }
+        vvi = vvi + 1
+    }
+
+    let out_nrows: Int = t.nrows * n_val
+
+    // Build id columns (repeated n_val times)
+    let mut out_id_cols: List<col.Col> = []
+    let mut ici: Int = 0
+    while ici < n_id {
+        let src_ci: Int = table.col_index(t, id_vars[ici])
+        let src_c: col.Col = t.cols[src_ci]
+        let mut new_strs: List<String> = []
+        let mut new_ints: List<Int> = []
+        let mut new_floats: List<Float> = []
+        let mut new_bools: List<Bool> = []
+        let mut new_mask: List<Bool> = []
+
+        let mut vj: Int = 0
+        while vj < n_val {
+            let mut ri: Int = 0
+            while ri < t.nrows {
+                new_mask = new_mask + [src_c.mask[ri]]
+                match src_c.dtype {
+                    I64 => { new_ints = new_ints + [src_c.ints[ri]] },
+                    F64 => { new_floats = new_floats + [src_c.floats[ri]] },
+                    Str => { new_strs = new_strs + [src_c.strs[ri]] },
+                    Bool => { new_bools = new_bools + [src_c.bools[ri]] },
+                    Null => {}
+                }
+                ri = ri + 1
+            }
+            vj = vj + 1
+        }
+
+        let out_c: col.Col = new col.Col { name: src_c.name, dtype: src_c.dtype, ints: new_ints, floats: new_floats, strs: new_strs, bools: new_bools, mask: new_mask }
+        out_id_cols = out_id_cols + [out_c]
+        ici = ici + 1
+    }
+
+    // Build "variable" column — name of the source value column
+    let mut var_data: List<String> = []
+    let mut vk: Int = 0
+    while vk < n_val {
+        let mut ri: Int = 0
+        while ri < t.nrows {
+            var_data = var_data + [value_vars[vk]]
+            ri = ri + 1
+        }
+        vk = vk + 1
+    }
+    let var_col: col.Col = col.col_str("variable", var_data)
+
+    // Build "value" column — actual values from each value column
+    let mut val_ints: List<Int> = []
+    let mut val_mask: List<Bool> = []
+    let mut vl: Int = 0
+    while vl < n_val {
+        let src_ci: Int = table.col_index(t, value_vars[vl])
+        let src_c: col.Col = t.cols[src_ci]
+        let mut ri: Int = 0
+        while ri < t.nrows {
+            val_mask = val_mask + [src_c.mask[ri]]
+            match src_c.dtype {
+                I64 => { val_ints = val_ints + [src_c.ints[ri]] },
+                _ => { val_ints = val_ints + [0] }
+            }
+            ri = ri + 1
+        }
+        vl = vl + 1
+    }
+    let val_col: col.Col = col.col_i64_masked("value", val_ints, val_mask)
+
+    // Combine all output columns
+    let mut out_cols: List<col.Col> = []
+    let mut oi: Int = 0
+    while oi < n_id {
+        out_cols = out_cols + [out_id_cols[oi]]
+        oi = oi + 1
+    }
+    out_cols = out_cols + [var_col, val_col]
+
+    return Ok(table.table_unchecked(out_cols, out_nrows))
+}

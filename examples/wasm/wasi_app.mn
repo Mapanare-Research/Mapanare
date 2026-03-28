@@ -1,0 +1,69 @@
+# WASI Application Example
+# Runs on any WASI-compatible runtime (wasmtime, wasmer, wasm3)
+#
+# Compile: mapanare emit-wasm --binary examples/wasm/wasi_app.mn
+# Run:     wasmtime wasi_app.wasm
+#          wasmer run wasi_app.wasm
+
+import wasm.runtime
+
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+fn is_prime(n: Int) -> Bool:
+    if n < 2:
+        return false
+    if n < 4:
+        return true
+    if n % 2 == 0:
+        return false
+    let i: Int = 3
+    while i * i <= n:
+        if n % i == 0:
+            return false
+        i = i + 2
+    return true
+
+fn sieve_primes(limit: Int) -> List<Int>:
+    let primes: List<Int> = []
+    for n in range(2, limit + 1):
+        if is_prime(n):
+            primes = primes + [n]
+    return primes
+
+fn main():
+    println("=== Mapanare on WASI ===")
+    println("Running as native WebAssembly via WASI")
+    println("")
+
+    # WASI environment
+    let args: List<String> = wasi_args()
+    println("Arguments: " + str(len(args)))
+    for arg in args:
+        println("  " + arg)
+
+    println("")
+
+    # Factorial computation
+    println("Factorials:")
+    for i in range(1, 13):
+        println("  " + str(i) + "! = " + str(factorial(i)))
+
+    println("")
+
+    # Prime sieve
+    let limit: Int = 100
+    let primes: List<Int> = sieve_primes(limit)
+    println("Primes up to " + str(limit) + ": " + str(len(primes)) + " found")
+    println("First 10: " + str(primes))
+
+    println("")
+
+    # Memory info
+    let pages: Int = memory_size()
+    println("WASM memory: " + str(pages) + " pages (" + str(pages * 64) + " KB)")
+
+    println("")
+    println("Done!")

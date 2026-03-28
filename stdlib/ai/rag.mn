@@ -1,0 +1,485 @@
+// ai/rag.mn — Retrieval-Augmented Generation for Mapanare
+//
+// Document chunking, context retrieval, and prompt augmentation.
+// Pure algorithms — uses ai::embedding for vectors and ai::llm for generation.
+//
+// Usage:
+//   import ai::rag
+//   import ai::embedding
+//   import ai::llm
+//
+//   // 1. Chunk a document
+//   let chunks = rag.chunk_text(document, 512, 64)
+//
+//   // 2. Embed and index chunks
+//   let embed_config = embedding.openai_embed("sk-...", "text-embedding-3-small")
+//   let mut store = embedding.new_store()
+//   let mut i = 0
+//   while i < len(chunks) {
+//       let emb = embedding.embed(embed_config, chunks[i].text)
+//       match emb {
+//           Ok(r) => { store = embedding.store_add(store, chunks[i].id, chunks[i].text, r.vector) },
+//           Err(e) => {}
+//       }
+//       i = i + 1
+//   }
+//
+//   // 3. Query with RAG
+//   let query_emb = embedding.embed(embed_config, "What is Mapanare?")
+//   match query_emb {
+//       Ok(qr) => {
+//           let results = embedding.store_search(store, qr.vector, 5)
+//           let context = rag.build_context_from_results(results)
+//           let augmented = rag.augment_prompt("What is Mapanare?", context)
+//           let resp = llm.complete(llm_config, augmented)
+//       },
+//       Err(e) => {}
+//   }
+
+// ---------------------------------------------------------------------------
+// Chunk types
+// ---------------------------------------------------------------------------
+
+pub struct Chunk {
+    id: String,
+    text: String,
+    index: Int,
+    start_char: Int,
+    end_char: Int
+}
+
+fn new_chunk(id: String, text: String, index: Int, start: Int, end: Int) -> Chunk {
+    return new Chunk {id: id, text: text, index: index, start_char: start, end_char: end}
+}
+
+// ---------------------------------------------------------------------------
+// Chunking algorithms
+// ---------------------------------------------------------------------------
+
+// Fixed-size chunking with overlap
+pub fn chunk_text(text: String, chunk_size: Int, overlap: Int) -> List<Chunk> {
+    let slen: Int = len(text)
+    let mut chunks: List<Chunk> = []
+    let mut pos: Int = 0
+    let mut index: Int = 0
+
+    while pos < slen {
+        let mut end: Int = pos + chunk_size
+        if end > slen { end = slen }
+
+        let mut chunk_text: String = ""
+        let mut i: Int = pos
+        while i < end {
+            chunk_text = chunk_text + text.char_at(i)
+            i = i + 1
+        }
+
+        let id: String = "chunk_" + str(index)
+        chunks = chunks + [new_chunk(id, chunk_text, index, pos, end)]
+        index = index + 1
+
+        let step: Int = chunk_size - overlap
+        if step <= 0 {
+            pos = pos + chunk_size
+        } else {
+            pos = pos + step
+        }
+    }
+    return chunks
+}
+
+// Sentence-aware chunking: splits on sentence boundaries (. ! ?)
+// Accumulates sentences until chunk_size is reached
+pub fn chunk_by_sentences(text: String, max_chunk_size: Int) -> List<Chunk> {
+    let sentences: List<String> = split_sentences(text)
+    let sent_count: Int = len(sentences)
+    let mut chunks: List<Chunk> = []
+    let mut current: String = ""
+    let mut current_start: Int = 0
+    let mut char_pos: Int = 0
+    let mut index: Int = 0
+
+    let mut i: Int = 0
+    while i < sent_count {
+        let sentence: String = sentences[i]
+        let slen: Int = len(sentence)
+
+        if len(current) + slen > max_chunk_size {
+            if len(current) > 0 {
+                chunks = chunks + [new_chunk("chunk_" + str(index), current, index, current_start, char_pos)]
+                index = index + 1
+                current = ""
+                current_start = char_pos
+            }
+        }
+
+        if len(current) > 0 {
+            current = current + " " + sentence
+        } else {
+            current = sentence
+            current_start = char_pos
+        }
+        char_pos = char_pos + slen + 1
+        i = i + 1
+    }
+
+    if len(current) > 0 {
+        chunks = chunks + [new_chunk("chunk_" + str(index), current, index, current_start, char_pos)]
+    }
+    return chunks
+}
+
+// Paragraph-aware chunking: splits on double newlines
+pub fn chunk_by_paragraphs(text: String, max_chunk_size: Int) -> List<Chunk> {
+    let paragraphs: List<String> = split_paragraphs(text)
+    let para_count: Int = len(paragraphs)
+    let mut chunks: List<Chunk> = []
+    let mut current: String = ""
+    let mut current_start: Int = 0
+    let mut char_pos: Int = 0
+    let mut index: Int = 0
+
+    let mut i: Int = 0
+    while i < para_count {
+        let para: String = paragraphs[i]
+        let plen: Int = len(para)
+
+        if len(current) + plen > max_chunk_size {
+            if len(current) > 0 {
+                chunks = chunks + [new_chunk("chunk_" + str(index), current, index, current_start, char_pos)]
+                index = index + 1
+                current = ""
+                current_start = char_pos
+            }
+        }
+
+        // If a single paragraph exceeds max size, split it further
+        if plen > max_chunk_size {
+            if len(current) > 0 {
+                chunks = chunks + [new_chunk("chunk_" + str(index), current, index, current_start, char_pos)]
+                index = index + 1
+                current = ""
+            }
+            let sub_chunks: List<Chunk> = chunk_text(para, max_chunk_size, 0)
+            let sub_count: Int = len(sub_chunks)
+            let mut j: Int = 0
+            while j < sub_count {
+                chunks = chunks + [new_chunk("chunk_" + str(index), sub_chunks[j].text, index, char_pos + sub_chunks[j].start_char, char_pos + sub_chunks[j].end_char)]
+                index = index + 1
+                j = j + 1
+            }
+            char_pos = char_pos + plen + 2
+            current_start = char_pos
+        } else {
+            if len(current) > 0 {
+                current = current + "\n\n" + para
+            } else {
+                current = para
+                current_start = char_pos
+            }
+            char_pos = char_pos + plen + 2
+        }
+        i = i + 1
+    }
+
+    if len(current) > 0 {
+        chunks = chunks + [new_chunk("chunk_" + str(index), current, index, current_start, char_pos)]
+    }
+    return chunks
+}
+
+// ---------------------------------------------------------------------------
+// Text splitting helpers
+// ---------------------------------------------------------------------------
+
+fn split_sentences(text: String) -> List<String> {
+    let slen: Int = len(text)
+    let mut sentences: List<String> = []
+    let mut current: String = ""
+    let mut i: Int = 0
+
+    while i < slen {
+        let ch: String = text.char_at(i)
+        current = current + ch
+
+        if ch == "." {
+            // Check for end of sentence (followed by space or end)
+            let mut is_end: Bool = false
+            if i + 1 >= slen { is_end = true } else {
+                let next: String = text.char_at(i + 1)
+                if next == " " { is_end = true }
+                if next == "\n" { is_end = true }
+            }
+            if is_end {
+                let trimmed: String = trim_string(current)
+                if len(trimmed) > 0 { sentences = sentences + [trimmed] }
+                current = ""
+            }
+        }
+        if ch == "!" {
+            let trimmed: String = trim_string(current)
+            if len(trimmed) > 0 { sentences = sentences + [trimmed] }
+            current = ""
+        }
+        if ch == "?" {
+            let trimmed: String = trim_string(current)
+            if len(trimmed) > 0 { sentences = sentences + [trimmed] }
+            current = ""
+        }
+        i = i + 1
+    }
+
+    let final_trimmed: String = trim_string(current)
+    if len(final_trimmed) > 0 { sentences = sentences + [final_trimmed] }
+    return sentences
+}
+
+fn split_paragraphs(text: String) -> List<String> {
+    let slen: Int = len(text)
+    let mut paragraphs: List<String> = []
+    let mut current: String = ""
+    let mut i: Int = 0
+
+    while i < slen {
+        let ch: String = text.char_at(i)
+        if ch == "\n" {
+            if i + 1 < slen {
+                if text.char_at(i + 1) == "\n" {
+                    // Double newline — paragraph break
+                    let trimmed: String = trim_string(current)
+                    if len(trimmed) > 0 { paragraphs = paragraphs + [trimmed] }
+                    current = ""
+                    i = i + 2
+                    // Skip extra blank lines
+                    while i < slen {
+                        if text.char_at(i) == "\n" { i = i + 1 } else { break }
+                    }
+                } else {
+                    current = current + ch
+                    i = i + 1
+                }
+            } else {
+                current = current + ch
+                i = i + 1
+            }
+        } else {
+            current = current + ch
+            i = i + 1
+        }
+    }
+
+    let final_trimmed: String = trim_string(current)
+    if len(final_trimmed) > 0 { paragraphs = paragraphs + [final_trimmed] }
+    return paragraphs
+}
+
+fn trim_string(s: String) -> String {
+    let slen: Int = len(s)
+    if slen == 0 { return "" }
+
+    // Find first non-whitespace
+    let mut start: Int = 0
+    while start < slen {
+        let ch: String = s.char_at(start)
+        if ch == " " { start = start + 1 } else { if ch == "\t" { start = start + 1 } else { if ch == "\n" { start = start + 1 } else { if ch == "\r" { start = start + 1 } else { break } } } }
+    }
+
+    // Find last non-whitespace
+    let mut end: Int = slen - 1
+    while end >= start {
+        let ch: String = s.char_at(end)
+        if ch == " " { end = end - 1 } else { if ch == "\t" { end = end - 1 } else { if ch == "\n" { end = end - 1 } else { if ch == "\r" { end = end - 1 } else { break } } } }
+    }
+
+    if start > end { return "" }
+
+    let mut result: String = ""
+    let mut i: Int = start
+    while i <= end {
+        result = result + s.char_at(i)
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Context building from search results
+//
+// Takes search results from embedding.store_search() and builds
+// a context string for prompt augmentation.
+// ---------------------------------------------------------------------------
+
+pub struct RetrievalContext {
+    text: String,
+    source_count: Int,
+    sources: List<String>
+}
+
+// Build context from SearchResult-like data (id, text, score tuples)
+// This function works with parallel lists to avoid cross-module type deps.
+pub fn build_context(texts: List<String>, ids: List<String>, scores: List<Float>) -> RetrievalContext {
+    let count: Int = len(texts)
+    let mut context: String = ""
+    let mut sources: List<String> = []
+
+    let mut i: Int = 0
+    while i < count {
+        if i > 0 { context = context + "\n\n---\n\n" }
+        context = context + "[Source " + str(i + 1)
+        if i < len(ids) {
+            context = context + " (" + ids[i] + ")"
+        }
+        context = context + "]\n" + texts[i]
+        if i < len(ids) { sources = sources + [ids[i]] }
+        i = i + 1
+    }
+
+    return new RetrievalContext {text: context, source_count: count, sources: sources}
+}
+
+// Simpler version: just pass list of text chunks
+pub fn build_context_simple(texts: List<String>) -> RetrievalContext {
+    let count: Int = len(texts)
+    let mut context: String = ""
+    let mut i: Int = 0
+    while i < count {
+        if i > 0 { context = context + "\n\n---\n\n" }
+        context = context + "[Source " + str(i + 1) + "]\n" + texts[i]
+        i = i + 1
+    }
+    return new RetrievalContext {text: context, source_count: count, sources: []}
+}
+
+// ---------------------------------------------------------------------------
+// Prompt augmentation
+//
+// Builds a RAG-augmented prompt that includes retrieved context.
+// ---------------------------------------------------------------------------
+
+pub fn augment_prompt(query: String, context: RetrievalContext) -> String {
+    let mut prompt: String = "Answer the following question using ONLY the provided context. "
+    prompt = prompt + "If the context does not contain enough information, say so.\n\n"
+    prompt = prompt + "## Context\n\n"
+    prompt = prompt + context.text
+    prompt = prompt + "\n\n## Question\n\n"
+    prompt = prompt + query
+    return prompt
+}
+
+pub fn augment_prompt_custom(query: String, context: RetrievalContext, instruction: String) -> String {
+    let mut prompt: String = instruction + "\n\n"
+    prompt = prompt + "## Context\n\n"
+    prompt = prompt + context.text
+    prompt = prompt + "\n\n## Question\n\n"
+    prompt = prompt + query
+    return prompt
+}
+
+// Augment with system prompt instead of inline context
+pub fn make_rag_system_prompt(context: RetrievalContext) -> String {
+    let mut system: String = "You are a helpful assistant. Answer questions using the following reference material.\n\n"
+    system = system + context.text
+    return system
+}
+
+// ---------------------------------------------------------------------------
+// RAG pipeline helpers
+// ---------------------------------------------------------------------------
+
+// Estimate token count (rough: ~4 chars per token for English)
+pub fn estimate_tokens(text: String) -> Int {
+    let char_count: Int = len(text)
+    return char_count / 4
+}
+
+// Check if adding more context would exceed a token budget
+pub fn fits_in_budget(current_context: String, new_chunk: String, max_tokens: Int) -> Bool {
+    let current_tokens: Int = estimate_tokens(current_context)
+    let new_tokens: Int = estimate_tokens(new_chunk)
+    return current_tokens + new_tokens <= max_tokens
+}
+
+// Build context from texts, respecting a token budget
+pub fn build_context_budgeted(texts: List<String>, max_tokens: Int) -> RetrievalContext {
+    let count: Int = len(texts)
+    let mut included: List<String> = []
+    let mut total: String = ""
+    let mut i: Int = 0
+    while i < count {
+        if fits_in_budget(total, texts[i], max_tokens) {
+            included = included + [texts[i]]
+            if len(total) > 0 { total = total + "\n\n---\n\n" }
+            total = total + texts[i]
+        } else {
+            break
+        }
+        i = i + 1
+    }
+    return build_context_simple(included)
+}
+
+// ---------------------------------------------------------------------------
+// Document type for multi-document RAG
+// ---------------------------------------------------------------------------
+
+pub struct Document {
+    id: String,
+    title: String,
+    content: String,
+    metadata: Map<String, String>
+}
+
+pub fn new_document(id: String, title: String, content: String) -> Document {
+    return new Document {id: id, title: title, content: content, metadata: #{}}
+}
+
+pub fn new_document_with_meta(id: String, title: String, content: String, metadata: Map<String, String>) -> Document {
+    return new Document {id: id, title: title, content: content, metadata: metadata}
+}
+
+// Chunk a document, preserving document ID as prefix for chunk IDs
+pub fn chunk_document(doc: Document, chunk_size: Int, overlap: Int) -> List<Chunk> {
+    let raw_chunks: List<Chunk> = chunk_text(doc.content, chunk_size, overlap)
+    let count: Int = len(raw_chunks)
+    let mut result: List<Chunk> = []
+    let mut i: Int = 0
+    while i < count {
+        let c: Chunk = raw_chunks[i]
+        let id: String = doc.id + "_chunk_" + str(c.index)
+        result = result + [new_chunk(id, c.text, c.index, c.start_char, c.end_char)]
+        i = i + 1
+    }
+    return result
+}
+
+pub fn chunk_document_sentences(doc: Document, max_chunk_size: Int) -> List<Chunk> {
+    let raw_chunks: List<Chunk> = chunk_by_sentences(doc.content, max_chunk_size)
+    let count: Int = len(raw_chunks)
+    let mut result: List<Chunk> = []
+    let mut i: Int = 0
+    while i < count {
+        let c: Chunk = raw_chunks[i]
+        let id: String = doc.id + "_chunk_" + str(c.index)
+        result = result + [new_chunk(id, c.text, c.index, c.start_char, c.end_char)]
+        i = i + 1
+    }
+    return result
+}
+
+// Chunk multiple documents
+pub fn chunk_documents(docs: List<Document>, chunk_size: Int, overlap: Int) -> List<Chunk> {
+    let doc_count: Int = len(docs)
+    let mut all_chunks: List<Chunk> = []
+    let mut i: Int = 0
+    while i < doc_count {
+        let chunks: List<Chunk> = chunk_document(docs[i], chunk_size, overlap)
+        let chunk_count: Int = len(chunks)
+        let mut j: Int = 0
+        while j < chunk_count {
+            all_chunks = all_chunks + [chunks[j]]
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return all_chunks
+}

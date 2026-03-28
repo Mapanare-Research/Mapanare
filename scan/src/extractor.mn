@@ -1,0 +1,143 @@
+// scan/src/extractor.mn — Response data extractors for the Mapanare vulnerability scanner.
+//
+// Extracts named values from HTTP responses using regex capture groups
+// or header values.  Extracted data is attached to scan findings for
+// evidence and post-processing.
+
+import text::regex
+
+// ---------------------------------------------------------------------------
+// Core types
+// ---------------------------------------------------------------------------
+
+pub enum ExtractorType {
+    RegexExtract,
+    HeaderExtract
+}
+
+pub struct Extractor {
+    extractor_type: ExtractorType,
+    name: String,
+    pattern: String,
+    group_idx: Int
+}
+
+// Re-declare ScanResponse locally (mirrors matcher.mn)
+pub struct ScanResponse {
+    url: String,
+    status: Int,
+    headers: Map<String, String>,
+    body: String,
+    elapsed_ms: Int
+}
+
+// ---------------------------------------------------------------------------
+// Constructor helpers
+// ---------------------------------------------------------------------------
+
+fn new_extractor(etype: ExtractorType, name: String, pattern: String, group_idx: Int) -> Extractor {
+    return new Extractor {
+        extractor_type: etype,
+        name: name,
+        pattern: pattern,
+        group_idx: group_idx
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Parse extractor type from string
+// ---------------------------------------------------------------------------
+
+pub fn parse_extractor_type(type_str: String) -> ExtractorType {
+    if type_str == "regex" { return RegexExtract() }
+    if type_str == "header" { return HeaderExtract() }
+    // Default to header extraction
+    return HeaderExtract()
+}
+
+// ---------------------------------------------------------------------------
+// Regex extractor: find all matches and return the specified capture group
+// ---------------------------------------------------------------------------
+
+pub fn extract_regex(ext: Extractor, body: String) -> List<String> {
+    let mut results: List<String> = []
+    let matches: List<regex.Match> = regex.find_all(ext.pattern, body)
+    let match_count: Int = len(matches)
+    let mut i: Int = 0
+    while i < match_count {
+        let m: regex.Match = matches[i]
+        if ext.group_idx == 0 {
+            // Group 0 = entire match
+            results = results + [m.text]
+        } else {
+            // Specific capture group
+            let group_count: Int = len(m.groups)
+            let group_index: Int = ext.group_idx - 1
+            if group_index < group_count {
+                match m.groups[group_index] {
+                    Some(val) => { results = results + [val] },
+                    _ => {}
+                }
+            }
+        }
+        i = i + 1
+    }
+    return results
+}
+
+// ---------------------------------------------------------------------------
+// Header extractor: extract the value of a named header
+// ---------------------------------------------------------------------------
+
+pub fn extract_header(ext: Extractor, headers: Map<String, String>) -> List<String> {
+    let mut results: List<String> = []
+    let target: String = ext.pattern
+    for hkey in headers {
+        if hkey == target {
+            results = results + [headers[hkey]]
+        }
+        // Also try case-insensitive comparison for common headers
+        if hkey.to_lower() == target.to_lower() {
+            // Avoid duplicates: only add if not already present
+            let val: String = headers[hkey]
+            let mut already: Bool = false
+            let rc: Int = len(results)
+            let mut ri: Int = 0
+            while ri < rc {
+                if results[ri] == val {
+                    already = true
+                }
+                ri = ri + 1
+            }
+            if already == false {
+                results = results + [val]
+            }
+        }
+    }
+    return results
+}
+
+// ---------------------------------------------------------------------------
+// Run all extractors against a response, returning name -> extracted values
+// ---------------------------------------------------------------------------
+
+pub fn run_extractors(extractors: List<Extractor>, resp: ScanResponse) -> Map<String, List<String>> {
+    let mut result: Map<String, List<String>> = #{}
+    let count: Int = len(extractors)
+    let mut i: Int = 0
+    while i < count {
+        let ext: Extractor = extractors[i]
+        let mut values: List<String> = []
+        match ext.extractor_type {
+            RegexExtract => {
+                values = extract_regex(ext, resp.body)
+            },
+            HeaderExtract => {
+                values = extract_header(ext, resp.headers)
+            }
+        }
+        result[ext.name] = values
+        i = i + 1
+    }
+    return result
+}

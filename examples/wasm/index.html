@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mapanare WASM Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      padding: 2rem;
+    }
+    h1 { color: #58a6ff; margin-bottom: 1rem; }
+    h2 { color: #8b949e; margin: 1.5rem 0 0.5rem; font-size: 1.1rem; }
+    .container { max-width: 800px; margin: 0 auto; }
+    .counter-section {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin: 1rem 0;
+    }
+    #counter-value {
+      font-size: 3rem;
+      font-weight: bold;
+      text-align: center;
+      margin: 1rem 0;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    .btn-group { display: flex; gap: 0.5rem; justify-content: center; }
+    button {
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      padding: 0.5rem 1.5rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    button:hover { background: #30363d; }
+    button.primary { background: #238636; border-color: #2ea043; }
+    button.primary:hover { background: #2ea043; }
+    button.danger { background: #da3633; border-color: #f85149; }
+    button.danger:hover { background: #f85149; }
+    #todo-app {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin: 1rem 0;
+    }
+    #todo-app ul { padding-left: 1.5rem; }
+    #todo-app li { margin: 0.3rem 0; }
+    #output {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1rem;
+      margin: 1rem 0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      min-height: 100px;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .stdout { color: #7ee787; }
+    .stderr { color: #f85149; }
+    .status { color: #8b949e; font-style: italic; }
+    .badge {
+      display: inline-block;
+      background: #238636;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      margin-left: 8px;
+    }
+    #file-input { margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Mapanare WASM Demo <span class="badge">v2.0.0</span></h1>
+    <p>Run Mapanare programs natively in the browser via WebAssembly.</p>
+
+    <h2>Load WASM Module</h2>
+    <div>
+      <input type="file" id="file-input" accept=".wasm">
+      <button class="primary" onclick="loadAndRun()">Run</button>
+    </div>
+
+    <h2>Counter (DOM Interop Demo)</h2>
+    <div class="counter-section">
+      <div id="counter-value">0</div>
+      <div class="btn-group">
+        <button class="danger" id="btn-decrement">- Decrement</button>
+        <button id="btn-reset">Reset</button>
+        <button class="primary" id="btn-increment">+ Increment</button>
+      </div>
+    </div>
+
+    <div id="todo-app"></div>
+
+    <h2>Output</h2>
+    <div id="output"><span class="status">Ready. Load a .wasm file to run.</span></div>
+  </div>
+
+  <script type="module">
+    import { loadModule, runModule, setInstance } from '../../playground/src/wasm-runtime.js';
+
+    const output = document.getElementById('output');
+
+    function appendOutput(text, cls = 'stdout') {
+      const span = document.createElement('span');
+      span.className = cls;
+      span.textContent = text;
+      output.appendChild(span);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function clearOutput() {
+      output.innerHTML = '';
+    }
+
+    window.loadAndRun = async function() {
+      const fileInput = document.getElementById('file-input');
+      if (!fileInput.files.length) {
+        appendOutput('No file selected.\n', 'stderr');
+        return;
+      }
+
+      clearOutput();
+      appendOutput('Loading WASM module...\n', 'status');
+
+      const file = fileInput.files[0];
+      const bytes = await file.arrayBuffer();
+
+      const result = await runModule(bytes, {
+        onStdout: (text) => appendOutput(text, 'stdout'),
+        onStderr: (text) => appendOutput(text, 'stderr'),
+      });
+
+      if (result.ok) {
+        appendOutput(`\nDone in ${result.elapsed.toFixed(1)}ms\n`, 'status');
+      } else {
+        appendOutput(`\nFailed: ${result.error}\n`, 'stderr');
+      }
+    };
+
+    // Wire up counter buttons (JS fallback — WASM DOM interop would replace this)
+    let count = 0;
+    const counterEl = document.getElementById('counter-value');
+
+    function updateCounter() {
+      counterEl.textContent = count;
+      counterEl.style.color = count > 0 ? '#7ee787' : count < 0 ? '#f85149' : '#c9d1d9';
+    }
+
+    document.getElementById('btn-increment').addEventListener('click', () => {
+      count++;
+      updateCounter();
+    });
+    document.getElementById('btn-decrement').addEventListener('click', () => {
+      count--;
+      updateCounter();
+    });
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      count = 0;
+      updateCounter();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,529 @@
+// scan/src/template.mn — YAML-based scan template loader for Mapanare v1.3.0.
+//
+// Loads Nuclei-style YAML templates that define HTTP requests, matchers,
+// and extractors for vulnerability scanning.  Depends on the stdlib YAML
+// parser (encoding/yaml) and the C runtime file-read primitive.
+//
+// Template format:
+//   id: <string>
+//   info:
+//     name: <string>
+//     severity: <string>   # CRITICAL | HIGH | MEDIUM | LOW | INFO
+//     tags: [<string>, ...]
+//     author: <string>
+//   requests:
+//     - method: GET|POST|...
+//       path: /...
+//       headers: { Key: Value }
+//       body: <string>
+//       follow_redirects: true|false
+//   matchers:
+//     - type: status|header|body|regex|response_time|word_count
+//       condition: and|or
+//       values: [...]
+//       negative: true|false
+//   extractors:
+//     - type: regex|header
+//       name: <string>
+//       pattern: <string>
+//       group: <int>
+
+import encoding::yaml
+
+extern "C" fn __mn_file_read(path: String) -> String
+
+// ---------------------------------------------------------------------------
+// Core types
+// ---------------------------------------------------------------------------
+
+pub struct ScanTemplate {
+    id: String,
+    name: String,
+    severity: String,
+    tags: List<String>,
+    author: String,
+    requests: List<TemplateRequest>,
+    matchers: List<Matcher>,
+    extractors: List<Extractor>
+}
+
+pub struct TemplateRequest {
+    method: String,
+    path: String,
+    headers: Map<String, String>,
+    body: String,
+    follow_redirects: Bool
+}
+
+pub struct Matcher {
+    matcher_type: String,
+    condition: String,
+    values: List<String>,
+    negative: Bool
+}
+
+pub struct Extractor {
+    extractor_type: String,
+    name: String,
+    pattern: String,
+    group_idx: Int
+}
+
+pub enum ScanError {
+    TemplateParseError(String),
+    FetchError(String),
+    MatchError(String),
+    IoError(String)
+}
+
+// ---------------------------------------------------------------------------
+// Constructor helpers
+// ---------------------------------------------------------------------------
+
+fn new_scan_error_parse(msg: String) -> ScanError {
+    return TemplateParseError(msg)
+}
+
+fn new_scan_error_io(msg: String) -> ScanError {
+    return IoError(msg)
+}
+
+fn new_template_request(method: String, path: String, headers: Map<String, String>, body: String, follow_redirects: Bool) -> TemplateRequest {
+    return new TemplateRequest {
+        method: method,
+        path: path,
+        headers: headers,
+        body: body,
+        follow_redirects: follow_redirects
+    }
+}
+
+fn new_matcher(matcher_type: String, condition: String, values: List<String>, negative: Bool) -> Matcher {
+    return new Matcher {
+        matcher_type: matcher_type,
+        condition: condition,
+        values: values,
+        negative: negative
+    }
+}
+
+fn new_extractor(extractor_type: String, name: String, pattern: String, group_idx: Int) -> Extractor {
+    return new Extractor {
+        extractor_type: extractor_type,
+        name: name,
+        pattern: pattern,
+        group_idx: group_idx
+    }
+}
+
+// ---------------------------------------------------------------------------
+// YAML field extraction helpers
+// ---------------------------------------------------------------------------
+
+fn get_yaml_string(entries: List<yaml.YamlEntry>, key: String) -> String {
+    let count: Int = len(entries)
+    let mut i: Int = 0
+    while i < count {
+        let entry: yaml.YamlEntry = entries[i]
+        if entry.key == key {
+            match entry.value {
+                Str(s) => { return s },
+                Int(n) => { return str(n) },
+                Bool(b) => {
+                    if b { return "true" } else { return "false" }
+                },
+                _ => { return "" }
+            }
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+fn get_yaml_bool(entries: List<yaml.YamlEntry>, key: String, default_val: Bool) -> Bool {
+    let count: Int = len(entries)
+    let mut i: Int = 0
+    while i < count {
+        let entry: yaml.YamlEntry = entries[i]
+        if entry.key == key {
+            match entry.value {
+                Bool(b) => { return b },
+                Str(s) => {
+                    if s == "true" { return true }
+                    if s == "yes" { return true }
+                    return false
+                },
+                _ => { return default_val }
+            }
+        }
+        i = i + 1
+    }
+    return default_val
+}
+
+fn get_yaml_int(entries: List<yaml.YamlEntry>, key: String, default_val: Int) -> Int {
+    let count: Int = len(entries)
+    let mut i: Int = 0
+    while i < count {
+        let entry: yaml.YamlEntry = entries[i]
+        if entry.key == key {
+            match entry.value {
+                Int(n) => { return n },
+                _ => { return default_val }
+            }
+        }
+        i = i + 1
+    }
+    return default_val
+}
+
+fn get_yaml_list_strings(entries: List<yaml.YamlEntry>, key: String) -> List<String> {
+    let count: Int = len(entries)
+    let mut i: Int = 0
+    while i < count {
+        let entry: yaml.YamlEntry = entries[i]
+        if entry.key == key {
+            match entry.value {
+                Seq(items) => {
+                    let mut result: List<String> = []
+                    let item_count: Int = len(items)
+                    let mut j: Int = 0
+                    while j < item_count {
+                        match items[j] {
+                            Str(s) => { result = result + [s] },
+                            Int(n) => { result = result + [str(n)] },
+                            _ => {}
+                        }
+                        j = j + 1
+                    }
+                    return result
+                },
+                _ => {
+                    let empty: List<String> = []
+                    return empty
+                }
+            }
+        }
+        i = i + 1
+    }
+    let empty: List<String> = []
+    return empty
+}
+
+fn get_yaml_map(entries: List<yaml.YamlEntry>, key: String) -> List<yaml.YamlEntry> {
+    let count: Int = len(entries)
+    let mut i: Int = 0
+    while i < count {
+        let entry: yaml.YamlEntry = entries[i]
+        if entry.key == key {
+            match entry.value {
+                Map(map_entries) => { return map_entries },
+                _ => {
+                    let empty: List<yaml.YamlEntry> = []
+                    return empty
+                }
+            }
+        }
+        i = i + 1
+    }
+    let empty: List<yaml.YamlEntry> = []
+    return empty
+}
+
+fn get_yaml_seq(entries: List<yaml.YamlEntry>, key: String) -> List<yaml.YamlValue> {
+    let count: Int = len(entries)
+    let mut i: Int = 0
+    while i < count {
+        let entry: yaml.YamlEntry = entries[i]
+        if entry.key == key {
+            match entry.value {
+                Seq(items) => { return items },
+                _ => {
+                    let empty: List<yaml.YamlValue> = []
+                    return empty
+                }
+            }
+        }
+        i = i + 1
+    }
+    let empty: List<yaml.YamlValue> = []
+    return empty
+}
+
+// ---------------------------------------------------------------------------
+// Parse a single YAML map into headers (Map<String, String>)
+// ---------------------------------------------------------------------------
+
+fn parse_headers_from_entries(entries: List<yaml.YamlEntry>) -> Map<String, String> {
+    let mut headers: Map<String, String> = #{}
+    let count: Int = len(entries)
+    let mut i: Int = 0
+    while i < count {
+        let entry: yaml.YamlEntry = entries[i]
+        match entry.value {
+            Str(s) => { headers[entry.key] = s },
+            Int(n) => { headers[entry.key] = str(n) },
+            _ => {}
+        }
+        i = i + 1
+    }
+    return headers
+}
+
+// ---------------------------------------------------------------------------
+// Parse a single request entry from YAML
+// ---------------------------------------------------------------------------
+
+fn parse_request(value: yaml.YamlValue) -> Result<TemplateRequest, ScanError> {
+    match value {
+        Map(entries) => {
+            let method: String = get_yaml_string(entries, "method")
+            let path: String = get_yaml_string(entries, "path")
+            let body: String = get_yaml_string(entries, "body")
+            let follow: Bool = get_yaml_bool(entries, "follow_redirects", false)
+            let header_entries: List<yaml.YamlEntry> = get_yaml_map(entries, "headers")
+            let headers: Map<String, String> = parse_headers_from_entries(header_entries)
+            if len(method) == 0 {
+                return Err(new_scan_error_parse("request missing 'method' field"))
+            }
+            if len(path) == 0 {
+                return Err(new_scan_error_parse("request missing 'path' field"))
+            }
+            return Ok(new_template_request(method, path, headers, body, follow))
+        },
+        _ => {
+            return Err(new_scan_error_parse("request entry must be a YAML map"))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Parse a single matcher entry from YAML
+// ---------------------------------------------------------------------------
+
+fn parse_matcher(value: yaml.YamlValue) -> Result<Matcher, ScanError> {
+    match value {
+        Map(entries) => {
+            let mtype: String = get_yaml_string(entries, "type")
+            let condition: String = get_yaml_string(entries, "condition")
+            let negative: Bool = get_yaml_bool(entries, "negative", false)
+            let values: List<String> = get_yaml_list_strings(entries, "values")
+            let cond: String = condition
+            if len(cond) == 0 {
+                return Ok(new_matcher(mtype, "and", values, negative))
+            }
+            return Ok(new_matcher(mtype, cond, values, negative))
+        },
+        _ => {
+            return Err(new_scan_error_parse("matcher entry must be a YAML map"))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Parse a single extractor entry from YAML
+// ---------------------------------------------------------------------------
+
+fn parse_extractor(value: yaml.YamlValue) -> Result<Extractor, ScanError> {
+    match value {
+        Map(entries) => {
+            let etype: String = get_yaml_string(entries, "type")
+            let name: String = get_yaml_string(entries, "name")
+            let pattern: String = get_yaml_string(entries, "pattern")
+            let group: Int = get_yaml_int(entries, "group", 0)
+            return Ok(new_extractor(etype, name, pattern, group))
+        },
+        _ => {
+            return Err(new_scan_error_parse("extractor entry must be a YAML map"))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Load template from parsed YAML document
+// ---------------------------------------------------------------------------
+
+fn parse_template_from_yaml(doc: yaml.YamlValue) -> Result<ScanTemplate, ScanError> {
+    match doc {
+        Map(root_entries) => {
+            let id: String = get_yaml_string(root_entries, "id")
+            if len(id) == 0 {
+                return Err(new_scan_error_parse("template missing 'id' field"))
+            }
+
+            // Parse info section
+            let info_entries: List<yaml.YamlEntry> = get_yaml_map(root_entries, "info")
+            let name: String = get_yaml_string(info_entries, "name")
+            let severity: String = get_yaml_string(info_entries, "severity")
+            let tags: List<String> = get_yaml_list_strings(info_entries, "tags")
+            let author: String = get_yaml_string(info_entries, "author")
+
+            // Parse requests
+            let request_values: List<yaml.YamlValue> = get_yaml_seq(root_entries, "requests")
+            let mut requests: List<TemplateRequest> = []
+            let req_count: Int = len(request_values)
+            let mut ri: Int = 0
+            while ri < req_count {
+                let req_result: Result<TemplateRequest, ScanError> = parse_request(request_values[ri])
+                match req_result {
+                    Ok(req) => { requests = requests + [req] },
+                    Err(e) => { return Err(e) }
+                }
+                ri = ri + 1
+            }
+
+            // Parse matchers
+            let matcher_values: List<yaml.YamlValue> = get_yaml_seq(root_entries, "matchers")
+            let mut matchers: List<Matcher> = []
+            let mat_count: Int = len(matcher_values)
+            let mut mi: Int = 0
+            while mi < mat_count {
+                let mat_result: Result<Matcher, ScanError> = parse_matcher(matcher_values[mi])
+                match mat_result {
+                    Ok(m) => { matchers = matchers + [m] },
+                    Err(e) => { return Err(e) }
+                }
+                mi = mi + 1
+            }
+
+            // Parse extractors
+            let extractor_values: List<yaml.YamlValue> = get_yaml_seq(root_entries, "extractors")
+            let mut extractors: List<Extractor> = []
+            let ext_count: Int = len(extractor_values)
+            let mut ei: Int = 0
+            while ei < ext_count {
+                let ext_result: Result<Extractor, ScanError> = parse_extractor(extractor_values[ei])
+                match ext_result {
+                    Ok(ex) => { extractors = extractors + [ex] },
+                    Err(e) => { return Err(e) }
+                }
+                ei = ei + 1
+            }
+
+            return Ok(new ScanTemplate {
+                id: id,
+                name: name,
+                severity: severity,
+                tags: tags,
+                author: author,
+                requests: requests,
+                matchers: matchers,
+                extractors: extractors
+            })
+        },
+        _ => {
+            return Err(new_scan_error_parse("template root must be a YAML mapping"))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public API: load a single template from a YAML file
+// ---------------------------------------------------------------------------
+
+pub fn load_template(path: String) -> Result<ScanTemplate, ScanError> {
+    let content: String = __mn_file_read(path)
+    if len(content) == 0 {
+        return Err(new_scan_error_io("failed to read template file: " + path))
+    }
+    let yaml_result: Result<yaml.YamlValue, yaml.YamlError> = yaml.decode(content)
+    match yaml_result {
+        Ok(doc) => {
+            return parse_template_from_yaml(doc)
+        },
+        Err(ye) => {
+            return Err(new_scan_error_parse("YAML parse error in " + path + ": " + ye.message))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public API: load multiple templates from a list of paths
+// ---------------------------------------------------------------------------
+
+pub fn load_templates_from_list(paths: List<String>) -> Result<List<ScanTemplate>, ScanError> {
+    let mut templates: List<ScanTemplate> = []
+    let count: Int = len(paths)
+    let mut i: Int = 0
+    while i < count {
+        let result: Result<ScanTemplate, ScanError> = load_template(paths[i])
+        match result {
+            Ok(tmpl) => { templates = templates + [tmpl] },
+            Err(e) => { return Err(e) }
+        }
+        i = i + 1
+    }
+    return Ok(templates)
+}
+
+// ---------------------------------------------------------------------------
+// Public API: interpolate template variables
+//
+// Replaces {{BaseURL}}, {{Hostname}}, {{Port}}, {{Path}}, {{Scheme}},
+// and any custom {{VarName}} with values from the vars map.
+// ---------------------------------------------------------------------------
+
+pub fn interpolate(s: String, vars: Map<String, String>) -> String {
+    let mut result: String = s
+    let slen: Int = len(result)
+    let mut out: String = ""
+    let mut pos: Int = 0
+
+    while pos < len(result) {
+        // Look for opening {{
+        if pos + 1 < len(result) {
+            let c0: String = result.char_at(pos)
+            let c1: String = result.char_at(pos + 1)
+            if c0 == "{" {
+                if c1 == "{" {
+                    // Find closing }}
+                    let mut end: Int = pos + 2
+                    let mut found_end: Bool = false
+                    while end + 1 < len(result) {
+                        let e0: String = result.char_at(end)
+                        let e1: String = result.char_at(end + 1)
+                        if e0 == "}" {
+                            if e1 == "}" {
+                                found_end = true
+                                break
+                            }
+                        }
+                        end = end + 1
+                    }
+                    if found_end {
+                        let var_name: String = result.substr(pos + 2, end)
+                        // Look up in vars map
+                        let mut replacement: String = ""
+                        let mut var_found: Bool = false
+                        for key in vars {
+                            if key == var_name {
+                                replacement = vars[key]
+                                var_found = true
+                            }
+                        }
+                        if var_found {
+                            out = out + replacement
+                        } else {
+                            // Leave the placeholder as-is
+                            out = out + "{{" + var_name + "}}"
+                        }
+                        pos = end + 2
+                    } else {
+                        out = out + c0
+                        pos = pos + 1
+                    }
+                } else {
+                    out = out + c0
+                    pos = pos + 1
+                }
+            } else {
+                out = out + c0
+                pos = pos + 1
+            }
+        } else {
+            out = out + result.char_at(pos)
+            pos = pos + 1
+        }
+    }
+    return out
+}

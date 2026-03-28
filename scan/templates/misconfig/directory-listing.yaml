@@ -1,0 +1,33 @@
+id: directory-listing-detect
+info:
+  name: Open Directory Listing Detection
+  severity: LOW
+  tags:
+    - misconfig
+    - directory-listing
+  author: mapanare
+requests:
+  - method: GET
+    path: /
+  - method: GET
+    path: /images/
+  - method: GET
+    path: /uploads/
+  - method: GET
+    path: /assets/
+matchers:
+  - type: status
+    values:
+      - "200"
+  - type: body
+    condition: or
+    values:
+      - "Index of"
+      - "Directory listing"
+      - "[To Parent Directory]"
+      - "<title>Index of"
+extractors:
+  - type: regex
+    name: directory_title
+    pattern: "<title>(Index of [^<]+)</title>"
+    group: 1

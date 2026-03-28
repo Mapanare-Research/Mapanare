@@ -1,0 +1,604 @@
+// scan/src/engine.mn — Scan engine for the Mapanare vulnerability scanner.
+//
+// Orchestrates template-driven scanning: sends HTTP requests via the C
+// runtime TCP/TLS primitives, evaluates matchers, runs extractors, and
+// collects findings.  Supports configurable concurrency, timeouts, and
+// rate limiting.
+
+import scan::src::template
+import scan::src::matcher
+import scan::src::extractor
+
+// ---------------------------------------------------------------------------
+// C runtime externs — networking & time
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_net_init() -> Int
+extern "C" fn __mn_tcp_connect_str(host: String, port: Int) -> Int
+extern "C" fn __mn_tcp_send_str(fd: Int, data: String) -> Int
+extern "C" fn __mn_tcp_recv_str(fd: Int, max_len: Int) -> String
+extern "C" fn __mn_tcp_close_fd(fd: Int) -> Int
+extern "C" fn __mn_tls_init() -> Int
+extern "C" fn __mn_tls_connect_str(fd: Int, hostname: String) -> Int
+extern "C" fn __mn_tls_write_str(tls_ctx: Int, data: String) -> Int
+extern "C" fn __mn_tls_read_str(tls_ctx: Int, max_len: Int) -> String
+extern "C" fn __mn_tls_close_fd(tls_ctx: Int, fd: Int) -> Int
+extern "C" fn __mn_time_now_ms() -> Int
+extern "C" fn __mn_sleep_ms(ms: Int)
+
+// ---------------------------------------------------------------------------
+// Core types
+// ---------------------------------------------------------------------------
+
+pub struct ScanConfig {
+    targets: List<String>,
+    templates: List<template.ScanTemplate>,
+    concurrency: Int,
+    timeout_ms: Int,
+    delay_ms: Int,
+    follow_redirects: Bool
+}
+
+pub struct Finding {
+    template_id: String,
+    template_name: String,
+    severity: String,
+    url: String,
+    matched_at: String,
+    evidence: String,
+    extracted: Map<String, List<String>>,
+    timestamp: Int
+}
+
+// Internal: parsed URL components
+struct UrlParts {
+    scheme: String,
+    host: String,
+    port: Int,
+    path: String,
+    use_tls: Bool
+}
+
+// ---------------------------------------------------------------------------
+// Constructor helpers
+// ---------------------------------------------------------------------------
+
+fn new_finding(tmpl_id: String, tmpl_name: String, severity: String, url: String, matched_at: String, evidence: String, extracted: Map<String, List<String>>, timestamp: Int) -> Finding {
+    return new Finding {
+        template_id: tmpl_id,
+        template_name: tmpl_name,
+        severity: severity,
+        url: url,
+        matched_at: matched_at,
+        evidence: evidence,
+        extracted: extracted,
+        timestamp: timestamp
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Default scan configuration
+// ---------------------------------------------------------------------------
+
+pub fn default_scan_config(targets: List<String>, templates: List<template.ScanTemplate>) -> ScanConfig {
+    return new ScanConfig {
+        targets: targets,
+        templates: templates,
+        concurrency: 10,
+        timeout_ms: 10000,
+        delay_ms: 0,
+        follow_redirects: true
+    }
+}
+
+// ---------------------------------------------------------------------------
+// URL parsing: extract scheme, host, port, path from a URL string
+// ---------------------------------------------------------------------------
+
+fn parse_url(url: String) -> UrlParts {
+    let mut scheme: String = "http"
+    let mut host: String = ""
+    let mut port: Int = 80
+    let mut path: String = "/"
+    let mut use_tls: Bool = false
+    let mut rest: String = url
+
+    // Strip scheme
+    let https_prefix: String = "https://"
+    let http_prefix: String = "http://"
+    if len(rest) >= len(https_prefix) {
+        let prefix_check: String = rest.substr(0, len(https_prefix))
+        if prefix_check == https_prefix {
+            scheme = "https"
+            use_tls = true
+            port = 443
+            rest = rest.substr(len(https_prefix), len(rest))
+        }
+    }
+    if scheme == "http" {
+        if len(rest) >= len(http_prefix) {
+            let prefix_check: String = rest.substr(0, len(http_prefix))
+            if prefix_check == http_prefix {
+                rest = rest.substr(len(http_prefix), len(rest))
+            }
+        }
+    }
+
+    // Split host from path at first /
+    let slash_idx: Int = rest.find("/")
+    if slash_idx >= 0 {
+        let host_part: String = rest.substr(0, slash_idx)
+        path = rest.substr(slash_idx, len(rest))
+        rest = host_part
+    } else {
+        rest = rest
+    }
+
+    // Check for port in host
+    let colon_idx: Int = rest.find(":")
+    if colon_idx >= 0 {
+        host = rest.substr(0, colon_idx)
+        let port_str: String = rest.substr(colon_idx + 1, len(rest))
+        port = parse_port(port_str)
+    } else {
+        host = rest
+    }
+
+    return new UrlParts {
+        scheme: scheme,
+        host: host,
+        port: port,
+        path: path,
+        use_tls: use_tls
+    }
+}
+
+fn parse_port(s: String) -> Int {
+    let slen: Int = len(s)
+    let mut result: Int = 0
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        if ch == "0" { result = result * 10 }
+        else if ch == "1" { result = result * 10 + 1 }
+        else if ch == "2" { result = result * 10 + 2 }
+        else if ch == "3" { result = result * 10 + 3 }
+        else if ch == "4" { result = result * 10 + 4 }
+        else if ch == "5" { result = result * 10 + 5 }
+        else if ch == "6" { result = result * 10 + 6 }
+        else if ch == "7" { result = result * 10 + 7 }
+        else if ch == "8" { result = result * 10 + 8 }
+        else if ch == "9" { result = result * 10 + 9 }
+        else { break }
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Build HTTP request string
+// ---------------------------------------------------------------------------
+
+fn build_http_request(method: String, host: String, path: String, headers: Map<String, String>, body: String) -> String {
+    let mut req: String = method + " " + path + " HTTP/1.1\r\n"
+    req = req + "Host: " + host + "\r\n"
+
+    // Add custom headers
+    for hkey in headers {
+        req = req + hkey + ": " + headers[hkey] + "\r\n"
+    }
+
+    // Add Content-Length for bodies
+    if len(body) > 0 {
+        req = req + "Content-Length: " + str(len(body)) + "\r\n"
+    }
+
+    // Connection close to simplify response reading
+    req = req + "Connection: close\r\n"
+    req = req + "User-Agent: Mapanare-Scanner/1.3.0\r\n"
+    req = req + "\r\n"
+
+    if len(body) > 0 {
+        req = req + body
+    }
+    return req
+}
+
+// ---------------------------------------------------------------------------
+// Parse HTTP response: extract status code, headers, and body
+// ---------------------------------------------------------------------------
+
+struct ParsedResponse {
+    status: Int,
+    headers: Map<String, String>,
+    body: String,
+    ok: Bool
+}
+
+fn parse_http_response(raw: String) -> ParsedResponse {
+    let raw_len: Int = len(raw)
+    if raw_len == 0 {
+        return new ParsedResponse { status: 0, headers: #{}, body: "", ok: false }
+    }
+
+    // Find end of status line
+    let mut pos: Int = 0
+    while pos < raw_len {
+        if raw.char_at(pos) == "\n" { break }
+        pos = pos + 1
+    }
+    let status_line: String = raw.substr(0, pos)
+
+    // Extract status code (e.g., "HTTP/1.1 200 OK")
+    let mut status: Int = 0
+    let space1: Int = status_line.find(" ")
+    if space1 >= 0 {
+        let after_space: String = status_line.substr(space1 + 1, len(status_line))
+        let space2: Int = after_space.find(" ")
+        let mut status_str: String = after_space
+        if space2 >= 0 {
+            status_str = after_space.substr(0, space2)
+        }
+        status = parse_port(status_str)
+    }
+    pos = pos + 1
+
+    // Parse headers until double CRLF
+    let mut headers: Map<String, String> = #{}
+    let mut header_end: Int = pos
+    while header_end < raw_len {
+        let line_start: Int = header_end
+        // Find end of line
+        while header_end < raw_len {
+            if raw.char_at(header_end) == "\n" { break }
+            header_end = header_end + 1
+        }
+        let mut line: String = raw.substr(line_start, header_end)
+        // Strip trailing \r
+        if len(line) > 0 {
+            if line.char_at(len(line) - 1) == "\r" {
+                line = line.substr(0, len(line) - 1)
+            }
+        }
+        header_end = header_end + 1
+
+        // Empty line = end of headers
+        if len(line) == 0 { break }
+
+        // Parse "Key: Value"
+        let colon: Int = line.find(":")
+        if colon > 0 {
+            let hkey: String = line.substr(0, colon)
+            let mut hval: String = ""
+            if colon + 2 < len(line) {
+                hval = line.substr(colon + 2, len(line))
+            } else if colon + 1 < len(line) {
+                hval = line.substr(colon + 1, len(line))
+            }
+            headers[hkey] = hval
+        }
+    }
+
+    // Everything after headers is the body
+    let body: String = raw.substr(header_end, raw_len)
+
+    return new ParsedResponse {
+        status: status,
+        headers: headers,
+        body: body,
+        ok: true
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Build interpolation variables from target URL
+// ---------------------------------------------------------------------------
+
+fn build_vars(target: String, parts: UrlParts) -> Map<String, String> {
+    let mut vars: Map<String, String> = #{}
+    vars["BaseURL"] = target
+    vars["Hostname"] = parts.host
+    vars["Host"] = parts.host
+    vars["Port"] = str(parts.port)
+    vars["Path"] = parts.path
+    vars["Scheme"] = parts.scheme
+    vars["RootURL"] = parts.scheme + "://" + parts.host + ":" + str(parts.port)
+    return vars
+}
+
+// ---------------------------------------------------------------------------
+// Send a single HTTP request and return a ScanResponse
+// ---------------------------------------------------------------------------
+
+pub fn send_request(target: String, req: template.TemplateRequest, timeout_ms: Int) -> Result<matcher.ScanResponse, template.ScanError> {
+    let parts: UrlParts = parse_url(target)
+    let vars: Map<String, String> = build_vars(target, parts)
+
+    // Interpolate the request path
+    let interp_path: String = template.interpolate(req.path, vars)
+
+    // Build the full request URL path
+    let mut request_path: String = interp_path
+    if len(request_path) == 0 {
+        request_path = "/"
+    }
+
+    // Interpolate body if present
+    let interp_body: String = template.interpolate(req.body, vars)
+
+    // Interpolate headers
+    let mut interp_headers: Map<String, String> = #{}
+    for hkey in req.headers {
+        let hval: String = template.interpolate(req.headers[hkey], vars)
+        interp_headers[hkey] = hval
+    }
+
+    // Initialize networking
+    let _: Int = __mn_net_init()
+    let start_ms: Int = __mn_time_now_ms()
+
+    // Connect
+    let fd: Int = __mn_tcp_connect_str(parts.host, parts.port)
+    if fd < 0 {
+        return Err(FetchError("TCP connect failed to " + parts.host + ":" + str(parts.port)))
+    }
+
+    let mut raw_response: String = ""
+
+    if parts.use_tls {
+        // TLS handshake
+        let _: Int = __mn_tls_init()
+        let tls_ctx: Int = __mn_tls_connect_str(fd, parts.host)
+        if tls_ctx < 0 {
+            let _: Int = __mn_tcp_close_fd(fd)
+            return Err(FetchError("TLS handshake failed for " + parts.host))
+        }
+
+        // Send request over TLS
+        let http_req: String = build_http_request(req.method, parts.host, request_path, interp_headers, interp_body)
+        let sent: Int = __mn_tls_write_str(tls_ctx, http_req)
+        if sent < 0 {
+            let _: Int = __mn_tls_close_fd(tls_ctx, fd)
+            return Err(FetchError("TLS write failed"))
+        }
+
+        // Read response over TLS
+        let mut done: Bool = false
+        while done == false {
+            let chunk: String = __mn_tls_read_str(tls_ctx, 65536)
+            if len(chunk) == 0 {
+                done = true
+            } else {
+                raw_response = raw_response + chunk
+            }
+        }
+
+        let _: Int = __mn_tls_close_fd(tls_ctx, fd)
+    } else {
+        // Plain TCP
+        let http_req: String = build_http_request(req.method, parts.host, request_path, interp_headers, interp_body)
+        let sent: Int = __mn_tcp_send_str(fd, http_req)
+        if sent < 0 {
+            let _: Int = __mn_tcp_close_fd(fd)
+            return Err(FetchError("TCP write failed"))
+        }
+
+        // Read response
+        let mut done: Bool = false
+        while done == false {
+            let chunk: String = __mn_tcp_recv_str(fd, 65536)
+            if len(chunk) == 0 {
+                done = true
+            } else {
+                raw_response = raw_response + chunk
+            }
+        }
+
+        let _: Int = __mn_tcp_close_fd(fd)
+    }
+
+    let end_ms: Int = __mn_time_now_ms()
+    let elapsed: Int = end_ms - start_ms
+
+    // Parse the raw HTTP response
+    let parsed: ParsedResponse = parse_http_response(raw_response)
+    if parsed.ok == false {
+        return Err(FetchError("failed to parse HTTP response from " + target))
+    }
+
+    let full_url: String = target + request_path
+    return Ok(new matcher.ScanResponse {
+        url: full_url,
+        status: parsed.status,
+        headers: parsed.headers,
+        body: parsed.body,
+        elapsed_ms: elapsed
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Build a matcher.Matcher from template.Matcher (type conversion)
+//
+// Templates store matcher_type as String; the matcher module uses an enum.
+// ---------------------------------------------------------------------------
+
+fn convert_matcher(tm: template.Matcher) -> matcher.Matcher {
+    let mtype: matcher.MatcherType = matcher.parse_matcher_type(tm.matcher_type)
+    return new matcher.Matcher {
+        matcher_type: mtype,
+        condition: tm.condition,
+        values: tm.values,
+        negative: tm.negative
+    }
+}
+
+fn convert_matchers(tms: List<template.Matcher>) -> List<matcher.Matcher> {
+    let mut result: List<matcher.Matcher> = []
+    let count: Int = len(tms)
+    let mut i: Int = 0
+    while i < count {
+        result = result + [convert_matcher(tms[i])]
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Build an extractor.Extractor from template.Extractor (type conversion)
+// ---------------------------------------------------------------------------
+
+fn convert_extractor(te: template.Extractor) -> extractor.Extractor {
+    let etype: extractor.ExtractorType = extractor.parse_extractor_type(te.extractor_type)
+    return new extractor.Extractor {
+        extractor_type: etype,
+        name: te.name,
+        pattern: te.pattern,
+        group_idx: te.group_idx
+    }
+}
+
+fn convert_extractors(tes: List<template.Extractor>) -> List<extractor.Extractor> {
+    let mut result: List<extractor.Extractor> = []
+    let count: Int = len(tes)
+    let mut i: Int = 0
+    while i < count {
+        result = result + [convert_extractor(tes[i])]
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Convert matcher.ScanResponse to extractor.ScanResponse
+// ---------------------------------------------------------------------------
+
+fn to_extractor_response(resp: matcher.ScanResponse) -> extractor.ScanResponse {
+    return new extractor.ScanResponse {
+        url: resp.url,
+        status: resp.status,
+        headers: resp.headers,
+        body: resp.body,
+        elapsed_ms: resp.elapsed_ms
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Build evidence string from a matched response
+// ---------------------------------------------------------------------------
+
+fn build_evidence(resp: matcher.ScanResponse, tmpl: template.ScanTemplate) -> String {
+    let mut evidence: String = "status=" + str(resp.status)
+    // Add first 200 chars of body as evidence preview
+    let body_len: Int = len(resp.body)
+    if body_len > 0 {
+        let preview_len: Int = 200
+        if body_len < preview_len {
+            evidence = evidence + " body_preview=" + resp.body
+        } else {
+            evidence = evidence + " body_preview=" + resp.body.substr(0, preview_len) + "..."
+        }
+    }
+    return evidence
+}
+
+// ---------------------------------------------------------------------------
+// Scan a single target with a single template
+// ---------------------------------------------------------------------------
+
+pub fn scan_target(target: String, tmpl: template.ScanTemplate, config: ScanConfig) -> List<Finding> {
+    let mut findings: List<Finding> = []
+    let req_count: Int = len(tmpl.requests)
+    let matchers_converted: List<matcher.Matcher> = convert_matchers(tmpl.matchers)
+    let extractors_converted: List<extractor.Extractor> = convert_extractors(tmpl.extractors)
+
+    let mut ri: Int = 0
+    while ri < req_count {
+        let req: template.TemplateRequest = tmpl.requests[ri]
+        let resp_result: Result<matcher.ScanResponse, template.ScanError> = send_request(target, req, config.timeout_ms)
+
+        match resp_result {
+            Ok(resp) => {
+                // Evaluate matchers
+                let matched: Bool = matcher.evaluate_matchers(matchers_converted, resp)
+                if matched {
+                    // Run extractors
+                    let ext_resp: extractor.ScanResponse = to_extractor_response(resp)
+                    let extracted: Map<String, List<String>> = extractor.run_extractors(extractors_converted, ext_resp)
+                    let evidence: String = build_evidence(resp, tmpl)
+                    let ts: Int = __mn_time_now_ms()
+                    let finding: Finding = new_finding(
+                        tmpl.id,
+                        tmpl.name,
+                        tmpl.severity,
+                        resp.url,
+                        req.path,
+                        evidence,
+                        extracted,
+                        ts
+                    )
+                    findings = findings + [finding]
+                }
+            },
+            Err(e) => {
+                // Log error but continue scanning
+                match e {
+                    FetchError(msg) => {
+                        println("[WARN] " + tmpl.id + " fetch error on " + target + ": " + msg)
+                    },
+                    _ => {
+                        println("[WARN] " + tmpl.id + " error on " + target)
+                    }
+                }
+            }
+        }
+
+        // Rate limiting between requests
+        if config.delay_ms > 0 {
+            __mn_sleep_ms(config.delay_ms)
+        }
+
+        ri = ri + 1
+    }
+    return findings
+}
+
+// ---------------------------------------------------------------------------
+// Run a full scan: all templates x all targets
+// ---------------------------------------------------------------------------
+
+pub fn scan(config: ScanConfig) -> List<Finding> {
+    let mut all_findings: List<Finding> = []
+    let target_count: Int = len(config.targets)
+    let template_count: Int = len(config.templates)
+
+    println("[*] Starting scan: " + str(target_count) + " targets x " + str(template_count) + " templates")
+
+    let mut ti: Int = 0
+    while ti < target_count {
+        let target: String = config.targets[ti]
+        println("[*] Scanning target: " + target)
+
+        let mut tmi: Int = 0
+        while tmi < template_count {
+            let tmpl: template.ScanTemplate = config.templates[tmi]
+            let findings: List<Finding> = scan_target(target, tmpl, config)
+            let finding_count: Int = len(findings)
+            let mut fi: Int = 0
+            while fi < finding_count {
+                all_findings = all_findings + [findings[fi]]
+                fi = fi + 1
+            }
+            tmi = tmi + 1
+        }
+
+        // Delay between targets
+        if config.delay_ms > 0 {
+            __mn_sleep_ms(config.delay_ms)
+        }
+
+        ti = ti + 1
+    }
+
+    println("[*] Scan complete: " + str(len(all_findings)) + " findings")
+    return all_findings
+}

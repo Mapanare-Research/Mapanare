@@ -801,7 +801,7 @@ class SemanticChecker:
         subject_type = self._infer_expr(expr.subject)
         for arm in expr.arms:
             self._push_scope()
-            self._bind_pattern(arm.pattern)
+            self._bind_pattern(arm.pattern, subject_type)
             if isinstance(arm.body, Block):
                 self._check_block(arm.body)
             elif isinstance(arm.body, Expr):
@@ -849,7 +849,7 @@ class SemanticChecker:
                 expr,
             )
 
-    def _bind_pattern(self, pattern: object) -> None:
+    def _bind_pattern(self, pattern: object, subject_type: TypeInfo | None = None) -> None:
         """Bind names introduced by a pattern into the current scope."""
         from mapanare.ast_nodes import (
             ConstructorPattern,
@@ -857,13 +857,45 @@ class SemanticChecker:
         )
 
         if isinstance(pattern, IdentPattern):
+            ty = subject_type if subject_type is not None else UNKNOWN_TYPE
             self.current_scope.define(
                 pattern.name,
-                Symbol(name=pattern.name, kind="variable", type_info=UNKNOWN_TYPE),
+                Symbol(name=pattern.name, kind="variable", type_info=ty),
             )
         elif isinstance(pattern, ConstructorPattern):
-            for arg in pattern.args:
-                self._bind_pattern(arg)
+            field_types = self._resolve_variant_fields(subject_type, pattern.name)
+            for i, arg in enumerate(pattern.args):
+                arg_type = field_types[i] if i < len(field_types) else None
+                self._bind_pattern(arg, arg_type)
+
+    def _resolve_variant_fields(
+        self, subject_type: TypeInfo | None, variant_name: str
+    ) -> list[TypeInfo]:
+        """Look up the field types for an enum variant from the subject type."""
+        if subject_type is None:
+            return []
+        # Builtin Result<T, E>
+        if subject_type.kind == TypeKind.RESULT:
+            if variant_name == "Ok" and len(subject_type.args) >= 1:
+                return [subject_type.args[0]]
+            if variant_name == "Err" and len(subject_type.args) >= 2:
+                return [subject_type.args[1]]
+            return [UNKNOWN_TYPE]
+        # Builtin Option<T>
+        if subject_type.kind == TypeKind.OPTION:
+            if variant_name == "Some" and len(subject_type.args) >= 1:
+                return [subject_type.args[0]]
+            return [UNKNOWN_TYPE]
+        # User-defined enum
+        if subject_type.kind == TypeKind.ENUM and subject_type.name:
+            sym = self.current_scope.lookup(subject_type.name)
+            if sym is None:
+                sym = self.global_scope.lookup(subject_type.name)
+            if sym is not None and sym.node is not None and isinstance(sym.node, EnumDef):
+                for variant in sym.node.variants:
+                    if variant.name == variant_name:
+                        return [self._resolve_type_expr(f) for f in variant.fields]
+        return []
 
     # -- Namespace access -----------------------------------------------
 

@@ -1,0 +1,174 @@
+// dato/src/table.mn — Core Table type for the Dato data engine.
+//
+// A Table is a collection of named columns, all of equal length.
+// This module provides construction, validation, and basic accessors.
+
+import dato::src::col
+
+// ---------------------------------------------------------------------------
+// Core Types
+// ---------------------------------------------------------------------------
+
+pub struct Table {
+    cols: List<col.Col>,
+    nrows: Int
+}
+
+pub enum DatoError {
+    ShapeMismatch(String),
+    ColumnNotFound(String),
+    TypeError(String),
+    IoError(String)
+}
+
+// ---------------------------------------------------------------------------
+// Error helpers
+// ---------------------------------------------------------------------------
+
+pub fn error_message(err: DatoError) -> String {
+    match err {
+        ShapeMismatch(msg) => { return "ShapeMismatch: " + msg },
+        ColumnNotFound(msg) => { return "ColumnNotFound: " + msg },
+        TypeError(msg) => { return "TypeError: " + msg },
+        IoError(msg) => { return "IoError: " + msg }
+    }
+}
+
+fn new_shape_error(msg: String) -> DatoError {
+    return ShapeMismatch(msg)
+}
+
+fn new_col_not_found(msg: String) -> DatoError {
+    return ColumnNotFound(msg)
+}
+
+fn new_type_error(msg: String) -> DatoError {
+    return TypeError(msg)
+}
+
+fn new_io_error(msg: String) -> DatoError {
+    return IoError(msg)
+}
+
+// ---------------------------------------------------------------------------
+// Constructors
+// ---------------------------------------------------------------------------
+
+pub fn table(cols: List<col.Col>) -> Result<Table, DatoError> {
+    let ncols: Int = len(cols)
+    if ncols == 0 {
+        return Ok(new Table { cols: cols, nrows: 0 })
+    }
+
+    let expected_len: Int = col.col_len(cols[0])
+    let mut i: Int = 1
+    while i < ncols {
+        let clen: Int = col.col_len(cols[i])
+        if clen != expected_len {
+            return Err(new_shape_error("Column '" + cols[i].name + "' has " + str(clen) + " rows, expected " + str(expected_len)))
+        }
+        i = i + 1
+    }
+
+    return Ok(new Table { cols: cols, nrows: expected_len })
+}
+
+pub fn empty() -> Table {
+    let empty_cols: List<col.Col> = []
+    return new Table { cols: empty_cols, nrows: 0 }
+}
+
+// ---------------------------------------------------------------------------
+// Accessors
+// ---------------------------------------------------------------------------
+
+pub fn ncols(t: Table) -> Int {
+    return len(t.cols)
+}
+
+pub fn nrows(t: Table) -> Int {
+    return t.nrows
+}
+
+pub fn get_col(t: Table, name: String) -> Option<col.Col> {
+    let n: Int = len(t.cols)
+    let mut i: Int = 0
+    while i < n {
+        if t.cols[i].name == name {
+            return Some(t.cols[i])
+        }
+        i = i + 1
+    }
+    return None
+}
+
+pub fn col_names(t: Table) -> List<String> {
+    let n: Int = len(t.cols)
+    let mut result: List<String> = []
+    let mut i: Int = 0
+    while i < n {
+        result = result + [t.cols[i].name]
+        i = i + 1
+    }
+    return result
+}
+
+pub fn dtypes(t: Table) -> List<String> {
+    let n: Int = len(t.cols)
+    let mut result: List<String> = []
+    let mut i: Int = 0
+    while i < n {
+        result = result + [col.dtype_name(t.cols[i].dtype)]
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Column index lookup (internal helper)
+// ---------------------------------------------------------------------------
+
+pub fn col_index(t: Table, name: String) -> Int {
+    let n: Int = len(t.cols)
+    let mut i: Int = 0
+    while i < n {
+        if t.cols[i].name == name {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// ---------------------------------------------------------------------------
+// Has column check
+// ---------------------------------------------------------------------------
+
+pub fn has_col(t: Table, name: String) -> Bool {
+    return col_index(t, name) >= 0
+}
+
+// ---------------------------------------------------------------------------
+// Build a table from pre-validated columns (no length check)
+// ---------------------------------------------------------------------------
+
+pub fn table_unchecked(cols: List<col.Col>, nrows: Int) -> Table {
+    return new Table { cols: cols, nrows: nrows }
+}
+
+// ---------------------------------------------------------------------------
+// Schema comparison
+// ---------------------------------------------------------------------------
+
+pub fn schemas_match(a: Table, b: Table) -> Bool {
+    let na: Int = len(a.cols)
+    let nb: Int = len(b.cols)
+    if na != nb { return false }
+    let mut i: Int = 0
+    while i < na {
+        if a.cols[i].name != b.cols[i].name { return false }
+        if col.dtype_eq(a.cols[i].dtype, b.cols[i].dtype) == false { return false }
+        i = i + 1
+    }
+    return true
+}

@@ -1,0 +1,478 @@
+// db/postgres.mn — PostgreSQL Driver for Mapanare
+//
+// Native PostgreSQL driver via C FFI to libpq. Uses text-format protocol
+// for parameter passing (all values serialized to strings). Supports
+// parameterized queries with $1, $2, ... placeholders.
+//
+// Uses the C runtime wrappers in mapanare_db.h which dlopen() libpq.
+
+import db::sql
+
+// ---------------------------------------------------------------------------
+// Extern C runtime functions (libpq wrappers from mapanare_db)
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_pg_connect(conninfo: String) -> Int
+extern "C" fn __mn_pg_close(conn: Int)
+extern "C" fn __mn_pg_exec(conn: Int, sql_str: String) -> Int
+extern "C" fn __mn_pg_ntuples(result: Int) -> Int
+extern "C" fn __mn_pg_nfields(result: Int) -> Int
+extern "C" fn __mn_pg_getvalue(result: Int, row: Int, col: Int) -> String
+extern "C" fn __mn_pg_fname(result: Int, col: Int) -> String
+extern "C" fn __mn_pg_status(result: Int) -> Int
+extern "C" fn __mn_pg_errmsg(conn: Int) -> String
+extern "C" fn __mn_pg_clear(result: Int)
+
+// ---------------------------------------------------------------------------
+// PQresultStatus constants
+// ---------------------------------------------------------------------------
+
+// PGRES_COMMAND_OK = 1, PGRES_TUPLES_OK = 2
+
+// ---------------------------------------------------------------------------
+// Connection
+// ---------------------------------------------------------------------------
+
+pub fn pg_connect(conninfo: String) -> Result<Connection, SqlError> {
+    let handle: Int = __mn_pg_connect(conninfo)
+    if handle == 0 {
+        return Err(ConnectionFailed("Failed to connect to PostgreSQL: " + conninfo))
+    }
+    return Ok(new Connection { handle: handle, driver: "postgres", url: conninfo })
+}
+
+// ---------------------------------------------------------------------------
+// Internal: Convert SqlValue list to list of string representations
+// ---------------------------------------------------------------------------
+
+fn params_to_strings(params: List<SqlValue>) -> List<String> {
+    let count: Int = len(params)
+    let mut result: List<String> = []
+    let mut i: Int = 0
+    while i < count {
+        let val: SqlValue = params[i]
+        match val {
+            Null => {
+                result = result + ["NULL"]
+            },
+            Int(n) => {
+                result = result + [str(n)]
+            },
+            Float(f) => {
+                result = result + [str(f)]
+            },
+            Str(s) => {
+                result = result + [s]
+            },
+            Bool(b) => {
+                if b {
+                    result = result + ["true"]
+                } else {
+                    result = result + ["false"]
+                }
+            }
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Internal: Replace ? placeholders with $1, $2, ... for libpq
+// ---------------------------------------------------------------------------
+
+fn build_parameterized_sql(sql_str: String, nparams: Int) -> String {
+    let slen: Int = len(sql_str)
+    let mut result: String = ""
+    let mut param_idx: Int = 0
+    let mut i: Int = 0
+
+    while i < slen {
+        let ch: String = sql_str.char_at(i)
+
+        // Skip ? inside single-quoted strings
+        if ch == "'" {
+            result = result + ch
+            i = i + 1
+            while i < slen {
+                let qch: String = sql_str.char_at(i)
+                result = result + qch
+                i = i + 1
+                if qch == "'" {
+                    // Check for escaped quote ''
+                    if i < slen {
+                        if sql_str.char_at(i) == "'" {
+                            result = result + "'"
+                            i = i + 1
+                        } else {
+                            break
+                        }
+                    } else {
+                        break
+                    }
+                }
+            }
+        } else { if ch == "?" {
+            param_idx = param_idx + 1
+            result = result + "$" + str(param_idx)
+            i = i + 1
+        } else {
+            result = result + ch
+            i = i + 1
+        } }
+    }
+
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Internal: Inline parameters into SQL for PQexec (text protocol)
+//
+// For v1.2.0 we use PQexec with inlined parameters. PQexecParams
+// support (binary protocol) is planned for v1.3.0.
+// ---------------------------------------------------------------------------
+
+fn escape_string_literal(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = "'"
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        if ch == "'" {
+            result = result + "''"
+        } else { if ch == "\\" {
+            result = result + "\\\\"
+        } else {
+            result = result + ch
+        } }
+        i = i + 1
+    }
+    result = result + "'"
+    return result
+}
+
+fn inline_params(sql_str: String, params: List<SqlValue>) -> String {
+    let slen: Int = len(sql_str)
+    let param_count: Int = len(params)
+    let mut result: String = ""
+    let mut param_idx: Int = 0
+    let mut i: Int = 0
+
+    while i < slen {
+        let ch: String = sql_str.char_at(i)
+
+        // Skip ? inside single-quoted strings
+        if ch == "'" {
+            result = result + ch
+            i = i + 1
+            while i < slen {
+                let qch: String = sql_str.char_at(i)
+                result = result + qch
+                i = i + 1
+                if qch == "'" {
+                    if i < slen {
+                        if sql_str.char_at(i) == "'" {
+                            result = result + "'"
+                            i = i + 1
+                        } else {
+                            break
+                        }
+                    } else {
+                        break
+                    }
+                }
+            }
+        } else { if ch == "?" {
+            if param_idx < param_count {
+                let val: SqlValue = params[param_idx]
+                match val {
+                    Null => {
+                        result = result + "NULL"
+                    },
+                    Int(n) => {
+                        result = result + str(n)
+                    },
+                    Float(f) => {
+                        result = result + str(f)
+                    },
+                    Str(s) => {
+                        result = result + escape_string_literal(s)
+                    },
+                    Bool(b) => {
+                        if b {
+                            result = result + "TRUE"
+                        } else {
+                            result = result + "FALSE"
+                        }
+                    }
+                }
+                param_idx = param_idx + 1
+            } else {
+                result = result + "?"
+            }
+            i = i + 1
+        } else {
+            result = result + ch
+            i = i + 1
+        } }
+    }
+
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Internal: Parse a value string into a SqlValue (heuristic)
+// ---------------------------------------------------------------------------
+
+fn is_digit(ch: String) -> Bool {
+    if ch == "0" { return true }
+    if ch == "1" { return true }
+    if ch == "2" { return true }
+    if ch == "3" { return true }
+    if ch == "4" { return true }
+    if ch == "5" { return true }
+    if ch == "6" { return true }
+    if ch == "7" { return true }
+    if ch == "8" { return true }
+    if ch == "9" { return true }
+    return false
+}
+
+fn looks_like_integer(s: String) -> Bool {
+    let slen: Int = len(s)
+    if slen == 0 { return false }
+    let mut start: Int = 0
+    if s.char_at(0) == "-" {
+        if slen == 1 { return false }
+        start = 1
+    }
+    let mut i: Int = start
+    while i < slen {
+        if is_digit(s.char_at(i)) == false {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+fn looks_like_float(s: String) -> Bool {
+    let slen: Int = len(s)
+    if slen == 0 { return false }
+    let mut has_dot: Bool = false
+    let mut start: Int = 0
+    if s.char_at(0) == "-" {
+        if slen == 1 { return false }
+        start = 1
+    }
+    let mut i: Int = start
+    while i < slen {
+        let ch: String = s.char_at(i)
+        if ch == "." {
+            if has_dot { return false }
+            has_dot = true
+        } else {
+            if is_digit(ch) == false {
+                return false
+            }
+        }
+        i = i + 1
+    }
+    return has_dot
+}
+
+fn parse_int_manual(s: String) -> Int {
+    let slen: Int = len(s)
+    let mut result: Int = 0
+    let mut neg: Bool = false
+    let mut i: Int = 0
+    if slen > 0 {
+        if s.char_at(0) == "-" {
+            neg = true
+            i = 1
+        }
+    }
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let mut d: Int = 0
+        if ch == "1" { d = 1 }
+        if ch == "2" { d = 2 }
+        if ch == "3" { d = 3 }
+        if ch == "4" { d = 4 }
+        if ch == "5" { d = 5 }
+        if ch == "6" { d = 6 }
+        if ch == "7" { d = 7 }
+        if ch == "8" { d = 8 }
+        if ch == "9" { d = 9 }
+        result = result * 10 + d
+        i = i + 1
+    }
+    if neg { return 0 - result }
+    return result
+}
+
+fn parse_pg_value(s: String) -> SqlValue {
+    // Check for boolean
+    if s == "t" { return Bool(true) }
+    if s == "f" { return Bool(false) }
+    if s == "true" { return Bool(true) }
+    if s == "false" { return Bool(false) }
+
+    // Check for integer
+    if looks_like_integer(s) {
+        let n: Int = parse_int_manual(s)
+        return Int(n)
+    }
+
+    // Check for float
+    if looks_like_float(s) {
+        // Use string representation — precise float parsing deferred to C runtime
+        return Str(s)
+    }
+
+    // Default: string
+    return Str(s)
+}
+
+// ---------------------------------------------------------------------------
+// Internal: Collect rows from a PG result
+// ---------------------------------------------------------------------------
+
+fn collect_pg_rows(pg_result: Int) -> List<Row> {
+    let nrows: Int = __mn_pg_ntuples(pg_result)
+    let ncols: Int = __mn_pg_nfields(pg_result)
+
+    // Build column name list
+    let mut columns: List<String> = []
+    let mut c: Int = 0
+    while c < ncols {
+        let name: String = __mn_pg_fname(pg_result, c)
+        columns = columns + [name]
+        c = c + 1
+    }
+
+    // Read all rows
+    let mut rows: List<Row> = []
+    let mut r: Int = 0
+    while r < nrows {
+        let mut values: List<SqlValue> = []
+        let mut col: Int = 0
+        while col < ncols {
+            let raw_val: String = __mn_pg_getvalue(pg_result, r, col)
+            let val: SqlValue = parse_pg_value(raw_val)
+            values = values + [val]
+            col = col + 1
+        }
+        let row: Row = new_row(columns, values)
+        rows = rows + [row]
+        r = r + 1
+    }
+
+    return rows
+}
+
+// ---------------------------------------------------------------------------
+// Public API: Query (SELECT — returns rows)
+// ---------------------------------------------------------------------------
+
+pub fn query(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<QueryResult, SqlError> {
+    let final_sql: String = inline_params(sql_str, params)
+    let pg_result: Int = __mn_pg_exec(conn.handle, final_sql)
+
+    if pg_result == 0 {
+        let errmsg: String = __mn_pg_errmsg(conn.handle)
+        return Err(QueryFailed("Query failed: " + errmsg))
+    }
+
+    let status: Int = __mn_pg_status(pg_result)
+    // PGRES_TUPLES_OK = 2
+    if status != 2 {
+        let errmsg: String = __mn_pg_errmsg(conn.handle)
+        __mn_pg_clear(pg_result)
+        return Err(QueryFailed("Query returned error status: " + errmsg))
+    }
+
+    let rows: List<Row> = collect_pg_rows(pg_result)
+    let nrows: Int = __mn_pg_ntuples(pg_result)
+    __mn_pg_clear(pg_result)
+
+    return Ok(new QueryResult { rows: rows, affected: nrows })
+}
+
+// ---------------------------------------------------------------------------
+// Public API: Execute (INSERT/UPDATE/DELETE — returns affected count)
+// ---------------------------------------------------------------------------
+
+pub fn execute(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<Int, SqlError> {
+    let final_sql: String = inline_params(sql_str, params)
+    let pg_result: Int = __mn_pg_exec(conn.handle, final_sql)
+
+    if pg_result == 0 {
+        let errmsg: String = __mn_pg_errmsg(conn.handle)
+        return Err(QueryFailed("Execute failed: " + errmsg))
+    }
+
+    let status: Int = __mn_pg_status(pg_result)
+    // PGRES_COMMAND_OK = 1
+    if status != 1 {
+        // Also accept PGRES_TUPLES_OK = 2 for RETURNING clauses
+        if status != 2 {
+            let errmsg: String = __mn_pg_errmsg(conn.handle)
+            __mn_pg_clear(pg_result)
+            return Err(QueryFailed("Execute returned error status: " + errmsg))
+        }
+    }
+
+    let affected: Int = __mn_pg_ntuples(pg_result)
+    __mn_pg_clear(pg_result)
+
+    return Ok(affected)
+}
+
+// ---------------------------------------------------------------------------
+// Public API: Simple query/execute (no parameters)
+// ---------------------------------------------------------------------------
+
+pub fn query_simple(conn: Connection, sql_str: String) -> Result<QueryResult, SqlError> {
+    let empty_params: List<SqlValue> = []
+    return query(conn, sql_str, empty_params)
+}
+
+pub fn execute_simple(conn: Connection, sql_str: String) -> Result<Int, SqlError> {
+    let empty_params: List<SqlValue> = []
+    return execute(conn, sql_str, empty_params)
+}
+
+// ---------------------------------------------------------------------------
+// Transaction helpers
+// ---------------------------------------------------------------------------
+
+pub fn begin(conn: Connection) -> Result<Bool, SqlError> {
+    let pg_result: Int = __mn_pg_exec(conn.handle, "BEGIN")
+    if pg_result == 0 {
+        let errmsg: String = __mn_pg_errmsg(conn.handle)
+        return Err(QueryFailed("BEGIN failed: " + errmsg))
+    }
+    __mn_pg_clear(pg_result)
+    return Ok(true)
+}
+
+pub fn commit(conn: Connection) -> Result<Bool, SqlError> {
+    let pg_result: Int = __mn_pg_exec(conn.handle, "COMMIT")
+    if pg_result == 0 {
+        let errmsg: String = __mn_pg_errmsg(conn.handle)
+        return Err(QueryFailed("COMMIT failed: " + errmsg))
+    }
+    __mn_pg_clear(pg_result)
+    return Ok(true)
+}
+
+pub fn rollback(conn: Connection) -> Result<Bool, SqlError> {
+    let pg_result: Int = __mn_pg_exec(conn.handle, "ROLLBACK")
+    if pg_result == 0 {
+        let errmsg: String = __mn_pg_errmsg(conn.handle)
+        return Err(QueryFailed("ROLLBACK failed: " + errmsg))
+    }
+    __mn_pg_clear(pg_result)
+    return Ok(true)
+}

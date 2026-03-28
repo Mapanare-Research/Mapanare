@@ -7,26 +7,31 @@
 
 ---
 
-## Where We Are (v1.0.0)
+## Where We Are (v2.0.0)
 
-Mapanare v1.0.0 is published. The language specification is frozen at v1.0 Final — syntax,
-semantics, and type system changes now require RFC + deprecation cycle. The compiler pipeline
-is hardened, the memory model is formally documented, and stability guarantees are published.
+Mapanare v2.0.0 is published. The language specification remains frozen at v1.0 Final — syntax,
+semantics, and type system changes require RFC + deprecation cycle. v2.0.0 brings three new
+compilation targets (WebAssembly, WASI, mobile), GPU compute via CUDA and Vulkan, and a
+massively expanded stdlib spanning AI, data, databases, encoding, web, and security.
 
-A [7-reviewer code review](.reviews/v1.0.0/README.md) scored the release at **7.8/10 median**
-(unanimous PASS WITH NOTES, up from 6.6 at v0.3.0). The review identified 34 issues across
-type soundness, memory leaks, codegen gaps, and missing primitives. These are being addressed
-across **10 patch releases** (v1.0.1–v1.0.10) before any new features. The goal: make the
-language rock-solid before building the ecosystem on top of it.
+The Python transpiler backends are now deprecated. LLVM and WebAssembly are the production targets.
 
-**No Python required at runtime.** **3,628 tests pass** across the full pipeline.
+**No Python required at runtime.** **3,698+ tests pass** across the full pipeline.
 
 ### What works today
 
-- **Full compiler pipeline** — Lexer, parser, semantic checker, MIR lowering, MIR optimizer (O0–O3), code emitter
+- **Full compiler pipeline** — Lexer, parser, semantic checker, MIR lowering, MIR optimizer (O0-O3), code emitter
 - **MIR pipeline** — Typed SSA-based intermediate representation with basic blocks and explicit terminators
-- **Two compilation targets** — Native binaries via LLVM IR (production) and Python transpilation (legacy, for reference and bootstrapping only)
+- **Three compilation targets** — Native binaries via LLVM IR (production), WebAssembly (WAT/WASM), and Python transpilation (deprecated)
 - **Self-hosted compiler** — 8,288+ lines of `.mn` across 7 modules (lexer, ast, parser, semantic, lower, emit_llvm, main)
+- **WebAssembly backend** — MIR-to-WAT emitter with linear memory, bump allocation, JS bridge, WASI support
+- **GPU compute** — CUDA Driver API + Vulkan compute via `dlopen`, `@gpu`/`@cuda`/`@vulkan` annotations, built-in tensor kernels
+- **AI stdlib** — LLM drivers (OpenAI, Anthropic, local), embedding providers, RAG pipelines
+- **Data engine (Dato)** — Tables, aggregations, joins, null handling, reshape, CSV/JSON I/O
+- **Database drivers** — SQLite, PostgreSQL, Redis, embedded KV, connection pooling, migrations
+- **Encoding** — Full TOML and YAML parsers/serializers
+- **Filesystem stdlib** — Read, write, walk, glob, metadata, temp files
+- **Web & Security** — HTTP server toolkit, web crawler, vulnerability scanner, HTTP fuzzer
 - **Built-in test runner** — `mapanare test` discovers `@test` functions, `assert` statement, `--filter` flag
 - **Agent observability** — OpenTelemetry tracing (`--trace`), Prometheus metrics (`--metrics`), structured error codes (`MN-X0000`)
 - **DWARF debug info** — `mapanare build -g` produces debuggable binaries with source mapping
@@ -38,39 +43,40 @@ language rock-solid before building the ecosystem on top of it.
 - **Type system** — Static typing with inference, generics, `Option<T>`, `Result<T, E>`, `TypeKind` enum (25 kinds)
 - **Traits** — `trait` / `impl Trait for Type`, trait bounds on generics, builtin traits (`Display`, `Eq`, `Ord`, `Hash`)
 - **Module system** — File-based imports with `pub` visibility, circular dependency detection, multi-file compilation
-- **Native C runtime** — Arena-based memory, lock-free SPSC ring buffers, thread pool, semaphore-based scheduling
+- **Native C runtime** — Arena-based memory, lock-free SPSC ring buffers, thread pool, semaphore-based scheduling, GPU runtime, DB runtime, HTML parser
 - **LLVM agent codegen** — `spawn`, `send` (`<-`), `sync` targeting C runtime with OS threads
-- **Cross-compilation** — Linux x64, macOS ARM64, Windows x64
+- **Cross-compilation** — Linux x64, macOS ARM64, Windows x64, wasm32-unknown-unknown, wasm32-wasi, aarch64-apple-ios, aarch64-linux-android
 - **Optimization passes** — Constant folding, DCE, agent inlining, stream fusion
 - **LSP server** — Diagnostics, hover, go-to-definition, find-references, autocomplete
 - **VS Code extension** — Syntax highlighting, LSP integration, snippets, commands
 - **Package manager** — Project manifests (`mapanare.toml`), git-based installation, dependency resolution
-- **Standard library** — I/O, HTTP, time, math, text, structured logging (Python-only, see v0.9.0 for native)
+- **Standard library** — 25+ modules across AI, data, databases, encoding, filesystem, GPU, WASM, HTTP, and more
 - **Formatter** — `mapanare fmt` for consistent code style
 - **Binary distribution** — PyInstaller builds, install scripts (Unix + Windows), GitHub Releases CI
 - **Getting Started guide** — 12-section tutorial from install to streams
 
-### LLVM Backend Feature Status
+### Backend Feature Status
 
-| Feature | Python Backend | LLVM Backend | Notes |
-|---------|:-:|:-:|--------|
-| Functions, closures, lambdas | Yes | Yes | Full closure capture via environment structs |
-| Structs, enums, pattern matching | Yes | Yes | Full tagged union + switch |
-| `if`/`else`, `for..in`, `while` | Yes | Yes | |
-| Type inference, generics | Yes | Yes | |
-| `Result`/`Option` | Yes | Yes | |
-| `print`/`println`, `str`/`int`/`float`/`len` | Yes | Yes | |
-| Lists: literals, indexing, `push`/`pop`/`length` | Yes | Yes | |
-| String methods | Yes | Yes | All methods: length, find, substring, contains, split, trim, replace, to_upper, to_lower |
-| Dictionaries/Maps | Yes | Yes | Robin Hood hash table in C runtime |
-| Traits (`trait`, `impl Trait for Type`) | Yes | Yes | |
-| Module imports (`import`, `pub`, multi-file) | Yes | Yes | |
-| Agents (spawn, channels, sync) | Yes | Yes | Full lifecycle |
-| Signals (reactive state) | Yes | Yes | Full reactivity: computed, subscribers, batched updates |
-| Streams + `\|>` pipe operator | Yes | Yes | map, filter, take, skip, collect, fold, backpressure |
-| Pipes (multi-agent composition) | Yes | Yes | Agent spawn chain compilation |
-| Tensors | No | No | Experimental only, no language integration |
-| Standard library modules | Partial | Yes | 7 native `.mn` modules: JSON, CSV, HTTP, server, WebSocket, crypto, regex |
+| Feature | LLVM Backend | WASM Backend | Python Backend (deprecated) | Notes |
+|---------|:-:|:-:|:-:|--------|
+| Functions, closures, lambdas | Yes | Yes | Yes | Full closure capture via environment structs |
+| Structs, enums, pattern matching | Yes | Yes | Yes | Full tagged union + switch |
+| `if`/`else`, `for..in`, `while` | Yes | Yes | Yes | |
+| Type inference, generics | Yes | Yes | Yes | |
+| `Result`/`Option` | Yes | Yes | Yes | |
+| `print`/`println`, `str`/`int`/`float`/`len` | Yes | Yes | Yes | |
+| Lists: literals, indexing, `push`/`pop`/`length` | Yes | Yes | Yes | |
+| String methods | Yes | Yes | Yes | All methods: length, find, substring, contains, split, trim, replace, to_upper, to_lower |
+| Dictionaries/Maps | Yes | Yes | Yes | Robin Hood hash table in C runtime |
+| Traits (`trait`, `impl Trait for Type`) | Yes | Yes | Yes | |
+| Module imports (`import`, `pub`, multi-file) | Yes | Yes | Yes | |
+| Agents (spawn, channels, sync) | Yes | Yes | Yes | Full lifecycle |
+| Signals (reactive state) | Yes | Yes | Yes | Full reactivity: computed, subscribers, batched updates |
+| Streams + `\|>` pipe operator | Yes | Yes | Yes | map, filter, take, skip, collect, fold, backpressure |
+| Pipes (multi-agent composition) | Yes | Yes | Yes | Agent spawn chain compilation |
+| Tensors | No | No | No | Experimental only, no language integration |
+| GPU compute | Yes | No | No | CUDA + Vulkan via dlopen |
+| Standard library modules | Yes | Partial | Partial | 25+ native `.mn` modules |
 
 ### Performance (LLVM native vs Python)
 
@@ -109,6 +115,10 @@ language rock-solid before building the ecosystem on top of it.
 | **v1.0.9** ✅ | Stdlib & Language Polish | Match exhaustiveness checking, async-only-when-needed, stdlib dedup (`string_utils.mn`) |
 | **v1.0.10** ✅ | Production Hardening | ASan/TSan clean (52/52), C hardening pass, 3,697 tests, VERSION 1.0.10 |
 | **v1.0.11** ✅ | Self-Hosted Compiler Fixes | Pointer-only large struct refactor, stack alignment fix, linkage fix, alloca size mismatch fix; **15/15 golden at -O1**, 3,698 tests, self-compilation unblocked |
+| **v1.1.0** ✅ | AI Native | LLM drivers (OpenAI, Anthropic, local), embedding providers with batching/caching, RAG pipeline with chunking and vector store |
+| **v1.2.0** ✅ | Data & Storage | Dato data engine (tables, aggregations, joins, reshape, I/O), database drivers (SQLite, PostgreSQL, Redis, KV, pooling, migrations), TOML/YAML encoding, filesystem stdlib |
+| **v1.3.0** ✅ | Web & Security | Web crawler (robots.txt, frontier, extraction), vulnerability scanner (template-driven, fingerprinting), HTTP fuzzer (mutation engine), HTTP server toolkit (auth, body, cookies, sessions, rate limiting, SSE, templates) |
+| **v2.0.0** ✅ | GPU & WASM | WebAssembly backend (MIR-to-WAT, WASI, JS bridge), GPU compute (CUDA + Vulkan via dlopen, tensor kernels), cross-compilation targets (wasm32, iOS, Android), Python backends deprecated, playground WASM runtime |
 
 ---
 

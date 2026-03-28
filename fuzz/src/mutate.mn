@@ -1,0 +1,451 @@
+// fuzz/mutate.mn — Input mutation strategies for fuzzing
+//
+// Provides mutation primitives for fuzz testing: case flipping, string
+// repetition, truncation, null-byte injection, overflow generation,
+// boundary values, and unicode edge cases. Each strategy returns one or
+// more mutated variants of the input.
+//
+// No external dependencies — pure Mapanare string manipulation.
+
+// ---------------------------------------------------------------------------
+// Mutation strategy enum
+// ---------------------------------------------------------------------------
+
+pub enum MutationStrategy {
+    FlipCase,
+    Repeat,
+    Truncate,
+    NullByte,
+    Overflow,
+    BoundaryInt,
+    BoundaryStr,
+    Unicode
+}
+
+// ---------------------------------------------------------------------------
+// Constructor helpers
+// ---------------------------------------------------------------------------
+
+fn new_flip_case() -> MutationStrategy {
+    return FlipCase()
+}
+
+fn new_repeat() -> MutationStrategy {
+    return Repeat()
+}
+
+fn new_truncate() -> MutationStrategy {
+    return Truncate()
+}
+
+fn new_null_byte() -> MutationStrategy {
+    return NullByte()
+}
+
+fn new_overflow() -> MutationStrategy {
+    return Overflow()
+}
+
+fn new_boundary_int() -> MutationStrategy {
+    return BoundaryInt()
+}
+
+fn new_boundary_str() -> MutationStrategy {
+    return BoundaryStr()
+}
+
+fn new_unicode() -> MutationStrategy {
+    return Unicode()
+}
+
+// ---------------------------------------------------------------------------
+// Character helpers
+// ---------------------------------------------------------------------------
+
+fn is_upper(ch: String) -> Bool {
+    if ch == "A" { return true }
+    if ch == "B" { return true }
+    if ch == "C" { return true }
+    if ch == "D" { return true }
+    if ch == "E" { return true }
+    if ch == "F" { return true }
+    if ch == "G" { return true }
+    if ch == "H" { return true }
+    if ch == "I" { return true }
+    if ch == "J" { return true }
+    if ch == "K" { return true }
+    if ch == "L" { return true }
+    if ch == "M" { return true }
+    if ch == "N" { return true }
+    if ch == "O" { return true }
+    if ch == "P" { return true }
+    if ch == "Q" { return true }
+    if ch == "R" { return true }
+    if ch == "S" { return true }
+    if ch == "T" { return true }
+    if ch == "U" { return true }
+    if ch == "V" { return true }
+    if ch == "W" { return true }
+    if ch == "X" { return true }
+    if ch == "Y" { return true }
+    if ch == "Z" { return true }
+    return false
+}
+
+fn is_lower(ch: String) -> Bool {
+    if ch == "a" { return true }
+    if ch == "b" { return true }
+    if ch == "c" { return true }
+    if ch == "d" { return true }
+    if ch == "e" { return true }
+    if ch == "f" { return true }
+    if ch == "g" { return true }
+    if ch == "h" { return true }
+    if ch == "i" { return true }
+    if ch == "j" { return true }
+    if ch == "k" { return true }
+    if ch == "l" { return true }
+    if ch == "m" { return true }
+    if ch == "n" { return true }
+    if ch == "o" { return true }
+    if ch == "p" { return true }
+    if ch == "q" { return true }
+    if ch == "r" { return true }
+    if ch == "s" { return true }
+    if ch == "t" { return true }
+    if ch == "u" { return true }
+    if ch == "v" { return true }
+    if ch == "w" { return true }
+    if ch == "x" { return true }
+    if ch == "y" { return true }
+    if ch == "z" { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// flip_case — toggle ASCII case of each character
+// ---------------------------------------------------------------------------
+
+pub fn flip_case(input: String) -> String {
+    let slen: Int = len(input)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = input.char_at(i)
+        if is_upper(ch) {
+            result = result + ch.to_lower()
+        } else if is_lower(ch) {
+            result = result + ch.to_upper()
+        } else {
+            result = result + ch
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// repeat_string — repeat input N times (buffer overflow testing)
+// ---------------------------------------------------------------------------
+
+pub fn repeat_string(input: String, n: Int) -> String {
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < n {
+        result = result + input
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// truncate — truncate to N characters
+// ---------------------------------------------------------------------------
+
+pub fn truncate(input: String, n: Int) -> String {
+    let slen: Int = len(input)
+    if n >= slen {
+        return input
+    }
+    if n <= 0 {
+        return ""
+    }
+    return input.substr(0, n)
+}
+
+// ---------------------------------------------------------------------------
+// null_byte_inject — return variants with \0 at start, middle, end
+// ---------------------------------------------------------------------------
+
+pub fn null_byte_inject(input: String) -> List<String> {
+    let slen: Int = len(input)
+    let null_ch: String = "\0"
+    let mut results: List<String> = []
+
+    // Null byte at start
+    results = results + [null_ch + input]
+
+    // Null byte in the middle
+    if slen > 0 {
+        let mid: Int = slen / 2
+        let left: String = input.substr(0, mid)
+        let right: String = input.substr(mid, slen)
+        results = results + [left + null_ch + right]
+    } else {
+        results = results + [null_ch]
+    }
+
+    // Null byte at end
+    results = results + [input + null_ch]
+
+    // Double null bytes
+    results = results + [null_ch + null_ch + input]
+    results = results + [input + null_ch + null_ch]
+
+    return results
+}
+
+// ---------------------------------------------------------------------------
+// overflow_string — generate string of N "A" chars
+// ---------------------------------------------------------------------------
+
+pub fn overflow_string(n: Int) -> String {
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < n {
+        result = result + "A"
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// boundary_ints — common integer boundary values as strings
+// ---------------------------------------------------------------------------
+
+pub fn boundary_ints() -> List<String> {
+    let mut results: List<String> = []
+    results = results + ["0"]
+    results = results + ["-1"]
+    results = results + ["1"]
+    results = results + ["2147483647"]
+    results = results + ["-2147483648"]
+    results = results + ["9999999999"]
+    results = results + ["-9999999999"]
+    results = results + [""]
+    results = results + ["2147483648"]
+    results = results + ["-2147483649"]
+    results = results + ["4294967295"]
+    results = results + ["4294967296"]
+    results = results + ["9223372036854775807"]
+    results = results + ["-9223372036854775808"]
+    results = results + ["NaN"]
+    results = results + ["Infinity"]
+    results = results + ["-Infinity"]
+    results = results + ["0x0"]
+    results = results + ["0.0"]
+    results = results + ["-0"]
+    results = results + ["00"]
+    results = results + ["01"]
+    return results
+}
+
+// ---------------------------------------------------------------------------
+// boundary_strings — common string boundary/edge cases
+// ---------------------------------------------------------------------------
+
+pub fn boundary_strings() -> List<String> {
+    let mut results: List<String> = []
+
+    // Empty and whitespace
+    results = results + [""]
+    results = results + [" "]
+    results = results + ["  "]
+    results = results + ["\t"]
+    results = results + ["\n"]
+    results = results + ["\r\n"]
+    results = results + [" \t\n\r "]
+
+    // Very long string (1000 chars)
+    let long_str: String = overflow_string(1000)
+    results = results + [long_str]
+
+    // Null bytes
+    results = results + ["\0"]
+    results = results + ["\0\0\0"]
+    results = results + ["abc\0def"]
+
+    // Unicode edge cases
+    let unicode_variants: List<String> = generate_unicode_variants()
+    let ucount: Int = len(unicode_variants)
+    let mut i: Int = 0
+    while i < ucount {
+        results = results + [unicode_variants[i]]
+        i = i + 1
+    }
+
+    // Special characters
+    results = results + ["'"]
+    results = results + ["\""]
+    results = results + ["\\"]
+    results = results + ["/"]
+    results = results + ["<>"]
+    results = results + ["&"]
+    results = results + ["%00"]
+    results = results + ["%n%n%n%n"]
+
+    return results
+}
+
+// ---------------------------------------------------------------------------
+// generate_unicode_variants — common unicode edge cases
+// ---------------------------------------------------------------------------
+
+fn generate_unicode_variants() -> List<String> {
+    let mut results: List<String> = []
+
+    // Common unicode test strings
+    results = results + ["\u00e9"]
+    results = results + ["\u00f1"]
+    results = results + ["\u00fc"]
+    results = results + ["\u00c0"]
+    results = results + ["\u00ff"]
+
+    // CJK and special ranges
+    results = results + ["\u4e2d\u6587"]
+    results = results + ["\u0410\u0411\u0412"]
+
+    // Right-to-left
+    results = results + ["\u0627\u0644\u0639\u0631\u0628\u064a\u0629"]
+
+    // Zero-width characters
+    results = results + ["\u200b"]
+    results = results + ["\u200c"]
+    results = results + ["\u200d"]
+    results = results + ["\ufeff"]
+
+    // Combining characters
+    results = results + ["e\u0301"]
+    results = results + ["n\u0303"]
+
+    // Emoji-like (surrogate-safe BMP characters)
+    results = results + ["\u2603"]
+    results = results + ["\u2764"]
+    results = results + ["\u2602"]
+
+    return results
+}
+
+// ---------------------------------------------------------------------------
+// mutate — dispatch to a strategy, return all variants
+// ---------------------------------------------------------------------------
+
+pub fn mutate(input: String, strategy: MutationStrategy) -> List<String> {
+    let mut results: List<String> = []
+
+    match strategy {
+        FlipCase => {
+            results = results + [flip_case(input)]
+        },
+        Repeat => {
+            results = results + [repeat_string(input, 2)]
+            results = results + [repeat_string(input, 10)]
+            results = results + [repeat_string(input, 100)]
+            results = results + [repeat_string(input, 1000)]
+        },
+        Truncate => {
+            let slen: Int = len(input)
+            if slen > 0 {
+                results = results + [truncate(input, 1)]
+                results = results + [truncate(input, slen / 2)]
+            }
+            results = results + [truncate(input, 0)]
+        },
+        NullByte => {
+            results = null_byte_inject(input)
+        },
+        Overflow => {
+            results = results + [overflow_string(256)]
+            results = results + [overflow_string(1024)]
+            results = results + [overflow_string(4096)]
+            results = results + [overflow_string(65536)]
+        },
+        BoundaryInt => {
+            results = boundary_ints()
+        },
+        BoundaryStr => {
+            results = boundary_strings()
+        },
+        Unicode => {
+            results = generate_unicode_variants()
+        }
+    }
+
+    return results
+}
+
+// ---------------------------------------------------------------------------
+// mutate_all — apply ALL strategies, return combined list
+// ---------------------------------------------------------------------------
+
+pub fn mutate_all(input: String) -> List<String> {
+    let mut results: List<String> = []
+
+    let flip_results: List<String> = mutate(input, FlipCase())
+    let mut i: Int = 0
+    while i < len(flip_results) {
+        results = results + [flip_results[i]]
+        i = i + 1
+    }
+
+    let repeat_results: List<String> = mutate(input, Repeat())
+    i = 0
+    while i < len(repeat_results) {
+        results = results + [repeat_results[i]]
+        i = i + 1
+    }
+
+    let trunc_results: List<String> = mutate(input, Truncate())
+    i = 0
+    while i < len(trunc_results) {
+        results = results + [trunc_results[i]]
+        i = i + 1
+    }
+
+    let null_results: List<String> = mutate(input, NullByte())
+    i = 0
+    while i < len(null_results) {
+        results = results + [null_results[i]]
+        i = i + 1
+    }
+
+    let overflow_results: List<String> = mutate(input, Overflow())
+    i = 0
+    while i < len(overflow_results) {
+        results = results + [overflow_results[i]]
+        i = i + 1
+    }
+
+    let bint_results: List<String> = mutate(input, BoundaryInt())
+    i = 0
+    while i < len(bint_results) {
+        results = results + [bint_results[i]]
+        i = i + 1
+    }
+
+    let bstr_results: List<String> = mutate(input, BoundaryStr())
+    i = 0
+    while i < len(bstr_results) {
+        results = results + [bstr_results[i]]
+        i = i + 1
+    }
+
+    let unicode_results: List<String> = mutate(input, Unicode())
+    i = 0
+    while i < len(unicode_results) {
+        results = results + [unicode_results[i]]
+        i = i + 1
+    }
+
+    return results
+}

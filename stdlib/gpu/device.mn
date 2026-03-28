@@ -1,0 +1,242 @@
+// gpu/device.mn — GPU Device Detection and Management for Mapanare
+//
+// Provides GPU enumeration, capability detection, and device selection.
+// Supports CUDA, Metal, and Vulkan backends with automatic fallback to CPU.
+//
+// All hardware probing delegates to C runtime (mapanare_gpu via dlopen).
+//
+// Usage:
+//   let result = device.detect_gpus()
+//   let best = device.preferred_device(result)
+//   let name = device.device_name(best)
+
+// ---------------------------------------------------------------------------
+// Extern C runtime functions
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_gpu_detect_count() -> Int
+extern "C" fn __mn_gpu_detect_kind(index: Int) -> Int
+extern "C" fn __mn_gpu_detect_name(index: Int) -> String
+extern "C" fn __mn_gpu_detect_memory(index: Int) -> Int
+extern "C" fn __mn_gpu_detect_driver(index: Int) -> String
+extern "C" fn __mn_gpu_cuda_available() -> Int
+extern "C" fn __mn_gpu_metal_available() -> Int
+extern "C" fn __mn_gpu_vulkan_available() -> Int
+extern "C" fn __mn_gpu_device_init(kind: Int, index: Int) -> Int
+extern "C" fn __mn_gpu_device_sync(handle: Int) -> Int
+extern "C" fn __mn_gpu_device_free(handle: Int) -> Int
+extern "C" fn __mn_gpu_memory_free(kind: Int, index: Int) -> Int
+extern "C" fn __mn_gpu_memory_total(kind: Int, index: Int) -> Int
+
+// ---------------------------------------------------------------------------
+// DeviceKind enum
+// ---------------------------------------------------------------------------
+
+pub enum DeviceKind {
+    CPU,
+    CUDA,
+    Metal,
+    Vulkan
+}
+
+fn device_kind_from_int(v: Int) -> DeviceKind {
+    if v == 1 {
+        return CUDA
+    }
+    if v == 2 {
+        return Metal
+    }
+    if v == 3 {
+        return Vulkan
+    }
+    return CPU
+}
+
+fn device_kind_to_int(k: DeviceKind) -> Int {
+    match k {
+        CPU => { return 0 },
+        CUDA => { return 1 },
+        Metal => { return 2 },
+        Vulkan => { return 3 }
+    }
+    return 0
+}
+
+// ---------------------------------------------------------------------------
+// GPUDevice struct
+// ---------------------------------------------------------------------------
+
+pub struct GPUDevice {
+    kind: DeviceKind,
+    name: String,
+    index: Int,
+    memory_bytes: Int,
+    driver_version: String
+}
+
+fn new_gpu_device(kind: DeviceKind, name: String, index: Int, memory_bytes: Int, driver_version: String) -> GPUDevice {
+    return new GPUDevice { kind: kind, name: name, index: index, memory_bytes: memory_bytes, driver_version: driver_version }
+}
+
+// ---------------------------------------------------------------------------
+// DeviceError enum
+// ---------------------------------------------------------------------------
+
+pub enum DeviceError {
+    NotFound(String),
+    InitFailed(String),
+    DriverError(String),
+    OutOfMemory(String)
+}
+
+fn new_not_found(msg: String) -> DeviceError {
+    return NotFound(msg)
+}
+
+fn new_init_failed(msg: String) -> DeviceError {
+    return InitFailed(msg)
+}
+
+fn new_driver_error(msg: String) -> DeviceError {
+    return DriverError(msg)
+}
+
+fn new_out_of_memory(msg: String) -> DeviceError {
+    return OutOfMemory(msg)
+}
+
+// ---------------------------------------------------------------------------
+// DetectionResult struct
+// ---------------------------------------------------------------------------
+
+pub struct DetectionResult {
+    devices: List<GPUDevice>,
+    cuda_available: Bool,
+    metal_available: Bool,
+    vulkan_available: Bool
+}
+
+fn new_detection_result(devices: List<GPUDevice>, cuda: Bool, metal: Bool, vulkan: Bool) -> DetectionResult {
+    return new DetectionResult { devices: devices, cuda_available: cuda, metal_available: metal, vulkan_available: vulkan }
+}
+
+// ---------------------------------------------------------------------------
+// Device detection
+// ---------------------------------------------------------------------------
+
+/// Auto-detect all available GPU devices on the system.
+/// Returns a DetectionResult containing a list of devices and backend availability.
+pub fn detect_gpus() -> DetectionResult {
+    let count: Int = __mn_gpu_detect_count()
+    let cuda: Bool = __mn_gpu_cuda_available() != 0
+    let metal: Bool = __mn_gpu_metal_available() != 0
+    let vulkan: Bool = __mn_gpu_vulkan_available() != 0
+
+    let mut devices: List<GPUDevice> = []
+    let mut i: Int = 0
+    while i < count {
+        let kind_int: Int = __mn_gpu_detect_kind(i)
+        let kind: DeviceKind = device_kind_from_int(kind_int)
+        let name: String = __mn_gpu_detect_name(i)
+        let memory: Int = __mn_gpu_detect_memory(i)
+        let driver: String = __mn_gpu_detect_driver(i)
+        let dev: GPUDevice = new_gpu_device(kind, name, i, memory, driver)
+        devices = devices + [dev]
+        i = i + 1
+    }
+
+    return new_detection_result(devices, cuda, metal, vulkan)
+}
+
+/// Pick the best available device kind from a detection result.
+/// Priority: CUDA > Vulkan > Metal > CPU.
+pub fn preferred_device(result: DetectionResult) -> DeviceKind {
+    if result.cuda_available {
+        return CUDA
+    }
+    if result.vulkan_available {
+        return Vulkan
+    }
+    if result.metal_available {
+        return Metal
+    }
+    return CPU
+}
+
+/// Return a human-readable name for a device kind.
+pub fn device_name(kind: DeviceKind) -> String {
+    match kind {
+        CPU => { return "CPU (fallback)" },
+        CUDA => { return "NVIDIA CUDA" },
+        Metal => { return "Apple Metal" },
+        Vulkan => { return "Vulkan" }
+    }
+    return "Unknown"
+}
+
+/// Return the number of detected devices.
+pub fn device_count(result: DetectionResult) -> Int {
+    return len(result.devices)
+}
+
+/// Get the device at a specific index from detection results.
+pub fn get_device(result: DetectionResult, index: Int) -> Result<GPUDevice, DeviceError> {
+    if index < 0 {
+        return Err(new_not_found("negative device index"))
+    }
+    if index >= len(result.devices) {
+        return Err(new_not_found("device index out of range: " + str(index)))
+    }
+    return Ok(result.devices[index])
+}
+
+/// Initialize a device for computation. Returns a handle on success.
+pub fn init_device(dev: GPUDevice) -> Result<Int, DeviceError> {
+    let kind_int: Int = device_kind_to_int(dev.kind)
+    let handle: Int = __mn_gpu_device_init(kind_int, dev.index)
+    if handle < 0 {
+        return Err(new_init_failed("failed to initialize device: " + dev.name))
+    }
+    return Ok(handle)
+}
+
+/// Synchronize the device, blocking until all pending operations complete.
+pub fn sync_device(handle: Int) -> Result<Int, DeviceError> {
+    let rc: Int = __mn_gpu_device_sync(handle)
+    if rc < 0 {
+        return Err(new_driver_error("device synchronization failed"))
+    }
+    return Ok(0)
+}
+
+/// Release a device handle and free associated resources.
+pub fn free_device(handle: Int) -> Result<Int, DeviceError> {
+    let rc: Int = __mn_gpu_device_free(handle)
+    if rc < 0 {
+        return Err(new_driver_error("failed to release device handle"))
+    }
+    return Ok(0)
+}
+
+/// Query free memory on a specific device (in bytes).
+pub fn free_memory(dev: GPUDevice) -> Int {
+    let kind_int: Int = device_kind_to_int(dev.kind)
+    return __mn_gpu_memory_free(kind_int, dev.index)
+}
+
+/// Query total memory on a specific device (in bytes).
+pub fn total_memory(dev: GPUDevice) -> Int {
+    let kind_int: Int = device_kind_to_int(dev.kind)
+    return __mn_gpu_memory_total(kind_int, dev.index)
+}
+
+/// Check whether a specific backend is available.
+pub fn is_available(kind: DeviceKind, result: DetectionResult) -> Bool {
+    match kind {
+        CPU => { return true },
+        CUDA => { return result.cuda_available },
+        Metal => { return result.metal_available },
+        Vulkan => { return result.vulkan_available }
+    }
+    return false
+}

@@ -1,0 +1,521 @@
+// crawl/src/url.mn — URL Parsing and Normalization for Mapanare Crawler
+//
+// Provides URL parsing (scheme, host, port, path, query, fragment),
+// relative URL resolution, domain comparison, and deduplication fingerprinting.
+// No external dependencies — pure string manipulation.
+
+// ---------------------------------------------------------------------------
+// Url struct
+// ---------------------------------------------------------------------------
+
+pub struct Url {
+    scheme: String,
+    host: String,
+    port: Int,
+    path: String,
+    query: String,
+    fragment: String
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Find the position of "://" in a URL string. Returns -1 if not found.
+fn find_scheme_end(raw: String) -> Int {
+    let slen: Int = len(raw)
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = raw.char_at(i)
+        if ch == ":" {
+            if i + 2 < slen {
+                if raw.char_at(i + 1) == "/" {
+                    if raw.char_at(i + 2) == "/" {
+                        return i
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+/// Find the end of the host portion (stops at /, ?, #, or :port).
+fn find_host_end(raw: String, start: Int) -> Int {
+    let slen: Int = len(raw)
+    let mut i: Int = start
+    while i < slen {
+        let ch: String = raw.char_at(i)
+        if ch == "/" { return i }
+        if ch == "?" { return i }
+        if ch == "#" { return i }
+        if ch == ":" { return i }
+        i = i + 1
+    }
+    return slen
+}
+
+/// Extract a port number from the string starting at pos (after ':').
+/// Returns -1 if no valid digits found.
+fn extract_port(raw: String, start: Int) -> Int {
+    let slen: Int = len(raw)
+    let mut result: Int = 0
+    let mut i: Int = start
+    let mut found: Bool = false
+    while i < slen {
+        let ch: String = raw.char_at(i)
+        if ch >= "0" {
+            if ch <= "9" {
+                result = result * 10 + (ch.byte_at(0) - 48)
+                found = true
+                i = i + 1
+            } else {
+                break
+            }
+        } else {
+            break
+        }
+    }
+    if found { return result }
+    return -1
+}
+
+/// Convert a single ASCII character to lowercase.
+fn to_lower_char(ch: String) -> String {
+    let b: Int = ch.byte_at(0)
+    if b >= 65 {
+        if b <= 90 {
+            return str(b + 32)
+        }
+    }
+    return ch
+}
+
+/// Convert a string to ASCII lowercase.
+fn to_lower(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = ch.byte_at(0)
+        if b >= 65 {
+            if b <= 90 {
+                // A-Z -> a-z
+                let mut lower: String = ""
+                let lb: Int = b + 32
+                // Build lowercase char via char_at on a known mapping
+                if lb == 97 { lower = "a" } else { if lb == 98 { lower = "b" } else { if lb == 99 { lower = "c" } else { if lb == 100 { lower = "d" } else { if lb == 101 { lower = "e" } else { if lb == 102 { lower = "f" } else { if lb == 103 { lower = "g" } else { if lb == 104 { lower = "h" } else { if lb == 105 { lower = "i" } else { if lb == 106 { lower = "j" } else { if lb == 107 { lower = "k" } else { if lb == 108 { lower = "l" } else { if lb == 109 { lower = "m" } else { if lb == 110 { lower = "n" } else { if lb == 111 { lower = "o" } else { if lb == 112 { lower = "p" } else { if lb == 113 { lower = "q" } else { if lb == 114 { lower = "r" } else { if lb == 115 { lower = "s" } else { if lb == 116 { lower = "t" } else { if lb == 117 { lower = "u" } else { if lb == 118 { lower = "v" } else { if lb == 119 { lower = "w" } else { if lb == 120 { lower = "x" } else { if lb == 121 { lower = "y" } else { lower = "z" } } } } } } } } } } } } } } } } } } } } } } } } } }
+                result = result + lower
+            } else {
+                result = result + ch
+            }
+        } else {
+            result = result + ch
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// URL Parsing
+// ---------------------------------------------------------------------------
+
+/// Parse a raw URL string into its components.
+pub fn parse_url(raw: String) -> Url {
+    let slen: Int = len(raw)
+    if slen == 0 {
+        return new Url { scheme: "", host: "", port: 0, path: "/", query: "", fragment: "" }
+    }
+
+    // Parse scheme
+    let scheme_end: Int = find_scheme_end(raw)
+    let mut scheme: String = ""
+    let mut pos: Int = 0
+    if scheme_end >= 0 {
+        let mut si: Int = 0
+        while si < scheme_end {
+            scheme = scheme + raw.char_at(si)
+            si = si + 1
+        }
+        scheme = to_lower(scheme)
+        pos = scheme_end + 3
+    } else {
+        // No scheme — treat entire string as path
+        return new Url { scheme: "", host: "", port: 0, path: raw, query: "", fragment: "" }
+    }
+
+    // Parse host
+    let host_end: Int = find_host_end(raw, pos)
+    let mut host: String = ""
+    let mut hi: Int = pos
+    while hi < host_end {
+        host = host + raw.char_at(hi)
+        hi = hi + 1
+    }
+    host = to_lower(host)
+    pos = host_end
+
+    // Parse port (if present)
+    let mut port: Int = 80
+    if scheme == "https" { port = 443 }
+
+    if pos < slen {
+        if raw.char_at(pos) == ":" {
+            pos = pos + 1
+            let extracted_port: Int = extract_port(raw, pos)
+            if extracted_port >= 0 {
+                port = extracted_port
+            }
+            // Advance past port digits
+            while pos < slen {
+                let pch: String = raw.char_at(pos)
+                if pch >= "0" {
+                    if pch <= "9" {
+                        pos = pos + 1
+                    } else {
+                        break
+                    }
+                } else {
+                    break
+                }
+            }
+        }
+    }
+
+    // Parse path
+    let mut path: String = ""
+    if pos < slen {
+        if raw.char_at(pos) == "/" {
+            while pos < slen {
+                let ch: String = raw.char_at(pos)
+                if ch == "?" { break }
+                if ch == "#" { break }
+                path = path + ch
+                pos = pos + 1
+            }
+        }
+    }
+    if len(path) == 0 {
+        path = "/"
+    }
+
+    // Parse query
+    let mut query: String = ""
+    if pos < slen {
+        if raw.char_at(pos) == "?" {
+            pos = pos + 1
+            while pos < slen {
+                let ch: String = raw.char_at(pos)
+                if ch == "#" { break }
+                query = query + ch
+                pos = pos + 1
+            }
+        }
+    }
+
+    // Parse fragment
+    let mut fragment: String = ""
+    if pos < slen {
+        if raw.char_at(pos) == "#" {
+            pos = pos + 1
+            while pos < slen {
+                fragment = fragment + raw.char_at(pos)
+                pos = pos + 1
+            }
+        }
+    }
+
+    return new Url { scheme: scheme, host: host, port: port, path: path, query: query, fragment: fragment }
+}
+
+// ---------------------------------------------------------------------------
+// URL Normalization / Resolution
+// ---------------------------------------------------------------------------
+
+/// Resolve a relative URL against a base URL.
+/// Handles "./", "../", "//host", absolute "/path", and full URLs.
+pub fn normalize_url(base: String, relative: String) -> String {
+    let rlen: Int = len(relative)
+    if rlen == 0 {
+        return base
+    }
+
+    // Already absolute URL (has scheme)
+    let rscheme: Int = find_scheme_end(relative)
+    if rscheme >= 0 {
+        return relative
+    }
+
+    let base_parsed: Url = parse_url(base)
+
+    // Protocol-relative: //host/path
+    if rlen > 1 {
+        if relative.char_at(0) == "/" {
+            if relative.char_at(1) == "/" {
+                return base_parsed.scheme + ":" + relative
+            }
+        }
+    }
+
+    // Absolute path: /path
+    if relative.char_at(0) == "/" {
+        return url_to_string(new Url {
+            scheme: base_parsed.scheme,
+            host: base_parsed.host,
+            port: base_parsed.port,
+            path: relative,
+            query: "",
+            fragment: ""
+        })
+    }
+
+    // Relative path — resolve against base directory
+    // Get directory of base path
+    let base_path: String = base_parsed.path
+    let mut base_dir: String = "/"
+    let bplen: Int = len(base_path)
+    let mut last_slash: Int = 0
+    let mut bi: Int = 0
+    while bi < bplen {
+        if base_path.char_at(bi) == "/" {
+            last_slash = bi
+        }
+        bi = bi + 1
+    }
+    if last_slash > 0 {
+        let mut di: Int = 0
+        base_dir = ""
+        while di <= last_slash {
+            base_dir = base_dir + base_path.char_at(di)
+            di = di + 1
+        }
+    }
+
+    // Combine base_dir + relative and resolve . and ..
+    let combined: String = base_dir + relative
+    let resolved_path: String = resolve_dot_segments(combined)
+
+    return url_to_string(new Url {
+        scheme: base_parsed.scheme,
+        host: base_parsed.host,
+        port: base_parsed.port,
+        path: resolved_path,
+        query: "",
+        fragment: ""
+    })
+}
+
+/// Resolve "." and ".." segments in a path.
+fn resolve_dot_segments(path: String) -> String {
+    // Split path into segments by "/"
+    let plen: Int = len(path)
+    let mut segments: List<String> = []
+    let mut current: String = ""
+    let mut i: Int = 0
+
+    while i < plen {
+        let ch: String = path.char_at(i)
+        if ch == "/" {
+            if len(current) > 0 {
+                segments = segments + [current]
+                current = ""
+            }
+            i = i + 1
+        } else {
+            current = current + ch
+            i = i + 1
+        }
+    }
+    if len(current) > 0 {
+        segments = segments + [current]
+    }
+
+    // Process segments: skip ".", pop for ".."
+    let mut resolved: List<String> = []
+    let seg_count: Int = len(segments)
+    let mut si: Int = 0
+    while si < seg_count {
+        let seg: String = segments[si]
+        if seg == "." {
+            // Skip
+            let mut nop: Int = 0
+        } else { if seg == ".." {
+            // Pop last resolved segment if possible
+            let rlen: Int = len(resolved)
+            if rlen > 0 {
+                let mut new_resolved: List<String> = []
+                let mut ri: Int = 0
+                while ri < rlen - 1 {
+                    new_resolved = new_resolved + [resolved[ri]]
+                    ri = ri + 1
+                }
+                resolved = new_resolved
+            }
+        } else {
+            resolved = resolved + [seg]
+        } }
+        si = si + 1
+    }
+
+    // Reconstruct path
+    let mut result: String = "/"
+    let rcount: Int = len(resolved)
+    let mut ri: Int = 0
+    while ri < rcount {
+        if ri > 0 {
+            result = result + "/"
+        }
+        result = result + resolved[ri]
+        ri = ri + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Domain comparison
+// ---------------------------------------------------------------------------
+
+/// Check if two URLs belong to the same domain (host comparison).
+pub fn same_domain(url1: String, url2: String) -> Bool {
+    let parsed1: Url = parse_url(url1)
+    let parsed2: Url = parse_url(url2)
+    return parsed1.host == parsed2.host
+}
+
+/// Extract just the host from a URL string.
+pub fn extract_host(raw: String) -> String {
+    let parsed: Url = parse_url(raw)
+    return parsed.host
+}
+
+// ---------------------------------------------------------------------------
+// Fingerprinting (dedup)
+// ---------------------------------------------------------------------------
+
+/// Normalize a URL for deduplication: lowercase host, strip fragment,
+/// sort query params, normalize path.
+pub fn url_fingerprint(raw: String) -> String {
+    let parsed: Url = parse_url(raw)
+
+    // Rebuild without fragment, with lowercased host
+    let mut result: String = parsed.scheme + "://" + parsed.host
+
+    // Include non-default port
+    let mut include_port: Bool = false
+    if parsed.scheme == "http" {
+        if parsed.port != 80 { include_port = true }
+    } else { if parsed.scheme == "https" {
+        if parsed.port != 443 { include_port = true }
+    } }
+    if include_port {
+        result = result + ":" + str(parsed.port)
+    }
+
+    result = result + parsed.path
+
+    // Sort query params for stable fingerprint
+    if len(parsed.query) > 0 {
+        let sorted_query: String = sort_query_params(parsed.query)
+        result = result + "?" + sorted_query
+    }
+
+    // No fragment in fingerprint
+    return result
+}
+
+/// Sort query parameters alphabetically by key.
+/// Input: "b=2&a=1" -> Output: "a=1&b=2"
+fn sort_query_params(query: String) -> String {
+    // Parse into key=value pairs
+    let qlen: Int = len(query)
+    let mut pairs: List<String> = []
+    let mut current: String = ""
+    let mut i: Int = 0
+
+    while i < qlen {
+        let ch: String = query.char_at(i)
+        if ch == "&" {
+            if len(current) > 0 {
+                pairs = pairs + [current]
+            }
+            current = ""
+        } else {
+            current = current + ch
+        }
+        i = i + 1
+    }
+    if len(current) > 0 {
+        pairs = pairs + [current]
+    }
+
+    // Simple insertion sort by string comparison
+    let pair_count: Int = len(pairs)
+    let mut sorted: List<String> = pairs
+    let mut si: Int = 1
+    while si < pair_count {
+        let mut j: Int = si
+        while j > 0 {
+            if sorted[j] < sorted[j - 1] {
+                // Swap
+                let tmp: String = sorted[j]
+                sorted[j] = sorted[j - 1]
+                sorted[j - 1] = tmp
+                j = j - 1
+            } else {
+                break
+            }
+        }
+        si = si + 1
+    }
+
+    // Rejoin
+    let mut result: String = ""
+    let mut ri: Int = 0
+    while ri < pair_count {
+        if ri > 0 { result = result + "&" }
+        result = result + sorted[ri]
+        ri = ri + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// URL reconstruction
+// ---------------------------------------------------------------------------
+
+/// Reconstruct a URL string from a Url struct.
+pub fn url_to_string(u: Url) -> String {
+    let mut result: String = ""
+
+    if len(u.scheme) > 0 {
+        result = result + u.scheme + "://"
+    }
+
+    result = result + u.host
+
+    // Include non-default port
+    let mut include_port: Bool = false
+    if u.scheme == "http" {
+        if u.port != 80 { include_port = true }
+    } else { if u.scheme == "https" {
+        if u.port != 443 { include_port = true }
+    } }
+    if include_port {
+        result = result + ":" + str(u.port)
+    }
+
+    result = result + u.path
+
+    if len(u.query) > 0 {
+        result = result + "?" + u.query
+    }
+
+    if len(u.fragment) > 0 {
+        result = result + "#" + u.fragment
+    }
+
+    return result
+}
