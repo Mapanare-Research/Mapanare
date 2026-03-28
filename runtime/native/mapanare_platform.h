@@ -77,4 +77,22 @@
   #endif
 #endif
 
+/* Agent scheduling mode: cooperative on mobile, preemptive on desktop */
+#ifndef MAPANARE_DEFAULT_SCHED_COOPERATIVE
+  #if MAPANARE_PLATFORM_MOBILE
+    #define MAPANARE_DEFAULT_SCHED_COOPERATIVE 1
+  #else
+    #define MAPANARE_DEFAULT_SCHED_COOPERATIVE 0
+  #endif
+#endif
+
+/* String intern table capacity: 4K entries on mobile, 64K on desktop */
+#ifndef MAPANARE_DEFAULT_INTERN_CAP
+  #if MAPANARE_PLATFORM_MOBILE
+    #define MAPANARE_DEFAULT_INTERN_CAP  4096
+  #else
+    #define MAPANARE_DEFAULT_INTERN_CAP  65536
+  #endif
+#endif
+
 #endif /* MAPANARE_PLATFORM_H */

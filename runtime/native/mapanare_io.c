@@ -622,6 +622,17 @@ MN_IO_EXPORT MnEventLoop *__mn_event_loop_new(void) {
     return loop;
 }
 
+MN_IO_EXPORT mn_evloop_backend_t __mn_event_loop_backend(MnEventLoop *loop) {
+    (void)loop;  /* backend is compile-time, not per-instance */
+#if defined(MN_USE_EPOLL)
+    return MN_EVLOOP_EPOLL;
+#elif defined(MN_USE_KQUEUE)
+    return MN_EVLOOP_KQUEUE;
+#else
+    return MN_EVLOOP_SELECT;
+#endif
+}
+
 /* Find entry by fd */
 static MnEventEntry *loop_find(MnEventLoop *loop, int64_t fd) {
     for (int i = 0; i < MN_MAX_EVENTS; i++) {

@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "mapanare_platform.h"
 
 #ifdef _WIN32
   #define MN_EXPORT __declspec(dllexport)
@@ -466,6 +467,35 @@ MN_EXPORT MnStream *__mn_stream_bounded(MnStream *source, int64_t capacity,
 
 /** Free a stream node (does NOT free upstream sources). */
 MN_EXPORT void __mn_stream_free(MnStream *stream);
+
+/* -----------------------------------------------------------------------
+ * String Interning — deduplication pool with configurable cap
+ *
+ * Interned strings share storage: if two strings have the same content,
+ * they point to the same heap buffer.  The intern table is a hash set
+ * with a configurable maximum entry count (MAPANARE_DEFAULT_INTERN_CAP).
+ * When the cap is reached, new strings are returned as normal heap
+ * allocations (no dedup) — the table is NOT evicted.
+ * ----------------------------------------------------------------------- */
+
+/** Intern a string: if an identical string is already in the table,
+ *  return the existing MnString (same data pointer).  Otherwise insert
+ *  a copy and return it.  If the table is full (>= cap), returns a
+ *  fresh heap copy without inserting. */
+MN_EXPORT MnString __mn_str_intern(MnString s);
+
+/** Query intern table statistics.
+ *  count: number of interned entries.  bytes: total value bytes stored. */
+MN_EXPORT void __mn_intern_stats(size_t *count, size_t *bytes);
+
+/** Set the intern table capacity (max entries).  Default is
+ *  MAPANARE_DEFAULT_INTERN_CAP from mapanare_platform.h.
+ *  Must be called before any interning; ignored after first intern. */
+MN_EXPORT void __mn_intern_set_cap(size_t cap);
+
+/** Free all interned strings and destroy the intern table.
+ *  Call at shutdown. */
+MN_EXPORT void __mn_intern_destroy(void);
 
 /* -----------------------------------------------------------------------
  * Process
