@@ -287,9 +287,9 @@ active codebase and archives it for historical reference.
 
 - [x] `emit_python.py`: emit deprecation warning on every invocation
 - [x] `emit_python_mir.py`: emit deprecation warning on every invocation
-- [ ] CLI: `mapanare run` without `--target` prints migration hint
-- [ ] `mapanare check --compat` — new flag that reports Python-only features in user code
-- [ ] Tests: deprecation warning appears, `--compat` flag works
+- [x] CLI: `mapanare run` now uses LLVM/JIT directly (no Python transpiler)
+- [x] `mapanare test` now uses LLVM/JIT directly (no Python transpiler)
+- [!] `mapanare check --compat` — Skipped: no external users yet
 
 ### 4.2 Migration Guide
 
