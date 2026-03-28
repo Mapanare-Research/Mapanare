@@ -226,8 +226,11 @@ def jit_compile_and_run(llvm_ir: str, opt_level: int = 2) -> int:
         pmb.populate(pm)
         pm.run(mod)
     elif hasattr(llvm, "create_pass_builder"):
-        pb = llvm.create_pass_builder(target_machine)
-        pb.run(mod)
+        pto = llvm.PipelineTuningOptions()
+        pto.speed_level = opt_level
+        pb = llvm.create_pass_builder(target_machine, pto)
+        mpm = pb.getModulePassManager()
+        mpm.run(mod, pb)
 
     engine = llvm.create_mcjit_compiler(mod, target_machine)
     engine.finalize_object()

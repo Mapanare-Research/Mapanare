@@ -908,6 +908,11 @@ static int vk_find_memory_type(const MnVkPhysicalDeviceMemoryProperties *props,
  * 9. Public API — GPU Initialization
  * ----------------------------------------------------------------------- */
 
+/* Metal integration — linked separately from mapanare_metal.m on Apple platforms */
+#ifdef __APPLE__
+#include "mapanare_metal.h"
+#endif
+
 MN_GPU_EXPORT int mapanare_gpu_init(void) {
     if (g_gpu_ctx.initialized) return 0;
 
@@ -915,6 +920,7 @@ MN_GPU_EXPORT int mapanare_gpu_init(void) {
 
     int cuda_ok = 0;
     int vulkan_ok = 0;
+    int metal_ok = 0;
 
     /* Try CUDA */
     if (cuda_load_library(&g_gpu_ctx.cuda) == 0) {
@@ -946,7 +952,25 @@ MN_GPU_EXPORT int mapanare_gpu_init(void) {
         }
     }
 
-    if (!cuda_ok && !vulkan_ok) {
+#ifdef __APPLE__
+    /* Try Metal (Apple platforms) */
+    if (mapanare_metal_available()) {
+        mn_metal_ctx_t *metal_ctx = (mn_metal_ctx_t *)calloc(1, sizeof(mn_metal_ctx_t));
+        if (metal_ctx && mapanare_metal_init(metal_ctx) == 0) {
+            g_gpu_ctx.metal = metal_ctx;
+            g_gpu_ctx.metal_initialized = 1;
+            metal_ok = 1;
+            fprintf(stderr, "mapanare_gpu: Metal initialized — %s (%lld MB, unified=%d)\n",
+                    metal_ctx->device_name,
+                    (long long)(metal_ctx->memory_bytes / (1024 * 1024)),
+                    metal_ctx->has_unified_memory);
+        } else {
+            free(metal_ctx);
+        }
+    }
+#endif
+
+    if (!cuda_ok && !vulkan_ok && !metal_ok) {
         return -1;
     }
 
@@ -959,6 +983,14 @@ MN_GPU_EXPORT void mapanare_gpu_shutdown(void) {
     if (!g_gpu_ctx.initialized) return;
     cuda_shutdown(&g_gpu_ctx.cuda);
     vulkan_shutdown(&g_gpu_ctx.vulkan);
+#ifdef __APPLE__
+    if (g_gpu_ctx.metal) {
+        mapanare_metal_shutdown((mn_metal_ctx_t *)g_gpu_ctx.metal);
+        free(g_gpu_ctx.metal);
+        g_gpu_ctx.metal = NULL;
+        g_gpu_ctx.metal_initialized = 0;
+    }
+#endif
     g_gpu_ctx.initialized = 0;
 }
 
@@ -972,6 +1004,14 @@ MN_GPU_EXPORT int mapanare_gpu_has_cuda(void) {
 
 MN_GPU_EXPORT int mapanare_gpu_has_vulkan(void) {
     return g_gpu_ctx.vulkan.initialized;
+}
+
+MN_GPU_EXPORT int mapanare_gpu_has_metal(void) {
+#ifdef __APPLE__
+    return g_gpu_ctx.metal_initialized;
+#else
+    return 0;
+#endif
 }
 
 /* -----------------------------------------------------------------------

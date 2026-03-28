@@ -286,6 +286,45 @@ jobs:
             -lpthread -o test_c_runtime_macos
           ./test_c_runtime_macos
 
+      - name: Run with AddressSanitizer
+        run: |
+          cd runtime/native
+          clang -fsanitize=address -fno-omit-frame-pointer -g -std=c11 -I. \
+            ../../tests/native/test_c_runtime.c \
+            mapanare_core.c mapanare_runtime.c \
+            -lpthread -o test_c_runtime_asan
+          ASAN_OPTIONS=detect_leaks=0 ./test_c_runtime_asan
+
+      - name: Run with ThreadSanitizer
+        run: |
+          cd runtime/native
+          clang -fsanitize=thread -g -std=c11 -I. \
+            ../../tests/native/test_c_runtime.c \
+            mapanare_core.c mapanare_runtime.c \
+            -lpthread -o test_c_runtime_tsan
+          TSAN_OPTIONS=halt_on_error=1 ./test_c_runtime_tsan
+
+      - name: Build universal binary (arm64 + x86_64)
+        run: |
+          cd runtime/native
+          for arch in arm64 x86_64; do
+            for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c; do
+              clang -c -std=c11 -O2 -arch $arch "$src" -o "${src%.c}_${arch}.o"
+            done
+            ar rcs "libmapanare_${arch}.a" *_${arch}.o
+          done
+          lipo -create libmapanare_arm64.a libmapanare_x86_64.a -output libmapanare_universal.a
+          echo "Universal binary architectures:"
+          lipo -info libmapanare_universal.a
+          ls -la libmapanare_universal.a
+
+      - name: Compile Metal GPU backend
+        run: |
+          cd runtime/native
+          clang -c -O2 -Wall -fobjc-arc mapanare_metal.m -o mapanare_metal.o
+          file mapanare_metal.o
+          echo "Metal backend compiled"
+
       - name: Cross-compile C runtime for iOS (aarch64-apple-ios)
         run: |
           IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)

@@ -136,7 +136,10 @@ _JIT_HARNESS = """\
 import ctypes, json, sys, time
 import llvmlite.binding as llvm
 
-llvm.initialize()
+try:
+    llvm.initialize()
+except RuntimeError:
+    pass  # llvmlite >= 0.46 auto-initializes
 llvm.initialize_native_target()
 llvm.initialize_native_asmprinter()
 
@@ -160,8 +163,11 @@ if hasattr(llvm, "create_pass_manager_builder"):
     pmb.populate(pm)
     pm.run(mod)
 elif hasattr(llvm, "create_pass_builder"):
-    pb = llvm.create_pass_builder(tm)
-    pb.run(mod)
+    pto = llvm.PipelineTuningOptions()
+    pto.speed_level = 2
+    pb = llvm.create_pass_builder(tm, pto)
+    mpm = pb.getModulePassManager()
+    mpm.run(mod, pb)
 
 engine = llvm.create_mcjit_compiler(mod, tm)
 engine.finalize_object()

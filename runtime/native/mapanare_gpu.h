@@ -545,6 +545,12 @@ typedef struct mn_vulkan_ctx {
 typedef struct mn_gpu_ctx {
     mn_cuda_ctx_t    cuda;
     mn_vulkan_ctx_t  vulkan;
+#ifdef __APPLE__
+    /* Metal context — included inline to avoid header dependency.
+     * Forward-declared; actual type is mn_metal_ctx_t from mapanare_metal.h. */
+    void            *metal;         /* mn_metal_ctx_t* (heap-allocated)     */
+    int              metal_initialized;
+#endif
     int              prefer_cuda;   /* 1 = prefer CUDA over Vulkan         */
     int              initialized;   /* 1 after mapanare_gpu_init()         */
 } mn_gpu_ctx_t;
@@ -606,6 +612,9 @@ MN_GPU_EXPORT int mapanare_gpu_has_cuda(void);
 
 /** Check if Vulkan compute is available. Returns 1 if yes, 0 if no. */
 MN_GPU_EXPORT int mapanare_gpu_has_vulkan(void);
+
+/** Check if Metal compute is available (Apple platforms only). Returns 1 if yes, 0 if no. */
+MN_GPU_EXPORT int mapanare_gpu_has_metal(void);
 
 /* -----------------------------------------------------------------------
  * 10. Public API — GPU Memory Management

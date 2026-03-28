@@ -5,52 +5,56 @@
 //   mapanare run examples/gpu/benchmark.mn
 //   mapanare build examples/gpu/benchmark.mn -o bench
 
-import gpu.tensor
-import gpu.device
+import gpu::tensor
+import gpu::device
 
-fn benchmark_matmul(size: Int, device: DeviceKind) -> Float:
-    let a: Tensor = ones([size, size])
-    let b: Tensor = ones([size, size])
+fn benchmark_matmul(size: Int, device: DeviceKind) -> Float {
+    let a = ones([size, size])
+    let b = ones([size, size])
 
     // Move to target device
-    let a_dev: Tensor = to_device(a, device)
-    let b_dev: Tensor = to_device(b, device)
+    let a_dev = to_device(a, device)
+    let b_dev = to_device(b, device)
 
     // Warm-up run
-    let _warmup: Tensor = matmul(a_dev, b_dev)
+    let _warmup = matmul(a_dev, b_dev)
 
     // Timed run (3 iterations, take average)
-    let total_ms: Float = 0.0
+    let mut total_ms: Float = 0.0
     let iterations: Int = 3
 
-    for i in range(0, iterations):
-        let result: Tensor = matmul(a_dev, b_dev)
+    for i in 0..iterations {
+        let result = matmul(a_dev, b_dev)
         // result triggers synchronization on GPU
         let _val: Float = sum(result)
+    }
 
     return total_ms / float(iterations)
+}
 
-fn benchmark_elementwise(size: Int, device: DeviceKind) -> Float:
+fn benchmark_elementwise(size: Int, device: DeviceKind) -> Float {
     let n: Int = size * size
-    let a: Tensor = ones([size, size])
-    let b: Tensor = ones([size, size])
+    let a = ones([size, size])
+    let b = ones([size, size])
 
-    let a_dev: Tensor = to_device(a, device)
-    let b_dev: Tensor = to_device(b, device)
+    let a_dev = to_device(a, device)
+    let b_dev = to_device(b, device)
 
     // Chain of operations: (a + b) * (a - b)
-    let total_ms: Float = 0.0
+    let mut total_ms: Float = 0.0
     let iterations: Int = 5
 
-    for i in range(0, iterations):
-        let sum_ab: Tensor = add(a_dev, b_dev)
-        let diff_ab: Tensor = sub(a_dev, b_dev)
-        let result: Tensor = mul(sum_ab, diff_ab)
+    for i in 0..iterations {
+        let sum_ab = add(a_dev, b_dev)
+        let diff_ab = sub(a_dev, b_dev)
+        let result = mul(sum_ab, diff_ab)
         let _val: Float = sum(result)
+    }
 
     return total_ms / float(iterations)
+}
 
-fn main():
+fn main() {
     println("=== Mapanare GPU Tensor Benchmark ===")
     println("")
 
@@ -68,15 +72,13 @@ fn main():
     println("Size     | CPU (ms)  | GPU (ms)  | Speedup")
     println("---------|-----------|-----------|--------")
 
-    for size in sizes:
+    for size in sizes {
         let cpu_time: Float = benchmark_matmul(size, CPU)
         let gpu_time: Float = benchmark_matmul(size, gpu_device)
         let speedup: Float = cpu_time / gpu_time
 
-        println(str(size) + "x" + str(size) +
-                " | " + str(cpu_time) +
-                " | " + str(gpu_time) +
-                " | " + str(speedup) + "x")
+        println(str(size) + "x" + str(size) + " | " + str(cpu_time) + " | " + str(gpu_time) + " | " + str(speedup) + "x")
+    }
 
     println("")
 
@@ -85,15 +87,14 @@ fn main():
     println("Size     | CPU (ms)  | GPU (ms)  | Speedup")
     println("---------|-----------|-----------|--------")
 
-    for size in sizes:
+    for size in sizes {
         let cpu_time: Float = benchmark_elementwise(size, CPU)
         let gpu_time: Float = benchmark_elementwise(size, gpu_device)
         let speedup: Float = cpu_time / gpu_time
 
-        println(str(size) + "x" + str(size) +
-                " | " + str(cpu_time) +
-                " | " + str(gpu_time) +
-                " | " + str(speedup) + "x")
+        println(str(size) + "x" + str(size) + " | " + str(cpu_time) + " | " + str(gpu_time) + " | " + str(speedup) + "x")
+    }
 
     println("")
     println("Done.")
+}

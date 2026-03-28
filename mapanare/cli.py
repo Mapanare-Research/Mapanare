@@ -1037,15 +1037,15 @@ def cmd_emit_wasm(args: argparse.Namespace) -> None:
         wat2wasm = shutil.which("wat2wasm")
         if wat2wasm:
             wasm_path = wat_paths[0].replace(".wat", ".wasm")
-            result = subprocess.run(
+            proc = subprocess.run(
                 [wat2wasm, wat_paths[0], "-o", wasm_path],
                 capture_output=True,
                 text=True,
             )
-            if result.returncode == 0:
+            if proc.returncode == 0:
                 print(f"compiled {wat_paths[0]} -> {wasm_path} (binary)")
             else:
-                print(f"wat2wasm failed: {result.stderr}", file=sys.stderr)
+                print(f"wat2wasm failed: {proc.stderr}", file=sys.stderr)
         else:
             print("warning: wat2wasm not found, skipping binary compilation", file=sys.stderr)
 

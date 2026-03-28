@@ -99,7 +99,7 @@ from the C runtime via dlopen.
 - [x] `@gpu` — auto-selects CUDA or Vulkan based on runtime detection
 - [x] `@cuda` — forces CUDA backend (error if unavailable)
 - [x] `@vulkan` — forces Vulkan backend (error if unavailable)
-- [x] `@metal` — reserved for future macOS/iOS Metal support (not implemented in v2.0.0)
+- [x] `@metal` — Metal compute backend for macOS/iOS (implemented: `mapanare_metal.h/.m`, MSL kernels, unified memory)
 - [x] Semantic pass validates GPU function constraints (max 1 device annotation per function)
 - [x] MIR lowering: decorators stored in `MirFunction.decorators`
 - [x] LLVM emitter: `@gpu`/`@cuda`/`@vulkan` functions auto-dispatch tensor ops to C runtime GPU calls

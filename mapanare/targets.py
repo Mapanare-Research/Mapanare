@@ -44,9 +44,9 @@ TARGET_X86_64_LINUX_GNU = Target(
 )
 
 TARGET_AARCH64_APPLE_MACOS = Target(
-    triple="aarch64-apple-macosx14.0.0",
-    data_layout=("e-m:o-p270:32:32-p271:32:32-p272:64:64-" "i64:64-i128:128-n32:64-S128-Fn32"),
-    description="macOS Apple Silicon (AArch64)",
+    triple="aarch64-apple-macos14.0",
+    data_layout="e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32",
+    description="macOS (ARM64 / Apple Silicon)",
     obj_ext=".o",
     exe_ext="",
     lib_ext=".dylib",
