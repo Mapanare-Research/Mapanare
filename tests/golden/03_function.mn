@@ -4,5 +4,5 @@ fn add(a: Int, b: Int) -> Int {
 
 fn main() {
     let r: Int = add(10, 20)
-    println(str(r))
+    print(str(r))
 }

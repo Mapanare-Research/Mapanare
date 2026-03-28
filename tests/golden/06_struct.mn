@@ -5,5 +5,5 @@ struct Point {
 
 fn main() {
     let p: Point = new Point { x: 3, y: 4 }
-    println(str(p.x))
+    print(str(p.x))
 }

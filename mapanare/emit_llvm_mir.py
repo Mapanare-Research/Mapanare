@@ -54,6 +54,7 @@ from mapanare.mir import (
     ListPush,
     MapInit,
     MIRFunction,
+    MIRGpuKernel,
     MIRModule,
     MIRPipeInfo,
     MIRType,
@@ -551,6 +552,7 @@ class LLVMMIREmitter:
         # GPU dispatch state
         self._gpu_device: str | None = None  # current function's GPU target (gpu/cuda/vulkan)
         self._gpu_declared: bool = False  # whether GPU runtime functions are declared
+        self._gpu_kernels: dict[str, MIRGpuKernel] = {}  # populated from MIRModule in emit()
 
         # Instruction dispatch table (type -> bound handler)
         self._inst_dispatch_bound: dict[type, Any] = {}
@@ -582,7 +584,10 @@ class LLVMMIREmitter:
 
     def emit(self, mir_module: MIRModule) -> Any:
         """Emit LLVM IR from a MIR module. Returns the llvmlite ir.Module."""
-        # 0. Initialize DWARF debug info if enabled
+        # 0a. Capture GPU kernel metadata for use during function emission
+        self._gpu_kernels = mir_module.gpu_kernels
+
+        # 0b. Initialize DWARF debug info if enabled
         if self._debug:
             self._init_debug_info(mir_module)
 
@@ -1501,6 +1506,41 @@ class LLVMMIREmitter:
         for op in ("add", "sub", "mul", "div", "matmul"):
             self._declare_runtime_fn(f"mapanare_vk_tensor_{op}", LLVM_PTR, [LLVM_PTR, LLVM_PTR])
 
+        # Kernel launch — CUDA
+        # mapanare_cuda_kernel_load(ptx_source: i8*, name: i8*) -> i8*
+        self._declare_runtime_fn("mapanare_cuda_kernel_load", LLVM_PTR, [LLVM_PTR, LLVM_PTR])
+        # mapanare_cuda_kernel_launch(kernel, gx, gy, gz, bx, by, bz, shared, params) -> i32
+        self._declare_runtime_fn(
+            "mapanare_cuda_kernel_launch",
+            LLVM_I32,
+            [
+                LLVM_PTR,
+                LLVM_I32,
+                LLVM_I32,
+                LLVM_I32,
+                LLVM_I32,
+                LLVM_I32,
+                LLVM_I32,
+                LLVM_I32,
+                LLVM_PTR,
+            ],
+        )
+        self._declare_runtime_fn("mapanare_cuda_kernel_free", LLVM_VOID, [LLVM_PTR])
+        self._declare_runtime_fn("mapanare_cuda_synchronize", LLVM_I32, [])
+
+        # Kernel launch — Vulkan
+        # mapanare_vk_pipeline_create(spirv: i8*, spirv_size: i64, num_buffers: i32) -> i8*
+        self._declare_runtime_fn(
+            "mapanare_vk_pipeline_create", LLVM_PTR, [LLVM_PTR, LLVM_INT, LLVM_I32]
+        )
+        # mapanare_vk_dispatch(pipeline, buffers, num_bufs, gx, gy, gz) -> i32
+        self._declare_runtime_fn(
+            "mapanare_vk_dispatch",
+            LLVM_I32,
+            [LLVM_PTR, LLVM_PTR, LLVM_I32, LLVM_I32, LLVM_I32, LLVM_I32],
+        )
+        self._declare_runtime_fn("mapanare_vk_pipeline_free", LLVM_VOID, [LLVM_PTR])
+
     def _gpu_runtime_name(self, device: str, operation: str) -> str | None:
         """Return the C runtime function name for a GPU tensor operation.
 
@@ -1531,6 +1571,168 @@ class LLVMMIREmitter:
         # Coerce both args to i8* (opaque pointers)
         coerced = [_coerce_arg(builder, a, LLVM_PTR, f"{name}.a{i}") for i, a in enumerate(args)]
         return builder.call(fn, coerced, name=name)
+
+    # -----------------------------------------------------------------------
+    # GPU kernel wrapper emission
+    # -----------------------------------------------------------------------
+
+    def _embed_global_string(self, data: str, name: str) -> Any:
+        """Embed a string as a global constant and return an i8* to it."""
+        encoded = bytearray(data.encode("utf-8")) + bytearray([0])
+        c_val = ir.Constant(ir.ArrayType(ir.IntType(8), len(encoded)), encoded)
+        g = ir.GlobalVariable(self.module, c_val.type, name=name)
+        g.linkage = "private"
+        g.global_constant = True
+        g.initializer = c_val
+        zero = ir.Constant(LLVM_I32, 0)
+        return g.gep([zero, zero])
+
+    def _embed_global_bytes(self, data: bytes, name: str) -> Any:
+        """Embed raw bytes as a global constant and return an i8* to it."""
+        arr_ty = ir.ArrayType(ir.IntType(8), len(data))
+        c_val = ir.Constant(arr_ty, bytearray(data))
+        g = ir.GlobalVariable(self.module, c_val.type, name=name)
+        g.linkage = "private"
+        g.global_constant = True
+        g.initializer = c_val
+        zero = ir.Constant(LLVM_I32, 0)
+        return g.gep([zero, zero])
+
+    def _emit_gpu_kernel_launch(
+        self,
+        builder: Any,
+        kernel: MIRGpuKernel,
+        param_ptrs: list[Any],
+    ) -> None:
+        """Emit kernel load, launch, sync, and free for a GPU-annotated function.
+
+        *param_ptrs* are the LLVM values (i8* pointers) for the function parameters
+        that should be passed to the kernel as its parameter array.
+        """
+        self._declare_gpu_runtime()
+
+        if kernel.device in ("cuda", "gpu"):
+            self._emit_cuda_kernel_launch(builder, kernel, param_ptrs)
+        elif kernel.device == "vulkan":
+            self._emit_vulkan_kernel_dispatch(builder, kernel, param_ptrs)
+
+    def _emit_cuda_kernel_launch(
+        self,
+        builder: Any,
+        kernel: MIRGpuKernel,
+        param_ptrs: list[Any],
+    ) -> None:
+        """Emit CUDA kernel load → launch → synchronize → free sequence."""
+        fn_name = kernel.name
+
+        # Embed PTX source as a global string constant
+        ptx_ptr = self._embed_global_string(kernel.ptx_source, f".gpu.ptx.{fn_name}")
+        # Embed kernel entry point name
+        entry_ptr = self._embed_global_string(fn_name, f".gpu.entry.{fn_name}")
+
+        # Load kernel: kernel_handle = mapanare_cuda_kernel_load(ptx, entry)
+        load_fn = self._runtime_fns["mapanare_cuda_kernel_load"]
+        kernel_handle = builder.call(load_fn, [ptx_ptr, entry_ptr], name=f"{fn_name}.kload")
+
+        # Build parameter array: i8** on the stack
+        if param_ptrs:
+            arr_ty = ir.ArrayType(LLVM_PTR, len(param_ptrs))
+            params_alloca = builder.alloca(arr_ty, name=f"{fn_name}.kparams")
+            for i, ptr in enumerate(param_ptrs):
+                gep = builder.gep(
+                    params_alloca,
+                    [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, i)],
+                    name=f"{fn_name}.kp.{i}",
+                )
+                coerced = _coerce_arg(builder, ptr, LLVM_PTR, f"{fn_name}.kpc.{i}")
+                builder.store(coerced, gep)
+            params_ptr = builder.bitcast(params_alloca, LLVM_PTR, name=f"{fn_name}.kpp")
+        else:
+            params_ptr = ir.Constant(LLVM_PTR, None)
+
+        # Launch kernel
+        launch_fn = self._runtime_fns["mapanare_cuda_kernel_launch"]
+        gx, gy, gz = kernel.grid
+        bx, by, bz = kernel.block
+        builder.call(
+            launch_fn,
+            [
+                kernel_handle,
+                ir.Constant(LLVM_I32, gx),
+                ir.Constant(LLVM_I32, gy),
+                ir.Constant(LLVM_I32, gz),
+                ir.Constant(LLVM_I32, bx),
+                ir.Constant(LLVM_I32, by),
+                ir.Constant(LLVM_I32, bz),
+                ir.Constant(LLVM_I32, kernel.shared_mem),
+                params_ptr,
+            ],
+            name=f"{fn_name}.klaunch",
+        )
+
+        # Synchronize
+        sync_fn = self._runtime_fns["mapanare_cuda_synchronize"]
+        builder.call(sync_fn, [], name=f"{fn_name}.ksync")
+
+        # Free kernel handle
+        free_fn = self._runtime_fns["mapanare_cuda_kernel_free"]
+        builder.call(free_fn, [kernel_handle])
+
+    def _emit_vulkan_kernel_dispatch(
+        self,
+        builder: Any,
+        kernel: MIRGpuKernel,
+        param_ptrs: list[Any],
+    ) -> None:
+        """Emit Vulkan pipeline create → dispatch → free sequence."""
+        fn_name = kernel.name
+
+        # Embed SPIR-V bytecode as a global byte array
+        spirv_ptr = self._embed_global_bytes(kernel.spirv_bytes, f".gpu.spirv.{fn_name}")
+        spirv_size = ir.Constant(LLVM_INT, len(kernel.spirv_bytes))
+        num_bufs = ir.Constant(LLVM_I32, kernel.num_buffers or len(param_ptrs))
+
+        # Create pipeline
+        create_fn = self._runtime_fns["mapanare_vk_pipeline_create"]
+        pipeline = builder.call(
+            create_fn, [spirv_ptr, spirv_size, num_bufs], name=f"{fn_name}.vpipe"
+        )
+
+        # Build buffer array: i8** on the stack
+        if param_ptrs:
+            arr_ty = ir.ArrayType(LLVM_PTR, len(param_ptrs))
+            bufs_alloca = builder.alloca(arr_ty, name=f"{fn_name}.vbufs")
+            for i, ptr in enumerate(param_ptrs):
+                gep = builder.gep(
+                    bufs_alloca,
+                    [ir.Constant(LLVM_I32, 0), ir.Constant(LLVM_I32, i)],
+                    name=f"{fn_name}.vb.{i}",
+                )
+                coerced = _coerce_arg(builder, ptr, LLVM_PTR, f"{fn_name}.vpc.{i}")
+                builder.store(coerced, gep)
+            bufs_ptr = builder.bitcast(bufs_alloca, LLVM_PTR, name=f"{fn_name}.vbp")
+        else:
+            bufs_ptr = ir.Constant(LLVM_PTR, None)
+
+        # Dispatch compute
+        dispatch_fn = self._runtime_fns["mapanare_vk_dispatch"]
+        gx, gy, gz = kernel.grid
+        builder.call(
+            dispatch_fn,
+            [
+                pipeline,
+                bufs_ptr,
+                ir.Constant(LLVM_I32, len(param_ptrs)),
+                ir.Constant(LLVM_I32, gx),
+                ir.Constant(LLVM_I32, gy),
+                ir.Constant(LLVM_I32, gz),
+            ],
+            name=f"{fn_name}.vdispatch",
+        )
+
+        # Free pipeline
+        free_fn = self._runtime_fns["mapanare_vk_pipeline_free"]
+        builder.call(free_fn, [pipeline])
 
     # -----------------------------------------------------------------------
     # Printf support
@@ -1754,6 +1956,19 @@ class LLVMMIREmitter:
                     entry_builder.store(arg_val, alloca)
                 except (TypeError, AttributeError) as exc:
                     logging.debug("fallback at param store: %s", exc)
+
+        # 3b. If this function has GPU kernel metadata with embedded source,
+        #     emit the kernel load → launch → sync → free sequence into the
+        #     entry block before the normal MIR instructions execute.
+        gpu_kernel = self._gpu_kernels.get(mir_fn.name)
+        if gpu_kernel is not None and (gpu_kernel.ptx_source or gpu_kernel.spirv_bytes):
+            # Collect function parameters as i8* pointers for the kernel launch
+            kb = entry_builder or ir.IRBuilder(llvm_blocks[mir_fn.blocks[0].label])
+            param_ptrs = [
+                _coerce_arg(kb, func.args[i], LLVM_PTR, f"karg.{i}")
+                for i in range(len(mir_fn.params))
+            ]
+            self._emit_gpu_kernel_launch(kb, gpu_kernel, param_ptrs)
 
         for bb in mir_fn.blocks:
             builder = ir.IRBuilder(llvm_blocks[bb.label])
@@ -2527,30 +2742,31 @@ class LLVMMIREmitter:
 
         # print/println
         if fn_name in ("println", "print"):
+            nl = fn_name == "println"
             if (
                 inst.args
                 and inst.args[0].ty.kind == TypeKind.STRING
                 and args[0].type == LLVM_STRING
             ):
-                rt_fn = self._rt_str_println() if fn_name == "println" else self._rt_str_print()
+                rt_fn = self._rt_str_println() if nl else self._rt_str_print()
                 builder.call(rt_fn, [args[0]])
             elif inst.args and inst.args[0].ty.kind == TypeKind.INT:
-                fmt = "%lld\n" if fn_name == "println" else "%lld"
+                fmt = "%lld\n" if nl else "%lld"
                 self._emit_printf(builder, fmt, [args[0]])
             elif inst.args and inst.args[0].ty.kind == TypeKind.FLOAT:
-                fmt = "%f\n" if fn_name == "println" else "%f"
+                fmt = "%f\n" if nl else "%f"
                 self._emit_printf(builder, fmt, [args[0]])
             elif inst.args and inst.args[0].ty.kind == TypeKind.BOOL:
                 # Convert bool to string then print
                 str_fn = self._rt_str_from_bool()
                 str_val = builder.call(str_fn, [args[0]], name=f"{name}.bstr")
                 self._track_string(builder, str_val)
-                rt_fn = self._rt_str_println() if fn_name == "println" else self._rt_str_print()
+                rt_fn = self._rt_str_println() if nl else self._rt_str_print()
                 builder.call(rt_fn, [str_val])
             else:
                 # Fallback: try printf with i64
                 if inst.args:
-                    fmt = "%lld\n" if fn_name == "println" else "%lld"
+                    fmt = "%lld\n" if nl else "%lld"
                     self._emit_printf(builder, fmt, [args[0]])
             # print/println returns void — store a dummy value
             self._store_value(inst.dest, ir.Constant(LLVM_BOOL, 0), values)

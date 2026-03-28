@@ -39,9 +39,11 @@ mapanare-lsp = "mapanare.lsp.server:main"
 
 [tool.black]
 line-length = 100
+extend-exclude = "bootstrap"
 
 [tool.ruff]
 line-length = 100
+exclude = ["bootstrap"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
@@ -54,6 +56,7 @@ select = ["E", "F", "W", "I"]
 [tool.mypy]
 strict = true
 ignore_missing_imports = true
+exclude = ["bootstrap"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

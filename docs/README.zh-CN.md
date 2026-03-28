@@ -28,7 +28,7 @@ Mapanare 编译为 Python（转译器）和原生二进制文件（LLVM），自
 
 <br>
 
-[**快速开始**](getting-started.md) · [为什么选择 Mapanare？](#为什么选择-mapanare) · [安装](#安装) · [语言特性](#语言特性) · [基准测试](#基准测试) · [CLI](#cli) · [架构](#编译器架构) · [路线图](ROADMAP.md) · [贡献](#贡献) · [Discord](https://discord.gg/5hpGBm3WXf)
+[**快速开始**](getting-started.md) · [为什么选择 Mapanare？](#为什么选择-mapanare) · [安装](#安装) · [语言特性](#语言特性) · [基准测试](#基准测试) · [CLI](#cli) · [架构](#编译器架构) · [路线图](roadmap/ROADMAP.md) · [贡献](#贡献) · [Discord](https://discord.gg/5hpGBm3WXf)
 
 </div>
 
@@ -217,7 +217,7 @@ mapanare targets             列出支持的编译目标
 | **v0.5.0** | 生态系统——包注册中心、WASM 演练场、代码检查器 | 计划中 |
 | **v1.0.0** | 稳定版——语言规范冻结、向后兼容保证 | 计划中 |
 
-查看完整的[路线图](ROADMAP.md)了解详情。
+查看完整的[路线图](roadmap/ROADMAP.md)了解详情。
 
 ---
 

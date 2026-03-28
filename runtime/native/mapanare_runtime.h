@@ -13,6 +13,8 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "mapanare_platform.h"
+#include "mapanare_core.h"
 
 /* -----------------------------------------------------------------------
  * Platform abstractions
@@ -464,10 +466,93 @@ MAPANARE_EXPORT void mapanare_trace_set_hook(mapanare_trace_hook_fn hook);
 MAPANARE_EXPORT mapanare_trace_hook_fn mapanare_trace_get_hook(void);
 
 /* -----------------------------------------------------------------------
+ * 9. Cooperative Scheduler — single-threaded agent execution for mobile
+ *
+ * On mobile targets (MAPANARE_DEFAULT_SCHED_COOPERATIVE == 1), agents
+ * run cooperatively on a single thread instead of spawning one thread
+ * per agent.  The scheduler uses a circular ready queue and runs each
+ * agent for up to `max_steps` message-handling iterations before
+ * yielding to the next agent.
+ *
+ * On desktop, the preemptive thread-per-agent model remains the default.
+ * The cooperative scheduler can also be used explicitly on any platform.
+ * ----------------------------------------------------------------------- */
+
+typedef struct mapanare_coop_scheduler {
+    mapanare_agent_t **ready_queue;   /* circular buffer of ready agents   */
+    uint32_t           queue_cap;     /* capacity (power of two)           */
+    uint32_t           queue_head;    /* write index (enqueue)             */
+    uint32_t           queue_tail;    /* read index  (dequeue)             */
+    uint32_t           max_steps;     /* max handler calls per tick (def 1000) */
+    mapanare_atomic_i32 running;      /* 1 = running, 0 = stopped          */
+} mapanare_coop_scheduler_t;
+
+/** Initialise a cooperative scheduler with the given queue capacity
+ *  (rounded up to power of two). */
+MAPANARE_EXPORT void mapanare_coop_scheduler_init(mapanare_coop_scheduler_t *sched,
+                                                   uint32_t capacity);
+
+/** Destroy the cooperative scheduler (frees ready queue). */
+MAPANARE_EXPORT void mapanare_coop_scheduler_destroy(mapanare_coop_scheduler_t *sched);
+
+/** Enqueue an agent into the cooperative scheduler's ready queue.
+ *  The agent must already be initialised (mapanare_agent_init).
+ *  Returns 0 on success, -1 if the queue is full. */
+MAPANARE_EXPORT int  mapanare_coop_scheduler_enqueue(mapanare_coop_scheduler_t *sched,
+                                                      mapanare_agent_t *agent);
+
+/** Run one scheduling tick: dequeue one agent, process up to max_steps
+ *  messages, re-enqueue if not done.  Returns 1 if work was done, 0 if
+ *  queue is empty. */
+MAPANARE_EXPORT int  mapanare_coop_scheduler_step(mapanare_coop_scheduler_t *sched);
+
+/** Run the cooperative scheduler until all agents are done or stop is called.
+ *  Returns 0 on clean exit. */
+MAPANARE_EXPORT int  mapanare_coop_scheduler_run(mapanare_coop_scheduler_t *sched);
+
+/** Signal the cooperative scheduler to stop. */
+MAPANARE_EXPORT void mapanare_coop_scheduler_stop(mapanare_coop_scheduler_t *sched);
+
+/* -----------------------------------------------------------------------
+ * 10. Memory profiling helpers
+ *
+ * Aggregate memory statistics across arenas, intern tables, agents, and
+ * ring buffers.  Useful for mobile memory budgets and diagnostics.
+ * ----------------------------------------------------------------------- */
+
+typedef struct mapanare_memory_stats {
+    size_t arena_allocated;     /* total bytes allocated from arenas      */
+    size_t arena_used;          /* bytes currently in use in arenas       */
+    size_t intern_count;        /* number of interned strings             */
+    size_t intern_bytes;        /* total bytes in intern table values     */
+    size_t agent_count;         /* number of live agents                  */
+    size_t ring_allocated;      /* total ring buffer bytes (all agents)   */
+} mapanare_memory_stats_t;
+
+/** Collect memory statistics.  Walks the global arena, intern table,
+ *  and agent registry to populate `out`. */
+MAPANARE_EXPORT void mapanare_memory_stats(mapanare_memory_stats_t *out);
+
+/** Query a single arena's usage: total allocated and bytes used. */
+MAPANARE_EXPORT void mapanare_arena_stats(const MnArena *arena,
+                                           size_t *out_allocated,
+                                           size_t *out_used);
+
+/* -----------------------------------------------------------------------
  * Utility
  * ----------------------------------------------------------------------- */
 
 /** Detect number of physical CPU cores. */
 MAPANARE_EXPORT uint32_t mapanare_cpu_count(void);
+
+/** Ensure the global thread pool is initialized (lazy init on first use).
+ *  Thread-safe: uses atomic spinlock for one-time initialization.
+ *  On mobile (MAPANARE_DEFAULT_SCHED_COOPERATIVE), the thread pool is
+ *  still created for non-agent background work but with fewer threads.
+ *  Returns pointer to the global pool. */
+MAPANARE_EXPORT mapanare_thread_pool_t *mapanare_ensure_pool(void);
+
+/** Destroy the global lazy-initialized thread pool (call at shutdown). */
+MAPANARE_EXPORT void mapanare_pool_destroy_global(void);
 
 #endif /* MAPANARE_RUNTIME_H */

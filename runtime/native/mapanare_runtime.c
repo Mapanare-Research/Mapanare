@@ -338,7 +338,7 @@ MAPANARE_EXPORT int mapanare_pool_create(mapanare_thread_pool_t *pool, uint32_t 
     pool->thread_count = num_threads;
     atomic_store_i32(&pool->running, 1);
 
-    if (mapanare_ring_create(&pool->work_queue, 1024) != 0) {
+    if (mapanare_ring_create(&pool->work_queue, MAPANARE_DEFAULT_RING_CAPACITY) != 0) {
         return -1;
     }
 
@@ -413,6 +413,52 @@ MAPANARE_EXPORT int mapanare_pool_submit(mapanare_thread_pool_t *pool, mapanare_
 
 MAPANARE_EXPORT uint32_t mapanare_pool_thread_count(mapanare_thread_pool_t *pool) {
     return pool->thread_count;
+}
+
+/* =======================================================================
+ * Global lazy-initialized thread pool
+ *
+ * The pool is created on first use (when the first agent is spawned)
+ * rather than eagerly at startup. This saves resources on mobile targets
+ * and programs that never spawn agents.
+ * ======================================================================= */
+
+static mapanare_thread_pool_t mn_global_pool;
+static mapanare_atomic_i32 mn_pool_initialized = 0;
+static mapanare_atomic_i32 mn_pool_initializing = 0;
+
+MAPANARE_EXPORT mapanare_thread_pool_t *mapanare_ensure_pool(void) {
+    if (atomic_load_i32(&mn_pool_initialized)) {
+        return &mn_global_pool;
+    }
+    /* Simple spinlock for one-time init */
+    int32_t expected = 0;
+    if (__atomic_compare_exchange_n(&mn_pool_initializing, &expected, 1,
+                                    0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        if (mapanare_pool_create(&mn_global_pool, MAPANARE_DEFAULT_THREADS) != 0) {
+            atomic_store_i32(&mn_pool_initializing, 0);
+            return NULL;
+        }
+        atomic_store_i32(&mn_pool_initialized, 1);
+    } else {
+        /* Another thread is initializing — spin until done */
+        while (!atomic_load_i32(&mn_pool_initialized)) {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
+            __builtin_ia32_pause();
+#elif defined(__aarch64__)
+            __asm__ volatile("yield");
+#endif
+        }
+    }
+    return &mn_global_pool;
+}
+
+MAPANARE_EXPORT void mapanare_pool_destroy_global(void) {
+    if (atomic_load_i32(&mn_pool_initialized)) {
+        mapanare_pool_destroy(&mn_global_pool);
+        atomic_store_i32(&mn_pool_initialized, 0);
+        atomic_store_i32(&mn_pool_initializing, 0);
+    }
 }
 
 /* =======================================================================
@@ -521,8 +567,8 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
     atomic_store_i64(&agent->messages_processed, 0);
     atomic_store_i64(&agent->total_latency_us, 0);
 
-    if (inbox_cap == 0) inbox_cap = 256;
-    if (outbox_cap == 0) outbox_cap = 256;
+    if (inbox_cap == 0) inbox_cap = MAPANARE_DEFAULT_AGENT_QUEUE;
+    if (outbox_cap == 0) outbox_cap = MAPANARE_DEFAULT_AGENT_QUEUE;
 
     if (mapanare_ring_create(&agent->inbox, inbox_cap) != 0) return -1;
     if (mapanare_ring_create(&agent->outbox, outbox_cap) != 0) {
@@ -538,6 +584,9 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
 }
 
 MAPANARE_EXPORT int mapanare_agent_spawn(mapanare_agent_t *agent) {
+    /* Ensure the global thread pool is initialized on first agent spawn */
+    mapanare_ensure_pool();
+
     atomic_store_i32(&agent->running, 1);
     int rc = mapanare_thread_create(&agent->thread, agent_thread_fn, agent);
     if (rc == 0) {
@@ -1074,6 +1123,8 @@ MAPANARE_EXPORT void mapanare_shutdown_drain(void) {
         mapanare_registry_stop_all(s_shutdown_registry);
         s_shutdown_registry = NULL;
     }
+    /* Tear down the lazy-initialized global pool if it was created */
+    mapanare_pool_destroy_global();
 #ifndef _WIN32
     if (s_shutdown_signal != 0) {
         /* Re-raise with default handler so the exit code reflects the signal */
@@ -1095,4 +1146,180 @@ MAPANARE_EXPORT void mapanare_trace_set_hook(mapanare_trace_hook_fn hook) {
 
 MAPANARE_EXPORT mapanare_trace_hook_fn mapanare_trace_get_hook(void) {
     return __atomic_load_n(&s_trace_hook, __ATOMIC_ACQUIRE);
+}
+
+/* =======================================================================
+ * 9. Cooperative Scheduler — single-threaded agent execution for mobile
+ *
+ * Instead of spawning one OS thread per agent, the cooperative scheduler
+ * runs all agents on the calling thread using a round-robin ready queue.
+ * Each agent gets up to `max_steps` message-handling iterations per tick
+ * before yielding to the next agent.
+ * ======================================================================= */
+
+MAPANARE_EXPORT void mapanare_coop_scheduler_init(mapanare_coop_scheduler_t *sched,
+                                                   uint32_t capacity) {
+    if (capacity == 0) capacity = MAPANARE_DEFAULT_AGENT_QUEUE;
+    uint32_t cap = next_pow2(capacity);
+    sched->ready_queue = (mapanare_agent_t **)calloc(cap, sizeof(mapanare_agent_t *));
+    if (!sched->ready_queue) {
+        sched->queue_cap = 0;
+        return;
+    }
+    sched->queue_cap  = cap;
+    sched->queue_head = 0;
+    sched->queue_tail = 0;
+    sched->max_steps  = 1000;
+    atomic_store_i32(&sched->running, 0);
+}
+
+MAPANARE_EXPORT void mapanare_coop_scheduler_destroy(mapanare_coop_scheduler_t *sched) {
+    if (sched->ready_queue) {
+        free(sched->ready_queue);
+        sched->ready_queue = NULL;
+    }
+    sched->queue_cap  = 0;
+    sched->queue_head = 0;
+    sched->queue_tail = 0;
+}
+
+static inline uint32_t coop_queue_size(mapanare_coop_scheduler_t *sched) {
+    return sched->queue_head - sched->queue_tail;
+}
+
+MAPANARE_EXPORT int mapanare_coop_scheduler_enqueue(mapanare_coop_scheduler_t *sched,
+                                                     mapanare_agent_t *agent) {
+    if (coop_queue_size(sched) >= sched->queue_cap) return -1;
+    uint32_t mask = sched->queue_cap - 1;
+    sched->ready_queue[sched->queue_head & mask] = agent;
+    sched->queue_head++;
+
+    /* Mark agent as running (cooperative mode — no thread spawned) */
+    atomic_store_i32(&agent->running, 1);
+    atomic_store_i32(&agent->state, MAPANARE_AGENT_RUNNING);
+    if (agent->on_init) agent->on_init(agent->agent_data);
+    trace_emit(MAPANARE_TRACE_SPAWN, agent, NULL, 0);
+    return 0;
+}
+
+MAPANARE_EXPORT int mapanare_coop_scheduler_step(mapanare_coop_scheduler_t *sched) {
+    if (coop_queue_size(sched) == 0) return 0;
+
+    uint32_t mask = sched->queue_cap - 1;
+    mapanare_agent_t *agent = sched->ready_queue[sched->queue_tail & mask];
+    sched->queue_tail++;
+
+    /* Skip paused agents — re-enqueue them silently */
+    if (atomic_load_i32(&agent->paused)) {
+        if (coop_queue_size(sched) < sched->queue_cap) {
+            sched->ready_queue[sched->queue_head & mask] = agent;
+            sched->queue_head++;
+        }
+        return 1;
+    }
+
+    /* Process up to max_steps messages for this agent */
+    uint32_t steps = 0;
+    int agent_done = 0;
+    while (steps < sched->max_steps && !agent_done) {
+        void *msg = NULL;
+        if (mapanare_ring_pop(&agent->inbox, &msg) != 0 || msg == NULL) {
+            break;  /* No more messages — yield */
+        }
+        mapanare_bp_decrement(&agent->bp);
+
+        int64_t t0 = mapanare_time_us();
+        void *out_msg = NULL;
+        int rc = 0;
+        if (agent->handler) {
+            rc = agent->handler(agent->agent_data, msg, &out_msg);
+        }
+        int64_t elapsed = mapanare_time_us() - t0;
+        atomic_add_i64(&agent->messages_processed, 1);
+        atomic_add_i64(&agent->total_latency_us, elapsed);
+        trace_emit(MAPANARE_TRACE_HANDLE, agent, msg, elapsed);
+
+        if (rc != 0) {
+            trace_emit(MAPANARE_TRACE_ERROR, agent, msg, 0);
+            if (agent->restart_policy == MAPANARE_RESTART_RESTART &&
+                agent->restart_count < agent->max_restarts) {
+                agent->restart_count++;
+                continue;
+            }
+            /* Agent failed — don't re-enqueue */
+            atomic_store_i32(&agent->state, MAPANARE_AGENT_FAILED);
+            atomic_store_i32(&agent->running, 0);
+            if (agent->on_stop) agent->on_stop(agent->agent_data);
+            agent_done = 1;
+        }
+
+        if (out_msg != NULL) {
+            mapanare_ring_push(&agent->outbox, out_msg);
+        }
+        steps++;
+    }
+
+    /* Re-enqueue agent if still running */
+    if (!agent_done && atomic_load_i32(&agent->running)) {
+        if (coop_queue_size(sched) < sched->queue_cap) {
+            sched->ready_queue[sched->queue_head & mask] = agent;
+            sched->queue_head++;
+        }
+    } else if (!agent_done) {
+        /* Agent was stopped externally */
+        atomic_store_i32(&agent->state, MAPANARE_AGENT_STOPPED);
+        if (agent->on_stop) agent->on_stop(agent->agent_data);
+    }
+
+    return 1;
+}
+
+MAPANARE_EXPORT int mapanare_coop_scheduler_run(mapanare_coop_scheduler_t *sched) {
+    atomic_store_i32(&sched->running, 1);
+    while (atomic_load_i32(&sched->running) && coop_queue_size(sched) > 0) {
+        if (!mapanare_coop_scheduler_step(sched)) {
+            /* Queue empty — all agents finished */
+            break;
+        }
+    }
+    atomic_store_i32(&sched->running, 0);
+    return 0;
+}
+
+MAPANARE_EXPORT void mapanare_coop_scheduler_stop(mapanare_coop_scheduler_t *sched) {
+    atomic_store_i32(&sched->running, 0);
+}
+
+/* =======================================================================
+ * 10. Memory profiling helpers
+ * ======================================================================= */
+
+MAPANARE_EXPORT void mapanare_arena_stats(const MnArena *arena,
+                                           size_t *out_allocated,
+                                           size_t *out_used) {
+    size_t allocated = 0, used = 0;
+    if (arena) {
+        const MnArenaBlock *blk = arena->head;
+        while (blk) {
+            allocated += (size_t)blk->size;
+            used      += (size_t)blk->used;
+            blk = blk->next;
+        }
+    }
+    if (out_allocated) *out_allocated = allocated;
+    if (out_used)      *out_used      = used;
+}
+
+MAPANARE_EXPORT void mapanare_memory_stats(mapanare_memory_stats_t *out) {
+    if (!out) return;
+    memset(out, 0, sizeof(*out));
+
+    /* Intern table stats — delegated to __mn_intern_stats in mapanare_core.c */
+    extern void __mn_intern_stats(size_t *count, size_t *bytes);
+    __mn_intern_stats(&out->intern_count, &out->intern_bytes);
+
+    /* NOTE: arena_allocated/arena_used and agent_count/ring_allocated require
+     * a global arena registry and agent registry respectively. Currently only
+     * intern stats are available; add arena/agent aggregation when a global
+     * registry is introduced. */
 }

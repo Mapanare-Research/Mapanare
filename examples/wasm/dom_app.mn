@@ -1,12 +1,12 @@
-# Interactive DOM Application — WebAssembly
-# Demonstrates Mapanare running in the browser with DOM manipulation
-#
-# Compile: mapanare emit-wasm --binary examples/wasm/dom_app.mn
-# Serve:   Include in an HTML page with the wasm-runtime.js bridge
+// Interactive DOM Application — WebAssembly
+// Demonstrates Mapanare running in the browser with DOM manipulation
+//
+// Compile: mapanare emit-wasm --binary examples/wasm/dom_app.mn
+// Serve:   Include in an HTML page with the wasm-runtime.js bridge
 
 import wasm.bridge
 
-# Counter state
+// Counter state
 let count: Int = 0
 
 fn increment():
@@ -25,7 +25,7 @@ fn update_display():
     let el: JsValue = dom_query("#counter-value")
     dom_set_text(el, str(count))
 
-    # Update color based on value
+    // Update color based on value
     let color: String = "black"
     if count > 0:
         color = "green"
@@ -35,7 +35,7 @@ fn update_display():
     js_eval("document.getElementById('counter-value').style.color = '" + color + "'")
 
 fn setup_todo():
-    # Create a simple todo list
+    // Create a simple todo list
     let container: JsValue = dom_query("#todo-app")
     if container == Null:
         return
@@ -57,10 +57,10 @@ fn setup_todo():
 fn main():
     console_log("Mapanare WASM DOM app loaded!")
 
-    # Set up counter
+    // Set up counter
     update_display()
 
-    # Set up event listeners
+    // Set up event listeners
     let inc_btn: JsValue = dom_query("#btn-increment")
     let dec_btn: JsValue = dom_query("#btn-decrement")
     let reset_btn: JsValue = dom_query("#btn-reset")
@@ -80,7 +80,7 @@ fn main():
         return Null
     )
 
-    # Set up todo app
+    // Set up todo app
     setup_todo()
 
     println("App initialized successfully!")

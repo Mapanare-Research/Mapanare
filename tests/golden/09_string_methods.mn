@@ -1,5 +1,5 @@
 fn main() {
     let s: String = "hello world"
-    println(str(s.contains("world")))
-    println(s.to_upper())
+    print(str(s.contains("world")))
+    print(s.to_upper())
 }

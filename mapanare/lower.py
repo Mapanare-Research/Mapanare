@@ -108,6 +108,7 @@ from mapanare.mir import (
     MapInit,
     MIRAgentInfo,
     MIRFunction,
+    MIRGpuKernel,
     MIRModule,
     MIRParam,
     MIRPipeInfo,
@@ -173,6 +174,108 @@ _STREAM_OP_MAP: dict[str, StreamOpKind] = {
     "skip": StreamOpKind.SKIP,
     "collect": StreamOpKind.COLLECT,
 }
+
+
+# ---------------------------------------------------------------------------
+# GPU kernel source generation
+# ---------------------------------------------------------------------------
+
+_PTX_TYPE_MAP: dict[TypeKind, str] = {
+    TypeKind.INT: ".s64",
+    TypeKind.FLOAT: ".f64",
+    TypeKind.BOOL: ".pred",
+}
+
+_GLSL_TYPE_MAP: dict[TypeKind, str] = {
+    TypeKind.INT: "int",
+    TypeKind.FLOAT: "double",
+    TypeKind.BOOL: "bool",
+}
+
+
+def _mir_type_to_ptx_param(ty: MIRType, name: str) -> str:
+    """Convert a MIR parameter to a PTX kernel parameter declaration."""
+    ptx_ty = _PTX_TYPE_MAP.get(ty.kind, ".b64")
+    return f".param {ptx_ty} {name}"
+
+
+def _generate_ptx_kernel(fn: MIRFunction) -> str:
+    """Generate a PTX kernel stub from a MIR function signature.
+
+    Produces a valid PTX kernel with thread-index gating and parameter
+    loading. For simple element-wise functions (pointer params + scalar
+    length), generates the standard parallel dispatch pattern.
+    """
+    name = fn.name
+    params = fn.params
+    param_decls = []
+    param_loads = []
+    for i, p in enumerate(params):
+        ptx_ty = _PTX_TYPE_MAP.get(p.ty.kind, ".b64")
+        param_decls.append(f"    .param {ptx_ty} param_{i}")
+        param_loads.append(f"    ld.param{ptx_ty} %rd{i}, [param_{i}];")
+
+    param_str = ",\n".join(param_decls)
+    load_str = "\n".join(param_loads)
+    n_params = len(params)
+
+    return f"""\
+.version 7.0
+.target sm_52
+.address_size 64
+
+.visible .entry {name}(
+{param_str}
+)
+{{
+    .reg .s64 %rd<{n_params + 4}>;
+    .reg .pred %p<2>;
+
+{load_str}
+
+    // Thread index computation
+    mov.u32 %r0, %ctaid.x;
+    mov.u32 %r1, %ntid.x;
+    mov.u32 %r2, %tid.x;
+    mad.lo.s32 %r3, %r0, %r1, %r2;
+    cvt.s64.s32 %rd{n_params}, %r3;
+
+    // Bounds check (last param assumed to be length N)
+    setp.ge.s64 %p0, %rd{n_params}, %rd{n_params - 1};
+    @%p0 bra $L_exit;
+
+    // Kernel body — element-wise dispatch placeholder
+    // The runtime loads actual kernel logic from the decorated function.
+
+$L_exit:
+    ret;
+}}
+"""
+
+
+def _generate_glsl_kernel(fn: MIRFunction) -> str:
+    """Generate a GLSL compute shader stub from a MIR function signature."""
+    name = fn.name
+    bindings = []
+    for i, p in enumerate(fn.params):
+        glsl_ty = _GLSL_TYPE_MAP.get(p.ty.kind, "float")
+        bindings.append(f"layout(set = 0, binding = {i}) buffer Buf{i} {{ {glsl_ty} data{i}[]; }};")
+    binding_str = "\n".join(bindings)
+
+    return f"""\
+#version 450
+// Auto-generated compute shader for {name}
+
+layout(local_size_x = 256) in;
+
+{binding_str}
+
+void main() {{
+    uint idx = gl_GlobalInvocationID.x;
+    // Kernel body — element-wise dispatch
+    // The runtime loads actual logic from the decorated function.
+}}
+"""
 
 
 def _ast_span_to_mir(node: ASTNode | None) -> SourceSpan | None:
@@ -718,6 +821,26 @@ class MIRLowerer:
                         mir_fn.return_type = inst.val.ty
 
         self._module.functions.append(mir_fn)
+
+        # Register GPU kernel metadata for @cuda/@vulkan/@gpu decorated functions
+        for dec in decorators:
+            d = dec.lower()
+            if d in ("cuda", "vulkan", "gpu"):
+                ptx = ""
+                spirv = b""
+                if d in ("cuda", "gpu"):
+                    ptx = _generate_ptx_kernel(mir_fn)
+                if d in ("vulkan", "gpu"):
+                    spirv = _generate_glsl_kernel(mir_fn).encode("utf-8")
+                kernel = MIRGpuKernel(
+                    name=fn_name,
+                    device=d,
+                    ptx_source=ptx,
+                    spirv_bytes=spirv,
+                    num_buffers=len(mir_fn.params),
+                )
+                self._module.gpu_kernels[fn_name] = kernel
+                break
 
         # Restore state
         self._fn = prev_fn

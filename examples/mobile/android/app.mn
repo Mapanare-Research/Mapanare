@@ -1,0 +1,27 @@
+// examples/mobile/android/app.mn
+//
+// Compile:
+//   mapanare build --target aarch64-linux-android --lib -o libmapanare_app.so app.mn
+//
+// Demonstrates:
+//   - Exported functions callable from Kotlin via JNI
+//   - Agent-based background computation
+
+pub fn greet(name: String) -> String:
+    return "Hello from Mapanare, " + name + "!"
+
+agent Counter:
+    state: Int = 0
+
+    on increment(n: Int):
+        state = state + n
+
+    on get_count() -> Int:
+        return state
+
+pub fn compute_in_background(input: Int) -> Int:
+    let c = spawn Counter()
+    for i in 0..input:
+        c <- increment(1)
+    let result = sync c <- get_count()
+    return result

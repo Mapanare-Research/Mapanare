@@ -7,6 +7,6 @@ fn triple(x: Int) -> Int {
 }
 
 fn main() {
-    println(str(double(5)))
-    println(str(triple(5)))
+    print(str(double(5)))
+    print(str(triple(5)))
 }

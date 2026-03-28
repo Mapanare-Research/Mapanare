@@ -28,7 +28,7 @@ Mapanare compila a Python (transpilador) y binarios nativos (LLVM), con un compi
 
 <br>
 
-[**Primeros Pasos**](getting-started.md) · [Por que Mapanare?](#por-que-mapanare) · [Instalar](#instalar) · [El Lenguaje](#el-lenguaje) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Arquitectura](#arquitectura-del-compilador) · [Hoja de Ruta](ROADMAP.md) · [Contribuir](#contribuir) · [Discord](https://discord.gg/5hpGBm3WXf)
+[**Primeros Pasos**](getting-started.md) · [Por que Mapanare?](#por-que-mapanare) · [Instalar](#instalar) · [El Lenguaje](#el-lenguaje) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Arquitectura](#arquitectura-del-compilador) · [Hoja de Ruta](roadmap/ROADMAP.md) · [Contribuir](#contribuir) · [Discord](https://discord.gg/5hpGBm3WXf)
 
 </div>
 
@@ -217,7 +217,7 @@ fuente .mn → Lexer → Parser → AST → Analisis Semantico → Optimizador �
 | **v0.5.0** | El Ecosistema — registro de paquetes, playground WASM, linter | Planeado |
 | **v1.0.0** | Estable — spec del lenguaje congelado, garantias de compatibilidad | Planeado |
 
-Ve la [hoja de ruta](ROADMAP.md) completa para detalles.
+Ve la [hoja de ruta](roadmap/ROADMAP.md) completa para detalles.
 
 ---
 

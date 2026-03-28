@@ -3,5 +3,5 @@ fn main() {
     for i in 0..10 {
         sum = sum + i
     }
-    println(str(sum))
+    print(str(sum))
 }

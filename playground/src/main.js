@@ -99,12 +99,15 @@ const outputEl = document.getElementById("output");
 const btnRun = document.getElementById("btn-run");
 let ready = false;
 
+let activeBackend = "python";
+
 worker.onmessage = (e) => {
   const msg = e.data;
   switch (msg.type) {
     case "ready":
       ready = true;
-      statusEl.textContent = "Ready";
+      activeBackend = msg.backend || "python";
+      statusEl.textContent = `Ready (${activeBackend === "wasm" ? "WASM" : "Python"})`;
       statusEl.className = "status ready";
       btnRun.disabled = false;
       // If there's code in the URL hash, load it
@@ -116,15 +119,17 @@ worker.onmessage = (e) => {
     case "stderr":
       appendOutput(msg.text, "out-error");
       break;
-    case "done":
+    case "done": {
+      const backendLabel = msg.backend ? ` [${msg.backend}]` : "";
       appendOutput(
-        `\n--- ${msg.ok ? "OK" : "FAILED"} (${msg.elapsed.toFixed(0)}ms) ---`,
+        `\n--- ${msg.ok ? "OK" : "FAILED"} (${msg.elapsed.toFixed(0)}ms)${backendLabel} ---`,
         msg.ok ? "out-info" : "out-warn"
       );
       btnRun.disabled = false;
-      statusEl.textContent = "Ready";
+      statusEl.textContent = `Ready (${activeBackend === "wasm" ? "WASM" : "Python"})`;
       statusEl.className = "status ready";
       break;
+    }
     case "error":
       appendOutput(msg.message, "out-error");
       statusEl.textContent = "Error";

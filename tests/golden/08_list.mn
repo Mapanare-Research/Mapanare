@@ -1,5 +1,5 @@
 fn main() {
     let mut items: List<Int> = [1, 2, 3]
     items.push(4)
-    println(str(len(items)))
+    print(str(len(items)))
 }

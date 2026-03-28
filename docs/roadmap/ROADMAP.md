@@ -16,7 +16,7 @@ massively expanded stdlib spanning AI, data, databases, encoding, web, and secur
 
 The Python transpiler backends are now deprecated. LLVM and WebAssembly are the production targets.
 
-**No Python required at runtime.** **3,698+ tests pass** across the full pipeline.
+**No Python required at runtime.** **4,465+ tests pass** across the full pipeline.
 
 ### What works today
 
@@ -24,8 +24,8 @@ The Python transpiler backends are now deprecated. LLVM and WebAssembly are the 
 - **MIR pipeline** — Typed SSA-based intermediate representation with basic blocks and explicit terminators
 - **Three compilation targets** — Native binaries via LLVM IR (production), WebAssembly (WAT/WASM), and Python transpilation (deprecated)
 - **Self-hosted compiler** — 8,288+ lines of `.mn` across 7 modules (lexer, ast, parser, semantic, lower, emit_llvm, main)
-- **WebAssembly backend** — MIR-to-WAT emitter with linear memory, bump allocation, JS bridge, WASI support
-- **GPU compute** — CUDA Driver API + Vulkan compute via `dlopen`, `@gpu`/`@cuda`/`@vulkan` annotations, built-in tensor kernels
+- **WebAssembly backend** — MIR-to-WAT emitter with linear memory, bump allocation, JS bridge, WASI support, wasm-ld multi-module linking
+- **GPU compute** — CUDA Driver API + Vulkan compute via `dlopen`, `@gpu`/`@cuda`/`@vulkan` annotations, MIR GpuKernel metadata, PTX/SPIR-V LLVM codegen, built-in tensor kernels
 - **AI stdlib** — LLM drivers (OpenAI, Anthropic, local), embedding providers, RAG pipelines
 - **Data engine (Dato)** — Tables, aggregations, joins, null handling, reshape, CSV/JSON I/O
 - **Database drivers** — SQLite, PostgreSQL, Redis, embedded KV, connection pooling, migrations
@@ -43,7 +43,7 @@ The Python transpiler backends are now deprecated. LLVM and WebAssembly are the 
 - **Type system** — Static typing with inference, generics, `Option<T>`, `Result<T, E>`, `TypeKind` enum (25 kinds)
 - **Traits** — `trait` / `impl Trait for Type`, trait bounds on generics, builtin traits (`Display`, `Eq`, `Ord`, `Hash`)
 - **Module system** — File-based imports with `pub` visibility, circular dependency detection, multi-file compilation
-- **Native C runtime** — Arena-based memory, lock-free SPSC ring buffers, thread pool, semaphore-based scheduling, GPU runtime, DB runtime, HTML parser
+- **Native C runtime** — Arena-based memory, lock-free SPSC ring buffers, thread pool, cooperative agent scheduler (mobile), epoll/select event loop, string interning, GPU runtime, DB runtime, HTML parser, memory profiling
 - **LLVM agent codegen** — `spawn`, `send` (`<-`), `sync` targeting C runtime with OS threads
 - **Cross-compilation** — Linux x64, macOS ARM64, Windows x64, wasm32-unknown-unknown, wasm32-wasi, aarch64-apple-ios, aarch64-linux-android
 - **Optimization passes** — Constant folding, DCE, agent inlining, stream fusion
@@ -118,7 +118,7 @@ The Python transpiler backends are now deprecated. LLVM and WebAssembly are the 
 | **v1.1.0** ✅ | AI Native | LLM drivers (OpenAI, Anthropic, local), embedding providers with batching/caching, RAG pipeline with chunking and vector store |
 | **v1.2.0** ✅ | Data & Storage | Dato data engine (tables, aggregations, joins, reshape, I/O), database drivers (SQLite, PostgreSQL, Redis, KV, pooling, migrations), TOML/YAML encoding, filesystem stdlib |
 | **v1.3.0** ✅ | Web & Security | Web crawler (robots.txt, frontier, extraction), vulnerability scanner (template-driven, fingerprinting), HTTP fuzzer (mutation engine), HTTP server toolkit (auth, body, cookies, sessions, rate limiting, SSE, templates) |
-| **v2.0.0** ✅ | GPU & WASM | WebAssembly backend (MIR-to-WAT, WASI, JS bridge), GPU compute (CUDA + Vulkan via dlopen, tensor kernels), cross-compilation targets (wasm32, iOS, Android), Python backends deprecated, playground WASM runtime |
+| **v2.0.0** ✅ | Beyond the Machine | WebAssembly backend (MIR-to-WAT, WASI, JS bridge, wasm-ld multi-module linking), GPU compute (CUDA + Vulkan via dlopen, MIR GpuKernel metadata, PTX/SPIR-V codegen), cross-compilation targets (wasm32, iOS, Android), mobile runtime (cooperative scheduler, epoll event loop, string interning cap, memory profiling), CI matrix (WASM + Android), Python backends deprecated, playground dual-mode (WASM+Pyodide), 4,465+ tests |
 
 ---
 
@@ -797,36 +797,51 @@ everything `requests`, `urllib3`, and `httpx` do in Python — in a single, nati
 
 ---
 
-### v2.0.0 — "Ecosystem"
+### v2.0.0 — "Beyond the Machine" ✅
 
-> The package ecosystem self-sustains. Mapanare applications replace Python equivalents.
+> Every device. Every accelerator. No Python.
+> See [`PLAN-v2.0.0.md`](v2.0.0/PLAN.md) for the detailed execution plan.
 
-#### Performance & Compute
+#### GPU Compute ✅
 
-- GPU kernel dispatch (`@gpu` / `@cpu` annotations → CUDA/Metal/Vulkan via SPIR-V)
-- Tensor autograd (automatic differentiation for ML training loops)
-- SIMD intrinsics for vectorized data processing (Dato acceleration)
-- SPIR-V backend for GPU compute shaders
+- GPU kernel dispatch (`@gpu` / `@cuda` / `@vulkan` annotations → CUDA/Vulkan via dlopen)
+- MIR `GpuKernel` metadata, PTX string embedding, SPIR-V byte embedding in LLVM codegen
+- C runtime: CUDA Driver API + Vulkan compute pipeline, tensor ops (add/sub/mul/div/matmul)
+- Built-in GPU kernels (PTX for CUDA, GLSL/SPIR-V for Vulkan)
+- GPU benchmarks: matmul, reduction, transfer, elementwise
 
-#### Language Evolution
+#### WebAssembly Backend ✅
 
-- Effect typing (compile-time tracking of agent side effects)
-- Session types (static protocol verification for channels)
-- Hot code reload (swap agent code without restart)
-- Formal semantics (core calculus with soundness proofs)
+- MIR-to-WAT emitter (2,785 lines), linear memory, bump allocation, JS bridge, WASI support
+- wasm-ld multi-module linking (`wasm_linker.py`): linker config, import/export tables, memory layout
+- CLI: `mapanare emit-wasm [--binary] [--link] [--wasi]` with multi-file support
+- Targets: `wasm32-unknown-unknown` (browser), `wasm32-wasi` (server)
 
-#### Platform Targets
+#### Mobile Targets ✅
 
-- WASM backend (browser-native Mapanare, not Pyodide wrapper)
-- Mobile compilation target (iOS/Android via LLVM)
+- Cross-compilation: `aarch64-apple-ios`, `aarch64-linux-android`, `x86_64-linux-android`
+- Mobile-tuned C runtime: cooperative agent scheduler, smaller arenas/queues, epoll event loop
+- String interning pool with configurable cap, memory profiling helpers
+
+#### Platform Targets — Still Open
+
 - Desktop app framework (native windowing, not Electron)
 
-#### Python Deprecation Timeline
+#### Python Deprecation ✅
 
 - v1.0.0: Python backend marked as "legacy, for reference only"
 - v1.2.0: Python backend removed from default build
 - v2.0.0: Python backend archived in `bootstrap/`
 - The Python bootstrap compiler remains in `bootstrap/` permanently as the Stage 0 seed
+
+#### Future (post-v2.0.0)
+
+- Tensor autograd (automatic differentiation for ML training loops)
+- SIMD intrinsics for vectorized data processing (Dato acceleration)
+- Effect typing (compile-time tracking of agent side effects)
+- Session types (static protocol verification for channels)
+- Hot code reload (swap agent code without restart)
+- Formal semantics (core calculus with soundness proofs)
 
 #### Ecosystem Vision
 
@@ -883,8 +898,10 @@ v0.8.0 (Native Parity)
                  │  Web framework, React interop
                  │  Crawler, vulnerability scanner, fuzzer
                  │
-                 └→ v2.0.0 (Ecosystem)
-                      GPU, WASM, mobile, Python deprecated
+                 └→ v2.0.0 (Beyond the Machine) ✅
+                      GPU (CUDA+Vulkan), WASM backend, mobile targets
+                      Cooperative scheduler, wasm-ld, CI matrix
+                      Python deprecated, 4,465+ tests
 ```
 
 ---
@@ -923,7 +940,7 @@ The compiler is written in Mapanare itself — 8,288+ lines across seven modules
 | LLVM IR emitter (`emit_llvm.mn`) | 1,497 | ✅ Complete (MIR-based rewrite) |
 | Compiler driver (`main.mn`) | 81 | ✅ Complete (MIR pipeline wired) |
 | Module resolution (`self::` imports) | — | ✅ Working |
-| Fixed-point verification | — | ⏳ In progress — emitter gaps being fixed (v1.0.1 → v1.0.2) |
+| Fixed-point verification | — | ⏳ Blocked — cross-module LLVM compilation needed (v0.9.0 infra) |
 | Bootstrap test suite (264 tests) | — | ✅ All passing |
 
 ---
@@ -940,23 +957,25 @@ yourfile.mn
 │                                              │       │
 │                                     MIR Optimizer    │
 │                                        (O0–O3)      │
-└────────────────────────┬─────────────────────────────┘
-                         │
-                    ┌────┴────┐
-                    ▼         ▼
-               Python      LLVM IR
-            (transpile)      │
-            [legacy]    ┌────┴────┐
-                        ▼         ▼
-                   Native x86  Native ARM
+└──────────┬───────────────┬───────────────────────────┘
+           │               │
+      ┌────┴────┐     ┌────┴────┐
+      ▼         ▼     ▼         ▼
+   LLVM IR    WASM   Python   GPU Kernel
+      │      (WAT)  [legacy]  (PTX/SPIR-V)
+ ┌────┴────┐   │
+ ▼    ▼    ▼   ▼
+x86  ARM  iOS  Browser / WASI / Cloudflare
+     Android
 ```
 
-Native dependency layers (post-v1.0):
+Native dependency layers (post-v2.0):
 ```
-Layer 3: stdlib/*.mn        ← Mapanare modules (json, http, sql, etc.)
-Layer 2: mapanare/self/*.mn ← Self-hosted compiler (8,288+ lines)
-Layer 1: runtime/native/*.c ← C runtime (memory, threads, sockets, TLS)
-Layer 0: LLVM               ← Code generation target
+Layer 4: stdlib/*.mn        ← Mapanare modules (json, http, sql, gpu, wasm, etc.)
+Layer 3: mapanare/self/*.mn ← Self-hosted compiler (8,288+ lines)
+Layer 2: runtime/native/*.c ← C runtime (memory, threads, sockets, TLS, GPU, event loop)
+Layer 1: LLVM / wasm-ld     ← Code generation and linking targets
+Layer 0: OS / Browser       ← Linux, macOS, Windows, iOS, Android, WASI, browser
 ```
 
 No Python required at runtime after v1.0.

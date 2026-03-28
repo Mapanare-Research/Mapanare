@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Bundle Mapanare compiler modules into public/compiler/ for Pyodide.
+# Bundle Mapanare compiler modules into public/compiler/ for the playground.
+# Includes WASM emitter pipeline (MIR lowering + WAT generation).
 # Run from the playground/ directory.
 
 set -euo pipefail
@@ -13,9 +14,10 @@ echo "Bundling compiler modules from $REPO_DIR -> $OUT"
 
 mkdir -p "$OUT/runtime"
 
-# Core compiler modules
+# Core compiler modules (includes WASM emitter pipeline)
 for f in __init__.py ast_nodes.py types.py parser.py semantic.py \
-         optimizer.py emit_python.py diagnostics.py modules.py linter.py; do
+         optimizer.py emit_python.py emit_wasm.py mir.py mir_builder.py \
+         lower.py mir_opt.py diagnostics.py modules.py linter.py; do
   if [ -f "$REPO_DIR/mapanare/$f" ]; then
     cp "$REPO_DIR/mapanare/$f" "$OUT/$f"
     echo "  copied mapanare/$f"

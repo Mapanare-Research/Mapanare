@@ -5,5 +5,5 @@ struct Pair {
 
 fn main() {
     let p: Pair = new Pair { first: 10, second: 20 }
-    println(str(p.first))
+    print(str(p.first))
 }

@@ -6,6 +6,7 @@
  */
 
 #include "mapanare_core.h"
+#include "mapanare_platform.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -107,7 +108,7 @@ static MnArenaBlock *mn_arena_block_new(int64_t size) {
 }
 
 MN_EXPORT MnArena *mn_arena_create(int64_t block_size) {
-    if (block_size <= 0) block_size = 8192;
+    if (block_size <= 0) block_size = MAPANARE_DEFAULT_ARENA_BLOCK;
     MnArena *arena = (MnArena *)malloc(sizeof(MnArena));
     if (!arena) {
         fprintf(stderr, "mapanare: arena create failed\n");
@@ -147,6 +148,124 @@ MN_EXPORT void mn_arena_destroy(MnArena *arena) {
         blk = next;
     }
     free(arena);
+}
+
+/* -----------------------------------------------------------------------
+ * String Interning — hash-set-based deduplication pool
+ *
+ * Uses open addressing with linear probing.  Key = MnString content,
+ * stored as a heap-allocated copy.  When the table reaches its cap,
+ * new strings are returned without inserting (no eviction).
+ * ----------------------------------------------------------------------- */
+
+typedef struct {
+    MnString str;      /* interned string (heap-allocated data) */
+    uint64_t hash;     /* cached hash of str                    */
+    int      occupied; /* 1 = slot in use                       */
+} MnInternEntry;
+
+static MnInternEntry *s_intern_table  = NULL;
+static size_t         s_intern_cap    = 0;    /* max entries (set from platform default) */
+static size_t         s_intern_count  = 0;    /* current entry count                     */
+static size_t         s_intern_bytes  = 0;    /* total bytes of interned string values   */
+static size_t         s_intern_tbl_sz = 0;    /* hash table slot count (>= cap * 2)      */
+static int            s_intern_sealed = 0;    /* 1 after first use — cap is locked        */
+
+static uint64_t intern_hash(const char *data, int64_t len) {
+    /* FNV-1a 64-bit */
+    uint64_t h = 14695981039346656037ULL;
+    for (int64_t i = 0; i < len; i++) {
+        h ^= (uint64_t)(unsigned char)data[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+static void intern_ensure_table(void) {
+    if (s_intern_table) return;
+    if (s_intern_cap == 0) s_intern_cap = MAPANARE_DEFAULT_INTERN_CAP;
+    /* Table size = 2x cap for ~50% load factor, rounded to power of 2 */
+    size_t tbl = s_intern_cap * 2;
+    /* next power of two */
+    size_t v = tbl;
+    v--; v |= v >> 1; v |= v >> 2; v |= v >> 4;
+    v |= v >> 8; v |= v >> 16; v |= v >> 32; v++;
+    s_intern_tbl_sz = v;
+    s_intern_table = (MnInternEntry *)calloc(v, sizeof(MnInternEntry));
+    s_intern_sealed = 1;
+}
+
+MN_EXPORT void __mn_intern_set_cap(size_t cap) {
+    if (s_intern_sealed) return;  /* too late */
+    if (cap > 0) s_intern_cap = cap;
+}
+
+MN_EXPORT MnString __mn_str_intern(MnString s) {
+    if (s.len <= 0 || !s.data) return s;
+    intern_ensure_table();
+    if (!s_intern_table) return s;  /* alloc failed */
+
+    const char *raw = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
+    uint64_t h = intern_hash(raw, s.len);
+    size_t mask = s_intern_tbl_sz - 1;
+    size_t idx = (size_t)(h & mask);
+
+    /* Probe for existing entry */
+    for (size_t i = 0; i < s_intern_tbl_sz; i++) {
+        size_t pos = (idx + i) & mask;
+        MnInternEntry *e = &s_intern_table[pos];
+        if (!e->occupied) break;
+        if (e->hash == h && e->str.len == s.len) {
+            const char *eraw = (const char *)((uintptr_t)e->str.data & ~(uintptr_t)1);
+            if (memcmp(eraw, raw, (size_t)s.len) == 0) {
+                return e->str;  /* deduplicated */
+            }
+        }
+    }
+
+    /* Not found — insert if under cap */
+    if (s_intern_count >= s_intern_cap) {
+        /* Cap reached — return a plain heap copy, no dedup */
+        return __mn_str_from_parts(raw, s.len);
+    }
+
+    /* Insert new entry */
+    for (size_t i = 0; i < s_intern_tbl_sz; i++) {
+        size_t pos = (idx + i) & mask;
+        MnInternEntry *e = &s_intern_table[pos];
+        if (!e->occupied) {
+            MnString copy = __mn_str_from_parts(raw, s.len);
+            e->str = copy;
+            e->hash = h;
+            e->occupied = 1;
+            s_intern_count++;
+            s_intern_bytes += (size_t)s.len;
+            return copy;
+        }
+    }
+
+    /* Table completely full (should not happen with 2x sizing) */
+    return __mn_str_from_parts(raw, s.len);
+}
+
+MN_EXPORT void __mn_intern_stats(size_t *count, size_t *bytes) {
+    if (count) *count = s_intern_count;
+    if (bytes) *bytes = s_intern_bytes;
+}
+
+MN_EXPORT void __mn_intern_destroy(void) {
+    if (!s_intern_table) return;
+    for (size_t i = 0; i < s_intern_tbl_sz; i++) {
+        if (s_intern_table[i].occupied) {
+            __mn_str_free(s_intern_table[i].str);
+        }
+    }
+    free(s_intern_table);
+    s_intern_table  = NULL;
+    s_intern_count  = 0;
+    s_intern_bytes  = 0;
+    s_intern_tbl_sz = 0;
+    s_intern_sealed = 0;
 }
 
 /* -----------------------------------------------------------------------

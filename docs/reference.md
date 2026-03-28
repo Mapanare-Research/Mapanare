@@ -774,6 +774,47 @@ let y: Tensor<Float>[4] = [1.0, 2.0, 3.0, 4.0]
 let z = x + y    // COMPILE ERROR: shape mismatch [3] vs [4]
 ```
 
+### Tensor Creation
+
+```mn
+let z = Tensor.zeros<Float>(3, 3)      // 3x3 zero tensor
+let o = Tensor.ones<Float>(4)          // length-4 ones vector
+let t = Tensor.from_list([1.0, 2.0])   // from list literal
+```
+
+### Tensor Operations
+
+| Category | Operations | Syntax |
+|----------|-----------|--------|
+| Arithmetic | add, sub, mul, div | `a + b`, `a - b`, `a * b`, `a / b` |
+| Matrix | matmul, dot, transpose | `a @ b`, `a.dot(b)`, `a.transpose()` |
+| Reductions | sum, mean, max, min | `t.sum()`, `t.mean()`, `t.max()`, `t.min()` |
+
+### Tensor Metadata
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `shape` | `List<Int>` | Dimension sizes |
+| `ndim` | `Int` | Number of dimensions |
+| `size` | `Int` | Total element count |
+| `device` | `String` | Current device (`"cpu"`, `"cuda"`, `"vulkan"`) |
+
+### GPU Device Transfer
+
+```mn
+let cpu_tensor: Tensor<Float>[1024] = Tensor.ones<Float>(1024)
+let gpu_tensor = cpu_tensor.to_device("cuda")   // CPU -> GPU
+let back = gpu_tensor.to_device("cpu")           // GPU -> CPU
+
+// Operations on GPU tensors execute on the GPU
+@gpu
+fn process(t: Tensor<Float>[1024]) -> Tensor<Float>[1024] {
+    return t * 2.0 + Tensor.ones<Float>(1024)
+}
+```
+
+All tensor operations fall back to CPU transparently when no GPU is available.
+
 ---
 
 ## Modules and Imports
@@ -861,6 +902,34 @@ agent ReliableWorker {
 }
 ```
 
+### GPU Decorators
+
+| Decorator | Description |
+|-----------|-------------|
+| `@gpu` | Auto-dispatch to CUDA or Vulkan based on runtime detection; falls back to CPU |
+| `@cuda` | Force CUDA backend (runtime error if unavailable) |
+| `@vulkan` | Force Vulkan backend (runtime error if unavailable) |
+| `@metal` | Reserved for future macOS/iOS Metal support |
+
+```mn
+@gpu
+fn add_tensors(a: Tensor<Float>[1024], b: Tensor<Float>[1024]) -> Tensor<Float>[1024] {
+    return a + b
+}
+
+@cuda
+fn train_step(weights: Tensor<Float>[256, 128], grads: Tensor<Float>[256, 128]) -> Tensor<Float>[256, 128] {
+    return weights - grads * 0.01
+}
+
+@vulkan
+fn compute_shader(data: Tensor<Float>[4096]) -> Tensor<Float>[4096] {
+    return data * 2.0
+}
+```
+
+GPU backends are loaded at runtime via `dlopen` -- no compile-time SDK installation required. When `@gpu` is used, the runtime probes for CUDA first, then Vulkan, then falls back to CPU.
+
 ---
 
 ## Lambdas
@@ -938,6 +1007,7 @@ data |> filter((x) => x > 0) |> map((x) => x * 10)
 | `mapanare version [type]` | Show or bump version |
 | `mapanare targets` | List compilation targets |
 | `mapanare doc <file>` | Generate documentation from doc comments |
+| `mapanare emit-wasm <file>` | Emit WebAssembly (WAT text format) |
 
 ### Common Options
 
@@ -945,11 +1015,39 @@ data |> filter((x) => x > 0) |> map((x) => x * 10)
 |--------|-------------|
 | `-O0` to `-O3` | Optimization level |
 | `-o <path>` | Output file path |
-| `--target <triple>` | Cross-compilation target |
+| `--target <triple>` | Cross-compilation target (e.g., `wasm32-wasi`, `aarch64-apple-ios17.0`) |
+| `--lib` | Produce library output (`.a` for iOS, `.so` for Android) instead of executable |
 | `--link-lib <lib>` | Link against a C library |
 | `--python-path <dir>` | Python module search path |
 | `--fix` | Auto-fix lint warnings |
 | `--bench` | Output benchmark metrics (JIT mode) |
+| `--binary` | Emit `.wasm` binary instead of WAT text (emit-wasm only, requires `wat2wasm`) |
+
+### WebAssembly Targets
+
+```bash
+# Browser target (no WASI, JS host provides imports)
+mapanare emit-wasm source.mn
+
+# Binary output
+mapanare emit-wasm --binary source.mn
+
+# Server-side WASI target
+mapanare emit-wasm --wasi source.mn
+```
+
+### Mobile Cross-Compilation
+
+```bash
+# iOS static library
+mapanare build --target aarch64-apple-ios17.0 --lib app.mn
+
+# Android shared library
+mapanare build --target aarch64-linux-android34 --lib app.mn
+
+# Android emulator
+mapanare build --target x86_64-linux-android34 --lib app.mn
+```
 
 ---
 
