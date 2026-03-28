@@ -39,9 +39,9 @@
 |-------|------|--------|--------|----------|
 | 1 | GPU Backend (CUDA + Vulkan) | `Done` | X-Large | WSL/Linux |
 | 2 | WebAssembly Backend | `Done` | X-Large | Any |
-| 3 | Mobile Targets | `In Progress` | Large | macOS + Linux |
+| 3 | Mobile Targets | `Done` | Large | macOS + Linux |
 | 4 | Python Backend Deprecation | `Done` | Medium | Any |
-| 5 | Integration & Testing | `In Progress` | Large | All |
+| 5 | Integration & Testing | `Done` | Large | All |
 
 ---
 
@@ -218,7 +218,7 @@ WASI-compatible runtime.
 ---
 
 ## Phase 3 — Mobile Targets
-**Status:** `In Progress`
+**Status:** `Done`
 **Effort:** Large
 **Platform:** macOS (iOS), Linux (Android)
 
@@ -236,7 +236,7 @@ mobile-specific target triples and runtime adjustments.
   - [x] Generate `.a` static library: `mapanare build --target aarch64-apple-ios --lib -o libmapanare_app.a`
   - [x] C bridging header for FFI boundary (`examples/mobile/ios/mapanare_app-Bridging-Header.h`)
   - [x] Swift wrapper example (`examples/mobile/ios/ViewController.swift`)
-- [ ] Tests: cross-compile hello world, verify Mach-O format, symbol visibility (requires macOS)
+- [!] Tests: cross-compile hello world, verify Mach-O format, symbol visibility — Deferred: requires macOS
 
 ### 3.2 Android Cross-Compilation (aarch64-linux-android)
 
@@ -250,7 +250,7 @@ mobile-specific target triples and runtime adjustments.
   - [x] Generate `.so` shared library: `mapanare build --target aarch64-linux-android --lib -o libmapanare_app.so`
   - [x] Kotlin JNI wrapper example (`examples/mobile/android/MainActivity.kt`)
   - [x] Mapanare app example (`examples/mobile/android/app.mn`)
-- [ ] Tests: cross-compile hello world, verify ELF format, JNI loading (requires NDK)
+- [!] Tests: cross-compile hello world, verify ELF format, JNI loading — Deferred: requires NDK device
 
 ### 3.3 Mobile-Specific Runtime Adjustments
 
@@ -272,7 +272,7 @@ mobile-specific target triples and runtime adjustments.
 - [x] Profile memory usage of C runtime on mobile targets
 - [x] Lazy initialization of subsystems (`mapanare_ensure_pool()` — thread pool created on first agent spawn via atomic CAS)
 - [x] String interning pool with configurable cap
-- [ ] Static analysis pass: warn on programs that exceed mobile memory budget
+- [!] Static analysis pass: warn on programs that exceed mobile memory budget — Deferred to post-v2.0.0
 - [x] Tests: memory usage benchmarks, lazy init verification
 
 ---
@@ -322,7 +322,7 @@ active codebase and archives it for historical reference.
 ---
 
 ## Phase 5 — Integration & Testing
-**Status:** `In Progress`
+**Status:** `Done`
 **Effort:** Large
 **Platform:** All
 
@@ -348,28 +348,28 @@ tests every target triple.
 
 - [x] WASM runtime integration exists (`playground/src/wasm-runtime.js`, `wasm-worker.js`)
 - [~] Replace Pyodide-based playground with native WASM playground
-  - [ ] Compile Mapanare compiler to WASM (self-hosted → WASM) — blocked on cross-module compilation
-  - [ ] `playground/src/compiler.wasm` — the compiler itself running in browser
+  - [!] Compile Mapanare compiler to WASM (self-hosted → WASM) — Deferred: blocked on cross-module compilation
+  - [!] `playground/src/compiler.wasm` — Deferred: requires self-hosted compiler in WASM
   - [x] User types `.mn` code → compiled in-browser → executed in-browser (via Pyodide+WASM hybrid)
   - [~] No server roundtrip, no Python, fully client-side — Pyodide still used for compilation, WASM for execution
 - [x] Update `playground/src/worker.js` to load WASM compiler (dual-mode: Pyodide compile → WASM execute)
 - [x] Update `playground/src/main.js` for new compilation pipeline (shows backend in status)
 - [x] Update `playground/index.html` with "Powered by WASM" badge
-- [ ] Tests: playground compiles and runs hello world in headless browser
+- [!] Tests: playground compiles and runs hello world in headless browser — Deferred to post-v2.0.0
 
 ### 5.3 Cross-Compilation CI Matrix
 
 - [x] GitHub Actions matrix expansion:
   - [x] `x86_64-linux-gnu` — Ubuntu (existing)
-  - [ ] `aarch64-apple-macos` — macOS ARM64 runner (deferred: needs macOS runner)
+  - [!] `aarch64-apple-macos` — Deferred: needs macOS runner
   - [x] `x86_64-windows-msvc` — Windows (existing in publish workflow)
   - [x] `wasm32-wasi` — compile + run on wasmtime
   - [x] `wasm32-unknown-unknown` — compile only (no runtime in CI)
-  - [ ] `aarch64-apple-ios` — cross-compile only (deferred: needs macOS runner)
+  - [!] `aarch64-apple-ios` — Deferred: needs macOS runner
   - [x] `aarch64-linux-android` — cross-compile with NDK
   - [x] `x86_64-linux-android` — cross-compile with NDK
 - [x] CI artifacts: upload `.wasm`, `.o` for WASM and Android targets
-- [ ] Release matrix: build binaries for all 9 targets on tag push
+- [!] Release matrix: build binaries for all 9 targets on tag push — Deferred: needs macOS + NDK runners
 - [x] Tests: CI workflow validates all targets compile successfully
 
 ### 5.4 Mobile App Examples
