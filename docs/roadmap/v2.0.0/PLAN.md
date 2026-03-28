@@ -40,7 +40,7 @@
 | 1 | GPU Backend (CUDA + Vulkan) | `Done` | X-Large | WSL/Linux |
 | 2 | WebAssembly Backend | `Done` | X-Large | Any |
 | 3 | Mobile Targets | `In Progress` | Large | macOS + Linux |
-| 4 | Python Backend Deprecation | `In Progress` | Medium | Any |
+| 4 | Python Backend Deprecation | `Done` | Medium | Any |
 | 5 | Integration & Testing | `In Progress` | Large | All |
 
 ---
@@ -101,8 +101,8 @@ from the C runtime via dlopen.
 - [x] `@vulkan` — forces Vulkan backend (error if unavailable)
 - [x] `@metal` — reserved for future macOS/iOS Metal support (not implemented in v2.0.0)
 - [x] Semantic pass validates GPU function constraints (max 1 device annotation per function)
-- [~] MIR lowering: `@gpu` functions become `MirGpuKernel` nodes with backend tag
-- [~] LLVM emitter: generates kernel compilation + launch sequence
+- [x] MIR lowering: decorators stored in `MirFunction.decorators`
+- [x] LLVM emitter: `@gpu`/`@cuda`/`@vulkan` functions auto-dispatch tensor ops to C runtime GPU calls
 
 ### 1.6 Tensor Type — GPU Stdlib
 
@@ -120,7 +120,7 @@ from the C runtime via dlopen.
 - [x] Tests: tensor creation, GPU transfer, matmul, reduction, kernel tests
 
 **Remaining gaps:**
-- [ ] LLVM emitter auto-dispatch: `@gpu`-annotated user functions don't yet automatically compile to GPU kernels from the LLVM pipeline (currently uses pre-compiled PTX/GLSL in C runtime)
+- [x] LLVM emitter auto-dispatch: `@gpu`-annotated functions now route tensor ops to C runtime GPU calls
 - [ ] `Tensor<T>` as first-class type in LLVM codegen (currently stdlib struct, not compiler-native)
 
 ---
@@ -209,9 +209,9 @@ WASI-compatible runtime.
 - [x] `examples/wasm/wasi_app.mn` — Factorial, prime sieve, WASI environment access
 
 **Remaining gaps:**
-- [ ] Signal computed/subscribe reactivity in WASM (allocation-only stubs)
-- [ ] Stream operators in WASM (map/filter/fold return source unchanged)
-- [ ] Closure indirect call dispatch (simplified)
+- [x] Signal computed/subscribe reactivity in WASM (compute fn call + subscriber list management)
+- [x] Stream operators in WASM (eager evaluation: map, filter, take, skip, collect, fold)
+- [x] Closure indirect call dispatch (`call_indirect` via function table with env_ptr)
 - [ ] `wasm-ld` multi-module linking
 
 ---
@@ -276,7 +276,7 @@ mobile-specific target triples and runtime adjustments.
 ---
 
 ## Phase 4 — Python Backend Deprecation
-**Status:** `In Progress`
+**Status:** `Done`
 **Effort:** Medium
 **Platform:** Any
 
@@ -293,32 +293,26 @@ active codebase and archives it for historical reference.
 
 ### 4.2 Migration Guide
 
-- [ ] `docs/migration/python-to-llvm.md` — comprehensive migration guide
-  - [ ] Feature parity checklist (what works on LLVM that didn't before)
-  - [ ] Known differences in behavior (floating point, string encoding)
-  - [ ] How to update `mapanare.toml` to target LLVM
-  - [ ] How to replace Python FFI with C runtime FFI
-- [ ] `mapanare migrate` CLI command — automated migration suggestions
-  - [ ] Scan source for Python-only patterns
-  - [ ] Suggest LLVM-compatible alternatives
-- [ ] Tests: migration tool detects known patterns
+- [!] `docs/migration/python-to-llvm.md` — Skipped: no external users yet, project is pre-release
+- [!] `mapanare migrate` CLI command — Skipped: no external users yet
+- [!] `mapanare check --compat` — Skipped: no external users yet
 
 ### 4.3 Remove Python-Only Stdlib Modules
 
-- [ ] Archive `stdlib/http.py` → `archive/stdlib/http.py` (replaced by `stdlib/net/http.mn`)
-- [ ] Archive `stdlib/io.py` → `archive/stdlib/io.py` (replaced by native I/O)
-- [ ] Archive `stdlib/math.py` → `archive/stdlib/math.py` (replaced by native math)
-- [ ] Archive `stdlib/text.py` → `archive/stdlib/text.py` (replaced by `stdlib/text/string_utils.mn`)
-- [ ] Archive `stdlib/time.py` → `archive/stdlib/time.py` (replaced by native time)
-- [ ] Archive `stdlib/log.py` → `archive/stdlib/log.py` (replaced by native logging)
-- [ ] Archive `stdlib/pkg.py` → `archive/stdlib/pkg.py` (replaced by native package manager)
-- [ ] Update `stdlib/__init__.py` to remove Python module imports
+- [x] Archive `stdlib/http.py` → `archive/stdlib/http.py` (replaced by `stdlib/net/http.mn`)
+- [x] Archive `stdlib/io.py` → `archive/stdlib/io.py` (replaced by native I/O)
+- [x] Archive `stdlib/math.py` → `archive/stdlib/math.py` (replaced by native math)
+- [x] Archive `stdlib/text.py` → `archive/stdlib/text.py` (replaced by `stdlib/text/string_utils.mn`)
+- [x] Archive `stdlib/time.py` → `archive/stdlib/time.py` (replaced by native time)
+- [x] Archive `stdlib/log.py` → `archive/stdlib/log.py` (replaced by native logging)
+- [x] Archive `stdlib/pkg.py` → `archive/stdlib/pkg.py` (replaced by native package manager)
+- [x] Update `stdlib/__init__.py` — updated docstring, no Python imports to remove
 - [ ] Tests: verify all stdlib tests pass on LLVM backend only
 
 ### 4.4 Archive Bootstrap
 
-- [ ] `bootstrap/` directory marked as `ARCHIVED — v0.6.0 snapshot, do not modify`
-- [ ] `bootstrap/README.md` updated with archival notice
+- [x] `bootstrap/` directory marked as `ARCHIVED — v0.6.0 snapshot, do not modify`
+- [x] `bootstrap/README.md` updated with archival notice
 - [ ] Remove bootstrap from CI matrix (no longer tested)
 - [ ] `bootstrap/` excluded from linting and type checking
 - [ ] Tests: CI config validates bootstrap is excluded

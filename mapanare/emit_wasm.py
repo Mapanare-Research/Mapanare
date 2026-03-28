@@ -538,16 +538,24 @@ class WasmEmitter:
         ]
 
     def _emit_type_section(self, module: MIRModule) -> list[str]:
-        """Emit function type declarations for indirect calls."""
+        """Emit function type declarations and table for indirect calls."""
         lines: list[str] = []
-        # Table for indirect calls (closures, callbacks)
-        if any(
-            isinstance(inst, (ClosureCreate, ClosureCall))
+        # Check if we need indirect call support (closures or stream ops with callbacks)
+        needs_table = any(
+            isinstance(inst, (ClosureCreate, ClosureCall, StreamOp))
             for fn in module.functions
             for bb in fn.blocks
             for inst in bb.instructions
-        ):
-            lines.append("  (table funcref (elem))")
+        )
+        if needs_table and self._func_indices:
+            # Build function table with all known functions for call_indirect.
+            # Table size = total number of functions (imports + user-defined).
+            total_funcs = len(self._func_indices)
+            # Collect function names sorted by their index
+            sorted_fns = sorted(self._func_indices.items(), key=lambda x: x[1])
+            func_refs = " ".join(f"${_sanitize_name(name)}" for name, _idx in sorted_fns)
+            lines.append(f"  (table {total_funcs} funcref)")
+            lines.append(f"  (elem (i32.const 0) func {func_refs})")
         return lines
 
     def _emit_data_section(self) -> list[str]:
@@ -1959,20 +1967,74 @@ class WasmEmitter:
         ]
 
     def _emit_signal_computed(self, inst: SignalComputed, _bl: str, _fn: MIRFunction) -> list[str]:
-        """Emit computed signal creation (stub)."""
+        """Emit computed signal creation.
+
+        Signal layout: [i64 value (offset 0)][i32 compute_fn_idx (offset 8)][i32 dirty (offset 12)]
+        The compute function is called once to get the initial value.
+        """
         dest = _sanitize_name(inst.dest.name)
-        return [
-            "      ;; signal_computed (stub)",
+        fn_idx = self._func_indices.get(inst.compute_fn, 0)
+
+        lines: list[str] = [
+            "      ;; signal_computed",
+            # Allocate signal struct (16 bytes)
             f"      (local.set ${dest}"
             f" (call $__alloc (i32.const {_SIGNAL_SIZE}) (i32.const 8)))",
+            # Store compute function index at offset 8
+            f"      (i32.store (i32.add (local.get ${dest}) (i32.const 8))"
+            f" (i32.const {fn_idx}))",
+            # Mark as not dirty (offset 12)
+            f"      (i32.store (i32.add (local.get ${dest}) (i32.const 12))" f" (i32.const 0))",
+            # Call compute function to get initial value and store at offset 0
+            f"      (i64.store (local.get ${dest})" f" (call ${_sanitize_name(inst.compute_fn)}))",
         ]
+        return lines
 
     def _emit_signal_subscribe(
         self, inst: SignalSubscribe, _bl: str, _fn: MIRFunction
     ) -> list[str]:
-        """Emit signal subscription (stub)."""
+        """Emit signal subscription.
+
+        Allocates an 8-byte subscription entry [signal_ptr, subscriber_ptr]
+        and appends it to the signal's subscriber list. The signal stores
+        subscriber_count at offset 8 and subscribers_ptr at offset 12.
+        """
+        signal = _sanitize_name(inst.signal.name)
+        subscriber = _sanitize_name(inst.subscriber.name)
+
+        # Temp locals for subscription bookkeeping
+        count_local = f"_sub_cnt_{id(inst) & 0xFFFF}"
+        subs_ptr_local = f"_sub_ptr_{id(inst) & 0xFFFF}"
+        for loc_name in (count_local, subs_ptr_local):
+            if loc_name not in self._locals:
+                self._locals[loc_name] = _WASM_I32
+        safe_count = _sanitize_name(count_local)
+        safe_subs = _sanitize_name(subs_ptr_local)
+
         return [
-            "      ;; signal_subscribe (stub)",
+            "      ;; signal_subscribe",
+            # Read current subscriber count from signal offset 8
+            f"      (local.set ${safe_count}"
+            f" (i32.load (i32.add (local.get ${signal}) (i32.const 8))))",
+            # Read subscribers_ptr from signal offset 12
+            f"      (local.set ${safe_subs}"
+            f" (i32.load (i32.add (local.get ${signal}) (i32.const 12))))",
+            # If subscribers_ptr is null, allocate initial block (capacity for 4 entries = 32 bytes)
+            f"      (if (i32.eqz (local.get ${safe_subs}))",
+            "        (then",
+            f"          (local.set ${safe_subs}" f" (call $__alloc (i32.const 32) (i32.const 4)))",
+            f"          (i32.store (i32.add (local.get ${signal}) (i32.const 12))"
+            f" (local.get ${safe_subs}))",
+            "        )",
+            "      )",
+            # Store subscriber pointer at subscribers_ptr[count * 4]
+            f"      (i32.store"
+            f" (i32.add (local.get ${safe_subs})"
+            f" (i32.mul (local.get ${safe_count}) (i32.const 4)))"
+            f" (local.get ${subscriber}))",
+            # Increment subscriber count
+            f"      (i32.store (i32.add (local.get ${signal}) (i32.const 8))"
+            f" (i32.add (local.get ${safe_count}) (i32.const 1)))",
         ]
 
     # ------------------------------------------------------------------
@@ -1992,15 +2054,451 @@ class WasmEmitter:
         ]
 
     def _emit_stream_op(self, inst: StreamOp, _bl: str, _fn: MIRFunction) -> list[str]:
-        """Emit a stream operation (map, filter, fold, etc.)."""
+        """Emit a stream operation (map, filter, fold, etc.).
+
+        Uses eager evaluation: each operator immediately produces a new list
+        by iterating the source stream's underlying list. This is simpler than
+        lazy chains and still correct for all operators.
+
+        Stream layout: [i32 source_ptr (list)][i32 position][i32 callback_idx]
+        List layout: [i32 len][i32 cap][i32 elem_size][i32 data_ptr]
+        """
+        from mapanare.mir import StreamOpKind
+
         dest = _sanitize_name(inst.dest.name)
         source = _sanitize_name(inst.source.name)
+        op = inst.op_kind
 
-        op_name = inst.op_kind.name.lower()
-        return [
-            f"      ;; stream_{op_name} (stub: returns source stream)",
-            f"      (local.set ${dest} (local.get ${source}))",
+        if op == StreamOpKind.MAP:
+            return self._emit_stream_map(inst, dest, source)
+        elif op == StreamOpKind.FILTER:
+            return self._emit_stream_filter(inst, dest, source)
+        elif op == StreamOpKind.TAKE:
+            return self._emit_stream_take(inst, dest, source)
+        elif op == StreamOpKind.SKIP:
+            return self._emit_stream_skip(inst, dest, source)
+        elif op == StreamOpKind.COLLECT:
+            return self._emit_stream_collect(inst, dest, source)
+        elif op == StreamOpKind.FOLD:
+            return self._emit_stream_fold(inst, dest, source)
+        else:
+            return [
+                f"      ;; stream_{op.name.lower()} (unsupported)",
+                f"      (local.set ${dest} (local.get ${source}))",
+            ]
+
+    def _stream_ensure_locals(self, tag: str) -> tuple[str, str, str, str, str, str]:
+        """Create and register temporary locals for stream loop operations.
+
+        Returns sanitized names for: src_list, src_len, src_data, idx, dst_list, dst_data.
+        """
+        names = {
+            "src_list": f"_strm_sl_{tag}",
+            "src_len": f"_strm_ln_{tag}",
+            "src_data": f"_strm_sd_{tag}",
+            "idx": f"_strm_ix_{tag}",
+            "dst_list": f"_strm_dl_{tag}",
+            "dst_data": f"_strm_dd_{tag}",
+        }
+        for n in names.values():
+            if n not in self._locals:
+                self._locals[n] = _WASM_I32
+        return tuple(_sanitize_name(n) for n in names.values())  # type: ignore[return-value]
+
+    def _emit_stream_map(self, inst: StreamOp, dest: str, source: str) -> list[str]:
+        """Emit stream map: iterate source list, apply fn, build new list.
+
+        Uses call_indirect to invoke the map function for each element.
+        """
+        tag = f"{id(inst) & 0xFFFF}"
+        src_list, src_len, src_data, idx, dst_list, dst_data = self._stream_ensure_locals(tag)
+        # Temp for mapped element value
+        tmp_val = f"_strm_mv_{tag}"
+        if tmp_val not in self._locals:
+            self._locals[tmp_val] = _WASM_I64
+        safe_tmp = _sanitize_name(tmp_val)
+
+        fn_name = _sanitize_name(inst.fn_name) if inst.fn_name else ""
+        blk = f"$strm_map_brk_{tag}"
+        lp = f"$strm_map_lp_{tag}"
+
+        lines: list[str] = [
+            "      ;; stream_map (eager)",
+            # Get source list from stream (offset 0)
+            f"      (local.set ${src_list} (i32.load (local.get ${source})))",
+            # Read source length
+            f"      (local.set ${src_len} (i32.load (local.get ${src_list})))",
+            # Read source data pointer
+            f"      (local.set ${src_data}"
+            f" (i32.load (i32.add (local.get ${src_list}) (i32.const 12))))",
+            # Allocate new list header
+            f"      (local.set ${dst_list}"
+            f" (call $__alloc (i32.const {_LIST_HEADER_SIZE}) (i32.const 4)))",
+            # Set new list len = source len, cap = source len, elem_size = 8
+            f"      (i32.store (local.get ${dst_list}) (local.get ${src_len}))",
+            f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 4))"
+            f" (local.get ${src_len}))",
+            f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 8))" f" (i32.const 8))",
+            # Allocate data array (len * 8)
+            f"      (local.set ${dst_data}"
+            f" (call $__alloc (i32.mul (local.get ${src_len}) (i32.const 8)) (i32.const 8)))",
+            f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 12))"
+            f" (local.get ${dst_data}))",
+            # Loop over source elements
+            f"      (local.set ${idx} (i32.const 0))",
+            f"      (block {blk}",
+            f"        (loop {lp}",
+            f"          (br_if {blk} (i32.ge_u (local.get ${idx}) (local.get ${src_len})))",
         ]
+        if fn_name:
+            # Call the map function with the source element
+            lines.extend(
+                [
+                    f"          (local.set ${safe_tmp}"
+                    f" (call ${fn_name}"
+                    f" (i64.load (i32.add (local.get ${src_data})"
+                    f" (i32.mul (local.get ${idx}) (i32.const 8))))))",
+                ]
+            )
+        else:
+            # No function: identity map
+            lines.extend(
+                [
+                    f"          (local.set ${safe_tmp}"
+                    f" (i64.load (i32.add (local.get ${src_data})"
+                    f" (i32.mul (local.get ${idx}) (i32.const 8))))))",
+                ]
+            )
+        lines.extend(
+            [
+                # Store result in destination
+                f"          (i64.store (i32.add (local.get ${dst_data})"
+                f" (i32.mul (local.get ${idx}) (i32.const 8)))"
+                f" (local.get ${safe_tmp}))",
+                # Increment index
+                f"          (local.set ${idx}" f" (i32.add (local.get ${idx}) (i32.const 1)))",
+                f"          (br {lp})",
+                "        )",
+                "      )",
+                # Allocate new stream wrapping the new list
+                f"      (local.set ${dest}"
+                f" (call $__alloc (i32.const {_STREAM_SIZE}) (i32.const 4)))",
+                f"      (i32.store (local.get ${dest}) (local.get ${dst_list}))",
+                f"      (i32.store (i32.add (local.get ${dest}) (i32.const 4)) (i32.const 0))",
+            ]
+        )
+        return lines
+
+    def _emit_stream_filter(self, inst: StreamOp, dest: str, source: str) -> list[str]:
+        """Emit stream filter: iterate source list, keep elements where fn returns true."""
+        tag = f"{id(inst) & 0xFFFF}"
+        src_list, src_len, src_data, idx, dst_list, dst_data = self._stream_ensure_locals(tag)
+        dst_len_local = f"_strm_fl_{tag}"
+        tmp_val = f"_strm_fv_{tag}"
+        cond_local = f"_strm_fc_{tag}"
+        for loc_name in (dst_len_local, tmp_val, cond_local):
+            if loc_name not in self._locals:
+                self._locals[loc_name] = _WASM_I32 if loc_name == cond_local else _WASM_I64
+        if dst_len_local not in self._locals:
+            self._locals[dst_len_local] = _WASM_I32
+        safe_dst_len = _sanitize_name(dst_len_local)
+        safe_tmp = _sanitize_name(tmp_val)
+        safe_cond = _sanitize_name(cond_local)
+
+        fn_name = _sanitize_name(inst.fn_name) if inst.fn_name else ""
+        blk = f"$strm_flt_brk_{tag}"
+        lp = f"$strm_flt_lp_{tag}"
+
+        lines: list[str] = [
+            "      ;; stream_filter (eager)",
+            f"      (local.set ${src_list} (i32.load (local.get ${source})))",
+            f"      (local.set ${src_len} (i32.load (local.get ${src_list})))",
+            f"      (local.set ${src_data}"
+            f" (i32.load (i32.add (local.get ${src_list}) (i32.const 12))))",
+            # Allocate output list (worst case: same size as input)
+            f"      (local.set ${dst_list}"
+            f" (call $__alloc (i32.const {_LIST_HEADER_SIZE}) (i32.const 4)))",
+            f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 4))"
+            f" (local.get ${src_len}))",
+            f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 8))" f" (i32.const 8))",
+            f"      (local.set ${dst_data}"
+            f" (call $__alloc (i32.mul (local.get ${src_len}) (i32.const 8)) (i32.const 8)))",
+            f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 12))"
+            f" (local.get ${dst_data}))",
+            # Initialize output length counter
+            f"      (local.set ${safe_dst_len} (i32.const 0))",
+            f"      (local.set ${idx} (i32.const 0))",
+            f"      (block {blk}",
+            f"        (loop {lp}",
+            f"          (br_if {blk} (i32.ge_u (local.get ${idx}) (local.get ${src_len})))",
+            # Load element
+            f"          (local.set ${safe_tmp}"
+            f" (i64.load (i32.add (local.get ${src_data})"
+            f" (i32.mul (local.get ${idx}) (i32.const 8)))))",
+        ]
+        if fn_name:
+            lines.append(
+                f"          (local.set ${safe_cond}"
+                f" (i32.wrap_i64 (call ${fn_name} (local.get ${safe_tmp}))))"
+            )
+        else:
+            # No filter function: keep all (identity)
+            lines.append(f"          (local.set ${safe_cond} (i32.const 1))")
+        lines.extend(
+            [
+                f"          (if (local.get ${safe_cond})",
+                "            (then",
+                f"              (i64.store (i32.add (local.get ${dst_data})"
+                f" (i32.mul (local.get ${safe_dst_len}) (i32.const 8)))"
+                f" (local.get ${safe_tmp}))",
+                f"              (local.set ${safe_dst_len}"
+                f" (i32.add (local.get ${safe_dst_len}) (i32.const 1)))",
+                "            )",
+                "          )",
+                f"          (local.set ${idx}" f" (i32.add (local.get ${idx}) (i32.const 1)))",
+                f"          (br {lp})",
+                "        )",
+                "      )",
+                # Set actual length
+                f"      (i32.store (local.get ${dst_list}) (local.get ${safe_dst_len}))",
+                # Wrap in stream
+                f"      (local.set ${dest}"
+                f" (call $__alloc (i32.const {_STREAM_SIZE}) (i32.const 4)))",
+                f"      (i32.store (local.get ${dest}) (local.get ${dst_list}))",
+                f"      (i32.store (i32.add (local.get ${dest}) (i32.const 4)) (i32.const 0))",
+            ]
+        )
+        return lines
+
+    def _emit_stream_take(self, inst: StreamOp, dest: str, source: str) -> list[str]:
+        """Emit stream take: produce a new list with at most N elements from source."""
+        tag = f"{id(inst) & 0xFFFF}"
+        src_list, src_len, src_data, idx, dst_list, dst_data = self._stream_ensure_locals(tag)
+        take_n_local = f"_strm_tn_{tag}"
+        if take_n_local not in self._locals:
+            self._locals[take_n_local] = _WASM_I32
+        safe_take_n = _sanitize_name(take_n_local)
+
+        # The count arg is the first element of inst.args
+        count_name = _sanitize_name(inst.args[0].name) if inst.args else "0"
+        blk = f"$strm_take_brk_{tag}"
+        lp = f"$strm_take_lp_{tag}"
+
+        lines: list[str] = [
+            "      ;; stream_take (eager)",
+            f"      (local.set ${src_list} (i32.load (local.get ${source})))",
+            f"      (local.set ${src_len} (i32.load (local.get ${src_list})))",
+            f"      (local.set ${src_data}"
+            f" (i32.load (i32.add (local.get ${src_list}) (i32.const 12))))",
+        ]
+        if inst.args:
+            lines.append(
+                f"      (local.set ${safe_take_n}" f" (i32.wrap_i64 (local.get ${count_name})))"
+            )
+        else:
+            lines.append(f"      (local.set ${safe_take_n} (i32.const 0))")
+        lines.extend(
+            [
+                # Clamp take_n to source length
+                f"      (if (i32.gt_u (local.get ${safe_take_n}) (local.get ${src_len}))",
+                f"        (then (local.set ${safe_take_n} (local.get ${src_len})))",
+                "      )",
+                # Allocate output list
+                f"      (local.set ${dst_list}"
+                f" (call $__alloc (i32.const {_LIST_HEADER_SIZE}) (i32.const 4)))",
+                f"      (i32.store (local.get ${dst_list}) (local.get ${safe_take_n}))",
+                f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 4))"
+                f" (local.get ${safe_take_n}))",
+                f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 8))"
+                f" (i32.const 8))",
+                f"      (local.set ${dst_data}"
+                " (call $__alloc"
+                f" (i32.mul (local.get ${safe_take_n}) (i32.const 8))"
+                " (i32.const 8)))",
+                f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 12))"
+                f" (local.get ${dst_data}))",
+                # Copy elements
+                f"      (local.set ${idx} (i32.const 0))",
+                f"      (block {blk}",
+                f"        (loop {lp}",
+                f"          (br_if {blk} (i32.ge_u (local.get ${idx}) (local.get ${safe_take_n})))",
+                f"          (i64.store (i32.add (local.get ${dst_data})"
+                f" (i32.mul (local.get ${idx}) (i32.const 8)))"
+                f" (i64.load (i32.add (local.get ${src_data})"
+                f" (i32.mul (local.get ${idx}) (i32.const 8)))))",
+                f"          (local.set ${idx}" f" (i32.add (local.get ${idx}) (i32.const 1)))",
+                f"          (br {lp})",
+                "        )",
+                "      )",
+                # Wrap in stream
+                f"      (local.set ${dest}"
+                f" (call $__alloc (i32.const {_STREAM_SIZE}) (i32.const 4)))",
+                f"      (i32.store (local.get ${dest}) (local.get ${dst_list}))",
+                f"      (i32.store (i32.add (local.get ${dest}) (i32.const 4)) (i32.const 0))",
+            ]
+        )
+        return lines
+
+    def _emit_stream_skip(self, inst: StreamOp, dest: str, source: str) -> list[str]:
+        """Emit stream skip: produce a new list skipping the first N elements."""
+        tag = f"{id(inst) & 0xFFFF}"
+        src_list, src_len, src_data, idx, dst_list, dst_data = self._stream_ensure_locals(tag)
+        skip_n_local = f"_strm_sn_{tag}"
+        new_len_local = f"_strm_nl_{tag}"
+        for loc_name in (skip_n_local, new_len_local):
+            if loc_name not in self._locals:
+                self._locals[loc_name] = _WASM_I32
+        safe_skip_n = _sanitize_name(skip_n_local)
+        safe_new_len = _sanitize_name(new_len_local)
+
+        count_name = _sanitize_name(inst.args[0].name) if inst.args else "0"
+        blk = f"$strm_skip_brk_{tag}"
+        lp = f"$strm_skip_lp_{tag}"
+
+        lines: list[str] = [
+            "      ;; stream_skip (eager)",
+            f"      (local.set ${src_list} (i32.load (local.get ${source})))",
+            f"      (local.set ${src_len} (i32.load (local.get ${src_list})))",
+            f"      (local.set ${src_data}"
+            f" (i32.load (i32.add (local.get ${src_list}) (i32.const 12))))",
+        ]
+        if inst.args:
+            lines.append(
+                f"      (local.set ${safe_skip_n}" f" (i32.wrap_i64 (local.get ${count_name})))"
+            )
+        else:
+            lines.append(f"      (local.set ${safe_skip_n} (i32.const 0))")
+        lines.extend(
+            [
+                # Clamp skip_n to source length
+                f"      (if (i32.gt_u (local.get ${safe_skip_n}) (local.get ${src_len}))",
+                f"        (then (local.set ${safe_skip_n} (local.get ${src_len})))",
+                "      )",
+                # Calculate new length
+                f"      (local.set ${safe_new_len}"
+                f" (i32.sub (local.get ${src_len}) (local.get ${safe_skip_n})))",
+                # Allocate output list
+                f"      (local.set ${dst_list}"
+                f" (call $__alloc (i32.const {_LIST_HEADER_SIZE}) (i32.const 4)))",
+                f"      (i32.store (local.get ${dst_list}) (local.get ${safe_new_len}))",
+                f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 4))"
+                f" (local.get ${safe_new_len}))",
+                f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 8))"
+                f" (i32.const 8))",
+                f"      (local.set ${dst_data}"
+                " (call $__alloc"
+                f" (i32.mul (local.get ${safe_new_len}) (i32.const 8))"
+                " (i32.const 8)))",
+                f"      (i32.store (i32.add (local.get ${dst_list}) (i32.const 12))"
+                f" (local.get ${dst_data}))",
+                # Copy elements starting from skip_n
+                f"      (local.set ${idx} (i32.const 0))",
+                f"      (block {blk}",
+                f"        (loop {lp}",
+                f"          (br_if {blk}"
+                f" (i32.ge_u (local.get ${idx}) (local.get ${safe_new_len})))",
+                f"          (i64.store (i32.add (local.get ${dst_data})"
+                f" (i32.mul (local.get ${idx}) (i32.const 8)))"
+                f" (i64.load (i32.add (local.get ${src_data})"
+                f" (i32.mul (i32.add (local.get ${idx}) (local.get ${safe_skip_n}))"
+                f" (i32.const 8)))))",
+                f"          (local.set ${idx}" f" (i32.add (local.get ${idx}) (i32.const 1)))",
+                f"          (br {lp})",
+                "        )",
+                "      )",
+                # Wrap in stream
+                f"      (local.set ${dest}"
+                f" (call $__alloc (i32.const {_STREAM_SIZE}) (i32.const 4)))",
+                f"      (i32.store (local.get ${dest}) (local.get ${dst_list}))",
+                f"      (i32.store (i32.add (local.get ${dest}) (i32.const 4)) (i32.const 0))",
+            ]
+        )
+        return lines
+
+    def _emit_stream_collect(self, inst: StreamOp, dest: str, source: str) -> list[str]:
+        """Emit stream collect: extract the underlying list from the stream.
+
+        Since all operators eagerly produce lists, collect just returns
+        the stream's current source list pointer.
+        """
+        return [
+            "      ;; stream_collect (extract list from stream)",
+            f"      (local.set ${dest} (i32.load (local.get ${source})))",
+        ]
+
+    def _emit_stream_fold(self, inst: StreamOp, dest: str, source: str) -> list[str]:
+        """Emit stream fold: reduce all elements using an accumulator function.
+
+        fold(init, fn) where fn(acc, elem) -> acc
+        args[0] = initial accumulator value
+        fn_name = fold function name
+        """
+        tag = f"{id(inst) & 0xFFFF}"
+        src_list_local = f"_strm_fsl_{tag}"
+        src_len_local = f"_strm_fln_{tag}"
+        src_data_local = f"_strm_fsd_{tag}"
+        idx_local = f"_strm_fix_{tag}"
+        acc_local = f"_strm_fac_{tag}"
+        for loc_name in (src_list_local, src_len_local, src_data_local, idx_local):
+            if loc_name not in self._locals:
+                self._locals[loc_name] = _WASM_I32
+        if acc_local not in self._locals:
+            self._locals[acc_local] = _WASM_I64
+        safe_sl = _sanitize_name(src_list_local)
+        safe_ln = _sanitize_name(src_len_local)
+        safe_sd = _sanitize_name(src_data_local)
+        safe_ix = _sanitize_name(idx_local)
+        safe_acc = _sanitize_name(acc_local)
+
+        fn_name = _sanitize_name(inst.fn_name) if inst.fn_name else ""
+        init_name = _sanitize_name(inst.args[0].name) if inst.args else "0"
+        blk = f"$strm_fold_brk_{tag}"
+        lp = f"$strm_fold_lp_{tag}"
+
+        lines: list[str] = [
+            "      ;; stream_fold (eager)",
+            f"      (local.set ${safe_sl} (i32.load (local.get ${source})))",
+            f"      (local.set ${safe_ln} (i32.load (local.get ${safe_sl})))",
+            f"      (local.set ${safe_sd}"
+            f" (i32.load (i32.add (local.get ${safe_sl}) (i32.const 12))))",
+        ]
+        # Initialize accumulator
+        if inst.args:
+            init_ty = self._locals.get(inst.args[0].name, _WASM_I64)
+            if init_ty == _WASM_I64:
+                lines.append(f"      (local.set ${safe_acc} (local.get ${init_name}))")
+            else:
+                lines.append(
+                    f"      (local.set ${safe_acc}" f" (i64.extend_i32_u (local.get ${init_name})))"
+                )
+        else:
+            lines.append(f"      (local.set ${safe_acc} (i64.const 0))")
+        lines.extend(
+            [
+                f"      (local.set ${safe_ix} (i32.const 0))",
+                f"      (block {blk}",
+                f"        (loop {lp}",
+                f"          (br_if {blk} (i32.ge_u (local.get ${safe_ix}) (local.get ${safe_ln})))",
+            ]
+        )
+        if fn_name:
+            lines.append(
+                f"          (local.set ${safe_acc}"
+                f" (call ${fn_name} (local.get ${safe_acc})"
+                f" (i64.load (i32.add (local.get ${safe_sd})"
+                f" (i32.mul (local.get ${safe_ix}) (i32.const 8))))))"
+            )
+        lines.extend(
+            [
+                f"          (local.set ${safe_ix}"
+                f" (i32.add (local.get ${safe_ix}) (i32.const 1)))",
+                f"          (br {lp})",
+                "        )",
+                "      )",
+                f"      (local.set ${dest} (local.get ${safe_acc}))",
+            ]
+        )
+        return lines
 
     # ------------------------------------------------------------------
     # Closure instructions
@@ -2058,19 +2556,61 @@ class WasmEmitter:
         return lines
 
     def _emit_closure_call(self, inst: ClosureCall, _bl: str, _fn: MIRFunction) -> list[str]:
-        """Emit closure call (indirect call through table).
+        """Emit closure call via call_indirect through the function table.
 
-        Note: Full indirect call support requires the funcref table to be
-        populated. This is a simplified stub that extracts fn_index and
-        calls via call_indirect.
+        Closure layout: [i32 fn_index (offset 0), i32 env_ptr (offset 4)]
+        The function is invoked with env_ptr as first argument, followed by
+        any additional arguments from inst.args.
         """
         dest = _sanitize_name(inst.dest.name)
         closure = _sanitize_name(inst.closure.name)
-        return [
-            "      ;; closure_call (simplified stub)",
-            "      ;; Would use call_indirect with fn_index from closure",
-            f"      (local.set ${dest} (i32.load (local.get ${closure})))",
+
+        # Temp locals for fn_index and env_ptr extraction
+        fn_idx_local = f"_cls_fi_{id(inst) & 0xFFFF}"
+        env_ptr_local = f"_cls_ep_{id(inst) & 0xFFFF}"
+        for loc_name in (fn_idx_local, env_ptr_local):
+            if loc_name not in self._locals:
+                self._locals[loc_name] = _WASM_I32
+        safe_fi = _sanitize_name(fn_idx_local)
+        safe_ep = _sanitize_name(env_ptr_local)
+
+        # Build the type signature for call_indirect
+        # Closure functions take (env_ptr: i32, args...) -> result
+        param_types = [_WASM_I32]  # env_ptr
+        for arg in inst.args:
+            arg_ty = self._locals.get(arg.name, _WASM_I64)
+            param_types.append(arg_ty)
+        dest_ty = self._locals.get(inst.dest.name, _WASM_I64)
+        param_str = " ".join(f"(param {p})" for p in param_types)
+        result_str = f" (result {dest_ty})" if dest_ty else ""
+        type_sig = f"(type ({param_str}{result_str}))"
+
+        # Build argument push sequence
+        arg_pushes: list[str] = [f"        (local.get ${safe_ep})"]
+        for arg in inst.args:
+            arg_name = _sanitize_name(arg.name)
+            arg_pushes.append(f"        (local.get ${arg_name})")
+
+        lines: list[str] = [
+            "      ;; closure_call (call_indirect)",
+            # Extract fn_index from closure offset 0
+            f"      (local.set ${safe_fi} (i32.load (local.get ${closure})))",
+            # Extract env_ptr from closure offset 4
+            f"      (local.set ${safe_ep}"
+            f" (i32.load (i32.add (local.get ${closure}) (i32.const 4))))",
+            # Call indirect: push args, then fn_index for table lookup
+            f"      (local.set ${dest}",
+            f"        (call_indirect {type_sig}",
         ]
+        lines.extend(arg_pushes)
+        lines.extend(
+            [
+                f"          (local.get ${safe_fi})",
+                "        )",
+                "      )",
+            ]
+        )
+        return lines
 
     def _emit_env_load(self, inst: EnvLoad, _bl: str, _fn: MIRFunction) -> list[str]:
         """Emit loading a captured variable from the closure environment."""
