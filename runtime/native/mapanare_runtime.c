@@ -106,6 +106,24 @@ static inline void mapanare_mutex_destroy(mapanare_mutex_t *m) {
     pthread_mutex_destroy(m);
 }
 
+#if defined(__APPLE__)
+static inline void mapanare_sem_init(mapanare_semaphore_t *s, int initial) {
+    *s = dispatch_semaphore_create(initial);
+}
+static inline void mapanare_sem_wait(mapanare_semaphore_t *s) {
+    dispatch_semaphore_wait(*s, DISPATCH_TIME_FOREVER);
+}
+static inline void mapanare_sem_post(mapanare_semaphore_t *s) {
+    dispatch_semaphore_signal(*s);
+}
+static inline void mapanare_sem_destroy(mapanare_semaphore_t *s) {
+    /* dispatch_semaphore is ARC-managed or refcounted; release if non-ARC */
+    #if !__has_feature(objc_arc)
+    dispatch_release(*s);
+    #endif
+    *s = NULL;
+}
+#else
 static inline void mapanare_sem_init(mapanare_semaphore_t *s, int initial) {
     sem_init(s, 0, initial);
 }
@@ -118,6 +136,7 @@ static inline void mapanare_sem_post(mapanare_semaphore_t *s) {
 static inline void mapanare_sem_destroy(mapanare_semaphore_t *s) {
     sem_destroy(s);
 }
+#endif
 
 #include <time.h>
 static inline int64_t mapanare_time_us(void) {

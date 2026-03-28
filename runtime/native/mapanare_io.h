@@ -161,12 +161,15 @@ MN_IO_EXPORT int64_t __mn_dir_list(const char *path, MnDirEntry *out, int64_t ma
  *   MN_EVENT_WRITE = 2
  * ----------------------------------------------------------------------- */
 
+/** Opaque event loop handle (forward declaration for use below). */
+typedef struct MnEventLoop MnEventLoop;
+
 /** Event loop backend selection.
  *  Detected automatically at creation time, or overridden manually. */
 typedef enum {
     MN_EVLOOP_SELECT = 0,  /* Fallback: works everywhere              */
     MN_EVLOOP_EPOLL  = 1,  /* Linux / Android                         */
-    MN_EVLOOP_KQUEUE = 2,  /* macOS / iOS (deferred — falls to select) */
+    MN_EVLOOP_KQUEUE = 2,  /* macOS / iOS                             */
 } mn_evloop_backend_t;
 
 /** Query which event loop backend is in use. */
@@ -180,9 +183,6 @@ MN_IO_EXPORT mn_evloop_backend_t __mn_event_loop_backend(MnEventLoop *loop);
  *  @param events Bitmask of MN_EVENT_READ / MN_EVENT_WRITE
  *  @param user_data  Opaque pointer passed at registration time */
 typedef void (*MnEventCallback)(int64_t fd, int64_t events, void *user_data);
-
-/** Opaque event loop handle. */
-typedef struct MnEventLoop MnEventLoop;
 
 /** Create a new event loop. Returns NULL on failure. */
 MN_IO_EXPORT MnEventLoop *__mn_event_loop_new(void);

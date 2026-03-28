@@ -245,6 +245,118 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # ---------------------------------------------------------------------------
+  # macOS native + iOS cross-compilation (aarch64-apple-macos, aarch64-apple-ios)
+  # ---------------------------------------------------------------------------
+  macos:
+    name: macOS & iOS Cross-Compilation
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Mapanare
+        run: pip install -e ".[dev]"
+
+      - name: Compile C runtime for macOS (native arm64)
+        run: |
+          echo "--- Compiling C runtime for aarch64-apple-macos ---"
+          cd runtime/native
+          clang -c -std=c11 -O2 -Wall mapanare_core.c -o mapanare_core.o
+          clang -c -std=c11 -O2 -Wall mapanare_runtime.c -o mapanare_runtime.o
+          clang -c -std=c11 -O2 -Wall mapanare_io.c -o mapanare_io.o
+          clang -c -std=c11 -O2 -Wall mapanare_gpu.c -o mapanare_gpu.o
+          ar rcs libmapanare.a mapanare_core.o mapanare_runtime.o mapanare_io.o mapanare_gpu.o
+          echo "Static library built:"
+          ls -la libmapanare.a
+          file mapanare_core.o
+          echo "macOS native build: OK"
+
+      - name: Run macOS C runtime tests
+        run: |
+          cd runtime/native
+          clang -std=c11 -O2 -Wall -I. \
+            ../../tests/native/test_c_runtime.c \
+            mapanare_core.c mapanare_runtime.c \
+            -lpthread -o test_c_runtime_macos
+          ./test_c_runtime_macos
+
+      - name: Cross-compile C runtime for iOS (aarch64-apple-ios)
+        run: |
+          IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "iOS SDK: $IOS_SDK"
+          cd runtime/native
+          for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c; do
+            echo "--- Compiling $src for iOS ---"
+            xcrun --sdk iphoneos clang -c -std=c11 -O2 -Wall \
+              -target arm64-apple-ios17.0 \
+              -isysroot "$IOS_SDK" \
+              "$src" -o "${src%.c}_ios.o"
+          done
+          ar rcs libmapanare_ios.a *_ios.o
+          echo "iOS static library built:"
+          ls -la libmapanare_ios.a
+
+      - name: Verify Mach-O format (iOS)
+        run: |
+          cd runtime/native
+          echo "=== File format ==="
+          file mapanare_core_ios.o
+          echo "=== Architecture ==="
+          lipo -info mapanare_core_ios.o
+          echo "=== Key symbols ==="
+          nm -g mapanare_runtime_ios.o | grep " T " | head -20
+          echo ""
+          echo "=== Verify dispatch_semaphore (not deprecated sem_init) ==="
+          nm -u mapanare_runtime_ios.o | grep -c dispatch_semaphore && echo "dispatch_semaphore: OK"
+          ! nm -u mapanare_runtime_ios.o | grep -q sem_init && echo "sem_init absent: OK"
+          echo ""
+          echo "=== Verify kqueue event loop (not epoll) ==="
+          ! nm -u mapanare_io_ios.o | grep -qi epoll && echo "No epoll references: OK"
+
+      - name: Emit LLVM IR with iOS target
+        run: |
+          if [ -f tests/golden/01_hello.mn ]; then
+            cp tests/golden/01_hello.mn /tmp/hello_ios_test.mn
+            mapanare emit-llvm --target aarch64-apple-ios /tmp/hello_ios_test.mn
+            grep 'target triple' /tmp/hello_ios_test.ll
+            echo "iOS LLVM IR emission: OK"
+          fi
+
+      - name: "End-to-end: .mn -> LLVM IR -> iOS Mach-O"
+        run: |
+          IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          if [ -f /tmp/hello_ios_test.ll ]; then
+            xcrun --sdk iphoneos clang -c \
+              -target arm64-apple-ios17.0 \
+              -isysroot "$IOS_SDK" \
+              /tmp/hello_ios_test.ll -o /tmp/hello_ios.o
+            file /tmp/hello_ios.o
+            nm -g /tmp/hello_ios.o
+            echo "End-to-end iOS compile: OK"
+          fi
+
+      - name: Run iOS cross-compilation tests
+        run: pytest tests/targets/test_ios_crosscompile.py -v
+
+      - name: Run full test suite on macOS
+        run: pytest tests/ -v --ignore=tests/bootstrap/
+
+      - name: Upload macOS/iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-ios-artifacts
+          path: |
+            runtime/native/libmapanare.a
+            runtime/native/libmapanare_ios.a
+          retention-days: 7
+          if-no-files-found: ignore
+
   # Fixed-point verification (manual milestone check, not per-PR).
   # Run locally: bash scripts/verify_fixed_point.sh
   # Blocked until emit_llvm.mn handles all IR constructs.

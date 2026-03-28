@@ -10,6 +10,7 @@
  */
 
 #include "mapanare_gpu.h"
+#include "mapanare_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -810,6 +811,15 @@ static uint32_t *vk_compile_glsl(const char *glsl_source, size_t *out_size_bytes
     char cmd[512];
     int rc = -1;
 
+#if MAPANARE_PLATFORM_MOBILE
+    /* system() is unavailable on iOS/Android — GLSL runtime compilation
+     * not supported on mobile. Use pre-compiled SPIR-V blobs instead. */
+    (void)cmd;
+    (void)rc;
+    remove(tmp_glsl);
+    return NULL;
+#else /* desktop: compile GLSL at runtime */
+
 #ifdef _WIN32
     snprintf(cmd, sizeof(cmd),
              "glslc.exe -fshader-stage=compute -o \"%s\" \"%s\" >nul 2>&1",
@@ -834,6 +844,7 @@ static uint32_t *vk_compile_glsl(const char *glsl_source, size_t *out_size_bytes
 #endif
         rc = system(cmd);
     }
+#endif /* MAPANARE_PLATFORM_MOBILE */
 
     /* Remove temp GLSL file */
     remove(tmp_glsl);
