@@ -16,9 +16,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$LogFile = Join-Path $Root "error.log"
 
 # --- Shared lint function (defined first so all modes can call it) ---
+function Write-Log {
+    param([string]$Message)
+    $Message | Out-File -Append -Encoding utf8 $script:LogFile
+}
+
 function Invoke-AllChecks {
+    # Overwrite log file each run
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "[$ts] Running checks...`n" | Out-File -Encoding utf8 $LogFile
+
     $ts = Get-Date -Format "HH:mm:ss"
     Write-Host "[$ts] " -ForegroundColor DarkGray -NoNewline
     Write-Host "Running checks..." -ForegroundColor Cyan
@@ -34,12 +44,15 @@ function Invoke-AllChecks {
     $ErrorActionPreference = $savedEAP
     if ($exitCode -eq 0) {
         Write-Host "ok" -ForegroundColor Green
+        Write-Log "[black] ok"
     } else {
         $savedEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
         & black --target-version py311 . 2>&1 | Out-Null
         $ErrorActionPreference = $savedEAP
         $fixed = ($out | Select-String "would reformat").Count
         Write-Host "fixed $fixed files" -ForegroundColor Yellow
+        Write-Log "[black] fixed $fixed files"
+        $out | ForEach-Object { Write-Log "  $_" }
     }
 
     # --- ruff check ---
@@ -50,6 +63,7 @@ function Invoke-AllChecks {
     $ErrorActionPreference = $savedEAP
     if ($exitCode -eq 0) {
         Write-Host "ok" -ForegroundColor Green
+        Write-Log "[ruff] ok"
     } else {
         $savedEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
         $fixOut = & ruff check --fix . 2>&1
@@ -58,10 +72,14 @@ function Invoke-AllChecks {
         if ($fixExit -eq 0) {
             $fixed = ($out | Select-String "^\[").Count
             Write-Host "fixed $fixed issues" -ForegroundColor Yellow
+            Write-Log "[ruff] fixed $fixed issues"
+            $out | ForEach-Object { Write-Log "  $_" }
         } else {
             Write-Host "fail" -ForegroundColor Red
             $allPassed = $false
             $fixOut | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+            Write-Log "[ruff] FAIL"
+            $fixOut | ForEach-Object { Write-Log "  $_" }
         }
     }
 
@@ -73,16 +91,20 @@ function Invoke-AllChecks {
     $ErrorActionPreference = $savedEAP
     if ($exitCode -eq 0) {
         Write-Host "ok" -ForegroundColor Green
+        Write-Log "[mypy] ok"
     } else {
         $allPassed = $false
         $errCount = ($out | Select-String "^Found \d+ error").Count
         if ($errCount -gt 0) {
             $summary = ($out | Select-String "^Found \d+ error").Line
             Write-Host "fail ($summary)" -ForegroundColor Red
+            Write-Log "[mypy] FAIL ($summary)"
         } else {
             Write-Host "fail" -ForegroundColor Red
+            Write-Log "[mypy] FAIL"
         }
         $out | Where-Object { $_ -match "error:" } | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        $out | ForEach-Object { Write-Log "  $_" }
     }
 
     # --- C runtime (gcc) ---
@@ -102,6 +124,8 @@ function Invoke-AllChecks {
             $allPassed = $false
             Write-Host "compile fail" -ForegroundColor Red
             $out | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+            Write-Log "[gcc] COMPILE FAIL"
+            $out | ForEach-Object { Write-Log "  $_" }
         } else {
             $savedEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
             $out = & $testExe 2>&1
@@ -110,15 +134,19 @@ function Invoke-AllChecks {
             if ($exitCode -eq 0) {
                 $passCount = ($out | Select-String "\[PASS\]").Count
                 Write-Host "ok ($passCount passed)" -ForegroundColor Green
+                Write-Log "[gcc] ok ($passCount passed)"
             } else {
                 $allPassed = $false
                 Write-Host "fail" -ForegroundColor Red
                 $out | Where-Object { $_ -match "FAIL|error|abort" } | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+                Write-Log "[gcc] FAIL"
+                $out | ForEach-Object { Write-Log "  $_" }
             }
             Remove-Item $testExe -ErrorAction SilentlyContinue
         }
     } else {
         Write-Host "skip (gcc not found)" -ForegroundColor DarkGray
+        Write-Log "[gcc] skip (gcc not found)"
     }
 
     # --- pytest ---
@@ -131,8 +159,10 @@ function Invoke-AllChecks {
         $passLine = ($out | Select-String "passed").Line
         if ($passLine) {
             Write-Host "ok ($passLine)" -ForegroundColor Green
+            Write-Log "[pytest] ok ($passLine)"
         } else {
             Write-Host "ok" -ForegroundColor Green
+            Write-Log "[pytest] ok"
         }
     } else {
         $allPassed = $false
@@ -143,6 +173,8 @@ function Invoke-AllChecks {
             Write-Host "fail" -ForegroundColor Red
         }
         $out | Where-Object { $_ -match "FAILED|ERROR" } | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        Write-Log "[pytest] FAIL"
+        $out | ForEach-Object { Write-Log "  $_" }
     }
 
     Write-Host ""

@@ -17,7 +17,6 @@ Tests cover:
 
 from __future__ import annotations
 
-from dataclasses import field
 from pathlib import Path
 
 import pytest
@@ -181,17 +180,17 @@ class TestSignalComputed:
         mir_mod = _make_signal_computed_module()
         wat = _emit_from_mir(mir_mod)
         assert "signal_computed" in wat, "Expected signal_computed comment in WAT output"
-        assert "call $compute_val" in wat, (
-            "Computed signal must call the compute function to get initial value"
-        )
+        assert (
+            "call $compute_val" in wat
+        ), "Computed signal must call the compute function to get initial value"
 
     def test_no_empty_stubs_in_signals(self) -> None:
         """Signal computed output should NOT contain the word 'stub'."""
         mir_mod = _make_signal_computed_module()
         wat = _emit_from_mir(mir_mod)
-        assert "stub" not in wat.lower(), (
-            "Signal computed should have a real implementation, not a stub"
-        )
+        assert (
+            "stub" not in wat.lower()
+        ), "Signal computed should have a real implementation, not a stub"
 
 
 class TestSignalSubscribe:
@@ -202,9 +201,7 @@ class TestSignalSubscribe:
         mir_mod = _make_signal_subscribe_module()
         wat = _emit_from_mir(mir_mod)
         assert "signal_subscribe" in wat, "Expected signal_subscribe comment in WAT output"
-        assert "i32.store" in wat, (
-            "Signal subscribe must store subscriber pointer in linear memory"
-        )
+        assert "i32.store" in wat, "Signal subscribe must store subscriber pointer in linear memory"
 
     def test_signal_subscribe_manages_count(self) -> None:
         """Signal subscribe should read and increment the subscriber count."""
@@ -263,9 +260,9 @@ class TestStreamMap:
                 if len(stream_section) > 20:
                     break
         stream_text = "\n".join(stream_section)
-        assert "loop" in stream_text, (
-            "Stream map section must contain a loop, not a trivial pass-through"
-        )
+        assert (
+            "loop" in stream_text
+        ), "Stream map section must contain a loop, not a trivial pass-through"
 
 
 class TestStreamFilter:
@@ -372,9 +369,9 @@ class TestClosureCall:
             "}\n"
         )
         wat = _emit(src)
-        assert "call_indirect" in wat, (
-            "Closure call must use call_indirect for indirect function dispatch"
-        )
+        assert (
+            "call_indirect" in wat
+        ), "Closure call must use call_indirect for indirect function dispatch"
 
 
 class TestFunctionTable:
@@ -391,9 +388,9 @@ class TestFunctionTable:
         )
         wat = _emit(src)
         assert "(table" in wat, "WAT must declare a function table for indirect calls"
-        assert "(elem" in wat, (
-            "WAT must have an (elem) section populating the table with function references"
-        )
+        assert (
+            "(elem" in wat
+        ), "WAT must have an (elem) section populating the table with function references"
 
     def test_function_table_has_funcref(self) -> None:
         """The table declaration should specify funcref type."""
