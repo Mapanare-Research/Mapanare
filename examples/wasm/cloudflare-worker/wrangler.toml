@@ -1,0 +1,10 @@
+name = "mapanare-worker"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[build]
+command = "mapanare emit-wasm --binary worker.mn -o worker.wasm"
+
+[[wasm_modules]]
+binding = "WASM_MODULE"
+path = "worker.wasm"

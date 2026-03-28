@@ -416,6 +416,45 @@ MAPANARE_EXPORT uint32_t mapanare_pool_thread_count(mapanare_thread_pool_t *pool
 }
 
 /* =======================================================================
+ * Global lazy-initialized thread pool
+ *
+ * The pool is created on first use (when the first agent is spawned)
+ * rather than eagerly at startup. This saves resources on mobile targets
+ * and programs that never spawn agents.
+ * ======================================================================= */
+
+static mapanare_thread_pool_t mn_global_pool;
+static mapanare_atomic_i32 mn_pool_initialized = 0;
+static mapanare_atomic_i32 mn_pool_initializing = 0;
+
+MAPANARE_EXPORT mapanare_thread_pool_t *mapanare_ensure_pool(void) {
+    if (atomic_load_i32(&mn_pool_initialized)) {
+        return &mn_global_pool;
+    }
+    /* Simple spinlock for one-time init */
+    int32_t expected = 0;
+    if (__atomic_compare_exchange_n(&mn_pool_initializing, &expected, 1,
+                                    0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        mapanare_pool_create(&mn_global_pool, MAPANARE_DEFAULT_THREADS);
+        atomic_store_i32(&mn_pool_initialized, 1);
+    } else {
+        /* Another thread is initializing — spin until done */
+        while (!atomic_load_i32(&mn_pool_initialized)) {
+            /* yield */
+        }
+    }
+    return &mn_global_pool;
+}
+
+MAPANARE_EXPORT void mapanare_pool_destroy_global(void) {
+    if (atomic_load_i32(&mn_pool_initialized)) {
+        mapanare_pool_destroy(&mn_global_pool);
+        atomic_store_i32(&mn_pool_initialized, 0);
+        atomic_store_i32(&mn_pool_initializing, 0);
+    }
+}
+
+/* =======================================================================
  * Task 1: Agent scheduler — port to C (called via FFI)
  * ======================================================================= */
 
@@ -538,6 +577,9 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
 }
 
 MAPANARE_EXPORT int mapanare_agent_spawn(mapanare_agent_t *agent) {
+    /* Ensure the global thread pool is initialized on first agent spawn */
+    mapanare_ensure_pool();
+
     atomic_store_i32(&agent->running, 1);
     int rc = mapanare_thread_create(&agent->thread, agent_thread_fn, agent);
     if (rc == 0) {
@@ -1074,6 +1116,8 @@ MAPANARE_EXPORT void mapanare_shutdown_drain(void) {
         mapanare_registry_stop_all(s_shutdown_registry);
         s_shutdown_registry = NULL;
     }
+    /* Tear down the lazy-initialized global pool if it was created */
+    mapanare_pool_destroy_global();
 #ifndef _WIN32
     if (s_shutdown_signal != 0) {
         /* Re-raise with default handler so the exit code reflects the signal */

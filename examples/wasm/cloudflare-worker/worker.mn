@@ -1,0 +1,28 @@
+# examples/wasm/cloudflare-worker/worker.mn
+#
+# Compile to WASM:
+#   mapanare emit-wasm --binary worker.mn -o worker.wasm
+#
+# A simple HTTP request handler that runs as a Cloudflare Worker.
+# Demonstrates Mapanare compiled to WASM for edge compute.
+
+import wasm.bridge
+
+pub fn handle_request(method: String, path: String) -> String:
+    if path == "/":
+        return json_response(200, "Welcome to Mapanare on Cloudflare Workers!")
+    elif path == "/health":
+        return json_response(200, "ok")
+    elif path == "/fib":
+        let result = fibonacci(30)
+        return json_response(200, "fibonacci(30) = " + str(result))
+    else:
+        return json_response(404, "Not found: " + path)
+
+fn json_response(status: Int, message: String) -> String:
+    return "{\"status\": " + str(status) + ", \"message\": \"" + message + "\"}"
+
+fn fibonacci(n: Int) -> Int:
+    if n <= 1:
+        return n
+    return fibonacci(n - 1) + fibonacci(n - 2)

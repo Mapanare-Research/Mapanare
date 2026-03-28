@@ -471,4 +471,12 @@ MAPANARE_EXPORT mapanare_trace_hook_fn mapanare_trace_get_hook(void);
 /** Detect number of physical CPU cores. */
 MAPANARE_EXPORT uint32_t mapanare_cpu_count(void);
 
+/** Ensure the global thread pool is initialized (lazy init on first use).
+ *  Thread-safe: uses atomic spinlock for one-time initialization.
+ *  Returns pointer to the global pool. */
+MAPANARE_EXPORT mapanare_thread_pool_t *mapanare_ensure_pool(void);
+
+/** Destroy the global lazy-initialized thread pool (call at shutdown). */
+MAPANARE_EXPORT void mapanare_pool_destroy_global(void);
+
 #endif /* MAPANARE_RUNTIME_H */

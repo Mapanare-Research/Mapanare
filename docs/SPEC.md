@@ -1673,7 +1673,178 @@ Generates a multi-stage Dockerfile optimized for Mapanare agent applications.
 
 ---
 
-## 23. Example Programs
+## 23. GPU Computing
+
+Mapanare supports GPU-accelerated computation as a first-class feature. GPU backends are loaded dynamically at runtime via `dlopen`, requiring no compile-time SDK dependency.
+
+### 23.1 GPU Annotations
+
+Functions can be annotated for GPU dispatch:
+
+| Decorator | Behavior |
+|-----------|----------|
+| `@gpu` | Auto-selects CUDA or Vulkan based on runtime device detection |
+| `@cuda` | Forces CUDA backend; compile error if unavailable at runtime |
+| `@vulkan` | Forces Vulkan backend; compile error if unavailable at runtime |
+| `@metal` | Reserved for future macOS/iOS Metal support (not yet implemented) |
+
+```mn
+@gpu
+fn vector_add(a: Tensor<Float>[1024], b: Tensor<Float>[1024]) -> Tensor<Float>[1024] {
+    return a + b
+}
+
+@cuda
+fn matrix_mul(a: Tensor<Float>[64, 128], b: Tensor<Float>[128, 256]) -> Tensor<Float>[64, 256] {
+    return a @ b
+}
+```
+
+When `@gpu` is used, the runtime probes for CUDA first (via `libcuda.so` / `nvcuda.dll`), then Vulkan (`libvulkan.so` / `vulkan-1.dll`). If neither is available, the operation falls back to CPU execution transparently.
+
+### 23.2 Tensor Type
+
+`Tensor<T>` is the primary data type for GPU computing. Tensors carry metadata:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `shape` | `List<Int>` | Dimension sizes |
+| `ndim` | `Int` | Number of dimensions |
+| `size` | `Int` | Total element count |
+| `device` | `String` | Current device (`"cpu"`, `"cuda"`, `"vulkan"`) |
+
+### 23.3 Tensor Operations
+
+**Creation:**
+
+```mn
+let z = Tensor.zeros<Float>(3, 3)      // 3x3 zero tensor
+let o = Tensor.ones<Float>(4)          // length-4 ones vector
+let t = Tensor.from_list([1.0, 2.0])   // from list literal
+```
+
+**Arithmetic (element-wise):** `add`, `sub`, `mul`, `div` via operators `+`, `-`, `*`, `/`.
+
+**Matrix operations:** `matmul` via `@` operator, `dot`, `transpose`.
+
+**Reductions:** `sum`, `mean`, `max`, `min`.
+
+### 23.4 Device Transfer
+
+```mn
+let cpu_tensor: Tensor<Float>[1024] = Tensor.ones<Float>(1024)
+let gpu_tensor = cpu_tensor.to_device("cuda")   // CPU -> GPU
+let back = gpu_tensor.to_device("cpu")           // GPU -> CPU
+```
+
+All operations degrade gracefully to CPU when no GPU is available. Code does not need separate CPU and GPU paths.
+
+### 23.5 Built-in Kernels
+
+The compiler ships with pre-compiled PTX kernels (CUDA) and SPIR-V shaders (Vulkan) for standard tensor operations: `add`, `sub`, `mul`, `div`, `matmul`. Custom kernels can be defined via `stdlib/gpu/kernel.mn`.
+
+---
+
+## 24. WebAssembly Backend
+
+Mapanare compiles to WebAssembly (WAT text format and `.wasm` binary) for browser and server-side execution.
+
+### 24.1 Compilation
+
+```bash
+mapanare emit-wasm source.mn              # Emit WAT text format
+mapanare emit-wasm --binary source.mn     # Emit .wasm binary (invokes wat2wasm)
+```
+
+### 24.2 Target Triples
+
+| Triple | Environment |
+|--------|-------------|
+| `wasm32-unknown-unknown` | Browser (no system calls, JS host) |
+| `wasm32-wasi` | Server-side (WASI preview 1 syscalls) |
+
+### 24.3 Memory Model
+
+WebAssembly output uses a linear memory model:
+
+- **Bump allocator** for dynamic allocations within a single WASM memory.
+- **Strings** are length-prefixed in linear memory.
+- **Closures** use `call_indirect` with a function table for dispatch.
+
+### 24.4 JS Bridge
+
+The `stdlib/wasm/bridge.mn` module provides browser interop:
+
+| Function | Description |
+|----------|-------------|
+| `js_call(fn_name, args)` | Call a JavaScript function by name |
+| `dom_query(selector)` | Query a DOM element |
+| `dom_set_text(element, text)` | Set text content of a DOM element |
+| `dom_on(element, event, handler)` | Attach an event listener |
+| `fetch(url)` | HTTP fetch (returns `Result<String, String>`) |
+| `set_timeout(handler, ms)` | Schedule a delayed callback |
+| `set_interval(handler, ms)` | Schedule a repeating callback |
+
+### 24.5 WASI Support
+
+The `stdlib/wasm/runtime.mn` module provides WASI syscall wrappers:
+
+| Function | WASI Syscall |
+|----------|-------------|
+| `fd_write(fd, data)` | `fd_write` |
+| `fd_read(fd, len)` | `fd_read` |
+| `args()` | `args_sizes_get` + `args_get` |
+| `environ()` | `environ_sizes_get` + `environ_get` |
+| `clock_time()` | `clock_time_get` |
+| `proc_exit(code)` | `proc_exit` |
+| `random(len)` | `random_get` |
+
+### 24.6 Signal and Stream Support
+
+Signals and streams compile to WASM with eager evaluation semantics. Signal subscriptions fire synchronously, and stream operators are inlined as direct function calls (no async runtime in WASM).
+
+---
+
+## 25. Mobile Cross-Compilation
+
+Mapanare uses the same LLVM pipeline for mobile targets, with platform-specific target triples and runtime tuning.
+
+### 25.1 Target Triples
+
+| Triple | Platform |
+|--------|----------|
+| `aarch64-apple-ios17.0` | iOS ARM64 |
+| `aarch64-linux-android34` | Android ARM64 |
+| `x86_64-linux-android34` | Android emulator (x86_64) |
+
+### 25.2 Building for Mobile
+
+```bash
+# iOS static library
+mapanare build --target aarch64-apple-ios17.0 --lib app.mn
+
+# Android shared library
+mapanare build --target aarch64-linux-android34 --lib app.mn
+```
+
+The `--lib` flag produces a static archive (`.a`) for iOS or a shared library (`.so`) for Android, instead of a standalone executable. iOS linking uses `clang -target` or `libtool -static`; Android linking uses NDK clang with `-shared`.
+
+### 25.3 Mobile Runtime Tuning
+
+Mobile targets use smaller defaults to conserve memory and battery:
+
+| Parameter | Desktop Default | Mobile Default | Compile-time Flag |
+|-----------|----------------|----------------|-------------------|
+| Arena size | 8 KB | 4 KB | `-DARENA_SIZE=4096` |
+| Ring buffer slots | 1024 | 256 | `-DRING_SLOTS=256` |
+| Agent queue depth | 256 | 64 | `-DAGENT_QUEUE=64` |
+| Signal batch interval | 16 ms | 1 ms | `-DSIGNAL_BATCH_MS=1` |
+
+All defaults are configurable via compile-time `-D` flags. Platform detection is handled by `mapanare_platform.h` in the C runtime.
+
+---
+
+## 26. Example Programs
 
 ### Example 1: Hello World
 
@@ -1761,7 +1932,7 @@ print(label)
 
 ---
 
-## 24. Stability
+## 27. Stability
 
 ### 24.1 What Is Frozen
 
@@ -1798,7 +1969,7 @@ Any change to a frozen area requires:
 
 ---
 
-## 25. Standard Library (v0.9.0)
+## 28. Standard Library (v0.9.0)
 
 Seven native stdlib modules written in `.mn`, compiled via LLVM:
 
@@ -1968,7 +2139,8 @@ The Mapanare compiler uses a multi-stage pipeline with an intermediate represent
 ```
 .mn source --> Lexer --> Parser --> AST --> Semantic Analysis --> MIR Lowering --> MIR Optimizer --> Emitter
                                                                                                     |--> Python (legacy)
-                                                                                                    +--> LLVM IR --> Native Binary
+                                                                                                    |--> LLVM IR --> Native Binary
+                                                                                                    +--> WebAssembly (WAT/WASM)
 ```
 
 ### MIR (Mid-level Intermediate Representation)
