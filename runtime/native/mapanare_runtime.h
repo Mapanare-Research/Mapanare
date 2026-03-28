@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "mapanare_platform.h"
 
 /* -----------------------------------------------------------------------
  * Platform abstractions

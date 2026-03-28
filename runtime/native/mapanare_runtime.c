@@ -338,7 +338,7 @@ MAPANARE_EXPORT int mapanare_pool_create(mapanare_thread_pool_t *pool, uint32_t 
     pool->thread_count = num_threads;
     atomic_store_i32(&pool->running, 1);
 
-    if (mapanare_ring_create(&pool->work_queue, 1024) != 0) {
+    if (mapanare_ring_create(&pool->work_queue, MAPANARE_DEFAULT_RING_CAPACITY) != 0) {
         return -1;
     }
 
@@ -521,8 +521,8 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
     atomic_store_i64(&agent->messages_processed, 0);
     atomic_store_i64(&agent->total_latency_us, 0);
 
-    if (inbox_cap == 0) inbox_cap = 256;
-    if (outbox_cap == 0) outbox_cap = 256;
+    if (inbox_cap == 0) inbox_cap = MAPANARE_DEFAULT_AGENT_QUEUE;
+    if (outbox_cap == 0) outbox_cap = MAPANARE_DEFAULT_AGENT_QUEUE;
 
     if (mapanare_ring_create(&agent->inbox, inbox_cap) != 0) return -1;
     if (mapanare_ring_create(&agent->outbox, outbox_cap) != 0) {

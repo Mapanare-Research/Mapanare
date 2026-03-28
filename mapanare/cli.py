@@ -19,7 +19,7 @@ from mapanare.modules import ModuleResolver
 from mapanare.optimizer import OptLevel, optimize
 from mapanare.parser import ParseError, parse, parse_recovering
 from mapanare.semantic import SemanticErrors, check_or_raise
-from mapanare.targets import get_target, list_targets
+from mapanare.targets import get_target, host_target_name, list_targets
 
 try:
     from importlib.metadata import version as _pkg_version
@@ -746,45 +746,133 @@ def cmd_build(args: argparse.Namespace) -> None:
     with open(obj_path, "wb") as f:
         f.write(obj_bytes)
 
-    # Try to link into executable
-    exe_ext = ".exe" if os.name == "nt" else ""
-    exe_path = base + exe_ext
-
     # Collect --link-lib flags as -l<lib> / <lib>.lib for linker
     link_libs: list[str] = getattr(args, "link_lib", None) or []
 
-    # Try common linkers
+    # Determine target and output format
+    target = get_target(target_name)
+    lib_mode = getattr(args, "lib", False)
+
+    if lib_mode:
+        # Library output
+        if "android" in target.triple:
+            out_ext = ".so"
+        elif "ios" in target.triple or "apple" in target.triple:
+            out_ext = ".a"
+        elif "windows" in target.triple:
+            out_ext = ".dll"
+        else:
+            out_ext = target.lib_ext or ".so"
+        out_path = args.o or (base + out_ext)
+    else:
+        out_ext = target.exe_ext
+        out_path = args.o or (base + out_ext)
+
+    # Cross-compilation: use target-specific linker
+    is_cross = target_name is not None and target_name != host_target_name()
+
     linked = False
     link_flags_unix = [f"-l{lib}" for lib in link_libs]
     link_flags_msvc = [f"{lib}.lib" for lib in link_libs]
-    for linker_cmd in (
-        ["clang", obj_path, "-o", exe_path] + link_flags_unix,
-        ["gcc", obj_path, "-o", exe_path] + link_flags_unix,
-        [
-            "link.exe",
-            f"/OUT:{exe_path}",
-            obj_path,
-            "msvcrt.lib",
-            "legacy_stdio_definitions.lib",
-        ]
-        + link_flags_msvc,
-    ):
+
+    if is_cross or lib_mode:
+        # Build the linker command for cross-compilation or library mode
+        linker = target.linker
+        linker_args: list[str] = []
+
+        if "android" in target.triple:
+            # Android NDK clang
+            linker_args = [linker]
+            if lib_mode:
+                linker_args += ["-shared"]
+            linker_args += ["-target", target.triple, obj_path, "-o", out_path]
+            linker_args += link_flags_unix
+
+        elif "ios" in target.triple:
+            if lib_mode:
+                # Static library via ar/libtool
+                linker_args = ["libtool", "-static", "-o", out_path, obj_path]
+            else:
+                linker_args = [
+                    linker,
+                    "-target",
+                    target.triple,
+                    obj_path,
+                    "-o",
+                    out_path,
+                ] + link_flags_unix
+
+        elif "wasm" in target.triple:
+            linker_args = [linker, obj_path, "-o", out_path, "--no-entry", "--export-all"]
+
+        else:
+            # Generic cross-compile with clang -target
+            linker_args = [linker]
+            if lib_mode:
+                linker_args += ["-shared"]
+            if "clang" in linker:
+                linker_args += ["-target", target.triple]
+            linker_args += [obj_path, "-o", out_path] + link_flags_unix
+
         import shutil
 
-        if shutil.which(linker_cmd[0]):
-            result = subprocess.run(linker_cmd, capture_output=True, text=True)
+        if shutil.which(linker_args[0]):
+            result = subprocess.run(linker_args, capture_output=True, text=True)
             if result.returncode == 0:
                 linked = True
-                print(f"built {args.source} -> {exe_path}")
-                break
+                kind = "library" if lib_mode else "binary"
+                print(f"built {args.source} -> {out_path} ({kind})")
             else:
-                print(f"link warning ({linker_cmd[0]}): {result.stderr[:200]}", file=sys.stderr)
+                print(
+                    f"link error ({linker_args[0]}): {result.stderr[:300]}",
+                    file=sys.stderr,
+                )
+        else:
+            print(
+                f"linker not found: {linker_args[0]}\n"
+                f"note: install the toolchain for target '{target.triple}'",
+                file=sys.stderr,
+            )
+    else:
+        # Host compilation: try common linkers
+        for linker_cmd in (
+            ["clang", obj_path, "-o", out_path] + link_flags_unix,
+            ["gcc", obj_path, "-o", out_path] + link_flags_unix,
+            [
+                "link.exe",
+                f"/OUT:{out_path}",
+                obj_path,
+                "msvcrt.lib",
+                "legacy_stdio_definitions.lib",
+            ]
+            + link_flags_msvc,
+        ):
+            import shutil
+
+            if shutil.which(linker_cmd[0]):
+                result = subprocess.run(linker_cmd, capture_output=True, text=True)
+                if result.returncode == 0:
+                    linked = True
+                    print(f"built {args.source} -> {out_path}")
+                    break
+                else:
+                    print(
+                        f"link warning ({linker_cmd[0]}): {result.stderr[:200]}",
+                        file=sys.stderr,
+                    )
 
     if not linked:
         print(f"compiled {args.source} -> {obj_path} (object file)")
-        print(
-            "note: no linker found (install clang, gcc, or MSVC build tools to produce executables)"
-        )
+        if is_cross:
+            print(
+                f"note: install the {target.triple} toolchain to link "
+                f"(e.g. Android NDK for android targets, Xcode for iOS)"
+            )
+        else:
+            print(
+                "note: no linker found (install clang, gcc, or MSVC build tools "
+                "to produce executables)"
+            )
 
 
 def cmd_emit_llvm(args: argparse.Namespace) -> None:
@@ -1347,6 +1435,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Treat warnings as errors",
+    )
+    p_build.add_argument(
+        "--lib",
+        action="store_true",
+        default=False,
+        help="Produce a shared library (.so/.dylib/.dll) instead of an executable",
     )
     _add_opt_level_args(p_build)
     _add_mir_flag(p_build)

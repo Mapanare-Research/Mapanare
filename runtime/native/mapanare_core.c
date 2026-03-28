@@ -6,6 +6,7 @@
  */
 
 #include "mapanare_core.h"
+#include "mapanare_platform.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -107,7 +108,7 @@ static MnArenaBlock *mn_arena_block_new(int64_t size) {
 }
 
 MN_EXPORT MnArena *mn_arena_create(int64_t block_size) {
-    if (block_size <= 0) block_size = 8192;
+    if (block_size <= 0) block_size = MAPANARE_DEFAULT_ARENA_BLOCK;
     MnArena *arena = (MnArena *)malloc(sizeof(MnArena));
     if (!arena) {
         fprintf(stderr, "mapanare: arena create failed\n");
