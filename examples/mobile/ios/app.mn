@@ -1,11 +1,11 @@
-# examples/mobile/ios/app.mn
-#
-# Compile:
-#   mapanare build --target aarch64-apple-ios --lib -o libmapanare_app.a app.mn
-#
-# Demonstrates:
-#   - Exported functions callable from Swift via C FFI
-#   - Agent-based background computation
+// examples/mobile/ios/app.mn
+//
+// Compile:
+//   mapanare build --target aarch64-apple-ios --lib -o libmapanare_app.a app.mn
+//
+// Demonstrates:
+//   - Exported functions callable from Swift via C FFI
+//   - Agent-based background computation
 
 pub fn greet(name: String) -> String:
     return "Hello from Mapanare, " + name + "!"

@@ -1,9 +1,9 @@
-# GPU Tensor Benchmark
-# Compares CPU vs GPU performance for tensor operations
-#
-# Usage:
-#   mapanare run examples/gpu/benchmark.mn
-#   mapanare build examples/gpu/benchmark.mn -o bench
+// GPU Tensor Benchmark
+// Compares CPU vs GPU performance for tensor operations
+//
+// Usage:
+//   mapanare run examples/gpu/benchmark.mn
+//   mapanare build examples/gpu/benchmark.mn -o bench
 
 import gpu.tensor
 import gpu.device
@@ -12,20 +12,20 @@ fn benchmark_matmul(size: Int, device: DeviceKind) -> Float:
     let a: Tensor = ones([size, size])
     let b: Tensor = ones([size, size])
 
-    # Move to target device
+    // Move to target device
     let a_dev: Tensor = to_device(a, device)
     let b_dev: Tensor = to_device(b, device)
 
-    # Warm-up run
+    // Warm-up run
     let _warmup: Tensor = matmul(a_dev, b_dev)
 
-    # Timed run (3 iterations, take average)
+    // Timed run (3 iterations, take average)
     let total_ms: Float = 0.0
     let iterations: Int = 3
 
     for i in range(0, iterations):
         let result: Tensor = matmul(a_dev, b_dev)
-        # result triggers synchronization on GPU
+        // result triggers synchronization on GPU
         let _val: Float = sum(result)
 
     return total_ms / float(iterations)
@@ -38,7 +38,7 @@ fn benchmark_elementwise(size: Int, device: DeviceKind) -> Float:
     let a_dev: Tensor = to_device(a, device)
     let b_dev: Tensor = to_device(b, device)
 
-    # Chain of operations: (a + b) * (a - b)
+    // Chain of operations: (a + b) * (a - b)
     let total_ms: Float = 0.0
     let iterations: Int = 5
 
@@ -63,7 +63,7 @@ fn main():
 
     let sizes: List<Int> = [64, 128, 256, 512, 1024]
 
-    # Matrix multiplication benchmark
+    // Matrix multiplication benchmark
     println("--- Matrix Multiplication (C = A @ B) ---")
     println("Size     | CPU (ms)  | GPU (ms)  | Speedup")
     println("---------|-----------|-----------|--------")
@@ -80,7 +80,7 @@ fn main():
 
     println("")
 
-    # Element-wise operations benchmark
+    // Element-wise operations benchmark
     println("--- Element-wise Ops ((A+B)*(A-B)) ---")
     println("Size     | CPU (ms)  | GPU (ms)  | Speedup")
     println("---------|-----------|-----------|--------")

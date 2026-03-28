@@ -1,10 +1,10 @@
-# examples/wasm/cloudflare-worker/worker.mn
-#
-# Compile to WASM:
-#   mapanare emit-wasm --binary worker.mn -o worker.wasm
-#
-# A simple HTTP request handler that runs as a Cloudflare Worker.
-# Demonstrates Mapanare compiled to WASM for edge compute.
+// examples/wasm/cloudflare-worker/worker.mn
+//
+// Compile to WASM:
+//   mapanare emit-wasm --binary worker.mn -o worker.wasm
+//
+// A simple HTTP request handler that runs as a Cloudflare Worker.
+// Demonstrates Mapanare compiled to WASM for edge compute.
 
 import wasm.bridge
 

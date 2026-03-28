@@ -57,6 +57,9 @@ MD_FILES = _collect_md_files()
 def test_relative_links_valid(md_file: Path) -> None:
     """All relative links in docs should point to existing files or directories."""
     links = _extract_relative_links(md_file)
+    # Skip template files with placeholder links (NNNN, XXXX, etc.)
+    if "TEMPLATE" in md_file.name.upper():
+        pytest.skip("Template file with placeholder links")
     broken = []
     for line_no, text, target in links:
         # Skip image badges, shields.io, and other known external patterns

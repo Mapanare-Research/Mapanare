@@ -1,11 +1,11 @@
-# examples/mobile/android/app.mn
-#
-# Compile:
-#   mapanare build --target aarch64-linux-android --lib -o libmapanare_app.so app.mn
-#
-# Demonstrates:
-#   - Exported functions callable from Kotlin via JNI
-#   - Agent-based background computation
+// examples/mobile/android/app.mn
+//
+// Compile:
+//   mapanare build --target aarch64-linux-android --lib -o libmapanare_app.so app.mn
+//
+// Demonstrates:
+//   - Exported functions callable from Kotlin via JNI
+//   - Agent-based background computation
 
 pub fn greet(name: String) -> String:
     return "Hello from Mapanare, " + name + "!"

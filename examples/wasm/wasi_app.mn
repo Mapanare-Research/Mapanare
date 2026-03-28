@@ -1,9 +1,9 @@
-# WASI Application Example
-# Runs on any WASI-compatible runtime (wasmtime, wasmer, wasm3)
-#
-# Compile: mapanare emit-wasm --binary examples/wasm/wasi_app.mn
-# Run:     wasmtime wasi_app.wasm
-#          wasmer run wasi_app.wasm
+// WASI Application Example
+// Runs on any WASI-compatible runtime (wasmtime, wasmer, wasm3)
+//
+// Compile: mapanare emit-wasm --binary examples/wasm/wasi_app.mn
+// Run:     wasmtime wasi_app.wasm
+//          wasmer run wasi_app.wasm
 
 import wasm.runtime
 
@@ -38,7 +38,7 @@ fn main():
     println("Running as native WebAssembly via WASI")
     println("")
 
-    # WASI environment
+    // WASI environment
     let args: List<String> = wasi_args()
     println("Arguments: " + str(len(args)))
     for arg in args:
@@ -46,14 +46,14 @@ fn main():
 
     println("")
 
-    # Factorial computation
+    // Factorial computation
     println("Factorials:")
     for i in range(1, 13):
         println("  " + str(i) + "! = " + str(factorial(i)))
 
     println("")
 
-    # Prime sieve
+    // Prime sieve
     let limit: Int = 100
     let primes: List<Int> = sieve_primes(limit)
     println("Primes up to " + str(limit) + ": " + str(len(primes)) + " found")
@@ -61,7 +61,7 @@ fn main():
 
     println("")
 
-    # Memory info
+    // Memory info
     let pages: Int = memory_size()
     println("WASM memory: " + str(pages) + " pages (" + str(pages * 64) + " KB)")
 

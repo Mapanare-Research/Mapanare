@@ -89,6 +89,7 @@ Key modules in `mapanare/`:
 - `emit_llvm.py` — LLVM IR generation via llvmlite (AST-based)
 - `emit_llvm_mir.py` — LLVM IR generation via llvmlite (MIR-based, preferred for new features)
 - `emit_wasm.py` — WebAssembly (WAT) generation from MIR (v2.0.0)
+- `wasm_linker.py` — wasm-ld integration for multi-module WASM linking (v2.0.0)
 - `types.py` — **Single source of truth** for the type system (TypeKind enum, TypeInfo, builtin registries)
 - `mapanare.lark` — LALR grammar with 13-level precedence climbing
 - `tracing.py` — OpenTelemetry-compatible tracing
@@ -100,13 +101,13 @@ Key modules in `mapanare/`:
 
 **Python runtime** (`runtime/`): `agent.py`, `signal.py`, `stream.py`, `result.py`, `deploy.py` — asyncio-based agents, reactive signals, async stream operators, Result/Option types, deployment infrastructure. **Legacy — will be replaced by native .mn stdlib.**
 
-**Native C runtime** (`runtime/native/`): Arena-based memory (no GC), lock-free SPSC ring buffers, thread pool with work stealing, agent lifecycle, trace hooks, TCP sockets, TLS (OpenSSL via dlopen), file I/O, event loop (epoll/kqueue/select). Used by the LLVM backend.
+**Native C runtime** (`runtime/native/`): Arena-based memory (no GC), lock-free SPSC ring buffers, thread pool with work stealing, cooperative agent scheduler (mobile), agent lifecycle, trace hooks, TCP sockets, TLS (OpenSSL via dlopen), file I/O, event loop (epoll/select), string interning with configurable cap, memory profiling. Used by the LLVM backend.
 
-## LLVM Backend Status (v0.8.0 — full parity)
+## LLVM Backend Status (v2.0.0 — full parity + GPU)
 
-**Working:** Functions, structs, enums, pattern matching, control flow, type inference, generics, Result/Option, print/println, builtins, lists, maps/dicts (Robin Hood hash table), agents (full lifecycle), signals (full reactivity: computed, subscribers, batched updates), streams (map/filter/take/skip/collect/fold, backpressure), closures (free variable capture via environment structs), traits, module imports, pipes (`|>` for function application), pipe definitions (multi-agent composition), all string methods.
+**Working:** Functions, structs, enums, pattern matching, control flow, type inference, generics, Result/Option, print/println, builtins, lists, maps/dicts (Robin Hood hash table), agents (full lifecycle), signals (full reactivity: computed, subscribers, batched updates), streams (map/filter/take/skip/collect/fold, backpressure), closures (free variable capture via environment structs), traits, module imports, pipes (`|>` for function application), pipe definitions (multi-agent composition), all string methods, GPU kernel dispatch (`@gpu`/`@cuda`/`@vulkan` via MIR GpuKernel metadata → PTX/SPIR-V LLVM codegen).
 
-**Not yet on LLVM:** Stdlib modules (Python-only, native in v0.9.0), tensors (experimental only).
+**Not yet on LLVM:** Tensors (experimental, GPU-backed via C runtime but no language-level integration).
 
 New LLVM features should target `emit_llvm_mir.py` (MIR-based emitter), not `emit_llvm.py` (AST-based).
 
@@ -159,6 +160,9 @@ Starting with v0.8.0, the project moves toward Python independence:
 
 GPU compute via CUDA and Vulkan, loaded dynamically at runtime (no compile-time SDK dependency):
 - **C runtime** (`runtime/native/mapanare_gpu.h/.c`): CUDA Driver API + Vulkan compute via dlopen
+- **MIR metadata** (`mapanare/mir.py`): `MIRGpuKernel` dataclass with device, PTX/SPIR-V source, grid/block config
+- **Lowering** (`mapanare/lower.py`): `@cuda`/`@vulkan`/`@gpu` decorators populate `MIRModule.gpu_kernels`
+- **LLVM codegen** (`mapanare/emit_llvm_mir.py`): PTX string embedding + `cuModuleLoadData`/`cuLaunchKernel`, SPIR-V byte embedding + Vulkan pipeline create/dispatch
 - **Python layer** (`experimental/gpu.py`): Device detection, kernel dispatch abstractions
 - **Stdlib** (`stdlib/gpu/`): `device.mn` (GPU detection), `tensor.mn` (GPU-accelerated tensors), `kernel.mn` (kernel management)
 - **Annotations**: `@gpu`, `@cuda`, `@metal`, `@vulkan` on functions for automatic dispatch
@@ -167,8 +171,9 @@ GPU compute via CUDA and Vulkan, loaded dynamically at runtime (no compile-time 
 ## WebAssembly Backend (v2.0.0)
 
 Compile Mapanare to WebAssembly for browser and server-side execution:
-- **Emitter** (`mapanare/emit_wasm.py`): MIR → WAT text format
-- **CLI**: `mapanare emit-wasm [--binary] source.mn`
+- **Emitter** (`mapanare/emit_wasm.py`): MIR → WAT text format (~2,785 lines)
+- **Linker** (`mapanare/wasm_linker.py`): wasm-ld integration for multi-module linking, memory layout, import/export management
+- **CLI**: `mapanare emit-wasm [--binary] [--link] [--wasi] source.mn [source2.mn ...]`
 - **Targets**: `wasm32-unknown-unknown` (browser), `wasm32-wasi` (server)
 - **JS runtime** (`playground/src/wasm-runtime.js`): Browser host for WASM modules
 - **Stdlib** (`stdlib/wasm/`): `bridge.mn` (JS interop), `runtime.mn` (WASI + memory)
@@ -181,6 +186,13 @@ Cross-compilation targets for mobile platforms:
 - `aarch64-linux-android` — Android ARM64
 - `x86_64-linux-android` — Android emulator
 
+Mobile-specific runtime features:
+- **Cooperative agent scheduler** — single-threaded event-driven execution (default on mobile)
+- **epoll event loop** — Linux/Android I/O multiplexing (kqueue on iOS deferred)
+- **Smaller defaults** — 4KB arenas, 256-slot ring buffers, 64-slot agent queues, 1ms signal batch
+- **String interning cap** — 4K entries on mobile vs 64K on desktop
+- **Memory profiling** — `mapanare_memory_stats()` for arena/intern/agent usage tracking
+
 ## Ecosystem Packages
 
 - **Dato** (`github.com/Mapanare-Research/dato`) — DataFrame/data analysis package (pandas+numpy replacement), written in .mn
@@ -189,4 +201,10 @@ Cross-compilation targets for mobile platforms:
 
 ## CI
 
-GitHub Actions on push/PR to `dev`: format check (black) → lint (ruff) → type check (mypy) → tests (pytest). Matrix: Python 3.11, 3.12 on Ubuntu.
+GitHub Actions on push/PR to `dev`:
+- **ci** — format check (black) → lint (ruff) → type check (mypy) → tests (pytest). Matrix: Python 3.11, 3.12 on Ubuntu.
+- **native** — C runtime tests with plain gcc, AddressSanitizer, ThreadSanitizer.
+- **wasm** — WASM cross-compilation: emit WAT, convert to WASM via wat2wasm, run WASI examples on wasmtime.
+- **android** — Android cross-compilation: NDK setup, ARM64 + x86_64 `.o` generation, ELF format verification.
+
+4,465+ tests across the full pipeline.
