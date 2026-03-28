@@ -7,9 +7,14 @@
 
 ---
 
-## Where We Are (v2.0.0)
+## Where We Are (v2.0.1)
 
-Mapanare v2.0.0 is published. The language specification remains frozen at v1.0 Final — syntax,
+Mapanare v2.0.0 is published. v2.0.1 is the trust restoration patch — fixing WASM correctness,
+GPU security, toolchain honesty, and silent failures identified by the
+[7-reviewer code review](../../.reviews/v2.0.0/README.md) (7.86/10 median).
+See [v2.0.1 Plan](v2.0.1/PLAN.md) for the full execution plan.
+
+The language specification remains frozen at v1.0 Final — syntax,
 semantics, and type system changes require RFC + deprecation cycle. v2.0.0 brings three new
 compilation targets (WebAssembly, WASI, mobile), GPU compute via CUDA and Vulkan, and a
 massively expanded stdlib spanning AI, data, databases, encoding, web, and security.
