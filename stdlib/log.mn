@@ -1,0 +1,157 @@
+// log.mn — Structured Logging for Mapanare
+//
+// Pure formatting module — no I/O output. The caller handles printing or
+// writing log records. Provides log levels, LogRecord construction, and
+// Logger with level filtering.
+
+// ---------------------------------------------------------------------------
+// Log levels (integer constants)
+// ---------------------------------------------------------------------------
+
+pub fn TRACE() -> Int { return 0 }
+pub fn DEBUG() -> Int { return 10 }
+pub fn INFO() -> Int { return 20 }
+pub fn WARN() -> Int { return 30 }
+pub fn ERROR() -> Int { return 40 }
+pub fn FATAL() -> Int { return 50 }
+
+// ---------------------------------------------------------------------------
+// Level name conversion
+// ---------------------------------------------------------------------------
+
+// Returns the human-readable name for a log level.
+pub fn level_name(level: Int) -> String {
+    if level == 0 { return "TRACE" }
+    if level == 10 { return "DEBUG" }
+    if level == 20 { return "INFO" }
+    if level == 30 { return "WARN" }
+    if level == 40 { return "ERROR" }
+    if level == 50 { return "FATAL" }
+    return "UNKNOWN"
+}
+
+// Parses a level name string into its integer value. Returns -1 for unknown.
+pub fn level_from_name(name: String) -> Int {
+    if name == "TRACE" { return 0 }
+    if name == "DEBUG" { return 10 }
+    if name == "INFO" { return 20 }
+    if name == "WARN" { return 30 }
+    if name == "ERROR" { return 40 }
+    if name == "FATAL" { return 50 }
+    return -1
+}
+
+// ---------------------------------------------------------------------------
+// Level comparison helpers
+// ---------------------------------------------------------------------------
+
+// Returns true if a >= b.
+pub fn level_gte(a: Int, b: Int) -> Bool {
+    return a >= b
+}
+
+// Returns true if a <= b.
+pub fn level_lte(a: Int, b: Int) -> Bool {
+    return a <= b
+}
+
+// ---------------------------------------------------------------------------
+// LogRecord
+// ---------------------------------------------------------------------------
+
+pub struct LogRecord {
+    level: Int,
+    message: String,
+    agent_name: String,
+    logger_name: String
+}
+
+// Creates a LogRecord with empty agent_name and logger_name.
+pub fn new_record(level: Int, message: String) -> LogRecord {
+    return new LogRecord { level: level, message: message, agent_name: "", logger_name: "" }
+}
+
+// Creates a LogRecord tagged with an agent name.
+pub fn record_with_agent(level: Int, message: String, agent: String) -> LogRecord {
+    return new LogRecord { level: level, message: message, agent_name: agent, logger_name: "" }
+}
+
+// Creates a LogRecord tagged with a logger name.
+pub fn record_with_logger(level: Int, message: String, logger: String) -> LogRecord {
+    return new LogRecord { level: level, message: message, agent_name: "", logger_name: logger }
+}
+
+// Formats a record as [LEVEL] [context] message where context is the
+// agent_name or logger_name (whichever is non-empty). Falls back to plain
+// format if both are empty.
+pub fn format_record(rec: LogRecord) -> String {
+    let lvl: String = level_name(rec.level)
+    let context: String = record_context(rec)
+    if len(context) > 0 {
+        return "[" + lvl + "] [" + context + "] " + rec.message
+    }
+    return "[" + lvl + "] " + rec.message
+}
+
+// Formats a record as [LEVEL] message with no context.
+pub fn format_record_plain(rec: LogRecord) -> String {
+    let lvl: String = level_name(rec.level)
+    return "[" + lvl + "] " + rec.message
+}
+
+// ---------------------------------------------------------------------------
+// LogRecord internal helpers
+// ---------------------------------------------------------------------------
+
+// Returns the context string for a record — prefers agent_name, then
+// logger_name, then empty.
+fn record_context(rec: LogRecord) -> String {
+    if len(rec.agent_name) > 0 {
+        return rec.agent_name
+    }
+    if len(rec.logger_name) > 0 {
+        return rec.logger_name
+    }
+    return ""
+}
+
+// ---------------------------------------------------------------------------
+// Logger
+// ---------------------------------------------------------------------------
+
+pub struct Logger {
+    name: String,
+    min_level: Int
+}
+
+// Creates a new Logger with default min_level = INFO (20).
+pub fn new_logger(name: String) -> Logger {
+    return new Logger { name: name, min_level: 20 }
+}
+
+// Creates a new Logger with a specific minimum level.
+pub fn logger_with_level(name: String, level: Int) -> Logger {
+    return new Logger { name: name, min_level: level }
+}
+
+// Returns true if the given level passes the logger's filter.
+pub fn should_log(logger: Logger, level: Int) -> Bool {
+    return level >= logger.min_level
+}
+
+// Creates a child logger whose name is "parent.child" and inherits the
+// parent's min_level.
+pub fn child_logger(parent: Logger, child_name: String) -> Logger {
+    let full_name: String = parent.name + "." + child_name
+    return new Logger { name: full_name, min_level: parent.min_level }
+}
+
+// Returns a formatted log string if the level passes the logger's filter,
+// or an empty string if filtered out.
+pub fn format_log(logger: Logger, level: Int, message: String) -> String {
+    if level < logger.min_level {
+        return ""
+    }
+    let rec: LogRecord = record_with_logger(level, message, logger.name)
+    return format_record(rec)
+}
