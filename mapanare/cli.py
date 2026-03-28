@@ -950,54 +950,100 @@ def cmd_emit_mir(args: argparse.Namespace) -> None:
 
 
 def cmd_emit_wasm(args: argparse.Namespace) -> None:
-    """Emit WebAssembly (WAT) for an .mn source file."""
+    """Emit WebAssembly (WAT) for .mn source file(s), optionally linking."""
     from mapanare.emit_wasm import WasmEmitter
     from mapanare.lower import lower as build_mir
     from mapanare.mir_opt import MIROptLevel
     from mapanare.mir_opt import optimize_module as mir_optimize
 
-    source = _read_source(args.source)
+    source_files: list[str] = args.source
     opt_level = _parse_opt_level(args)
-    resolver = ModuleResolver()
-    try:
-        ast = parse(source, filename=args.source)
-        check_or_raise(ast, filename=args.source, resolver=resolver)
-        module_name = os.path.splitext(os.path.basename(args.source))[0]
-        mir_module = build_mir(ast, module_name=module_name)
-        mir_opt_level = MIROptLevel(opt_level.value)
-        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+    do_link = getattr(args, "link", False)
+    do_binary = getattr(args, "binary", False)
 
-        emitter = WasmEmitter()
-        wat_output = emitter.emit(mir_module)
-    except ParseError as e:
-        _emit_parse_error(e, source, args.source)
-        sys.exit(1)
-    except SemanticErrors as e:
-        _emit_semantic_errors(e, source)
-        sys.exit(1)
-    except ValueError as e:
-        print(f"error: {e}", file=sys.stderr)
-        sys.exit(1)
+    # Emit WAT for each source file
+    wat_paths: list[str] = []
+    for src_file in source_files:
+        source = _read_source(src_file)
+        resolver = ModuleResolver()
+        try:
+            ast = parse(source, filename=src_file)
+            check_or_raise(ast, filename=src_file, resolver=resolver)
+            module_name = os.path.splitext(os.path.basename(src_file))[0]
+            mir_module = build_mir(ast, module_name=module_name)
+            mir_opt_level = MIROptLevel(opt_level.value)
+            mir_module, _ = mir_optimize(mir_module, mir_opt_level)
 
-    out_path = args.o or args.source.replace(".mn", ".wat")
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(wat_output)
-    print(f"emitted {args.source} -> {out_path} (WebAssembly text format)")
+            emitter = WasmEmitter()
+            wat_output = emitter.emit(mir_module)
+        except ParseError as e:
+            _emit_parse_error(e, source, src_file)
+            sys.exit(1)
+        except SemanticErrors as e:
+            _emit_semantic_errors(e, source)
+            sys.exit(1)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
 
-    # Optionally compile to .wasm binary if wat2wasm is available
-    if getattr(args, "binary", False):
+        if len(source_files) == 1 and args.o and not do_link:
+            out_path = args.o
+        else:
+            out_path = src_file.replace(".mn", ".wat")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(wat_output)
+        print(f"emitted {src_file} -> {out_path} (WebAssembly text format)")
+        wat_paths.append(out_path)
+
+    # Link multiple WAT modules into a single .wasm binary
+    if do_link or (do_binary and len(source_files) > 1):
+        from pathlib import Path
+
+        from mapanare.wasm_linker import WasmLinkerConfig, link_wat_files
+
+        # Build linker config from CLI args
+        use_wasi = getattr(args, "wasi", False)
+        if use_wasi:
+            config = WasmLinkerConfig.for_wasi()
+        elif getattr(args, "export_all", False):
+            config = WasmLinkerConfig.for_library()
+        else:
+            config = WasmLinkerConfig()
+
+        config.stack_size = getattr(args, "stack_size", 65536)
+        config.initial_memory = getattr(args, "initial_memory", 1048576)
+
+        if args.o:
+            wasm_output = Path(args.o)
+        else:
+            wasm_output = Path(source_files[0]).with_suffix(".wasm")
+
+        result = link_wat_files(
+            [Path(p) for p in wat_paths],
+            wasm_output,
+            config=config,
+        )
+        if result.success:
+            print(f"linked {len(wat_paths)} module(s) -> {wasm_output}")
+        else:
+            print(f"wasm-ld linking failed: {result.stderr}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    # Single-file binary compilation (original behavior)
+    if do_binary and len(source_files) == 1:
         import shutil
 
         wat2wasm = shutil.which("wat2wasm")
         if wat2wasm:
-            wasm_path = out_path.replace(".wat", ".wasm")
+            wasm_path = wat_paths[0].replace(".wat", ".wasm")
             result = subprocess.run(
-                [wat2wasm, out_path, "-o", wasm_path],
+                [wat2wasm, wat_paths[0], "-o", wasm_path],
                 capture_output=True,
                 text=True,
             )
             if result.returncode == 0:
-                print(f"compiled {out_path} -> {wasm_path} (binary)")
+                print(f"compiled {wat_paths[0]} -> {wasm_path} (binary)")
             else:
                 print(f"wat2wasm failed: {result.stderr}", file=sys.stderr)
         else:
@@ -1487,13 +1533,45 @@ def build_parser() -> argparse.ArgumentParser:
     p_emit_wasm = subparsers.add_parser(
         "emit-wasm", help="Emit WebAssembly (WAT/WASM) for .mn source"
     )
-    p_emit_wasm.add_argument("source", help="Path to .mn source file")
-    p_emit_wasm.add_argument("-o", metavar="OUTPUT", help="Output .wat file path", default=None)
+    p_emit_wasm.add_argument("source", nargs="+", help="Path to .mn source file(s)")
+    p_emit_wasm.add_argument(
+        "-o", metavar="OUTPUT", help="Output .wat/.wasm file path", default=None
+    )
     p_emit_wasm.add_argument(
         "--binary",
         action="store_true",
         default=False,
         help="Also compile to .wasm binary (requires wat2wasm)",
+    )
+    p_emit_wasm.add_argument(
+        "--link",
+        action="store_true",
+        default=False,
+        help="Link multiple WAT modules into a single .wasm binary (requires wasm-ld)",
+    )
+    p_emit_wasm.add_argument(
+        "--wasi",
+        action="store_true",
+        default=False,
+        help="Link for WASI target (use with --link)",
+    )
+    p_emit_wasm.add_argument(
+        "--export-all",
+        action="store_true",
+        default=False,
+        help="Export all functions (library mode, use with --link)",
+    )
+    p_emit_wasm.add_argument(
+        "--stack-size",
+        type=int,
+        default=65536,
+        help="Stack size in bytes (default: 65536, use with --link)",
+    )
+    p_emit_wasm.add_argument(
+        "--initial-memory",
+        type=int,
+        default=1048576,
+        help="Initial memory in bytes (default: 1048576, use with --link)",
     )
     _add_opt_level_args(p_emit_wasm)
     p_emit_wasm.set_defaults(func=cmd_emit_wasm)

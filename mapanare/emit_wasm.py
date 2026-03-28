@@ -141,6 +141,16 @@ _HEAP_PTR_GLOBAL = "__heap_ptr"
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class WasmModuleImport:
+    """Describes an imported function from another WASM module."""
+
+    module: str  # Source module name (e.g. "math_utils")
+    name: str  # Function name in the source module
+    params: list[str] = field(default_factory=list)  # WASM param types
+    result: str | None = None  # WASM result type, or None for void
+
+
 @dataclass(slots=True)
 class WasmOptions:
     """Configuration for the WASM emitter."""
@@ -151,6 +161,8 @@ class WasmOptions:
     export_all_functions: bool = False
     debug_names: bool = True
     optimize: bool = False
+    # Cross-module imports: functions this module needs from other modules
+    module_imports: list[WasmModuleImport] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -527,6 +539,19 @@ class WasmEmitter:
             lines.append(f'  (import "{mod}" "{name}" (func ${name} {param_str}{result_str}))')
             self._func_indices[name] = self._import_count
             self._import_count += 1
+
+        # Cross-module imports (functions from other WASM modules)
+        for mod_import in self._options.module_imports:
+            param_str = " ".join(f"(param {p})" for p in mod_import.params)
+            result_str = f" (result {mod_import.result})" if mod_import.result else ""
+            safe_name = _sanitize_name(mod_import.name)
+            lines.append(
+                f'  (import "{mod_import.module}" "{mod_import.name}"'
+                f" (func ${safe_name} {param_str}{result_str}))"
+            )
+            self._func_indices[mod_import.name] = self._import_count
+            self._import_count += 1
+
         return lines
 
     def _emit_globals_section(self) -> list[str]:

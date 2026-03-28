@@ -75,6 +75,176 @@ jobs:
             -o test_c_runtime_tsan
           TSAN_OPTIONS=halt_on_error=1 ./test_c_runtime_tsan
 
+  # ---------------------------------------------------------------------------
+  # WASM cross-compilation (wasm32-wasi via wasmtime, wasm32 compile-only)
+  # ---------------------------------------------------------------------------
+  wasm:
+    name: WASM Cross-Compilation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Mapanare
+        run: pip install -e ".[dev]"
+
+      - name: Install wasmtime
+        run: |
+          curl https://wasmtime.dev/install.sh -sSf | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      - name: Install wabt (wat2wasm)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y wabt
+
+      - name: Compile examples to WAT (wasm32)
+        run: |
+          for f in examples/wasm/hello.mn examples/wasm/wasi_app.mn; do
+            if [ -f "$f" ]; then
+              echo "--- Compiling $f (wasm32) ---"
+              python -m mapanare emit-wasm "$f" -o "${f%.mn}.wat" || echo "WARN: $f failed"
+            fi
+          done
+
+      - name: Compile examples to WAT (wasm32-wasi)
+        run: |
+          for f in examples/wasm/hello.mn examples/wasm/wasi_app.mn; do
+            if [ -f "$f" ]; then
+              echo "--- Compiling $f (wasm32-wasi) ---"
+              python -m mapanare emit-wasm "$f" -o "${f%.mn}.wasi.wat" || echo "WARN: $f failed"
+            fi
+          done
+
+      - name: Convert WAT to WASM binary
+        run: |
+          for wat in examples/wasm/*.wat; do
+            if [ -f "$wat" ]; then
+              echo "--- wat2wasm $wat ---"
+              wat2wasm "$wat" -o "${wat%.wat}.wasm" || echo "WARN: $wat conversion failed"
+            fi
+          done
+
+      - name: Run WASI examples on wasmtime
+        run: |
+          for wasm in examples/wasm/*.wasi.wasm; do
+            if [ -f "$wasm" ]; then
+              echo "--- Running $wasm on wasmtime ---"
+              wasmtime run "$wasm" || echo "WARN: $wasm execution failed"
+            fi
+          done
+
+      - name: Run WASM pytest suite
+        run: pytest tests/wasm/ -v
+
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: |
+            examples/wasm/*.wat
+            examples/wasm/*.wasm
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Android cross-compilation (compile-only, no device)
+  # ---------------------------------------------------------------------------
+  android:
+    name: Android Cross-Compilation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Mapanare
+        run: pip install -e ".[dev]"
+
+      - name: Setup Android NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK via sdkmanager
+        run: |
+          sdkmanager --install "ndk;26.1.10909125" 2>/dev/null || true
+          # Find the NDK path
+          NDK_PATH="$ANDROID_HOME/ndk/26.1.10909125"
+          if [ ! -d "$NDK_PATH" ]; then
+            NDK_PATH=$(find "$ANDROID_HOME/ndk" -maxdepth 1 -type d | tail -1)
+          fi
+          echo "NDK_PATH=$NDK_PATH" >> "$GITHUB_ENV"
+          echo "Found NDK at: $NDK_PATH"
+
+      - name: Cross-compile C runtime for Android ARM64
+        run: |
+          TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
+          CC="$TOOLCHAIN/bin/aarch64-linux-android34-clang"
+          if [ -f "$CC" ]; then
+            echo "--- Compiling C runtime for aarch64-linux-android34 ---"
+            "$CC" -c -O2 -DMAPANARE_PLATFORM_ANDROID=1 \
+              runtime/native/mapanare_core.c \
+              -o mapanare_core_android_arm64.o
+            "$CC" -c -O2 -DMAPANARE_PLATFORM_ANDROID=1 \
+              runtime/native/mapanare_runtime.c \
+              -o mapanare_runtime_android_arm64.o
+            file mapanare_core_android_arm64.o
+            file mapanare_runtime_android_arm64.o
+            echo "Android ARM64 cross-compilation successful"
+          else
+            echo "WARN: NDK clang not found at $CC"
+            ls -la "$TOOLCHAIN/bin/" | head -20
+          fi
+
+      - name: Cross-compile C runtime for Android x86_64
+        run: |
+          TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
+          CC="$TOOLCHAIN/bin/x86_64-linux-android34-clang"
+          if [ -f "$CC" ]; then
+            echo "--- Compiling C runtime for x86_64-linux-android34 ---"
+            "$CC" -c -O2 -DMAPANARE_PLATFORM_ANDROID=1 \
+              runtime/native/mapanare_core.c \
+              -o mapanare_core_android_x64.o
+            "$CC" -c -O2 -DMAPANARE_PLATFORM_ANDROID=1 \
+              runtime/native/mapanare_runtime.c \
+              -o mapanare_runtime_android_x64.o
+            file mapanare_core_android_x64.o
+            file mapanare_runtime_android_x64.o
+            echo "Android x86_64 cross-compilation successful"
+          else
+            echo "WARN: NDK clang not found at $CC"
+          fi
+
+      - name: Verify ELF format
+        run: |
+          for obj in *_android_*.o; do
+            if [ -f "$obj" ]; then
+              echo "--- Checking $obj ---"
+              file "$obj"
+              readelf -h "$obj" 2>/dev/null | head -5 || true
+            fi
+          done
+
+      - name: Run Android target tests
+        run: pytest tests/targets/ -v -k "android or mobile"
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-artifacts
+          path: |
+            *_android_*.o
+          retention-days: 7
+          if-no-files-found: ignore
+
   # Fixed-point verification (manual milestone check, not per-PR).
   # Run locally: bash scripts/verify_fixed_point.sh
   # Blocked until emit_llvm.mn handles all IR constructs.

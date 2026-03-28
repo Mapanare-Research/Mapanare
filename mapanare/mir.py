@@ -786,6 +786,20 @@ class MIRPipeInfo:
 
 
 @dataclass(slots=True)
+class MIRGpuKernel:
+    """GPU kernel metadata for @cuda/@vulkan annotated functions."""
+
+    name: str = ""  # kernel entry point name
+    device: str = ""  # "cuda" | "vulkan" | "gpu"
+    ptx_source: str = ""  # embedded PTX source (CUDA only)
+    spirv_bytes: bytes = field(default_factory=bytes)  # embedded SPIR-V bytecode (Vulkan only)
+    grid: tuple[int, int, int] = (1, 1, 1)  # grid dimensions
+    block: tuple[int, int, int] = (256, 1, 1)  # block dimensions (threads per block)
+    shared_mem: int = 0  # shared memory bytes
+    num_buffers: int = 0  # number of storage buffers (Vulkan)
+
+
+@dataclass(slots=True)
 class MIRModule:
     """Top-level MIR module: a collection of functions and type definitions."""
 
@@ -804,6 +818,7 @@ class MIRModule:
     )  # (abi, module, name, param_types, ret_type)
     agents: dict[str, MIRAgentInfo] = field(default_factory=dict)
     pipes: dict[str, MIRPipeInfo] = field(default_factory=dict)
+    gpu_kernels: dict[str, MIRGpuKernel] = field(default_factory=dict)  # fn_name -> kernel meta
     imports: list[tuple[list[str], list[str]]] = field(default_factory=list)  # (path, items)
     trait_names: list[str] = field(default_factory=list)
 

@@ -108,6 +108,7 @@ from mapanare.mir import (
     MapInit,
     MIRAgentInfo,
     MIRFunction,
+    MIRGpuKernel,
     MIRModule,
     MIRParam,
     MIRPipeInfo,
@@ -718,6 +719,17 @@ class MIRLowerer:
                         mir_fn.return_type = inst.val.ty
 
         self._module.functions.append(mir_fn)
+
+        # Register GPU kernel metadata for @cuda/@vulkan/@gpu decorated functions
+        for dec in decorators:
+            d = dec.lower()
+            if d in ("cuda", "vulkan", "gpu"):
+                kernel = MIRGpuKernel(
+                    name=fn_name,
+                    device=d,
+                )
+                self._module.gpu_kernels[fn_name] = kernel
+                break
 
         # Restore state
         self._fn = prev_fn
