@@ -435,12 +435,19 @@ MAPANARE_EXPORT mapanare_thread_pool_t *mapanare_ensure_pool(void) {
     int32_t expected = 0;
     if (__atomic_compare_exchange_n(&mn_pool_initializing, &expected, 1,
                                     0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-        mapanare_pool_create(&mn_global_pool, MAPANARE_DEFAULT_THREADS);
+        if (mapanare_pool_create(&mn_global_pool, MAPANARE_DEFAULT_THREADS) != 0) {
+            atomic_store_i32(&mn_pool_initializing, 0);
+            return NULL;
+        }
         atomic_store_i32(&mn_pool_initialized, 1);
     } else {
         /* Another thread is initializing — spin until done */
         while (!atomic_load_i32(&mn_pool_initialized)) {
-            /* yield */
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
+            __builtin_ia32_pause();
+#elif defined(__aarch64__)
+            __asm__ volatile("yield");
+#endif
         }
     }
     return &mn_global_pool;
@@ -1155,6 +1162,10 @@ MAPANARE_EXPORT void mapanare_coop_scheduler_init(mapanare_coop_scheduler_t *sch
     if (capacity == 0) capacity = MAPANARE_DEFAULT_AGENT_QUEUE;
     uint32_t cap = next_pow2(capacity);
     sched->ready_queue = (mapanare_agent_t **)calloc(cap, sizeof(mapanare_agent_t *));
+    if (!sched->ready_queue) {
+        sched->queue_cap = 0;
+        return;
+    }
     sched->queue_cap  = cap;
     sched->queue_head = 0;
     sched->queue_tail = 0;
@@ -1300,9 +1311,15 @@ MAPANARE_EXPORT void mapanare_arena_stats(const MnArena *arena,
 }
 
 MAPANARE_EXPORT void mapanare_memory_stats(mapanare_memory_stats_t *out) {
+    if (!out) return;
     memset(out, 0, sizeof(*out));
 
     /* Intern table stats — delegated to __mn_intern_stats in mapanare_core.c */
     extern void __mn_intern_stats(size_t *count, size_t *bytes);
     __mn_intern_stats(&out->intern_count, &out->intern_bytes);
+
+    /* NOTE: arena_allocated/arena_used and agent_count/ring_allocated require
+     * a global arena registry and agent registry respectively. Currently only
+     * intern stats are available; add arena/agent aggregation when a global
+     * registry is introduced. */
 }

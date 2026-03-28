@@ -1033,7 +1033,7 @@ mapanare emit-wasm source.mn
 mapanare emit-wasm --binary source.mn
 
 # Server-side WASI target
-mapanare emit-wasm --target wasm32-wasi source.mn
+mapanare emit-wasm --wasi source.mn
 ```
 
 ### Mobile Cross-Compilation

@@ -491,8 +491,8 @@ def link_wat_files(
 
     # Step 1: Convert each WAT to a relocatable object
     object_files: list[Path] = []
-    for wat in wat_files:
-        obj_path = work_dir / (wat.stem + ".o")
+    for idx, wat in enumerate(wat_files):
+        obj_path = work_dir / (f"{idx}_{wat.stem}.o")
         if not wat_to_wasm_object(wat, obj_path, relocatable=True):
             return WasmLinkResult(
                 success=False,

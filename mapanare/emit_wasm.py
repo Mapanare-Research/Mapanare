@@ -544,12 +544,15 @@ class WasmEmitter:
         for mod_import in self._options.module_imports:
             param_str = " ".join(f"(param {p})" for p in mod_import.params)
             result_str = f" (result {mod_import.result})" if mod_import.result else ""
-            safe_name = _sanitize_name(mod_import.name)
+            # Namespace by module to avoid collisions when importing same-named
+            # functions from different modules
+            namespaced = f"{mod_import.module}__{mod_import.name}"
+            safe_name = _sanitize_name(namespaced)
             lines.append(
                 f'  (import "{mod_import.module}" "{mod_import.name}"'
                 f" (func ${safe_name} {param_str}{result_str}))"
             )
-            self._func_indices[mod_import.name] = self._import_count
+            self._func_indices[namespaced] = self._import_count
             self._import_count += 1
 
         return lines
@@ -1244,7 +1247,7 @@ class WasmEmitter:
         fn = inst.fn_name
 
         if fn == "print" or fn == "println":
-            return self._emit_print_call(inst, True)
+            return self._emit_print_call(inst, fn == "println")
 
         if fn == "len":
             if inst.args:

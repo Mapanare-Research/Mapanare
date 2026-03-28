@@ -1225,13 +1225,15 @@ class LLVMTextEmitter:
         args = [(self._get(a)) for a in i.args]  # [(val, ty)]
         self._san(i.dest.name)
 
-        # print / println — both add a newline (print behaves like Python's print)
+        # print / println
         if fn in ("println", "print"):
+            nl = fn == "println"
             if i.args and i.args[0].ty.kind == TypeKind.STRING and args[0][1] == STR:
-                self._rt("__mn_str_println", VOID, [STR], [args[0]])
+                rt_fn = "__mn_str_println" if nl else "__mn_str_print"
+                self._rt(rt_fn, VOID, [STR], [args[0]])
             elif i.args and i.args[0].ty.kind == TypeKind.INT:
                 self._printf(
-                    "%lld\n",
+                    "%lld\n" if nl else "%lld",
                     [
                         (
                             (
@@ -1244,12 +1246,16 @@ class LLVMTextEmitter:
                     ],
                 )
             elif i.args and i.args[0].ty.kind == TypeKind.FLOAT:
-                self._printf("%f\n", [(args[0][0], DBL)])
+                self._printf("%f\n" if nl else "%f", [(args[0][0], DBL)])
             elif i.args and i.args[0].ty.kind == TypeKind.BOOL:
                 s = self._rt("__mn_str_from_bool", STR, [I1], [args[0]])
-                self._rt("__mn_str_println", VOID, [STR], [(s, STR)])
+                rt_fn_b = "__mn_str_println" if nl else "__mn_str_print"
+                self._rt(rt_fn_b, VOID, [STR], [(s, STR)])
             elif i.args:
-                self._printf("%lld\n", [(self._coerce(args[0][0], args[0][1], I64), I64)])
+                self._printf(
+                    "%lld\n" if nl else "%lld",
+                    [(self._coerce(args[0][0], args[0][1], I64), I64)],
+                )
             self._put(i.dest, "0", I1)
             return
 

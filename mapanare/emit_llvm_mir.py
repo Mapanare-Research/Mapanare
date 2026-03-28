@@ -2742,28 +2742,32 @@ class LLVMMIREmitter:
 
         # print/println
         if fn_name in ("println", "print"):
+            nl = fn_name == "println"
             if (
                 inst.args
                 and inst.args[0].ty.kind == TypeKind.STRING
                 and args[0].type == LLVM_STRING
             ):
-                rt_fn = self._rt_str_println()
+                rt_fn = self._rt_str_println() if nl else self._rt_str_print()
                 builder.call(rt_fn, [args[0]])
             elif inst.args and inst.args[0].ty.kind == TypeKind.INT:
-                self._emit_printf(builder, "%lld\n", [args[0]])
+                fmt = "%lld\n" if nl else "%lld"
+                self._emit_printf(builder, fmt, [args[0]])
             elif inst.args and inst.args[0].ty.kind == TypeKind.FLOAT:
-                self._emit_printf(builder, "%f\n", [args[0]])
+                fmt = "%f\n" if nl else "%f"
+                self._emit_printf(builder, fmt, [args[0]])
             elif inst.args and inst.args[0].ty.kind == TypeKind.BOOL:
                 # Convert bool to string then print
                 str_fn = self._rt_str_from_bool()
                 str_val = builder.call(str_fn, [args[0]], name=f"{name}.bstr")
                 self._track_string(builder, str_val)
-                rt_fn = self._rt_str_println()
+                rt_fn = self._rt_str_println() if nl else self._rt_str_print()
                 builder.call(rt_fn, [str_val])
             else:
                 # Fallback: try printf with i64
                 if inst.args:
-                    self._emit_printf(builder, "%lld\n", [args[0]])
+                    fmt = "%lld\n" if nl else "%lld"
+                    self._emit_printf(builder, fmt, [args[0]])
             # print/println returns void — store a dummy value
             self._store_value(inst.dest, ir.Constant(LLVM_BOOL, 0), values)
             return

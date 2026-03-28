@@ -2,8 +2,7 @@
  * mapanare_platform.h — Mobile platform detection and tunable defaults
  *
  * Mobile targets (iOS, Android) use smaller defaults to reduce memory
- * footprint.  All values can be overridden via environment variables
- * at runtime, or compile-time defines.
+ * footprint.  All values can be overridden via compile-time -D defines.
  */
 
 #ifndef MAPANARE_PLATFORM_H

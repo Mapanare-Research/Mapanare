@@ -108,7 +108,7 @@ jobs:
           for f in examples/wasm/hello.mn examples/wasm/wasi_app.mn; do
             if [ -f "$f" ]; then
               echo "--- Compiling $f (wasm32) ---"
-              python -m mapanare emit-wasm "$f" -o "${f%.mn}.wat" || echo "WARN: $f failed"
+              python -m mapanare emit-wasm "$f" -o "${f%.mn}.wat"
             fi
           done
 
@@ -117,7 +117,7 @@ jobs:
           for f in examples/wasm/hello.mn examples/wasm/wasi_app.mn; do
             if [ -f "$f" ]; then
               echo "--- Compiling $f (wasm32-wasi) ---"
-              python -m mapanare emit-wasm "$f" -o "${f%.mn}.wasi.wat" || echo "WARN: $f failed"
+              python -m mapanare emit-wasm --wasi "$f" -o "${f%.mn}.wasi.wat"
             fi
           done
 
@@ -126,7 +126,7 @@ jobs:
           for wat in examples/wasm/*.wat; do
             if [ -f "$wat" ]; then
               echo "--- wat2wasm $wat ---"
-              wat2wasm "$wat" -o "${wat%.wat}.wasm" || echo "WARN: $wat conversion failed"
+              wat2wasm "$wat" -o "${wat%.wat}.wasm"
             fi
           done
 
@@ -135,7 +135,7 @@ jobs:
           for wasm in examples/wasm/*.wasi.wasm; do
             if [ -f "$wasm" ]; then
               echo "--- Running $wasm on wasmtime ---"
-              wasmtime run "$wasm" || echo "WARN: $wasm execution failed"
+              wasmtime run "$wasm"
             fi
           done
 

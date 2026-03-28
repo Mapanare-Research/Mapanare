@@ -1833,14 +1833,14 @@ The `--lib` flag produces a static archive (`.a`) for iOS or a shared library (`
 
 Mobile targets use smaller defaults to conserve memory and battery:
 
-| Parameter | Desktop Default | Mobile Default | Compile-time Flag |
-|-----------|----------------|----------------|-------------------|
-| Arena size | 8 KB | 4 KB | `-DARENA_SIZE=4096` |
-| Ring buffer slots | 1024 | 256 | `-DRING_SLOTS=256` |
-| Agent queue depth | 256 | 64 | `-DAGENT_QUEUE=64` |
-| Signal batch interval | 16 ms | 1 ms | `-DSIGNAL_BATCH_MS=1` |
+| Parameter | Desktop Default | Mobile Default | Compile-time Override |
+|-----------|----------------|----------------|----------------------|
+| Arena block size | 8 KB | 4 KB | `-DMAPANARE_DEFAULT_ARENA_BLOCK=4096` |
+| Ring buffer slots | 1024 | 256 | `-DMAPANARE_DEFAULT_RING_CAPACITY=256` |
+| Agent queue depth | 256 | 64 | `-DMAPANARE_DEFAULT_AGENT_QUEUE=64` |
+| Signal batch interval | 16 ms | 1 ms | `-DMAPANARE_DEFAULT_BATCH_MS=1` |
 
-All defaults are configurable via compile-time `-D` flags. Platform detection is handled by `mapanare_platform.h` in the C runtime.
+All defaults are defined as `MAPANARE_DEFAULT_*` macros in `mapanare_platform.h` and can be overridden via compile-time `-D` flags. Platform detection is handled by `mapanare_platform.h` in the C runtime.
 
 ---
 

@@ -400,7 +400,9 @@ def _mn_compile_and_run(source):
         return {"ok": False, "error": f"Compiler error: {e}\\n{traceback.format_exc()}"}
 `);
 
-  wasmBackendAvailable = true;
+  // WAT compilation works but native WASM execution requires wat2wasm
+  // (e.g. bundled wabt.js). Until then, the backend falls back to Python.
+  wasmBackendAvailable = false;
 }
 
 // ---- Compile source → WASM binary, then execute natively ----
