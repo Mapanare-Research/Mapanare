@@ -10,6 +10,7 @@ from __future__ import annotations
 import pathlib
 import re
 import subprocess
+import sys
 
 import pytest
 
@@ -21,8 +22,6 @@ def _read_self_hosted() -> tuple[str, str]:
     path = pathlib.Path("mapanare/self/main.mn")
     return path.read_text(encoding="utf-8"), str(path)
 
-
-import sys
 
 MNC_STAGE1 = pathlib.Path("mapanare/self/mnc-stage1" + (".exe" if sys.platform == "win32" else ""))
 
