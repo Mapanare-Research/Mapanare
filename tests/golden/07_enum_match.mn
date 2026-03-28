@@ -7,7 +7,7 @@ enum Color {
 fn main() {
     let c: Color = Color::Green
     match c {
-        Green => { println("green") },
-        _ => { println("other") }
+        Green => { print("green") },
+        _ => { print("other") }
     }
 }

@@ -12,18 +12,16 @@ Warmup: 5 runs, Timed: 10 runs, Median with IQR outlier removal
 from __future__ import annotations
 
 import ctypes
-import sys
 
 import numpy as np
 
-from benchmarks.gpu._bench_utils import BenchResult, format_count, timed_runs
+from benchmarks.gpu._bench_utils import BenchResult, compile_ptx, format_count, timed_runs
 from benchmarks.gpu._cuda_helpers import (
     CUDAContext,
     cuda_free,
     cuda_init,
     cuda_launch_kernel,
     cuda_malloc,
-    cuda_memcpy_dtoh,
     cuda_memcpy_htod,
     cuda_shutdown,
     cuda_synchronize,
@@ -73,38 +71,6 @@ void tensor_scale_f64(const double* __restrict__ a,
 
 SIZES = [1_000_000, 4_000_000, 16_000_000, 64_000_000]
 OPS = ["add", "mul", "scale"]
-
-
-def _compile_ptx(cuda_source: str) -> str | None:
-    """Compile CUDA C source to PTX using nvcc."""
-    import os
-    import shutil
-    import subprocess
-    import tempfile
-
-    nvcc = shutil.which("nvcc")
-    if nvcc is None:
-        return None
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        cu_path = os.path.join(tmpdir, "kernel.cu")
-        ptx_path = os.path.join(tmpdir, "kernel.ptx")
-        with open(cu_path, "w") as f:
-            f.write(cuda_source)
-        try:
-            result = subprocess.run(
-                [nvcc, "--ptx", "-o", ptx_path, cu_path, "-arch=sm_89"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if result.returncode != 0:
-                print(f"  nvcc failed: {result.stderr.strip()}", file=sys.stderr)
-                return None
-            with open(ptx_path) as f:
-                return f.read()
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return None
 
 
 def _bytes_accessed_binary(n: int) -> int:
@@ -268,13 +234,13 @@ def run_elementwise_benchmarks() -> list[BenchResult]:
     print("\n=== Element-wise Operations Benchmark ===")
     print(f"  Sizes: {', '.join(format_count(n) for n in SIZES)} elements")
     print(f"  Ops: {', '.join(OPS)}")
-    print(f"  Metric: GB/s effective bandwidth")
+    print("  Metric: GB/s effective bandwidth")
 
     ctx = cuda_init()
     ptx: str | None = None
     if ctx is not None:
         print(f"  CUDA device: {ctx.device_name}")
-        ptx = _compile_ptx(ELEMENTWISE_CUDA_SOURCE)
+        ptx = compile_ptx(ELEMENTWISE_CUDA_SOURCE)
         if ptx is None:
             print("  WARNING: PTX compilation failed — GPU tests skipped")
     else:
@@ -304,7 +270,7 @@ def run_elementwise_benchmarks() -> list[BenchResult]:
             print(f"\n  [{size_label} / {op}]")
 
             # CPU
-            print(f"    CPU (numpy)...", end="", flush=True)
+            print("    CPU (numpy)...", end="", flush=True)
             cpu_time, cpu_cv = cpu_fns[op](n)
             cpu_gbps = total_bytes / cpu_time / 1e9
             print(f" {cpu_time*1000:.2f}ms ({cpu_gbps:.1f} GB/s, CV={cpu_cv:.1%})")
@@ -322,7 +288,7 @@ def run_elementwise_benchmarks() -> list[BenchResult]:
             # GPU
             if gpu_available:
                 assert ctx is not None and ptx is not None
-                print(f"    GPU (CUDA)...", end="", flush=True)
+                print("    GPU (CUDA)...", end="", flush=True)
                 try:
                     gpu_time, gpu_cv = gpu_fns[op](ctx, ptx, n)
                     gpu_gbps = total_bytes / gpu_time / 1e9

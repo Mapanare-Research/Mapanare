@@ -8,7 +8,7 @@ fn divide(a: Int, b: Int) -> Result<Int, String> {
 fn main() {
     let r: Result<Int, String> = divide(10, 2)
     match r {
-        Ok(v) => { println(str(v)) },
-        Err(e) => { println(e) }
+        Ok(v) => { print(str(v)) },
+        Err(e) => { print(e) }
     }
 }

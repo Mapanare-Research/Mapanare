@@ -16,9 +16,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import platform
-import sys
 from dataclasses import dataclass
-
 
 # ---------------------------------------------------------------------------
 # CUDA Driver API types
@@ -76,6 +74,7 @@ def _load_cuda_driver() -> ctypes.CDLL | None:
 # ---------------------------------------------------------------------------
 # CUDA context management
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class CUDAContext:
@@ -230,9 +229,7 @@ def cuda_load_module(ctx: CUDAContext, ptx_source: str) -> CUmodule:
 def cuda_get_function(ctx: CUDAContext, module: CUmodule, name: str) -> CUfunction:
     """Get a kernel function from a loaded module."""
     func = CUfunction()
-    rc = ctx.lib.cuModuleGetFunction(
-        ctypes.byref(func), module, name.encode("utf-8")
-    )
+    rc = ctx.lib.cuModuleGetFunction(ctypes.byref(func), module, name.encode("utf-8"))
     if rc != CUDA_SUCCESS:
         raise RuntimeError(f"cuModuleGetFunction failed: {rc}")
     return func

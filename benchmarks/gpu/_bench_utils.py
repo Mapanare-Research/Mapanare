@@ -8,6 +8,7 @@ for synchronous GPU workloads (no asyncio needed).
 from __future__ import annotations
 
 import gc
+import os
 import statistics
 import time
 from dataclasses import dataclass, field
@@ -110,3 +111,64 @@ def format_count(n: int) -> str:
     if n >= 1_000:
         return f"{n // 1_000}K"
     return str(n)
+
+
+def _find_msvc_cl() -> str | None:
+    """Find cl.exe from Visual Studio on Windows (nvcc needs it as host compiler)."""
+    import glob
+
+    for base in [
+        r"C:\Program Files\Microsoft Visual Studio",
+        r"C:\Program Files (x86)\Microsoft Visual Studio",
+    ]:
+        matches = glob.glob(base + r"\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\cl.exe")
+        if matches:
+            matches.sort()
+            return os.path.dirname(matches[-1])
+    return None
+
+
+def compile_ptx(cuda_source: str, arch: str = "sm_89") -> str | None:
+    """Compile CUDA C source to PTX using nvcc.
+
+    On Windows, automatically locates cl.exe (MSVC) and passes -ccbin to nvcc.
+    Returns the PTX source string, or None if compilation fails.
+    """
+    import os
+    import platform
+    import shutil
+    import subprocess
+    import sys
+    import tempfile
+
+    nvcc = shutil.which("nvcc")
+    if nvcc is None:
+        return None
+
+    extra_args: list[str] = []
+    if platform.system() == "Windows" and shutil.which("cl") is None:
+        cl_dir = _find_msvc_cl()
+        if cl_dir:
+            extra_args = [f"-ccbin={cl_dir}"]
+        else:
+            print(
+                "  WARNING: cl.exe not found — nvcc requires MSVC on Windows",
+                file=sys.stderr,
+            )
+            return None
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cu_path = os.path.join(tmpdir, "kernel.cu")
+        ptx_path = os.path.join(tmpdir, "kernel.ptx")
+        with open(cu_path, "w") as f:
+            f.write(cuda_source)
+        try:
+            cmd = [nvcc, "--ptx", "-o", ptx_path, cu_path, f"-arch={arch}"] + extra_args
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                print(f"  nvcc PTX compilation failed: {result.stderr.strip()}", file=sys.stderr)
+                return None
+            with open(ptx_path) as f:
+                return f.read()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return None

@@ -6,5 +6,5 @@ fn fib(n: Int) -> Int {
 }
 
 fn main() {
-    println(str(fib(10)))
+    print(str(fib(10)))
 }

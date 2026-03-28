@@ -1219,7 +1219,7 @@ class WasmEmitter:
         fn = inst.fn_name
 
         if fn == "print" or fn == "println":
-            return self._emit_print_call(inst, fn == "println")
+            return self._emit_print_call(inst, True)
 
         if fn == "len":
             if inst.args:

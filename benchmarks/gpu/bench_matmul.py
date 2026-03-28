@@ -11,19 +11,16 @@ Warmup: 5 runs, Timed: 10 runs, Median with IQR outlier removal
 from __future__ import annotations
 
 import ctypes
-import sys
 
 import numpy as np
 
-from benchmarks.gpu._bench_utils import BenchResult, timed_runs
+from benchmarks.gpu._bench_utils import BenchResult, compile_ptx, timed_runs
 from benchmarks.gpu._cuda_helpers import (
     CUDAContext,
-    CUdeviceptr,
     cuda_free,
     cuda_init,
     cuda_launch_kernel,
     cuda_malloc,
-    cuda_memcpy_dtoh,
     cuda_memcpy_htod,
     cuda_shutdown,
     cuda_synchronize,
@@ -59,38 +56,6 @@ void matmul_f64(const double* __restrict__ a,
 SIZES = [256, 512, 1024, 2048, 4096]
 
 
-def _compile_ptx(cuda_source: str) -> str | None:
-    """Compile CUDA C source to PTX using nvcc."""
-    import os
-    import shutil
-    import subprocess
-    import tempfile
-
-    nvcc = shutil.which("nvcc")
-    if nvcc is None:
-        return None
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        cu_path = os.path.join(tmpdir, "kernel.cu")
-        ptx_path = os.path.join(tmpdir, "kernel.ptx")
-        with open(cu_path, "w") as f:
-            f.write(cuda_source)
-        try:
-            result = subprocess.run(
-                [nvcc, "--ptx", "-o", ptx_path, cu_path, "-arch=sm_89"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if result.returncode != 0:
-                print(f"  nvcc PTX compilation failed: {result.stderr.strip()}", file=sys.stderr)
-                return None
-            with open(ptx_path) as f:
-                return f.read()
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return None
-
-
 # ---------------------------------------------------------------------------
 # Benchmark functions
 # ---------------------------------------------------------------------------
@@ -121,8 +86,6 @@ def _bench_gpu_matmul(
     # Prepare host data
     a = np.random.randn(n, n).astype(np.float64)
     b = np.random.randn(n, n).astype(np.float64)
-    c = np.zeros((n, n), dtype=np.float64)
-
     size_bytes = n * n * 8  # float64 = 8 bytes
 
     # Allocate device memory
@@ -174,7 +137,7 @@ def run_matmul_benchmarks() -> list[BenchResult]:
     """
     print("\n=== Matrix Multiply Benchmark ===")
     print(f"  Sizes: {', '.join(f'{n}x{n}' for n in SIZES)}")
-    print(f"  Metric: GFLOPS (2*N^3 / time)")
+    print("  Metric: GFLOPS (2*N^3 / time)")
 
     # Try to initialize CUDA
     ctx = cuda_init()
@@ -183,7 +146,7 @@ def run_matmul_benchmarks() -> list[BenchResult]:
         print(f"  CUDA device: {ctx.device_name}")
         print(f"  Compute capability: sm_{ctx.compute_cap[0]}{ctx.compute_cap[1]}")
         print(f"  Memory: {ctx.total_mem / (1024**3):.1f} GB")
-        ptx = _compile_ptx(MATMUL_CUDA_SOURCE)
+        ptx = compile_ptx(MATMUL_CUDA_SOURCE)
         if ptx is None:
             print("  WARNING: nvcc not found or PTX compilation failed — GPU tests skipped")
     else:
@@ -199,7 +162,7 @@ def run_matmul_benchmarks() -> list[BenchResult]:
         print(f"\n  [{label}]")
 
         # CPU benchmark
-        print(f"    CPU (numpy)...", end="", flush=True)
+        print("    CPU (numpy)...", end="", flush=True)
         cpu_time, cpu_cv = _bench_cpu_matmul(n)
         cpu_gflops = flops / cpu_time / 1e9
         print(f" {cpu_time*1000:.1f}ms ({cpu_gflops:.1f} GFLOPS, CV={cpu_cv:.1%})")
@@ -217,7 +180,7 @@ def run_matmul_benchmarks() -> list[BenchResult]:
         # GPU benchmark
         if gpu_available:
             assert ctx is not None and ptx is not None
-            print(f"    GPU (CUDA)...", end="", flush=True)
+            print("    GPU (CUDA)...", end="", flush=True)
             try:
                 gpu_time, gpu_cv = _bench_gpu_matmul(ctx, ptx, n)
                 gpu_gflops = flops / gpu_time / 1e9

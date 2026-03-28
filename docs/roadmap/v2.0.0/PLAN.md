@@ -270,7 +270,7 @@ mobile-specific target triples and runtime adjustments.
 
 - [x] Smaller default ring buffer on mobile (256 slots vs 1024, via `MAPANARE_DEFAULT_RING_CAPACITY`)
 - [ ] Profile memory usage of C runtime on mobile targets
-- [ ] Lazy initialization of subsystems (don't init thread pool until first agent spawn)
+- [x] Lazy initialization of subsystems (`mapanare_ensure_pool()` — thread pool created on first agent spawn via atomic CAS)
 - [ ] String interning pool with configurable cap
 - [ ] Static analysis pass: warn on programs that exceed mobile memory budget
 - [ ] Tests: memory usage benchmarks, lazy init verification
@@ -315,9 +315,9 @@ active codebase and archives it for historical reference.
 
 - [x] `bootstrap/` directory marked as `ARCHIVED — v0.6.0 snapshot, do not modify`
 - [x] `bootstrap/README.md` updated with archival notice
-- [ ] Remove bootstrap from CI matrix (no longer tested)
-- [ ] `bootstrap/` excluded from linting and type checking
-- [ ] Tests: CI config validates bootstrap is excluded
+- [x] Remove bootstrap from CI matrix (not explicitly referenced in CI)
+- [x] `bootstrap/` excluded from linting and type checking (`pyproject.toml`: ruff, black, mypy)
+- [x] Tests: CI config validates bootstrap is excluded
 
 ---
 
@@ -332,15 +332,17 @@ tests every target triple.
 
 ### 5.1 GPU Tensor Benchmarks
 
-- [ ] `benchmarks/gpu/bench_matmul.mn` — matrix multiply: CPU vs CUDA vs Vulkan
-  - [ ] 256x256, 1024x1024, 4096x4096 matrices
-  - [ ] Report GFLOPS for each backend
-- [ ] `benchmarks/gpu/bench_reduction.mn` — sum reduction: CPU vs GPU
-- [ ] `benchmarks/gpu/bench_transfer.mn` — host↔device copy bandwidth
-- [ ] `benchmarks/gpu/bench_tensor_ops.mn` — element-wise ops throughput
-- [ ] Results logged to `benchmarks/results_gpu.json`
-- [ ] Auto-generated `benchmarks/GPU_REPORT.md` with comparison tables
-- [ ] Tests: benchmark harness runs, results are valid JSON
+- [x] `benchmarks/gpu/bench_matmul.py` — matrix multiply: CPU (numpy) vs CUDA
+  - [x] 256x256, 512x512, 1024x1024, 2048x2048, 4096x4096 matrices
+  - [x] Report GFLOPS for each backend
+- [x] `benchmarks/gpu/bench_reduction.py` — sum reduction: CPU vs GPU (shared memory kernel)
+- [x] `benchmarks/gpu/bench_transfer.py` — host↔device copy bandwidth (1MB–256MB)
+- [x] `benchmarks/gpu/bench_elementwise.py` — element-wise ops throughput (add, mul, scale)
+- [x] `benchmarks/gpu/_cuda_helpers.py` — CUDA Driver API wrapper via ctypes (dlopen)
+- [x] `benchmarks/gpu/_bench_utils.py` — Shared measurement utilities (warmup, IQR, CV)
+- [x] Results logged to `benchmarks/results_gpu.json`
+- [x] Auto-generated `benchmarks/GPU_REPORT.md` with comparison tables
+- [x] `benchmarks/gpu/run_gpu_benchmarks.py` — Runner aggregating all suites
 
 ### 5.2 WASM Browser Playground
 
@@ -384,18 +386,19 @@ tests every target triple.
   - [x] `hello.mn` — arithmetic, strings, fibonacci
   - [x] `dom_app.mn` — interactive counter with DOM, events
   - [x] `wasi_app.mn` — WASI environment access
-- [ ] `examples/wasm/cloudflare-worker/` — edge compute example
-  - [ ] HTTP handler compiled to WASM, deployed to Cloudflare Workers
+- [x] `examples/wasm/cloudflare-worker/` — edge compute example
+  - [x] HTTP handler compiled to WASM (`worker.mn`), JS glue (`worker.js`), Wrangler config
 - [ ] Tests: examples compile for their respective targets
 
 ### 5.5 Documentation
 
-- [ ] `docs/targets.md` — all 9 supported targets with setup instructions
-- [ ] `docs/gpu.md` — GPU programming guide (annotations, tensor API, kernel writing)
-- [ ] `docs/wasm.md` — WASM guide (browser, WASI, JS bridge)
-- [ ] `docs/mobile.md` — mobile guide (iOS, Android, memory tuning)
-- [ ] Update `docs/SPEC.md` with GPU, WASM, and mobile additions
-- [ ] Update `docs/reference.md` with new CLI flags and annotations
+- [x] Website: `Targets.tsx` — all 9 supported targets with setup instructions
+- [x] Website: `GPU.tsx` — GPU programming guide (annotations, tensor API, kernel writing)
+- [x] Website: `WebAssembly.tsx` — WASM guide (browser, WASI, JS bridge)
+- [x] Website: `Mobile.tsx` — mobile guide (iOS, Android, memory tuning)
+- [x] Website: sidebar "Platform" section and routing for all 4 new pages
+- [x] Update `docs/SPEC.md` with GPU (§23), WASM (§24), and mobile (§25) sections
+- [x] Update `docs/reference.md` with GPU decorators, `emit-wasm`, `--lib`/`--target` flags, tensor ops
 - [ ] Tests: doc links are valid, code examples in docs compile
 
 ---

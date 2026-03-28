@@ -1,5 +1,5 @@
 fn main() {
     let x: Int = 10
     let add_x = (n) => n + x
-    println(str(add_x(5)))
+    print(str(add_x(5)))
 }

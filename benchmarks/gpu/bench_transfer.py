@@ -11,7 +11,6 @@ Warmup: 5 runs, Timed: 10 runs, Median with IQR outlier removal
 from __future__ import annotations
 
 import ctypes
-import sys
 
 import numpy as np
 
@@ -28,11 +27,11 @@ from benchmarks.gpu._cuda_helpers import (
 )
 
 SIZES_BYTES = [
-    1 * 1024 * 1024,       # 1 MB
-    4 * 1024 * 1024,       # 4 MB
-    16 * 1024 * 1024,      # 16 MB
-    64 * 1024 * 1024,      # 64 MB
-    256 * 1024 * 1024,     # 256 MB
+    1 * 1024 * 1024,  # 1 MB
+    4 * 1024 * 1024,  # 4 MB
+    16 * 1024 * 1024,  # 16 MB
+    64 * 1024 * 1024,  # 64 MB
+    256 * 1024 * 1024,  # 256 MB
 ]
 
 
@@ -85,7 +84,7 @@ def run_transfer_benchmarks() -> list[BenchResult]:
     """
     print("\n=== Host <-> Device Transfer Benchmark ===")
     print(f"  Sizes: {', '.join(format_size(s) for s in SIZES_BYTES)}")
-    print(f"  Metric: GB/s")
+    print("  Metric: GB/s")
 
     ctx = cuda_init()
     if ctx is None:
@@ -103,7 +102,7 @@ def run_transfer_benchmarks() -> list[BenchResult]:
         print(f"\n  [{label}]")
 
         # Host -> Device
-        print(f"    H2D...", end="", flush=True)
+        print("    H2D...", end="", flush=True)
         try:
             h2d_time, h2d_cv = _bench_h2d(ctx, size_bytes)
             h2d_gbps = size_bytes / h2d_time / 1e9
@@ -123,7 +122,7 @@ def run_transfer_benchmarks() -> list[BenchResult]:
             print(f" FAILED: {e}")
 
         # Device -> Host
-        print(f"    D2H...", end="", flush=True)
+        print("    D2H...", end="", flush=True)
         try:
             d2h_time, d2h_cv = _bench_d2h(ctx, size_bytes)
             d2h_gbps = size_bytes / d2h_time / 1e9
