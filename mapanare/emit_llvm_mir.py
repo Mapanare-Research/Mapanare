@@ -548,6 +548,10 @@ class LLVMMIREmitter:
         self._local_closures: list[Any] = []
         self._str_tmp_count: int = 0
 
+        # GPU dispatch state
+        self._gpu_device: str | None = None  # current function's GPU target (gpu/cuda/vulkan)
+        self._gpu_declared: bool = False  # whether GPU runtime functions are declared
+
         # Instruction dispatch table (type -> bound handler)
         self._inst_dispatch_bound: dict[type, Any] = {}
         self._init_dispatch()
@@ -1450,6 +1454,84 @@ class LLVMMIREmitter:
             "mapanare_agent_recv_blocking", LLVM_I32, [LLVM_PTR, LLVM_PTR.as_pointer()]
         )
 
+    # -- GPU runtime functions --------------------------------------------------
+
+    # Mapping from (device, operation) to C runtime function name.
+    # "gpu" uses the generic mapanare_gpu_tensor_* which auto-selects at runtime.
+    # "cuda" also uses mapanare_gpu_tensor_* (CUDA is the default in the C runtime).
+    # "vulkan" uses mapanare_vk_tensor_*.
+    _GPU_OPS: dict[str, str] = {
+        "tensor_add": "add",
+        "tensor_sub": "sub",
+        "tensor_mul": "mul",
+        "tensor_div": "div",
+        "tensor_matmul": "matmul",
+        "add": "add",
+        "sub": "sub",
+        "mul": "mul",
+        "div": "div",
+        "matmul": "matmul",
+    }
+
+    def _declare_gpu_runtime(self) -> None:
+        """Lazily declare all GPU C runtime functions as LLVM externals."""
+        if self._gpu_declared:
+            return
+        self._gpu_declared = True
+
+        # GPU init / detection
+        self._declare_runtime_fn("mapanare_gpu_init", LLVM_I32, [])
+        self._declare_runtime_fn("mapanare_gpu_has_cuda", LLVM_I32, [])
+        self._declare_runtime_fn("mapanare_gpu_has_vulkan", LLVM_I32, [])
+
+        # Buffer management
+        self._declare_runtime_fn("mapanare_gpu_buffer_alloc", LLVM_PTR, [LLVM_I32, LLVM_INT])
+        self._declare_runtime_fn("mapanare_gpu_buffer_free", LLVM_VOID, [LLVM_PTR])
+        self._declare_runtime_fn(
+            "mapanare_gpu_buffer_upload", LLVM_I32, [LLVM_PTR, LLVM_PTR, LLVM_INT]
+        )
+        self._declare_runtime_fn(
+            "mapanare_gpu_buffer_download", LLVM_I32, [LLVM_PTR, LLVM_PTR, LLVM_INT]
+        )
+
+        # Tensor operations — generic (CUDA default)
+        for op in ("add", "sub", "mul", "div", "matmul"):
+            self._declare_runtime_fn(f"mapanare_gpu_tensor_{op}", LLVM_PTR, [LLVM_PTR, LLVM_PTR])
+        # Tensor operations — Vulkan variants
+        for op in ("add", "sub", "mul", "div", "matmul"):
+            self._declare_runtime_fn(f"mapanare_vk_tensor_{op}", LLVM_PTR, [LLVM_PTR, LLVM_PTR])
+
+    def _gpu_runtime_name(self, device: str, operation: str) -> str | None:
+        """Return the C runtime function name for a GPU tensor operation.
+
+        Returns None if *operation* is not a recognized GPU tensor op.
+        """
+        canon = self._GPU_OPS.get(operation)
+        if canon is None:
+            return None
+        if device == "vulkan":
+            return f"mapanare_vk_tensor_{canon}"
+        # "gpu" and "cuda" both use the generic entry point
+        return f"mapanare_gpu_tensor_{canon}"
+
+    def _emit_gpu_call(
+        self,
+        builder: Any,
+        device: str,
+        operation: str,
+        args: list[Any],
+        name: str,
+    ) -> Any:
+        """Emit a GPU tensor operation call, returning the result pointer."""
+        self._declare_gpu_runtime()
+        rt_name = self._gpu_runtime_name(device, operation)
+        if rt_name is None:
+            raise ValueError(f"Unknown GPU tensor operation: {operation}")
+        fn = self._runtime_fns[rt_name]
+        # Coerce both args to i8* (opaque pointers)
+        coerced = [_coerce_arg(builder, a, LLVM_PTR, f"{name}.a{i}") for i, a in enumerate(args)]
+        return builder.call(fn, coerced, name=name)
+
     # -----------------------------------------------------------------------
     # Printf support
     # -----------------------------------------------------------------------
@@ -1538,6 +1620,17 @@ class LLVMMIREmitter:
         if not mir_fn.blocks:
             # Function with no body — just a declaration
             return
+
+        # Detect GPU decorators (@gpu, @cuda, @vulkan) on this function.
+        # Sets self._gpu_device for the duration of the function body so
+        # that tensor operations inside are redirected to GPU C runtime calls.
+        gpu_device_for_fn: str | None = None
+        for dec in mir_fn.decorators:
+            d = dec.lower()
+            if d in ("gpu", "cuda", "vulkan"):
+                gpu_device_for_fn = d
+                break
+        self._gpu_device = gpu_device_for_fn
 
         # Attach DISubprogram if debug info is enabled
         if self._debug:
@@ -1823,6 +1916,7 @@ class LLVMMIREmitter:
         self._local_strings = []
         self._local_closures = []
         self._str_tmp_count = 0
+        self._gpu_device = None
 
     # -----------------------------------------------------------------------
     # Value name helper
@@ -2418,6 +2512,16 @@ class LLVMMIREmitter:
         fn_name = inst.fn_name
         args = [self._get_value(a, values) for a in inst.args]
         name = self._val_name(inst.dest)
+
+        # --- GPU tensor dispatch ---
+        # When inside a @gpu/@cuda/@vulkan function, redirect recognized tensor
+        # operations to the GPU C runtime instead of the normal call path.
+        if self._gpu_device is not None and len(args) >= 2:
+            rt_name = self._gpu_runtime_name(self._gpu_device, fn_name)
+            if rt_name is not None:
+                result = self._emit_gpu_call(builder, self._gpu_device, fn_name, args[:2], name)
+                self._store_value(inst.dest, result, values)
+                return
 
         # --- Builtin dispatch ---
 
