@@ -1,3 +1,8 @@
+> **ARCHIVED -- v0.6.0 snapshot, do not modify.**
+> This directory contains the frozen Python bootstrap compiler from v0.6.0.
+> It is preserved for historical reference and self-hosted compiler bootstrapping only.
+> All active development targets the LLVM and WebAssembly backends.
+
 # Bootstrap Compiler (v0.6.0 Snapshot)
 
 This directory contains a frozen copy of the v0.6.0 Python-based Mapanare
