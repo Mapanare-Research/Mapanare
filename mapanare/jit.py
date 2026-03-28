@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import os
 import sys
+from typing import Any, Callable
 
 import llvmlite.binding as llvm
 
@@ -43,7 +44,7 @@ def _load_runtime() -> None:
     if sys.platform == "win32":
         import ctypes.wintypes as wintypes
 
-        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        kernel32 = ctypes.windll.kernel32
         GetProcAddress = kernel32.GetProcAddress
         GetProcAddress.argtypes = [wintypes.HMODULE, ctypes.c_char_p]
         GetProcAddress.restype = ctypes.c_void_p
@@ -55,7 +56,7 @@ def _load_runtime() -> None:
         _register_dll_symbols_unix(handle)
 
 
-def _register_dll_symbols(handle: int, get_proc: object) -> None:
+def _register_dll_symbols(handle: Any, get_proc: Callable[[Any, bytes], Any]) -> None:
     """Register known runtime symbols from the DLL with llvm.add_symbol (Windows)."""
     # Exhaustive list of symbols the LLVM codegen may reference
     symbols = [

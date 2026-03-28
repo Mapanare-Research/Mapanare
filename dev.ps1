@@ -11,7 +11,9 @@
 
 param(
     [ValidateSet("validate", "test", "lint", "fmt", "e2e", "bench")]
-    [string]$Mode = "validate"
+    [string]$Mode = "validate",
+
+    [switch]$Once
 )
 
 $ErrorActionPreference = "Stop"
@@ -233,6 +235,10 @@ if ($Mode -eq "validate") {
     Write-Host ""
 
     Invoke-AllChecks
+
+    if ($Once) {
+        return
+    }
 
     $watchers = @()
     $watchDirs = @($mapaPath, $runtimePath, $testsPath, $stdlibPath) | Where-Object { Test-Path $_ }
