@@ -6,7 +6,6 @@ import argparse
 import os
 import subprocess
 import sys
-import tempfile
 
 from mapanare.ast_nodes import Program
 from mapanare.diagnostics import (
@@ -16,7 +15,6 @@ from mapanare.diagnostics import (
     format_diagnostic,
     format_summary,
 )
-from mapanare.emit_python import PythonEmitter
 from mapanare.modules import ModuleResolver
 from mapanare.optimizer import OptLevel, optimize
 from mapanare.parser import ParseError, parse, parse_recovering
@@ -89,7 +87,13 @@ def _compile_source(
     python_path: list[str] | None = None,
     use_mir: bool = True,
 ) -> str:
-    """Parse, check, optimize, and emit Python from Mapanare source. Returns Python code."""
+    """Parse, check, optimize, and emit Python from Mapanare source. Returns Python code.
+
+    .. deprecated:: 2.0.0
+        This function uses the legacy Python transpiler backend. New code should
+        use ``_compile_to_llvm_ir`` + ``jit_compile_and_run`` instead. Kept for
+        ``cmd_compile``, REPL, and test compatibility.
+    """
     ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename, resolver=resolver)
 
@@ -104,6 +108,8 @@ def _compile_source(
         mir_module, _ = mir_optimize(mir_module, mir_opt_level)
         emitter = PythonMIREmitter(python_path=python_path)
         return emitter.emit(mir_module)
+
+    from mapanare.emit_python import PythonEmitter
 
     ast, stats = optimize(ast, opt_level)
     py_emitter = PythonEmitter(python_path=python_path)
@@ -283,8 +289,10 @@ def _compile_resolved_modules(resolver: ModuleResolver, opt_level: OptLevel, out
         if os.path.abspath(mod_out) == os.path.abspath(filepath.replace(".mn", ".py")):
             # Already compiled as the main file
             continue
+        from mapanare.emit_python import PythonEmitter as _PyEmit
+
         ast, _ = optimize(module.program, opt_level)
-        emitter = PythonEmitter()
+        emitter = _PyEmit()
         code = emitter.emit(ast)
         with open(mod_out, "w", encoding="utf-8") as f:
             f.write(code)
@@ -351,7 +359,7 @@ def cmd_check(args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
-    """Compile and run an .mn source file."""
+    """Compile and run an .mn source file via LLVM JIT."""
     # Enable tracing if --trace is passed
     trace_mode = getattr(args, "trace", None)
     if trace_mode:
@@ -376,17 +384,17 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    python_path: list[str] = getattr(args, "python_path", None) or []
     use_mir = not getattr(args, "no_mir", False)
+    debug = getattr(args, "debug", False)
     resolver = ModuleResolver()
     try:
-        python_code = _compile_source(
+        llvm_ir = _compile_to_llvm_ir(
             source,
             args.source,
             opt_level=opt_level,
             resolver=resolver,
-            python_path=python_path,
             use_mir=use_mir,
+            debug=debug,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -394,40 +402,13 @@ def cmd_run(args: argparse.Namespace) -> None:
     except SemanticErrors as e:
         _emit_semantic_errors(e, source)
         sys.exit(1)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    # When frozen (PyInstaller), sys.executable points to the mapanare binary,
-    # not a Python interpreter.  Fall back to exec() in that case.
-    if getattr(sys, "frozen", False):
+    from mapanare.jit import jit_compile_and_run
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False, encoding="utf-8"
-        ) as tmp:
-            tmp.write(python_code)
-            tmp_path = tmp.name
-        try:
-            code = compile(python_code, tmp_path, "exec")
-            exec(code, {"__name__": "__main__", "__file__": tmp_path})
-        except SystemExit as exc:
-            sys.exit(exc.code)
-        except Exception as exc:
-            print(f"runtime error: {exc}", file=sys.stderr)
-            sys.exit(1)
-        finally:
-            os.unlink(tmp_path)
-    else:
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False, encoding="utf-8"
-        ) as tmp:
-            tmp.write(python_code)
-            tmp_path = tmp.name
-        try:
-            result = subprocess.run(
-                [sys.executable, tmp_path],
-                cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            )
-            sys.exit(result.returncode)
-        finally:
-            os.unlink(tmp_path)
+    jit_compile_and_run(llvm_ir, opt_level=opt_level.value)
 
 
 def cmd_repl(args: argparse.Namespace) -> None:
