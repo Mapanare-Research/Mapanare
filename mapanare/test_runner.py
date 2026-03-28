@@ -1,11 +1,13 @@
 """Built-in test runner for Mapanare.
 
 Discovers and runs @test-decorated functions in .mn source files.
+Uses the LLVM JIT backend to compile and execute tests natively.
 Usage: mapanare test [path] [--filter pattern]
 """
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -96,9 +98,12 @@ def discover_tests(source: str, filename: str) -> list[str]:
     return test_names
 
 
-def _compile_test_source(source: str, filename: str) -> str:
-    """Compile a .mn file to Python, keeping @test functions."""
-    from mapanare.emit_python_mir import PythonMIREmitter
+def _compile_test_to_llvm(source: str, filename: str, test_names: list[str]) -> str:
+    """Compile a .mn file to LLVM IR for JIT execution.
+
+    Test functions are marked public so the JIT engine can resolve them by name.
+    """
+    from mapanare.emit_llvm_mir import LLVMMIREmitter
     from mapanare.lower import lower as build_mir
     from mapanare.mir_opt import MIROptLevel
     from mapanare.mir_opt import optimize_module as mir_optimize
@@ -112,12 +117,75 @@ def _compile_test_source(source: str, filename: str) -> str:
     mir_module = build_mir(ast, module_name=module_name)
     mir_module, _ = mir_optimize(mir_module, MIROptLevel.O0)
 
-    emitter = PythonMIREmitter()
-    return emitter.emit(mir_module)
+    # Mark @test functions as public so they get external linkage in LLVM IR
+    test_name_set = set(test_names)
+    for fn in mir_module.functions:
+        if fn.name in test_name_set:
+            fn.is_public = True
+
+    emitter = LLVMMIREmitter()
+    llvm_module = emitter.emit(mir_module)
+    return str(llvm_module)
+
+
+# Subprocess harness script template.  The subprocess loads the LLVM IR from a
+# temp file, JIT-compiles it, and calls the named test function.  On success it
+# prints a JSON result line; on assertion failure (exit(1) from compiled code)
+# the process exits with code 1 and stderr carries the assertion message.
+_JIT_HARNESS = """\
+import ctypes, json, sys, time
+import llvmlite.binding as llvm
+
+llvm.initialize()
+llvm.initialize_native_target()
+llvm.initialize_native_asmprinter()
+
+ir_path = sys.argv[1]
+fn_name = sys.argv[2]
+
+with open(ir_path, encoding="utf-8") as f:
+    llvm_ir = f.read()
+
+target = llvm.Target.from_default_triple()
+tm = target.create_target_machine(opt=2)
+mod = llvm.parse_assembly(llvm_ir)
+mod.triple = tm.triple
+mod.data_layout = str(tm.target_data)
+mod.verify()
+
+if hasattr(llvm, "create_pass_manager_builder"):
+    pmb = llvm.create_pass_manager_builder()
+    pmb.opt_level = 2
+    pm = llvm.create_module_pass_manager()
+    pmb.populate(pm)
+    pm.run(mod)
+elif hasattr(llvm, "create_pass_builder"):
+    pb = llvm.create_pass_builder(tm)
+    pb.run(mod)
+
+engine = llvm.create_mcjit_compiler(mod, tm)
+engine.finalize_object()
+engine.run_static_constructors()
+
+t0 = time.perf_counter()
+ptr = engine.get_function_address(fn_name)
+if ptr == 0:
+    print(json.dumps({"passed": False, "error": f"function '{fn_name}' not found"}))
+    sys.exit(0)
+
+cfunc = ctypes.CFUNCTYPE(None)(ptr)
+cfunc()
+dur = time.perf_counter() - t0
+print(json.dumps({"passed": True, "duration": dur}))
+"""
 
 
 def run_test_file(filepath: str, filter_pattern: str | None = None) -> list[TestResult]:
-    """Run all @test functions in a single .mn file."""
+    """Run all @test functions in a single .mn file via LLVM JIT.
+
+    Each test function is executed in a separate subprocess so that assertion
+    failures (which call exit(1) in compiled code) do not kill the runner.
+    """
     source = _read_file(filepath)
     test_names = discover_tests(source, filepath)
 
@@ -127,88 +195,94 @@ def run_test_file(filepath: str, filter_pattern: str | None = None) -> list[Test
     if not test_names:
         return []
 
-    # Compile the file
+    # Compile to LLVM IR (once per file)
     try:
-        python_code = _compile_test_source(source, filepath)
+        llvm_ir = _compile_test_to_llvm(source, filepath, test_names)
     except (ParseError, SemanticErrors, Exception) as e:
         return [
             TestResult(name=n, file=filepath, passed=False, error=f"compile error: {e}")
             for n in test_names
         ]
 
-    # Generate test harness that calls each test and reports results
-    harness_lines = [python_code, "", "import sys, time, json", "", "_results = []"]
-    for name in test_names:
-        harness_lines.append("_t0 = time.perf_counter()")
-        harness_lines.append("try:")
-        harness_lines.append(f"    {name}()")
-        harness_lines.append(
-            f"    _results.append(dict(name={name!r}, passed=True,"
-            f" duration=time.perf_counter() - _t0))"
-        )
-        harness_lines.append("except Exception as _e:")
-        harness_lines.append(
-            f"    _results.append(dict(name={name!r}, passed=False,"
-            f" error=str(_e), duration=time.perf_counter() - _t0))"
-        )
-    harness_lines.append('print("__TEST_RESULTS__")')
-    harness_lines.append("print(json.dumps(_results))")
-
-    harness_code = "\n".join(harness_lines)
-
-    # Write to temp file and run
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as tmp:
-        tmp.write(harness_code)
-        tmp_path = tmp.name
-
+    # Write LLVM IR and harness script to temp files
+    ir_fd, ir_path = tempfile.mkstemp(suffix=".ll", prefix="mn_test_")
+    harness_fd, harness_path = tempfile.mkstemp(suffix=".py", prefix="mn_harness_")
     try:
-        result = subprocess.run(
-            [sys.executable, tmp_path],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        )
-
-        # Parse results from stdout
-        import json
+        with os.fdopen(ir_fd, "w", encoding="utf-8") as f:
+            f.write(llvm_ir)
+        with os.fdopen(harness_fd, "w", encoding="utf-8") as f:
+            f.write(_JIT_HARNESS)
 
         results: list[TestResult] = []
-        output = result.stdout
-        if "__TEST_RESULTS__" in output:
-            json_line = output.split("__TEST_RESULTS__\n", 1)[1].strip().split("\n")[0]
-            raw_results = json.loads(json_line)
-            for r in raw_results:
-                results.append(
-                    TestResult(
-                        name=r["name"],
-                        file=filepath,
-                        passed=r["passed"],
-                        duration=r.get("duration", 0.0),
-                        error=r.get("error", ""),
-                    )
+        for name in test_names:
+            t0 = time.perf_counter()
+            try:
+                proc = subprocess.run(
+                    [sys.executable, harness_path, ir_path, name],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
                 )
-        else:
-            # Process crashed — all tests fail
-            stderr = result.stderr.strip()
-            for name in test_names:
+                duration = time.perf_counter() - t0
+
+                if proc.returncode == 0 and proc.stdout.strip():
+                    data = json.loads(proc.stdout.strip().split("\n")[-1])
+                    results.append(
+                        TestResult(
+                            name=name,
+                            file=filepath,
+                            passed=data["passed"],
+                            duration=data.get("duration", duration),
+                            error=data.get("error", ""),
+                        )
+                    )
+                else:
+                    # Process exited non-zero (assertion failure calls exit(1))
+                    stderr = proc.stderr.strip()
+                    # Extract assertion message from stderr/stdout
+                    error_msg = stderr or proc.stdout.strip()
+                    if not error_msg:
+                        error_msg = f"process exited with code {proc.returncode}"
+                    # Clean up the error: look for "assertion failed" in output
+                    combined = (proc.stdout + proc.stderr).strip()
+                    for line in combined.split("\n"):
+                        if "assertion failed" in line.lower():
+                            error_msg = line.strip()
+                            break
+                    results.append(
+                        TestResult(
+                            name=name,
+                            file=filepath,
+                            passed=False,
+                            duration=duration,
+                            error=error_msg,
+                        )
+                    )
+            except subprocess.TimeoutExpired:
                 results.append(
                     TestResult(
                         name=name,
                         file=filepath,
                         passed=False,
-                        error=stderr or f"process exited with code {result.returncode}",
+                        duration=time.perf_counter() - t0,
+                        error="timeout (60s)",
                     )
                 )
-        return results
+            except Exception as e:
+                results.append(
+                    TestResult(
+                        name=name,
+                        file=filepath,
+                        passed=False,
+                        duration=time.perf_counter() - t0,
+                        error=str(e),
+                    )
+                )
 
-    except subprocess.TimeoutExpired:
-        return [
-            TestResult(name=n, file=filepath, passed=False, error="timeout (60s)")
-            for n in test_names
-        ]
+        return results
     finally:
-        os.unlink(tmp_path)
+        os.unlink(ir_path)
+        os.unlink(harness_path)
 
 
 def run_tests(path: str = ".", filter_pattern: str | None = None) -> TestSuite:

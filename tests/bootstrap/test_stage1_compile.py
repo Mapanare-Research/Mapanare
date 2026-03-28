@@ -10,6 +10,7 @@ from __future__ import annotations
 import pathlib
 import re
 import subprocess
+import sys
 
 import pytest
 
@@ -22,21 +23,17 @@ def _read_self_hosted() -> tuple[str, str]:
     return path.read_text(encoding="utf-8"), str(path)
 
 
-MNC_STAGE1 = pathlib.Path("mapanare/self/mnc-stage1")
+MNC_STAGE1 = pathlib.Path("mapanare/self/mnc-stage1" + (".exe" if sys.platform == "win32" else ""))
 
 
 def _has_mnc_stage1() -> bool:
     """Check if mnc-stage1 exists and is executable on this platform."""
     import os
-    import sys
 
     if not MNC_STAGE1.exists():
         return False
-    # ELF binaries can't run on Windows
-    if sys.platform == "win32":
-        return False
     # Must have execute permission (git may store as 644 on Windows/WSL)
-    if not os.access(MNC_STAGE1, os.X_OK):
+    if sys.platform != "win32" and not os.access(MNC_STAGE1, os.X_OK):
         return False
     return True
 
@@ -166,9 +163,9 @@ class TestStage1Compilation:
 class TestStage1BasicFunctionality:
     """mnc-stage1 must be able to compile simple Mapanare programs."""
 
-    def test_hello_world(self) -> None:
+    def test_hello_world(self, tmp_path: pathlib.Path) -> None:
         """Compile a hello world program."""
-        src = pathlib.Path("/tmp/test_mnc_hello.mn")
+        src = tmp_path / "test_mnc_hello.mn"
         src.write_text('fn main() {\n    println("Hello")\n}\n', encoding="utf-8")
         result = subprocess.run(
             [str(MNC_STAGE1), str(src)],
@@ -178,9 +175,9 @@ class TestStage1BasicFunctionality:
         assert result.returncode == 0, f"stderr: {result.stderr.decode()}"
         assert len(result.stdout) > 0, "No output produced"
 
-    def test_arithmetic(self) -> None:
+    def test_arithmetic(self, tmp_path: pathlib.Path) -> None:
         """Compile a program with arithmetic expressions."""
-        src = pathlib.Path("/tmp/test_mnc_arith.mn")
+        src = tmp_path / "test_mnc_arith.mn"
         src.write_text(
             "fn main() {\n" "    let x: Int = 1 + 2 * 3\n" "    println(str(x))\n" "}\n",
             encoding="utf-8",
@@ -192,9 +189,9 @@ class TestStage1BasicFunctionality:
         )
         assert result.returncode == 0, f"stderr: {result.stderr.decode()}"
 
-    def test_function_call(self) -> None:
+    def test_function_call(self, tmp_path: pathlib.Path) -> None:
         """Compile a program with function calls."""
-        src = pathlib.Path("/tmp/test_mnc_fn.mn")
+        src = tmp_path / "test_mnc_fn.mn"
         src.write_text(
             "fn add(a: Int, b: Int) -> Int {\n"
             "    return a + b\n"
@@ -212,10 +209,10 @@ class TestStage1BasicFunctionality:
         )
         assert result.returncode == 0, f"stderr: {result.stderr.decode()}"
 
-    def test_bad_file_returns_error(self) -> None:
+    def test_bad_file_returns_error(self, tmp_path: pathlib.Path) -> None:
         """Compiling a nonexistent file returns exit code 1."""
         result = subprocess.run(
-            [str(MNC_STAGE1), "/tmp/nonexistent_file.mn"],
+            [str(MNC_STAGE1), str(tmp_path / "nonexistent_file.mn")],
             capture_output=True,
             timeout=10,
         )
@@ -240,9 +237,9 @@ class TestStage1BasicFunctionality:
 class TestStage1LLVMEmission:
     """mnc-stage1 must emit valid LLVM IR text."""
 
-    def test_output_contains_llvm_keywords(self) -> None:
+    def test_output_contains_llvm_keywords(self, tmp_path: pathlib.Path) -> None:
         """Output should contain LLVM IR keywords like 'define', 'target'."""
-        src = pathlib.Path("/tmp/test_mnc_ir.mn")
+        src = tmp_path / "test_mnc_ir.mn"
         src.write_text('fn main() {\n    println("test")\n}\n', encoding="utf-8")
         result = subprocess.run(
             [str(MNC_STAGE1), str(src)],
@@ -255,9 +252,9 @@ class TestStage1LLVMEmission:
         # For now, we just verify it produces output without crashing
         assert len(result.stdout) > 0, "No IR output"
 
-    def test_no_string_corruption(self) -> None:
+    def test_no_string_corruption(self, tmp_path: pathlib.Path) -> None:
         """IR output must not have character-level corruption from string untagging."""
-        src = pathlib.Path("/tmp/test_mnc_corruption.mn")
+        src = tmp_path / "test_mnc_corruption.mn"
         src.write_text('fn main() {\n    println("hello")\n}\n', encoding="utf-8")
         result = subprocess.run(
             [str(MNC_STAGE1), str(src)],

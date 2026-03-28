@@ -1,0 +1,726 @@
+// test_text.mn — Tests for stdlib/text/text.mn
+//
+// Self-contained: functions defined inline so the JIT test runner
+// can compile and execute without cross-module imports.
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+fn is_upper_byte(b: Int) -> Bool {
+    return b >= 65 && b <= 90
+}
+
+fn is_lower_byte(b: Int) -> Bool {
+    return b >= 97 && b <= 122
+}
+
+fn is_space(c: String) -> Bool {
+    if c == " " { return true }
+    if c == "\t" { return true }
+    if c == "\n" { return true }
+    if c == "\r" { return true }
+    return false
+}
+
+fn to_lower_char(ch: String) -> String {
+    if ch == "A" { return "a" }
+    if ch == "B" { return "b" }
+    if ch == "C" { return "c" }
+    if ch == "D" { return "d" }
+    if ch == "E" { return "e" }
+    if ch == "F" { return "f" }
+    if ch == "G" { return "g" }
+    if ch == "H" { return "h" }
+    if ch == "I" { return "i" }
+    if ch == "J" { return "j" }
+    if ch == "K" { return "k" }
+    if ch == "L" { return "l" }
+    if ch == "M" { return "m" }
+    if ch == "N" { return "n" }
+    if ch == "O" { return "o" }
+    if ch == "P" { return "p" }
+    if ch == "Q" { return "q" }
+    if ch == "R" { return "r" }
+    if ch == "S" { return "s" }
+    if ch == "T" { return "t" }
+    if ch == "U" { return "u" }
+    if ch == "V" { return "v" }
+    if ch == "W" { return "w" }
+    if ch == "X" { return "x" }
+    if ch == "Y" { return "y" }
+    if ch == "Z" { return "z" }
+    return ch
+}
+
+fn to_upper_char(ch: String) -> String {
+    if ch == "a" { return "A" }
+    if ch == "b" { return "B" }
+    if ch == "c" { return "C" }
+    if ch == "d" { return "D" }
+    if ch == "e" { return "E" }
+    if ch == "f" { return "F" }
+    if ch == "g" { return "G" }
+    if ch == "h" { return "H" }
+    if ch == "i" { return "I" }
+    if ch == "j" { return "J" }
+    if ch == "k" { return "K" }
+    if ch == "l" { return "L" }
+    if ch == "m" { return "M" }
+    if ch == "n" { return "N" }
+    if ch == "o" { return "O" }
+    if ch == "p" { return "P" }
+    if ch == "q" { return "Q" }
+    if ch == "r" { return "R" }
+    if ch == "s" { return "S" }
+    if ch == "t" { return "T" }
+    if ch == "u" { return "U" }
+    if ch == "v" { return "V" }
+    if ch == "w" { return "W" }
+    if ch == "x" { return "X" }
+    if ch == "y" { return "Y" }
+    if ch == "z" { return "Z" }
+    return ch
+}
+
+// ---------------------------------------------------------------------------
+// Case conversion
+// ---------------------------------------------------------------------------
+
+fn to_lower(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        result = result + to_lower_char(s.char_at(i))
+        i = i + 1
+    }
+    return result
+}
+
+fn to_upper(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        result = result + to_upper_char(s.char_at(i))
+        i = i + 1
+    }
+    return result
+}
+
+fn capitalize(s: String) -> String {
+    if len(s) == 0 { return s }
+    let first: String = to_upper_char(s.char_at(0))
+    if len(s) == 1 { return first }
+    return first + s.substr(1, len(s))
+}
+
+fn title_case(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut word_start: Bool = true
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        if is_space(ch) {
+            result = result + ch
+            word_start = true
+        } else {
+            if word_start {
+                result = result + to_upper_char(ch)
+                word_start = false
+            } else {
+                result = result + to_lower_char(ch)
+            }
+        }
+        i = i + 1
+    }
+    return result
+}
+
+fn camel_case(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut capitalize_next: Bool = false
+    let mut first: Bool = true
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        if ch == "_" || ch == "-" || ch == " " {
+            capitalize_next = true
+        } else {
+            if capitalize_next {
+                result = result + to_upper_char(ch)
+                capitalize_next = false
+            } else {
+                if first {
+                    result = result + to_lower_char(ch)
+                } else {
+                    result = result + ch
+                }
+            }
+            first = false
+        }
+        i = i + 1
+    }
+    return result
+}
+
+fn snake_case(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        if ch == "-" || ch == " " {
+            result = result + "_"
+        } else if is_upper_byte(b) {
+            if len(result) > 0 {
+                let last_ch: String = result.char_at(len(result) - 1)
+                if last_ch != "_" {
+                    result = result + "_"
+                }
+            }
+            result = result + to_lower_char(ch)
+        } else {
+            result = result + ch
+        }
+        i = i + 1
+    }
+    return result
+}
+
+fn kebab_case(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        if ch == "_" || ch == " " {
+            result = result + "-"
+        } else if is_upper_byte(b) {
+            if len(result) > 0 {
+                let last_ch: String = result.char_at(len(result) - 1)
+                if last_ch != "-" {
+                    result = result + "-"
+                }
+            }
+            result = result + to_lower_char(ch)
+        } else {
+            result = result + ch
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Trim/pad
+// ---------------------------------------------------------------------------
+
+fn trim(s: String) -> String {
+    let slen: Int = len(s)
+    if slen == 0 { return s }
+    let mut start: Int = 0
+    while start < slen {
+        if is_space(s.char_at(start)) {
+            start = start + 1
+        } else {
+            start = start + slen  // break
+        }
+    }
+    if start >= slen { return "" }
+    // fix start from the break trick
+    start = start - slen
+    let mut end_pos: Int = slen - 1
+    while end_pos >= start {
+        if is_space(s.char_at(end_pos)) {
+            end_pos = end_pos - 1
+        } else {
+            end_pos = end_pos - slen  // break
+        }
+    }
+    end_pos = end_pos + slen  // fix from break
+    return s.substr(start, end_pos + 1)
+}
+
+fn trim_start(s: String) -> String {
+    let slen: Int = len(s)
+    let mut start: Int = 0
+    while start < slen {
+        if is_space(s.char_at(start)) {
+            start = start + 1
+        } else {
+            return s.substr(start, slen)
+        }
+    }
+    return ""
+}
+
+fn trim_end(s: String) -> String {
+    let slen: Int = len(s)
+    let mut end_pos: Int = slen - 1
+    while end_pos >= 0 {
+        if is_space(s.char_at(end_pos)) {
+            end_pos = end_pos - 1
+        } else {
+            return s.substr(0, end_pos + 1)
+        }
+    }
+    return ""
+}
+
+fn pad_start(s: String, width: Int, fill: String) -> String {
+    let slen: Int = len(s)
+    if slen >= width { return s }
+    let mut result: String = ""
+    let mut i: Int = 0
+    let pad_len: Int = width - slen
+    while i < pad_len {
+        result = result + fill
+        i = i + 1
+    }
+    return result + s
+}
+
+fn pad_end(s: String, width: Int, fill: String) -> String {
+    let slen: Int = len(s)
+    if slen >= width { return s }
+    let mut result: String = s
+    let mut i: Int = slen
+    while i < width {
+        result = result + fill
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Search/replace
+// ---------------------------------------------------------------------------
+
+fn contains(s: String, sub: String) -> Bool {
+    return s.find(sub) >= 0
+}
+
+fn starts_with(s: String, prefix: String) -> Bool {
+    let plen: Int = len(prefix)
+    if plen > len(s) { return false }
+    return s.substr(0, plen) == prefix
+}
+
+fn ends_with(s: String, suffix: String) -> Bool {
+    let slen: Int = len(s)
+    let xlen: Int = len(suffix)
+    if xlen > slen { return false }
+    return s.substr(slen - xlen, slen) == suffix
+}
+
+fn index_of(s: String, sub: String) -> Int {
+    return s.find(sub)
+}
+
+fn text_replace(s: String, old: String, new_str: String) -> String {
+    let old_len: Int = len(old)
+    if old_len == 0 { return s }
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        if i + old_len <= slen {
+            let chunk: String = s.substr(i, i + old_len)
+            if chunk == old {
+                result = result + new_str
+                i = i + old_len
+            } else {
+                result = result + s.char_at(i)
+                i = i + 1
+            }
+        } else {
+            result = result + s.char_at(i)
+            i = i + 1
+        }
+    }
+    return result
+}
+
+fn text_count(s: String, sub: String) -> Int {
+    let sub_len: Int = len(sub)
+    if sub_len == 0 { return 0 }
+    let slen: Int = len(s)
+    let mut count: Int = 0
+    let mut i: Int = 0
+    while i <= slen - sub_len {
+        if s.substr(i, i + sub_len) == sub {
+            count = count + 1
+            i = i + sub_len
+        } else {
+            i = i + 1
+        }
+    }
+    return count
+}
+
+// ---------------------------------------------------------------------------
+// Split/join
+// ---------------------------------------------------------------------------
+
+fn split(s: String, sep: String) -> List<String> {
+    let slen: Int = len(s)
+    let sep_len: Int = len(sep)
+    let mut parts: List<String> = []
+    let mut start: Int = 0
+    let mut i: Int = 0
+    while i <= slen - sep_len {
+        if s.substr(i, i + sep_len) == sep {
+            parts = parts + [s.substr(start, i)]
+            start = i + sep_len
+            i = start
+        } else {
+            i = i + 1
+        }
+    }
+    parts = parts + [s.substr(start, slen)]
+    return parts
+}
+
+fn mn_join(parts: List<String>, sep: String) -> String {
+    let n: Int = len(parts)
+    if n == 0 { return "" }
+    let mut result: String = parts[0]
+    let mut i: Int = 1
+    while i < n {
+        result = result + sep + parts[i]
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Character utilities
+// ---------------------------------------------------------------------------
+
+fn is_alpha(c: String) -> Bool {
+    let b: Int = c.byte_at(0)
+    if is_upper_byte(b) { return true }
+    if is_lower_byte(b) { return true }
+    return false
+}
+
+fn is_digit(c: String) -> Bool {
+    let b: Int = c.byte_at(0)
+    return b >= 48 && b <= 57
+}
+
+fn is_alphanumeric(c: String) -> Bool {
+    return is_alpha(c) || is_digit(c)
+}
+
+fn is_whitespace(c: String) -> Bool {
+    return is_space(c)
+}
+
+fn is_empty(s: String) -> Bool {
+    return len(s) == 0
+}
+
+// ---------------------------------------------------------------------------
+// Misc
+// ---------------------------------------------------------------------------
+
+fn reverse(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut i: Int = slen - 1
+    while i >= 0 {
+        result = result + s.char_at(i)
+        i = i - 1
+    }
+    return result
+}
+
+fn repeat(s: String, n: Int) -> String {
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < n {
+        result = result + s
+        i = i + 1
+    }
+    return result
+}
+
+fn truncate(s: String, max_len: Int, suffix: String) -> String {
+    if len(s) <= max_len { return s }
+    let cut: Int = max_len - len(suffix)
+    if cut < 0 { return suffix }
+    return s.substr(0, cut) + suffix
+}
+
+fn slug(s: String) -> String {
+    let slen: Int = len(s)
+    let mut result: String = ""
+    let mut prev_dash: Bool = true
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        if is_lower_byte(b) || is_digit(ch) {
+            result = result + ch
+            prev_dash = false
+        } else if is_upper_byte(b) {
+            result = result + to_lower_char(ch)
+            prev_dash = false
+        } else {
+            if !prev_dash {
+                if len(result) > 0 {
+                    result = result + "-"
+                    prev_dash = true
+                }
+            }
+        }
+        i = i + 1
+    }
+    // Strip trailing dash
+    if len(result) > 0 {
+        if result.char_at(len(result) - 1) == "-" {
+            result = result.substr(0, len(result) - 1)
+        }
+    }
+    return result
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+// --- Case conversion ---
+
+@test
+fn test_to_upper() {
+    assert to_upper("hello") == "HELLO"
+    assert to_upper("Hello World") == "HELLO WORLD"
+    assert to_upper("ABC") == "ABC"
+    assert to_upper("") == ""
+}
+
+@test
+fn test_to_lower() {
+    assert to_lower("HELLO") == "hello"
+    assert to_lower("Hello World") == "hello world"
+    assert to_lower("abc") == "abc"
+    assert to_lower("") == ""
+}
+
+@test
+fn test_capitalize() {
+    assert capitalize("hello") == "Hello"
+    assert capitalize("h") == "H"
+    assert capitalize("") == ""
+    assert capitalize("HELLO") == "HELLO"
+}
+
+@test
+fn test_title_case() {
+    assert title_case("hello world") == "Hello World"
+    assert title_case("foo bar baz") == "Foo Bar Baz"
+    assert title_case("") == ""
+}
+
+@test
+fn test_camel_case() {
+    assert camel_case("hello_world") == "helloWorld"
+    assert camel_case("foo-bar-baz") == "fooBarBaz"
+    assert camel_case("already") == "already"
+}
+
+@test
+fn test_snake_case() {
+    assert snake_case("helloWorld") == "hello_world"
+    assert snake_case("HelloWorld") == "hello_world"
+    assert snake_case("already_snake") == "already_snake"
+}
+
+@test
+fn test_kebab_case() {
+    assert kebab_case("helloWorld") == "hello-world"
+    assert kebab_case("hello_world") == "hello-world"
+    assert kebab_case("HelloWorld") == "hello-world"
+}
+
+// --- Trim/pad ---
+
+@test
+fn test_trim() {
+    assert trim("  hello  ") == "hello"
+    assert trim("hello") == "hello"
+    assert trim("   ") == ""
+    assert trim("") == ""
+}
+
+@test
+fn test_trim_start() {
+    assert trim_start("  hello") == "hello"
+    assert trim_start("hello  ") == "hello  "
+    assert trim_start("  hello  ") == "hello  "
+}
+
+@test
+fn test_trim_end() {
+    assert trim_end("hello  ") == "hello"
+    assert trim_end("  hello") == "  hello"
+    assert trim_end("  hello  ") == "  hello"
+}
+
+@test
+fn test_pad_start() {
+    assert pad_start("hi", 5, " ") == "   hi"
+    assert pad_start("hi", 5, "0") == "000hi"
+    assert pad_start("hello", 3, " ") == "hello", "no padding when long enough"
+}
+
+@test
+fn test_pad_end() {
+    assert pad_end("hi", 5, " ") == "hi   "
+    assert pad_end("hi", 5, ".") == "hi..."
+    assert pad_end("hello", 3, " ") == "hello"
+}
+
+// --- Search/replace ---
+
+@test
+fn test_contains() {
+    assert contains("hello world", "world") == true
+    assert contains("hello world", "xyz") == false
+    assert contains("", "a") == false
+}
+
+@test
+fn test_starts_with() {
+    assert starts_with("hello world", "hello") == true
+    assert starts_with("hello world", "world") == false
+    assert starts_with("hi", "hello") == false
+}
+
+@test
+fn test_ends_with() {
+    assert ends_with("hello world", "world") == true
+    assert ends_with("hello world", "hello") == false
+    assert ends_with("hi", "hello") == false
+}
+
+@test
+fn test_index_of() {
+    assert index_of("hello world", "world") == 6
+    assert index_of("hello world", "xyz") == -1
+    assert index_of("hello", "hello") == 0
+}
+
+@test
+fn test_replace() {
+    assert text_replace("hello world", "world", "earth") == "hello earth"
+    assert text_replace("aaa", "a", "bb") == "bbbbbb"
+    assert text_replace("hello", "xyz", "abc") == "hello"
+}
+
+@test
+fn test_count() {
+    assert text_count("hello hello hello", "hello") == 3
+    assert text_count("aaa", "a") == 3
+    assert text_count("hello", "xyz") == 0
+}
+
+// --- Split/join ---
+
+@test
+fn test_split() {
+    let parts: List<String> = split("a,b,c", ",")
+    assert len(parts) == 3
+    assert parts[0] == "a"
+    assert parts[1] == "b"
+    assert parts[2] == "c"
+}
+
+@test
+fn test_join() {
+    let parts: List<String> = ["a", "b", "c"]
+    assert mn_join(parts, ", ") == "a, b, c"
+    assert mn_join(parts, "") == "abc"
+}
+
+@test
+fn test_join_empty() {
+    let empty: List<String> = []
+    assert mn_join(empty, ",") == ""
+}
+
+// --- Character utilities ---
+
+@test
+fn test_is_alpha() {
+    assert is_alpha("a") == true
+    assert is_alpha("Z") == true
+    assert is_alpha("5") == false
+}
+
+@test
+fn test_is_digit() {
+    assert is_digit("0") == true
+    assert is_digit("9") == true
+    assert is_digit("a") == false
+}
+
+@test
+fn test_is_alphanumeric() {
+    assert is_alphanumeric("a") == true
+    assert is_alphanumeric("5") == true
+    assert is_alphanumeric(" ") == false
+}
+
+@test
+fn test_is_whitespace() {
+    assert is_whitespace(" ") == true
+    assert is_whitespace("\t") == true
+    assert is_whitespace("\n") == true
+    assert is_whitespace("a") == false
+}
+
+@test
+fn test_is_empty() {
+    assert is_empty("") == true
+    assert is_empty("a") == false
+    assert is_empty(" ") == false
+}
+
+// --- Misc ---
+
+@test
+fn test_reverse() {
+    assert reverse("hello") == "olleh"
+    assert reverse("abc") == "cba"
+    assert reverse("a") == "a"
+    assert reverse("") == ""
+}
+
+@test
+fn test_repeat() {
+    assert repeat("ab", 3) == "ababab"
+    assert repeat("x", 5) == "xxxxx"
+    assert repeat("hi", 0) == ""
+}
+
+@test
+fn test_truncate() {
+    assert truncate("hello world", 5, "...") == "he..."
+    assert truncate("hi", 10, "...") == "hi", "no truncation when short enough"
+}
+
+@test
+fn test_slug() {
+    assert slug("Hello World!") == "hello-world"
+    assert slug("  Foo  Bar  ") == "foo-bar"
+    assert slug("camelCase") == "camel-case"
+    assert slug("already-slug") == "already-slug"
+}

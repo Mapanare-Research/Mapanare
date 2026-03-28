@@ -1,0 +1,296 @@
+// test_log.mn — Tests for stdlib/log.mn
+//
+// Self-contained: structs and functions defined inline so the JIT test runner
+// can compile and execute without cross-module imports.
+
+// ---------------------------------------------------------------------------
+// Log level constants
+// ---------------------------------------------------------------------------
+
+fn TRACE() -> Int { return 0 }
+fn DEBUG() -> Int { return 10 }
+fn INFO() -> Int { return 20 }
+fn WARN() -> Int { return 30 }
+fn ERROR() -> Int { return 40 }
+fn FATAL() -> Int { return 50 }
+
+// ---------------------------------------------------------------------------
+// Level name conversion
+// ---------------------------------------------------------------------------
+
+fn level_name(level: Int) -> String {
+    if level == 0 { return "TRACE" }
+    if level == 10 { return "DEBUG" }
+    if level == 20 { return "INFO" }
+    if level == 30 { return "WARN" }
+    if level == 40 { return "ERROR" }
+    if level == 50 { return "FATAL" }
+    return "UNKNOWN"
+}
+
+fn level_from_name(name: String) -> Int {
+    if name == "TRACE" { return 0 }
+    if name == "DEBUG" { return 10 }
+    if name == "INFO" { return 20 }
+    if name == "WARN" { return 30 }
+    if name == "ERROR" { return 40 }
+    if name == "FATAL" { return 50 }
+    return -1
+}
+
+// ---------------------------------------------------------------------------
+// LogRecord struct
+// ---------------------------------------------------------------------------
+
+struct LogRecord {
+    level: Int,
+    message: String,
+    agent_name: String,
+    logger_name: String
+}
+
+fn new_record(level: Int, message: String) -> LogRecord {
+    return new LogRecord { level: level, message: message, agent_name: "", logger_name: "" }
+}
+
+fn record_with_agent(level: Int, message: String, agent: String) -> LogRecord {
+    return new LogRecord { level: level, message: message, agent_name: agent, logger_name: "" }
+}
+
+fn record_with_logger(level: Int, message: String, logger: String) -> LogRecord {
+    return new LogRecord { level: level, message: message, agent_name: "", logger_name: logger }
+}
+
+// ---------------------------------------------------------------------------
+// Formatting
+// ---------------------------------------------------------------------------
+
+fn format_record(rec: LogRecord) -> String {
+    let level_str: String = level_name(rec.level)
+    let mut result: String = "[" + level_str + "]"
+
+    if len(rec.agent_name) > 0 {
+        result = result + " [" + rec.agent_name + "]"
+    } else if len(rec.logger_name) > 0 {
+        result = result + " [" + rec.logger_name + "]"
+    }
+
+    result = result + " " + rec.message
+    return result
+}
+
+fn format_record_plain(rec: LogRecord) -> String {
+    let level_str: String = level_name(rec.level)
+    return "[" + level_str + "] " + rec.message
+}
+
+// ---------------------------------------------------------------------------
+// Logger struct
+// ---------------------------------------------------------------------------
+
+struct Logger {
+    name: String,
+    min_level: Int
+}
+
+fn new_logger(name: String) -> Logger {
+    return new Logger { name: name, min_level: 20 }
+}
+
+fn logger_with_level(name: String, level: Int) -> Logger {
+    return new Logger { name: name, min_level: level }
+}
+
+fn should_log(logger: Logger, level: Int) -> Bool {
+    return level >= logger.min_level
+}
+
+fn child_logger(parent: Logger, child_name: String) -> Logger {
+    let full_name: String = parent.name + "." + child_name
+    return new Logger { name: full_name, min_level: parent.min_level }
+}
+
+fn format_log(logger: Logger, level: Int, message: String) -> String {
+    if level < logger.min_level {
+        return ""
+    }
+    let level_str: String = level_name(level)
+    return "[" + level_str + "] [" + logger.name + "] " + message
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+// --- Level constants ---
+
+@test
+fn test_level_ordering() {
+    assert TRACE() < DEBUG(), "TRACE < DEBUG"
+    assert DEBUG() < INFO(), "DEBUG < INFO"
+    assert INFO() < WARN(), "INFO < WARN"
+    assert WARN() < ERROR(), "WARN < ERROR"
+    assert ERROR() < FATAL(), "ERROR < FATAL"
+}
+
+@test
+fn test_level_names() {
+    assert level_name(TRACE()) == "TRACE"
+    assert level_name(DEBUG()) == "DEBUG"
+    assert level_name(INFO()) == "INFO"
+    assert level_name(WARN()) == "WARN"
+    assert level_name(ERROR()) == "ERROR"
+    assert level_name(FATAL()) == "FATAL"
+    assert level_name(99) == "UNKNOWN"
+}
+
+@test
+fn test_level_from_name() {
+    assert level_from_name("TRACE") == 0
+    assert level_from_name("DEBUG") == 10
+    assert level_from_name("INFO") == 20
+    assert level_from_name("WARN") == 30
+    assert level_from_name("ERROR") == 40
+    assert level_from_name("FATAL") == 50
+    assert level_from_name("BOGUS") == -1
+}
+
+@test
+fn test_level_roundtrip() {
+    assert level_from_name(level_name(TRACE())) == TRACE()
+    assert level_from_name(level_name(INFO())) == INFO()
+    assert level_from_name(level_name(FATAL())) == FATAL()
+}
+
+// --- LogRecord ---
+
+@test
+fn test_new_record() {
+    let rec: LogRecord = new_record(INFO(), "hello")
+    assert rec.level == 20
+    assert rec.message == "hello"
+    assert rec.agent_name == ""
+    assert rec.logger_name == ""
+}
+
+@test
+fn test_record_with_agent() {
+    let rec: LogRecord = record_with_agent(WARN(), "alert", "MyAgent")
+    assert rec.level == 30
+    assert rec.message == "alert"
+    assert rec.agent_name == "MyAgent"
+}
+
+@test
+fn test_record_with_logger() {
+    let rec: LogRecord = record_with_logger(ERROR(), "crash", "app.http")
+    assert rec.level == 40
+    assert rec.message == "crash"
+    assert rec.logger_name == "app.http"
+}
+
+// --- Formatting ---
+
+@test
+fn test_format_record_plain() {
+    let rec: LogRecord = new_record(INFO(), "server started")
+    let text: String = format_record_plain(rec)
+    assert text == "[INFO] server started"
+}
+
+@test
+fn test_format_record_with_agent() {
+    let rec: LogRecord = record_with_agent(WARN(), "high latency", "HttpAgent")
+    let text: String = format_record(rec)
+    assert text == "[WARN] [HttpAgent] high latency"
+}
+
+@test
+fn test_format_record_with_logger() {
+    let rec: LogRecord = record_with_logger(DEBUG(), "request received", "app.http")
+    let text: String = format_record(rec)
+    assert text == "[DEBUG] [app.http] request received"
+}
+
+@test
+fn test_format_record_no_context() {
+    let rec: LogRecord = new_record(ERROR(), "fatal error")
+    let text: String = format_record(rec)
+    assert text == "[ERROR] fatal error"
+}
+
+// --- Logger ---
+
+@test
+fn test_new_logger_default_level() {
+    let log: Logger = new_logger("app")
+    assert log.name == "app"
+    assert log.min_level == 20, "default level is INFO (20)"
+}
+
+@test
+fn test_logger_with_level() {
+    let log: Logger = logger_with_level("app", DEBUG())
+    assert log.name == "app"
+    assert log.min_level == 10
+}
+
+@test
+fn test_should_log() {
+    let log: Logger = new_logger("app")
+    assert should_log(log, INFO()) == true, "INFO >= INFO"
+    assert should_log(log, WARN()) == true, "WARN >= INFO"
+    assert should_log(log, DEBUG()) == false, "DEBUG < INFO"
+    assert should_log(log, TRACE()) == false, "TRACE < INFO"
+}
+
+@test
+fn test_should_log_warn_level() {
+    let log: Logger = logger_with_level("app", WARN())
+    assert should_log(log, FATAL()) == true
+    assert should_log(log, ERROR()) == true
+    assert should_log(log, WARN()) == true
+    assert should_log(log, INFO()) == false
+    assert should_log(log, DEBUG()) == false
+}
+
+@test
+fn test_child_logger() {
+    let parent: Logger = new_logger("app")
+    let child: Logger = child_logger(parent, "http")
+    assert child.name == "app.http"
+    assert child.min_level == 20, "inherits parent level"
+}
+
+@test
+fn test_child_logger_chain() {
+    let root: Logger = new_logger("app")
+    let mid: Logger = child_logger(root, "http")
+    let leaf: Logger = child_logger(mid, "handler")
+    assert leaf.name == "app.http.handler"
+}
+
+@test
+fn test_format_log() {
+    let log: Logger = new_logger("app")
+    let msg: String = format_log(log, INFO(), "started")
+    assert msg == "[INFO] [app] started"
+}
+
+@test
+fn test_format_log_filtered() {
+    let log: Logger = new_logger("app")
+    let msg: String = format_log(log, DEBUG(), "trace info")
+    assert msg == "", "DEBUG is below INFO level, should be filtered"
+}
+
+@test
+fn test_format_log_all_levels() {
+    let log: Logger = logger_with_level("svc", TRACE())
+    assert format_log(log, TRACE(), "t") == "[TRACE] [svc] t"
+    assert format_log(log, DEBUG(), "d") == "[DEBUG] [svc] d"
+    assert format_log(log, INFO(), "i") == "[INFO] [svc] i"
+    assert format_log(log, WARN(), "w") == "[WARN] [svc] w"
+    assert format_log(log, ERROR(), "e") == "[ERROR] [svc] e"
+    assert format_log(log, FATAL(), "f") == "[FATAL] [svc] f"
+}

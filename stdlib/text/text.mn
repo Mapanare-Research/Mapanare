@@ -1,0 +1,696 @@
+// text.mn — Comprehensive text manipulation utilities for Mapanare.
+//
+// Provides case conversion, trimming, padding, search/replace, split/join,
+// character classification, and miscellaneous string operations.
+//
+// Functions in string_utils.mn (to_lower, to_upper, to_lower_char,
+// to_upper_char, is_digit, hex_digit_value, parse_int_manual, digit_value,
+// is_hex, hex_char) are NOT duplicated here.
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+fn is_upper_byte(b: Int) -> Bool {
+    if b >= 65 {
+        if b <= 90 {
+            return true
+        }
+    }
+    return false
+}
+
+fn is_lower_byte(b: Int) -> Bool {
+    if b >= 97 {
+        if b <= 122 {
+            return true
+        }
+    }
+    return false
+}
+
+fn is_space(c: String) -> Bool {
+    if c == " " { return true }
+    if c == "\t" { return true }
+    if c == "\n" { return true }
+    if c == "\r" { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// upper_char — uppercase a single ASCII char (internal, avoids import).
+// ---------------------------------------------------------------------------
+
+fn upper_char(ch: String, b: Int) -> String {
+    if b < 97 { return ch }
+    if b > 122 { return ch }
+    return chr(b - 32)
+}
+
+// ---------------------------------------------------------------------------
+// lower_char — lowercase a single ASCII char (internal, avoids import).
+// ---------------------------------------------------------------------------
+
+fn lower_char(ch: String, b: Int) -> String {
+    if b < 65 { return ch }
+    if b > 90 { return ch }
+    return chr(b + 32)
+}
+
+// ---------------------------------------------------------------------------
+// Case conversion
+// ---------------------------------------------------------------------------
+
+// capitalize — uppercase first character, rest unchanged.
+pub fn capitalize(s: String) -> String {
+    let slen: Int = len(s)
+    if slen == 0 { return s }
+    let ch: String = s.char_at(0)
+    let b: Int = s.byte_at(0)
+    let first: String = upper_char(ch, b)
+    if slen == 1 { return first }
+    return first + s.substr(1, slen)
+}
+
+// ---------------------------------------------------------------------------
+// title_case — uppercase first character of each word.
+// ---------------------------------------------------------------------------
+
+pub fn title_case(s: String) -> String {
+    let slen: Int = len(s)
+    if slen == 0 { return s }
+    let mut result: String = ""
+    let mut at_word_start: Bool = true
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        if is_space(ch) {
+            result = result + ch
+            at_word_start = true
+        } else {
+            if at_word_start {
+                result = result + upper_char(ch, b)
+                at_word_start = false
+            } else {
+                result = result + ch
+            }
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// camel_case — convert snake_case or kebab-case to camelCase.
+// ---------------------------------------------------------------------------
+
+pub fn camel_case(s: String) -> String {
+    let slen: Int = len(s)
+    if slen == 0 { return s }
+    let mut result: String = ""
+    let mut upper_next: Bool = false
+    let mut first_word: Bool = true
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        if ch == "_" {
+            upper_next = true
+        } else { if ch == "-" {
+            upper_next = true
+        } else {
+            if upper_next {
+                if first_word {
+                    result = result + lower_char(ch, b)
+                    first_word = false
+                } else {
+                    result = result + upper_char(ch, b)
+                }
+                upper_next = false
+            } else {
+                if first_word {
+                    result = result + lower_char(ch, b)
+                    first_word = false
+                } else {
+                    result = result + ch
+                }
+            }
+        } }
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// snake_case — convert camelCase or PascalCase to snake_case.
+// ---------------------------------------------------------------------------
+
+pub fn snake_case(s: String) -> String {
+    let slen: Int = len(s)
+    if slen == 0 { return s }
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        if ch == "-" {
+            result = result + "_"
+        } else { if is_upper_byte(b) {
+            if i > 0 {
+                result = result + "_"
+            }
+            result = result + lower_char(ch, b)
+        } else {
+            result = result + ch
+        } }
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// kebab_case — convert any case to kebab-case.
+// ---------------------------------------------------------------------------
+
+pub fn kebab_case(s: String) -> String {
+    let slen: Int = len(s)
+    if slen == 0 { return s }
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        if ch == "_" {
+            result = result + "-"
+        } else { if is_upper_byte(b) {
+            if i > 0 {
+                result = result + "-"
+            }
+            result = result + lower_char(ch, b)
+        } else {
+            result = result + ch
+        } }
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Trimming
+// ---------------------------------------------------------------------------
+
+// trim — strip leading and trailing whitespace.
+pub fn trim(s: String) -> String {
+    return trim_impl(s, len(s))
+}
+
+fn trim_impl(s: String, slen: Int) -> String {
+    if slen == 0 { return s }
+    let mut start: Int = 0
+    let mut keep_going: Bool = true
+    while keep_going {
+        if start >= slen {
+            keep_going = false
+        } else {
+            let ch: String = s.char_at(start)
+            if is_space(ch) {
+                start = start + 1
+            } else {
+                keep_going = false
+            }
+        }
+    }
+    if start >= slen { return "" }
+    let mut end: Int = slen - 1
+    let mut keep_going2: Bool = true
+    while keep_going2 {
+        if end < start {
+            keep_going2 = false
+        } else {
+            let ch: String = s.char_at(end)
+            if is_space(ch) {
+                end = end - 1
+            } else {
+                keep_going2 = false
+            }
+        }
+    }
+    return s.substr(start, end + 1)
+}
+
+// ---------------------------------------------------------------------------
+// trim_start — strip leading whitespace.
+// ---------------------------------------------------------------------------
+
+pub fn trim_start(s: String) -> String {
+    let slen: Int = len(s)
+    if slen == 0 { return s }
+    let mut start: Int = 0
+    let mut keep_going: Bool = true
+    while keep_going {
+        if start >= slen {
+            keep_going = false
+        } else {
+            let ch: String = s.char_at(start)
+            if is_space(ch) {
+                start = start + 1
+            } else {
+                keep_going = false
+            }
+        }
+    }
+    if start >= slen { return "" }
+    return s.substr(start, slen)
+}
+
+// ---------------------------------------------------------------------------
+// trim_end — strip trailing whitespace.
+// ---------------------------------------------------------------------------
+
+pub fn trim_end(s: String) -> String {
+    let slen: Int = len(s)
+    if slen == 0 { return s }
+    let mut end: Int = slen - 1
+    let mut keep_going: Bool = true
+    while keep_going {
+        if end < 0 {
+            keep_going = false
+        } else {
+            let ch: String = s.char_at(end)
+            if is_space(ch) {
+                end = end - 1
+            } else {
+                keep_going = false
+            }
+        }
+    }
+    if end < 0 { return "" }
+    return s.substr(0, end + 1)
+}
+
+// ---------------------------------------------------------------------------
+// Padding
+// ---------------------------------------------------------------------------
+
+// pad_start — left-pad s to width using fill character.
+pub fn pad_start(s: String, width: Int, fill: String) -> String {
+    let slen: Int = len(s)
+    if slen >= width { return s }
+    let mut result: String = ""
+    let mut needed: Int = width - slen
+    while needed > 0 {
+        result = result + fill
+        needed = needed - 1
+    }
+    return result + s
+}
+
+// ---------------------------------------------------------------------------
+// pad_end — right-pad s to width using fill character.
+// ---------------------------------------------------------------------------
+
+pub fn pad_end(s: String, width: Int, fill: String) -> String {
+    let slen: Int = len(s)
+    if slen >= width { return s }
+    let mut result: String = s
+    let mut needed: Int = width - slen
+    while needed > 0 {
+        result = result + fill
+        needed = needed - 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// center — center-pad s to width using fill character.
+// ---------------------------------------------------------------------------
+
+pub fn center(s: String, width: Int, fill: String) -> String {
+    let slen: Int = len(s)
+    if slen >= width { return s }
+    let total_pad: Int = width - slen
+    let left_pad: Int = total_pad / 2
+    let right_pad: Int = total_pad - left_pad
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < left_pad {
+        result = result + fill
+        i = i + 1
+    }
+    result = result + s
+    i = 0
+    while i < right_pad {
+        result = result + fill
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Search/replace
+// ---------------------------------------------------------------------------
+
+// contains — check if s contains sub.
+pub fn contains(s: String, sub: String) -> Bool {
+    let pos: Int = s.find(sub)
+    if pos >= 0 { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// starts_with — check if s starts with prefix.
+// ---------------------------------------------------------------------------
+
+pub fn starts_with(s: String, prefix: String) -> Bool {
+    let slen: Int = len(s)
+    let plen: Int = len(prefix)
+    if plen > slen { return false }
+    if plen == 0 { return true }
+    let head: String = s.substr(0, plen)
+    if head == prefix { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// ends_with — check if s ends with suffix.
+// ---------------------------------------------------------------------------
+
+pub fn ends_with(s: String, suffix: String) -> Bool {
+    let slen: Int = len(s)
+    let xlen: Int = len(suffix)
+    if xlen > slen { return false }
+    if xlen == 0 { return true }
+    let tail: String = s.substr(slen - xlen, slen)
+    if tail == suffix { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// index_of — return first index of sub in s, or -1 if not found.
+// ---------------------------------------------------------------------------
+
+pub fn index_of(s: String, sub: String) -> Int {
+    return s.find(sub)
+}
+
+// ---------------------------------------------------------------------------
+// replace — replace all occurrences of old with new_str in s.
+// ---------------------------------------------------------------------------
+
+pub fn replace(s: String, old: String, new_str: String) -> String {
+    return replace_impl(s, old, new_str)
+}
+
+fn replace_impl(s: String, old: String, new_str: String) -> String {
+    let old_len: Int = len(old)
+    if old_len == 0 { return s }
+    let mut result: String = ""
+    let mut remaining: String = s
+    let mut keep_going: Bool = true
+    while keep_going {
+        let pos: Int = remaining.find(old)
+        if pos < 0 {
+            result = result + remaining
+            keep_going = false
+        } else {
+            let rlen: Int = len(remaining)
+            if pos > 0 {
+                result = result + remaining.substr(0, pos)
+            }
+            result = result + new_str
+            remaining = remaining.substr(pos + old_len, rlen)
+        }
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// count — count non-overlapping occurrences of sub in s.
+// ---------------------------------------------------------------------------
+
+pub fn count(s: String, sub: String) -> Int {
+    let sub_len: Int = len(sub)
+    if sub_len == 0 { return 0 }
+    let mut n: Int = 0
+    let mut remaining: String = s
+    let mut keep_going: Bool = true
+    while keep_going {
+        let pos: Int = remaining.find(sub)
+        if pos < 0 {
+            keep_going = false
+        } else {
+            n = n + 1
+            let rlen: Int = len(remaining)
+            remaining = remaining.substr(pos + sub_len, rlen)
+        }
+    }
+    return n
+}
+
+// ---------------------------------------------------------------------------
+// Split/join
+// ---------------------------------------------------------------------------
+
+// split — split s by separator sep.
+pub fn split(s: String, sep: String) -> List<String> {
+    let mut parts: List<String> = []
+    let sep_len: Int = len(sep)
+    if sep_len == 0 {
+        // Split into individual characters.
+        let slen: Int = len(s)
+        let mut i: Int = 0
+        while i < slen {
+            let ch: String = s.char_at(i)
+            parts = parts + [ch]
+            i = i + 1
+        }
+        return parts
+    }
+    let mut remaining: String = s
+    let mut keep_going: Bool = true
+    while keep_going {
+        let pos: Int = remaining.find(sep)
+        if pos < 0 {
+            parts = parts + [remaining]
+            keep_going = false
+        } else {
+            let rlen: Int = len(remaining)
+            if pos > 0 {
+                parts = parts + [remaining.substr(0, pos)]
+            } else {
+                parts = parts + [""]
+            }
+            remaining = remaining.substr(pos + sep_len, rlen)
+        }
+    }
+    return parts
+}
+
+// ---------------------------------------------------------------------------
+// mn_join — join a list of strings with separator.
+// Prefixed mn_ to avoid conflict with potential builtins.
+// ---------------------------------------------------------------------------
+
+pub fn mn_join(parts: List<String>, sep: String) -> String {
+    let plen: Int = len(parts)
+    if plen == 0 { return "" }
+    let mut result: String = parts[0]
+    let mut i: Int = 1
+    while i < plen {
+        result = result + sep + parts[i]
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// lines — split s by newlines (\n). Handles \r\n by stripping \r.
+// ---------------------------------------------------------------------------
+
+pub fn lines(s: String) -> List<String> {
+    let cleaned: String = replace_impl(s, "\r\n", "\n")
+    return split(cleaned, "\n")
+}
+
+// ---------------------------------------------------------------------------
+// words — split s by whitespace runs, ignoring leading/trailing whitespace.
+// ---------------------------------------------------------------------------
+
+pub fn words(s: String) -> List<String> {
+    let trimmed: String = trim_impl(s, len(s))
+    let tlen: Int = len(trimmed)
+    if tlen == 0 { return [] }
+    let mut parts: List<String> = []
+    let mut current: String = ""
+    let mut i: Int = 0
+    while i < tlen {
+        let ch: String = trimmed.char_at(i)
+        if is_space(ch) {
+            if len(current) > 0 {
+                parts = parts + [current]
+                current = ""
+            }
+        } else {
+            current = current + ch
+        }
+        i = i + 1
+    }
+    if len(current) > 0 {
+        parts = parts + [current]
+    }
+    return parts
+}
+
+// ---------------------------------------------------------------------------
+// Character utilities
+// ---------------------------------------------------------------------------
+
+// char_code — return the byte value of the first character.
+pub fn char_code(c: String) -> Int {
+    return c.byte_at(0)
+}
+
+// ---------------------------------------------------------------------------
+// from_char_code — return a single-character string from a byte value.
+// ---------------------------------------------------------------------------
+
+pub fn from_char_code(code: Int) -> String {
+    return chr(code)
+}
+
+// ---------------------------------------------------------------------------
+// is_alpha — check if c is an ASCII letter (a-z or A-Z).
+// ---------------------------------------------------------------------------
+
+pub fn is_alpha(c: String) -> Bool {
+    let b: Int = c.byte_at(0)
+    if is_upper_byte(b) { return true }
+    if is_lower_byte(b) { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// is_alphanumeric — check if c is an ASCII letter or digit.
+// ---------------------------------------------------------------------------
+
+pub fn is_alphanumeric(c: String) -> Bool {
+    if is_alpha(c) { return true }
+    let b: Int = c.byte_at(0)
+    if b >= 48 {
+        if b <= 57 {
+            return true
+        }
+    }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// is_whitespace — check if c is a whitespace character.
+// ---------------------------------------------------------------------------
+
+pub fn is_whitespace(c: String) -> Bool {
+    return is_space(c)
+}
+
+// ---------------------------------------------------------------------------
+// is_empty — check if s has zero length.
+// ---------------------------------------------------------------------------
+
+pub fn is_empty(s: String) -> Bool {
+    if len(s) == 0 { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Miscellaneous
+// ---------------------------------------------------------------------------
+
+// reverse — reverse a string.
+pub fn reverse(s: String) -> String {
+    let slen: Int = len(s)
+    if slen == 0 { return s }
+    let mut result: String = ""
+    let mut i: Int = slen - 1
+    let mut keep_going: Bool = true
+    while keep_going {
+        let ch: String = s.char_at(i)
+        result = result + ch
+        if i == 0 {
+            keep_going = false
+        } else {
+            i = i - 1
+        }
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// repeat — repeat string s n times.
+// ---------------------------------------------------------------------------
+
+pub fn repeat(s: String, n: Int) -> String {
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < n {
+        result = result + s
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// truncate — truncate s to max_len, appending suffix if truncated.
+// ---------------------------------------------------------------------------
+
+pub fn truncate(s: String, max_len: Int, suffix: String) -> String {
+    let slen: Int = len(s)
+    if slen <= max_len { return s }
+    let suffix_len: Int = len(suffix)
+    let cut: Int = max_len - suffix_len
+    if cut <= 0 { return s.substr(0, max_len) }
+    return s.substr(0, cut) + suffix
+}
+
+// ---------------------------------------------------------------------------
+// slug — lowercase, replace non-alphanumeric with hyphens, collapse runs.
+// ---------------------------------------------------------------------------
+
+pub fn slug(s: String) -> String {
+    let slen: Int = len(s)
+    if slen == 0 { return s }
+    let mut result: String = ""
+    let mut prev_hyphen: Bool = false
+    let mut i: Int = 0
+    while i < slen {
+        let ch: String = s.char_at(i)
+        let b: Int = s.byte_at(i)
+        if is_alphanumeric(ch) {
+            result = result + lower_char(ch, b)
+            prev_hyphen = false
+        } else {
+            if prev_hyphen == false {
+                result = result + "-"
+                prev_hyphen = true
+            }
+        }
+        i = i + 1
+    }
+    // Strip leading hyphen.
+    let rlen: Int = len(result)
+    if rlen > 0 {
+        let first: String = result.char_at(0)
+        if first == "-" {
+            result = result.substr(1, rlen)
+        }
+    }
+    // Strip trailing hyphen.
+    let rlen2: Int = len(result)
+    if rlen2 > 0 {
+        let last: String = result.char_at(rlen2 - 1)
+        if last == "-" {
+            result = result.substr(0, rlen2 - 1)
+        }
+    }
+    return result
+}

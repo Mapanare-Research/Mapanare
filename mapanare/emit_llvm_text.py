@@ -495,15 +495,38 @@ class LLVMTextEmitter:
         return 0
 
     # ── declaration helpers ─────────────────────────────────────────
+    @property
+    def _win64(self) -> bool:
+        return "windows" in self._triple
+
+    @staticmethod
+    def _is_large_struct(ty: str) -> bool:
+        """True if *ty* is a struct that exceeds 8 bytes (Win64 indirect ABI)."""
+        return ty.startswith("{") and ty.endswith("}") and _tsz(ty) > 8
+
     def _decl_fn(self, nm: str, ret: str, pts: list[str], va: bool = False) -> None:
         if nm in self._declared:
             return
         self._declared.add(nm)
         self._sigs[nm] = (ret, pts, va)
-        ps = ", ".join(pts)
+
+        if self._win64:
+            # Win64 ABI: large structs passed by pointer, returned via sret
+            abi_pts = [f"{t}*" if self._is_large_struct(t) else t for t in pts]
+            if self._is_large_struct(ret):
+                sret = f"{ret}* sret({ret})"
+                abi_pts = [sret] + abi_pts
+                abi_ret = "void"
+            else:
+                abi_ret = ret
+        else:
+            abi_pts = list(pts)
+            abi_ret = ret
+
+        ps = ", ".join(abi_pts)
         if va:
             ps += ", ..." if ps else "..."
-        self._decls.append(f"declare {ret} @{nm}({ps})")
+        self._decls.append(f"declare {abi_ret} @{nm}({ps})")
 
     def _ensure(self, nm: str, ret: str, pts: list[str], va: bool = False) -> None:
         if nm not in self._sigs:
@@ -679,6 +702,36 @@ class LLVMTextEmitter:
         for i, (v, t) in enumerate(args):
             et = pts[i] if i < len(pts) else t
             coerced.append((self._coerce(v, t, et) if t != et else v, et))
+
+        if self._win64:
+            # Win64 ABI: pass large structs by pointer, return via sret
+            abi_args: list[tuple[str, str]] = []
+            for v, t in coerced:
+                if self._is_large_struct(t):
+                    a = self._alloca(t, "sarg")
+                    self._L(f"store {t} {v}, {t}* {a}")
+                    abi_args.append((a, f"{t}*"))
+                else:
+                    abi_args.append((v, t))
+
+            if self._is_large_struct(ret):
+                sret_a = self._alloca(ret, nm or "sret")
+                sret_arg = f"{ret}* sret({ret}) {sret_a}"
+                rest = ", ".join(f"{t} {v}" for v, t in abi_args)
+                a_str = f"{sret_arg}, {rest}" if rest else sret_arg
+                self._L(f"call void @{fn}({a_str})")
+                r = self._f(nm or "rt")
+                self._L(f"{r} = load {ret}, {ret}* {sret_a}")
+                return r
+
+            a_str = ", ".join(f"{t} {v}" for v, t in abi_args)
+            if ret == VOID:
+                self._L(f"call void @{fn}({a_str})")
+                return ""
+            r = self._f(nm or "rt")
+            self._L(f"{r} = call {ret} @{fn}({a_str})")
+            return r
+
         a = ", ".join(f"{t} {v}" for v, t in coerced)
         if ret == VOID:
             self._L(f"call void @{fn}({a})")
