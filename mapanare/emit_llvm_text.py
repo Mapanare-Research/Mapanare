@@ -1044,12 +1044,11 @@ class LLVMTextEmitter:
         if t == LIST:
             root = self._lroots.get(i.src.name, i.src.name)
             self._lroots[i.dest.name] = root
-        # Clone list fields on struct copy. Required for correctness when
-        # lists are shared between parent and child scopes (lambda lowering).
-        if i.src.ty.kind == TypeKind.STRUCT:
-            sn = self._res_struct(i.src.ty.type_info.name)
-            if sn in self._structs:
-                self._clone_list_fields(i.dest, sn)
+        # No explicit list cloning needed — the C runtime's __mn_list_push
+        # and __mn_list_set call mn_list_detach() (COW) before mutation,
+        # so shared list buffers are automatically copied on write.
+        # The previous _clone_list_fields call here caused O(n²) memory
+        # (57 GB for mnc_all.mn) by cloning growing lists on every state copy.
 
     def _clone_list_fields(self, dest: Value, sn: str) -> None:
         """After a struct copy, deep-clone any List fields in the destination.

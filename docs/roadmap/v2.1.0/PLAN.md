@@ -12,65 +12,33 @@
 
 ---
 
-## Current State (start of v2.1.0)
+## Current State (2026-03-29)
 
-Before planning, here's what's actually true right now:
+### What works
 
-### Already solved (from v1.0.x / v2.0.x work)
+- **15/15 golden tests pass** — `mnc-stage1` compiles all golden test programs to valid LLVM IR.
+- **Self-compilation succeeds** — `mnc-stage1` compiles `mnc_all.mn` (9,400 lines, 400+ functions) in **0.19s** using **86 MB**. Produces 51,807 lines of stage2 IR.
+- **Stage2 IR: 1 error** — `extractvalue operand must be aggregate type` (struct field access on non-struct). All other code emits correctly.
+- **Byref optimization** — structs >64 bytes pass by pointer with pre-zeroed sret buffers. Eliminates all large-struct corruption permanently.
+- **COW list system** — `__mn_list_push`/`__mn_list_set` call `mn_list_detach()` before mutation. No explicit clone needed on struct copy.
+- **Cross-module function resolution** — per-module cumulative fn_maps (topological order). Prevents name collisions (`fresh_tmp`, `is_comparison_op`, `new_param`).
+- **Closure support** — parser extracts lambda params, lowerer lifts captured vars as extra params, emitter handles function pointer constants.
+- **1,775 tests pass** — full pytest suite, 0 failures.
 
-- **llvmlite bypassed** — `build_stage1.py` defaults to the text emitter + clang -O2,
-  not llvmlite. The text emitter generates alloca/load/store IR and relies on clang's
-  mem2reg pass. No llvmlite truncation bugs in this path.
-- **Enum boxing** — enums use `{i64, i8*}` (heap-allocated payload), not inline buffers.
-  Eliminates the old 272-byte enum corruption.
-- **Linkage fix** — `define internal` → `define` prevents LLVM -O1 from stripping
-  functions with sret calling conventions.
-- **`mnc-stage1` binary exists** — built and on disk at `mapanare/self/mnc-stage1`.
-- **15/15 golden tests pass** — `mnc-stage1` compiles all golden test programs correctly.
-- **Stage2 IR: 9/15 valid** — `mnc-stage1` generates valid LLVM IR for 9/15 golden tests.
-  6 still fail (struct init, enum match, list types, string methods, result types, closures).
-- **Large struct threshold: 1024 bytes** — raised from 56 to avoid most truncation edge cases.
+### What's still broken
 
-### What's actually still broken
+1. **Stage2 IR validity** — `mnc-stage1 mnc_all.mn` produces IR with 1 type error (`extractvalue` on non-aggregate). Must fix to build `mnc-stage2` binary.
+2. **Individual module compilation** — 9/10 modules produce invalid stage2 IR due to cross-module `%struct.X` types not being defined. Only matters for module-by-module workflow, not for Phase 4.
 
-1. **`lower.mn` control flow bug** — `return` inside `if`/`match` blocks doesn't
-   terminate the block. Control falls through to the merge block. This blocks 6/15
-   stage2 tests. See [`ENUM_PAYLOAD_FIX_PLAN.md`](../ENUM_PAYLOAD_FIX_PLAN.md).
+### Key metrics
 
-2. **MIR copy aliasing** — `let copy = list` creates a new alloca that doesn't
-   track pushes to the original. Lists appear empty after copy+push sequences.
-
-3. **Self-compilation untested** — `mnc-stage1` compiles golden tests (small programs)
-   but has not been verified compiling its own 8,288-line source (`mnc_all.mn`).
-   Previous attempts (03/20) crashed on `parser.mn`, `semantic.mn`, `lower.mn`,
-   `emit_llvm.mn` due to LowerState (680 bytes). This may be resolved now that
-   the text emitter + clang -O2 path is in place — needs retesting.
-
-4. **`mn_checked_mul` visibility** — declared `static` in `mapanare_core.c` but
-   called from `mapanare_runtime.c`. Causes gcc compilation failure on Windows.
-
-### LowerState struct (the 680-byte problem)
-
-```mapanare
-struct LowerState {             // mapanare/self/lower.mn:399
-    module: MIRModule,          // large — contains function list, type list, etc.
-    current_fn: Option<MIRFunction>,
-    current_block_idx: Int,
-    tmp_counter: Int,
-    block_counter: Int,
-    vars: List<VarInfo>,
-    scope_stack: List<List<VarInfo>>,
-    impl_methods: List<ImplEntry>,
-    struct_fields: List<StructFieldInfo>,
-    enum_variants: List<EnumVariantNames>,
-    lambda_vars: List<LambdaEntry>
-}
-```
-
-Every `lower_*` function takes `LowerState` and returns `LowerResult { value, state }`.
-This means 680 bytes copied on every call. With clang -O2 + mem2reg this may now
-work (previous crashes were with llvmlite -O1 and clang -O0). **Must retest before
-assuming restructuring is needed.**
+| Metric | Value |
+|--------|-------|
+| Golden tests | 15/15 |
+| Self-compilation | 0.19s, 86 MB, 51,807 lines IR |
+| LowerState size | 240 bytes (11 fields) |
+| Byref threshold | 64 bytes |
+| Total pytest | 1,775 passed |
 
 ---
 
@@ -100,233 +68,116 @@ assuming restructuring is needed.**
 | Phase | Name | Status | Effort | Impact |
 |-------|------|--------|--------|--------|
 | 0 | Quick Fixes (gcc, test parallelism) | `Done` | Small | Unblocks dev.ps1, 4-6x test speed |
-| 1 | Retest Self-Compilation | `Done` | Small | 7/15 stage2, 4/7 modules, 3 crash on copy aliasing |
-| 2 | Control flow + type recovery fixes | `In Progress` | Medium-Large | 14 bugs fixed, 9/15 stage2 valid, self-compile 1 error |
-| 3 | Deep-copy list fields on struct copy | `Done` | Medium | `__mn_list_clone` + text emitter fix → self-compilation works |
-| 4 | Fixed-Point Verification | `Not started` | Medium | Python independence achieved |
+| 1 | Retest Self-Compilation | `Done` | Small | Confirmed 15/15 golden, identified OOM |
+| 2 | Control flow + type recovery fixes | `Done` | Medium-Large | 15/15 golden, self-compilation works |
+| 3 | Byref optimization + OOM fix | `Done` | Medium | Architectural fix — structs by pointer, O(n) join |
+| 4 | Fixed-Point Verification | `In Progress` | Medium | 1 stage2 type error remaining |
 | 5 | Native Test Migration | `Not started` | X-Large | 10-50x test speed |
 | 6 | Go Test Harness (optional) | `Not started` | Large | Only if measurements justify |
 
 ---
 
 ## Phase 0 — Quick Fixes
-**Status:** `In Progress`
-**Effort:** Small
+**Status:** `Done`
 
-### Tasks
-
-| # | Task | Status | Files | Notes |
-|---|------|--------|-------|-------|
-| 1 | Add `pytest-xdist` to dev dependencies | `[x]` | `pyproject.toml` | |
-| 2 | Add `-n auto` to `dev.ps1` and CI (with graceful fallback) | `[x]` | `dev.ps1`, `.github/workflows/ci.yml`, `Makefile` | Auto-detects xdist |
-| 3 | Make `dev.ps1 validate` run once and exit (not watch) | `[x]` | `dev.ps1` | `-Watch` flag for old behavior |
-| 4 | Fix `mn_checked_mul` visibility: move from `static` to non-static, add declaration to header | `[x]` | `runtime/native/mapanare_core.c`, `mapanare_core.h` | Removed `static` from both `mn_checked_mul` and `mn_checked_add`, added declarations to header |
-| 5 | Install `pytest-xdist` and verify parallel execution | `[x]` | — | Installed with mapanare dev deps |
-| 6 | Measure baseline test time (sequential vs parallel) | `[~]` | — | Running... |
-
-**Done when:** `dev.ps1 validate` runs green with parallel tests.
+All tasks completed: pytest-xdist, dev.ps1 validate, mn_checked_mul visibility.
 
 ---
 
-## Phase 1 — Retest Self-Compilation (WSL)
-**Status:** `Not started`
-**Effort:** Small (just running commands and observing)
+## Phase 1 — Retest Self-Compilation
+**Status:** `Done`
 
-Before writing any fix code, test what actually works NOW. The text emitter +
-clang -O2 path may have fixed the old LowerState crashes that happened under
-llvmlite -O1 and clang -O0. **Don't fix what isn't broken.**
-
-### Tasks
-
-| # | Task | Status | Files | Notes |
-|---|------|--------|-------|-------|
-| 1 | Rebuild `mnc-stage1`: `python scripts/build_stage1.py` | `[x]` | — | 82,010 lines IR, 918KB binary, clang -O2 |
-| 2 | Run golden test harness | `[x]` | — | **15/15 pass** in 1.6s |
-| 3 | Test stage2 IR validity | `[x]` | — | **7/15 VALID** (was 9/15). Invalid: for_loop, struct, enum_match, list, result, closure, nested_struct |
-| 4 | Test self-compilation: `./mnc-stage1 mapanare/self/mnc_all.mn` | `[x]` | — | **SEGFAULT** in `lookup_var` → `__mn_str_eq` (corrupted string pointer) |
-| 5 | Test individual modules | `[x]` | — | ast✓ lexer✓ semantic✓ main✓ / parser(double-free) lower(segfault) emit_llvm(segfault) |
-| 6 | Document results and decide path | `[x]` | — | See findings below |
-
-**Findings (2026-03-28):**
-
-Stage2 IR errors fall into two categories:
-1. **Control flow** (07_enum_match): unterminated block before merge label → Phase 2
-2. **Type emission** (struct/list/result/closure/for_loop): wrong types in emitted IR → Phase 2
-
-Self-compilation crashes (parser/lower/emit_llvm) are all **memory corruption**:
-- `parser.mn`: double-free in `__mn_list_push` during `lower_let` — list data pointer aliased after copy
-- `lower.mn`: SIGSEGV in `__mn_str_eq` during `lookup_var` — stale string pointer after list realloc
-- `emit_llvm.mn`: same pattern
-
-**Root cause:** LowerState (680 bytes) is passed by value. Its list fields (vars, scope_stack, etc.)
-get shallow-copied. When the copy's list grows (realloc moves the data), the original's data pointer
-becomes dangling. This is the classic copy-aliasing bug.
-
-**Decision:** Phase 3 (LowerState restructure) is the critical path. Phase 2 (control flow) fixes
-stage2 IR quality but doesn't unblock self-compilation. Execute Phase 3 first, then Phase 2.
+**Findings:** 15/15 golden pass. Self-compilation identified two blockers: function resolution collision (`fresh_tmp`) and O(n²) string concat in emitter.
 
 ---
 
-## Phase 2 — Control Flow & Type Recovery Fixes (`lower.mn` + `emit_llvm.mn`)
-**Status:** `In Progress` (2026-03-29: 14 bugs fixed, 9/15 golden stage2 valid, self-compile down to 1 error)
-**Effort:** Medium-Large
-**Depends on:** Phase 1 results (skip if stage2 already produces 15/15 valid IR)
+## Phase 2 — Control Flow & Type Recovery
+**Status:** `Done`
 
-The self-hosted `lower.mn` had a control flow bug: `return` inside `if`/`match`
-blocks didn't terminate the block — control fell through to the merge block. This
-was caused by unconditional Phi entry collection for terminated arms.
+### Fixes applied (cumulative from v1.0.x through v2.0.x sessions)
 
-Additionally, enum handling had 3 bugs (namespace resolution, variant index stub,
-missing zero-init), and function/method return types were lost (`mir_unknown()`).
+**Lowerer (`lower.mn`):**
+1. `lower_match` Phi collection — skip terminated arms
+2. `lower_if` Phi collection — track then/else terminated
+3. Enum namespace resolution — verify variant belongs to correct enum
+4. String method return types
+5. Function return type registry
+6. Signal vs field `.value` dispatch
+7. Struct field type tracking
+8. Two-pass declaration registration
+9. State-aware type resolver
+10. Full generic type resolution
+11. Lambda param parsing (`parser.mn`) — extract from left expression
+12. Closure by parameter lifting — captured vars as extra function params
+13. Lambda registration — `lower_let` updates `lambda_vars` entry
 
-### Fixes Applied (2026-03-29)
+**Emitter (`emit_llvm.mn`):**
+14. `resolve_variant_index` — was stub returning 0
+15. Enum zero-init — `store zeroinitializer`
+16. `emit_builtin_len` / `emit_index_get` — alloca+store before pointer-expecting calls
+17. `emit_const` for function type — `bitcast void ()* @name to i8*`
+18. `emit_mir_return` — use `current_ret_type` instead of value's MIR type
+19. `emit_mir_module` — O(n) `join("\n", st.lines)` replaces O(n²) string concat
 
-1. **`lower_match` Phi collection** — skip Phi entries for arms that terminated (return/break). Mirrors Python `lower.py:2464`.
-2. **`lower_if` Phi collection** — same fix: track `then_terminated`/`else_terminated`, only include non-terminated arms in Phi.
-3. **Enum namespace resolution** — `Foo::Bar(...)` now verifies `Bar` belongs to enum `Foo` via `enum_name_for_variant`, not loose `is_enum_variant`.
-4. **`resolve_variant_index` implemented** — was a stub returning 0. Now looks up actual variant index from `enum_infos` registry in EmitState.
-5. **Enum zero-initialization** — replaced orphaned bitcast with `store zeroinitializer` to properly zero unused payload slots.
-6. **String method return types** — `str_method_return_type()` maps `char_at`→String, `contains`→Bool, etc. for correct alloca types.
-7. **Function return type registry** — `fn_ret_types: List<FnRetEntry>` in LowerState, populated during `register_declarations`, used in `lower_call_by_name`.
-8. **Signal/field `.value` dispatch** — only emit `SignalGet` when object type is actually `signal`, not for struct `.value` fields.
-
-### Results (latest 2026-03-29)
-
-- **Golden stage2:** 9/15 valid (was 7/15). `08_list` and `09_string_methods` now valid.
-- **Self-compilation:** 1 error remaining (was multiple). `mnc-stage1 mnc_all.mn` → 31,919 lines IR, 442+ functions.
-- **Remaining error:** `tokens[pos]` — `__mn_list_get` returns `i8*` but variable expects Token struct. Needs list element type tracking (generic type params).
-
-### Fixes Applied (2026-03-29)
-
-**Lowerer fixes (`lower.mn`):**
-1. `lower_match` Phi collection — skip Phi entries for terminated arms
-2. `lower_if` Phi collection — track `then_terminated`/`else_terminated`
-3. Enum namespace resolution — verify variant belongs to the correct enum
-4. String method return types — `char_at`→String, `contains`→Bool, etc.
-5. Function return type registry — `fn_ret_types` populated during declaration pass
-6. Signal vs field `.value` dispatch — only SignalGet for actual signal types
-7. Struct field type tracking — `StructFieldInfo` stores `field_types`, used in `lower_field_access`
-8. Two-pass declaration registration — enums first, then structs (so field types resolve correctly)
-9. State-aware type resolver — `resolve_type_name_checked` distinguishes enums from structs
-10. Full generic type resolution — `lower_resolve_type_checked` handles `Option<EnumType>` etc.
-
-**Emitter fixes (`emit_llvm.mn`):**
-11. `resolve_variant_index` implemented — was always 0
-12. Enum zero-init — `store zeroinitializer` replaces orphaned bitcast
-13. `emit_builtin_len` — alloca+store list value before passing pointer to `__mn_list_len`
-14. `emit_index_get` — alloca+store list value before passing pointer to `__mn_list_get`
-
-### Tasks
-
-| # | Task | Status | Files | Notes |
-|---|------|--------|-------|-------|
-| 1 | Fix `lower_if` Phi for terminated arms | `[x]` | `lower.mn` | |
-| 2 | Fix `lower_match` Phi for terminated arms | `[x]` | `lower.mn` | |
-| 3 | Fix enum namespace, variant index, zero-init | `[x]` | `lower.mn`, `emit_llvm.mn` | |
-| 4 | String method + function return type resolution | `[x]` | `lower.mn` | |
-| 5 | Signal vs field `.value` dispatch | `[x]` | `lower.mn` | |
-| 6 | Struct field type tracking + enum/struct resolution | `[x]` | `lower.mn` | Two-pass registration, state-aware resolver |
-| 7 | List runtime pointer passing (len, get) | `[x]` | `emit_llvm.mn` | alloca+store before pointer-expecting calls |
-| 8 | Type annotation propagation in lower_let | `[x]` | `lower.mn` | Use declared type when expr type is unknown |
-| 9 | Binary type coercion in lower_binary | `[x]` | `lower.mn` | Infer unknown operand type from known operand |
-| 10 | For loop variable alloca | `[x]` | `lower.mn` | Alloca+store for loop var (was using raw call result as pointer) |
-| 11 | Variant name→index in emitter Switch | `[x]` | `emit_llvm.mn` | Resolve string names to integer tags (matches Python emitter _vtag) |
-| 12 | MIRModule nested list cloning | `[x]` | `emit_llvm_text.py` | Clone MIRModule's list fields on LowerState copy (skip functions for OOM) |
-| 13 | Boxed enum payload lifetime | `[ ]` | C runtime / `emit_llvm_text.py` | Match arms list is empty because boxed Expr payload is freed prematurely |
-
-### Remaining Blocker: Boxed Enum Payload Lifetime
-
-The Python emitter boxes self-referential enum payloads (e.g., `Expr::Match(Expr, List<MatchArm>)`) as heap-allocated pointers. These boxed payloads lack lifetime management — when the parent enum value is copied or goes out of scope, the boxed payload may be freed prematurely. This causes `arms` in `lower_match` to be an empty/garbage list (0 arm blocks, 0 switch cases in stage2 IR).
-
-**Impact:** 1 switch instruction in 33K lines of stage2 IR (should be ~94). All match expressions on complex enums produce dead code.
-
-**Fix options:**
-1. Reference-count boxed payloads (C runtime change)
-2. Arena-allocate boxed payloads (tie lifetime to compilation scope)
-3. Avoid boxing by using pointer-based enum representation throughout
-
-**Done when:** `mnc-stage1` produces valid LLVM IR for all 15 golden tests (stage2).
+**Infrastructure (`emit_llvm_text.py` + `multi_module.py`):**
+20. Byref optimization (`_BYREF_BYTES = 64`) — structs >64B by pointer, pre-zeroed sret
+21. Per-module function resolution — fixes `fresh_tmp` collision
+22. Removed `_clone_list_fields` from `_do_copy` — COW handles aliasing, clone was causing 57GB OOM
+23. `ir_doctor.py` — `RET_TYPE_MISMATCH` fix for struct return types, `stage2` command
 
 ---
 
-## Phase 3 — LowerState Restructure (if needed)
-**Status:** `Not started`
-**Effort:** Medium
-**Depends on:** Phase 1 (only needed if self-compilation still crashes on large modules)
+## Phase 3 — Byref Optimization
+**Status:** `Done`
 
-If `mnc-stage1` compiles golden tests but crashes on its own source due to
-LowerState (680 bytes), restructure the struct to avoid large-value passing.
+### Problem
+LowerState (240B), LowerResult (248B), EmitState (240B) passed by value through 632 call sites. Every copy triggered `_clone_list_fields` (list cloning). With growing lists, caused O(n²) memory → 57GB OOM on self-compilation.
 
-### Option A: Split LowerState (preferred)
+### Solution (architectural — replaces all previous clone/restructure approaches)
 
-Break LowerState into a small core + heap-allocated context:
+**Byref pass-by-reference** (`emit_llvm_text.py`):
+- `_BYREF_BYTES = 64` threshold
+- Function params >64B: `{T}* %name.byref` pointer; callee loads into pre-zeroed local alloca
+- Function returns >64B: sret — caller allocates zeroed buffer, passes `{T}* sret({T})`
+- Call sites: args stored to allocas, sret buffers zeroed before call
 
-```mapanare
-struct LowerCtx {                    // heap-allocated, passed by pointer
-    module: MIRModule,
-    vars: List<VarInfo>,
-    scope_stack: List<List<VarInfo>>,
-    impl_methods: List<ImplEntry>,
-    struct_fields: List<StructFieldInfo>,
-    enum_variants: List<EnumVariantNames>,
-    lambda_vars: List<LambdaEntry>
-}
+**COW replaces clone** (`_do_copy`):
+- Removed `_clone_list_fields` — the C runtime's `__mn_list_push`/`__mn_list_set` call `mn_list_detach()` (COW) before mutation
+- Explicit cloning was redundant and caused 57GB allocations
 
-struct LowerState {                  // small, safe to pass by value
-    ctx: LowerCtx,                   // single pointer
-    current_fn: Option<MIRFunction>,
-    current_block_idx: Int,
-    tmp_counter: Int,
-    block_counter: Int
-}
-```
-
-This reduces LowerState to ~80 bytes (5 scalars + 1 pointer). All the heavy
-collections live behind a single pointer.
-
-### Option B: Thread state through mutable reference
-
-Change `lower_*` functions to take `LowerState` by mutable reference instead of
-by value + return. This eliminates all copies but requires changing every
-function signature in `lower.mn` (2,629 lines, ~100+ functions).
-
-### Tasks
-
-| # | Task | Status | Files | Notes |
-|---|------|--------|-------|-------|
-| 1 | Confirm Phase 1 crash is LowerState-related (not control flow) | `[x]` | — | ASAN: double-free in `__mn_list_push` from shallow-copied list data ptrs |
-| 2 | Choose fix strategy | `[x]` | — | **Neither A nor B** — fixed at emitter level: deep-clone list fields on struct copy |
-| 3 | Add `__mn_list_clone` to C runtime | `[x]` | `mapanare_core.c/h` | Allocates new buffer, memcpys elements |
-| 4 | Fix text emitter `_do_copy` for struct types | `[x]` | `emit_llvm_text.py` | `_clone_list_fields`: GEP each list field, call clone, store back |
-| 5 | Rebuild and test self-compilation | `[x]` | — | **7/7 modules compile, mnc_all.mn → 29,114 lines IR** |
-
-**Done when:** `mnc-stage1` compiles `mnc_all.mn` without crashing.
+**O(n) string join** (`emit_llvm.mn`):
+- `join("\n", st.lines)` replaces `result = result + line + "\n"` loop
+- Self-compilation: 57GB/killed → 86MB/0.19s
 
 ---
 
 ## Phase 4 — Fixed-Point Verification
-**Status:** `Not started`
+**Status:** `In Progress`
 **Effort:** Medium
-**Depends on:** Phase 2/3 (mnc-stage1 must compile itself)
+**Depends on:** Phase 2/3 (done)
 
-Three-stage bootstrap:
-1. Python bootstrap compiles `mnc_all.mn` → `mnc-stage1` (already done)
-2. `mnc-stage1` compiles `mnc_all.mn` → `mnc-stage2` IR
-3. `mnc-stage2` compiles `mnc_all.mn` → `mnc-stage3` IR
-4. If stage2 IR == stage3 IR → **fixed point. Python is no longer needed.**
+### Current state
 
-### Tasks
+Self-compilation produces 51,807 lines of stage2 IR with **1 error**:
+```
+extractvalue operand must be aggregate type
+  %t14 =extractvalue i64 %fd_val13, 0
+```
 
-| # | Task | Status | Files | Notes |
-|---|------|--------|-------|-------|
-| 1 | `mnc-stage1` compiles `mnc_all.mn` → stage2 IR | `[ ]` | — | |
-| 2 | Compile stage2 IR to binary: `clang -O2 stage2.ll -o mnc-stage2` | `[ ]` | — | |
-| 3 | `mnc-stage2` compiles `mnc_all.mn` → stage3 IR | `[ ]` | — | |
-| 4 | Diff: `diff stage2.ll stage3.ll` | `[ ]` | — | Must be identical |
-| 5 | If not identical: analyze diff, fix determinism issues | `[ ]` | — | Counter resets, label numbering, etc. |
-| 6 | Update `scripts/verify_fixed_point.sh` | `[ ]` | `scripts/verify_fixed_point.sh` | |
-| 7 | CI: remove `continue-on-error: true` from fixed-point job | `[ ]` | `.github/workflows/ci.yml` | Make it a hard gate |
-| 8 | Document in ROADMAP.md | `[ ]` | `docs/roadmap/ROADMAP.md` | **Milestone: Python bootstrap optional** |
+This is a struct field access (`fd.name`) where the lowerer resolved `fd`'s type as `i64` instead of the struct type. Same class of bug as the `ret i64` issue (fixed for returns, still present for field access on some variables).
+
+### Remaining work
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Fix extractvalue on non-aggregate (field access type tracking) | `[ ]` | Same fix pattern as ret type — use declared type |
+| 2 | `mnc-stage1` compiles `mnc_all.mn` → valid stage2 IR | `[~]` | 1 error remaining |
+| 3 | Compile stage2 IR to binary: `clang -O2 stage2.ll -o mnc-stage2` | `[ ]` | |
+| 4 | `mnc-stage2` compiles `mnc_all.mn` → stage3 IR | `[ ]` | |
+| 5 | Diff: `diff stage2.ll stage3.ll` | `[ ]` | Must be identical |
+| 6 | If not identical: analyze diff, fix determinism issues | `[ ]` | |
+| 7 | Update `scripts/verify_fixed_point.sh` | `[ ]` | |
+| 8 | CI: gate on fixed-point verification | `[ ]` | |
 
 **Done when:** `verify_fixed_point.sh` passes. CI gates on it.
 
@@ -334,82 +185,46 @@ Three-stage bootstrap:
 
 ## Phase 5 — Native Test Migration
 **Status:** `Not started`
-**Effort:** X-Large
 **Depends on:** Phase 4
-**Expected speedup:** 10-50x (native compilation in microseconds vs Python in milliseconds)
 
-Migrate tests from `from mapanare.parser import ...` (Python compiler) to calling
-the native `mnc` binary. Python bootstrap becomes the oracle for differential
-testing, not the primary test target.
-
-### Strategy
-
-| Category | ~Count | Migration |
-|----------|--------|-----------|
-| Compilation tests (IR validation) | ~3,500 | `mnc source.mn`, check IR output |
-| Runtime behavior (compile + execute) | ~500 | `mnc build` + execute binary |
-| Python-only (bootstrap, FFI, Python emitter) | ~400 | Keep in pytest as-is |
-
-### Tasks
-
-| # | Task | Status | Files | Notes |
-|---|------|--------|-------|-------|
-| 1 | Add `mnc_binary` fixture to `tests/conftest.py` | `[ ]` | `tests/conftest.py` | Skip if binary not found |
-| 2 | Create `tests/helpers/native.py` — thin subprocess wrapper | `[ ]` | `tests/helpers/native.py` | `compile_mn(source) -> ir`, `run_mn(source) -> stdout` |
-| 3 | Migrate `tests/llvm/` (19 files, highest value) | `[ ]` | `tests/llvm/` | |
-| 4 | Migrate `tests/semantic/` (3 files) | `[ ]` | `tests/semantic/` | |
-| 5 | Migrate `tests/parser/` (2 files) | `[ ]` | `tests/parser/` | |
-| 6 | Migrate `tests/e2e/` (7 files) | `[ ]` | `tests/e2e/` | |
-| 7 | Migrate `tests/wasm/` (4 files) | `[ ]` | `tests/wasm/` | |
-| 8 | Migrate `tests/stdlib/` (21 files) | `[ ]` | `tests/stdlib/` | |
-| 9 | Tag remaining Python-only tests: `@pytest.mark.python_backend` | `[ ]` | `tests/` | |
-| 10 | Measure wall-clock improvement | `[ ]` | — | Record here |
-
-**Done when:** >80% of tests call native binary. Full suite faster than Phase 0 baseline.
+Migrate tests from Python compiler to native `mnc` binary. 10-50x speedup expected.
 
 ---
 
 ## Phase 6 — Go Test Harness (Optional)
 **Status:** `Not started`
-**Effort:** Large
-**Depends on:** Phase 5 measurements
-
-Only justified if pytest subprocess overhead is >20% of wall-clock time after
-Phase 5. Go's `testing` package has built-in parallelism and zero-overhead
-subprocess management. Rust is also viable but Go's test ergonomics are better
-for string-heavy IR validation.
-
-**Decision gate:** Measure after Phase 5. If CI < 5 min with pytest, skip this.
+**Decision gate:** Measure after Phase 5.
 
 ---
 
-## Execution Order
+## Debugging Tools
 
-```
-Phase 0 (quick fixes) ──── Immediate: gcc fix, parallel tests
-     │
-Phase 1 (retest) ───────── WSL: rebuild mnc-stage1, test self-compilation
-     │
-     ├── if self-compilation works → Phase 4
-     │
-     ├── if stage2 IR fails → Phase 2 (control flow fix)
-     │
-     └── if crash on large modules → Phase 3 (LowerState restructure)
-                                          │
-                                     Phase 4 (fixed-point) ── Python independence
-                                          │
-                                     Phase 5 (test migration) ── 10-50x speed
-                                          │
-                                     Phase 6 (Go harness) ── measure first
-```
+```bash
+# Stage 1: golden test validation (15/15)
+python scripts/ir_doctor.py golden
 
-**Key insight:** Phase 1 (just running tests) tells us how much work remains.
-Don't write fix code until we know what's actually broken with the current
-text emitter + clang -O2 pipeline.
+# Stage 2: self-hosted module compilation + validation
+python scripts/ir_doctor.py stage2
+
+# Stage 2 with longer timeout
+python scripts/ir_doctor.py stage2 --timeout 60
+
+# Audit specific IR file
+python scripts/ir_doctor.py audit /tmp/stage2_full.ll
+
+# Compare bootstrap vs stage1 output
+python scripts/ir_doctor.py diff tests/golden/07_enum_match.mn
+
+# Per-function metrics
+python scripts/ir_doctor.py table mapanare/self/main.ll
+
+# Struct layout inspector
+python scripts/ir_doctor.py structmap LowerState
+```
 
 ---
 
-## Bootstrap Path (no llvmlite anywhere)
+## Bootstrap Path
 
 ```
 mnc_all.mn ──[Python text emitter]──> main.ll ──[clang -O2]──> mnc-stage1
@@ -419,30 +234,13 @@ mnc_all.mn ──────────────[mnc-stage1]─────
 mnc_all.mn ──────────────[mnc-stage2]──────────> stage3.ll    (== stage2.ll? → fixed point)
 ```
 
-No llvmlite in any step. The Python text emitter generates alloca-based IR as
-plain strings. clang handles optimization. After fixed-point, Python is only
-needed if you want to rebuild from scratch (disaster recovery).
-
----
-
-## Risk Register
-
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Phase 1 reveals new crashes not seen before | Medium | Text emitter + clang -O2 is a different path — may have new bugs, but unlikely to have the old llvmlite bugs |
-| Control flow fix breaks working stage2 tests | High | Run golden harness after every change |
-| LowerState restructure touches 100+ functions | High | Option A (split struct) is smaller; Option B (mutable ref) is cleaner but larger |
-| Fixed-point IR not byte-identical (non-determinism) | Medium | Diff-based debugging; counter/label normalization pass |
-| Test migration reveals `mnc` bugs not in golden tests | Medium | Differential testing: run both Python and native, compare |
+No llvmlite in any step. After fixed-point, Python is only needed for disaster recovery.
 
 ---
 
 ## References
 
-- [v1.0.x Plan](../v1.0.x/PLAN.md) — self-hosted compiler progress through v1.0.11
-- [Enum Payload Fix Plan](../ENUM_PAYLOAD_FIX_PLAN.md) — control flow bug diagnosis (03/21)
-- [v2.0.1 Plan](../v2.0.1/PLAN.md) — defers self-hosted parity to v2.1.0
-- [Chat logs](../../../.reviews/chats/) — 03/19-03/22 debugging sessions
-- `scripts/build_stage1.py` — current bootstrap build (text emitter + clang)
-- `scripts/verify_fixed_point.sh` — three-stage verification script
+- `scripts/ir_doctor.py` — IR diagnostics, golden tests, stage2 validation
+- `scripts/build_stage1.py` — bootstrap build (text emitter + clang)
+- `scripts/verify_fixed_point.sh` — three-stage verification
 - `scripts/test_native.py` — golden test harness

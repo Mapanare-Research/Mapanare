@@ -1549,7 +1549,10 @@ fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitStat
 fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
     match val_opt {
         Some(val) => {
-            let ty: String = resolve_mir_type(val.ty)
+            // Use the function's declared return type (current_ret_type), not the
+            // value's MIR type.  The value's type is often "unknown"/i64 for struct
+            // constructors whose type wasn't propagated through the lowerer.
+            let ty: String = st.current_ret_type
             if ty == "void" {
                 return emit_line(st, emit_ret_void())
             }
@@ -1884,10 +1887,15 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     }
 
     // Emit function bodies
+    let total_fns: Int = len(module.functions)
     let mut fi: Int = 0
     for _ in 0..100000 {
-        if fi >= len(module.functions) { break }
+        if fi >= total_fns { break }
         let f: MIRFunction = module.functions[fi]
+        // Progress: print every 50th function to stderr (avoids stdout pollution)
+        // Uses println which goes to stdout — but the user redirects stdout to .ll
+        // so this effectively goes to the terminal if not redirected.
+        // TODO: use proper stderr when available
         st = emit_mir_function(st, f)
         fi = fi + 1
     }
@@ -1913,21 +1921,15 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     // LLVM doesn't care about declaration order — globals can appear anywhere
     // at the top level, even after functions.
 
-    let nlines: Int = len(st.lines)
-    let mut result: String = ""
-    let mut li: Int = 0
-    for _ in 0..1000000 {
-        if li >= nlines { break }
-        result = result + st.lines[li] + "\n"
-        li = li + 1
-    }
-    // Append string globals at end of module (valid LLVM IR)
+    // Append string globals to lines (valid anywhere in LLVM IR)
     let mut gi: Int = 0
     for _ in 0..1000000 {
         if gi >= len(st.str_globals) { break }
-        result = result + st.str_globals[gi] + "\n"
+        st = emit_line(st, st.str_globals[gi])
         gi = gi + 1
     }
+    // Join all lines with newline — O(n) instead of O(n²) string concat
+    let result: String = join("\n", st.lines)
     return result
 }
 

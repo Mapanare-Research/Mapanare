@@ -1400,6 +1400,104 @@ def cmd_check(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_stage2(args: argparse.Namespace) -> int:
+    """Compile self-hosted modules through mnc-stage1, validate stage2 IR.
+
+    Tests whether mnc-stage1 can compile its own source modules and produce
+    valid LLVM IR.  This is the gate for Phase 4 (fixed-point verification).
+    Also attempts full mnc_all.mn compilation.
+    """
+    stage1 = pathlib.Path(args.stage1)
+    self_dir = ROOT / "mapanare" / "self"
+    timeout_s = args.timeout
+
+    modules = [
+        "ast.mn", "lexer.mn", "parser.mn", "semantic.mn", "mir.mn",
+        "lower_state.mn", "lower.mn", "emit_llvm_ir.mn", "emit_llvm.mn", "main.mn",
+    ]
+
+    if not stage1.exists():
+        print(f"Stage1 binary not found: {stage1}", file=sys.stderr)
+        return 1
+
+    results: list[tuple[str, str, int, str]] = []
+    for mod in modules:
+        mn_path = self_dir / mod
+        name = mod.replace(".mn", "")
+        print(f"  {name}...", end=" ", flush=True)
+
+        try:
+            proc = subprocess.run(
+                [str(stage1), str(mn_path)],
+                capture_output=True, text=True, timeout=timeout_s,
+            )
+            ir = proc.stdout
+            n_lines = ir.count("\n")
+            if proc.returncode != 0 or n_lines == 0:
+                crash = proc.stderr.strip().split("\n")[0] if proc.stderr else "no output"
+                print(f"COMPILE_FAIL ({crash})")
+                results.append((name, "COMPILE_FAIL", 0, crash))
+                continue
+
+            valid, err = validate_ir(ir)
+            if valid:
+                mod_obj = parse_ir(ir)
+                pathologies = run_audit(mod_obj)
+                n_errs = sum(1 for p in pathologies if p.severity == "error")
+                if n_errs == 0:
+                    print(f"OK  {len(mod_obj.functions)} fn  {n_lines} lines")
+                    results.append((name, "OK", n_lines, ""))
+                else:
+                    print(f"WARN({n_errs})  {len(mod_obj.functions)} fn")
+                    results.append((name, f"WARN({n_errs})", n_lines, ""))
+            else:
+                first_err = (err or "").split("\n")[0]
+                print(f"INVALID  {n_lines} lines  {first_err}")
+                results.append((name, "INVALID", n_lines, first_err))
+        except subprocess.TimeoutExpired:
+            print(f"TIMEOUT ({timeout_s}s)")
+            results.append((name, "TIMEOUT", 0, f"killed after {timeout_s}s"))
+
+    # Full self-compilation test
+    print(f"\n  mnc_all.mn...", end=" ", flush=True)
+    all_mn = self_dir / "mnc_all.mn"
+    if all_mn.exists():
+        try:
+            proc = subprocess.run(
+                [str(stage1), str(all_mn)],
+                capture_output=True, text=True, timeout=timeout_s * 4,
+            )
+            ir = proc.stdout
+            n_lines = ir.count("\n")
+            if proc.returncode != 0 or n_lines == 0:
+                print(f"FAIL ({proc.returncode}, {n_lines} lines)")
+                results.append(("mnc_all", "FAIL", n_lines, "no output"))
+            else:
+                valid, err = validate_ir(ir)
+                if valid:
+                    print(f"OK  {n_lines} lines")
+                    results.append(("mnc_all", "OK", n_lines, ""))
+                else:
+                    first_err = (err or "").split("\n")[0]
+                    print(f"INVALID  {n_lines} lines  {first_err}")
+                    results.append(("mnc_all", "INVALID", n_lines, first_err))
+        except subprocess.TimeoutExpired:
+            print(f"TIMEOUT ({timeout_s * 4}s)")
+            results.append(("mnc_all", "TIMEOUT", 0, f"killed after {timeout_s * 4}s"))
+    else:
+        print("SKIP (file not found)")
+
+    # Summary
+    print(f"\n{'Module':<20s} {'Status':<15s} {'Lines':>7s}  Error")
+    print("-" * 70)
+    for name, status, n_lines, err in results:
+        err_short = err[:40] if err else ""
+        print(f"{name:<20s} {status:<15s} {n_lines:>7d}  {err_short}")
+    ok = sum(1 for _, s, *_ in results if s == "OK")
+    print(f"\n{ok}/{len(results)} stage2 modules valid")
+    return 0 if ok == len(results) else 1
+
+
 def cmd_golden(args: argparse.Namespace) -> int:
     """Fresh compile + validate + audit for all golden tests. No caching.
 
@@ -2017,6 +2115,10 @@ def main() -> int:
     # diff-all
     sub.add_parser("diff-all", help="Compare all golden tests")
 
+    # stage2
+    s_s2 = sub.add_parser("stage2", help="Compile self-hosted modules through mnc-stage1, validate stage2 IR")
+    s_s2.add_argument("--timeout", type=int, default=30, help="Per-module timeout in seconds")
+
     # snapshot
     sub.add_parser("snapshot", help="Generate stage1 IR snapshots for golden tests (WSL)")
 
@@ -2049,6 +2151,7 @@ def main() -> int:
         "diff": cmd_diff,
         "diff-ir": cmd_diff_ir,
         "diff-all": cmd_diff_all,
+        "stage2": cmd_stage2,
         "snapshot": cmd_snapshot,
         "table": cmd_table,
         "fingerprint": cmd_fingerprint,
