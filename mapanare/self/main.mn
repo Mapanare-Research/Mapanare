@@ -2,13 +2,9 @@
 // Wires the pipeline: source -> parse -> check -> lower -> emit_llvm -> LLVM IR.
 
 import self::ast
-import self::lexer
 import self::parser
 import self::semantic
-import self::mir
-import self::lower_state
 import self::lower
-import self::emit_llvm_ir
 import self::emit_llvm
 
 // ---------------------------------------------------------------------------

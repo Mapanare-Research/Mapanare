@@ -2,7 +2,7 @@
 """Build the Stage 1 self-hosted compiler binary (mnc-stage1).
 
 Pipeline:
-    1. Compile mapanare/self/*.mn (7 modules) → LLVM IR via Python bootstrap
+    1. Compile mapanare/self/*.mn (10 modules) → LLVM IR via Python bootstrap
     2. Post-process IR: make compile() externally visible
     3. Compile IR → native object code
     4. Compile C runtime (mapanare_core.c)

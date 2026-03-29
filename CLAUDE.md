@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language (v2.0.0) with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (native backend via llvmlite) and WebAssembly (WAT/WASM). A legacy Python transpiler backend exists for reference and bootstrapping only. The self-hosted compiler is 8,288+ lines of `.mn` across 7 modules in `mapanare/self/`. The language is frozen at v1.0 — syntax and semantics changes require RFC + deprecation cycle.
+Mapanare is an AI-native compiled programming language (v2.0.0) with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (native backend via llvmlite) and WebAssembly (WAT/WASM). A legacy Python transpiler backend exists for reference and bootstrapping only. The self-hosted compiler is 9,400+ lines of `.mn` across 10 modules in `mapanare/self/`. The language is frozen at v1.0 — syntax and semantics changes require RFC + deprecation cycle.
 
 ## Current Version & Roadmap
 
@@ -157,17 +157,20 @@ All type definitions, builtin registries, and type-name mappings live in `types.
 
 ## Self-Hosted Compiler (`mapanare/self/`)
 
-7 modules, 8,288+ lines of Mapanare. Mirrors the Python bootstrap pipeline:
+10 modules, 9,400+ lines of Mapanare. Mirrors the Python bootstrap pipeline:
 
 | Module | Lines | Role |
 |--------|-------|------|
-| `lexer.mn` | 498 | Character-by-character tokenizer |
-| `ast.mn` | 255 | AST node definitions (structs + enums) |
-| `parser.mn` | 1,721 | Recursive descent parser, 13-level precedence |
-| `semantic.mn` | 1,607 | Two-pass type checker and scope resolver |
-| `lower.mn` | 2,629 | AST → MIR lowering |
-| `emit_llvm.mn` | 1,497 | MIR → LLVM IR string emitter |
-| `main.mn` | 81 | Compiler driver |
+| `ast.mn` | 277 | AST node definitions (structs + enums) + shared constructors |
+| `lexer.mn` | 508 | Character-by-character tokenizer |
+| `parser.mn` | 1,879 | Recursive descent parser, 13-level precedence |
+| `semantic.mn` | 1,617 | Two-pass type checker and scope resolver |
+| `mir.mn` | 415 | MIR data structures (types, values, instructions, blocks, module) |
+| `lower_state.mn` | 530 | Lowerer state, scope management, lookups, type resolution |
+| `lower.mn` | 2,007 | AST → MIR lowering (registration + expression/statement lowering) |
+| `emit_llvm_ir.mn` | 258 | LLVM type constants and IR instruction string builders |
+| `emit_llvm.mn` | 1,879 | MIR → LLVM IR emitter (state, handlers, module emission) |
+| `main.mn` | 79 | Compiler driver |
 
 **Patterns:** Constructor functions (`let r: T = first_field; return r`), state-threading (functions thread state structs), no struct literal syntax in grammar yet.
 

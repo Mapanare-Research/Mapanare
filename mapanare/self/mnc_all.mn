@@ -4673,6 +4673,35 @@ fn new_lambda_entry(var_name: String, fn_name: String) -> LambdaEntry {
     return new LambdaEntry { var_name: var_name, fn_name: fn_name }
 }
 
+// ---------------------------------------------------------------------------
+// Enum-to-string conversion (used by emit_llvm.mn and pretty-printer)
+// ---------------------------------------------------------------------------
+
+pub fn binop_kind_to_str(op: BinOpKind) -> String {
+    match op {
+        Add => { return "add" },
+        Sub => { return "sub" },
+        Mul => { return "mul" },
+        Div => { return "div" },
+        Mod => { return "mod" },
+        Eq => { return "eq" },
+        Ne => { return "ne" },
+        Lt => { return "lt" },
+        Gt => { return "gt" },
+        Le => { return "le" },
+        Ge => { return "ge" },
+        And => { return "and" },
+        Or => { return "or" }
+    }
+}
+
+pub fn unaryop_kind_to_str(op: UnaryOpKind) -> String {
+    match op {
+        Neg => { return "neg" },
+        Not => { return "not" }
+    }
+}
+
 // ===== lower_state.mn =====
 // lower_state.mn — Lowerer state, scope management, lookups, and type resolution.
 // Extracted from lower.mn to reduce file size and share lookup utilities.
@@ -5201,30 +5230,7 @@ fn is_comparison_op(op: BinOpKind) -> Bool {
     }
 }
 
-pub fn binop_kind_to_str(op: BinOpKind) -> String {
-    match op {
-        Add => { return "add" },
-        Sub => { return "sub" },
-        Mul => { return "mul" },
-        Div => { return "div" },
-        Mod => { return "mod" },
-        Eq => { return "eq" },
-        Ne => { return "ne" },
-        Lt => { return "lt" },
-        Gt => { return "gt" },
-        Le => { return "le" },
-        Ge => { return "ge" },
-        And => { return "and" },
-        Or => { return "or" }
-    }
-}
-
-pub fn unaryop_kind_to_str(op: UnaryOpKind) -> String {
-    match op {
-        Neg => { return "neg" },
-        Not => { return "not" }
-    }
-}
+// binop_kind_to_str and unaryop_kind_to_str live in mir.mn (near the enums they convert)
 
 // ===== lower.mn =====
 // lower.mn — AST → MIR lowering pass for the Mapanare self-hosted compiler.
@@ -6564,7 +6570,7 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
                 // Compound assignment: x += 1 → x = x + 1
                 let old_r: LowerResult = lower_identifier(s, name)
                 s = old_r.state
-                let op_str: String = substr(op, 0, len(op) - 1)
+                let op_str: String = strip_assign_op(op)
                 let binop_opt: Option<BinOpKind> = binop_from_str(op_str)
                 match binop_opt {
                     Some(binop) => {
@@ -6611,15 +6617,14 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
     }
 }
 
-// Helper to extract substring
-fn substr(s: String, start: Int, end: Int) -> String {
-    // substring extraction — handles compound assignment operators
-    if s == "+=" { return "+" }
-    if s == "-=" { return "-" }
-    if s == "*=" { return "*" }
-    if s == "/=" { return "/" }
-    if s == "%=" { return "%" }
-    return s
+// Strip the '=' suffix from compound assignment operators: "+=" → "+"
+fn strip_assign_op(op: String) -> String {
+    if op == "+=" { return "+" }
+    if op == "-=" { return "-" }
+    if op == "*=" { return "*" }
+    if op == "/=" { return "/" }
+    if op == "%=" { return "%" }
+    return op
 }
 
 // ---------------------------------------------------------------------------

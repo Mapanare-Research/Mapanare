@@ -383,3 +383,32 @@ struct LambdaEntry {
 fn new_lambda_entry(var_name: String, fn_name: String) -> LambdaEntry {
     return new LambdaEntry { var_name: var_name, fn_name: fn_name }
 }
+
+// ---------------------------------------------------------------------------
+// Enum-to-string conversion (used by emit_llvm.mn and pretty-printer)
+// ---------------------------------------------------------------------------
+
+pub fn binop_kind_to_str(op: BinOpKind) -> String {
+    match op {
+        Add => { return "add" },
+        Sub => { return "sub" },
+        Mul => { return "mul" },
+        Div => { return "div" },
+        Mod => { return "mod" },
+        Eq => { return "eq" },
+        Ne => { return "ne" },
+        Lt => { return "lt" },
+        Gt => { return "gt" },
+        Le => { return "le" },
+        Ge => { return "ge" },
+        And => { return "and" },
+        Or => { return "or" }
+    }
+}
+
+pub fn unaryop_kind_to_str(op: UnaryOpKind) -> String {
+    match op {
+        Neg => { return "neg" },
+        Not => { return "not" }
+    }
+}
