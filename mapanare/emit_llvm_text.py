@@ -976,6 +976,47 @@ class LLVMTextEmitter:
         if t == LIST:
             root = self._lroots.get(i.src.name, i.src.name)
             self._lroots[i.dest.name] = root
+        # Deep-clone list fields inside structs to avoid aliased data
+        # pointers.  Without this, two copies of a struct share the same
+        # list data buffer; a realloc in one invalidates the other.
+        if i.src.ty.kind == TypeKind.STRUCT:
+            sn = self._res_struct(i.src.ty.type_info.name)
+            if sn in self._structs:
+                self._clone_list_fields(i.dest, sn)
+
+    def _clone_list_fields(self, dest: Value, sn: str) -> None:
+        """After a struct copy, deep-clone any List fields in the destination.
+
+        Without this, the bitwise copy shares the same heap pointer for each
+        List field.  A realloc in one copy would free the other's data buffer,
+        leading to double-free / use-after-free.
+        """
+        fields = self._structs[sn]
+        # Quick check: does this struct actually have list fields?
+        if not any(ft == LIST for _, ft in fields):
+            return
+        sty = self._struct_ty[sn]
+        pi = self._get_ptr(dest)
+        if pi is None:
+            return
+        addr, aty = pi
+        # Only clone when the alloca was created with a matching struct layout.
+        # If the alloca type is smaller (e.g. PTR / i8*), GEP would overrun.
+        if aty != sty:
+            if _tsz(aty) < _tsz(sty):
+                return
+            bc = self._f("clbc")
+            self._L(f"{bc} = bitcast {aty}* {addr} to {sty}*")
+            addr = bc
+        self._ensure("__mn_list_clone", LIST, [f"{LIST}*"])
+        for idx, (_, ft) in enumerate(fields):
+            if ft != LIST:
+                continue
+            fp = self._f("clf")
+            self._L(f"{fp} = getelementptr inbounds {sty}, {sty}* {addr}, i32 0, i32 {idx}")
+            cloned = self._f("clr")
+            self._L(f"{cloned} = call {LIST} @__mn_list_clone({LIST}* {fp})")
+            self._L(f"store {LIST} {cloned}, {LIST}* {fp}")
 
     # --- Cast ---
     def _do_cast(self, i: Cast) -> None:

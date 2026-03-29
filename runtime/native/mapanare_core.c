@@ -747,6 +747,18 @@ MN_EXPORT void __mn_list_free(MnList *list) {
     list->cap = 0;
 }
 
+MN_EXPORT MnList __mn_list_clone(MnList *src) {
+    MnList dst;
+    dst.elem_size = src->elem_size;
+    dst.len = src->len;
+    dst.cap = src->cap > 0 ? src->cap : MN_LIST_INITIAL_CAP;
+    dst.data = (char *)__mn_alloc(mn_checked_mul(dst.cap, dst.elem_size));
+    if (src->len > 0 && src->data) {
+        memcpy(dst.data, src->data, (size_t)(src->len * src->elem_size));
+    }
+    return dst;
+}
+
 MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
     int64_t es = a->elem_size;
     MnList result = __mn_list_new(es);

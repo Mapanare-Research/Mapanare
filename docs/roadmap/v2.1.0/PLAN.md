@@ -102,7 +102,7 @@ assuming restructuring is needed.**
 | 0 | Quick Fixes (gcc, test parallelism) | `Done` | Small | Unblocks dev.ps1, 4-6x test speed |
 | 1 | Retest Self-Compilation | `Done` | Small | 7/15 stage2, 4/7 modules, 3 crash on copy aliasing |
 | 2 | Control Flow Fix (`lower.mn`) | `Not started` | Medium-Large | 7/15 stage2 → 15/15 |
-| 3 | LowerState Restructure (CRITICAL) | `In Progress` | Medium | Copy aliasing crashes block self-compilation |
+| 3 | Deep-copy list fields on struct copy | `Done` | Medium | `__mn_list_clone` + text emitter fix → self-compilation works |
 | 4 | Fixed-Point Verification | `Not started` | Medium | Python independence achieved |
 | 5 | Native Test Migration | `Not started` | X-Large | 10-50x test speed |
 | 6 | Go Test Harness (optional) | `Not started` | Large | Only if measurements justify |
@@ -252,11 +252,11 @@ function signature in `lower.mn` (2,629 lines, ~100+ functions).
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Confirm Phase 1 crash is LowerState-related (not control flow) | `[ ]` | — | Check crash location |
-| 2 | Choose Option A or B based on change scope | `[ ]` | — | A is smaller change |
-| 3 | Implement restructure in `lower.mn` | `[ ]` | `mapanare/self/lower.mn` | |
-| 4 | Update all callers in `lower.mn` | `[ ]` | `mapanare/self/lower.mn` | |
-| 5 | Rebuild and test self-compilation | `[ ]` | — | `mnc-stage1 mapanare/self/mnc_all.mn` |
+| 1 | Confirm Phase 1 crash is LowerState-related (not control flow) | `[x]` | — | ASAN: double-free in `__mn_list_push` from shallow-copied list data ptrs |
+| 2 | Choose fix strategy | `[x]` | — | **Neither A nor B** — fixed at emitter level: deep-clone list fields on struct copy |
+| 3 | Add `__mn_list_clone` to C runtime | `[x]` | `mapanare_core.c/h` | Allocates new buffer, memcpys elements |
+| 4 | Fix text emitter `_do_copy` for struct types | `[x]` | `emit_llvm_text.py` | `_clone_list_fields`: GEP each list field, call clone, store back |
+| 5 | Rebuild and test self-compilation | `[x]` | — | **7/7 modules compile, mnc_all.mn → 29,114 lines IR** |
 
 **Done when:** `mnc-stage1` compiles `mnc_all.mn` without crashing.
 

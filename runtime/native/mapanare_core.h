@@ -179,6 +179,9 @@ MN_EXPORT int64_t __mn_list_len(MnList *list);
  *  Returns 0 on success, -1 if empty. */
 MN_EXPORT int64_t __mn_list_pop(MnList *list, void *out_ptr);
 
+/** Deep-clone a list: allocates a new data buffer and copies elements. */
+MN_EXPORT MnList __mn_list_clone(MnList *src);
+
 /** Clear the list (set len to 0, keep capacity). */
 MN_EXPORT void __mn_list_clear(MnList *list);
 
