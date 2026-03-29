@@ -530,4 +530,26 @@ MN_EXPORT int8_t __iter_has_next(void *iter);
 /** Get the next element and advance. Returns value as i8* (inttoptr). */
 MN_EXPORT void *__iter_next(void *iter);
 
+/* -----------------------------------------------------------------------
+ * Function Type Registry — global, lives outside LowerState
+ *
+ * Used by the self-hosted compiler to track function return types
+ * without adding fields to LowerState (which causes OOM due to
+ * deep-clone on every copy).
+ * ----------------------------------------------------------------------- */
+
+/** Store a function name → return type mapping.
+ *  kind: "int", "string", "bool", "struct", "enum", "list", etc.
+ *  name: the type name (e.g., "Token" for struct Token) */
+MN_EXPORT void __mn_type_registry_put(MnString fn_name, MnString kind, MnString type_name);
+
+/** Look up a function's return type kind. Returns empty string if not found. */
+MN_EXPORT MnString __mn_type_registry_get_kind(MnString fn_name);
+
+/** Look up a function's return type name. Returns empty string if not found. */
+MN_EXPORT MnString __mn_type_registry_get_name(MnString fn_name);
+
+/** Clear the registry (call before each compilation). */
+MN_EXPORT void __mn_type_registry_clear(void);
+
 #endif /* MAPANARE_CORE_H */

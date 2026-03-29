@@ -1875,3 +1875,96 @@ MN_EXPORT void *__iter_next(void *iter_ptr) {
     iter->current++;
     return (void *)(intptr_t)val;
 }
+
+/* -----------------------------------------------------------------------
+ * Function Type Registry — global, static, outside LowerState
+ *
+ * Simple open-addressing hash table. Fixed capacity of 4096 entries.
+ * Used by the self-hosted compiler to track fn name → return type
+ * without polluting LowerState (which gets deep-cloned on every copy).
+ * ----------------------------------------------------------------------- */
+
+#define MN_TYPEREG_CAP 4096
+
+typedef struct {
+    char     fn_name[256];
+    char     kind[64];
+    char     type_name[256];
+    int      occupied;
+} MnTypeRegEntry;
+
+static MnTypeRegEntry mn_type_reg[MN_TYPEREG_CAP];
+
+static uint32_t mn_typereg_hash(const char *s, int64_t len) {
+    uint32_t h = 5381;
+    for (int64_t i = 0; i < len; i++)
+        h = ((h << 5) + h) + (uint8_t)s[i];
+    return h;
+}
+
+MN_EXPORT void __mn_type_registry_put(MnString fn_name, MnString kind, MnString type_name) {
+    if (fn_name.len <= 0 || fn_name.data == NULL) return;
+    const char *fdata = mn_untag(fn_name.data);
+    int64_t flen = fn_name.len > 255 ? 255 : fn_name.len;
+    uint32_t idx = mn_typereg_hash(fdata, fn_name.len) % MN_TYPEREG_CAP;
+
+    for (int probe = 0; probe < MN_TYPEREG_CAP; probe++) {
+        uint32_t i = (idx + probe) % MN_TYPEREG_CAP;
+        if (!mn_type_reg[i].occupied ||
+            (mn_type_reg[i].fn_name[flen] == '\0' &&
+             memcmp(mn_type_reg[i].fn_name, fdata, (size_t)flen) == 0)) {
+            memcpy(mn_type_reg[i].fn_name, fdata, (size_t)flen);
+            mn_type_reg[i].fn_name[flen] = '\0';
+
+            const char *kdata = mn_untag(kind.data);
+            int64_t klen = kind.len > 63 ? 63 : kind.len;
+            if (kdata && klen > 0) {
+                memcpy(mn_type_reg[i].kind, kdata, (size_t)klen);
+            }
+            mn_type_reg[i].kind[klen] = '\0';
+
+            const char *tdata = mn_untag(type_name.data);
+            int64_t tlen = type_name.len > 255 ? 255 : type_name.len;
+            if (tdata && tlen > 0) {
+                memcpy(mn_type_reg[i].type_name, tdata, (size_t)tlen);
+            }
+            mn_type_reg[i].type_name[tlen] = '\0';
+
+            mn_type_reg[i].occupied = 1;
+            return;
+        }
+    }
+}
+
+static MnTypeRegEntry *mn_typereg_find(MnString fn_name) {
+    if (fn_name.len <= 0 || fn_name.data == NULL) return NULL;
+    const char *fdata = mn_untag(fn_name.data);
+    uint32_t idx = mn_typereg_hash(fdata, fn_name.len) % MN_TYPEREG_CAP;
+
+    for (int probe = 0; probe < MN_TYPEREG_CAP; probe++) {
+        uint32_t i = (idx + probe) % MN_TYPEREG_CAP;
+        if (!mn_type_reg[i].occupied) return NULL;
+        int64_t flen = fn_name.len > 255 ? 255 : fn_name.len;
+        if (mn_type_reg[i].fn_name[flen] == '\0' &&
+            memcmp(mn_type_reg[i].fn_name, fdata, (size_t)flen) == 0) {
+            return &mn_type_reg[i];
+        }
+    }
+    return NULL;
+}
+
+MN_EXPORT MnString __mn_type_registry_get_kind(MnString fn_name) {
+    MnTypeRegEntry *e = mn_typereg_find(fn_name);
+    if (e) return __mn_str_from_cstr(e->kind);
+    return __mn_str_empty();
+}
+
+MN_EXPORT MnString __mn_type_registry_get_name(MnString fn_name) {
+    MnTypeRegEntry *e = mn_typereg_find(fn_name);
+    if (e) return __mn_str_from_cstr(e->type_name);
+    return __mn_str_empty();
+}
+
+MN_EXPORT void __mn_type_registry_clear(void) {
+    memset(mn_type_reg, 0, sizeof(mn_type_reg));
+}

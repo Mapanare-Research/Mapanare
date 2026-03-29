@@ -4705,7 +4705,6 @@ struct LowerState {
     struct_fields: List<StructFieldInfo>,
     enum_variants: List<EnumVariantNames>,
     lambda_vars: List<LambdaEntry>,
-    fn_ret_types: List<FnRetEntry>
 }
 
 fn new_lower_state(module_name: String) -> LowerState {
@@ -4716,8 +4715,7 @@ fn new_lower_state(module_name: String) -> LowerState {
     let struct_fields: List<StructFieldInfo> = []
     let enum_variants: List<EnumVariantNames> = []
     let lambda_vars: List<LambdaEntry> = []
-    let fn_ret_types: List<FnRetEntry> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_ret_types: fn_ret_types }
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars }
 }
 
 // Lower result: value + updated state
@@ -5292,12 +5290,8 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
                 _ => { return st }
             }
         },
-        FnDef(data) => {
-            let ret_ty: MIRType = resolve_return_type_checked(st, data.return_type)
-            let entry: FnRetEntry = new_fn_ret_entry(data.name, ret_ty)
-            let mut new_st: LowerState = st
-            new_st.fn_ret_types.push(entry)
-            return new_st
+        FnDef(_) => {
+            return st
         },
         _ => { return st }
     }
@@ -5378,10 +5372,6 @@ fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lo
         let mir_name: String = target + "_" + method.name
         let entry: ImplEntry = new_impl_entry(key, mir_name)
         s.impl_methods.push(entry)
-        // Also register the method's return type under its MIR name
-        let ret_ty: MIRType = resolve_return_type_checked(s, method.return_type)
-        let fn_entry: FnRetEntry = new_fn_ret_entry(mir_name, ret_ty)
-        s.fn_ret_types.push(fn_entry)
         i = i + 1
     }
     return s
@@ -6120,10 +6110,7 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         _ => { fn_name }
     }
 
-    // Look up return type from function registry
-    let ret_ty: MIRType = lookup_fn_ret_type(st, resolved)
-
-    let dest_r: LowerResult = make_value(st, ret_ty, "t")
+    let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
     let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, resolved, args))
     return new_lower_result(dest_r.value, s)
 }
@@ -6245,7 +6232,19 @@ fn lower_namespace_access(st: LowerState, ns: String, member: String) -> LowerRe
 fn lower_index(st: LowerState, obj: Expr, idx: Expr) -> LowerResult {
     let obj_r: LowerResult = lower_expr(st, obj)
     let idx_r: LowerResult = lower_expr(obj_r.state, idx)
-    let dest_r: LowerResult = make_value(idx_r.state, mir_unknown(), "t")
+
+    // For string indexing, result is a string (char_at)
+    // For list indexing, result is the element type from List<T>.args[0]
+    let mut elem_ty: MIRType = mir_unknown()
+    if obj_r.value.ty.kind == "string" {
+        elem_ty = mir_string()
+    } else if obj_r.value.ty.kind == "list" {
+        if len(obj_r.value.ty.args) > 0 {
+            elem_ty = obj_r.value.ty.args[0]
+        }
+    }
+
+    let dest_r: LowerResult = make_value(idx_r.state, elem_ty, "t")
     let s: LowerState = emit_instr(dest_r.state, Instruction::IndexGet(dest_r.value, obj_r.value, idx_r.value))
     return new_lower_result(dest_r.value, s)
 }
@@ -7534,7 +7533,9 @@ struct EmitState {
     str_globals: List<String>,
     current_ret_type: String,
     enum_names: List<String>,
-    enum_infos: List<EnumInfo>
+    enum_infos: List<EnumInfo>,
+    deferred_alloca: String,
+    deferred_alloca_set: Int
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
@@ -7544,7 +7545,7 @@ fn new_emit_state(module_name: String) -> EmitState {
     let str_globals: List<String> = []
     let enum_names: List<String> = []
     let enum_infos: List<EnumInfo> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos }
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, deferred_alloca: "", deferred_alloca_set: 0 }
 }
 
 fn emit_global(st: EmitState, line: String) -> EmitState {
@@ -8405,7 +8406,18 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
     let tmp: String = dn + ".lp"
     s = emit_line(s, "  " + tmp + " = alloca " + lt)
     s = emit_line(s, "  store " + lt + " " + obj.name + ", " + lt + "* " + tmp)
-    s = emit_line(s, emit_call_ir(dn, "i8*", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
+
+    // If dest type is known (struct/enum), cast i8* → element_type* and load
+    let dest_ty: String = resolve_mir_type(dest.ty)
+    if dest_ty != llvm_int() && dest_ty != "i8*" && dest_ty != "void" {
+        let raw: String = dn + ".raw"
+        s = emit_line(s, emit_call_ir(raw, "i8*", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
+        let cast: String = dn + ".ep"
+        s = emit_line(s, "  " + cast + " = bitcast i8* " + raw + " to " + dest_ty + "*")
+        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", " + dest_ty + "* " + cast)
+    } else {
+        s = emit_line(s, emit_call_ir(dn, "i8*", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
+    }
     return s
 }
 
@@ -8423,17 +8435,39 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
 // ---------------------------------------------------------------------------
 
 fn emit_alloca(st: EmitState, dest: Value, ty: MIRType) -> EmitState {
-    return emit_line(st, llvm_alloca(dest.name, resolve_mir_type(ty)))
+    let resolved: String = resolve_mir_type(ty)
+    let mut s: EmitState = st
+    // If alloca type is i64 but the last Call returned a different type, use that
+    // Keep deferred_alloca_set=1 so emit_store/emit_load can also use the type
+    if s.deferred_alloca_set == 1 && resolved == "i64" {
+        return emit_line(s, llvm_alloca(dest.name, s.deferred_alloca))
+    }
+    s.deferred_alloca_set = 0
+    return emit_line(s, llvm_alloca(dest.name, resolved))
 }
 
 fn emit_load(st: EmitState, dest: Value, ptr: Value) -> EmitState {
     let ty: String = resolve_mir_type(dest.ty)
-    return emit_line(st, llvm_load(dest.name, ty, ptr.name))
+    let mut s: EmitState = st
+    // Use deferred alloca type if the dest type is i64 but we know the actual type
+    if s.deferred_alloca_set == 1 && ty == "i64" {
+        let actual: String = s.deferred_alloca
+        s.deferred_alloca_set = 0
+        s.deferred_alloca = ""
+        return emit_line(s, llvm_load(dest.name, actual, ptr.name))
+    }
+    return emit_line(s, llvm_load(dest.name, ty, ptr.name))
 }
 
 fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState {
-    let ty: String = resolve_mir_type(val.ty)
-    return emit_line(st, llvm_store(ty, val.name, ptr.name))
+    let mut s: EmitState = st
+    let val_ty: String = resolve_mir_type(val.ty)
+    // Use deferred alloca type if available and value type is i64
+    // Keep flag set so subsequent Load can also use the deferred type
+    if s.deferred_alloca_set == 1 && val_ty == "i64" {
+        return emit_line(s, llvm_store(s.deferred_alloca, val.name, ptr.name))
+    }
+    return emit_line(s, llvm_store(val_ty, val.name, ptr.name))
 }
 
 // ---------------------------------------------------------------------------
@@ -8733,22 +8767,28 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         j = j + 1
     }
 
-    // Look up return type
+    // Look up return type and record for deferred alloca type recovery
     let fn_opt: Option<FnEntry> = find_function(s, fn_name)
     match fn_opt {
         Some(fe) => {
             if fe.ret_type == "void" {
+                s.deferred_alloca_set = 0
                 return emit_line(s, emit_call_void(fn_name, args_str))
             }
             s = emit_line(s, emit_call_ir(dn, fe.ret_type, fn_name, args_str))
+            s.deferred_alloca = fe.ret_type
+            s.deferred_alloca_set = 1
             return s
         },
         _ => {
             let ret_ty: String = resolve_mir_type(dest.ty)
             if ret_ty == "void" {
+                s.deferred_alloca_set = 0
                 return emit_line(s, emit_call_void(fn_name, args_str))
             }
             s = emit_line(s, emit_call_ir(dn, ret_ty, fn_name, args_str))
+            s.deferred_alloca = ret_ty
+            s.deferred_alloca_set = 1
             return s
         }
     }

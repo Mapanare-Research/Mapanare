@@ -1184,7 +1184,18 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
     let tmp: String = dn + ".lp"
     s = emit_line(s, "  " + tmp + " = alloca " + lt)
     s = emit_line(s, "  store " + lt + " " + obj.name + ", " + lt + "* " + tmp)
-    s = emit_line(s, emit_call_ir(dn, "i8*", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
+
+    // If dest type is known (struct/enum), cast i8* → element_type* and load
+    let dest_ty: String = resolve_mir_type(dest.ty)
+    if dest_ty != llvm_int() && dest_ty != "i8*" && dest_ty != "void" {
+        let raw: String = dn + ".raw"
+        s = emit_line(s, emit_call_ir(raw, "i8*", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
+        let cast: String = dn + ".ep"
+        s = emit_line(s, "  " + cast + " = bitcast i8* " + raw + " to " + dest_ty + "*")
+        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", " + dest_ty + "* " + cast)
+    } else {
+        s = emit_line(s, emit_call_ir(dn, "i8*", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
+    }
     return s
 }
 
@@ -1206,13 +1217,11 @@ fn emit_alloca(st: EmitState, dest: Value, ty: MIRType) -> EmitState {
 }
 
 fn emit_load(st: EmitState, dest: Value, ptr: Value) -> EmitState {
-    let ty: String = resolve_mir_type(dest.ty)
-    return emit_line(st, llvm_load(dest.name, ty, ptr.name))
+    return emit_line(st, llvm_load(dest.name, resolve_mir_type(dest.ty), ptr.name))
 }
 
 fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState {
-    let ty: String = resolve_mir_type(val.ty)
-    return emit_line(st, llvm_store(ty, val.name, ptr.name))
+    return emit_line(st, llvm_store(resolve_mir_type(val.ty), val.name, ptr.name))
 }
 
 // ---------------------------------------------------------------------------
@@ -1512,7 +1521,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         j = j + 1
     }
 
-    // Look up return type
+    // Look up return type from function registry
     let fn_opt: Option<FnEntry> = find_function(s, fn_name)
     match fn_opt {
         Some(fe) => {
