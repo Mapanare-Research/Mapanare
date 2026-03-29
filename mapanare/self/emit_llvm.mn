@@ -1002,7 +1002,11 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
     // List .len
     if obj.ty.kind == "list" {
         if field_name == "len" {
-            s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", llvm_list_rt() + "* " + on))
+            let lt: String = llvm_list_rt()
+            let tmp: String = dn + ".lp"
+            s = emit_line(s, "  " + tmp + " = alloca " + lt)
+            s = emit_line(s, "  store " + lt + " " + on + ", " + lt + "* " + tmp)
+            s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", lt + "* " + tmp))
             return s
         }
         // List methods (push, etc.) — pass object through
@@ -1175,8 +1179,12 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
         return s
     }
 
-    // List indexing → list_get
-    s = emit_line(s, emit_call_ir(dn, "i8*", "__mn_list_get", llvm_list_rt() + "* " + obj.name + ", i64 " + idx.name))
+    // List indexing → list_get (needs pointer; alloca+store the list value)
+    let lt: String = llvm_list_rt()
+    let tmp: String = dn + ".lp"
+    s = emit_line(s, "  " + tmp + " = alloca " + lt)
+    s = emit_line(s, "  store " + lt + " " + obj.name + ", " + lt + "* " + tmp)
+    s = emit_line(s, emit_call_ir(dn, "i8*", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
     return s
 }
 
@@ -1586,7 +1594,12 @@ fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
     if args[0].ty.kind == "string" {
         s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_len", llvm_string() + " " + an))
     } else {
-        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", llvm_list_rt() + "* " + an))
+        // __mn_list_len expects a pointer; alloca+store the list value first
+        let tmp: String = dn + ".lp"
+        let lt: String = llvm_list_rt()
+        s = emit_line(s, "  " + tmp + " = alloca " + lt)
+        s = emit_line(s, "  store " + lt + " " + an + ", " + lt + "* " + tmp)
+        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", lt + "* " + tmp))
     }
     return s
 }

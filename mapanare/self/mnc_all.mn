@@ -4648,14 +4648,15 @@ fn new_impl_entry(key: String, mir_name: String) -> ImplEntry {
     return new ImplEntry { key: key, mir_name: mir_name }
 }
 
-// Struct field names mapping
+// Struct field names and types mapping
 struct StructFieldInfo {
     name: String,
-    field_names: List<String>
+    field_names: List<String>,
+    field_types: List<MIRType>
 }
 
-fn new_struct_field_info(name: String, fields: List<String>) -> StructFieldInfo {
-    return new StructFieldInfo { name: name, field_names: fields }
+fn new_struct_field_info(name: String, fields: List<String>, types: List<MIRType>) -> StructFieldInfo {
+    return new StructFieldInfo { name: name, field_names: fields, field_types: types }
 }
 
 // Enum variant names mapping
@@ -5052,6 +5053,31 @@ fn resolve_type_name(name: String) -> MIRType {
     return mir_struct(name)
 }
 
+// State-aware type resolution: distinguishes structs from enums
+fn resolve_type_name_checked(st: LowerState, name: String) -> MIRType {
+    if name == "Int" { return mir_int() }
+    if name == "Float" { return mir_float() }
+    if name == "Bool" { return mir_bool() }
+    if name == "String" { return mir_string() }
+    if name == "Char" { return mir_string() }
+    if name == "Void" { return mir_void() }
+    if name == "Option" { return mir_option() }
+    if name == "Result" { return mir_result() }
+    if name == "List" { return mir_list() }
+    if name == "Map" { return mir_map() }
+    if name == "Signal" { return mir_signal() }
+    // Check if this is a registered enum
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= len(st.enum_variants) { break }
+        if st.enum_variants[i].enum_name == name {
+            return mir_enum(name)
+        }
+        i = i + 1
+    }
+    return mir_struct(name)
+}
+
 fn kind_from_name(name: String) -> String {
     if name == "Int" { return "int" }
     if name == "Float" { return "float" }
@@ -5078,9 +5104,56 @@ fn lower_resolve_type_opt(te: Option<TypeExpr>) -> MIRType {
     }
 }
 
+fn lower_resolve_type_opt_checked(st: LowerState, te: Option<TypeExpr>) -> MIRType {
+    match te {
+        Some(t) => { return lower_resolve_type_checked(st, t) },
+        _ => { return mir_unknown() }
+    }
+}
+
 fn resolve_return_type(te: Option<TypeExpr>) -> MIRType {
     match te {
         Some(t) => { return lower_resolve_type_expr(t) },
+        _ => { return mir_void() }
+    }
+}
+
+// State-aware type expression resolver (distinguishes enums from structs)
+fn lower_resolve_type_checked(st: LowerState, te: TypeExpr) -> MIRType {
+    match te {
+        Named(name) => {
+            return resolve_type_name_checked(st, name)
+        },
+        Generic(name, args) => {
+            let mut resolved_args: List<MIRType> = []
+            let mut i: Int = 0
+            for _ in 0..100 {
+                if i >= len(args) {
+                    let kind: String = kind_from_name(name)
+                    if kind != "unknown" {
+                        return new_mir_type_with_args(name, kind, resolved_args)
+                    }
+                    // Check if it's an enum
+                    let checked: MIRType = resolve_type_name_checked(st, name)
+                    return new_mir_type_with_args(name, checked.kind, resolved_args)
+                }
+                let arg: TypeExpr = args[i]
+                let resolved: MIRType = lower_resolve_type_checked(st, arg)
+                resolved_args.push(resolved)
+                i = i + 1
+            }
+            return mir_unknown()
+        },
+        FnTy(param_types, return_type) => {
+            return mir_fn_type()
+        },
+        _ => { return mir_unknown() }
+    }
+}
+
+fn resolve_return_type_checked(st: LowerState, te: Option<TypeExpr>) -> MIRType {
+    match te {
+        Some(t) => { return lower_resolve_type_checked(st, t) },
         _ => { return mir_void() }
     }
 }
@@ -5167,11 +5240,26 @@ pub fn unaryop_kind_to_str(op: UnaryOpKind) -> String {
 
 fn register_declarations(st: LowerState, program: Program) -> LowerState {
     let mut s: LowerState = st
+    // Pass 1: register enums first so struct field types can distinguish enum vs struct
     let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(program.definitions) { break }
+        let defn: Definition = program.definitions[i]
+        match defn {
+            EnumDef(data) => { s = register_enum(s, data) },
+            _ => {}
+        }
+        i = i + 1
+    }
+    // Pass 2: register structs, impls, functions, imports
+    i = 0
     for _ in 0..100000 {
         if i >= len(program.definitions) { return s }
         let defn: Definition = program.definitions[i]
-        s = register_definition(s, defn)
+        match defn {
+            EnumDef(_) => {},
+            _ => { s = register_definition(s, defn) }
+        }
         i = i + 1
     }
     return s
@@ -5205,7 +5293,7 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
             }
         },
         FnDef(data) => {
-            let ret_ty: MIRType = resolve_return_type(data.return_type)
+            let ret_ty: MIRType = resolve_return_type_checked(st, data.return_type)
             let entry: FnRetEntry = new_fn_ret_entry(data.name, ret_ty)
             let mut new_st: LowerState = st
             new_st.fn_ret_types.push(entry)
@@ -5218,6 +5306,7 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
 fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
     let mut fields: List<FieldPair> = []
     let mut field_names: List<String> = []
+    let mut field_types: List<MIRType> = []
     let mut i: Int = 0
     let mut s: LowerState = st
 
@@ -5229,15 +5318,16 @@ fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
             struct_list.push(info)
             mod_s.structs = struct_list
             s.module = mod_s
-            let sfi: StructFieldInfo = new_struct_field_info(data.name, field_names)
+            let sfi: StructFieldInfo = new_struct_field_info(data.name, field_names, field_types)
             s.struct_fields.push(sfi)
             return s
         }
         let field: StructField = data.fields[i]
-        let fty: MIRType = lower_resolve_type_expr(field.type_annotation)
+        let fty: MIRType = lower_resolve_type_checked(s, field.type_annotation)
         let fp: FieldPair = new_field_pair(field.name, new_value("", fty))
         fields.push(fp)
         field_names.push(field.name)
+        field_types.push(fty)
         i = i + 1
     }
     return s
@@ -5289,7 +5379,7 @@ fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lo
         let entry: ImplEntry = new_impl_entry(key, mir_name)
         s.impl_methods.push(entry)
         // Also register the method's return type under its MIR name
-        let ret_ty: MIRType = resolve_return_type(method.return_type)
+        let ret_ty: MIRType = resolve_return_type_checked(s, method.return_type)
         let fn_entry: FnRetEntry = new_fn_ret_entry(mir_name, ret_ty)
         s.fn_ret_types.push(fn_entry)
         i = i + 1
@@ -5355,13 +5445,13 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     for _ in 0..1000 {
         if pi >= len(fn_def.params) { break }
         let p: Param = fn_def.params[pi]
-        let pty: MIRType = lower_resolve_type_opt(p.type_annotation)
+        let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
         let mp: MIRParam = new_mir_param(p.name, pty)
         params.push(mp)
         pi = pi + 1
     }
 
-    let ret_type: MIRType = resolve_return_type(fn_def.return_type)
+    let ret_type: MIRType = resolve_return_type_checked(st, fn_def.return_type)
 
     // Collect decorator names
     let mut decorators: List<String> = []
@@ -5398,8 +5488,8 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     for _ in 0..1000 {
         if bi >= len(fn_def.params) { break }
         let p: Param = fn_def.params[bi]
-        let pty: MIRType = lower_resolve_type_opt(p.type_annotation)
-        
+        let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
+
         let addr_name: String = "%" + p.name + ".addr"
         let addr: Value = new_value(addr_name, pty)
         let param_val: Value = new_value("%" + p.name, pty)
@@ -6095,6 +6185,29 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
 // Field access lowering
 // ---------------------------------------------------------------------------
 
+fn lookup_struct_field_type(st: LowerState, struct_name: String, field_name: String) -> MIRType {
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= len(st.struct_fields) { return mir_unknown() }
+        let info: StructFieldInfo = st.struct_fields[i]
+        if info.name == struct_name {
+            let mut j: Int = 0
+            for _ in 0..1000 {
+                if j >= len(info.field_names) { return mir_unknown() }
+                if info.field_names[j] == field_name {
+                    if j < len(info.field_types) {
+                        return info.field_types[j]
+                    }
+                    return mir_unknown()
+                }
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+    return mir_unknown()
+}
+
 fn lower_field_access(st: LowerState, obj: Expr, field_name: String) -> LowerResult {
     let obj_r: LowerResult = lower_expr(st, obj)
 
@@ -6105,7 +6218,10 @@ fn lower_field_access(st: LowerState, obj: Expr, field_name: String) -> LowerRes
         return new_lower_result(dest_r.value, s)
     }
 
-    let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+    // Resolve field type from struct registry
+    let field_ty: MIRType = lookup_struct_field_type(obj_r.state, obj_r.value.ty.name, field_name)
+
+    let dest_r: LowerResult = make_value(obj_r.state, field_ty, "t")
     let s: LowerState = emit_instr(dest_r.state, Instruction::FieldGet(dest_r.value, obj_r.value, field_name))
     return new_lower_result(dest_r.value, s)
 }
@@ -8107,7 +8223,11 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
     // List .len
     if obj.ty.kind == "list" {
         if field_name == "len" {
-            s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", llvm_list_rt() + "* " + on))
+            let lt: String = llvm_list_rt()
+            let tmp: String = dn + ".lp"
+            s = emit_line(s, "  " + tmp + " = alloca " + lt)
+            s = emit_line(s, "  store " + lt + " " + on + ", " + lt + "* " + tmp)
+            s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", lt + "* " + tmp))
             return s
         }
         // List methods (push, etc.) — pass object through
@@ -8280,8 +8400,12 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
         return s
     }
 
-    // List indexing → list_get
-    s = emit_line(s, emit_call_ir(dn, "i8*", "__mn_list_get", llvm_list_rt() + "* " + obj.name + ", i64 " + idx.name))
+    // List indexing → list_get (needs pointer; alloca+store the list value)
+    let lt: String = llvm_list_rt()
+    let tmp: String = dn + ".lp"
+    s = emit_line(s, "  " + tmp + " = alloca " + lt)
+    s = emit_line(s, "  store " + lt + " " + obj.name + ", " + lt + "* " + tmp)
+    s = emit_line(s, emit_call_ir(dn, "i8*", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
     return s
 }
 
@@ -8691,7 +8815,12 @@ fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
     if args[0].ty.kind == "string" {
         s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_len", llvm_string() + " " + an))
     } else {
-        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", llvm_list_rt() + "* " + an))
+        // __mn_list_len expects a pointer; alloca+store the list value first
+        let tmp: String = dn + ".lp"
+        let lt: String = llvm_list_rt()
+        s = emit_line(s, "  " + tmp + " = alloca " + lt)
+        s = emit_line(s, "  store " + lt + " " + an + ", " + lt + "* " + tmp)
+        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", lt + "* " + tmp))
     }
     return s
 }

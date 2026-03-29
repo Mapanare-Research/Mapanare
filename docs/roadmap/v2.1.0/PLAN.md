@@ -101,7 +101,7 @@ assuming restructuring is needed.**
 |-------|------|--------|--------|--------|
 | 0 | Quick Fixes (gcc, test parallelism) | `Done` | Small | Unblocks dev.ps1, 4-6x test speed |
 | 1 | Retest Self-Compilation | `Done` | Small | 7/15 stage2, 4/7 modules, 3 crash on copy aliasing |
-| 2 | Control flow + type recovery fixes | `In Progress` | Medium-Large | 8 bugs fixed, 8/15 stage2 valid, self-compile 1 error |
+| 2 | Control flow + type recovery fixes | `In Progress` | Medium-Large | 14 bugs fixed, 9/15 stage2 valid, self-compile 1 error |
 | 3 | Deep-copy list fields on struct copy | `Done` | Medium | `__mn_list_clone` + text emitter fix → self-compilation works |
 | 4 | Fixed-Point Verification | `Not started` | Medium | Python independence achieved |
 | 5 | Native Test Migration | `Not started` | X-Large | 10-50x test speed |
@@ -168,7 +168,7 @@ stage2 IR quality but doesn't unblock self-compilation. Execute Phase 3 first, t
 ---
 
 ## Phase 2 — Control Flow & Type Recovery Fixes (`lower.mn` + `emit_llvm.mn`)
-**Status:** `In Progress` (2026-03-29: 8 bugs fixed, 8/15 golden stage2 valid, self-compile down to 1 error)
+**Status:** `In Progress` (2026-03-29: 14 bugs fixed, 9/15 golden stage2 valid, self-compile down to 1 error)
 **Effort:** Medium-Large
 **Depends on:** Phase 1 results (skip if stage2 already produces 15/15 valid IR)
 
@@ -190,26 +190,45 @@ missing zero-init), and function/method return types were lost (`mir_unknown()`)
 7. **Function return type registry** — `fn_ret_types: List<FnRetEntry>` in LowerState, populated during `register_declarations`, used in `lower_call_by_name`.
 8. **Signal/field `.value` dispatch** — only emit `SignalGet` when object type is actually `signal`, not for struct `.value` fields.
 
-### Results
+### Results (latest 2026-03-29)
 
-- **Golden stage2:** 8/15 valid (was 7/15). `09_string_methods` now valid.
-- **Self-compilation:** 1 error remaining (was multiple). `mnc-stage1 mnc_all.mn` → 30,859 lines IR, 442 functions.
-- **Remaining error:** `tok.value` field access returns `{ i8*, i64 }` (String) but `len()` dispatches to `__mn_list_len` expecting list pointer. Needs struct field type tracking in the lowerer.
+- **Golden stage2:** 9/15 valid (was 7/15). `08_list` and `09_string_methods` now valid.
+- **Self-compilation:** 1 error remaining (was multiple). `mnc-stage1 mnc_all.mn` → 31,919 lines IR, 442+ functions.
+- **Remaining error:** `tokens[pos]` — `__mn_list_get` returns `i8*` but variable expects Token struct. Needs list element type tracking (generic type params).
+
+### Fixes Applied (2026-03-29)
+
+**Lowerer fixes (`lower.mn`):**
+1. `lower_match` Phi collection — skip Phi entries for terminated arms
+2. `lower_if` Phi collection — track `then_terminated`/`else_terminated`
+3. Enum namespace resolution — verify variant belongs to the correct enum
+4. String method return types — `char_at`→String, `contains`→Bool, etc.
+5. Function return type registry — `fn_ret_types` populated during declaration pass
+6. Signal vs field `.value` dispatch — only SignalGet for actual signal types
+7. Struct field type tracking — `StructFieldInfo` stores `field_types`, used in `lower_field_access`
+8. Two-pass declaration registration — enums first, then structs (so field types resolve correctly)
+9. State-aware type resolver — `resolve_type_name_checked` distinguishes enums from structs
+10. Full generic type resolution — `lower_resolve_type_checked` handles `Option<EnumType>` etc.
+
+**Emitter fixes (`emit_llvm.mn`):**
+11. `resolve_variant_index` implemented — was always 0
+12. Enum zero-init — `store zeroinitializer` replaces orphaned bitcast
+13. `emit_builtin_len` — alloca+store list value before passing pointer to `__mn_list_len`
+14. `emit_index_get` — alloca+store list value before passing pointer to `__mn_list_get`
 
 ### Tasks
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Create minimal reproducer and trace the MIR blocks | `[!]` | — | Skipped — directly fixed root causes |
-| 2 | Fix `lower_if` in `lower.mn`: skip Phi for terminated arms | `[x]` | `mapanare/self/lower.mn` | Track `then_terminated`/`else_terminated` |
-| 3 | Fix `lower_match` in `lower.mn`: skip Phi for terminated arms | `[x]` | `mapanare/self/lower.mn` | Check `current_block_terminated` before Phi push |
-| 4 | Handle nested case: `if { if { return } }` | `[x]` | `mapanare/self/lower.mn` | Handled by `lower_block` → `current_block_terminated` propagation |
-| 5 | Rebuild mnc-stage1 and test golden stage2 | `[x]` | — | 15/15 golden pass, 8/15 stage2 valid |
-| 6 | Fix enum namespace, variant index, zero-init | `[x]` | `lower.mn`, `emit_llvm.mn` | 3 separate fixes |
-| 7 | Add string method + function return type resolution | `[x]` | `mapanare/self/lower.mn` | `str_method_return_type()` + `fn_ret_types` registry |
-| 8 | Fix `.value` signal vs field dispatch | `[x]` | `mapanare/self/lower.mn` | Check `obj.ty.kind == "signal"` |
-| 9 | Add struct field type tracking for `FieldGet` | `[ ]` | `mapanare/self/lower.mn` | Needed for `len(tok.value)` dispatch |
-| 10 | Fix remaining stage2 errors (struct alloca, list/result types, closures) | `[ ]` | `lower.mn`, `emit_llvm.mn` | 7 golden tests still invalid |
+| 1 | Fix `lower_if` Phi for terminated arms | `[x]` | `lower.mn` | |
+| 2 | Fix `lower_match` Phi for terminated arms | `[x]` | `lower.mn` | |
+| 3 | Fix enum namespace, variant index, zero-init | `[x]` | `lower.mn`, `emit_llvm.mn` | |
+| 4 | String method + function return type resolution | `[x]` | `lower.mn` | |
+| 5 | Signal vs field `.value` dispatch | `[x]` | `lower.mn` | |
+| 6 | Struct field type tracking + enum/struct resolution | `[x]` | `lower.mn` | Two-pass registration, state-aware resolver |
+| 7 | List runtime pointer passing (len, get) | `[x]` | `emit_llvm.mn` | alloca+store before pointer-expecting calls |
+| 8 | List element type recovery (generic params) | `[ ]` | `lower.mn` | `tokens[pos]` needs to return Token, not i8* |
+| 9 | Fix remaining stage2 errors (struct alloca, result types, closures, for_loop, enum match) | `[ ]` | `lower.mn`, `emit_llvm.mn` | 6 golden tests still invalid |
 
 **Done when:** `mnc-stage1` produces valid LLVM IR for all 15 golden tests (stage2).
 
