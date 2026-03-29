@@ -6192,33 +6192,37 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         return new_lower_result(dest_r.value, s)
     }
 
-    // Lambda call: decode captures from "lambda1:x,y" and add as extra args
+    // Lambda call with captures — decode "lambda1:x,y" and load captured vars.
+    // Chain state through make_value/emit_instr (byref, no LowerState copy).
     let actual_fn: String = resolved.substr(0, resolved.find(":"))
     let cp: Int = resolved.find(":")
     let caps_str: String = resolved.substr(cp + 1, len(resolved) - cp - 1)
     let cap_parts: List<String> = caps_str.split(",")
-    let mut all_args: List<Value> = args
-    let mut cur_st: LowerState = st
-    let mut ci: Int = 0
-    for _ in 0..1000 {
-        if ci >= len(cap_parts) { break }
-        let cap_name: String = cap_parts[ci]
-        if len(cap_name) > 0 {
-            let cap_var: Option<Value> = lookup_var(cur_st, cap_name)
-            match cap_var {
-                Some(addr) => {
-                    let load_r: LowerResult = make_value(cur_st, addr.ty, "cap")
-                    cur_st = emit_instr(load_r.state, Instruction::Load(load_r.value, addr))
-                    all_args.push(load_r.value)
-                },
-                _ => {}
-            }
-        }
-        ci = ci + 1
+    return lower_call_with_captures(st, actual_fn, args, cap_parts, 0)
+}
+
+fn lower_call_with_captures(st: LowerState, fn_name: String, args: List<Value>, captures: List<String>, idx: Int) -> LowerResult {
+    // Base case: all captures loaded — emit the call
+    if idx >= len(captures) {
+        let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s)
     }
-    let dest_r: LowerResult = make_value(cur_st, mir_unknown(), "t")
-    let fin_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, actual_fn, all_args))
-    return new_lower_result(dest_r.value, fin_s)
+
+    // Load one captured variable and recurse
+    let cap_name: String = captures[idx]
+    let var_opt: Option<Value> = lookup_var(st, cap_name)
+    match var_opt {
+        Some(addr) => {
+            let lr: LowerResult = make_value(st, addr.ty, "cap")
+            let ns: LowerState = emit_instr(lr.state, Instruction::Load(lr.value, addr))
+            args.push(lr.value)
+            return lower_call_with_captures(ns, fn_name, args, captures, idx + 1)
+        },
+        _ => {
+            return lower_call_with_captures(st, fn_name, args, captures, idx + 1)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -8331,6 +8335,12 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     // Struct constant (undef initializer for struct construction)
     if ty.kind == "struct" {
         s = emit_line(s, "  " + dn + " = insertvalue " + llvm_ty + " undef, " + llvm_ty + " undef, 0")
+        return s
+    }
+
+    // Function constant: emit function pointer reference
+    if ty.kind == "fn" {
+        s = emit_line(s, "  " + dn + " = bitcast void ()* @" + val + " to i8*")
         return s
     }
 

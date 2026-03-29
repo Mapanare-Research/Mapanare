@@ -578,6 +578,12 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
         return s
     }
 
+    // Function constant: emit function pointer reference
+    if ty.kind == "fn" {
+        s = emit_line(s, "  " + dn + " = bitcast void ()* @" + val + " to i8*")
+        return s
+    }
+
     // Unknown type — no-op
     return s
 }
