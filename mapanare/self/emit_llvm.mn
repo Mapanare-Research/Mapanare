@@ -279,6 +279,20 @@ fn new_struct_entry(name: String, fields: List<String>, types: List<String>, ty:
     return new StructEntry { name: name, field_names: fields, field_types: types, llvm_type: ty }
 }
 
+fn lookup_struct_field_types(st: EmitState, name: String) -> List<String> {
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= len(st.structs) { break }
+        let entry: StructEntry = st.structs[i]
+        if entry.name == name {
+            return entry.field_types
+        }
+        i = i + 1
+    }
+    let empty: List<String> = []
+    return empty
+}
+
 struct FnEntry {
     name: String,
     ret_type: String,
@@ -296,7 +310,9 @@ struct EmitState {
     structs: List<StructEntry>,
     module_name: String,
     str_counter: Int,
-    str_globals: List<String>
+    str_globals: List<String>,
+    current_ret_type: String,
+    enum_names: List<String>
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
@@ -304,7 +320,8 @@ fn new_emit_state(module_name: String) -> EmitState {
     let functions: List<FnEntry> = []
     let structs: List<StructEntry> = []
     let str_globals: List<String> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals }
+    let enum_names: List<String> = []
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names }
 }
 
 fn emit_global(st: EmitState, line: String) -> EmitState {
@@ -491,6 +508,16 @@ fn register_mir_struct(st: EmitState, info: StructInfo) -> EmitState {
 // Enum type registration from MIR
 // ---------------------------------------------------------------------------
 
+fn is_enum_type(st: EmitState, name: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= len(st.enum_names) { return false }
+        if st.enum_names[i] == name { return true }
+        i = i + 1
+    }
+    return false
+}
+
 fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
     // Tagged union: { i64 tag, payload... }
     // Count max payload slots: each payload type gets 8 i64 slots (conservative)
@@ -508,6 +535,7 @@ fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
     }
 
     let mut s: EmitState = st
+    s.enum_names.push(info.name)
     if max_payload == 0 {
         s = emit_line(s, "%enum." + info.name + " = type { i64 }")
     } else {
@@ -737,15 +765,24 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
 // ---------------------------------------------------------------------------
 
 fn emit_copy(st: EmitState, dest: Value, src: Value) -> EmitState {
-    let s: EmitState = st
+    let mut s: EmitState = st
     let ty: String = resolve_mir_type(dest.ty)
     let src_ty: String = resolve_mir_type(src.ty)
     let use_ty: String = if ty == "i8*" { src_ty } else { ty }
 
-    // Temporary dest: emit SSA assignment
+    // Bool: use bitwise identity (and true)
     if ty == "i1" {
         return emit_line(s, "  " + dest.name + " = and i1 " + src.name + ", true")
     }
+    // Aggregate types (structs, enums, options, results, lists) cannot use `add`.
+    // Use alloca/store/load to copy the value through memory.
+    if use_ty.starts_with("%struct.") || use_ty.starts_with("%enum.") || use_ty.starts_with("{") {
+        let tmp_a: String = dest.name + ".cpy"
+        s = emit_line(s, "  " + tmp_a + " = alloca " + use_ty)
+        s = emit_line(s, "  store " + use_ty + " " + src.name + ", " + use_ty + "* " + tmp_a)
+        return emit_line(s, "  " + dest.name + " = load " + use_ty + ", " + use_ty + "* " + tmp_a)
+    }
+    // Scalars (i64, double, i8*, etc.): use add 0 identity
     return emit_line(s, "  " + dest.name + " = add " + use_ty + " 0, " + src.name)
 }
 
@@ -881,17 +918,32 @@ fn emit_struct_init(st: EmitState, dest: Value, ty: MIRType, fields: List<FieldP
     let mut agg: String = "undef"
     let mut i: Int = 0
 
+    // Lookup struct field types from the registry (more reliable than MIR types)
+    let field_types: List<String> = lookup_struct_field_types(s, ty.name)
+
     let nfields: Int = len(fields)
     for _ in 0..1000 {
         if i >= nfields {
             break
         }
         let fp: FieldPair = fields[i]
-        let fty: String = resolve_mir_type(fp.val.ty)
+        let mut fty: String = resolve_mir_type(fp.val.ty)
+        // If MIR type is unknown, use the registered struct field type
+        if fty == "i64" && fp.val.ty.kind == "unknown" && i < len(field_types) {
+            fty = field_types[i]
+        }
         let tmp_name: String = dn + ".f" + toString(i)
         s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, agg, fp.val.name, fty, toString(i)))
         agg = tmp_name
         i = i + 1
+    }
+    // Copy the final insertvalue result to dest via alloca/store/load
+    // (aggregate types cannot use `add 0` identity)
+    if nfields > 0 {
+        let cpy_a: String = dn + ".si"
+        s = emit_line(s, "  " + cpy_a + " = alloca " + struct_ty)
+        s = emit_line(s, "  store " + struct_ty + " " + agg + ", " + struct_ty + "* " + cpy_a)
+        s = emit_line(s, "  " + dn + " = load " + struct_ty + ", " + struct_ty + "* " + cpy_a)
     }
     return s
 }
@@ -1017,15 +1069,30 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
     let dn: String = strip_percent(dest.name)
     let mut agg: String = "undef"
     let nfields: Int = len(values)
+
+    // Lookup registered field types for this struct
+    let field_types: List<String> = lookup_struct_field_types(s, ty.name)
+
     let mut i: Int = 0
     for _ in 0..1000 {
         if i >= nfields { break }
         let v: Value = values[i]
-        let fty: String = resolve_mir_type(v.ty)
+        let mut fty: String = resolve_mir_type(v.ty)
+        // If MIR type is unknown, use the registered struct field type
+        if fty == "i64" && v.ty.kind == "unknown" && i < len(field_types) {
+            fty = field_types[i]
+        }
         let tmp_name: String = dn + ".f" + toString(i)
         s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, agg, v.name, fty, toString(i)))
         agg = tmp_name
         i = i + 1
+    }
+    // Copy the final insertvalue result to dest
+    if nfields > 0 {
+        let cpy_a: String = dn + ".si"
+        s = emit_line(s, "  " + cpy_a + " = alloca " + struct_ty)
+        s = emit_line(s, "  store " + struct_ty + " " + agg + ", " + struct_ty + "* " + cpy_a)
+        s = emit_line(s, "  " + dn + " = load " + struct_ty + ", " + struct_ty + "* " + cpy_a)
     }
     return s
 }
@@ -1151,6 +1218,11 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
         agg = tmp
         i = i + 1
     }
+    // Copy the final result to dest via alloca/store/load
+    let cpy_a: String = dn + ".ei"
+    s = emit_line(s, "  " + cpy_a + " = alloca " + enum_ty)
+    s = emit_line(s, "  store " + enum_ty + " " + agg + ", " + enum_ty + "* " + cpy_a)
+    s = emit_line(s, "  " + dn + " = load " + enum_ty + ", " + enum_ty + "* " + cpy_a)
     return s
 }
 
@@ -1510,9 +1582,19 @@ fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitStat
 fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
     match val_opt {
         Some(val) => {
-            let ty: String = resolve_mir_type(val.ty)
+            let mut ty: String = resolve_mir_type(val.ty)
             if ty == "void" {
                 return emit_line(st, emit_ret_void())
+            }
+            // If the value type is a fallback (i64) but the function's declared
+            // return type is different, use the function's return type and
+            // bitcast the value through memory.
+            if ty == "i64" && st.current_ret_type != "i64" && st.current_ret_type != "void" {
+                // The value's MIR type is unknown (i64) but the function returns an
+                // aggregate. The value might actually be the correct type (struct init
+                // assigns the right LLVM type), or it might truly be i64 (from a fallback).
+                // Just use the return type directly — LLVM will validate the actual types.
+                ty = st.current_ret_type
             }
             return emit_line(st, emit_ret(ty, val.name))
         },
@@ -1697,13 +1779,24 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         pi = pi + 1
     }
 
-    // Resolve return type
-    let ret_ty: String = resolve_mir_type(f.return_type)
+    // Resolve return type. If the type resolves to %struct.X but the name
+    // refers to an enum, correct it to %enum.X (the lowerer sometimes
+    // misclassifies enums as structs due to type information loss).
+    let mut ret_ty: String = resolve_mir_type(f.return_type)
+    if ret_ty.starts_with("%struct.") {
+        let ret_name: String = f.return_type.name
+        if is_enum_type(st, ret_name) {
+            ret_ty = "%enum." + ret_name
+        }
+    }
 
     // Register function
     let entry: FnEntry = new_fn_entry(f.name, ret_ty, param_types)
     let mut s: EmitState = st
     s.functions.push(entry)
+
+    // Track current function's return type for Return instruction
+    s.current_ret_type = ret_ty
 
     // Emit function header
     let fn_name: String = strip_percent(f.name)
