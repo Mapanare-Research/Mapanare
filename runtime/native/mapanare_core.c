@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 /* -----------------------------------------------------------------------
  * Memory helpers
@@ -702,12 +704,28 @@ static int64_t *mn_list_rc(MnList *list) {
     return ((int64_t *)list->data) - 1;
 }
 
-/* Check if the buffer has a valid COW magic header */
+/* Check if the buffer has a valid COW magic header.
+ * MUST only be called after validating len > 0, cap > 0, elem_size > 0. */
 static int mn_list_has_magic(MnList *list) {
     if (!list->data) return 0;
     uintptr_t p = (uintptr_t)list->data;
-    /* Reject pointers that look like garbage: near-NULL, near-max, or misaligned */
-    if (p < 0x1000 || p > 0x7FFFFFFFFFFF || (p & 7) != 0) return 0;
+    /* Reject garbage pointers: must be 8-byte aligned, in reasonable heap range */
+    if ((p & 7) != 0) return 0;
+    if (p < 0x10000) return 0;  /* too low (near NULL) */
+    /* Use write(2) trick: try reading from the address. If it segfaults,
+     * the kernel returns EFAULT. This is the only portable safe probe. */
+#ifdef __linux__
+    /* Probe: can we read 16 bytes before data? */
+    {
+        /* Use /dev/null fd trick: write() returns EFAULT for unmapped memory */
+        static int devnull_fd = -1;
+        if (devnull_fd < 0) devnull_fd = open("/dev/null", 1 /*O_WRONLY*/);
+        if (devnull_fd >= 0) {
+            ssize_t r = write(devnull_fd, ((char *)list->data) - 16, 16);
+            if (r < 0) return 0;  /* EFAULT: unmapped memory */
+        }
+    }
+#endif
     int64_t *magic = ((int64_t *)list->data) - 2;
     return *magic == MN_COW_MAGIC;
 }
@@ -782,9 +800,13 @@ static void mn_list_grow(MnList *list) {
 }
 
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
-    if (!list->data || list->cap <= 0) {
-        /* Handle zero-initialized or empty lists */
-        if (list->elem_size <= 0) list->elem_size = 8;
+    /* Validate list fields before any operation. Garbage from uninitialized
+     * struct fields (lambda/recursive lowering) must not cause huge allocs. */
+    if (!list->data || list->cap <= 0 || list->elem_size <= 0
+        || list->elem_size > 65536 || list->cap > 100000000
+        || list->len < 0 || list->len > list->cap) {
+        /* Reinitialize: treat as empty list */
+        if (list->elem_size <= 0 || list->elem_size > 65536) list->elem_size = 8;
         list->data = mn_list_alloc_buf(MN_LIST_INITIAL_CAP, list->elem_size);
         list->cap = MN_LIST_INITIAL_CAP;
         list->len = 0;
@@ -887,9 +909,18 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
     dst.elem_size = src->elem_size;
     dst.len = src->len;
 
-    /* Check magic FIRST to avoid reading uninitialised list fields.
-     * Guard: data pointer must look like a valid heap address (> 4096). */
-    if (src->data && (uintptr_t)src->data > 4096 && mn_list_has_magic(src)) {
+    /* Validate ALL fields before touching data. Uninitialised struct fields
+     * from lambda/recursive state passing can have garbage in every field. */
+    if (!src->data || src->elem_size <= 0 || src->elem_size > 65536
+        || src->cap <= 0 || src->cap > 100000000
+        || src->len < 0 || src->len > src->cap) {
+        /* Garbage or empty — just copy the raw header */
+        dst.cap = src->cap;
+        dst.data = src->data;
+        cow_fallbacks++;
+        return dst;
+    }
+    if (mn_list_has_magic(src)) {
         int64_t *rc = mn_list_rc(src);
         if (rc && *rc > 0 && *rc < 10000000) {
             dst.cap = src->cap;
@@ -900,9 +931,23 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
         }
     }
 
-    /* Not managed — copy header only (no allocation) */
-    dst.cap = src->cap;
-    dst.data = src->data;
+    /* Not managed by COW — do a full memcpy clone for safety.
+     * Extra size check: cap*elem_size must be reasonable (< 256MB). */
+    {
+        int64_t total = src->cap * src->elem_size;
+        if (total <= 0 || total > 256 * 1024 * 1024) {
+            /* Unreasonable size — just copy header */
+            dst.cap = src->cap;
+            dst.data = src->data;
+            cow_fallbacks++;
+            return dst;
+        }
+        dst.cap = src->cap;
+        dst.data = mn_list_alloc_buf(dst.cap, src->elem_size);
+        if (src->len > 0) {
+            memcpy(dst.data, src->data, (size_t)(src->len * src->elem_size));
+        }
+    }
     cow_fallbacks++;
     return dst;
 }

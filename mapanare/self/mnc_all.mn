@@ -6417,6 +6417,8 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
     let empty_decorators: List<Decorator> = []
     let fn_def: FnDefData = new_fn_def_data(span, lambda_name, false, empty_type_params, params, none, body_block, empty_decorators)
 
+    // Use lower_fn (not lower_one_fn) — lower_fn preserves parent vars so
+    // captured variables are accessible in the lambda body (closures).
     let mut s: LowerState = lower_fn(name_r.state, fn_def, "")
 
     // Return a reference to the lambda function

@@ -979,8 +979,8 @@ class LLVMTextEmitter:
         if t == LIST:
             root = self._lroots.get(i.src.name, i.src.name)
             self._lroots[i.dest.name] = root
-        # COW clone is O(1) (refcount increment). Required to prevent
-        # use-after-free when shared lists are grown by push in another copy.
+        # Clone list fields on struct copy. Required for correctness when
+        # lists are shared between parent and child scopes (lambda lowering).
         if i.src.ty.kind == TypeKind.STRUCT:
             sn = self._res_struct(i.src.ty.type_info.name)
             if sn in self._structs:
