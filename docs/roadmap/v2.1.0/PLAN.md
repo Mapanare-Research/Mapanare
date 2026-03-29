@@ -101,7 +101,7 @@ assuming restructuring is needed.**
 |-------|------|--------|--------|--------|
 | 0 | Quick Fixes (gcc, test parallelism) | `Done` | Small | Unblocks dev.ps1, 4-6x test speed |
 | 1 | Retest Self-Compilation | `Done` | Small | 7/15 stage2, 4/7 modules, 3 crash on copy aliasing |
-| 2 | Control Flow Fix (`lower.mn`) | `Not started` | Medium-Large | 7/15 stage2 → 15/15 |
+| 2 | Emitter type fixes + enum payload | `In Progress` | Medium-Large | Stage2 IR down to 1 error (enum payload) |
 | 3 | Deep-copy list fields on struct copy | `Done` | Medium | `__mn_list_clone` + text emitter fix → self-compilation works |
 | 4 | Fixed-Point Verification | `Not started` | Medium | Python independence achieved |
 | 5 | Native Test Migration | `Not started` | X-Large | 10-50x test speed |
