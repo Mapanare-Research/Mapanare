@@ -4678,6 +4678,16 @@ fn new_lambda_entry(var_name: String, fn_name: String) -> LambdaEntry {
     return new LambdaEntry { var_name: var_name, fn_name: fn_name }
 }
 
+// Function return type mapping (populated during declaration registration)
+struct FnRetEntry {
+    name: String,
+    ret_type: MIRType
+}
+
+fn new_fn_ret_entry(name: String, ret_type: MIRType) -> FnRetEntry {
+    return new FnRetEntry { name: name, ret_type: ret_type }
+}
+
 // ---------------------------------------------------------------------------
 // Lowerer state — threaded through all lowering functions
 // ---------------------------------------------------------------------------
@@ -4693,7 +4703,8 @@ struct LowerState {
     impl_methods: List<ImplEntry>,
     struct_fields: List<StructFieldInfo>,
     enum_variants: List<EnumVariantNames>,
-    lambda_vars: List<LambdaEntry>
+    lambda_vars: List<LambdaEntry>,
+    fn_ret_types: List<FnRetEntry>
 }
 
 fn new_lower_state(module_name: String) -> LowerState {
@@ -4704,7 +4715,8 @@ fn new_lower_state(module_name: String) -> LowerState {
     let struct_fields: List<StructFieldInfo> = []
     let enum_variants: List<EnumVariantNames> = []
     let lambda_vars: List<LambdaEntry> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars }
+    let fn_ret_types: List<FnRetEntry> = []
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_ret_types: fn_ret_types }
 }
 
 // Lower result: value + updated state
@@ -4980,6 +4992,17 @@ fn find_lambda(st: LowerState, name: String) -> Option<String> {
     return none
 }
 
+fn lookup_fn_ret_type(st: LowerState, name: String) -> MIRType {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.fn_ret_types) { return mir_unknown() }
+        let e: FnRetEntry = st.fn_ret_types[i]
+        if e.name == name { return e.ret_type }
+        i = i + 1
+    }
+    return mir_unknown()
+}
+
 // ---------------------------------------------------------------------------
 // Type resolution: AST TypeExpr -> MIRType
 // ---------------------------------------------------------------------------
@@ -5181,6 +5204,13 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
                 _ => { return st }
             }
         },
+        FnDef(data) => {
+            let ret_ty: MIRType = resolve_return_type(data.return_type)
+            let entry: FnRetEntry = new_fn_ret_entry(data.name, ret_ty)
+            let mut new_st: LowerState = st
+            new_st.fn_ret_types.push(entry)
+            return new_st
+        },
         _ => { return st }
     }
 }
@@ -5258,6 +5288,10 @@ fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lo
         let mir_name: String = target + "_" + method.name
         let entry: ImplEntry = new_impl_entry(key, mir_name)
         s.impl_methods.push(entry)
+        // Also register the method's return type under its MIR name
+        let ret_ty: MIRType = resolve_return_type(method.return_type)
+        let fn_entry: FnRetEntry = new_fn_ret_entry(mir_name, ret_ty)
+        s.fn_ret_types.push(fn_entry)
         i = i + 1
     }
     return s
@@ -5996,7 +6030,10 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         _ => { fn_name }
     }
 
-    let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
+    // Look up return type from function registry
+    let ret_ty: MIRType = lookup_fn_ret_type(st, resolved)
+
+    let dest_r: LowerResult = make_value(st, ret_ty, "t")
     let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, resolved, args))
     return new_lower_result(dest_r.value, s)
 }
@@ -6005,6 +6042,25 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
 // Method call lowering
 // ---------------------------------------------------------------------------
 
+fn str_method_return_type(method: String) -> MIRType {
+    if method == "char_at" { return mir_string() }
+    if method == "substr" { return mir_string() }
+    if method == "to_upper" { return mir_string() }
+    if method == "to_lower" { return mir_string() }
+    if method == "replace" { return mir_string() }
+    if method == "trim" { return mir_string() }
+    if method == "trim_start" { return mir_string() }
+    if method == "trim_end" { return mir_string() }
+    if method == "concat" { return mir_string() }
+    if method == "byte_at" { return mir_int() }
+    if method == "find" { return mir_int() }
+    if method == "starts_with" { return mir_bool() }
+    if method == "ends_with" { return mir_bool() }
+    if method == "contains" { return mir_bool() }
+    if method == "split" { return mir_list() }
+    return mir_unknown()
+}
+
 fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<Expr>) -> LowerResult {
     // Lower as Call(method, [obj, args...]) directly.
     // Stream/signal dispatch handled by the emitter.
@@ -6012,7 +6068,6 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     let mut s: LowerState = obj_r.state
 
     // Build arg list: [obj_value, arg_values...]
-    // Use lower_call_args helper to build the list in one pass
     let mut all_args: List<Value> = []
     all_args.push(obj_r.value)
     let nae: Int = len(arg_exprs)
@@ -6025,7 +6080,13 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
         i = i + 1
     }
 
-    let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+    // Resolve return type for known string methods
+    let mut ret_ty: MIRType = mir_unknown()
+    if obj_r.value.ty.kind == "string" {
+        ret_ty = str_method_return_type(method)
+    }
+
+    let dest_r: LowerResult = make_value(s, ret_ty, "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
     return new_lower_result(dest_r.value, new_s)
 }
@@ -6037,8 +6098,8 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
 fn lower_field_access(st: LowerState, obj: Expr, field_name: String) -> LowerResult {
     let obj_r: LowerResult = lower_expr(st, obj)
 
-    // Check for signal .value
-    if field_name == "value" {
+    // Only emit SignalGet for actual signal types, not for struct .value fields
+    if field_name == "value" && obj_r.value.ty.kind == "signal" {
         let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
         let s: LowerState = emit_instr(dest_r.state, Instruction::SignalGet(dest_r.value, obj_r.value))
         return new_lower_result(dest_r.value, s)
@@ -6473,7 +6534,8 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     s = then_r.state
     let then_val: Value = then_r.value
     let then_exit_idx: Int = s.current_block_idx
-    if !current_block_terminated(s) {
+    let then_terminated: Bool = current_block_terminated(s)
+    if !then_terminated {
         s = emit_instr(s, Instruction::Jump(merge_label))
     }
 
@@ -6498,30 +6560,33 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
         _ => {}
     }
     let else_exit_idx: Int = s.current_block_idx
-    if !current_block_terminated(s) {
+    let else_terminated: Bool = current_block_terminated(s)
+    if !else_terminated {
         s = emit_instr(s, Instruction::Jump(merge_label))
     }
 
-    // Merge block with phi
+    // Merge block with phi — only include arms that reach the merge block
     s = set_block(s, merge_idx)
 
-    // Get exit block labels for phi
     let then_exit_label: String = get_block_label(s, then_exit_idx)
     let else_exit_label: String = get_block_label(s, else_exit_idx)
 
-    if then_val.ty.kind != "void" && then_val.ty.kind != "unknown" && then_val.name != "%void" {
-        let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
+    let mut incoming: List<PhiEntry> = []
+    if !then_terminated && then_val.ty.kind != "void" && then_val.name != "%void" {
+        incoming.push(new_phi_entry(then_exit_label, then_val))
+    }
+    if !else_terminated && else_val.ty.kind != "void" && else_val.name != "%void" {
+        incoming.push(new_phi_entry(else_exit_label, else_val))
+    }
+
+    if len(incoming) > 0 {
+        let result_r: LowerResult = make_value(s, incoming[0].val.ty, "if_result")
         s = result_r.state
-        let mut incoming: List<PhiEntry> = []
-        let e1: PhiEntry = new_phi_entry(then_exit_label, then_val)
-        let e2: PhiEntry = new_phi_entry(else_exit_label, else_val)
-        incoming.push(e1)
-        incoming.push(e2)
         s = emit_instr(s, Instruction::Phi(result_r.value, incoming))
         return new_lower_result(result_r.value, s)
     }
 
-    // Void if — no value
+    // Void if — no value (or all arms returned)
     let result_r: LowerResult = make_value(s, mir_void(), "t")
     s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
     return new_lower_result(result_r.value, s)

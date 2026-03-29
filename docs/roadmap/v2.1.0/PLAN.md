@@ -101,7 +101,7 @@ assuming restructuring is needed.**
 |-------|------|--------|--------|--------|
 | 0 | Quick Fixes (gcc, test parallelism) | `Done` | Small | Unblocks dev.ps1, 4-6x test speed |
 | 1 | Retest Self-Compilation | `Done` | Small | 7/15 stage2, 4/7 modules, 3 crash on copy aliasing |
-| 2 | Emitter type fixes + enum payload | `In Progress` | Medium-Large | Stage2 IR down to 1 error (enum payload) |
+| 2 | Control flow + type recovery fixes | `In Progress` | Medium-Large | 8 bugs fixed, 8/15 stage2 valid, self-compile 1 error |
 | 3 | Deep-copy list fields on struct copy | `Done` | Medium | `__mn_list_clone` + text emitter fix → self-compilation works |
 | 4 | Fixed-Point Verification | `Not started` | Medium | Python independence achieved |
 | 5 | Native Test Migration | `Not started` | X-Large | 10-50x test speed |
@@ -167,41 +167,49 @@ stage2 IR quality but doesn't unblock self-compilation. Execute Phase 3 first, t
 
 ---
 
-## Phase 2 — Control Flow Fix (`lower.mn`)
-**Status:** `Not started`
+## Phase 2 — Control Flow & Type Recovery Fixes (`lower.mn` + `emit_llvm.mn`)
+**Status:** `In Progress` (2026-03-29: 8 bugs fixed, 8/15 golden stage2 valid, self-compile down to 1 error)
 **Effort:** Medium-Large
 **Depends on:** Phase 1 results (skip if stage2 already produces 15/15 valid IR)
 
-The self-hosted `lower.mn` has a known bug: `return` inside `if`/`match` blocks
-doesn't terminate the block — control falls through to the merge block. This was
-identified in the 03/21 chat session and confirmed by the ENUM_PAYLOAD_FIX_PLAN.
+The self-hosted `lower.mn` had a control flow bug: `return` inside `if`/`match`
+blocks didn't terminate the block — control fell through to the merge block. This
+was caused by unconditional Phi entry collection for terminated arms.
 
-### Root Cause
+Additionally, enum handling had 3 bugs (namespace resolution, variant index stub,
+missing zero-init), and function/method return types were lost (`mir_unknown()`).
 
-`lower_if` creates then/else/merge blocks. A `Return` in the then-block becomes
-the block's last instruction, but the merge block is still emitted with a phi node
-that references the then-block's "value" — even though the then-block already
-returned and should never reach the merge.
+### Fixes Applied (2026-03-29)
 
-### Fix Strategy
+1. **`lower_match` Phi collection** — skip Phi entries for arms that terminated (return/break). Mirrors Python `lower.py:2464`.
+2. **`lower_if` Phi collection** — same fix: track `then_terminated`/`else_terminated`, only include non-terminated arms in Phi.
+3. **Enum namespace resolution** — `Foo::Bar(...)` now verifies `Bar` belongs to enum `Foo` via `enum_name_for_variant`, not loose `is_enum_variant`.
+4. **`resolve_variant_index` implemented** — was a stub returning 0. Now looks up actual variant index from `enum_infos` registry in EmitState.
+5. **Enum zero-initialization** — replaced orphaned bitcast with `store zeroinitializer` to properly zero unused payload slots.
+6. **String method return types** — `str_method_return_type()` maps `char_at`→String, `contains`→Bool, etc. for correct alloca types.
+7. **Function return type registry** — `fn_ret_types: List<FnRetEntry>` in LowerState, populated during `register_declarations`, used in `lower_call_by_name`.
+8. **Signal/field `.value` dispatch** — only emit `SignalGet` when object type is actually `signal`, not for struct `.value` fields.
 
-Fix in the self-hosted `lower.mn` source (not the Python `lower.py`):
+### Results
 
-1. After lowering the then-block body, check if the last instruction is `Return`
-2. If so, don't emit a branch to the merge block from that arm
-3. If BOTH arms return, don't emit the merge block at all
-4. Same logic for `lower_match` arms
+- **Golden stage2:** 8/15 valid (was 7/15). `09_string_methods` now valid.
+- **Self-compilation:** 1 error remaining (was multiple). `mnc-stage1 mnc_all.mn` → 30,859 lines IR, 442 functions.
+- **Remaining error:** `tok.value` field access returns `{ i8*, i64 }` (String) but `len()` dispatches to `__mn_list_len` expecting list pointer. Needs struct field type tracking in the lowerer.
 
 ### Tasks
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Create minimal reproducer and trace the MIR blocks | `[ ]` | — | `fn f(x: Int) -> Int { if x > 0 { return 1 } return 0 }` |
-| 2 | Fix `lower_if` in `lower.mn`: skip merge when arm returns | `[ ]` | `mapanare/self/lower.mn` | ~line 2126 |
-| 3 | Fix `lower_match` in `lower.mn`: same pattern | `[ ]` | `mapanare/self/lower.mn` | ~line 2235 |
-| 4 | Handle nested case: `if { if { return } }` | `[ ]` | `mapanare/self/lower.mn` | Must propagate through nesting |
-| 5 | Rebuild mnc-stage1 and test 15/15 golden stage2 | `[ ]` | — | |
-| 6 | Fix copy aliasing if it blocks remaining tests | `[ ]` | `mapanare/self/lower.mn` or `emit_llvm.mn` | List copy + push = stale alloca |
+| 1 | Create minimal reproducer and trace the MIR blocks | `[!]` | — | Skipped — directly fixed root causes |
+| 2 | Fix `lower_if` in `lower.mn`: skip Phi for terminated arms | `[x]` | `mapanare/self/lower.mn` | Track `then_terminated`/`else_terminated` |
+| 3 | Fix `lower_match` in `lower.mn`: skip Phi for terminated arms | `[x]` | `mapanare/self/lower.mn` | Check `current_block_terminated` before Phi push |
+| 4 | Handle nested case: `if { if { return } }` | `[x]` | `mapanare/self/lower.mn` | Handled by `lower_block` → `current_block_terminated` propagation |
+| 5 | Rebuild mnc-stage1 and test golden stage2 | `[x]` | — | 15/15 golden pass, 8/15 stage2 valid |
+| 6 | Fix enum namespace, variant index, zero-init | `[x]` | `lower.mn`, `emit_llvm.mn` | 3 separate fixes |
+| 7 | Add string method + function return type resolution | `[x]` | `mapanare/self/lower.mn` | `str_method_return_type()` + `fn_ret_types` registry |
+| 8 | Fix `.value` signal vs field dispatch | `[x]` | `mapanare/self/lower.mn` | Check `obj.ty.kind == "signal"` |
+| 9 | Add struct field type tracking for `FieldGet` | `[ ]` | `mapanare/self/lower.mn` | Needed for `len(tok.value)` dispatch |
+| 10 | Fix remaining stage2 errors (struct alloca, list/result types, closures) | `[ ]` | `lower.mn`, `emit_llvm.mn` | 7 golden tests still invalid |
 
 **Done when:** `mnc-stage1` produces valid LLVM IR for all 15 golden tests (stage2).
 
