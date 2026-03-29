@@ -979,13 +979,11 @@ class LLVMTextEmitter:
         if t == LIST:
             root = self._lroots.get(i.src.name, i.src.name)
             self._lroots[i.dest.name] = root
-        # Deep-clone list fields inside structs to avoid aliased data
-        # pointers.  Without this, two copies of a struct share the same
-        # list data buffer; a realloc in one invalidates the other.
-        if i.src.ty.kind == TypeKind.STRUCT:
-            sn = self._res_struct(i.src.ty.type_info.name)
-            if sn in self._structs:
-                self._clone_list_fields(i.dest, sn)
+        # COW lists handle aliased data safely. The only list that's both
+        # shared AND mutated is the current_fn's instruction list (via
+        # emit_instr push). Without cloning, push reallocs the shared buffer
+        # but the old pointer is never read again (linear state threading).
+        # So NO clone is needed — saves O(N^2) detach copies.
 
     def _clone_list_fields(self, dest: Value, sn: str) -> None:
         """After a struct copy, deep-clone any List fields in the destination.

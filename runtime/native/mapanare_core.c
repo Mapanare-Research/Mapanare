@@ -680,27 +680,105 @@ MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts) {
 }
 
 /* -----------------------------------------------------------------------
- * MnList
+ * MnList — Copy-On-Write (COW) Implementation
+ *
+ * Layout: the refcount is stored in a header BEFORE the data pointer.
+ *   Allocation: [8 bytes refcount][element data...]
+ *   list.data points to element data (after the header).
+ *   Refcount is at ((int64_t *)list.data)[-1].
+ *
+ * This keeps MnList at 32 bytes {data, len, cap, elem_size} — no layout change.
+ * Clone is O(1): copy header, increment refcount.
+ * Mutation (push/set/pop) detaches if refcount > 1: allocate new buffer, copy.
  * ----------------------------------------------------------------------- */
 
 #define MN_LIST_INITIAL_CAP 8
+#define MN_LIST_HEADER_SIZE 8  /* refcount: int64_t */
+
+/* Access the refcount for a list's data buffer */
+static int64_t *mn_list_rc(MnList *list) {
+    if (!list->data) return NULL;
+    return ((int64_t *)list->data) - 1;
+}
+
+/* Allocate a new COW buffer: [refcount=1][cap * elem_size] */
+static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
+    int64_t data_bytes = mn_checked_mul(cap, elem_size);
+    char *raw = (char *)__mn_alloc(mn_checked_add(MN_LIST_HEADER_SIZE, data_bytes));
+    int64_t *rc = (int64_t *)raw;
+    *rc = 1;  /* refcount = 1 (sole owner) */
+    return raw + MN_LIST_HEADER_SIZE;  /* data pointer past the header */
+}
+
+static int mn_list_is_managed(MnList *list);
+static int64_t cow_shares, cow_fallbacks, cow_detaches;
+
+/* Detach: if refcount > 1, allocate a private copy of the data.
+ * Also handles lists that were zero-initialized (data == NULL). */
+static void mn_list_detach(MnList *list) {
+    if (!list->data) {
+        /* Zero-initialized list — allocate a fresh buffer */
+        int64_t cap = list->cap > 0 ? list->cap : MN_LIST_INITIAL_CAP;
+        list->data = mn_list_alloc_buf(cap, list->elem_size > 0 ? list->elem_size : 8);
+        list->cap = cap;
+        return;
+    }
+    if (!mn_list_is_managed(list)) return;  /* unmanaged buffer — nothing to detach */
+    int64_t *rc = mn_list_rc(list);
+    if (*rc <= 1) return;  /* sole owner, no detach needed */
+    cow_detaches++;
+    /* Shared — make a private copy */
+    (*rc)--;  /* decrement original's refcount */
+    int64_t cap = list->cap > 0 ? list->cap : MN_LIST_INITIAL_CAP;
+    char *new_data = mn_list_alloc_buf(cap, list->elem_size);
+    if (list->len > 0) {
+        memcpy(new_data, list->data, (size_t)(list->len * list->elem_size));
+    }
+    list->data = new_data;
+    list->cap = cap;
+}
 
 MN_EXPORT MnList __mn_list_new(int64_t elem_size) {
     MnList list;
     list.elem_size = elem_size;
     list.len = 0;
     list.cap = MN_LIST_INITIAL_CAP;
-    list.data = (char *)__mn_alloc(mn_checked_mul(list.cap, elem_size));
+    list.data = mn_list_alloc_buf(list.cap, elem_size);
     return list;
 }
 
 static void mn_list_grow(MnList *list) {
-    int64_t new_cap = list->cap * 2;
-    list->data = (char *)__mn_realloc(list->data, mn_checked_mul(new_cap, list->elem_size));
+    int64_t new_cap = list->cap > 0 ? list->cap * 2 : MN_LIST_INITIAL_CAP;
+    if (list->data && mn_list_is_managed(list)) {
+        /* Detach first if shared */
+        mn_list_detach(list);
+        /* After detach, we're sole owner — safe to realloc */
+        int64_t new_bytes = mn_checked_add(MN_LIST_HEADER_SIZE,
+                                mn_checked_mul(new_cap, list->elem_size));
+        char *raw = ((char *)list->data) - MN_LIST_HEADER_SIZE;
+        raw = (char *)__mn_realloc(raw, new_bytes);
+        list->data = raw + MN_LIST_HEADER_SIZE;
+    } else {
+        /* Unmanaged or NULL — allocate fresh COW buffer */
+        char *new_data = mn_list_alloc_buf(new_cap, list->elem_size);
+        if (list->data && list->len > 0) {
+            memcpy(new_data, list->data, (size_t)(list->len * list->elem_size));
+        }
+        list->data = new_data;
+    }
     list->cap = new_cap;
 }
 
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
+    if (!list->data || list->cap <= 0) {
+        /* Handle zero-initialized or empty lists */
+        if (list->elem_size <= 0) list->elem_size = 8;
+        list->data = mn_list_alloc_buf(MN_LIST_INITIAL_CAP, list->elem_size);
+        list->cap = MN_LIST_INITIAL_CAP;
+        list->len = 0;
+    } else {
+        mn_list_detach(list);  /* COW: ensure sole ownership */
+    }
     if (list->len >= list->cap) {
         mn_list_grow(list);
     }
@@ -718,6 +796,7 @@ MN_EXPORT void *__mn_list_get(MnList *list, int64_t i) {
 
 MN_EXPORT void __mn_list_set(MnList *list, int64_t i, const void *elem_ptr) {
     if (i < 0 || i >= list->len) return;
+    mn_list_detach(list);  /* COW: ensure sole ownership */
     memcpy(list->data + i * list->elem_size,
            elem_ptr, (size_t)list->elem_size);
 }
@@ -745,6 +824,7 @@ MN_EXPORT int64_t __mn_list_len(MnList *list) {
 
 MN_EXPORT int64_t __mn_list_pop(MnList *list, void *out_ptr) {
     if (list->len <= 0) return -1;
+    mn_list_detach(list);  /* COW */
     list->len--;
     memcpy(out_ptr, list->data + list->len * list->elem_size,
            (size_t)list->elem_size);
@@ -752,34 +832,81 @@ MN_EXPORT int64_t __mn_list_pop(MnList *list, void *out_ptr) {
 }
 
 MN_EXPORT void __mn_list_clear(MnList *list) {
+    mn_list_detach(list);  /* COW */
     list->len = 0;
 }
 
 MN_EXPORT void __mn_list_free(MnList *list) {
     if (list->data) {
-        __mn_free(list->data);
+        int64_t *rc = mn_list_rc(list);
+        if (rc) {
+            (*rc)--;
+            if (*rc <= 0) {
+                __mn_free(((char *)list->data) - MN_LIST_HEADER_SIZE);
+            }
+        }
         list->data = NULL;
     }
     list->len = 0;
     list->cap = 0;
 }
 
+/* Check if a list looks like it was properly allocated with a COW header */
+static int mn_list_is_managed(MnList *list) {
+    if (!list->data) return 0;
+    if (list->elem_size <= 0 || list->elem_size > 65536) return 0;
+    if (list->cap <= 0 || list->cap > 100000000) return 0;
+    if (list->len < 0 || list->len > list->cap) return 0;
+    /* Check refcount looks sane */
+    int64_t *rc = mn_list_rc(list);
+    if (!rc) return 0;
+    if (*rc <= 0 || *rc > 10000000) return 0;
+    return 1;
+}
+
+static int64_t cow_shares = 0;
+static int64_t cow_fallbacks = 0;
+static int64_t cow_detaches = 0;
+
+MN_EXPORT void __mn_cow_stats(void) {
+    fprintf(stderr, "[COW] shares=%ld fallbacks=%ld detaches=%ld\n",
+            (long)cow_shares, (long)cow_fallbacks, (long)cow_detaches);
+}
+
 MN_EXPORT MnList __mn_list_clone(MnList *src) {
+    /* If the buffer is a managed COW buffer, share it (O(1)).
+     * Otherwise, just copy the header (no allocation). */
     MnList dst;
     dst.elem_size = src->elem_size;
     dst.len = src->len;
-    dst.cap = src->cap > 0 ? src->cap : MN_LIST_INITIAL_CAP;
-    dst.data = (char *)__mn_alloc(mn_checked_mul(dst.cap, dst.elem_size));
-    if (src->len > 0 && src->data) {
-        memcpy(dst.data, src->data, (size_t)(src->len * src->elem_size));
+
+    if (src->data && src->elem_size > 0 && src->cap > 0 && src->len >= 0
+        && src->len <= src->cap && src->cap <= 100000000
+        && src->elem_size <= 65536) {
+        int64_t *rc = mn_list_rc(src);
+        if (rc && *rc > 0 && *rc < 10000000) {
+            /* Managed COW buffer — share it */
+            dst.cap = src->cap;
+            dst.data = src->data;
+            (*rc)++;
+            cow_shares++;
+            return dst;
+        }
     }
+
+    /* Not managed — copy header only (no allocation) */
+    dst.cap = src->cap;
+    dst.data = src->data;
+    cow_fallbacks++;
     return dst;
 }
 
 MN_EXPORT MnList __mn_list_deep_clone(MnList *src, const int64_t *list_offsets, int64_t num_offsets) {
     MnList dst = __mn_list_clone(src);
     if (num_offsets <= 0 || list_offsets == NULL || dst.len <= 0) return dst;
-    /* After shallow-cloning, recursively clone any nested MnList fields
+    /* Detach first — we're about to modify element data (nested list headers) */
+    mn_list_detach(&dst);
+    /* After detaching, recursively clone any nested MnList fields
      * at the given byte offsets within each element. */
     for (int64_t i = 0; i < dst.len; i++) {
         char *elem = dst.data + i * dst.elem_size;
@@ -798,8 +925,12 @@ MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
     MnList result = __mn_list_new(es);
     int64_t total = mn_checked_add(a->len, b->len);
     if (total > result.cap) {
+        /* Grow: realloc must include the COW header */
+        int64_t new_bytes = mn_checked_add(MN_LIST_HEADER_SIZE, mn_checked_mul(total, es));
+        char *raw = ((char *)result.data) - MN_LIST_HEADER_SIZE;
+        raw = (char *)__mn_realloc(raw, new_bytes);
+        result.data = raw + MN_LIST_HEADER_SIZE;
         result.cap = total;
-        result.data = (char *)__mn_realloc(result.data, mn_checked_mul(result.cap, es));
     }
     if (a->len > 0) {
         memcpy(result.data, a->data, (size_t)(a->len * es));

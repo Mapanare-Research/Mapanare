@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
                 putchar('\n');
             }
         }
-        return 0;
+        extern void __mn_cow_stats(void); __mn_cow_stats(); return 0;
     } else {
         /* Print errors to stderr */
         int64_t n_errors = result.errors.len;
