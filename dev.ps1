@@ -179,6 +179,47 @@ function Invoke-AllChecks {
         $out | ForEach-Object { Write-Log "  $_" }
     }
 
+    # --- WAT emission (wasm32) ---
+    Write-Host "  wat (wasm32)    " -ForegroundColor Cyan -NoNewline
+    $wasmExamples = @(
+        "$Root\examples\wasm\hello.mn",
+        "$Root\examples\wasm\wasi_app.mn"
+    ) | Where-Object { Test-Path $_ }
+    if ($wasmExamples.Count -gt 0) {
+        $watFailed = $false
+        $watErrors = @()
+        foreach ($mn in $wasmExamples) {
+            $watOut = $mn -replace '\.mn$', '.wat'
+            $savedEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+            $out = & python -m mapanare emit-wasm $mn -o $watOut 2>&1
+            $exitCode = $LASTEXITCODE
+            $ErrorActionPreference = $savedEAP
+            if ($exitCode -ne 0) {
+                $watFailed = $true
+                $watErrors += "  $mn"
+                $out | ForEach-Object { $watErrors += "    $_" }
+            }
+        }
+        if (-not $watFailed) {
+            Write-Host "ok ($($wasmExamples.Count) files)" -ForegroundColor Green
+            Write-Log "[wat] ok ($($wasmExamples.Count) files)"
+        } else {
+            $allPassed = $false
+            Write-Host "fail" -ForegroundColor Red
+            $watErrors | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+            Write-Log "[wat] FAIL"
+            $watErrors | ForEach-Object { Write-Log "  $_" }
+        }
+        # Clean up generated .wat files
+        foreach ($mn in $wasmExamples) {
+            $watOut = $mn -replace '\.mn$', '.wat'
+            Remove-Item $watOut -ErrorAction SilentlyContinue
+        }
+    } else {
+        Write-Host "skip (no examples)" -ForegroundColor DarkGray
+        Write-Log "[wat] skip (no examples)"
+    }
+
     Write-Host ""
     return $allPassed
 }
@@ -244,7 +285,7 @@ if ($Mode -eq "validate") {
     $watchDirs = @($mapaPath, $runtimePath, $testsPath, $stdlibPath) | Where-Object { Test-Path $_ }
 
     foreach ($dir in $watchDirs) {
-        foreach ($filter in @("*.py", "*.c", "*.h")) {
+        foreach ($filter in @("*.py", "*.c", "*.h", "*.mn")) {
             $w = [System.IO.FileSystemWatcher]::new($dir, $filter)
             $w.IncludeSubdirectories = $true
             $w.NotifyFilter = [System.IO.NotifyFilters]::LastWrite -bor
