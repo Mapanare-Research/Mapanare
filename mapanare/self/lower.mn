@@ -868,14 +868,33 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
     }
     if fn_name == "Ok" {
         if len(args) == 1 {
-            let dest_r: LowerResult = make_value(st, mir_result(), "t")
+            // Use the function's return type (with generic args) if available
+            let mut res_ty: MIRType = mir_result()
+            match st.current_fn {
+                Some(cf) => {
+                    if cf.return_type.kind == "result" {
+                        res_ty = cf.return_type
+                    }
+                },
+                _ => {}
+            }
+            let dest_r: LowerResult = make_value(st, res_ty, "t")
             let s: LowerState = emit_instr(dest_r.state, Instruction::WrapOk(dest_r.value, args[0]))
             return new_lower_result(dest_r.value, s)
         }
     }
     if fn_name == "Err" {
         if len(args) == 1 {
-            let dest_r: LowerResult = make_value(st, mir_result(), "t")
+            let mut res_ty: MIRType = mir_result()
+            match st.current_fn {
+                Some(cf) => {
+                    if cf.return_type.kind == "result" {
+                        res_ty = cf.return_type
+                    }
+                },
+                _ => {}
+            }
+            let dest_r: LowerResult = make_value(st, res_ty, "t")
             let s: LowerState = emit_instr(dest_r.state, Instruction::WrapErr(dest_r.value, args[0]))
             return new_lower_result(dest_r.value, s)
         }
@@ -1667,9 +1686,9 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         }
         s = lower_pop_scope(s)
 
-        // Only add to Phi if the arm didn't terminate (return/break).
-        // Mirrors Python lower.py:2464 `if arm_val is not None`.
-        if !arm_terminated {
+        // Only add to Phi if arm didn't terminate AND produces a real value.
+        // Skip void values (e.g., from print()) to avoid undefined SSA refs.
+        if !arm_terminated && arm_val_r.value.ty.kind != "void" && arm_val_r.value.ty.kind != "unknown" && arm_val_r.value.name != "%void" {
             let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
             arm_results.push(pe)
         }

@@ -5140,30 +5140,29 @@ fn resolve_return_type(te: Option<TypeExpr>) -> MIRType {
 }
 
 // State-aware type expression resolver (distinguishes enums from structs)
+fn resolve_generic_args_rec(st: LowerState, args: List<TypeExpr>, idx: Int, acc: List<MIRType>) -> List<MIRType> {
+    if idx >= len(args) { return acc }
+    let arg: TypeExpr = args[idx]
+    let resolved: MIRType = lower_resolve_type_checked(st, arg)
+    acc.push(resolved)
+    return resolve_generic_args_rec(st, args, idx + 1, acc)
+}
+
 fn lower_resolve_type_checked(st: LowerState, te: TypeExpr) -> MIRType {
     match te {
         Named(name) => {
             return resolve_type_name_checked(st, name)
         },
         Generic(name, args) => {
-            let mut resolved_args: List<MIRType> = []
-            let mut i: Int = 0
-            for _ in 0..100 {
-                if i >= len(args) {
-                    let kind: String = kind_from_name(name)
-                    if kind != "unknown" {
-                        return new_mir_type_with_args(name, kind, resolved_args)
-                    }
-                    // Check if it's an enum
-                    let checked: MIRType = resolve_type_name_checked(st, name)
-                    return new_mir_type_with_args(name, checked.kind, resolved_args)
-                }
-                let arg: TypeExpr = args[i]
-                let resolved: MIRType = lower_resolve_type_checked(st, arg)
-                resolved_args.push(resolved)
-                i = i + 1
+            // Use recursion instead of for-loop to avoid the alloca aliasing bug
+            let init_args: List<MIRType> = []
+            let resolved_args: List<MIRType> = resolve_generic_args_rec(st, args, 0, init_args)
+            let kind: String = kind_from_name(name)
+            if kind != "unknown" {
+                return new_mir_type_with_args(name, kind, resolved_args)
             }
-            return mir_unknown()
+            let checked: MIRType = resolve_type_name_checked(st, name)
+            return new_mir_type_with_args(name, checked.kind, resolved_args)
         },
         FnTy(param_types, return_type) => {
             return mir_fn_type()
@@ -6100,14 +6099,33 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
     }
     if fn_name == "Ok" {
         if len(args) == 1 {
-            let dest_r: LowerResult = make_value(st, mir_result(), "t")
+            // Use the function's return type (with generic args) if available
+            let mut res_ty: MIRType = mir_result()
+            match st.current_fn {
+                Some(cf) => {
+                    if cf.return_type.kind == "result" {
+                        res_ty = cf.return_type
+                    }
+                },
+                _ => {}
+            }
+            let dest_r: LowerResult = make_value(st, res_ty, "t")
             let s: LowerState = emit_instr(dest_r.state, Instruction::WrapOk(dest_r.value, args[0]))
             return new_lower_result(dest_r.value, s)
         }
     }
     if fn_name == "Err" {
         if len(args) == 1 {
-            let dest_r: LowerResult = make_value(st, mir_result(), "t")
+            let mut res_ty: MIRType = mir_result()
+            match st.current_fn {
+                Some(cf) => {
+                    if cf.return_type.kind == "result" {
+                        res_ty = cf.return_type
+                    }
+                },
+                _ => {}
+            }
+            let dest_r: LowerResult = make_value(st, res_ty, "t")
             let s: LowerState = emit_instr(dest_r.state, Instruction::WrapErr(dest_r.value, args[0]))
             return new_lower_result(dest_r.value, s)
         }
@@ -6899,9 +6917,9 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         }
         s = lower_pop_scope(s)
 
-        // Only add to Phi if the arm didn't terminate (return/break).
-        // Mirrors Python lower.py:2464 `if arm_val is not None`.
-        if !arm_terminated {
+        // Only add to Phi if arm didn't terminate AND produces a real value.
+        // Skip void values (e.g., from print()) to avoid undefined SSA refs.
+        if !arm_terminated && arm_val_r.value.ty.kind != "void" && arm_val_r.value.ty.kind != "unknown" && arm_val_r.value.name != "%void" {
             let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
             arm_results.push(pe)
         }
@@ -8763,7 +8781,15 @@ fn emit_enum_tag(st: EmitState, dest: Value, val: Value) -> EmitState {
     let mut s: EmitState = st
     let enum_ty: String = resolve_mir_type(val.ty)
     let dn: String = dest.name
-    s = emit_line(s, emit_extractvalue(dn, enum_ty, val.name, "0"))
+    // For Result/Option the tag field is i1; for enums it's i64.
+    // Extract field 0 and zext to i64 if needed.
+    if val.ty.kind == "result" || val.ty.kind == "option" {
+        let raw_tag: String = dn + ".raw"
+        s = emit_line(s, emit_extractvalue(raw_tag, enum_ty, val.name, "0"))
+        s = emit_line(s, "  " + dn + " = zext i1 " + raw_tag + " to i64")
+    } else {
+        s = emit_line(s, emit_extractvalue(dn, enum_ty, val.name, "0"))
+    }
     return s
 }
 
@@ -8812,29 +8838,44 @@ fn emit_wrap_none(st: EmitState, dest: Value, ty: MIRType) -> EmitState {
 
 fn emit_wrap_ok(st: EmitState, dest: Value, val: Value) -> EmitState {
     let mut s: EmitState = st
+    // Use dest's Result type args for correct ok/err layout
+    let res_ty: String = resolve_mir_type(dest.ty)
     let val_ty: String = resolve_mir_type(val.ty)
-    let res_ty: String = llvm_result_type(val_ty, llvm_ptr())
+    let mut ok_ty: String = val_ty
+    let mut err_ty: String = llvm_ptr()
+    if len(dest.ty.args) >= 2 {
+        ok_ty = resolve_mir_type(dest.ty.args[0])
+        err_ty = resolve_mir_type(dest.ty.args[1])
+    }
+    let inner_ty: String = "{ " + ok_ty + ", " + err_ty + " }"
     let dn: String = dest.name
 
     let tag_name: String = dn + ".tag"
     s = emit_line(s, emit_insertvalue(tag_name, res_ty, "undef", "1", "i1", "0"))
     let inner_name: String = dn + ".inner"
-    s = emit_line(s, emit_insertvalue(inner_name, "{ " + val_ty + ", " + llvm_ptr() + " }", "undef", val.name, val_ty, "0"))
-    s = emit_line(s, emit_insertvalue(dn, res_ty, tag_name, inner_name, "{ " + val_ty + ", " + llvm_ptr() + " }", "1"))
+    s = emit_line(s, emit_insertvalue(inner_name, inner_ty, "undef", val.name, ok_ty, "0"))
+    s = emit_line(s, emit_insertvalue(dn, res_ty, tag_name, inner_name, inner_ty, "1"))
     return s
 }
 
 fn emit_wrap_err(st: EmitState, dest: Value, val: Value) -> EmitState {
     let mut s: EmitState = st
+    let res_ty: String = resolve_mir_type(dest.ty)
     let val_ty: String = resolve_mir_type(val.ty)
-    let res_ty: String = llvm_result_type(llvm_ptr(), val_ty)
+    let mut ok_ty: String = llvm_ptr()
+    let mut err_ty: String = val_ty
+    if len(dest.ty.args) >= 2 {
+        ok_ty = resolve_mir_type(dest.ty.args[0])
+        err_ty = resolve_mir_type(dest.ty.args[1])
+    }
+    let inner_ty: String = "{ " + ok_ty + ", " + err_ty + " }"
     let dn: String = dest.name
 
     let tag_name: String = dn + ".tag"
     s = emit_line(s, emit_insertvalue(tag_name, res_ty, "undef", "0", "i1", "0"))
     let inner_name: String = dn + ".inner"
-    s = emit_line(s, emit_insertvalue(inner_name, "{ " + llvm_ptr() + ", " + val_ty + " }", "undef", val.name, val_ty, "1"))
-    s = emit_line(s, emit_insertvalue(dn, res_ty, tag_name, inner_name, "{ " + llvm_ptr() + ", " + val_ty + " }", "1"))
+    s = emit_line(s, emit_insertvalue(inner_name, inner_ty, "undef", val.name, err_ty, "1"))
+    s = emit_line(s, emit_insertvalue(dn, res_ty, tag_name, inner_name, inner_ty, "1"))
     return s
 }
 
@@ -9164,7 +9205,14 @@ fn emit_mir_switch(st: EmitState, tag: Value, cases: List<SwitchCase>, default_b
             // If not a digit (0-9) and not '-', it's a variant name → resolve to index
             if first_ch < 48 || first_ch > 57 {
                 if first_ch != 45 {
-                    case_val = toString(resolve_variant_index(s, enum_name, case_val))
+                    // Hardcoded indices for Result/Option builtins
+                    if case_val == "Ok" || case_val == "Some" {
+                        case_val = "1"
+                    } else if case_val == "Err" || case_val == "None" {
+                        case_val = "0"
+                    } else {
+                        case_val = toString(resolve_variant_index(s, enum_name, case_val))
+                    }
                 }
             }
         }

@@ -77,12 +77,17 @@ python scripts/test_native.py --bless                            # Regenerate re
 python scripts/test_native.py --filter fib -v                    # One test, verbose
 
 # IR Doctor — per-function diagnostics for the self-hosted compiler
-# Audit: detects ALLOCA_ALIAS, EMPTY_SWITCH, RET_TYPE_MISMATCH, MISSING_PERCENT, etc.
-# Saves baselines to .ir_doctor/ — reruns show delta (fixed/new issues)
+# Detects: ALLOCA_ALIAS (real vs mitigated), EMPTY_SWITCH, RET_TYPE_MISMATCH,
+#          MISSING_PERCENT, DUPLICATE_CASE, PHI_UNDEF_REF, LOOP_PUSH, etc.
+# Saves baselines to .ir_doctor/ — reruns show delta (fixed/new/regressed)
 python scripts/ir_doctor.py audit mapanare/self/main.ll              # Audit + baseline + llvm-as
 python scripts/ir_doctor.py --only lower__ audit mapanare/self/main.ll  # Audit specific module
+python scripts/ir_doctor.py worklist mapanare/self/main.ll           # Functions needing recursive rewrite
+python scripts/ir_doctor.py extract mapanare/self/main.ll lower__lower_match  # Dump one function's IR
 python scripts/ir_doctor.py check file.ll                            # Just llvm-as validation
 python scripts/ir_doctor.py golden                                   # Fresh compile+validate ALL golden (WSL, no cache)
+python scripts/ir_doctor.py selftest                                 # Self-compile mnc_all.mn (WSL)
+python scripts/ir_doctor.py memory                                   # Memory scaling test (WSL)
 python scripts/ir_doctor.py table mapanare/self/main.ll              # Per-function metrics table
 python scripts/ir_doctor.py --top 15 table mapanare/self/main.ll     # Top 15 largest functions
 python scripts/ir_doctor.py fingerprint mapanare/self/main.ll        # JSON per-function hashes

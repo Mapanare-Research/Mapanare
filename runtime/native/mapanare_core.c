@@ -693,7 +693,8 @@ MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts) {
  * ----------------------------------------------------------------------- */
 
 #define MN_LIST_INITIAL_CAP 8
-#define MN_LIST_HEADER_SIZE 8  /* refcount: int64_t */
+#define MN_LIST_HEADER_SIZE 16  /* [magic: i64][refcount: i64] */
+#define MN_COW_MAGIC ((int64_t)0x434F574C495354LL)  /* "COWLIST" in ASCII */
 
 /* Access the refcount for a list's data buffer */
 static int64_t *mn_list_rc(MnList *list) {
@@ -701,12 +702,20 @@ static int64_t *mn_list_rc(MnList *list) {
     return ((int64_t *)list->data) - 1;
 }
 
-/* Allocate a new COW buffer: [refcount=1][cap * elem_size] */
+/* Check if the buffer has a valid COW magic header */
+static int mn_list_has_magic(MnList *list) {
+    if (!list->data) return 0;
+    int64_t *magic = ((int64_t *)list->data) - 2;
+    return *magic == MN_COW_MAGIC;
+}
+
+/* Allocate a new COW buffer: [magic][refcount=1][cap * elem_size] */
 static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
     int64_t data_bytes = mn_checked_mul(cap, elem_size);
     char *raw = (char *)__mn_alloc(mn_checked_add(MN_LIST_HEADER_SIZE, data_bytes));
-    int64_t *rc = (int64_t *)raw;
-    *rc = 1;  /* refcount = 1 (sole owner) */
+    int64_t *header = (int64_t *)raw;
+    header[0] = MN_COW_MAGIC;  /* magic */
+    header[1] = 1;             /* refcount = 1 */
     return raw + MN_LIST_HEADER_SIZE;  /* data pointer past the header */
 }
 
@@ -854,14 +863,9 @@ MN_EXPORT void __mn_list_free(MnList *list) {
 /* Check if a list looks like it was properly allocated with a COW header */
 static int mn_list_is_managed(MnList *list) {
     if (!list->data) return 0;
-    if (list->elem_size <= 0 || list->elem_size > 65536) return 0;
-    if (list->cap <= 0 || list->cap > 100000000) return 0;
-    if (list->len < 0 || list->len > list->cap) return 0;
-    /* Check refcount looks sane */
-    int64_t *rc = mn_list_rc(list);
-    if (!rc) return 0;
-    if (*rc <= 0 || *rc > 10000000) return 0;
-    return 1;
+    /* The magic number check is the ONLY way to know if data[-16..-8] is valid.
+     * Without it, reading data[-8] on a non-COW buffer is undefined behavior. */
+    return mn_list_has_magic(list);
 }
 
 static int64_t cow_shares = 0;

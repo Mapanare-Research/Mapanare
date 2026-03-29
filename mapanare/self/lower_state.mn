@@ -437,30 +437,29 @@ fn resolve_return_type(te: Option<TypeExpr>) -> MIRType {
 }
 
 // State-aware type expression resolver (distinguishes enums from structs)
+fn resolve_generic_args_rec(st: LowerState, args: List<TypeExpr>, idx: Int, acc: List<MIRType>) -> List<MIRType> {
+    if idx >= len(args) { return acc }
+    let arg: TypeExpr = args[idx]
+    let resolved: MIRType = lower_resolve_type_checked(st, arg)
+    acc.push(resolved)
+    return resolve_generic_args_rec(st, args, idx + 1, acc)
+}
+
 fn lower_resolve_type_checked(st: LowerState, te: TypeExpr) -> MIRType {
     match te {
         Named(name) => {
             return resolve_type_name_checked(st, name)
         },
         Generic(name, args) => {
-            let mut resolved_args: List<MIRType> = []
-            let mut i: Int = 0
-            for _ in 0..100 {
-                if i >= len(args) {
-                    let kind: String = kind_from_name(name)
-                    if kind != "unknown" {
-                        return new_mir_type_with_args(name, kind, resolved_args)
-                    }
-                    // Check if it's an enum
-                    let checked: MIRType = resolve_type_name_checked(st, name)
-                    return new_mir_type_with_args(name, checked.kind, resolved_args)
-                }
-                let arg: TypeExpr = args[i]
-                let resolved: MIRType = lower_resolve_type_checked(st, arg)
-                resolved_args.push(resolved)
-                i = i + 1
+            // Use recursion instead of for-loop to avoid the alloca aliasing bug
+            let init_args: List<MIRType> = []
+            let resolved_args: List<MIRType> = resolve_generic_args_rec(st, args, 0, init_args)
+            let kind: String = kind_from_name(name)
+            if kind != "unknown" {
+                return new_mir_type_with_args(name, kind, resolved_args)
             }
-            return mir_unknown()
+            let checked: MIRType = resolve_type_name_checked(st, name)
+            return new_mir_type_with_args(name, checked.kind, resolved_args)
         },
         FnTy(param_types, return_type) => {
             return mir_fn_type()

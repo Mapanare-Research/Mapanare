@@ -234,7 +234,12 @@ def detect_alloca_aliasing(mod: IRModule) -> list[Pathology]:
 
     Pattern: __mn_list_push writes to alloca %A, but a later
     __mn_list_len reads from a DIFFERENT alloca %B for the same variable.
+
+    Also checks for write-back stores that connect push allocas to len
+    allocas — if a store copies the updated list from the push alloca to
+    the len alloca, the aliasing is mitigated (downgrade to warning).
     """
+    LIST_TY = r"\{i8\*, i64, i64, i64\}"
     results = []
     for fn in mod.functions.values():
         if fn.list_pushes == 0:
@@ -243,7 +248,7 @@ def detect_alloca_aliasing(mod: IRModule) -> list[Pathology]:
         # Find all allocas that are targets of list_push
         push_targets: set[str] = set()
         for m in re.finditer(
-            r"call void @__mn_list_push\(\{i8\*, i64, i64, i64\}\*\s+(%[\w.]+)",
+            rf"call void @__mn_list_push\({LIST_TY}\*\s+(%[\w.]+)",
             fn.body,
         ):
             push_targets.add(m.group(1))
@@ -251,13 +256,54 @@ def detect_alloca_aliasing(mod: IRModule) -> list[Pathology]:
         # Find all allocas that are sources for list_len
         len_sources: set[str] = set()
         for m in re.finditer(
-            r"call i64 @__mn_list_len\(\{i8\*, i64, i64, i64\}\*\s+(%[\w.]+)",
+            rf"call i64 @__mn_list_len\({LIST_TY}\*\s+(%[\w.]+)",
             fn.body,
         ):
             len_sources.add(m.group(1))
 
-        # If push and len use different allocas, flag it
-        if push_targets and len_sources and not push_targets & len_sources:
+        # If push and len use the same allocas, no issue
+        if not push_targets or not len_sources or push_targets & len_sources:
+            continue
+
+        # Check for write-back stores: after push, is there a store
+        # that copies the list from a loaded-from-push-alloca to a len-alloca?
+        # Pattern: %r = load LIST, LIST* %push_alloca ... store LIST %r, LIST* %len_alloca
+        # Also check: store to the len alloca from ANY value loaded after a push call
+        has_writeback = False
+        for pt in push_targets:
+            # Find values loaded from this push target
+            loaded_vals: set[str] = set()
+            for m in re.finditer(
+                rf"(%[\w.]+)\s*=\s*load\s+{LIST_TY},\s*{LIST_TY}\*\s*{re.escape(pt)}",
+                fn.body,
+            ):
+                loaded_vals.add(m.group(1))
+            # Check if any of those loaded values are stored to a len source
+            for lv in loaded_vals:
+                for ls in len_sources:
+                    if re.search(
+                        rf"store\s+{LIST_TY}\s+{re.escape(lv)},\s*{LIST_TY}\*\s*{re.escape(ls)}",
+                        fn.body,
+                    ):
+                        has_writeback = True
+                        break
+                if has_writeback:
+                    break
+            if has_writeback:
+                break
+
+        if has_writeback:
+            results.append(
+                Pathology(
+                    severity="warning",
+                    code="ALLOCA_ALIAS_MITIGATED",
+                    function=fn.name,
+                    line=fn.line_start,
+                    message=f"Aliased allocas with write-back: push->{push_targets}, len->{len_sources}",
+                    detail="Write-back store detected. The aliasing may be safe.",
+                )
+            )
+        else:
             results.append(
                 Pathology(
                     severity="error",
@@ -267,8 +313,8 @@ def detect_alloca_aliasing(mod: IRModule) -> list[Pathology]:
                     message=f"List push/len use different allocas: push->{push_targets}, len->{len_sources}",
                     detail=(
                         "The for-loop body pushes to one alloca but post-loop len() "
-                        "reads from a stale pre-entry alloca. This is the known "
-                        "emit_llvm_text.py scoping bug."
+                        "reads from a stale pre-entry alloca. NO write-back found. "
+                        "This function needs a recursive rewrite to avoid the bug."
                     ),
                 )
             )
@@ -397,6 +443,109 @@ def detect_unreachable_blocks(mod: IRModule) -> list[Pathology]:
     return results
 
 
+def detect_duplicate_switch_cases(mod: IRModule) -> list[Pathology]:
+    """Detect switch statements with duplicate case values."""
+    results = []
+    for fn in mod.functions.values():
+        for m in re.finditer(
+            r"switch\s+i64\s+%[\w.]+,\s*label\s+%[\w.]+\s*\[([^\]]+)\]",
+            fn.body,
+        ):
+            cases_text = m.group(1)
+            case_vals = re.findall(r"i64\s+(\d+)", cases_text)
+            seen: set[str] = set()
+            dupes: list[str] = []
+            for cv in case_vals:
+                if cv in seen:
+                    dupes.append(cv)
+                seen.add(cv)
+            if dupes:
+                results.append(
+                    Pathology(
+                        severity="error",
+                        code="DUPLICATE_CASE",
+                        function=fn.name,
+                        line=fn.line_start,
+                        message=f"Switch has duplicate case values: {dupes}",
+                        detail="Variant index resolution returned same value for different variants.",
+                    )
+                )
+    return results
+
+
+def detect_phi_undefined_refs(mod: IRModule) -> list[Pathology]:
+    """Detect Phi nodes referencing values that don't exist in the function."""
+    results = []
+    for fn in mod.functions.values():
+        if fn.phis == 0:
+            continue
+        # Collect all defined SSA values
+        defined = set(re.findall(r"(%[\w.]+)\s*=", fn.body))
+        # Also include function parameters
+        sig_params = set(re.findall(r"(%[\w.]+)(?:\s*,|\s*\))", fn.signature))
+        defined |= sig_params
+        # Check phi incoming values
+        for m in re.finditer(
+            r"=\s*phi\s+\S+\s+((?:\[.*?\]\s*,?\s*)+)",
+            fn.body,
+        ):
+            phi_text = m.group(1)
+            refs = re.findall(r"\[\s*(%[\w.]+)\s*,", phi_text)
+            for ref in refs:
+                if ref not in defined and ref != "undef" and ref != "zeroinitializer":
+                    results.append(
+                        Pathology(
+                            severity="error",
+                            code="PHI_UNDEF_REF",
+                            function=fn.name,
+                            line=fn.line_start,
+                            message=f"Phi references undefined value {ref}",
+                            detail="Likely a void/unknown arm result added to Phi collection.",
+                        )
+                    )
+                    break  # one per function
+    return results
+
+
+def detect_for_loop_push_patterns(mod: IRModule) -> list[Pathology]:
+    """Detect functions with list.push inside for-loop-like patterns.
+
+    These are candidates for recursive rewrite to avoid alloca aliasing.
+    Reports as 'info' severity — it's a work queue, not a bug.
+    """
+    results = []
+    for fn in mod.functions.values():
+        if fn.list_pushes == 0:
+            continue
+        # Heuristic: for-loops have "for_header" or "for_body" or "for_exit" blocks
+        has_for = bool(re.search(r"for_(?:header|body|exit)\d*:", fn.body))
+        if not has_for:
+            continue
+        # Check if push is inside a for-body block
+        blocks = re.split(r"^([\w.]+):", fn.body, flags=re.MULTILINE)
+        in_for_body = False
+        push_in_loop = False
+        for i, part in enumerate(blocks):
+            if part.startswith("for_body"):
+                in_for_body = True
+            elif re.match(r"for_exit|for_header", part):
+                in_for_body = False
+            elif in_for_body and "__mn_list_push" in part:
+                push_in_loop = True
+                break
+        if push_in_loop:
+            results.append(
+                Pathology(
+                    severity="info",
+                    code="LOOP_PUSH",
+                    function=fn.name,
+                    line=fn.line_start,
+                    message="list.push() inside for-loop body — candidate for recursive rewrite",
+                )
+            )
+    return results
+
+
 ALL_DETECTORS = [
     detect_alloca_aliasing,
     detect_empty_switches,
@@ -404,6 +553,9 @@ ALL_DETECTORS = [
     detect_type_mismatch_ret,
     detect_missing_percent,
     detect_unreachable_blocks,
+    detect_duplicate_switch_cases,
+    detect_phi_undefined_refs,
+    detect_for_loop_push_patterns,
 ]
 
 
@@ -995,6 +1147,9 @@ def cmd_golden(args: argparse.Namespace) -> int:
     This is the one command that answers: "does the self-hosted compiler
     work right now?" It compiles every golden test FRESH through stage1,
     validates with llvm-as, audits for pathologies, and shows a summary.
+
+    Saves results to .ir_doctor/golden.json. On subsequent runs, shows
+    delta: which tests were FIXED, REGRESSED, or CHANGED.
     """
     stage1 = pathlib.Path(args.stage1)
     mn_files = sorted(GOLDEN_DIR.glob("*.mn"))
@@ -1040,7 +1195,7 @@ def cmd_golden(args: argparse.Namespace) -> int:
         print(f"{status}  {n_fns} fn" + (f"  {detail}" if detail else ""))
         results.append((name, status, detail, n_fns, n_errs, ir.count("\n")))
 
-    # Summary
+    # Summary table
     print()
     print(f"{'Test':<25s} {'Status':<15s} {'Fns':>4s} {'Errs':>5s} {'Lines':>6s}")
     print("-" * 60)
@@ -1058,7 +1213,285 @@ def cmd_golden(args: argparse.Namespace) -> int:
         for name, status, detail in fails:
             print(f"  {name}: {status}" + (f" -- {detail}" if detail else ""))
 
+    # Delta from previous golden run
+    old_golden = _load_baseline("golden")
+    if old_golden and "tests" in old_golden:
+        old_tests = old_golden["tests"]
+        print(f"\n--- Delta from last golden ({old_golden.get('timestamp', '?')}) ---")
+        any_change = False
+        for name, status, *_ in results:
+            old_status = old_tests.get(name, "?")
+            if old_status == status:
+                continue
+            any_change = True
+            if status == "OK" and old_status != "OK":
+                print(f"  FIXED      {name}: {old_status} -> {status}")
+            elif status != "OK" and old_status == "OK":
+                print(f"  REGRESSED  {name}: {old_status} -> {status}")
+            else:
+                print(f"  CHANGED    {name}: {old_status} -> {status}")
+        if not any_change:
+            print("  No changes from last run.")
+        old_ok = sum(1 for s in old_tests.values() if s == "OK")
+        if ok != old_ok:
+            print(f"  Score: {old_ok}/{len(old_tests)} -> {ok}/{total}")
+
+    # Save golden baseline
+    BASELINE_DIR.mkdir(exist_ok=True)
+    golden_data = {
+        "timestamp": __import__("datetime").datetime.now().isoformat(),
+        "ok": ok,
+        "total": total,
+        "tests": {name: status for name, status, *_ in results},
+    }
+    (BASELINE_DIR / "golden.json").write_text(
+        json.dumps(golden_data, indent=2), encoding="utf-8"
+    )
+    print(f"\nBaseline saved: .ir_doctor/golden.json")
+
     return 0 if ok == total else 1
+
+
+def cmd_worklist(args: argparse.Namespace) -> int:
+    """Show functions that need recursive rewrite due to alloca aliasing.
+
+    Filters to only REAL alias bugs (no write-back), sorted by severity.
+    This is a direct work queue for the .mn source fixes.
+    """
+    text = pathlib.Path(args.file).read_text(encoding="utf-8")
+    mod = parse_ir(text)
+
+    if args.only:
+        mod.functions = {k: v for k, v in mod.functions.items() if args.only in k}
+
+    pathologies = run_audit(mod)
+
+    # Real alias bugs (no write-back)
+    real_alias = [p for p in pathologies if p.code == "ALLOCA_ALIAS"]
+    mitigated = [p for p in pathologies if p.code == "ALLOCA_ALIAS_MITIGATED"]
+    loop_push = [p for p in pathologies if p.code == "LOOP_PUSH"]
+
+    print(f"Alloca Aliasing Work Queue")
+    print("=" * 72)
+    print(f"  Real bugs (need recursive rewrite): {len(real_alias)}")
+    print(f"  Mitigated (write-back exists):      {len(mitigated)}")
+    print(f"  For-loop push patterns (all):       {len(loop_push)}")
+
+    if real_alias:
+        print(f"\nFunctions needing recursive rewrite:")
+        print("-" * 72)
+        for p in sorted(real_alias, key=lambda p: p.function):
+            fn = mod.functions.get(p.function)
+            # Map to .mn module name
+            parts = p.function.split("__", 1)
+            mn_module = parts[0] if len(parts) > 1 else "?"
+            mn_func = parts[1] if len(parts) > 1 else p.function
+            size = fn.instructions if fn else 0
+            pushes = fn.list_pushes if fn else 0
+            print(f"  {mn_module + '/' + mn_func:<50s} {size:>5d} instr  {pushes:>2d} push")
+
+    if mitigated:
+        print(f"\nMitigated (probably safe, verify manually):")
+        print("-" * 72)
+        for p in sorted(mitigated, key=lambda p: p.function):
+            parts = p.function.split("__", 1)
+            mn_module = parts[0] if len(parts) > 1 else "?"
+            mn_func = parts[1] if len(parts) > 1 else p.function
+            print(f"  {mn_module + '/' + mn_func:<50s} (write-back)")
+
+    return 1 if real_alias else 0
+
+
+def cmd_extract(args: argparse.Namespace) -> int:
+    """Extract and display a single function's IR from a .ll file.
+
+    Replaces manual `sed -n '/^define.*funcname/,/^}/p' file.ll` piping.
+    """
+    text = pathlib.Path(args.file).read_text(encoding="utf-8")
+    mod = parse_ir(text)
+
+    name = args.func_name
+    # Find by exact match or substring
+    fn = mod.functions.get(name)
+    if not fn:
+        matches = [f for f in mod.functions.values() if name in f.name]
+        if len(matches) == 1:
+            fn = matches[0]
+        elif len(matches) > 1:
+            print(f"Ambiguous: {name} matches {len(matches)} functions:")
+            for m in matches[:20]:
+                print(f"  {m.name}")
+            return 1
+        else:
+            print(f"Function not found: {name}")
+            print(f"Available ({len(mod.functions)}):")
+            for n in sorted(mod.functions)[:30]:
+                print(f"  {n}")
+            if len(mod.functions) > 30:
+                print(f"  ... and {len(mod.functions) - 30} more")
+            return 1
+
+    # Print signature + body
+    print(f"{fn.signature} {{")
+    print(fn.body)
+    print("}")
+
+    # Print metrics summary
+    print(f"\n--- {fn.name} ---")
+    print(f"  Lines: {fn.line_start}-{fn.line_end}  Instr: {fn.instructions}  "
+          f"BB: {fn.basic_blocks}  Alloc: {fn.allocas}  Stack: {fn.alloca_bytes}B")
+    print(f"  Calls: {fn.calls}  Switch: {fn.switches}  Push: {fn.list_pushes}  "
+          f"StrEq: {fn.str_eqs}  Hash: {fn.body_hash}")
+
+    # Run detectors on just this function
+    single_mod = IRModule(source="", functions={fn.name: fn})
+    pathologies = run_audit(single_mod)
+    if pathologies:
+        print(f"\n  Issues ({len(pathologies)}):")
+        for p in pathologies:
+            print(f"    [{_severity_icon(p.severity)}] {p.code}: {p.message}")
+
+    return 0
+
+
+def cmd_selftest(args: argparse.Namespace) -> int:
+    """Test self-compilation: compile mnc_all.mn through stage1.
+
+    Reports: how many lines of IR were produced, how many functions
+    were emitted, whether llvm-as validates, and memory usage.
+    """
+    stage1 = pathlib.Path(args.stage1)
+    mnc_all = ROOT / "mapanare" / "self" / "mnc_all.mn"
+
+    if not stage1.exists():
+        print(f"Stage1 binary not found: {stage1}", file=sys.stderr)
+        return 1
+    if not mnc_all.exists():
+        print(f"mnc_all.mn not found. Run: python scripts/concat_self.py", file=sys.stderr)
+        return 1
+
+    print(f"Self-compiling {mnc_all.name} ({mnc_all.stat().st_size // 1024} KB)...")
+
+    # Compile with timeout and memory tracking
+    import time as _time
+    t0 = _time.monotonic()
+    try:
+        r = subprocess.run(
+            [str(stage1), str(mnc_all)],
+            capture_output=True, text=True, timeout=300,
+        )
+        elapsed = _time.monotonic() - t0
+        ir = r.stdout
+        exit_code = r.returncode
+    except subprocess.TimeoutExpired:
+        print("TIMEOUT (300s)")
+        return 1
+    except OSError as e:
+        print(f"Cannot run stage1: {e}")
+        return 1
+
+    n_lines = ir.count("\n")
+    mod = parse_ir(ir)
+    n_fns = len(mod.functions)
+    n_declares = len(mod.declares)
+    n_structs = len(mod.struct_types)
+
+    print(f"  Exit code:  {exit_code}")
+    print(f"  Time:       {elapsed:.1f}s")
+    print(f"  IR lines:   {n_lines}")
+    print(f"  Functions:  {n_fns}")
+    print(f"  Declares:   {n_declares}")
+    print(f"  Structs:    {n_structs}")
+
+    if n_fns > 0:
+        valid, err = validate_ir(ir)
+        print(f"  llvm-as:    {'VALID' if valid else 'INVALID: ' + err}")
+        pathologies = run_audit(mod)
+        n_errs = sum(1 for p in pathologies if p.severity == "error")
+        n_warns = sum(1 for p in pathologies if p.severity == "warning")
+        print(f"  Errors:     {n_errs}")
+        print(f"  Warnings:   {n_warns}")
+    else:
+        print(f"  (No functions emitted — header only)")
+        if r.stderr:
+            print(f"  stderr: {r.stderr[:200]}")
+
+    # Compare with bootstrap
+    print(f"\n--- Bootstrap comparison ---")
+    try:
+        boot_ir = bootstrap_compile(mnc_all)
+        boot_mod = parse_ir(boot_ir)
+        print(f"  Bootstrap functions: {len(boot_mod.functions)}")
+        if n_fns > 0:
+            diffs = diff_modules(boot_mod, mod)
+            matched = sum(1 for d in diffs if d.status == "match")
+            print(f"  Matching:           {matched}/{len(diffs)}")
+    except Exception as e:
+        print(f"  Bootstrap failed: {e}")
+
+    return 0 if exit_code == 0 and n_fns > 0 else 1
+
+
+def cmd_memory(args: argparse.Namespace) -> int:
+    """Test memory scaling: compile synthetic inputs of increasing size.
+
+    Generates .mn files with N functions and measures peak RSS.
+    Helps detect O(N^2) memory regressions.
+    """
+    stage1 = pathlib.Path(args.stage1)
+
+    if not stage1.exists():
+        print(f"Stage1 binary not found: {stage1}", file=sys.stderr)
+        return 1
+
+    sizes = [10, 50, 100, 200, 500]
+    print(f"{'Fns':>5s} {'Lines':>6s} {'RSS MB':>7s} {'Time':>6s} {'IR Lines':>8s} {'Exit':>5s}")
+    print("-" * 45)
+
+    import time as _time
+    for n_fns in sizes:
+        # Generate synthetic .mn file with N functions
+        lines = []
+        for i in range(n_fns):
+            lines.append(f"fn f{i}(x: Int) -> Int {{ return x + {i} }}")
+        lines.append("fn main() { print(str(f0(42))) }")
+        source = "\n".join(lines)
+        n_lines = len(lines)
+
+        with tempfile.NamedTemporaryFile(suffix=".mn", mode="w", delete=False, encoding="utf-8") as f:
+            f.write(source)
+            tmp = f.name
+
+        try:
+            t0 = _time.monotonic()
+            # Use /usr/bin/time for RSS on Linux, fallback to no-RSS on other platforms
+            try:
+                r = subprocess.run(
+                    ["/usr/bin/time", "-f", "%M", str(stage1), tmp],
+                    capture_output=True, text=True, timeout=120,
+                )
+                elapsed = _time.monotonic() - t0
+                # /usr/bin/time writes RSS to stderr
+                rss_lines = [l for l in r.stderr.strip().splitlines() if l.strip().isdigit()]
+                rss_kb = int(rss_lines[-1]) if rss_lines else 0
+                rss_mb = rss_kb / 1024
+            except (FileNotFoundError, OSError):
+                r = subprocess.run(
+                    [str(stage1), tmp],
+                    capture_output=True, text=True, timeout=120,
+                )
+                elapsed = _time.monotonic() - t0
+                rss_mb = 0
+
+            ir_lines = r.stdout.count("\n") if r.returncode == 0 else 0
+            exit_code = r.returncode
+            print(f"{n_fns:>5d} {n_lines:>6d} {rss_mb:>7.1f} {elapsed:>5.1f}s {ir_lines:>8d} {exit_code:>5d}")
+        except subprocess.TimeoutExpired:
+            print(f"{n_fns:>5d} {n_lines:>6d}     TIMEOUT")
+        finally:
+            pathlib.Path(tmp).unlink(missing_ok=True)
+
+    return 0
 
 
 def cmd_diff_ir(args: argparse.Namespace) -> int:
@@ -1139,6 +1572,21 @@ def main() -> int:
     # golden
     sub.add_parser("golden", help="Fresh compile + validate + audit ALL golden tests (WSL)")
 
+    # worklist
+    s_wl = sub.add_parser("worklist", help="Functions needing recursive rewrite (alloca alias bugs)")
+    s_wl.add_argument("file", help="Path to .ll file")
+
+    # extract
+    s_ext = sub.add_parser("extract", help="Extract one function's IR from a .ll file")
+    s_ext.add_argument("file", help="Path to .ll file")
+    s_ext.add_argument("func_name", help="Function name (exact or substring)")
+
+    # selftest
+    sub.add_parser("selftest", help="Self-compile mnc_all.mn through stage1 (WSL)")
+
+    # memory
+    sub.add_parser("memory", help="Test memory scaling with synthetic inputs (WSL)")
+
     # diff
     s_diff = sub.add_parser("diff", help="Compare bootstrap vs stage1 for a .mn file")
     s_diff.add_argument("file", help="Path to .mn file")
@@ -1173,6 +1621,10 @@ def main() -> int:
         "audit": cmd_audit,
         "check": cmd_check,
         "golden": cmd_golden,
+        "worklist": cmd_worklist,
+        "extract": cmd_extract,
+        "selftest": cmd_selftest,
+        "memory": cmd_memory,
         "diff": cmd_diff,
         "diff-ir": cmd_diff_ir,
         "diff-all": cmd_diff_all,
