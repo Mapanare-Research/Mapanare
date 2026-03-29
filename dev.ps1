@@ -1,8 +1,9 @@
 # Mapanare dev launcher.
 #
 # Usage:
-#   .\dev.ps1                  # validate (default)
-#   .\dev.ps1 validate         # watch Python files and validate on changes
+#   .\dev.ps1                  # validate (default, runs once)
+#   .\dev.ps1 validate         # same — run all checks once and exit
+#   .\dev.ps1 validate -Watch  # validate then watch for changes
 #   .\dev.ps1 test             # run pytest once
 #   .\dev.ps1 lint             # run all linters once
 #   .\dev.ps1 fmt              # auto-format and fix
@@ -13,7 +14,7 @@ param(
     [ValidateSet("validate", "test", "lint", "fmt", "e2e", "bench")]
     [string]$Mode = "validate",
 
-    [switch]$Once
+    [switch]$Watch
 )
 
 $ErrorActionPreference = "Stop"
@@ -154,7 +155,15 @@ function Invoke-AllChecks {
     # --- pytest ---
     Write-Host "  pytest          " -ForegroundColor Cyan -NoNewline
     $savedEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    $out = & pytest --tb=short -q 2>&1
+    # Use parallel execution if pytest-xdist is installed
+    $xdistArgs = @("--tb=short", "-q")
+    $savedEAP2 = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $xdistCheck = & python -c "import xdist" 2>&1
+    $ErrorActionPreference = $savedEAP2
+    if ($LASTEXITCODE -eq 0) {
+        $xdistArgs += @("-n", "auto")
+    }
+    $out = & pytest @xdistArgs 2>&1
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = $savedEAP
     if ($exitCode -eq 0) {
@@ -236,7 +245,14 @@ if ($Mode -eq "fmt") {
 # --- test mode ---
 if ($Mode -eq "test") {
     Write-Host "[dev] Running tests..." -ForegroundColor Cyan
-    & pytest tests/ -v
+    $savedEAP2 = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $xdistCheck = & python -c "import xdist" 2>&1
+    $ErrorActionPreference = $savedEAP2
+    if ($LASTEXITCODE -eq 0) {
+        & pytest tests/ -v -n auto --durations=20
+    } else {
+        & pytest tests/ -v --durations=20
+    }
     return
 }
 
@@ -260,26 +276,35 @@ if ($Mode -eq "lint") {
     return
 }
 
-# --- validate mode (watch + lint) ---
+# --- validate mode (run once, watch with -Watch) ---
 if ($Mode -eq "validate") {
+    Write-Host "[dev] Validating..." -ForegroundColor Cyan
+    Write-Host ""
+
+    $passed = Invoke-AllChecks
+
+    if (-not $Watch) {
+        if ($passed) {
+            Write-Host "[dev] All checks passed." -ForegroundColor Green
+        } else {
+            Write-Host "[dev] Some checks failed. See error.log for details." -ForegroundColor Red
+        }
+        return
+    }
+
+    # --- watch mode (opt-in with -Watch) ---
     $mapaPath = "$Root\mapanare"
     $runtimePath = "$Root\runtime"
     $testsPath = "$Root\tests"
     $stdlibPath = "$Root\stdlib"
 
-    Write-Host "[dev] Watching for lint + type + test errors" -ForegroundColor Cyan
+    Write-Host "[dev] Watching for changes..." -ForegroundColor Cyan
     Write-Host "[dev]   Compiler : $mapaPath" -ForegroundColor DarkGray
     Write-Host "[dev]   Runtime  : $runtimePath" -ForegroundColor DarkGray
     Write-Host "[dev]   Tests    : $testsPath" -ForegroundColor DarkGray
     Write-Host "[dev]   Stdlib   : $stdlibPath" -ForegroundColor DarkGray
     Write-Host "[dev] Press Ctrl+C to stop." -ForegroundColor DarkGray
     Write-Host ""
-
-    Invoke-AllChecks
-
-    if ($Once) {
-        return
-    }
 
     $watchers = @()
     $watchDirs = @($mapaPath, $runtimePath, $testsPath, $stdlibPath) | Where-Object { Test-Path $_ }

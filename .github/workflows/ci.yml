@@ -39,7 +39,7 @@ jobs:
         run: mypy mapanare/ runtime/
 
       - name: Run tests
-        run: pytest tests/ -v
+        run: pytest tests/ -v -n auto --durations=20
 
   native:
     name: C Runtime Tests

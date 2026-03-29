@@ -21,9 +21,9 @@ See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v2.0.0/PLAN
 **Before ANY commit or push**, run the full validation suite. This mirrors CI exactly and writes results to `error.log`:
 
 ```powershell
-.\dev.ps1                  # Full validate: black + ruff + mypy + gcc + pytest + WAT emission
-.\dev.ps1 validate         # Same as above (default mode), watches for changes
-.\dev.ps1 validate -Once   # Run once, no file watcher
+.\dev.ps1                  # Full validate: black + ruff + mypy + gcc + pytest + WAT emission (runs once)
+.\dev.ps1 validate         # Same as above (default mode), runs once and exits
+.\dev.ps1 validate -Watch  # Validate then watch for changes
 .\dev.ps1 test             # pytest only
 .\dev.ps1 lint             # Linters only (black + ruff + mypy)
 .\dev.ps1 fmt              # Auto-format (black + ruff --fix)

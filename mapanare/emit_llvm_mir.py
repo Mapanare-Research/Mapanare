@@ -3385,9 +3385,7 @@ class LLVMMIREmitter:
                     # Compare data pointers to skip the returned string
                     try:
                         drop_ptr = builder.extract_value(loaded, 0, name="drop.dptr")
-                        is_same = builder.icmp_unsigned(
-                            "==", drop_ptr, ret_ptr, name="drop.same"
-                        )
+                        is_same = builder.icmp_unsigned("==", drop_ptr, ret_ptr, name="drop.same")
                         fn_block = builder.function
                         free_bb = fn_block.append_basic_block(name="drop.free")
                         skip_bb = fn_block.append_basic_block(name="drop.skip")
@@ -3429,9 +3427,7 @@ class LLVMMIREmitter:
                     except (TypeError, AttributeError):
                         pass
                 # No return value to worry about — just null-check and free
-                is_null = builder.icmp_unsigned(
-                    "==", env_raw, null_ptr, name="drop.envnull"
-                )
+                is_null = builder.icmp_unsigned("==", env_raw, null_ptr, name="drop.envnull")
                 fn_block = builder.function
                 do_free_bb = fn_block.append_basic_block(name="drop.envdo")
                 skip_bb = fn_block.append_basic_block(name="drop.envskip")

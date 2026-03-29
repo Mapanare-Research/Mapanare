@@ -7,7 +7,7 @@ build:
 	pip install -e .
 
 test:
-	pytest tests/ -v
+	pytest tests/ -v -n auto --durations=20
 
 lint:
 	ruff check . && black --check . && mypy mapanare/ runtime/
