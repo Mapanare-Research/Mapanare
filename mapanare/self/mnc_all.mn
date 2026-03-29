@@ -5983,7 +5983,10 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
     let binop_opt: Option<BinOpKind> = binop_from_str(op)
     match binop_opt {
         Some(binop) => {
-            let result_ty: MIRType = if is_comparison_op(binop) { mir_bool() } else { lhs_val.ty }
+            // Use string comparison on the operator (not enum match on BinOpKind)
+            // because enum match falls through in the compiled binary
+            let is_cmp: Bool = op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=" || op == "and" || op == "or"
+            let result_ty: MIRType = if is_cmp { mir_bool() } else { lhs_val.ty }
             let dest_r: LowerResult = make_value(rhs_r.state, result_ty, "t")
             let s: LowerState = emit_instr(dest_r.state, Instruction::BinOp(dest_r.value, binop, lhs_val, rhs_val))
             return new_lower_result(dest_r.value, s)
@@ -6251,7 +6254,26 @@ fn lower_field_access(st: LowerState, obj: Expr, field_name: String) -> LowerRes
 // Namespace access lowering
 // ---------------------------------------------------------------------------
 
+fn is_enum_name(st: LowerState, name: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.enum_variants) { return false }
+        if st.enum_variants[i].enum_name == name { return true }
+        i = i + 1
+    }
+    return false
+}
+
 fn lower_namespace_access(st: LowerState, ns: String, member: String) -> LowerResult {
+    // Check if namespace is a registered enum → emit EnumInit
+    if is_enum_name(st, ns) {
+        let enum_ty: MIRType = mir_enum(ns)
+        let dest_r: LowerResult = make_value(st, enum_ty, "t")
+        let empty_args: List<Value> = []
+        let s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, member, empty_args))
+        return new_lower_result(dest_r.value, s)
+    }
+    // Otherwise: module function call
     let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
     let fn_name: String = ns + "_" + member
     let empty_args: List<Value> = []
@@ -8415,7 +8437,7 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
     // Build struct from a list of values (field order matches struct definition)
     let struct_ty: String = resolve_mir_type(ty)
     let mut s: EmitState = st
-    let dn: String = strip_percent(dest.name)
+    let dn: String = dest.name
     let mut agg: String = "undef"
     let nfields: Int = len(values)
 
@@ -8448,7 +8470,7 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
 
 fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<Value>) -> EmitState {
     let mut s: EmitState = st
-    let dn: String = strip_percent(dest.name)
+    let dn: String = dest.name
 
     // Create empty list
     let list_name: String = dn + ".new"
@@ -8990,19 +9012,9 @@ fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitStat
 fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
     match val_opt {
         Some(val) => {
-            let mut ty: String = resolve_mir_type(val.ty)
+            let ty: String = resolve_mir_type(val.ty)
             if ty == "void" {
                 return emit_line(st, emit_ret_void())
-            }
-            // If the value type is a fallback (i64) but the function's declared
-            // return type is different, use the function's return type and
-            // bitcast the value through memory.
-            if ty == "i64" && st.current_ret_type != "i64" && st.current_ret_type != "void" {
-                // The value's MIR type is unknown (i64) but the function returns an
-                // aggregate. The value might actually be the correct type (struct init
-                // assigns the right LLVM type), or it might truly be i64 (from a fallback).
-                // Just use the return type directly — LLVM will validate the actual types.
-                ty = st.current_ret_type
             }
             return emit_line(st, emit_ret(ty, val.name))
         },

@@ -1023,39 +1023,9 @@ class LLVMTextEmitter:
                 cloned = self._f("clr")
                 self._L(f"{cloned} = call {LIST} @__mn_list_clone({LIST}* {fp})")
                 self._L(f"store {LIST} {cloned}, {LIST}* {fp}")
-        # Recurse into struct-typed fields that contain lists (e.g., MIRModule
-        # inside LowerState). Only clone small/static lists to avoid OOM — skip
-        # 'functions' which is huge and grows during lowering.
-        for idx, (fn, ft) in enumerate(fields):
-            if ft == LIST or not ft.startswith("{"):
-                continue
-            mir_ft = self._struct_mir_types.get(sn, {}).get(idx)
-            if not mir_ft:
-                continue
-            sub_sn = getattr(getattr(mir_ft, "type_info", None), "name", "") or ""
-            if not sub_sn or sub_sn not in self._structs:
-                continue
-            sub_fields = self._structs[sub_sn]
-            # Only recurse if the sub-struct has list fields (excluding 'functions')
-            clone_indices = [
-                i for i, (sfn, sft) in enumerate(sub_fields)
-                if sft == LIST and sfn != "functions"
-            ]
-            if not clone_indices:
-                continue
-            sub_sty = self._struct_ty[sub_sn]
-            sfp = self._f("sfp")
-            self._L(f"{sfp} = getelementptr inbounds {sty}, {sty}* {addr}, i32 0, i32 {idx}")
-            if ft != sub_sty:
-                bc = self._f("sbc")
-                self._L(f"{bc} = bitcast {ft}* {sfp} to {sub_sty}*")
-                sfp = bc
-            for si in clone_indices:
-                nfp = self._f("nclf")
-                self._L(f"{nfp} = getelementptr inbounds {sub_sty}, {sub_sty}* {sfp}, i32 0, i32 {si}")
-                nclr = self._f("nclr")
-                self._L(f"{nclr} = call {LIST} @__mn_list_clone({LIST}* {nfp})")
-                self._L(f"store {LIST} {nclr}, {LIST}* {nfp}")
+        # Note: MIRModule's list fields (enums, structs, extern_fns, etc.) are
+        # static after registration pass 1 — they don't need cloning because
+        # they're never modified during pass 2. Cloning them causes OOM.
 
     def _struct_name_for_llvm_type(self, llvm_ty: str) -> str | None:
         """Find the struct name whose LLVM type matches."""

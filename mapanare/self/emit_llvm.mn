@@ -918,7 +918,7 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
     // Build struct from a list of values (field order matches struct definition)
     let struct_ty: String = resolve_mir_type(ty)
     let mut s: EmitState = st
-    let dn: String = strip_percent(dest.name)
+    let dn: String = dest.name
     let mut agg: String = "undef"
     let nfields: Int = len(values)
 
@@ -951,7 +951,7 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
 
 fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<Value>) -> EmitState {
     let mut s: EmitState = st
-    let dn: String = strip_percent(dest.name)
+    let dn: String = dest.name
 
     // Create empty list
     let list_name: String = dn + ".new"
@@ -1493,19 +1493,9 @@ fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitStat
 fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
     match val_opt {
         Some(val) => {
-            let mut ty: String = resolve_mir_type(val.ty)
+            let ty: String = resolve_mir_type(val.ty)
             if ty == "void" {
                 return emit_line(st, emit_ret_void())
-            }
-            // If the value type is a fallback (i64) but the function's declared
-            // return type is different, use the function's return type and
-            // bitcast the value through memory.
-            if ty == "i64" && st.current_ret_type != "i64" && st.current_ret_type != "void" {
-                // The value's MIR type is unknown (i64) but the function returns an
-                // aggregate. The value might actually be the correct type (struct init
-                // assigns the right LLVM type), or it might truly be i64 (from a fallback).
-                // Just use the return type directly — LLVM will validate the actual types.
-                ty = st.current_ret_type
             }
             return emit_line(st, emit_ret(ty, val.name))
         },
