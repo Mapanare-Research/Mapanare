@@ -44,7 +44,7 @@ def build() -> pathlib.Path:
     # 2. Post-process: make compile() and format_error() externally visible
     print("[2/6] Post-processing IR (external linkage for entry points) ...")
     # Remove 'internal' linkage from ALL function definitions.
-    # LLVM -O1 dead-code-eliminates internal functions it considers
+    # LLVM -O2 dead-code-eliminates internal functions it considers
     # unreachable, but with sret calling conventions it sometimes
     # misjudges reachability, stripping functions that ARE called.
     ir = ir.replace("define internal ", "define ")
@@ -63,7 +63,7 @@ def build() -> pathlib.Path:
     import shutil
 
     clang_bin = shutil.which("clang")
-    opt_flag = "-O0" if "--O0" in sys.argv else "-O2"
+    opt_flag = "-O2" if "--O2" in sys.argv else "-O2"
     if clang_bin:
         subprocess.run(
             [clang_bin, "-c", opt_flag, str(ir_path), "-o", str(obj_path)],
@@ -76,7 +76,7 @@ def build() -> pathlib.Path:
 
         obj_bytes = jit_compile_to_object(ir, opt_level=1)
         obj_path.write_bytes(obj_bytes)
-        print(f"  Object: {len(obj_bytes)} bytes → {obj_path} (llvmlite -O1)")
+        print(f"  Object: {len(obj_bytes)} bytes → {obj_path} (llvmlite -O2)")
 
     # 4. Compile C runtime
     print("[4/6] Compiling C runtime ...")
@@ -84,7 +84,7 @@ def build() -> pathlib.Path:
     core_o = SELF_DIR / "mapanare_core.o"
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
     subprocess.run(
-        [CC, "-c", "-O0", "-g", "-fPIC", "-I", str(NATIVE_DIR)]
+        [CC, "-c", "-O2", "-g", "-fPIC", "-I", str(NATIVE_DIR)]
         + asan_flags
         + [str(core_c), "-o", str(core_o)],
         check=True,
@@ -96,7 +96,7 @@ def build() -> pathlib.Path:
     main_c = SELF_DIR / "mnc_main.c"
     main_o = SELF_DIR / "mnc_main.o"
     subprocess.run(
-        [CC, "-c", "-O0", "-g"] + asan_flags + [str(main_c), "-o", str(main_o)],
+        [CC, "-c", "-O2", "-g"] + asan_flags + [str(main_c), "-o", str(main_o)],
         check=True,
     )
     print(f"  Wrapper: {main_o}")

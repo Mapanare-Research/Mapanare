@@ -6766,6 +6766,49 @@ fn get_block_label(st: LowerState, idx: Int) -> String {
 // Match lowering
 // ---------------------------------------------------------------------------
 
+struct MatchBuildResult {
+    state: LowerState,
+    arm_labels: List<String>,
+    arm_indices: List<Int>,
+    cases: List<SwitchCase>,
+    default_label: String
+}
+
+fn build_match_arms_rec(st: LowerState, arms: List<MatchArm>, idx: Int, r: MatchBuildResult) -> MatchBuildResult {
+    if idx >= len(arms) { return r }
+    let mut s: LowerState = r.state
+    let label_r: LowerResult = fresh_block_label(s, "match_arm")
+    s = label_r.state
+    let label: String = label_r.value.name
+    s = add_block(s, label)
+    r.arm_labels.push(label)
+    r.arm_indices.push(s.current_block_idx)
+    let arm: MatchArm = arms[idx]
+    let mut def: String = r.default_label
+    match arm.pattern {
+        ConstructorPat(name, _) => { r.cases.push(new_switch_case(name, label)) },
+        LiteralPat(expr) => { r.cases.push(new_switch_case(get_literal_value(expr), label)) },
+        IdentPat(name) => {
+            if is_enum_variant(s, name) {
+                r.cases.push(new_switch_case(name, label))
+            } else {
+                def = label
+            }
+        },
+        Wildcard => { def = label }
+    }
+    let next: MatchBuildResult = new MatchBuildResult { state: s, arm_labels: r.arm_labels, arm_indices: r.arm_indices, cases: r.cases, default_label: def }
+    return build_match_arms_rec(next.state, arms, idx + 1, next)
+}
+
+fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -> MatchBuildResult {
+    let labels: List<String> = []
+    let indices: List<Int> = []
+    let cases: List<SwitchCase> = []
+    let init: MatchBuildResult = new MatchBuildResult { state: st, arm_labels: labels, arm_indices: indices, cases: cases, default_label: merge_label }
+    return build_match_arms_rec(st, arms, 0, init)
+}
+
 fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResult {
     let subject_r: LowerResult = lower_expr(st, subject)
     let mut s: LowerState = subject_r.state
@@ -6780,53 +6823,15 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     s = add_block(s, merge_label)
     let merge_idx: Int = s.current_block_idx
 
-    // Create blocks for each arm
-    let mut arm_labels: List<String> = []
-    let mut arm_indices: List<Int> = []
-    let mut i: Int = 0
-    for _ in 0..1000 {
-        if i >= len(arms) { break }
-        let label_r: LowerResult = fresh_block_label(s, "match_arm")
-        s = label_r.state
-        let label: String = label_r.value.name
-        s = add_block(s, label)
-        arm_labels.push(label)
-        arm_indices.push(s.current_block_idx)
-        i = i + 1
-    }
-
-    // Build switch cases
-    let mut cases: List<SwitchCase> = []
-    let mut default_label: String = merge_label
-    let mut ci: Int = 0
-    for _ in 0..1000 {
-        if ci >= len(arms) { break }
-        let arm: MatchArm = arms[ci]
-        let label: String = arm_labels[ci]
-        match arm.pattern {
-            ConstructorPat(name, _) => {
-                let sc: SwitchCase = new_switch_case(name, label)
-                cases.push(sc)
-            },
-            LiteralPat(expr) => {
-                let lit_val: String = get_literal_value(expr)
-                let sc: SwitchCase = new_switch_case(lit_val, label)
-                cases.push(sc)
-            },
-            IdentPat(name) => {
-                if is_enum_variant(s, name) {
-                    let sc: SwitchCase = new_switch_case(name, label)
-                    cases.push(sc)
-                } else {
-                    default_label = label
-                }
-            },
-            Wildcard => {
-                default_label = label
-            }
-        }
-        ci = ci + 1
-    }
+    // Create arm blocks AND build switch cases.
+    // Note: we use build_match_arms which returns accumulated results,
+    // avoiding the for-loop local variable aliasing bug in the compiled binary.
+    let build_r: MatchBuildResult = build_match_arms(s, arms, merge_label)
+    s = build_r.state
+    let arm_labels: List<String> = build_r.arm_labels
+    let arm_indices: List<Int> = build_r.arm_indices
+    let cases: List<SwitchCase> = build_r.cases
+    let default_label: String = build_r.default_label
 
     // Emit switch or branch (in the entry block, not the last arm block)
     s = set_block(s, match_entry_idx)
