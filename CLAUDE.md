@@ -76,6 +76,13 @@ python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 --run  # Also ru
 python scripts/test_native.py --bless                            # Regenerate reference files
 python scripts/test_native.py --filter fib -v                    # One test, verbose
 
+# Rebuild cycle (WSL) — one command for the full edit-compile-test loop
+bash scripts/rebuild.sh              # concat + build + golden (default)
+bash scripts/rebuild.sh quick        # concat + build only (fast iteration)
+bash scripts/rebuild.sh full         # concat + build + golden + selftest + memory
+bash scripts/rebuild.sh audit        # concat + build + audit main.ll
+bash scripts/rebuild.sh worklist     # concat + build + show alloca alias work queue
+
 # IR Doctor — per-function diagnostics for the self-hosted compiler
 # Detects: ALLOCA_ALIAS (real vs mitigated), EMPTY_SWITCH, RET_TYPE_MISMATCH,
 #          MISSING_PERCENT, DUPLICATE_CASE, PHI_UNDEF_REF, LOOP_PUSH, etc.
@@ -95,6 +102,13 @@ python scripts/ir_doctor.py diff tests/golden/07_enum_match.mn       # Bootstrap
 python scripts/ir_doctor.py diff-ir a.ll b.ll                        # Compare two .ll files
 python scripts/ir_doctor.py diff-all                                 # All golden tests (WSL)
 python scripts/ir_doctor.py snapshot                                 # Generate .stage1.ll files (WSL)
+
+# MIR Trace — debug type inference issues in the Python lowerer
+python scripts/mir_trace.py tests/golden/10_result.mn divide         # Trace types for one function
+python scripts/mir_trace.py tests/golden/07_enum_match.mn            # Trace all functions in file
+python scripts/mir_trace.py tests/golden/10_result.mn divide -v      # Verbose (all instructions)
+python scripts/mir_trace.py tests/golden/10_result.mn divide --json  # JSON output
+python scripts/mir_trace.py tests/golden/10_result.mn divide --compare  # Compare MIR vs stage1 IR
 
 # Self-hosted compiler build + fixed-point (WSL/Linux only)
 python scripts/build_stage1.py                   # Build mnc-stage1 from Python bootstrap
