@@ -663,7 +663,7 @@ class LLVMMIREmitter:
             {
                 "language": ir.DIToken("DW_LANG_C"),
                 "file": self._di_file,
-                "producer": "mapanare 1.0.0",
+                "producer": "mapanare 2.0.1",
                 "isOptimized": False,
                 "runtimeVersion": 0,
                 "emissionKind": ir.DIToken("FullDebug"),

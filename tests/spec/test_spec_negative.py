@@ -151,7 +151,8 @@ class TestDuplicateDefinitions:
 
 class TestNonExhaustiveMatch:
     def test_missing_variant(self) -> None:
-        _check_errors(textwrap.dedent("""\
+        _check_err(
+            textwrap.dedent("""\
             enum Color {
                 Red,
                 Green,
@@ -163,9 +164,9 @@ class TestNonExhaustiveMatch:
                     Green => "green"
                 }
             }
-        """))
-        # Non-exhaustive match may or may not be enforced yet
-        pass
+        """),
+            "Non-exhaustive match",
+        )
 
 
 # ── Parse errors ──

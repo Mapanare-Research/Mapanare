@@ -250,6 +250,19 @@ def _compile_multi_module_llvm(
 
 def cmd_compile(args: argparse.Namespace) -> None:
     """Compile an .mn source file to Python."""
+    import warnings
+
+    warnings.warn(
+        "The 'compile' subcommand targets the deprecated Python backend. "
+        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead.",
+        DeprecationWarning,
+        stacklevel=1,
+    )
+    print(
+        "warning: 'mapanare compile' targets the deprecated Python backend. "
+        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead.",
+        file=sys.stderr,
+    )
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     python_path: list[str] = getattr(args, "python_path", None) or []
@@ -332,8 +345,23 @@ def cmd_check(args: argparse.Namespace) -> None:
         for err in sem_errors:
             from mapanare.ast_nodes import Span
 
-            # With --werror, promote warnings to errors
-            if err.severity == "warning" and not werror:
+            # With --werror, promote warnings to errors; otherwise still show them
+            is_warning = err.severity == "warning"
+            if is_warning and not werror:
+                span = Span(
+                    line=err.line,
+                    column=err.column,
+                    end_line=err.line,
+                    end_column=err.column + 1,
+                )
+                all_diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.WARNING,
+                        message=err.message,
+                        filename=err.filename,
+                        labels=[Label(span=span, primary=True)],
+                    )
+                )
                 continue
             span = Span(
                 line=err.line, column=err.column, end_line=err.line, end_column=err.column + 1

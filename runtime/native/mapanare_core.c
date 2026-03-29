@@ -53,11 +53,31 @@ static int64_t mn_checked_mul(int64_t a, int64_t b) {
                 (long long)a, (long long)b);
         exit(1);
     }
+    if (a > 0 && b < 0 && b < INT64_MIN / a) {
+        fprintf(stderr, "mapanare: integer overflow in %lld * %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
+    if (a < 0 && b > 0 && a < INT64_MIN / b) {
+        fprintf(stderr, "mapanare: integer overflow in %lld * %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
+    if (a < 0 && b < 0 && a < INT64_MAX / b) {
+        fprintf(stderr, "mapanare: integer overflow in %lld * %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
     return a * b;
 }
 
 static int64_t mn_checked_add(int64_t a, int64_t b) {
-    if (a > 0 && b > INT64_MAX - a) {
+    if (b > 0 && a > INT64_MAX - b) {
+        fprintf(stderr, "mapanare: integer overflow in %lld + %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
+    if (b < 0 && a < INT64_MIN - b) {
         fprintf(stderr, "mapanare: integer overflow in %lld + %lld\n",
                 (long long)a, (long long)b);
         exit(1);

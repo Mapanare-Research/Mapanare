@@ -820,8 +820,8 @@ class SemanticChecker:
         return UNKNOWN_TYPE
 
     def _check_match_exhaustiveness(self, expr: MatchExpr, subject_type: TypeInfo) -> None:
-        """Warn if a match on an enum type does not cover all variants."""
-        from mapanare.ast_nodes import ConstructorPattern, WildcardPattern
+        """Error if a match on an enum type does not cover all variants."""
+        from mapanare.ast_nodes import ConstructorPattern, IdentPattern, WildcardPattern
 
         if subject_type.kind != TypeKind.ENUM or not subject_type.name:
             return
@@ -843,6 +843,8 @@ class SemanticChecker:
                 break
             if isinstance(arm.pattern, ConstructorPattern):
                 covered_variants.add(arm.pattern.name)
+            elif isinstance(arm.pattern, IdentPattern) and arm.pattern.name in all_variants:
+                covered_variants.add(arm.pattern.name)
 
         if has_wildcard:
             return
@@ -850,7 +852,7 @@ class SemanticChecker:
         missing = all_variants - covered_variants
         if missing:
             names = ", ".join(sorted(missing))
-            self._warning(
+            self._error(
                 f"Non-exhaustive match on '{subject_type.name}': " f"missing variant(s) {names}",
                 expr,
             )

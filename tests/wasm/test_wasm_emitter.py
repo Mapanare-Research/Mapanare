@@ -931,3 +931,44 @@ fn bool_as_int(b: Bool) -> Int {
 """
         wat = _emit(src)
         assert "i64.extend_i32_s" in wat or "i64.extend_i32_u" in wat
+
+
+# ---------------------------------------------------------------------------
+# str(int) correctness tests (P1 — v2.0.1)
+# ---------------------------------------------------------------------------
+
+
+class TestStrIntConversion:
+    """Verify the WASM str(int) builtin emits a correct reversal loop."""
+
+    def test_str_int_builtin_present(self) -> None:
+        """str(int) helper must be emitted when str() is called on an Int."""
+        src = "fn main() { print(str(123)); }"
+        wat = _emit(src)
+        assert "$__builtin_str_i64" in wat
+
+    def test_str_int_reversal_has_swap(self) -> None:
+        """The digit reversal loop must contain actual byte swap instructions."""
+        src = "fn main() { print(str(42)); }"
+        wat = _emit(src)
+        assert "i32.load8_u" in wat
+        assert "$rev" in wat
+
+    def test_str_int_negative_handling(self) -> None:
+        """str(int) must handle negative numbers (emit '-' prefix)."""
+        src = "fn main() { print(str(-1)); }"
+        wat = _emit(src)
+        assert "i32.const 45" in wat
+
+    def test_str_int_zero_handling(self) -> None:
+        """str(0) must produce '0', not empty string."""
+        src = "fn main() { print(str(0)); }"
+        wat = _emit(src)
+        assert "i32.const 48" in wat
+
+    def test_str_int_inside_println(self) -> None:
+        """str(int) inside println — the most common user path."""
+        src = "fn main() { println(str(9)); }"
+        wat = _emit(src)
+        assert "$__builtin_str_i64" in wat
+        assert "$__builtin_println_str" in wat

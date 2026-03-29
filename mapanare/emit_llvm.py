@@ -2443,7 +2443,7 @@ class LLVMEmitter:
                 idx = field_names.index(node.field_name)
                 try:
                     return self.builder.extract_value(obj, idx, name=f"{sname}.{node.field_name}")
-                except Exception:
+                except (IndexError, TypeError):
                     continue
 
         # For MnString, .len is at index 1

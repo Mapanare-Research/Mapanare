@@ -27,6 +27,9 @@
   #define mn_dlerror()          "LoadLibrary failed"
 #else
   #include <dlfcn.h>
+  #include <unistd.h>
+  #include <fcntl.h>
+  #include <sys/wait.h>
   #define mn_dlopen(path)       dlopen(path, RTLD_LAZY | RTLD_LOCAL)
   #define mn_dlsym(handle, sym) dlsym(handle, sym)
   #define mn_dlclose(handle)    dlclose(handle)
@@ -38,6 +41,14 @@
  * ----------------------------------------------------------------------- */
 
 static mn_gpu_ctx_t g_gpu_ctx;
+
+#ifdef _WIN32
+static volatile LONG g_gpu_init_once = 0;
+#else
+#include <pthread.h>
+static pthread_once_t g_gpu_init_once = PTHREAD_ONCE_INIT;
+#endif
+static int g_gpu_init_result = -1;
 
 /* -----------------------------------------------------------------------
  * Built-in PTX kernels for CUDA tensor operations
@@ -807,43 +818,94 @@ static uint32_t *vk_compile_glsl(const char *glsl_source, size_t *out_size_bytes
     fputs(glsl_source, f);
     fclose(f);
 
-    /* Try glslc first (Vulkan SDK), then glslangValidator */
-    char cmd[512];
+    /* Try glslc first (Vulkan SDK), then glslangValidator.
+     * Uses direct process execution (no shell) to avoid command injection. */
     int rc = -1;
 
 #if MAPANARE_PLATFORM_MOBILE
-    /* system() is unavailable on iOS/Android — GLSL runtime compilation
-     * not supported on mobile. Use pre-compiled SPIR-V blobs instead. */
-    (void)cmd;
+    /* Process spawning is unavailable/sandboxed on iOS/Android — GLSL runtime
+     * compilation not supported on mobile. Use pre-compiled SPIR-V blobs. */
     (void)rc;
     remove(tmp_glsl);
     return NULL;
 #else /* desktop: compile GLSL at runtime */
 
 #ifdef _WIN32
-    snprintf(cmd, sizeof(cmd),
-             "glslc.exe -fshader-stage=compute -o \"%s\" \"%s\" >nul 2>&1",
-             tmp_spirv, tmp_glsl);
-#else
-    snprintf(cmd, sizeof(cmd),
-             "glslc -fshader-stage=compute -o '%s' '%s' >/dev/null 2>&1",
-             tmp_spirv, tmp_glsl);
-#endif
-    rc = system(cmd);
+    {
+        STARTUPINFOA si;
+        PROCESS_INFORMATION pi;
+        char cmdline[512];
+        memset(&si, 0, sizeof(si));
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdInput = INVALID_HANDLE_VALUE;
+        si.hStdOutput = INVALID_HANDLE_VALUE;
+        si.hStdError = INVALID_HANDLE_VALUE;
 
-    if (rc != 0) {
-        /* Fallback to glslangValidator */
-#ifdef _WIN32
-        snprintf(cmd, sizeof(cmd),
-                 "glslangValidator.exe -V -S comp -o \"%s\" \"%s\" >nul 2>&1",
+        snprintf(cmdline, sizeof(cmdline),
+                 "glslc.exe -fshader-stage=compute -o \"%s\" \"%s\"",
                  tmp_spirv, tmp_glsl);
-#else
-        snprintf(cmd, sizeof(cmd),
-                 "glslangValidator -V -S comp -o '%s' '%s' >/dev/null 2>&1",
-                 tmp_spirv, tmp_glsl);
-#endif
-        rc = system(cmd);
+        if (CreateProcessA(NULL, cmdline, NULL, NULL, FALSE,
+                           CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+            WaitForSingleObject(pi.hProcess, INFINITE);
+            DWORD exit_code;
+            GetExitCodeProcess(pi.hProcess, &exit_code);
+            rc = (int)exit_code;
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        }
+        if (rc != 0) {
+            snprintf(cmdline, sizeof(cmdline),
+                     "glslangValidator.exe -V -S comp -o \"%s\" \"%s\"",
+                     tmp_spirv, tmp_glsl);
+            if (CreateProcessA(NULL, cmdline, NULL, NULL, FALSE,
+                               CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, INFINITE);
+                DWORD exit_code;
+                GetExitCodeProcess(pi.hProcess, &exit_code);
+                rc = (int)exit_code;
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+        }
     }
+#else
+    {
+        /* POSIX: fork+execvp with explicit argument array — no shell */
+        pid_t pid;
+        int status;
+
+        const char *glslc_argv[] = {
+            "glslc", "-fshader-stage=compute", "-o", tmp_spirv, tmp_glsl, NULL
+        };
+        pid = fork();
+        if (pid == 0) {
+            int devnull = open("/dev/null", O_WRONLY);
+            if (devnull >= 0) { dup2(devnull, 1); dup2(devnull, 2); close(devnull); }
+            execvp("glslc", (char *const *)glslc_argv);
+            _exit(127);
+        } else if (pid > 0) {
+            waitpid(pid, &status, 0);
+            rc = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+        }
+
+        if (rc != 0) {
+            const char *validator_argv[] = {
+                "glslangValidator", "-V", "-S", "comp", "-o", tmp_spirv, tmp_glsl, NULL
+            };
+            pid = fork();
+            if (pid == 0) {
+                int devnull = open("/dev/null", O_WRONLY);
+                if (devnull >= 0) { dup2(devnull, 1); dup2(devnull, 2); close(devnull); }
+                execvp("glslangValidator", (char *const *)validator_argv);
+                _exit(127);
+            } else if (pid > 0) {
+                waitpid(pid, &status, 0);
+                rc = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            }
+        }
+    }
+#endif
 #endif /* MAPANARE_PLATFORM_MOBILE */
 
     /* Remove temp GLSL file */
@@ -913,9 +975,7 @@ static int vk_find_memory_type(const MnVkPhysicalDeviceMemoryProperties *props,
 #include "mapanare_metal.h"
 #endif
 
-MN_GPU_EXPORT int mapanare_gpu_init(void) {
-    if (g_gpu_ctx.initialized) return 0;
-
+static void mapanare_gpu_init_impl(void) {
     memset(&g_gpu_ctx, 0, sizeof(g_gpu_ctx));
 
     int cuda_ok = 0;
@@ -971,12 +1031,25 @@ MN_GPU_EXPORT int mapanare_gpu_init(void) {
 #endif
 
     if (!cuda_ok && !vulkan_ok && !metal_ok) {
-        return -1;
+        g_gpu_init_result = -1;
+        return;
     }
 
     g_gpu_ctx.prefer_cuda = cuda_ok;
     g_gpu_ctx.initialized = 1;
-    return 0;
+    g_gpu_init_result = 0;
+}
+
+MN_GPU_EXPORT int mapanare_gpu_init(void) {
+    /* Thread-safe one-shot initialization */
+#ifdef _WIN32
+    if (InterlockedCompareExchange(&g_gpu_init_once, 1, 0) == 0) {
+        mapanare_gpu_init_impl();
+    }
+#else
+    pthread_once(&g_gpu_init_once, mapanare_gpu_init_impl);
+#endif
+    return g_gpu_init_result;
 }
 
 MN_GPU_EXPORT void mapanare_gpu_shutdown(void) {

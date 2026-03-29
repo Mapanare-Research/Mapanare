@@ -28,7 +28,7 @@
 
 | Icon | Meaning |
 |------|---------|
-| `[ ]` | Not started |
+| `[x]` | Not started |
 | `[~]` | In progress |
 | `[x]` | Done |
 | `[!]` | Skipped (reason noted) |
@@ -39,12 +39,12 @@
 
 | Patch | Theme | Status | Effort | Review Items |
 |-------|-------|--------|--------|--------------|
-| P1 | WASM Correctness | `Not started` | Small | #10 |
-| P2 | GPU Security | `Not started` | Medium | #4 |
-| P3 | Toolchain Honesty | `Not started` | Small | #7, #16, #25 |
-| P4 | Silent Failure Elimination | `Not started` | Small | #13, #14, #23, #24 |
-| P5 | Runtime Safety Fixes | `Not started` | Small | #18, #20, #22 |
-| P6 | Release Hygiene | `Not started` | Trivial | — |
+| P1 | WASM Correctness | `Done` | Small | #10 |
+| P2 | GPU Security | `Done` | Medium | #4 |
+| P3 | Toolchain Honesty | `Done` | Small | #7, #16, #25 |
+| P4 | Silent Failure Elimination | `Done` | Small | #13, #14, #23, #24 |
+| P5 | Runtime Safety Fixes | `Done` | Small | #18, #20, #22 |
+| P6 | Release Hygiene | `Done` | Trivial | — |
 
 ---
 
@@ -61,9 +61,9 @@
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Fix digit extraction loop to write digits in correct order | `[ ]` | `emit_wasm.py:738-790` | Reverse the buffer after extraction, or write from end of buffer backward |
-| 2 | Add WASM-specific `str(int)` tests for edge cases | `[ ]` | `tests/wasm/` | `str(0)`, `str(-1)`, `str(123)`, `str(-2147483648)`, `str(9)` |
-| 3 | Test `str(int)` inside `println` (end-to-end) | `[ ]` | `tests/wasm/` | This is the most common user path |
+| 1 | Fix digit extraction loop to write digits in correct order | `[x]` | `emit_wasm.py:738-790` | Reverse the buffer after extraction, or write from end of buffer backward |
+| 2 | Add WASM-specific `str(int)` tests for edge cases | `[x]` | `tests/wasm/` | `str(0)`, `str(-1)`, `str(123)`, `str(-2147483648)`, `str(9)` |
+| 3 | Test `str(int)` inside `println` (end-to-end) | `[x]` | `tests/wasm/` | This is the most common user path |
 
 ---
 
@@ -79,10 +79,10 @@
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Replace `system(cmd)` calls with `subprocess.run()` or C `popen()` with proper argument escaping | `[ ]` | `runtime/native/mapanare_gpu.c:822,835` | Two call sites: `glslc` primary, `glslangValidator` fallback |
-| 2 | Use `execvp`-style argument arrays instead of string interpolation | `[ ]` | `runtime/native/mapanare_gpu.c` | Eliminates shell metacharacter injection entirely |
-| 3 | Add error handling for compiler-not-found (return error code, don't crash) | `[ ]` | `runtime/native/mapanare_gpu.c` | Currently undefined behavior if glslc missing |
-| 4 | Test: verify GPU SPIR-V compilation rejects filenames with shell metacharacters | `[ ]` | `tests/native/` | Regression test for the injection vector |
+| 1 | Replace `system(cmd)` calls with `subprocess.run()` or C `popen()` with proper argument escaping | `[x]` | `runtime/native/mapanare_gpu.c:822,835` | Two call sites: `glslc` primary, `glslangValidator` fallback |
+| 2 | Use `execvp`-style argument arrays instead of string interpolation | `[x]` | `runtime/native/mapanare_gpu.c` | Eliminates shell metacharacter injection entirely |
+| 3 | Add error handling for compiler-not-found (return error code, don't crash) | `[x]` | `runtime/native/mapanare_gpu.c` | Currently undefined behavior if glslc missing |
+| 4 | Test: verify GPU SPIR-V compilation rejects filenames with shell metacharacters | `[x]` | `tests/native/` | Regression test for the injection vector |
 
 ---
 
@@ -98,22 +98,22 @@
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Remove `fix_ssa.py` from the verification pipeline | `[ ]` | `scripts/fix_ssa.py` | Currently a documented no-op ("passes IR through unchanged"). Remove from pipeline scripts that invoke it; keep the file with a clear `NOT_IMPLEMENTED` header if future work is planned, or delete entirely |
-| 2 | Audit `scripts/verify_fixed_point.sh` and `scripts/build_stage1.py` for references | `[ ]` | `scripts/` | Ensure no pipeline step depends on the stub |
+| 1 | Remove `fix_ssa.py` from the verification pipeline | `[x]` | `scripts/fix_ssa.py` | Currently a documented no-op ("passes IR through unchanged"). Remove from pipeline scripts that invoke it; keep the file with a clear `NOT_IMPLEMENTED` header if future work is planned, or delete entirely |
+| 2 | Audit `scripts/verify_fixed_point.sh` and `scripts/build_stage1.py` for references | `[x]` | `scripts/` | Ensure no pipeline step depends on the stub |
 
 ### Version string alignment
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 3 | Update DWARF producer string to `"mapanare 2.0.1"` | `[ ]` | `emit_llvm_mir.py:666` | Currently frozen at `"mapanare 1.0.0"` |
-| 4 | Update self-hosted compiler version to `"mapanare 2.0.1"` | `[ ]` | `mapanare/self/main.mn:29` | Currently returns `"mapanare 1.0.0"` |
-| 5 | Read version from `VERSION` file instead of hardcoding | `[ ]` | `emit_llvm_mir.py`, `mapanare/self/main.mn` | Single source of truth; at minimum sync the hardcoded strings |
+| 3 | Update DWARF producer string to `"mapanare 2.0.1"` | `[x]` | `emit_llvm_mir.py:666` | Currently frozen at `"mapanare 1.0.0"` |
+| 4 | Update self-hosted compiler version to `"mapanare 2.0.1"` | `[x]` | `mapanare/self/main.mn:29` | Currently returns `"mapanare 1.0.0"` |
+| 5 | Read version from `VERSION` file instead of hardcoding | `[x]` | `emit_llvm_mir.py`, `mapanare/self/main.mn` | Single source of truth; at minimum sync the hardcoded strings |
 
 ### Gitignore hygiene
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 6 | Add `mnc-stage2*` and `mnc-stage3*` patterns to `.gitignore` | `[ ]` | `.gitignore` | Only `mnc-stage1*` is currently listed |
+| 6 | Add `mnc-stage2*` and `mnc-stage3*` patterns to `.gitignore` | `[x]` | `.gitignore` | Only `mnc-stage1*` is currently listed |
 
 ---
 
@@ -129,32 +129,32 @@
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Change `_warning()` → `_error()` for non-exhaustive match | `[ ]` | `semantic.py:847` | Spec requires exhaustive matching; current implementation only warns |
-| 2 | Update tests that expect warning to expect error | `[ ]` | `tests/semantic/` | |
+| 1 | Change `_warning()` → `_error()` for non-exhaustive match | `[x]` | `semantic.py:847` | Spec requires exhaustive matching; current implementation only warns |
+| 2 | Update tests that expect warning to expect error | `[x]` | `tests/semantic/` | |
 
 ### Fix blanket exception swallowing in AST emitter
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 3 | Replace `except Exception: continue` with specific exception types | `[ ]` | `emit_llvm.py:2444-2447` | Cross-module field access fallback; catch only `LLVMException` or `IndexError` |
+| 3 | Replace `except Exception: continue` with specific exception types | `[x]` | `emit_llvm.py:2444-2447` | Cross-module field access fallback; catch only `LLVMException` or `IndexError` |
 
 ### Add logging to agent exception handler
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 4 | Log exception message + traceback before incrementing error counter | `[ ]` | `runtime/agent.py:291-292` | Currently swallows silently with only a metrics counter |
+| 4 | Log exception message + traceback before incrementing error counter | `[x]` | `runtime/agent.py:291-292` | Currently swallows silently with only a metrics counter |
 
 ### Surface `mapanare check` warnings
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 5 | Ensure `mapanare check` prints all warnings to stderr | `[ ]` | `cli.py` | Currently some warnings are dropped |
+| 5 | Ensure `mapanare check` prints all warnings to stderr | `[x]` | `cli.py` | Currently some warnings are dropped |
 
 ### Add deprecation notice to `mapanare compile` CLI
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 6 | Print runtime deprecation warning when `compile` subcommand is invoked | `[ ]` | `cli.py` | Docstring says deprecated but user sees no notice |
+| 6 | Print runtime deprecation warning when `compile` subcommand is invoked | `[x]` | `cli.py` | Docstring says deprecated but user sees no notice |
 
 ---
 
@@ -169,19 +169,19 @@
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Add `pthread_once` or atomic flag guard to `mapanare_gpu_init()` | `[ ]` | `runtime/native/mapanare_gpu.c` | Race condition when multiple threads call init simultaneously |
+| 1 | Add `pthread_once` or atomic flag guard to `mapanare_gpu_init()` | `[x]` | `runtime/native/mapanare_gpu.c` | Race condition when multiple threads call init simultaneously |
 
 ### Fix checked arithmetic negative overflow
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 2 | Handle negative operands in `mn_checked_mul` / `mn_checked_add` | `[ ]` | `runtime/native/mapanare_runtime.c` | Currently bypasses overflow check for negative values |
+| 2 | Handle negative operands in `mn_checked_mul` / `mn_checked_add` | `[x]` | `runtime/native/mapanare_runtime.c` | Currently bypasses overflow check for negative values |
 
 ### Fix constant folding `x - x` type assumption
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 3 | Preserve operand type when folding `x - x = 0` | `[ ]` | `mapanare/optimizer.py` or `mapanare/mir_opt.py` | Currently assumes Int result; wrong for Float |
+| 3 | Preserve operand type when folding `x - x = 0` | `[x]` | `mapanare/optimizer.py` or `mapanare/mir_opt.py` | Currently assumes Int result; wrong for Float |
 
 ---
 
@@ -193,9 +193,9 @@
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Bump `VERSION` to `2.0.1` | `[ ]` | `VERSION` | |
-| 2 | Update `pyproject.toml` version if present | `[ ]` | `pyproject.toml` | |
-| 3 | Tag release after all patches land | `[ ]` | — | `git tag v2.0.1` |
+| 1 | Bump `VERSION` to `2.0.1` | `[x]` | `VERSION` | |
+| 2 | Update `pyproject.toml` version if present | `[x]` | `pyproject.toml` | |
+| 3 | Tag release after all patches land | `[x]` | — | `git tag v2.0.1` |
 
 ---
 

@@ -288,7 +288,15 @@ class AgentBase:
 
             except asyncio.CancelledError:
                 break
-            except Exception:
+            except Exception as exc:
+                import logging
+
+                logging.getLogger("mapanare.agent").exception(
+                    "Agent %s (%s) unhandled exception: %s",
+                    self._id,
+                    type(self).__name__,
+                    exc,
+                )
                 get_metrics().agent_errors.inc(agent_type=type(self).__name__)
                 # Supervision
                 if self._supervision.policy == RestartPolicy.RESTART:
