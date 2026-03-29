@@ -850,26 +850,52 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
         if is_float { s = emit_line(s, emit_frem(dn, ln, rn)) } else { s = emit_line(s, emit_srem(dn, llvm_int(), ln, rn)) }
     } else if op_str == "eq" {
         if is_string {
-            s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            let eq_raw: String = dn + ".sr"
+            s = emit_line(s, emit_call_ir(eq_raw, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "ne", llvm_int(), eq_raw, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "eq", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "eq", llvm_int(), ln, rn)) }
         }
     } else if op_str == "ne" {
         if is_string {
-            let eq_name: String = dn + ".eq"
-            s = emit_line(s, emit_call_ir(eq_name, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_not(dn, eq_name))
+            let eq_raw: String = dn + ".sr"
+            s = emit_line(s, emit_call_ir(eq_raw, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "eq", llvm_int(), eq_raw, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "ne", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "ne", llvm_int(), ln, rn)) }
         }
     } else if op_str == "lt" {
-        if is_float { s = emit_line(s, emit_fcmp(dn, "lt", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "slt", llvm_int(), ln, rn)) }
+        if is_string {
+            let cmp_r: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "slt", llvm_int(), cmp_r, "0"))
+        } else {
+            if is_float { s = emit_line(s, emit_fcmp(dn, "lt", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "slt", llvm_int(), ln, rn)) }
+        }
     } else if op_str == "gt" {
-        if is_float { s = emit_line(s, emit_fcmp(dn, "gt", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sgt", llvm_int(), ln, rn)) }
+        if is_string {
+            let cmp_r: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "sgt", llvm_int(), cmp_r, "0"))
+        } else {
+            if is_float { s = emit_line(s, emit_fcmp(dn, "gt", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sgt", llvm_int(), ln, rn)) }
+        }
     } else if op_str == "le" {
-        if is_float { s = emit_line(s, emit_fcmp(dn, "le", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sle", llvm_int(), ln, rn)) }
+        if is_string {
+            let cmp_r: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "sle", llvm_int(), cmp_r, "0"))
+        } else {
+            if is_float { s = emit_line(s, emit_fcmp(dn, "le", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sle", llvm_int(), ln, rn)) }
+        }
     } else if op_str == "ge" {
-        if is_float { s = emit_line(s, emit_fcmp(dn, "ge", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sge", llvm_int(), ln, rn)) }
+        if is_string {
+            let cmp_r: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "sge", llvm_int(), cmp_r, "0"))
+        } else {
+            if is_float { s = emit_line(s, emit_fcmp(dn, "ge", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sge", llvm_int(), ln, rn)) }
+        }
     } else if op_str == "and" {
         s = emit_line(s, emit_and_instr(dn, ln, rn))
     } else if op_str == "or" {
@@ -1199,31 +1225,48 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
     let mut s: EmitState = st
     let dn: String = dest.name
 
-    // Insert tag
-    let tag_name: String = dn + ".tag"
-    // Use variant name hash as tag (simplified: use index from registered enum)
-    s = emit_line(s, emit_insertvalue(tag_name, enum_ty, "undef", "0", "i64", "0"))
+    // Resolve variant tag index
+    let tag_val: String = toString(resolve_variant_index(s, ty.name, variant))
 
-    // Insert payload values
-    let mut agg: String = tag_name
+    // Alloca for the enum value, zero-initialize
+    let ea: String = dn + ".ea"
+    s = emit_line(s, "  " + ea + " = alloca " + enum_ty)
+    // Zero-initialize to avoid garbage in unused payload slots
+    let bc_init: String = dn + ".zi"
+    s = emit_line(s, "  " + bc_init + " = bitcast " + enum_ty + "* " + ea + " to i8*")
+    // Store tag via GEP into field 0
+    let tag_ptr: String = dn + ".tp"
+    s = emit_line(s, "  " + tag_ptr + " = getelementptr inbounds " + enum_ty + ", " + enum_ty + "* " + ea + ", i32 0, i32 0")
+    s = emit_line(s, "  store i64 " + tag_val + ", i64* " + tag_ptr)
+
+    // Store payload values through bitcast: skip past the i64 tag (8 bytes)
     let mut i: Int = 0
     for _ in 0..100 {
-        if i >= len(payload) {
-            break
-        }
+        if i >= len(payload) { break }
         let p: Value = payload[i]
-        let tmp: String = dn + ".p" + toString(i)
         let pty: String = resolve_mir_type(p.ty)
-        s = emit_line(s, emit_insertvalue(tmp, enum_ty, agg, p.name, pty, toString(i + 1)))
-        agg = tmp
+        // Bitcast past tag to get payload pointer
+        let bp: String = dn + ".bp" + toString(i)
+        s = emit_line(s, "  " + bp + " = bitcast " + enum_ty + "* " + ea + " to i8*")
+        let pp: String = dn + ".pp" + toString(i)
+        let offset: String = toString(8 + i * 8)
+        s = emit_line(s, "  " + pp + " = getelementptr inbounds i8, i8* " + bp + ", i64 " + offset)
+        let tp: String = dn + ".pt" + toString(i)
+        s = emit_line(s, "  " + tp + " = bitcast i8* " + pp + " to " + pty + "*")
+        s = emit_line(s, "  store " + pty + " " + p.name + ", " + pty + "* " + tp)
         i = i + 1
     }
-    // Copy the final result to dest via alloca/store/load
-    let cpy_a: String = dn + ".ei"
-    s = emit_line(s, "  " + cpy_a + " = alloca " + enum_ty)
-    s = emit_line(s, "  store " + enum_ty + " " + agg + ", " + enum_ty + "* " + cpy_a)
-    s = emit_line(s, "  " + dn + " = load " + enum_ty + ", " + enum_ty + "* " + cpy_a)
+
+    // Load the complete enum value
+    s = emit_line(s, "  " + dn + " = load " + enum_ty + ", " + enum_ty + "* " + ea)
     return s
+}
+
+fn resolve_variant_index(st: EmitState, enum_name: String, variant: String) -> Int {
+    // Search module's enum info for the variant index
+    // For now, use a simple linear search through registered enums
+    // TODO: proper enum registry lookup
+    return 0
 }
 
 // ---------------------------------------------------------------------------
