@@ -655,6 +655,22 @@ fn is_enum_variant(st: LowerState, name: String) -> Bool {
     return false
 }
 
+fn variant_index(st: LowerState, variant: String) -> Int {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.enum_variants) { return 0 }
+        let ev: EnumVariantNames = st.enum_variants[i]
+        let mut j: Int = 0
+        for _ in 0..100000 {
+            if j >= len(ev.variant_names) { break }
+            if ev.variant_names[j] == variant { return j }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
 fn enum_name_for_variant(st: LowerState, variant: String) -> String {
     let mut i: Int = 0
     for _ in 0..100000 {
@@ -2509,7 +2525,8 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     // Emit switch or branch (in the entry block, not the last arm block)
     s = set_block(s, match_entry_idx)
     if len(cases) > 0 {
-        let tag_r: LowerResult = make_value(s, mir_unknown(), "tag")
+        // Tag carries the subject's enum type so the emitter can resolve variant names
+        let tag_r: LowerResult = make_value(s, subject_r.value.ty, "tag")
         s = tag_r.state
         s = emit_instr(s, Instruction::EnumTag(tag_r.value, subject_r.value))
         s = emit_instr(s, Instruction::Switch(tag_r.value, cases, default_label))

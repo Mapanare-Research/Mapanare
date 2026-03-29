@@ -215,6 +215,7 @@ class LLVMTextEmitter:
         self._boxed_enum: dict[str, set[tuple[str, int]]] = {}
         self._boxed_struct: dict[str, set[int]] = {}
         self._boxed_struct_mir: dict[str, dict[int, MIRType]] = {}
+        self._struct_mir_types: dict[str, dict[int, MIRType]] = {}
         # function signatures
         self._sigs: dict[str, tuple[str, list[str], bool]] = {}
         self._decls: list[str] = []
@@ -435,6 +436,8 @@ class LLVMTextEmitter:
         self._structs[nm] = list(zip(fnames, ftypes))
         self._struct_idx[nm] = {n: i for i, n in enumerate(fnames)}
         self._struct_ty[nm] = "{" + ", ".join(ftypes) + "}"
+        # Preserve MIR types for nested list detection in deep clone
+        self._struct_mir_types[nm] = {i: ft for i, (_, ft) in enumerate(fields)}
         if boxed:
             self._boxed_struct[nm] = boxed
             self._boxed_struct_mir[nm] = {i: ft for i, (_, ft) in enumerate(fields) if i in boxed}
@@ -990,6 +993,10 @@ class LLVMTextEmitter:
         Without this, the bitwise copy shares the same heap pointer for each
         List field.  A realloc in one copy would free the other's data buffer,
         leading to double-free / use-after-free.
+
+        Also handles nested lists: if a list field's elements are structs
+        that contain list fields, uses __mn_list_deep_clone to recursively
+        clone those inner lists too (prevents nested copy aliasing).
         """
         fields = self._structs[sn]
         # Quick check: does this struct actually have list fields?
@@ -1009,14 +1016,78 @@ class LLVMTextEmitter:
             self._L(f"{bc} = bitcast {aty}* {addr} to {sty}*")
             addr = bc
         self._ensure("__mn_list_clone", LIST, [f"{LIST}*"])
+        for idx, (fn, ft) in enumerate(fields):
+            if ft == LIST:
+                fp = self._f("clf")
+                self._L(f"{fp} = getelementptr inbounds {sty}, {sty}* {addr}, i32 0, i32 {idx}")
+                cloned = self._f("clr")
+                self._L(f"{cloned} = call {LIST} @__mn_list_clone({LIST}* {fp})")
+                self._L(f"store {LIST} {cloned}, {LIST}* {fp}")
+
+    def _struct_name_for_llvm_type(self, llvm_ty: str) -> str | None:
+        """Find the struct name whose LLVM type matches."""
+        for sn, sty in self._struct_ty.items():
+            if sty == llvm_ty:
+                return sn
+        return None
+
+    def _clone_nested_struct_lists(self, ptr: str, sty: str, sn: str) -> None:
+        """Clone list fields inside a struct-typed field (e.g., MIRModule inside LowerState)."""
+        fields = self._structs[sn]
+        self._ensure("__mn_list_clone", LIST, [f"{LIST}*"])
         for idx, (_, ft) in enumerate(fields):
             if ft != LIST:
                 continue
-            fp = self._f("clf")
-            self._L(f"{fp} = getelementptr inbounds {sty}, {sty}* {addr}, i32 0, i32 {idx}")
-            cloned = self._f("clr")
+            fp = self._f("nclf")
+            self._L(f"{fp} = getelementptr inbounds {sty}, {sty}* {ptr}, i32 0, i32 {idx}")
+            cloned = self._f("nclr")
             self._L(f"{cloned} = call {LIST} @__mn_list_clone({LIST}* {fp})")
             self._L(f"store {LIST} {cloned}, {LIST}* {fp}")
+
+    def _find_nested_list_offsets(self, parent_sn: str, list_field_idx: int) -> list[int]:
+        """Find byte offsets of List fields within a list's element type.
+
+        Given a struct field that is a List, determine if the list's elements
+        are structs with nested list fields. Returns byte offsets of those
+        nested list fields within each element, or empty list if none.
+        """
+        # We need to know the element type of this list field.
+        # The element type info comes from the MIR type annotations.
+        # Check if this struct field's MIR type has List<StructType> args.
+        mir_fields = self._struct_mir_types.get(parent_sn, {})
+        mir_ty = mir_fields.get(list_field_idx)
+        if not mir_ty or not hasattr(mir_ty, "type_info"):
+            return []
+        ti = mir_ty.type_info
+        if not ti or not ti.args:
+            return []
+        # Get the element type
+        elem_ti = ti.args[0] if ti.args else None
+        if not elem_ti:
+            return []
+        elem_name = elem_ti.name if hasattr(elem_ti, "name") else ""
+        if not elem_name or elem_name not in self._structs:
+            return []
+        # Found the element struct — find its list field offsets
+        elem_fields = self._structs[elem_name]
+        elem_ty = self._struct_ty[elem_name]
+        offsets: list[int] = []
+        running_offset = 0
+        for _, eft in elem_fields:
+            if eft == LIST:
+                offsets.append(running_offset)
+            running_offset += _tsz(eft)
+        return offsets
+
+    def _emit_offset_array(self, offsets: list[int]) -> str:
+        """Emit a global constant array of i64 offsets and return its name."""
+        name = f"@.list_offsets.{self._ctr}"
+        self._ctr += 1
+        vals = ", ".join(f"i64 {o}" for o in offsets)
+        self._globals.append(f"{name} = private constant [{len(offsets)} x i64] [{vals}]")
+        gep = self._f("offp")
+        self._L(f"{gep} = getelementptr [{len(offsets)} x i64], [{len(offsets)} x i64]* {name}, i64 0, i64 0")
+        return gep
 
     # --- Cast ---
     def _do_cast(self, i: Cast) -> None:

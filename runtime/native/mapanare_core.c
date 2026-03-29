@@ -759,6 +759,23 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
     return dst;
 }
 
+MN_EXPORT MnList __mn_list_deep_clone(MnList *src, const int64_t *list_offsets, int64_t num_offsets) {
+    MnList dst = __mn_list_clone(src);
+    if (num_offsets <= 0 || list_offsets == NULL || dst.len <= 0) return dst;
+    /* After shallow-cloning, recursively clone any nested MnList fields
+     * at the given byte offsets within each element. */
+    for (int64_t i = 0; i < dst.len; i++) {
+        char *elem = dst.data + i * dst.elem_size;
+        for (int64_t j = 0; j < num_offsets; j++) {
+            MnList *nested = (MnList *)(elem + list_offsets[j]);
+            if (nested->data && nested->len > 0) {
+                *nested = __mn_list_clone(nested);
+            }
+        }
+    }
+    return dst;
+}
+
 MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
     int64_t es = a->elem_size;
     MnList result = __mn_list_new(es);

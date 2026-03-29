@@ -182,6 +182,11 @@ MN_EXPORT int64_t __mn_list_pop(MnList *list, void *out_ptr);
 /** Deep-clone a list: allocates a new data buffer and copies elements. */
 MN_EXPORT MnList __mn_list_clone(MnList *src);
 
+/** Deep-clone a list, also cloning nested MnList fields within each element.
+ *  list_offsets: array of byte offsets within each element where nested lists are.
+ *  num_offsets: number of offsets. */
+MN_EXPORT MnList __mn_list_deep_clone(MnList *src, const int64_t *list_offsets, int64_t num_offsets);
+
 /** Clear the list (set len to 0, keep capacity). */
 MN_EXPORT void __mn_list_clear(MnList *list);
 

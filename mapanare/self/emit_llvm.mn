@@ -520,10 +520,80 @@ fn is_enum_type(st: EmitState, name: String) -> Bool {
     return false
 }
 
+// Compute size of an LLVM type in i64 units (8-byte slots)
+fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
+    let resolved: String = resolve_mir_type(ty)
+    if resolved == "i64" { return 1 }
+    if resolved == "double" { return 1 }
+    if resolved == "i1" { return 1 }
+    if resolved == "i8" { return 1 }
+    if resolved == "i8*" { return 1 }
+    if resolved == "void" { return 0 }
+    // String: { i8*, i64 } = 2 slots
+    if resolved == "{ i8*, i64 }" { return 2 }
+    // List: { i8*, i64, i64, i64 } = 4 slots
+    if resolved == "{ i8*, i64, i64, i64 }" { return 4 }
+    // Range: { i64, i64 } = 2 slots
+    if resolved == "{ i64, i64 }" { return 2 }
+    // Option: { i1, T } ≈ 2 slots minimum
+    if ty.kind == "option" {
+        if len(ty.args) > 0 {
+            return 1 + type_size_in_slots(st, ty.args[0])
+        }
+        return 2
+    }
+    // Result: { i1, { T, E } }
+    if ty.kind == "result" { return 4 }
+    // Map: { i8*, i64 } = 2 slots
+    if ty.kind == "map" { return 2 }
+    // Enum: look up declared size from enum_infos
+    if ty.kind == "enum" {
+        // Search for the enum's type definition to get its actual slot count
+        let mut ei: Int = 0
+        for _ in 0..1000 {
+            if ei >= len(st.enum_infos) { break }
+            let e_info: EnumInfo = st.enum_infos[ei]
+            if e_info.name == ty.name {
+                // Already registered — look up its slot count from the type string
+                // The type was emitted as { i64, [N x i64] } → N+1 total slots
+                // For now, iterate its variants to compute max payload
+                let mut mp: Int = 0
+                let mut evi: Int = 0
+                for _ in 0..1000 {
+                    if evi >= len(e_info.variants) { break }
+                    let ev: EnumVariantInfo = e_info.variants[evi]
+                    let mut vsize: Int = 0
+                    let mut pi: Int = 0
+                    for _ in 0..100 {
+                        if pi >= len(ev.payload_types) { break }
+                        vsize = vsize + type_size_in_slots(st, ev.payload_types[pi])
+                        pi = pi + 1
+                    }
+                    if vsize > mp { mp = vsize }
+                    evi = evi + 1
+                }
+                return 1 + mp
+            }
+            ei = ei + 1
+        }
+        return 4
+    }
+    // Struct: look up from struct entries
+    if ty.kind == "struct" {
+        let struct_opt: Option<StructEntry> = find_struct_entry(st, ty.name)
+        match struct_opt {
+            Some(se) => { return len(se.field_types) },
+            _ => { return 8 }
+        }
+    }
+    // Default: 8 slots (conservative fallback)
+    return 8
+}
+
 fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
     // Tagged union: { i64 tag, payload... }
-    // Count max payload slots: each payload type gets 8 i64 slots (conservative)
-    // to handle struct payloads that expand to multiple fields.
+    // Each payload type gets 8 i64 slots (conservative) to handle
+    // struct payloads that expand to multiple fields.
     let mut max_payload: Int = 0
     let mut vi: Int = 0
     for _ in 0..1000 {
@@ -1702,6 +1772,8 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
 
 fn emit_mir_switch(st: EmitState, tag: Value, cases: List<SwitchCase>, default_bb: String) -> EmitState {
     let mut s: EmitState = emit_line(st, emit_switch_hdr(tag.name, default_bb))
+    // Resolve the enum name from the tag value's type for variant index lookup
+    let enum_name: String = tag.ty.name
 
     let mut i: Int = 0
     for _ in 0..1000 {
@@ -1710,7 +1782,19 @@ fn emit_mir_switch(st: EmitState, tag: Value, cases: List<SwitchCase>, default_b
             return s
         }
         let c: SwitchCase = cases[i]
-        s = emit_line(s, emit_switch_case(c.tag_value, c.block_label))
+        // If the case value is a variant name (not a number), resolve to integer index
+        // This mirrors the Python emitter's _vtag() method
+        let mut case_val: String = c.tag_value
+        if len(case_val) > 0 {
+            let first_ch: Int = c.tag_value.byte_at(0)
+            // If not a digit (0-9) and not '-', it's a variant name → resolve to index
+            if first_ch < 48 || first_ch > 57 {
+                if first_ch != 45 {
+                    case_val = toString(resolve_variant_index(s, enum_name, case_val))
+                }
+            }
+        }
+        s = emit_line(s, emit_switch_case(case_val, c.block_label))
         i = i + 1
     }
     s = emit_line(s, "  ]")
