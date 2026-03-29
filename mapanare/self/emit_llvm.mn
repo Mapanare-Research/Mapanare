@@ -1462,12 +1462,24 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         }
     }
 
-    // Build args string
+    // Look up registered function parameter types (more reliable than MIR)
+    let fn_opt_pre: Option<FnEntry> = find_function(s, fn_name)
+    let mut reg_param_types: List<String> = []
+    match fn_opt_pre {
+        Some(fe) => { reg_param_types = fe.param_types },
+        _ => {}
+    }
+
+    // Build args string, using registered param types when MIR type is unknown
     let mut args_str: String = ""
     let mut j: Int = 0
     for _ in 0..1000 {
         if j >= len(args) { break }
-        let aty: String = resolve_mir_type(args[j].ty)
+        let mut aty: String = resolve_mir_type(args[j].ty)
+        // If MIR type is unknown (i64) but registered type differs, use registered
+        if aty == "i64" && args[j].ty.kind == "unknown" && j < len(reg_param_types) {
+            aty = reg_param_types[j]
+        }
         let an: String = args[j].name
         if j > 0 {
             args_str = args_str + ", " + aty + " " + an
