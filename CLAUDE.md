@@ -100,6 +100,8 @@ python scripts/ir_doctor.py --top 15 table mapanare/self/main.ll     # Top 15 la
 python scripts/ir_doctor.py fingerprint mapanare/self/main.ll        # JSON per-function hashes
 python scripts/ir_doctor.py diff tests/golden/07_enum_match.mn       # Bootstrap vs stage1 (WSL)
 python scripts/ir_doctor.py diff-ir a.ll b.ll                        # Compare two .ll files
+python scripts/ir_doctor.py valgrind tests/golden/11_closure.mn       # Auto-run valgrind + map crash to fields (WSL)
+python scripts/ir_doctor.py valgrind 11_closure.mn --struct EmitState  # Map against a different struct
 python scripts/ir_doctor.py structmap LowerState                     # Show struct byte layout + field names
 python scripts/ir_doctor.py structmap LowerState --offset 176        # What field is at byte 176?
 python scripts/ir_doctor.py structmap                                # List all structs with sizes

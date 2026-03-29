@@ -1385,6 +1385,102 @@ def _diagnose_invalid_ir(ir: str, err: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def cmd_valgrind(args: argparse.Namespace) -> int:
+    """Run valgrind on stage1 + test file, auto-map crash offsets to field names.
+
+    Replaces the manual: run valgrind -> copy hex offset -> structmap --offset.
+    """
+    stage1 = pathlib.Path(args.stage1)
+    mn_path = pathlib.Path(args.test_file)
+    struct_name = args.struct or "LowerState"
+
+    if not stage1.exists():
+        print(f"Stage1 not found: {stage1}", file=sys.stderr)
+        return 1
+
+    # Parse struct layouts
+    all_source = ""
+    for mn_file in sorted(SELF_DIR.glob("*.mn")):
+        if mn_file.name != "mnc_all.mn":
+            all_source += mn_file.read_text(encoding="utf-8") + "\n"
+    structs = parse_mn_structs(all_source)
+    layout = structs.get(struct_name)
+
+    # Run valgrind
+    print(f"Running valgrind on: {stage1.name} {mn_path.name}")
+    try:
+        r = subprocess.run(
+            ["valgrind", "--track-origins=yes", "-q", "--error-exitcode=99",
+             str(stage1), str(mn_path)],
+            capture_output=True, text=True, timeout=120,
+        )
+    except FileNotFoundError:
+        print("valgrind not found. This command requires WSL/Linux.", file=sys.stderr)
+        return 1
+    except subprocess.TimeoutExpired:
+        print("Valgrind timed out (120s)")
+        return 1
+
+    stderr = r.stderr
+    print(f"Exit code: {r.returncode}")
+
+    # Parse valgrind output
+    # Extract crash function names
+    crash_fns = re.findall(r"by 0x[\dA-Fa-f]+:\s*(\w+)", stderr)
+    # Extract "Invalid read/write" with addresses
+    invalid_ops = re.findall(r"(Invalid (?:read|write) of size \d+)", stderr)
+    # Extract hex addresses
+    addrs = re.findall(r"Address (0x[\dA-Fa-f]+)", stderr)
+    # Extract "Uninitialised value" origins
+    uninit = re.findall(r"Uninitialised value was created by (.+)", stderr)
+    # Extract function+offset patterns like func+0x1234
+    fn_offsets = re.findall(r"(\w+)\+0x([\dA-Fa-f]+)", stderr)
+
+    print(f"\n--- Valgrind Summary ---")
+    if invalid_ops:
+        print(f"  Errors: {', '.join(set(invalid_ops))}")
+    if uninit:
+        print(f"  Origin: {uninit[0]}")
+    if crash_fns:
+        # Show unique crash path (deduped, in order)
+        seen: set[str] = set()
+        path = []
+        for fn in crash_fns:
+            if fn not in seen:
+                seen.add(fn)
+                path.append(fn)
+        print(f"  Call path: {' -> '.join(path[:8])}")
+
+    # Try to map function+offset to struct field
+    if layout and fn_offsets:
+        print(f"\n--- Struct Field Mapping ({struct_name}) ---")
+        print(format_struct_layout(layout))
+        for fn_name, hex_off in fn_offsets:
+            byte_off = int(hex_off, 16)
+            # The offset might be into the function, not the struct.
+            # Only map if it's within the struct size range.
+            if byte_off <= layout.total_size:
+                field_info = field_at_offset(layout, byte_off)
+                print(f"\n  {fn_name}+0x{hex_off} (byte {byte_off}): {field_info}")
+
+    # Log to journal
+    _journal_append({
+        "command": "valgrind",
+        "test": mn_path.name,
+        "exit_code": r.returncode,
+        "errors": invalid_ops[:5],
+        "crash_path": crash_fns[:8],
+        "uninit_origin": uninit[0] if uninit else None,
+    })
+
+    # Show raw stderr if verbose
+    if args.verbose:
+        print(f"\n--- Raw Valgrind Output ---")
+        print(stderr[:3000])
+
+    return 0 if r.returncode == 0 else 1
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     """Validate IR file with llvm-as."""
     text = pathlib.Path(args.file).read_text(encoding="utf-8")
@@ -2103,6 +2199,12 @@ def main() -> int:
     s_note = sub.add_parser("note", help="Add a note to the debug journal")
     s_note.add_argument("text", nargs="+", help="Note text")
 
+    # valgrind
+    s_vg = sub.add_parser("valgrind", help="Run valgrind + auto-map crash to struct fields (WSL)")
+    s_vg.add_argument("test_file", help="Path to .mn test file")
+    s_vg.add_argument("--struct", default="LowerState", help="Struct to map offsets against")
+    s_vg.add_argument("-v", "--verbose", action="store_true", help="Show raw valgrind output")
+
     # diff
     s_diff = sub.add_parser("diff", help="Compare bootstrap vs stage1 for a .mn file")
     s_diff.add_argument("file", help="Path to .mn file")
@@ -2148,6 +2250,7 @@ def main() -> int:
         "structmap": cmd_structmap,
         "journal": cmd_journal,
         "note": cmd_note,
+        "valgrind": cmd_valgrind,
         "diff": cmd_diff,
         "diff-ir": cmd_diff_ir,
         "diff-all": cmd_diff_all,
