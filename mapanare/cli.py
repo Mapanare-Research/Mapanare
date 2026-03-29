@@ -1124,6 +1124,13 @@ def cmd_lint(args: argparse.Namespace) -> None:
         print(f"lint: {args.source} OK — no warnings")
 
 
+def cmd_lsp(args: argparse.Namespace) -> None:
+    """Start the Mapanare language server (LSP over stdio)."""
+    from mapanare.lsp.server import main as lsp_main
+
+    lsp_main()
+
+
 def cmd_build_multi(args: argparse.Namespace) -> None:
     """Compile multiple .mn source files into a single linked LLVM IR / binary."""
     source_files = args.sources
@@ -1652,6 +1659,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_doc.add_argument("source", help="Path to .mn source file")
     p_doc.add_argument("-o", metavar="OUTPUT", help="Output .html file path", default=None)
     p_doc.set_defaults(func=cmd_doc)
+
+    # lsp
+    p_lsp = subparsers.add_parser("lsp", help="Start the Mapanare language server (LSP over stdio)")
+    p_lsp.set_defaults(func=cmd_lsp)
 
     # deploy
     p_deploy = subparsers.add_parser(

@@ -21,15 +21,22 @@ server = LanguageServer("mapanare-lsp", "v0.5.0")
 
 # Document cache: uri -> DocumentAnalysis
 _documents: dict[str, DocumentAnalysis] = {}
+# Source text cache: uri -> source string (needed for formatting and code actions)
+_sources: dict[str, str] = {}
+# Diagnostics with fix info: uri -> list of (lsp.Diagnostic, LspDiagnostic) pairs
+_fixable_diagnostics: dict[str, list[tuple[lsp.Diagnostic, object]]] = {}
 
 
 def _analyze_and_publish(uri: str, source: str) -> None:
     """Analyze a document and publish diagnostics."""
+    _sources[uri] = source
     analysis, diags = analyze_document(uri, source)
     if analysis:
         _documents[uri] = analysis
 
     diagnostics: list[lsp.Diagnostic] = []
+    fixable: list[tuple[lsp.Diagnostic, object]] = []
+
     for d in diags:
         line = max(0, d.line - 1)
         col = max(0, d.column - 1)
@@ -60,6 +67,12 @@ def _analyze_and_publish(uri: str, source: str) -> None:
 
         diagnostics.append(lsp_diag)
 
+        # Track fixable diagnostics (W002, W005)
+        if d.severity == "warning" and ("[W002]" in d.message or "[W005]" in d.message):
+            fixable.append((lsp_diag, d))
+
+    _fixable_diagnostics[uri] = fixable
+
     server.text_document_publish_diagnostics(
         lsp.PublishDiagnosticsParams(uri=uri, diagnostics=diagnostics)
     )
@@ -84,6 +97,13 @@ def on_initialize(params: lsp.InitializeParams) -> lsp.InitializeResult:
                 trigger_characters=[".", ":", "<"],
                 resolve_provider=False,
             ),
+            code_action_provider=lsp.CodeActionOptions(
+                code_action_kinds=[
+                    lsp.CodeActionKind.QuickFix,
+                    lsp.CodeActionKind.SourceFixAll,
+                ],
+            ),
+            document_formatting_provider=True,
         ),
     )
 
@@ -117,6 +137,8 @@ def on_save(params: lsp.DidSaveTextDocumentParams) -> None:
 def on_close(params: lsp.DidCloseTextDocumentParams) -> None:
     uri = params.text_document.uri
     _documents.pop(uri, None)
+    _sources.pop(uri, None)
+    _fixable_diagnostics.pop(uri, None)
     invalidate_document(uri)
     server.text_document_publish_diagnostics(lsp.PublishDiagnosticsParams(uri=uri, diagnostics=[]))
 
@@ -229,6 +251,130 @@ def on_completion(
         )
 
     return lsp.CompletionList(is_incomplete=False, items=items)
+
+
+# -- Code actions (Quick Fix) ------------------------------------------------
+
+
+@server.feature(lsp.TEXT_DOCUMENT_CODE_ACTION)
+def on_code_action(
+    params: lsp.CodeActionParams,
+) -> Optional[list[lsp.CodeAction]]:
+    uri = params.text_document.uri
+    fixable = _fixable_diagnostics.get(uri, [])
+    if not fixable:
+        return None
+
+    source = _sources.get(uri, "")
+    lines = source.split("\n")
+    actions: list[lsp.CodeAction] = []
+
+    for lsp_diag, raw_diag in fixable:
+        # Check if this diagnostic overlaps with the requested range
+        diag_range = lsp_diag.range
+        if diag_range.end.line < params.range.start.line:
+            continue
+        if diag_range.start.line > params.range.end.line:
+            continue
+
+        line_idx = diag_range.start.line
+        if line_idx >= len(lines):
+            continue
+
+        if "[W002]" in lsp_diag.message:
+            # Fix: remove the unused import line
+            edit = lsp.TextEdit(
+                range=lsp.Range(
+                    start=lsp.Position(line=line_idx, character=0),
+                    end=lsp.Position(line=line_idx + 1, character=0),
+                ),
+                new_text="",
+            )
+            actions.append(
+                lsp.CodeAction(
+                    title="Remove unused import",
+                    kind=lsp.CodeActionKind.QuickFix,
+                    diagnostics=[lsp_diag],
+                    edit=lsp.WorkspaceEdit(
+                        changes={uri: [edit]},
+                    ),
+                )
+            )
+
+        elif "[W005]" in lsp_diag.message:
+            # Fix: remove `mut` keyword
+            old_line = lines[line_idx]
+            new_line = old_line.replace("let mut ", "let ", 1)
+            if new_line != old_line:
+                edit = lsp.TextEdit(
+                    range=lsp.Range(
+                        start=lsp.Position(line=line_idx, character=0),
+                        end=lsp.Position(line=line_idx, character=len(old_line)),
+                    ),
+                    new_text=new_line,
+                )
+                actions.append(
+                    lsp.CodeAction(
+                        title="Remove unnecessary `mut`",
+                        kind=lsp.CodeActionKind.QuickFix,
+                        diagnostics=[lsp_diag],
+                        edit=lsp.WorkspaceEdit(
+                            changes={uri: [edit]},
+                        ),
+                    )
+                )
+
+    # "Fix all" action when there are multiple fixes
+    if len(actions) > 1:
+        all_edits: list[lsp.TextEdit] = []
+        all_diags: list[lsp.Diagnostic] = []
+        for action in actions:
+            if action.edit and action.edit.changes:
+                all_edits.extend(action.edit.changes.get(uri, []))
+            if action.diagnostics:
+                all_diags.extend(action.diagnostics)
+        actions.append(
+            lsp.CodeAction(
+                title="Fix all auto-fixable lint warnings",
+                kind=lsp.CodeActionKind.SourceFixAll,
+                diagnostics=all_diags,
+                edit=lsp.WorkspaceEdit(changes={uri: all_edits}),
+            )
+        )
+
+    return actions if actions else None
+
+
+# -- Document formatting -----------------------------------------------------
+
+
+@server.feature(lsp.TEXT_DOCUMENT_FORMATTING)
+def on_formatting(
+    params: lsp.DocumentFormattingParams,
+) -> Optional[list[lsp.TextEdit]]:
+    uri = params.text_document.uri
+    source = _sources.get(uri)
+    if source is None:
+        return None
+
+    from mapanare.cli import _format_mapanare
+
+    formatted = _format_mapanare(source)
+    if formatted == source:
+        return None
+
+    # Replace the entire document
+    line_count = source.count("\n")
+    last_line = source.split("\n")[-1] if source else ""
+    return [
+        lsp.TextEdit(
+            range=lsp.Range(
+                start=lsp.Position(line=0, character=0),
+                end=lsp.Position(line=line_count, character=len(last_line)),
+            ),
+            new_text=formatted,
+        )
+    ]
 
 
 def _map_completion_kind(kind: str) -> lsp.CompletionItemKind:
