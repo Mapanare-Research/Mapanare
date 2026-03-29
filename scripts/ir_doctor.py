@@ -867,8 +867,16 @@ def cmd_audit(args: argparse.Namespace) -> int:
             print(f"\n--- Delta from last audit ---")
             print(_format_baseline_diff(old_baseline, pathologies))
 
-        # Save new baseline
+        # Save new baseline + journal
         bp = _save_baseline(baseline_name, pathologies)
+        _journal_append({
+            "command": "audit",
+            "file": args.file,
+            "functions": len(mod.functions),
+            "issues": len(pathologies),
+            "errors": sum(1 for p in pathologies if p.severity == "error"),
+            "by_code": dict(defaultdict(int, {p.code: sum(1 for q in pathologies if q.code == p.code) for p in pathologies})),
+        })
         print(f"\nBaseline saved: {bp.relative_to(ROOT)}")
 
         if pathologies:
@@ -1043,6 +1051,8 @@ def validate_ir(ir_text: str) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 BASELINE_DIR = ROOT / ".ir_doctor"
+JOURNAL_FILE = BASELINE_DIR / "journal.jsonl"
+SELF_DIR = ROOT / "mapanare" / "self"
 
 
 def _save_baseline(name: str, pathologies: list[Pathology]) -> pathlib.Path:
@@ -1122,6 +1132,239 @@ def _format_baseline_diff(old: dict, new_pathologies: list[Pathology]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Struct field mapper — translate byte offsets to Mapanare field names
+# ---------------------------------------------------------------------------
+
+# LLVM type sizes (64-bit target)
+_LLVM_SIZES = {
+    "i1": 1, "i8": 1, "i16": 2, "i32": 4, "i64": 8,
+    "double": 8, "float": 4, "i8*": 8, "ptr": 8,
+}
+# Common Mapanare types and their LLVM representations
+_MN_TYPE_MAP = {
+    "Int": ("i64", 8),
+    "Float": ("double", 8),
+    "Bool": ("i1", 8),  # padded to 8 in structs
+    "String": ("{i8*, i64}", 16),
+    "Char": ("i8", 8),  # padded
+}
+_LIST_SIZE = 32  # {i8*, i64, i64, i64}
+_OPTION_SIZE = 16  # {i64, i8*} = {tag, payload_ptr}
+_ENUM_SIZE = 16  # {i64, i8*}
+
+
+def _mn_field_size(type_str: str) -> int:
+    """Estimate byte size of a Mapanare type in LLVM struct layout."""
+    type_str = type_str.strip()
+    if type_str in _MN_TYPE_MAP:
+        return _MN_TYPE_MAP[type_str][1]
+    if type_str.startswith("List<"):
+        return _LIST_SIZE
+    if type_str.startswith("Option<"):
+        return _OPTION_SIZE
+    if type_str.startswith("Result<"):
+        return 24  # {i1, {ptr, ptr}} padded
+    # Assume struct (will be resolved later)
+    return 0  # unknown
+
+
+@dataclass
+class StructField:
+    name: str
+    type_str: str
+    offset: int
+    size: int
+
+
+@dataclass
+class StructLayout:
+    name: str
+    fields: list[StructField]
+    total_size: int
+
+
+def parse_mn_structs(source: str) -> dict[str, StructLayout]:
+    """Parse struct definitions from .mn source code."""
+    structs: dict[str, StructLayout] = {}
+    # Match: struct Name { field1: Type1, field2: Type2, ... }
+    for m in re.finditer(
+        r"struct\s+(\w+)\s*\{([^}]+)\}",
+        source,
+    ):
+        name = m.group(1)
+        body = m.group(2)
+        fields = []
+        offset = 0
+        for fm in re.finditer(r"(\w+)\s*:\s*([^,}]+)", body):
+            fname = fm.group(1).strip()
+            ftype = fm.group(2).strip()
+            size = _mn_field_size(ftype)
+            if size == 0:
+                # Unknown type — check if it's a known struct
+                if ftype in structs:
+                    size = structs[ftype].total_size
+                else:
+                    size = 8  # assume pointer-sized
+            # Align to 8 bytes
+            if offset % 8 != 0:
+                offset = (offset + 7) & ~7
+            fields.append(StructField(name=fname, type_str=ftype, offset=offset, size=size))
+            offset += size
+        if offset % 8 != 0:
+            offset = (offset + 7) & ~7
+        structs[name] = StructLayout(name=name, fields=fields, total_size=offset)
+    return structs
+
+
+def format_struct_layout(layout: StructLayout) -> str:
+    """Format struct layout for display."""
+    lines = [f"struct {layout.name} ({layout.total_size} bytes):"]
+    for f in layout.fields:
+        lines.append(f"  +{f.offset:4d}  {f.name:30s} {f.type_str:30s} ({f.size}B)")
+    return "\n".join(lines)
+
+
+def field_at_offset(layout: StructLayout, offset: int) -> str:
+    """Find which field contains a given byte offset."""
+    for f in layout.fields:
+        if f.offset <= offset < f.offset + f.size:
+            inner_off = offset - f.offset
+            return f"{layout.name}.{f.name} (+{f.offset}, {f.type_str}, inner offset {inner_off})"
+    return f"{layout.name}.??? (offset {offset} out of range, struct is {layout.total_size}B)"
+
+
+# ---------------------------------------------------------------------------
+# Debug journal — persistent log of what was tried and what happened
+# ---------------------------------------------------------------------------
+
+def _journal_append(entry: dict) -> None:
+    """Append an entry to the debug journal."""
+    BASELINE_DIR.mkdir(exist_ok=True)
+    entry["timestamp"] = __import__("datetime").datetime.now().isoformat()
+    with open(JOURNAL_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def _journal_load(limit: int = 50) -> list[dict]:
+    """Load recent journal entries."""
+    if not JOURNAL_FILE.exists():
+        return []
+    lines = JOURNAL_FILE.read_text(encoding="utf-8").strip().splitlines()
+    entries = []
+    for line in lines[-limit:]:
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return entries
+
+
+# ---------------------------------------------------------------------------
+# Failure diagnosis — classify errors and suggest next steps
+# ---------------------------------------------------------------------------
+
+def _diagnose_compile_fail(stage1: pathlib.Path, mn_path: pathlib.Path) -> dict:
+    """Run stage1 on a file and capture crash details."""
+    info: dict = {"type": "compile_fail", "file": mn_path.name}
+    try:
+        r = subprocess.run(
+            [str(stage1), str(mn_path)],
+            capture_output=True, text=True, timeout=30,
+        )
+        info["exit_code"] = r.returncode
+        info["stderr"] = r.stderr[:500] if r.stderr else ""
+        info["stdout_lines"] = r.stdout.count("\n") if r.stdout else 0
+
+        if r.returncode == 139 or "Signal 11" in r.stderr:
+            info["crash"] = "SIGSEGV"
+            # Extract crash location
+            for line in r.stderr.splitlines():
+                if "at:" in line.lower() or "+0x" in line:
+                    info["crash_location"] = line.strip()
+                    break
+            info["suggestion"] = (
+                "Segfault during compilation. Common causes:\n"
+                "  1. Uninitialized list field in LowerState (lambda/recursive lowering)\n"
+                "  2. Stale data pointer from shared list (COW detach missed)\n"
+                "  3. Stack overflow from deep recursion\n"
+                "Try: valgrind --track-origins=yes ./mapanare/self/mnc-stage1 <file>"
+            )
+        elif "out of memory" in r.stderr:
+            info["crash"] = "OOM"
+            # Extract allocation size
+            m = re.search(r"requested (\d+) bytes", r.stderr)
+            if m:
+                info["oom_bytes"] = int(m.group(1))
+            info["suggestion"] = (
+                "Out of memory. Common causes:\n"
+                "  1. Garbage cap/elem_size in list clone (uninitialized struct fields)\n"
+                "  2. O(N^2) string concatenation in emitter\n"
+                "  3. Alloca aliasing causing leaked copies\n"
+                "Try: python scripts/ir_doctor.py memory"
+            )
+        elif r.returncode != 0:
+            info["crash"] = f"exit_{r.returncode}"
+            info["suggestion"] = f"Non-zero exit. Check stderr: {r.stderr[:200]}"
+
+    except subprocess.TimeoutExpired:
+        info["crash"] = "TIMEOUT"
+        info["suggestion"] = "Compilation timed out (30s). Likely infinite loop or OOM."
+    except OSError as e:
+        info["crash"] = f"OS_ERROR: {e}"
+    return info
+
+
+def _diagnose_invalid_ir(ir: str, err: str) -> dict:
+    """Classify an llvm-as validation error."""
+    info: dict = {"type": "invalid_ir", "error": err}
+
+    if "undefined value" in err:
+        m = re.search(r"use of undefined value '(%[\w.]+)'", err)
+        val = m.group(1) if m else "?"
+        info["category"] = "UNDEF_VALUE"
+        info["value"] = val
+        info["suggestion"] = (
+            f"Undefined value {val} in IR. Common causes:\n"
+            "  1. Phi references a void/unknown arm result (add ty.kind != 'void' filter)\n"
+            "  2. Variable defined in one block but used in another without proper SSA\n"
+            "  3. Match arm body produces no value but Phi expects one\n"
+            f"Try: python scripts/ir_doctor.py extract <file.ll> <function_with_{val}>"
+        )
+    elif "expected value token" in err:
+        info["category"] = "EMPTY_LABEL"
+        info["suggestion"] = (
+            "Empty branch label (br label %). The match/switch produced 0 cases.\n"
+            "  Root cause: alloca aliasing in the case-building loop.\n"
+            "  Fix: rewrite the loop as a recursive function (see build_match_arms_rec pattern)."
+        )
+    elif "defined with type" in err and "but expected" in err:
+        m = re.search(r"'(%[\w.]+)' defined with type '([^']+)' but expected '([^']+)'", err)
+        info["category"] = "TYPE_MISMATCH"
+        if m:
+            info["value"] = m.group(1)
+            info["actual_type"] = m.group(2)
+            info["expected_type"] = m.group(3)
+        info["suggestion"] = (
+            "Type mismatch in IR. Common causes:\n"
+            "  1. Result/Option generic args not propagated (use resolve_generic_args_rec)\n"
+            "  2. WrapOk/WrapErr using fallback {ptr, ptr} instead of actual types\n"
+            "  3. EnumPayload extraction type wrong (use extractvalue, not byte-offset)\n"
+            "Try: python scripts/mir_trace.py <file.mn> <function> --compare"
+        )
+    elif "duplicate case value" in err:
+        info["category"] = "DUPLICATE_CASE"
+        info["suggestion"] = (
+            "Duplicate case in switch. Both variants resolved to the same index.\n"
+            "  Fix: check hardcoded Ok=1/Err=0/Some=1/None=0 in emit_llvm.mn"
+        )
+    else:
+        info["category"] = "OTHER"
+        info["suggestion"] = f"Unknown IR error: {err[:200]}"
+
+    return info
+
+
+# ---------------------------------------------------------------------------
 # CLI commands
 # ---------------------------------------------------------------------------
 
@@ -1160,6 +1403,7 @@ def cmd_golden(args: argparse.Namespace) -> int:
         return 1
 
     results = []
+    fail_details: list[tuple[str, dict]] = []
     for mn_path in mn_files:
         name = mn_path.stem
         print(f"  {name}...", end=" ", flush=True)
@@ -1167,8 +1411,11 @@ def cmd_golden(args: argparse.Namespace) -> int:
         # Compile fresh through stage1
         ir = stage1_compile(mn_path, stage1)
         if ir is None:
-            print("COMPILE_FAIL")
-            results.append((name, "COMPILE_FAIL", "", 0, 0, 0))
+            diag = _diagnose_compile_fail(stage1, mn_path)
+            crash = diag.get("crash", "unknown")
+            print(f"COMPILE_FAIL ({crash})")
+            results.append((name, "COMPILE_FAIL", crash, 0, 0, 0))
+            fail_details.append((name, diag))
             continue
 
         # Check: did it emit any functions?
@@ -1177,6 +1424,10 @@ def cmd_golden(args: argparse.Namespace) -> int:
         if n_fns == 0:
             print(f"EMPTY (0 functions, {ir.count(chr(10))} lines)")
             results.append((name, "EMPTY", "", n_fns, 0, 0))
+            fail_details.append((name, {
+                "type": "empty", "suggestion": "Binary produced header only (no functions).\n"
+                "  Check: did _clone_list_fields get disabled? Is COW lazy init breaking module lists?"
+            }))
             continue
 
         # Validate with llvm-as
@@ -1190,6 +1441,8 @@ def cmd_golden(args: argparse.Namespace) -> int:
             status = f"WARN({n_errs})"
         else:
             status = "INVALID"
+            diag = _diagnose_invalid_ir(ir, err)
+            fail_details.append((name, diag))
 
         detail = err if not valid else ""
         print(f"{status}  {n_fns} fn" + (f"  {detail}" if detail else ""))
@@ -1208,10 +1461,23 @@ def cmd_golden(args: argparse.Namespace) -> int:
     print(f"\n{ok}/{total} golden tests OK")
 
     if ok < total:
-        fails = [(n, s, d) for n, s, d, *_ in results if s != "OK"]
-        print("\nFailures:")
-        for name, status, detail in fails:
-            print(f"  {name}: {status}" + (f" -- {detail}" if detail else ""))
+        print("\nFailure Details:")
+        print("-" * 60)
+        for name, diag in fail_details:
+            status = next((s for n, s, *_ in results if n == name), "?")
+            print(f"\n  {name} [{status}]")
+            cat = diag.get("category", diag.get("crash", diag.get("type", "?")))
+            print(f"  Category: {cat}")
+            if "error" in diag:
+                print(f"  Error: {diag['error'][:200]}")
+            if "crash_location" in diag:
+                print(f"  Crash at: {diag['crash_location']}")
+            if "oom_bytes" in diag:
+                oom_mb = diag["oom_bytes"] / (1024 * 1024)
+                print(f"  Requested: {oom_mb:,.0f} MB")
+            if "suggestion" in diag:
+                for line in diag["suggestion"].splitlines():
+                    print(f"  {line}")
 
     # Delta from previous golden run
     old_golden = _load_baseline("golden")
@@ -1247,7 +1513,15 @@ def cmd_golden(args: argparse.Namespace) -> int:
     (BASELINE_DIR / "golden.json").write_text(
         json.dumps(golden_data, indent=2), encoding="utf-8"
     )
-    print(f"\nBaseline saved: .ir_doctor/golden.json")
+
+    # Log to journal
+    _journal_append({
+        "command": "golden",
+        "score": f"{ok}/{total}",
+        "tests": {name: status for name, status, *_ in results},
+        "failures": {name: diag for name, diag in fail_details},
+    })
+    print(f"\nBaseline + journal saved to .ir_doctor/")
 
     return 0 if ok == total else 1
 
@@ -1494,6 +1768,122 @@ def cmd_memory(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_journal(args: argparse.Namespace) -> int:
+    """View the debug journal — history of golden/audit runs with results.
+
+    Shows what was tried, what score was achieved, and failure details.
+    Prevents repeating the same failed approaches across sessions.
+    """
+    entries = _journal_load(limit=args.top or 20)
+    if not entries:
+        print("No journal entries yet. Run 'golden' or 'audit' to start logging.")
+        return 0
+
+    search = args.only
+    for e in entries:
+        ts = e.get("timestamp", "?")[:19]
+        cmd = e.get("command", "?")
+
+        if search and search.lower() not in json.dumps(e).lower():
+            continue
+
+        if cmd == "golden":
+            score = e.get("score", "?")
+            tests = e.get("tests", {})
+            fails = {k: v for k, v in tests.items() if v != "OK"}
+            print(f"[{ts}] golden {score}")
+            if fails:
+                for name, status in fails.items():
+                    # Show failure category if available
+                    fd = e.get("failures", {}).get(name, {})
+                    cat = fd.get("category", fd.get("crash", ""))
+                    extra = f" ({cat})" if cat else ""
+                    print(f"  FAIL {name}: {status}{extra}")
+        elif cmd == "audit":
+            f = e.get("file", "?")
+            errs = e.get("errors", 0)
+            n_fn = e.get("functions", 0)
+            by_code = e.get("by_code", {})
+            codes = ", ".join(f"{k}={v}" for k, v in sorted(by_code.items()) if v > 0)
+            print(f"[{ts}] audit {f} ({n_fn} fn, {errs} errors: {codes})")
+        elif cmd == "note":
+            print(f"[{ts}] NOTE: {e.get('text', '?')}")
+        else:
+            print(f"[{ts}] {cmd}: {json.dumps(e)[:100]}")
+    return 0
+
+
+def cmd_note(args: argparse.Namespace) -> int:
+    """Add a manual note to the debug journal.
+
+    Use this to record what you tried, what worked, what didn't.
+    Example: ir_doctor note "Tried disabling _clone_list_fields — closures still crash"
+    """
+    text = " ".join(args.text)
+    _journal_append({"command": "note", "text": text})
+    print(f"Note saved: {text}")
+    return 0
+
+
+def cmd_structmap(args: argparse.Namespace) -> int:
+    """Map struct field offsets to Mapanare field names.
+
+    Parses all struct definitions from mapanare/self/*.mn and shows
+    byte-level layout. Optionally resolves a specific byte offset.
+
+    Examples:
+        ir_doctor structmap LowerState           # Show full layout
+        ir_doctor structmap LowerState --offset 128  # What field is at byte 128?
+        ir_doctor structmap                      # List all structs with sizes
+    """
+    # Parse all .mn source files for struct definitions
+    all_source = ""
+    for mn_file in sorted(SELF_DIR.glob("*.mn")):
+        if mn_file.name == "mnc_all.mn":
+            continue
+        all_source += mn_file.read_text(encoding="utf-8") + "\n"
+
+    structs = parse_mn_structs(all_source)
+    if not structs:
+        print("No struct definitions found")
+        return 1
+
+    target = args.struct_name if hasattr(args, "struct_name") and args.struct_name else None
+    offset = args.offset if hasattr(args, "offset") and args.offset is not None else None
+
+    if target:
+        layout = structs.get(target)
+        if not layout:
+            # Try substring match
+            matches = [s for s in structs if target in s]
+            if len(matches) == 1:
+                layout = structs[matches[0]]
+            elif matches:
+                print(f"Ambiguous: '{target}' matches: {', '.join(matches)}")
+                return 1
+            else:
+                print(f"Struct '{target}' not found. Available:")
+                for s in sorted(structs):
+                    print(f"  {s} ({structs[s].total_size}B, {len(structs[s].fields)} fields)")
+                return 1
+
+        print(format_struct_layout(layout))
+        if offset is not None:
+            print(f"\n  Offset {offset}: {field_at_offset(layout, offset)}")
+    else:
+        # List all structs
+        print(f"{'Struct':<35s} {'Size':>6s} {'Fields':>6s}  {'Field Names'}")
+        print("-" * 100)
+        for name in sorted(structs):
+            s = structs[name]
+            field_names = ", ".join(f.name for f in s.fields)
+            if len(field_names) > 50:
+                field_names = field_names[:47] + "..."
+            print(f"{name:<35s} {s.total_size:>5d}B {len(s.fields):>6d}  {field_names}")
+
+    return 0
+
+
 def cmd_diff_ir(args: argparse.Namespace) -> int:
     """Compare two pre-generated .ll files directly."""
     ir_a = pathlib.Path(args.file_a).read_text(encoding="utf-8")
@@ -1587,6 +1977,18 @@ def main() -> int:
     # memory
     sub.add_parser("memory", help="Test memory scaling with synthetic inputs (WSL)")
 
+    # structmap
+    s_sm = sub.add_parser("structmap", help="Map struct byte offsets to field names")
+    s_sm.add_argument("struct_name", nargs="?", default=None, help="Struct name (optional)")
+    s_sm.add_argument("--offset", type=int, default=None, help="Byte offset to resolve")
+
+    # journal
+    sub.add_parser("journal", help="View debug journal (history of runs + notes)")
+
+    # note
+    s_note = sub.add_parser("note", help="Add a note to the debug journal")
+    s_note.add_argument("text", nargs="+", help="Note text")
+
     # diff
     s_diff = sub.add_parser("diff", help="Compare bootstrap vs stage1 for a .mn file")
     s_diff.add_argument("file", help="Path to .mn file")
@@ -1625,6 +2027,9 @@ def main() -> int:
         "extract": cmd_extract,
         "selftest": cmd_selftest,
         "memory": cmd_memory,
+        "structmap": cmd_structmap,
+        "journal": cmd_journal,
+        "note": cmd_note,
         "diff": cmd_diff,
         "diff-ir": cmd_diff_ir,
         "diff-all": cmd_diff_all,

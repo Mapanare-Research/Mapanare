@@ -100,6 +100,11 @@ python scripts/ir_doctor.py --top 15 table mapanare/self/main.ll     # Top 15 la
 python scripts/ir_doctor.py fingerprint mapanare/self/main.ll        # JSON per-function hashes
 python scripts/ir_doctor.py diff tests/golden/07_enum_match.mn       # Bootstrap vs stage1 (WSL)
 python scripts/ir_doctor.py diff-ir a.ll b.ll                        # Compare two .ll files
+python scripts/ir_doctor.py structmap LowerState                     # Show struct byte layout + field names
+python scripts/ir_doctor.py structmap LowerState --offset 176        # What field is at byte 176?
+python scripts/ir_doctor.py structmap                                # List all structs with sizes
+python scripts/ir_doctor.py journal                                  # View debug history (runs + notes)
+python scripts/ir_doctor.py note "tried X, result was Y"             # Add note to debug journal
 python scripts/ir_doctor.py diff-all                                 # All golden tests (WSL)
 python scripts/ir_doctor.py snapshot                                 # Generate .stage1.ll files (WSL)
 
