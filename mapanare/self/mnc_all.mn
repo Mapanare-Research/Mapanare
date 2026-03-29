@@ -4679,16 +4679,6 @@ fn new_lambda_entry(var_name: String, fn_name: String) -> LambdaEntry {
     return new LambdaEntry { var_name: var_name, fn_name: fn_name }
 }
 
-// Function return type mapping (populated during declaration registration)
-struct FnRetEntry {
-    name: String,
-    ret_type: MIRType
-}
-
-fn new_fn_ret_entry(name: String, ret_type: MIRType) -> FnRetEntry {
-    return new FnRetEntry { name: name, ret_type: ret_type }
-}
-
 // ---------------------------------------------------------------------------
 // Lowerer state — threaded through all lowering functions
 // ---------------------------------------------------------------------------
@@ -4989,17 +4979,6 @@ fn find_lambda(st: LowerState, name: String) -> Option<String> {
         i = i + 1
     }
     return none
-}
-
-fn lookup_fn_ret_type(st: LowerState, name: String) -> MIRType {
-    let mut i: Int = 0
-    for _ in 0..100000 {
-        if i >= len(st.fn_ret_types) { return mir_unknown() }
-        let e: FnRetEntry = st.fn_ret_types[i]
-        if e.name == name { return e.ret_type }
-        i = i + 1
-    }
-    return mir_unknown()
 }
 
 // ---------------------------------------------------------------------------
@@ -5618,7 +5597,7 @@ fn lower_block(st: LowerState, block: Block) -> LowerResult {
 fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
     match stmt {
         Let(name, mutable, type_ann, value) => {
-            let s: LowerState = lower_let(st, name, mutable, value)
+            let s: LowerState = lower_let(st, name, mutable, type_ann, value)
             return new_lower_result(void_value(), s)
         },
         ExprStmt(expr) => {
@@ -5647,19 +5626,32 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
 // Let binding
 // ---------------------------------------------------------------------------
 
-fn lower_let(st: LowerState, name: String, mutable: Bool, value: Expr) -> LowerState {
+fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState {
     let r: LowerResult = lower_expr(st, value)
     let mut s: LowerState = r.state
 
-    // Use the lowered value's type
-    let val_ty: MIRType = r.value.ty
-    let val: Value = r.value
+    // Prefer the declared type annotation over the expression's inferred type.
+    // This is critical: function calls return mir_unknown(), but the declared
+    // type (e.g., `let ch: String = lexer_peek(source)`) carries the real type.
+    let mut val_ty: MIRType = r.value.ty
+    let mut val: Value = r.value
+    match type_ann {
+        Some(te) => {
+            let declared: MIRType = lower_resolve_type_checked(s, te)
+            if declared.kind != "unknown" {
+                val_ty = declared
+                // Patch the value to carry the declared type (same SSA name, correct type)
+                val = new_value(r.value.name, declared)
+            }
+        },
+        _ => {}
+    }
 
     // Find or create alloca for this variable
     let addr_name: String = "%" + name + ".addr"
     let addr: Value = new_value(addr_name, val_ty)
 
-    // Only emit Alloca if not already present in this function
+    // Emit Alloca with the resolved type
     s = emit_instr(s, Instruction::Alloca(addr, val_ty))
 
     // Store value to alloca
@@ -5725,11 +5717,8 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
         s = emit_instr(s, Instruction::Jump(header_label))
     }
 
-    // Header block
+    // Header block — pre-define loop variable with alloca (body will update)
     s = set_block(s, header_idx)
-    let iter_val_r: LowerResult = make_value(s, mir_unknown(), "iter")
-    s = iter_val_r.state
-    s = define_var(s, var_name, iter_val_r.value, false)
 
     let has_next_r: LowerResult = make_value(s, mir_bool(), "has_next")
     s = has_next_r.state
@@ -5738,14 +5727,18 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s = emit_instr(s, Instruction::Call(has_next_r.value, "__iter_has_next", iter_args))
     s = emit_instr(s, Instruction::Branch(has_next_r.value, body_label, exit_label))
 
-    // Body block
+    // Body block — alloca the loop variable and store __iter_next result into it
     s = set_block(s, body_idx)
-    let next_r: LowerResult = make_value(s, mir_unknown(), "next")
+    let next_r: LowerResult = make_value(s, mir_int(), "next")
     s = next_r.state
     let mut next_args: List<Value> = []
     next_args.push(iter_r.value)
     s = emit_instr(s, Instruction::Call(next_r.value, "__iter_next", next_args))
-    s = define_var(s, var_name, next_r.value, false)
+    let loop_addr_r: LowerResult = make_value(s, mir_int(), var_name + "_addr")
+    s = loop_addr_r.state
+    s = emit_instr(s, Instruction::Alloca(loop_addr_r.value, mir_int()))
+    s = emit_instr(s, Instruction::Store(loop_addr_r.value, next_r.value))
+    s = define_var(s, var_name, loop_addr_r.value, false)
 
     s = lower_push_scope(s)
     let body_result: LowerResult = lower_block(s, body)
@@ -5946,12 +5939,23 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
     let lhs_r: LowerResult = lower_expr(st, left)
     let rhs_r: LowerResult = lower_expr(lhs_r.state, right)
 
+    // Type coercion: if one operand is unknown and the other is typed,
+    // propagate the known type to the unknown operand.
+    let mut lhs_val: Value = lhs_r.value
+    let mut rhs_val: Value = rhs_r.value
+    if lhs_val.ty.kind == "unknown" && rhs_val.ty.kind != "unknown" {
+        lhs_val = new_value(lhs_val.name, rhs_val.ty)
+    }
+    if rhs_val.ty.kind == "unknown" && lhs_val.ty.kind != "unknown" {
+        rhs_val = new_value(rhs_val.name, lhs_val.ty)
+    }
+
     let binop_opt: Option<BinOpKind> = binop_from_str(op)
     match binop_opt {
         Some(binop) => {
-            let result_ty: MIRType = if is_comparison_op(binop) { mir_bool() } else { lhs_r.value.ty }
+            let result_ty: MIRType = if is_comparison_op(binop) { mir_bool() } else { lhs_val.ty }
             let dest_r: LowerResult = make_value(rhs_r.state, result_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::BinOp(dest_r.value, binop, lhs_r.value, rhs_r.value))
+            let s: LowerState = emit_instr(dest_r.state, Instruction::BinOp(dest_r.value, binop, lhs_val, rhs_val))
             return new_lower_result(dest_r.value, s)
         },
         _ => {
@@ -7533,9 +7537,7 @@ struct EmitState {
     str_globals: List<String>,
     current_ret_type: String,
     enum_names: List<String>,
-    enum_infos: List<EnumInfo>,
-    deferred_alloca: String,
-    deferred_alloca_set: Int
+    enum_infos: List<EnumInfo>
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
@@ -7545,7 +7547,7 @@ fn new_emit_state(module_name: String) -> EmitState {
     let str_globals: List<String> = []
     let enum_names: List<String> = []
     let enum_infos: List<EnumInfo> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, deferred_alloca: "", deferred_alloca_set: 0 }
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos }
 }
 
 fn emit_global(st: EmitState, line: String) -> EmitState {
@@ -8435,39 +8437,15 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
 // ---------------------------------------------------------------------------
 
 fn emit_alloca(st: EmitState, dest: Value, ty: MIRType) -> EmitState {
-    let resolved: String = resolve_mir_type(ty)
-    let mut s: EmitState = st
-    // If alloca type is i64 but the last Call returned a different type, use that
-    // Keep deferred_alloca_set=1 so emit_store/emit_load can also use the type
-    if s.deferred_alloca_set == 1 && resolved == "i64" {
-        return emit_line(s, llvm_alloca(dest.name, s.deferred_alloca))
-    }
-    s.deferred_alloca_set = 0
-    return emit_line(s, llvm_alloca(dest.name, resolved))
+    return emit_line(st, llvm_alloca(dest.name, resolve_mir_type(ty)))
 }
 
 fn emit_load(st: EmitState, dest: Value, ptr: Value) -> EmitState {
-    let ty: String = resolve_mir_type(dest.ty)
-    let mut s: EmitState = st
-    // Use deferred alloca type if the dest type is i64 but we know the actual type
-    if s.deferred_alloca_set == 1 && ty == "i64" {
-        let actual: String = s.deferred_alloca
-        s.deferred_alloca_set = 0
-        s.deferred_alloca = ""
-        return emit_line(s, llvm_load(dest.name, actual, ptr.name))
-    }
-    return emit_line(s, llvm_load(dest.name, ty, ptr.name))
+    return emit_line(st, llvm_load(dest.name, resolve_mir_type(dest.ty), ptr.name))
 }
 
 fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState {
-    let mut s: EmitState = st
-    let val_ty: String = resolve_mir_type(val.ty)
-    // Use deferred alloca type if available and value type is i64
-    // Keep flag set so subsequent Load can also use the deferred type
-    if s.deferred_alloca_set == 1 && val_ty == "i64" {
-        return emit_line(s, llvm_store(s.deferred_alloca, val.name, ptr.name))
-    }
-    return emit_line(s, llvm_store(val_ty, val.name, ptr.name))
+    return emit_line(st, llvm_store(resolve_mir_type(val.ty), val.name, ptr.name))
 }
 
 // ---------------------------------------------------------------------------
@@ -8767,28 +8745,22 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         j = j + 1
     }
 
-    // Look up return type and record for deferred alloca type recovery
+    // Look up return type from function registry
     let fn_opt: Option<FnEntry> = find_function(s, fn_name)
     match fn_opt {
         Some(fe) => {
             if fe.ret_type == "void" {
-                s.deferred_alloca_set = 0
                 return emit_line(s, emit_call_void(fn_name, args_str))
             }
             s = emit_line(s, emit_call_ir(dn, fe.ret_type, fn_name, args_str))
-            s.deferred_alloca = fe.ret_type
-            s.deferred_alloca_set = 1
             return s
         },
         _ => {
             let ret_ty: String = resolve_mir_type(dest.ty)
             if ret_ty == "void" {
-                s.deferred_alloca_set = 0
                 return emit_line(s, emit_call_void(fn_name, args_str))
             }
             s = emit_line(s, emit_call_ir(dn, ret_ty, fn_name, args_str))
-            s.deferred_alloca = ret_ty
-            s.deferred_alloca_set = 1
             return s
         }
     }

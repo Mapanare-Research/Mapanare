@@ -1311,7 +1311,7 @@ fn lower_block(st: LowerState, block: Block) -> LowerResult {
 fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
     match stmt {
         Let(name, mutable, type_ann, value) => {
-            let s: LowerState = lower_let(st, name, mutable, value)
+            let s: LowerState = lower_let(st, name, mutable, type_ann, value)
             return new_lower_result(void_value(), s)
         },
         ExprStmt(expr) => {
@@ -1340,19 +1340,32 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
 // Let binding
 // ---------------------------------------------------------------------------
 
-fn lower_let(st: LowerState, name: String, mutable: Bool, value: Expr) -> LowerState {
+fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState {
     let r: LowerResult = lower_expr(st, value)
     let mut s: LowerState = r.state
 
-    // Use the lowered value's type
-    let val_ty: MIRType = r.value.ty
-    let val: Value = r.value
+    // Prefer the declared type annotation over the expression's inferred type.
+    // This is critical: function calls return mir_unknown(), but the declared
+    // type (e.g., `let ch: String = lexer_peek(source)`) carries the real type.
+    let mut val_ty: MIRType = r.value.ty
+    let mut val: Value = r.value
+    match type_ann {
+        Some(te) => {
+            let declared: MIRType = lower_resolve_type_checked(s, te)
+            if declared.kind != "unknown" {
+                val_ty = declared
+                // Patch the value to carry the declared type (same SSA name, correct type)
+                val = new_value(r.value.name, declared)
+            }
+        },
+        _ => {}
+    }
 
     // Find or create alloca for this variable
     let addr_name: String = "%" + name + ".addr"
     let addr: Value = new_value(addr_name, val_ty)
 
-    // Only emit Alloca if not already present in this function
+    // Emit Alloca with the resolved type
     s = emit_instr(s, Instruction::Alloca(addr, val_ty))
 
     // Store value to alloca
@@ -1418,11 +1431,8 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
         s = emit_instr(s, Instruction::Jump(header_label))
     }
 
-    // Header block
+    // Header block — pre-define loop variable with alloca (body will update)
     s = set_block(s, header_idx)
-    let iter_val_r: LowerResult = make_value(s, mir_unknown(), "iter")
-    s = iter_val_r.state
-    s = define_var(s, var_name, iter_val_r.value, false)
 
     let has_next_r: LowerResult = make_value(s, mir_bool(), "has_next")
     s = has_next_r.state
@@ -1431,14 +1441,18 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s = emit_instr(s, Instruction::Call(has_next_r.value, "__iter_has_next", iter_args))
     s = emit_instr(s, Instruction::Branch(has_next_r.value, body_label, exit_label))
 
-    // Body block
+    // Body block — alloca the loop variable and store __iter_next result into it
     s = set_block(s, body_idx)
-    let next_r: LowerResult = make_value(s, mir_unknown(), "next")
+    let next_r: LowerResult = make_value(s, mir_int(), "next")
     s = next_r.state
     let mut next_args: List<Value> = []
     next_args.push(iter_r.value)
     s = emit_instr(s, Instruction::Call(next_r.value, "__iter_next", next_args))
-    s = define_var(s, var_name, next_r.value, false)
+    let loop_addr_r: LowerResult = make_value(s, mir_int(), var_name + "_addr")
+    s = loop_addr_r.state
+    s = emit_instr(s, Instruction::Alloca(loop_addr_r.value, mir_int()))
+    s = emit_instr(s, Instruction::Store(loop_addr_r.value, next_r.value))
+    s = define_var(s, var_name, loop_addr_r.value, false)
 
     s = lower_push_scope(s)
     let body_result: LowerResult = lower_block(s, body)
@@ -1639,12 +1653,23 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
     let lhs_r: LowerResult = lower_expr(st, left)
     let rhs_r: LowerResult = lower_expr(lhs_r.state, right)
 
+    // Type coercion: if one operand is unknown and the other is typed,
+    // propagate the known type to the unknown operand.
+    let mut lhs_val: Value = lhs_r.value
+    let mut rhs_val: Value = rhs_r.value
+    if lhs_val.ty.kind == "unknown" && rhs_val.ty.kind != "unknown" {
+        lhs_val = new_value(lhs_val.name, rhs_val.ty)
+    }
+    if rhs_val.ty.kind == "unknown" && lhs_val.ty.kind != "unknown" {
+        rhs_val = new_value(rhs_val.name, lhs_val.ty)
+    }
+
     let binop_opt: Option<BinOpKind> = binop_from_str(op)
     match binop_opt {
         Some(binop) => {
-            let result_ty: MIRType = if is_comparison_op(binop) { mir_bool() } else { lhs_r.value.ty }
+            let result_ty: MIRType = if is_comparison_op(binop) { mir_bool() } else { lhs_val.ty }
             let dest_r: LowerResult = make_value(rhs_r.state, result_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::BinOp(dest_r.value, binop, lhs_r.value, rhs_r.value))
+            let s: LowerState = emit_instr(dest_r.state, Instruction::BinOp(dest_r.value, binop, lhs_val, rhs_val))
             return new_lower_result(dest_r.value, s)
         },
         _ => {
