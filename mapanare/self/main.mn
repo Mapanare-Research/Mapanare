@@ -68,11 +68,11 @@ fn compile_and_print(source: String, filename: String) -> CompileResult {
     let cr: CompileResult = compile(source, filename)
 
     if cr.success {
-        println(cr.ir_text)
+        print(cr.ir_text)
     } else {
         for i in 0..len(cr.errors) {
             let err: SemanticError = cr.errors[i]
-            println(format_error(err))
+            print(format_error(err))
         }
     }
     return cr

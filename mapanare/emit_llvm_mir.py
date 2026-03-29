@@ -2740,9 +2740,9 @@ class LLVMMIREmitter:
 
         # --- Builtin dispatch ---
 
-        # print/println
+        # print/println (both add newline; println is a deprecated alias)
         if fn_name in ("println", "print"):
-            nl = fn_name == "println"
+            nl = True
             if (
                 inst.args
                 and inst.args[0].ty.kind == TypeKind.STRING

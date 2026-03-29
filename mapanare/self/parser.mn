@@ -297,7 +297,7 @@ fn expect(tokens: List<Token>, pos: Int, expected: String) -> Int {
     let tt: String = peek_type(tokens, pos)
     if tt != expected {
         let msg: String = "Expected " + expected + " but got " + tt
-        println(msg)
+        print(msg)
     }
     return pos + 1
 }

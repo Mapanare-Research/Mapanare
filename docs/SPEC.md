@@ -238,9 +238,9 @@ Any valid expression can appear inside `${...}`, including function calls and bi
 
 ```mn
 let name = "world"
-println("Hello, ${name}!")
-println("sum: ${a + b}")
-println("length: ${len(items)}")
+print("Hello, ${name}!")
+print("sum: ${a + b}")
+print("length: ${len(items)}")
 ```
 
 #### Character Literals
@@ -478,8 +478,8 @@ let x: Option<Int> = Some(42)
 let y: Option<Int> = none
 
 match x {
-    Some(v) => println("Got: ${v}"),
-    None    => println("Nothing"),
+    Some(v) => print("Got: ${v}"),
+    None    => print("Nothing"),
 }
 ```
 
@@ -504,8 +504,8 @@ fn parse_int(s: String) -> Result<Int, String> {
 
 let result = parse_int("42")
 match result {
-    Ok(n)  => println("Parsed: ${n}"),
-    Err(e) => println("Error: ${e}"),
+    Ok(n)  => print("Parsed: ${n}"),
+    Err(e) => print("Error: ${e}"),
 }
 ```
 
@@ -613,11 +613,11 @@ Chained conditions use `else if`:
 
 ```mn
 if x > 10 {
-    println("big")
+    print("big")
 } else if x > 0 {
-    println("small")
+    print("small")
 } else {
-    println("non-positive")
+    print("non-positive")
 }
 ```
 
@@ -629,7 +629,7 @@ Iterates over a range or iterable:
 
 ```mn
 for i in 0..10 {
-    println("${i}")
+    print("${i}")
 }
 
 for item in items {
@@ -646,7 +646,7 @@ Loops while a condition is true:
 ```mn
 let mut count = 0
 while count < 10 {
-    println("${count}")
+    print("${count}")
     count += 1
 }
 ```
@@ -683,8 +683,8 @@ Pattern matching dispatches on the structure of a value. See section 5 (Pattern 
 
 ```mn
 match value {
-    Some(x) => println("got ${x}"),
-    None    => println("nothing"),
+    Some(x) => print("got ${x}"),
+    None    => print("nothing"),
 }
 ```
 
@@ -736,8 +736,8 @@ enum Expr {
 }
 
 match expr {
-    Num(n)    => println("number: ${n}"),
-    Add(a, b) => println("sum: ${a + b}"),
+    Num(n)    => print("number: ${n}"),
+    Add(a, b) => print("sum: ${a + b}"),
 }
 ```
 
@@ -745,9 +745,9 @@ Nested destructuring is supported:
 
 ```mn
 match result {
-    Ok(Some(v)) => println("got ${v}"),
-    Ok(None)    => println("ok but empty"),
-    Err(e)      => println("error: ${e}"),
+    Ok(Some(v)) => print("got ${v}"),
+    Ok(None)    => print("ok but empty"),
+    Err(e)      => print("error: ${e}"),
 }
 ```
 
@@ -828,7 +828,7 @@ Closures capture variables from the enclosing scope:
 ```mn
 let offset = 10
 let add_offset = (x: Int) => x + offset
-println(add_offset(5))  // prints 15
+print(add_offset(5))  // prints 15
 ```
 
 **Implementation:** Closures with free variables are compiled as a pair: `{function_pointer, environment_struct_pointer}`. The environment struct contains the captured variables. Variables are captured by value (copy).
@@ -912,7 +912,7 @@ Generic type parameters can be constrained with trait bounds:
 
 ```mn
 fn print_value<T: Display>(x: T) {
-    println(x.to_string())
+    print(x.to_string())
 }
 ```
 
@@ -1086,7 +1086,7 @@ let doubled = signal { count.value * 2 }
 
 // Updating a signal
 count.value = 5
-println(doubled.value)   // prints 10
+print(doubled.value)   // prints 10
 ```
 
 `signal(expr)` creates a mutable signal with an initial value. `signal { expr }` creates a computed signal that re-evaluates when its dependencies change.
@@ -1101,7 +1101,7 @@ let mut b = signal(2)
 let sum = signal { a.value + b.value }
 
 a.value = 10
-println(sum.value)   // prints 12
+print(sum.value)   // prints 12
 ```
 
 ### 10.4 Subscribers
@@ -1113,7 +1113,7 @@ let mut temperature = signal(20.0)
 
 // Subscribe to changes
 temperature.subscribe((t) => {
-    println("Temperature changed to ${t}")
+    print("Temperature changed to ${t}")
 })
 ```
 
@@ -1150,7 +1150,7 @@ let s = Stream::from([1, 2, 3, 4, 5])
 
 // Consume a stream
 for value in s {
-    println("${value}")
+    print("${value}")
 }
 ```
 
@@ -1239,7 +1239,7 @@ pipe ClassifyText {
 let pipeline = spawn ClassifyText()
 pipeline.text <- "Mapanare is an AI-native programming language"
 let label = sync pipeline.label
-println(label)
+print(label)
 ```
 
 The pipe chain connects the output of one agent to the input of the next. The pipeline itself is spawned and used like a single agent — input goes to the first agent; output comes from the last.
@@ -1308,8 +1308,8 @@ The following functions are available without import:
 
 | Function | Signature | Description |
 |---|---|---|
-| `print(value)` | `(Any) -> Void` | Print a value to stdout without newline. |
-| `println(value)` | `(Any) -> Void` | Print a value to stdout with a trailing newline. |
+| `print(value)` | `(Any) -> Void` | Print a value to stdout with a trailing newline. |
+| `println(value)` | `(Any) -> Void` | **Deprecated.** Alias for `print`. Use `print` instead. |
 | `len(collection)` | `(List<T> \| String \| Map<K,V>) -> Int` | Return the number of elements or characters. |
 | `str(value)` | `(Any) -> String` | Convert a value to its string representation. |
 | `toString(value)` | `(Any) -> String` | Alias for `str()`. |

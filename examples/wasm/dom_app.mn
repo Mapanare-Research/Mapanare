@@ -91,4 +91,4 @@ dom_on(reset_btn, "click", on_reset)
 // Set up todo app
 setup_todo()
 
-println("App initialized successfully!")
+print("App initialized successfully!")

@@ -87,9 +87,9 @@ class TestDropNulls:
             match result {{
                 Ok(t) => {{
                     let cleaned: Table = drop_nulls(t, "val")
-                    println(str(nrows(cleaned)))
+                    print(str(nrows(cleaned)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -110,9 +110,9 @@ class TestFillNull:
             match result {{
                 Ok(t) => {{
                     let filled: Table = fill_null_int(t, "val", -1)
-                    println(str(nrows(filled)))
+                    print(str(nrows(filled)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -133,9 +133,9 @@ class TestFillForward:
             match result {{
                 Ok(t) => {{
                     let filled: Table = fill_forward(t, "val")
-                    println(str(nrows(filled)))
+                    print(str(nrows(filled)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -156,9 +156,9 @@ class TestNullCount:
             match result {{
                 Ok(t) => {{
                     let nc: Int = null_count(t, "val")
-                    println(str(nc))
+                    print(str(nc))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)

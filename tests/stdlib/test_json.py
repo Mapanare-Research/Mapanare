@@ -65,7 +65,7 @@ class TestCoreTypes:
         """JsonValue enum (recursive, with List and Map variants) compiles."""
         src = _json_source_with_main("""\
             let v: JsonValue = Null()
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -74,7 +74,7 @@ class TestCoreTypes:
         """JsonError struct compiles."""
         src = _json_source_with_main("""\
             let e: JsonError = new JsonError { message: "test", line: 1, col: 1 }
-            println(e.message)
+            print(e.message)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -83,7 +83,7 @@ class TestCoreTypes:
         """JsonValue::Bool variant compiles."""
         src = _json_source_with_main("""\
             let v: JsonValue = Bool(true)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -92,7 +92,7 @@ class TestCoreTypes:
         """JsonValue::Int variant compiles."""
         src = _json_source_with_main("""\
             let v: JsonValue = Int(42)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -101,7 +101,7 @@ class TestCoreTypes:
         """JsonValue::Str variant compiles."""
         src = _json_source_with_main("""\
             let v: JsonValue = Str("hello")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -118,7 +118,7 @@ class TestCharHelpers:
         """Digit classification helper compiles."""
         src = _json_source_with_main("""\
             let r: Bool = is_json_digit("5")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -127,7 +127,7 @@ class TestCharHelpers:
         """Digit value helper compiles."""
         src = _json_source_with_main("""\
             let v: Int = digit_value("7")
-            println(str(v))
+            print(str(v))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -144,7 +144,7 @@ class TestWhitespace:
         """skip_whitespace function compiles."""
         src = _json_source_with_main("""\
             let r: SkipResult = skip_whitespace("  hello", 0, 1, 1)
-            println(str(r.pos))
+            print(str(r.pos))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -161,7 +161,7 @@ class TestStringParsing:
         """Parse a simple JSON string."""
         src = _json_source_with_main("""\
             let r: StringResult = parse_json_string("\\"hello\\"", 0, 1, 1)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "__mn_str_char_at" in ir_out
@@ -170,7 +170,7 @@ class TestStringParsing:
         """Parse string with escape sequences."""
         src = _json_source_with_main("""\
             let r: StringResult = parse_json_string("\\"line1\\\\nline2\\"", 0, 1, 1)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -187,7 +187,7 @@ class TestNumberParsing:
         """Parse an integer."""
         src = _json_source_with_main("""\
             let r: NumberResult = parse_json_number("42", 0, 1, 1)
-            println(str(r.int_val))
+            print(str(r.int_val))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -196,7 +196,7 @@ class TestNumberParsing:
         """Parse a negative integer."""
         src = _json_source_with_main("""\
             let r: NumberResult = parse_json_number("-7", 0, 1, 1)
-            println(str(r.int_val))
+            print(str(r.int_val))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -205,7 +205,7 @@ class TestNumberParsing:
         """Parse a float."""
         src = _json_source_with_main("""\
             let r: NumberResult = parse_json_number("3.14", 0, 1, 1)
-            println(str(r.float_val))
+            print(str(r.float_val))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -214,7 +214,7 @@ class TestNumberParsing:
         """Parse a number with exponent."""
         src = _json_source_with_main("""\
             let r: NumberResult = parse_json_number("2.5e10", 0, 1, 1)
-            println(str(r.float_val))
+            print(str(r.float_val))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -231,7 +231,7 @@ class TestDecode:
         """Decode JSON null."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("null")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -240,7 +240,7 @@ class TestDecode:
         """Decode JSON true."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("true")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -249,7 +249,7 @@ class TestDecode:
         """Decode JSON false."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("false")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -258,7 +258,7 @@ class TestDecode:
         """Decode JSON integer."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("42")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -267,7 +267,7 @@ class TestDecode:
         """Decode JSON float."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("3.14")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -276,7 +276,7 @@ class TestDecode:
         """Decode JSON string."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("\\"hello\\"")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -293,7 +293,7 @@ class TestArrayParsing:
         """Decode empty JSON array."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("[]")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -302,7 +302,7 @@ class TestArrayParsing:
         """Decode JSON array of integers."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("[1, 2, 3]")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -311,7 +311,7 @@ class TestArrayParsing:
         """Decode nested JSON array."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("[[1, 2], [3, 4]]")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -328,7 +328,7 @@ class TestObjectParsing:
         """Decode empty JSON object."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("{}")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -337,7 +337,7 @@ class TestObjectParsing:
         """Decode simple JSON object."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("{\\"name\\": \\"Mapanare\\", \\"version\\": 9}")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -346,7 +346,7 @@ class TestObjectParsing:
         """Decode nested JSON object with arrays."""
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("{\\"data\\": {\\"items\\": [1, 2, 3]}}")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -364,8 +364,8 @@ class TestErrorCases:
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("\\"hello")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -376,8 +376,8 @@ class TestErrorCases:
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("xyz")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -388,8 +388,8 @@ class TestErrorCases:
         src = _json_source_with_main("""\
             let r: Result<JsonValue, JsonError> = decode("42 extra")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -407,7 +407,7 @@ class TestEncode:
         """Encode null."""
         src = _json_source_with_main("""\
             let s: String = encode(Null())
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -416,7 +416,7 @@ class TestEncode:
         """Encode boolean."""
         src = _json_source_with_main("""\
             let s: String = encode(Bool(true))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -425,7 +425,7 @@ class TestEncode:
         """Encode integer."""
         src = _json_source_with_main("""\
             let s: String = encode(Int(42))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "__mn_str_from_int" in ir_out
@@ -434,7 +434,7 @@ class TestEncode:
         """Encode string with escape handling."""
         src = _json_source_with_main("""\
             let s: String = encode(Str("hello\\"world"))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -444,7 +444,7 @@ class TestEncode:
         src = _json_source_with_main("""\
             let items: List<JsonValue> = []
             let s: String = encode(Array(items))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -454,7 +454,7 @@ class TestEncode:
         src = _json_source_with_main("""\
             let items: List<JsonValue> = [Int(1), Int(2), Int(3)]
             let s: String = encode(Array(items))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -472,7 +472,7 @@ class TestEncodePretty:
         src = _json_source_with_main("""\
             let items: List<JsonValue> = [Int(1), Int(2)]
             let s: String = encode_pretty(Array(items), 2)
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -490,7 +490,7 @@ class TestRoundTrip:
         src = _json_source_with_main("""\
             let encoded: String = encode(Int(42))
             let decoded: Result<JsonValue, JsonError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -500,7 +500,7 @@ class TestRoundTrip:
         src = _json_source_with_main("""\
             let encoded: String = encode(Str("hello"))
             let decoded: Result<JsonValue, JsonError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -511,7 +511,7 @@ class TestRoundTrip:
             let items: List<JsonValue> = [Int(1), Str("two"), Bool(true)]
             let encoded: String = encode(Array(items))
             let decoded: Result<JsonValue, JsonError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -521,7 +521,7 @@ class TestRoundTrip:
         src = _json_source_with_main("""\
             let encoded: String = encode(Null())
             let decoded: Result<JsonValue, JsonError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -538,7 +538,7 @@ class TestStreamingParser:
         """Streaming parser compiles."""
         src = _json_source_with_main("""\
             let r: Result<List<JsonEvent>, JsonError> = stream_parse("{\\"key\\": 42}")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -547,7 +547,7 @@ class TestStreamingParser:
         """Streaming parser for arrays compiles."""
         src = _json_source_with_main("""\
             let r: Result<List<JsonEvent>, JsonError> = stream_parse("[1, 2, 3]")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -566,7 +566,7 @@ class TestSchemaValidation:
             let schema: JsonSchema = new JsonSchema {schema_type: SInt(), required_fields: [], min_value: 0, max_value: 100, has_min: true, has_max: true}
             let value: JsonValue = Int(42)
             let r: Result<Bool, List<JsonError>> = validate(value, schema)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -586,7 +586,7 @@ class TestTypedDeserialization:
             fn main() {
                 let u: User = User("Alice", 30)
                 let json: String = encode_struct::<User>(u)
-                println(json)
+                print(json)
             }
         """)
         ir_out = _compile_mir(src)
@@ -601,7 +601,7 @@ class TestTypedDeserialization:
                 let entries: Map<String, JsonValue> = #{}
                 let jv: JsonValue = Object(entries)
                 let result: Result<Person, JsonError> = decode_to::<Person>(jv)
-                println("ok")
+                print("ok")
             }
         """)
         ir_out = _compile_mir(src)
@@ -620,7 +620,7 @@ class TestPerformance:
         src = _json_source_with_main("""\
             let big: String = "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"
             let r: Result<JsonValue, JsonError> = decode(big)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

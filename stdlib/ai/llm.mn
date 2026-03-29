@@ -9,8 +9,8 @@
 //   let config = llm.openai("sk-...", "gpt-4o")
 //   let resp = llm.chat(config, [llm.user_msg("What is Mapanare?")])
 //   match resp {
-//       Ok(r) => { println(r.content) },
-//       Err(e) => { println(llm.error_message(e)) }
+//       Ok(r) => { print(r.content) },
+//       Err(e) => { print(llm.error_message(e)) }
 //   }
 //
 // Multi-model composition with agents:
@@ -1219,9 +1219,9 @@ pub fn usage_summary(usage: TokenUsage) -> String {
 //   let mut conv = llm.new_conversation(config)
 //   conv = llm.set_system_prompt(conv, "You are a helpful assistant.")
 //   let r1 = llm.converse(conv, "What is Mapanare?")
-//   match r1 { Ok(turn) => { conv = turn.conversation; println(turn.content) }, Err(e) => {} }
+//   match r1 { Ok(turn) => { conv = turn.conversation; print(turn.content) }, Err(e) => {} }
 //   let r2 = llm.converse(conv, "Tell me more about its type system.")
-//   match r2 { Ok(turn) => { println(turn.content) }, Err(e) => {} }
+//   match r2 { Ok(turn) => { print(turn.content) }, Err(e) => {} }
 // ===========================================================================
 
 pub struct Conversation {
@@ -1548,8 +1548,8 @@ pub fn run_chain(steps: List<ChainStep>, initial_prompt: String) -> Result<Chain
 // Usage:
 //   let configs = [llm.openai("sk-...", "gpt-4o"), llm.anthropic("sk-...", "claude-sonnet-4-20250514")]
 //   let result = llm.consensus(configs, "What is 2+2?")
-//   println("Agreed: " + str(result.all_agree))
-//   println("Answer: " + result.best_answer)
+//   print("Agreed: " + str(result.all_agree))
+//   print("Answer: " + result.best_answer)
 // ===========================================================================
 
 pub struct ConsensusResult {
@@ -1649,7 +1649,7 @@ pub fn consensus_chat(configs: List<LLMConfig>, messages: List<ChatMessage>) -> 
 //
 // Usage:
 //   let cost = llm.estimate_cost("gpt-4o", 1000, 500)
-//   println("Estimated: $" + str(cost))
+//   print("Estimated: $" + str(cost))
 // ===========================================================================
 
 struct ModelRate {

@@ -60,7 +60,7 @@ class TestExternPythonParsing:
 
 fn main() {
     let result: Float = sqrt(4.0)
-    println(result)
+    print(result)
 }
 """
         ast = parse(src)
@@ -110,7 +110,7 @@ class TestExternPythonSemantic:
 
 fn main() {
     let result: Float = sqrt(4.0)
-    println(result)
+    print(result)
 }
 """
         errors = check(parse(src))
@@ -330,7 +330,7 @@ class TestMathSqrt:
 
 fn main() {
     let result: Float = sqrt(16.0)
-    println(result)
+    print(result)
 }
 """
         from mapanare.emit_python import PythonEmitter
@@ -349,7 +349,7 @@ fn main() {
 
 fn main() {
     let result: Float = sqrt(16.0)
-    println(result)
+    print(result)
 }
 """
         from mapanare.emit_python import PythonEmitter
@@ -379,7 +379,7 @@ fn main() {
 
 fn main() {
     let result: Int = floor(3.7)
-    println(result)
+    print(result)
 }
 """
         from mapanare.emit_python import PythonEmitter
@@ -417,7 +417,7 @@ class TestJsonInterop:
 
 fn main() {
     let result: String = dumps("hello")
-    println(result)
+    print(result)
 }
 """
         ast = parse(src)
@@ -505,7 +505,7 @@ extern "Python" fn os::getpid() -> Int
 
 fn main() {
     let s: Float = sqrt(25.0)
-    println(s)
+    print(s)
 }
 """
         from mapanare.emit_python import PythonEmitter
@@ -553,7 +553,7 @@ extern "Python" fn math::ceil(x: Float) -> Int
 fn main() {
     let a: Float = sqrt(2.0)
     let b: Int = ceil(a)
-    println(b)
+    print(b)
 }
 """
         ast = parse(src)

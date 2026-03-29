@@ -192,7 +192,7 @@ fn apply_middleware_before(router: Router, ctx: Context) -> Context {
     let mut result: Context = ctx
     // Task 16: Logging middleware — log method and path
     if router.has_logging {
-        println("[LOG] " + ctx.request.method + " " + ctx.request.path)
+        print("[LOG] " + ctx.request.method + " " + ctx.request.path)
     }
     return result
 }
@@ -796,7 +796,7 @@ pub fn server_listen(config: ServerConfig, router: Router) -> Result<Int, Server
         return Err(BindFailed("Failed to bind on " + config.host + ":" + str(config.port)))
     }
 
-    println("[SERVER] Listening on " + config.host + ":" + str(config.port))
+    print("[SERVER] Listening on " + config.host + ":" + str(config.port))
 
     // Task 8+13: Accept loop — each connection handled inline
     // Agent-per-request: In v0.9.0, the agent system can spawn per connection.

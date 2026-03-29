@@ -113,7 +113,7 @@ fi
 info "Stage 1 complete: $STAGE1"
 
 # Quick sanity check
-echo 'fn main() { println("hello") }' > /tmp/mnc_fp_test.mn
+echo 'fn main() { print("hello") }' > /tmp/mnc_fp_test.mn
 if ! "$STAGE1" /tmp/mnc_fp_test.mn > /dev/null 2>&1; then
     warn "Stage 1 sanity check failed (may be expected if emitter has known issues)"
 fi

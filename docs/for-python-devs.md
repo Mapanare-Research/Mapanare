@@ -92,8 +92,8 @@ fn parse(s: String) -> Result<Int, String> {
 }
 
 match parse("bad") {
-    Ok(v) => println(str(v)),
-    Err(e) => println("Error: ${e}"),
+    Ok(v) => print(str(v)),
+    Err(e) => print("Error: ${e}"),
 }
 
 // Or propagate with ?
@@ -158,8 +158,8 @@ match command:
 // Mapanare
 match command {
     "quit" => exit(),
-    "hello" => println("Hi!"),
-    _ => println("Unknown"),
+    "hello" => print("Hi!"),
+    _ => print("Unknown"),
 }
 ```
 

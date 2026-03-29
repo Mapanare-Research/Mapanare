@@ -58,7 +58,7 @@ class TestW001UnusedVariable:
         _no_warnings("""
             fn main() {
                 let x: Int = 42
-                println(str(x))
+                print(str(x))
             }
         """)
 
@@ -84,7 +84,7 @@ class TestW001UnusedVariable:
             fn main() {
                 let items: List<Int> = [1, 2, 3]
                 for x in items {
-                    println(str(x))
+                    print(str(x))
                 }
             }
         """)
@@ -112,7 +112,7 @@ class TestW002UnusedImport:
             import math { sqrt }
             fn main() {
                 let x: Int = 42
-                println(str(x))
+                print(str(x))
             }
         """)
         assert _has_warning(diags, LintRule.W002)
@@ -131,7 +131,7 @@ class TestW002UnusedImport:
             import math
             fn main() {
                 let x: Int = 42
-                println(str(x))
+                print(str(x))
             }
         """)
         assert _has_warning(diags, LintRule.W002)
@@ -158,9 +158,9 @@ class TestW003VariableShadowing:
                 let x: Int = 1
                 if true {
                     let x: Int = 2
-                    println(str(x))
+                    print(str(x))
                 }
-                println(str(x))
+                print(str(x))
             }
         """)
         assert _has_warning(diags, LintRule.W003)
@@ -171,9 +171,9 @@ class TestW003VariableShadowing:
                 let x: Int = 1
                 if true {
                     let y: Int = 2
-                    println(str(y))
+                    print(str(y))
                 }
-                println(str(x))
+                print(str(x))
             }
         """)
         assert not _has_warning(diags, LintRule.W003)
@@ -185,9 +185,9 @@ class TestW003VariableShadowing:
                 let items: List<Int> = [1, 2]
                 for i in items {
                     let x: Int = i
-                    println(str(x))
+                    print(str(x))
                 }
-                println(str(x))
+                print(str(x))
             }
         """)
         assert _has_warning(diags, LintRule.W003)
@@ -238,7 +238,7 @@ class TestW005UnnecessaryMut:
         diags = _lint("""
             fn main() {
                 let mut x: Int = 1
-                println(str(x))
+                print(str(x))
             }
         """)
         assert _has_warning(diags, LintRule.W005)
@@ -248,7 +248,7 @@ class TestW005UnnecessaryMut:
             fn main() {
                 let mut x: Int = 1
                 x = 2
-                println(str(x))
+                print(str(x))
             }
         """)
 
@@ -257,7 +257,7 @@ class TestW005UnnecessaryMut:
             fn main() {
                 let mut x: Int = 1
                 x += 1
-                println(str(x))
+                print(str(x))
             }
         """)
 
@@ -276,7 +276,7 @@ class TestW006EmptyMatchArm:
                     1 => {
                     },
                     _ => {
-                        println("other")
+                        print("other")
                     }
                 }
             }
@@ -289,10 +289,10 @@ class TestW006EmptyMatchArm:
                 let x: Int = 1
                 match x {
                     1 => {
-                        println("one")
+                        print("one")
                     },
                     _ => {
-                        println("other")
+                        print("other")
                     }
                 }
             }
@@ -313,7 +313,7 @@ class TestW007AgentHandleNoSend:
                 output result: String
 
                 fn handle(msg: String) {
-                    println(msg)
+                    print(msg)
                 }
             }
         """)
@@ -338,7 +338,7 @@ class TestW007AgentHandleNoSend:
                 input msg: String
 
                 fn handle(msg: String) {
-                    println(msg)
+                    print(msg)
                 }
             }
         """)
@@ -369,7 +369,7 @@ class TestW008UncheckedResult:
             }
             fn main() {
                 let r: Int = try_connect()
-                println(str(r))
+                print(str(r))
             }
         """)
 
@@ -394,7 +394,7 @@ class TestAutoFix:
         source = """import math { sqrt }
 fn main() {
     let x: Int = 42
-    println(str(x))
+    print(str(x))
 }
 """
         program = parse(source, filename="test.mn")
@@ -405,7 +405,7 @@ fn main() {
     def test_fix_removes_mut(self) -> None:
         source = """fn main() {
     let mut x: Int = 1
-    println(str(x))
+    print(str(x))
 }
 """
         program = parse(source, filename="test.mn")
@@ -450,7 +450,7 @@ class TestEdgeCases:
     def test_single_fn_no_body_issues(self) -> None:
         _no_warnings("""
             fn main() {
-                println("hello")
+                print("hello")
             }
         """)
 
@@ -459,7 +459,7 @@ class TestEdgeCases:
         _no_warnings("""
             fn main() {
                 let f: fn(Int) -> Int = (x) => x + 1
-                println(str(f(1)))
+                print(str(f(1)))
             }
         """)
 
@@ -469,7 +469,7 @@ class TestEdgeCases:
             fn main() {
                 let x: Int = 1
                 match x {
-                    y => { println(str(y)) }
+                    y => { print(str(y)) }
                 }
             }
         """)

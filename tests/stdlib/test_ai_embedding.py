@@ -63,7 +63,7 @@ class TestCoreTypes:
         """EmbedProvider enum compiles."""
         src = _embed_source_with_main("""\
             let p: EmbedProvider = OpenAI()
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -72,7 +72,7 @@ class TestCoreTypes:
         """EmbeddingError enum compiles."""
         src = _embed_source_with_main("""\
             let e: EmbeddingError = ApiError("test")
-            println(error_message(e))
+            print(error_message(e))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -86,8 +86,8 @@ class TestCoreTypes:
             let e4: EmbeddingError = AuthError("d")
             let e5: EmbeddingError = RateLimited("e")
             let e6: EmbeddingError = InvalidInput("f")
-            println(error_message(e1))
-            println(error_message(e6))
+            print(error_message(e1))
+            print(error_message(e6))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -97,8 +97,8 @@ class TestCoreTypes:
         src = _embed_source_with_main("""\
             let vec: List<Float> = [0.1, 0.2, 0.3]
             let r: EmbeddingResult = new_embedding_result(vec, 10, "test-model")
-            println(str(r.dimensions))
-            println(str(r.tokens_used))
+            print(str(r.dimensions))
+            print(str(r.tokens_used))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -115,7 +115,7 @@ class TestConfig:
         """openai_embed() compiles."""
         src = _embed_source_with_main("""\
             let c: EmbedConfig = openai_embed("sk-test", "text-embedding-3-small")
-            println(c.model)
+            print(c.model)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -124,7 +124,7 @@ class TestConfig:
         """ollama_embed() compiles."""
         src = _embed_source_with_main("""\
             let c: EmbedConfig = ollama_embed("nomic-embed-text")
-            println(str(c.port))
+            print(str(c.port))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -134,7 +134,7 @@ class TestConfig:
         src = _embed_source_with_main("""\
             let c: EmbedConfig = openai_embed("sk-test", "text-embedding-3-small")
             let c2: EmbedConfig = with_dimensions(c, 256)
-            println(str(c2.dimensions))
+            print(str(c2.dimensions))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -144,7 +144,7 @@ class TestConfig:
         src = _embed_source_with_main("""\
             let c: EmbedConfig = openai_embed("sk-test", "text-embedding-3-small")
             let c2: EmbedConfig = with_embed_timeout(c, 30000)
-            println(str(c2.timeout_ms))
+            print(str(c2.timeout_ms))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -163,7 +163,7 @@ class TestVectorMath:
             let a: List<Float> = [1.0, 2.0, 3.0]
             let b: List<Float> = [4.0, 5.0, 6.0]
             let result: Float = dot_product(a, b)
-            println(str(result))
+            print(str(result))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -173,7 +173,7 @@ class TestVectorMath:
         src = _embed_source_with_main("""\
             let v: List<Float> = [3.0, 4.0]
             let mag: Float = magnitude(v)
-            println(str(mag))
+            print(str(mag))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -184,7 +184,7 @@ class TestVectorMath:
             let a: List<Float> = [1.0, 0.0]
             let b: List<Float> = [0.0, 1.0]
             let sim: Float = cosine_similarity(a, b)
-            println(str(sim))
+            print(str(sim))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -195,7 +195,7 @@ class TestVectorMath:
             let a: List<Float> = [0.0, 0.0]
             let b: List<Float> = [3.0, 4.0]
             let dist: Float = euclidean_distance(a, b)
-            println(str(dist))
+            print(str(dist))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -205,7 +205,7 @@ class TestVectorMath:
         src = _embed_source_with_main("""\
             let v: List<Float> = [3.0, 4.0]
             let n: List<Float> = normalize(v)
-            println(str(len(n)))
+            print(str(len(n)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -216,7 +216,7 @@ class TestVectorMath:
             let a: List<Float> = [1.0, 2.0]
             let b: List<Float> = [3.0, 4.0]
             let c: List<Float> = vector_add(a, b)
-            println(str(len(c)))
+            print(str(len(c)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -226,7 +226,7 @@ class TestVectorMath:
         src = _embed_source_with_main("""\
             let v: List<Float> = [1.0, 2.0, 3.0]
             let scaled: List<Float> = vector_scale(v, 2.0)
-            println(str(len(scaled)))
+            print(str(len(scaled)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -236,7 +236,7 @@ class TestVectorMath:
         src = _embed_source_with_main("""\
             let vecs: List<List<Float>> = [[1.0, 2.0], [3.0, 4.0]]
             let m: List<Float> = vector_mean(vecs)
-            println(str(len(m)))
+            print(str(len(m)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -245,7 +245,7 @@ class TestVectorMath:
         """sqrt_approx (internal) compiles."""
         src = _embed_source_with_main("""\
             let r: Float = sqrt_approx(25.0)
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -262,7 +262,7 @@ class TestJSONHelpers:
         """parse_float_array compiles."""
         src = _embed_source_with_main("""\
             let arr: List<Float> = parse_float_array("[1.0, 2.5, -3.0]")
-            println(str(len(arr)))
+            print(str(len(arr)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -271,7 +271,7 @@ class TestJSONHelpers:
         """escape_json compiles."""
         src = _embed_source_with_main("""\
             let escaped: String = escape_json("hello \\"world\\"")
-            println(escaped)
+            print(escaped)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -288,7 +288,7 @@ class TestVectorStore:
         """new_store compiles."""
         src = _embed_source_with_main("""\
             let store: VectorStore = new_store()
-            println(str(store_size(store)))
+            print(str(store_size(store)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -299,7 +299,7 @@ class TestVectorStore:
             let mut store: VectorStore = new_store()
             let vec: List<Float> = [0.1, 0.2, 0.3]
             store = store_add(store, "id1", "Hello world", vec)
-            println(str(store_size(store)))
+            print(str(store_size(store)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -312,7 +312,7 @@ class TestVectorStore:
             store = store_add(store, "id2", "text2", [0.0, 1.0, 0.0])
             let query: List<Float> = [1.0, 0.0, 0.0]
             let results: List<SearchResult> = store_search(store, query, 2)
-            println(str(len(results)))
+            print(str(len(results)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -323,7 +323,7 @@ class TestVectorStore:
             let mut store: VectorStore = new_store()
             store = store_add(store, "id1", "text1", [1.0, 0.0])
             let results: List<SearchResult> = store_search_threshold(store, [1.0, 0.0], 0.5)
-            println(str(len(results)))
+            print(str(len(results)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -335,7 +335,7 @@ class TestVectorStore:
             store = store_add(store, "id1", "text1", [1.0, 0.0])
             store = store_add(store, "id2", "text2", [0.0, 1.0])
             store = store_remove(store, "id1")
-            println(str(store_size(store)))
+            print(str(store_size(store)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -346,7 +346,7 @@ class TestVectorStore:
             let mut store: VectorStore = new_store()
             let meta: Map<String, String> = #{"source": "doc1"}
             store = store_add_with_meta(store, "id1", "text1", [0.1, 0.2], meta)
-            println(str(store_size(store)))
+            print(str(store_size(store)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

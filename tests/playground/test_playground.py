@@ -48,7 +48,7 @@ def compile_and_run(source: str) -> str:
 EXAMPLE_PROGRAMS = {
     "Hello World": textwrap.dedent("""\
         fn main() {
-            println("Hello, Mapanare!")
+            print("Hello, Mapanare!")
         }
     """),
     "String Interpolation": textwrap.dedent("""\
@@ -58,8 +58,8 @@ EXAMPLE_PROGRAMS = {
 
         fn main() {
             let name = "World"
-            println(greet(name))
-            println("2 + 3 = ${2 + 3}")
+            print(greet(name))
+            print("2 + 3 = ${2 + 3}")
         }
     """),
     "Fibonacci": textwrap.dedent("""\
@@ -73,7 +73,7 @@ EXAMPLE_PROGRAMS = {
         fn main() {
             let mut i = 0
             while i < 10 {
-                println("fib(${i}) = ${fib(i)}")
+                print("fib(${i}) = ${fib(i)}")
                 i = i + 1
             }
         }
@@ -98,8 +98,8 @@ EXAMPLE_PROGRAMS = {
         fn main() {
             let c = Shape_Circle(5.0)
             let r = Shape_Rect(4.0, 6.0)
-            println(describe(c))
-            println(describe(r))
+            print(describe(c))
+            print(describe(r))
         }
     """),
     "Option & Result": textwrap.dedent("""\
@@ -123,14 +123,14 @@ EXAMPLE_PROGRAMS = {
 
         fn main() {
             let result = divide(10.0, 3.0)
-            println("10 / 3 = ${result}")
+            print("10 / 3 = ${result}")
 
             let err = divide(1.0, 0.0)
-            println("1 / 0 = ${err}")
+            print("1 / 0 = ${err}")
 
             let nums = [1, 2, 3, 4, 5]
-            println("find 3: ${find_first(nums, 3)}")
-            println("find 9: ${find_first(nums, 9)}")
+            print("find 3: ${find_first(nums, 3)}")
+            print("find 9: ${find_first(nums, 9)}")
         }
     """),
     "Higher-Order Functions": textwrap.dedent("""\
@@ -142,8 +142,8 @@ EXAMPLE_PROGRAMS = {
             let double = (x) => x * 2
             let square = (x) => x * x
 
-            println("double(5) = ${apply(double, 5)}")
-            println("square(5) = ${apply(square, 5)}")
+            print("double(5) = ${apply(double, 5)}")
+            print("square(5) = ${apply(square, 5)}")
         }
     """),
     "Pipe Operator": textwrap.dedent("""\
@@ -157,7 +157,7 @@ EXAMPLE_PROGRAMS = {
 
         fn main() {
             let result = 5 |> double |> add_one
-            println("5 |> double |> add_one = ${result}")
+            print("5 |> double |> add_one = ${result}")
         }
     """),
 }
@@ -219,7 +219,7 @@ def _decode_share(encoded: str) -> str:
 
 def test_share_roundtrip_simple() -> None:
     """Simple ASCII code survives share encoding roundtrip."""
-    code = 'fn main() {\n    println("hello")\n}'
+    code = 'fn main() {\n    print("hello")\n}'
     encoded = _encode_share(code)
     decoded = _decode_share(encoded)
     assert decoded == code
@@ -227,7 +227,7 @@ def test_share_roundtrip_simple() -> None:
 
 def test_share_roundtrip_unicode() -> None:
     """Unicode characters survive share encoding roundtrip."""
-    code = 'fn main() {\n    println("Hola Mundo")\n}'
+    code = 'fn main() {\n    print("Hola Mundo")\n}'
     encoded = _encode_share(code)
     decoded = _decode_share(encoded)
     assert decoded == code
@@ -235,7 +235,7 @@ def test_share_roundtrip_unicode() -> None:
 
 def test_share_roundtrip_interpolation() -> None:
     """String interpolation syntax survives share encoding."""
-    code = 'fn main() {\n    let x = 42\n    println("value: ${x}")\n}'
+    code = 'fn main() {\n    let x = 42\n    print("value: ${x}")\n}'
     encoded = _encode_share(code)
     decoded = _decode_share(encoded)
     assert decoded == code

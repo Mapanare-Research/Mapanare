@@ -36,7 +36,7 @@ class TestMutableVarReassignInLoop:
                 for i in 0..5 {
                     x = x + 1
                 }
-                println(str(x))
+                print(str(x))
             }
         """)
         ir_text = _to_ir(source)
@@ -54,7 +54,7 @@ class TestMutableVarReassignInLoop:
                 for i in 0..10 {
                     total += i
                 }
-                println(str(total))
+                print(str(total))
             }
         """)
         ir_text = _to_ir(source)
@@ -69,7 +69,7 @@ class TestMutableVarReassignInLoop:
                 for i in 0..3 {
                     s = "updated"
                 }
-                println(s)
+                print(s)
             }
         """)
         ir_text = _to_ir(source)
@@ -83,7 +83,7 @@ class TestMutableVarReassignInLoop:
                 while n > 0 {
                     n = n - 1
                 }
-                println(str(n))
+                print(str(n))
             }
         """)
         ir_text = _to_ir(source)
@@ -100,7 +100,7 @@ class TestMutableVarReassignInLoop:
                         count = count + 1
                     }
                 }
-                println(str(count))
+                print(str(count))
             }
         """)
         ir_text = _to_ir(source)
@@ -116,7 +116,7 @@ class TestMutableVarReassignInLoop:
                     x = x + 1
                 }
                 let y: Int = x + 100
-                println(str(y))
+                print(str(y))
             }
         """)
         ir_text = _to_ir(source)
@@ -141,7 +141,7 @@ class TestListAccumulationReassign:
                 for i in 0..3 {
                     xs.push(i)
                 }
-                println(str(len(xs)))
+                print(str(len(xs)))
             }
         """)
         ir_text = _to_ir(source)
@@ -156,7 +156,7 @@ class TestListAccumulationReassign:
                 for i in 0..3 {
                     xs = xs + [i]
                 }
-                println(str(len(xs)))
+                print(str(len(xs)))
             }
         """)
         ir_text = _to_ir(source)
@@ -170,9 +170,9 @@ class TestListAccumulationReassign:
                 xs.push(10)
                 xs.push(20)
                 xs.push(30)
-                println(str(xs[0]))
-                println(str(xs[1]))
-                println(str(xs[2]))
+                print(str(xs[0]))
+                print(str(xs[1]))
+                print(str(xs[2]))
             }
         """)
         ir_text = _to_ir(source)
@@ -196,7 +196,7 @@ class TestEmitterOutputSuite:
         """Simple hello world program."""
         source = textwrap.dedent("""\
             fn main() {
-                println("Hello, world!")
+                print("Hello, world!")
             }
         """)
         ir_text = _to_ir(source)
@@ -214,7 +214,7 @@ class TestEmitterOutputSuite:
             }
 
             fn main() {
-                println(str(fib(10)))
+                print(str(fib(10)))
             }
         """)
         ir_text = _to_ir(source)
@@ -234,7 +234,7 @@ class TestEmitterOutputSuite:
             }
 
             fn main() {
-                println(str(factorial(5)))
+                print(str(factorial(5)))
             }
         """)
         ir_text = _to_ir(source)
@@ -256,7 +256,7 @@ class TestEmitterOutputSuite:
             }
 
             fn main() {
-                println(classify(42))
+                print(classify(42))
             }
         """)
         ir_text = _to_ir(source)
@@ -269,7 +269,7 @@ class TestEmitterOutputSuite:
         source = textwrap.dedent("""\
             fn main() {
                 for i in 0..10 {
-                    println(str(i))
+                    print(str(i))
                 }
             }
         """)
@@ -290,7 +290,7 @@ class TestEmitterOutputSuite:
             }
 
             fn main() {
-                println(describe(1))
+                print(describe(1))
             }
         """)
         ir_text = _to_ir(source)
@@ -307,8 +307,8 @@ class TestEmitterOutputSuite:
 
             fn main() {
                 let p: Point = Point(10, 20)
-                println(str(p.x))
-                println(str(p.y))
+                print(str(p.x))
+                print(str(p.y))
             }
         """)
         ir_text = _to_ir(source)
@@ -334,7 +334,7 @@ class TestEmitterOutputSuite:
 
             fn main() {
                 let c: Color = Color::Red
-                println(name(c))
+                print(name(c))
             }
         """)
         ir_text = _to_ir(source)
@@ -346,8 +346,8 @@ class TestEmitterOutputSuite:
             fn main() {
                 let mut xs: List<Int> = [1, 2, 3]
                 xs.push(4)
-                println(str(xs[0]))
-                println(str(len(xs)))
+                print(str(xs[0]))
+                print(str(len(xs)))
             }
         """)
         ir_text = _to_ir(source)
@@ -359,9 +359,9 @@ class TestEmitterOutputSuite:
         source = textwrap.dedent("""\
             fn main() {
                 let s: String = "Hello, World!"
-                println(str(len(s)))
-                println(s.to_upper())
-                println(s.to_lower())
+                print(str(len(s)))
+                print(s.to_upper())
+                print(s.to_lower())
             }
         """)
         ir_text = _to_ir(source)
@@ -380,8 +380,8 @@ class TestEmitterOutputSuite:
             fn main() {
                 let r: Result<Int, String> = divide(10, 2)
                 match r {
-                    Ok(v) => { println(str(v)) },
-                    Err(e) => { println(e) }
+                    Ok(v) => { print(str(v)) },
+                    Err(e) => { print(e) }
                 }
             }
         """)
@@ -394,7 +394,7 @@ class TestEmitterOutputSuite:
             fn main() {
                 let x: Int = 10
                 let add_x = (n) => n + x
-                println(str(add_x(5)))
+                print(str(add_x(5)))
             }
         """)
         ir_text = _to_ir(source)
@@ -414,7 +414,7 @@ class TestEmitterOutputSuite:
             fn main() {
                 let x: Int = add(3, 4)
                 let y: Int = mul(x, 2)
-                println(str(y))
+                print(str(y))
             }
         """)
         ir_text = _to_ir(source)

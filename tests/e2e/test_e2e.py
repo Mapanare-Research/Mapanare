@@ -64,10 +64,10 @@ class TestHelloWorld:
         assert result.returncode == 0
         assert "Hello, World!" in result.stdout
 
-    def test_hello_world_println(self) -> None:
+    def test_hello_world_print_greeting(self) -> None:
         source = textwrap.dedent("""\
             fn main() {
-                println("Hello from Mapanare!")
+                print("Hello from Mapanare!")
             }
         """)
         result = _run_mapanare(source)

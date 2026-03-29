@@ -89,7 +89,7 @@ class TestDocGenerator:
         assert "A helper function." in html
 
     def test_empty_program_generates_html(self):
-        source = 'fn main() {\n    println("hello")\n}'
+        source = 'fn main() {\n    print("hello")\n}'
         ast = parse(source, filename="test.mn")
         items = extract_doc_items(ast)
         html = generate_html(items, module_name="test")

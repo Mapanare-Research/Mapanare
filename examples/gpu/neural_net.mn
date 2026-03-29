@@ -31,8 +31,8 @@ fn softmax(t: Tens) -> Tens {
 }
 
 fn main() {
-    println("=== Mapanare Neural Network (GPU) ===")
-    println("")
+    print("=== Mapanare Neural Network (GPU) ===")
+    print("")
 
     // Initialize weights (normally random, here fixed for reproducibility)
     let w1 = from_list([0.1, 0.2, -0.1, 0.3, 0.4, -0.2, 0.1, 0.5, -0.3, 0.1, 0.2, -0.1, 0.3, 0.2, -0.4, 0.1, 0.2, -0.1, 0.3, 0.4, -0.2, 0.1, 0.2, -0.3, 0.1, 0.3, -0.2, 0.1, 0.4, -0.1, 0.3, 0.2], [4, 8])
@@ -43,21 +43,21 @@ fn main() {
     let input = from_list([5.1, 3.5, 1.4, 0.2], [1, 4])
 
     // Forward pass
-    println("Input: " + str(input))
+    print("Input: " + str(input))
 
     // Layer 1: input @ w1 -> hidden (1x4 @ 4x8 = 1x8)
     let hidden = matmul(input, w1)
-    println("Hidden (pre-activation): " + str(hidden))
+    print("Hidden (pre-activation): " + str(hidden))
 
     let activated = relu(hidden)
-    println("Hidden (post-ReLU): " + str(activated))
+    print("Hidden (post-ReLU): " + str(activated))
 
     // Layer 2: hidden @ w2 -> output (1x8 @ 8x2 = 1x2)
     let output = matmul(activated, w2)
-    println("Output (logits): " + str(output))
+    print("Output (logits): " + str(output))
 
     let probs = softmax(output)
-    println("Output (probabilities): " + str(probs))
-    println("")
-    println("Prediction: class " + str(0))
+    print("Output (probabilities): " + str(probs))
+    print("")
+    print("Prediction: class " + str(0))
 }

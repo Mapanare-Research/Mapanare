@@ -17,7 +17,7 @@ class TestTutorialHelloWorld:
     def test_hello_world(self) -> None:
         source = textwrap.dedent("""\
             fn main() {
-                println("Hello, Mapanare!")
+                print("Hello, Mapanare!")
             }
         """)
         result = _run_mapanare(source)
@@ -37,13 +37,13 @@ class TestTutorialVariables:
                 let pi: Float = 3.14159
                 let active: Bool = true
 
-                println("Hello, " + name + "!")
-                println("x = " + str(x))
-                println("pi = " + str(pi))
+                print("Hello, " + name + "!")
+                print("x = " + str(x))
+                print("pi = " + str(pi))
 
                 let mut count: Int = 0
                 count += 1
-                println("count = " + str(count))
+                print("count = " + str(count))
             }
         """)
         result = _run_mapanare(source)
@@ -70,8 +70,8 @@ class TestTutorialFunctions:
             }
 
             fn main() {
-                println(str(add(3, 4)))
-                println(greet("Mapanare"))
+                print(str(add(3, 4)))
+                print(greet("Mapanare"))
             }
         """)
         result = _run_mapanare(source)
@@ -98,9 +98,9 @@ class TestTutorialControlFlow:
             }
 
             fn main() {
-                println(classify(-5))
-                println(classify(0))
-                println(classify(42))
+                print(classify(-5))
+                print(classify(0))
+                print(classify(42))
             }
         """)
         result = _run_mapanare(source)
@@ -115,7 +115,7 @@ class TestTutorialControlFlow:
             fn main() {
                 let mut i: Int = 0
                 while i < 5 {
-                    println(str(i))
+                    print(str(i))
                     i += 1
                 }
             }
@@ -131,18 +131,18 @@ class TestTutorialControlFlow:
         source = textwrap.dedent("""\
             fn main() {
                 for i in 0..5 {
-                    println(str(i))
+                    print(str(i))
                 }
 
                 let mut sum: Int = 0
                 for i in 1..=5 {
                     sum += i
                 }
-                println("sum = " + str(sum))
+                print("sum = " + str(sum))
 
                 let items = [10, 20, 30]
                 for item in items {
-                    println(str(item))
+                    print(str(item))
                 }
             }
         """)
@@ -174,9 +174,9 @@ class TestTutorialStructs:
 
             fn main() {
                 let p = Point(3.0, 4.0)
-                println("x = " + str(p.x))
-                println("y = " + str(p.y))
-                println("distance squared = " + str(distance(p)))
+                print("x = " + str(p.x))
+                print("y = " + str(p.y))
+                print("distance squared = " + str(distance(p)))
             }
         """)
         result = _run_mapanare(source)
@@ -210,8 +210,8 @@ class TestTutorialEnums:
             fn main() {
                 let c = Shape_Circle(5.0)
                 let r = Shape_Rect(3.0, 4.0)
-                println("circle area = " + str(area(c)))
-                println("rect area = " + str(area(r)))
+                print("circle area = " + str(area(c)))
+                print("rect area = " + str(area(r)))
             }
         """)
         result = _run_mapanare(source)
@@ -233,8 +233,8 @@ class TestTutorialEnums:
             }
 
             fn main() {
-                println(describe(1))
-                println(describe(99))
+                print(describe(1))
+                print(describe(99))
             }
         """)
         result = _run_mapanare(source)
@@ -256,14 +256,14 @@ class TestTutorialLists:
                 items.push(20)
                 items.push(30)
 
-                println("length = " + str(items.length()))
-                println("first = " + str(items[0]))
+                print("length = " + str(items.length()))
+                print("first = " + str(items[0]))
 
                 let mut total: Int = 0
                 for item in items {
                     total += item
                 }
-                println("total = " + str(total))
+                print("total = " + str(total))
             }
         """)
         result = _run_mapanare(source)
@@ -290,14 +290,14 @@ class TestTutorialErrorHandling:
             fn main() {
                 let r1 = divide(10, 2)
                 match r1 {
-                    Ok(v) => { println("result = " + str(v)) },
-                    Err(e) => { println("error: " + e) }
+                    Ok(v) => { print("result = " + str(v)) },
+                    Err(e) => { print("error: " + e) }
                 }
 
                 let r2 = divide(10, 0)
                 match r2 {
-                    Ok(v) => { println("result = " + str(v)) },
-                    Err(e) => { println("error: " + e) }
+                    Ok(v) => { print("result = " + str(v)) },
+                    Err(e) => { print("error: " + e) }
                 }
             }
         """)
@@ -323,7 +323,7 @@ class TestTutorialErrorHandling:
 
             fn main() {
                 let r = do_work()
-                println(str(r))
+                print(str(r))
             }
         """)
         result = _run_mapanare(source)
@@ -344,8 +344,8 @@ class TestTutorialErrorHandling:
             fn main() {
                 let result = find_item([10, 20, 30], 20)
                 match result {
-                    Some(v) => { println("found: " + str(v)) },
-                    _ => { println("not found") }
+                    Some(v) => { print("found: " + str(v)) },
+                    _ => { print("not found") }
                 }
             }
         """)
@@ -373,7 +373,7 @@ class TestTutorialAgents:
                 let g = spawn Greeter()
                 g.name <- "World"
                 let msg = sync g.greeting
-                println(msg)
+                print(msg)
                 sync g.stop()
             }
         """)
@@ -395,9 +395,9 @@ class TestTutorialAgents:
             fn main() {
                 let d = spawn Doubler()
                 d.val <- 21
-                println(str(sync d.result))
+                print(str(sync d.result))
                 d.val <- 50
-                println(str(sync d.result))
+                print(str(sync d.result))
                 sync d.stop()
             }
         """)
@@ -440,7 +440,7 @@ class TestTutorialPipelines:
                 let mid = sync a.result
                 d.val <- mid
                 let final_val = sync d.result
-                println(str(final_val))
+                print(str(final_val))
 
                 sync a.stop()
                 sync d.stop()
@@ -476,7 +476,7 @@ class TestTutorialPipelines:
 
             fn main() {
                 let result = sync Transform(10)
-                println(str(result))
+                print(str(result))
             }
         """)
         result = _run_mapanare(source)
@@ -494,10 +494,10 @@ class TestTutorialSignals:
                 let count = signal(0)
                 let doubled = signal { count.value * 2 }
 
-                println("doubled = " + str(doubled.value))
+                print("doubled = " + str(doubled.value))
 
                 count.value = 10
-                println("doubled = " + str(doubled.value))
+                print("doubled = " + str(doubled.value))
             }
         """)
         result = _run_mapanare(source)
@@ -517,7 +517,7 @@ class TestTutorialStreams:
                 let s = stream([1, 2, 3, 4, 5])
                 let result = s.map((x) => x * 2).filter((x) => x > 4)
                 let collected = sync result.collect()
-                println(str(collected))
+                print(str(collected))
             }
         """)
         result = _run_mapanare(source)

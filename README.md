@@ -117,7 +117,7 @@ What works today vs. what's planned.
 | `if`/`else`, `for..in`, `while` | Yes | Yes | Yes | Stable |
 | Type inference, generics | Yes | Yes | Yes | Stable |
 | `Result`/`Option` | Yes | Yes | Yes | Stable |
-| `print`/`println`, `str`/`int`/`float`/`len` | Yes | Yes | Yes | Stable |
+| `print` (`println` deprecated), `str`/`int`/`float`/`len` | Yes | Yes | Yes | Stable |
 | Lists: literals, indexing, `push`/`pop`/`length` | Yes | Yes | Yes | Stable |
 | String methods: `length`/`find`/`substring`/`contains`/`split`/`trim`/`replace`/... | Yes | Yes | Yes | Stable |
 | Dictionaries/Maps | Yes | Yes | Yes | Stable |
@@ -150,16 +150,16 @@ What works today vs. what's planned.
 ```mn
 fn main() {
     let name = "World"
-    println("Hello, " + name + "!")
+    print("Hello, " + name + "!")
 
     let mut count = 0
     while count < 5 {
-        println(str(count))
+        print(str(count))
         count += 1
     }
 
     for i in 0..5 {
-        println(str(i))
+        print(str(i))
     }
 }
 ```
@@ -202,12 +202,12 @@ let mut items: List<Int> = []
 items.push(1)
 items.push(2)
 items.push(3)
-println(str(items.length()))    // 3
-println(str(items[0]))         // 1
+print(str(items.length()))    // 3
+print(str(items[0]))         // 1
 
 let s = "hello world"
-println(str(s.length()))       // 11
-println(s.substring(0, 5))    // hello
+print(str(s.length()))       // 11
+print(s.substring(0, 5))    // hello
 ```
 
 ### Agents

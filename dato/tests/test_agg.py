@@ -86,9 +86,9 @@ class TestScalarAgg:
             match result {{
                 Ok(t) => {{
                     let s: Int = sum_col(t, "salary")
-                    println(str(s))
+                    print(str(s))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -101,9 +101,9 @@ class TestScalarAgg:
             match result {{
                 Ok(t) => {{
                     let m: Float = mean_col(t, "salary")
-                    println(str(m))
+                    print(str(m))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -116,9 +116,9 @@ class TestScalarAgg:
             match result {{
                 Ok(t) => {{
                     let mn: Int = min_col(t, "salary")
-                    println(str(mn))
+                    print(str(mn))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -131,9 +131,9 @@ class TestScalarAgg:
             match result {{
                 Ok(t) => {{
                     let mx: Int = max_col(t, "salary")
-                    println(str(mx))
+                    print(str(mx))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -146,9 +146,9 @@ class TestScalarAgg:
             match result {{
                 Ok(t) => {{
                     let c: Int = count(t)
-                    println(str(c))
+                    print(str(c))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -170,11 +170,11 @@ class TestGroupBy:
                 Ok(t) => {{
                     let gr: Result<Grouped, DatoError> = group(t, "dept")
                     match gr {{
-                        Ok(g) => {{ println(str(len(g.key_values))) }},
-                        Err(e) => {{ println("err") }}
+                        Ok(g) => {{ print(str(len(g.key_values))) }},
+                        Err(e) => {{ print("err") }}
                     }}
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -190,12 +190,12 @@ class TestGroupBy:
                     match gr {{
                         Ok(g) => {{
                             let agg: Table = group_sum(g, "salary")
-                            println(str(nrows(agg)))
+                            print(str(nrows(agg)))
                         }},
-                        Err(e) => {{ println("err") }}
+                        Err(e) => {{ print("err") }}
                     }}
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -211,12 +211,12 @@ class TestGroupBy:
                     match gr {{
                         Ok(g) => {{
                             let agg: Table = group_mean(g, "salary")
-                            println(str(nrows(agg)))
+                            print(str(nrows(agg)))
                         }},
-                        Err(e) => {{ println("err") }}
+                        Err(e) => {{ print("err") }}
                     }}
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -232,12 +232,12 @@ class TestGroupBy:
                     match gr {{
                         Ok(g) => {{
                             let agg: Table = group_count(g)
-                            println(str(nrows(agg)))
+                            print(str(nrows(agg)))
                         }},
-                        Err(e) => {{ println("err") }}
+                        Err(e) => {{ print("err") }}
                     }}
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -258,10 +258,10 @@ class TestDescribe:
             match result {{
                 Ok(t) => {{
                     let desc: Table = describe(t)
-                    println(str(ncols(desc)))
-                    println(str(nrows(desc)))
+                    print(str(ncols(desc)))
+                    print(str(nrows(desc)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)

@@ -61,28 +61,28 @@ class TestCoreTypes:
             let headers: List<String> = ["name", "age"]
             let rows: List<List<String>> = [["Alice", "30"], ["Bob", "25"]]
             let table: CsvTable = new CsvTable { headers: headers, rows: rows }
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
     def test_csv_error_struct(self) -> None:
         src = _csv_with_main("""\
             let e: CsvError = new CsvError { message: "test error", line: 1 }
-            println(e.message)
+            print(e.message)
         """)
         assert "main" in _compile_mir(src)
 
     def test_csv_config_struct(self) -> None:
         src = _csv_with_main("""\
             let config: CsvConfig = new CsvConfig { delimiter: ",", quote_char: "\\"", has_headers: true }
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
     def test_default_csv_config(self) -> None:
         src = _csv_with_main("""\
             let config: CsvConfig = default_csv_config()
-            println(config.delimiter)
+            print(config.delimiter)
         """)
         assert "main" in _compile_mir(src)
 
@@ -98,7 +98,7 @@ class TestBasicParsing:
         src = _csv_with_main("""\
             let csv_data: String = "name,age\\nAlice,30\\nBob,25"
             let result: Result<CsvTable, CsvError> = parse(csv_data)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -106,7 +106,7 @@ class TestBasicParsing:
         src = _csv_with_main("""\
             let csv_data: String = "x,y\\n1,2"
             let result: Result<CsvTable, CsvError> = parse(csv_data)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -114,7 +114,7 @@ class TestBasicParsing:
         src = _csv_with_main("""\
             let csv_data: String = ""
             let result: Result<CsvTable, CsvError> = parse(csv_data)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -122,7 +122,7 @@ class TestBasicParsing:
         src = _csv_with_main("""\
             let csv_data: String = "name,age\\n"
             let result: Result<CsvTable, CsvError> = parse(csv_data)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -139,7 +139,7 @@ class TestCustomDelimiter:
             let csv_data: String = "name\\tage\\nAlice\\t30"
             let config: CsvConfig = new CsvConfig { delimiter: "\\t", quote_char: "\\"", has_headers: true }
             let result: Result<CsvTable, CsvError> = parse_with(csv_data, config)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -148,7 +148,7 @@ class TestCustomDelimiter:
             let csv_data: String = "name|age\\nAlice|30"
             let config: CsvConfig = new CsvConfig { delimiter: "|", quote_char: "\\"", has_headers: true }
             let result: Result<CsvTable, CsvError> = parse_with(csv_data, config)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -157,7 +157,7 @@ class TestCustomDelimiter:
             let csv_data: String = "Alice,30\\nBob,25"
             let config: CsvConfig = new CsvConfig { delimiter: ",", quote_char: "\\"", has_headers: false }
             let result: Result<CsvTable, CsvError> = parse_with(csv_data, config)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -173,7 +173,7 @@ class TestQuotedFields:
         src = _csv_with_main("""\
             let csv_data: String = "name,address\\n\\"Alice\\",\\"123 Main St, Apt 4\\""
             let result: Result<CsvTable, CsvError> = parse(csv_data)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -181,7 +181,7 @@ class TestQuotedFields:
         src = _csv_with_main("""\
             let csv_data: String = "name,bio\\n\\"Alice\\",\\"line1\\nline2\\""
             let result: Result<CsvTable, CsvError> = parse(csv_data)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -189,7 +189,7 @@ class TestQuotedFields:
         src = _csv_with_main("""\
             let csv_data: String = "name,quote\\nAlice,\\"She said \\"\\"hello\\"\\"\\""
             let result: Result<CsvTable, CsvError> = parse(csv_data)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -207,7 +207,7 @@ class TestRoundTrip:
             let rows: List<List<String>> = [["Alice", "30"], ["Bob", "25"]]
             let table: CsvTable = new CsvTable { headers: headers, rows: rows }
             let csv_out: String = to_string(table, ",", "\\"")
-            println(csv_out)
+            print(csv_out)
         """)
         assert "main" in _compile_mir(src)
 
@@ -218,7 +218,7 @@ class TestRoundTrip:
             let table: CsvTable = new CsvTable { headers: headers, rows: rows }
             let csv_str: String = to_string(table, ",", "\\"")
             let result: Result<CsvTable, CsvError> = parse(csv_str)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -229,7 +229,7 @@ class TestRoundTrip:
             let table: CsvTable = new CsvTable { headers: headers, rows: rows }
             let csv_str: String = to_string(table, ",", "\\"")
             let result: Result<CsvTable, CsvError> = parse(csv_str)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -245,14 +245,14 @@ class TestStreaming:
         src = _csv_with_main("""\
             let csv_data: String = "name,age\\nAlice,30\\nBob,25\\nCarol,28"
             let result: Result<List<List<String>>, CsvError> = collect_rows(csv_data)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
     def test_stream_state(self) -> None:
         src = _csv_with_main("""\
             let state: StreamState = new_stream_state("a,b\\n1,2", ",", "\\"", true)
-            println(str(state.pos))
+            print(str(state.pos))
         """)
         assert "main" in _compile_mir(src)
 
@@ -260,7 +260,7 @@ class TestStreaming:
         src = _csv_with_main("""\
             let state: StreamState = new_stream_state("a,b\\n1,2", ",", "\\"", false)
             let result: Result<List<String>, CsvError> = stream_next_row(state)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -277,8 +277,8 @@ class TestErrorCases:
             let csv_data: String = "name,age\\n\\"Alice,30"
             let result: Result<CsvTable, CsvError> = parse(csv_data)
             match result {
-                Ok(table) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(table) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         assert "main" in _compile_mir(src)
@@ -286,7 +286,7 @@ class TestErrorCases:
     def test_error_line_number(self) -> None:
         src = _csv_with_main("""\
             let e: CsvError = new CsvError { message: "test", line: 5 }
-            println(str(e.line))
+            print(str(e.line))
         """)
         assert "main" in _compile_mir(src)
 
@@ -301,14 +301,14 @@ class TestWriter:
     def test_field_needs_quoting(self) -> None:
         src = _csv_with_main("""\
             let needs: Bool = field_needs_quoting("hello,world", ",", "\\"")
-            println(str(needs))
+            print(str(needs))
         """)
         assert "main" in _compile_mir(src)
 
     def test_quote_field(self) -> None:
         src = _csv_with_main("""\
             let quoted: String = quote_field("hello,world", "\\"")
-            println(quoted)
+            print(quoted)
         """)
         assert "main" in _compile_mir(src)
 
@@ -316,7 +316,7 @@ class TestWriter:
         src = _csv_with_main("""\
             let fields: List<String> = ["Alice", "30", "NYC"]
             let row_str: String = row_to_csv_string(fields, ",", "\\"")
-            println(row_str)
+            print(row_str)
         """)
         assert "main" in _compile_mir(src)
 
@@ -326,7 +326,7 @@ class TestWriter:
             let rows: List<List<String>> = [["1", "2"]]
             let table: CsvTable = new CsvTable { headers: headers, rows: rows }
             let result: Result<Bool, CsvError> = write(table, "/tmp/test.csv")
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -337,7 +337,7 @@ class TestWriter:
             let table: CsvTable = new CsvTable { headers: headers, rows: rows }
             let config: CsvConfig = new CsvConfig { delimiter: "\\t", quote_char: "\\"", has_headers: true }
             let result: Result<Bool, CsvError> = write_with(table, "/tmp/test.tsv", config)
-            println("ok")
+            print("ok")
         """)
         assert "main" in _compile_mir(src)
 
@@ -352,20 +352,20 @@ class TestParserHelpers:
     def test_parse_csv_field_unquoted(self) -> None:
         src = _csv_with_main("""\
             let fr: FieldResult = parse_csv_field("hello,world", 0, 1, ",", "\\"")
-            println(fr.value)
+            print(fr.value)
         """)
         assert "main" in _compile_mir(src)
 
     def test_parse_csv_field_quoted(self) -> None:
         src = _csv_with_main("""\
             let fr: FieldResult = parse_csv_field("\\"hello,world\\"", 0, 1, ",", "\\"")
-            println(fr.value)
+            print(fr.value)
         """)
         assert "main" in _compile_mir(src)
 
     def test_parse_csv_row(self) -> None:
         src = _csv_with_main("""\
             let rr: RowResult = parse_csv_row("a,b,c\\n", 0, 1, ",", "\\"")
-            println(str(len(rr.fields)))
+            print(str(len(rr.fields)))
         """)
         assert "main" in _compile_mir(src)

@@ -414,7 +414,7 @@ class TestDeadCodeElimination:
                 ReturnStmt(value=IntLiteral(value=42)),
                 ExprStmt(
                     expr=CallExpr(
-                        callee=Identifier(name="println"),
+                        callee=Identifier(name="print"),
                         args=[StringLiteral(value="unreachable")],
                     )
                 ),
@@ -544,7 +544,7 @@ class TestDeadCodeElimination:
                     ReturnStmt(value=Identifier(name="i")),
                     ExprStmt(
                         expr=CallExpr(
-                            callee=Identifier(name="println"),
+                            callee=Identifier(name="print"),
                             args=[StringLiteral(value="dead")],
                         )
                     ),
@@ -647,7 +647,7 @@ class TestAgentInlining:
                         stmts=[
                             ExprStmt(
                                 expr=CallExpr(
-                                    callee=Identifier(name="println"),
+                                    callee=Identifier(name="print"),
                                     args=[Identifier(name="msg")],
                                 )
                             )

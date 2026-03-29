@@ -68,9 +68,9 @@ class TestSimplePatterns:
         src = _regex_source_with_main("""\
             let ok: Bool = is_match("hello", "say hello world")
             if ok {
-                println("matched")
+                print("matched")
             } else {
-                println("no match")
+                print("no match")
             }
             """)
         ir_out = _compile_mir(src)
@@ -82,7 +82,7 @@ class TestSimplePatterns:
         src = _regex_source_with_main("""\
             let ok: Bool = is_match("h.llo", "hello")
             if ok {
-                println("matched")
+                print("matched")
             }
             """)
         ir_out = _compile_mir(src)
@@ -93,7 +93,7 @@ class TestSimplePatterns:
         src = _regex_source_with_main("""\
             let ok: Bool = is_match("ab*c", "abbbbc")
             if ok {
-                println("matched")
+                print("matched")
             }
             """)
         ir_out = _compile_mir(src)
@@ -104,7 +104,7 @@ class TestSimplePatterns:
         src = _regex_source_with_main("""\
             let ok: Bool = is_match("a+b", "aaab")
             if ok {
-                println("matched")
+                print("matched")
             }
             """)
         ir_out = _compile_mir(src)
@@ -115,7 +115,7 @@ class TestSimplePatterns:
         src = _regex_source_with_main("""\
             let ok: Bool = is_match("colou?r", "color")
             if ok {
-                println("matched")
+                print("matched")
             }
             """)
         ir_out = _compile_mir(src)
@@ -127,10 +127,10 @@ class TestSimplePatterns:
             let m: Option<Match> = regex_match("world", "hello world")
             match m {
                 Some(found) => {
-                    println(found.text)
+                    print(found.text)
                 },
                 None => {
-                    println("no match")
+                    print("no match")
                 }
             }
             """)
@@ -139,7 +139,7 @@ class TestSimplePatterns:
 
     def test_extern_declarations_present(self) -> None:
         """All regex extern declarations are present in compiled IR."""
-        src = _regex_source_with_main('println("ok")')
+        src = _regex_source_with_main('print("ok")')
         ir_out = _compile_mir(src)
         assert "__mn_regex_compile_str" in ir_out
         assert "__mn_regex_exec_str" in ir_out
@@ -159,7 +159,7 @@ class TestCharacterClasses:
         src = _regex_source_with_main("""\
             let ok: Bool = is_match("[a-z]+", "hello")
             if ok {
-                println("matched")
+                print("matched")
             }
             """)
         ir_out = _compile_mir(src)
@@ -170,7 +170,7 @@ class TestCharacterClasses:
         src = _regex_source_with_main("""\
             let ok: Bool = is_match("[^0-9]+", "hello")
             if ok {
-                println("matched")
+                print("matched")
             }
             """)
         ir_out = _compile_mir(src)
@@ -181,7 +181,7 @@ class TestCharacterClasses:
         src = _regex_source_with_main("""\
             let ok: Bool = is_match("\\\\d+", "abc123")
             if ok {
-                println("matched")
+                print("matched")
             }
             """)
         ir_out = _compile_mir(src)
@@ -192,7 +192,7 @@ class TestCharacterClasses:
         src = _regex_source_with_main("""\
             let ok: Bool = is_match("\\\\w+", "hello_world")
             if ok {
-                println("matched")
+                print("matched")
             }
             """)
         ir_out = _compile_mir(src)
@@ -203,7 +203,7 @@ class TestCharacterClasses:
         src = _regex_source_with_main("""\
             let ok: Bool = is_match("hello\\\\sworld", "hello world")
             if ok {
-                println("matched")
+                print("matched")
             }
             """)
         ir_out = _compile_mir(src)
@@ -223,10 +223,10 @@ class TestCaptureGroups:
             let m: Option<Match> = regex_match("(\\\\d+)-(\\\\d+)", "date: 2026-03")
             match m {
                 Some(found) => {
-                    println(found.text)
+                    print(found.text)
                 },
                 None => {
-                    println("no match")
+                    print("no match")
                 }
             }
             """)
@@ -240,12 +240,12 @@ class TestCaptureGroups:
             let m: Option<Match> = regex_match("(\\\\w+)@(\\\\w+)", "user@host")
             match m {
                 Some(found) => {
-                    println(found.text)
-                    println(str(found.start))
-                    println(str(found.end))
+                    print(found.text)
+                    print(str(found.start))
+                    print(str(found.end))
                 },
                 None => {
-                    println("no match")
+                    print("no match")
                 }
             }
             """)
@@ -259,10 +259,10 @@ class TestCaptureGroups:
             let m: Option<Match> = regex_match("(a)(b)?(c)", "ac")
             match m {
                 Some(found) => {
-                    println(found.text)
+                    print(found.text)
                 },
                 None => {
-                    println("no match")
+                    print("no match")
                 }
             }
             """)
@@ -281,7 +281,7 @@ class TestFindAll:
         """find_all returns List<Match> compiles."""
         src = _regex_source_with_main("""\
             let matches: List<Match> = find_all("[a-z]+", "hello world 123 foo")
-            println(str(len(matches)))
+            print(str(len(matches)))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -290,7 +290,7 @@ class TestFindAll:
         """find_all with digit pattern compiles."""
         src = _regex_source_with_main("""\
             let matches: List<Match> = find_all("\\\\d+", "abc 123 def 456 ghi 789")
-            println(str(len(matches)))
+            print(str(len(matches)))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -299,7 +299,7 @@ class TestFindAll:
         """find_all with no matches returns empty list."""
         src = _regex_source_with_main("""\
             let matches: List<Match> = find_all("xyz", "hello world")
-            println(str(len(matches)))
+            print(str(len(matches)))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -316,7 +316,7 @@ class TestReplaceAll:
         """replace_all substitutes all occurrences compiles."""
         src = _regex_source_with_main("""\
             let result: String = replace_all("\\\\d+", "abc 123 def 456", "NUM")
-            println(result)
+            print(result)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -326,7 +326,7 @@ class TestReplaceAll:
         """replace (first occurrence only) compiles."""
         src = _regex_source_with_main("""\
             let result: String = replace("\\\\d+", "abc 123 def 456", "NUM")
-            println(result)
+            print(result)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -335,7 +335,7 @@ class TestReplaceAll:
         """replace with no match returns original string."""
         src = _regex_source_with_main("""\
             let result: String = replace_all("xyz", "hello world", "XYZ")
-            println(result)
+            print(result)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -352,7 +352,7 @@ class TestSplit:
         """regex_split by pattern compiles."""
         src = _regex_source_with_main("""\
             let parts: List<String> = regex_split("[,;]\\\\s*", "a, b; c, d")
-            println(str(len(parts)))
+            print(str(len(parts)))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -361,7 +361,7 @@ class TestSplit:
         """Split by whitespace pattern compiles."""
         src = _regex_source_with_main("""\
             let parts: List<String> = regex_split("\\\\s+", "hello   world   foo")
-            println(str(len(parts)))
+            print(str(len(parts)))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -370,7 +370,7 @@ class TestSplit:
         """Split with no match returns original as single element."""
         src = _regex_source_with_main("""\
             let parts: List<String> = regex_split("xyz", "hello world")
-            println(str(len(parts)))
+            print(str(len(parts)))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -388,8 +388,8 @@ class TestErrors:
         src = _regex_source_with_main("""\
             let r: Result<Regex, RegexError> = compile("[invalid")
             match r {
-                Ok(re) => { println("unexpected ok") },
-                Err(e) => { println("expected error") }
+                Ok(re) => { print("unexpected ok") },
+                Err(e) => { print("expected error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -400,8 +400,8 @@ class TestErrors:
         src = _regex_source_with_main("""\
             let r: Result<Regex, RegexError> = compile("")
             match r {
-                Ok(re) => { println("unexpected ok") },
-                Err(e) => { println("expected error") }
+                Ok(re) => { print("unexpected ok") },
+                Err(e) => { print("expected error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -413,7 +413,7 @@ class TestErrors:
             let e1: RegexError = CompileError("bad pattern")
             let e2: RegexError = InvalidPattern("empty")
             let e3: RegexError = RuntimeError("runtime")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -423,9 +423,9 @@ class TestErrors:
         src = _regex_source_with_main("""\
             let ok: Bool = is_match("[invalid", "test")
             if ok {
-                println("should not match")
+                print("should not match")
             } else {
-                println("correctly false")
+                print("correctly false")
             }
             """)
         ir_out = _compile_mir(src)
@@ -445,7 +445,7 @@ class TestRegexIntegration:
             let ok: Bool = is_match("\\\\d{4}-\\\\d{2}", "date: 2026-03")
             if ok {
                 let cleaned: String = replace_all("\\\\d", "date: 2026-03", "#")
-                println(cleaned)
+                print(cleaned)
             }
             """)
         ir_out = _compile_mir(src)
@@ -456,7 +456,7 @@ class TestRegexIntegration:
         src = _regex_source_with_main("""\
             let matches: List<Match> = find_all("[A-Z][a-z]+", "Hello World Foo")
             let count: Int = len(matches)
-            println(str(count))
+            print(str(count))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -467,10 +467,10 @@ class TestRegexIntegration:
             let r: Result<Regex, RegexError> = compile("\\\\d+")
             match r {
                 Ok(re) => {
-                    println(re.pattern)
+                    print(re.pattern)
                 },
                 Err(e) => {
-                    println("error")
+                    print("error")
                 }
             }
             """)
@@ -483,10 +483,10 @@ class TestRegexIntegration:
             let m: Option<Match> = regex_match("(\\\\d+)-(\\\\d+)", "date: 2026-03")
             match m {
                 Some(found) => {
-                    println(found.text)
+                    print(found.text)
                 },
                 None => {
-                    println("no match")
+                    print("no match")
                 }
             }
             """)

@@ -1070,7 +1070,7 @@ fn expect(tokens: List<Token>, pos: Int, expected: String) -> Int {
     let tt: String = peek_type(tokens, pos)
     if tt != expected {
         let msg: String = "Expected " + expected + " but got " + tt
-        println(msg)
+        print(msg)
     }
     return pos + 1
 }
@@ -7982,9 +7982,9 @@ fn emit_unwrap(st: EmitState, dest: Value, val: Value) -> EmitState {
 fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>) -> EmitState {
     let dn: String = dest.name
 
-    // Built-in: print / println
+    // Built-in: print / println (both add newline; println is deprecated)
     if fn_name == "print" {
-        return emit_builtin_print(st, args)
+        return emit_builtin_println(st, args)
     }
     if fn_name == "println" {
         return emit_builtin_println(st, args)
@@ -8064,15 +8064,9 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
 // Built-in function emission
 // ---------------------------------------------------------------------------
 
+// Deprecated: print now adds newline (same as println). Kept for backwards compat.
 fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
-    if len(args) == 0 {
-        return emit_line(st, emit_call_void("printf", "i8* @.newline"))
-    }
-    let arg: Value = args[0]
-    if arg.ty.kind == "string" {
-        return emit_line(st, emit_call_void("__mn_str_print", llvm_string() + " " + arg.name))
-    }
-    return emit_line(st, "  call i32 (i8*, ...) @printf(i8* @.fmt_int, i64 " + arg.name + ")")
+    return emit_builtin_println(st, args)
 }
 
 fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
@@ -8474,15 +8468,15 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     st = emit_line(st, "; ModuleID = '" + module_name + "'")
     st = emit_line(st, "source_filename = \"" + module_name + "\"")
     st = emit_blank(st)
-    println("[E] header done")
+    print("[E] header done")
 
     // Format string constants
     st = emit_format_constants(st)
-    println("[E] format constants done")
+    print("[E] format constants done")
 
     // Runtime declarations
     st = declare_all_runtime(st)
-    println("[E] runtime decls done, lines=" + str(len(st.lines)))
+    print("[E] runtime decls done, lines=" + str(len(st.lines)))
 
     // Register struct types
     let mut si: Int = 0
@@ -8626,11 +8620,11 @@ fn compile_and_print(source: String, filename: String) -> CompileResult {
     let cr: CompileResult = compile(source, filename)
 
     if cr.success {
-        println(cr.ir_text)
+        print(cr.ir_text)
     } else {
         for i in 0..len(cr.errors) {
             let err: SemanticError = cr.errors[i]
-            println(format_error(err))
+            print(format_error(err))
         }
     }
     return cr

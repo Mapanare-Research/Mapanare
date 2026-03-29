@@ -92,14 +92,14 @@ class TestInnerJoin:
                         Ok(right) => {{
                             let jr: Result<Table, DatoError> = inner_join(left, right, "id")
                             match jr {{
-                                Ok(joined) => {{ println(str(nrows(joined))) }},
-                                Err(e) => {{ println(error_message(e)) }}
+                                Ok(joined) => {{ print(str(nrows(joined))) }},
+                                Err(e) => {{ print(error_message(e)) }}
                             }}
                         }},
-                        Err(e) => {{ println("err") }}
+                        Err(e) => {{ print("err") }}
                     }}
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -123,14 +123,14 @@ class TestLeftJoin:
                         Ok(right) => {{
                             let jr: Result<Table, DatoError> = left_join(left, right, "id")
                             match jr {{
-                                Ok(joined) => {{ println(str(nrows(joined))) }},
-                                Err(e) => {{ println(error_message(e)) }}
+                                Ok(joined) => {{ print(str(nrows(joined))) }},
+                                Err(e) => {{ print(error_message(e)) }}
                             }}
                         }},
-                        Err(e) => {{ println("err") }}
+                        Err(e) => {{ print("err") }}
                     }}
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -157,14 +157,14 @@ class TestConcat:
                         Ok(t2) => {
                             let cr: Result<Table, DatoError> = concat([t1, t2])
                             match cr {
-                                Ok(combined) => { println(str(nrows(combined))) },
-                                Err(e) => { println(error_message(e)) }
+                                Ok(combined) => { print(str(nrows(combined))) },
+                                Err(e) => { print(error_message(e)) }
                             }
                         },
-                        Err(e) => { println("err") }
+                        Err(e) => { print("err") }
                     }
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -183,14 +183,14 @@ class TestConcat:
                         Ok(t2) => {
                             let cr: Result<Table, DatoError> = concat([t1, t2])
                             match cr {
-                                Ok(combined) => { println("unexpected ok") },
-                                Err(e) => { println(error_message(e)) }
+                                Ok(combined) => { print("unexpected ok") },
+                                Err(e) => { print(error_message(e)) }
                             }
                         },
-                        Err(e) => { println("err") }
+                        Err(e) => { print("err") }
                     }
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)

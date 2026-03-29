@@ -101,7 +101,7 @@ class TestMigrationConstruction:
         """new_migration constructor compiles."""
         src = _migrate_with_main("""\
             let m: Migration = new_migration(1, "create_users", "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)", "DROP TABLE users")
-            println(m.name)
+            print(m.name)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -110,7 +110,7 @@ class TestMigrationConstruction:
         """Migration struct literal compiles."""
         src = _migrate_with_main("""\
             let m: Migration = new Migration { version: 1, name: "create_users", up: "CREATE TABLE users (id INTEGER)", down: "DROP TABLE users" }
-            println(str(m.version))
+            print(str(m.version))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -119,7 +119,7 @@ class TestMigrationConstruction:
         """MigrationInfo struct compiles."""
         src = _migrate_with_main("""\
             let info: MigrationInfo = new MigrationInfo { version: 1, name: "create_users", applied: true }
-            println(str(info.applied))
+            print(str(info.applied))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -131,7 +131,7 @@ class TestMigrationConstruction:
             let m2: Migration = new_migration(2, "add_email", "ALTER TABLE users ADD COLUMN email TEXT", "ALTER TABLE users DROP COLUMN email")
             let m3: Migration = new_migration(3, "add_age", "ALTER TABLE users ADD COLUMN age INTEGER", "ALTER TABLE users DROP COLUMN age")
             let migrations: List<Migration> = [m1, m2, m3]
-            println(str(len(migrations)))
+            print(str(len(migrations)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -150,8 +150,8 @@ class TestEnsureTable:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let result: Result<Bool, SqlError> = ensure_table(conn)
             match result {
-                Ok(ok) => { println("table created") },
-                Err(e) => { println(error_message(e)) }
+                Ok(ok) => { print("table created") },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -163,7 +163,7 @@ class TestEnsureTable:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let r1: Result<Bool, SqlError> = ensure_table(conn)
             let r2: Result<Bool, SqlError> = ensure_table(conn)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -184,8 +184,8 @@ class TestMigrateUp:
             let migrations: List<Migration> = [m1]
             let result: Result<Int, SqlError> = migrate_up(conn, migrations)
             match result {
-                Ok(count) => { println(str(count)) },
-                Err(e) => { println(error_message(e)) }
+                Ok(count) => { print(str(count)) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -201,8 +201,8 @@ class TestMigrateUp:
             let migrations: List<Migration> = [m3, m1, m2]
             let result: Result<Int, SqlError> = migrate_up(conn, migrations)
             match result {
-                Ok(count) => { println(str(count)) },
-                Err(e) => { println(error_message(e)) }
+                Ok(count) => { print(str(count)) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -215,8 +215,8 @@ class TestMigrateUp:
             let migrations: List<Migration> = []
             let result: Result<Int, SqlError> = migrate_up(conn, migrations)
             match result {
-                Ok(count) => { println(str(count)) },
-                Err(e) => { println(error_message(e)) }
+                Ok(count) => { print(str(count)) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -231,8 +231,8 @@ class TestMigrateUp:
             let r1: Result<Int, SqlError> = migrate_up(conn, migrations)
             let r2: Result<Int, SqlError> = migrate_up(conn, migrations)
             match r2 {
-                Ok(count) => { println(str(count)) },
-                Err(e) => { println(error_message(e)) }
+                Ok(count) => { print(str(count)) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -255,8 +255,8 @@ class TestMigrateDown:
             let migrations: List<Migration> = [m1, m2]
             let result: Result<Int, SqlError> = migrate_down(conn, migrations, 0)
             match result {
-                Ok(count) => { println(str(count)) },
-                Err(e) => { println(error_message(e)) }
+                Ok(count) => { print(str(count)) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -272,8 +272,8 @@ class TestMigrateDown:
             let migrations: List<Migration> = [m1, m2, m3]
             let result: Result<Int, SqlError> = migrate_down(conn, migrations, 1)
             match result {
-                Ok(count) => { println(str(count)) },
-                Err(e) => { println(error_message(e)) }
+                Ok(count) => { print(str(count)) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -287,8 +287,8 @@ class TestMigrateDown:
             let migrations: List<Migration> = [m1]
             let result: Result<Int, SqlError> = migrate_down(conn, migrations, 0)
             match result {
-                Ok(count) => { println(str(count)) },
-                Err(e) => { println(error_message(e)) }
+                Ok(count) => { print(str(count)) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -302,7 +302,7 @@ class TestMigrateDown:
             let migrations: List<Migration> = [m1]
             let up_result: Result<Int, SqlError> = migrate_up(conn, migrations)
             let down_result: Result<Int, SqlError> = migrate_down(conn, migrations, 0)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -324,8 +324,8 @@ class TestMigrationStatus:
             let migrations: List<Migration> = [m1, m2]
             let result: Result<List<MigrationInfo>, SqlError> = migration_status(conn, migrations)
             match result {
-                Ok(infos) => { println(str(len(infos))) },
-                Err(e) => { println(error_message(e)) }
+                Ok(infos) => { print(str(len(infos))) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -338,8 +338,8 @@ class TestMigrationStatus:
             let migrations: List<Migration> = []
             let result: Result<List<MigrationInfo>, SqlError> = migration_status(conn, migrations)
             match result {
-                Ok(infos) => { println(str(len(infos))) },
-                Err(e) => { println(error_message(e)) }
+                Ok(infos) => { print(str(len(infos))) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -357,9 +357,9 @@ class TestMigrationStatus:
             match result {
                 Ok(infos) => {
                     let count: Int = len(infos)
-                    println(str(count))
+                    print(str(count))
                 },
-                Err(e) => { println(error_message(e)) }
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -369,9 +369,9 @@ class TestMigrationStatus:
         """MigrationInfo fields are accessible."""
         src = _migrate_with_main("""\
             let info: MigrationInfo = new MigrationInfo { version: 1, name: "create_users", applied: false }
-            println(str(info.version))
-            println(info.name)
-            println(str(info.applied))
+            print(str(info.version))
+            print(info.name)
+            print(str(info.applied))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -389,7 +389,7 @@ class TestInternalHelpers:
         src = _migrate_with_main("""\
             let versions: List<Int> = [1, 2, 3]
             let found: Bool = version_is_applied(versions, 2)
-            println(str(found))
+            print(str(found))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -399,7 +399,7 @@ class TestInternalHelpers:
         src = _migrate_with_main("""\
             let versions: List<Int> = [1, 3, 5]
             let found: Bool = version_is_applied(versions, 4)
-            println(str(found))
+            print(str(found))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -412,7 +412,7 @@ class TestInternalHelpers:
             let m2: Migration = new_migration(2, "second", "CREATE TABLE b (id INTEGER)", "DROP TABLE b")
             let unsorted: List<Migration> = [m3, m1, m2]
             let sorted: List<Migration> = sort_migrations(unsorted)
-            println(sorted[0].name)
+            print(sorted[0].name)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -423,7 +423,7 @@ class TestInternalHelpers:
             let m1: Migration = new_migration(1, "only", "CREATE TABLE t (id INTEGER)", "DROP TABLE t")
             let migrations: List<Migration> = [m1]
             let sorted: List<Migration> = sort_migrations(migrations)
-            println(str(len(sorted)))
+            print(str(len(sorted)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -433,7 +433,7 @@ class TestInternalHelpers:
         src = _migrate_with_main("""\
             let migrations: List<Migration> = []
             let sorted: List<Migration> = sort_migrations(migrations)
-            println(str(len(sorted)))
+            print(str(len(sorted)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

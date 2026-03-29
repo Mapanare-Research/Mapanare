@@ -9,7 +9,7 @@
 //   let store = redis.connect("127.0.0.1", 6379)
 //   match store {
 //       Ok(s) => { kv.kv_set(s, "hello", "world") },
-//       Err(e) => { println(kv.error_message(e)) }
+//       Err(e) => { print(kv.error_message(e)) }
 //   }
 
 import db::kv

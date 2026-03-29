@@ -246,7 +246,7 @@ class TestPythonEmitInterpolation:
         source = """
 fn main() {
     let name = "world"
-    println("Hello, ${name}!")
+    print("Hello, ${name}!")
 }
 """
         prog = parse(source)
@@ -259,7 +259,7 @@ fn main() {
 fn main() {
     let a = 1
     let b = 2
-    println("sum: ${a + b}")
+    print("sum: ${a + b}")
 }
 """
         prog = parse(source)
@@ -346,7 +346,7 @@ class TestE2EInterpolation:
         source = """
 fn main() {
     let name = "Mapanare"
-    println("Hello, ${name}!")
+    print("Hello, ${name}!")
 }
 """
         prog = parse(source)
@@ -361,7 +361,7 @@ fn main() {
 fn main() {
     let first = "Ada"
     let last = "Lovelace"
-    println("${first} ${last}")
+    print("${first} ${last}")
 }
 """
         prog = parse(source)
@@ -376,7 +376,7 @@ fn main() {
 fn main() {
     let x: Int = 10
     let y: Int = 20
-    println("result: ${x + y}")
+    print("result: ${x + y}")
 }
 """
         prog = parse(source)

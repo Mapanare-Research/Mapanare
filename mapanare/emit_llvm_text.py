@@ -1225,9 +1225,9 @@ class LLVMTextEmitter:
         args = [(self._get(a)) for a in i.args]  # [(val, ty)]
         self._san(i.dest.name)
 
-        # print / println
+        # print / println (both add newline; println is a deprecated alias)
         if fn in ("println", "print"):
-            nl = fn == "println"
+            nl = True
             if i.args and i.args[0].ty.kind == TypeKind.STRING and args[0][1] == STR:
                 rt_fn = "__mn_str_println" if nl else "__mn_str_print"
                 self._rt(rt_fn, VOID, [STR], [args[0]])

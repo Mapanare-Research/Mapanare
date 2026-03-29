@@ -11,7 +11,7 @@ Tests cover:
   8. Local variables and parameters
   9. Memory load/store for structs
   10. Bump allocator for heap allocation
-  11. Print/println built-in stubs (import from JS)
+  11. Print built-in stubs (import from JS)
   12. List operations (linear memory layout)
   13. Struct field access
   14. Enum/match compilation
@@ -534,12 +534,12 @@ fn make() -> Pair { return new Pair { a: 1, b: 2 } }
 
 
 # ===========================================================================
-# 11. Print/println built-in stubs
+# 11. Print built-in stubs
 # ===========================================================================
 
 
 class TestPrintBuiltins:
-    """Test that print/println are imported from JS environment."""
+    """Test that print is imported from JS environment."""
 
     def test_print_import(self) -> None:
         src = 'fn main() { print("hello"); }'
@@ -548,10 +548,10 @@ class TestPrintBuiltins:
         assert "print" in wat
 
     def test_println_import(self) -> None:
-        src = 'fn main() { println("world"); }'
+        src = 'fn main() { print("world"); }'
         wat = _emit(src)
         assert "(import" in wat
-        assert "println" in wat or "print" in wat
+        assert "print" in wat
 
     def test_print_int(self) -> None:
         src = "fn main() { print(42); }"

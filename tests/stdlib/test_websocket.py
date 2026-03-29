@@ -66,31 +66,31 @@ def _ws_source_with_main(main_body: str) -> str:
 class TestWsMessage:
     def test_text_variant_compiles(self) -> None:
         """WsMessage::Text variant compiles."""
-        src = _ws_source_with_main('let msg: WsMessage = Text("hello")\nprintln("ok")')
+        src = _ws_source_with_main('let msg: WsMessage = Text("hello")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_binary_variant_compiles(self) -> None:
         """WsMessage::Binary variant compiles."""
-        src = _ws_source_with_main('let msg: WsMessage = Binary("data")\nprintln("ok")')
+        src = _ws_source_with_main('let msg: WsMessage = Binary("data")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_ping_variant_compiles(self) -> None:
         """WsMessage::Ping variant compiles."""
-        src = _ws_source_with_main('let msg: WsMessage = Ping("")\nprintln("ok")')
+        src = _ws_source_with_main('let msg: WsMessage = Ping("")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_pong_variant_compiles(self) -> None:
         """WsMessage::Pong variant compiles."""
-        src = _ws_source_with_main('let msg: WsMessage = Pong("")\nprintln("ok")')
+        src = _ws_source_with_main('let msg: WsMessage = Pong("")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_close_variant_compiles(self) -> None:
         """WsMessage::Close variant compiles."""
-        src = _ws_source_with_main('let msg: WsMessage = Close(1000, "bye")\nprintln("ok")')
+        src = _ws_source_with_main('let msg: WsMessage = Close(1000, "bye")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
@@ -106,7 +106,7 @@ class TestWsConnection:
         """WsConnection struct compiles with all fields."""
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -115,7 +115,7 @@ class TestWsConnection:
         """Server-side WsConnection compiles."""
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, true)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -130,37 +130,37 @@ class TestWsConnection:
 class TestWsError:
     def test_handshake_failed_compiles(self) -> None:
         """WsError::HandshakeFailed variant compiles."""
-        src = _ws_source_with_main('let e: WsError = HandshakeFailed("test")\nprintln("ok")')
+        src = _ws_source_with_main('let e: WsError = HandshakeFailed("test")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_connection_closed_compiles(self) -> None:
         """WsError::ConnectionClosed variant compiles."""
-        src = _ws_source_with_main('let e: WsError = ConnectionClosed("test")\nprintln("ok")')
+        src = _ws_source_with_main('let e: WsError = ConnectionClosed("test")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_invalid_frame_compiles(self) -> None:
         """WsError::InvalidFrame variant compiles."""
-        src = _ws_source_with_main('let e: WsError = InvalidFrame("test")\nprintln("ok")')
+        src = _ws_source_with_main('let e: WsError = InvalidFrame("test")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_protocol_error_compiles(self) -> None:
         """WsError::ProtocolError variant compiles."""
-        src = _ws_source_with_main('let e: WsError = ProtocolError("test")\nprintln("ok")')
+        src = _ws_source_with_main('let e: WsError = ProtocolError("test")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_send_failed_compiles(self) -> None:
         """WsError::SendFailed variant compiles."""
-        src = _ws_source_with_main('let e: WsError = SendFailed("test")\nprintln("ok")')
+        src = _ws_source_with_main('let e: WsError = SendFailed("test")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_recv_failed_compiles(self) -> None:
         """WsError::RecvFailed variant compiles."""
-        src = _ws_source_with_main('let e: WsError = RecvFailed("test")\nprintln("ok")')
+        src = _ws_source_with_main('let e: WsError = RecvFailed("test")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
@@ -176,7 +176,7 @@ class TestWsUrlParsing:
         """Parse ws:// URL compiles."""
         src = _ws_source_with_main("""\
             let u: WsUrl = parse_ws_url("ws://example.com/ws")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -185,7 +185,7 @@ class TestWsUrlParsing:
         """Parse wss:// URL compiles."""
         src = _ws_source_with_main("""\
             let u: WsUrl = parse_ws_url("wss://example.com/ws")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -194,7 +194,7 @@ class TestWsUrlParsing:
         """Parse URL with explicit port compiles."""
         src = _ws_source_with_main("""\
             let u: WsUrl = parse_ws_url("ws://localhost:8080/chat")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -211,7 +211,7 @@ class TestWsHandshakeKeys:
         """Generate WebSocket key (random + base64) compiles."""
         src = _ws_source_with_main("""\
             let key: String = generate_ws_key()
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -220,7 +220,7 @@ class TestWsHandshakeKeys:
         """Compute accept key (SHA-1 + base64) compiles."""
         src = _ws_source_with_main("""\
             let accept: String = compute_accept_key("dGhlIHNhbXBsZSBub25jZQ==")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -229,7 +229,7 @@ class TestWsHandshakeKeys:
         """WebSocket GUID constant compiles."""
         src = _ws_source_with_main("""\
             let guid: String = ws_guid()
-            println(guid)
+            print(guid)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -246,7 +246,7 @@ class TestBitwiseOps:
         """XOR bytes helper compiles."""
         src = _ws_source_with_main("""\
             let result: Int = xor_bytes(170, 85)
-            println(str(result))
+            print(str(result))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -255,7 +255,7 @@ class TestBitwiseOps:
         """Bitwise OR helper compiles."""
         src = _ws_source_with_main("""\
             let result: Int = bitor(128, 1)
-            println(str(result))
+            print(str(result))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -264,7 +264,7 @@ class TestBitwiseOps:
         """Bitwise AND helper compiles."""
         src = _ws_source_with_main("""\
             let result: Int = bitand(255, 15)
-            println(str(result))
+            print(str(result))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -281,7 +281,7 @@ class TestFrameEncoding:
         """WsFrame struct compiles."""
         src = _ws_source_with_main("""\
             let frame: WsFrame = new_ws_frame(true, 1, false, "", "hello")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -290,7 +290,7 @@ class TestFrameEncoding:
         """Build send frame for text compiles."""
         src = _ws_source_with_main("""\
             let frame: String = build_send_frame(1, "hello", true)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -299,7 +299,7 @@ class TestFrameEncoding:
         """Build send frame without mask (server mode) compiles."""
         src = _ws_source_with_main("""\
             let frame: String = build_send_frame(1, "hello", false)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -309,7 +309,7 @@ class TestFrameEncoding:
         src = _ws_source_with_main("""\
             let frame: WsFrame = new_ws_frame(true, 1, false, "", "test")
             let encoded: String = encode_frame(frame)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -327,7 +327,7 @@ class TestFrameDecoding:
         src = _ws_source_with_main("""\
             let raw: String = "AB"
             let result: FrameDecodeResult = decode_frame(raw)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -338,9 +338,9 @@ class TestFrameDecoding:
             let raw: String = "ABCDEFGHIJKLMNOP"
             let result: FrameDecodeResult = decode_frame(raw)
             if result.ok {
-                println("decoded")
+                print("decoded")
             } else {
-                println(result.error_msg)
+                print(result.error_msg)
             }
             """)
         ir_out = _compile_mir(src)
@@ -358,7 +358,7 @@ class TestMasking:
         """apply_mask compiles."""
         src = _ws_source_with_main("""\
             let masked: String = apply_mask("hello", "ABCD")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -375,7 +375,7 @@ class TestWsConnect:
         """ws_connect to ws:// URL compiles (extern TCP calls present)."""
         src = _ws_source_with_main("""\
             let r: Result<WsConnection, WsError> = ws_connect("ws://echo.example.com/ws")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -386,7 +386,7 @@ class TestWsConnect:
         """ws_connect to wss:// URL compiles with TLS externs."""
         src = _ws_source_with_main("""\
             let r: Result<WsConnection, WsError> = ws_connect("wss://echo.example.com/ws")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -405,7 +405,7 @@ class TestWsSend:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let r: Result<Int, WsError> = ws_send(conn, Text("hello"))
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -415,7 +415,7 @@ class TestWsSend:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let r: Result<Int, WsError> = ws_send(conn, Binary("data"))
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -425,7 +425,7 @@ class TestWsSend:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let r: Result<Int, WsError> = ws_send(conn, Ping(""))
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -443,7 +443,7 @@ class TestWsRecv:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let r: Result<WsMessage, WsError> = ws_recv(conn)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -464,7 +464,7 @@ class TestWebSocketUpgradeDetection:
             headers["connection"] = "upgrade"
             headers["sec-websocket-key"] = "dGhlIHNhbXBsZSBub25jZQ=="
             let result: Bool = is_websocket_upgrade(headers)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -483,7 +483,7 @@ class TestWsAcceptUpgrade:
             let mut headers: Map<String, String> = #{}
             headers["sec-websocket-key"] = "dGhlIHNhbXBsZSBub25jZQ=="
             let r: Result<WsConnection, WsError> = ws_accept_upgrade(5, headers)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -502,7 +502,7 @@ class TestWsClose:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let r: Result<Int, WsError> = ws_close(conn, 1000, "bye")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -520,7 +520,7 @@ class TestPingPong:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let r: Result<Int, WsError> = ws_send(conn, Ping("ping-data"))
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -530,7 +530,7 @@ class TestPingPong:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let r: Result<Int, WsError> = ws_send(conn, Pong("pong-data"))
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -548,7 +548,7 @@ class TestEchoLoop:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, true)
             let r: Result<Int, WsError> = ws_echo_loop(conn)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -572,14 +572,14 @@ class TestServerUpgradeIntegration:
                 let r: Result<WsConnection, WsError> = ws_accept_upgrade(5, headers)
                 match r {
                     Ok(conn) => {
-                        println("upgraded")
+                        print("upgraded")
                     },
                     Err(e) => {
-                        println("failed")
+                        print("failed")
                     }
                 }
             }
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -598,7 +598,7 @@ class TestFragmentation:
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let fb: String = conn.frag_buffer
             let fo: Int = conn.frag_opcode
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -609,7 +609,7 @@ class TestFragmentation:
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let m: WsMessage = Text("hello world long msg")
             let r: Result<Int, WsError> = ws_send_fragmented(conn, m, 10)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -620,7 +620,7 @@ class TestFragmentation:
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let m: WsMessage = Binary("binary-data")
             let r: Result<Int, WsError> = ws_send_fragmented(conn, m, 5)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -630,7 +630,7 @@ class TestFragmentation:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, true)
             let r: Result<Int, WsError> = ws_send_fragmented(conn, Text("server message"), 4)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -643,14 +643,14 @@ class TestFragmentation:
             match r {
                 Ok(msg) => {
                     match msg {
-                        Text(data) => { println(data) },
-                        Binary(data) => { println("binary") },
-                        Ping(data) => { println("ping") },
-                        Pong(data) => { println("pong") },
-                        Close(code, reason) => { println("close") }
+                        Text(data) => { print(data) },
+                        Binary(data) => { print("binary") },
+                        Ping(data) => { print("ping") },
+                        Pong(data) => { print("pong") },
+                        Close(code, reason) => { print("close") }
                     }
                 },
-                Err(e) => { println("error") }
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -661,7 +661,7 @@ class TestFragmentation:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, true)
             let r: Result<WsMessage, WsError> = ws_recv_full(conn)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -676,19 +676,19 @@ class TestFragmentation:
 class TestCryptoExterns:
     def test_sha1_extern_present(self) -> None:
         """SHA-1 extern declaration present in compiled IR."""
-        src = _ws_source_with_main('println("ok")')
+        src = _ws_source_with_main('print("ok")')
         ir_out = _compile_mir(src)
         assert "__mn_sha1_str" in ir_out
 
     def test_base64_extern_present(self) -> None:
         """Base64 extern declaration present in compiled IR."""
-        src = _ws_source_with_main('println("ok")')
+        src = _ws_source_with_main('print("ok")')
         ir_out = _compile_mir(src)
         assert "__mn_base64_encode_str" in ir_out
 
     def test_random_bytes_extern_present(self) -> None:
         """Random bytes extern declaration present in compiled IR."""
-        src = _ws_source_with_main('println("ok")')
+        src = _ws_source_with_main('print("ok")')
         ir_out = _compile_mir(src)
         assert "__mn_random_bytes_str" in ir_out
 
@@ -705,7 +705,7 @@ class TestHeaderExtraction:
         src = _ws_source_with_main("""\
             let resp: String = "HTTP/1.1 101\\r\\nUpgrade: websocket\\r\\n\\r\\n"
             let val: String = extract_header(resp, "upgrade")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -727,10 +727,10 @@ class TestIntegrationPatterns:
                     let sr: Result<Int, WsError> = ws_send(conn, Text("hello"))
                     let mr: Result<WsMessage, WsError> = ws_recv(conn)
                     let cr: Result<Int, WsError> = ws_close(conn, 1000, "done")
-                    println("done")
+                    print("done")
                 },
                 Err(e) => {
-                    println("failed")
+                    print("failed")
                 }
             }
             """)
@@ -746,10 +746,10 @@ class TestIntegrationPatterns:
             match r {
                 Ok(conn) => {
                     let er: Result<Int, WsError> = ws_echo_loop(conn)
-                    println("echo done")
+                    print("echo done")
                 },
                 Err(e) => {
-                    println("upgrade failed")
+                    print("upgrade failed")
                 }
             }
             """)
@@ -765,14 +765,14 @@ class TestIntegrationPatterns:
             match mr {
                 Ok(msg) => {
                     match msg {
-                        Text(data) => { println(data) },
-                        Binary(data) => { println("binary") },
-                        Ping(data) => { println("ping") },
-                        Pong(data) => { println("pong") },
-                        Close(code, reason) => { println("close") }
+                        Text(data) => { print(data) },
+                        Binary(data) => { print("binary") },
+                        Ping(data) => { print("ping") },
+                        Pong(data) => { print("pong") },
+                        Close(code, reason) => { print("close") }
                     }
                 },
-                Err(e) => { println("error") }
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -783,7 +783,7 @@ class TestIntegrationPatterns:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let sr: Result<Int, WsError> = ws_send(conn, Binary("binary-data"))
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -794,7 +794,7 @@ class TestIntegrationPatterns:
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let pr: Result<Int, WsError> = ws_send(conn, Ping("test"))
             let mr: Result<WsMessage, WsError> = ws_recv(conn)
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -804,7 +804,7 @@ class TestIntegrationPatterns:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let cr: Result<Int, WsError> = ws_close(conn, 1000, "normal closure")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -819,14 +819,14 @@ class TestIntegrationPatterns:
             match mr {
                 Ok(msg) => {
                     match msg {
-                        Text(data) => { println(data) },
-                        Binary(data) => { println("binary") },
-                        Ping(data) => { println("ping") },
-                        Pong(data) => { println("pong") },
-                        Close(code, reason) => { println("close") }
+                        Text(data) => { print(data) },
+                        Binary(data) => { print("binary") },
+                        Ping(data) => { print("ping") },
+                        Pong(data) => { print("pong") },
+                        Close(code, reason) => { print("close") }
                     }
                 },
-                Err(e) => { println("error") }
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -839,7 +839,7 @@ class TestIntegrationPatterns:
         src = _ws_source_with_main("""\
             let conn: WsConnection = new_ws_connection(5, 0, false, false)
             let cr: Result<Int, WsError> = ws_close(conn, 1001, "going away")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -856,12 +856,12 @@ class TestIntegrationPatterns:
                     match mr {
                         Ok(msg) => {
                             let sr: Result<Int, WsError> = ws_send_fragmented(conn, msg, 1024)
-                            println("echoed")
+                            print("echoed")
                         },
-                        Err(e) => { println("recv error") }
+                        Err(e) => { print("recv error") }
                     }
                 },
-                Err(e) => { println("upgrade failed") }
+                Err(e) => { print("upgrade failed") }
             }
             """)
         ir_out = _compile_mir(src)

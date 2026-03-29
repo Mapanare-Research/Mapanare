@@ -170,28 +170,28 @@ fn severity_tag(severity: String) -> String {
 pub fn show_findings(findings: List<engine.Finding>) {
     let count: Int = len(findings)
     if count == 0 {
-        println("No findings.")
+        print("No findings.")
         return
     }
 
     // Print summary header
     let summary: Map<String, Int> = findings_summary(findings)
-    println("=== Scan Results: " + str(count) + " findings ===")
-    if summary["CRITICAL"] > 0 { println("  CRITICAL: " + str(summary["CRITICAL"])) }
-    if summary["HIGH"] > 0 { println("  HIGH:     " + str(summary["HIGH"])) }
-    if summary["MEDIUM"] > 0 { println("  MEDIUM:   " + str(summary["MEDIUM"])) }
-    if summary["LOW"] > 0 { println("  LOW:      " + str(summary["LOW"])) }
-    if summary["INFO"] > 0 { println("  INFO:     " + str(summary["INFO"])) }
-    println("")
+    print("=== Scan Results: " + str(count) + " findings ===")
+    if summary["CRITICAL"] > 0 { print("  CRITICAL: " + str(summary["CRITICAL"])) }
+    if summary["HIGH"] > 0 { print("  HIGH:     " + str(summary["HIGH"])) }
+    if summary["MEDIUM"] > 0 { print("  MEDIUM:   " + str(summary["MEDIUM"])) }
+    if summary["LOW"] > 0 { print("  LOW:      " + str(summary["LOW"])) }
+    if summary["INFO"] > 0 { print("  INFO:     " + str(summary["INFO"])) }
+    print("")
 
     // Print each finding
     let mut i: Int = 0
     while i < count {
         let f: engine.Finding = findings[i]
         let tag: String = severity_tag(f.severity)
-        println(tag + " " + f.template_name + " -- " + f.url)
+        print(tag + " " + f.template_name + " -- " + f.url)
         if len(f.evidence) > 0 {
-            println("  Evidence: " + f.evidence)
+            print("  Evidence: " + f.evidence)
         }
         // Print extracted values
         for ekey in f.extracted {
@@ -205,7 +205,7 @@ pub fn show_findings(findings: List<engine.Finding>) {
                     val_str = val_str + vals[vi]
                     vi = vi + 1
                 }
-                println("  " + ekey + ": " + val_str)
+                print("  " + ekey + ": " + val_str)
             }
         }
         i = i + 1
@@ -230,6 +230,6 @@ pub fn save_report(findings: List<engine.Finding>, path: String, format: String)
     if written < 0 {
         return Err("failed to write report to " + path)
     }
-    println("[*] Report saved to " + path + " (" + format + ", " + str(len(findings)) + " findings)")
+    print("[*] Report saved to " + path + " (" + format + ", " + str(len(findings)) + " findings)")
     return Ok(true)
 }

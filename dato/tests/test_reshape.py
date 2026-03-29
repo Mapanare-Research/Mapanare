@@ -96,13 +96,13 @@ class TestPivot:
                     let pr: Result<Table, DatoError> = pivot(t, "id", "metric", "value")
                     match pr {
                         Ok(wide) => {
-                            println(str(nrows(wide)))
-                            println(str(ncols(wide)))
+                            print(str(nrows(wide)))
+                            print(str(ncols(wide)))
                         },
-                        Err(e) => { println(error_message(e)) }
+                        Err(e) => { print(error_message(e)) }
                     }
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -117,11 +117,11 @@ class TestPivot:
                 Ok(t) => {
                     let pr: Result<Table, DatoError> = pivot(t, "a", "missing", "also_missing")
                     match pr {
-                        Ok(w) => { println("unexpected ok") },
-                        Err(e) => { println(error_message(e)) }
+                        Ok(w) => { print("unexpected ok") },
+                        Err(e) => { print(error_message(e)) }
                     }
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -160,13 +160,13 @@ class TestMelt:
                     let mr: Result<Table, DatoError> = melt(t, ["name"], ["score_a", "score_b"])
                     match mr {
                         Ok(long) => {
-                            println(str(nrows(long)))
-                            println(str(ncols(long)))
+                            print(str(nrows(long)))
+                            print(str(ncols(long)))
                         },
-                        Err(e) => { println(error_message(e)) }
+                        Err(e) => { print(error_message(e)) }
                     }
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -181,11 +181,11 @@ class TestMelt:
                 Ok(t) => {
                     let mr: Result<Table, DatoError> = melt(t, ["a"], ["missing"])
                     match mr {
-                        Ok(l) => { println("unexpected ok") },
-                        Err(e) => { println(error_message(e)) }
+                        Ok(l) => { print("unexpected ok") },
+                        Err(e) => { print(error_message(e)) }
                     }
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)

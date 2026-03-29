@@ -696,6 +696,12 @@ class SemanticChecker:
                 self._error(f"Undefined function '{expr.callee.name}'", expr.callee)
                 return UNKNOWN_TYPE
             if sym.kind == "function":
+                # println is deprecated — use print instead
+                if expr.callee.name == "println":
+                    self._warning(
+                        "println is deprecated, use print instead",
+                        expr,
+                    )
                 # Check for @deprecated decorator on the called function
                 if sym.node is not None and isinstance(sym.node, FnDef):
                     for dec in sym.node.decorators:

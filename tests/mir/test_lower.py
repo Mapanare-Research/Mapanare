@@ -167,10 +167,10 @@ class TestLowerExpressions:
         assert any(c.fn_name == "double" for c in calls)
 
     def test_builtin_call(self) -> None:
-        mod = _lower_source("fn main() {\n" '    println("hello")\n' "}\n")
+        mod = _lower_source("fn main() {\n" '    print("hello")\n' "}\n")
         fn = _get_fn(mod, "main")
         calls = _find_inst(fn, Call)
-        assert any(c.fn_name == "println" for c in calls)
+        assert any(c.fn_name == "print" for c in calls)
 
 
 # ===================================================================
@@ -233,7 +233,7 @@ class TestLowerIfElse:
         mod = _lower_source(
             "fn maybe_print(x: Int) {\n"
             "    if x > 0 {\n"
-            '        println("positive")\n'
+            '        print("positive")\n'
             "    }\n"
             "}\n"
         )
@@ -351,7 +351,7 @@ class TestLowerFunctions:
         assert fn.return_type.kind == TypeKind.INT
 
     def test_void_function(self) -> None:
-        mod = _lower_source('fn greet() {\n    println("hello")\n}\n')
+        mod = _lower_source('fn greet() {\n    print("hello")\n}\n')
         fn = _get_fn(mod, "greet")
         assert fn.return_type.kind == TypeKind.VOID
         rets = _find_inst(fn, Return)
@@ -602,7 +602,7 @@ class TestLowerAgents:
             "    output value: Int\n"
             "\n"
             "    fn handle(self: Counter) {\n"
-            '        println("handling")\n'
+            '        print("handling")\n'
             "    }\n"
             "}\n"
             "\n"

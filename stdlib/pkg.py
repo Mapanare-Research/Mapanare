@@ -908,6 +908,6 @@ def init_project(project_dir: str, name: str | None = None) -> MapanareManifest:
     main_path = os.path.join(project_dir, "main.mn")
     if not os.path.isfile(main_path):
         with open(main_path, "w", encoding="utf-8") as f:
-            f.write('fn main() {\n    println("Hello, Mapanare!")\n}\n')
+            f.write('fn main() {\n    print("Hello, Mapanare!")\n}\n')
 
     return manifest

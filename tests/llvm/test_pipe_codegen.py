@@ -41,7 +41,7 @@ _PIPE_SOURCE = textwrap.dedent("""\
     }
 
     fn main() {
-        println(0)
+        print(0)
     }
 """)
 
@@ -70,7 +70,7 @@ class TestPipeDef:
                 Echo
             }
             fn main() {
-                println(0)
+                print(0)
             }
         """)
         ir = _compile_ast(src)
@@ -89,7 +89,7 @@ class TestPipeDef:
                 Echo
             }
             fn main() {
-                println(0)
+                print(0)
             }
         """)
         ir = _compile_mir(src)

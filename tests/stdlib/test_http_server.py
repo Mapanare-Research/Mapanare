@@ -70,8 +70,8 @@ class TestRouteStruct:
         """Route struct compiles with all fields."""
         src = _server_source_with_main("""\
             let r: Route = new_route("GET", "/hello", "handle_hello")
-            println(r.method)
-            println(r.path_pattern)
+            print(r.method)
+            print(r.path_pattern)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -80,8 +80,8 @@ class TestRouteStruct:
         """Static file route compiles."""
         src = _server_source_with_main("""\
             let r: Route = new_static_route("/static/", "/var/www")
-            println(r.path_pattern)
-            println(r.static_dir)
+            print(r.path_pattern)
+            print(r.static_dir)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -98,7 +98,7 @@ class TestRouterStruct:
         """Router struct with empty routes compiles."""
         src = _server_source_with_main("""\
             let router: Router = new_router()
-            println(str(router.route_count))
+            print(str(router.route_count))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -109,7 +109,7 @@ class TestRouterStruct:
             let mut router: Router = new_router()
             router = router_add_route(router, "GET", "/hello", "handle_hello")
             router = router_add_route(router, "POST", "/data", "handle_data")
-            println(str(router.route_count))
+            print(str(router.route_count))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -126,8 +126,8 @@ class TestServerConfig:
         """ServerConfig struct compiles with defaults."""
         src = _server_source_with_main("""\
             let cfg: ServerConfig = new_server_config("0.0.0.0", 8080)
-            println(cfg.host)
-            println(str(cfg.port))
+            print(cfg.host)
+            print(str(cfg.port))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -146,8 +146,8 @@ class TestContextStruct:
             let req: HttpRequest = new_server_request("GET", "/api/users", #{}, "", "")
             let params: Map<String, String> = #{"id": "42"}
             let ctx: Context = new_context(req, params)
-            println(ctx.request.path)
-            println(ctx.path_params["id"])
+            print(ctx.request.path)
+            print(ctx.path_params["id"])
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -164,10 +164,10 @@ class TestRouteMatching:
         """split_path breaks path into segments."""
         src = _server_source_with_main("""\
             let segs: List<String> = split_path("/api/users/42")
-            println(str(len(segs)))
-            println(segs[0])
-            println(segs[1])
-            println(segs[2])
+            print(str(len(segs)))
+            print(segs[0])
+            print(segs[1])
+            print(segs[2])
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -178,8 +178,8 @@ class TestRouteMatching:
             let r1: Bool = is_param_segment("\\${id}")
             let r2: Bool = is_param_segment("users")
             let r3: Bool = is_param_segment("\\${}")
-            println(str(r1))
-            println(str(r2))
+            print(str(r1))
+            print(str(r2))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -188,7 +188,7 @@ class TestRouteMatching:
         """extract_param_name gets name from ${name}."""
         src = _server_source_with_main("""\
             let name: String = extract_param_name("\\${user_id}")
-            println(name)
+            print(name)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -197,7 +197,7 @@ class TestRouteMatching:
         """Task 6: Static path matching works."""
         src = _server_source_with_main("""\
             let mr: MatchResult = match_route("/health", "/health", "GET", "GET")
-            println(str(mr.matched))
+            print(str(mr.matched))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -207,7 +207,7 @@ class TestRouteMatching:
         src = _server_source_with_main("""\
             let mr: MatchResult = match_route("/api/users/\\${id}", "/api/users/42", "GET", "GET")
             if mr.matched {
-                println(mr.params["id"])
+                print(mr.params["id"])
             }
         """)
         ir_out = _compile_mir(src)
@@ -217,7 +217,7 @@ class TestRouteMatching:
         """Method mismatch returns no match."""
         src = _server_source_with_main("""\
             let mr: MatchResult = match_route("/hello", "/hello", "POST", "GET")
-            println(str(mr.matched))
+            print(str(mr.matched))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -226,7 +226,7 @@ class TestRouteMatching:
         """Different segment counts don't match."""
         src = _server_source_with_main("""\
             let mr: MatchResult = match_route("/api/users", "/api/users/42", "GET", "GET")
-            println(str(mr.matched))
+            print(str(mr.matched))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -236,8 +236,8 @@ class TestRouteMatching:
         src = _server_source_with_main("""\
             let mr: MatchResult = match_route("/api/\\${resource}/\\${id}", "/api/users/42", "GET", "GET")
             if mr.matched {
-                println(mr.params["resource"])
-                println(mr.params["id"])
+                print(mr.params["resource"])
+                print(mr.params["id"])
             }
         """)
         ir_out = _compile_mir(src)
@@ -256,8 +256,8 @@ class TestRequestParsing:
         src = _server_source_with_main("""\
             let raw: String = "GET /hello HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n"
             let parsed: ParsedRequest = parse_incoming_request(raw)
-            println(parsed.method)
-            println(parsed.path)
+            print(parsed.method)
+            print(parsed.path)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -267,8 +267,8 @@ class TestRequestParsing:
         src = _server_source_with_main("""\
             let raw: String = "POST /api/data HTTP/1.1\\r\\nHost: localhost\\r\\nContent-Type: application/json\\r\\n\\r\\n{}"
             let parsed: ParsedRequest = parse_incoming_request(raw)
-            println(parsed.method)
-            println(parsed.body)
+            print(parsed.method)
+            print(parsed.body)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -278,8 +278,8 @@ class TestRequestParsing:
         src = _server_source_with_main("""\
             let raw: String = "GET /search?q=hello&page=1 HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n"
             let parsed: ParsedRequest = parse_incoming_request(raw)
-            println(parsed.path)
-            println(parsed.query)
+            print(parsed.path)
+            print(parsed.query)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -289,7 +289,7 @@ class TestRequestParsing:
         src = _server_source_with_main("""\
             let raw: String = "GET / HTTP/1.1\\r\\nHost: localhost\\r\\nAccept: text/html\\r\\nX-Custom: value\\r\\n\\r\\n"
             let parsed: ParsedRequest = parse_incoming_request(raw)
-            println(str(parsed.ok))
+            print(str(parsed.ok))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -306,7 +306,7 @@ class TestResponseBuilding:
         """Build a 200 OK response."""
         src = _server_source_with_main("""\
             let resp: String = build_response(200, #{}, "hello")
-            println(resp)
+            print(resp)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -316,7 +316,7 @@ class TestResponseBuilding:
         src = _server_source_with_main("""\
             let hdrs: Map<String, String> = #{"Content-Type": "application/json"}
             let resp: String = build_response(200, hdrs, "{}")
-            println(resp)
+            print(resp)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -325,7 +325,7 @@ class TestResponseBuilding:
         """Build a 404 response."""
         src = _server_source_with_main("""\
             let resp: String = build_404_response("/missing")
-            println(resp)
+            print(resp)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -334,7 +334,7 @@ class TestResponseBuilding:
         """Build a 500 response."""
         src = _server_source_with_main("""\
             let resp: String = build_500_response("something broke")
-            println(resp)
+            print(resp)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -342,10 +342,10 @@ class TestResponseBuilding:
     def test_status_reasons(self) -> None:
         """Status codes map to correct reason phrases."""
         src = _server_source_with_main("""\
-            println(status_reason(200))
-            println(status_reason(404))
-            println(status_reason(500))
-            println(status_reason(301))
+            print(status_reason(200))
+            print(status_reason(404))
+            print(status_reason(500))
+            print(status_reason(301))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -364,8 +364,8 @@ class TestResponseHelpers:
             let req: HttpRequest = new_server_request("GET", "/", #{}, "", "")
             let ctx: Context = new_context(req, #{})
             let ctx2: Context = ctx_respond(ctx, 200, "hello world")
-            println(str(ctx2.response_status))
-            println(ctx2.response_body)
+            print(str(ctx2.response_status))
+            print(ctx2.response_body)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -376,7 +376,7 @@ class TestResponseHelpers:
             let req: HttpRequest = new_server_request("GET", "/", #{}, "", "")
             let ctx: Context = new_context(req, #{})
             let ctx2: Context = ctx_json(ctx, 200, "{}")
-            println(str(ctx2.response_status))
+            print(str(ctx2.response_status))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -387,7 +387,7 @@ class TestResponseHelpers:
             let req: HttpRequest = new_server_request("GET", "/old", #{}, "", "")
             let ctx: Context = new_context(req, #{})
             let ctx2: Context = ctx_redirect(ctx, "/new", 301)
-            println(str(ctx2.response_status))
+            print(str(ctx2.response_status))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -408,7 +408,7 @@ class TestMiddleware:
             let req: HttpRequest = new_server_request("GET", "/test", #{}, "", "")
             let ctx: Context = new_context(req, #{})
             let ctx2: Context = apply_middleware_before(router, ctx)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -422,7 +422,7 @@ class TestMiddleware:
             let ctx: Context = new_context(req, #{})
             let ctx2: Context = ctx_respond(ctx, 200, "ok")
             let ctx3: Context = apply_middleware_after(router, ctx2)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -439,7 +439,7 @@ class TestMiddleware:
             let before: Context = apply_middleware_before(router, ctx)
             let handled: Context = ctx_respond(before, 200, "Hello!")
             let after: Context = apply_middleware_after(router, handled)
-            println(str(after.response_status))
+            print(str(after.response_status))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -457,7 +457,7 @@ class TestStaticFiles:
         src = _server_source_with_main("""\
             let mut router: Router = new_router()
             router = router_static_files(router, "/static/", "/var/www")
-            println(str(router.route_count))
+            print(str(router.route_count))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -470,9 +470,9 @@ class TestStaticFiles:
             let ct3: String = guess_content_type("app.js")
             let ct4: String = guess_content_type("data.json")
             let ct5: String = guess_content_type("noext")
-            println(ct1)
-            println(ct2)
-            println(ct3)
+            print(ct1)
+            print(ct2)
+            print(ct3)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -482,8 +482,8 @@ class TestStaticFiles:
         src = _server_source_with_main("""\
             let r1: Bool = starts_with("/static/img.png", "/static/")
             let r2: Bool = starts_with("/api/data", "/static/")
-            println(str(r1))
-            println(str(r2))
+            print(str(r1))
+            print(str(r2))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -503,8 +503,8 @@ class TestRouteDispatch:
             router = router_add_route(router, "GET", "/hello", "handle_hello")
             router = router_add_route(router, "POST", "/data", "handle_data")
             let dr: DispatchResult = dispatch_route(router, "GET", "/hello")
-            println(str(dr.matched))
-            println(str(dr.route_idx))
+            print(str(dr.matched))
+            print(str(dr.route_idx))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -516,7 +516,7 @@ class TestRouteDispatch:
             router = router_add_route(router, "GET", "/users/\\${id}", "handle_user")
             let dr: DispatchResult = dispatch_route(router, "GET", "/users/42")
             if dr.matched {
-                println(dr.params["id"])
+                print(dr.params["id"])
             }
         """)
         ir_out = _compile_mir(src)
@@ -528,7 +528,7 @@ class TestRouteDispatch:
             let mut router: Router = new_router()
             router = router_add_route(router, "GET", "/hello", "handle_hello")
             let dr: DispatchResult = dispatch_route(router, "GET", "/missing")
-            println(str(dr.matched))
+            print(str(dr.matched))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -548,7 +548,7 @@ class TestIntegration:
             router = router_add_route(router, "GET", "/hello", "handle_hello")
             let cfg: ServerConfig = new_server_config("127.0.0.1", 8080)
             // Don't actually call server_listen (blocks), just verify compilation
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -564,7 +564,7 @@ class TestIntegration:
             let raw: String = "GET /api/users/42 HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n"
             let ctx: Context = process_request(router, raw)
             let response: String = context_to_response(ctx)
-            println(response)
+            print(response)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -576,7 +576,7 @@ class TestIntegration:
             let ctx: Context = new_context(req, #{})
             let ctx2: Context = ctx_json(ctx, 200, "{}")
             let response: String = context_to_response(ctx2)
-            println(response)
+            print(response)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -587,7 +587,7 @@ class TestIntegration:
             let mut router: Router = new_router()
             router = router_add_route(router, "GET", "/", "handler")
             // Verify extern functions are declared
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -602,7 +602,7 @@ class TestIntegration:
             let e2: ServerError = AcceptFailed("accept failed")
             let e3: ServerError = ReadFailed("read failed")
             let e4: ServerError = WriteFailed("write failed")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -615,8 +615,8 @@ class TestIntegration:
             router = router_add_route(router, "GET", "/api/\\${id}", "api_handler")
             let cfg: ServerConfig = new_server_config("0.0.0.0", 3000)
             // Verify the full server structure compiles
-            println(str(cfg.max_connections))
-            println(str(router.route_count))
+            print(str(cfg.max_connections))
+            print(str(router.route_count))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

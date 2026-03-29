@@ -65,25 +65,25 @@ def _fs_source_with_main(main_body: str) -> str:
 class TestFsError:
     def test_not_found_compiles(self) -> None:
         """FsError::NotFound variant compiles."""
-        src = _fs_source_with_main('let e: FsError = NotFound("missing")\nprintln("ok")')
+        src = _fs_source_with_main('let e: FsError = NotFound("missing")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_permission_denied_compiles(self) -> None:
         """FsError::PermissionDenied variant compiles."""
-        src = _fs_source_with_main('let e: FsError = PermissionDenied("denied")\nprintln("ok")')
+        src = _fs_source_with_main('let e: FsError = PermissionDenied("denied")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_io_error_compiles(self) -> None:
         """FsError::IoError variant compiles."""
-        src = _fs_source_with_main('let e: FsError = IoError("disk fail")\nprintln("ok")')
+        src = _fs_source_with_main('let e: FsError = IoError("disk fail")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_invalid_path_compiles(self) -> None:
         """FsError::InvalidPath variant compiles."""
-        src = _fs_source_with_main('let e: FsError = InvalidPath("bad path")\nprintln("ok")')
+        src = _fs_source_with_main('let e: FsError = InvalidPath("bad path")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
@@ -100,7 +100,7 @@ class TestPathJoin:
         src = _fs_source_with_main("""\
             let p: Path = path("/home/user")
             let joined: Path = join(p, "docs")
-            println(to_string(joined))
+            print(to_string(joined))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -110,7 +110,7 @@ class TestPathJoin:
         src = _fs_source_with_main("""\
             let p: Path = path("/home/user/")
             let joined: Path = join(p, "file.txt")
-            println(to_string(joined))
+            print(to_string(joined))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -120,7 +120,7 @@ class TestPathJoin:
         src = _fs_source_with_main("""\
             let p: Path = path("")
             let joined: Path = join(p, "file.txt")
-            println(to_string(joined))
+            print(to_string(joined))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -132,7 +132,7 @@ class TestPathJoin:
             let p2: Path = join(p, "a")
             let p3: Path = join(p2, "b")
             let p4: Path = join(p3, "c.txt")
-            println(to_string(p4))
+            print(to_string(p4))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -150,7 +150,7 @@ class TestPathParent:
         src = _fs_source_with_main("""\
             let p: Path = path("/foo/bar")
             let par: Path = parent(p)
-            println(to_string(par))
+            print(to_string(par))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -160,7 +160,7 @@ class TestPathParent:
         src = _fs_source_with_main("""\
             let p: Path = path("/")
             let par: Path = parent(p)
-            println(to_string(par))
+            print(to_string(par))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -170,7 +170,7 @@ class TestPathParent:
         src = _fs_source_with_main("""\
             let p: Path = path("foo")
             let par: Path = parent(p)
-            println(to_string(par))
+            print(to_string(par))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -180,7 +180,7 @@ class TestPathParent:
         src = _fs_source_with_main("""\
             let p: Path = path("")
             let par: Path = parent(p)
-            println(to_string(par))
+            print(to_string(par))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -190,7 +190,7 @@ class TestPathParent:
         src = _fs_source_with_main("""\
             let p: Path = path("/foo/bar/")
             let par: Path = parent(p)
-            println(to_string(par))
+            print(to_string(par))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -208,7 +208,7 @@ class TestPathFilename:
         src = _fs_source_with_main("""\
             let p: Path = path("/foo/bar.txt")
             let name: String = filename(p)
-            println(name)
+            print(name)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -218,7 +218,7 @@ class TestPathFilename:
         src = _fs_source_with_main("""\
             let p: Path = path("file.txt")
             let name: String = filename(p)
-            println(name)
+            print(name)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -228,7 +228,7 @@ class TestPathFilename:
         src = _fs_source_with_main("""\
             let p: Path = path("/")
             let name: String = filename(p)
-            println(name)
+            print(name)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -238,7 +238,7 @@ class TestPathFilename:
         src = _fs_source_with_main("""\
             let p: Path = path("")
             let name: String = filename(p)
-            println(name)
+            print(name)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -256,7 +256,7 @@ class TestPathExtension:
         src = _fs_source_with_main("""\
             let p: Path = path("/foo/file.txt")
             let ext: String = extension(p)
-            println(ext)
+            print(ext)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -266,7 +266,7 @@ class TestPathExtension:
         src = _fs_source_with_main("""\
             let p: Path = path("archive.tar.gz")
             let ext: String = extension(p)
-            println(ext)
+            print(ext)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -276,7 +276,7 @@ class TestPathExtension:
         src = _fs_source_with_main("""\
             let p: Path = path("noext")
             let ext: String = extension(p)
-            println(ext)
+            print(ext)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -286,7 +286,7 @@ class TestPathExtension:
         src = _fs_source_with_main("""\
             let p: Path = path(".gitignore")
             let ext: String = extension(p)
-            println(ext)
+            print(ext)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -304,7 +304,7 @@ class TestPathStem:
         src = _fs_source_with_main("""\
             let p: Path = path("/foo/file.txt")
             let s: String = stem(p)
-            println(s)
+            print(s)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -314,7 +314,7 @@ class TestPathStem:
         src = _fs_source_with_main("""\
             let p: Path = path("file.tar.gz")
             let s: String = stem(p)
-            println(s)
+            print(s)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -324,7 +324,7 @@ class TestPathStem:
         src = _fs_source_with_main("""\
             let p: Path = path("noext")
             let s: String = stem(p)
-            println(s)
+            print(s)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -334,7 +334,7 @@ class TestPathStem:
         src = _fs_source_with_main("""\
             let p: Path = path("")
             let s: String = stem(p)
-            println(s)
+            print(s)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -353,9 +353,9 @@ class TestPathAbsoluteAndToString:
             let p: Path = path("/foo")
             let abs: Bool = is_absolute(p)
             if abs {
-                println("absolute")
+                print("absolute")
             } else {
-                println("relative")
+                print("relative")
             }
             """)
         ir_out = _compile_mir(src)
@@ -367,9 +367,9 @@ class TestPathAbsoluteAndToString:
             let p: Path = path("relative/path")
             let abs: Bool = is_absolute(p)
             if abs {
-                println("absolute")
+                print("absolute")
             } else {
-                println("relative")
+                print("relative")
             }
             """)
         ir_out = _compile_mir(src)
@@ -381,9 +381,9 @@ class TestPathAbsoluteAndToString:
             let p: Path = path("")
             let abs: Bool = is_absolute(p)
             if abs {
-                println("absolute")
+                print("absolute")
             } else {
-                println("relative")
+                print("relative")
             }
             """)
         ir_out = _compile_mir(src)
@@ -394,7 +394,7 @@ class TestPathAbsoluteAndToString:
         src = _fs_source_with_main("""\
             let p: Path = path("/home/user/file.txt")
             let s: String = to_string(p)
-            println(s)
+            print(s)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -412,8 +412,8 @@ class TestFileIO:
         src = _fs_source_with_main("""\
             let r: Result<String, FsError> = read_file("/tmp/test.txt")
             match r {
-                Ok(content) => { println(content) },
-                Err(e) => { println("error") }
+                Ok(content) => { print(content) },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -425,8 +425,8 @@ class TestFileIO:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = write_file("/tmp/out.txt", "hello")
             match r {
-                Ok(ok) => { println("written") },
-                Err(e) => { println("error") }
+                Ok(ok) => { print("written") },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -438,8 +438,8 @@ class TestFileIO:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = append_file("/tmp/out.txt", " world")
             match r {
-                Ok(ok) => { println("appended") },
-                Err(e) => { println("error") }
+                Ok(ok) => { print("appended") },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -456,11 +456,11 @@ class TestFileIO:
                 Ok(ok) => {
                     let rr: Result<String, FsError> = read_file("/tmp/rt.txt")
                     match rr {
-                        Ok(content) => { println(content) },
-                        Err(e) => { println("read error") }
+                        Ok(content) => { print(content) },
+                        Err(e) => { print("read error") }
                     }
                 },
-                Err(e) => { println("write error") }
+                Err(e) => { print("write error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -477,14 +477,14 @@ class TestFileIO:
                         Ok(ok2) => {
                             let r: Result<String, FsError> = read_file("/tmp/app.txt")
                             match r {
-                                Ok(content) => { println(content) },
-                                Err(e) => { println("read error") }
+                                Ok(content) => { print(content) },
+                                Err(e) => { print("read error") }
                             }
                         },
-                        Err(e) => { println("append error") }
+                        Err(e) => { print("append error") }
                     }
                 },
-                Err(e) => { println("write error") }
+                Err(e) => { print("write error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -503,9 +503,9 @@ class TestFileQueries:
         src = _fs_source_with_main("""\
             let ex: Bool = exists("/tmp/test.txt")
             if ex {
-                println("exists")
+                print("exists")
             } else {
-                println("not found")
+                print("not found")
             }
             """)
         ir_out = _compile_mir(src)
@@ -517,8 +517,8 @@ class TestFileQueries:
         src = _fs_source_with_main("""\
             let r: Result<Int, FsError> = file_size("/tmp/test.txt")
             match r {
-                Ok(sz) => { println(str(sz)) },
-                Err(e) => { println("error") }
+                Ok(sz) => { print(str(sz)) },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -530,8 +530,8 @@ class TestFileQueries:
         src = _fs_source_with_main("""\
             let r: Result<Int, FsError> = file_mtime("/tmp/test.txt")
             match r {
-                Ok(mt) => { println(str(mt)) },
-                Err(e) => { println("error") }
+                Ok(mt) => { print(str(mt)) },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -551,9 +551,9 @@ class TestFileTypeChecks:
         src = _fs_source_with_main("""\
             let d: Bool = is_dir("/tmp")
             if d {
-                println("is directory")
+                print("is directory")
             } else {
-                println("not directory")
+                print("not directory")
             }
             """)
         ir_out = _compile_mir(src)
@@ -564,9 +564,9 @@ class TestFileTypeChecks:
         src = _fs_source_with_main("""\
             let f: Bool = is_file("/tmp/test.txt")
             if f {
-                println("is file")
+                print("is file")
             } else {
-                println("not file")
+                print("not file")
             }
             """)
         ir_out = _compile_mir(src)
@@ -579,11 +579,11 @@ class TestFileTypeChecks:
             let d: Bool = is_dir(path_str)
             let f: Bool = is_file(path_str)
             if d {
-                println("directory")
+                print("directory")
             } else if f {
-                println("file")
+                print("file")
             } else {
-                println("does not exist")
+                print("does not exist")
             }
             """)
         ir_out = _compile_mir(src)
@@ -602,8 +602,8 @@ class TestFileManipulation:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = remove("/tmp/to_delete.txt")
             match r {
-                Ok(ok) => { println("removed") },
-                Err(e) => { println("error") }
+                Ok(ok) => { print("removed") },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -615,8 +615,8 @@ class TestFileManipulation:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = rename("/tmp/old.txt", "/tmp/new.txt")
             match r {
-                Ok(ok) => { println("renamed") },
-                Err(e) => { println("error") }
+                Ok(ok) => { print("renamed") },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -628,8 +628,8 @@ class TestFileManipulation:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = copy("/tmp/src.txt", "/tmp/dst.txt")
             match r {
-                Ok(ok) => { println("copied") },
-                Err(e) => { println("error") }
+                Ok(ok) => { print("copied") },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -647,14 +647,14 @@ class TestFileManipulation:
                         Ok(ok2) => {
                             let r: Result<String, FsError> = read_file("/tmp/copy.txt")
                             match r {
-                                Ok(content) => { println(content) },
-                                Err(e) => { println("read error") }
+                                Ok(content) => { print(content) },
+                                Err(e) => { print("read error") }
                             }
                         },
-                        Err(e) => { println("copy error") }
+                        Err(e) => { print("copy error") }
                     }
                 },
-                Err(e) => { println("write error") }
+                Err(e) => { print("write error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -673,8 +673,8 @@ class TestDirectoryOperations:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = mkdir("/tmp/testdir")
             match r {
-                Ok(ok) => { println("created") },
-                Err(e) => { println("error") }
+                Ok(ok) => { print("created") },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -686,8 +686,8 @@ class TestDirectoryOperations:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = mkdir_all("/tmp/a/b/c/d")
             match r {
-                Ok(ok) => { println("tree created") },
-                Err(e) => { println("error") }
+                Ok(ok) => { print("tree created") },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -699,8 +699,8 @@ class TestDirectoryOperations:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = rmdir("/tmp/testdir")
             match r {
-                Ok(ok) => { println("removed") },
-                Err(e) => { println("error") }
+                Ok(ok) => { print("removed") },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -713,9 +713,9 @@ class TestDirectoryOperations:
             let r: Result<List<DirEntry>, FsError> = list_dir("/tmp")
             match r {
                 Ok(entries) => {
-                    println(str(len(entries)))
+                    print(str(len(entries)))
                 },
-                Err(e) => { println("error") }
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -730,11 +730,11 @@ class TestDirectoryOperations:
                 Ok(ok) => {
                     let rm: Result<Bool, FsError> = rmdir("/tmp/roundtrip_dir")
                     match rm {
-                        Ok(ok2) => { println("created and removed") },
-                        Err(e) => { println("remove error") }
+                        Ok(ok2) => { print("created and removed") },
+                        Err(e) => { print("remove error") }
                     }
                 },
-                Err(e) => { println("create error") }
+                Err(e) => { print("create error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -745,8 +745,8 @@ class TestDirectoryOperations:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = mkdir_all("/tmp/deep/nest/a/b/c/d/e/f")
             match r {
-                Ok(ok) => { println("deep tree created") },
-                Err(e) => { println("error") }
+                Ok(ok) => { print("deep tree created") },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -766,9 +766,9 @@ class TestReadLines:
             let r: Result<List<String>, FsError> = read_lines("/tmp/lines.txt")
             match r {
                 Ok(lines) => {
-                    println(str(len(lines)))
+                    print(str(len(lines)))
                 },
-                Err(e) => { println("error") }
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -782,11 +782,11 @@ class TestReadLines:
                 Ok(ok) => {
                     let r: Result<List<String>, FsError> = read_lines("/tmp/multiline.txt")
                     match r {
-                        Ok(lines) => { println(str(len(lines))) },
-                        Err(e) => { println("read error") }
+                        Ok(lines) => { print(str(len(lines))) },
+                        Err(e) => { print("read error") }
                     }
                 },
-                Err(e) => { println("write error") }
+                Err(e) => { print("write error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -805,8 +805,8 @@ class TestTmpfile:
         src = _fs_source_with_main("""\
             let r: Result<String, FsError> = tmpfile()
             match r {
-                Ok(path) => { println(path) },
-                Err(e) => { println("error") }
+                Ok(path) => { print(path) },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -827,8 +827,8 @@ class TestPathResolve:
             let p: Path = path("/tmp")
             let r: Result<Path, FsError> = resolve(p)
             match r {
-                Ok(resolved) => { println(to_string(resolved)) },
-                Err(e) => { println("error") }
+                Ok(resolved) => { print(to_string(resolved)) },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -841,8 +841,8 @@ class TestPathResolve:
             let p: Path = path("")
             let r: Result<Path, FsError> = resolve(p)
             match r {
-                Ok(resolved) => { println(to_string(resolved)) },
-                Err(e) => { println("expected error for empty path") }
+                Ok(resolved) => { print(to_string(resolved)) },
+                Err(e) => { print("expected error for empty path") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -860,7 +860,7 @@ class TestWalk:
         """walk() returns List<String> compiles."""
         src = _fs_source_with_main("""\
             let files: List<String> = walk("/tmp")
-            println(str(len(files)))
+            print(str(len(files)))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -871,7 +871,7 @@ class TestWalk:
             let entries: List<String> = walk("/tmp/testdir")
             let mut i: Int = 0
             while i < len(entries) {
-                println(entries[i])
+                print(entries[i])
                 i = i + 1
             }
             """)
@@ -891,8 +891,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<String, FsError> = read_file("/nonexistent/file.txt")
             match r {
-                Ok(content) => { println("unexpected") },
-                Err(e) => { println("expected not found") }
+                Ok(content) => { print("unexpected") },
+                Err(e) => { print("expected not found") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -903,8 +903,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<String, FsError> = read_file("")
             match r {
-                Ok(content) => { println("unexpected") },
-                Err(e) => { println("expected invalid path") }
+                Ok(content) => { print("unexpected") },
+                Err(e) => { print("expected invalid path") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -915,8 +915,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = write_file("", "data")
             match r {
-                Ok(ok) => { println("unexpected") },
-                Err(e) => { println("expected invalid path") }
+                Ok(ok) => { print("unexpected") },
+                Err(e) => { print("expected invalid path") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -927,8 +927,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = remove("/nonexistent/file.txt")
             match r {
-                Ok(ok) => { println("unexpected") },
-                Err(e) => { println("expected error") }
+                Ok(ok) => { print("unexpected") },
+                Err(e) => { print("expected error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -939,8 +939,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = rename("", "/tmp/new.txt")
             match r {
-                Ok(ok) => { println("unexpected") },
-                Err(e) => { println("expected invalid path") }
+                Ok(ok) => { print("unexpected") },
+                Err(e) => { print("expected invalid path") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -951,8 +951,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = rename("/tmp/old.txt", "")
             match r {
-                Ok(ok) => { println("unexpected") },
-                Err(e) => { println("expected invalid path") }
+                Ok(ok) => { print("unexpected") },
+                Err(e) => { print("expected invalid path") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -963,8 +963,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = copy("", "/tmp/dst.txt")
             match r {
-                Ok(ok) => { println("unexpected") },
-                Err(e) => { println("expected invalid path") }
+                Ok(ok) => { print("unexpected") },
+                Err(e) => { print("expected invalid path") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -975,8 +975,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = copy("/nonexistent/src.txt", "/tmp/dst.txt")
             match r {
-                Ok(ok) => { println("unexpected") },
-                Err(e) => { println("expected not found") }
+                Ok(ok) => { print("unexpected") },
+                Err(e) => { print("expected not found") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -987,8 +987,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = rename("/nonexistent/old.txt", "/tmp/new.txt")
             match r {
-                Ok(ok) => { println("unexpected") },
-                Err(e) => { println("expected not found") }
+                Ok(ok) => { print("unexpected") },
+                Err(e) => { print("expected not found") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -999,8 +999,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = mkdir("")
             match r {
-                Ok(ok) => { println("unexpected") },
-                Err(e) => { println("expected invalid path") }
+                Ok(ok) => { print("unexpected") },
+                Err(e) => { print("expected invalid path") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -1011,8 +1011,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = rmdir("/nonexistent/dir")
             match r {
-                Ok(ok) => { println("unexpected") },
-                Err(e) => { println("expected error") }
+                Ok(ok) => { print("unexpected") },
+                Err(e) => { print("expected error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -1023,8 +1023,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<List<DirEntry>, FsError> = list_dir("/nonexistent/dir")
             match r {
-                Ok(entries) => { println("unexpected") },
-                Err(e) => { println("expected error") }
+                Ok(entries) => { print("unexpected") },
+                Err(e) => { print("expected error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -1035,8 +1035,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Int, FsError> = file_size("/nonexistent/file.txt")
             match r {
-                Ok(sz) => { println("unexpected") },
-                Err(e) => { println("expected error") }
+                Ok(sz) => { print("unexpected") },
+                Err(e) => { print("expected error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -1047,8 +1047,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Int, FsError> = file_mtime("")
             match r {
-                Ok(mt) => { println("unexpected") },
-                Err(e) => { println("expected invalid path") }
+                Ok(mt) => { print("unexpected") },
+                Err(e) => { print("expected invalid path") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -1059,8 +1059,8 @@ class TestErrorHandling:
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = append_file("", "data")
             match r {
-                Ok(ok) => { println("unexpected") },
-                Err(e) => { println("expected invalid path") }
+                Ok(ok) => { print("unexpected") },
+                Err(e) => { print("expected invalid path") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -1087,7 +1087,7 @@ class TestEdgeCases:
             let p7: Path = join(p6, "g")
             let p8: Path = join(p7, "h")
             let p9: Path = join(p8, "file.txt")
-            println(to_string(p9))
+            print(to_string(p9))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1099,7 +1099,7 @@ class TestEdgeCases:
             let p1: Path = parent(p)
             let p2: Path = parent(p1)
             let p3: Path = parent(p2)
-            println(to_string(p3))
+            print(to_string(p3))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1111,9 +1111,9 @@ class TestEdgeCases:
             let name: String = filename(p)
             let ext: String = extension(p)
             let s: String = stem(p)
-            println(name)
-            println(ext)
-            println(s)
+            print(name)
+            print(ext)
+            print(s)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1126,10 +1126,10 @@ class TestEdgeCases:
             let ext: String = extension(p)
             let s: String = stem(p)
             let par: Path = parent(p)
-            println(name)
-            println(ext)
-            println(s)
-            println(to_string(par))
+            print(name)
+            print(ext)
+            print(s)
+            print(to_string(par))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1145,15 +1145,15 @@ class TestEdgeCases:
             let s: String = stem(p)
             let abs: Bool = is_absolute(p)
             let raw: String = to_string(p)
-            println(to_string(joined))
-            println(to_string(par))
-            println(name)
-            println(ext)
-            println(s)
+            print(to_string(joined))
+            print(to_string(par))
+            print(name)
+            print(ext)
+            print(s)
             if abs {
-                println("absolute")
+                print("absolute")
             }
-            println(raw)
+            print(raw)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1167,15 +1167,15 @@ class TestEdgeCases:
                     let count: Int = len(entries)
                     if count > 0 {
                         let first: DirEntry = entries[0]
-                        println(first.name)
+                        print(first.name)
                         if first.is_dir {
-                            println("dir")
+                            print("dir")
                         } else {
-                            println("file")
+                            print("file")
                         }
                     }
                 },
-                Err(e) => { println("error") }
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -1191,7 +1191,7 @@ class TestEdgeCases:
 class TestExternDeclarations:
     def test_all_extern_functions_declared(self) -> None:
         """All C runtime extern functions are declared in compiled IR."""
-        src = _fs_source_with_main('println("ok")')
+        src = _fs_source_with_main('print("ok")')
         ir_out = _compile_mir(src)
         assert "__mn_file_read" in ir_out
         assert "__mn_file_write" in ir_out
@@ -1226,27 +1226,27 @@ class TestFsIntegration:
                 Ok(ok) => {
                     let r1: Result<String, FsError> = read_file("/tmp/lifecycle.txt")
                     match r1 {
-                        Ok(c1) => { println(c1) },
-                        Err(e) => { println("read1 error") }
+                        Ok(c1) => { print(c1) },
+                        Err(e) => { print("read1 error") }
                     }
                     let a: Result<Bool, FsError> = append_file("/tmp/lifecycle.txt", " appended")
                     match a {
                         Ok(ok2) => {
                             let r2: Result<String, FsError> = read_file("/tmp/lifecycle.txt")
                             match r2 {
-                                Ok(c2) => { println(c2) },
-                                Err(e) => { println("read2 error") }
+                                Ok(c2) => { print(c2) },
+                                Err(e) => { print("read2 error") }
                             }
                         },
-                        Err(e) => { println("append error") }
+                        Err(e) => { print("append error") }
                     }
                     let rm: Result<Bool, FsError> = remove("/tmp/lifecycle.txt")
                     match rm {
-                        Ok(ok3) => { println("cleaned up") },
-                        Err(e) => { println("remove error") }
+                        Ok(ok3) => { print("cleaned up") },
+                        Err(e) => { print("remove error") }
                     }
                 },
-                Err(e) => { println("write error") }
+                Err(e) => { print("write error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -1263,14 +1263,14 @@ class TestFsIntegration:
                         Ok(ok2) => {
                             let ls: Result<List<DirEntry>, FsError> = list_dir("/tmp/fs_test/sub")
                             match ls {
-                                Ok(entries) => { println(str(len(entries))) },
-                                Err(e) => { println("list error") }
+                                Ok(entries) => { print(str(len(entries))) },
+                                Err(e) => { print("list error") }
                             }
                         },
-                        Err(e) => { println("write error") }
+                        Err(e) => { print("write error") }
                     }
                 },
-                Err(e) => { println("mkdir error") }
+                Err(e) => { print("mkdir error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -1293,15 +1293,15 @@ class TestFsIntegration:
                         Ok(ok2) => {
                             let ex: Bool = exists(file_str)
                             if ex {
-                                println("file exists")
+                                print("file exists")
                             }
                             let name: String = filename(file_path)
-                            println(name)
+                            print(name)
                         },
-                        Err(e) => { println("write error") }
+                        Err(e) => { print("write error") }
                     }
                 },
-                Err(e) => { println("mkdir error") }
+                Err(e) => { print("mkdir error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -1314,7 +1314,7 @@ class TestFsIntegration:
             let e2: FsError = new_permission_denied("denied")
             let e3: FsError = new_io_error("disk fail")
             let e4: FsError = new_invalid_path("bad")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
