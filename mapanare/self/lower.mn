@@ -428,6 +428,16 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeE
     let r: LowerResult = lower_expr(st, value)
     let mut s: LowerState = r.state
 
+    // Update lambda registration: lower_lambda left var_name empty
+    let num_lv: Int = len(s.lambda_vars)
+    if num_lv > 0 {
+        let last_e: LambdaEntry = s.lambda_vars[num_lv - 1]
+        if last_e.var_name == "" {
+            let updated: LambdaEntry = new_lambda_entry(name, last_e.fn_name)
+            s.lambda_vars[num_lv - 1] = updated
+        }
+    }
+
     // Prefer the declared type annotation over the expression's inferred type.
     // This is critical: function calls return mir_unknown(), but the declared
     // type (e.g., `let ch: String = lexer_peek(source)`) carries the real type.
@@ -934,9 +944,40 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         _ => { fn_name }
     }
 
-    let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
-    let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, resolved, args))
-    return new_lower_result(dest_r.value, s)
+    // For non-lambda calls, emit directly (no state copy needed)
+    if resolved.find(":") < 0 {
+        let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, resolved, args))
+        return new_lower_result(dest_r.value, s)
+    }
+
+    // Lambda call: decode captures from "lambda1:x,y" and add as extra args
+    let actual_fn: String = resolved.substr(0, resolved.find(":"))
+    let cp: Int = resolved.find(":")
+    let caps_str: String = resolved.substr(cp + 1, len(resolved) - cp - 1)
+    let cap_parts: List<String> = caps_str.split(",")
+    let mut all_args: List<Value> = args
+    let mut cur_st: LowerState = st
+    let mut ci: Int = 0
+    for _ in 0..1000 {
+        if ci >= len(cap_parts) { break }
+        let cap_name: String = cap_parts[ci]
+        if len(cap_name) > 0 {
+            let cap_var: Option<Value> = lookup_var(cur_st, cap_name)
+            match cap_var {
+                Some(addr) => {
+                    let load_r: LowerResult = make_value(cur_st, addr.ty, "cap")
+                    cur_st = emit_instr(load_r.state, Instruction::Load(load_r.value, addr))
+                    all_args.push(load_r.value)
+                },
+                _ => {}
+            }
+        }
+        ci = ci + 1
+    }
+    let dest_r: LowerResult = make_value(cur_st, mir_unknown(), "t")
+    let fin_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, actual_fn, all_args))
+    return new_lower_result(dest_r.value, fin_s)
 }
 
 // ---------------------------------------------------------------------------
@@ -1178,15 +1219,44 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
         }
     }
 
-    // Create a FnDefData for the lambda
+    // Build extended params: explicit params + captured parent vars
+    let parent_vars: List<VarInfo> = name_r.state.vars
+    let mut all_params: List<Param> = []
+    let mut capture_suffix: String = ""
+    let mut pi: Int = 0
+    for _ in 0..100 {
+        if pi >= len(params) { break }
+        all_params.push(params[pi])
+        pi = pi + 1
+    }
+    let mut ci: Int = 0
+    for _ in 0..1000 {
+        if ci >= len(parent_vars) { break }
+        let pv: VarInfo = parent_vars[ci]
+        let cap_param: Param = new Param { span: new_span(0, 0, 0, 0), name: pv.name, type_annotation: none }
+        all_params.push(cap_param)
+        if ci == 0 {
+            capture_suffix = ":" + pv.name
+        } else {
+            capture_suffix = capture_suffix + "," + pv.name
+        }
+        ci = ci + 1
+    }
+
+    // Create FnDefData with Int return type
     let span: Span = new_span(0, 0, 0, 0)
     let empty_type_params: List<String> = []
     let empty_decorators: List<Decorator> = []
-    let fn_def: FnDefData = new_fn_def_data(span, lambda_name, false, empty_type_params, params, none, body_block, empty_decorators)
+    let int_ret: TypeExpr = make_int_type()
+    let fn_def: FnDefData = new_fn_def_data(span, lambda_name, false, empty_type_params, all_params, Some(int_ret), body_block, empty_decorators)
 
-    // Use lower_fn (not lower_one_fn) — lower_fn preserves parent vars so
-    // captured variables are accessible in the lambda body (closures).
+    // Lower as a nested function (lower_fn saves/restores function scope)
     let mut s: LowerState = lower_fn(name_r.state, fn_def, "")
+
+    // Register lambda with capture info
+    let encoded_name: String = lambda_name + capture_suffix
+    let entry: LambdaEntry = new_lambda_entry("", encoded_name)
+    s.lambda_vars.push(entry)
 
     // Return a reference to the lambda function
     let dest_r: LowerResult = make_value(s, mir_fn_type(), "t")

@@ -1134,7 +1134,15 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
         if att == "FAT_ARROW" {
             p = p + 1
             let body: ExprResult = parse_expr(tokens, p, filename, 0)
-            let params: List<Param> = []
+            // Extract lambda params from the left-hand side expression.
+            // (n) => ... parses as Ident("n") on the left of =>
+            let mut params: List<Param> = []
+            match left {
+                Ident(name) => {
+                    params.push(new_param(name, none))
+                },
+                _ => {}
+            }
             return new_expr_result(Expr::Lambda(params, LambdaBody::ExprBody(body.expr)), body.pos)
         }
     }
