@@ -1632,7 +1632,9 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
         },
         NamespaceAccess(ns, member) => {
             // Check if this is an enum variant constructor: Enum::Variant(...)
-            if is_enum_variant(s, member) {
+            // Verify the variant belongs specifically to the namespace enum
+            let found_enum: String = enum_name_for_variant(s, member)
+            if found_enum == ns {
                 let enum_ty: MIRType = mir_enum(ns)
                 let dest_r: LowerResult = make_value(s, enum_ty, "t")
                 let new_s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, member, args))
@@ -2379,13 +2381,18 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         s = arm_val_r.state
 
         let exit_label: String = get_block_label(s, s.current_block_idx)
-        if !current_block_terminated(s) {
+        let arm_terminated: Bool = current_block_terminated(s)
+        if !arm_terminated {
             s = emit_instr(s, Instruction::Jump(merge_label))
         }
         s = lower_pop_scope(s)
 
-        let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
-        arm_results.push(pe)
+        // Only add to Phi if the arm didn't terminate (return/break).
+        // Mirrors Python lower.py:2464 `if arm_val is not None`.
+        if !arm_terminated {
+            let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
+            arm_results.push(pe)
+        }
         ai = ai + 1
     }
 
