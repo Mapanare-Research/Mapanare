@@ -124,8 +124,8 @@ class TestStage1CrossFile:
             source = mn_file.read_text(encoding="utf-8")
             program = parse(source, filename=mn_file.name)
             prim = _extract_primitive_fns(program)
-            # ast.mn has no primitive-only fns (all return TypeExpr), so skip
-            if mn_file.name == "ast.mn":
+            # ast.mn and mir.mn have no primitive-only fns (all return custom types), so skip
+            if mn_file.name in ("ast.mn", "mir.mn"):
                 continue
             assert len(prim.definitions) > 0, f"{mn_file.name}: no primitive fns"
 

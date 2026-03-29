@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit — regenerate with: python scripts/concat_self.py
+// Do not edit -- regenerate with: python scripts/concat_self.py
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -264,6 +264,20 @@ fn make_bool_type() -> TypeExpr {
 
 fn make_string_type() -> TypeExpr {
     return TypeExpr::Named("String")
+}
+
+// Shared AST constructors (used by parser.mn and lower.mn)
+
+fn new_span(line: Int, col: Int, end_line: Int, end_col: Int) -> Span {
+    return new Span { line: line, column: col, end_line: end_line, end_column: end_col }
+}
+
+fn new_block(span: Span, stmts: List<Stmt>) -> Block {
+    return new Block { span: span, stmts: stmts }
+}
+
+fn new_fn_def_data(span: Span, name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
+    return new FnDefData { span: span, name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
 }
 
 // ===== lexer.mn =====
@@ -999,15 +1013,7 @@ fn new_match_arm_result(arm: MatchArm, pos: Int) -> MatchArmResult {
     return new MatchArmResult { arm: arm, pos: pos }
 }
 
-// AST node constructors
-
-fn new_span(line: Int, col: Int, end_line: Int, end_col: Int) -> Span {
-    return new Span { line: line, column: col, end_line: end_line, end_column: end_col }
-}
-
-fn new_block(span: Span, stmts: List<Stmt>) -> Block {
-    return new Block { span: span, stmts: stmts }
-}
+// AST node constructors (new_span, new_block, new_fn_def_data are in ast.mn)
 
 fn new_param(name: String, type_ann: Option<TypeExpr>) -> Param {
     return new Param { span: new_span(0, 0, 0, 0), name: name, type_annotation: type_ann }
@@ -1023,10 +1029,6 @@ fn new_enum_variant(name: String, fields: List<TypeExpr>) -> EnumVariant {
 
 fn new_match_arm(pattern: Pattern, body: MatchArmBody) -> MatchArm {
     return new MatchArm { span: new_span(0, 0, 0, 0), pattern: pattern, body: body }
-}
-
-fn new_fn_def_data(span: Span, name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
-    return new FnDefData { span: span, name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
 }
 
 fn new_struct_def_data(name: String, public: Bool, type_params: List<String>, fields: List<StructField>) -> StructDefData {
@@ -4284,20 +4286,12 @@ fn check_or_raise(program: Program, filename: String) -> List<SemanticError> {
     return errors
 }
 
-// ===== lower.mn =====
-// lower.mn — AST → MIR lowering pass for the Mapanare self-hosted compiler.
-// Port of bootstrap/lower.py to native Mapanare.
+// ===== mir.mn =====
+// mir.mn — MIR (Mid-level Intermediate Representation) data structures.
+// Shared by lower.mn, lower_state.mn, and emit_llvm.mn.
 //
-// Walks the typed AST (after semantic analysis) and produces MIR functions
-// with basic blocks. Nested expressions become flat three-address code and
-// control flow becomes explicit jumps/branches.
-//
-// Architecture:
-//   - Two-pass: register declarations first, then lower function bodies
-//   - State-threaded: all functions thread LowerState through
-//   - SSA: every value gets a unique name (%t0, %t1, ...)
-//   - Basic blocks with explicit terminators (Jump, Branch, Switch, Return)
-
+// Defines all MIR types, values, instructions, basic blocks, functions,
+// modules, and associated helper structs/constructors.
 
 // ---------------------------------------------------------------------------
 // MIR type representation
@@ -4678,6 +4672,11 @@ struct LambdaEntry {
 fn new_lambda_entry(var_name: String, fn_name: String) -> LambdaEntry {
     return new LambdaEntry { var_name: var_name, fn_name: fn_name }
 }
+
+// ===== lower_state.mn =====
+// lower_state.mn — Lowerer state, scope management, lookups, and type resolution.
+// Extracted from lower.mn to reduce file size and share lookup utilities.
+
 
 // ---------------------------------------------------------------------------
 // Lowerer state — threaded through all lowering functions
@@ -5226,6 +5225,15 @@ pub fn unaryop_kind_to_str(op: UnaryOpKind) -> String {
         Not => { return "not" }
     }
 }
+
+// ===== lower.mn =====
+// lower.mn — AST → MIR lowering pass for the Mapanare self-hosted compiler.
+// Core lowering logic: declaration registration, definition lowering,
+// expression/statement lowering, control flow, pretty-printer, verifier.
+//
+// Data structures (MIRType, Value, Instruction, etc.) are in mir.mn.
+// State management (LowerState, lookups, type resolution) is in lower_state.mn.
+
 
 // ---------------------------------------------------------------------------
 // Declaration registration (Pass 1)
@@ -6369,21 +6377,6 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
     return new_lower_result(dest_r.value, s)
 }
 
-// Helper: create Span
-fn new_span(line: Int, col: Int, end_line: Int, end_col: Int) -> Span {
-    return new Span { line: line, column: col, end_line: end_line, end_column: end_col }
-}
-
-// Helper: create Block
-fn new_block(span: Span, stmts: List<Stmt>) -> Block {
-    return new Block { span: span, stmts: stmts }
-}
-
-// Helper: create FnDefData
-fn new_fn_def_data(span: Span, name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
-    return new FnDefData { span: span, name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
-}
-
 // ---------------------------------------------------------------------------
 // Spawn / Sync / Send lowering
 // ---------------------------------------------------------------------------
@@ -7239,16 +7232,9 @@ pub fn lower(program: Program, module_name: String) -> MIRModule {
     return st.module
 }
 
-// ===== emit_llvm.mn =====
-// emit_llvm.mn — LLVM IR emitter for the Mapanare self-hosted compiler.
-// Consumes MIR (from lower.mn) and produces LLVM IR text (string-based).
-//
-// Architecture:
-//   - emit_mir_module walks MIR structs, enums, extern fns, then functions
-//   - emit_mir_function emits function header + basic blocks
-//   - emit_mir_basic_block emits block label + instructions
-//   - emit_mir_instruction maps each MIR opcode to LLVM IR instructions
-//   - A local counter produces unique SSA names (%0, %1, ...)
+// ===== emit_llvm_ir.mn =====
+// emit_llvm_ir.mn — LLVM IR type constants and instruction string builders.
+// Pure string-producing functions, shared by emit_llvm.mn.
 
 
 // ---------------------------------------------------------------------------
@@ -7504,6 +7490,20 @@ fn emit_extractvalue(name: String, struct_ty: String, agg: String, idx: String) 
 fn emit_bitcast(name: String, src_ty: String, val: String, dst_ty: String) -> String {
     return "  " + name + " =bitcast " + src_ty + " " + val + " to " + dst_ty
 }
+
+// ===== emit_llvm.mn =====
+// emit_llvm.mn — LLVM IR emitter for the Mapanare self-hosted compiler.
+// Consumes MIR (from lower.mn) and produces LLVM IR text (string-based).
+//
+// Architecture:
+//   - emit_mir_module walks MIR structs, enums, extern fns, then functions
+//   - emit_mir_function emits function header + basic blocks
+//   - emit_mir_basic_block emits block label + instructions
+//   - emit_mir_instruction maps each MIR opcode to LLVM IR instructions
+//   - A local counter produces unique SSA names (%0, %1, ...)
+//
+// LLVM type constants and IR string builders are in emit_llvm_ir.mn.
+
 
 // ---------------------------------------------------------------------------
 // Emitter state

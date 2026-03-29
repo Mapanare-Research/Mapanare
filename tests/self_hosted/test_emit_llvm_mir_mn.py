@@ -16,6 +16,7 @@ import pytest
 
 SELF_DIR = Path(__file__).resolve().parent.parent.parent / "mapanare" / "self"
 EMIT_LLVM_MN = SELF_DIR / "emit_llvm.mn"
+EMIT_LLVM_IR_MN = SELF_DIR / "emit_llvm_ir.mn"
 
 
 @pytest.fixture
@@ -23,6 +24,15 @@ def emit_llvm_source() -> str:
     """Read the emit_llvm.mn source file."""
     assert EMIT_LLVM_MN.exists(), f"emit_llvm.mn not found at {EMIT_LLVM_MN}"
     return EMIT_LLVM_MN.read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def emit_llvm_combined() -> str:
+    """Read both emit_llvm.mn and emit_llvm_ir.mn combined."""
+    src = EMIT_LLVM_MN.read_text(encoding="utf-8")
+    if EMIT_LLVM_IR_MN.exists():
+        src += "\n" + EMIT_LLVM_IR_MN.read_text(encoding="utf-8")
+    return src
 
 
 # ===================================================================
@@ -41,9 +51,9 @@ class TestEmitLlvmMnStructure:
         lines = emit_llvm_source.strip().split("\n")
         assert len(lines) >= 1000, f"emit_llvm.mn has only {len(lines)} lines (expected >= 1000)"
 
-    def test_imports_lower_not_ast(self, emit_llvm_source: str) -> None:
-        """MIR-based emitter should import lower, not ast."""
-        assert "import self::lower" in emit_llvm_source
+    def test_imports_mir_not_ast(self, emit_llvm_source: str) -> None:
+        """MIR-based emitter should import mir, not ast."""
+        assert "import self::mir" in emit_llvm_source
         assert "import self::ast" not in emit_llvm_source
 
     def test_has_emit_state(self, emit_llvm_source: str) -> None:
@@ -61,8 +71,8 @@ class TestEmitLlvmMnStructure:
 class TestEmitLlvmMnTypeResolution:
     """Ensure emit_llvm.mn resolves MIR types to LLVM types."""
 
-    def test_has_resolve_mir_type(self, emit_llvm_source: str) -> None:
-        assert "fn resolve_mir_type" in emit_llvm_source
+    def test_has_resolve_mir_type(self, emit_llvm_combined: str) -> None:
+        assert "fn resolve_mir_type" in emit_llvm_combined
 
     @pytest.mark.parametrize(
         "llvm_type_fn",
@@ -76,8 +86,8 @@ class TestEmitLlvmMnTypeResolution:
             "llvm_ptr",
         ],
     )
-    def test_has_llvm_type_fn(self, emit_llvm_source: str, llvm_type_fn: str) -> None:
-        assert f"fn {llvm_type_fn}" in emit_llvm_source
+    def test_has_llvm_type_fn(self, emit_llvm_combined: str, llvm_type_fn: str) -> None:
+        assert f"fn {llvm_type_fn}" in emit_llvm_combined
 
     @pytest.mark.parametrize(
         "composite_fn",
@@ -89,8 +99,8 @@ class TestEmitLlvmMnTypeResolution:
             "llvm_map_type",
         ],
     )
-    def test_has_composite_type_fn(self, emit_llvm_source: str, composite_fn: str) -> None:
-        assert f"fn {composite_fn}" in emit_llvm_source
+    def test_has_composite_type_fn(self, emit_llvm_combined: str, composite_fn: str) -> None:
+        assert f"fn {composite_fn}" in emit_llvm_combined
 
 
 # ===================================================================
@@ -132,8 +142,8 @@ class TestEmitLlvmMnInstructionBuilders:
             "emit_bitcast",
         ],
     )
-    def test_has_builder(self, emit_llvm_source: str, builder_fn: str) -> None:
-        assert f"fn {builder_fn}" in emit_llvm_source
+    def test_has_builder(self, emit_llvm_combined: str, builder_fn: str) -> None:
+        assert f"fn {builder_fn}" in emit_llvm_combined
 
 
 # ===================================================================

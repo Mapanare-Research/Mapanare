@@ -261,3 +261,17 @@ fn make_bool_type() -> TypeExpr {
 fn make_string_type() -> TypeExpr {
     return TypeExpr::Named("String")
 }
+
+// Shared AST constructors (used by parser.mn and lower.mn)
+
+fn new_span(line: Int, col: Int, end_line: Int, end_col: Int) -> Span {
+    return new Span { line: line, column: col, end_line: end_line, end_column: end_col }
+}
+
+fn new_block(span: Span, stmts: List<Stmt>) -> Block {
+    return new Block { span: span, stmts: stmts }
+}
+
+fn new_fn_def_data(span: Span, name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
+    return new FnDefData { span: span, name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
+}

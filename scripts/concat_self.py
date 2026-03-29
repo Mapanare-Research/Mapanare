@@ -18,7 +18,10 @@ MODULE_ORDER = [
     "lexer.mn",
     "parser.mn",
     "semantic.mn",
+    "mir.mn",
+    "lower_state.mn",
     "lower.mn",
+    "emit_llvm_ir.mn",
     "emit_llvm.mn",
     "main.mn",
 ]
