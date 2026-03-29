@@ -791,7 +791,8 @@ class WasmEmitter:
                 "          (loop $rev",
                 "            (br_if $rev_done (i32.ge_s (local.get $lo) (local.get $hi)))",
                 "            ;; swap buf[lo] and buf[hi]",
-                "            (local.set $swap (i32.load8_u (i32.add (local.get $buf) (local.get $lo))))",
+                "            (local.set $swap"
+                " (i32.load8_u (i32.add (local.get $buf) (local.get $lo))))",
                 "            (i32.store8",
                 "              (i32.add (local.get $buf) (local.get $lo))",
                 "              (i32.load8_u (i32.add (local.get $buf) (local.get $hi)))",
@@ -817,7 +818,8 @@ class WasmEmitter:
                 "            (br_if $shift_done (i32.le_s (local.get $i) (i32.const 0)))",
                 "            (i32.store8",
                 "              (i32.add (local.get $buf) (local.get $i))",
-                "              (i32.load8_u (i32.add (local.get $buf) (i32.sub (local.get $i) (i32.const 1))))",
+                "              (i32.load8_u (i32.add (local.get $buf)"
+                " (i32.sub (local.get $i) (i32.const 1))))",
                 "            )",
                 "            (local.set $i (i32.sub (local.get $i) (i32.const 1)))",
                 "            (br $shift)",

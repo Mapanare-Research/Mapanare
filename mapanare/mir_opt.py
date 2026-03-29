@@ -484,7 +484,7 @@ def constant_folding(fn: MIRFunction, stats: MIRPassStats) -> bool:
 
                 # x - x = 0 (same operand) — preserve the operand type
                 if inst.op == BinOpKind.SUB and inst.lhs.name == inst.rhs.name:
-                    is_float = inst.lhs.ty.info.kind == TypeKind.FLOAT
+                    is_float = inst.lhs.ty.kind == TypeKind.FLOAT
                     tk = TypeKind.FLOAT if is_float else TypeKind.INT
                     new_insts.append(
                         Const(
