@@ -376,8 +376,24 @@ def detect_type_mismatch_ret(mod: IRModule) -> list[Pathology]:
             continue
 
         # Find ret instructions with different types
-        for m in re.finditer(r"^\s*ret\s+(\S+)\s+", fn.body, re.MULTILINE):
-            ret_ty = m.group(1)
+        for m in re.finditer(r"^\s*ret\s+(.*)", fn.body, re.MULTILINE):
+            rest = m.group(1).strip()
+            if rest == "void":
+                continue
+            # Extract full type: struct types like { i1, { i64, ... } } have spaces
+            if rest.startswith("{"):
+                depth, end = 0, len(rest)
+                for ci, ch in enumerate(rest):
+                    if ch == "{":
+                        depth += 1
+                    elif ch == "}":
+                        depth -= 1
+                    if depth == 0:
+                        end = ci + 1
+                        break
+                ret_ty = rest[:end]
+            else:
+                ret_ty = rest.split()[0]
             if ret_ty != declared_ret and ret_ty != "void":
                 results.append(
                     Pathology(
