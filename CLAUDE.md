@@ -105,7 +105,7 @@ Key modules in `mapanare/`:
 
 ## LLVM Backend Status (v2.0.0 — full parity + GPU)
 
-**Working:** Functions, structs, enums, pattern matching, control flow, type inference, generics, Result/Option, print/println, builtins, lists, maps/dicts (Robin Hood hash table), agents (full lifecycle), signals (full reactivity: computed, subscribers, batched updates), streams (map/filter/take/skip/collect/fold, backpressure), closures (free variable capture via environment structs), traits, module imports, pipes (`|>` for function application), pipe definitions (multi-agent composition), all string methods, GPU kernel dispatch (`@gpu`/`@cuda`/`@vulkan` via MIR GpuKernel metadata → PTX/SPIR-V LLVM codegen).
+**Working:** Functions, structs, enums, pattern matching, control flow, type inference, generics, Result/Option, print (println deprecated), builtins, lists, maps/dicts (Robin Hood hash table), agents (full lifecycle), signals (full reactivity: computed, subscribers, batched updates), streams (map/filter/take/skip/collect/fold, backpressure), closures (free variable capture via environment structs), traits, module imports, pipes (`|>` for function application), pipe definitions (multi-agent composition), all string methods, GPU kernel dispatch (`@gpu`/`@cuda`/`@vulkan` via MIR GpuKernel metadata → PTX/SPIR-V LLVM codegen).
 
 **Not yet on LLVM:** Tensors (experimental, GPU-backed via C runtime but no language-level integration).
 
@@ -115,7 +115,7 @@ New LLVM features should target `emit_llvm_mir.py` (MIR-based emitter), not `emi
 
 All type definitions, builtin registries, and type-name mappings live in `types.py`:
 - `TypeKind` enum (25 kinds: INT, FLOAT, BOOL, STRING, LIST, MAP, OPTION, RESULT, SIGNAL, STREAM, AGENT, TENSOR, FN, etc.)
-- `BUILTIN_FUNCTIONS`: print, println, len, str, int, float, Some, Ok, Err, signal, stream
+- `BUILTIN_FUNCTIONS`: print, println (deprecated), len, str, int, float, Some, Ok, Err, signal, stream
 - `BUILTIN_CALL_MAP`: Mapanare→Python name mapping used by emitters
 - `PYTHON_TYPE_MAP`: Type→Python type mapping
 
