@@ -18,7 +18,10 @@ ALL_MODULES = [
     "lexer.mn",
     "parser.mn",
     "semantic.mn",
+    "mir.mn",
+    "lower_state.mn",
     "lower.mn",
+    "emit_llvm_ir.mn",
     "emit_llvm.mn",
     "main.mn",
 ]
@@ -58,13 +61,17 @@ class TestBootstrapImports:
         assert "import self::lower" in source
         assert "import self::emit_llvm" in source
 
-    def test_emit_llvm_imports_lower(self) -> None:
+    def test_emit_llvm_imports_mir(self) -> None:
         source = (SELF_DIR / "emit_llvm.mn").read_text(encoding="utf-8")
-        assert "import self::lower" in source
+        assert "import self::mir" in source
 
     def test_lower_imports_ast(self) -> None:
         source = (SELF_DIR / "lower.mn").read_text(encoding="utf-8")
         assert "import self::ast" in source
+
+    def test_lower_imports_mir(self) -> None:
+        source = (SELF_DIR / "lower.mn").read_text(encoding="utf-8")
+        assert "import self::mir" in source
 
 
 # ===================================================================
@@ -87,7 +94,7 @@ class TestSelfModuleResolution:
         assert result.endswith("ast.mn")
         assert "self" + "/" + "self" not in result.replace("\\", "/")
 
-    @pytest.mark.parametrize("module", ["ast", "lexer", "parser", "semantic", "lower", "emit_llvm"])
+    @pytest.mark.parametrize("module", ["ast", "lexer", "parser", "semantic", "mir", "lower_state", "lower", "emit_llvm_ir", "emit_llvm"])
     def test_resolves_all_self_modules(self, module: str) -> None:
         from mapanare.modules import ModuleResolver
 
