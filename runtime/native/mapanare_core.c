@@ -705,6 +705,9 @@ static int64_t *mn_list_rc(MnList *list) {
 /* Check if the buffer has a valid COW magic header */
 static int mn_list_has_magic(MnList *list) {
     if (!list->data) return 0;
+    uintptr_t p = (uintptr_t)list->data;
+    /* Reject pointers that look like garbage: near-NULL, near-max, or misaligned */
+    if (p < 0x1000 || p > 0x7FFFFFFFFFFF || (p & 7) != 0) return 0;
     int64_t *magic = ((int64_t *)list->data) - 2;
     return *magic == MN_COW_MAGIC;
 }
@@ -884,12 +887,11 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
     dst.elem_size = src->elem_size;
     dst.len = src->len;
 
-    if (src->data && src->elem_size > 0 && src->cap > 0 && src->len >= 0
-        && src->len <= src->cap && src->cap <= 100000000
-        && src->elem_size <= 65536) {
+    /* Check magic FIRST to avoid reading uninitialised list fields.
+     * Guard: data pointer must look like a valid heap address (> 4096). */
+    if (src->data && (uintptr_t)src->data > 4096 && mn_list_has_magic(src)) {
         int64_t *rc = mn_list_rc(src);
         if (rc && *rc > 0 && *rc < 10000000) {
-            /* Managed COW buffer — share it */
             dst.cap = src->cap;
             dst.data = src->data;
             (*rc)++;

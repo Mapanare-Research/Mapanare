@@ -15,7 +15,7 @@ struct LowerState {
     tmp_counter: Int,
     block_counter: Int,
     vars: List<VarInfo>,
-    scope_stack: List<List<VarInfo>>,
+    scope_stack: List<Int>,
     impl_methods: List<ImplEntry>,
     struct_fields: List<StructFieldInfo>,
     enum_variants: List<EnumVariantNames>,
@@ -25,7 +25,7 @@ struct LowerState {
 fn new_lower_state(module_name: String) -> LowerState {
     let module: MIRModule = new_mir_module(module_name)
     let vars: List<VarInfo> = []
-    let scope_stack: List<List<VarInfo>> = []
+    let scope_stack: List<Int> = []
     let impl_methods: List<ImplEntry> = []
     let struct_fields: List<StructFieldInfo> = []
     let enum_variants: List<EnumVariantNames> = []
@@ -141,27 +141,29 @@ fn current_block_terminated(st: LowerState) -> Bool {
 // ---------------------------------------------------------------------------
 
 fn lower_push_scope(st: LowerState) -> LowerState {
+    // Save the current variable count. On pop, truncate vars back to this length.
+    // This avoids nested list aliasing (no List<List<VarInfo>> needed).
     let mut new_st: LowerState = st
-    // Copy current vars to scope stack
-    let mut copy: List<VarInfo> = []
-    let mut i: Int = 0
-    for _ in 0..100000 {
-        if i >= len(st.vars) {
-            new_st.scope_stack.push(copy)
-            return new_st
-        }
-        let v: VarInfo = st.vars[i]
-        copy.push(v)
-        i = i + 1
-    }
+    let var_count: Int = len(st.vars)
+    new_st.scope_stack.push(var_count)
     return new_st
 }
 
 fn lower_pop_scope(st: LowerState) -> LowerState {
     let mut new_st: LowerState = st
     if len(st.scope_stack) > 0 {
-        new_st.vars = st.scope_stack[len(st.scope_stack) - 1]
-        // Remove last element from scope_stack
+        let saved_len: Int = st.scope_stack[len(st.scope_stack) - 1]
+        // Truncate vars back to the saved length
+        // (removes variables defined in the inner scope)
+        let mut restored: List<VarInfo> = []
+        let mut i: Int = 0
+        for _ in 0..100000 {
+            if i >= saved_len { break }
+            if i >= len(st.vars) { break }
+            restored.push(st.vars[i])
+            i = i + 1
+        }
+        new_st.vars = restored
     }
     return new_st
 }

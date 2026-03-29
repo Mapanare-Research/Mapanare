@@ -1654,10 +1654,27 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                     let sub_pat: Pattern = sub_patterns[pi]
                     match sub_pat {
                         IdentPat(var_name) => {
-                            let payload_r: LowerResult = make_value(s, mir_unknown(), var_name)
+                            // Infer payload type from subject's Result/Option args
+                            let mut pay_ty: MIRType = mir_unknown()
+                            if subject_r.value.ty.kind == "result" {
+                                if len(subject_r.value.ty.args) >= 2 {
+                                    if name == "Ok" { pay_ty = subject_r.value.ty.args[0] }
+                                    if name == "Err" { pay_ty = subject_r.value.ty.args[1] }
+                                }
+                            }
+                            if subject_r.value.ty.kind == "option" {
+                                if len(subject_r.value.ty.args) >= 1 {
+                                    pay_ty = subject_r.value.ty.args[0]
+                                }
+                            }
+                            let payload_r: LowerResult = make_value(s, pay_ty, var_name)
                             s = payload_r.state
                             s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject_r.value, name))
-                            s = define_var(s, var_name, payload_r.value, false)
+                            // Store payload to alloca so lower_identifier can load from it
+                            let payload_addr: Value = new_value("%" + var_name + ".addr", pay_ty)
+                            s = emit_instr(s, Instruction::Alloca(payload_addr, pay_ty))
+                            s = emit_instr(s, Instruction::Store(payload_addr, payload_r.value))
+                            s = define_var(s, var_name, payload_addr, false)
                         },
                         _ => {}
                     }
@@ -1666,7 +1683,11 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             },
             IdentPat(name) => {
                 if !is_enum_variant(s, name) {
-                    s = define_var(s, name, subject_r.value, false)
+                    // Store subject to alloca so lower_identifier can load from it
+                    let ident_addr: Value = new_value("%" + name + ".addr", subject_r.value.ty)
+                    s = emit_instr(s, Instruction::Alloca(ident_addr, subject_r.value.ty))
+                    s = emit_instr(s, Instruction::Store(ident_addr, subject_r.value))
+                    s = define_var(s, name, ident_addr, false)
                 }
             },
             _ => {}

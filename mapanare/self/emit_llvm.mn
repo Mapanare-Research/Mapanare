@@ -1147,9 +1147,36 @@ fn emit_enum_tag(st: EmitState, dest: Value, val: Value) -> EmitState {
 fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) -> EmitState {
     let mut s: EmitState = st
     let enum_ty: String = resolve_mir_type(val.ty)
-    let dest_ty: String = resolve_mir_type(dest.ty)
     let dn: String = dest.name
-    // Alloca the enum, store it, bitcast past the tag, load as dest type
+
+    // For Result/Option: use extractvalue on the inner struct
+    if val.ty.kind == "result" {
+        // Result = {i1, {ok_ty, err_ty}}. Extract inner struct, then payload.
+        let inner_r: String = dn + ".inner"
+        s = emit_line(s, "  " + inner_r + " = extractvalue " + enum_ty + " " + val.name + ", 1")
+        // Ok payload at index 0, Err payload at index 1
+        let mut ok_ty: String = llvm_ptr()
+        let mut err_ty: String = llvm_ptr()
+        if len(val.ty.args) >= 2 {
+            ok_ty = resolve_mir_type(val.ty.args[0])
+            err_ty = resolve_mir_type(val.ty.args[1])
+        }
+        let inner_ty: String = "{ " + ok_ty + ", " + err_ty + " }"
+        if variant == "Ok" {
+            s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty + " " + inner_r + ", 0")
+        } else {
+            s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty + " " + inner_r + ", 1")
+        }
+        return s
+    }
+    if val.ty.kind == "option" {
+        // Option = {i1, inner_ty}. Extract inner at index 1.
+        s = emit_line(s, "  " + dn + " = extractvalue " + enum_ty + " " + val.name + ", 1")
+        return s
+    }
+
+    // Regular enum: byte-offset arithmetic (skip i64 tag)
+    let dest_ty: String = resolve_mir_type(dest.ty)
     s = emit_line(s, "  " + dn + ".ea = alloca " + enum_ty)
     s = emit_line(s, "  store " + enum_ty + " " + val.name + ", " + enum_ty + "* " + dn + ".ea")
     s = emit_line(s, "  " + dn + ".bp = bitcast " + enum_ty + "* " + dn + ".ea to i8*")
