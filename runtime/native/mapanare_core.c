@@ -47,7 +47,7 @@ MN_EXPORT void __mn_free(void *ptr) {
  * Checked arithmetic — abort on integer overflow instead of wrapping.
  * ----------------------------------------------------------------------- */
 
-static int64_t mn_checked_mul(int64_t a, int64_t b) {
+int64_t mn_checked_mul(int64_t a, int64_t b) {
     if (a > 0 && b > 0 && a > INT64_MAX / b) {
         fprintf(stderr, "mapanare: integer overflow in %lld * %lld\n",
                 (long long)a, (long long)b);
@@ -71,7 +71,7 @@ static int64_t mn_checked_mul(int64_t a, int64_t b) {
     return a * b;
 }
 
-static int64_t mn_checked_add(int64_t a, int64_t b) {
+int64_t mn_checked_add(int64_t a, int64_t b) {
     if (b > 0 && a > INT64_MAX - b) {
         fprintf(stderr, "mapanare: integer overflow in %lld + %lld\n",
                 (long long)a, (long long)b);

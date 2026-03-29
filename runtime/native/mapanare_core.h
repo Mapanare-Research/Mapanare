@@ -229,6 +229,13 @@ MN_EXPORT void *__mn_realloc(void *ptr, int64_t new_size);
 MN_EXPORT void __mn_free(void *ptr);
 
 /* -----------------------------------------------------------------------
+ * Checked arithmetic — abort on integer overflow instead of wrapping.
+ * ----------------------------------------------------------------------- */
+
+int64_t mn_checked_mul(int64_t a, int64_t b);
+int64_t mn_checked_add(int64_t a, int64_t b);
+
+/* -----------------------------------------------------------------------
  * Arena Allocator
  *
  * Bump allocator for scope-local temporaries. All allocations are freed

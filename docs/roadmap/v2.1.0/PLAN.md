@@ -2,14 +2,75 @@
 
 > The Python transpiler backends are deprecated since v2.0.0, but the Python
 > *compiler* still runs every test. 4,400+ tests invoke the Python lexer, parser,
-> semantic checker, MIR lowerer, and LLVM emitter — the test harness is just the
-> thin wrapper. Rewriting tests in Go or Rust would not help: the bottleneck is
-> the compiler code itself, not pytest.
+> semantic checker, MIR lowerer, and LLVM emitter. The test harness is just the
+> thin wrapper — the bottleneck is the compiler code itself, not pytest.
 >
 > v2.1.0 closes that gap. The self-hosted compiler reaches fixed-point, tests
 > migrate to call the native binary, and the test infrastructure scales to match.
 >
 > Core theme: **The compiler compiles itself. Tests call native code. Python is optional.**
+
+---
+
+## Current State (start of v2.1.0)
+
+Before planning, here's what's actually true right now:
+
+### Already solved (from v1.0.x / v2.0.x work)
+
+- **llvmlite bypassed** — `build_stage1.py` defaults to the text emitter + clang -O2,
+  not llvmlite. The text emitter generates alloca/load/store IR and relies on clang's
+  mem2reg pass. No llvmlite truncation bugs in this path.
+- **Enum boxing** — enums use `{i64, i8*}` (heap-allocated payload), not inline buffers.
+  Eliminates the old 272-byte enum corruption.
+- **Linkage fix** — `define internal` → `define` prevents LLVM -O1 from stripping
+  functions with sret calling conventions.
+- **`mnc-stage1` binary exists** — built and on disk at `mapanare/self/mnc-stage1`.
+- **15/15 golden tests pass** — `mnc-stage1` compiles all golden test programs correctly.
+- **Stage2 IR: 9/15 valid** — `mnc-stage1` generates valid LLVM IR for 9/15 golden tests.
+  6 still fail (struct init, enum match, list types, string methods, result types, closures).
+- **Large struct threshold: 1024 bytes** — raised from 56 to avoid most truncation edge cases.
+
+### What's actually still broken
+
+1. **`lower.mn` control flow bug** — `return` inside `if`/`match` blocks doesn't
+   terminate the block. Control falls through to the merge block. This blocks 6/15
+   stage2 tests. See [`ENUM_PAYLOAD_FIX_PLAN.md`](../ENUM_PAYLOAD_FIX_PLAN.md).
+
+2. **MIR copy aliasing** — `let copy = list` creates a new alloca that doesn't
+   track pushes to the original. Lists appear empty after copy+push sequences.
+
+3. **Self-compilation untested** — `mnc-stage1` compiles golden tests (small programs)
+   but has not been verified compiling its own 8,288-line source (`mnc_all.mn`).
+   Previous attempts (03/20) crashed on `parser.mn`, `semantic.mn`, `lower.mn`,
+   `emit_llvm.mn` due to LowerState (680 bytes). This may be resolved now that
+   the text emitter + clang -O2 path is in place — needs retesting.
+
+4. **`mn_checked_mul` visibility** — declared `static` in `mapanare_core.c` but
+   called from `mapanare_runtime.c`. Causes gcc compilation failure on Windows.
+
+### LowerState struct (the 680-byte problem)
+
+```mapanare
+struct LowerState {             // mapanare/self/lower.mn:399
+    module: MIRModule,          // large — contains function list, type list, etc.
+    current_fn: Option<MIRFunction>,
+    current_block_idx: Int,
+    tmp_counter: Int,
+    block_counter: Int,
+    vars: List<VarInfo>,
+    scope_stack: List<List<VarInfo>>,
+    impl_methods: List<ImplEntry>,
+    struct_fields: List<StructFieldInfo>,
+    enum_variants: List<EnumVariantNames>,
+    lambda_vars: List<LambdaEntry>
+}
+```
+
+Every `lower_*` function takes `LowerState` and returns `LowerResult { value, state }`.
+This means 680 bytes copied on every call. With clang -O2 + mem2reg this may now
+work (previous crashes were with llvmlite -O1 and clang -O0). **Must retest before
+assuming restructuring is needed.**
 
 ---
 
@@ -36,263 +97,289 @@
 
 ## Phase Overview
 
-| Phase | Name | Status | Effort | Speedup |
-|-------|------|--------|--------|---------|
-| 1 | Immediate Test Parallelism | `Not started` | Small | 4-6x |
-| 2 | Self-Hosted Compiler: Control Flow Fix | `Not started` | Large | — |
-| 3 | Self-Hosted Compiler: Large Struct Codegen | `Not started` | Large | — |
-| 4 | Fixed-Point Verification | `Not started` | Medium | — |
-| 5 | Native Test Migration | `Not started` | X-Large | 10-50x |
-| 6 | Go Test Harness (optional) | `Not started` | Large | 2-3x on top of Phase 5 |
+| Phase | Name | Status | Effort | Impact |
+|-------|------|--------|--------|--------|
+| 0 | Quick Fixes (gcc, test parallelism) | `Done` | Small | Unblocks dev.ps1, 4-6x test speed |
+| 1 | Retest Self-Compilation | `Done` | Small | 7/15 stage2, 4/7 modules, 3 crash on copy aliasing |
+| 2 | Control Flow Fix (`lower.mn`) | `Not started` | Medium-Large | 7/15 stage2 → 15/15 |
+| 3 | LowerState Restructure (CRITICAL) | `In Progress` | Medium | Copy aliasing crashes block self-compilation |
+| 4 | Fixed-Point Verification | `Not started` | Medium | Python independence achieved |
+| 5 | Native Test Migration | `Not started` | X-Large | 10-50x test speed |
+| 6 | Go Test Harness (optional) | `Not started` | Large | Only if measurements justify |
 
 ---
 
-## Phase 1 — Immediate Test Parallelism
-**Status:** `Not started`
+## Phase 0 — Quick Fixes
+**Status:** `In Progress`
 **Effort:** Small
-**Expected speedup:** 4-6x (no code changes to tests)
-
-The tests are independent — no shared global state, no database, no filesystem
-contention. `pytest-xdist` can distribute them across CPU cores immediately.
 
 ### Tasks
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Add `pytest-xdist` to dev dependencies | `[ ]` | `pyproject.toml` | `pip install pytest-xdist` |
-| 2 | Add `-n auto` to default pytest invocation | `[ ]` | `pyproject.toml`, `Makefile` | `addopts = "-n auto"` in `[tool.pytest.ini_options]` |
-| 3 | Fix any tests that accidentally share state | `[ ]` | `tests/` | Unlikely but audit — look for temp files with fixed names, global singletons |
-| 4 | Update CI to use parallel execution | `[ ]` | `.github/workflows/ci.yml` | `pytest tests/ -v -n auto` |
-| 5 | Measure before/after wall-clock time | `[ ]` | — | Record in this plan |
-| 6 | Add `pytest --durations=50` to CI for ongoing bottleneck visibility | `[ ]` | `.github/workflows/ci.yml` | Shows the 50 slowest tests per run |
+| 1 | Add `pytest-xdist` to dev dependencies | `[x]` | `pyproject.toml` | |
+| 2 | Add `-n auto` to `dev.ps1` and CI (with graceful fallback) | `[x]` | `dev.ps1`, `.github/workflows/ci.yml`, `Makefile` | Auto-detects xdist |
+| 3 | Make `dev.ps1 validate` run once and exit (not watch) | `[x]` | `dev.ps1` | `-Watch` flag for old behavior |
+| 4 | Fix `mn_checked_mul` visibility: move from `static` to non-static, add declaration to header | `[x]` | `runtime/native/mapanare_core.c`, `mapanare_core.h` | Removed `static` from both `mn_checked_mul` and `mn_checked_add`, added declarations to header |
+| 5 | Install `pytest-xdist` and verify parallel execution | `[x]` | — | Installed with mapanare dev deps |
+| 6 | Measure baseline test time (sequential vs parallel) | `[~]` | — | Running... |
 
-**Done when:** CI runs 4x faster. No test failures from parallelism.
+**Done when:** `dev.ps1 validate` runs green with parallel tests.
 
 ---
 
-## Phase 2 — Self-Hosted Compiler: Control Flow Fix
+## Phase 1 — Retest Self-Compilation (WSL)
 **Status:** `Not started`
-**Effort:** Large
-**Depends on:** Nothing (can run in parallel with Phase 1)
+**Effort:** Small (just running commands and observing)
 
-The self-hosted compiler (`mnc-stage1`) compiles 6/15 golden tests correctly.
-The remaining 9 fail because **`return` inside `if`/`match` blocks does not
-actually return** — control flow falls through to the merge block.
+Before writing any fix code, test what actually works NOW. The text emitter +
+clang -O2 path may have fixed the old LowerState crashes that happened under
+llvmlite -O1 and clang -O0. **Don't fix what isn't broken.**
 
-This is the single biggest blocker to self-hosted parity. See
-[`ENUM_PAYLOAD_FIX_PLAN.md`](../ENUM_PAYLOAD_FIX_PLAN.md) for the full diagnosis.
+### Tasks
+
+| # | Task | Status | Files | Notes |
+|---|------|--------|-------|-------|
+| 1 | Rebuild `mnc-stage1`: `python scripts/build_stage1.py` | `[x]` | — | 82,010 lines IR, 918KB binary, clang -O2 |
+| 2 | Run golden test harness | `[x]` | — | **15/15 pass** in 1.6s |
+| 3 | Test stage2 IR validity | `[x]` | — | **7/15 VALID** (was 9/15). Invalid: for_loop, struct, enum_match, list, result, closure, nested_struct |
+| 4 | Test self-compilation: `./mnc-stage1 mapanare/self/mnc_all.mn` | `[x]` | — | **SEGFAULT** in `lookup_var` → `__mn_str_eq` (corrupted string pointer) |
+| 5 | Test individual modules | `[x]` | — | ast✓ lexer✓ semantic✓ main✓ / parser(double-free) lower(segfault) emit_llvm(segfault) |
+| 6 | Document results and decide path | `[x]` | — | See findings below |
+
+**Findings (2026-03-28):**
+
+Stage2 IR errors fall into two categories:
+1. **Control flow** (07_enum_match): unterminated block before merge label → Phase 2
+2. **Type emission** (struct/list/result/closure/for_loop): wrong types in emitted IR → Phase 2
+
+Self-compilation crashes (parser/lower/emit_llvm) are all **memory corruption**:
+- `parser.mn`: double-free in `__mn_list_push` during `lower_let` — list data pointer aliased after copy
+- `lower.mn`: SIGSEGV in `__mn_str_eq` during `lookup_var` — stale string pointer after list realloc
+- `emit_llvm.mn`: same pattern
+
+**Root cause:** LowerState (680 bytes) is passed by value. Its list fields (vars, scope_stack, etc.)
+get shallow-copied. When the copy's list grows (realloc moves the data), the original's data pointer
+becomes dangling. This is the classic copy-aliasing bug.
+
+**Decision:** Phase 3 (LowerState restructure) is the critical path. Phase 2 (control flow) fixes
+stage2 IR quality but doesn't unblock self-compilation. Execute Phase 3 first, then Phase 2.
+
+---
+
+## Phase 2 — Control Flow Fix (`lower.mn`)
+**Status:** `Not started`
+**Effort:** Medium-Large
+**Depends on:** Phase 1 results (skip if stage2 already produces 15/15 valid IR)
+
+The self-hosted `lower.mn` has a known bug: `return` inside `if`/`match` blocks
+doesn't terminate the block — control falls through to the merge block. This was
+identified in the 03/21 chat session and confirmed by the ENUM_PAYLOAD_FIX_PLAN.
 
 ### Root Cause
 
-`lower.mn`'s `lower_if` creates separate blocks for then/else/merge. A `Return`
-in the then-block becomes the block's last instruction, but the merge block still
-gets emitted and falls through. The terminator is lost.
+`lower_if` creates then/else/merge blocks. A `Return` in the then-block becomes
+the block's last instruction, but the merge block is still emitted with a phi node
+that references the then-block's "value" — even though the then-block already
+returned and should never reach the merge.
 
-### Fix Options
+### Fix Strategy
 
-| Approach | Complexity | Risk |
-|----------|-----------|------|
-| A. Fix `lower_if` in `lower.mn` to detect `Return` and skip merge block emission | Medium | Low — surgical fix at the source |
-| B. Add a post-pass in `lower.mn` that removes unreachable blocks after `Return` | Medium | Low — catch-all but harder to debug |
-| C. Fix the Python bootstrap `lower.py` to generate better MIR that `emit_llvm.mn` can handle | Small | Medium — may mask the real bug |
+Fix in the self-hosted `lower.mn` source (not the Python `lower.py`):
+
+1. After lowering the then-block body, check if the last instruction is `Return`
+2. If so, don't emit a branch to the merge block from that arm
+3. If BOTH arms return, don't emit the merge block at all
+4. Same logic for `lower_match` arms
 
 ### Tasks
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Create minimal `.mn` reproducer: function with `if { return X }` that falls through | `[ ]` | `tests/golden/` | Smallest program that triggers the bug |
-| 2 | Trace MIR block graph for the reproducer — identify missing terminator | `[ ]` | — | Use `--emit-mir` to inspect |
-| 3 | Fix `lower_if` in `lower.mn`: detect `Return` in then/else and mark merge block unreachable | `[ ]` | `mapanare/self/lower.mn` | Approach A |
-| 4 | Fix `lower_match` in `lower.mn`: same terminator propagation for match arms | `[ ]` | `mapanare/self/lower.mn` | Same pattern |
-| 5 | Fix nested conditionals: `if { if { return } }` must propagate through both levels | `[ ]` | `mapanare/self/lower.mn` | Recursive case |
-| 6 | Rebuild `mnc-stage1` with the fix | `[ ]` | — | `python scripts/build_stage1.py` |
-| 7 | Verify 15/15 golden tests produce valid IR | `[ ]` | — | `python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 -v` |
-| 8 | Verify the 9 previously-failing tests now pass | `[ ]` | — | struct, loop, enum, string, closure, result tests |
+| 1 | Create minimal reproducer and trace the MIR blocks | `[ ]` | — | `fn f(x: Int) -> Int { if x > 0 { return 1 } return 0 }` |
+| 2 | Fix `lower_if` in `lower.mn`: skip merge when arm returns | `[ ]` | `mapanare/self/lower.mn` | ~line 2126 |
+| 3 | Fix `lower_match` in `lower.mn`: same pattern | `[ ]` | `mapanare/self/lower.mn` | ~line 2235 |
+| 4 | Handle nested case: `if { if { return } }` | `[ ]` | `mapanare/self/lower.mn` | Must propagate through nesting |
+| 5 | Rebuild mnc-stage1 and test 15/15 golden stage2 | `[ ]` | — | |
+| 6 | Fix copy aliasing if it blocks remaining tests | `[ ]` | `mapanare/self/lower.mn` or `emit_llvm.mn` | List copy + push = stale alloca |
 
-**Done when:** `mnc-stage1` compiles all 15 golden tests to correct, runnable LLVM IR.
+**Done when:** `mnc-stage1` produces valid LLVM IR for all 15 golden tests (stage2).
 
 ---
 
-## Phase 3 — Self-Hosted Compiler: Large Struct Codegen
+## Phase 3 — LowerState Restructure (if needed)
 **Status:** `Not started`
-**Effort:** Large
-**Depends on:** Phase 2 (control flow must work before large modules compile)
+**Effort:** Medium
+**Depends on:** Phase 1 (only needed if self-compilation still crashes on large modules)
 
-Even after the control flow fix, `mnc-stage1` crashes on its own large modules
-(`parser.mn`, `semantic.mn`, `lower.mn`, `emit_llvm.mn`) due to large-struct
-codegen issues at the 680-byte `LowerState` scale.
+If `mnc-stage1` compiles golden tests but crashes on its own source due to
+LowerState (680 bytes), restructure the struct to avoid large-value passing.
 
-### Known Issues
+### Option A: Split LowerState (preferred)
 
-From v1.0.x final results:
-- llvmlite truncates large by-value load/store (>128 bytes) — partially fixed
-  with `llvm.memcpy` in `_emit_enum_init` for large enums (v1.0.11)
-- LowerState (680 bytes) triggers remaining edge cases in struct pass-by-value
-- Self-hosted emitter's type resolution: `List<Int>` had kind `"unknown"` instead
-  of `"list"` — partially fixed by checking method name before type kind
+Break LowerState into a small core + heap-allocated context:
+
+```mapanare
+struct LowerCtx {                    // heap-allocated, passed by pointer
+    module: MIRModule,
+    vars: List<VarInfo>,
+    scope_stack: List<List<VarInfo>>,
+    impl_methods: List<ImplEntry>,
+    struct_fields: List<StructFieldInfo>,
+    enum_variants: List<EnumVariantNames>,
+    lambda_vars: List<LambdaEntry>
+}
+
+struct LowerState {                  // small, safe to pass by value
+    ctx: LowerCtx,                   // single pointer
+    current_fn: Option<MIRFunction>,
+    current_block_idx: Int,
+    tmp_counter: Int,
+    block_counter: Int
+}
+```
+
+This reduces LowerState to ~80 bytes (5 scalars + 1 pointer). All the heavy
+collections live behind a single pointer.
+
+### Option B: Thread state through mutable reference
+
+Change `lower_*` functions to take `LowerState` by mutable reference instead of
+by value + return. This eliminates all copies but requires changing every
+function signature in `lower.mn` (2,629 lines, ~100+ functions).
 
 ### Tasks
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Profile `mnc-stage1` crash on `parser.mn` — capture crash location and IR state | `[ ]` | — | `mnc-stage1 mapanare/self/parser.mn 2>&1` |
-| 2 | Identify all struct types > 128 bytes in the self-hosted compiler | `[ ]` | `mapanare/self/*.mn` | LowerState, ParseState, SemanticState, EmitState |
-| 3 | Ensure all large structs use pointer-based passing (sret/byptr) consistently | `[ ]` | `mapanare/emit_llvm_mir.py` | The v1.0.11 fix may be incomplete for self-referential patterns |
-| 4 | Fix type resolution for nested generic types (`List<StructInit>`, `Map<String, MIRType>`) | `[ ]` | `mapanare/emit_llvm_mir.py`, `mapanare/self/emit_llvm.mn` | The "unknown" kind fallback |
-| 5 | Test: `mnc-stage1` compiles `parser.mn` without crash | `[ ]` | — | Largest module (1,721 lines) |
-| 6 | Test: `mnc-stage1` compiles `semantic.mn` without crash | `[ ]` | — | Second largest (1,607 lines) |
-| 7 | Test: `mnc-stage1` compiles `lower.mn` without crash | `[ ]` | — | Largest (2,629 lines), heaviest struct usage |
-| 8 | Test: `mnc-stage1` compiles `emit_llvm.mn` without crash | `[ ]` | — | 1,497 lines |
-| 9 | Test: `mnc-stage1` compiles `mnc_all.mn` (all 7 modules concatenated) | `[ ]` | — | The full self-compilation input |
+| 1 | Confirm Phase 1 crash is LowerState-related (not control flow) | `[ ]` | — | Check crash location |
+| 2 | Choose Option A or B based on change scope | `[ ]` | — | A is smaller change |
+| 3 | Implement restructure in `lower.mn` | `[ ]` | `mapanare/self/lower.mn` | |
+| 4 | Update all callers in `lower.mn` | `[ ]` | `mapanare/self/lower.mn` | |
+| 5 | Rebuild and test self-compilation | `[ ]` | — | `mnc-stage1 mapanare/self/mnc_all.mn` |
 
-**Done when:** `mnc-stage1` compiles its own source code into `mnc-stage2` without crashing.
+**Done when:** `mnc-stage1` compiles `mnc_all.mn` without crashing.
 
 ---
 
 ## Phase 4 — Fixed-Point Verification
 **Status:** `Not started`
 **Effort:** Medium
-**Depends on:** Phase 3 (mnc-stage1 must compile itself first)
+**Depends on:** Phase 2/3 (mnc-stage1 must compile itself)
 
-Three-stage bootstrap: `mnc-stage1` (built from Python) compiles itself into
-`mnc-stage2`, which compiles itself into `mnc-stage3`. If `stage2 == stage3`
-(byte-identical IR), the compiler has reached a fixed point and Python is no
-longer needed for compilation.
+Three-stage bootstrap:
+1. Python bootstrap compiles `mnc_all.mn` → `mnc-stage1` (already done)
+2. `mnc-stage1` compiles `mnc_all.mn` → `mnc-stage2` IR
+3. `mnc-stage2` compiles `mnc_all.mn` → `mnc-stage3` IR
+4. If stage2 IR == stage3 IR → **fixed point. Python is no longer needed.**
 
 ### Tasks
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Stage 2: `mnc-stage1` compiles `mnc_all.mn` -> `mnc-stage2` IR | `[ ]` | — | First self-compilation |
-| 2 | Stage 3: `mnc-stage2` compiles `mnc_all.mn` -> `mnc-stage3` IR | `[ ]` | — | Second self-compilation |
-| 3 | Binary diff: `mnc-stage2` IR == `mnc-stage3` IR | `[ ]` | — | THIS is the fixed point |
-| 4 | Update `scripts/verify_fixed_point.sh` if needed | `[ ]` | `scripts/verify_fixed_point.sh` | |
-| 5 | Fixed-point CI job passes (remove `continue-on-error: true`) | `[ ]` | `.github/workflows/ci.yml` | Make it a hard gate |
-| 6 | Document the achievement in ROADMAP.md | `[ ]` | `docs/roadmap/ROADMAP.md` | Milestone: Python bootstrap is no longer required |
+| 1 | `mnc-stage1` compiles `mnc_all.mn` → stage2 IR | `[ ]` | — | |
+| 2 | Compile stage2 IR to binary: `clang -O2 stage2.ll -o mnc-stage2` | `[ ]` | — | |
+| 3 | `mnc-stage2` compiles `mnc_all.mn` → stage3 IR | `[ ]` | — | |
+| 4 | Diff: `diff stage2.ll stage3.ll` | `[ ]` | — | Must be identical |
+| 5 | If not identical: analyze diff, fix determinism issues | `[ ]` | — | Counter resets, label numbering, etc. |
+| 6 | Update `scripts/verify_fixed_point.sh` | `[ ]` | `scripts/verify_fixed_point.sh` | |
+| 7 | CI: remove `continue-on-error: true` from fixed-point job | `[ ]` | `.github/workflows/ci.yml` | Make it a hard gate |
+| 8 | Document in ROADMAP.md | `[ ]` | `docs/roadmap/ROADMAP.md` | **Milestone: Python bootstrap optional** |
 
-**Done when:** `verify_fixed_point.sh` passes. CI gates on it. The compiler sustains itself.
+**Done when:** `verify_fixed_point.sh` passes. CI gates on it.
 
 ---
 
 ## Phase 5 — Native Test Migration
 **Status:** `Not started`
 **Effort:** X-Large
-**Depends on:** Phase 4 (fixed-point must pass — otherwise tests would use an incorrect compiler)
-**Expected speedup:** 10-50x over Python pipeline (native compilation in microseconds vs milliseconds)
+**Depends on:** Phase 4
+**Expected speedup:** 10-50x (native compilation in microseconds vs Python in milliseconds)
 
-Migrate tests from calling the Python compiler pipeline (`from mapanare.parser import ...`)
-to invoking the native `mnc` binary via subprocess. The Python bootstrap becomes the
-oracle for differential testing, not the primary test target.
+Migrate tests from `from mapanare.parser import ...` (Python compiler) to calling
+the native `mnc` binary. Python bootstrap becomes the oracle for differential
+testing, not the primary test target.
 
 ### Strategy
 
-Tests fall into three categories:
-
-| Category | Count | Migration Path |
-|----------|-------|----------------|
-| **Compilation tests** (parse + semantic + emit, verify IR) | ~3,500 | Call `mnc` binary, check IR output |
-| **Runtime behavior tests** (compile + execute, check stdout) | ~500 | Call `mnc` to compile, `lli` to execute, check stdout |
-| **Python-specific tests** (Python emitter, bootstrap, FFI) | ~400 | Keep as-is (deprecated backend, reference only) |
+| Category | ~Count | Migration |
+|----------|--------|-----------|
+| Compilation tests (IR validation) | ~3,500 | `mnc source.mn`, check IR output |
+| Runtime behavior (compile + execute) | ~500 | `mnc build` + execute binary |
+| Python-only (bootstrap, FFI, Python emitter) | ~400 | Keep in pytest as-is |
 
 ### Tasks
 
 | # | Task | Status | Files | Notes |
 |---|------|--------|-------|-------|
-| 1 | Create `tests/conftest.py` with `mnc_binary` fixture that locates `mnc-stage1` | `[ ]` | `tests/conftest.py` | Skip tests if binary not found |
-| 2 | Create `tests/helpers/native.py` with `compile_mn(source) -> ir`, `run_mn(source) -> stdout` | `[ ]` | `tests/helpers/native.py` | Thin subprocess wrapper |
-| 3 | Migrate `tests/llvm/` — LLVM IR validation tests (19 files) | `[ ]` | `tests/llvm/` | Highest value: most tests, all check IR output |
-| 4 | Migrate `tests/mir/` — MIR tests (4 files) | `[ ]` | `tests/mir/` | Need `mnc --emit-mir` flag |
-| 5 | Migrate `tests/semantic/` — type checking tests (3 files) | `[ ]` | `tests/semantic/` | Need `mnc check` to report errors |
-| 6 | Migrate `tests/parser/` — syntax tests (2 files) | `[ ]` | `tests/parser/` | Need `mnc --parse-only` or similar |
-| 7 | Migrate `tests/e2e/` — end-to-end tests (7 files) | `[ ]` | `tests/e2e/` | `mnc build` + execute |
-| 8 | Migrate `tests/wasm/` — WASM emitter tests (4 files) | `[ ]` | `tests/wasm/` | `mnc emit-wasm` |
-| 9 | Migrate `tests/stdlib/` — stdlib compilation tests (21 files) | `[ ]` | `tests/stdlib/` | `mnc build` with stdlib imports |
-| 10 | Keep Python-only tests tagged with `@pytest.mark.python_backend` | `[ ]` | `tests/` | Bootstrap, FFI, Python emitter tests |
-| 11 | Add `--backend=native` / `--backend=python` test selector | `[ ]` | `tests/conftest.py` | Run both for differential testing |
-| 12 | Measure before/after wall-clock time | `[ ]` | — | Record in this plan |
+| 1 | Add `mnc_binary` fixture to `tests/conftest.py` | `[ ]` | `tests/conftest.py` | Skip if binary not found |
+| 2 | Create `tests/helpers/native.py` — thin subprocess wrapper | `[ ]` | `tests/helpers/native.py` | `compile_mn(source) -> ir`, `run_mn(source) -> stdout` |
+| 3 | Migrate `tests/llvm/` (19 files, highest value) | `[ ]` | `tests/llvm/` | |
+| 4 | Migrate `tests/semantic/` (3 files) | `[ ]` | `tests/semantic/` | |
+| 5 | Migrate `tests/parser/` (2 files) | `[ ]` | `tests/parser/` | |
+| 6 | Migrate `tests/e2e/` (7 files) | `[ ]` | `tests/e2e/` | |
+| 7 | Migrate `tests/wasm/` (4 files) | `[ ]` | `tests/wasm/` | |
+| 8 | Migrate `tests/stdlib/` (21 files) | `[ ]` | `tests/stdlib/` | |
+| 9 | Tag remaining Python-only tests: `@pytest.mark.python_backend` | `[ ]` | `tests/` | |
+| 10 | Measure wall-clock improvement | `[ ]` | — | Record here |
 
-**Done when:** >80% of tests call the native binary. Full suite is faster than Phase 1 baseline.
+**Done when:** >80% of tests call native binary. Full suite faster than Phase 0 baseline.
 
 ---
 
 ## Phase 6 — Go Test Harness (Optional)
 **Status:** `Not started`
 **Effort:** Large
-**Depends on:** Phase 5 (only makes sense when tests call a native binary)
+**Depends on:** Phase 5 measurements
 
-Once tests shell out to `mnc`, the Python test runner adds overhead: process
-startup, GIL, subprocess management. A Go test harness would eliminate that:
-`go test -parallel` with native subprocess management, zero warmup, built-in
-benchmarking.
+Only justified if pytest subprocess overhead is >20% of wall-clock time after
+Phase 5. Go's `testing` package has built-in parallelism and zero-overhead
+subprocess management. Rust is also viable but Go's test ergonomics are better
+for string-heavy IR validation.
 
-This phase is optional. It only makes sense if Phase 5 shows that pytest
-subprocess overhead is a measurable bottleneck (>20% of wall-clock time).
-
-### Decision Criteria
-
-| Metric | Stay with pytest | Migrate to Go |
-|--------|-----------------|---------------|
-| pytest subprocess overhead | <20% of total time | >20% of total time |
-| Test count growth | Stable | Growing fast (>6,000) |
-| CI wall-clock time after Phase 5 | <5 min | >10 min |
-| Team Go experience | Low | Comfortable |
-
-### Tasks (if Go is chosen)
-
-| # | Task | Status | Files | Notes |
-|---|------|--------|-------|-------|
-| 1 | Design Go test structure: `tests_go/compiler_test.go`, `tests_go/e2e_test.go` | `[ ]` | `tests_go/` | Mirror Python test categories |
-| 2 | Implement `mnc` binary wrapper: `CompileMN(source) -> (ir string, err)` | `[ ]` | `tests_go/testutil/` | Reusable across all tests |
-| 3 | Migrate golden tests first (15 tests, well-defined input/output) | `[ ]` | `tests_go/golden_test.go` | Validate approach |
-| 4 | Migrate LLVM IR validation tests | `[ ]` | `tests_go/llvm_test.go` | Bulk of the suite |
-| 5 | Migrate E2E tests | `[ ]` | `tests_go/e2e_test.go` | `mnc build` + execute |
-| 6 | Parallel execution with `t.Parallel()` | `[ ]` | `tests_go/` | Built into Go's test runner |
-| 7 | CI integration: `go test ./tests_go/... -v -count=1` | `[ ]` | `.github/workflows/ci.yml` | Alongside or replacing pytest |
-| 8 | Keep pytest for Python-specific tests (bootstrap, FFI, Python backend) | `[ ]` | — | ~400 tests stay in Python |
-
-### Why Go Over Rust
-
-| Factor | Go | Rust |
-|--------|-----|------|
-| Test runner | Built-in, parallel, benchmarks | Needs `#[test]` + custom harness |
-| Subprocess management | `exec.Command` — simple | `std::process::Command` — verbose |
-| Compile time (tests themselves) | <2s | 10-30s for first build |
-| String assertions | `strings.Contains`, `testing` | `assert!` macros, less ergonomic for string-heavy IR checks |
-| Learning curve | Low | Medium-high |
-| Binary size | Single `go test` binary | Single binary but slower to produce |
-
-**Done when:** Go test suite covers the same ground as pytest. CI uses Go for native tests, pytest for Python-only tests.
+**Decision gate:** Measure after Phase 5. If CI < 5 min with pytest, skip this.
 
 ---
 
 ## Execution Order
 
 ```
-Phase 1 (parallelism) ─────────────────────────────────── Immediate 4-6x win
+Phase 0 (quick fixes) ──── Immediate: gcc fix, parallel tests
      │
-Phase 2 (control flow fix) ── Phase 3 (large struct) ─── Compiler parity
-                                        │
-                                   Phase 4 (fixed-point) ── The milestone
-                                        │
-                                   Phase 5 (test migration) ── 10-50x win
-                                        │
-                                   Phase 6 (Go harness) ── Optional, measure first
+Phase 1 (retest) ───────── WSL: rebuild mnc-stage1, test self-compilation
+     │
+     ├── if self-compilation works → Phase 4
+     │
+     ├── if stage2 IR fails → Phase 2 (control flow fix)
+     │
+     └── if crash on large modules → Phase 3 (LowerState restructure)
+                                          │
+                                     Phase 4 (fixed-point) ── Python independence
+                                          │
+                                     Phase 5 (test migration) ── 10-50x speed
+                                          │
+                                     Phase 6 (Go harness) ── measure first
 ```
 
-Phase 1 is independent and should ship immediately. Phases 2-4 are the critical
-path to self-hosted parity. Phase 5 is the payoff. Phase 6 is only justified by
-measurements after Phase 5.
+**Key insight:** Phase 1 (just running tests) tells us how much work remains.
+Don't write fix code until we know what's actually broken with the current
+text emitter + clang -O2 pipeline.
 
 ---
 
-## Success Metrics
+## Bootstrap Path (no llvmlite anywhere)
 
-| Metric | Current (v2.0.1) | After Phase 1 | After Phase 5 | After Phase 6 |
-|--------|------------------|---------------|---------------|---------------|
-| Test suite wall-clock | ~TBD | ~TBD / 4-6x | ~TBD / 10-50x | ~TBD / 2-3x more |
-| Python required at runtime | Yes (compiler) | Yes (compiler) | No (native `mnc`) | No |
-| Self-compilation | Crashes on large modules | Crashes on large modules | Fixed-point achieved | Fixed-point achieved |
-| Test count | 4,400+ | 4,400+ | 4,400+ | 4,400+ |
+```
+mnc_all.mn ──[Python text emitter]──> main.ll ──[clang -O2]──> mnc-stage1
+                                                                    │
+mnc_all.mn ──────────────[mnc-stage1]──────────> stage2.ll ──[clang]──> mnc-stage2
+                                                                    │
+mnc_all.mn ──────────────[mnc-stage2]──────────> stage3.ll    (== stage2.ll? → fixed point)
+```
+
+No llvmlite in any step. The Python text emitter generates alloca-based IR as
+plain strings. clang handles optimization. After fixed-point, Python is only
+needed if you want to rebuild from scratch (disaster recovery).
 
 ---
 
@@ -300,18 +387,20 @@ measurements after Phase 5.
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Control flow fix in `lower.mn` breaks working tests | High | Run golden harness after every change |
-| Large struct codegen has deeper issues than expected | High | Fall back to refactoring LowerState into smaller structs (<128 bytes) |
-| Fixed-point produces different IR (not byte-identical) | Medium | Diff-based debugging, relax to semantic equivalence first |
-| Native test migration reveals `mnc` bugs not caught by golden tests | Medium | Differential testing: run both Python and native, compare |
-| Go harness not worth the effort | Low | Phase 6 is gated on measurements — skip if pytest is fast enough |
+| Phase 1 reveals new crashes not seen before | Medium | Text emitter + clang -O2 is a different path — may have new bugs, but unlikely to have the old llvmlite bugs |
+| Control flow fix breaks working stage2 tests | High | Run golden harness after every change |
+| LowerState restructure touches 100+ functions | High | Option A (split struct) is smaller; Option B (mutable ref) is cleaner but larger |
+| Fixed-point IR not byte-identical (non-determinism) | Medium | Diff-based debugging; counter/label normalization pass |
+| Test migration reveals `mnc` bugs not in golden tests | Medium | Differential testing: run both Python and native, compare |
 
 ---
 
 ## References
 
-- [v1.0.x Plan](../v1.0.x/PLAN.md) — v1.0.5/v1.0.6 self-hosted compiler status
-- [Enum Payload Fix Plan](../ENUM_PAYLOAD_FIX_PLAN.md) — control flow bug diagnosis
+- [v1.0.x Plan](../v1.0.x/PLAN.md) — self-hosted compiler progress through v1.0.11
+- [Enum Payload Fix Plan](../ENUM_PAYLOAD_FIX_PLAN.md) — control flow bug diagnosis (03/21)
 - [v2.0.1 Plan](../v2.0.1/PLAN.md) — defers self-hosted parity to v2.1.0
-- [SPEC.md](../../SPEC.md) — language specification (frozen at v1.0)
-- [BOOTSTRAP.md](../../BOOTSTRAP.md) — self-hosted compiler architecture
+- [Chat logs](../../../.reviews/chats/) — 03/19-03/22 debugging sessions
+- `scripts/build_stage1.py` — current bootstrap build (text emitter + clang)
+- `scripts/verify_fixed_point.sh` — three-stage verification script
+- `scripts/test_native.py` — golden test harness
