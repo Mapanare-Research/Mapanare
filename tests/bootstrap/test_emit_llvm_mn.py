@@ -59,11 +59,24 @@ class TestEmitLlvmMnParsing:
         assert "EmitState" in struct_names
 
     def test_has_type_functions(self, combined_fn_names: set[str]) -> None:
-        for name in ["llvm_int", "llvm_float", "llvm_bool", "llvm_char", "llvm_void", "llvm_string"]:
+        for name in [
+            "llvm_int",
+            "llvm_float",
+            "llvm_bool",
+            "llvm_char",
+            "llvm_void",
+            "llvm_string",
+        ]:
             assert name in combined_fn_names
 
     def test_has_composite_type_functions(self, combined_fn_names: set[str]) -> None:
-        for name in ["llvm_option_type", "llvm_result_type", "llvm_tensor_type", "llvm_list_type", "llvm_map_type"]:
+        for name in [
+            "llvm_option_type",
+            "llvm_result_type",
+            "llvm_tensor_type",
+            "llvm_list_type",
+            "llvm_map_type",
+        ]:
             assert name in combined_fn_names
 
     def test_has_type_resolver(self, combined_fn_names: set[str]) -> None:

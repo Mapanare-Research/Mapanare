@@ -94,7 +94,20 @@ class TestSelfModuleResolution:
         assert result.endswith("ast.mn")
         assert "self" + "/" + "self" not in result.replace("\\", "/")
 
-    @pytest.mark.parametrize("module", ["ast", "lexer", "parser", "semantic", "mir", "lower_state", "lower", "emit_llvm_ir", "emit_llvm"])
+    @pytest.mark.parametrize(
+        "module",
+        [
+            "ast",
+            "lexer",
+            "parser",
+            "semantic",
+            "mir",
+            "lower_state",
+            "lower",
+            "emit_llvm_ir",
+            "emit_llvm",
+        ],
+    )
     def test_resolves_all_self_modules(self, module: str) -> None:
         from mapanare.modules import ModuleResolver
 
