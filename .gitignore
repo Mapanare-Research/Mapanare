@@ -1,3 +1,6 @@
+# IR Doctor baselines (local, per-machine)
+.ir_doctor/
+
 # Python
 __pycache__/
 *.py[cod]

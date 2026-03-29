@@ -77,8 +77,12 @@ python scripts/test_native.py --bless                            # Regenerate re
 python scripts/test_native.py --filter fib -v                    # One test, verbose
 
 # IR Doctor — per-function diagnostics for the self-hosted compiler
-python scripts/ir_doctor.py audit mapanare/self/main.ll              # Detect known bug patterns
+# Audit: detects ALLOCA_ALIAS, EMPTY_SWITCH, RET_TYPE_MISMATCH, MISSING_PERCENT, etc.
+# Saves baselines to .ir_doctor/ — reruns show delta (fixed/new issues)
+python scripts/ir_doctor.py audit mapanare/self/main.ll              # Audit + baseline + llvm-as
 python scripts/ir_doctor.py --only lower__ audit mapanare/self/main.ll  # Audit specific module
+python scripts/ir_doctor.py check file.ll                            # Just llvm-as validation
+python scripts/ir_doctor.py golden                                   # Fresh compile+validate ALL golden (WSL, no cache)
 python scripts/ir_doctor.py table mapanare/self/main.ll              # Per-function metrics table
 python scripts/ir_doctor.py --top 15 table mapanare/self/main.ll     # Top 15 largest functions
 python scripts/ir_doctor.py fingerprint mapanare/self/main.ll        # JSON per-function hashes

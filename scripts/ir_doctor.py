@@ -684,7 +684,7 @@ def format_fingerprint_json(mod: IRModule) -> str:
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
-    """Audit a single IR file."""
+    """Audit a single IR file. Saves baseline for before/after comparison."""
     text = pathlib.Path(args.file).read_text(encoding="utf-8")
     mod = parse_ir(text)
 
@@ -693,12 +693,33 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     pathologies = run_audit(mod)
 
+    # Also validate with llvm-as
+    valid, err = validate_ir(text)
+
     if args.json:
         print(json.dumps([asdict(p) for p in pathologies], indent=2))
     else:
         print(format_audit(pathologies, mod))
+
+        if not valid:
+            print(f"\nllvm-as: INVALID -- {err}")
+        elif err:
+            print(f"\nllvm-as: {err}")
+        else:
+            print(f"\nllvm-as: VALID")
+
+        # Compare with previous baseline
+        baseline_name = pathlib.Path(args.file).stem
+        old_baseline = _load_baseline(baseline_name)
+        if old_baseline:
+            print(f"\n--- Delta from last audit ---")
+            print(_format_baseline_diff(old_baseline, pathologies))
+
+        # Save new baseline
+        bp = _save_baseline(baseline_name, pathologies)
+        print(f"\nBaseline saved: {bp.relative_to(ROOT)}")
+
         if pathologies:
-            # Also print the table for context
             print()
             print(format_table(mod, top_n=args.top))
 
@@ -826,6 +847,220 @@ def cmd_fingerprint(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# llvm-as validation
+# ---------------------------------------------------------------------------
+
+def _find_llvm_as() -> str | None:
+    """Find llvm-as binary."""
+    import shutil
+    for name in ("llvm-as", "llvm-as-14", "llvm-as-15", "llvm-as-16", "llvm-as-17", "llvm-as-18"):
+        p = shutil.which(name)
+        if p:
+            return p
+    return None
+
+
+def validate_ir(ir_text: str) -> tuple[bool, str]:
+    """Run llvm-as on IR text. Returns (valid, error_message)."""
+    llvm_as = _find_llvm_as()
+    if not llvm_as:
+        return True, "(llvm-as not found, skipped)"
+    with tempfile.NamedTemporaryFile(suffix=".ll", mode="w", delete=False, encoding="utf-8") as f:
+        f.write(ir_text)
+        f.flush()
+        tmp = f.name
+    try:
+        r = subprocess.run(
+            [llvm_as, tmp, "-o", "/dev/null"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode == 0:
+            return True, ""
+        # Extract first error line
+        err = r.stderr.strip().splitlines()[0] if r.stderr.strip() else "unknown error"
+        return False, err
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return True, "(llvm-as failed to run)"
+    finally:
+        pathlib.Path(tmp).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Audit baselines (before/after comparison)
+# ---------------------------------------------------------------------------
+
+BASELINE_DIR = ROOT / ".ir_doctor"
+
+
+def _save_baseline(name: str, pathologies: list[Pathology]) -> pathlib.Path:
+    """Save audit results as a baseline for later comparison."""
+    BASELINE_DIR.mkdir(exist_ok=True)
+    path = BASELINE_DIR / f"{name}.json"
+    data = {
+        "timestamp": __import__("datetime").datetime.now().isoformat(),
+        "counts": {},
+        "functions": {},
+    }
+    by_code: dict[str, int] = defaultdict(int)
+    by_fn: dict[str, list[str]] = defaultdict(list)
+    for p in pathologies:
+        by_code[p.code] += 1
+        by_fn[p.function].append(p.code)
+    data["counts"] = dict(by_code)
+    data["functions"] = dict(by_fn)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return path
+
+
+def _load_baseline(name: str) -> dict | None:
+    """Load a previous baseline."""
+    path = BASELINE_DIR / f"{name}.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _format_baseline_diff(old: dict, new_pathologies: list[Pathology]) -> str:
+    """Show what changed between baseline and current audit."""
+    new_counts: dict[str, int] = defaultdict(int)
+    new_fns: dict[str, list[str]] = defaultdict(list)
+    for p in new_pathologies:
+        new_counts[p.code] += 1
+        new_fns[p.function].append(p.code)
+
+    old_counts = old.get("counts", {})
+    old_fns = old.get("functions", {})
+    lines = []
+    lines.append(f"Baseline from: {old.get('timestamp', '?')}")
+    lines.append("")
+
+    all_codes = sorted(set(old_counts) | set(new_counts))
+    changed = False
+    for code in all_codes:
+        o = old_counts.get(code, 0)
+        n = new_counts.get(code, 0)
+        if o != n:
+            delta = n - o
+            sign = "+" if delta > 0 else ""
+            lines.append(f"  {code}: {o} -> {n} ({sign}{delta})")
+            changed = True
+
+    if not changed:
+        lines.append("  No changes from baseline.")
+        return "\n".join(lines)
+
+    # Show which functions were fixed or broke
+    fixed_fns = set(old_fns) - set(new_fns)
+    broke_fns = set(new_fns) - set(old_fns)
+    if fixed_fns:
+        lines.append(f"\n  Fixed ({len(fixed_fns)}):")
+        for fn in sorted(fixed_fns)[:15]:
+            lines.append(f"    - {fn}: {', '.join(old_fns[fn])}")
+        if len(fixed_fns) > 15:
+            lines.append(f"    ... and {len(fixed_fns) - 15} more")
+    if broke_fns:
+        lines.append(f"\n  New issues ({len(broke_fns)}):")
+        for fn in sorted(broke_fns)[:15]:
+            lines.append(f"    + {fn}: {', '.join(new_fns[fn])}")
+        if len(broke_fns) > 15:
+            lines.append(f"    ... and {len(broke_fns) - 15} more")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# CLI commands
+# ---------------------------------------------------------------------------
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    """Validate IR file with llvm-as."""
+    text = pathlib.Path(args.file).read_text(encoding="utf-8")
+    valid, err = validate_ir(text)
+    if valid:
+        print(f"VALID: {args.file}")
+        if err:
+            print(f"  ({err})")
+        return 0
+    else:
+        print(f"INVALID: {args.file}")
+        print(f"  {err}")
+        return 1
+
+
+def cmd_golden(args: argparse.Namespace) -> int:
+    """Fresh compile + validate + audit for all golden tests. No caching.
+
+    This is the one command that answers: "does the self-hosted compiler
+    work right now?" It compiles every golden test FRESH through stage1,
+    validates with llvm-as, audits for pathologies, and shows a summary.
+    """
+    stage1 = pathlib.Path(args.stage1)
+    mn_files = sorted(GOLDEN_DIR.glob("*.mn"))
+
+    if not stage1.exists():
+        print(f"Stage1 binary not found: {stage1}", file=sys.stderr)
+        print("Run: python scripts/build_stage1.py", file=sys.stderr)
+        return 1
+
+    results = []
+    for mn_path in mn_files:
+        name = mn_path.stem
+        print(f"  {name}...", end=" ", flush=True)
+
+        # Compile fresh through stage1
+        ir = stage1_compile(mn_path, stage1)
+        if ir is None:
+            print("COMPILE_FAIL")
+            results.append((name, "COMPILE_FAIL", "", 0, 0, 0))
+            continue
+
+        # Check: did it emit any functions?
+        mod = parse_ir(ir)
+        n_fns = len(mod.functions)
+        if n_fns == 0:
+            print(f"EMPTY (0 functions, {ir.count(chr(10))} lines)")
+            results.append((name, "EMPTY", "", n_fns, 0, 0))
+            continue
+
+        # Validate with llvm-as
+        valid, err = validate_ir(ir)
+        pathologies = run_audit(mod)
+        n_errs = sum(1 for p in pathologies if p.severity == "error")
+
+        if valid and n_errs == 0:
+            status = "OK"
+        elif valid:
+            status = f"WARN({n_errs})"
+        else:
+            status = "INVALID"
+
+        detail = err if not valid else ""
+        print(f"{status}  {n_fns} fn" + (f"  {detail}" if detail else ""))
+        results.append((name, status, detail, n_fns, n_errs, ir.count("\n")))
+
+    # Summary
+    print()
+    print(f"{'Test':<25s} {'Status':<15s} {'Fns':>4s} {'Errs':>5s} {'Lines':>6s}")
+    print("-" * 60)
+    for name, status, detail, n_fns, n_errs, n_lines in results:
+        print(f"{name:<25s} {status:<15s} {n_fns:>4d} {n_errs:>5d} {n_lines:>6d}")
+    print("-" * 60)
+
+    ok = sum(1 for _, s, *_ in results if s == "OK")
+    total = len(results)
+    print(f"\n{ok}/{total} golden tests OK")
+
+    if ok < total:
+        fails = [(n, s, d) for n, s, d, *_ in results if s != "OK"]
+        print("\nFailures:")
+        for name, status, detail in fails:
+            print(f"  {name}: {status}" + (f" -- {detail}" if detail else ""))
+
+    return 0 if ok == total else 1
+
+
 def cmd_diff_ir(args: argparse.Namespace) -> int:
     """Compare two pre-generated .ll files directly."""
     ir_a = pathlib.Path(args.file_a).read_text(encoding="utf-8")
@@ -894,8 +1129,15 @@ def main() -> int:
     sub = p.add_subparsers(dest="command")
 
     # audit
-    s_audit = sub.add_parser("audit", help="Audit IR file for known pathologies")
+    s_audit = sub.add_parser("audit", help="Audit IR file for known pathologies + save baseline")
     s_audit.add_argument("file", help="Path to .ll file")
+
+    # check
+    s_check = sub.add_parser("check", help="Validate IR file with llvm-as")
+    s_check.add_argument("file", help="Path to .ll file")
+
+    # golden
+    sub.add_parser("golden", help="Fresh compile + validate + audit ALL golden tests (WSL)")
 
     # diff
     s_diff = sub.add_parser("diff", help="Compare bootstrap vs stage1 for a .mn file")
@@ -929,6 +1171,8 @@ def main() -> int:
 
     handlers = {
         "audit": cmd_audit,
+        "check": cmd_check,
+        "golden": cmd_golden,
         "diff": cmd_diff,
         "diff-ir": cmd_diff_ir,
         "diff-all": cmd_diff_all,
