@@ -3355,38 +3355,91 @@ class LLVMMIREmitter:
         freeing), so zero-initialized allocas that were never written to
         are harmless.
         """
-        if not self._local_strings:
+        has_strings = bool(self._local_strings)
+        has_closures = bool(self._local_closures)
+
+        if not has_strings and not has_closures:
             return
-        str_free = self._rt_str_free()
 
         # Extract the return value's data pointer once (if it's a string)
         # so we can skip freeing the returned string.
         ret_ptr: Any = None
-        if ret_val is not None and hasattr(ret_val, "type") and ret_val.type == LLVM_STRING:
-            try:
-                ret_ptr = builder.extract_value(ret_val, 0, name="drop.retptr")
-            except (TypeError, AttributeError):
-                pass
-
-        for alloca in self._local_strings:
-            loaded = builder.load(alloca, name="drop.str")
-            if ret_ptr is not None:
-                # Compare data pointers to skip the returned string
+        ret_env_ptr: Any = None
+        if ret_val is not None and hasattr(ret_val, "type"):
+            if ret_val.type == LLVM_STRING:
                 try:
-                    drop_ptr = builder.extract_value(loaded, 0, name="drop.dptr")
-                    is_same = builder.icmp_unsigned("==", drop_ptr, ret_ptr, name="drop.same")
-                    fn_block = builder.function
-                    free_bb = fn_block.append_basic_block(name="drop.free")
-                    skip_bb = fn_block.append_basic_block(name="drop.skip")
-                    builder.cbranch(is_same, skip_bb, free_bb)
-                    builder.position_at_end(free_bb)
-                    builder.call(str_free, [loaded])
-                    builder.branch(skip_bb)
-                    builder.position_at_end(skip_bb)
-                    continue
+                    ret_ptr = builder.extract_value(ret_val, 0, name="drop.retptr")
                 except (TypeError, AttributeError):
                     pass
-            builder.call(str_free, [loaded])
+            elif ret_val.type == LLVM_CLOSURE:
+                try:
+                    ret_env_ptr = builder.extract_value(ret_val, 1, name="drop.retenv")
+                except (TypeError, AttributeError):
+                    pass
+
+        if has_strings:
+            str_free = self._rt_str_free()
+            for alloca in self._local_strings:
+                loaded = builder.load(alloca, name="drop.str")
+                if ret_ptr is not None:
+                    # Compare data pointers to skip the returned string
+                    try:
+                        drop_ptr = builder.extract_value(loaded, 0, name="drop.dptr")
+                        is_same = builder.icmp_unsigned(
+                            "==", drop_ptr, ret_ptr, name="drop.same"
+                        )
+                        fn_block = builder.function
+                        free_bb = fn_block.append_basic_block(name="drop.free")
+                        skip_bb = fn_block.append_basic_block(name="drop.skip")
+                        builder.cbranch(is_same, skip_bb, free_bb)
+                        builder.position_at_end(free_bb)
+                        builder.call(str_free, [loaded])
+                        builder.branch(skip_bb)
+                        builder.position_at_end(skip_bb)
+                        continue
+                    except (TypeError, AttributeError):
+                        pass
+                builder.call(str_free, [loaded])
+
+        if has_closures:
+            free_fn = self._rt_free()
+            null_ptr = ir.Constant(LLVM_PTR, None)
+            for env_raw in self._local_closures:
+                # Skip freeing the environment if it is being returned
+                if ret_env_ptr is not None:
+                    try:
+                        is_ret = builder.icmp_unsigned(
+                            "==", env_raw, ret_env_ptr, name="drop.envret"
+                        )
+                        fn_block = builder.function
+                        free_bb = fn_block.append_basic_block(name="drop.envfree")
+                        skip_bb = fn_block.append_basic_block(name="drop.envskip")
+                        builder.cbranch(is_ret, skip_bb, free_bb)
+                        builder.position_at_end(free_bb)
+                        is_null = builder.icmp_unsigned(
+                            "==", env_raw, null_ptr, name="drop.envnull"
+                        )
+                        do_free_bb = fn_block.append_basic_block(name="drop.envdo")
+                        builder.cbranch(is_null, skip_bb, do_free_bb)
+                        builder.position_at_end(do_free_bb)
+                        builder.call(free_fn, [env_raw])
+                        builder.branch(skip_bb)
+                        builder.position_at_end(skip_bb)
+                        continue
+                    except (TypeError, AttributeError):
+                        pass
+                # No return value to worry about — just null-check and free
+                is_null = builder.icmp_unsigned(
+                    "==", env_raw, null_ptr, name="drop.envnull"
+                )
+                fn_block = builder.function
+                do_free_bb = fn_block.append_basic_block(name="drop.envdo")
+                skip_bb = fn_block.append_basic_block(name="drop.envskip")
+                builder.cbranch(is_null, skip_bb, do_free_bb)
+                builder.position_at_end(do_free_bb)
+                builder.call(free_fn, [env_raw])
+                builder.branch(skip_bb)
+                builder.position_at_end(skip_bb)
 
     # --- Jump ---
 

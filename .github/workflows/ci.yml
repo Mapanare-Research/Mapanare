@@ -50,7 +50,7 @@ jobs:
 
       - name: Compile C runtime (plain)
         run: |
-          gcc -O2 -g -pthread \
+          gcc -O2 -g -Wall -Wextra -Werror -pthread \
             tests/native/test_c_runtime.c \
             runtime/native/mapanare_core.c \
             runtime/native/mapanare_runtime.c \
@@ -59,7 +59,7 @@ jobs:
 
       - name: Compile and run with AddressSanitizer
         run: |
-          gcc -fsanitize=address -fno-omit-frame-pointer -g -pthread \
+          gcc -fsanitize=address -fno-omit-frame-pointer -g -Wall -Wextra -Werror -pthread \
             tests/native/test_c_runtime.c \
             runtime/native/mapanare_core.c \
             runtime/native/mapanare_runtime.c \
@@ -68,7 +68,7 @@ jobs:
 
       - name: Compile and run with ThreadSanitizer
         run: |
-          gcc -fsanitize=thread -g -pthread \
+          gcc -fsanitize=thread -g -Wall -Wextra -Werror -pthread \
             tests/native/test_c_runtime.c \
             runtime/native/mapanare_core.c \
             runtime/native/mapanare_runtime.c \
@@ -267,10 +267,10 @@ jobs:
         run: |
           echo "--- Compiling C runtime for aarch64-apple-macos ---"
           cd runtime/native
-          clang -c -std=c11 -O2 -Wall mapanare_core.c -o mapanare_core.o
-          clang -c -std=c11 -O2 -Wall mapanare_runtime.c -o mapanare_runtime.o
-          clang -c -std=c11 -O2 -Wall mapanare_io.c -o mapanare_io.o
-          clang -c -std=c11 -O2 -Wall mapanare_gpu.c -o mapanare_gpu.o
+          clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_core.c -o mapanare_core.o
+          clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_runtime.c -o mapanare_runtime.o
+          clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_io.c -o mapanare_io.o
+          clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_gpu.c -o mapanare_gpu.o
           ar rcs libmapanare.a mapanare_core.o mapanare_runtime.o mapanare_io.o mapanare_gpu.o
           echo "Static library built:"
           ls -la libmapanare.a
@@ -280,7 +280,7 @@ jobs:
       - name: Run macOS C runtime tests
         run: |
           cd runtime/native
-          clang -std=c11 -O2 -Wall -I. \
+          clang -std=c11 -O2 -Wall -Wextra -Werror -I. \
             ../../tests/native/test_c_runtime.c \
             mapanare_core.c mapanare_runtime.c \
             -lpthread -o test_c_runtime_macos
@@ -289,7 +289,7 @@ jobs:
       - name: Run with AddressSanitizer
         run: |
           cd runtime/native
-          clang -fsanitize=address -fno-omit-frame-pointer -g -std=c11 -I. \
+          clang -fsanitize=address -fno-omit-frame-pointer -g -Wall -Wextra -Werror -std=c11 -I. \
             ../../tests/native/test_c_runtime.c \
             mapanare_core.c mapanare_runtime.c \
             -lpthread -o test_c_runtime_asan
@@ -298,7 +298,7 @@ jobs:
       - name: Run with ThreadSanitizer
         run: |
           cd runtime/native
-          clang -fsanitize=thread -g -std=c11 -I. \
+          clang -fsanitize=thread -g -Wall -Wextra -Werror -std=c11 -I. \
             ../../tests/native/test_c_runtime.c \
             mapanare_core.c mapanare_runtime.c \
             -lpthread -o test_c_runtime_tsan

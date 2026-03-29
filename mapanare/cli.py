@@ -1343,7 +1343,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # compile
-    p_compile = subparsers.add_parser("compile", help="Compile .mn source to Python")
+    p_compile = subparsers.add_parser(
+        "compile", help="[DEPRECATED] Compile .mn source to Python (use 'build' or 'emit-wasm')"
+    )
     p_compile.add_argument("source", help="Path to .mn source file")
     p_compile.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
     p_compile.add_argument(

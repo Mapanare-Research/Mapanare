@@ -814,7 +814,7 @@ MAPANARE_EXPORT mapanare_tensor_t *mapanare_tensor_alloc(
     int64_t total = 1;
     for (int64_t i = 0; i < ndim; i++) {
         t->shape[i] = shape[i];
-        total *= shape[i];
+        total = mn_checked_mul(total, shape[i]);
     }
     t->size = total;
 

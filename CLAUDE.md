@@ -16,6 +16,42 @@ Mapanare is an AI-native compiled programming language (v2.0.0) with first-class
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v2.0.0/PLAN.md` for the current execution plan.
 
+## Pre-Push Validation (MANDATORY)
+
+**Before ANY commit or push**, run the full validation suite. This mirrors CI exactly and writes results to `error.log`:
+
+```powershell
+.\dev.ps1                  # Full validate: black + ruff + mypy + gcc + pytest + WAT emission
+.\dev.ps1 validate         # Same as above (default mode), watches for changes
+.\dev.ps1 validate -Once   # Run once, no file watcher
+.\dev.ps1 test             # pytest only
+.\dev.ps1 lint             # Linters only (black + ruff + mypy)
+.\dev.ps1 fmt              # Auto-format (black + ruff --fix)
+.\dev.ps1 e2e              # End-to-end tests only
+.\dev.ps1 bench            # Benchmarks
+```
+
+The validate step includes **WAT emission** for all `examples/wasm/*.mn` files — this is what catches WASM CI failures locally. Running just `pytest` is NOT sufficient; the WASM cross-compilation step in CI compiles those examples and will fail independently of pytest.
+
+**Quick partial checks** (use these during development, but always run full validate before pushing):
+
+```bash
+# WASM emission only (fast, catches the most common CI-only failures)
+python -m mapanare emit-wasm examples/wasm/hello.mn -o /dev/null
+python -m mapanare emit-wasm examples/wasm/wasi_app.mn -o /dev/null
+
+# Lint only (no tests)
+black --check . && ruff check . && mypy mapanare/ runtime/
+
+# Single test file
+pytest tests/semantic/test_types.py -v
+
+# Single test directory
+pytest tests/parser/ -v
+pytest tests/llvm/ -v
+pytest tests/wasm/ -v
+```
+
 ## Commands
 
 ```bash

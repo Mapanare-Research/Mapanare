@@ -1007,8 +1007,13 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
     int64_t idx = (int64_t)(h & (uint64_t)mask);
     uint8_t psl = 0;
 
-    /* Copy key/val into temp buffer for potential swaps */
-    char *temp = (char *)__mn_alloc(map->key_size + map->val_size);
+    /* Stack buffer for Robin Hood swaps (avoids malloc per insert).
+     * Falls back to heap for very large keys+values (> 512 bytes). */
+    char stack_buf[512];
+    int64_t entry_size = map->key_size + map->val_size;
+    char *temp = (entry_size <= (int64_t)sizeof(stack_buf))
+        ? stack_buf
+        : (char *)__mn_alloc(entry_size);
     memcpy(temp, key, (size_t)map->key_size);
     memcpy(temp + map->key_size, val, (size_t)map->val_size);
 
@@ -1024,7 +1029,7 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
             memcpy(mn_bucket_val(bucket, map->key_size),
                    temp + map->key_size, (size_t)map->val_size);
             map->len++;
-            __mn_free(temp);
+            if (temp != stack_buf) __mn_free(temp);
             return;
         }
 
@@ -1032,7 +1037,7 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
         if (status == MN_BUCKET_OCCUPIED && eq(mn_bucket_key(bucket), temp)) {
             memcpy(mn_bucket_val(bucket, map->key_size),
                    temp + map->key_size, (size_t)map->val_size);
-            __mn_free(temp);
+            if (temp != stack_buf) __mn_free(temp);
             return;
         }
 
@@ -1043,8 +1048,12 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
             char *old_key = mn_bucket_key(bucket);
             char *old_val = mn_bucket_val(bucket, map->key_size);
 
-            /* Save old bucket data */
-            char *swap = (char *)__mn_alloc(map->key_size + map->val_size);
+            /* Save old bucket data into temp via in-place swap.
+             * We reuse the same temp buffer — no extra allocation needed. */
+            char swap_buf[512];
+            char *swap = (entry_size <= (int64_t)sizeof(swap_buf))
+                ? swap_buf
+                : (char *)__mn_alloc(entry_size);
             memcpy(swap, old_key, (size_t)map->key_size);
             memcpy(swap + map->key_size, old_val, (size_t)map->val_size);
 
@@ -1054,9 +1063,9 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
             memcpy(old_val, temp + map->key_size, (size_t)map->val_size);
 
             /* Continue inserting displaced entry */
-            memcpy(temp, swap, (size_t)(map->key_size + map->val_size));
+            memcpy(temp, swap, (size_t)entry_size);
             psl = old_psl;
-            __mn_free(swap);
+            if (swap != swap_buf) __mn_free(swap);
         }
 
         psl++;

@@ -24,7 +24,7 @@ fn is_prime(n: Int) -> Bool {
     if n % 2 == 0 {
         return false
     }
-    let i: Int = 3
+    let mut i: Int = 3
     while i * i <= n {
         if n % i == 0 {
             return false
@@ -35,7 +35,7 @@ fn is_prime(n: Int) -> Bool {
 }
 
 fn sieve_primes(limit: Int) -> List<Int> {
-    let primes: List<Int> = []
+    let mut primes: List<Int> = []
     for n in 2..limit + 1 {
         if is_prime(n) {
             primes = primes + [n]
@@ -50,7 +50,7 @@ fn main() {
     print("")
 
     // WASI environment
-    let args: List<String> = wasi_args()
+    let args: List<String> = runtime.wasi_args()
     print("Arguments: " + str(len(args)))
     for arg in args {
         print("  " + arg)
@@ -75,7 +75,7 @@ fn main() {
     print("")
 
     // Memory info
-    let pages: Int = memory_size()
+    let pages: Int = runtime.memory_size()
     print("WASM memory: " + str(pages) + " pages (" + str(pages * 64) + " KB)")
 
     print("")

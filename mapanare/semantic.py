@@ -1192,11 +1192,22 @@ class SemanticChecker:
         )
 
     def _check_for(self, loop: ForLoop) -> None:
-        self._infer_expr(loop.iterable)
+        iter_type = self._infer_expr(loop.iterable)
+        # Infer element type from iterable: List<T> → T, Range → Int, String → Char
+        if iter_type.kind == TypeKind.LIST and iter_type.args:
+            elem_type = iter_type.args[0]
+        elif iter_type.kind == TypeKind.RANGE:
+            elem_type = INT_TYPE
+        elif iter_type.kind == TypeKind.STRING:
+            elem_type = CHAR_TYPE
+        elif iter_type.kind == TypeKind.MAP and len(iter_type.args) >= 1:
+            elem_type = iter_type.args[0]
+        else:
+            elem_type = UNKNOWN_TYPE
         self._push_scope()
         self.current_scope.define(
             loop.var_name,
-            Symbol(name=loop.var_name, kind="variable", type_info=UNKNOWN_TYPE),
+            Symbol(name=loop.var_name, kind="variable", type_info=elem_type),
         )
         self._check_block(loop.body)
         self._pop_scope()
