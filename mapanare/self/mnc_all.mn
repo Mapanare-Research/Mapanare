@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit -- regenerate with: python scripts/concat_self.py
+// Do not edit — regenerate with: python scripts/concat_self.py
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -1195,7 +1195,7 @@ pub fn parse(source: String, filename: String) -> Program {
                     let empty_params: List<Param> = []
                     let empty_decs: List<Decorator> = []
                     let main_fn: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp, empty_params, none, body, empty_decs)
-                    defs = defs + [Definition::FnDef(main_fn)]
+                    defs.push(Definition::FnDef(main_fn))
                 }
             }
             return Program::start(defs)
@@ -1204,11 +1204,11 @@ pub fn parse(source: String, filename: String) -> Program {
         let tt: String = peek_type(tokens, pos)
         if is_definition_start(tt) {
             let r: DefResult = parse_definition(tokens, pos, filename)
-            defs = defs + [r.def_node]
+            defs.push(r.def_node)
             pos = r.pos
         } else {
             let sr: StmtResult = parse_stmt(tokens, pos, filename)
-            top_stmts = top_stmts + [sr.stmt]
+            top_stmts.push(sr.stmt)
             pos = sr.pos
         }
     }
@@ -1220,7 +1220,7 @@ pub fn parse(source: String, filename: String) -> Program {
             let empty_params2: List<Param> = []
             let empty_decs2: List<Decorator> = []
             let main_fn: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp2, empty_params2, none, body, empty_decs2)
-            defs = defs + [Definition::FnDef(main_fn)]
+            defs.push(Definition::FnDef(main_fn))
         }
     }
 
@@ -1273,7 +1273,7 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     let mut path: List<String> = []
 
     let name0: String = peek_value(tokens, p)
-    path = path + [name0]
+    path.push(name0)
     p = p + 1
 
     for _ in 0..100 {
@@ -1283,7 +1283,7 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
         }
         p = p + 1
         let seg: String = peek_value(tokens, p)
-        path = path + [seg]
+        path.push(seg)
         p = p + 1
     }
 
@@ -1311,14 +1311,14 @@ fn parse_export_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     }
 
     let mut names: List<String> = []
-    names = names + [peek_value(tokens, p)]
+    names.push(peek_value(tokens, p))
     p = p + 1
     for _ in 0..100 {
         if peek_type(tokens, p) != "COMMA" {
             return new_def_result(Definition::ExportDef(none, names), p)
         }
         p = p + 1
-        names = names + [peek_value(tokens, p)]
+        names.push(peek_value(tokens, p))
         p = p + 1
     }
     return new_def_result(Definition::ExportDef(none, names), p)
@@ -1345,7 +1345,7 @@ fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
     let mut type_params: List<String> = []
     if peek_type(tokens, p) == "LT" {
         p = p + 1
-        type_params = type_params + [peek_value(tokens, p)]
+        type_params.push(peek_value(tokens, p))
         p = p + 1
         for _ in 0..20 {
             if peek_type(tokens, p) != "COMMA" {
@@ -1353,7 +1353,7 @@ fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
                 return parse_fn_params(tokens, p, filename, name, is_pub, type_params)
             }
             p = p + 1
-            type_params = type_params + [peek_value(tokens, p)]
+            type_params.push(peek_value(tokens, p))
             p = p + 1
         }
         p = expect(tokens, p, "GT")
@@ -1369,7 +1369,7 @@ fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String
 
     if peek_type(tokens, p) != "RPAREN" {
         let pr: ParamResult = parse_param(tokens, p, filename)
-        params = params + [pr.param]
+        params.push(pr.param)
         p = pr.pos
 
         for _ in 0..50 {
@@ -1383,7 +1383,7 @@ fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String
                 return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params)
             }
             let pr2: ParamResult = parse_param(tokens, p, filename)
-            params = params + [pr2.param]
+            params.push(pr2.param)
             p = pr2.pos
         }
     }
@@ -1440,7 +1440,7 @@ fn parse_struct_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     let mut type_params: List<String> = []
     if peek_type(tokens, p) == "LT" {
         p = p + 1
-        type_params = type_params + [peek_value(tokens, p)]
+        type_params.push(peek_value(tokens, p))
         p = p + 1
         for _ in 0..20 {
             if peek_type(tokens, p) != "COMMA" {
@@ -1448,7 +1448,7 @@ fn parse_struct_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
                 return parse_struct_fields(tokens, p, filename, name, is_pub, type_params)
             }
             p = p + 1
-            type_params = type_params + [peek_value(tokens, p)]
+            type_params.push(peek_value(tokens, p))
             p = p + 1
         }
         p = expect(tokens, p, "GT")
@@ -1477,7 +1477,7 @@ fn parse_struct_fields(tokens: List<Token>, pos: Int, filename: String, name: St
         p = tr.pos
 
         let field: StructField = new_struct_field(fname, tr.type_expr)
-        fields = fields + [field]
+        fields.push(field)
 
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
     }
@@ -1506,7 +1506,7 @@ fn parse_enum_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
     let mut type_params: List<String> = []
     if peek_type(tokens, p) == "LT" {
         p = p + 1
-        type_params = type_params + [peek_value(tokens, p)]
+        type_params.push(peek_value(tokens, p))
         p = p + 1
         for _ in 0..20 {
             if peek_type(tokens, p) != "COMMA" {
@@ -1514,7 +1514,7 @@ fn parse_enum_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
                 return parse_enum_body(tokens, p, filename, name, is_pub, type_params)
             }
             p = p + 1
-            type_params = type_params + [peek_value(tokens, p)]
+            type_params.push(peek_value(tokens, p))
             p = p + 1
         }
         p = expect(tokens, p, "GT")
@@ -1544,20 +1544,20 @@ fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String
             p = p + 1
             if peek_type(tokens, p) != "RPAREN" {
                 let tr: TypeResult = parse_type_expr(tokens, p, filename)
-                vtypes = vtypes + [tr.type_expr]
+                vtypes.push(tr.type_expr)
                 p = tr.pos
                 for _ in 0..20 {
                     if peek_type(tokens, p) != "COMMA" {
                         p = expect(tokens, p, "RPAREN")
                         let v: EnumVariant = new_enum_variant(vname, vtypes)
-                        variants = variants + [v]
+                        variants.push(v)
                         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
                         // Continue loop
                         return parse_enum_body_continue(tokens, p, filename, name, is_pub, type_params, variants)
                     }
                     p = p + 1
                     let tr2: TypeResult = parse_type_expr(tokens, p, filename)
-                    vtypes = vtypes + [tr2.type_expr]
+                    vtypes.push(tr2.type_expr)
                     p = tr2.pos
                 }
             }
@@ -1565,7 +1565,7 @@ fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String
         }
 
         let v: EnumVariant = new_enum_variant(vname, vtypes)
-        variants = variants + [v]
+        variants.push(v)
 
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
     }
@@ -1594,19 +1594,19 @@ fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, nam
             p = p + 1
             if peek_type(tokens, p) != "RPAREN" {
                 let tr: TypeResult = parse_type_expr(tokens, p, filename)
-                vt = vt + [tr.type_expr]
+                vt.push(tr.type_expr)
                 p = tr.pos
                 for _ in 0..20 {
                     if peek_type(tokens, p) != "COMMA" {
                         p = expect(tokens, p, "RPAREN")
                         let v2: EnumVariant = new_enum_variant(vn, vt)
-                        vars = vars + [v2]
+                        vars.push(v2)
                         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
                         return parse_enum_body_continue(tokens, p, filename, name, is_pub, type_params, vars)
                     }
                     p = p + 1
                     let tr2: TypeResult = parse_type_expr(tokens, p, filename)
-                    vt = vt + [tr2.type_expr]
+                    vt.push(tr2.type_expr)
                     p = tr2.pos
                 }
             }
@@ -1614,7 +1614,7 @@ fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, nam
         }
 
         let v: EnumVariant = new_enum_variant(vn, vt)
-        vars = vars + [v]
+        vars.push(v)
 
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
     }
@@ -1793,7 +1793,7 @@ fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult {
         }
 
         let sr: StmtResult = parse_stmt(tokens, p, filename)
-        stmts = stmts + [sr.stmt]
+        stmts.push(sr.stmt)
         p = sr.pos
     }
 
@@ -2048,7 +2048,7 @@ fn parse_call_args(tokens: List<Token>, pos: Int, filename: String, callee: Expr
     }
 
     let a0: ExprResult = parse_expr(tokens, p, filename, 0)
-    args = args + [a0.expr]
+    args.push(a0.expr)
     p = a0.pos
 
     for _ in 0..100 {
@@ -2062,7 +2062,7 @@ fn parse_call_args(tokens: List<Token>, pos: Int, filename: String, callee: Expr
             return new_expr_result(Expr::Call(callee, args), p)
         }
         let an: ExprResult = parse_expr(tokens, p, filename, 0)
-        args = args + [an.expr]
+        args.push(an.expr)
         p = an.pos
     }
 
@@ -2080,7 +2080,7 @@ fn parse_method_args(tokens: List<Token>, pos: Int, filename: String, obj: Expr,
     }
 
     let a0: ExprResult = parse_expr(tokens, p, filename, 0)
-    args = args + [a0.expr]
+    args.push(a0.expr)
     p = a0.pos
 
     for _ in 0..100 {
@@ -2094,7 +2094,7 @@ fn parse_method_args(tokens: List<Token>, pos: Int, filename: String, obj: Expr,
             return new_expr_result(Expr::MethodCall(obj, method, args), p)
         }
         let an: ExprResult = parse_expr(tokens, p, filename, 0)
-        args = args + [an.expr]
+        args.push(an.expr)
         p = an.pos
     }
 
@@ -2127,7 +2127,7 @@ fn split_interp_parts(s: String) -> List<Expr> {
     let mut i: Int = 0
     for _ in 0..100000 {
         if i >= len(s) {
-            if len(lit) > 0 { parts = parts + [Expr::StringLit(lit)] }
+            if len(lit) > 0 { parts.push(Expr::StringLit(lit)) }
             return parts
         }
         let ch: String = s.char_at(i)
@@ -2150,7 +2150,7 @@ fn split_interp_parts(s: String) -> List<Expr> {
                     if s.char_at(i + 1) == "{" {
                         // Flush literal
                         if len(lit) > 0 {
-                            parts = parts + [Expr::StringLit(lit)]
+                            parts.push(Expr::StringLit(lit))
                             lit = ""
                         }
                         // Find matching }
@@ -2166,7 +2166,7 @@ fn split_interp_parts(s: String) -> List<Expr> {
                                     // Extract expression text between ${ and }
                                     let expr_text: String = s.substr(i + 2, j)
                                     // For now, treat as Ident (simple variable reference)
-                                    parts = parts + [Expr::Ident(expr_text)]
+                                    parts.push(Expr::Ident(expr_text))
                                     i = j + 1
                                     return parts
                                 }
@@ -2188,7 +2188,7 @@ fn split_interp_parts(s: String) -> List<Expr> {
             }
         }
     }
-    if len(lit) > 0 { parts = parts + [Expr::StringLit(lit)] }
+    if len(lit) > 0 { parts.push(Expr::StringLit(lit)) }
     return parts
 }
 
@@ -2399,7 +2399,7 @@ fn parse_match_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
         }
 
         let mar: MatchArmResult = parse_match_arm_item(tokens, p, filename)
-        arms = arms + [mar.arm]
+        arms.push(mar.arm)
         p = mar.pos
 
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
@@ -2450,7 +2450,7 @@ fn parse_pattern(tokens: List<Token>, pos: Int, filename: String) -> PatternResu
 
             if peek_type(tokens, p) != "RPAREN" {
                 let p0: PatternResult = parse_pattern(tokens, p, filename)
-                pats = pats + [p0.pattern]
+                pats.push(p0.pattern)
                 p = p0.pos
                 for _ in 0..20 {
                     if peek_type(tokens, p) != "COMMA" {
@@ -2459,7 +2459,7 @@ fn parse_pattern(tokens: List<Token>, pos: Int, filename: String) -> PatternResu
                     }
                     p = p + 1
                     let pn: PatternResult = parse_pattern(tokens, p, filename)
-                    pats = pats + [pn.pattern]
+                    pats.push(pn.pattern)
                     p = pn.pos
                 }
             }
@@ -2486,7 +2486,7 @@ fn parse_spawn_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
     let mut args: List<Expr> = []
     if peek_type(tokens, p) != "RPAREN" {
         let a0: ExprResult = parse_expr(tokens, p, filename, 0)
-        args = args + [a0.expr]
+        args.push(a0.expr)
         p = a0.pos
         for _ in 0..50 {
             if peek_type(tokens, p) != "COMMA" {
@@ -2496,7 +2496,7 @@ fn parse_spawn_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
             }
             p = p + 1
             let an: ExprResult = parse_expr(tokens, p, filename, 0)
-            args = args + [an.expr]
+            args.push(an.expr)
             p = an.pos
         }
     }
@@ -2542,7 +2542,7 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
     }
 
     let e0: ExprResult = parse_expr(tokens, p, filename, 0)
-    elems = elems + [e0.expr]
+    elems.push(e0.expr)
     p = e0.pos
 
     for _ in 0..10000 {
@@ -2556,7 +2556,7 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
             return new_expr_result(Expr::ListLit(elems), p)
         }
         let en: ExprResult = parse_expr(tokens, p, filename, 0)
-        elems = elems + [en.expr]
+        elems.push(en.expr)
         p = en.pos
     }
 
@@ -2588,7 +2588,7 @@ fn parse_paren_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
         }
         p = p + 1
         let en: ExprResult = parse_expr(tokens, p, filename, 0)
-        elems = elems + [en.expr]
+        elems.push(en.expr)
         p = en.pos
     }
     p = expect(tokens, p, "RPAREN")
@@ -2622,7 +2622,7 @@ fn parse_generic_type(tokens: List<Token>, pos: Int, filename: String) -> TypeRe
 
     let mut args: List<TypeExpr> = []
     let t0: TypeResult = parse_type_expr(tokens, p, filename)
-    args = args + [t0.type_expr]
+    args.push(t0.type_expr)
     p = t0.pos
 
     for _ in 0..20 {
@@ -2632,7 +2632,7 @@ fn parse_generic_type(tokens: List<Token>, pos: Int, filename: String) -> TypeRe
         }
         p = p + 1
         let tn: TypeResult = parse_type_expr(tokens, p, filename)
-        args = args + [tn.type_expr]
+        args.push(tn.type_expr)
         p = tn.pos
     }
 
@@ -2647,7 +2647,7 @@ fn parse_fn_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult 
     let mut param_types: List<TypeExpr> = []
     if peek_type(tokens, p) != "RPAREN" {
         let t0: TypeResult = parse_type_expr(tokens, p, filename)
-        param_types = param_types + [t0.type_expr]
+        param_types.push(t0.type_expr)
         p = t0.pos
         for _ in 0..20 {
             if peek_type(tokens, p) != "COMMA" {
@@ -2658,7 +2658,7 @@ fn parse_fn_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult 
             }
             p = p + 1
             let tn: TypeResult = parse_type_expr(tokens, p, filename)
-            param_types = param_types + [tn.type_expr]
+            param_types.push(tn.type_expr)
             p = tn.pos
         }
     }

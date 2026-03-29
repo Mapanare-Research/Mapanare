@@ -227,8 +227,23 @@ missing zero-init), and function/method return types were lost (`mir_unknown()`)
 | 5 | Signal vs field `.value` dispatch | `[x]` | `lower.mn` | |
 | 6 | Struct field type tracking + enum/struct resolution | `[x]` | `lower.mn` | Two-pass registration, state-aware resolver |
 | 7 | List runtime pointer passing (len, get) | `[x]` | `emit_llvm.mn` | alloca+store before pointer-expecting calls |
-| 8 | List element type recovery (generic params) | `[ ]` | `lower.mn` | `tokens[pos]` needs to return Token, not i8* |
-| 9 | Fix remaining stage2 errors (struct alloca, result types, closures, for_loop, enum match) | `[ ]` | `lower.mn`, `emit_llvm.mn` | 6 golden tests still invalid |
+| 8 | Type annotation propagation in lower_let | `[x]` | `lower.mn` | Use declared type when expr type is unknown |
+| 9 | Binary type coercion in lower_binary | `[x]` | `lower.mn` | Infer unknown operand type from known operand |
+| 10 | For loop variable alloca | `[x]` | `lower.mn` | Alloca+store for loop var (was using raw call result as pointer) |
+| 11 | Variant name→index in emitter Switch | `[x]` | `emit_llvm.mn` | Resolve string names to integer tags (matches Python emitter _vtag) |
+| 12 | MIRModule nested list cloning | `[x]` | `emit_llvm_text.py` | Clone MIRModule's list fields on LowerState copy (skip functions for OOM) |
+| 13 | Boxed enum payload lifetime | `[ ]` | C runtime / `emit_llvm_text.py` | Match arms list is empty because boxed Expr payload is freed prematurely |
+
+### Remaining Blocker: Boxed Enum Payload Lifetime
+
+The Python emitter boxes self-referential enum payloads (e.g., `Expr::Match(Expr, List<MatchArm>)`) as heap-allocated pointers. These boxed payloads lack lifetime management — when the parent enum value is copied or goes out of scope, the boxed payload may be freed prematurely. This causes `arms` in `lower_match` to be an empty/garbage list (0 arm blocks, 0 switch cases in stage2 IR).
+
+**Impact:** 1 switch instruction in 33K lines of stage2 IR (should be ~94). All match expressions on complex enums produce dead code.
+
+**Fix options:**
+1. Reference-count boxed payloads (C runtime change)
+2. Arena-allocate boxed payloads (tie lifetime to compilation scope)
+3. Avoid boxing by using pointer-based enum representation throughout
 
 **Done when:** `mnc-stage1` produces valid LLVM IR for all 15 golden tests (stage2).
 

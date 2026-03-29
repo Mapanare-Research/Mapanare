@@ -722,6 +722,23 @@ MN_EXPORT void __mn_list_set(MnList *list, int64_t i, const void *elem_ptr) {
            elem_ptr, (size_t)list->elem_size);
 }
 
+MN_EXPORT void __mn_debug_i64(int64_t val) {
+    fprintf(stderr, "[DEBUG] i64=%ld\n", (long)val);
+}
+
+MN_EXPORT void __mn_debug_str(MnString s) {
+    if (s.data && s.len > 0) {
+        fprintf(stderr, "[DEBUG] str='%.*s' len=%ld\n", (int)s.len, mn_untag(s.data), (long)s.len);
+    } else {
+        fprintf(stderr, "[DEBUG] str=<empty> len=%ld data=%p\n", (long)s.len, (void*)s.data);
+    }
+}
+
+MN_EXPORT void __mn_debug_list(MnList list) {
+    fprintf(stderr, "[DEBUG] list data=%p len=%ld cap=%ld esz=%ld\n",
+            (void*)list.data, (long)list.len, (long)list.cap, (long)list.elem_size);
+}
+
 MN_EXPORT int64_t __mn_list_len(MnList *list) {
     return list->len;
 }
