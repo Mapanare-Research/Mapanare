@@ -30,6 +30,11 @@ fn mir_string() -> MIRType { return new_mir_type("String", "string") }
 fn mir_void() -> MIRType { return new_mir_type("Void", "void") }
 fn mir_unknown() -> MIRType { return new_mir_type("<unknown>", "unknown") }
 fn mir_option() -> MIRType { return new_mir_type("Option", "option") }
+fn mir_option_of(inner: MIRType) -> MIRType {
+    let mut t: MIRType = new_mir_type("Option", "option")
+    t.args.push(inner)
+    return t
+}
 fn mir_result() -> MIRType { return new_mir_type("Result", "result") }
 fn mir_list() -> MIRType { return new_mir_type("List", "list") }
 fn mir_map() -> MIRType { return new_mir_type("Map", "map") }

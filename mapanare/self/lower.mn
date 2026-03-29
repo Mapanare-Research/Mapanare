@@ -455,12 +455,23 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeE
         _ => {}
     }
 
-    // Find or create alloca for this variable
-    let addr_name: String = "%" + name + ".addr"
+    // Find or create alloca for this variable (use counter for uniqueness
+    // when the same variable name appears in different branches)
+    let addr_name: String = "%" + name + toString(s.tmp_counter) + ".addr"
+    s.tmp_counter = s.tmp_counter + 1
+
     let addr: Value = new_value(addr_name, val_ty)
 
     // Emit Alloca with the resolved type
     s = emit_instr(s, Instruction::Alloca(addr, val_ty))
+
+    // For None stored to a typed Option alloca: re-emit WrapNone with the
+    // declared type so the value and alloca types match.
+    if val_ty.kind == "option" && r.value.ty.kind == "option" && len(val_ty.args) > 0 && len(r.value.ty.args) == 0 {
+        let typed_none_r: LowerResult = make_value(s, val_ty, "tnone")
+        s = emit_instr(typed_none_r.state, Instruction::WrapNone(typed_none_r.value, val_ty))
+        val = typed_none_r.value
+    }
 
     // Store value to alloca
     s = emit_instr(s, Instruction::Store(addr, val))
@@ -855,8 +866,9 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
                 let new_s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, member, args))
                 return new_lower_result(dest_r.value, new_s)
             }
-            let fn_name: String = ns + "_" + member
-            return lower_call_by_name(s, fn_name, args)
+            // For struct statics like Program::start(defs), try bare function
+            // name first (the function is `start`, not `Program_start`).
+            return lower_call_by_name(s, member, args)
         },
         _ => {
             let callee_r: LowerResult = lower_expr(s, callee)
@@ -1730,7 +1742,7 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                     let sub_pat: Pattern = sub_patterns[pi]
                     match sub_pat {
                         IdentPat(var_name) => {
-                            // Infer payload type from subject's Result/Option args
+                            // Infer payload type from subject's type info
                             let mut pay_ty: MIRType = mir_unknown()
                             if subject_r.value.ty.kind == "result" {
                                 if len(subject_r.value.ty.args) >= 2 {
@@ -1741,6 +1753,31 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                             if subject_r.value.ty.kind == "option" {
                                 if len(subject_r.value.ty.args) >= 1 {
                                     pay_ty = subject_r.value.ty.args[0]
+                                }
+                            }
+                            // For regular enums, look up payload type from module's enum registry
+                            if pay_ty.kind == "unknown" && subject_r.value.ty.kind == "enum" {
+                                let enum_name: String = subject_r.value.ty.name
+                                let mut ei3: Int = 0
+                                for _ in 0..1000 {
+                                    if ei3 >= len(s.module.enums) { break }
+                                    let einfo: EnumInfo = s.module.enums[ei3]
+                                    if einfo.name == enum_name {
+                                        let mut vi3: Int = 0
+                                        for _ in 0..1000 {
+                                            if vi3 >= len(einfo.variants) { break }
+                                            let vinfo: EnumVariantInfo = einfo.variants[vi3]
+                                            if vinfo.name == name {
+                                                if len(vinfo.payload_types) > 0 {
+                                                    pay_ty = vinfo.payload_types[pi]
+                                                }
+                                                break
+                                            }
+                                            vi3 = vi3 + 1
+                                        }
+                                        break
+                                    }
+                                    ei3 = ei3 + 1
                                 }
                             }
                             let payload_r: LowerResult = make_value(s, pay_ty, var_name)

@@ -596,7 +596,16 @@ fn emit_copy(st: EmitState, dest: Value, src: Value) -> EmitState {
     let mut s: EmitState = st
     let ty: String = resolve_mir_type(dest.ty)
     let src_ty: String = resolve_mir_type(src.ty)
-    let use_ty: String = if ty == "i8*" { src_ty } else { ty }
+    // Use source type when dest is unknown/scalar but source is aggregate.
+    // This handles match pattern bindings where the payload type is known
+    // from enum info but the pattern variable type is unknown.
+    let mut use_ty: String = ty
+    if ty == "i8*" {
+        use_ty = src_ty
+    }
+    if ty == "i64" && (src_ty.starts_with("%struct.") || src_ty.starts_with("%enum.") || src_ty.starts_with("{")) {
+        use_ty = src_ty
+    }
 
     // Bool: use bitwise identity (and true)
     if ty == "i1" {
@@ -1046,7 +1055,15 @@ fn emit_load(st: EmitState, dest: Value, ptr: Value) -> EmitState {
 }
 
 fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState {
-    return emit_line(st, llvm_store(resolve_mir_type(val.ty), val.name, ptr.name))
+    let val_ty: String = resolve_mir_type(val.ty)
+    let ptr_ty: String = resolve_mir_type(ptr.ty)
+    // When storing a generic None ({i1, i8*}) to a specific Option alloca
+    // ({i1, %enum.T}), use zeroinitializer with the alloca's type instead.
+    // None has tag=0 and null payload — zeroinitializer is equivalent.
+    if val.ty.kind == "option" && ptr_ty != val_ty && ptr_ty.starts_with("{") {
+        return emit_line(st, "  store " + ptr_ty + " zeroinitializer, " + ptr_ty + "* " + ptr.name)
+    }
+    return emit_line(st, llvm_store(val_ty, val.name, ptr.name))
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,8 +1198,33 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         return s
     }
 
-    // Regular enum: byte-offset arithmetic (skip i64 tag)
-    let dest_ty: String = resolve_mir_type(dest.ty)
+    // Regular enum: byte-offset arithmetic (skip i64 tag).
+    // If dest type is unknown (i64), look up actual payload type from enum info.
+    let mut dest_ty: String = resolve_mir_type(dest.ty)
+    if dest_ty == "i64" && dest.ty.kind == "unknown" {
+        let enum_name: String = val.ty.name
+        let mut ei2: Int = 0
+        for _ in 0..1000 {
+            if ei2 >= len(s.enum_infos) { break }
+            let einfo: EnumInfo = s.enum_infos[ei2]
+            if einfo.name == enum_name {
+                let mut vi2: Int = 0
+                for _ in 0..1000 {
+                    if vi2 >= len(einfo.variants) { break }
+                    let vinfo: EnumVariantInfo = einfo.variants[vi2]
+                    if vinfo.name == variant {
+                        if len(vinfo.payload_types) > 0 {
+                            dest_ty = resolve_mir_type(vinfo.payload_types[0])
+                        }
+                        break
+                    }
+                    vi2 = vi2 + 1
+                }
+                break
+            }
+            ei2 = ei2 + 1
+        }
+    }
     s = emit_line(s, "  " + dn + ".ea = alloca " + enum_ty)
     s = emit_line(s, "  store " + enum_ty + " " + val.name + ", " + enum_ty + "* " + dn + ".ea")
     s = emit_line(s, "  " + dn + ".bp = bitcast " + enum_ty + "* " + dn + ".ea to i8*")
@@ -1199,9 +1241,24 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
 fn emit_wrap_some(st: EmitState, dest: Value, val: Value) -> EmitState {
     let mut s: EmitState = st
     let val_ty: String = resolve_mir_type(val.ty)
-    let opt_ty: String = llvm_option_type(val_ty)
     let dn: String = dest.name
 
+    // For enum values (%enum.X = large inline struct), use {i1, i8*} representation
+    // to match WrapNone and function signatures. Store enum to alloca, use ptr.
+    if val_ty.starts_with("%enum.") {
+        let ea: String = dn + ".ea"
+        s = emit_line(s, "  " + ea + " = alloca " + val_ty)
+        s = emit_line(s, "  store " + val_ty + " " + val.name + ", " + val_ty + "* " + ea)
+        let ep: String = dn + ".ep"
+        s = emit_line(s, "  " + ep + " = bitcast " + val_ty + "* " + ea + " to i8*")
+        let opt_ty: String = llvm_option_type(llvm_ptr())
+        let tag_name: String = dn + ".tag"
+        s = emit_line(s, emit_insertvalue(tag_name, opt_ty, "undef", "1", "i1", "0"))
+        s = emit_line(s, emit_insertvalue(dn, opt_ty, tag_name, ep, llvm_ptr(), "1"))
+        return s
+    }
+
+    let opt_ty: String = llvm_option_type(val_ty)
     let tag_name: String = dn + ".tag"
     s = emit_line(s, emit_insertvalue(tag_name, opt_ty, "undef", "1", "i1", "0"))
     s = emit_line(s, emit_insertvalue(dn, opt_ty, tag_name, val.name, val_ty, "1"))
@@ -1383,11 +1440,22 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     for _ in 0..1000 {
         if j >= len(args) { break }
         let mut aty: String = resolve_mir_type(args[j].ty)
-        // If MIR type is unknown (i64) but registered type differs, use registered
-        if aty == "i64" && args[j].ty.kind == "unknown" && j < len(reg_param_types) {
-            aty = reg_param_types[j]
+        let mut an: String = args[j].name
+        // Use registered param type when available and different.
+        // When types mismatch (e.g. generic Option vs specific), reinterpret
+        // through memory to coerce the value to the expected type.
+        if j < len(reg_param_types) {
+            let rpt: String = reg_param_types[j]
+            if rpt != aty && rpt != "i64" {
+                // Type mismatch: use registered type. For generic None ({i1,i8*})
+                // passed to a specific Option param ({i1,%enum.T}), replace with
+                // zeroinitializer since None is all-zeros regardless of inner type.
+                if aty.starts_with("{ i1, i8*") && rpt.starts_with("{ i1,") {
+                    an = "zeroinitializer"
+                }
+                aty = rpt
+            }
         }
-        let an: String = args[j].name
         if j > 0 {
             args_str = args_str + ", " + aty + " " + an
         } else {
@@ -1880,7 +1948,13 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
             }
             fpi = fpi + 1
         }
-        let fn_types: List<String> = []
+        let mut fn_types: List<String> = []
+        let mut fti: Int = 0
+        for _ in 0..1000 {
+            if fti >= len(f.params) { break }
+            fn_types.push(resolve_mir_type(f.params[fti].ty))
+            fti = fti + 1
+        }
         let fe: FnEntry = new_fn_entry(f.name, ret_ty, fn_types)
         st.functions.push(fe)
         di = di + 1
