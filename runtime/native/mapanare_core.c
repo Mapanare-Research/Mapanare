@@ -742,8 +742,8 @@ MN_EXPORT MnList __mn_list_new(int64_t elem_size) {
     MnList list;
     list.elem_size = elem_size;
     list.len = 0;
-    list.cap = MN_LIST_INITIAL_CAP;
-    list.data = mn_list_alloc_buf(list.cap, elem_size);
+    list.cap = 0;
+    list.data = NULL;  /* Lazy allocation: first push allocates */
     return list;
 }
 

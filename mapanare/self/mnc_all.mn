@@ -7259,6 +7259,117 @@ pub fn lower(program: Program, module_name: String) -> MIRModule {
     return st.module
 }
 
+// Streaming API: lower header only (types, externs), return state for per-function lowering
+pub fn lower_header(program: Program, module_name: String) -> LowerState {
+    let mut st: LowerState = new_lower_state(module_name)
+    st = register_declarations(st, program)
+    return st
+}
+
+// Lower a single function and return the MIR function + updated state
+// The function is NOT added to module.functions (caller handles emission)
+pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerResult {
+    let fn_name: String = prefix + fn_def.name
+
+    // Build params
+    let mut params: List<MIRParam> = []
+    let mut pi: Int = 0
+    for _ in 0..1000 {
+        if pi >= len(fn_def.params) { break }
+        let p: Param = fn_def.params[pi]
+        let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
+        let mp: MIRParam = new_mir_param(p.name, pty)
+        params.push(mp)
+        pi = pi + 1
+    }
+
+    let ret_type: MIRType = resolve_return_type_checked(st, fn_def.return_type)
+
+    let mut decorators: List<String> = []
+    let mut di: Int = 0
+    for _ in 0..100 {
+        if di >= len(fn_def.decorators) { break }
+        decorators.push(fn_def.decorators[di].name)
+        di = di + 1
+    }
+
+    let mir_fn: MIRFunction = new_mir_function(fn_name, params, ret_type, decorators, fn_def.public)
+
+    // Save state
+    let prev_fn: Option<MIRFunction> = st.current_fn
+    let prev_block_idx: Int = st.current_block_idx
+    let prev_tmp: Int = st.tmp_counter
+    let prev_blk_cnt: Int = st.block_counter
+    let prev_vars: List<VarInfo> = st.vars
+
+    let mut s: LowerState = st
+    s.current_fn = Some(mir_fn)
+    s.tmp_counter = 0
+    s.block_counter = 0
+    let fresh_vars: List<VarInfo> = []
+    s.vars = fresh_vars
+
+    s = add_block(s, "entry")
+    s = set_block(s, 0)
+
+    // Bind params
+    let mut bi: Int = 0
+    for _ in 0..1000 {
+        if bi >= len(fn_def.params) { break }
+        let p: Param = fn_def.params[bi]
+        let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
+        let addr_name: String = "%" + p.name + ".addr"
+        let addr: Value = new_value(addr_name, pty)
+        let param_val: Value = new_value("%" + p.name, pty)
+        s = emit_instr(s, Instruction::Alloca(addr, pty))
+        s = emit_instr(s, Instruction::Store(addr, param_val))
+        s = define_var(s, p.name, addr, false)
+        bi = bi + 1
+    }
+
+    // Lower body
+    let body_r: LowerResult = lower_block(s, fn_def.body)
+    s = body_r.state
+
+    if !current_block_terminated(s) {
+        if ret_type.kind == "void" {
+            s = emit_instr(s, Instruction::Return(none))
+        } else {
+            s = emit_instr(s, Instruction::Return(Some(body_r.value)))
+        }
+    }
+
+    // Extract the completed function (DO NOT add to module — caller emits it)
+    let mut result_fn: MIRFunction = mir_fn
+    match s.current_fn {
+        Some(f) => { result_fn = f },
+        _ => {}
+    }
+
+    // Restore counters/vars but KEEP current_fn so caller can extract it
+    s.current_fn = Some(result_fn)
+    s.current_block_idx = prev_block_idx
+    s.tmp_counter = prev_tmp
+    s.block_counter = prev_blk_cnt
+    s.vars = prev_vars
+
+    let fn_val: Value = new_value(fn_name, mir_void())
+    return new_lower_result(fn_val, s)
+}
+
+// Get the last-added function from a LowerState's current_fn
+pub fn extract_current_fn(st: LowerState) -> MIRFunction {
+    match st.current_fn {
+        Some(f) => { return f },
+        _ => {
+            let empty_params: List<MIRParam> = []
+            let empty_blocks: List<BasicBlock> = []
+            let empty_decorators: List<String> = []
+            return new MIRFunction { name: "unknown", params: empty_params, return_type: mir_void(), blocks: empty_blocks, decorators: empty_decorators, is_public: false }
+        }
+    }
+}
+
 // ===== emit_llvm_ir.mn =====
 // emit_llvm_ir.mn — LLVM IR type constants and instruction string builders.
 // Pure string-producing functions, shared by emit_llvm.mn.
@@ -9387,6 +9498,81 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     return result
 }
 
+// ---------------------------------------------------------------------------
+// Streaming API: emit module header, then individual functions
+// ---------------------------------------------------------------------------
+
+pub fn emit_header(module: MIRModule, module_name: String) -> EmitState {
+    let mut st: EmitState = new_emit_state(module_name)
+
+    st = emit_line(st, "; ModuleID = '" + module_name + "'")
+    st = emit_line(st, "source_filename = \"" + module_name + "\"")
+    st = emit_blank(st)
+    st = emit_format_constants(st)
+    st = declare_all_runtime(st)
+
+    let mut si: Int = 0
+    for _ in 0..1000 {
+        if si >= len(module.structs) { break }
+        st = register_mir_struct(st, module.structs[si])
+        si = si + 1
+    }
+    let mut ei: Int = 0
+    for _ in 0..1000 {
+        if ei >= len(module.enums) { break }
+        st = register_mir_enum(st, module.enums[ei])
+        ei = ei + 1
+    }
+    if len(module.structs) > 0 { st = emit_blank(st) }
+    if len(module.enums) > 0 { st = emit_blank(st) }
+
+    let mut xi: Int = 0
+    for _ in 0..1000 {
+        if xi >= len(module.extern_fns) { break }
+        st = declare_mir_extern(st, module.extern_fns[xi])
+        xi = xi + 1
+    }
+    if len(module.extern_fns) > 0 { st = emit_blank(st) }
+
+    return st
+}
+
+pub fn register_fn_sig(st: EmitState, f: MIRFunction) -> EmitState {
+    let mut ret_ty: String = resolve_mir_type(f.return_type)
+    if ret_ty.starts_with("%struct.") {
+        if is_enum_type(st, f.return_type.name) {
+            ret_ty = "%enum." + f.return_type.name
+        }
+    }
+    let fn_types: List<String> = []
+    let fe: FnEntry = new_fn_entry(f.name, ret_ty, fn_types)
+    let mut s: EmitState = st
+    s.functions.push(fe)
+    return s
+}
+
+pub fn emit_one_fn(st: EmitState, f: MIRFunction) -> EmitState {
+    return emit_mir_function(st, f)
+}
+
+pub fn emit_finalize(st: EmitState) -> String {
+    let nlines: Int = len(st.lines)
+    let mut result: String = ""
+    let mut li: Int = 0
+    for _ in 0..1000000 {
+        if li >= nlines { break }
+        result = result + st.lines[li] + "\n"
+        li = li + 1
+    }
+    let mut gi: Int = 0
+    for _ in 0..1000000 {
+        if gi >= len(st.str_globals) { break }
+        result = result + st.str_globals[gi] + "\n"
+        gi = gi + 1
+    }
+    return result
+}
+
 // ===== main.mn =====
 // main.mn — Compiler driver for the Mapanare self-hosted compiler.
 // Wires the pipeline: source -> parse -> check -> lower -> emit_llvm -> LLVM IR.
@@ -9419,15 +9605,15 @@ fn version() -> String {
 // ---------------------------------------------------------------------------
 
 fn compile(source: String, filename: String) -> CompileResult {
-    // Stage 1: parse (lexer is called internally by parser)
+    // Stage 1: parse
     let program: Program = parse(source, filename)
 
     // Stage 2: semantic analysis
     let errors: List<SemanticError> = check(program, filename)
-
     if len(errors) > 0 {
         return new_compile_result(false, "", errors)
     }
+
     // Stage 3: lower AST to MIR
     let mir_module: MIRModule = lower(program, filename)
 

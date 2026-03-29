@@ -1867,3 +1867,78 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     }
     return result
 }
+
+// ---------------------------------------------------------------------------
+// Streaming API: emit module header, then individual functions
+// ---------------------------------------------------------------------------
+
+pub fn emit_header(module: MIRModule, module_name: String) -> EmitState {
+    let mut st: EmitState = new_emit_state(module_name)
+
+    st = emit_line(st, "; ModuleID = '" + module_name + "'")
+    st = emit_line(st, "source_filename = \"" + module_name + "\"")
+    st = emit_blank(st)
+    st = emit_format_constants(st)
+    st = declare_all_runtime(st)
+
+    let mut si: Int = 0
+    for _ in 0..1000 {
+        if si >= len(module.structs) { break }
+        st = register_mir_struct(st, module.structs[si])
+        si = si + 1
+    }
+    let mut ei: Int = 0
+    for _ in 0..1000 {
+        if ei >= len(module.enums) { break }
+        st = register_mir_enum(st, module.enums[ei])
+        ei = ei + 1
+    }
+    if len(module.structs) > 0 { st = emit_blank(st) }
+    if len(module.enums) > 0 { st = emit_blank(st) }
+
+    let mut xi: Int = 0
+    for _ in 0..1000 {
+        if xi >= len(module.extern_fns) { break }
+        st = declare_mir_extern(st, module.extern_fns[xi])
+        xi = xi + 1
+    }
+    if len(module.extern_fns) > 0 { st = emit_blank(st) }
+
+    return st
+}
+
+pub fn register_fn_sig(st: EmitState, f: MIRFunction) -> EmitState {
+    let mut ret_ty: String = resolve_mir_type(f.return_type)
+    if ret_ty.starts_with("%struct.") {
+        if is_enum_type(st, f.return_type.name) {
+            ret_ty = "%enum." + f.return_type.name
+        }
+    }
+    let fn_types: List<String> = []
+    let fe: FnEntry = new_fn_entry(f.name, ret_ty, fn_types)
+    let mut s: EmitState = st
+    s.functions.push(fe)
+    return s
+}
+
+pub fn emit_one_fn(st: EmitState, f: MIRFunction) -> EmitState {
+    return emit_mir_function(st, f)
+}
+
+pub fn emit_finalize(st: EmitState) -> String {
+    let nlines: Int = len(st.lines)
+    let mut result: String = ""
+    let mut li: Int = 0
+    for _ in 0..1000000 {
+        if li >= nlines { break }
+        result = result + st.lines[li] + "\n"
+        li = li + 1
+    }
+    let mut gi: Int = 0
+    for _ in 0..1000000 {
+        if gi >= len(st.str_globals) { break }
+        result = result + st.str_globals[gi] + "\n"
+        gi = gi + 1
+    }
+    return result
+}

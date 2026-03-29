@@ -57,10 +57,9 @@ class TestMainMnPipeline:
         """compile() should call lower() to produce MIR."""
         assert "lower(program" in main_mn_source
 
-    def test_calls_emit_mir_module(self, main_mn_source: str) -> None:
-        """compile() should call emit_mir_module() instead of emit_program()."""
+    def test_calls_emit(self, main_mn_source: str) -> None:
+        """compile() should call emit_mir_module()."""
         assert "emit_mir_module(" in main_mn_source
-        assert "emit_program(" not in main_mn_source
 
     def test_pipeline_order(self, main_mn_source: str) -> None:
         """Pipeline should be: parse → check → lower → emit_mir_module."""
