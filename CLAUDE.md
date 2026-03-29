@@ -76,6 +76,17 @@ python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 --run  # Also ru
 python scripts/test_native.py --bless                            # Regenerate reference files
 python scripts/test_native.py --filter fib -v                    # One test, verbose
 
+# IR Doctor — per-function diagnostics for the self-hosted compiler
+python scripts/ir_doctor.py audit mapanare/self/main.ll              # Detect known bug patterns
+python scripts/ir_doctor.py --only lower__ audit mapanare/self/main.ll  # Audit specific module
+python scripts/ir_doctor.py table mapanare/self/main.ll              # Per-function metrics table
+python scripts/ir_doctor.py --top 15 table mapanare/self/main.ll     # Top 15 largest functions
+python scripts/ir_doctor.py fingerprint mapanare/self/main.ll        # JSON per-function hashes
+python scripts/ir_doctor.py diff tests/golden/07_enum_match.mn       # Bootstrap vs stage1 (WSL)
+python scripts/ir_doctor.py diff-ir a.ll b.ll                        # Compare two .ll files
+python scripts/ir_doctor.py diff-all                                 # All golden tests (WSL)
+python scripts/ir_doctor.py snapshot                                 # Generate .stage1.ll files (WSL)
+
 # Self-hosted compiler build + fixed-point (WSL/Linux only)
 python scripts/build_stage1.py                   # Build mnc-stage1 from Python bootstrap
 bash scripts/verify_fixed_point.sh               # 3-stage self-compilation verification
