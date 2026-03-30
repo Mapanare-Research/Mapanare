@@ -2165,10 +2165,10 @@ fn format_instruction(inst: Instruction) -> String {
         AgentSpawn(dest, ty, args) => {
             return dest.name + " = agent_spawn " + format_type(ty)
         },
-        AgentSend(agent, channel, val) => {
+        AgentSend(ag, channel, val) => {
             return "agent_send"
         },
-        AgentSync(dest, agent, channel) => {
+        AgentSync(dest, ag, channel) => {
             return "agent_sync"
         },
         SignalInit(dest, ty, val) => {

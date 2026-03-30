@@ -183,6 +183,7 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_starts_with", llvm_bool(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_ends_with", llvm_bool(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_find", llvm_int(), llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_join", llvm_string(), llvm_string() + ", " + llvm_list_rt())
 
     // List runtime
     s = declare_runtime_fn(s, "__mn_list_new", llvm_list_rt(), "i64")
@@ -521,11 +522,11 @@ fn emit_mir_instruction(st: EmitState, inst: Instruction) -> EmitState {
         AgentSpawn(dest, ty, args) => {
             return emit_agent_spawn(st, dest, ty, args)
         },
-        AgentSend(agent, channel, val) => {
-            return emit_agent_send(st, agent, channel, val)
+        AgentSend(ag, channel, val) => {
+            return emit_agent_send(st, ag, channel, val)
         },
-        AgentSync(dest, agent, channel) => {
-            return emit_agent_sync(st, dest, agent, channel)
+        AgentSync(dest, ag, channel) => {
+            return emit_agent_sync(st, dest, ag, channel)
         },
         SignalInit(dest, ty, val) => {
             return emit_signal_init(st, dest, ty, val)
@@ -564,11 +565,13 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
 
     // String constant: emit global at module level, build struct inline
     if ty.kind == "string" {
+        // Escape special chars for LLVM IR string constants
+        let escaped: String = val.replace("\\", "\\5C").replace("\"", "\\22").replace("\n", "\\0A")
         let slen: Int = len(val)
         let gname: String = next_str_name(s)
         s.str_counter = s.str_counter + 1
         let arr_ty: String = "[" + toString(slen) + " x i8]"
-        s = emit_global(s, gname + " = private constant " + arr_ty + " c\"" + val + "\"")
+        s = emit_global(s, gname + " = private constant " + arr_ty + " c\"" + escaped + "\"")
         let ptr_name: String = dn + ".ptr"
         s = emit_line(s, "  " + ptr_name + " = getelementptr " + arr_ty + ", " + "ptr " + gname + ", i64 0, i64 0")
         let s1_name: String = dn + ".s1"
@@ -1415,6 +1418,39 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_builtin_float(st, dest, args)
     }
 
+    // String builtins
+    if fn_name == "split" {
+        let mut s: EmitState = st
+        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        s = emit_line(s, emit_call_ir(dn, llvm_list_rt(), "__mn_str_split", arg_str))
+        return s
+    }
+    if fn_name == "contains" {
+        let mut s: EmitState = st
+        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        s = emit_line(s, emit_call_ir(dn, llvm_bool(), "__mn_str_contains", arg_str))
+        return s
+    }
+    if fn_name == "replace" {
+        let mut s: EmitState = st
+        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name
+        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_replace", arg_str))
+        return s
+    }
+    if fn_name == "byte_at" {
+        let mut s: EmitState = st
+        let arg_str: String = llvm_string() + " " + args[0].name + ", i64 " + args[1].name
+        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_byte_at", arg_str))
+        return s
+    }
+    // join(sep, list) → String via C runtime
+    if fn_name == "join" {
+        let mut s: EmitState = st
+        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_list_rt() + " " + args[1].name
+        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_join", arg_str))
+        return s
+    }
+
     // List push: handled by ListPush instruction in MIR, skip in emitter.
     // Check by method name first (before accessing args) since the type kind
     // may be "unknown" for List<Int> due to type inference gaps.
@@ -1762,13 +1798,13 @@ fn emit_agent_spawn(st: EmitState, dest: Value, ty: MIRType, args: List<Value>) 
     return s
 }
 
-fn emit_agent_send(st: EmitState, agent: Value, channel: String, val: Value) -> EmitState {
-    return emit_line(st, emit_call_void("__mn_agent_send", "ptr " + agent.name + ", ptr null, ptr null"))
+fn emit_agent_send(st: EmitState, ag: Value, channel: String, val: Value) -> EmitState {
+    return emit_line(st, emit_call_void("__mn_agent_send", "ptr " + ag.name + ", ptr null, ptr null"))
 }
 
-fn emit_agent_sync(st: EmitState, dest: Value, agent: Value, channel: String) -> EmitState {
+fn emit_agent_sync(st: EmitState, dest: Value, ag: Value, channel: String) -> EmitState {
     let dn: String = dest.name
-    let s2: EmitState = emit_line(st, emit_call_ir(dn, "ptr", "__mn_agent_sync", "ptr " + agent.name + ", ptr null"))
+    let s2: EmitState = emit_line(st, emit_call_ir(dn, "ptr", "__mn_agent_sync", "ptr " + ag.name + ", ptr null"))
     return s2
 }
 
@@ -1980,6 +2016,10 @@ fn emit_format_constants(st: EmitState) -> EmitState {
 // Public API: emit_mir_module
 // ---------------------------------------------------------------------------
 
+fn str_join(sep: String, parts: List<String>) -> String {
+    return join(sep, parts)
+}
+
 pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     let mut st: EmitState = new_emit_state(module_name)
 
@@ -2094,8 +2134,8 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
         st = emit_line(st, st.str_globals[gi])
         gi = gi + 1
     }
-    // Join all lines with newline — O(n) instead of O(n²) string concat
-    let result: String = join("\n", st.lines)
+    // Join all lines with newline — O(n) via builtin join
+    let result: String = str_join("\n", st.lines)
     return result
 }
 
