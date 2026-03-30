@@ -6049,15 +6049,19 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
 // Unary expression lowering
 // ---------------------------------------------------------------------------
 
+fn resolve_unary_result_type(uop: UnaryOpKind, operand_ty: MIRType) -> MIRType {
+    match uop {
+        Not => { return mir_bool() },
+        _ => { return operand_ty }
+    }
+}
+
 fn lower_unary(st: LowerState, op: String, operand: Expr) -> LowerResult {
     let op_r: LowerResult = lower_expr(st, operand)
     let uop_opt: Option<UnaryOpKind> = unaryop_from_str(op)
     match uop_opt {
         Some(uop) => {
-            let result_ty: MIRType = match uop {
-                Not => { mir_bool() },
-                _ => { op_r.value.ty }
-            }
+            let result_ty: MIRType = resolve_unary_result_type(uop, op_r.value.ty)
             let dest_r: LowerResult = make_value(op_r.state, result_ty, "t")
             let s: LowerState = emit_instr(dest_r.state, Instruction::UnaryOp(dest_r.value, uop, op_r.value))
             return new_lower_result(dest_r.value, s)
@@ -6237,10 +6241,7 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
     }
 
     // Resolve lambda variable names to actual function names
-    let resolved: String = match find_lambda(st, fn_name) {
-        Some(actual) => { actual },
-        _ => { fn_name }
-    }
+    let resolved: String = unwrap_or_default(find_lambda(st, fn_name), fn_name)
 
     // For non-lambda calls, emit directly (no state copy needed).
     // Look up function return type from lambda_vars registry (__ret__fn_name).
@@ -6535,23 +6536,45 @@ fn lower_range(st: LowerState, start: Expr, end: Expr, inclusive: Bool) -> Lower
 // Lambda lowering
 // ---------------------------------------------------------------------------
 
-fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerResult {
-    let name_r: LowerResult = fresh_tmp(st, "lambda")
-    // Lambda function names should not have % prefix (it becomes @%lambda in IR)
-    let lambda_name: String = "lambda" + toString(st.tmp_counter)
+fn lower_arm_body(st: LowerState, body: MatchArmBody) -> LowerResult {
+    match body {
+        BlockBody(block) => { return lower_block(st, block) },
+        ExprBody(expr) => { return lower_expr(st, expr) }
+    }
+}
 
-    // Build the body block
-    let body_block: Block = match body {
-        BlockBody(block) => { block },
+fn extract_ident_name(expr: Expr) -> String {
+    match expr {
+        Ident(name) => { return name },
+        _ => { return "" }
+    }
+}
+
+fn unwrap_or_default(opt: Option<String>, default: String) -> String {
+    match opt {
+        Some(val) => { return val },
+        _ => { return default }
+    }
+}
+
+fn lambda_body_to_block(body: LambdaBody) -> Block {
+    match body {
+        BlockBody(block) => { return block },
         ExprBody(expr) => {
-            // Wrap expression in a block with return
             let ret_stmt: Stmt = Stmt::Return(Some(expr))
             let stmts: List<Stmt> = []
             stmts.push(ret_stmt)
             let span: Span = new_span(0, 0, 0, 0)
-            new_block(span, stmts)
+            return new_block(span, stmts)
         }
     }
+}
+
+fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerResult {
+    let name_r: LowerResult = fresh_tmp(st, "lambda")
+    let lambda_name: String = "lambda" + toString(st.tmp_counter)
+
+    let body_block: Block = lambda_body_to_block(body)
 
     // Build extended params: explicit params + captured parent vars
     let parent_vars: List<VarInfo> = name_r.state.vars
@@ -6614,10 +6637,7 @@ fn lower_spawn(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResu
         i = i + 1
     }
 
-    let agent_name: String = match callee {
-        Ident(name) => { name },
-        _ => { "" }
-    }
+    let agent_name: String = extract_ident_name(callee)
 
     let agent_ty: MIRType = mir_agent(agent_name)
     let dest_r: LowerResult = make_value(s, agent_ty, "t")
@@ -7252,10 +7272,7 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         }
 
         // Lower arm body
-        let arm_val_r: LowerResult = match arm.body {
-            BlockBody(block) => { lower_block(s, block) },
-            ExprBody(expr) => { lower_expr(s, expr) }
-        }
+        let arm_val_r: LowerResult = lower_arm_body(s, arm.body)
         s = arm_val_r.state
 
         let exit_label: String = get_block_label(s, s.current_block_idx)
@@ -7266,10 +7283,6 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         s = lower_pop_scope(s)
 
         // Only add to Phi if arm didn't terminate AND produces a real value.
-        // Skip void values (e.g., from print()) to avoid undefined SSA refs.
-        // Only include arm results in Phi if the arm didn't terminate
-        // AND the value has a known type that won't produce mismatched i64.
-        // Check by verifying the resolved LLVM type is NOT "i64" (the unknown fallback).
         let arm_kind: String = arm_val_r.value.ty.kind
         if !arm_terminated && arm_kind != "void" && arm_kind != "unknown" && arm_val_r.value.name != "%void" {
             let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
@@ -7287,10 +7300,11 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         return new_lower_result(result_r.value, s)
     }
 
-    // All arms terminated (returned/broke). Merge block is unreachable.
-    // Emit Return(none) — the emitter handles non-void functions by emitting
-    // `ret TYPE zeroinitializer` (valid LLVM IR for dead code).
-    s = emit_instr(s, Instruction::Return(none))
+    // All arms terminated. Merge block is unreachable.
+    // Emit a dummy return to terminate the block. Any code the caller
+    // emits after this will be in a dead block (after a terminator).
+    let dummy_val: Value = new_value("zeroinitializer", mir_unknown())
+    s = emit_instr(s, Instruction::Return(Some(dummy_val)))
     let void_r: LowerResult = make_value(s, mir_void(), "t")
     return new_lower_result(void_r.value, void_r.state)
 }
