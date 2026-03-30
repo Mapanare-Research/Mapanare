@@ -4162,6 +4162,50 @@ fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> Se
 // Pipe definition checking
 // ---------------------------------------------------------------------------
 
+fn check_pipe_stage_type(st: SemState, stage: Expr, pipe_name: String) -> TypeInfo {
+    match stage {
+        Ident(name) => {
+            return resolve_pipe_ident_type(st, name)
+        },
+        _ => { return unknown_type() }
+    }
+}
+
+fn resolve_pipe_ident_type(st: SemState, name: String) -> TypeInfo {
+    let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+    match sym_opt {
+        Some(sym) => {
+            return resolve_sym_output_type(sym)
+        },
+        _ => { return unknown_type() }
+    }
+}
+
+fn resolve_sym_output_type(sym: Symbol) -> TypeInfo {
+    if sym.kind != "function" { return unknown_type() }
+    if !sym.type_info.is_function { return unknown_type() }
+    match sym.type_info.return_type {
+        Some(ret) => { return ret },
+        _ => { return unknown_type() }
+    }
+}
+
+fn check_pipe_stage_err(st: SemState, stage: Expr, pipe_name: String) -> SemState {
+    match stage {
+        Ident(name) => {
+            let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+            match sym_opt {
+                Some(sym) => { return st },
+                _ => { return add_error(st, "Undefined stage '" + name + "' in pipe '" + pipe_name + "'", 0, 0) }
+            }
+        },
+        _ => {
+            let sr: InferResult = infer_expr(st, stage)
+            return sr.st
+        }
+    }
+}
+
 fn check_pipe_stages(st: SemState, data: PipeDefData) -> SemState {
     if len(data.stages) < 2 { return st }
 
@@ -4172,36 +4216,9 @@ fn check_pipe_stages(st: SemState, data: PipeDefData) -> SemState {
     for _ in 0..1000 {
         if si >= len(data.stages) { return st2 }
         let stage: Expr = data.stages[si]
-        match stage {
-            Ident(name) => {
-                let sym_opt: Option<Symbol> = scope_lookup(st2.scope, name)
-                match sym_opt {
-                    Some(sym) => {
-                        if sym.kind == "function" {
-                            if sym.type_info.is_function {
-                                match sym.type_info.return_type {
-                                    Some(ret) => { prev_output = ret },
-                                    _ => { prev_output = unknown_type() }
-                                }
-                            } else {
-                                prev_output = unknown_type()
-                            }
-                        } else {
-                            prev_output = unknown_type()
-                        }
-                    },
-                    _ => {
-                        st2 = add_error(st2, "Undefined stage '" + name + "' in pipe '" + data.name + "'", 0, 0)
-                        prev_output = unknown_type()
-                    }
-                }
-            },
-            _ => {
-                let sr: InferResult = infer_expr(st2, stage)
-                st2 = sr.st
-                prev_output = unknown_type()
-            }
-        }
+        prev_output = check_pipe_stage_type(st2, stage, data.name)
+        let stage_err: SemState = check_pipe_stage_err(st2, stage, data.name)
+        st2 = stage_err
         si = si + 1
     }
     return st2
@@ -6467,37 +6484,43 @@ fn lower_index(st: LowerState, obj: Expr, idx: Expr) -> LowerResult {
 // Pipe lowering
 // ---------------------------------------------------------------------------
 
+fn lower_pipe_call(arg_r: LowerResult, fn_name: String, extra_exprs: List<Expr>) -> LowerResult {
+    let mut s: LowerState = arg_r.state
+    let mut args: List<Value> = []
+    args.push(arg_r.value)
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(extra_exprs) { break }
+        let extra_r: LowerResult = lower_expr(s, extra_exprs[i])
+        s = extra_r.state
+        args.push(extra_r.value)
+        i = i + 1
+    }
+    let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+    return new_lower_result(dest_r.value, new_s)
+}
+
+fn lower_pipe_with_call(arg_r: LowerResult, callee: Expr, extra_arg_exprs: List<Expr>) -> LowerResult {
+    match callee {
+        Ident(fn_name) => {
+            return lower_pipe_call(arg_r, fn_name, extra_arg_exprs)
+        },
+        _ => {
+            return new_lower_result(arg_r.value, arg_r.state)
+        }
+    }
+}
+
 fn lower_pipe(st: LowerState, left: Expr, right: Expr) -> LowerResult {
     let arg_r: LowerResult = lower_expr(st, left)
 
     match right {
         Ident(fn_name) => {
-            let dest_r: LowerResult = make_value(arg_r.state, mir_unknown(), "t")
-            let mut args: List<Value> = []
-            args.push(arg_r.value)
-            let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-            return new_lower_result(dest_r.value, s)
+            return lower_pipe_call(arg_r, fn_name, [])
         },
         Call(callee, extra_arg_exprs) => {
-            match callee {
-                Ident(fn_name) => {
-                    let mut s: LowerState = arg_r.state
-                    let mut args: List<Value> = []
-                    args.push(arg_r.value)
-                    let mut i: Int = 0
-                    for _ in 0..1000 {
-                        if i >= len(extra_arg_exprs) { break }
-                        let extra_r: LowerResult = lower_expr(s, extra_arg_exprs[i])
-                        s = extra_r.state
-                        args.push(extra_r.value)
-                        i = i + 1
-                    }
-                    let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
-                    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-                    return new_lower_result(dest_r.value, new_s)
-                },
-                _ => {}
-            }
+            return lower_pipe_with_call(arg_r, callee, extra_arg_exprs)
         },
         _ => {}
     }
@@ -6885,6 +6908,33 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
     return result
 }
 
+fn is_some_else_clause(clause: Option<ElseClause>) -> Bool {
+    match clause {
+        Some(c) => { return true },
+        _ => { return false }
+    }
+}
+
+fn lower_else_clause(st: LowerState, clause_opt: Option<ElseClause>) -> LowerResult {
+    match clause_opt {
+        Some(clause) => {
+            return lower_else_clause_inner(st, clause)
+        },
+        _ => { return new_lower_result(void_value(), st) }
+    }
+}
+
+fn lower_else_clause_inner(st: LowerState, clause: ElseClause) -> LowerResult {
+    match clause {
+        ElseBlock(block) => {
+            return lower_block(st, block)
+        },
+        ElseIf(next_cond, next_then, next_else) => {
+            return lower_if(st, next_cond, next_then, next_else)
+        }
+    }
+}
+
 fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<ElseClause>) -> LowerResult {
     let cond_r: LowerResult = lower_expr(st, cond)
     let mut s: LowerState = cond_r.state
@@ -6929,22 +6979,11 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     // Else block
     s = set_block(s, else_idx)
     let mut else_val: Value = void_value()
-    match else_clause {
-        Some(clause) => {
-            match clause {
-                ElseBlock(block) => {
-                    let else_r: LowerResult = lower_block(s, block)
-                    s = else_r.state
-                    else_val = else_r.value
-                },
-                ElseIf(next_cond, next_then, next_else) => {
-                    let else_r: LowerResult = lower_if(s, next_cond, next_then, next_else)
-                    s = else_r.state
-                    else_val = else_r.value
-                }
-            }
-        },
-        _ => {}
+    let has_else: Bool = is_some_else_clause(else_clause)
+    if has_else {
+        let else_r: LowerResult = lower_else_clause(s, else_clause)
+        s = else_r.state
+        else_val = else_r.value
     }
     let else_exit_idx: Int = s.current_block_idx
     let else_terminated: Bool = current_block_terminated(s)
@@ -7071,6 +7110,26 @@ struct MatchBuildResult {
     default_label: String
 }
 
+fn match_arm_pattern_dispatch(st: LowerState, pattern: Pattern, r: MatchBuildResult, label: String) -> Bool {
+    match pattern {
+        ConstructorPat(name, _) => { r.cases.push(new_switch_case(name, label)); return true },
+        LiteralPat(expr) => { r.cases.push(new_switch_case(get_literal_value(expr), label)); return true },
+        IdentPat(name) => {
+            if is_enum_variant(st, name) {
+                r.cases.push(new_switch_case(name, label))
+                return true
+            }
+            return false
+        },
+        Wildcard => { return false }
+    }
+}
+
+fn get_default_label(matched: Bool, current_default: String, arm_label: String) -> String {
+    if matched { return current_default }
+    return arm_label
+}
+
 fn build_match_arms_rec(st: LowerState, arms: List<MatchArm>, idx: Int, r: MatchBuildResult) -> MatchBuildResult {
     if idx >= len(arms) { return r }
     let mut s: LowerState = r.state
@@ -7081,28 +7140,28 @@ fn build_match_arms_rec(st: LowerState, arms: List<MatchArm>, idx: Int, r: Match
     r.arm_labels.push(label)
     r.arm_indices.push(s.current_block_idx)
     let arm: MatchArm = arms[idx]
-    let mut def: String = r.default_label
-    match arm.pattern {
-        ConstructorPat(name, _) => { r.cases.push(new_switch_case(name, label)) },
-        LiteralPat(expr) => { r.cases.push(new_switch_case(get_literal_value(expr), label)) },
-        IdentPat(name) => {
-            if is_enum_variant(s, name) {
-                r.cases.push(new_switch_case(name, label))
-            } else {
-                def = label
-            }
-        },
-        Wildcard => { def = label }
-    }
-    let next: MatchBuildResult = new MatchBuildResult { state: s, arm_labels: r.arm_labels, arm_indices: r.arm_indices, cases: r.cases, default_label: def }
-    return build_match_arms_rec(next.state, arms, idx + 1, next)
+    let matched: Bool = match_arm_pattern_dispatch(s, arm.pattern, r, label)
+    let def: String = get_default_label(matched, r.default_label, label)
+    r.state = s
+    r.default_label = def
+    return build_match_arms_rec(r.state, arms, idx + 1, r)
 }
 
-fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -> MatchBuildResult {
+fn new_match_build_result(st: LowerState, merge_label: String) -> MatchBuildResult {
     let labels: List<String> = []
     let indices: List<Int> = []
     let cases: List<SwitchCase> = []
-    let init: MatchBuildResult = new MatchBuildResult { state: st, arm_labels: labels, arm_indices: indices, cases: cases, default_label: merge_label }
+    // Use first-field constructor pattern to avoid 5-field struct init issues
+    let r: MatchBuildResult = st
+    r.arm_labels = labels
+    r.arm_indices = indices
+    r.cases = cases
+    r.default_label = merge_label
+    return r
+}
+
+fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -> MatchBuildResult {
+    let init: MatchBuildResult = new_match_build_result(st, merge_label)
     return build_match_arms_rec(st, arms, 0, init)
 }
 
@@ -7805,16 +7864,10 @@ fn resolve_mir_type(t: MIRType) -> String {
     if t.kind == "list" { return llvm_list_rt() }
     if t.kind == "map" { return llvm_map_type() }
     if t.kind == "option" {
-        if len(t.args) > 0 {
-            let inner: String = resolve_mir_type(t.args[0])
-            // Type erasure: Option<Struct/Enum> uses ptr payload to avoid
-            // recursive type definitions and typed pointer mismatches.
-            // With opaque pointers, {i1, ptr} is universal for all compound types.
-            if inner.starts_with("%struct.") || inner.starts_with("%enum.") {
-                return llvm_option_type(llvm_ptr())
-            }
-            return llvm_option_type(inner)
-        }
+        // Universal type erasure: all Option types use {i1, ptr}.
+        // The payload is stored via alloca and accessed through the ptr.
+        // This ensures Option types are always consistent between
+        // function signatures and match extraction.
         return llvm_option_type(llvm_ptr())
     }
     if t.kind == "result" {
@@ -9189,7 +9242,7 @@ fn resolve_variant_index(st: EmitState, enum_name: String, variant: String) -> I
 
 fn emit_enum_tag(st: EmitState, dest: Value, val: Value) -> EmitState {
     let mut s: EmitState = st
-    let enum_ty: String = resolve_mir_type(val.ty)
+    let enum_ty: String = resolve_type(st, val.ty)
     let dn: String = dest.name
     // For Result/Option the tag field is i1; for enums it's i64.
     // Extract field 0 and zext to i64 if needed.
@@ -9209,7 +9262,7 @@ fn emit_enum_tag(st: EmitState, dest: Value, val: Value) -> EmitState {
 
 fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) -> EmitState {
     let mut s: EmitState = st
-    let enum_ty: String = resolve_mir_type(val.ty)
+    let enum_ty: String = resolve_type(st, val.ty)
     let dn: String = dest.name
 
     // For Result/Option: use extractvalue on the inner struct
@@ -9233,17 +9286,12 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         return s
     }
     if val.ty.kind == "option" {
-        // Option = {i1, inner_ty}. Extract inner at index 1.
-        // With type erasure, Option<Struct/Enum> = {i1, ptr}. The extracted
-        // value is ptr. If the dest expects a concrete struct/enum, dereference.
-        let dest_ty_opt: String = resolve_type(st, dest.ty)
-        if dest_ty_opt.starts_with("%struct.") || dest_ty_opt.starts_with("%enum.") {
-            let ptr_name: String = dn + ".ptr"
-            s = emit_line(s, "  " + ptr_name + " = extractvalue " + enum_ty + " " + val.name + ", 1")
-            s = emit_line(s, "  " + dn + " = load " + dest_ty_opt + ", ptr " + ptr_name)
-        } else {
-            s = emit_line(s, "  " + dn + " = extractvalue " + enum_ty + " " + val.name + ", 1")
-        }
+        // Universal erasure: Option = {i1, ptr}. Extract ptr, then load.
+        let ptr_name: String = dn + ".ptr"
+        s = emit_line(s, "  " + ptr_name + " = extractvalue " + enum_ty + " " + val.name + ", 1")
+        // Use destination type for load — avoids struct/enum name mismatches
+        let inner_ty: String = resolve_type(st, dest.ty)
+        s = emit_line(s, "  " + dn + " = load " + inner_ty + ", ptr " + ptr_name)
         return s
     }
 
@@ -9298,43 +9346,21 @@ fn emit_wrap_some(st: EmitState, dest: Value, val: Value) -> EmitState {
     let val_ty: String = resolve_type(st, val.ty)
     let dn: String = dest.name
 
-    // Type erasure: compound types (struct/enum) use ptr in Options.
-    // Store to alloca and use the pointer as the option payload.
-    if val_ty.starts_with("%enum.") || val_ty.starts_with("%struct.") {
-        let ea: String = dn + ".ea"
-        s = emit_line(s, "  " + ea + " = alloca " + val_ty)
-        s = emit_line(s, "  store " + val_ty + " " + val.name + ", ptr " + ea)
-        // With opaque pointers, the alloca IS a ptr — no bitcast needed
-        let ep: String = ea
-        let opt_ty: String = llvm_option_type(llvm_ptr())
-        let tag_name: String = dn + ".tag"
-        s = emit_line(s, emit_insertvalue(tag_name, opt_ty, "undef", "1", "i1", "0"))
-        s = emit_line(s, emit_insertvalue(dn, opt_ty, tag_name, ep, llvm_ptr(), "1"))
-        return s
-    }
-
-    let opt_ty: String = llvm_option_type(val_ty)
+    // Universal type erasure: all Option payloads stored via alloca + ptr.
+    // Store value to alloca, then put the alloca ptr into {i1, ptr}.
+    let ea: String = dn + ".ea"
+    s = emit_line(s, "  " + ea + " = alloca " + val_ty)
+    s = emit_line(s, "  store " + val_ty + " " + val.name + ", ptr " + ea)
+    let opt_ty: String = llvm_option_type(llvm_ptr())
     let tag_name: String = dn + ".tag"
     s = emit_line(s, emit_insertvalue(tag_name, opt_ty, "undef", "1", "i1", "0"))
-    s = emit_line(s, emit_insertvalue(dn, opt_ty, tag_name, val.name, val_ty, "1"))
+    s = emit_line(s, emit_insertvalue(dn, opt_ty, tag_name, ea, llvm_ptr(), "1"))
     return s
 }
 
 fn emit_wrap_none(st: EmitState, dest: Value, ty: MIRType) -> EmitState {
-    let mut inner_ty: String = if len(ty.args) > 0 { resolve_mir_type(ty.args[0]) } else { llvm_ptr() }
-    // Type erasure: compound types (struct/enum) use ptr in Options
-    if inner_ty.starts_with("%struct.") || inner_ty.starts_with("%enum.") {
-        inner_ty = llvm_ptr()
-    }
-    // If inner type is generic (ptr) but the function's return type is a
-    // specific Option, use the return type to match. This handles Option<List>
-    // where the MIR type has no args.
-    let opt_ty: String = llvm_option_type(inner_ty)
-    if opt_ty != st.current_ret_type && st.current_ret_type.starts_with("{ i1,") {
-        let dn: String = dest.name
-        let s: EmitState = emit_line(st, emit_insertvalue(dn, st.current_ret_type, "undef", "0", "i1", "0"))
-        return s
-    }
+    // Universal erasure: all Option types are {i1, ptr}. None = {i1=0, null}.
+    let opt_ty: String = llvm_option_type(llvm_ptr())
     let dn: String = dest.name
     let s: EmitState = emit_line(st, emit_insertvalue(dn, opt_ty, "undef", "0", "i1", "0"))
     return s
@@ -9391,8 +9417,17 @@ fn emit_unwrap(st: EmitState, dest: Value, val: Value) -> EmitState {
     let mut s: EmitState = st
     let val_ty: String = resolve_mir_type(val.ty)
     let dn: String = dest.name
-    // Extract index 1 (the value after the tag)
-    s = emit_line(s, emit_extractvalue(dn, val_ty, val.name, "1"))
+    if val.ty.kind == "option" {
+        // Universal erasure: Option is {i1, ptr}. Extract ptr, then load.
+        let ptr_name: String = dn + ".ptr"
+        s = emit_line(s, emit_extractvalue(ptr_name, val_ty, val.name, "1"))
+        // Use destination type for the load — avoids struct/enum name mismatches
+        let inner_ty: String = resolve_type(st, dest.ty)
+        s = emit_line(s, "  " + dn + " = load " + inner_ty + ", ptr " + ptr_name)
+    } else {
+        // Non-option: direct extractvalue
+        s = emit_line(s, emit_extractvalue(dn, val_ty, val.name, "1"))
+    }
     return s
 }
 
@@ -10209,7 +10244,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 2.0.1"
+    return "mapanare 2.1.0"
 }
 
 // ---------------------------------------------------------------------------

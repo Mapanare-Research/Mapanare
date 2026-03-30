@@ -1221,37 +1221,43 @@ fn lower_index(st: LowerState, obj: Expr, idx: Expr) -> LowerResult {
 // Pipe lowering
 // ---------------------------------------------------------------------------
 
+fn lower_pipe_call(arg_r: LowerResult, fn_name: String, extra_exprs: List<Expr>) -> LowerResult {
+    let mut s: LowerState = arg_r.state
+    let mut args: List<Value> = []
+    args.push(arg_r.value)
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(extra_exprs) { break }
+        let extra_r: LowerResult = lower_expr(s, extra_exprs[i])
+        s = extra_r.state
+        args.push(extra_r.value)
+        i = i + 1
+    }
+    let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+    return new_lower_result(dest_r.value, new_s)
+}
+
+fn lower_pipe_with_call(arg_r: LowerResult, callee: Expr, extra_arg_exprs: List<Expr>) -> LowerResult {
+    match callee {
+        Ident(fn_name) => {
+            return lower_pipe_call(arg_r, fn_name, extra_arg_exprs)
+        },
+        _ => {
+            return new_lower_result(arg_r.value, arg_r.state)
+        }
+    }
+}
+
 fn lower_pipe(st: LowerState, left: Expr, right: Expr) -> LowerResult {
     let arg_r: LowerResult = lower_expr(st, left)
 
     match right {
         Ident(fn_name) => {
-            let dest_r: LowerResult = make_value(arg_r.state, mir_unknown(), "t")
-            let mut args: List<Value> = []
-            args.push(arg_r.value)
-            let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-            return new_lower_result(dest_r.value, s)
+            return lower_pipe_call(arg_r, fn_name, [])
         },
         Call(callee, extra_arg_exprs) => {
-            match callee {
-                Ident(fn_name) => {
-                    let mut s: LowerState = arg_r.state
-                    let mut args: List<Value> = []
-                    args.push(arg_r.value)
-                    let mut i: Int = 0
-                    for _ in 0..1000 {
-                        if i >= len(extra_arg_exprs) { break }
-                        let extra_r: LowerResult = lower_expr(s, extra_arg_exprs[i])
-                        s = extra_r.state
-                        args.push(extra_r.value)
-                        i = i + 1
-                    }
-                    let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
-                    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-                    return new_lower_result(dest_r.value, new_s)
-                },
-                _ => {}
-            }
+            return lower_pipe_with_call(arg_r, callee, extra_arg_exprs)
         },
         _ => {}
     }
@@ -1639,6 +1645,33 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
     return result
 }
 
+fn is_some_else_clause(clause: Option<ElseClause>) -> Bool {
+    match clause {
+        Some(c) => { return true },
+        _ => { return false }
+    }
+}
+
+fn lower_else_clause(st: LowerState, clause_opt: Option<ElseClause>) -> LowerResult {
+    match clause_opt {
+        Some(clause) => {
+            return lower_else_clause_inner(st, clause)
+        },
+        _ => { return new_lower_result(void_value(), st) }
+    }
+}
+
+fn lower_else_clause_inner(st: LowerState, clause: ElseClause) -> LowerResult {
+    match clause {
+        ElseBlock(block) => {
+            return lower_block(st, block)
+        },
+        ElseIf(next_cond, next_then, next_else) => {
+            return lower_if(st, next_cond, next_then, next_else)
+        }
+    }
+}
+
 fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<ElseClause>) -> LowerResult {
     let cond_r: LowerResult = lower_expr(st, cond)
     let mut s: LowerState = cond_r.state
@@ -1683,22 +1716,11 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     // Else block
     s = set_block(s, else_idx)
     let mut else_val: Value = void_value()
-    match else_clause {
-        Some(clause) => {
-            match clause {
-                ElseBlock(block) => {
-                    let else_r: LowerResult = lower_block(s, block)
-                    s = else_r.state
-                    else_val = else_r.value
-                },
-                ElseIf(next_cond, next_then, next_else) => {
-                    let else_r: LowerResult = lower_if(s, next_cond, next_then, next_else)
-                    s = else_r.state
-                    else_val = else_r.value
-                }
-            }
-        },
-        _ => {}
+    let has_else: Bool = is_some_else_clause(else_clause)
+    if has_else {
+        let else_r: LowerResult = lower_else_clause(s, else_clause)
+        s = else_r.state
+        else_val = else_r.value
     }
     let else_exit_idx: Int = s.current_block_idx
     let else_terminated: Bool = current_block_terminated(s)
@@ -1825,6 +1847,26 @@ struct MatchBuildResult {
     default_label: String
 }
 
+fn match_arm_pattern_dispatch(st: LowerState, pattern: Pattern, r: MatchBuildResult, label: String) -> Bool {
+    match pattern {
+        ConstructorPat(name, _) => { r.cases.push(new_switch_case(name, label)); return true },
+        LiteralPat(expr) => { r.cases.push(new_switch_case(get_literal_value(expr), label)); return true },
+        IdentPat(name) => {
+            if is_enum_variant(st, name) {
+                r.cases.push(new_switch_case(name, label))
+                return true
+            }
+            return false
+        },
+        Wildcard => { return false }
+    }
+}
+
+fn get_default_label(matched: Bool, current_default: String, arm_label: String) -> String {
+    if matched { return current_default }
+    return arm_label
+}
+
 fn build_match_arms_rec(st: LowerState, arms: List<MatchArm>, idx: Int, r: MatchBuildResult) -> MatchBuildResult {
     if idx >= len(arms) { return r }
     let mut s: LowerState = r.state
@@ -1835,28 +1877,28 @@ fn build_match_arms_rec(st: LowerState, arms: List<MatchArm>, idx: Int, r: Match
     r.arm_labels.push(label)
     r.arm_indices.push(s.current_block_idx)
     let arm: MatchArm = arms[idx]
-    let mut def: String = r.default_label
-    match arm.pattern {
-        ConstructorPat(name, _) => { r.cases.push(new_switch_case(name, label)) },
-        LiteralPat(expr) => { r.cases.push(new_switch_case(get_literal_value(expr), label)) },
-        IdentPat(name) => {
-            if is_enum_variant(s, name) {
-                r.cases.push(new_switch_case(name, label))
-            } else {
-                def = label
-            }
-        },
-        Wildcard => { def = label }
-    }
-    let next: MatchBuildResult = new MatchBuildResult { state: s, arm_labels: r.arm_labels, arm_indices: r.arm_indices, cases: r.cases, default_label: def }
-    return build_match_arms_rec(next.state, arms, idx + 1, next)
+    let matched: Bool = match_arm_pattern_dispatch(s, arm.pattern, r, label)
+    let def: String = get_default_label(matched, r.default_label, label)
+    r.state = s
+    r.default_label = def
+    return build_match_arms_rec(r.state, arms, idx + 1, r)
 }
 
-fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -> MatchBuildResult {
+fn new_match_build_result(st: LowerState, merge_label: String) -> MatchBuildResult {
     let labels: List<String> = []
     let indices: List<Int> = []
     let cases: List<SwitchCase> = []
-    let init: MatchBuildResult = new MatchBuildResult { state: st, arm_labels: labels, arm_indices: indices, cases: cases, default_label: merge_label }
+    // Use first-field constructor pattern to avoid 5-field struct init issues
+    let r: MatchBuildResult = st
+    r.arm_labels = labels
+    r.arm_indices = indices
+    r.cases = cases
+    r.default_label = merge_label
+    return r
+}
+
+fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -> MatchBuildResult {
+    let init: MatchBuildResult = new_match_build_result(st, merge_label)
     return build_match_arms_rec(st, arms, 0, init)
 }
 

@@ -1484,6 +1484,50 @@ fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> Se
 // Pipe definition checking
 // ---------------------------------------------------------------------------
 
+fn check_pipe_stage_type(st: SemState, stage: Expr, pipe_name: String) -> TypeInfo {
+    match stage {
+        Ident(name) => {
+            return resolve_pipe_ident_type(st, name)
+        },
+        _ => { return unknown_type() }
+    }
+}
+
+fn resolve_pipe_ident_type(st: SemState, name: String) -> TypeInfo {
+    let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+    match sym_opt {
+        Some(sym) => {
+            return resolve_sym_output_type(sym)
+        },
+        _ => { return unknown_type() }
+    }
+}
+
+fn resolve_sym_output_type(sym: Symbol) -> TypeInfo {
+    if sym.kind != "function" { return unknown_type() }
+    if !sym.type_info.is_function { return unknown_type() }
+    match sym.type_info.return_type {
+        Some(ret) => { return ret },
+        _ => { return unknown_type() }
+    }
+}
+
+fn check_pipe_stage_err(st: SemState, stage: Expr, pipe_name: String) -> SemState {
+    match stage {
+        Ident(name) => {
+            let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+            match sym_opt {
+                Some(sym) => { return st },
+                _ => { return add_error(st, "Undefined stage '" + name + "' in pipe '" + pipe_name + "'", 0, 0) }
+            }
+        },
+        _ => {
+            let sr: InferResult = infer_expr(st, stage)
+            return sr.st
+        }
+    }
+}
+
 fn check_pipe_stages(st: SemState, data: PipeDefData) -> SemState {
     if len(data.stages) < 2 { return st }
 
@@ -1494,36 +1538,9 @@ fn check_pipe_stages(st: SemState, data: PipeDefData) -> SemState {
     for _ in 0..1000 {
         if si >= len(data.stages) { return st2 }
         let stage: Expr = data.stages[si]
-        match stage {
-            Ident(name) => {
-                let sym_opt: Option<Symbol> = scope_lookup(st2.scope, name)
-                match sym_opt {
-                    Some(sym) => {
-                        if sym.kind == "function" {
-                            if sym.type_info.is_function {
-                                match sym.type_info.return_type {
-                                    Some(ret) => { prev_output = ret },
-                                    _ => { prev_output = unknown_type() }
-                                }
-                            } else {
-                                prev_output = unknown_type()
-                            }
-                        } else {
-                            prev_output = unknown_type()
-                        }
-                    },
-                    _ => {
-                        st2 = add_error(st2, "Undefined stage '" + name + "' in pipe '" + data.name + "'", 0, 0)
-                        prev_output = unknown_type()
-                    }
-                }
-            },
-            _ => {
-                let sr: InferResult = infer_expr(st2, stage)
-                st2 = sr.st
-                prev_output = unknown_type()
-            }
-        }
+        prev_output = check_pipe_stage_type(st2, stage, data.name)
+        let stage_err: SemState = check_pipe_stage_err(st2, stage, data.name)
+        st2 = stage_err
         si = si + 1
     }
     return st2

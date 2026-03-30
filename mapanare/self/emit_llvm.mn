@@ -1197,7 +1197,7 @@ fn resolve_variant_index(st: EmitState, enum_name: String, variant: String) -> I
 
 fn emit_enum_tag(st: EmitState, dest: Value, val: Value) -> EmitState {
     let mut s: EmitState = st
-    let enum_ty: String = resolve_mir_type(val.ty)
+    let enum_ty: String = resolve_type(st, val.ty)
     let dn: String = dest.name
     // For Result/Option the tag field is i1; for enums it's i64.
     // Extract field 0 and zext to i64 if needed.
@@ -1217,7 +1217,7 @@ fn emit_enum_tag(st: EmitState, dest: Value, val: Value) -> EmitState {
 
 fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) -> EmitState {
     let mut s: EmitState = st
-    let enum_ty: String = resolve_mir_type(val.ty)
+    let enum_ty: String = resolve_type(st, val.ty)
     let dn: String = dest.name
 
     // For Result/Option: use extractvalue on the inner struct
@@ -1241,17 +1241,12 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         return s
     }
     if val.ty.kind == "option" {
-        // Option = {i1, inner_ty}. Extract inner at index 1.
-        // With type erasure, Option<Struct/Enum> = {i1, ptr}. The extracted
-        // value is ptr. If the dest expects a concrete struct/enum, dereference.
-        let dest_ty_opt: String = resolve_type(st, dest.ty)
-        if dest_ty_opt.starts_with("%struct.") || dest_ty_opt.starts_with("%enum.") {
-            let ptr_name: String = dn + ".ptr"
-            s = emit_line(s, "  " + ptr_name + " = extractvalue " + enum_ty + " " + val.name + ", 1")
-            s = emit_line(s, "  " + dn + " = load " + dest_ty_opt + ", ptr " + ptr_name)
-        } else {
-            s = emit_line(s, "  " + dn + " = extractvalue " + enum_ty + " " + val.name + ", 1")
-        }
+        // Universal erasure: Option = {i1, ptr}. Extract ptr, then load.
+        let ptr_name: String = dn + ".ptr"
+        s = emit_line(s, "  " + ptr_name + " = extractvalue " + enum_ty + " " + val.name + ", 1")
+        // Use destination type for load — avoids struct/enum name mismatches
+        let inner_ty: String = resolve_type(st, dest.ty)
+        s = emit_line(s, "  " + dn + " = load " + inner_ty + ", ptr " + ptr_name)
         return s
     }
 
@@ -1306,43 +1301,21 @@ fn emit_wrap_some(st: EmitState, dest: Value, val: Value) -> EmitState {
     let val_ty: String = resolve_type(st, val.ty)
     let dn: String = dest.name
 
-    // Type erasure: compound types (struct/enum) use ptr in Options.
-    // Store to alloca and use the pointer as the option payload.
-    if val_ty.starts_with("%enum.") || val_ty.starts_with("%struct.") {
-        let ea: String = dn + ".ea"
-        s = emit_line(s, "  " + ea + " = alloca " + val_ty)
-        s = emit_line(s, "  store " + val_ty + " " + val.name + ", ptr " + ea)
-        // With opaque pointers, the alloca IS a ptr — no bitcast needed
-        let ep: String = ea
-        let opt_ty: String = llvm_option_type(llvm_ptr())
-        let tag_name: String = dn + ".tag"
-        s = emit_line(s, emit_insertvalue(tag_name, opt_ty, "undef", "1", "i1", "0"))
-        s = emit_line(s, emit_insertvalue(dn, opt_ty, tag_name, ep, llvm_ptr(), "1"))
-        return s
-    }
-
-    let opt_ty: String = llvm_option_type(val_ty)
+    // Universal type erasure: all Option payloads stored via alloca + ptr.
+    // Store value to alloca, then put the alloca ptr into {i1, ptr}.
+    let ea: String = dn + ".ea"
+    s = emit_line(s, "  " + ea + " = alloca " + val_ty)
+    s = emit_line(s, "  store " + val_ty + " " + val.name + ", ptr " + ea)
+    let opt_ty: String = llvm_option_type(llvm_ptr())
     let tag_name: String = dn + ".tag"
     s = emit_line(s, emit_insertvalue(tag_name, opt_ty, "undef", "1", "i1", "0"))
-    s = emit_line(s, emit_insertvalue(dn, opt_ty, tag_name, val.name, val_ty, "1"))
+    s = emit_line(s, emit_insertvalue(dn, opt_ty, tag_name, ea, llvm_ptr(), "1"))
     return s
 }
 
 fn emit_wrap_none(st: EmitState, dest: Value, ty: MIRType) -> EmitState {
-    let mut inner_ty: String = if len(ty.args) > 0 { resolve_mir_type(ty.args[0]) } else { llvm_ptr() }
-    // Type erasure: compound types (struct/enum) use ptr in Options
-    if inner_ty.starts_with("%struct.") || inner_ty.starts_with("%enum.") {
-        inner_ty = llvm_ptr()
-    }
-    // If inner type is generic (ptr) but the function's return type is a
-    // specific Option, use the return type to match. This handles Option<List>
-    // where the MIR type has no args.
-    let opt_ty: String = llvm_option_type(inner_ty)
-    if opt_ty != st.current_ret_type && st.current_ret_type.starts_with("{ i1,") {
-        let dn: String = dest.name
-        let s: EmitState = emit_line(st, emit_insertvalue(dn, st.current_ret_type, "undef", "0", "i1", "0"))
-        return s
-    }
+    // Universal erasure: all Option types are {i1, ptr}. None = {i1=0, null}.
+    let opt_ty: String = llvm_option_type(llvm_ptr())
     let dn: String = dest.name
     let s: EmitState = emit_line(st, emit_insertvalue(dn, opt_ty, "undef", "0", "i1", "0"))
     return s
@@ -1399,8 +1372,17 @@ fn emit_unwrap(st: EmitState, dest: Value, val: Value) -> EmitState {
     let mut s: EmitState = st
     let val_ty: String = resolve_mir_type(val.ty)
     let dn: String = dest.name
-    // Extract index 1 (the value after the tag)
-    s = emit_line(s, emit_extractvalue(dn, val_ty, val.name, "1"))
+    if val.ty.kind == "option" {
+        // Universal erasure: Option is {i1, ptr}. Extract ptr, then load.
+        let ptr_name: String = dn + ".ptr"
+        s = emit_line(s, emit_extractvalue(ptr_name, val_ty, val.name, "1"))
+        // Use destination type for the load — avoids struct/enum name mismatches
+        let inner_ty: String = resolve_type(st, dest.ty)
+        s = emit_line(s, "  " + dn + " = load " + inner_ty + ", ptr " + ptr_name)
+    } else {
+        // Non-option: direct extractvalue
+        s = emit_line(s, emit_extractvalue(dn, val_ty, val.name, "1"))
+    }
     return s
 }
 

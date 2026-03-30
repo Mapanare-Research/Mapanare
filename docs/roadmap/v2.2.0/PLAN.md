@@ -51,7 +51,7 @@ consumers to producers. See `docs/ARCHITECTURE_DECISIONS.md`.
 | Phase | Name | Status | Effort | Impact |
 |-------|------|--------|--------|--------|
 | 1 | Python text emitter opaque pointers | `Done` | Large | Eliminates ALL typed-pointer type mismatches |
-| 2 | Fix last stage2 error | `Not started` | Small | 0 stage2 errors → can build mnc-stage2 |
+| 2 | Fix stage2 errors | `In progress` | Medium | 5/6 fixed, 1 remaining (struct init) |
 | 3 | Build mnc-stage2 binary | `Not started` | Small | First native-compiled native compiler |
 | 4 | Fixed-point verification | `Not started` | Medium | stage2 == stage3 → Python independence |
 | 5 | Fix Python lowerer control flow bugs | `Not started` | Medium | Enables clean .mn code without workarounds |
@@ -98,22 +98,34 @@ errors that blocked stage2 validation.
 
 ---
 
-## Phase 2 — Fix Last Stage2 Error
-**Status:** `Not started`
-**Effort:** Small (should resolve automatically from Phase 1)
+## Phase 2 — Fix Stage2 Errors
+**Status:** `In progress`
+**Effort:** Medium
 **Depends on:** Phase 1
 
-With opaque pointers in the Python text emitter, the nested if-Phi type mismatch
-should disappear because `Option<TypeInfo>` becomes `{i1, ptr}` everywhere —
-no `{i1, %struct.TypeInfo}` vs `{i1, i8*}` conflicts.
+### Fixed errors
+1. **Nested if-Phi type mismatch** in `check_pipe_stages` — refactored to helper fns
+2. **Option<String/List> type inconsistency** — universal Option type erasure ({i1, ptr})
+3. **struct/enum name mismatch** — emit_enum_tag/emit_enum_payload now use resolve_type
+4. **Nested match in lower_if** — extracted else_clause handling to helper fns
+5. **lower_pipe nested match** — extracted to lower_pipe_call/lower_pipe_with_call
+
+### Remaining (1 error)
+`MatchBuildResult` 5-field struct init: the self-hosted emitter drops fields 3-4
+when generating insertvalue chains for large struct literals. Root cause is in the
+self-hosted emitter's struct init handling, not the .mn source.
 
 ### Tasks
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Run `ir_doctor stage2` after Phase 1 | `[ ]` | |
-| 2 | If errors remain, diagnose with `ir_doctor audit` | `[ ]` | |
-| 3 | Verify `llvm-as` accepts all stage2 IR | `[ ]` | 0 errors |
+| 1 | Run `ir_doctor stage2` after Phase 1 | `[x]` | TypeInfo phi mismatch |
+| 2 | Fix nested if-phi in check_pipe_stages | `[x]` | Refactored to helpers |
+| 3 | Fix Option type erasure inconsistency | `[x]` | Universal {i1, ptr} |
+| 4 | Fix struct/enum name mismatch | `[x]` | resolve_type in tag/payload |
+| 5 | Fix nested match in lower_if | `[x]` | Extracted else helpers |
+| 6 | Fix MatchBuildResult struct init | `[ ]` | 5-field struct init bug |
+| 7 | Verify `llvm-as` accepts all stage2 IR | `[ ]` | 1 error remaining |
 
 **Done when:** `llvm-as /tmp/stage2.ll` exits 0.
 
