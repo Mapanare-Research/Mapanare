@@ -2259,7 +2259,7 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     for _ in 0..100000 {
         if fi >= total_fns { break }
         let f: MIRFunction = module.functions[fi]
-        // Skip stub functions (registered in pass 1 for return type lookup only)
+        
         if len(f.blocks) > 0 {
             st = emit_mir_function(st, f)
         }
