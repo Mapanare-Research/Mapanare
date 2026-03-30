@@ -5757,29 +5757,50 @@ fn lower_return(st: LowerState, value_opt: Option<Expr>) -> LowerState {
 // ---------------------------------------------------------------------------
 
 fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> LowerState {
-    // Lower the iterable
+    // Lower the iterable (Range expression: start..end)
     let iter_r: LowerResult = lower_expr(st, iterable)
     let mut s: LowerState = iter_r.state
+
+    // Counter-based loop: use __mn_range_start/end to extract bounds.
+    // SSA-based iterator can't mutate, so we use alloca counter.
+    let counter_addr: Value = new_value("%for_counter" + toString(s.tmp_counter) + ".addr", mir_int())
+    s.tmp_counter = s.tmp_counter + 1
+    s = emit_instr(s, Instruction::Alloca(counter_addr, mir_int()))
+
+    // Extract start/end from range via runtime calls
+    let start_r: LowerResult = make_value(s, mir_int(), "for_start")
+    s = start_r.state
+    let mut start_args: List<Value> = []
+    start_args.push(iter_r.value)
+    s = emit_instr(s, Instruction::Call(start_r.value, "__mn_range_start", start_args))
+    let end_r: LowerResult = make_value(s, mir_int(), "for_end")
+    s = end_r.state
+    let mut end_args: List<Value> = []
+    end_args.push(iter_r.value)
+    s = emit_instr(s, Instruction::Call(end_r.value, "__mn_range_end", end_args))
+
+    // Store start value to counter
+    s = emit_instr(s, Instruction::Store(counter_addr, start_r.value))
 
     // Save current (entry) block index
     let entry_idx: Int = s.current_block_idx
 
     // Create blocks
-    let header_r: LowerResult = fresh_block_label(s, "for_header")
-    s = header_r.state
-    let header_label: String = header_r.value.name
+    let header_r2: LowerResult = fresh_block_label(s, "for_header")
+    s = header_r2.state
+    let header_label: String = header_r2.value.name
     s = add_block(s, header_label)
     let header_idx: Int = s.current_block_idx
 
-    let body_r: LowerResult = fresh_block_label(s, "for_body")
-    s = body_r.state
-    let body_label: String = body_r.value.name
+    let body_r2: LowerResult = fresh_block_label(s, "for_body")
+    s = body_r2.state
+    let body_label: String = body_r2.value.name
     s = add_block(s, body_label)
     let body_idx: Int = s.current_block_idx
 
-    let exit_r: LowerResult = fresh_block_label(s, "for_exit")
-    s = exit_r.state
-    let exit_label: String = exit_r.value.name
+    let exit_r2: LowerResult = fresh_block_label(s, "for_exit")
+    s = exit_r2.state
+    let exit_label: String = exit_r2.value.name
     s = add_block(s, exit_label)
     let exit_idx: Int = s.current_block_idx
 
@@ -5789,27 +5810,26 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
         s = emit_instr(s, Instruction::Jump(header_label))
     }
 
-    // Header block — pre-define loop variable with alloca (body will update)
+    // Header block: load counter, compare < end, branch
     s = set_block(s, header_idx)
+    let counter_val: LowerResult = make_value(s, mir_int(), "for_i")
+    s = counter_val.state
+    s = emit_instr(s, Instruction::Load(counter_val.value, counter_addr))
+    let cmp_r: LowerResult = make_value(s, mir_bool(), "for_cmp")
+    s = cmp_r.state
+    s = emit_instr(s, Instruction::BinOp(cmp_r.value, BinOpKind::Lt, counter_val.value, end_r.value))
+    s = emit_instr(s, Instruction::Branch(cmp_r.value, body_label, exit_label))
 
-    let has_next_r: LowerResult = make_value(s, mir_bool(), "has_next")
-    s = has_next_r.state
-    let mut iter_args: List<Value> = []
-    iter_args.push(iter_r.value)
-    s = emit_instr(s, Instruction::Call(has_next_r.value, "__iter_has_next", iter_args))
-    s = emit_instr(s, Instruction::Branch(has_next_r.value, body_label, exit_label))
-
-    // Body block — alloca the loop variable and store __iter_next result into it
+    // Body block: define loop variable, execute body, increment counter
     s = set_block(s, body_idx)
-    let next_r: LowerResult = make_value(s, mir_int(), "next")
-    s = next_r.state
-    let mut next_args: List<Value> = []
-    next_args.push(iter_r.value)
-    s = emit_instr(s, Instruction::Call(next_r.value, "__iter_next", next_args))
     let loop_addr_r: LowerResult = make_value(s, mir_int(), var_name + "_addr")
     s = loop_addr_r.state
     s = emit_instr(s, Instruction::Alloca(loop_addr_r.value, mir_int()))
-    s = emit_instr(s, Instruction::Store(loop_addr_r.value, next_r.value))
+    // Load current counter value for the loop variable
+    let cur_i: LowerResult = make_value(s, mir_int(), "cur_i")
+    s = cur_i.state
+    s = emit_instr(s, Instruction::Load(cur_i.value, counter_addr))
+    s = emit_instr(s, Instruction::Store(loop_addr_r.value, cur_i.value))
     s = define_var(s, var_name, loop_addr_r.value, false)
 
     s = lower_push_scope(s)
@@ -5817,7 +5837,18 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s = body_result.state
     s = lower_pop_scope(s)
 
+    // Increment counter and jump back to header
     if !current_block_terminated(s) {
+        let inc_val: LowerResult = make_value(s, mir_int(), "for_inc")
+        s = inc_val.state
+        let inc_i: LowerResult = make_value(s, mir_int(), "for_ci")
+        s = inc_i.state
+        s = emit_instr(s, Instruction::Load(inc_i.value, counter_addr))
+        let one_r: LowerResult = make_value(s, mir_int(), "one")
+        s = one_r.state
+        s = emit_instr(s, Instruction::Const(one_r.value, mir_int(), "1"))
+        s = emit_instr(s, Instruction::BinOp(inc_val.value, BinOpKind::Add, inc_i.value, one_r.value))
+        s = emit_instr(s, Instruction::Store(counter_addr, inc_val.value))
         s = emit_instr(s, Instruction::Jump(header_label))
     }
 
@@ -8205,7 +8236,7 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_starts_with", llvm_bool(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_ends_with", llvm_bool(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_find", llvm_int(), llvm_string() + ", " + llvm_string())
-    s = declare_runtime_fn(s, "__mn_str_join", llvm_string(), llvm_string() + ", " + llvm_list_rt())
+    s = declare_runtime_fn(s, "__mn_str_join", llvm_string(), llvm_string() + ", ptr")
 
     // List runtime
     s = declare_runtime_fn(s, "__mn_list_new", llvm_list_rt(), "i64")
@@ -9440,6 +9471,18 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_builtin_float(st, dest, args)
     }
 
+    // Range field extraction (counter-based for-loops)
+    if fn_name == "__mn_range_start" {
+        let mut s: EmitState = st
+        s = emit_line(s, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 0")
+        return s
+    }
+    if fn_name == "__mn_range_end" {
+        let mut s: EmitState = st
+        s = emit_line(s, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 1")
+        return s
+    }
+
     // String builtins
     if fn_name == "split" {
         let mut s: EmitState = st
@@ -9465,10 +9508,14 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_byte_at", arg_str))
         return s
     }
-    // join(sep, list) → String via C runtime
+    // join(sep, list) → String via C runtime. List passed by pointer.
     if fn_name == "join" {
         let mut s: EmitState = st
-        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_list_rt() + " " + args[1].name
+        // Alloca the list and pass pointer (C runtime expects MnList*)
+        let la: String = "%" + strip_percent(dn) + ".la"
+        s = emit_line(s, "  " + la + " = alloca " + llvm_list_rt())
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + la)
+        let arg_str: String = llvm_string() + " " + args[0].name + ", ptr " + la
         s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_join", arg_str))
         return s
     }

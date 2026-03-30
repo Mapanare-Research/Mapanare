@@ -183,7 +183,7 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_starts_with", llvm_bool(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_ends_with", llvm_bool(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_find", llvm_int(), llvm_string() + ", " + llvm_string())
-    s = declare_runtime_fn(s, "__mn_str_join", llvm_string(), llvm_string() + ", " + llvm_list_rt())
+    s = declare_runtime_fn(s, "__mn_str_join", llvm_string(), llvm_string() + ", ptr")
 
     // List runtime
     s = declare_runtime_fn(s, "__mn_list_new", llvm_list_rt(), "i64")
@@ -1418,6 +1418,18 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_builtin_float(st, dest, args)
     }
 
+    // Range field extraction (counter-based for-loops)
+    if fn_name == "__mn_range_start" {
+        let mut s: EmitState = st
+        s = emit_line(s, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 0")
+        return s
+    }
+    if fn_name == "__mn_range_end" {
+        let mut s: EmitState = st
+        s = emit_line(s, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 1")
+        return s
+    }
+
     // String builtins
     if fn_name == "split" {
         let mut s: EmitState = st
@@ -1443,10 +1455,14 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_byte_at", arg_str))
         return s
     }
-    // join(sep, list) → String via C runtime
+    // join(sep, list) → String via C runtime. List passed by pointer.
     if fn_name == "join" {
         let mut s: EmitState = st
-        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_list_rt() + " " + args[1].name
+        // Alloca the list and pass pointer (C runtime expects MnList*)
+        let la: String = "%" + strip_percent(dn) + ".la"
+        s = emit_line(s, "  " + la + " = alloca " + llvm_list_rt())
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + la)
+        let arg_str: String = llvm_string() + " " + args[0].name + ", ptr " + la
         s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_join", arg_str))
         return s
     }
