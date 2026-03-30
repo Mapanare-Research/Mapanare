@@ -1381,24 +1381,31 @@ fn find_expr_alloca(st: LowerState, expr: Expr, obj_r: LowerResult) -> Value {
     }
 }
 
+// Module mutation: extract list to local variable, push, reconstruct.
+// This avoids struct field push (GEP index issues) by using the
+// 9-field struct init which the parser now supports.
 fn module_push_struct(m: MIRModule, info: StructInfo) -> MIRModule {
-    m.structs.push(info)
-    return m
+    let mut lst: List<StructInfo> = m.structs
+    lst.push(info)
+    return new MIRModule { name: m.name, functions: m.functions, structs: lst, enums: m.enums, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names }
 }
 
 fn module_push_enum(m: MIRModule, info: EnumInfo) -> MIRModule {
-    m.enums.push(info)
-    return m
+    let mut lst: List<EnumInfo> = m.enums
+    lst.push(info)
+    return new MIRModule { name: m.name, functions: m.functions, structs: m.structs, enums: lst, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names }
 }
 
 fn module_push_function(m: MIRModule, f: MIRFunction) -> MIRModule {
-    m.functions.push(f)
-    return m
+    let mut lst: List<MIRFunction> = m.functions
+    lst.push(f)
+    return new MIRModule { name: m.name, functions: lst, structs: m.structs, enums: m.enums, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names }
 }
 
 fn module_push_agent(m: MIRModule, info: AgentInfo) -> MIRModule {
-    m.agents.push(info)
-    return m
+    let mut lst: List<AgentInfo> = m.agents
+    lst.push(info)
+    return new MIRModule { name: m.name, functions: m.functions, structs: m.structs, enums: m.enums, extern_fns: m.extern_fns, agents: lst, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names }
 }
 
 fn lower_arm_body(st: LowerState, body: MatchArmBody) -> LowerResult {
