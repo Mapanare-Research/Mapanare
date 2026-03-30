@@ -6364,10 +6364,14 @@ fn str_method_return_type(method: String) -> MIRType {
 }
 
 fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<Expr>) -> LowerResult {
-    // Lower as Call(method, [obj, args...]) directly.
-    // Stream/signal dispatch handled by the emitter.
     let obj_r: LowerResult = lower_expr(st, obj)
     let mut s: LowerState = obj_r.state
+
+    // Special handling for push: pass the list ALLOCA address (not the loaded value)
+    // so the emitter can push directly to the alloca, avoiding copy semantics.
+    if method == "push" {
+        return lower_push_method(s, obj, obj_r, arg_exprs)
+    }
 
     // Build arg list: [obj_value, arg_values...]
     let mut all_args: List<Value> = []
@@ -6382,7 +6386,6 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
         i = i + 1
     }
 
-    // Resolve return type for known string methods
     let mut ret_ty: MIRType = mir_unknown()
     if obj_r.value.ty.kind == "string" {
         ret_ty = str_method_return_type(method)
@@ -6391,6 +6394,53 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     let dest_r: LowerResult = make_value(s, ret_ty, "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
     return new_lower_result(dest_r.value, new_s)
+}
+
+fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: List<Expr>) -> LowerResult {
+    let mut s: LowerState = st
+    // Find the alloca address for the list variable
+    let list_alloca: Value = find_list_alloca(s, obj, obj_r)
+    // Lower the element
+    let arg_r: LowerResult = lower_expr(s, arg_exprs[0])
+    s = arg_r.state
+    // Emit push with alloca address
+    let mut all_args: List<Value> = []
+    all_args.push(list_alloca)
+    all_args.push(arg_r.value)
+    let dest_r: LowerResult = make_value(s, mir_void(), "t")
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "push", all_args))
+    return new_lower_result(dest_r.value, new_s)
+}
+
+fn find_list_alloca(st: LowerState, obj: Expr, obj_r: LowerResult) -> Value {
+    // For simple identifiers (x.push()), look up the variable's alloca address
+    match obj {
+        Ident(name) => {
+            return find_var_alloca(st, name, obj_r)
+        },
+        FieldAccess(inner, field_name) => {
+            // For struct.field.push(), we need the struct alloca then GEP
+            // For now, fall back to loading the list into a temp alloca
+            return alloca_for_value(st, obj_r)
+        },
+        _ => {
+            return alloca_for_value(st, obj_r)
+        }
+    }
+}
+
+fn find_var_alloca(st: LowerState, name: String, obj_r: LowerResult) -> Value {
+    let var_opt: Option<Value> = lookup_var(st, name)
+    match var_opt {
+        Some(addr) => { return addr },
+        _ => { return alloca_for_value(st, obj_r) }
+    }
+}
+
+fn alloca_for_value(st: LowerState, obj_r: LowerResult) -> Value {
+    // Return the loaded list value — the emitter's push handler will
+    // create a temp alloca and store this value into it.
+    return obj_r.value
 }
 
 // ---------------------------------------------------------------------------
@@ -8129,12 +8179,11 @@ fn new_emit_state(module_name: String) -> EmitState {
 }
 
 fn emit_global(st: EmitState, line: String) -> EmitState {
-    st.str_globals.push(line)
-    return st
+    let new_globals: List<String> = list_append(st.str_globals, line)
+    return new EmitState { lines: st.lines, counter: st.counter, functions: st.functions, structs: st.structs, module_name: st.module_name, str_counter: st.str_counter, str_globals: new_globals, current_ret_type: st.current_ret_type, enum_names: st.enum_names, enum_infos: st.enum_infos }
 }
 
 fn emit_fresh_tmp(st: EmitState, prefix: String) -> String {
-    // Generate a fresh temporary name
     return prefix + "." + toString(st.counter)
 }
 
@@ -8143,8 +8192,15 @@ fn emit_fresh_tmp(st: EmitState, prefix: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_line(st: EmitState, line: String) -> EmitState {
-    st.lines.push(line)
-    return st
+    let new_lines: List<String> = list_append(st.lines, line)
+    return new EmitState { lines: new_lines, counter: st.counter, functions: st.functions, structs: st.structs, module_name: st.module_name, str_counter: st.str_counter, str_globals: st.str_globals, current_ret_type: st.current_ret_type, enum_names: st.enum_names, enum_infos: st.enum_infos }
+}
+
+fn list_append(lst: List<String>, item: String) -> List<String> {
+    // Push to the parameter alloca directly (find_list_alloca resolves it).
+    // The return loads from the same alloca, getting the updated list.
+    lst.push(item)
+    return lst
 }
 
 fn emit_blank(st: EmitState) -> EmitState {
@@ -8975,6 +9031,10 @@ fn emit_field_set(st: EmitState, obj: Value, field_name: String, val: Value) -> 
             s.counter = s.counter + 1
             let struct_ty: String = resolve_type(s, obj.ty)
             s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, obj.name, val.name, val_ty, toString(idx)))
+            // Note: insertvalue creates a new struct value but doesn't store
+            // back to the alloca. The caller must use the returned value.
+            // This is the SSA pattern — FieldSet creates a new value, it doesn't
+            // mutate. The lowerer handles this via Copy/Store.
             return s
         },
         _ => {
@@ -9059,20 +9119,25 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
 fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
     let mut s: EmitState = st
     if len(args) >= 2 {
-        let list_name: String = args[0].name
+        let list_ref: String = args[0].name
         let elem_name: String = args[1].name
         let mut elem_ty: String = resolve_type(st, args[1].ty)
         if elem_ty == "i64" { elem_ty = resolve_mir_type(args[1].ty) }
-        // Use unique counter for alloca names
         let cnt: String = toString(s.counter)
         s.counter = s.counter + 1
-        let la: String = "%push_la" + cnt
-        s = emit_line(s, "  " + la + " = alloca " + llvm_list_rt())
-        s = emit_line(s, "  store " + llvm_list_rt() + " " + list_name + ", ptr " + la)
+        // If the list ref is a real alloca (ends with .addr), use it directly.
+        // Otherwise, create a temp alloca for the loaded list value.
+        let mut list_ptr: String = list_ref
+        if !list_ref.contains(".addr") {
+            let la: String = "%push_la" + cnt
+            s = emit_line(s, "  " + la + " = alloca " + llvm_list_rt())
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + list_ref + ", ptr " + la)
+            list_ptr = la
+        }
         let ea: String = "%push_ea" + cnt
         s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
         s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ea)
-        s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + la + ", ptr " + ea))
+        s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + list_ptr + ", ptr " + ea))
     }
     return s
 }

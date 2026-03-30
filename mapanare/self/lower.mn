@@ -1120,10 +1120,14 @@ fn str_method_return_type(method: String) -> MIRType {
 }
 
 fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<Expr>) -> LowerResult {
-    // Lower as Call(method, [obj, args...]) directly.
-    // Stream/signal dispatch handled by the emitter.
     let obj_r: LowerResult = lower_expr(st, obj)
     let mut s: LowerState = obj_r.state
+
+    // Special handling for push: pass the list ALLOCA address (not the loaded value)
+    // so the emitter can push directly to the alloca, avoiding copy semantics.
+    if method == "push" {
+        return lower_push_method(s, obj, obj_r, arg_exprs)
+    }
 
     // Build arg list: [obj_value, arg_values...]
     let mut all_args: List<Value> = []
@@ -1138,7 +1142,6 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
         i = i + 1
     }
 
-    // Resolve return type for known string methods
     let mut ret_ty: MIRType = mir_unknown()
     if obj_r.value.ty.kind == "string" {
         ret_ty = str_method_return_type(method)
@@ -1147,6 +1150,53 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     let dest_r: LowerResult = make_value(s, ret_ty, "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
     return new_lower_result(dest_r.value, new_s)
+}
+
+fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: List<Expr>) -> LowerResult {
+    let mut s: LowerState = st
+    // Find the alloca address for the list variable
+    let list_alloca: Value = find_list_alloca(s, obj, obj_r)
+    // Lower the element
+    let arg_r: LowerResult = lower_expr(s, arg_exprs[0])
+    s = arg_r.state
+    // Emit push with alloca address
+    let mut all_args: List<Value> = []
+    all_args.push(list_alloca)
+    all_args.push(arg_r.value)
+    let dest_r: LowerResult = make_value(s, mir_void(), "t")
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "push", all_args))
+    return new_lower_result(dest_r.value, new_s)
+}
+
+fn find_list_alloca(st: LowerState, obj: Expr, obj_r: LowerResult) -> Value {
+    // For simple identifiers (x.push()), look up the variable's alloca address
+    match obj {
+        Ident(name) => {
+            return find_var_alloca(st, name, obj_r)
+        },
+        FieldAccess(inner, field_name) => {
+            // For struct.field.push(), we need the struct alloca then GEP
+            // For now, fall back to loading the list into a temp alloca
+            return alloca_for_value(st, obj_r)
+        },
+        _ => {
+            return alloca_for_value(st, obj_r)
+        }
+    }
+}
+
+fn find_var_alloca(st: LowerState, name: String, obj_r: LowerResult) -> Value {
+    let var_opt: Option<Value> = lookup_var(st, name)
+    match var_opt {
+        Some(addr) => { return addr },
+        _ => { return alloca_for_value(st, obj_r) }
+    }
+}
+
+fn alloca_for_value(st: LowerState, obj_r: LowerResult) -> Value {
+    // Return the loaded list value — the emitter's push handler will
+    // create a temp alloca and store this value into it.
+    return obj_r.value
 }
 
 // ---------------------------------------------------------------------------
