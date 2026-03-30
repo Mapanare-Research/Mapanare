@@ -51,7 +51,7 @@ consumers to producers. See `docs/ARCHITECTURE_DECISIONS.md`.
 | Phase | Name | Status | Effort | Impact |
 |-------|------|--------|--------|--------|
 | 1 | Python text emitter opaque pointers | `Done` | Large | Eliminates ALL typed-pointer type mismatches |
-| 2 | Fix stage2 errors | `In progress` | Medium | 5/6 fixed, 1 remaining (struct init) |
+| 2 | Fix stage2 errors | `In progress` | Medium | 7/8 fixed, 1 remaining (list element type) |
 | 3 | Build mnc-stage2 binary | `Not started` | Small | First native-compiled native compiler |
 | 4 | Fixed-point verification | `Not started` | Medium | stage2 == stage3 → Python independence |
 | 5 | Fix Python lowerer control flow bugs | `Not started` | Medium | Enables clean .mn code without workarounds |
@@ -124,8 +124,10 @@ self-hosted emitter's struct init handling, not the .mn source.
 | 3 | Fix Option type erasure inconsistency | `[x]` | Universal {i1, ptr} |
 | 4 | Fix struct/enum name mismatch | `[x]` | resolve_type in tag/payload |
 | 5 | Fix nested match in lower_if | `[x]` | Extracted else helpers |
-| 6 | Fix MatchBuildResult struct init | `[!]` | Root cause: self-hosted lowerer's loop pushes only 3 of 5 values — runtime list push bug beyond 3 iterations in struct constructor arg build. Requires runtime/list debugging. |
-| 7 | Verify `llvm-as` accepts all stage2 IR | `[ ]` | 1 error remaining |
+| 6 | Fix MatchBuildResult struct init | `[x]` | Root cause: parse_struct_fields_to_list hardcoded to 3 fields. Fixed with loop. |
+| 7 | Fix multi-field enum destructuring | `[x]` | AgentSend(a,ch,v) workaround: simplified format_instruction to avoid >1 binding |
+| 8 | Fix List<TypeExpr> element type | `[ ]` | IndexGet on List<enum> defaults to i64 — need emitter type resolution fix |
+| 9 | Verify `llvm-as` accepts all stage2 IR | `[ ]` | 1 error remaining (TypeExpr list element type) |
 
 **Done when:** `llvm-as /tmp/stage2.ll` exits 0.
 

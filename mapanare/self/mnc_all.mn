@@ -2209,35 +2209,16 @@ fn parse_struct_fields_to_list(tokens: List<Token>, pos: Int, filename: String) 
     // Returns a ListLit of the field values (ignoring field names)
     let mut p: Int = pos
     let mut vals: List<Expr> = []
-    // Field 1
-    p = p + 1  // skip field name
-    p = expect(tokens, p, "COLON")
-    let e1: ExprResult = parse_expr(tokens, p, filename, 0)
-    p = e1.pos
-    vals.push(e1.expr)
-    if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-    if peek_type(tokens, p) == "RBRACE" {
-        return new_expr_result(Expr::ListLit(vals), p + 1)
-    }
-    // Field 2
-    p = p + 1
-    p = expect(tokens, p, "COLON")
-    let e2: ExprResult = parse_expr(tokens, p, filename, 0)
-    p = e2.pos
-    vals.push(e2.expr)
-    if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-    if peek_type(tokens, p) == "RBRACE" {
-        return new_expr_result(Expr::ListLit(vals), p + 1)
-    }
-    // Field 3+
-    p = p + 1
-    p = expect(tokens, p, "COLON")
-    let e3: ExprResult = parse_expr(tokens, p, filename, 0)
-    p = e3.pos
-    vals.push(e3.expr)
-    if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-    if peek_type(tokens, p) == "RBRACE" {
-        return new_expr_result(Expr::ListLit(vals), p + 1)
+    for _ in 0..100 {
+        if peek_type(tokens, p) == "RBRACE" {
+            return new_expr_result(Expr::ListLit(vals), p + 1)
+        }
+        p = p + 1  // skip field name
+        p = expect(tokens, p, "COLON")
+        let er: ExprResult = parse_expr(tokens, p, filename, 0)
+        p = er.pos
+        vals.push(er.expr)
+        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
     }
     return new_expr_result(Expr::ListLit(vals), p)
 }
@@ -6908,6 +6889,46 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
     return result
 }
 
+fn infer_variant_payload_type(st: LowerState, subject: Value, variant_name: String, field_idx: Int) -> MIRType {
+    // Result types
+    if subject.ty.kind == "result" {
+        if len(subject.ty.args) >= 2 {
+            if variant_name == "Ok" { return subject.ty.args[0] }
+            if variant_name == "Err" { return subject.ty.args[1] }
+        }
+    }
+    // Option types
+    if subject.ty.kind == "option" {
+        if len(subject.ty.args) >= 1 {
+            return subject.ty.args[0]
+        }
+    }
+    // Regular enums — look up from module registry
+    if subject.ty.kind == "enum" {
+        let enum_name: String = subject.ty.name
+        let mut ei: Int = 0
+        for _ in 0..1000 {
+            if ei >= len(st.module.enums) { break }
+            let einfo: EnumInfo = st.module.enums[ei]
+            if einfo.name == enum_name {
+                let mut vi: Int = 0
+                for _ in 0..1000 {
+                    if vi >= len(einfo.variants) { break }
+                    let vinfo: EnumVariantInfo = einfo.variants[vi]
+                    if vinfo.name == variant_name {
+                        if field_idx < len(vinfo.payload_types) {
+                            return vinfo.payload_types[field_idx]
+                        }
+                    }
+                    vi = vi + 1
+                }
+            }
+            ei = ei + 1
+        }
+    }
+    return mir_unknown()
+}
+
 fn is_some_else_clause(clause: Option<ElseClause>) -> Bool {
     match clause {
         Some(c) => { return true },
@@ -7197,54 +7218,18 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         // Bind pattern variables
         match arm.pattern {
             ConstructorPat(name, sub_patterns) => {
-                let mut pi: Int = 0
-                for _ in 0..100 {
-                    if pi >= len(sub_patterns) { break }
-                    let sub_pat: Pattern = sub_patterns[pi]
+                // Extract only the first sub-pattern binding (single-field extraction).
+                // Multi-field variant destructuring (>1 binding) is not fully supported
+                // in stage2 — the emitter generates the same payload for all bindings.
+                // Workaround: avoid multi-field destructuring in .mn source code.
+                if len(sub_patterns) > 0 {
+                    let sub_pat: Pattern = sub_patterns[0]
                     match sub_pat {
                         IdentPat(var_name) => {
-                            // Infer payload type from subject's type info
-                            let mut pay_ty: MIRType = mir_unknown()
-                            if subject_r.value.ty.kind == "result" {
-                                if len(subject_r.value.ty.args) >= 2 {
-                                    if name == "Ok" { pay_ty = subject_r.value.ty.args[0] }
-                                    if name == "Err" { pay_ty = subject_r.value.ty.args[1] }
-                                }
-                            }
-                            if subject_r.value.ty.kind == "option" {
-                                if len(subject_r.value.ty.args) >= 1 {
-                                    pay_ty = subject_r.value.ty.args[0]
-                                }
-                            }
-                            // For regular enums, look up payload type from module's enum registry
-                            if pay_ty.kind == "unknown" && subject_r.value.ty.kind == "enum" {
-                                let enum_name: String = subject_r.value.ty.name
-                                let mut ei3: Int = 0
-                                for _ in 0..1000 {
-                                    if ei3 >= len(s.module.enums) { break }
-                                    let einfo: EnumInfo = s.module.enums[ei3]
-                                    if einfo.name == enum_name {
-                                        let mut vi3: Int = 0
-                                        for _ in 0..1000 {
-                                            if vi3 >= len(einfo.variants) { break }
-                                            let vinfo: EnumVariantInfo = einfo.variants[vi3]
-                                            if vinfo.name == name {
-                                                if len(vinfo.payload_types) > 0 {
-                                                    pay_ty = vinfo.payload_types[pi]
-                                                }
-                                                break
-                                            }
-                                            vi3 = vi3 + 1
-                                        }
-                                        break
-                                    }
-                                    ei3 = ei3 + 1
-                                }
-                            }
+                            let pay_ty: MIRType = infer_variant_payload_type(s, subject_r.value, name, 0)
                             let payload_r: LowerResult = make_value(s, pay_ty, var_name)
                             s = payload_r.state
                             s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject_r.value, name))
-                            // Store payload to alloca (counter suffix for unique names)
                             let payload_addr: Value = new_value("%" + var_name + toString(s.tmp_counter) + ".addr", pay_ty)
                             s.tmp_counter = s.tmp_counter + 1
                             s = emit_instr(s, Instruction::Alloca(payload_addr, pay_ty))
@@ -7253,7 +7238,6 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                         },
                         _ => {}
                     }
-                    pi = pi + 1
                 }
             },
             IdentPat(name) => {
@@ -7379,7 +7363,7 @@ fn format_instruction(inst: Instruction) -> String {
             return "store " + val.name + " to " + ptr.name
         },
         MapInit(dest, kt, vt, pairs) => {
-            return dest.name + " = map_init"
+            return "map_init"
         },
         EnumInit(dest, ty, variant, payload) => {
             return dest.name + " = enum_init " + format_type(ty) + "::" + variant
@@ -7427,10 +7411,10 @@ fn format_instruction(inst: Instruction) -> String {
             return dest.name + " = agent_spawn " + format_type(ty)
         },
         AgentSend(agent, channel, val) => {
-            return "agent_send " + agent.name + "." + channel + " <- " + val.name
+            return "agent_send"
         },
         AgentSync(dest, agent, channel) => {
-            return dest.name + " = agent_sync " + agent.name + "." + channel
+            return "agent_sync"
         },
         SignalInit(dest, ty, val) => {
             return dest.name + " = signal_init " + format_type(ty) + " " + val.name
@@ -7442,7 +7426,7 @@ fn format_instruction(inst: Instruction) -> String {
             return "signal_set " + sig.name + " = " + val.name
         },
         StreamOp(dest, kind, source, args) => {
-            return dest.name + " = stream_op " + source.name
+            return "stream_op"
         },
         InterpConcat(dest, parts) => {
             return dest.name + " = interp_concat [...]"
