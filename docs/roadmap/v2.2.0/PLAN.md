@@ -50,7 +50,7 @@ consumers to producers. See `docs/ARCHITECTURE_DECISIONS.md`.
 
 | Phase | Name | Status | Effort | Impact |
 |-------|------|--------|--------|--------|
-| 1 | Python text emitter opaque pointers | `Not started` | Large | Eliminates ALL typed-pointer type mismatches |
+| 1 | Python text emitter opaque pointers | `Done` | Large | Eliminates ALL typed-pointer type mismatches |
 | 2 | Fix last stage2 error | `Not started` | Small | 0 stage2 errors → can build mnc-stage2 |
 | 3 | Build mnc-stage2 binary | `Not started` | Small | First native-compiled native compiler |
 | 4 | Fixed-point verification | `Not started` | Medium | stage2 == stage3 → Python independence |
@@ -60,7 +60,7 @@ consumers to producers. See `docs/ARCHITECTURE_DECISIONS.md`.
 ---
 
 ## Phase 1 — Python Text Emitter Opaque Pointers
-**Status:** `Not started`
+**Status:** `Done`
 **Effort:** Large
 **Files:** `mapanare/emit_llvm_text.py`
 
@@ -85,14 +85,14 @@ errors that blocked stage2 validation.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Change `PTR = "ptr"`, `STR = "{ptr, i64}"`, `LIST = "{ptr, i64, i64, i64}"` | `[ ]` | Single-point constants |
-| 2 | Add `_is_ptr(ty)` predicate, replace `endswith("*")` | `[ ]` | 13 locations |
-| 3 | Replace `f"{TYPE}*"` with `"ptr"` in store/load/GEP | `[ ]` | 83 locations |
-| 4 | Remove pointer-to-pointer bitcasts | `[ ]` | 50 locations |
-| 5 | Update byref/sret to use `ptr` | `[ ]` | |
-| 6 | Run full test suite | `[ ]` | Must stay 1,775+ passing |
-| 7 | Rebuild mnc-stage1 with opaque-pointer main.ll | `[ ]` | |
-| 8 | Verify 15/15 golden | `[ ]` | |
+| 1 | Change `PTR = "ptr"`, `STR = "{ptr, i64}"`, `LIST = "{ptr, i64, i64, i64}"` | `[x]` | Single-point constants |
+| 2 | Add `_is_ptr(ty)` predicate, replace `endswith("*")` | `[x]` | 13 locations |
+| 3 | Replace `f"{TYPE}*"` with `"ptr"` in store/load/GEP | `[x]` | 83 locations |
+| 4 | Remove pointer-to-pointer bitcasts | `[x]` | ~50 bitcasts eliminated |
+| 5 | Update byref/sret to use `ptr` | `[x]` | |
+| 6 | Run full test suite | `[x]` | 4248+ passing |
+| 7 | Rebuild mnc-stage1 with opaque-pointer main.ll | `[x]` | 111K lines IR, 1.8MB binary |
+| 8 | Verify 15/15 golden | `[x]` | |
 
 **Done when:** `main.ll` uses zero typed pointers. All tests pass.
 
