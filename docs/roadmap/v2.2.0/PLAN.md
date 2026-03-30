@@ -235,3 +235,89 @@ mnc_all.mn ──────────────[mnc-stage2]─────
 ```
 
 After fixed-point, Python is only needed for disaster recovery.
+
+---
+
+## Groundwork for Phase 3: Industrialization
+
+> Mapanare is being built to compete with Go, Rust, and Python as a
+> production-grade language. Once the bootstrapping phase (v2.2.0) is
+> complete, the next architectural goals shift from "can the compiler
+> compile itself" to "can the language ship real software safely."
+
+### 1. Formalize the Memory & Concurrency Model
+
+The current COW list system and opaque pointer representation must be
+proven safe for concurrent use by the native Agent/Signal runtime:
+
+- **COW + Agents**: When `__mn_agent_spawn` copies state into a new
+  agent, the COW refcount must be atomically incremented. The current
+  `mn_list_detach` uses non-atomic operations — safe for single-threaded
+  lowering/emission, but a data race under the agent scheduler's
+  cooperative thread pool.
+
+- **Signal reactivity**: `__mn_signal_set` triggers subscriber callbacks
+  that may read shared lists. The COW magic header check
+  (`mn_list_has_magic`) is a read on shared memory — needs acquire
+  semantics under concurrency.
+
+- **Opaque pointer + arena lifetime**: With type-erased `ptr` payloads
+  in Options and enum variants, the arena allocator must guarantee that
+  pointed-to memory outlives all references. The current arena is
+  function-scoped (freed at return) — needs extension to compilation-unit
+  scope for the self-hosted compiler's state threading.
+
+**Deliverable**: A formal memory model document (`docs/MEMORY_MODEL.md`
+update) that specifies ownership, borrowing, and lifetime rules for COW
+lists, opaque pointers, and agent-spawned state. This document becomes
+the reference for all future runtime and codegen work.
+
+### 2. Consolidate the Toolchain
+
+The current developer workflow depends on Python scripts (`ir_doctor.py`,
+`build_stage1.py`, `concat_self.py`, `rebuild.sh`, `test_native.py`,
+`mir_trace.py`). Once the self-hosted compiler reaches fixed-point, these
+should be rewritten in Mapanare to create a unified, self-hosted CLI —
+analogous to `cargo` (Rust), `go` (Go), or `dotnet` (C#).
+
+**Target CLI**:
+```
+mapanare build              # compile .mn → native binary
+mapanare test               # run test suite
+mapanare golden             # golden test validation (replaces ir_doctor golden)
+mapanare stage2             # stage2 self-compilation check
+mapanare audit file.ll      # IR pathology detection
+mapanare doctor file.mn     # valgrind + structmap crash analysis
+mapanare fmt                # auto-format .mn files
+mapanare lint               # lint .mn files
+mapanare bench              # run benchmarks
+mapanare init               # scaffold new project
+mapanare doc                # generate documentation
+```
+
+**Migration path**:
+1. Phase 4 (fixed-point) proves `mapanare` can compile arbitrary `.mn` files
+2. Port `concat_self.py` → `mapanare concat` (simplest, validates I/O)
+3. Port `ir_doctor.py golden` → `mapanare golden` (validates subprocess + IR parsing)
+4. Port `build_stage1.py` → `mapanare bootstrap` (validates end-to-end pipeline)
+5. Eventually: `mapanare` compiles itself without any Python in the loop
+
+### 3. Performance & Safety Standards
+
+All code written during v2.2.0 must meet these standards, even for
+"temporary" workarounds:
+
+- **No O(n²) patterns** — every list operation must be O(1) amortized
+  or O(n) total. The 57GB OOM from string concat must never recur.
+
+- **Valgrind-clean on all golden tests** — zero uninitialised reads,
+  zero invalid accesses. Use `/valgrind-map` to verify.
+
+- **No silent type coercion in the emitter** — if a type mismatch
+  exists, the emitter must either fix it explicitly (bitcast, alloca
+  reinterpret) or reject it with a diagnostic. No implicit `i64`
+  fallbacks.
+
+- **Deterministic output** — same input must produce byte-identical IR.
+  Counter resets, label numbering, and string interning must be
+  deterministic. This is a prerequisite for fixed-point verification.

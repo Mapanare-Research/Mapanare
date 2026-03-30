@@ -294,3 +294,18 @@ GitHub Actions on push/PR to `dev`:
 - **android** — Android cross-compilation: NDK setup, ARM64 + x86_64 `.o` generation, ELF format verification.
 
 4,465+ tests across the full pipeline.
+
+## Skills (slash commands)
+
+These are invocable via `/skill-name` in Claude Code:
+
+| Skill | Description |
+|-------|-------------|
+| `/golden` | Run the 15/15 golden test suite through mnc-stage1 + llvm-as. Shows delta from last run. |
+| `/stage2` | Compile all self-hosted modules through mnc-stage1, validate stage2 IR. Tests self-compilation. |
+| `/rebuild` | Full rebuild cycle: concat .mn sources → build mnc-stage1 → run golden tests. |
+| `/ir-audit` | Audit LLVM IR for known pathologies (ALLOCA_ALIAS, RET_TYPE_MISMATCH, etc.) with baseline tracking. |
+| `/valgrind-map` | Run valgrind on crashing binary, map byte offsets to struct fields automatically. |
+| `/bump-version` | Bump version across VERSION, README, CHANGELOG, and all localized docs. |
+| `/code-review` | Run a full 7-reviewer panel code review of the codebase. |
+| `/create-pr` | Generate PR title and description from the current branch's commits. |

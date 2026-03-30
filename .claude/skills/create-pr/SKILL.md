@@ -81,14 +81,15 @@ Omit the Highlights section entirely for internal-only PRs — don't force it.
 - Summarize the entire PR scope — not just one commit
 
 #### Summary
-- **2-3 sentences max.** This is the elevator pitch, not the full story.
+- **4-6 sentences.** This is the part people actually read — give it room to breathe.
 - **Open with a touch of personality.** One line that makes the reader smile — a wry observation, a lighthearted remark, a playful metaphor. Not forced, just human. Examples of the energy (don't copy these literally, invent your own each time):
   - "This one's mostly about cleaning house."
   - "Turns out the type checker was right to complain."
   - A playful metaphor about what the code was doing wrong
   - A wry observation about the state of things before this PR
-- **Then say what the PR does at a high level.** Name the main change areas (new feature, refactor target, bug fixed) but don't enumerate every file. The personality is in *how* you describe the changes, not in being vague.
-- **Do not repeat what Highlights or Technical changes already cover.** The summary is the "why" and the big picture; details live below.
+- **Then explain what was going on and what this PR does about it.** Set the scene — what was broken, missing, or annoying? What's the approach? Name the main change areas (new feature, refactor target, bug fixed) but describe them in context, not as a dry list. The reader should walk away understanding the *story* of this PR, not just a changelog.
+- **Include the "why" and the reasoning.** If there was a design choice, a trade-off, or a particular reason you went one way instead of another, mention it briefly. "We went with X instead of Y because Z" is the kind of thing that saves people from asking in review.
+- **Do not repeat what Highlights or Technical changes already cover** verbatim, but it's fine to reference the same areas — the summary gives narrative context, the sections below give specifics.
 
 #### Highlights (only when applicable)
 - One bullet per user-facing feature, behavior change, or notable improvement.
