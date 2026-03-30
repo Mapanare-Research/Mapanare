@@ -187,8 +187,8 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
 
     // List runtime
     s = declare_runtime_fn(s, "__mn_list_new", llvm_list_rt(), "i64")
-    s = declare_runtime_fn(s, "__mn_list_push", "void", llvm_list_rt() + "*, ptr")
-    s = declare_runtime_fn(s, "__mn_list_get", "ptr", llvm_list_rt() + "*, i64")
+    s = declare_runtime_fn(s, "__mn_list_push", "void", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_list_get", "ptr", "ptr, i64")
     s = declare_runtime_fn(s, "__mn_list_len", "i64", "ptr")
 
     // Iterator runtime
@@ -1003,6 +1003,27 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
     return s
 }
 
+fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
+    let mut s: EmitState = st
+    if len(args) >= 2 {
+        let list_name: String = args[0].name
+        let elem_name: String = args[1].name
+        let mut elem_ty: String = resolve_type(st, args[1].ty)
+        if elem_ty == "i64" { elem_ty = resolve_mir_type(args[1].ty) }
+        // Use unique counter for alloca names
+        let cnt: String = toString(s.counter)
+        s.counter = s.counter + 1
+        let la: String = "%push_la" + cnt
+        s = emit_line(s, "  " + la + " = alloca " + llvm_list_rt())
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + list_name + ", ptr " + la)
+        let ea: String = "%push_ea" + cnt
+        s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
+        s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ea)
+        s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + la + ", ptr " + ea))
+    }
+    return s
+}
+
 fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<Value>) -> EmitState {
     let mut s: EmitState = st
     let dn: String = dest.name
@@ -1467,11 +1488,9 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return s
     }
 
-    // List push: handled by ListPush instruction in MIR, skip in emitter.
-    // Check by method name first (before accessing args) since the type kind
-    // may be "unknown" for List<Int> due to type inference gaps.
+    // List push: extract to helper to avoid return-inside-if bug
     if fn_name == "push" {
-        return st
+        return emit_list_push_call(st, dest, args)
     }
 
     // Synthetic struct constructor: __new_<StructName>(field_values...)
