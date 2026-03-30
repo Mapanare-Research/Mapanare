@@ -1847,59 +1847,39 @@ struct MatchBuildResult {
     default_label: String
 }
 
-fn match_arm_pattern_dispatch(st: LowerState, pattern: Pattern, r: MatchBuildResult, label: String) -> Bool {
-    match pattern {
-        ConstructorPat(name, _) => { r.cases.push(new_switch_case(name, label)); return true },
-        LiteralPat(expr) => { r.cases.push(new_switch_case(get_literal_value(expr), label)); return true },
-        IdentPat(name) => {
-            if is_enum_variant(st, name) {
-                r.cases.push(new_switch_case(name, label))
-                return true
-            }
-            return false
-        },
-        Wildcard => { return false }
-    }
-}
-
-fn get_default_label(matched: Bool, current_default: String, arm_label: String) -> String {
-    if matched { return current_default }
-    return arm_label
-}
-
-fn build_match_arms_rec(st: LowerState, arms: List<MatchArm>, idx: Int, r: MatchBuildResult) -> MatchBuildResult {
-    if idx >= len(arms) { return r }
-    let mut s: LowerState = r.state
-    let label_r: LowerResult = fresh_block_label(s, "match_arm")
-    s = label_r.state
-    let label: String = label_r.value.name
-    s = add_block(s, label)
-    r.arm_labels.push(label)
-    r.arm_indices.push(s.current_block_idx)
-    let arm: MatchArm = arms[idx]
-    let matched: Bool = match_arm_pattern_dispatch(s, arm.pattern, r, label)
-    let def: String = get_default_label(matched, r.default_label, label)
-    r.state = s
-    r.default_label = def
-    return build_match_arms_rec(r.state, arms, idx + 1, r)
-}
-
-fn new_match_build_result(st: LowerState, merge_label: String) -> MatchBuildResult {
+fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -> MatchBuildResult {
     let labels: List<String> = []
     let indices: List<Int> = []
     let cases: List<SwitchCase> = []
-    // Use first-field constructor pattern to avoid 5-field struct init issues
-    let r: MatchBuildResult = st
-    r.arm_labels = labels
-    r.arm_indices = indices
-    r.cases = cases
-    r.default_label = merge_label
-    return r
-}
-
-fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -> MatchBuildResult {
-    let init: MatchBuildResult = new_match_build_result(st, merge_label)
-    return build_match_arms_rec(st, arms, 0, init)
+    let init: MatchBuildResult = new MatchBuildResult { state: st, arm_labels: labels, arm_indices: indices, cases: cases, default_label: merge_label }
+    let mut s: LowerState = st
+    let mut i: Int = 0
+    let n: Int = len(arms)
+    for _ in 0..1000 {
+        if i >= n { break }
+        let label_r: LowerResult = fresh_block_label(s, "match_arm")
+        s = label_r.state
+        let label: String = label_r.value.name
+        s = add_block(s, label)
+        init.arm_labels.push(label)
+        init.arm_indices.push(s.current_block_idx)
+        let arm: MatchArm = arms[i]
+        match arm.pattern {
+            ConstructorPat(name, _) => { init.cases.push(new_switch_case(name, label)) },
+            LiteralPat(expr) => { init.cases.push(new_switch_case(get_literal_value(expr), label)) },
+            IdentPat(name) => {
+                if is_enum_variant(s, name) {
+                    init.cases.push(new_switch_case(name, label))
+                } else {
+                    init.default_label = label
+                }
+            },
+            Wildcard => { init.default_label = label }
+        }
+        i = i + 1
+    }
+    init.state = s
+    return init
 }
 
 fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResult {

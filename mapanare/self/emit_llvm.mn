@@ -917,8 +917,7 @@ fn emit_field_set(st: EmitState, obj: Value, field_name: String, val: Value) -> 
             let idx: Int = find_field_index(se.field_names, field_name)
             let tmp_name: String = "%" + strip_percent(obj.name) + "_set" + toString(s.counter)
             s.counter = s.counter + 1
-            // Use named struct type (%struct.X) to match the value type
-            let struct_ty: String = "%struct." + obj.ty.name
+            let struct_ty: String = resolve_type(s, obj.ty)
             s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, obj.name, val.name, val_ty, toString(idx)))
             return s
         },
