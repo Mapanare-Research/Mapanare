@@ -9029,10 +9029,25 @@ fn emit_field_set(st: EmitState, obj: Value, field_name: String, val: Value) -> 
             s.counter = s.counter + 1
             let struct_ty: String = resolve_type(s, obj.ty)
             s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, obj.name, val.name, val_ty, toString(idx)))
-            // Note: insertvalue creates a new struct value but doesn't store
-            // back to the alloca. The caller must use the returned value.
-            // This is the SSA pattern — FieldSet creates a new value, it doesn't
-            // mutate. The lowerer handles this via Copy/Store.
+            // Store the updated struct back to the alloca.
+            // Derive alloca from value name: %name_val{N} → load from %name{M}.addr.
+            // Use the obj.name's ".addr" variant — for parameters it's %name.addr,
+            // for locals we try %name.addr first (set by the lowerer's define_var).
+            let obj_base: String = strip_percent(obj.name)
+            let vp: Int = obj_base.find("_val")
+            if vp > 0 {
+                let var_base: String = obj_base.substr(0, vp)
+                // Try the variable's alloca: %{var_base}.addr
+                // The lowerer creates allocas as %{name}{counter}.addr
+                // For the FieldSet pattern, the obj was loaded from its alloca,
+                // which is tracked by emit_line's output.
+                // Simple heuristic: use %{var_base}.addr (works for params)
+                // or search st.lines for the actual alloca name
+                let alloca_name: String = find_alloca_by_search(s.lines, obj.name)
+                if len(alloca_name) > 1 {
+                    s = emit_line(s, "  store " + struct_ty + " " + tmp_name + ", ptr " + alloca_name)
+                }
+            }
             return s
         },
         _ => {
@@ -9114,6 +9129,51 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
     return s
 }
 
+fn find_alloca_by_search(lines: List<String>, value_name: String) -> String {
+    // Search for "%value_name =load TYPE, ptr %alloca" in the lines list
+    let search_pat: String = value_name + " =load"
+    let n: Int = len(lines)
+    let mut i: Int = n - 1
+    for _ in 0..50000 {
+        if i < 0 { return "" }
+        let line: String = lines[i]
+        if line.contains(search_pat) {
+            // Found the load. Extract ptr operand.
+            let pp: Int = line.find(", ptr ")
+            if pp > 0 {
+                return line.substr(pp + 6, len(line) - pp - 6)
+            }
+        }
+        i = i - 1
+    }
+    return ""
+}
+
+fn find_alloca_for_value(st: EmitState, value_name: String) -> String {
+    // Scan backward through emitted lines to find:
+    //   %value_name =load TYPE, ptr %ALLOCA
+    // Return %ALLOCA name so FieldSet can store back.
+    let search: String = value_name + " ="
+    let n: Int = len(st.lines)
+    let mut i: Int = n - 1
+    for _ in 0..10000 {
+        if i < 0 { return "" }
+        let line: String = st.lines[i]
+        if line.contains(search) {
+            if line.contains("load") {
+                let ptr_pos: Int = line.find(", ptr ")
+                if ptr_pos > 0 {
+                    let after: String = line.substr(ptr_pos + 6, len(line) - ptr_pos - 6)
+                    return after
+                }
+            }
+            return ""
+        }
+        i = i - 1
+    }
+    return ""
+}
+
 fn llvm_type_size(ty: String) -> Int {
     if ty == "i1" { return 1 }
     if ty == "i8" { return 1 }
@@ -9187,7 +9247,7 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
     let mut elem_sz: Int = llvm_type_size(elem_llvm_ty)
-    if elem_sz < 16 { elem_sz = 64 }
+    if elem_sz < 16 { elem_sz = 256 }
     s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz)))
 
     // Alloca for push
