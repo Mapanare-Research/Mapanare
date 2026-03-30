@@ -2259,42 +2259,20 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     for _ in 0..100000 {
         if fi >= total_fns { break }
         let f: MIRFunction = module.functions[fi]
-        
         if len(f.blocks) > 0 {
             st = emit_mir_function(st, f)
         }
         fi = fi + 1
     }
 
-    // Record how many lines were emitted BEFORE function bodies.
-    // String globals go right before the function definitions.
-    let header_lines: Int = len(st.lines)
-
-    // Now emit function bodies (appends to st.lines)
-    // Wait — functions were already emitted above. header_lines captures
-    // the line count AFTER functions. We need the count BEFORE functions.
-    // Solution: track it before the function loop.
-    // But we already passed that point. So let's just emit globals after
-    // all declarations (right before functions) by using a simpler approach:
-    // output all lines, then insert globals at the right spot.
-
-    // Actually the simplest fix: just append globals to the st.lines list
-    // right before functions. Since we can't "insert", we output:
-    // 1) header + decl lines (everything in st.lines)
-    // 2) But we need globals between decls and functions...
-    //
-    // Cleanest approach: just add globals to the end of the output.
-    // LLVM doesn't care about declaration order — globals can appear anywhere
-    // at the top level, even after functions.
-
-    // Append string globals to lines (valid anywhere in LLVM IR)
+    // Append string globals
     let mut gi: Int = 0
     for _ in 0..1000000 {
         if gi >= len(st.str_globals) { break }
         st = emit_line(st, st.str_globals[gi])
         gi = gi + 1
     }
-    // Join all lines with newline — O(n) via builtin join
+    // Join all lines with newline
     let result: String = str_join("\n", st.lines)
     return result
 }
