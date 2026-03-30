@@ -1966,10 +1966,9 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     let cases: List<SwitchCase> = build_r.cases
     let default_label: String = build_r.default_label
 
-    // Emit switch or branch (in the entry block, not the last arm block)
+    // Emit switch or branch (in the entry block)
     s = set_block(s, match_entry_idx)
     if len(cases) > 0 {
-        // Tag carries the subject's enum type so the emitter can resolve variant names
         let tag_r: LowerResult = make_value(s, subject_r.value.ty, "tag")
         s = tag_r.state
         s = emit_instr(s, Instruction::EnumTag(tag_r.value, subject_r.value))
@@ -2033,17 +2032,18 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
 
         let exit_label: String = get_block_label(s, s.current_block_idx)
         let arm_terminated: Bool = current_block_terminated(s)
-        if !arm_terminated {
-            s = emit_instr(s, Instruction::Jump(merge_label))
-        }
-        s = lower_pop_scope(s)
 
-        // Only add to Phi if arm didn't terminate AND produces a real value.
+        // Track arm results for phi
         let arm_kind: String = arm_val_r.value.ty.kind
         if !arm_terminated && arm_kind != "void" && arm_kind != "unknown" && arm_val_r.value.name != "%void" {
             let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
             arm_results.push(pe)
         }
+
+        if !arm_terminated {
+            s = emit_instr(s, Instruction::Jump(merge_label))
+        }
+        s = lower_pop_scope(s)
         ai = ai + 1
     }
 
