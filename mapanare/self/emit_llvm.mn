@@ -917,28 +917,19 @@ fn emit_field_set(st: EmitState, obj: Value, field_name: String, val: Value) -> 
     match struct_opt {
         Some(se) => {
             let idx: Int = find_field_index(se.field_names, field_name)
-            let tmp_name: String = "%" + strip_percent(obj.name) + "_set" + toString(s.counter)
-            s.counter = s.counter + 1
             let struct_ty: String = resolve_type(s, obj.ty)
-            s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, obj.name, val.name, val_ty, toString(idx)))
-            // Store the updated struct back to the alloca.
-            // Derive alloca from value name: %name_val{N} → load from %name{M}.addr.
-            // Use the obj.name's ".addr" variant — for parameters it's %name.addr,
-            // for locals we try %name.addr first (set by the lowerer's define_var).
-            let obj_base: String = strip_percent(obj.name)
-            let vp: Int = obj_base.find("_val")
-            if vp > 0 {
-                let var_base: String = obj_base.substr(0, vp)
-                // Try the variable's alloca: %{var_base}.addr
-                // The lowerer creates allocas as %{name}{counter}.addr
-                // For the FieldSet pattern, the obj was loaded from its alloca,
-                // which is tracked by emit_line's output.
-                // Simple heuristic: use %{var_base}.addr (works for params)
-                // or search st.lines for the actual alloca name
-                let alloca_name: String = find_alloca_by_search(s.lines, obj.name)
-                if len(alloca_name) > 1 {
-                    s = emit_line(s, "  store " + struct_ty + " " + tmp_name + ", ptr " + alloca_name)
-                }
+            // If obj is an alloca address (from lowerer's find_expr_alloca),
+            // use GEP+store directly — no insertvalue needed.
+            if obj.name.contains(".addr") {
+                let gep: String = "%" + strip_percent(obj.name) + "_fp" + toString(s.counter)
+                s.counter = s.counter + 1
+                s = emit_line(s, "  " + gep + " = getelementptr inbounds " + struct_ty + ", ptr " + obj.name + ", i32 0, i32 " + toString(idx))
+                s = emit_line(s, "  store " + val_ty + " " + val.name + ", ptr " + gep)
+            } else {
+                // Fallback: insertvalue (doesn't write back to alloca)
+                let tmp_name: String = "%" + strip_percent(obj.name) + "_set" + toString(s.counter)
+                s.counter = s.counter + 1
+                s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, obj.name, val.name, val_ty, toString(idx)))
             }
             return s
         },
@@ -1021,24 +1012,43 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
     return s
 }
 
+fn find_list_field_index(st: EmitState, struct_name: String, dest: Value) -> String {
+    // The struct_name may be "StructName:field_name" (encoded by lowerer)
+    let colon_pos: Int = struct_name.find(":")
+    if colon_pos > 0 {
+        let base: String = struct_name.substr(0, colon_pos)
+        let field: String = struct_name.substr(colon_pos + 1, len(struct_name) - colon_pos - 1)
+        let opt: Option<StructEntry> = find_struct_entry(st, base)
+        match opt {
+            Some(se) => {
+                let idx: Int = find_field_index(se.field_names, field)
+                return toString(idx)
+            },
+            _ => { return "0" }
+        }
+    }
+    return "0"
+}
+
 fn find_alloca_by_search(lines: List<String>, value_name: String) -> String {
-    // Search for "%value_name =load TYPE, ptr %alloca" in the lines list
+    // Search FORWARD for "value_name =load TYPE, ptr %alloca"
+    // Use the LAST match (most recent load of this value)
     let search_pat: String = value_name + " =load"
     let n: Int = len(lines)
-    let mut i: Int = n - 1
-    for _ in 0..50000 {
-        if i < 0 { return "" }
+    let mut result: String = ""
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= n { return result }
         let line: String = lines[i]
         if line.contains(search_pat) {
-            // Found the load. Extract ptr operand.
             let pp: Int = line.find(", ptr ")
             if pp > 0 {
-                return line.substr(pp + 6, len(line) - pp - 6)
+                result = line.substr(pp + 6, len(line) - pp - 6)
             }
         }
-        i = i - 1
+        i = i + 1
     }
-    return ""
+    return result
 }
 
 fn find_alloca_for_value(st: EmitState, value_name: String) -> String {
@@ -1108,9 +1118,14 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
         // GEP to the first list field (index 0 = lines field for EmitState).
         // The struct type is resolved from the args[0] MIR type.
         if list_ref.contains(".addr") && list_ty_kind == "struct" {
-            let struct_ty: String = resolve_type(st, args[0].ty)
+            // The type name may be "StructName:field_name" — strip the field part
+            let type_name: String = args[0].ty.name
+            let cp: Int = type_name.find(":")
+            let base_name: String = if cp > 0 { type_name.substr(0, cp) } else { type_name }
+            let struct_ty: String = "%struct." + base_name
+            let field_idx: String = find_list_field_index(st, type_name, dest)
             let gep: String = "%push_gep" + cnt
-            s = emit_line(s, "  " + gep + " = getelementptr inbounds " + struct_ty + ", ptr " + list_ref + ", i32 0, i32 0")
+            s = emit_line(s, "  " + gep + " = getelementptr inbounds " + struct_ty + ", ptr " + list_ref + ", i32 0, i32 " + field_idx)
             list_ptr = gep
         }
         if !list_ref.contains(".addr") {
