@@ -145,7 +145,9 @@ def _structural_hash(body: str) -> str:
 def _analyze_function(fn: IRFunction) -> None:
     """Populate structural metrics from body text."""
     body = fn.body
-    fn.instructions = len([l for l in body.splitlines() if l.strip() and not l.strip().endswith(":")])
+    fn.instructions = len(
+        [l for l in body.splitlines() if l.strip() and not l.strip().endswith(":")]
+    )
     fn.basic_blocks = len(re.findall(r"^\w[\w.]*:", body, re.MULTILINE)) + 1  # +1 for entry
     fn.allocas = body.count("= alloca ")
     fn.stores = body.count("store ")
@@ -181,7 +183,11 @@ def parse_ir(text: str) -> IRModule:
         mod.declares.append(m.group(0))
 
     # Extract globals
-    for m in re.finditer(r"^@[\w.]+\s*=\s*(?:private|internal)?\s*(?:unnamed_addr\s+)?(?:constant|global)\s+.+", text, re.MULTILINE):
+    for m in re.finditer(
+        r"^@[\w.]+\s*=\s*(?:private|internal)?\s*(?:unnamed_addr\s+)?(?:constant|global)\s+.+",
+        text,
+        re.MULTILINE,
+    ):
         mod.globals.append(m.group(0))
 
     # Extract functions — find matching braces
@@ -198,7 +204,7 @@ def parse_ir(text: str) -> IRModule:
                 depth -= 1
             pos += 1
         body = text[start : pos - 1]
-        line_start = text[:m.start()].count("\n") + 1
+        line_start = text[: m.start()].count("\n") + 1
         line_end = text[:pos].count("\n") + 1
 
         fn = IRFunction(
@@ -417,7 +423,9 @@ def detect_missing_percent(mod: IRModule) -> list[Pathology]:
     results = []
     for fn in mod.functions.values():
         # insertvalue with bare name: "t.f0 =insertvalue" or "t.new ="
-        for m in re.finditer(r"^\s+([a-zA-Z]\w*\.\w+)\s*=\s*(?:insertvalue|call|load)", fn.body, re.MULTILINE):
+        for m in re.finditer(
+            r"^\s+([a-zA-Z]\w*\.\w+)\s*=\s*(?:insertvalue|call|load)", fn.body, re.MULTILINE
+        ):
             name = m.group(1)
             if not name.startswith("%"):
                 results.append(
@@ -615,16 +623,31 @@ def diff_modules(a: IRModule, b: IRModule) -> list[FnDiff]:
         assert fa and fb
 
         if fa.body_hash == fb.body_hash:
-            diffs.append(FnDiff(name=name, status="match", hash_a=fa.body_hash, hash_b=fb.body_hash))
+            diffs.append(
+                FnDiff(name=name, status="match", hash_a=fa.body_hash, hash_b=fb.body_hash)
+            )
             continue
 
         # Diverged — find which metrics differ
         metrics = {}
         for attr in (
-            "instructions", "basic_blocks", "allocas", "stores", "loads",
-            "calls", "switches", "phis", "branches", "rets", "geps",
-            "list_pushes", "list_news", "str_eqs", "insertvalues",
-            "extractvalues", "alloca_bytes",
+            "instructions",
+            "basic_blocks",
+            "allocas",
+            "stores",
+            "loads",
+            "calls",
+            "switches",
+            "phis",
+            "branches",
+            "rets",
+            "geps",
+            "list_pushes",
+            "list_news",
+            "str_eqs",
+            "insertvalues",
+            "extractvalues",
+            "alloca_bytes",
         ):
             va = getattr(fa, attr)
             vb = getattr(fb, attr)
@@ -640,14 +663,16 @@ def diff_modules(a: IRModule, b: IRModule) -> list[FnDiff]:
         if fa.list_pushes != fb.list_pushes:
             detail += f"  LIST_PUSH: {fa.list_pushes} vs {fb.list_pushes}\n"
 
-        diffs.append(FnDiff(
-            name=name,
-            status="diverged",
-            hash_a=fa.body_hash,
-            hash_b=fb.body_hash,
-            metric_diffs=metrics,
-            detail=detail,
-        ))
+        diffs.append(
+            FnDiff(
+                name=name,
+                status="diverged",
+                hash_a=fa.body_hash,
+                hash_b=fb.body_hash,
+                metric_diffs=metrics,
+                detail=detail,
+            )
+        )
     return diffs
 
 
@@ -663,6 +688,7 @@ def bootstrap_compile(mn_path: str | pathlib.Path) -> str:
     # Use the multi-module compiler for self-hosted sources
     if "import self::" in source or str(mn_path).endswith("mnc_all.mn"):
         from mapanare.multi_module import compile_multi_module_mir
+
         return compile_multi_module_mir(source, str(mn_path), opt_level=2, emitter_backend="text")
     else:
         # Use the CLI-level compile path which handles all wiring
@@ -670,9 +696,20 @@ def bootstrap_compile(mn_path: str | pathlib.Path) -> str:
             out_path = f.name
         try:
             r = subprocess.run(
-                [sys.executable, "-m", "mapanare", "emit-llvm", str(mn_path),
-                 "--emitter", "text", "-o", out_path],
-                capture_output=True, text=True, timeout=120,
+                [
+                    sys.executable,
+                    "-m",
+                    "mapanare",
+                    "emit-llvm",
+                    str(mn_path),
+                    "--emitter",
+                    "text",
+                    "-o",
+                    out_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             if r.returncode != 0:
                 raise RuntimeError(f"Bootstrap emit-llvm failed: {r.stderr[:500]}")
@@ -719,6 +756,7 @@ def _severity_icon(s: str) -> str:
 # Ensure stdout handles unicode on Windows
 if sys.platform == "win32":
     import io
+
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
@@ -726,8 +764,10 @@ if sys.platform == "win32":
 def format_audit(pathologies: list[Pathology], mod: IRModule) -> str:
     """Human-readable audit report."""
     lines = []
-    lines.append(f"IR Doctor Audit — {len(mod.functions)} functions, "
-                 f"{sum(f.instructions for f in mod.functions.values())} instructions")
+    lines.append(
+        f"IR Doctor Audit — {len(mod.functions)} functions, "
+        f"{sum(f.instructions for f in mod.functions.values())} instructions"
+    )
     lines.append("=" * 72)
 
     if not pathologies:
@@ -874,25 +914,35 @@ def cmd_audit(args: argparse.Namespace) -> int:
         elif err:
             print(f"\nllvm-as: {err}")
         else:
-            print(f"\nllvm-as: VALID")
+            print("\nllvm-as: VALID")
 
         # Compare with previous baseline
         baseline_name = pathlib.Path(args.file).stem
         old_baseline = _load_baseline(baseline_name)
         if old_baseline:
-            print(f"\n--- Delta from last audit ---")
+            print("\n--- Delta from last audit ---")
             print(_format_baseline_diff(old_baseline, pathologies))
 
         # Save new baseline + journal
         bp = _save_baseline(baseline_name, pathologies)
-        _journal_append({
-            "command": "audit",
-            "file": args.file,
-            "functions": len(mod.functions),
-            "issues": len(pathologies),
-            "errors": sum(1 for p in pathologies if p.severity == "error"),
-            "by_code": dict(defaultdict(int, {p.code: sum(1 for q in pathologies if q.code == p.code) for p in pathologies})),
-        })
+        _journal_append(
+            {
+                "command": "audit",
+                "file": args.file,
+                "functions": len(mod.functions),
+                "issues": len(pathologies),
+                "errors": sum(1 for p in pathologies if p.severity == "error"),
+                "by_code": dict(
+                    defaultdict(
+                        int,
+                        {
+                            p.code: sum(1 for q in pathologies if q.code == p.code)
+                            for p in pathologies
+                        },
+                    )
+                ),
+            }
+        )
         print(f"\nBaseline saved: {bp.relative_to(ROOT)}")
 
         if pathologies:
@@ -917,7 +967,7 @@ def cmd_diff(args: argparse.Namespace) -> int:
     print(f"Compiling {mn_path.name} via stage1...", file=sys.stderr)
     ir_b = stage1_compile(mn_path, stage1)
     if ir_b is None:
-        print(f"Stage1 compilation failed or timed out", file=sys.stderr)
+        print("Stage1 compilation failed or timed out", file=sys.stderr)
         # Still audit the bootstrap output
         mod_a = parse_ir(ir_a)
         print(format_table(mod_a, top_n=args.top))
@@ -1027,9 +1077,11 @@ def cmd_fingerprint(args: argparse.Namespace) -> int:
 # llvm-as validation
 # ---------------------------------------------------------------------------
 
+
 def _find_llvm_as() -> str | None:
     """Find llvm-as binary."""
     import shutil
+
     for name in ("llvm-as", "llvm-as-14", "llvm-as-15", "llvm-as-16", "llvm-as-17", "llvm-as-18"):
         p = shutil.which(name)
         if p:
@@ -1049,7 +1101,9 @@ def validate_ir(ir_text: str) -> tuple[bool, str]:
     try:
         r = subprocess.run(
             [llvm_as, tmp, "-o", "/dev/null"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if r.returncode == 0:
             return True, ""
@@ -1153,8 +1207,15 @@ def _format_baseline_diff(old: dict, new_pathologies: list[Pathology]) -> str:
 
 # LLVM type sizes (64-bit target)
 _LLVM_SIZES = {
-    "i1": 1, "i8": 1, "i16": 2, "i32": 4, "i64": 8,
-    "double": 8, "float": 4, "i8*": 8, "ptr": 8,
+    "i1": 1,
+    "i8": 1,
+    "i16": 2,
+    "i32": 4,
+    "i64": 8,
+    "double": 8,
+    "float": 4,
+    "i8*": 8,
+    "ptr": 8,
 }
 # Common Mapanare types and their LLVM representations
 _MN_TYPE_MAP = {
@@ -1253,6 +1314,7 @@ def field_at_offset(layout: StructLayout, offset: int) -> str:
 # Debug journal — persistent log of what was tried and what happened
 # ---------------------------------------------------------------------------
 
+
 def _journal_append(entry: dict) -> None:
     """Append an entry to the debug journal."""
     BASELINE_DIR.mkdir(exist_ok=True)
@@ -1279,13 +1341,16 @@ def _journal_load(limit: int = 50) -> list[dict]:
 # Failure diagnosis — classify errors and suggest next steps
 # ---------------------------------------------------------------------------
 
+
 def _diagnose_compile_fail(stage1: pathlib.Path, mn_path: pathlib.Path) -> dict:
     """Run stage1 on a file and capture crash details."""
     info: dict = {"type": "compile_fail", "file": mn_path.name}
     try:
         r = subprocess.run(
             [str(stage1), str(mn_path)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         info["exit_code"] = r.returncode
         info["stderr"] = r.stderr[:500] if r.stderr else ""
@@ -1410,9 +1475,17 @@ def cmd_valgrind(args: argparse.Namespace) -> int:
     print(f"Running valgrind on: {stage1.name} {mn_path.name}")
     try:
         r = subprocess.run(
-            ["valgrind", "--track-origins=yes", "-q", "--error-exitcode=99",
-             str(stage1), str(mn_path)],
-            capture_output=True, text=True, timeout=120,
+            [
+                "valgrind",
+                "--track-origins=yes",
+                "-q",
+                "--error-exitcode=99",
+                str(stage1),
+                str(mn_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
     except FileNotFoundError:
         print("valgrind not found. This command requires WSL/Linux.", file=sys.stderr)
@@ -1436,7 +1509,7 @@ def cmd_valgrind(args: argparse.Namespace) -> int:
     # Extract function+offset patterns like func+0x1234
     fn_offsets = re.findall(r"(\w+)\+0x([\dA-Fa-f]+)", stderr)
 
-    print(f"\n--- Valgrind Summary ---")
+    print("\n--- Valgrind Summary ---")
     if invalid_ops:
         print(f"  Errors: {', '.join(set(invalid_ops))}")
     if uninit:
@@ -1464,18 +1537,20 @@ def cmd_valgrind(args: argparse.Namespace) -> int:
                 print(f"\n  {fn_name}+0x{hex_off} (byte {byte_off}): {field_info}")
 
     # Log to journal
-    _journal_append({
-        "command": "valgrind",
-        "test": mn_path.name,
-        "exit_code": r.returncode,
-        "errors": invalid_ops[:5],
-        "crash_path": crash_fns[:8],
-        "uninit_origin": uninit[0] if uninit else None,
-    })
+    _journal_append(
+        {
+            "command": "valgrind",
+            "test": mn_path.name,
+            "exit_code": r.returncode,
+            "errors": invalid_ops[:5],
+            "crash_path": crash_fns[:8],
+            "uninit_origin": uninit[0] if uninit else None,
+        }
+    )
 
     # Show raw stderr if verbose
     if args.verbose:
-        print(f"\n--- Raw Valgrind Output ---")
+        print("\n--- Raw Valgrind Output ---")
         print(stderr[:3000])
 
     return 0 if r.returncode == 0 else 1
@@ -1508,8 +1583,16 @@ def cmd_stage2(args: argparse.Namespace) -> int:
     timeout_s = args.timeout
 
     modules = [
-        "ast.mn", "lexer.mn", "parser.mn", "semantic.mn", "mir.mn",
-        "lower_state.mn", "lower.mn", "emit_llvm_ir.mn", "emit_llvm.mn", "main.mn",
+        "ast.mn",
+        "lexer.mn",
+        "parser.mn",
+        "semantic.mn",
+        "mir.mn",
+        "lower_state.mn",
+        "lower.mn",
+        "emit_llvm_ir.mn",
+        "emit_llvm.mn",
+        "main.mn",
     ]
 
     if not stage1.exists():
@@ -1525,7 +1608,9 @@ def cmd_stage2(args: argparse.Namespace) -> int:
         try:
             proc = subprocess.run(
                 [str(stage1), str(mn_path)],
-                capture_output=True, text=True, timeout=timeout_s,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
             )
             ir = proc.stdout
             n_lines = ir.count("\n")
@@ -1555,13 +1640,15 @@ def cmd_stage2(args: argparse.Namespace) -> int:
             results.append((name, "TIMEOUT", 0, f"killed after {timeout_s}s"))
 
     # Full self-compilation test
-    print(f"\n  mnc_all.mn...", end=" ", flush=True)
+    print("\n  mnc_all.mn...", end=" ", flush=True)
     all_mn = self_dir / "mnc_all.mn"
     if all_mn.exists():
         try:
             proc = subprocess.run(
                 [str(stage1), str(all_mn)],
-                capture_output=True, text=True, timeout=timeout_s * 4,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s * 4,
             )
             ir = proc.stdout
             n_lines = ir.count("\n")
@@ -1634,10 +1721,16 @@ def cmd_golden(args: argparse.Namespace) -> int:
         if n_fns == 0:
             print(f"EMPTY (0 functions, {ir.count(chr(10))} lines)")
             results.append((name, "EMPTY", "", n_fns, 0, 0))
-            fail_details.append((name, {
-                "type": "empty", "suggestion": "Binary produced header only (no functions).\n"
-                "  Check: did _clone_list_fields get disabled? Is COW lazy init breaking module lists?"
-            }))
+            fail_details.append(
+                (
+                    name,
+                    {
+                        "type": "empty",
+                        "suggestion": "Binary produced header only (no functions).\n"
+                        "  Check: did _clone_list_fields get disabled? Is COW lazy init breaking module lists?",
+                    },
+                )
+            )
             continue
 
         # Validate with llvm-as
@@ -1720,18 +1813,18 @@ def cmd_golden(args: argparse.Namespace) -> int:
         "total": total,
         "tests": {name: status for name, status, *_ in results},
     }
-    (BASELINE_DIR / "golden.json").write_text(
-        json.dumps(golden_data, indent=2), encoding="utf-8"
-    )
+    (BASELINE_DIR / "golden.json").write_text(json.dumps(golden_data, indent=2), encoding="utf-8")
 
     # Log to journal
-    _journal_append({
-        "command": "golden",
-        "score": f"{ok}/{total}",
-        "tests": {name: status for name, status, *_ in results},
-        "failures": {name: diag for name, diag in fail_details},
-    })
-    print(f"\nBaseline + journal saved to .ir_doctor/")
+    _journal_append(
+        {
+            "command": "golden",
+            "score": f"{ok}/{total}",
+            "tests": {name: status for name, status, *_ in results},
+            "failures": {name: diag for name, diag in fail_details},
+        }
+    )
+    print("\nBaseline + journal saved to .ir_doctor/")
 
     return 0 if ok == total else 1
 
@@ -1755,14 +1848,14 @@ def cmd_worklist(args: argparse.Namespace) -> int:
     mitigated = [p for p in pathologies if p.code == "ALLOCA_ALIAS_MITIGATED"]
     loop_push = [p for p in pathologies if p.code == "LOOP_PUSH"]
 
-    print(f"Alloca Aliasing Work Queue")
+    print("Alloca Aliasing Work Queue")
     print("=" * 72)
     print(f"  Real bugs (need recursive rewrite): {len(real_alias)}")
     print(f"  Mitigated (write-back exists):      {len(mitigated)}")
     print(f"  For-loop push patterns (all):       {len(loop_push)}")
 
     if real_alias:
-        print(f"\nFunctions needing recursive rewrite:")
+        print("\nFunctions needing recursive rewrite:")
         print("-" * 72)
         for p in sorted(real_alias, key=lambda p: p.function):
             fn = mod.functions.get(p.function)
@@ -1775,7 +1868,7 @@ def cmd_worklist(args: argparse.Namespace) -> int:
             print(f"  {mn_module + '/' + mn_func:<50s} {size:>5d} instr  {pushes:>2d} push")
 
     if mitigated:
-        print(f"\nMitigated (probably safe, verify manually):")
+        print("\nMitigated (probably safe, verify manually):")
         print("-" * 72)
         for p in sorted(mitigated, key=lambda p: p.function):
             parts = p.function.split("__", 1)
@@ -1822,10 +1915,14 @@ def cmd_extract(args: argparse.Namespace) -> int:
 
     # Print metrics summary
     print(f"\n--- {fn.name} ---")
-    print(f"  Lines: {fn.line_start}-{fn.line_end}  Instr: {fn.instructions}  "
-          f"BB: {fn.basic_blocks}  Alloc: {fn.allocas}  Stack: {fn.alloca_bytes}B")
-    print(f"  Calls: {fn.calls}  Switch: {fn.switches}  Push: {fn.list_pushes}  "
-          f"StrEq: {fn.str_eqs}  Hash: {fn.body_hash}")
+    print(
+        f"  Lines: {fn.line_start}-{fn.line_end}  Instr: {fn.instructions}  "
+        f"BB: {fn.basic_blocks}  Alloc: {fn.allocas}  Stack: {fn.alloca_bytes}B"
+    )
+    print(
+        f"  Calls: {fn.calls}  Switch: {fn.switches}  Push: {fn.list_pushes}  "
+        f"StrEq: {fn.str_eqs}  Hash: {fn.body_hash}"
+    )
 
     # Run detectors on just this function
     single_mod = IRModule(source="", functions={fn.name: fn})
@@ -1851,18 +1948,21 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         print(f"Stage1 binary not found: {stage1}", file=sys.stderr)
         return 1
     if not mnc_all.exists():
-        print(f"mnc_all.mn not found. Run: python scripts/concat_self.py", file=sys.stderr)
+        print("mnc_all.mn not found. Run: python scripts/concat_self.py", file=sys.stderr)
         return 1
 
     print(f"Self-compiling {mnc_all.name} ({mnc_all.stat().st_size // 1024} KB)...")
 
     # Compile with timeout and memory tracking
     import time as _time
+
     t0 = _time.monotonic()
     try:
         r = subprocess.run(
             [str(stage1), str(mnc_all)],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True,
+            text=True,
+            timeout=300,
         )
         elapsed = _time.monotonic() - t0
         ir = r.stdout
@@ -1896,12 +1996,12 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         print(f"  Errors:     {n_errs}")
         print(f"  Warnings:   {n_warns}")
     else:
-        print(f"  (No functions emitted — header only)")
+        print("  (No functions emitted — header only)")
         if r.stderr:
             print(f"  stderr: {r.stderr[:200]}")
 
     # Compare with bootstrap
-    print(f"\n--- Bootstrap comparison ---")
+    print("\n--- Bootstrap comparison ---")
     try:
         boot_ir = bootstrap_compile(mnc_all)
         boot_mod = parse_ir(boot_ir)
@@ -1933,6 +2033,7 @@ def cmd_memory(args: argparse.Namespace) -> int:
     print("-" * 45)
 
     import time as _time
+
     for n_fns in sizes:
         # Generate synthetic .mn file with N functions
         lines = []
@@ -1942,7 +2043,9 @@ def cmd_memory(args: argparse.Namespace) -> int:
         source = "\n".join(lines)
         n_lines = len(lines)
 
-        with tempfile.NamedTemporaryFile(suffix=".mn", mode="w", delete=False, encoding="utf-8") as f:
+        with tempfile.NamedTemporaryFile(
+            suffix=".mn", mode="w", delete=False, encoding="utf-8"
+        ) as f:
             f.write(source)
             tmp = f.name
 
@@ -1952,7 +2055,9 @@ def cmd_memory(args: argparse.Namespace) -> int:
             try:
                 r = subprocess.run(
                     ["/usr/bin/time", "-f", "%M", str(stage1), tmp],
-                    capture_output=True, text=True, timeout=120,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
                 )
                 elapsed = _time.monotonic() - t0
                 # /usr/bin/time writes RSS to stderr
@@ -1962,14 +2067,18 @@ def cmd_memory(args: argparse.Namespace) -> int:
             except (FileNotFoundError, OSError):
                 r = subprocess.run(
                     [str(stage1), tmp],
-                    capture_output=True, text=True, timeout=120,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
                 )
                 elapsed = _time.monotonic() - t0
                 rss_mb = 0
 
             ir_lines = r.stdout.count("\n") if r.returncode == 0 else 0
             exit_code = r.returncode
-            print(f"{n_fns:>5d} {n_lines:>6d} {rss_mb:>7.1f} {elapsed:>5.1f}s {ir_lines:>8d} {exit_code:>5d}")
+            print(
+                f"{n_fns:>5d} {n_lines:>6d} {rss_mb:>7.1f} {elapsed:>5.1f}s {ir_lines:>8d} {exit_code:>5d}"
+            )
         except subprocess.TimeoutExpired:
             print(f"{n_fns:>5d} {n_lines:>6d}     TIMEOUT")
         finally:
@@ -2147,13 +2256,305 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_valgrind_map(args: argparse.Namespace) -> int:
+    """Run valgrind on an arbitrary command and auto-map offsets to struct fields.
+
+    Unlike the existing ``valgrind`` subcommand (which always runs mnc-stage1
+    on a .mn test file), this accepts any command line and performs deeper
+    parsing of valgrind stderr to produce a structured, human-readable report.
+
+    Examples:
+        ir_doctor valgrind-map ./mapanare/self/mnc-stage1 tests/golden/07_enum_match.mn
+        ir_doctor valgrind-map --struct LowerState ./mnc some_file.mn
+        ir_doctor valgrind-map --timeout 60 ./my_binary --flag arg
+    """
+    command = args.cmd
+    struct_name = args.struct
+    timeout_s = args.timeout
+
+    # --- Parse struct layouts --------------------------------------------------
+    all_source = ""
+    for mn_file in sorted(SELF_DIR.glob("*.mn")):
+        if mn_file.name == "mnc_all.mn":
+            continue
+        all_source += mn_file.read_text(encoding="utf-8") + "\n"
+    structs = parse_mn_structs(all_source)
+
+    target_layout: StructLayout | None = None
+    if struct_name:
+        target_layout = structs.get(struct_name)
+        if target_layout is None:
+            # Try substring match
+            matches = [s for s in structs if struct_name in s]
+            if len(matches) == 1:
+                target_layout = structs[matches[0]]
+                struct_name = matches[0]
+            elif matches:
+                print(
+                    f"Ambiguous --struct '{struct_name}' matches: {', '.join(matches)}",
+                    file=sys.stderr,
+                )
+                return 1
+            else:
+                print(f"Struct '{struct_name}' not found. Available:", file=sys.stderr)
+                for s in sorted(structs):
+                    print(f"  {s} ({structs[s].total_size}B)", file=sys.stderr)
+                return 1
+
+    # --- Run valgrind ----------------------------------------------------------
+    vg_cmd = [
+        "valgrind",
+        "--track-origins=yes",
+        "--error-exitcode=99",
+    ] + command
+
+    print(f"Running: {' '.join(vg_cmd)}")
+    try:
+        r = subprocess.run(
+            vg_cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except FileNotFoundError:
+        print("valgrind not found. This command requires WSL/Linux.", file=sys.stderr)
+        return 1
+    except subprocess.TimeoutExpired:
+        print(f"Valgrind timed out ({timeout_s}s)", file=sys.stderr)
+        return 1
+
+    stderr = r.stderr
+
+    # --- Check for clean run ---------------------------------------------------
+    # Valgrind uses exit code 99 (--error-exitcode) when it detects errors.
+    # If there are no Valgrind-specific error lines, report a clean run.
+    has_vg_errors = bool(
+        re.search(r"Invalid (read|write) of size", stderr)
+        or re.search(r"Uninitialised value", stderr)
+        or re.search(r"Conditional jump or move depends on uninitialised", stderr)
+        or re.search(r"Use of uninitialised value", stderr)
+        or re.search(r"definitely lost", stderr)
+    )
+    if not has_vg_errors:
+        print("\nValgrind Analysis")
+        print("=================")
+        print("Clean run -- no errors detected.")
+        print(f"Exit code: {r.returncode}")
+        if args.verbose:
+            print(f"\n--- stdout ---\n{r.stdout[:2000]}")
+        return 0
+
+    # --- Parse valgrind output -------------------------------------------------
+    # Collect structured issues from stderr.  Valgrind reports are separated by
+    # blank lines; each report typically starts with an error summary line
+    # followed by a stack trace.
+
+    @dataclass
+    class VgIssue:
+        error_type: str  # e.g. "Invalid read of size 8"
+        origin: str  # e.g. "stack allocation" or ""
+        functions: list[str]  # call-stack function names (outermost last)
+        byte_offset: int | None  # from "N bytes inside a block of size M"
+        block_size: int | None
+        raw_lines: list[str]
+
+    # Regex patterns
+    re_invalid = re.compile(r"(Invalid (?:read|write) of size \d+)")
+    re_uninit = re.compile(r"(Uninitialised value was created by .+)")
+    re_cond_uninit = re.compile(r"(Conditional jump or move depends on uninitialised value)")
+    re_use_uninit = re.compile(r"(Use of uninitialised value of size \d+)")
+    re_func = re.compile(r"(?:at|by) 0x[0-9A-Fa-f]+:\s*(\w+)")
+    re_bytes_inside = re.compile(r"(\d+) bytes (?:inside|after) a block of size (\d+)")
+    re_stack_alloc = re.compile(
+        r"Uninitialised value was created by a (stack allocation|heap allocation)"
+    )
+    re_fn_offset = re.compile(r"(\w+)\+0x([0-9A-Fa-f]+)")
+
+    issues: list[VgIssue] = []
+
+    # Strip valgrind PID prefixes (==12345== ) so blank-line splitting works.
+    stripped_stderr = re.sub(r"^==\d+==\s?", "", stderr, flags=re.MULTILINE)
+    # Split into blocks separated by blank lines (valgrind separates
+    # reports this way).  Each block is one error report + its stack trace.
+    blocks = re.split(r"\n\s*\n", stripped_stderr)
+    for block in blocks:
+        lines = block.strip().splitlines()
+        if not lines:
+            continue
+
+        error_type = ""
+        origin = ""
+        functions: list[str] = []
+        byte_offset: int | None = None
+        block_size: int | None = None
+
+        for line in lines:
+            # Error type
+            m = re_invalid.search(line)
+            if m and not error_type:
+                error_type = m.group(1)
+            m = re_cond_uninit.search(line)
+            if m and not error_type:
+                error_type = m.group(1)
+            m = re_use_uninit.search(line)
+            if m and not error_type:
+                error_type = m.group(1)
+            m = re_uninit.search(line)
+            if m:
+                origin = m.group(1)
+
+            # Stack-allocation origin
+            m = re_stack_alloc.search(line)
+            if m:
+                origin = f"Uninitialised value was created by a {m.group(1)}"
+
+            # Function names from stack trace
+            m = re_func.search(line)
+            if m:
+                functions.append(m.group(1))
+
+            # "N bytes inside a block of size M"
+            m = re_bytes_inside.search(line)
+            if m:
+                byte_offset = int(m.group(1))
+                block_size = int(m.group(2))
+
+        if error_type or origin:
+            issues.append(
+                VgIssue(
+                    error_type=error_type,
+                    origin=origin,
+                    functions=functions,
+                    byte_offset=byte_offset,
+                    block_size=block_size,
+                    raw_lines=lines,
+                )
+            )
+
+    # Also collect function+hex-offset pairs globally for struct mapping
+    global_fn_offsets = re_fn_offset.findall(stderr)
+
+    # --- Build report ----------------------------------------------------------
+    report: list[str] = []
+    report.append("Valgrind Analysis")
+    report.append("=================")
+    report.append(f"Command: {' '.join(command)}")
+    report.append(f"Exit code: {r.returncode}")
+    report.append(f"Issues found: {len(issues)}")
+    report.append("")
+
+    for i, issue in enumerate(issues, 1):
+        report.append(f"--- Issue {i} ---")
+        report.append(f"  Type: {issue.error_type or '(unknown)'}")
+        if issue.origin:
+            report.append(f"  Origin: {issue.origin}")
+        if issue.functions:
+            report.append(f"  Function: {issue.functions[0]}")
+            if len(issue.functions) > 1:
+                report.append(f"  Call path: {' -> '.join(issue.functions[:8])}")
+        if issue.byte_offset is not None:
+            size_str = f" (block size {issue.block_size})" if issue.block_size else ""
+            report.append(f"  Offset: {issue.byte_offset} bytes into allocation{size_str}")
+
+        # Auto-map: if we have a byte offset, try to map it to a struct field
+        mapped = False
+        if issue.byte_offset is not None and target_layout:
+            if issue.byte_offset <= target_layout.total_size:
+                fld = field_at_offset(target_layout, issue.byte_offset)
+                report.append("")
+                report.append(
+                    f"  Field Mapping ({target_layout.name}, " f"{target_layout.total_size} bytes):"
+                )
+                report.append(f"    Offset {issue.byte_offset} -> {fld}")
+                # Find the matching StructField for extra detail
+                for sf in target_layout.fields:
+                    if sf.offset <= issue.byte_offset < sf.offset + sf.size:
+                        llvm_repr = _MN_TYPE_MAP.get(sf.type_str, (sf.type_str, sf.size))
+                        if isinstance(llvm_repr, tuple):
+                            llvm_repr = llvm_repr[0]
+                        report.append(f"    Field type: {llvm_repr} ({sf.size} bytes)")
+                        break
+                mapped = True
+
+        # If no byte_offset from "N bytes inside", fall back to function+hex offsets
+        if not mapped and target_layout and issue.functions:
+            for fn_name in issue.functions:
+                for gfn, ghex in global_fn_offsets:
+                    if gfn == fn_name:
+                        off = int(ghex, 16)
+                        if off <= target_layout.total_size:
+                            fld = field_at_offset(target_layout, off)
+                            report.append("")
+                            report.append(
+                                f"  Field Mapping ({target_layout.name}, "
+                                f"{target_layout.total_size} bytes):"
+                            )
+                            report.append(f"    {fn_name}+0x{ghex} (byte {off}) -> {fld}")
+                            mapped = True
+                            break
+                if mapped:
+                    break
+        report.append("")
+
+    # If there are function+offset pairs that didn't appear in any issue, show
+    # them in a supplementary section.
+    if target_layout and global_fn_offsets:
+        extras: list[str] = []
+        for fn_name, hex_off in global_fn_offsets:
+            off = int(hex_off, 16)
+            if off <= target_layout.total_size:
+                fld = field_at_offset(target_layout, off)
+                extras.append(f"  {fn_name}+0x{hex_off} (byte {off}): {fld}")
+        if extras:
+            report.append(f"--- All Function+Offset Mappings ({target_layout.name}) ---")
+            seen_extra: set[str] = set()
+            for line in extras:
+                if line not in seen_extra:
+                    seen_extra.add(line)
+                    report.append(line)
+            report.append("")
+
+    # Full struct layout (always useful context)
+    if target_layout:
+        report.append("--- Struct Layout ---")
+        report.append(format_struct_layout(target_layout))
+        report.append("")
+
+    print("\n".join(report))
+
+    # Show raw stderr if verbose
+    if args.verbose:
+        print("--- Raw Valgrind Output ---")
+        print(stderr[:5000])
+
+    # Log to journal
+    fn_names = []
+    for issue in issues:
+        fn_names.extend(issue.functions[:2])
+    _journal_append(
+        {
+            "command": "valgrind-map",
+            "cmd": command,
+            "exit_code": r.returncode,
+            "issue_count": len(issues),
+            "error_types": list({iss.error_type for iss in issues if iss.error_type}),
+            "functions": list(dict.fromkeys(fn_names))[:10],
+        }
+    )
+
+    return 0 if r.returncode == 0 else 1
+
+
 def main() -> int:
     p = argparse.ArgumentParser(
         prog="ir_doctor",
         description="Per-function IR diagnostics for the Mapanare compiler",
     )
-    p.add_argument("--stage1", default=str(ROOT / "mapanare" / "self" / "mnc-stage1"),
-                   help="Path to mnc-stage1 binary")
+    p.add_argument(
+        "--stage1",
+        default=str(ROOT / "mapanare" / "self" / "mnc-stage1"),
+        help="Path to mnc-stage1 binary",
+    )
     p.add_argument("--json", action="store_true", help="Output as JSON")
     p.add_argument("--only", default="", help="Filter functions by substring")
     p.add_argument("--top", type=int, default=0, help="Show top N functions")
@@ -2173,7 +2574,9 @@ def main() -> int:
     sub.add_parser("golden", help="Fresh compile + validate + audit ALL golden tests (WSL)")
 
     # worklist
-    s_wl = sub.add_parser("worklist", help="Functions needing recursive rewrite (alloca alias bugs)")
+    s_wl = sub.add_parser(
+        "worklist", help="Functions needing recursive rewrite (alloca alias bugs)"
+    )
     s_wl.add_argument("file", help="Path to .ll file")
 
     # extract
@@ -2205,6 +2608,17 @@ def main() -> int:
     s_vg.add_argument("--struct", default="LowerState", help="Struct to map offsets against")
     s_vg.add_argument("-v", "--verbose", action="store_true", help="Show raw valgrind output")
 
+    # valgrind-map
+    s_vgm = sub.add_parser("valgrind-map", help="Run valgrind and map offsets to struct fields")
+    s_vgm.add_argument("cmd", nargs="+", help="Command to run under valgrind")
+    s_vgm.add_argument(
+        "--struct", default=None, help="Struct name to map offsets against (auto-detect if omitted)"
+    )
+    s_vgm.add_argument(
+        "--timeout", type=int, default=30, help="Valgrind timeout in seconds (default: 30)"
+    )
+    s_vgm.add_argument("-v", "--verbose", action="store_true", help="Show raw valgrind output")
+
     # diff
     s_diff = sub.add_parser("diff", help="Compare bootstrap vs stage1 for a .mn file")
     s_diff.add_argument("file", help="Path to .mn file")
@@ -2218,7 +2632,9 @@ def main() -> int:
     sub.add_parser("diff-all", help="Compare all golden tests")
 
     # stage2
-    s_s2 = sub.add_parser("stage2", help="Compile self-hosted modules through mnc-stage1, validate stage2 IR")
+    s_s2 = sub.add_parser(
+        "stage2", help="Compile self-hosted modules through mnc-stage1, validate stage2 IR"
+    )
     s_s2.add_argument("--timeout", type=int, default=30, help="Per-module timeout in seconds")
 
     # snapshot
@@ -2227,8 +2643,11 @@ def main() -> int:
     # table
     s_table = sub.add_parser("table", help="Show function metrics table")
     s_table.add_argument("file", help="Path to .ll file")
-    s_table.add_argument("--sort-by", default="instructions",
-                         help="Sort column (instructions, alloca_bytes, calls, etc.)")
+    s_table.add_argument(
+        "--sort-by",
+        default="instructions",
+        help="Sort column (instructions, alloca_bytes, calls, etc.)",
+    )
 
     # fingerprint
     s_fp = sub.add_parser("fingerprint", help="Dump per-function fingerprints as JSON")
@@ -2251,6 +2670,7 @@ def main() -> int:
         "journal": cmd_journal,
         "note": cmd_note,
         "valgrind": cmd_valgrind,
+        "valgrind-map": cmd_valgrind_map,
         "diff": cmd_diff,
         "diff-ir": cmd_diff_ir,
         "diff-all": cmd_diff_all,

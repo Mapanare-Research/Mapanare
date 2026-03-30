@@ -41,6 +41,40 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v -n auto --durations=20
 
+  # ---------------------------------------------------------------------------
+  # Self-hosted compiler: build mnc-stage1 and validate golden tests
+  # ---------------------------------------------------------------------------
+  self-hosted:
+    name: Self-Hosted Compiler
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Mapanare
+        run: pip install -e ".[dev]"
+
+      - name: Install LLVM tools
+        run: sudo apt-get update -qq && sudo apt-get install -y llvm-18 clang-18
+
+      - name: Build mnc-stage1
+        run: python scripts/build_stage1.py
+        continue-on-error: true
+
+      - name: Run golden tests (15/15)
+        if: success()
+        run: python scripts/ir_doctor.py golden
+
+      - name: Run stage2 validation
+        if: success()
+        run: python scripts/ir_doctor.py stage2 --timeout 30
+        continue-on-error: true
+
   native:
     name: C Runtime Tests
     runs-on: ubuntu-latest

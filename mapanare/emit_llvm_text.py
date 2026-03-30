@@ -517,11 +517,7 @@ class LLVMTextEmitter:
     @staticmethod
     def _use_byref(ty: str) -> bool:
         """True if *ty* should use pointer passing (byref) for user functions."""
-        return (
-            ty.startswith("{")
-            and ty.endswith("}")
-            and _tsz(ty) > LLVMTextEmitter._BYREF_BYTES
-        )
+        return ty.startswith("{") and ty.endswith("}") and _tsz(ty) > LLVMTextEmitter._BYREF_BYTES
 
     def _decl_fn(self, nm: str, ret: str, pts: list[str], va: bool = False) -> None:
         if nm in self._declared:
@@ -1156,7 +1152,9 @@ class LLVMTextEmitter:
         vals = ", ".join(f"i64 {o}" for o in offsets)
         self._globals.append(f"{name} = private constant [{len(offsets)} x i64] [{vals}]")
         gep = self._f("offp")
-        self._L(f"{gep} = getelementptr [{len(offsets)} x i64], [{len(offsets)} x i64]* {name}, i64 0, i64 0")
+        self._L(
+            f"{gep} = getelementptr [{len(offsets)} x i64], [{len(offsets)} x i64]* {name}, i64 0, i64 0"
+        )
         return gep
 
     # --- Cast ---

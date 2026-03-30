@@ -6135,6 +6135,17 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
 }
 
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
+    // Builtin void functions
+    if fn_name == "print" {
+        let dest_r: LowerResult = make_value(st, mir_void(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s)
+    }
+    if fn_name == "println" {
+        let dest_r: LowerResult = make_value(st, mir_void(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s)
+    }
     // Builtin conversion functions — set correct MIR return types
     if fn_name == "int" {
         let dest_r: LowerResult = make_value(st, mir_int(), "t")
@@ -6838,6 +6849,42 @@ fn strip_assign_op(op: String) -> String {
 // If/else lowering
 // ---------------------------------------------------------------------------
 
+fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_val: Value, then_lbl: String, else_lbl: String) -> List<PhiEntry> {
+    let mut result: List<PhiEntry> = []
+    // Add then arm if it has a usable value (not terminated, not void)
+    let then_ok: Bool = !then_term
+    let then_non_void: Bool = then_val.ty.kind != "void"
+    if then_ok {
+        if then_non_void {
+            result.push(new_phi_entry(then_lbl, then_val))
+        }
+    }
+    // Add else arm if it has a usable value
+    let else_ok: Bool = !else_term
+    let else_non_void: Bool = else_val.ty.kind != "void"
+    if else_ok {
+        if else_non_void {
+            result.push(new_phi_entry(else_lbl, else_val))
+        }
+    }
+    // If one arm has value but other is void, add zeroinitializer for the void arm
+    if len(result) == 1 {
+        if then_ok {
+            if !then_non_void {
+                let zero_v: Value = new_value("zeroinitializer", result[0].val.ty)
+                result.push(new_phi_entry(then_lbl, zero_v))
+            }
+        }
+        if else_ok {
+            if !else_non_void {
+                let zero_v: Value = new_value("zeroinitializer", result[0].val.ty)
+                result.push(new_phi_entry(else_lbl, zero_v))
+            }
+        }
+    }
+    return result
+}
+
 fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<ElseClause>) -> LowerResult {
     let cond_r: LowerResult = lower_expr(st, cond)
     let mut s: LowerState = cond_r.state
@@ -6911,37 +6958,90 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     let then_exit_label: String = get_block_label(s, then_exit_idx)
     let else_exit_label: String = get_block_label(s, else_exit_idx)
 
-    let mut incoming: List<PhiEntry> = []
-    let then_has_val: Bool = !then_terminated && then_val.ty.kind != "void" && then_val.name != "%void"
-    let else_has_val: Bool = !else_terminated && else_val.ty.kind != "void" && else_val.name != "%void"
-    if then_has_val {
-        incoming.push(new_phi_entry(then_exit_label, then_val))
+    // Build Phi directly — no list intermediary to avoid return-by-value bugs.
+    // Determine what kind of Phi we need:
+    // - Both arms have values → 2-entry Phi
+    // - One arm has value, other void → 2-entry Phi with zeroinitializer
+    // - Neither has value → void fallback
+    let then_ok: Bool = !then_terminated
+    let mut then_non_void: Bool = true
+    if then_val.ty.kind == "void" { then_non_void = false }
+    if then_val.ty.kind == "unknown" { then_non_void = false }
+    if then_val.name == "%void" { then_non_void = false }
+    let else_ok: Bool = !else_terminated
+    let mut else_non_void: Bool = true
+    if else_val.ty.kind == "void" { else_non_void = false }
+    if else_val.ty.kind == "unknown" { else_non_void = false }
+    if else_val.name == "%void" { else_non_void = false }
+
+    // Determine case using simple flags
+    let mut both: Bool = false
+    let mut only_then: Bool = false
+    let mut only_else: Bool = false
+    if then_ok {
+        if then_non_void {
+            if else_ok {
+                if else_non_void {
+                    both = true
+                }
+                if !else_non_void {
+                    only_then = true
+                }
+            }
+        }
+        if !then_non_void {
+            if else_ok {
+                if else_non_void {
+                    only_else = true
+                }
+            }
+        }
     }
-    if else_has_val {
-        incoming.push(new_phi_entry(else_exit_label, else_val))
-    }
-    // If one arm has a value but the other is void/empty, include the empty arm
-    // with a zero value so the Phi has entries for ALL predecessors.
-    if then_has_val && !else_has_val && !else_terminated {
-        let zero_val: Value = new_value("zeroinitializer", then_val.ty)
-        incoming.push(new_phi_entry(else_exit_label, zero_val))
-    }
-    if else_has_val && !then_has_val && !then_terminated {
-        let zero_val: Value = new_value("zeroinitializer", else_val.ty)
-        incoming.push(new_phi_entry(then_exit_label, zero_val))
+    if !then_ok {
+        if else_ok {
+            if else_non_void {
+                only_else = true
+            }
+        }
     }
 
-    if len(incoming) > 0 {
-        let result_r: LowerResult = make_value(s, incoming[0].val.ty, "if_result")
+    let mut final_val: Value = void_value()
+    if both {
+        let mut entries: List<PhiEntry> = []
+        entries.push(new_phi_entry(then_exit_label, then_val))
+        entries.push(new_phi_entry(else_exit_label, else_val))
+        let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
         s = result_r.state
-        s = emit_instr(s, Instruction::Phi(result_r.value, incoming))
-        return new_lower_result(result_r.value, s)
+        s = emit_instr(s, Instruction::Phi(result_r.value, entries))
+        final_val = result_r.value
     }
-
-    // Void if — no value (or all arms returned)
-    let result_r: LowerResult = make_value(s, mir_void(), "t")
-    s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
-    return new_lower_result(result_r.value, s)
+    if only_then {
+        let mut entries: List<PhiEntry> = []
+        entries.push(new_phi_entry(then_exit_label, then_val))
+        let zero_v: Value = new_value("zeroinitializer", then_val.ty)
+        entries.push(new_phi_entry(else_exit_label, zero_v))
+        let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
+        s = result_r.state
+        s = emit_instr(s, Instruction::Phi(result_r.value, entries))
+        final_val = result_r.value
+    }
+    if only_else {
+        let mut entries: List<PhiEntry> = []
+        let zero_v: Value = new_value("zeroinitializer", else_val.ty)
+        entries.push(new_phi_entry(then_exit_label, zero_v))
+        entries.push(new_phi_entry(else_exit_label, else_val))
+        let result_r: LowerResult = make_value(s, else_val.ty, "if_result")
+        s = result_r.state
+        s = emit_instr(s, Instruction::Phi(result_r.value, entries))
+        final_val = result_r.value
+    }
+    let is_void: Bool = !both && !only_then && !only_else
+    if is_void {
+        let result_r: LowerResult = make_value(s, mir_void(), "t")
+        s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
+        final_val = result_r.value
+    }
+    return new_lower_result(final_val, s)
 }
 
 fn get_block_label(st: LowerState, idx: Int) -> String {
@@ -9758,17 +9858,20 @@ fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitSta
     let mut skip: Bool = false
     if len(incoming) == 0 { skip = true }
     if ty == "void" { skip = true }
-    // For Phis with i64 type (unresolved): try to recover the actual type
-    // from the incoming values. If any incoming value has a non-i64 type,
-    // use that (they should all agree).
+    // For Phis with i64 type (unresolved): recover the actual type from
+    // the incoming values. Uses a flag instead of break to avoid the
+    // Python lowerer's control flow bug that swallows break-inside-if.
     if ty == "i64" && len(incoming) > 0 {
+        let mut found: Bool = false
         let mut ci: Int = 0
         for _ in 0..100 {
-            if ci >= len(incoming) { break }
-            let inc_ty: String = resolve_type(st, incoming[ci].val.ty)
-            if inc_ty != "i64" && inc_ty != "void" {
-                ty = inc_ty
-                break
+            if ci >= len(incoming) { ci = 999 }
+            if !found && ci < len(incoming) {
+                let inc_ty: String = resolve_type(st, incoming[ci].val.ty)
+                if inc_ty != "i64" && inc_ty != "void" {
+                    ty = inc_ty
+                    found = true
+                }
             }
             ci = ci + 1
         }

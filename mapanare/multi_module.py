@@ -483,7 +483,9 @@ def resolve_cross_dep_references(
         # Collect defined function names for this module
         defined_fns = {fn.name for fn in mir.functions}
         # Use per-module fn_map: only resolve to functions from earlier modules
-        mod_fn_map = per_module_fn_map[mod_idx] if mod_idx < len(per_module_fn_map) else global_fn_map
+        mod_fn_map = (
+            per_module_fn_map[mod_idx] if mod_idx < len(per_module_fn_map) else global_fn_map
+        )
 
         for fn in mir.functions:
             for block in fn.blocks:

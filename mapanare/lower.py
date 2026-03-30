@@ -1037,9 +1037,11 @@ class MIRLowerer:
         # Track which variables were updated via ListPush during this loop
         _list_push_vars: set[str] = set()
         _orig_update = self._update_var
+
         def _tracking_update(name: str, val: Value) -> None:
             _list_push_vars.add(name)
             _orig_update(name, val)
+
         self._update_var = _tracking_update  # type: ignore[assignment]
         self._lower_block(loop.body)
         self._update_var = _orig_update  # restore

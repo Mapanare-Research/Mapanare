@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language (v2.0.0) with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (native backend via llvmlite) and WebAssembly (WAT/WASM). A legacy Python transpiler backend exists for reference and bootstrapping only. The self-hosted compiler is 9,400+ lines of `.mn` across 10 modules in `mapanare/self/`. The language is frozen at v1.0 — syntax and semantics changes require RFC + deprecation cycle.
+Mapanare is an AI-native compiled programming language (v2.1.0) with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (native backend via llvmlite) and WebAssembly (WAT/WASM). A legacy Python transpiler backend exists for reference and bootstrapping only. The self-hosted compiler is 9,400+ lines of `.mn` across 10 modules in `mapanare/self/`. The language is frozen at v1.0 — syntax and semantics changes require RFC + deprecation cycle.
 
 ## Current Version & Roadmap
 
@@ -12,7 +12,8 @@ Mapanare is an AI-native compiled programming language (v2.0.0) with first-class
 - **v1.1.0** — AI native: LLM drivers, embeddings, RAG as stdlib
 - **v1.2.0** — Data & storage: SQL drivers, Dato v1.0, YAML/TOML
 - **v1.3.0** — Web platform & security: crawler, vulnerability scanner, web framework
-- **v2.0.0** (current) — GPU compute (CUDA/Vulkan via dlopen), WebAssembly backend, mobile targets, Python backend deprecated
+- **v2.0.0** — GPU compute (CUDA/Vulkan via dlopen), WebAssembly backend, mobile targets, Python backend deprecated
+- **v2.1.0** (current) — Self-hosted compiler approaching fixed-point, stage2 validation, valgrind-based crash diagnostics
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v2.0.0/PLAN.md` for the current execution plan.
 
@@ -109,6 +110,11 @@ python scripts/ir_doctor.py journal                                  # View debu
 python scripts/ir_doctor.py note "tried X, result was Y"             # Add note to debug journal
 python scripts/ir_doctor.py diff-all                                 # All golden tests (WSL)
 python scripts/ir_doctor.py snapshot                                 # Generate .stage1.ll files (WSL)
+python scripts/ir_doctor.py stage2                                   # Compile self-hosted modules through mnc-stage1, validate stage2 IR
+python scripts/ir_doctor.py stage2 --timeout 60                      # With longer timeout
+python scripts/ir_doctor.py valgrind-map ./mapanare/self/mnc-stage1 tests/golden/07_enum_match.mn  # Run valgrind and map crash offsets to struct fields
+python scripts/ir_doctor.py valgrind-map --struct LowerState ./mnc some_file.mn  # Map against specific struct
+python scripts/ir_doctor.py valgrind-map --timeout 60 ./my_binary --flag arg     # With timeout
 
 # MIR Trace — debug type inference issues in the Python lowerer
 python scripts/mir_trace.py tests/golden/10_result.mn divide         # Trace types for one function

@@ -53,15 +53,37 @@ def _type_str(ty: object) -> str:
             return f"{name}<{', '.join(arg_strs)}>"
         # Use friendly names for common types
         friendly = {
-            "1": "Int", "2": "Float", "3": "Bool", "4": "String",
-            "5": "List", "6": "Void", "7": "Fn", "8": "Option",
-            "9": "Struct", "10": "Result", "11": "Agent", "12": "Signal",
-            "13": "Stream", "14": "Map", "0": "Unknown", "15": "Enum",
-            "16": "Tensor", "17": "Char",
+            "1": "Int",
+            "2": "Float",
+            "3": "Bool",
+            "4": "String",
+            "5": "List",
+            "6": "Void",
+            "7": "Fn",
+            "8": "Option",
+            "9": "Struct",
+            "10": "Result",
+            "11": "Agent",
+            "12": "Signal",
+            "13": "Stream",
+            "14": "Map",
+            "0": "Unknown",
+            "15": "Enum",
+            "16": "Tensor",
+            "17": "Char",
         }
         display = friendly.get(k, name or k)
-        if name and name not in ("Int", "Float", "Bool", "String", "Void",
-                                  "List", "Option", "Result", "Unknown"):
+        if name and name not in (
+            "Int",
+            "Float",
+            "Bool",
+            "String",
+            "Void",
+            "List",
+            "Option",
+            "Result",
+            "Unknown",
+        ):
             return f"{name}"  # struct/enum name
         return display
     return str(ty)
@@ -76,11 +98,13 @@ def _value_str(v: object) -> str:
     return name
 
 
-def trace_function(source: str, filename: str, fn_name: str | None, verbose: bool = False) -> list[dict]:
+def trace_function(
+    source: str, filename: str, fn_name: str | None, verbose: bool = False
+) -> list[dict]:
     """Lower a .mn file and trace MIR types for one or all functions."""
+    from mapanare.lower import MIRLowerer
     from mapanare.parser import parse
     from mapanare.semantic import SemanticChecker
-    from mapanare.lower import MIRLowerer
 
     ast = parse(source, filename=filename)
     checker = SemanticChecker()
@@ -114,7 +138,9 @@ def trace_function(source: str, filename: str, fn_name: str | None, verbose: boo
                 dest = getattr(inst, "dest", None)
                 if dest:
                     inst_data["dest"] = _value_str(dest)
-                    fn_data["values"][getattr(dest, "name", "?")] = _type_str(getattr(dest, "ty", None))
+                    fn_data["values"][getattr(dest, "name", "?")] = _type_str(
+                        getattr(dest, "ty", None)
+                    )
 
                 # Extract specific fields based on instruction type
                 val = getattr(inst, "value", None)
@@ -213,8 +239,9 @@ def main() -> int:
     p.add_argument("function", nargs="?", default=None, help="Function name (substring match)")
     p.add_argument("-v", "--verbose", action="store_true", help="Show all instructions")
     p.add_argument("--json", action="store_true", help="Output as JSON")
-    p.add_argument("--compare", action="store_true",
-                   help="Compare with stage1 IR types (requires mnc-stage1)")
+    p.add_argument(
+        "--compare", action="store_true", help="Compare with stage1 IR types (requires mnc-stage1)"
+    )
     p.add_argument("--stage1", default=str(ROOT / "mapanare" / "self" / "mnc-stage1"))
 
     args = p.parse_args()
@@ -223,7 +250,7 @@ def main() -> int:
     traces = trace_function(source, args.file, args.function, verbose=args.verbose)
 
     if not traces:
-        print(f"No functions found" + (f" matching '{args.function}'" if args.function else ""))
+        print("No functions found" + (f" matching '{args.function}'" if args.function else ""))
         return 1
 
     if args.json:
@@ -250,7 +277,10 @@ def main() -> int:
                         print(f"    MIR return: {fn_trace['return_type']}")
                         # Extract return type from IR signature
                         import re
-                        sig_m = re.match(r"define\s+(?:internal\s+)?(?:dso_local\s+)?(.+?)\s+@", ir_fn.signature)
+
+                        sig_m = re.match(
+                            r"define\s+(?:internal\s+)?(?:dso_local\s+)?(.+?)\s+@", ir_fn.signature
+                        )
                         if sig_m:
                             print(f"    IR  return: {sig_m.group(1).strip()}")
                         print(f"    IR  instrs: {ir_fn.instructions}")

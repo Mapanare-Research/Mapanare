@@ -1866,17 +1866,20 @@ fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitSta
     let mut skip: Bool = false
     if len(incoming) == 0 { skip = true }
     if ty == "void" { skip = true }
-    // For Phis with i64 type (unresolved): try to recover the actual type
-    // from the incoming values. If any incoming value has a non-i64 type,
-    // use that (they should all agree).
+    // For Phis with i64 type (unresolved): recover the actual type from
+    // the incoming values. Uses a flag instead of break to avoid the
+    // Python lowerer's control flow bug that swallows break-inside-if.
     if ty == "i64" && len(incoming) > 0 {
+        let mut found: Bool = false
         let mut ci: Int = 0
         for _ in 0..100 {
-            if ci >= len(incoming) { break }
-            let inc_ty: String = resolve_type(st, incoming[ci].val.ty)
-            if inc_ty != "i64" && inc_ty != "void" {
-                ty = inc_ty
-                break
+            if ci >= len(incoming) { ci = 999 }
+            if !found && ci < len(incoming) {
+                let inc_ty: String = resolve_type(st, incoming[ci].val.ty)
+                if inc_ty != "i64" && inc_ty != "void" {
+                    ty = inc_ty
+                    found = true
+                }
             }
             ci = ci + 1
         }

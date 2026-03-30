@@ -12,22 +12,27 @@
 
 ---
 
-## Current State (2026-03-29)
+## Current State (2026-03-29, updated)
 
 ### What works
 
 - **15/15 golden tests pass** — `mnc-stage1` compiles all golden test programs to valid LLVM IR.
-- **Self-compilation succeeds** — `mnc-stage1` compiles `mnc_all.mn` (9,400 lines, 400+ functions) in **0.19s** using **86 MB**. Produces 51,807 lines of stage2 IR.
-- **Stage2 IR: 1 error** — `extractvalue operand must be aggregate type` (struct field access on non-struct). All other code emits correctly.
-- **Byref optimization** — structs >64 bytes pass by pointer with pre-zeroed sret buffers. Eliminates all large-struct corruption permanently.
-- **COW list system** — `__mn_list_push`/`__mn_list_set` call `mn_list_detach()` before mutation. No explicit clone needed on struct copy.
-- **Cross-module function resolution** — per-module cumulative fn_maps (topological order). Prevents name collisions (`fresh_tmp`, `is_comparison_op`, `new_param`).
-- **Closure support** — parser extracts lambda params, lowerer lifts captured vars as extra params, emitter handles function pointer constants.
+- **Self-compilation succeeds** — `mnc-stage1` compiles `mnc_all.mn` (10,120 lines, 460 functions) in **~0.8s** using **~200 MB**. Produces 53,260 lines of stage2 IR.
+- **Stage2 IR: 1 error** — nested if-expression Phi type mismatch (`i64` vs `%struct.TypeInfo`). See [ARCHITECTURE_DECISIONS.md](../ARCHITECTURE_DECISIONS.md) for full analysis.
+- **Opaque pointer migration (partial)** — self-hosted emitter uses `ptr` throughout. Python text emitter still uses typed pointers (Phase 2).
+- **Byref optimization** — structs >64 bytes pass by pointer with pre-zeroed sret buffers. Eliminated 57GB OOM → 200MB.
+- **Selective COW cloning** — clone list fields on struct copy EXCEPT append-only lists (`lines`, `str_globals`). Maintains correctness without OOM.
+- **Type erasure for Options** — `Option<Struct/Enum>` = `{i1, ptr}` with alloca boxing in WrapSome, ptr dereference in EnumPayload.
+- **State-aware type resolution** — `resolve_type(st, ty)` corrects struct→enum misclassification at emit time.
+- **Cross-module function resolution** — per-module cumulative fn_maps. Prevents `fresh_tmp`, `is_comparison_op` collisions.
+- **Closure support** — parser extracts lambda params, lowerer lifts captured vars, emitter handles function pointer constants.
+- **Builtin return types** — `print`, `println`, `int`, `float`, `str`, `len` produce correctly typed MIR values.
+- **Debugging tools** — `ir_doctor stage2` (automated stage2 validation), `ir_doctor valgrind-map` (crash analysis with struct field mapping).
 - **1,775 tests pass** — full pytest suite, 0 failures.
 
 ### What's still broken
 
-1. **Stage2 IR validity** — `mnc-stage1 mnc_all.mn` produces IR with 1 type error (`extractvalue` on non-aggregate). Must fix to build `mnc-stage2` binary.
+1. **Stage2 IR: 1 error** — nested if-expression Phi produces `i64` but downstream match-Phi expects `%struct.TypeInfo`. Requires multi-pass type inference or Phase 2 opaque pointer migration. See [ARCHITECTURE_DECISIONS.md](../ARCHITECTURE_DECISIONS.md).
 2. **Individual module compilation** — 9/10 modules produce invalid stage2 IR due to cross-module `%struct.X` types not being defined. Only matters for module-by-module workflow, not for Phase 4.
 
 ### Key metrics
@@ -93,6 +98,7 @@ All tasks completed: pytest-xdist, dev.ps1 validate, mn_checked_mul visibility.
 
 ## Phase 2 — Control Flow & Type Recovery
 **Status:** `Done`
+**Summary:** 15/15 golden, opaque pointer migration (partial), type erasure for Options, 20+ emitter fixes
 
 ### Fixes applied (cumulative from v1.0.x through v2.0.x sessions)
 
@@ -129,6 +135,7 @@ All tasks completed: pytest-xdist, dev.ps1 validate, mn_checked_mul visibility.
 
 ## Phase 3 — Byref Optimization
 **Status:** `Done`
+**Summary:** Byref optimization (_BYREF_BYTES=64), selective COW cloning, O(n) join. 57GB->200MB.
 
 ### Problem
 LowerState (240B), LowerResult (248B), EmitState (240B) passed by value through 632 call sites. Every copy triggered `_clone_list_fields` (list cloning). With growing lists, caused O(n²) memory → 57GB OOM on self-compilation.
@@ -155,16 +162,13 @@ LowerState (240B), LowerResult (248B), EmitState (240B) passed by value through 
 **Status:** `In Progress`
 **Effort:** Medium
 **Depends on:** Phase 2/3 (done)
+**Summary:** Self-compilation works (0.8s, 200MB, 53K lines). 1 stage2 error remaining (nested if-Phi type). Blocked on Phase 2 Python emitter opaque pointer migration.
 
 ### Current state
 
-Self-compilation produces 51,807 lines of stage2 IR with **1 error**:
-```
-extractvalue operand must be aggregate type
-  %t14 =extractvalue i64 %fd_val13, 0
-```
+Self-compilation produces 53,260 lines of stage2 IR with **1 error** — a nested if-expression Phi type mismatch (`i64` vs `%struct.TypeInfo`). The lowerer emits `i64` for one branch of a nested if-expression, but downstream pattern matching expects the full struct type.
 
-This is a struct field access (`fd.name`) where the lowerer resolved `fd`'s type as `i64` instead of the struct type. Same class of bug as the `ret i64` issue (fixed for returns, still present for field access on some variables).
+This is blocked on completing the opaque pointer migration in the Python text emitter (Phase 2 leftover). The typed-pointer vs opaque-pointer mismatch causes the lowerer to misresolve variable types in certain nested control flow paths.
 
 ### Remaining work
 
@@ -220,6 +224,9 @@ python scripts/ir_doctor.py table mapanare/self/main.ll
 
 # Struct layout inspector
 python scripts/ir_doctor.py structmap LowerState
+
+# Valgrind crash analysis with struct field mapping
+python scripts/ir_doctor.py valgrind-map mapanare/self/main.ll
 ```
 
 ---
