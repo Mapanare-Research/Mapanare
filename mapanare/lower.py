@@ -1042,9 +1042,9 @@ class MIRLowerer:
             _list_push_vars.add(name)
             _orig_update(name, val)
 
-        self._update_var = _tracking_update  # type: ignore[assignment]
+        self._update_var = _tracking_update  # type: ignore[method-assign]
         self._lower_block(loop.body)
-        self._update_var = _orig_update  # restore
+        self._update_var = _orig_update  # type: ignore[method-assign]
         self._loop_exit_stack.pop()
         # Capture list-pushed variable values BEFORE pop
         _pushed_vals = {vn: self._vars[vn].current for vn in _list_push_vars if vn in self._vars}

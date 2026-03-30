@@ -1086,8 +1086,7 @@ class LLVMTextEmitter:
                     continue
                 fp = self._f("clf")
                 self._L(f"{fp} = getelementptr inbounds {sty}, {sty}* {addr}, i32 0, i32 {idx}")
-                cloned = self._f("clr")
-                self._L(f"{cloned} = call {LIST} @__mn_list_clone({LIST}* {fp})")
+                cloned = self._rt("__mn_list_clone", LIST, [f"{LIST}*"], [(fp, f"{LIST}*")])
                 self._L(f"store {LIST} {cloned}, {LIST}* {fp}")
 
     def _struct_name_for_llvm_type(self, llvm_ty: str) -> str | None:
@@ -1106,8 +1105,7 @@ class LLVMTextEmitter:
                 continue
             fp = self._f("nclf")
             self._L(f"{fp} = getelementptr inbounds {sty}, {sty}* {ptr}, i32 0, i32 {idx}")
-            cloned = self._f("nclr")
-            self._L(f"{cloned} = call {LIST} @__mn_list_clone({LIST}* {fp})")
+            cloned = self._rt("__mn_list_clone", LIST, [f"{LIST}*"], [(fp, f"{LIST}*")])
             self._L(f"store {LIST} {cloned}, {LIST}* {fp}")
 
     def _find_nested_list_offsets(self, parent_sn: str, list_field_idx: int) -> list[int]:
@@ -1136,7 +1134,6 @@ class LLVMTextEmitter:
             return []
         # Found the element struct — find its list field offsets
         elem_fields = self._structs[elem_name]
-        elem_ty = self._struct_ty[elem_name]
         offsets: list[int] = []
         running_offset = 0
         for _, eft in elem_fields:
@@ -1147,13 +1144,14 @@ class LLVMTextEmitter:
 
     def _emit_offset_array(self, offsets: list[int]) -> str:
         """Emit a global constant array of i64 offsets and return its name."""
-        name = f"@.list_offsets.{self._ctr}"
-        self._ctr += 1
+        name = f"@.list_offsets.{self._c}"
+        self._c += 1
         vals = ", ".join(f"i64 {o}" for o in offsets)
         self._globals.append(f"{name} = private constant [{len(offsets)} x i64] [{vals}]")
         gep = self._f("offp")
         self._L(
-            f"{gep} = getelementptr [{len(offsets)} x i64], [{len(offsets)} x i64]* {name}, i64 0, i64 0"
+            f"{gep} = getelementptr [{len(offsets)} x i64], "
+            f"[{len(offsets)} x i64]* {name}, i64 0, i64 0"
         )
         return gep
 

@@ -71,8 +71,8 @@ class TestMainMnPipeline:
         assert parse_pos < check_pos < lower_pos < emit_pos
 
     def test_version_string(self, main_mn_source: str) -> None:
-        """Version should be 2.0.1."""
-        assert "2.0.1" in main_mn_source
+        """Version should be 2.1.0."""
+        assert "2.1.0" in main_mn_source
 
 
 class TestMainMnCompileResult:

@@ -146,7 +146,7 @@ def _analyze_function(fn: IRFunction) -> None:
     """Populate structural metrics from body text."""
     body = fn.body
     fn.instructions = len(
-        [l for l in body.splitlines() if l.strip() and not l.strip().endswith(":")]
+        [ln for ln in body.splitlines() if ln.strip() and not ln.strip().endswith(":")]
     )
     fn.basic_blocks = len(re.findall(r"^\w[\w.]*:", body, re.MULTILINE)) + 1  # +1 for entry
     fn.allocas = body.count("= alloca ")
@@ -305,7 +305,10 @@ def detect_alloca_aliasing(mod: IRModule) -> list[Pathology]:
                     code="ALLOCA_ALIAS_MITIGATED",
                     function=fn.name,
                     line=fn.line_start,
-                    message=f"Aliased allocas with write-back: push->{push_targets}, len->{len_sources}",
+                    message=(
+                        f"Aliased allocas with write-back: "
+                        f"push->{push_targets}, len->{len_sources}"
+                    ),
                     detail="Write-back store detected. The aliasing may be safe.",
                 )
             )
@@ -316,7 +319,10 @@ def detect_alloca_aliasing(mod: IRModule) -> list[Pathology]:
                     code="ALLOCA_ALIAS",
                     function=fn.name,
                     line=fn.line_start,
-                    message=f"List push/len use different allocas: push->{push_targets}, len->{len_sources}",
+                    message=(
+                        f"List push/len use different allocas: "
+                        f"push->{push_targets}, len->{len_sources}"
+                    ),
                     detail=(
                         "The for-loop body pushes to one alloca but post-loop len() "
                         "reads from a stale pre-entry alloca. NO write-back found. "
@@ -491,7 +497,10 @@ def detect_duplicate_switch_cases(mod: IRModule) -> list[Pathology]:
                         function=fn.name,
                         line=fn.line_start,
                         message=f"Switch has duplicate case values: {dupes}",
-                        detail="Variant index resolution returned same value for different variants.",
+                        detail=(
+                            "Variant index resolution returned same "
+                            "value for different variants."
+                        ),
                     )
                 )
     return results
@@ -1503,7 +1512,7 @@ def cmd_valgrind(args: argparse.Namespace) -> int:
     # Extract "Invalid read/write" with addresses
     invalid_ops = re.findall(r"(Invalid (?:read|write) of size \d+)", stderr)
     # Extract hex addresses
-    addrs = re.findall(r"Address (0x[\dA-Fa-f]+)", stderr)
+    re.findall(r"Address (0x[\dA-Fa-f]+)", stderr)
     # Extract "Uninitialised value" origins
     uninit = re.findall(r"Uninitialised value was created by (.+)", stderr)
     # Extract function+offset patterns like func+0x1234
@@ -1726,8 +1735,11 @@ def cmd_golden(args: argparse.Namespace) -> int:
                     name,
                     {
                         "type": "empty",
-                        "suggestion": "Binary produced header only (no functions).\n"
-                        "  Check: did _clone_list_fields get disabled? Is COW lazy init breaking module lists?",
+                        "suggestion": (
+                            "Binary produced header only (no functions).\n"
+                            "  Check: did _clone_list_fields get disabled? "
+                            "Is COW lazy init breaking module lists?"
+                        ),
                     },
                 )
             )
@@ -2061,7 +2073,7 @@ def cmd_memory(args: argparse.Namespace) -> int:
                 )
                 elapsed = _time.monotonic() - t0
                 # /usr/bin/time writes RSS to stderr
-                rss_lines = [l for l in r.stderr.strip().splitlines() if l.strip().isdigit()]
+                rss_lines = [ln for ln in r.stderr.strip().splitlines() if ln.strip().isdigit()]
                 rss_kb = int(rss_lines[-1]) if rss_lines else 0
                 rss_mb = rss_kb / 1024
             except (FileNotFoundError, OSError):
@@ -2077,7 +2089,8 @@ def cmd_memory(args: argparse.Namespace) -> int:
             ir_lines = r.stdout.count("\n") if r.returncode == 0 else 0
             exit_code = r.returncode
             print(
-                f"{n_fns:>5d} {n_lines:>6d} {rss_mb:>7.1f} {elapsed:>5.1f}s {ir_lines:>8d} {exit_code:>5d}"
+                f"{n_fns:>5d} {n_lines:>6d} {rss_mb:>7.1f} "
+                f"{elapsed:>5.1f}s {ir_lines:>8d} {exit_code:>5d}"
             )
         except subprocess.TimeoutExpired:
             print(f"{n_fns:>5d} {n_lines:>6d}     TIMEOUT")

@@ -18,7 +18,7 @@
 
 - **15/15 golden tests pass** — `mnc-stage1` compiles all golden test programs to valid LLVM IR.
 - **Self-compilation succeeds** — `mnc-stage1` compiles `mnc_all.mn` (10,120 lines, 460 functions) in **~0.8s** using **~200 MB**. Produces 53,260 lines of stage2 IR.
-- **Stage2 IR: 1 error** — nested if-expression Phi type mismatch (`i64` vs `%struct.TypeInfo`). See [ARCHITECTURE_DECISIONS.md](../ARCHITECTURE_DECISIONS.md) for full analysis.
+- **Stage2 IR: 1 error** — nested if-expression Phi type mismatch (`i64` vs `%struct.TypeInfo`). See [ARCHITECTURE_DECISIONS.md](../../ARCHITECTURE_DECISIONS.md) for full analysis.
 - **Opaque pointer migration (partial)** — self-hosted emitter uses `ptr` throughout. Python text emitter still uses typed pointers (Phase 2).
 - **Byref optimization** — structs >64 bytes pass by pointer with pre-zeroed sret buffers. Eliminated 57GB OOM → 200MB.
 - **Selective COW cloning** — clone list fields on struct copy EXCEPT append-only lists (`lines`, `str_globals`). Maintains correctness without OOM.
@@ -32,7 +32,7 @@
 
 ### What's still broken
 
-1. **Stage2 IR: 1 error** — nested if-expression Phi produces `i64` but downstream match-Phi expects `%struct.TypeInfo`. Requires multi-pass type inference or Phase 2 opaque pointer migration. See [ARCHITECTURE_DECISIONS.md](../ARCHITECTURE_DECISIONS.md).
+1. **Stage2 IR: 1 error** — nested if-expression Phi produces `i64` but downstream match-Phi expects `%struct.TypeInfo`. Requires multi-pass type inference or Phase 2 opaque pointer migration. See [ARCHITECTURE_DECISIONS.md](../../ARCHITECTURE_DECISIONS.md).
 2. **Individual module compilation** — 9/10 modules produce invalid stage2 IR due to cross-module `%struct.X` types not being defined. Only matters for module-by-module workflow, not for Phase 4.
 
 ### Key metrics
