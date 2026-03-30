@@ -28,7 +28,7 @@ fn llvm_void() -> String {
 }
 
 fn llvm_string() -> String {
-    return "{ i8*, i64 }"
+    return "{ ptr, i64 }"
 }
 
 // ---------------------------------------------------------------------------
@@ -44,23 +44,23 @@ fn llvm_result_type(ok_ty: String, err_ty: String) -> String {
 }
 
 fn llvm_tensor_type(elem_ty: String) -> String {
-    return "{ " + elem_ty + "*, i64, i64*, i64 }"
+    return "{ ptr, i64, ptr, i64 }"
 }
 
 fn llvm_list_type(elem_ty: String) -> String {
-    return "{ " + elem_ty + "*, i64, i64 }"
+    return "{ ptr, i64, i64 }"
 }
 
 fn llvm_map_type() -> String {
-    return "{ i8*, i64 }"
+    return "{ ptr, i64 }"
 }
 
 fn llvm_ptr() -> String {
-    return "i8*"
+    return "ptr"
 }
 
 fn llvm_list_rt() -> String {
-    return "{ i8*, i64, i64, i64 }"
+    return "{ ptr, i64, i64, i64 }"
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +79,12 @@ fn resolve_mir_type(t: MIRType) -> String {
     if t.kind == "option" {
         if len(t.args) > 0 {
             let inner: String = resolve_mir_type(t.args[0])
+            // Type erasure: Option<Struct/Enum> uses ptr payload to avoid
+            // recursive type definitions and typed pointer mismatches.
+            // With opaque pointers, {i1, ptr} is universal for all compound types.
+            if inner.starts_with("%struct.") || inner.starts_with("%enum.") {
+                return llvm_option_type(llvm_ptr())
+            }
             return llvm_option_type(inner)
         }
         return llvm_option_type(llvm_ptr())
@@ -110,11 +116,11 @@ fn llvm_alloca(name: String, ty: String) -> String {
 }
 
 fn llvm_store(ty: String, value: String, ptr: String) -> String {
-    return "  store " + ty + " " + value + ", " + ty + "* " + ptr
+    return "  store " + ty + " " + value + ", ptr " + ptr
 }
 
 fn llvm_load(name: String, ty: String, ptr: String) -> String {
-    return "  " + name + " =load " + ty + ", " + ty + "* " + ptr
+    return "  " + name + " =load " + ty + ", ptr " + ptr
 }
 
 fn emit_add(name: String, ty: String, left: String, right: String) -> String {
@@ -242,7 +248,7 @@ fn emit_ret_void() -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_gep(name: String, ty: String, ptr: String, idx: String) -> String {
-    return "  " + name + " =getelementptr " + ty + ", " + ty + "* " + ptr + ", i64 0, i64 " + idx
+    return "  " + name + " =getelementptr " + ty + ", ptr " + ptr + ", i64 0, i64 " + idx
 }
 
 fn emit_insertvalue(name: String, struct_ty: String, agg: String, val: String, val_ty: String, idx: String) -> String {

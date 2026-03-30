@@ -143,7 +143,7 @@ class TestEmitLlvmMnCoverage:
         assert '"i1"' in emitter_source  # Bool
         assert '"i8"' in emitter_source  # Char
         assert '"void"' in emitter_source  # Void
-        assert '"{ i8*, i64 }"' in emitter_source  # String
+        assert '"{ ptr, i64 }"' in emitter_source  # String (opaque pointers)
 
     def test_tensor_runtime_fns_listed(self, emitter_source: str) -> None:
         runtime_fns = [

@@ -6126,6 +6126,28 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
 }
 
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
+    // Builtin conversion functions — set correct MIR return types
+    if fn_name == "int" {
+        let dest_r: LowerResult = make_value(st, mir_int(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s)
+    }
+    if fn_name == "float" {
+        let dest_r: LowerResult = make_value(st, mir_float(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s)
+    }
+    if fn_name == "str" || fn_name == "toString" {
+        let dest_r: LowerResult = make_value(st, mir_string(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s)
+    }
+    if fn_name == "len" {
+        let dest_r: LowerResult = make_value(st, mir_int(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s)
+    }
+
     // Handle Option/Result builtins
     if fn_name == "Some" {
         if len(args) == 1 {
@@ -7084,9 +7106,12 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         return new_lower_result(result_r.value, s)
     }
 
-    let result_r: LowerResult = make_value(s, mir_void(), "t")
-    s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
-    return new_lower_result(result_r.value, s)
+    // All arms terminated (returned/broke). Merge block is unreachable.
+    // Emit Return(none) — the emitter handles non-void functions by emitting
+    // `ret TYPE zeroinitializer` (valid LLVM IR for dead code).
+    s = emit_instr(s, Instruction::Return(none))
+    let void_r: LowerResult = make_value(s, mir_void(), "t")
+    return new_lower_result(void_r.value, void_r.state)
 }
 
 fn get_literal_value(expr: Expr) -> String {
@@ -7572,7 +7597,7 @@ fn llvm_void() -> String {
 }
 
 fn llvm_string() -> String {
-    return "{ i8*, i64 }"
+    return "{ ptr, i64 }"
 }
 
 // ---------------------------------------------------------------------------
@@ -7588,23 +7613,23 @@ fn llvm_result_type(ok_ty: String, err_ty: String) -> String {
 }
 
 fn llvm_tensor_type(elem_ty: String) -> String {
-    return "{ " + elem_ty + "*, i64, i64*, i64 }"
+    return "{ ptr, i64, ptr, i64 }"
 }
 
 fn llvm_list_type(elem_ty: String) -> String {
-    return "{ " + elem_ty + "*, i64, i64 }"
+    return "{ ptr, i64, i64 }"
 }
 
 fn llvm_map_type() -> String {
-    return "{ i8*, i64 }"
+    return "{ ptr, i64 }"
 }
 
 fn llvm_ptr() -> String {
-    return "i8*"
+    return "ptr"
 }
 
 fn llvm_list_rt() -> String {
-    return "{ i8*, i64, i64, i64 }"
+    return "{ ptr, i64, i64, i64 }"
 }
 
 // ---------------------------------------------------------------------------
@@ -7623,6 +7648,12 @@ fn resolve_mir_type(t: MIRType) -> String {
     if t.kind == "option" {
         if len(t.args) > 0 {
             let inner: String = resolve_mir_type(t.args[0])
+            // Type erasure: Option<Struct/Enum> uses ptr payload to avoid
+            // recursive type definitions and typed pointer mismatches.
+            // With opaque pointers, {i1, ptr} is universal for all compound types.
+            if inner.starts_with("%struct.") || inner.starts_with("%enum.") {
+                return llvm_option_type(llvm_ptr())
+            }
             return llvm_option_type(inner)
         }
         return llvm_option_type(llvm_ptr())
@@ -7654,11 +7685,11 @@ fn llvm_alloca(name: String, ty: String) -> String {
 }
 
 fn llvm_store(ty: String, value: String, ptr: String) -> String {
-    return "  store " + ty + " " + value + ", " + ty + "* " + ptr
+    return "  store " + ty + " " + value + ", ptr " + ptr
 }
 
 fn llvm_load(name: String, ty: String, ptr: String) -> String {
-    return "  " + name + " =load " + ty + ", " + ty + "* " + ptr
+    return "  " + name + " =load " + ty + ", ptr " + ptr
 }
 
 fn emit_add(name: String, ty: String, left: String, right: String) -> String {
@@ -7786,7 +7817,7 @@ fn emit_ret_void() -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_gep(name: String, ty: String, ptr: String, idx: String) -> String {
-    return "  " + name + " =getelementptr " + ty + ", " + ty + "* " + ptr + ", i64 0, i64 " + idx
+    return "  " + name + " =getelementptr " + ty + ", ptr " + ptr + ", i64 0, i64 " + idx
 }
 
 fn emit_insertvalue(name: String, struct_ty: String, agg: String, val: String, val_ty: String, idx: String) -> String {
@@ -7976,9 +8007,9 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
 
     // List runtime
     s = declare_runtime_fn(s, "__mn_list_new", llvm_list_rt(), "i64")
-    s = declare_runtime_fn(s, "__mn_list_push", "void", llvm_list_rt() + "*, i8*")
-    s = declare_runtime_fn(s, "__mn_list_get", "i8*", llvm_list_rt() + "*, i64")
-    s = declare_runtime_fn(s, "__mn_list_len", "i64", llvm_list_rt() + "*")
+    s = declare_runtime_fn(s, "__mn_list_push", "void", llvm_list_rt() + "*, ptr")
+    s = declare_runtime_fn(s, "__mn_list_get", "ptr", llvm_list_rt() + "*, i64")
+    s = declare_runtime_fn(s, "__mn_list_len", "i64", "ptr")
 
     // Iterator runtime
     s = declare_runtime_fn(s, "__iter_has_next", llvm_bool(), "{ i64, i64 }")
@@ -7997,28 +8028,28 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_panic", "void", llvm_string())
 
     // Printf
-    s = declare_runtime_fn(s, "printf", "i32", "i8*, ...")
+    s = declare_runtime_fn(s, "printf", "i32", "ptr, ...")
 
     // Tensor runtime
-    s = declare_runtime_fn(s, "__mapanare_tensor_add", "i8*", "i8*, i8*")
-    s = declare_runtime_fn(s, "__mapanare_tensor_sub", "i8*", "i8*, i8*")
-    s = declare_runtime_fn(s, "__mapanare_tensor_mul", "i8*", "i8*, i8*")
-    s = declare_runtime_fn(s, "__mapanare_tensor_div", "i8*", "i8*, i8*")
-    s = declare_runtime_fn(s, "__mapanare_matmul", "i8*", "i8*, i8*")
-    s = declare_runtime_fn(s, "__mapanare_tensor_alloc", "i8*", "i64, i64*, i64")
-    s = declare_runtime_fn(s, "__mapanare_tensor_free", "void", "i8*")
-    s = declare_runtime_fn(s, "__mapanare_tensor_shape_eq", "i1", "i8*, i8*")
-    s = declare_runtime_fn(s, "__mapanare_detect_gpus", "i8*", "")
+    s = declare_runtime_fn(s, "__mapanare_tensor_add", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mapanare_tensor_sub", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mapanare_tensor_mul", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mapanare_tensor_div", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mapanare_matmul", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mapanare_tensor_alloc", "ptr", "i64, i64*, i64")
+    s = declare_runtime_fn(s, "__mapanare_tensor_free", "void", "ptr")
+    s = declare_runtime_fn(s, "__mapanare_tensor_shape_eq", "i1", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mapanare_detect_gpus", "ptr", "")
 
     // Agent runtime
-    s = declare_runtime_fn(s, "__mn_agent_spawn", "i8*", "i8*, i8*")
-    s = declare_runtime_fn(s, "__mn_agent_send", "void", "i8*, i8*, i8*")
-    s = declare_runtime_fn(s, "__mn_agent_sync", "i8*", "i8*, i8*")
+    s = declare_runtime_fn(s, "__mn_agent_spawn", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_agent_send", "void", "ptr, ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_agent_sync", "ptr", "ptr, ptr")
 
     // Signal runtime
-    s = declare_runtime_fn(s, "__mn_signal_new", "i8*", "i8*")
-    s = declare_runtime_fn(s, "__mn_signal_get", "i8*", "i8*")
-    s = declare_runtime_fn(s, "__mn_signal_set", "void", "i8*, i8*")
+    s = declare_runtime_fn(s, "__mn_signal_new", "ptr", "ptr")
+    s = declare_runtime_fn(s, "__mn_signal_get", "ptr", "ptr")
+    s = declare_runtime_fn(s, "__mn_signal_set", "void", "ptr, ptr")
 
     return emit_blank(s)
 }
@@ -8044,7 +8075,19 @@ fn register_mir_struct(st: EmitState, info: StructInfo) -> EmitState {
             return s
         }
         let fp: FieldPair = info.fields[fi]
-        let fty: String = resolve_mir_type(fp.val.ty)
+        let mut fty: String = resolve_mir_type(fp.val.ty)
+        // Detect self-referential fields (e.g. TypeInfo has Option<TypeInfo>).
+        // Replace with ptr to avoid infinite recursion in LLVM type layout.
+        // Use boundary-aware match: check for exact type name followed by
+        // non-alphanumeric (space, comma, }, etc.) to avoid false positives
+        // like MatchArm matching MatchArmBody.
+        let self_struct: String = "%struct." + info.name + " "
+        let self_struct2: String = "%struct." + info.name + "}"
+        let self_enum: String = "%enum." + info.name + " "
+        let self_enum2: String = "%enum." + info.name + "}"
+        if fty.contains(self_struct) || fty.contains(self_struct2) || fty.contains(self_enum) || fty.contains(self_enum2) {
+            fty = llvm_ptr()
+        }
         field_names.push(fp.name)
         field_types.push(fty)
         if fi > 0 {
@@ -8078,12 +8121,12 @@ fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
     if resolved == "double" { return 1 }
     if resolved == "i1" { return 1 }
     if resolved == "i8" { return 1 }
-    if resolved == "i8*" { return 1 }
+    if resolved == "ptr" { return 1 }
     if resolved == "void" { return 0 }
-    // String: { i8*, i64 } = 2 slots
-    if resolved == "{ i8*, i64 }" { return 2 }
-    // List: { i8*, i64, i64, i64 } = 4 slots
-    if resolved == "{ i8*, i64, i64, i64 }" { return 4 }
+    // String: { ptr, i64 } = 2 slots
+    if resolved == "{ ptr, i64 }" { return 2 }
+    // List: { ptr, i64, i64, i64 } = 4 slots
+    if resolved == "{ ptr, i64, i64, i64 }" { return 4 }
     // Range: { i64, i64 } = 2 slots
     if resolved == "{ i64, i64 }" { return 2 }
     // Option: { i1, T } ≈ 2 slots minimum
@@ -8095,7 +8138,7 @@ fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
     }
     // Result: { i1, { T, E } }
     if ty.kind == "result" { return 4 }
-    // Map: { i8*, i64 } = 2 slots
+    // Map: { ptr, i64 } = 2 slots
     if ty.kind == "map" { return 2 }
     // Enum: look up declared size from enum_infos
     if ty.kind == "enum" {
@@ -8350,7 +8393,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
         let ptr_name: String = dn + ".ptr"
         s = emit_line(s, "  " + ptr_name + " = getelementptr " + arr_ty + ", " + arr_ty + "* " + gname + ", i64 0, i64 0")
         let s1_name: String = dn + ".s1"
-        s = emit_line(s, emit_insertvalue(s1_name, llvm_string(), "undef", ptr_name, "i8*", "0"))
+        s = emit_line(s, emit_insertvalue(s1_name, llvm_string(), "undef", ptr_name, "ptr", "0"))
         s = emit_line(s, emit_insertvalue(dn, llvm_string(), s1_name, toString(slen), "i64", "1"))
         return s
     }
@@ -8382,7 +8425,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
 
     // Function constant: emit function pointer reference
     if ty.kind == "fn" {
-        s = emit_line(s, "  " + dn + " = bitcast void ()* @" + val + " to i8*")
+        s = emit_line(s, "  " + dn + " = bitcast void ()* @" + val + " to ptr")
         return s
     }
 
@@ -8402,7 +8445,7 @@ fn emit_copy(st: EmitState, dest: Value, src: Value) -> EmitState {
     // This handles match pattern bindings where the payload type is known
     // from enum info but the pattern variable type is unknown.
     let mut use_ty: String = ty
-    if ty == "i8*" {
+    if ty == "ptr" {
         use_ty = src_ty
     }
     if ty == "i64" && (src_ty.starts_with("%struct.") || src_ty.starts_with("%enum.") || src_ty.starts_with("{")) {
@@ -8421,7 +8464,7 @@ fn emit_copy(st: EmitState, dest: Value, src: Value) -> EmitState {
         s = emit_line(s, "  store " + use_ty + " " + src.name + ", " + use_ty + "* " + tmp_a)
         return emit_line(s, "  " + dest.name + " = load " + use_ty + ", " + use_ty + "* " + tmp_a)
     }
-    // Scalars (i64, double, i8*, etc.): use add 0 identity
+    // Scalars (i64, double, ptr, etc.): use add 0 identity
     return emit_line(s, "  " + dest.name + " = add " + use_ty + " 0, " + src.name)
 }
 
@@ -8593,12 +8636,13 @@ fn emit_struct_init(st: EmitState, dest: Value, ty: MIRType, fields: List<FieldP
         }
         let fp: FieldPair = fields[i]
         let mut fty: String = resolve_mir_type(fp.val.ty)
+        let val_name: String = fp.val.name
         // If MIR type is unknown, use the registered struct field type
         if fty == "i64" && fp.val.ty.kind == "unknown" && i < len(field_types) {
             fty = field_types[i]
         }
         let tmp_name: String = dn + ".f" + toString(i)
-        s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, agg, fp.val.name, fty, toString(i)))
+        s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, agg, val_name, fty, toString(i)))
         agg = tmp_name
         i = i + 1
     }
@@ -8747,12 +8791,13 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
         if i >= nfields { break }
         let v: Value = values[i]
         let mut fty: String = resolve_mir_type(v.ty)
+        let vname: String = v.name
         // If MIR type is unknown, use the registered struct field type
         if fty == "i64" && v.ty.kind == "unknown" && i < len(field_types) {
             fty = field_types[i]
         }
         let tmp_name: String = dn + ".f" + toString(i)
-        s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, agg, v.name, fty, toString(i)))
+        s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, agg, vname, fty, toString(i)))
         agg = tmp_name
         i = i + 1
     }
@@ -8794,8 +8839,8 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
         s = emit_line(s, llvm_alloca(elem_alloca, ety))
         s = emit_line(s, llvm_store(ety, elem.name, elem_alloca))
         let cast_name: String = dn + ".c" + toString(i)
-        s = emit_line(s, emit_bitcast(cast_name, ety + "*", elem_alloca, "i8*"))
-        s = emit_line(s, emit_call_void("__mn_list_push", llvm_list_rt() + "* " + alloca_name + ", i8* " + cast_name))
+        s = emit_line(s, emit_bitcast(cast_name, ety + "*", elem_alloca, "ptr"))
+        s = emit_line(s, emit_call_void("__mn_list_push", llvm_list_rt() + "* " + alloca_name + ", ptr " + cast_name))
         i = i + 1
     }
     return s
@@ -8821,16 +8866,16 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
     s = emit_line(s, "  " + tmp + " = alloca " + lt)
     s = emit_line(s, "  store " + lt + " " + obj.name + ", " + lt + "* " + tmp)
 
-    // If dest type is known (struct/enum), cast i8* → element_type* and load
+    // If dest type is known (struct/enum), cast ptr → element_type* and load
     let dest_ty: String = resolve_mir_type(dest.ty)
-    if dest_ty != llvm_int() && dest_ty != "i8*" && dest_ty != "void" {
+    if dest_ty != llvm_int() && dest_ty != "ptr" && dest_ty != "void" {
         let raw: String = dn + ".raw"
-        s = emit_line(s, emit_call_ir(raw, "i8*", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
+        s = emit_line(s, emit_call_ir(raw, "ptr", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
         let cast: String = dn + ".ep"
-        s = emit_line(s, "  " + cast + " = bitcast i8* " + raw + " to " + dest_ty + "*")
+        s = emit_line(s, "  " + cast + " = bitcast ptr " + raw + " to " + dest_ty + "*")
         s = emit_line(s, "  " + dn + " = load " + dest_ty + ", " + dest_ty + "* " + cast)
     } else {
-        s = emit_line(s, emit_call_ir(dn, "i8*", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
+        s = emit_line(s, emit_call_ir(dn, "ptr", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
     }
     return s
 }
@@ -8859,7 +8904,7 @@ fn emit_load(st: EmitState, dest: Value, ptr: Value) -> EmitState {
 fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState {
     let val_ty: String = resolve_mir_type(val.ty)
     let ptr_ty: String = resolve_mir_type(ptr.ty)
-    // When storing a generic None ({i1, i8*}) to a specific Option alloca
+    // When storing a generic None ({i1, ptr}) to a specific Option alloca
     // ({i1, %enum.T}), use zeroinitializer with the alloca's type instead.
     // None has tag=0 and null payload — zeroinitializer is equivalent.
     if val.ty.kind == "option" && ptr_ty != val_ty && ptr_ty.starts_with("{") {
@@ -8876,7 +8921,7 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
     let mut s: EmitState = st
     let dn: String = dest.name
     // Maps are pointer-based; minimal implementation
-    s = emit_line(s, "  " + dn + " =insertvalue " + llvm_map_type() + " undef, i8* null, 0")
+    s = emit_line(s, "  " + dn + " =insertvalue " + llvm_map_type() + " undef, ptr null, 0")
     return s
 }
 
@@ -8902,21 +8947,31 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
     s = emit_line(s, "  " + tag_ptr + " = getelementptr inbounds " + enum_ty + ", " + enum_ty + "* " + ea + ", i32 0, i32 0")
     s = emit_line(s, "  store i64 " + tag_val + ", i64* " + tag_ptr)
 
-    // Store payload values through bitcast: skip past the i64 tag (8 bytes)
+    // Store payload values through bitcast: skip past the i64 tag (8 bytes).
+    // All payload slots are i64-sized. Non-i64 values (double, i1) are stored
+    // through type-punning (alloca+bitcast) to fit the i64 slot.
     let mut i: Int = 0
     for _ in 0..100 {
         if i >= len(payload) { break }
         let p: Value = payload[i]
-        let pty: String = resolve_mir_type(p.ty)
+        let mut pty: String = resolve_mir_type(p.ty)
+        let mut pname: String = p.name
+        // Type erasure: double → bitcast to i64 for the enum slot
+        if pty == "double" {
+            let bc: String = dn + ".fti" + toString(i)
+            s = emit_line(s, "  " + bc + " = bitcast double " + pname + " to i64")
+            pname = bc
+            pty = "i64"
+        }
         // Bitcast past tag to get payload pointer
         let bp: String = dn + ".bp" + toString(i)
-        s = emit_line(s, "  " + bp + " = bitcast " + enum_ty + "* " + ea + " to i8*")
+        s = emit_line(s, "  " + bp + " = bitcast " + enum_ty + "* " + ea + " to ptr")
         let pp: String = dn + ".pp" + toString(i)
         let offset: String = toString(8 + i * 8)
-        s = emit_line(s, "  " + pp + " = getelementptr inbounds i8, i8* " + bp + ", i64 " + offset)
+        s = emit_line(s, "  " + pp + " = getelementptr inbounds i8, ptr " + bp + ", i64 " + offset)
         let tp: String = dn + ".pt" + toString(i)
-        s = emit_line(s, "  " + tp + " = bitcast i8* " + pp + " to " + pty + "*")
-        s = emit_line(s, "  store " + pty + " " + p.name + ", " + pty + "* " + tp)
+        s = emit_line(s, "  " + tp + " = bitcast ptr " + pp + " to " + pty + "*")
+        s = emit_line(s, "  store " + pty + " " + pname + ", " + pty + "* " + tp)
         i = i + 1
     }
 
@@ -9029,9 +9084,9 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
     }
     s = emit_line(s, "  " + dn + ".ea = alloca " + enum_ty)
     s = emit_line(s, "  store " + enum_ty + " " + val.name + ", " + enum_ty + "* " + dn + ".ea")
-    s = emit_line(s, "  " + dn + ".bp = bitcast " + enum_ty + "* " + dn + ".ea to i8*")
-    s = emit_line(s, "  " + dn + ".pp = getelementptr inbounds i8, i8* " + dn + ".bp, i64 8")
-    s = emit_line(s, "  " + dn + ".tp = bitcast i8* " + dn + ".pp to " + dest_ty + "*")
+    s = emit_line(s, "  " + dn + ".bp = bitcast " + enum_ty + "* " + dn + ".ea to ptr")
+    s = emit_line(s, "  " + dn + ".pp = getelementptr inbounds i8, ptr " + dn + ".bp, i64 8")
+    s = emit_line(s, "  " + dn + ".tp = bitcast ptr " + dn + ".pp to " + dest_ty + "*")
     s = emit_line(s, "  " + dn + " = load " + dest_ty + ", " + dest_ty + "* " + dn + ".tp")
     return s
 }
@@ -9045,14 +9100,14 @@ fn emit_wrap_some(st: EmitState, dest: Value, val: Value) -> EmitState {
     let val_ty: String = resolve_mir_type(val.ty)
     let dn: String = dest.name
 
-    // For enum values (%enum.X = large inline struct), use {i1, i8*} representation
-    // to match WrapNone and function signatures. Store enum to alloca, use ptr.
-    if val_ty.starts_with("%enum.") {
+    // Type erasure: compound types (struct/enum) use ptr in Options.
+    // Store to alloca and use the pointer as the option payload.
+    if val_ty.starts_with("%enum.") || val_ty.starts_with("%struct.") {
         let ea: String = dn + ".ea"
         s = emit_line(s, "  " + ea + " = alloca " + val_ty)
-        s = emit_line(s, "  store " + val_ty + " " + val.name + ", " + val_ty + "* " + ea)
-        let ep: String = dn + ".ep"
-        s = emit_line(s, "  " + ep + " = bitcast " + val_ty + "* " + ea + " to i8*")
+        s = emit_line(s, "  store " + val_ty + " " + val.name + ", ptr " + ea)
+        // With opaque pointers, the alloca IS a ptr — no bitcast needed
+        let ep: String = ea
         let opt_ty: String = llvm_option_type(llvm_ptr())
         let tag_name: String = dn + ".tag"
         s = emit_line(s, emit_insertvalue(tag_name, opt_ty, "undef", "1", "i1", "0"))
@@ -9068,7 +9123,11 @@ fn emit_wrap_some(st: EmitState, dest: Value, val: Value) -> EmitState {
 }
 
 fn emit_wrap_none(st: EmitState, dest: Value, ty: MIRType) -> EmitState {
-    let inner_ty: String = if len(ty.args) > 0 { resolve_mir_type(ty.args[0]) } else { llvm_ptr() }
+    let mut inner_ty: String = if len(ty.args) > 0 { resolve_mir_type(ty.args[0]) } else { llvm_ptr() }
+    // Type erasure: compound types (struct/enum) use ptr in Options
+    if inner_ty.starts_with("%struct.") || inner_ty.starts_with("%enum.") {
+        inner_ty = llvm_ptr()
+    }
     let opt_ty: String = llvm_option_type(inner_ty)
     let dn: String = dest.name
     let s: EmitState = emit_line(st, emit_insertvalue(dn, opt_ty, "undef", "0", "i1", "0"))
@@ -9249,11 +9308,25 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         if j < len(reg_param_types) {
             let rpt: String = reg_param_types[j]
             if rpt != aty && rpt != "i64" {
-                // Type mismatch: use registered type. For generic None ({i1,i8*})
-                // passed to a specific Option param ({i1,%enum.T}), replace with
-                // zeroinitializer since None is all-zeros regardless of inner type.
-                if aty.starts_with("{ i1, i8*") && rpt.starts_with("{ i1,") {
+                // Type mismatch: use registered type.
+                // Generic None ({i1,ptr}) → zeroinitializer of specific type
+                if aty.starts_with("{ i1, ptr") && rpt.starts_with("{ i1,") {
                     an = "zeroinitializer"
+                }
+                // Enum type mismatch (e.g. LambdaBody vs MatchArmBody — same layout):
+                // reinterpret through memory alloca+bitcast+load
+                if aty.starts_with("%enum.") && rpt.starts_with("%enum.") && aty != rpt {
+                    let rc_a: String = "%ecast" + toString(s.counter)
+                    s.counter = s.counter + 1
+                    let rc_bp: String = "%ecast_bp" + toString(s.counter)
+                    s.counter = s.counter + 1
+                    let rc_ld: String = "%ecast_ld" + toString(s.counter)
+                    s.counter = s.counter + 1
+                    s = emit_line(s, "  " + rc_a + " = alloca " + rpt)
+                    s = emit_line(s, "  " + rc_bp + " = bitcast " + rpt + "* " + rc_a + " to " + aty + "*")
+                    s = emit_line(s, "  store " + aty + " " + an + ", " + aty + "* " + rc_bp)
+                    s = emit_line(s, "  " + rc_ld + " = load " + rpt + ", " + rpt + "* " + rc_a)
+                    an = rc_ld
                 }
                 aty = rpt
             }
@@ -9293,7 +9366,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
 
 fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
     if len(args) == 0 {
-        return emit_line(st, emit_call_void("printf", "i8* @.newline"))
+        return emit_line(st, emit_call_void("printf", "ptr @.newline"))
     }
     let arg: Value = args[0]
     let mut s: EmitState = st
@@ -9303,13 +9376,13 @@ fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
         return emit_line(s, emit_call_void("__mn_str_print", llvm_string() + " " + an))
     }
     if arg.ty.kind == "float" {
-        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_float, double " + an + ")")
+        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_float, double " + an + ")")
     }
     if arg.ty.kind == "int" {
-        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_int, i64 " + an + ")")
+        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 " + an + ")")
     }
     if arg.ty.kind == "bool" {
-        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_int, i64 " + an + ")")
+        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 " + an + ")")
     }
     // Unknown type: assume string
     return emit_line(s, emit_call_void("__mn_str_print", llvm_string() + " " + an))
@@ -9317,7 +9390,7 @@ fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
 
 fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
     if len(args) == 0 {
-        return emit_line(st, emit_call_void("printf", "i8* @.newline"))
+        return emit_line(st, emit_call_void("printf", "ptr @.newline"))
     }
     let arg: Value = args[0]
     let mut s: EmitState = st
@@ -9327,13 +9400,13 @@ fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
         return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
     }
     if arg.ty.kind == "float" {
-        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_float_nl, double " + an + ")")
+        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_float_nl, double " + an + ")")
     }
     if arg.ty.kind == "int" {
-        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_int_nl, i64 " + an + ")")
+        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
     }
     if arg.ty.kind == "bool" {
-        return emit_line(s, "  call i32 (i8*, ...) @printf(i8* @.fmt_int_nl, i64 " + an + ")")
+        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
     }
     // Unknown type: assume string (common from str()/toString() calls)
     return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
@@ -9429,6 +9502,12 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
             return emit_line(st, emit_ret(ty, val.name))
         },
         _ => {
+            // For non-void functions, emit zeroinitializer return (dead code from
+            // match arms that all terminate). For void functions, emit ret void.
+            let ret_ty: String = st.current_ret_type
+            if ret_ty != "void" {
+                return emit_line(st, "  ret " + ret_ty + " zeroinitializer")
+            }
             return emit_line(st, emit_ret_void())
         }
     }
@@ -9484,17 +9563,17 @@ fn emit_agent_spawn(st: EmitState, dest: Value, ty: MIRType, args: List<Value>) 
     let dn: String = dest.name
     let mut s: EmitState = st
     // Call agent spawn runtime function
-    s = emit_line(s, emit_call_ir(dn, "i8*", "__mn_agent_spawn", "i8* null, i8* null"))
+    s = emit_line(s, emit_call_ir(dn, "ptr", "__mn_agent_spawn", "ptr null, ptr null"))
     return s
 }
 
 fn emit_agent_send(st: EmitState, agent: Value, channel: String, val: Value) -> EmitState {
-    return emit_line(st, emit_call_void("__mn_agent_send", "i8* " + agent.name + ", i8* null, i8* null"))
+    return emit_line(st, emit_call_void("__mn_agent_send", "ptr " + agent.name + ", ptr null, ptr null"))
 }
 
 fn emit_agent_sync(st: EmitState, dest: Value, agent: Value, channel: String) -> EmitState {
     let dn: String = dest.name
-    let s2: EmitState = emit_line(st, emit_call_ir(dn, "i8*", "__mn_agent_sync", "i8* " + agent.name + ", i8* null"))
+    let s2: EmitState = emit_line(st, emit_call_ir(dn, "ptr", "__mn_agent_sync", "ptr " + agent.name + ", ptr null"))
     return s2
 }
 
@@ -9504,18 +9583,18 @@ fn emit_agent_sync(st: EmitState, dest: Value, agent: Value, channel: String) ->
 
 fn emit_signal_init(st: EmitState, dest: Value, ty: MIRType, val: Value) -> EmitState {
     let dn: String = dest.name
-    let s2: EmitState = emit_line(st, emit_call_ir(dn, "i8*", "__mn_signal_new", "i8* null"))
+    let s2: EmitState = emit_line(st, emit_call_ir(dn, "ptr", "__mn_signal_new", "ptr null"))
     return s2
 }
 
 fn emit_signal_get(st: EmitState, dest: Value, sig: Value) -> EmitState {
     let dn: String = dest.name
-    let s2: EmitState = emit_line(st, emit_call_ir(dn, "i8*", "__mn_signal_get", "i8* " + sig.name))
+    let s2: EmitState = emit_line(st, emit_call_ir(dn, "ptr", "__mn_signal_get", "ptr " + sig.name))
     return s2
 }
 
 fn emit_signal_set(st: EmitState, sig: Value, val: Value) -> EmitState {
-    return emit_line(st, emit_call_void("__mn_signal_set", "i8* " + sig.name + ", i8* null"))
+    return emit_line(st, emit_call_void("__mn_signal_set", "ptr " + sig.name + ", ptr null"))
 }
 
 // ---------------------------------------------------------------------------
@@ -9526,7 +9605,7 @@ fn emit_stream_op(st: EmitState, dest: Value, kind: StreamOpKind, source: Value,
     let mut s: EmitState = st
     let dn: String = dest.name
     // Stream operations are runtime-dispatched; minimal LLVM lowering
-    let s2: EmitState = emit_line(s, "  " + dn + " =bitcast i8* " + source.name + " to i8*")
+    let s2: EmitState = emit_line(s, "  " + dn + " =bitcast ptr " + source.name + " to ptr")
     return s2
 }
 

@@ -880,6 +880,28 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
 }
 
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
+    // Builtin conversion functions — set correct MIR return types
+    if fn_name == "int" {
+        let dest_r: LowerResult = make_value(st, mir_int(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s)
+    }
+    if fn_name == "float" {
+        let dest_r: LowerResult = make_value(st, mir_float(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s)
+    }
+    if fn_name == "str" || fn_name == "toString" {
+        let dest_r: LowerResult = make_value(st, mir_string(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s)
+    }
+    if fn_name == "len" {
+        let dest_r: LowerResult = make_value(st, mir_int(), "t")
+        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s)
+    }
+
     // Handle Option/Result builtins
     if fn_name == "Some" {
         if len(args) == 1 {
@@ -1838,9 +1860,12 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         return new_lower_result(result_r.value, s)
     }
 
-    let result_r: LowerResult = make_value(s, mir_void(), "t")
-    s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
-    return new_lower_result(result_r.value, s)
+    // All arms terminated (returned/broke). Merge block is unreachable.
+    // Emit Return(none) — the emitter handles non-void functions by emitting
+    // `ret TYPE zeroinitializer` (valid LLVM IR for dead code).
+    s = emit_instr(s, Instruction::Return(none))
+    let void_r: LowerResult = make_value(s, mir_void(), "t")
+    return new_lower_result(void_r.value, void_r.state)
 }
 
 fn get_literal_value(expr: Expr) -> String {
