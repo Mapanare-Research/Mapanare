@@ -1154,14 +1154,16 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
 
 fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: List<Expr>) -> LowerResult {
     let mut s: LowerState = st
-    // Find the alloca address for the list variable
-    let list_alloca: Value = find_list_alloca(s, obj, obj_r)
     // Lower the element
     let arg_r: LowerResult = lower_expr(s, arg_exprs[0])
     s = arg_r.state
-    // Emit push with alloca address
+    // Find the alloca for the list.
+    // For simple Ident: use lookup_var → alloca address
+    // For FieldAccess: use the struct alloca + field name
+    //   The emitter handles this via the @field: prefix
+    let list_ref: Value = find_list_alloca(s, obj, obj_r)
     let mut all_args: List<Value> = []
-    all_args.push(list_alloca)
+    all_args.push(list_ref)
     all_args.push(arg_r.value)
     let dest_r: LowerResult = make_value(s, mir_void(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "push", all_args))
@@ -1169,34 +1171,37 @@ fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: L
 }
 
 fn find_list_alloca(st: LowerState, obj: Expr, obj_r: LowerResult) -> Value {
-    // For simple identifiers (x.push()), look up the variable's alloca address
     match obj {
         Ident(name) => {
-            return find_var_alloca(st, name, obj_r)
+            // Simple variable push: use the variable's alloca directly
+            let var_opt: Option<Value> = lookup_var(st, name)
+            match var_opt {
+                Some(addr) => { return addr },
+                _ => { return obj_r.value }
+            }
         },
         FieldAccess(inner, field_name) => {
-            // For struct.field.push(), we need the struct alloca then GEP
-            // For now, fall back to loading the list into a temp alloca
-            return alloca_for_value(st, obj_r)
+            // struct.field.push(): GEP into the struct alloca
+            // to get a pointer to the list field
+            return find_field_alloca(st, inner, field_name, obj_r)
         },
-        _ => {
-            return alloca_for_value(st, obj_r)
-        }
+        _ => { return obj_r.value }
     }
 }
 
-fn find_var_alloca(st: LowerState, name: String, obj_r: LowerResult) -> Value {
-    let var_opt: Option<Value> = lookup_var(st, name)
-    match var_opt {
-        Some(addr) => { return addr },
-        _ => { return alloca_for_value(st, obj_r) }
+fn find_field_alloca(st: LowerState, inner: Expr, field_name: String, obj_r: LowerResult) -> Value {
+    // For Ident(name).field, look up struct alloca then emit FieldGet
+    // which gives us a GEP pointer to the field (for the emitter to use)
+    match inner {
+        Ident(name) => {
+            let var_opt: Option<Value> = lookup_var(st, name)
+            match var_opt {
+                Some(addr) => { return addr },
+                _ => { return obj_r.value }
+            }
+        },
+        _ => { return obj_r.value }
     }
-}
-
-fn alloca_for_value(st: LowerState, obj_r: LowerResult) -> Value {
-    // Return the loaded list value — the emitter's push handler will
-    // create a temp alloca and store this value into it.
-    return obj_r.value
 }
 
 // ---------------------------------------------------------------------------

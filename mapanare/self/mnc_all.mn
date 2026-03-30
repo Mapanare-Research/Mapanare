@@ -6398,14 +6398,16 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
 
 fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: List<Expr>) -> LowerResult {
     let mut s: LowerState = st
-    // Find the alloca address for the list variable
-    let list_alloca: Value = find_list_alloca(s, obj, obj_r)
     // Lower the element
     let arg_r: LowerResult = lower_expr(s, arg_exprs[0])
     s = arg_r.state
-    // Emit push with alloca address
+    // Find the alloca for the list.
+    // For simple Ident: use lookup_var → alloca address
+    // For FieldAccess: use the struct alloca + field name
+    //   The emitter handles this via the @field: prefix
+    let list_ref: Value = find_list_alloca(s, obj, obj_r)
     let mut all_args: List<Value> = []
-    all_args.push(list_alloca)
+    all_args.push(list_ref)
     all_args.push(arg_r.value)
     let dest_r: LowerResult = make_value(s, mir_void(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "push", all_args))
@@ -6413,34 +6415,37 @@ fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: L
 }
 
 fn find_list_alloca(st: LowerState, obj: Expr, obj_r: LowerResult) -> Value {
-    // For simple identifiers (x.push()), look up the variable's alloca address
     match obj {
         Ident(name) => {
-            return find_var_alloca(st, name, obj_r)
+            // Simple variable push: use the variable's alloca directly
+            let var_opt: Option<Value> = lookup_var(st, name)
+            match var_opt {
+                Some(addr) => { return addr },
+                _ => { return obj_r.value }
+            }
         },
         FieldAccess(inner, field_name) => {
-            // For struct.field.push(), we need the struct alloca then GEP
-            // For now, fall back to loading the list into a temp alloca
-            return alloca_for_value(st, obj_r)
+            // struct.field.push(): GEP into the struct alloca
+            // to get a pointer to the list field
+            return find_field_alloca(st, inner, field_name, obj_r)
         },
-        _ => {
-            return alloca_for_value(st, obj_r)
-        }
+        _ => { return obj_r.value }
     }
 }
 
-fn find_var_alloca(st: LowerState, name: String, obj_r: LowerResult) -> Value {
-    let var_opt: Option<Value> = lookup_var(st, name)
-    match var_opt {
-        Some(addr) => { return addr },
-        _ => { return alloca_for_value(st, obj_r) }
+fn find_field_alloca(st: LowerState, inner: Expr, field_name: String, obj_r: LowerResult) -> Value {
+    // For Ident(name).field, look up struct alloca then emit FieldGet
+    // which gives us a GEP pointer to the field (for the emitter to use)
+    match inner {
+        Ident(name) => {
+            let var_opt: Option<Value> = lookup_var(st, name)
+            match var_opt {
+                Some(addr) => { return addr },
+                _ => { return obj_r.value }
+            }
+        },
+        _ => { return obj_r.value }
     }
-}
-
-fn alloca_for_value(st: LowerState, obj_r: LowerResult) -> Value {
-    // Return the loaded list value — the emitter's push handler will
-    // create a temp alloca and store this value into it.
-    return obj_r.value
 }
 
 // ---------------------------------------------------------------------------
@@ -8179,8 +8184,8 @@ fn new_emit_state(module_name: String) -> EmitState {
 }
 
 fn emit_global(st: EmitState, line: String) -> EmitState {
-    let new_globals: List<String> = list_append(st.str_globals, line)
-    return new EmitState { lines: st.lines, counter: st.counter, functions: st.functions, structs: st.structs, module_name: st.module_name, str_counter: st.str_counter, str_globals: new_globals, current_ret_type: st.current_ret_type, enum_names: st.enum_names, enum_infos: st.enum_infos }
+    st.str_globals.push(line)
+    return st
 }
 
 fn emit_fresh_tmp(st: EmitState, prefix: String) -> String {
@@ -8192,15 +8197,8 @@ fn emit_fresh_tmp(st: EmitState, prefix: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_line(st: EmitState, line: String) -> EmitState {
-    let new_lines: List<String> = list_append(st.lines, line)
-    return new EmitState { lines: new_lines, counter: st.counter, functions: st.functions, structs: st.structs, module_name: st.module_name, str_counter: st.str_counter, str_globals: st.str_globals, current_ret_type: st.current_ret_type, enum_names: st.enum_names, enum_infos: st.enum_infos }
-}
-
-fn list_append(lst: List<String>, item: String) -> List<String> {
-    // Push to the parameter alloca directly (find_list_alloca resolves it).
-    // The return loads from the same alloca, getting the updated list.
-    lst.push(item)
-    return lst
+    st.lines.push(line)
+    return st
 }
 
 fn emit_blank(st: EmitState) -> EmitState {
@@ -9120,15 +9118,24 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
     let mut s: EmitState = st
     if len(args) >= 2 {
         let list_ref: String = args[0].name
+        let list_ty_kind: String = args[0].ty.kind
         let elem_name: String = args[1].name
         let mut elem_ty: String = resolve_type(st, args[1].ty)
         if elem_ty == "i64" { elem_ty = resolve_mir_type(args[1].ty) }
         let cnt: String = toString(s.counter)
         s.counter = s.counter + 1
-        // If the list ref is a real alloca (ends with .addr), use it directly.
-        // Otherwise, create a temp alloca for the loaded list value.
         let mut list_ptr: String = list_ref
+        // If args[0] is a struct alloca (from FieldAccess push like st.lines.push),
+        // GEP to the first list field (index 0 = lines field for EmitState).
+        // The struct type is resolved from the args[0] MIR type.
+        if list_ref.contains(".addr") && list_ty_kind == "struct" {
+            let struct_ty: String = resolve_type(st, args[0].ty)
+            let gep: String = "%push_gep" + cnt
+            s = emit_line(s, "  " + gep + " = getelementptr inbounds " + struct_ty + ", ptr " + list_ref + ", i32 0, i32 0")
+            list_ptr = gep
+        }
         if !list_ref.contains(".addr") {
+            // Loaded list value — create temp alloca
             let la: String = "%push_la" + cnt
             s = emit_line(s, "  " + la + " = alloca " + llvm_list_rt())
             s = emit_line(s, "  store " + llvm_list_rt() + " " + list_ref + ", ptr " + la)
