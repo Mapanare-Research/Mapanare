@@ -1006,6 +1006,33 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
     return s
 }
 
+fn llvm_type_size(ty: String) -> Int {
+    if ty == "i1" { return 1 }
+    if ty == "i8" { return 1 }
+    if ty == "i32" { return 4 }
+    if ty == "i64" { return 8 }
+    if ty == "double" { return 8 }
+    if ty == "ptr" { return 8 }
+    if ty == "void" { return 0 }
+    // String = {ptr, i64} = 16
+    if ty == llvm_string() { return 16 }
+    // List = {ptr, i64, i64, i64} = 32
+    if ty == llvm_list_rt() { return 32 }
+    // Structs and enums: use pointer size (8) as they're passed by ptr
+    if ty.starts_with("%struct.") { return 8 }
+    if ty.starts_with("%enum.") { return 8 }
+    // Aggregate types: count fields
+    if ty.starts_with("{") { return llvm_aggregate_size(ty) }
+    return 8
+}
+
+fn llvm_aggregate_size(ty: String) -> Int {
+    // Count comma-separated fields, each assumed 8 bytes
+    let inner: String = ty.substr(1, len(ty) - 2)
+    let parts: List<String> = inner.split(",")
+    return len(parts) * 8
+}
+
 fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
     let mut s: EmitState = st
     if len(args) >= 2 {
@@ -1045,9 +1072,15 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let mut s: EmitState = st
     let dn: String = dest.name
 
-    // Create empty list
+    // Create empty list. Use 64 bytes as default element size — this covers
+    // all types (i64=8, String=16, List=32, structs≤64). The C runtime
+    // uses elem_size for memcpy in push; oversizing wastes memory but
+    // prevents truncation crashes.
     let list_name: String = dn + ".new"
-    s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 8"))
+    let elem_llvm_ty: String = resolve_mir_type(elem_ty)
+    let mut elem_sz: Int = llvm_type_size(elem_llvm_ty)
+    if elem_sz < 16 { elem_sz = 64 }
+    s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz)))
 
     // Alloca for push
     let alloca_name: String = dn + ".addr"
