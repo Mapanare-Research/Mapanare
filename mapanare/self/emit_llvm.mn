@@ -915,8 +915,11 @@ fn emit_field_set(st: EmitState, obj: Value, field_name: String, val: Value) -> 
     match struct_opt {
         Some(se) => {
             let idx: Int = find_field_index(se.field_names, field_name)
-            let tmp_name: String = strip_percent(obj.name) + ".set"
-            s = emit_line(s, emit_insertvalue(tmp_name, se.llvm_type, obj.name, val.name, val_ty, toString(idx)))
+            let tmp_name: String = "%" + strip_percent(obj.name) + "_set" + toString(s.counter)
+            s.counter = s.counter + 1
+            // Use named struct type (%struct.X) to match the value type
+            let struct_ty: String = "%struct." + obj.ty.name
+            s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, obj.name, val.name, val_ty, toString(idx)))
             return s
         },
         _ => {
@@ -1061,7 +1064,10 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
         // Opaque pointers: load directly from ptr, no bitcast needed
         s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + raw)
     } else {
-        s = emit_line(s, emit_call_ir(dn, "ptr", "__mn_list_get", "ptr " + tmp + ", i64 " + idx.name))
+        // list_get returns ptr to element. Load the element value.
+        let raw2: String = dn + ".raw"
+        s = emit_line(s, emit_call_ir(raw2, "ptr", "__mn_list_get", "ptr " + tmp + ", i64 " + idx.name))
+        s = emit_line(s, "  " + dn + " = load i64, ptr " + raw2)
     }
     return s
 }
@@ -1238,7 +1244,7 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         // Option = {i1, inner_ty}. Extract inner at index 1.
         // With type erasure, Option<Struct/Enum> = {i1, ptr}. The extracted
         // value is ptr. If the dest expects a concrete struct/enum, dereference.
-        let dest_ty_opt: String = resolve_mir_type(dest.ty)
+        let dest_ty_opt: String = resolve_type(st, dest.ty)
         if dest_ty_opt.starts_with("%struct.") || dest_ty_opt.starts_with("%enum.") {
             let ptr_name: String = dn + ".ptr"
             s = emit_line(s, "  " + ptr_name + " = extractvalue " + enum_ty + " " + val.name + ", 1")
@@ -1328,7 +1334,15 @@ fn emit_wrap_none(st: EmitState, dest: Value, ty: MIRType) -> EmitState {
     if inner_ty.starts_with("%struct.") || inner_ty.starts_with("%enum.") {
         inner_ty = llvm_ptr()
     }
+    // If inner type is generic (ptr) but the function's return type is a
+    // specific Option, use the return type to match. This handles Option<List>
+    // where the MIR type has no args.
     let opt_ty: String = llvm_option_type(inner_ty)
+    if opt_ty != st.current_ret_type && st.current_ret_type.starts_with("{ i1,") {
+        let dn: String = dest.name
+        let s: EmitState = emit_line(st, emit_insertvalue(dn, st.current_ret_type, "undef", "0", "i1", "0"))
+        return s
+    }
     let dn: String = dest.name
     let s: EmitState = emit_line(st, emit_insertvalue(dn, opt_ty, "undef", "0", "i1", "0"))
     return s
@@ -1845,29 +1859,43 @@ fn emit_interp_concat(st: EmitState, dest: Value, parts: List<Value>) -> EmitSta
 // ---------------------------------------------------------------------------
 
 fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitState {
-    let ty: String = resolve_type(st, dest.ty)
+    let mut ty: String = resolve_type(st, dest.ty)
     let dn: String = dest.name
 
-    if len(incoming) == 0 {
-        return st
-    }
-
-    // Build phi instruction string
-    let mut phi_str: String = "  " + dn + " = phi " + ty + " "
-    let mut i: Int = 0
-    for _ in 0..1000 {
-        if i >= len(incoming) { break }
-        let e: PhiEntry = incoming[i]
-        if i > 0 {
-            phi_str = phi_str + ", "
+    let mut s: EmitState = st
+    let mut skip: Bool = false
+    if len(incoming) == 0 { skip = true }
+    if ty == "void" { skip = true }
+    // For Phis with i64 type (unresolved): try to recover the actual type
+    // from the incoming values. If any incoming value has a non-i64 type,
+    // use that (they should all agree).
+    if ty == "i64" && len(incoming) > 0 {
+        let mut ci: Int = 0
+        for _ in 0..100 {
+            if ci >= len(incoming) { break }
+            let inc_ty: String = resolve_type(st, incoming[ci].val.ty)
+            if inc_ty != "i64" && inc_ty != "void" {
+                ty = inc_ty
+                break
+            }
+            ci = ci + 1
         }
-        // NOTE: Phi operands must be SSA names from predecessor blocks.
-        // We assume MIR only puts temporaries (non-variables) in Phi.
-        phi_str = phi_str + "[ " + e.val.name + ", %" + e.block_label + " ]"
-        i = i + 1
     }
 
-    let s: EmitState = emit_line(st, phi_str)
+    if !skip {
+        let mut phi_str: String = "  " + dn + " = phi " + ty + " "
+        let mut i: Int = 0
+        for _ in 0..1000 {
+            if i >= len(incoming) { break }
+            let e: PhiEntry = incoming[i]
+            if i > 0 {
+                phi_str = phi_str + ", "
+            }
+            phi_str = phi_str + "[ " + e.val.name + ", %" + e.block_label + " ]"
+            i = i + 1
+        }
+        s = emit_line(s, phi_str)
+    }
     return s
 }
 

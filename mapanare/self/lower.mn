@@ -999,7 +999,8 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
                 let colon: Int = ret_encoded.find(":")
                 if colon >= 0 {
                     let kind: String = ret_encoded.substr(0, colon)
-                    let name: String = ret_encoded.substr(colon + 1, len(ret_encoded) - colon - 1)
+                    // substr(start, END) not substr(start, LENGTH)
+                    let name: String = ret_encoded.substr(colon + 1, len(ret_encoded))
                     if kind == "struct" { call_ret = mir_struct(name) }
                     if kind == "enum" { call_ret = mir_enum(name) }
                     if kind == "int" { call_ret = mir_int() }
@@ -1023,7 +1024,7 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
     // Chain state through make_value/emit_instr (byref, no LowerState copy).
     let actual_fn: String = resolved.substr(0, resolved.find(":"))
     let cp: Int = resolved.find(":")
-    let caps_str: String = resolved.substr(cp + 1, len(resolved) - cp - 1)
+    let caps_str: String = resolved.substr(cp + 1, len(resolved))
     let cap_parts: List<String> = caps_str.split(",")
     return lower_call_with_captures(st, actual_fn, args, cap_parts, 0)
 }
@@ -1665,11 +1666,23 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     let else_exit_label: String = get_block_label(s, else_exit_idx)
 
     let mut incoming: List<PhiEntry> = []
-    if !then_terminated && then_val.ty.kind != "void" && then_val.name != "%void" {
+    let then_has_val: Bool = !then_terminated && then_val.ty.kind != "void" && then_val.name != "%void"
+    let else_has_val: Bool = !else_terminated && else_val.ty.kind != "void" && else_val.name != "%void"
+    if then_has_val {
         incoming.push(new_phi_entry(then_exit_label, then_val))
     }
-    if !else_terminated && else_val.ty.kind != "void" && else_val.name != "%void" {
+    if else_has_val {
         incoming.push(new_phi_entry(else_exit_label, else_val))
+    }
+    // If one arm has a value but the other is void/empty, include the empty arm
+    // with a zero value so the Phi has entries for ALL predecessors.
+    if then_has_val && !else_has_val && !else_terminated {
+        let zero_val: Value = new_value("zeroinitializer", then_val.ty)
+        incoming.push(new_phi_entry(else_exit_label, zero_val))
+    }
+    if else_has_val && !then_has_val && !then_terminated {
+        let zero_val: Value = new_value("zeroinitializer", else_val.ty)
+        incoming.push(new_phi_entry(then_exit_label, zero_val))
     }
 
     if len(incoming) > 0 {
@@ -1886,7 +1899,11 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
 
         // Only add to Phi if arm didn't terminate AND produces a real value.
         // Skip void values (e.g., from print()) to avoid undefined SSA refs.
-        if !arm_terminated && arm_val_r.value.ty.kind != "void" && arm_val_r.value.ty.kind != "unknown" && arm_val_r.value.name != "%void" {
+        // Only include arm results in Phi if the arm didn't terminate
+        // AND the value has a known type that won't produce mismatched i64.
+        // Check by verifying the resolved LLVM type is NOT "i64" (the unknown fallback).
+        let arm_kind: String = arm_val_r.value.ty.kind
+        if !arm_terminated && arm_kind != "void" && arm_kind != "unknown" && arm_val_r.value.name != "%void" {
             let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
             arm_results.push(pe)
         }

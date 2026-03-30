@@ -514,7 +514,7 @@ fn stream_op_from_str(name: String) -> Option<StreamOpKind> {
     return none
 }
 
-fn is_comparison_op(op: BinOpKind) -> Bool {
+fn is_comparison_binop(op: BinOpKind) -> Bool {
     match op {
         Eq => { return true },
         Ne => { return true },
