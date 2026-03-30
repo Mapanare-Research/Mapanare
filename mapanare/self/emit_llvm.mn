@@ -80,7 +80,7 @@ fn emit_global(st: EmitState, line: String) -> EmitState {
     return st
 }
 
-fn fresh_tmp(st: EmitState, prefix: String) -> String {
+fn emit_fresh_tmp(st: EmitState, prefix: String) -> String {
     // Generate a fresh temporary name
     return prefix + "." + toString(st.counter)
 }

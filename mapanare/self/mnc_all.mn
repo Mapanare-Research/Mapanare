@@ -3057,7 +3057,7 @@ fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
                 if i >= len(args) { return make_generic_type(name, resolved) }
                 let arg: TypeExpr = args[i]
                 let rt: TypeInfo = resolve_type_expr(arg)
-                // resolved.push(rt)
+                resolved.push(rt)
                 i = i + 1
             }
             return make_generic_type(name, resolved)
@@ -3072,7 +3072,7 @@ fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
                 }
                 let pt: TypeExpr = param_types[i]
                 let rp: TypeInfo = resolve_type_expr(pt)
-                // params.push(rp)
+                params.push(rp)
                 i = i + 1
             }
             let ret2: TypeInfo = resolve_type_expr(return_type)
@@ -7218,15 +7218,13 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         // Bind pattern variables
         match arm.pattern {
             ConstructorPat(name, sub_patterns) => {
-                // Extract only the first sub-pattern binding (single-field extraction).
-                // Multi-field variant destructuring (>1 binding) is not fully supported
-                // in stage2 — the emitter generates the same payload for all bindings.
-                // Workaround: avoid multi-field destructuring in .mn source code.
-                if len(sub_patterns) > 0 {
-                    let sub_pat: Pattern = sub_patterns[0]
+                let mut pi: Int = 0
+                for _ in 0..100 {
+                    if pi >= len(sub_patterns) { break }
+                    let sub_pat: Pattern = sub_patterns[pi]
                     match sub_pat {
                         IdentPat(var_name) => {
-                            let pay_ty: MIRType = infer_variant_payload_type(s, subject_r.value, name, 0)
+                            let pay_ty: MIRType = infer_variant_payload_type(s, subject_r.value, name, pi)
                             let payload_r: LowerResult = make_value(s, pay_ty, var_name)
                             s = payload_r.state
                             s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject_r.value, name))
@@ -7238,6 +7236,7 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                         },
                         _ => {}
                     }
+                    pi = pi + 1
                 }
             },
             IdentPat(name) => {
@@ -8089,7 +8088,7 @@ fn emit_global(st: EmitState, line: String) -> EmitState {
     return st
 }
 
-fn fresh_tmp(st: EmitState, prefix: String) -> String {
+fn emit_fresh_tmp(st: EmitState, prefix: String) -> String {
     // Generate a fresh temporary name
     return prefix + "." + toString(st.counter)
 }

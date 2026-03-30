@@ -1974,15 +1974,13 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         // Bind pattern variables
         match arm.pattern {
             ConstructorPat(name, sub_patterns) => {
-                // Extract only the first sub-pattern binding (single-field extraction).
-                // Multi-field variant destructuring (>1 binding) is not fully supported
-                // in stage2 — the emitter generates the same payload for all bindings.
-                // Workaround: avoid multi-field destructuring in .mn source code.
-                if len(sub_patterns) > 0 {
-                    let sub_pat: Pattern = sub_patterns[0]
+                let mut pi: Int = 0
+                for _ in 0..100 {
+                    if pi >= len(sub_patterns) { break }
+                    let sub_pat: Pattern = sub_patterns[pi]
                     match sub_pat {
                         IdentPat(var_name) => {
-                            let pay_ty: MIRType = infer_variant_payload_type(s, subject_r.value, name, 0)
+                            let pay_ty: MIRType = infer_variant_payload_type(s, subject_r.value, name, pi)
                             let payload_r: LowerResult = make_value(s, pay_ty, var_name)
                             s = payload_r.state
                             s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject_r.value, name))
@@ -1994,6 +1992,7 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                         },
                         _ => {}
                     }
+                    pi = pi + 1
                 }
             },
             IdentPat(name) => {

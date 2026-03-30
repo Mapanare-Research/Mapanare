@@ -398,7 +398,7 @@ fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
                 if i >= len(args) { return make_generic_type(name, resolved) }
                 let arg: TypeExpr = args[i]
                 let rt: TypeInfo = resolve_type_expr(arg)
-                // resolved.push(rt)
+                resolved.push(rt)
                 i = i + 1
             }
             return make_generic_type(name, resolved)
@@ -413,7 +413,7 @@ fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
                 }
                 let pt: TypeExpr = param_types[i]
                 let rp: TypeInfo = resolve_type_expr(pt)
-                // params.push(rp)
+                params.push(rp)
                 i = i + 1
             }
             let ret2: TypeInfo = resolve_type_expr(return_type)
