@@ -1034,9 +1034,25 @@ class MIRLowerer:
         self._define_var(loop.var_name, next_val)
         self._push_scope()
         self._loop_exit_stack.append(exit_bb.label)
+        # Track which variables were updated via ListPush during this loop
+        _list_push_vars: set[str] = set()
+        _orig_update = self._update_var
+
+        def _tracking_update(name: str, val: Value) -> None:
+            _list_push_vars.add(name)
+            _orig_update(name, val)
+
+        self._update_var = _tracking_update  # type: ignore[method-assign]
         self._lower_block(loop.body)
+        self._update_var = _orig_update  # type: ignore[method-assign]
         self._loop_exit_stack.pop()
+        # Capture list-pushed variable values BEFORE pop
+        _pushed_vals = {vn: self._vars[vn].current for vn in _list_push_vars if vn in self._vars}
         self._pop_scope()
+        # Propagate ONLY variables that were updated via push
+        for vn, val in _pushed_vals.items():
+            if vn != loop.var_name:
+                self._update_var(vn, val)
         if not self._block_terminated():
             self._emit(Jump(target=header.label))
 

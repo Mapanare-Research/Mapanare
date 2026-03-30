@@ -1,0 +1,419 @@
+// mir.mn — MIR (Mid-level Intermediate Representation) data structures.
+// Shared by lower.mn, lower_state.mn, and emit_llvm.mn.
+//
+// Defines all MIR types, values, instructions, basic blocks, functions,
+// modules, and associated helper structs/constructors.
+
+// ---------------------------------------------------------------------------
+// MIR type representation
+// ---------------------------------------------------------------------------
+
+struct MIRType {
+    name: String,
+    kind: String,
+    args: List<MIRType>
+}
+
+fn new_mir_type(name: String, kind: String) -> MIRType {
+    let args: List<MIRType> = []
+    return new MIRType { name: name, kind: kind, args: args }
+}
+
+fn new_mir_type_with_args(name: String, kind: String, args: List<MIRType>) -> MIRType {
+    return new MIRType { name: name, kind: kind, args: args }
+}
+
+fn mir_int() -> MIRType { return new_mir_type("Int", "int") }
+fn mir_float() -> MIRType { return new_mir_type("Float", "float") }
+fn mir_bool() -> MIRType { return new_mir_type("Bool", "bool") }
+fn mir_string() -> MIRType { return new_mir_type("String", "string") }
+fn mir_void() -> MIRType { return new_mir_type("Void", "void") }
+fn mir_unknown() -> MIRType { return new_mir_type("<unknown>", "unknown") }
+fn mir_option() -> MIRType { return new_mir_type("Option", "option") }
+fn mir_option_of(inner: MIRType) -> MIRType {
+    let mut t: MIRType = new_mir_type("Option", "option")
+    t.args.push(inner)
+    return t
+}
+fn mir_result() -> MIRType { return new_mir_type("Result", "result") }
+fn mir_list() -> MIRType { return new_mir_type("List", "list") }
+fn mir_map() -> MIRType { return new_mir_type("Map", "map") }
+fn mir_signal() -> MIRType { return new_mir_type("Signal", "signal") }
+fn mir_range() -> MIRType { return new_mir_type("Range", "range") }
+fn mir_fn_type() -> MIRType { return new_mir_type("<fn>", "fn") }
+
+fn mir_struct(name: String) -> MIRType {
+    return new_mir_type(name, "struct")
+}
+
+fn mir_enum(name: String) -> MIRType {
+    return new_mir_type(name, "enum")
+}
+
+fn mir_agent(name: String) -> MIRType {
+    return new_mir_type(name, "agent")
+}
+
+// ---------------------------------------------------------------------------
+// MIR values — SSA virtual registers
+// ---------------------------------------------------------------------------
+
+struct Value {
+    name: String,
+    ty: MIRType
+}
+
+fn new_value(name: String, ty: MIRType) -> Value {
+    return new Value { name: name, ty: ty }
+}
+
+fn void_value() -> Value {
+    return new_value("%void", mir_void())
+}
+
+// ---------------------------------------------------------------------------
+// MIR instructions — encoded as tagged enum
+// ---------------------------------------------------------------------------
+
+enum BinOpKind {
+    Add, Sub, Mul, Div, Mod,
+    Eq, Ne, Lt, Gt, Le, Ge,
+    And, Or
+}
+
+enum UnaryOpKind {
+    Neg, Not
+}
+
+enum StreamOpKind {
+    Map, Filter, Fold, Take, Skip, Collect
+}
+
+// Field pair for struct init
+struct FieldPair {
+    name: String,
+    val: Value
+}
+
+fn new_field_pair(name: String, val: Value) -> FieldPair {
+    return new FieldPair { name: name, val: val }
+}
+
+// Key-value pair for map init
+struct KVPair {
+    key: Value,
+    val: Value
+}
+
+fn new_kv_pair(key: Value, val: Value) -> KVPair {
+    return new KVPair { key: key, val: val }
+}
+
+// Phi incoming entry
+struct PhiEntry {
+    block_label: String,
+    val: Value
+}
+
+fn new_phi_entry(label: String, val: Value) -> PhiEntry {
+    return new PhiEntry { block_label: label, val: val }
+}
+
+// Switch case entry
+struct SwitchCase {
+    tag_value: String,
+    block_label: String
+}
+
+fn new_switch_case(tag: String, label: String) -> SwitchCase {
+    return new SwitchCase { tag_value: tag, block_label: label }
+}
+
+enum Instruction {
+    // Values
+    Const(Value, MIRType, String),
+    Copy(Value, Value),
+    Cast(Value, Value, MIRType),
+    // Arithmetic
+    BinOp(Value, BinOpKind, Value, Value),
+    UnaryOp(Value, UnaryOpKind, Value),
+    // Aggregates
+    StructInit(Value, MIRType, List<FieldPair>),
+    FieldGet(Value, Value, String),
+    FieldSet(Value, String, Value),
+    ListInit(Value, MIRType, List<Value>),
+    IndexGet(Value, Value, Value),
+    IndexSet(Value, Value, Value),
+    Alloca(Value, MIRType),
+    Load(Value, Value),
+    Store(Value, Value),
+    MapInit(Value, MIRType, MIRType, List<KVPair>),
+    // Enum
+    EnumInit(Value, MIRType, String, List<Value>),
+    EnumTag(Value, Value),
+    EnumPayload(Value, Value, String),
+    // Option/Result
+    WrapSome(Value, Value),
+    WrapNone(Value, MIRType),
+    WrapOk(Value, Value),
+    WrapErr(Value, Value),
+    Unwrap(Value, Value),
+    // Functions
+    Call(Value, String, List<Value>),
+    Return(Option<Value>),
+    // Control flow
+    Jump(String),
+    Branch(Value, String, String),
+    Switch(Value, List<SwitchCase>, String),
+    // Agents
+    AgentSpawn(Value, MIRType, List<Value>),
+    AgentSend(Value, String, Value),
+    AgentSync(Value, Value, String),
+    // Signals
+    SignalInit(Value, MIRType, Value),
+    SignalGet(Value, Value),
+    SignalSet(Value, Value),
+    // Streams
+    StreamOp(Value, StreamOpKind, Value, List<Value>),
+    // Strings
+    InterpConcat(Value, List<Value>),
+    // SSA
+    Phi(Value, List<PhiEntry>)
+}
+
+// ---------------------------------------------------------------------------
+// Basic block
+// ---------------------------------------------------------------------------
+
+struct BasicBlock {
+    label: String,
+    instructions: List<Instruction>
+}
+
+fn new_basic_block(label: String) -> BasicBlock {
+    let instrs: List<Instruction> = []
+    return new BasicBlock { label: label, instructions: instrs }
+}
+
+fn is_terminator(inst: Instruction) -> Bool {
+    match inst {
+        Jump(_) => { return true },
+        Branch(_, _, _) => { return true },
+        Switch(_, _, _) => { return true },
+        Return(_) => { return true },
+        _ => { return false }
+    }
+}
+
+fn block_terminated(bb: BasicBlock) -> Bool {
+    if len(bb.instructions) == 0 { return false }
+    let last: Instruction = bb.instructions[len(bb.instructions) - 1]
+    return is_terminator(last)
+}
+
+// ---------------------------------------------------------------------------
+// MIR function
+// ---------------------------------------------------------------------------
+
+struct MIRParam {
+    name: String,
+    ty: MIRType
+}
+
+fn new_mir_param(name: String, ty: MIRType) -> MIRParam {
+    return new MIRParam { name: name, ty: ty }
+}
+
+struct MIRFunction {
+    name: String,
+    params: List<MIRParam>,
+    return_type: MIRType,
+    blocks: List<BasicBlock>,
+    decorators: List<String>,
+    is_public: Bool
+}
+
+fn new_mir_function(name: String, params: List<MIRParam>, ret: MIRType, decorators: List<String>, is_public: Bool) -> MIRFunction {
+    let blocks: List<BasicBlock> = []
+    return new MIRFunction { name: name, params: params, return_type: ret, blocks: blocks, decorators: decorators, is_public: is_public }
+}
+
+// ---------------------------------------------------------------------------
+// MIR module
+// ---------------------------------------------------------------------------
+
+struct StructInfo {
+    name: String,
+    fields: List<FieldPair>
+}
+
+fn new_struct_info(name: String, fields: List<FieldPair>) -> StructInfo {
+    return new StructInfo { name: name, fields: fields }
+}
+
+struct EnumVariantInfo {
+    name: String,
+    payload_types: List<MIRType>
+}
+
+fn new_enum_variant_info(name: String, types: List<MIRType>) -> EnumVariantInfo {
+    return new EnumVariantInfo { name: name, payload_types: types }
+}
+
+struct EnumInfo {
+    name: String,
+    variants: List<EnumVariantInfo>
+}
+
+fn new_enum_info(name: String, variants: List<EnumVariantInfo>) -> EnumInfo {
+    return new EnumInfo { name: name, variants: variants }
+}
+
+struct ExternFnInfo {
+    abi: String,
+    module_name: String,
+    fn_name: String,
+    param_types: List<MIRType>,
+    return_type: MIRType
+}
+
+fn new_extern_fn_info(abi: String, module_name: String, fn_name: String, params: List<MIRType>, ret: MIRType) -> ExternFnInfo {
+    return new ExternFnInfo { abi: abi, module_name: module_name, fn_name: fn_name, param_types: params, return_type: ret }
+}
+
+struct AgentInfo {
+    name: String,
+    inputs: List<String>,
+    outputs: List<String>,
+    method_names: List<String>
+}
+
+fn new_agent_info(name: String, inputs: List<String>, outputs: List<String>, methods: List<String>) -> AgentInfo {
+    return new AgentInfo { name: name, inputs: inputs, outputs: outputs, method_names: methods }
+}
+
+struct PipeInfo {
+    name: String,
+    stages: List<String>
+}
+
+fn new_pipe_info(name: String, stages: List<String>) -> PipeInfo {
+    return new PipeInfo { name: name, stages: stages }
+}
+
+struct ImportInfo {
+    path: List<String>,
+    items: List<String>
+}
+
+fn new_import_info(path: List<String>, items: List<String>) -> ImportInfo {
+    return new ImportInfo { path: path, items: items }
+}
+
+struct MIRModule {
+    name: String,
+    functions: List<MIRFunction>,
+    structs: List<StructInfo>,
+    enums: List<EnumInfo>,
+    extern_fns: List<ExternFnInfo>,
+    agents: List<AgentInfo>,
+    pipes: List<PipeInfo>,
+    imports: List<ImportInfo>,
+    trait_names: List<String>
+}
+
+fn new_mir_module(name: String) -> MIRModule {
+    let functions: List<MIRFunction> = []
+    let structs: List<StructInfo> = []
+    let enums: List<EnumInfo> = []
+    let extern_fns: List<ExternFnInfo> = []
+    let agents: List<AgentInfo> = []
+    let pipes: List<PipeInfo> = []
+    let imports: List<ImportInfo> = []
+    let trait_names: List<String> = []
+    return new MIRModule { name: name, functions: functions, structs: structs, enums: enums, extern_fns: extern_fns, agents: agents, pipes: pipes, imports: imports, trait_names: trait_names }
+}
+
+// ---------------------------------------------------------------------------
+// Variable tracking
+// ---------------------------------------------------------------------------
+
+struct VarInfo {
+    name: String,
+    current: Value,
+    mutable: Bool
+}
+
+fn new_var_info(name: String, val: Value, mutable: Bool) -> VarInfo {
+    return new VarInfo { name: name, current: val, mutable: mutable }
+}
+
+// Impl method mapping: "Type.method" -> "Type_method"
+struct ImplEntry {
+    key: String,
+    mir_name: String
+}
+
+fn new_impl_entry(key: String, mir_name: String) -> ImplEntry {
+    return new ImplEntry { key: key, mir_name: mir_name }
+}
+
+// Struct field names and types mapping
+struct StructFieldInfo {
+    name: String,
+    field_names: List<String>,
+    field_types: List<MIRType>
+}
+
+fn new_struct_field_info(name: String, fields: List<String>, types: List<MIRType>) -> StructFieldInfo {
+    return new StructFieldInfo { name: name, field_names: fields, field_types: types }
+}
+
+// Enum variant names mapping
+struct EnumVariantNames {
+    enum_name: String,
+    variant_names: List<String>
+}
+
+fn new_enum_variant_names(name: String, variants: List<String>) -> EnumVariantNames {
+    return new EnumVariantNames { enum_name: name, variant_names: variants }
+}
+
+// Lambda variable mapping
+struct LambdaEntry {
+    var_name: String,
+    fn_name: String
+}
+
+fn new_lambda_entry(var_name: String, fn_name: String) -> LambdaEntry {
+    return new LambdaEntry { var_name: var_name, fn_name: fn_name }
+}
+
+// ---------------------------------------------------------------------------
+// Enum-to-string conversion (used by emit_llvm.mn and pretty-printer)
+// ---------------------------------------------------------------------------
+
+pub fn binop_kind_to_str(op: BinOpKind) -> String {
+    match op {
+        Add => { return "add" },
+        Sub => { return "sub" },
+        Mul => { return "mul" },
+        Div => { return "div" },
+        Mod => { return "mod" },
+        Eq => { return "eq" },
+        Ne => { return "ne" },
+        Lt => { return "lt" },
+        Gt => { return "gt" },
+        Le => { return "le" },
+        Ge => { return "ge" },
+        And => { return "and" },
+        Or => { return "or" }
+    }
+}
+
+pub fn unaryop_kind_to_str(op: UnaryOpKind) -> String {
+    match op {
+        Neg => { return "neg" },
+        Not => { return "not" }
+    }
+}

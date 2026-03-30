@@ -89,27 +89,55 @@ pub fn memory_grow(pages: Int) -> Int {
 // A simple bump allocator that tracks a global pointer. Allocations are
 // contiguous and cannot be individually freed. Call reset() to reclaim
 // all bump-allocated memory at once.
+//
+// Allocator state is stored in WASM linear memory at fixed addresses
+// (bytes 0-11). WASM memory is zero-initialized, so the init flag
+// starts as 0 (false). The bump region starts at 1 MB (address 1048576).
+//
+// Layout:
+//   Address 0: bump_base       (i32) — start of bump region
+//   Address 4: bump_offset     (i32) — current allocation offset
+//   Address 8: bump_initialized (i32) — 0 = not init, 1 = init
 // ---------------------------------------------------------------------------
 
-// Allocator state: base pointer and current offset.
-// Initialized on first alloc call. The bump region starts after the
-// initial data/stack region (we reserve the first 1 MB).
-let mut __bump_base: Int = 1048576
-let mut __bump_offset: Int = 0
-let mut __bump_initialized: Bool = false
+fn bump_base() -> Int {
+    return __mn_wasm_memory_read_i32(0)
+}
+
+fn set_bump_base(val: Int) {
+    __mn_wasm_memory_write_i32(0, val)
+}
+
+fn bump_offset() -> Int {
+    return __mn_wasm_memory_read_i32(4)
+}
+
+fn set_bump_offset(val: Int) {
+    __mn_wasm_memory_write_i32(4, val)
+}
+
+fn bump_initialized() -> Bool {
+    return __mn_wasm_memory_read_i32(8) != 0
+}
+
+fn set_bump_initialized() {
+    __mn_wasm_memory_write_i32(8, 1)
+}
 
 fn ensure_bump_init() {
-    if __bump_initialized == false {
+    if bump_initialized() == false {
+        let base: Int = 1048576
+        set_bump_base(base)
+        set_bump_offset(0)
         let mem_bytes: Int = memory_size_bytes()
-        if __bump_base >= mem_bytes {
-            // Need to grow memory to accommodate the bump region
-            let needed_pages: Int = (__bump_base / page_size()) + 1
+        if base >= mem_bytes {
+            let needed_pages: Int = (base / page_size()) + 1
             let current_pages: Int = memory_size()
             if needed_pages > current_pages {
                 memory_grow(needed_pages - current_pages)
             }
         }
-        __bump_initialized = true
+        set_bump_initialized()
     }
 }
 
@@ -122,19 +150,21 @@ pub fn alloc(size: Int) -> Result<Int, RuntimeError> {
     }
     // Align to 8 bytes
     let aligned: Int = (size + 7) / 8 * 8
-    let ptr: Int = __bump_base + __bump_offset
-    let new_offset: Int = __bump_offset + aligned
+    let base: Int = bump_base()
+    let offset: Int = bump_offset()
+    let ptr: Int = base + offset
+    let new_offset: Int = offset + aligned
     let mem_bytes: Int = memory_size_bytes()
-    if __bump_base + new_offset > mem_bytes {
+    if base + new_offset > mem_bytes {
         // Need more memory
-        let needed: Int = __bump_base + new_offset - mem_bytes
+        let needed: Int = base + new_offset - mem_bytes
         let pages_needed: Int = (needed / page_size()) + 1
         let result: Int = memory_grow(pages_needed)
         if result < 0 {
             return Err(new_oom("alloc: memory_grow failed for " + str(size) + " bytes"))
         }
     }
-    __bump_offset = new_offset
+    set_bump_offset(new_offset)
     return Ok(ptr)
 }
 
@@ -146,12 +176,12 @@ pub fn free(ptr: Int) {
 
 /// Reset the bump allocator, reclaiming all allocated memory.
 pub fn reset() {
-    __bump_offset = 0
+    set_bump_offset(0)
 }
 
 /// Return the number of bytes currently allocated by the bump allocator.
 pub fn allocated_bytes() -> Int {
-    return __bump_offset
+    return bump_offset()
 }
 
 // ---------------------------------------------------------------------------

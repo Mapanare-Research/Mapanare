@@ -19,7 +19,7 @@ struct User { name: String, age: Int }
 fn main() {
     let u: User = User("Alice", 30)
     let json: String = encode_struct::<User>(u)
-    println(json)
+    print(json)
 }
 """
         ir = _compile_mir(src)
@@ -33,7 +33,7 @@ struct Config { label: String, count: Int, ratio: Float, enabled: Bool }
 fn main() {
     let c: Config = Config("test", 42, 3.14, true)
     let json: String = encode_struct::<Config>(c)
-    println(json)
+    print(json)
 }
 """
         ir = _compile_mir(src)
@@ -45,7 +45,7 @@ struct Tag { value: String }
 fn main() {
     let t: Tag = Tag("hello")
     let json: String = encode_struct::<Tag>(t)
-    println(json)
+    print(json)
 }
 """
         ir = _compile_mir(src)
@@ -57,7 +57,7 @@ struct Record { a: String, b: String, c: Int, d: Int, e: Float }
 fn main() {
     let r: Record = Record("x", "y", 1, 2, 3.0)
     let json: String = encode_struct::<Record>(r)
-    println(json)
+    print(json)
 }
 """
         ir = _compile_mir(src)
@@ -68,7 +68,7 @@ fn main() {
 fn main() {
     let x: Int = 0
     let json: String = encode_struct::<Unknown>(x)
-    println(json)
+    print(json)
 }
 """
         ir = _compile_mir(src)
@@ -91,7 +91,7 @@ fn main() {
     let entries: Map<String, JsonValue> = #{}
     let jv: JsonValue = Object(entries)
     let result: Result<Person, JsonError> = decode_to::<Person>(jv)
-    println("ok")
+    print("ok")
 }
 """
         ir = _compile_mir(src)
@@ -104,7 +104,7 @@ fn main() {
     let entries: Map<String, JsonValue> = #{}
     let jv: JsonValue = Object(entries)
     let result: Result<Label, JsonError> = decode_to::<Label>(jv)
-    println("ok")
+    print("ok")
 }
 """
         ir = _compile_mir(src)
@@ -117,7 +117,7 @@ fn main() {
     let entries: Map<String, JsonValue> = #{}
     let jv: JsonValue = Object(entries)
     let result: Result<Metrics, JsonError> = decode_to::<Metrics>(jv)
-    println("ok")
+    print("ok")
 }
 """
         ir = _compile_mir(src)
@@ -130,7 +130,7 @@ fn main() {
     let entries: Map<String, JsonValue> = #{}
     let jv: JsonValue = Object(entries)
     let result: Result<Flag, JsonError> = decode_to::<Flag>(jv)
-    println("ok")
+    print("ok")
 }
 """
         ir = _compile_mir(src)
@@ -143,7 +143,7 @@ struct Item { name: String }
 fn main() {
     let jv: JsonValue = Null()
     let result: Result<Item, JsonError> = decode_to::<Item>(jv)
-    println("ok")
+    print("ok")
 }
 """
         ir = _compile_mir(src)

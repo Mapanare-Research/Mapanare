@@ -69,7 +69,7 @@ class TestHttpMethod:
         """HttpMethod enum with all variants compiles."""
         src = _http_source_with_main("""\
             let m: HttpMethod = GET()
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -84,7 +84,7 @@ class TestHttpMethod:
             let m5: HttpMethod = PATCH()
             let m6: HttpMethod = HEAD()
             let m7: HttpMethod = OPTIONS()
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -93,7 +93,7 @@ class TestHttpMethod:
         """method_to_string converts enum to string."""
         src = _http_source_with_main("""\
             let s: String = method_to_string(GET())
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -117,7 +117,7 @@ class TestHttpError:
             let e6: HttpError = ParseError("parse")
             let e7: HttpError = SendError("send")
             let e8: HttpError = RecvError("recv")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -134,7 +134,7 @@ class TestCoreStructs:
         """HttpRequest struct compiles."""
         src = _http_source_with_main("""\
             let req: HttpRequest = new_http_request(GET(), "http://example.com")
-            println(req.url)
+            print(req.url)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -143,7 +143,7 @@ class TestCoreStructs:
         """HttpResponse struct compiles."""
         src = _http_source_with_main("""\
             let resp: HttpResponse = new_http_response(200, #{}, "hello")
-            println(str(resp.status_code))
+            print(str(resp.status_code))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -152,7 +152,7 @@ class TestCoreStructs:
         """HttpConfig struct with defaults compiles."""
         src = _http_source_with_main("""\
             let cfg: HttpConfig = default_http_config()
-            println(cfg.user_agent)
+            print(cfg.user_agent)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -162,7 +162,7 @@ class TestCoreStructs:
         src = _http_source_with_main("""\
             let hdrs: Map<String, String> = #{"Content-Type": "application/json"}
             let req: HttpRequest = make_request_with_body(POST(), "http://ex.com/api", "{}", hdrs)
-            println(req.body)
+            print(req.body)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -179,8 +179,8 @@ class TestUrlParsing:
         """Parse simple HTTP URL."""
         src = _http_source_with_main("""\
             let url: ParsedUrl = parse_url("http://example.com/path")
-            println(url.host)
-            println(url.path)
+            print(url.host)
+            print(url.path)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -189,8 +189,8 @@ class TestUrlParsing:
         """Parse HTTPS URL with default port."""
         src = _http_source_with_main("""\
             let url: ParsedUrl = parse_url("https://api.example.com/v1/users")
-            println(url.host)
-            println(str(url.port))
+            print(url.host)
+            print(str(url.port))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -199,8 +199,8 @@ class TestUrlParsing:
         """Parse URL with explicit port."""
         src = _http_source_with_main("""\
             let url: ParsedUrl = parse_url("http://localhost:8080/api")
-            println(url.host)
-            println(str(url.port))
+            print(url.host)
+            print(str(url.port))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -209,8 +209,8 @@ class TestUrlParsing:
         """Parse URL with query string."""
         src = _http_source_with_main("""\
             let url: ParsedUrl = parse_url("http://example.com/search?q=hello&page=1")
-            println(url.path)
-            println(url.query)
+            print(url.path)
+            print(url.query)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -219,7 +219,7 @@ class TestUrlParsing:
         """Parse URL without path defaults to /."""
         src = _http_source_with_main("""\
             let url: ParsedUrl = parse_url("http://example.com")
-            println(url.path)
+            print(url.path)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -229,7 +229,7 @@ class TestUrlParsing:
         src = _http_source_with_main("""\
             let url: ParsedUrl = parse_url("not_a_url")
             if url.ok == false {
-                println(url.error_msg)
+                print(url.error_msg)
             }
         """)
         ir_out = _compile_mir(src)
@@ -239,7 +239,7 @@ class TestUrlParsing:
         """URL encoding percent-encodes special characters."""
         src = _http_source_with_main("""\
             let encoded: String = url_encode("hello world")
-            println(encoded)
+            print(encoded)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -248,7 +248,7 @@ class TestUrlParsing:
         """URL decoding reverses percent-encoding."""
         src = _http_source_with_main("""\
             let decoded: String = url_decode("hello%20world")
-            println(decoded)
+            print(decoded)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -258,7 +258,7 @@ class TestUrlParsing:
         src = _http_source_with_main("""\
             let params: Map<String, String> = #{"q": "hello", "page": "1"}
             let qs: String = build_query(params)
-            println(qs)
+            print(qs)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -276,7 +276,7 @@ class TestRequestBuilding:
         src = _http_source_with_main("""\
             let url: ParsedUrl = parse_url("http://example.com/api/data")
             let raw: String = build_http_request(GET(), url, #{}, "", false)
-            println(raw)
+            print(raw)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -287,7 +287,7 @@ class TestRequestBuilding:
             let url: ParsedUrl = parse_url("http://example.com/api")
             let headers: Map<String, String> = #{"Content-Type": "application/json"}
             let raw: String = build_http_request(POST(), url, headers, "{}", true)
-            println(raw)
+            print(raw)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -297,7 +297,7 @@ class TestRequestBuilding:
         src = _http_source_with_main("""\
             let url: ParsedUrl = parse_url("http://example.com/search?q=test")
             let raw: String = build_http_request(GET(), url, #{}, "", false)
-            println(raw)
+            print(raw)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -307,7 +307,7 @@ class TestRequestBuilding:
         src = _http_source_with_main("""\
             let url: ParsedUrl = parse_url("http://localhost:8080/api")
             let raw: String = build_http_request(GET(), url, #{}, "", false)
-            println(raw)
+            print(raw)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -327,10 +327,10 @@ class TestResponseParsing:
             let result: Result<HttpResponse, HttpError> = parse_raw_response(raw)
             match result {
                 Ok(resp) => {
-                    println(str(resp.status_code))
-                    println(resp.body)
+                    print(str(resp.status_code))
+                    print(resp.body)
                 },
-                Err(e) => { println("error") }
+                Err(e) => { print("error") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -341,7 +341,7 @@ class TestResponseParsing:
         src = _http_source_with_main("""\
             let raw: String = "HTTP/1.1 200 OK\\r\\nContent-Type: text/html\\r\\nServer: test\\r\\n\\r\\nbody"
             let hdr: HeaderParseResult = parse_response_headers(raw)
-            println(str(hdr.status_code))
+            print(str(hdr.status_code))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -352,8 +352,8 @@ class TestResponseParsing:
             let raw: String = "HTTP/1.1 200 OK\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n5\\r\\nhello\\r\\n0\\r\\n\\r\\n"
             let result: Result<HttpResponse, HttpError> = parse_raw_response(raw)
             match result {
-                Ok(resp) => { println(resp.body) },
-                Err(e) => { println("error") }
+                Ok(resp) => { print(resp.body) },
+                Err(e) => { print("error") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -364,8 +364,8 @@ class TestResponseParsing:
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = parse_raw_response("")
             match result {
-                Ok(resp) => { println("unexpected") },
-                Err(e) => { println("got error") }
+                Ok(resp) => { print("unexpected") },
+                Err(e) => { print("got error") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -387,7 +387,7 @@ class TestRedirectHandling:
             let r3: Bool = is_redirect(307)
             let r4: Bool = is_redirect(308)
             let r5: Bool = is_redirect(200)
-            println(str(r1))
+            print(str(r1))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -396,7 +396,7 @@ class TestRedirectHandling:
         """Absolute redirect URL returned as-is."""
         src = _http_source_with_main("""\
             let resolved: String = resolve_redirect_url("http://old.com", "https://new.com/path")
-            println(resolved)
+            print(resolved)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -405,7 +405,7 @@ class TestRedirectHandling:
         """Relative redirect resolved against base URL."""
         src = _http_source_with_main("""\
             let resolved: String = resolve_redirect_url("http://example.com/old", "/new/path")
-            println(resolved)
+            print(resolved)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -422,7 +422,7 @@ class TestConvenienceFunctions:
         """http.get() compiles (extern TCP calls present)."""
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = get("http://example.com")
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -433,7 +433,7 @@ class TestConvenienceFunctions:
         """http.post() compiles with body."""
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = post("http://example.com/api", "{}")
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -442,7 +442,7 @@ class TestConvenienceFunctions:
         """http.put() compiles."""
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = put("http://example.com/api", "{}")
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -451,7 +451,7 @@ class TestConvenienceFunctions:
         """http.delete() compiles."""
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = delete("http://example.com/api/1")
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -460,7 +460,7 @@ class TestConvenienceFunctions:
         """http.patch() compiles."""
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = patch("http://example.com/api/1", "{}")
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -469,7 +469,7 @@ class TestConvenienceFunctions:
         """http.head() compiles."""
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = head("http://example.com")
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -478,7 +478,7 @@ class TestConvenienceFunctions:
         """http.options() compiles."""
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = options("http://example.com")
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -497,7 +497,7 @@ class TestFullRequest:
             let req: HttpRequest = new_http_request(GET(), "http://example.com")
             let cfg: HttpConfig = default_http_config()
             let result: Result<HttpResponse, HttpError> = request_with_config(req, cfg)
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -507,7 +507,7 @@ class TestFullRequest:
         src = _http_source_with_main("""\
             let req: HttpRequest = new_http_request(GET(), "http://example.com")
             let result: Result<HttpResponse, HttpError> = request(req)
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -524,7 +524,7 @@ class TestFingerprint:
         """Request fingerprint generates a hex string."""
         src = _http_source_with_main("""\
             let fp: String = request_fingerprint(GET(), "http://example.com")
-            println(fp)
+            print(fp)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -534,8 +534,8 @@ class TestFingerprint:
         src = _http_source_with_main("""\
             let fp1: String = request_fingerprint(GET(), "http://example.com")
             let fp2: String = request_fingerprint(POST(), "http://example.com")
-            println(fp1)
-            println(fp2)
+            print(fp1)
+            print(fp2)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -553,8 +553,8 @@ class TestIntegration:
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = get("http://httpbin.org/get")
             match result {
-                Ok(resp) => { println(resp.body) },
-                Err(e) => { println("error") }
+                Ok(resp) => { print(resp.body) },
+                Err(e) => { print("error") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -568,8 +568,8 @@ class TestIntegration:
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = get("https://httpbin.org/get")
             match result {
-                Ok(resp) => { println(resp.body) },
-                Err(e) => { println("error") }
+                Ok(resp) => { print(resp.body) },
+                Err(e) => { print("error") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -583,8 +583,8 @@ class TestIntegration:
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = post("http://httpbin.org/post", "{}")
             match result {
-                Ok(resp) => { println(str(resp.status_code)) },
-                Err(e) => { println("error") }
+                Ok(resp) => { print(str(resp.status_code)) },
+                Err(e) => { print("error") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -595,7 +595,7 @@ class TestIntegration:
         src = _http_source_with_main("""\
             let req: HttpRequest = new_http_request(GET(), "http://httpbin.org/headers")
             let result: Result<HttpResponse, HttpError> = request(req)
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -604,7 +604,7 @@ class TestIntegration:
         """Task 31: Timeout set via __mn_tcp_set_timeout."""
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = get("http://example.com")
-            println("compiled")
+            print("compiled")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -615,17 +615,17 @@ class TestIntegration:
         src = _http_source_with_main("""\
             let result: Result<HttpResponse, HttpError> = get("http://invalid.example.com")
             match result {
-                Ok(resp) => { println("ok: " + str(resp.status_code)) },
+                Ok(resp) => { print("ok: " + str(resp.status_code)) },
                 Err(e) => {
                     match e {
-                        ConnectionFailed(msg) => { println("conn fail: " + msg) },
-                        Timeout(msg) => { println("timeout: " + msg) },
-                        TlsError(msg) => { println("tls: " + msg) },
-                        InvalidUrl(msg) => { println("url: " + msg) },
-                        TooManyRedirects(msg) => { println("redir: " + msg) },
-                        ParseError(msg) => { println("parse: " + msg) },
-                        SendError(msg) => { println("send: " + msg) },
-                        RecvError(msg) => { println("recv: " + msg) }
+                        ConnectionFailed(msg) => { print("conn fail: " + msg) },
+                        Timeout(msg) => { print("timeout: " + msg) },
+                        TlsError(msg) => { print("tls: " + msg) },
+                        InvalidUrl(msg) => { print("url: " + msg) },
+                        TooManyRedirects(msg) => { print("redir: " + msg) },
+                        ParseError(msg) => { print("parse: " + msg) },
+                        SendError(msg) => { print("send: " + msg) },
+                        RecvError(msg) => { print("recv: " + msg) }
                     }
                 }
             }
@@ -637,7 +637,7 @@ class TestIntegration:
         """Task 33: Response body available for JSON parsing."""
         src = _http_source_with_main("""\
             let resp: HttpResponse = new_http_response(200, #{}, "{}")
-            println(resp.body)
+            print(resp.body)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -647,8 +647,8 @@ class TestIntegration:
         src = _http_source_with_main("""\
             let fp1: String = request_fingerprint(GET(), "http://example.com/a")
             let fp2: String = request_fingerprint(GET(), "http://example.com/b")
-            println(fp1)
-            println(fp2)
+            print(fp1)
+            print(fp2)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -665,7 +665,7 @@ class TestHelpers:
         """to_lower converts uppercase to lowercase."""
         src = _http_source_with_main("""\
             let result: String = to_lower("Content-Type")
-            println(result)
+            print(result)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -674,7 +674,7 @@ class TestHelpers:
         """parse_int_manual converts string digits to int."""
         src = _http_source_with_main("""\
             let n: Int = parse_int_manual("8080")
-            println(str(n))
+            print(str(n))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -683,7 +683,7 @@ class TestHelpers:
         """parse_hex_int converts hex string to int."""
         src = _http_source_with_main("""\
             let n: Int = parse_hex_int("1a")
-            println(str(n))
+            print(str(n))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -693,8 +693,8 @@ class TestHelpers:
         src = _http_source_with_main("""\
             let r1: Bool = is_unreserved("a")
             let r2: Bool = is_unreserved(" ")
-            println(str(r1))
-            println(str(r2))
+            print(str(r1))
+            print(str(r2))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -704,8 +704,8 @@ class TestHelpers:
         src = _http_source_with_main("""\
             let h1: String = hex_char(10)
             let h2: String = hex_char(15)
-            println(h1)
-            println(h2)
+            print(h1)
+            print(h2)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

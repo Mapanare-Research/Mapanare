@@ -1341,7 +1341,7 @@ class LLVMEmitter:
 
     def _emit_call(self, node: CallExpr) -> ir.Value:
         """Emit a function call instruction."""
-        # Built-in: print() / println()
+        # Built-in: print() / println() (both add newline; println is deprecated)
         if isinstance(node.callee, Identifier) and node.callee.name in ("print", "println"):
             return self._emit_print(list(node.args))
 
@@ -2443,7 +2443,7 @@ class LLVMEmitter:
                 idx = field_names.index(node.field_name)
                 try:
                     return self.builder.extract_value(obj, idx, name=f"{sname}.{node.field_name}")
-                except Exception:
+                except (IndexError, TypeError):
                     continue
 
         # For MnString, .len is at index 1

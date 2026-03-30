@@ -50,7 +50,7 @@ class StdlibBenchResult:
 def _compile_module(source: str, name: str) -> tuple[str, float]:
     """Compile a module source and return (IR output, elapsed_ms)."""
     # Add a main function so the compiler has an entry point
-    full_source = source + '\n\nfn main() {\n    println("ok")\n}\n'
+    full_source = source + '\n\nfn main() {\n    print("ok")\n}\n'
     start = time.perf_counter()
     ir_out = _compile_to_llvm_ir(full_source, f"{name}.mn", use_mir=True)
     elapsed = (time.perf_counter() - start) * 1000

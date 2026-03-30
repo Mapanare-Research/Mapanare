@@ -70,19 +70,19 @@ class TestASTSpans:
         assert let_stmt.value.span.line >= 1
 
     def test_call_expr_span(self) -> None:
-        prog = parse("println(42)")
+        prog = parse("print(42)")
         main_fn = prog.definitions[0]
         call = main_fn.body.stmts[0].expr
         assert call.span.line >= 1
 
     def test_for_loop_span(self) -> None:
-        prog = parse("for i in 0..10 { println(i) }")
+        prog = parse("for i in 0..10 { print(i) }")
         main_fn = prog.definitions[0]
         for_loop = main_fn.body.stmts[0]
         assert for_loop.span.line >= 1
 
     def test_while_loop_span(self) -> None:
-        prog = parse("while true { println(1) }")
+        prog = parse("while true { print(1) }")
         main_fn = prog.definitions[0]
         while_loop = main_fn.body.stmts[0]
         assert while_loop.span.line >= 1
@@ -112,7 +112,7 @@ class TestASTSpans:
         assert stmts[2].span.line == 4
 
     def test_program_span(self) -> None:
-        prog = parse("fn main() { println(1) }")
+        prog = parse("fn main() { print(1) }")
         assert prog.span.line >= 1
 
 
@@ -337,7 +337,7 @@ fn add(a: Int, b: Int) -> Int {
 
     def test_no_errors_fast_path(self) -> None:
         """When there are no errors, parse_recovering should work like parse."""
-        src = "fn main() { println(42) }"
+        src = "fn main() { print(42) }"
         program, errors = parse_recovering(src, filename="test.mn")
         assert errors == []
         assert len(program.definitions) == 1

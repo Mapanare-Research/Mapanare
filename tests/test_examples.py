@@ -162,7 +162,7 @@ def test_wasm_example_emits_wat(mn_file: Path) -> None:
     except SemanticErrors:
         pytest.xfail("Semantic errors (likely import resolution)")
     ast, _ = optimize(ast, OptLevel.O0)
-    mir_module = lower(ast, filename=str(mn_file))
+    mir_module = lower(ast, source_file=str(mn_file))
     emitter = WasmEmitter()
     wat = emitter.emit(mir_module)
     assert "(module" in wat, "WAT output should contain module declaration"

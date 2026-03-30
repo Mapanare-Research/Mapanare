@@ -250,6 +250,19 @@ def _compile_multi_module_llvm(
 
 def cmd_compile(args: argparse.Namespace) -> None:
     """Compile an .mn source file to Python."""
+    import warnings
+
+    warnings.warn(
+        "The 'compile' subcommand targets the deprecated Python backend. "
+        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead.",
+        DeprecationWarning,
+        stacklevel=1,
+    )
+    print(
+        "warning: 'mapanare compile' targets the deprecated Python backend. "
+        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead.",
+        file=sys.stderr,
+    )
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     python_path: list[str] = getattr(args, "python_path", None) or []
@@ -332,8 +345,23 @@ def cmd_check(args: argparse.Namespace) -> None:
         for err in sem_errors:
             from mapanare.ast_nodes import Span
 
-            # With --werror, promote warnings to errors
-            if err.severity == "warning" and not werror:
+            # With --werror, promote warnings to errors; otherwise still show them
+            is_warning = err.severity == "warning"
+            if is_warning and not werror:
+                span = Span(
+                    line=err.line,
+                    column=err.column,
+                    end_line=err.line,
+                    end_column=err.column + 1,
+                )
+                all_diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.WARNING,
+                        message=err.message,
+                        filename=err.filename,
+                        labels=[Label(span=span, primary=True)],
+                    )
+                )
                 continue
             span = Span(
                 line=err.line, column=err.column, end_line=err.line, end_column=err.column + 1
@@ -1037,15 +1065,15 @@ def cmd_emit_wasm(args: argparse.Namespace) -> None:
         wat2wasm = shutil.which("wat2wasm")
         if wat2wasm:
             wasm_path = wat_paths[0].replace(".wat", ".wasm")
-            result = subprocess.run(
+            proc = subprocess.run(
                 [wat2wasm, wat_paths[0], "-o", wasm_path],
                 capture_output=True,
                 text=True,
             )
-            if result.returncode == 0:
+            if proc.returncode == 0:
                 print(f"compiled {wat_paths[0]} -> {wasm_path} (binary)")
             else:
-                print(f"wat2wasm failed: {result.stderr}", file=sys.stderr)
+                print(f"wat2wasm failed: {proc.stderr}", file=sys.stderr)
         else:
             print("warning: wat2wasm not found, skipping binary compilation", file=sys.stderr)
 
@@ -1094,6 +1122,13 @@ def cmd_lint(args: argparse.Namespace) -> None:
         sys.exit(0)  # Lint warnings are not fatal
     else:
         print(f"lint: {args.source} OK — no warnings")
+
+
+def cmd_lsp(args: argparse.Namespace) -> None:
+    """Start the Mapanare language server (LSP over stdio)."""
+    from mapanare.lsp.server import main as lsp_main
+
+    lsp_main()
 
 
 def cmd_build_multi(args: argparse.Namespace) -> None:
@@ -1308,7 +1343,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # compile
-    p_compile = subparsers.add_parser("compile", help="Compile .mn source to Python")
+    p_compile = subparsers.add_parser(
+        "compile", help="[DEPRECATED] Compile .mn source to Python (use 'build' or 'emit-wasm')"
+    )
     p_compile.add_argument("source", help="Path to .mn source file")
     p_compile.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
     p_compile.add_argument(
@@ -1624,6 +1661,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_doc.add_argument("source", help="Path to .mn source file")
     p_doc.add_argument("-o", metavar="OUTPUT", help="Output .html file path", default=None)
     p_doc.set_defaults(func=cmd_doc)
+
+    # lsp
+    p_lsp = subparsers.add_parser("lsp", help="Start the Mapanare language server (LSP over stdio)")
+    p_lsp.set_defaults(func=cmd_lsp)
 
     # deploy
     p_deploy = subparsers.add_parser(

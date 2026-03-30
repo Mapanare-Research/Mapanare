@@ -121,7 +121,7 @@ class TestRedisTypesCompile:
         """RedisStore struct compiles."""
         src = _redis_source_with_main("""\
             let rs: RedisStore = new_redis_store(0, "127.0.0.1", 6379)
-            println(rs.host)
+            print(rs.host)
         """)
         _compile_mir(src)
 
@@ -130,7 +130,7 @@ class TestRedisTypesCompile:
         src = _redis_source_with_main("""\
             let rs: RedisStore = new_redis_store(0, "localhost", 6379)
             let store: KVStore = Redis(rs)
-            println("ok")
+            print("ok")
         """)
         _compile_mir(src)
 
@@ -138,7 +138,7 @@ class TestRedisTypesCompile:
         """Redis error constructor compiles."""
         src = _redis_source_with_main("""\
             let e: KVError = new_redis_error("connection failed")
-            println(e.message)
+            print(e.message)
         """)
         _compile_mir(src)
 
@@ -150,7 +150,7 @@ class TestRedisHelpers:
         """build_command helper compiles."""
         src = _redis_source_with_main("""\
             let cmd: String = build_command(["SET", "key", "val"])
-            println(cmd)
+            print(cmd)
         """)
         ir_out = _compile_mir(src)
         assert "build_command" in ir_out
@@ -159,7 +159,7 @@ class TestRedisHelpers:
         """quote_value helper compiles."""
         src = _redis_source_with_main("""\
             let quoted: String = quote_value("hello world")
-            println(quoted)
+            print(quoted)
         """)
         ir_out = _compile_mir(src)
         assert "quote_value" in ir_out
@@ -168,7 +168,7 @@ class TestRedisHelpers:
         """parse_int_simple helper compiles."""
         src = _redis_source_with_main("""\
             let v: Int = parse_int_simple("42")
-            println(str(v))
+            print(str(v))
         """)
         ir_out = _compile_mir(src)
         assert "parse_int_simple" in ir_out
@@ -177,7 +177,7 @@ class TestRedisHelpers:
         """parse_int_simple with negative number compiles."""
         src = _redis_source_with_main("""\
             let v: Int = parse_int_simple("-7")
-            println(str(v))
+            print(str(v))
         """)
         ir_out = _compile_mir(src)
         assert "parse_int_simple" in ir_out
@@ -186,7 +186,7 @@ class TestRedisHelpers:
         """split_lines helper compiles."""
         src = _redis_source_with_main("""\
             let lines: List<String> = split_lines("a\\nb\\nc")
-            println(str(len(lines)))
+            print(str(len(lines)))
         """)
         ir_out = _compile_mir(src)
         assert "split_lines" in ir_out

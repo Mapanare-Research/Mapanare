@@ -43,21 +43,21 @@ class TestEmitterEquivalence:
     """Verify MIR Python emitter produces semantically equivalent output to AST emitter."""
 
     def test_hello_world(self) -> None:
-        _check_equiv('println("Hello, world!")')
+        _check_equiv('print("Hello, world!")')
 
     def test_arithmetic(self) -> None:
         _check_equiv("""\
 let x: Int = 10 + 5
-println(str(x))
+print(str(x))
 """)
 
     def test_if_else(self) -> None:
         _check_equiv("""\
 let x: Int = 10
 if x > 5 {
-    println("big")
+    print("big")
 } else {
-    println("small")
+    print("small")
 }
 """)
 
@@ -65,7 +65,7 @@ if x > 5 {
         _check_equiv("""\
 let mut i: Int = 0
 while i < 5 {
-    println(str(i))
+    print(str(i))
     i = i + 1
 }
 """)
@@ -73,7 +73,7 @@ while i < 5 {
     def test_for_loop_range(self) -> None:
         _check_equiv("""\
 for i in 0..5 {
-    println(str(i))
+    print(str(i))
 }
 """)
 
@@ -83,7 +83,7 @@ fn add(a: Int, b: Int) -> Int {
     return a + b
 }
 let result: Int = add(3, 4)
-println(str(result))
+print(str(result))
 """)
 
     def test_struct_creation_and_field_access(self) -> None:
@@ -93,8 +93,8 @@ struct Point {
     y: Int
 }
 let p: Point = Point(1, 2)
-println(str(p.x))
-println(str(p.y))
+print(str(p.x))
+print(str(p.y))
 """)
 
     def test_multiple_functions(self) -> None:
@@ -106,21 +106,21 @@ fn double(x: Int) -> Int {
 fn triple(x: Int) -> Int {
     return x * 3
 }
-println(str(double(5)))
-println(str(triple(4)))
+print(str(double(5)))
+print(str(triple(4)))
 """)
 
     def test_string_interpolation(self) -> None:
         _check_equiv("""\
 let name: String = "world"
-println("Hello, {name}!")
+print("Hello, {name}!")
 """)
 
     def test_list_operations(self) -> None:
         _check_equiv("""\
 let xs: List<Int> = [1, 2, 3]
-println(str(len(xs)))
-println(str(xs[0]))
+print(str(len(xs)))
+print(str(xs[0]))
 """)
 
     def test_boolean_logic(self) -> None:
@@ -128,9 +128,9 @@ println(str(xs[0]))
 let a: Bool = true
 let b: Bool = false
 if a && !b {
-    println("yes")
+    print("yes")
 } else {
-    println("no")
+    print("no")
 }
 """)
 
@@ -138,12 +138,12 @@ if a && !b {
         _check_equiv("""\
 let x: Int = 15
 if x > 20 {
-    println("very big")
+    print("very big")
 } else {
     if x > 10 {
-        println("big")
+        print("big")
     } else {
-        println("small")
+        print("small")
     }
 }
 """)

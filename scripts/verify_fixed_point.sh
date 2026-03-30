@@ -63,8 +63,8 @@ compile_with_native() {
     sed -i 's/define internal {i1, {i8\*, i64}, {i8\*, i64, i64, i64}} @"compile"/define {i1, {i8*, i64}, {i8*, i64, i64, i64}} @"compile"/' "$ir_path"
     sed -i 's/define internal {i8\*, i64} @"format_error"/define {i8*, i64} @"format_error"/' "$ir_path"
 
-    # Fix duplicate SSA names from relaxed SSA in self-hosted compiler
-    python3 "$ROOT/scripts/fix_ssa.py" "$ir_path" -o "$ir_path"
+    # NOTE: fix_ssa.py was a no-op stub and has been removed (v2.0.1).
+    # SSA fixup will be implemented as a proper compiler pass if needed.
 
     # Compile IR to object code
     info "  Compiling IR -> object code ..."
@@ -113,7 +113,7 @@ fi
 info "Stage 1 complete: $STAGE1"
 
 # Quick sanity check
-echo 'fn main() { println("hello") }' > /tmp/mnc_fp_test.mn
+echo 'fn main() { print("hello") }' > /tmp/mnc_fp_test.mn
 if ! "$STAGE1" /tmp/mnc_fp_test.mn > /dev/null 2>&1; then
     warn "Stage 1 sanity check failed (may be expected if emitter has known issues)"
 fi

@@ -2,8 +2,10 @@
 // Wires the pipeline: source -> parse -> check -> lower -> emit_llvm -> LLVM IR.
 
 import self::ast
+import self::mir
 import self::parser
 import self::semantic
+import self::lower_state
 import self::lower
 import self::emit_llvm
 
@@ -26,7 +28,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 1.0.0"
+    return "mapanare 2.1.0"
 }
 
 // ---------------------------------------------------------------------------
@@ -34,15 +36,15 @@ fn version() -> String {
 // ---------------------------------------------------------------------------
 
 fn compile(source: String, filename: String) -> CompileResult {
-    // Stage 1: parse (lexer is called internally by parser)
+    // Stage 1: parse
     let program: Program = parse(source, filename)
 
     // Stage 2: semantic analysis
     let errors: List<SemanticError> = check(program, filename)
-
     if len(errors) > 0 {
         return new_compile_result(false, "", errors)
     }
+
     // Stage 3: lower AST to MIR
     let mir_module: MIRModule = lower(program, filename)
 
@@ -68,11 +70,11 @@ fn compile_and_print(source: String, filename: String) -> CompileResult {
     let cr: CompileResult = compile(source, filename)
 
     if cr.success {
-        println(cr.ir_text)
+        print(cr.ir_text)
     } else {
         for i in 0..len(cr.errors) {
             let err: SemanticError = cr.errors[i]
-            println(format_error(err))
+            print(format_error(err))
         }
     }
     return cr

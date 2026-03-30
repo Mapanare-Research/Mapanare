@@ -25,9 +25,12 @@ struct Program {
     definitions: List<Definition>
 }
 
+fn make_span(line: Int, column: Int, end_line: Int, end_column: Int) -> Span {
+    return new Span { line: line, column: column, end_line: end_line, end_column: end_column }
+}
+
 fn start(defs: List<Definition>) -> Program {
-    let s: Span = new Span { line: 1, column: 0, end_line: 1, end_column: 0 }
-    return new Program { span: s, definitions: defs }
+    return new Program { span: make_span(1, 0, 1, 0), definitions: defs }
 }
 
 // ---------------------------------------------------------------------------
@@ -257,4 +260,18 @@ fn make_bool_type() -> TypeExpr {
 
 fn make_string_type() -> TypeExpr {
     return TypeExpr::Named("String")
+}
+
+// Shared AST constructors (used by parser.mn and lower.mn)
+
+fn new_span(line: Int, col: Int, end_line: Int, end_col: Int) -> Span {
+    return new Span { line: line, column: col, end_line: end_line, end_column: end_col }
+}
+
+fn new_block(span: Span, stmts: List<Stmt>) -> Block {
+    return new Block { span: span, stmts: stmts }
+}
+
+fn new_fn_def_data(span: Span, name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
+    return new FnDefData { span: span, name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
 }

@@ -607,7 +607,7 @@ pub fn fuzz_params(config: FuzzConfig) -> FuzzReport {
             },
             Err(e) => {
                 // If baseline fails, use defaults — still fuzz
-                println("[WARN] Baseline request failed for param: " + param)
+                print("[WARN] Baseline request failed for param: " + param)
             }
         }
 
@@ -655,29 +655,29 @@ pub fn fuzz_params(config: FuzzConfig) -> FuzzReport {
 // ---------------------------------------------------------------------------
 
 pub fn show_report(report: FuzzReport) {
-    println("=== Fuzz Report ===")
-    println("Total requests: " + str(report.total))
-    println("Interesting:    " + str(report.interesting))
-    println("")
+    print("=== Fuzz Report ===")
+    print("Total requests: " + str(report.total))
+    print("Interesting:    " + str(report.interesting))
+    print("")
 
     if report.interesting > 0 {
-        println("--- Interesting Findings ---")
+        print("--- Interesting Findings ---")
         let result_count: Int = len(report.results)
         let mut i: Int = 0
         while i < result_count {
             let r: FuzzResult = report.results[i]
             if r.interesting {
-                println("[!] param=" + r.param + " status=" + str(r.status) + " len=" + str(r.body_length) + " time=" + str(r.elapsed_ms) + "ms")
-                println("    payload: " + r.payload)
-                println("")
+                print("[!] param=" + r.param + " status=" + str(r.status) + " len=" + str(r.body_length) + " time=" + str(r.elapsed_ms) + "ms")
+                print("    payload: " + r.payload)
+                print("")
             }
             i = i + 1
         }
     } else {
-        println("No interesting findings.")
+        print("No interesting findings.")
     }
 
-    println("=== End Report ===")
+    print("=== End Report ===")
 }
 
 // ---------------------------------------------------------------------------

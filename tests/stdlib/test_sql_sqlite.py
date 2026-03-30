@@ -78,7 +78,7 @@ class TestCrud:
         src = _sqlite_with_main("""\
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let result: Result<Bool, SqlError> = exec(conn, "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -89,7 +89,7 @@ class TestCrud:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let params: List<SqlValue> = [Str("Alice"), Int(30)]
             let result: Result<Int, SqlError> = execute(conn, "INSERT INTO users (name, age) VALUES (?, ?)", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -100,7 +100,7 @@ class TestCrud:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let params: List<SqlValue> = []
             let result: Result<QueryResult, SqlError> = query(conn, "SELECT * FROM users", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -111,7 +111,7 @@ class TestCrud:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let params: List<SqlValue> = [Str("Bob"), Int(1)]
             let result: Result<Int, SqlError> = execute(conn, "UPDATE users SET name = ? WHERE id = ?", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -122,7 +122,7 @@ class TestCrud:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let params: List<SqlValue> = [Int(1)]
             let result: Result<Int, SqlError> = execute(conn, "DELETE FROM users WHERE id = ?", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -141,7 +141,7 @@ class TestParameterBinding:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let params: List<SqlValue> = [Int(42)]
             let result: Result<QueryResult, SqlError> = query(conn, "SELECT * FROM t WHERE id = ?", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -152,7 +152,7 @@ class TestParameterBinding:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let params: List<SqlValue> = [Float(3.14)]
             let result: Result<QueryResult, SqlError> = query(conn, "SELECT * FROM t WHERE price = ?", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -163,7 +163,7 @@ class TestParameterBinding:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let params: List<SqlValue> = [Str("Alice")]
             let result: Result<QueryResult, SqlError> = query(conn, "SELECT * FROM t WHERE name = ?", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -174,7 +174,7 @@ class TestParameterBinding:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let params: List<SqlValue> = [Null()]
             let result: Result<Int, SqlError> = execute(conn, "INSERT INTO t (name) VALUES (?)", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -185,7 +185,7 @@ class TestParameterBinding:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let params: List<SqlValue> = [Bool(true)]
             let result: Result<QueryResult, SqlError> = query(conn, "SELECT * FROM t WHERE active = ?", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -196,7 +196,7 @@ class TestParameterBinding:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let params: List<SqlValue> = [Str("Alice"), Int(30), Float(5.5), Bool(true), Null()]
             let result: Result<Int, SqlError> = execute(conn, "INSERT INTO t (name, age, score, active, notes) VALUES (?, ?, ?, ?, ?)", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -214,7 +214,7 @@ class TestTransactions:
         src = _sqlite_with_main("""\
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let result: Result<Bool, SqlError> = begin(conn)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -224,7 +224,7 @@ class TestTransactions:
         src = _sqlite_with_main("""\
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let result: Result<Bool, SqlError> = commit(conn)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -234,7 +234,7 @@ class TestTransactions:
         src = _sqlite_with_main("""\
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let result: Result<Bool, SqlError> = rollback(conn)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -249,7 +249,7 @@ class TestTransactions:
             let r3: Result<Bool, SqlError> = commit(conn)
             let empty: List<SqlValue> = []
             let r4: Result<QueryResult, SqlError> = query(conn, "SELECT * FROM users", empty)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -264,7 +264,7 @@ class TestTransactions:
             let r3: Result<Bool, SqlError> = rollback(conn)
             let empty: List<SqlValue> = []
             let r4: Result<QueryResult, SqlError> = query(conn, "SELECT * FROM users", empty)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -284,8 +284,8 @@ class TestEmptyResults:
             let params: List<SqlValue> = [Int(999)]
             let result: Result<QueryResult, SqlError> = query(conn, "SELECT * FROM users WHERE id = ?", params)
             match result {
-                Ok(qr) => { println(str(len(qr.rows))) },
-                Err(e) => { println(error_message(e)) }
+                Ok(qr) => { print(str(len(qr.rows))) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -296,7 +296,7 @@ class TestEmptyResults:
         src = _sqlite_with_main("""\
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let result: Result<QueryResult, SqlError> = query_simple(conn, "SELECT * FROM users WHERE 1=0")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -316,8 +316,8 @@ class TestExecuteAffectedCount:
             let params: List<SqlValue> = [Str("new_name"), Int(1)]
             let result: Result<Int, SqlError> = execute(conn, "UPDATE users SET name = ? WHERE id = ?", params)
             match result {
-                Ok(n) => { println(str(n)) },
-                Err(e) => { println(error_message(e)) }
+                Ok(n) => { print(str(n)) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -329,8 +329,8 @@ class TestExecuteAffectedCount:
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
             let result: Result<Int, SqlError> = execute_simple(conn, "DELETE FROM users WHERE id = 999")
             match result {
-                Ok(n) => { println(str(n)) },
-                Err(e) => { println(error_message(e)) }
+                Ok(n) => { print(str(n)) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -351,7 +351,7 @@ class TestSqlInjection:
             let malicious: String = "Robert'; DROP TABLE users;--"
             let params: List<SqlValue> = [Str(malicious)]
             let result: Result<QueryResult, SqlError> = query(conn, "SELECT * FROM users WHERE name = ?", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -363,7 +363,7 @@ class TestSqlInjection:
             let malicious: String = "'; DELETE FROM users; --"
             let params: List<SqlValue> = [Str(malicious)]
             let result: Result<Int, SqlError> = execute(conn, "INSERT INTO users (name) VALUES (?)", params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -384,7 +384,7 @@ class TestMultipleConnections:
             let empty: List<SqlValue> = []
             let r1: Result<QueryResult, SqlError> = query(conn1, "SELECT 1", empty)
             let r2: Result<QueryResult, SqlError> = query(conn2, "SELECT 2", empty)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -394,8 +394,8 @@ class TestMultipleConnections:
         src = _sqlite_with_main("""\
             let result: Result<Connection, SqlError> = sqlite_connect("/tmp/test.db")
             match result {
-                Ok(conn) => { println(conn.driver) },
-                Err(e) => { println(error_message(e)) }
+                Ok(conn) => { print(conn.driver) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -413,7 +413,7 @@ class TestInternalHelpers:
         """read_column_value function compiles."""
         src = _sqlite_with_main("""\
             let val: SqlValue = read_column_value(0, 0)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -423,7 +423,7 @@ class TestInternalHelpers:
         src = _sqlite_with_main("""\
             let params: List<SqlValue> = []
             let result: Result<Bool, SqlError> = bind_params(0, params)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -432,7 +432,7 @@ class TestInternalHelpers:
         """collect_rows function compiles."""
         src = _sqlite_with_main("""\
             let rows: List<Row> = collect_rows(0)
-            println(str(len(rows)))
+            print(str(len(rows)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

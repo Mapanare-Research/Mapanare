@@ -77,7 +77,7 @@ class TestStrictSSA:
 fn main() {
     let mut x: Int = 0
     x = 1
-    println(str(x))
+    print(str(x))
 }
 """
         ast = parse(source)
@@ -97,7 +97,7 @@ fn main() {
 fn main() {
     let mut x: Int = 0
     x = 1
-    println(str(x))
+    print(str(x))
 }
 """
         ast = parse(source)

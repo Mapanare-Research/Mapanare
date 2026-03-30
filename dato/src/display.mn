@@ -102,7 +102,7 @@ fn build_row_line(values: List<String>, widths: List<Int>, ncols: Int) -> String
 pub fn show(t: table.Table, max_rows: Int) -> String {
     let nc: Int = len(t.cols)
     if nc == 0 {
-        println("(empty table)")
+        print("(empty table)")
         return ""
     }
 
@@ -130,9 +130,9 @@ pub fn show(t: table.Table, max_rows: Int) -> String {
 
     // Print
     let sep: String = build_separator(widths, nc)
-    println(sep)
-    println(build_row_line(headers, widths, nc))
-    println(sep)
+    print(sep)
+    print(build_row_line(headers, widths, nc))
+    print(sep)
 
     let mut ri: Int = 0
     while ri < display_rows {
@@ -142,16 +142,16 @@ pub fn show(t: table.Table, max_rows: Int) -> String {
             row_vals = row_vals + [col.value_to_string(t.cols[ci2], ri)]
             ci2 = ci2 + 1
         }
-        println(build_row_line(row_vals, widths, nc))
+        print(build_row_line(row_vals, widths, nc))
         ri = ri + 1
     }
-    println(sep)
+    print(sep)
 
     if t.nrows > max_rows {
-        println("... " + str(t.nrows - max_rows) + " more rows")
+        print("... " + str(t.nrows - max_rows) + " more rows")
     }
 
-    println(str(t.nrows) + " rows x " + str(nc) + " cols")
+    print(str(t.nrows) + " rows x " + str(nc) + " cols")
     return ""
 }
 

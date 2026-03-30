@@ -1,0 +1,264 @@
+// emit_llvm_ir.mn — LLVM IR type constants and instruction string builders.
+// Pure string-producing functions, shared by emit_llvm.mn.
+
+import self::mir
+
+// ---------------------------------------------------------------------------
+// LLVM type constants (as string representations)
+// ---------------------------------------------------------------------------
+
+fn llvm_int() -> String {
+    return "i64"
+}
+
+fn llvm_float() -> String {
+    return "double"
+}
+
+fn llvm_bool() -> String {
+    return "i1"
+}
+
+fn llvm_char() -> String {
+    return "i8"
+}
+
+fn llvm_void() -> String {
+    return "void"
+}
+
+fn llvm_string() -> String {
+    return "{ ptr, i64 }"
+}
+
+// ---------------------------------------------------------------------------
+// Composite type builders
+// ---------------------------------------------------------------------------
+
+fn llvm_option_type(inner: String) -> String {
+    return "{ i1, " + inner + " }"
+}
+
+fn llvm_result_type(ok_ty: String, err_ty: String) -> String {
+    return "{ i1, { " + ok_ty + ", " + err_ty + " } }"
+}
+
+fn llvm_tensor_type(elem_ty: String) -> String {
+    return "{ ptr, i64, ptr, i64 }"
+}
+
+fn llvm_list_type(elem_ty: String) -> String {
+    return "{ ptr, i64, i64 }"
+}
+
+fn llvm_map_type() -> String {
+    return "{ ptr, i64 }"
+}
+
+fn llvm_ptr() -> String {
+    return "ptr"
+}
+
+fn llvm_list_rt() -> String {
+    return "{ ptr, i64, i64, i64 }"
+}
+
+// ---------------------------------------------------------------------------
+// MIR type → LLVM type resolution
+// ---------------------------------------------------------------------------
+
+fn resolve_mir_type(t: MIRType) -> String {
+    if t.kind == "int" { return llvm_int() }
+    if t.kind == "float" { return llvm_float() }
+    if t.kind == "bool" { return llvm_bool() }
+    if t.kind == "string" { return llvm_string() }
+    if t.kind == "void" { return llvm_void() }
+    if t.kind == "char" { return llvm_char() }
+    if t.kind == "list" { return llvm_list_rt() }
+    if t.kind == "map" { return llvm_map_type() }
+    if t.kind == "option" {
+        if len(t.args) > 0 {
+            let inner: String = resolve_mir_type(t.args[0])
+            // Type erasure: Option<Struct/Enum> uses ptr payload to avoid
+            // recursive type definitions and typed pointer mismatches.
+            // With opaque pointers, {i1, ptr} is universal for all compound types.
+            if inner.starts_with("%struct.") || inner.starts_with("%enum.") {
+                return llvm_option_type(llvm_ptr())
+            }
+            return llvm_option_type(inner)
+        }
+        return llvm_option_type(llvm_ptr())
+    }
+    if t.kind == "result" {
+        if len(t.args) >= 2 {
+            let ok_ty: String = resolve_mir_type(t.args[0])
+            let err_ty: String = resolve_mir_type(t.args[1])
+            return llvm_result_type(ok_ty, err_ty)
+        }
+        return llvm_result_type(llvm_ptr(), llvm_ptr())
+    }
+    if t.kind == "signal" { return llvm_ptr() }
+    if t.kind == "agent" { return llvm_ptr() }
+    if t.kind == "struct" { return "%struct." + t.name }
+    if t.kind == "enum" { return "%enum." + t.name }
+    if t.kind == "range" { return "{ i64, i64 }" }
+    if t.kind == "fn" { return llvm_ptr() }
+    if t.kind == "unknown" { return llvm_int() }
+    return llvm_int()
+}
+
+// ---------------------------------------------------------------------------
+// LLVM IR instruction builders (string-based)
+// ---------------------------------------------------------------------------
+
+fn llvm_alloca(name: String, ty: String) -> String {
+    return "  " + name + " =alloca " + ty
+}
+
+fn llvm_store(ty: String, value: String, ptr: String) -> String {
+    return "  store " + ty + " " + value + ", ptr " + ptr
+}
+
+fn llvm_load(name: String, ty: String, ptr: String) -> String {
+    return "  " + name + " =load " + ty + ", ptr " + ptr
+}
+
+fn emit_add(name: String, ty: String, left: String, right: String) -> String {
+    return "  " + name + " =add " + ty + " " + left + ", " + right
+}
+
+fn emit_sub(name: String, ty: String, left: String, right: String) -> String {
+    return "  " + name + " =sub " + ty + " " + left + ", " + right
+}
+
+fn emit_mul(name: String, ty: String, left: String, right: String) -> String {
+    return "  " + name + " =mul " + ty + " " + left + ", " + right
+}
+
+fn emit_sdiv(name: String, ty: String, left: String, right: String) -> String {
+    return "  " + name + " =sdiv " + ty + " " + left + ", " + right
+}
+
+fn emit_srem(name: String, ty: String, left: String, right: String) -> String {
+    return "  " + name + " =srem " + ty + " " + left + ", " + right
+}
+
+fn emit_fadd(name: String, left: String, right: String) -> String {
+    return "  " + name + " =fadd double " + left + ", " + right
+}
+
+fn emit_fsub(name: String, left: String, right: String) -> String {
+    return "  " + name + " =fsub double " + left + ", " + right
+}
+
+fn emit_fmul(name: String, left: String, right: String) -> String {
+    return "  " + name + " =fmul double " + left + ", " + right
+}
+
+fn emit_fdiv(name: String, left: String, right: String) -> String {
+    return "  " + name + " =fdiv double " + left + ", " + right
+}
+
+fn emit_frem(name: String, left: String, right: String) -> String {
+    return "  " + name + " =frem double " + left + ", " + right
+}
+
+fn emit_fneg(name: String, operand: String) -> String {
+    return "  " + name + " =fneg double " + operand
+}
+
+fn emit_neg(name: String, ty: String, operand: String) -> String {
+    return "  " + name + " =sub " + ty + " 0, " + operand
+}
+
+fn emit_not(name: String, operand: String) -> String {
+    return "  " + name + " =xor i1 " + operand + ", true"
+}
+
+// ---------------------------------------------------------------------------
+// Comparison instruction builders
+// ---------------------------------------------------------------------------
+
+fn emit_icmp(name: String, cmp: String, ty: String, left: String, right: String) -> String {
+    return "  " + name + " =icmp " + cmp + " " + ty + " " + left + ", " + right
+}
+
+fn emit_fcmp(name: String, cmp: String, left: String, right: String) -> String {
+    return "  " + name + " =fcmp o" + cmp + " double " + left + ", " + right
+}
+
+// ---------------------------------------------------------------------------
+// Logical operators
+// ---------------------------------------------------------------------------
+
+fn emit_and_instr(name: String, left: String, right: String) -> String {
+    return "  " + name + " =and i1 " + left + ", " + right
+}
+
+fn emit_or_instr(name: String, left: String, right: String) -> String {
+    return "  " + name + " =or i1 " + left + ", " + right
+}
+
+// ---------------------------------------------------------------------------
+// Control flow
+// ---------------------------------------------------------------------------
+
+fn emit_br(label: String) -> String {
+    return "  br label %" + label
+}
+
+fn emit_cbranch(cond: String, true_label: String, false_label: String) -> String {
+    return "  br i1 " + cond + ", label %" + true_label + ", label %" + false_label
+}
+
+fn emit_phi_instr(name: String, ty: String, val1: String, bb1: String, val2: String, bb2: String) -> String {
+    return "  " + name + " =phi " + ty + " [ " + val1 + ", %" + bb1 + " ], [ " + val2 + ", %" + bb2 + " ]"
+}
+
+fn emit_switch_hdr(subject: String, default_label: String) -> String {
+    return "  switch i64 " + subject + ", label %" + default_label + " ["
+}
+
+fn emit_switch_case(value: String, label: String) -> String {
+    return "    i64 " + value + ", label %" + label
+}
+
+// ---------------------------------------------------------------------------
+// Function / call builders
+// ---------------------------------------------------------------------------
+
+fn emit_call_ir(name: String, ret_ty: String, callee: String, args: String) -> String {
+    return "  " + name + " =call " + ret_ty + " @" + callee + "(" + args + ")"
+}
+
+fn emit_call_void(callee: String, args: String) -> String {
+    return "  call void @" + callee + "(" + args + ")"
+}
+
+fn emit_ret(ty: String, value: String) -> String {
+    return "  ret " + ty + " " + value
+}
+
+fn emit_ret_void() -> String {
+    return "  ret void"
+}
+
+// ---------------------------------------------------------------------------
+// GEP / insertvalue / extractvalue builders
+// ---------------------------------------------------------------------------
+
+fn emit_gep(name: String, ty: String, ptr: String, idx: String) -> String {
+    return "  " + name + " =getelementptr " + ty + ", ptr " + ptr + ", i64 0, i64 " + idx
+}
+
+fn emit_insertvalue(name: String, struct_ty: String, agg: String, val: String, val_ty: String, idx: String) -> String {
+    return "  " + name + " =insertvalue " + struct_ty + " " + agg + ", " + val_ty + " " + val + ", " + idx
+}
+
+fn emit_extractvalue(name: String, struct_ty: String, agg: String, idx: String) -> String {
+    return "  " + name + " =extractvalue " + struct_ty + " " + agg + ", " + idx
+}
+
+fn emit_bitcast(name: String, src_ty: String, val: String, dst_ty: String) -> String {
+    return "  " + name + " =bitcast " + src_ty + " " + val + " to " + dst_ty
+}

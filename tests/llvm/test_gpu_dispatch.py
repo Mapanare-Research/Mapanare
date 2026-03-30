@@ -213,15 +213,15 @@ class TestNonTensorCallNotDispatched:
     """Verify that non-tensor calls in GPU functions are not routed to GPU."""
 
     def test_non_tensor_call_not_dispatched(self) -> None:
-        """A @gpu function calling println() should NOT be routed to GPU runtime."""
+        """A @gpu function calling print() should NOT be routed to GPU runtime."""
         msg = Value(name="%msg", ty=_mir_type(TypeKind.STRING))
         result = Value(name="%result", ty=_mir_type(TypeKind.VOID))
         instructions = [
             Const(dest=msg, ty=_mir_type(TypeKind.STRING), value="hello"),
-            Call(dest=result, fn_name="println", args=[msg]),
+            Call(dest=result, fn_name="print", args=[msg]),
         ]
         module = _make_gpu_module(instructions, decorators=["gpu"])
         ir_str = _emit_ir(module)
-        # println should go through the normal path, not GPU dispatch
-        assert "mapanare_gpu_tensor_println" not in ir_str
-        assert "mapanare_vk_tensor_println" not in ir_str
+        # print should go through the normal path, not GPU dispatch
+        assert "mapanare_gpu_tensor_print" not in ir_str
+        assert "mapanare_vk_tensor_print" not in ir_str

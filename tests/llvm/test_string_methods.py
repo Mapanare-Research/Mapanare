@@ -33,7 +33,7 @@ class TestStringContains:
                 let s: String = "hello world"
                 let needle: String = "world"
                 let r: Bool = s.contains(needle)
-                println(r)
+                print(r)
             }
         """)
         ir = _compile_ast(src)
@@ -45,7 +45,7 @@ class TestStringContains:
                 let s: String = "hello world"
                 let needle: String = "world"
                 let r: Bool = s.contains(needle)
-                println(r)
+                print(r)
             }
         """)
         ir = _compile_mir(src)
@@ -64,7 +64,7 @@ class TestStringSplit:
                 let s: String = "a,b,c"
                 let delim: String = ","
                 let parts: List<String> = s.split(delim)
-                println(len(parts))
+                print(len(parts))
             }
         """)
         ir = _compile_ast(src)
@@ -76,7 +76,7 @@ class TestStringSplit:
                 let s: String = "a,b,c"
                 let delim: String = ","
                 let parts: List<String> = s.split(delim)
-                println(len(parts))
+                print(len(parts))
             }
         """)
         ir = _compile_mir(src)
@@ -94,7 +94,7 @@ class TestStringTrim:
             fn main() {
                 let s: String = "  hello  "
                 let t: String = s.trim()
-                println(t)
+                print(t)
             }
         """)
         ir = _compile_ast(src)
@@ -105,7 +105,7 @@ class TestStringTrim:
             fn main() {
                 let s: String = "  hello  "
                 let t: String = s.trim()
-                println(t)
+                print(t)
             }
         """)
         ir = _compile_mir(src)
@@ -116,7 +116,7 @@ class TestStringTrim:
             fn main() {
                 let s: String = "  hello"
                 let t: String = s.trim_start()
-                println(t)
+                print(t)
             }
         """)
         ir = _compile_ast(src)
@@ -127,7 +127,7 @@ class TestStringTrim:
             fn main() {
                 let s: String = "  hello"
                 let t: String = s.trim_start()
-                println(t)
+                print(t)
             }
         """)
         ir = _compile_mir(src)
@@ -138,7 +138,7 @@ class TestStringTrim:
             fn main() {
                 let s: String = "hello  "
                 let t: String = s.trim_end()
-                println(t)
+                print(t)
             }
         """)
         ir = _compile_ast(src)
@@ -149,7 +149,7 @@ class TestStringTrim:
             fn main() {
                 let s: String = "hello  "
                 let t: String = s.trim_end()
-                println(t)
+                print(t)
             }
         """)
         ir = _compile_mir(src)
@@ -167,7 +167,7 @@ class TestStringCase:
             fn main() {
                 let s: String = "hello"
                 let u: String = s.to_upper()
-                println(u)
+                print(u)
             }
         """)
         ir = _compile_ast(src)
@@ -178,7 +178,7 @@ class TestStringCase:
             fn main() {
                 let s: String = "hello"
                 let u: String = s.to_upper()
-                println(u)
+                print(u)
             }
         """)
         ir = _compile_mir(src)
@@ -189,7 +189,7 @@ class TestStringCase:
             fn main() {
                 let s: String = "HELLO"
                 let l: String = s.to_lower()
-                println(l)
+                print(l)
             }
         """)
         ir = _compile_ast(src)
@@ -200,7 +200,7 @@ class TestStringCase:
             fn main() {
                 let s: String = "HELLO"
                 let l: String = s.to_lower()
-                println(l)
+                print(l)
             }
         """)
         ir = _compile_mir(src)
@@ -218,7 +218,7 @@ class TestStringReplace:
             fn main() {
                 let s: String = "hello world"
                 let r: String = s.replace("world", "earth")
-                println(r)
+                print(r)
             }
         """)
         ir = _compile_ast(src)
@@ -229,7 +229,7 @@ class TestStringReplace:
             fn main() {
                 let s: String = "hello world"
                 let r: String = s.replace("world", "earth")
-                println(r)
+                print(r)
             }
         """)
         ir = _compile_mir(src)

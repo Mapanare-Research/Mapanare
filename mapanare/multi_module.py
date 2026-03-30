@@ -434,12 +434,24 @@ def resolve_cross_dep_references(
     Also converts Call instructions that target known enum variant constructors
     into proper EnumInit instructions.
     """
-    # Build global fn_map and type_map across all deps
-    global_fn_map: dict[str, str] = {}
+    # Build global type_map across all deps (types are globally unique)
     global_type_map: dict[str, str] = {}
     for filepath, (fn_map, type_map) in dep_renames.items():
-        global_fn_map.update(fn_map)
         global_type_map.update(type_map)
+
+    # Build per-module fn_maps: each module can only resolve calls to functions
+    # from modules that come BEFORE it in topological order (its dependencies).
+    # This prevents name collisions when different modules define the same
+    # unqualified function name (e.g. fresh_tmp in lower_state vs emit_llvm).
+    per_module_fn_map: list[dict[str, str]] = []
+    cumulative_fn_map: dict[str, str] = {}
+    for filepath, _ in deps:
+        per_module_fn_map.append(dict(cumulative_fn_map))
+        if filepath in dep_renames:
+            fn_map, _ = dep_renames[filepath]
+            cumulative_fn_map.update(fn_map)
+    # Full map for fallback (used by root module and type renaming)
+    global_fn_map = cumulative_fn_map
 
     # Build call_key → (mangled_enum_name, variant_name, field_types) from all dep modules.
     # Call targets use "{OriginalEnumName}_{VariantName}" format (e.g., "Expr_Ident").
@@ -466,10 +478,14 @@ def resolve_cross_dep_references(
                 ns_key = f"{orig_type}_{orig_fn}"
                 ns_fn_map[ns_key] = mangled_fn
 
-    # Apply global renames and convert enum variant Calls to EnumInit
-    for mir in dep_mirs:
+    # Apply per-module renames and convert enum variant Calls to EnumInit
+    for mod_idx, mir in enumerate(dep_mirs):
         # Collect defined function names for this module
         defined_fns = {fn.name for fn in mir.functions}
+        # Use per-module fn_map: only resolve to functions from earlier modules
+        mod_fn_map = (
+            per_module_fn_map[mod_idx] if mod_idx < len(per_module_fn_map) else global_fn_map
+        )
 
         for fn in mir.functions:
             for block in fn.blocks:
@@ -478,8 +494,8 @@ def resolve_cross_dep_references(
                     if isinstance(inst, Call):
                         # Remap function name if it's an unresolved cross-dep reference
                         if inst.fn_name not in defined_fns:
-                            if inst.fn_name in global_fn_map:
-                                inst.fn_name = global_fn_map[inst.fn_name]
+                            if inst.fn_name in mod_fn_map:
+                                inst.fn_name = mod_fn_map[inst.fn_name]
                             elif inst.fn_name in ns_fn_map:
                                 inst.fn_name = ns_fn_map[inst.fn_name]
                             elif inst.fn_name in variant_call_map:

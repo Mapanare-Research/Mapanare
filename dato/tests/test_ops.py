@@ -89,9 +89,9 @@ class TestColumnOps:
             match result {{
                 Ok(t) => {{
                     let selected: Table = select(t, ["name"])
-                    println(str(ncols(selected)))
+                    print(str(ncols(selected)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -104,9 +104,9 @@ class TestColumnOps:
             match result {{
                 Ok(t) => {{
                     let dropped: Table = drop_cols(t, ["age"])
-                    println(str(ncols(dropped)))
+                    print(str(ncols(dropped)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -120,9 +120,9 @@ class TestColumnOps:
                 Ok(t) => {{
                     let renamed: Table = rename(t, "age", "years")
                     let names: List<String> = col_names(renamed)
-                    println(str(len(names)))
+                    print(str(len(names)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -143,9 +143,9 @@ class TestSlicing:
             match result {{
                 Ok(t) => {{
                     let h: Table = head(t, 2)
-                    println(str(nrows(h)))
+                    print(str(nrows(h)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -158,9 +158,9 @@ class TestSlicing:
             match result {{
                 Ok(t) => {{
                     let tl: Table = tail(t, 1)
-                    println(str(nrows(tl)))
+                    print(str(nrows(tl)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -173,9 +173,9 @@ class TestSlicing:
             match result {{
                 Ok(t) => {{
                     let s: Table = slice(t, 1, 3)
-                    println(str(nrows(s)))
+                    print(str(nrows(s)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -196,9 +196,9 @@ class TestSort:
             match result {{
                 Ok(t) => {{
                     let sorted: Table = sort_by_int(t, "age", true)
-                    println(str(nrows(sorted)))
+                    print(str(nrows(sorted)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -211,9 +211,9 @@ class TestSort:
             match result {{
                 Ok(t) => {{
                     let sorted: Table = sort_by_int(t, "age", false)
-                    println(str(nrows(sorted)))
+                    print(str(nrows(sorted)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -234,9 +234,9 @@ class TestFilter:
             match result {{
                 Ok(t) => {{
                     let filtered: Table = filter_by_int(t, "age", 26, true)
-                    println(str(nrows(filtered)))
+                    print(str(nrows(filtered)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -249,9 +249,9 @@ class TestFilter:
             match result {{
                 Ok(t) => {{
                     let filtered: Table = filter_by_int(t, "age", 29, false)
-                    println(str(nrows(filtered)))
+                    print(str(nrows(filtered)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -264,9 +264,9 @@ class TestFilter:
             match result {{
                 Ok(t) => {{
                     let filtered: Table = filter_by_str(t, "name", "Bob")
-                    println(str(nrows(filtered)))
+                    print(str(nrows(filtered)))
                 }},
-                Err(e) => {{ println("err") }}
+                Err(e) => {{ print("err") }}
             }}
         """)
         ir_out = _compile_mir(src)
@@ -289,9 +289,9 @@ class TestUnique:
             match result {
                 Ok(t) => {
                     let uniq: Table = unique_by(t, "name")
-                    println(str(nrows(uniq)))
+                    print(str(nrows(uniq)))
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)

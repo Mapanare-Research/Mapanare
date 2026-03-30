@@ -69,7 +69,7 @@ class TestCoreTypes:
         """TomlValue enum (with Table and Array variants) compiles."""
         src = _toml_source_with_main("""\
             let v: TomlValue = Str("hello")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -78,7 +78,7 @@ class TestCoreTypes:
         """TomlError struct compiles."""
         src = _toml_source_with_main("""\
             let e: TomlError = new TomlError { message: "test", line: 1, col: 1 }
-            println(e.message)
+            print(e.message)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -87,7 +87,7 @@ class TestCoreTypes:
         """TomlValue::Int variant compiles."""
         src = _toml_source_with_main("""\
             let v: TomlValue = Int(42)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -96,7 +96,7 @@ class TestCoreTypes:
         """TomlValue::Float variant compiles."""
         src = _toml_source_with_main("""\
             let v: TomlValue = Float(3.14)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -105,7 +105,7 @@ class TestCoreTypes:
         """TomlValue::Bool variant compiles."""
         src = _toml_source_with_main("""\
             let v: TomlValue = Bool(true)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -114,7 +114,7 @@ class TestCoreTypes:
         """TomlValue::DateTime variant compiles."""
         src = _toml_source_with_main("""\
             let v: TomlValue = DateTime("2024-01-15T10:30:00Z")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -124,7 +124,7 @@ class TestCoreTypes:
         src = _toml_source_with_main("""\
             let items: List<TomlValue> = [Int(1), Int(2)]
             let v: TomlValue = Array(items)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -134,7 +134,7 @@ class TestCoreTypes:
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
             let v: TomlValue = Table(entries)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -151,7 +151,7 @@ class TestCharHelpers:
         """Digit classification helper compiles."""
         src = _toml_source_with_main("""\
             let r: Bool = is_toml_digit("5")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -160,7 +160,7 @@ class TestCharHelpers:
         """Hex classification helper compiles."""
         src = _toml_source_with_main("""\
             let r: Bool = is_hex("a")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -169,7 +169,7 @@ class TestCharHelpers:
         """Bare key char classification compiles."""
         src = _toml_source_with_main("""\
             let r: Bool = is_bare_key_char("k")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -178,7 +178,7 @@ class TestCharHelpers:
         """Octal digit classification compiles."""
         src = _toml_source_with_main("""\
             let r: Bool = is_octal_digit("7")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -187,7 +187,7 @@ class TestCharHelpers:
         """Binary digit classification compiles."""
         src = _toml_source_with_main("""\
             let r: Bool = is_binary_digit("1")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -204,7 +204,7 @@ class TestWhitespace:
         """skip_ws function compiles."""
         src = _toml_source_with_main("""\
             let r: ParseState = skip_ws("  hello", 0, 1, 1)
-            println(str(r.pos))
+            print(str(r.pos))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -213,7 +213,7 @@ class TestWhitespace:
         """skip_ws_and_comments function compiles."""
         src = _toml_source_with_main("""\
             let r: ParseState = skip_ws_and_comments("  # comment", 0, 1, 1)
-            println(str(r.pos))
+            print(str(r.pos))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -222,7 +222,7 @@ class TestWhitespace:
         """skip_ws_comments_newlines function compiles."""
         src = _toml_source_with_main("""\
             let r: ParseState = skip_ws_comments_newlines("  \\n  hello", 0, 1, 1)
-            println(str(r.pos))
+            print(str(r.pos))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -239,7 +239,7 @@ class TestStringParsing:
         """Parse a basic TOML string."""
         src = _toml_source_with_main("""\
             let r: StringParseResult = parse_basic_string("\\"hello\\"", 0, 1, 1)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "__mn_str_char_at" in ir_out
@@ -248,7 +248,7 @@ class TestStringParsing:
         """Parse basic string with escape sequences."""
         src = _toml_source_with_main("""\
             let r: StringParseResult = parse_basic_string("\\"line1\\\\nline2\\"", 0, 1, 1)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -257,7 +257,7 @@ class TestStringParsing:
         """Parse a literal string (no escapes)."""
         src = _toml_source_with_main("""\
             let r: StringParseResult = parse_literal_string("'raw \\\\string'", 0, 1, 1)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -274,7 +274,7 @@ class TestMultiLineStrings:
         """Multi-line basic string parser compiles."""
         src = _toml_source_with_main("""\
             let r: StringParseResult = parse_ml_basic_string("\\"\\"\\"\\nhello\\nworld\\"\\"\\"\\"", 0, 1, 1)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -283,7 +283,7 @@ class TestMultiLineStrings:
         """Multi-line literal string parser compiles."""
         src = _toml_source_with_main("""\
             let r: StringParseResult = parse_ml_literal_string("'''\\nhello\\nworld'''", 0, 1, 1)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -292,7 +292,7 @@ class TestMultiLineStrings:
         """String dispatch function routes to correct parser."""
         src = _toml_source_with_main("""\
             let r: StringParseResult = parse_toml_string("\\"test\\"", 0, 1, 1)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -309,7 +309,7 @@ class TestKeyParsing:
         """Parse a bare key."""
         src = _toml_source_with_main("""\
             let r: KeyResult = parse_bare_key("my-key = 1", 0, 1, 1)
-            println(r.key)
+            print(r.key)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -318,7 +318,7 @@ class TestKeyParsing:
         """Parse a quoted key."""
         src = _toml_source_with_main("""\
             let r: KeyResult = parse_simple_key("\\"complex key\\" = 1", 0, 1, 1)
-            println(r.key)
+            print(r.key)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -327,7 +327,7 @@ class TestKeyParsing:
         """Parse a dotted key (a.b.c)."""
         src = _toml_source_with_main("""\
             let r: DottedKeyResult = parse_dotted_key("a.b.c = 1", 0, 1, 1)
-            println(str(len(r.keys)))
+            print(str(len(r.keys)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -344,7 +344,7 @@ class TestNumberParsing:
         """Parse a decimal integer."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("42", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -353,7 +353,7 @@ class TestNumberParsing:
         """Parse a negative integer."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("-7", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -362,7 +362,7 @@ class TestNumberParsing:
         """Parse a positive integer with explicit + sign."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("+99", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -371,7 +371,7 @@ class TestNumberParsing:
         """Parse integer with underscore separators."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("1_000_000", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -380,7 +380,7 @@ class TestNumberParsing:
         """Parse a float with decimal point."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("3.14", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -389,7 +389,7 @@ class TestNumberParsing:
         """Parse a float with exponent."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("2.5e10", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -398,7 +398,7 @@ class TestNumberParsing:
         """Parse a float with negative exponent."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("5e-3", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -415,7 +415,7 @@ class TestIntegerBases:
         """Parse a hexadecimal integer (0xDEAD)."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("0xDEAD", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -424,7 +424,7 @@ class TestIntegerBases:
         """Parse hex integer with underscore separators."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("0xdead_beef", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -433,7 +433,7 @@ class TestIntegerBases:
         """Parse an octal integer (0o755)."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("0o755", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -442,7 +442,7 @@ class TestIntegerBases:
         """Parse a binary integer (0b1010)."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("0b1010", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -451,7 +451,7 @@ class TestIntegerBases:
         """Parse binary integer with underscore separators."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("0b1111_0000", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -468,7 +468,7 @@ class TestSpecialFloats:
         """Parse inf value."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("inf", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -477,7 +477,7 @@ class TestSpecialFloats:
         """Parse +inf value."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("+inf", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -486,7 +486,7 @@ class TestSpecialFloats:
         """Parse -inf value."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("-inf", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -495,7 +495,7 @@ class TestSpecialFloats:
         """Parse nan value."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("nan", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -504,7 +504,7 @@ class TestSpecialFloats:
         """Parse +nan value."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("+nan", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -513,7 +513,7 @@ class TestSpecialFloats:
         """Parse -nan value."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_number("-nan", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -530,7 +530,7 @@ class TestValueParsing:
         """Parse a string value via top-level dispatch."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_value("\\"hello\\"", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -539,7 +539,7 @@ class TestValueParsing:
         """Parse true boolean via value dispatch."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_value("true", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -548,7 +548,7 @@ class TestValueParsing:
         """Parse false boolean via value dispatch."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_value("false", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -557,7 +557,7 @@ class TestValueParsing:
         """Parse integer via value dispatch."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_value("42", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -566,7 +566,7 @@ class TestValueParsing:
         """Parse float via value dispatch."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_value("3.14", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -575,7 +575,7 @@ class TestValueParsing:
         """Parse datetime via value dispatch."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_value("2024-01-15T10:30:00Z", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -592,7 +592,7 @@ class TestArrayParsing:
         """Parse empty TOML array."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_array("[]", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -601,7 +601,7 @@ class TestArrayParsing:
         """Parse array of integers."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_array("[1, 2, 3]", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -610,7 +610,7 @@ class TestArrayParsing:
         """Parse array of strings."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_array("[\\"a\\", \\"b\\", \\"c\\"]", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -619,7 +619,7 @@ class TestArrayParsing:
         """Parse nested TOML array."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_array("[[1, 2], [3, 4]]", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -628,7 +628,7 @@ class TestArrayParsing:
         """Parse array with trailing comma."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_toml_array("[1, 2, 3,]", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -645,7 +645,7 @@ class TestInlineTableParsing:
         """Parse empty inline table."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_inline_table("{}", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -654,7 +654,7 @@ class TestInlineTableParsing:
         """Parse inline table with key-value pairs."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_inline_table("{name = \\"test\\", version = 1}", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -663,7 +663,7 @@ class TestInlineTableParsing:
         """Parse inline table with dotted keys."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_inline_table("{a.b = 1}", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -680,7 +680,7 @@ class TestDecode:
         """Decode empty TOML document."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -689,7 +689,7 @@ class TestDecode:
         """Decode simple key = value pair."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("name = \\"Mapanare\\"")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -698,7 +698,7 @@ class TestDecode:
         """Decode integer value."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("port = 8080")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -707,7 +707,7 @@ class TestDecode:
         """Decode float value."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("pi = 3.14")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -716,7 +716,7 @@ class TestDecode:
         """Decode boolean values."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("enabled = true")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -725,7 +725,7 @@ class TestDecode:
         """Decode datetime value."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("created = 2024-01-15T10:30:00Z")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -734,7 +734,7 @@ class TestDecode:
         """Decode array value."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("ports = [8080, 8443, 9090]")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -743,7 +743,7 @@ class TestDecode:
         """Decode multiple key-value pairs."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("name = \\"test\\"\\nversion = 1")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -752,7 +752,7 @@ class TestDecode:
         """Decode TOML with comments."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("# comment\\nkey = \\"value\\"")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -769,7 +769,7 @@ class TestDottedKeys:
         """Decode dotted key creates nested tables."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("a.b.c = 1")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -778,7 +778,7 @@ class TestDottedKeys:
         """Decode quoted key in dotted path."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("a.\\"complex key\\".c = 1")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -795,7 +795,7 @@ class TestNestedTables:
         """Decode standard table header [section]."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("[server]\\nhost = \\"localhost\\"\\nport = 8080")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -804,7 +804,7 @@ class TestNestedTables:
         """Decode nested table headers [a.b]."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("[database]\\nhost = \\"db\\"\\n[database.pool]\\nsize = 10")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -813,7 +813,7 @@ class TestNestedTables:
         """Decode document with multiple table sections."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("[server]\\nport = 80\\n[database]\\nhost = \\"db\\"")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -830,7 +830,7 @@ class TestArrayOfTables:
         """Decode array of tables [[section]]."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("[[products]]\\nname = \\"Hammer\\"\\n[[products]]\\nname = \\"Nail\\"")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -839,7 +839,7 @@ class TestArrayOfTables:
         """Decode array of tables with multiple fields per entry."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("[[servers]]\\nhost = \\"a\\"\\nport = 80\\n[[servers]]\\nhost = \\"b\\"\\nport = 443")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -857,8 +857,8 @@ class TestErrorCases:
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("key = 1\\nkey = 2")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -869,8 +869,8 @@ class TestErrorCases:
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("key = \\"hello")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -881,8 +881,8 @@ class TestErrorCases:
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("key = ")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -893,8 +893,8 @@ class TestErrorCases:
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("key = \\"bad\\\\qescape\\"")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -905,8 +905,8 @@ class TestErrorCases:
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("[missing_close")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -926,7 +926,7 @@ class TestEncode:
             let entries: Map<String, TomlValue> = #{}
             entries["name"] = Str("Mapanare")
             let s: String = encode(Table(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -937,7 +937,7 @@ class TestEncode:
             let entries: Map<String, TomlValue> = #{}
             entries["port"] = Int(8080)
             let s: String = encode(Table(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "__mn_str_from_int" in ir_out
@@ -948,7 +948,7 @@ class TestEncode:
             let entries: Map<String, TomlValue> = #{}
             entries["pi"] = Float(3.14)
             let s: String = encode(Table(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -959,7 +959,7 @@ class TestEncode:
             let entries: Map<String, TomlValue> = #{}
             entries["enabled"] = Bool(true)
             let s: String = encode(Table(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -970,7 +970,7 @@ class TestEncode:
             let entries: Map<String, TomlValue> = #{}
             entries["created"] = DateTime("2024-01-15T10:30:00Z")
             let s: String = encode(Table(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -982,7 +982,7 @@ class TestEncode:
             let items: List<TomlValue> = []
             entries["tags"] = Array(items)
             let s: String = encode(Table(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -994,7 +994,7 @@ class TestEncode:
             let items: List<TomlValue> = [Int(1), Int(2), Int(3)]
             entries["ports"] = Array(items)
             let s: String = encode(Table(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1007,7 +1007,7 @@ class TestEncode:
             sub["host"] = Str("localhost")
             entries["server"] = Table(sub)
             let s: String = encode(Table(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1016,7 +1016,7 @@ class TestEncode:
         """Encode value inline (for simple values)."""
         src = _toml_source_with_main("""\
             let s: String = encode_value_inline(Str("hello"))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1036,7 +1036,7 @@ class TestEncodePretty:
             entries["name"] = Str("test")
             entries["version"] = Int(1)
             let s: String = encode_pretty(Table(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1051,7 +1051,7 @@ class TestEncodePretty:
             db["port"] = Int(5432)
             entries["database"] = Table(db)
             let s: String = encode_pretty(Table(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1071,7 +1071,7 @@ class TestRoundTrip:
             entries["name"] = Str("Mapanare")
             let encoded: String = encode(Table(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1083,7 +1083,7 @@ class TestRoundTrip:
             entries["count"] = Int(42)
             let encoded: String = encode(Table(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1095,7 +1095,7 @@ class TestRoundTrip:
             entries["flag"] = Bool(true)
             let encoded: String = encode(Table(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1108,7 +1108,7 @@ class TestRoundTrip:
             entries["ports"] = Array(items)
             let encoded: String = encode(Table(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1123,7 +1123,7 @@ class TestRoundTrip:
             entries["db"] = Table(sub)
             let encoded: String = encode(Table(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1135,7 +1135,7 @@ class TestRoundTrip:
             entries["pi"] = Float(3.14)
             let encoded: String = encode(Table(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1155,9 +1155,9 @@ class TestTypedGetters:
             match r {
                 Ok(v) => {
                     let s: Result<String, TomlError> = get_string(v, "name")
-                    println("ok")
+                    print("ok")
                 },
-                Err(e) => { println(e.message) }
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1170,9 +1170,9 @@ class TestTypedGetters:
             match r {
                 Ok(v) => {
                     let n: Result<Int, TomlError> = get_int(v, "port")
-                    println("ok")
+                    print("ok")
                 },
-                Err(e) => { println(e.message) }
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1185,9 +1185,9 @@ class TestTypedGetters:
             match r {
                 Ok(v) => {
                     let f: Result<Float, TomlError> = get_float(v, "pi")
-                    println("ok")
+                    print("ok")
                 },
-                Err(e) => { println(e.message) }
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1200,9 +1200,9 @@ class TestTypedGetters:
             match r {
                 Ok(v) => {
                     let b: Result<Bool, TomlError> = get_bool(v, "enabled")
-                    println("ok")
+                    print("ok")
                 },
-                Err(e) => { println(e.message) }
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1215,9 +1215,9 @@ class TestTypedGetters:
             match r {
                 Ok(v) => {
                     let a: Result<List<TomlValue>, TomlError> = get_array(v, "tags")
-                    println("ok")
+                    print("ok")
                 },
-                Err(e) => { println(e.message) }
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1230,9 +1230,9 @@ class TestTypedGetters:
             match r {
                 Ok(v) => {
                     let t: Result<TomlValue, TomlError> = get_table(v, "server")
-                    println("ok")
+                    print("ok")
                 },
-                Err(e) => { println(e.message) }
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1245,11 +1245,11 @@ class TestTypedGetters:
             match r {
                 Ok(v) => {
                     let s: String = get_or_default_str(v, "name", "fallback")
-                    println(s)
+                    print(s)
                     let missing: String = get_or_default_str(v, "absent", "default")
-                    println(missing)
+                    print(missing)
                 },
-                Err(e) => { println(e.message) }
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1263,11 +1263,11 @@ class TestTypedGetters:
                 Ok(v) => {
                     let s: Result<String, TomlError> = get_string(v, "nonexistent")
                     match s {
-                        Ok(val) => { println("unexpected ok") },
-                        Err(e) => { println(e.message) }
+                        Ok(val) => { print("unexpected ok") },
+                        Err(e) => { print(e.message) }
                     }
                 },
-                Err(e) => { println(e.message) }
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1281,11 +1281,11 @@ class TestTypedGetters:
                 Ok(v) => {
                     let n: Result<Int, TomlError> = get_int(v, "name")
                     match n {
-                        Ok(val) => { println("unexpected ok") },
-                        Err(e) => { println(e.message) }
+                        Ok(val) => { print("unexpected ok") },
+                        Err(e) => { print(e.message) }
                     }
                 },
-                Err(e) => { println(e.message) }
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1303,7 +1303,7 @@ class TestEscapeHandling:
         """Handle \\n escape sequence."""
         src = _toml_source_with_main("""\
             let r: EscapeResult = handle_toml_escape("nhello", 0, 6)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1312,7 +1312,7 @@ class TestEscapeHandling:
         """Handle \\t escape sequence."""
         src = _toml_source_with_main("""\
             let r: EscapeResult = handle_toml_escape("thello", 0, 6)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1321,7 +1321,7 @@ class TestEscapeHandling:
         """Handle \\uXXXX escape sequence."""
         src = _toml_source_with_main("""\
             let r: EscapeResult = handle_toml_escape("u0041rest", 0, 9)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1330,7 +1330,7 @@ class TestEscapeHandling:
         """Handle \\\\ escape sequence."""
         src = _toml_source_with_main("""\
             let r: EscapeResult = handle_toml_escape("\\\\hello", 0, 6)
-            println(r.value)
+            print(r.value)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1339,7 +1339,7 @@ class TestEscapeHandling:
         """Handle invalid escape sequence returns error."""
         src = _toml_source_with_main("""\
             let r: EscapeResult = handle_toml_escape("qhello", 0, 6)
-            println(str(r.ok))
+            print(str(r.ok))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1356,7 +1356,7 @@ class TestSerializerHelpers:
         """escape_toml_basic_string compiles."""
         src = _toml_source_with_main("""\
             let r: String = escape_toml_basic_string("hello\\"world")
-            println(r)
+            print(r)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1366,8 +1366,8 @@ class TestSerializerHelpers:
         src = _toml_source_with_main("""\
             let r1: Bool = needs_quoting("simple")
             let r2: Bool = needs_quoting("has spaces")
-            println(str(r1))
-            println(str(r2))
+            print(str(r1))
+            print(str(r2))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1376,7 +1376,7 @@ class TestSerializerHelpers:
         """encode_key for bare key compiles."""
         src = _toml_source_with_main("""\
             let r: String = encode_key("simple_key")
-            println(r)
+            print(r)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1385,7 +1385,7 @@ class TestSerializerHelpers:
         """encode_key for key needing quotes compiles."""
         src = _toml_source_with_main("""\
             let r: String = encode_key("complex key")
-            println(r)
+            print(r)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1395,8 +1395,8 @@ class TestSerializerHelpers:
         src = _toml_source_with_main("""\
             let r1: Bool = is_simple_value(Str("hello"))
             let r2: Bool = is_simple_value(Int(42))
-            println(str(r1))
-            println(str(r2))
+            print(str(r1))
+            print(str(r2))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1408,7 +1408,7 @@ class TestSerializerHelpers:
             entries["a"] = Int(1)
             let items: List<TomlValue> = [Table(entries)]
             let r: Bool = is_table_array(Array(items))
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1425,7 +1425,7 @@ class TestDateTimeParsing:
         """Datetime heuristic detects date pattern."""
         src = _toml_source_with_main("""\
             let r: Bool = looks_like_datetime("2024-01-15", 0)
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1434,7 +1434,7 @@ class TestDateTimeParsing:
         """Parse full RFC 3339 datetime."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_datetime("2024-01-15T10:30:00Z", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1443,7 +1443,7 @@ class TestDateTimeParsing:
         """Parse local date (no time component)."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_datetime("2024-01-15", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1452,7 +1452,7 @@ class TestDateTimeParsing:
         """Parse datetime with timezone offset."""
         src = _toml_source_with_main("""\
             let r: ValueResult = parse_datetime("2024-01-15T10:30:00+05:30", 0, 1, 1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1469,7 +1469,7 @@ class TestPerformance:
         """Large TOML parsing code compiles (basic performance sanity)."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("a = 1\\nb = 2\\nc = 3\\nd = 4\\ne = 5\\nf = 6\\ng = 7\\nh = 8\\ni = 9\\nj = 10")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1478,7 +1478,7 @@ class TestPerformance:
         """Complex TOML document with tables and arrays compiles."""
         src = _toml_source_with_main("""\
             let r: Result<TomlValue, TomlError> = decode("[package]\\nname = \\"test\\"\\nversion = \\"1.0\\"\\n[dependencies]\\nhttp = \\"0.2\\"\\njson = \\"1.0\\"")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

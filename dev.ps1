@@ -1,8 +1,9 @@
 # Mapanare dev launcher.
 #
 # Usage:
-#   .\dev.ps1                  # validate (default)
-#   .\dev.ps1 validate         # watch Python files and validate on changes
+#   .\dev.ps1                  # validate (default, runs once)
+#   .\dev.ps1 validate         # same — run all checks once and exit
+#   .\dev.ps1 validate -Watch  # validate then watch for changes
 #   .\dev.ps1 test             # run pytest once
 #   .\dev.ps1 lint             # run all linters once
 #   .\dev.ps1 fmt              # auto-format and fix
@@ -13,7 +14,7 @@ param(
     [ValidateSet("validate", "test", "lint", "fmt", "e2e", "bench")]
     [string]$Mode = "validate",
 
-    [switch]$Once
+    [switch]$Watch
 )
 
 $ErrorActionPreference = "Stop"
@@ -154,7 +155,15 @@ function Invoke-AllChecks {
     # --- pytest ---
     Write-Host "  pytest          " -ForegroundColor Cyan -NoNewline
     $savedEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    $out = & pytest --tb=short -q 2>&1
+    # Use parallel execution if pytest-xdist is installed
+    $xdistArgs = @("--tb=short", "-q")
+    $savedEAP2 = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $xdistCheck = & python -c "import xdist" 2>&1
+    $ErrorActionPreference = $savedEAP2
+    if ($LASTEXITCODE -eq 0) {
+        $xdistArgs += @("-n", "auto")
+    }
+    $out = & pytest @xdistArgs 2>&1
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = $savedEAP
     if ($exitCode -eq 0) {
@@ -179,6 +188,47 @@ function Invoke-AllChecks {
         $out | ForEach-Object { Write-Log "  $_" }
     }
 
+    # --- WAT emission (wasm32) ---
+    Write-Host "  wat (wasm32)    " -ForegroundColor Cyan -NoNewline
+    $wasmExamples = @(
+        "$Root\examples\wasm\hello.mn",
+        "$Root\examples\wasm\wasi_app.mn"
+    ) | Where-Object { Test-Path $_ }
+    if ($wasmExamples.Count -gt 0) {
+        $watFailed = $false
+        $watErrors = @()
+        foreach ($mn in $wasmExamples) {
+            $watOut = $mn -replace '\.mn$', '.wat'
+            $savedEAP = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+            $out = & python -m mapanare emit-wasm $mn -o $watOut 2>&1
+            $exitCode = $LASTEXITCODE
+            $ErrorActionPreference = $savedEAP
+            if ($exitCode -ne 0) {
+                $watFailed = $true
+                $watErrors += "  $mn"
+                $out | ForEach-Object { $watErrors += "    $_" }
+            }
+        }
+        if (-not $watFailed) {
+            Write-Host "ok ($($wasmExamples.Count) files)" -ForegroundColor Green
+            Write-Log "[wat] ok ($($wasmExamples.Count) files)"
+        } else {
+            $allPassed = $false
+            Write-Host "fail" -ForegroundColor Red
+            $watErrors | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+            Write-Log "[wat] FAIL"
+            $watErrors | ForEach-Object { Write-Log "  $_" }
+        }
+        # Clean up generated .wat files
+        foreach ($mn in $wasmExamples) {
+            $watOut = $mn -replace '\.mn$', '.wat'
+            Remove-Item $watOut -ErrorAction SilentlyContinue
+        }
+    } else {
+        Write-Host "skip (no examples)" -ForegroundColor DarkGray
+        Write-Log "[wat] skip (no examples)"
+    }
+
     Write-Host ""
     return $allPassed
 }
@@ -195,7 +245,14 @@ if ($Mode -eq "fmt") {
 # --- test mode ---
 if ($Mode -eq "test") {
     Write-Host "[dev] Running tests..." -ForegroundColor Cyan
-    & pytest tests/ -v
+    $savedEAP2 = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $xdistCheck = & python -c "import xdist" 2>&1
+    $ErrorActionPreference = $savedEAP2
+    if ($LASTEXITCODE -eq 0) {
+        & pytest tests/ -v -n auto --durations=20
+    } else {
+        & pytest tests/ -v --durations=20
+    }
     return
 }
 
@@ -219,14 +276,29 @@ if ($Mode -eq "lint") {
     return
 }
 
-# --- validate mode (watch + lint) ---
+# --- validate mode (run once, watch with -Watch) ---
 if ($Mode -eq "validate") {
+    Write-Host "[dev] Validating..." -ForegroundColor Cyan
+    Write-Host ""
+
+    $passed = Invoke-AllChecks
+
+    if (-not $Watch) {
+        if ($passed) {
+            Write-Host "[dev] All checks passed." -ForegroundColor Green
+        } else {
+            Write-Host "[dev] Some checks failed. See error.log for details." -ForegroundColor Red
+        }
+        return
+    }
+
+    # --- watch mode (opt-in with -Watch) ---
     $mapaPath = "$Root\mapanare"
     $runtimePath = "$Root\runtime"
     $testsPath = "$Root\tests"
     $stdlibPath = "$Root\stdlib"
 
-    Write-Host "[dev] Watching for lint + type + test errors" -ForegroundColor Cyan
+    Write-Host "[dev] Watching for changes..." -ForegroundColor Cyan
     Write-Host "[dev]   Compiler : $mapaPath" -ForegroundColor DarkGray
     Write-Host "[dev]   Runtime  : $runtimePath" -ForegroundColor DarkGray
     Write-Host "[dev]   Tests    : $testsPath" -ForegroundColor DarkGray
@@ -234,17 +306,11 @@ if ($Mode -eq "validate") {
     Write-Host "[dev] Press Ctrl+C to stop." -ForegroundColor DarkGray
     Write-Host ""
 
-    Invoke-AllChecks
-
-    if ($Once) {
-        return
-    }
-
     $watchers = @()
     $watchDirs = @($mapaPath, $runtimePath, $testsPath, $stdlibPath) | Where-Object { Test-Path $_ }
 
     foreach ($dir in $watchDirs) {
-        foreach ($filter in @("*.py", "*.c", "*.h")) {
+        foreach ($filter in @("*.py", "*.c", "*.h", "*.mn")) {
             $w = [System.IO.FileSystemWatcher]::new($dir, $filter)
             $w.IncludeSubdirectories = $true
             $w.NotifyFilter = [System.IO.NotifyFilters]::LastWrite -bor

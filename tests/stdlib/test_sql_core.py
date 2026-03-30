@@ -81,7 +81,7 @@ class TestSqlValueEnum:
         """SqlValue::Null variant compiles."""
         src = _sql_with_main("""\
             let v: SqlValue = Null()
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -90,7 +90,7 @@ class TestSqlValueEnum:
         """SqlValue::Int variant compiles."""
         src = _sql_with_main("""\
             let v: SqlValue = Int(42)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -99,7 +99,7 @@ class TestSqlValueEnum:
         """SqlValue::Float variant compiles."""
         src = _sql_with_main("""\
             let v: SqlValue = Float(3.14)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -108,7 +108,7 @@ class TestSqlValueEnum:
         """SqlValue::Str variant compiles."""
         src = _sql_with_main("""\
             let v: SqlValue = Str("hello")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -117,7 +117,7 @@ class TestSqlValueEnum:
         """SqlValue::Bool variant compiles."""
         src = _sql_with_main("""\
             let v: SqlValue = Bool(true)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -136,7 +136,7 @@ class TestRowAccessors:
             let cols: List<String> = ["name", "age"]
             let vals: List<SqlValue> = [Str("Alice"), Int(30)]
             let r: Row = new_row(cols, vals)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -148,7 +148,7 @@ class TestRowAccessors:
             let vals: List<SqlValue> = [Int(1), Str("Bob")]
             let r: Row = new_row(cols, vals)
             let val: Option<SqlValue> = row_get(r, "name")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -160,7 +160,7 @@ class TestRowAccessors:
             let vals: List<SqlValue> = [Int(1)]
             let r: Row = new_row(cols, vals)
             let val: Option<SqlValue> = row_get(r, "nonexistent")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -172,7 +172,7 @@ class TestRowAccessors:
             let vals: List<SqlValue> = [Str("Alice")]
             let r: Row = new_row(cols, vals)
             let val: Option<String> = row_get_string(r, "name")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -184,7 +184,7 @@ class TestRowAccessors:
             let vals: List<SqlValue> = [Int(42)]
             let r: Row = new_row(cols, vals)
             let val: Option<String> = row_get_string(r, "count")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -196,7 +196,7 @@ class TestRowAccessors:
             let vals: List<SqlValue> = [Int(7)]
             let r: Row = new_row(cols, vals)
             let val: Option<Int> = row_get_int(r, "id")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -208,7 +208,7 @@ class TestRowAccessors:
             let vals: List<SqlValue> = [Str("Alice")]
             let r: Row = new_row(cols, vals)
             let val: Option<Int> = row_get_int(r, "name")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -220,7 +220,7 @@ class TestRowAccessors:
             let vals: List<SqlValue> = [Float(9.99)]
             let r: Row = new_row(cols, vals)
             let val: Option<Float> = row_get_float(r, "price")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -232,7 +232,7 @@ class TestRowAccessors:
             let vals: List<SqlValue> = [Int(100)]
             let r: Row = new_row(cols, vals)
             let val: Option<Float> = row_get_float(r, "score")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -244,7 +244,7 @@ class TestRowAccessors:
             let vals: List<SqlValue> = [Bool(true)]
             let r: Row = new_row(cols, vals)
             let val: Option<Bool> = row_get_bool(r, "active")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -256,7 +256,7 @@ class TestRowAccessors:
             let vals: List<SqlValue> = [Int(1)]
             let r: Row = new_row(cols, vals)
             let val: Option<Bool> = row_get_bool(r, "flag")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -273,7 +273,7 @@ class TestSqlValueToString:
         """sql_value_to_string(Null) returns 'NULL'."""
         src = _sql_with_main("""\
             let s: String = sql_value_to_string(Null())
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -282,7 +282,7 @@ class TestSqlValueToString:
         """sql_value_to_string(Int) returns the number as string."""
         src = _sql_with_main("""\
             let s: String = sql_value_to_string(Int(42))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "__mn_str_from_int" in ir_out
@@ -291,7 +291,7 @@ class TestSqlValueToString:
         """sql_value_to_string(Float) returns the float as string."""
         src = _sql_with_main("""\
             let s: String = sql_value_to_string(Float(3.14))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -300,7 +300,7 @@ class TestSqlValueToString:
         """sql_value_to_string(Str) returns the string itself."""
         src = _sql_with_main("""\
             let s: String = sql_value_to_string(Str("hello"))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -309,7 +309,7 @@ class TestSqlValueToString:
         """sql_value_to_string(Bool(true)) returns 'true'."""
         src = _sql_with_main("""\
             let s: String = sql_value_to_string(Bool(true))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -318,7 +318,7 @@ class TestSqlValueToString:
         """sql_value_to_string(Bool(false)) returns 'false'."""
         src = _sql_with_main("""\
             let s: String = sql_value_to_string(Bool(false))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -335,7 +335,7 @@ class TestUrlParsing:
         """extract_scheme returns 'sqlite' from sqlite:///path."""
         src = _sql_with_main("""\
             let scheme: String = extract_scheme("sqlite:///data/app.db")
-            println(scheme)
+            print(scheme)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -344,7 +344,7 @@ class TestUrlParsing:
         """extract_scheme returns 'postgres' from postgres://..."""
         src = _sql_with_main("""\
             let scheme: String = extract_scheme("postgres://user:pass@host:5432/mydb")
-            println(scheme)
+            print(scheme)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -353,7 +353,7 @@ class TestUrlParsing:
         """extract_rest returns file path from sqlite:///path."""
         src = _sql_with_main("""\
             let rest: String = extract_rest("sqlite:///data/app.db")
-            println(rest)
+            print(rest)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -362,7 +362,7 @@ class TestUrlParsing:
         """extract_rest handles sqlite::memory: special case."""
         src = _sql_with_main("""\
             let rest: String = extract_rest("sqlite::memory:")
-            println(rest)
+            print(rest)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -371,7 +371,7 @@ class TestUrlParsing:
         """extract_rest returns user:pass@host/db from postgres://..."""
         src = _sql_with_main("""\
             let rest: String = extract_rest("postgres://user:pass@host/db")
-            println(rest)
+            print(rest)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -380,7 +380,7 @@ class TestUrlParsing:
         """extract_scheme on empty string returns empty."""
         src = _sql_with_main("""\
             let scheme: String = extract_scheme("")
-            println(scheme)
+            print(scheme)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -398,7 +398,7 @@ class TestErrorMessage:
         src = _sql_with_main("""\
             let err: SqlError = ConnectionFailed("timeout")
             let msg: String = error_message(err)
-            println(msg)
+            print(msg)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -408,7 +408,7 @@ class TestErrorMessage:
         src = _sql_with_main("""\
             let err: SqlError = QueryFailed("syntax error")
             let msg: String = error_message(err)
-            println(msg)
+            print(msg)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -418,7 +418,7 @@ class TestErrorMessage:
         src = _sql_with_main("""\
             let err: SqlError = TypeMismatch("expected Int, got String")
             let msg: String = error_message(err)
-            println(msg)
+            print(msg)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -428,7 +428,7 @@ class TestErrorMessage:
         src = _sql_with_main("""\
             let err: SqlError = DriverNotFound("mysql")
             let msg: String = error_message(err)
-            println(msg)
+            print(msg)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -446,7 +446,7 @@ class TestStructConstruction:
         src = _sql_with_main("""\
             let rows: List<Row> = []
             let qr: QueryResult = new QueryResult { rows: rows, affected: 0 }
-            println(str(qr.affected))
+            print(str(qr.affected))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -455,7 +455,7 @@ class TestStructConstruction:
         """Connection struct compiles."""
         src = _sql_with_main("""\
             let conn: Connection = new Connection { handle: 1, driver: "sqlite", url: "sqlite:///test.db" }
-            println(conn.driver)
+            print(conn.driver)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -466,7 +466,7 @@ class TestStructConstruction:
             let cols: List<String> = ["a", "b"]
             let vals: List<SqlValue> = [Int(1), Int(2)]
             let r: Row = new_row(cols, vals)
-            println(str(len(r.columns)))
+            print(str(len(r.columns)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

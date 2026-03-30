@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language (v2.0.0) with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (native backend via llvmlite) and WebAssembly (WAT/WASM). A legacy Python transpiler backend exists for reference and bootstrapping only. The self-hosted compiler is 8,288+ lines of `.mn` across 7 modules in `mapanare/self/`. The language is frozen at v1.0 — syntax and semantics changes require RFC + deprecation cycle.
+Mapanare is an AI-native compiled programming language (v2.1.0) with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (native backend via llvmlite) and WebAssembly (WAT/WASM). A legacy Python transpiler backend exists for reference and bootstrapping only. The self-hosted compiler is 9,400+ lines of `.mn` across 10 modules in `mapanare/self/`. The language is frozen at v1.0 — syntax and semantics changes require RFC + deprecation cycle.
 
 ## Current Version & Roadmap
 
@@ -12,9 +12,46 @@ Mapanare is an AI-native compiled programming language (v2.0.0) with first-class
 - **v1.1.0** — AI native: LLM drivers, embeddings, RAG as stdlib
 - **v1.2.0** — Data & storage: SQL drivers, Dato v1.0, YAML/TOML
 - **v1.3.0** — Web platform & security: crawler, vulnerability scanner, web framework
-- **v2.0.0** (current) — GPU compute (CUDA/Vulkan via dlopen), WebAssembly backend, mobile targets, Python backend deprecated
+- **v2.0.0** — GPU compute (CUDA/Vulkan via dlopen), WebAssembly backend, mobile targets, Python backend deprecated
+- **v2.1.0** (current) — Self-hosted compiler approaching fixed-point, stage2 validation, valgrind-based crash diagnostics
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v2.0.0/PLAN.md` for the current execution plan.
+
+## Pre-Push Validation (MANDATORY)
+
+**Before ANY commit or push**, run the full validation suite. This mirrors CI exactly and writes results to `error.log`:
+
+```powershell
+.\dev.ps1                  # Full validate: black + ruff + mypy + gcc + pytest + WAT emission (runs once)
+.\dev.ps1 validate         # Same as above (default mode), runs once and exits
+.\dev.ps1 validate -Watch  # Validate then watch for changes
+.\dev.ps1 test             # pytest only
+.\dev.ps1 lint             # Linters only (black + ruff + mypy)
+.\dev.ps1 fmt              # Auto-format (black + ruff --fix)
+.\dev.ps1 e2e              # End-to-end tests only
+.\dev.ps1 bench            # Benchmarks
+```
+
+The validate step includes **WAT emission** for all `examples/wasm/*.mn` files — this is what catches WASM CI failures locally. Running just `pytest` is NOT sufficient; the WASM cross-compilation step in CI compiles those examples and will fail independently of pytest.
+
+**Quick partial checks** (use these during development, but always run full validate before pushing):
+
+```bash
+# WASM emission only (fast, catches the most common CI-only failures)
+python -m mapanare emit-wasm examples/wasm/hello.mn -o /dev/null
+python -m mapanare emit-wasm examples/wasm/wasi_app.mn -o /dev/null
+
+# Lint only (no tests)
+black --check . && ruff check . && mypy mapanare/ runtime/
+
+# Single test file
+pytest tests/semantic/test_types.py -v
+
+# Single test directory
+pytest tests/parser/ -v
+pytest tests/llvm/ -v
+pytest tests/wasm/ -v
+```
 
 ## Commands
 
@@ -39,6 +76,52 @@ python scripts/test_native.py --stage1 mapanare/self/mnc-stage1  # Compare with 
 python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 --run  # Also run IR via lli
 python scripts/test_native.py --bless                            # Regenerate reference files
 python scripts/test_native.py --filter fib -v                    # One test, verbose
+
+# Rebuild cycle (WSL) — one command for the full edit-compile-test loop
+bash scripts/rebuild.sh              # concat + build + golden (default)
+bash scripts/rebuild.sh quick        # concat + build only (fast iteration)
+bash scripts/rebuild.sh full         # concat + build + golden + selftest + memory
+bash scripts/rebuild.sh audit        # concat + build + audit main.ll
+bash scripts/rebuild.sh worklist     # concat + build + show alloca alias work queue
+
+# IR Doctor — per-function diagnostics for the self-hosted compiler
+# Detects: ALLOCA_ALIAS (real vs mitigated), EMPTY_SWITCH, RET_TYPE_MISMATCH,
+#          MISSING_PERCENT, DUPLICATE_CASE, PHI_UNDEF_REF, LOOP_PUSH, etc.
+# Saves baselines to .ir_doctor/ — reruns show delta (fixed/new/regressed)
+python scripts/ir_doctor.py audit mapanare/self/main.ll              # Audit + baseline + llvm-as
+python scripts/ir_doctor.py --only lower__ audit mapanare/self/main.ll  # Audit specific module
+python scripts/ir_doctor.py worklist mapanare/self/main.ll           # Functions needing recursive rewrite
+python scripts/ir_doctor.py extract mapanare/self/main.ll lower__lower_match  # Dump one function's IR
+python scripts/ir_doctor.py check file.ll                            # Just llvm-as validation
+python scripts/ir_doctor.py golden                                   # Fresh compile+validate ALL golden (WSL, no cache)
+python scripts/ir_doctor.py selftest                                 # Self-compile mnc_all.mn (WSL)
+python scripts/ir_doctor.py memory                                   # Memory scaling test (WSL)
+python scripts/ir_doctor.py table mapanare/self/main.ll              # Per-function metrics table
+python scripts/ir_doctor.py --top 15 table mapanare/self/main.ll     # Top 15 largest functions
+python scripts/ir_doctor.py fingerprint mapanare/self/main.ll        # JSON per-function hashes
+python scripts/ir_doctor.py diff tests/golden/07_enum_match.mn       # Bootstrap vs stage1 (WSL)
+python scripts/ir_doctor.py diff-ir a.ll b.ll                        # Compare two .ll files
+python scripts/ir_doctor.py valgrind tests/golden/11_closure.mn       # Auto-run valgrind + map crash to fields (WSL)
+python scripts/ir_doctor.py valgrind 11_closure.mn --struct EmitState  # Map against a different struct
+python scripts/ir_doctor.py structmap LowerState                     # Show struct byte layout + field names
+python scripts/ir_doctor.py structmap LowerState --offset 176        # What field is at byte 176?
+python scripts/ir_doctor.py structmap                                # List all structs with sizes
+python scripts/ir_doctor.py journal                                  # View debug history (runs + notes)
+python scripts/ir_doctor.py note "tried X, result was Y"             # Add note to debug journal
+python scripts/ir_doctor.py diff-all                                 # All golden tests (WSL)
+python scripts/ir_doctor.py snapshot                                 # Generate .stage1.ll files (WSL)
+python scripts/ir_doctor.py stage2                                   # Compile self-hosted modules through mnc-stage1, validate stage2 IR
+python scripts/ir_doctor.py stage2 --timeout 60                      # With longer timeout
+python scripts/ir_doctor.py valgrind-map ./mapanare/self/mnc-stage1 tests/golden/07_enum_match.mn  # Run valgrind and map crash offsets to struct fields
+python scripts/ir_doctor.py valgrind-map --struct LowerState ./mnc some_file.mn  # Map against specific struct
+python scripts/ir_doctor.py valgrind-map --timeout 60 ./my_binary --flag arg     # With timeout
+
+# MIR Trace — debug type inference issues in the Python lowerer
+python scripts/mir_trace.py tests/golden/10_result.mn divide         # Trace types for one function
+python scripts/mir_trace.py tests/golden/07_enum_match.mn            # Trace all functions in file
+python scripts/mir_trace.py tests/golden/10_result.mn divide -v      # Verbose (all instructions)
+python scripts/mir_trace.py tests/golden/10_result.mn divide --json  # JSON output
+python scripts/mir_trace.py tests/golden/10_result.mn divide --compare  # Compare MIR vs stage1 IR
 
 # Self-hosted compiler build + fixed-point (WSL/Linux only)
 python scripts/build_stage1.py                   # Build mnc-stage1 from Python bootstrap
@@ -105,7 +188,7 @@ Key modules in `mapanare/`:
 
 ## LLVM Backend Status (v2.0.0 — full parity + GPU)
 
-**Working:** Functions, structs, enums, pattern matching, control flow, type inference, generics, Result/Option, print/println, builtins, lists, maps/dicts (Robin Hood hash table), agents (full lifecycle), signals (full reactivity: computed, subscribers, batched updates), streams (map/filter/take/skip/collect/fold, backpressure), closures (free variable capture via environment structs), traits, module imports, pipes (`|>` for function application), pipe definitions (multi-agent composition), all string methods, GPU kernel dispatch (`@gpu`/`@cuda`/`@vulkan` via MIR GpuKernel metadata → PTX/SPIR-V LLVM codegen).
+**Working:** Functions, structs, enums, pattern matching, control flow, type inference, generics, Result/Option, print (println deprecated), builtins, lists, maps/dicts (Robin Hood hash table), agents (full lifecycle), signals (full reactivity: computed, subscribers, batched updates), streams (map/filter/take/skip/collect/fold, backpressure), closures (free variable capture via environment structs), traits, module imports, pipes (`|>` for function application), pipe definitions (multi-agent composition), all string methods, GPU kernel dispatch (`@gpu`/`@cuda`/`@vulkan` via MIR GpuKernel metadata → PTX/SPIR-V LLVM codegen).
 
 **Not yet on LLVM:** Tensors (experimental, GPU-backed via C runtime but no language-level integration).
 
@@ -115,23 +198,26 @@ New LLVM features should target `emit_llvm_mir.py` (MIR-based emitter), not `emi
 
 All type definitions, builtin registries, and type-name mappings live in `types.py`:
 - `TypeKind` enum (25 kinds: INT, FLOAT, BOOL, STRING, LIST, MAP, OPTION, RESULT, SIGNAL, STREAM, AGENT, TENSOR, FN, etc.)
-- `BUILTIN_FUNCTIONS`: print, println, len, str, int, float, Some, Ok, Err, signal, stream
+- `BUILTIN_FUNCTIONS`: print, println (deprecated), len, str, int, float, Some, Ok, Err, signal, stream
 - `BUILTIN_CALL_MAP`: Mapanare→Python name mapping used by emitters
 - `PYTHON_TYPE_MAP`: Type→Python type mapping
 
 ## Self-Hosted Compiler (`mapanare/self/`)
 
-7 modules, 8,288+ lines of Mapanare. Mirrors the Python bootstrap pipeline:
+10 modules, 9,400+ lines of Mapanare. Mirrors the Python bootstrap pipeline:
 
 | Module | Lines | Role |
 |--------|-------|------|
-| `lexer.mn` | 498 | Character-by-character tokenizer |
-| `ast.mn` | 255 | AST node definitions (structs + enums) |
-| `parser.mn` | 1,721 | Recursive descent parser, 13-level precedence |
-| `semantic.mn` | 1,607 | Two-pass type checker and scope resolver |
-| `lower.mn` | 2,629 | AST → MIR lowering |
-| `emit_llvm.mn` | 1,497 | MIR → LLVM IR string emitter |
-| `main.mn` | 81 | Compiler driver |
+| `ast.mn` | 277 | AST node definitions (structs + enums) + shared constructors |
+| `lexer.mn` | 508 | Character-by-character tokenizer |
+| `parser.mn` | 1,879 | Recursive descent parser, 13-level precedence |
+| `semantic.mn` | 1,617 | Two-pass type checker and scope resolver |
+| `mir.mn` | 415 | MIR data structures (types, values, instructions, blocks, module) |
+| `lower_state.mn` | 530 | Lowerer state, scope management, lookups, type resolution |
+| `lower.mn` | 2,007 | AST → MIR lowering (registration + expression/statement lowering) |
+| `emit_llvm_ir.mn` | 258 | LLVM type constants and IR instruction string builders |
+| `emit_llvm.mn` | 1,879 | MIR → LLVM IR emitter (state, handlers, module emission) |
+| `main.mn` | 79 | Compiler driver |
 
 **Patterns:** Constructor functions (`let r: T = first_field; return r`), state-threading (functions thread state structs), no struct literal syntax in grammar yet.
 

@@ -543,10 +543,10 @@ pub fn scan_target(target: String, tmpl: template.ScanTemplate, config: ScanConf
                 // Log error but continue scanning
                 match e {
                     FetchError(msg) => {
-                        println("[WARN] " + tmpl.id + " fetch error on " + target + ": " + msg)
+                        print("[WARN] " + tmpl.id + " fetch error on " + target + ": " + msg)
                     },
                     _ => {
-                        println("[WARN] " + tmpl.id + " error on " + target)
+                        print("[WARN] " + tmpl.id + " error on " + target)
                     }
                 }
             }
@@ -571,12 +571,12 @@ pub fn scan(config: ScanConfig) -> List<Finding> {
     let target_count: Int = len(config.targets)
     let template_count: Int = len(config.templates)
 
-    println("[*] Starting scan: " + str(target_count) + " targets x " + str(template_count) + " templates")
+    print("[*] Starting scan: " + str(target_count) + " targets x " + str(template_count) + " templates")
 
     let mut ti: Int = 0
     while ti < target_count {
         let target: String = config.targets[ti]
-        println("[*] Scanning target: " + target)
+        print("[*] Scanning target: " + target)
 
         let mut tmi: Int = 0
         while tmi < template_count {
@@ -599,6 +599,6 @@ pub fn scan(config: ScanConfig) -> List<Finding> {
         ti = ti + 1
     }
 
-    println("[*] Scan complete: " + str(len(all_findings)) + " findings")
+    print("[*] Scan complete: " + str(len(all_findings)) + " findings")
     return all_findings
 }

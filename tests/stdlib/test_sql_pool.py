@@ -91,7 +91,7 @@ class TestPoolConfig:
         """new_pool_config constructor compiles."""
         src = _pool_with_main("""\
             let config: PoolConfig = new_pool_config("sqlite:///test.db", 2, 10, 60000)
-            println(config.url)
+            print(config.url)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -100,9 +100,9 @@ class TestPoolConfig:
         """PoolConfig field access compiles."""
         src = _pool_with_main("""\
             let config: PoolConfig = new_pool_config("sqlite:///app.db", 1, 5, 30000)
-            println(str(config.min_conns))
-            println(str(config.max_conns))
-            println(str(config.idle_timeout))
+            print(str(config.min_conns))
+            print(str(config.max_conns))
+            print(str(config.idle_timeout))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -111,7 +111,7 @@ class TestPoolConfig:
         """PoolConfig via struct literal compiles."""
         src = _pool_with_main("""\
             let config: PoolConfig = new PoolConfig { url: "sqlite:///x.db", min_conns: 0, max_conns: 3, idle_timeout: 5000 }
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -131,7 +131,7 @@ class TestPoolCreation:
             let flags: List<Bool> = []
             let config: PoolConfig = new_pool_config("sqlite:///test.db", 0, 5, 60000)
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -145,7 +145,7 @@ class TestPoolCreation:
             let flags: List<Bool> = [false, false]
             let config: PoolConfig = new_pool_config("sqlite:///test.db", 2, 10, 60000)
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -168,8 +168,8 @@ class TestCheckoutCheckin:
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let result: Result<Connection, SqlError> = checkout(pool)
             match result {
-                Ok(conn) => { println(str(conn.handle)) },
-                Err(e) => { println(error_message(e)) }
+                Ok(conn) => { print(str(conn.handle)) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -184,7 +184,7 @@ class TestCheckoutCheckin:
             let config: PoolConfig = new_pool_config("sqlite:///test.db", 1, 5, 60000)
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let updated: Pool = checkin(pool, c1)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -199,7 +199,7 @@ class TestCheckoutCheckin:
             let config: PoolConfig = new_pool_config("sqlite:///test.db", 2, 5, 60000)
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let cr: CheckoutResult = checkout_with_pool(pool)
-            println(str(cr.ok))
+            print(str(cr.ok))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -214,7 +214,7 @@ class TestCheckoutCheckin:
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let cr: CheckoutResult = checkout_with_pool(pool)
             let pool2: Pool = checkin(cr.pool, cr.conn)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -237,7 +237,7 @@ class TestPoolStatus:
             let config: PoolConfig = new_pool_config("sqlite:///test.db", 2, 10, 60000)
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let size: Int = pool_size(pool)
-            println(str(size))
+            print(str(size))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -253,7 +253,7 @@ class TestPoolStatus:
             let config: PoolConfig = new_pool_config("sqlite:///test.db", 3, 10, 60000)
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let active: Int = pool_active(pool)
-            println(str(active))
+            print(str(active))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -268,7 +268,7 @@ class TestPoolStatus:
             let config: PoolConfig = new_pool_config("sqlite:///test.db", 2, 10, 60000)
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let idle: Int = pool_idle(pool)
-            println(str(idle))
+            print(str(idle))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -284,8 +284,8 @@ class TestPoolStatus:
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let idle: Int = pool_idle(pool)
             let active: Int = pool_active(pool)
-            println(str(idle))
-            println(str(active))
+            print(str(idle))
+            print(str(active))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -300,7 +300,7 @@ class TestPoolStatus:
             let size: Int = pool_size(pool)
             let active: Int = pool_active(pool)
             let idle: Int = pool_idle(pool)
-            println(str(size))
+            print(str(size))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -321,7 +321,7 @@ class TestClosePool:
             let config: PoolConfig = new_pool_config("sqlite:///test.db", 0, 5, 60000)
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let result: Result<Bool, SqlError> = close_pool(pool)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -337,8 +337,8 @@ class TestClosePool:
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let result: Result<Bool, SqlError> = close_pool(pool)
             match result {
-                Ok(ok) => { println("closed") },
-                Err(e) => { println(error_message(e)) }
+                Ok(ok) => { print("closed") },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -362,8 +362,8 @@ class TestPoolExhaustion:
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let result: Result<Connection, SqlError> = checkout(pool)
             match result {
-                Ok(conn) => { println("got connection") },
-                Err(e) => { println(error_message(e)) }
+                Ok(conn) => { print("got connection") },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -378,7 +378,7 @@ class TestPoolExhaustion:
             let config: PoolConfig = new_pool_config("sqlite:///test.db", 1, 1, 60000)
             let pool: Pool = new Pool { connections: conns, in_use: flags, config: config }
             let cr: CheckoutResult = checkout_with_pool(pool)
-            println(str(cr.ok))
+            print(str(cr.ok))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

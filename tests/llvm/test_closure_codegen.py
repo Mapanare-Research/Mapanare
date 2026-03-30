@@ -332,14 +332,14 @@ class TestFreeVariableAnalysis:
         assert free == ["outer"]
 
     def test_builtins_not_captured(self):
-        """Builtins like println should not be detected as free variables."""
+        """Builtins like print should not be detected as free variables."""
         from mapanare.ast_nodes import CallExpr, Identifier
         from mapanare.lower import MIRLowerer
 
         lowerer = MIRLowerer()
-        # Simulate: (x) => println(x)
+        # Simulate: (x) => print(x)
         body = CallExpr(
-            callee=Identifier(name="println"),
+            callee=Identifier(name="print"),
             args=[Identifier(name="x")],
         )
         free = lowerer._analyze_free_vars(body, {"x"})

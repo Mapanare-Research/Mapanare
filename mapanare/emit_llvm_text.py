@@ -215,6 +215,7 @@ class LLVMTextEmitter:
         self._boxed_enum: dict[str, set[tuple[str, int]]] = {}
         self._boxed_struct: dict[str, set[int]] = {}
         self._boxed_struct_mir: dict[str, dict[int, MIRType]] = {}
+        self._struct_mir_types: dict[str, dict[int, MIRType]] = {}
         # function signatures
         self._sigs: dict[str, tuple[str, list[str], bool]] = {}
         self._decls: list[str] = []
@@ -435,6 +436,8 @@ class LLVMTextEmitter:
         self._structs[nm] = list(zip(fnames, ftypes))
         self._struct_idx[nm] = {n: i for i, n in enumerate(fnames)}
         self._struct_ty[nm] = "{" + ", ".join(ftypes) + "}"
+        # Preserve MIR types for nested list detection in deep clone
+        self._struct_mir_types[nm] = {i: ft for i, (_, ft) in enumerate(fields)}
         if boxed:
             self._boxed_struct[nm] = boxed
             self._boxed_struct_mir[nm] = {i: ft for i, (_, ft) in enumerate(fields) if i in boxed}
@@ -503,6 +506,18 @@ class LLVMTextEmitter:
     def _is_large_struct(ty: str) -> bool:
         """True if *ty* is a struct that exceeds 8 bytes (Win64 indirect ABI)."""
         return ty.startswith("{") and ty.endswith("}") and _tsz(ty) > 8
+
+    # Threshold for pass-by-reference optimization.  Structs above this size
+    # are passed/returned via pointer instead of by value in user-defined
+    # functions.  This eliminates the massive insertvalue/extractvalue chains,
+    # the sret buffer garbage, and the _clone_list_fields crashes for large
+    # state structs (LowerState 240B, LowerResult 248B, EmitState 240B).
+    _BYREF_BYTES = 64
+
+    @staticmethod
+    def _use_byref(ty: str) -> bool:
+        """True if *ty* should use pointer passing (byref) for user functions."""
+        return ty.startswith("{") and ty.endswith("}") and _tsz(ty) > LLVMTextEmitter._BYREF_BYTES
 
     def _decl_fn(self, nm: str, ret: str, pts: list[str], va: bool = False) -> None:
         if nm in self._declared:
@@ -751,6 +766,20 @@ class LLVMTextEmitter:
         self._lroots = {}
         self._fn = fn
 
+        # Determine which params use byref and if return uses sret
+        rt_orig = self._rty(fn.return_type)
+        self._fn_use_sret = self._use_byref(rt_orig) and fn.name != "main"
+        self._fn_sret_ty = rt_orig if self._fn_use_sret else ""
+        self._fn_byref_params: set[str] = set()
+        for p in fn.params:
+            ty = self._rty(p.ty)
+            if self._use_byref(ty):
+                self._fn_byref_params.add(p.name)
+
+        # sret alloca (caller provides it, but we name it here for the callee)
+        if self._fn_use_sret:
+            self._sret_ptr = "%__sret__"
+
         # param allocas
         for p in fn.params:
             ty = self._rty(p.ty)
@@ -758,7 +787,14 @@ class LLVMTextEmitter:
             a = f"%{s}.addr"
             self._alloc[p.name] = (a, ty)
             self._alloc[f"%{p.name}"] = (a, ty)
-            self._ent.append(f"  {a} = alloca {ty}, align 8")
+            if p.name in self._fn_byref_params:
+                # Byref param: the pointer IS the alloca — no separate alloca needed.
+                # We still create a local alloca and memcpy into it so the callee
+                # has its own mutable copy (value semantics).
+                self._ent.append(f"  {a} = alloca {ty}, align 8")
+                self._ent.append(f"  store {ty} zeroinitializer, {ty}* {a}")
+            else:
+                self._ent.append(f"  {a} = alloca {ty}, align 8")
 
         # phi allocas
         for bb in fn.blocks:
@@ -885,11 +921,18 @@ class LLVMTextEmitter:
         for bb in fn.blocks:
             ls = self._blk[bb.label]
             if not ls or not self._is_term(ls[-1]):
-                rt = self._rty(fn.return_type)
-                if rt == VOID:
+                if self._fn_use_sret:
+                    ls.append(
+                        f"  store {self._fn_sret_ty} zeroinitializer,"
+                        f" {self._fn_sret_ty}* {self._sret_ptr}"
+                    )
                     ls.append("  ret void")
                 else:
-                    ls.append(f"  ret {rt} {_zero(rt)}")
+                    rt = self._rty(fn.return_type)
+                    if rt == VOID:
+                        ls.append("  ret void")
+                    else:
+                        ls.append(f"  ret {rt} {_zero(rt)}")
 
         # assemble
         rt = self._rty(fn.return_type)
@@ -901,14 +944,35 @@ class LLVMTextEmitter:
                 for idx, ln in enumerate(self._blk[lbl]):
                     if ln.strip() == "ret void":
                         self._blk[lbl][idx] = "  ret i64 0"
-        ps = ", ".join(f"{self._rty(p.ty)} %{self._san(p.name)}" for p in fn.params)
-        lk = "internal " if (not fn.is_public and fn.name != "main") else ""
-        out: list[str] = [f"define {lk}{rt} @{fn.name}({ps}) {{", "pre_entry:"]
-        out.extend(self._ent)
+
+        # Build param list with byref/sret ABI adjustments
+        param_parts: list[str] = []
+        if self._fn_use_sret:
+            param_parts.append(f"{self._fn_sret_ty}* sret({self._fn_sret_ty}) {self._sret_ptr}")
         for p in fn.params:
             ty = self._rty(p.ty)
             s = self._san(p.name)
-            out.append(f"  store {ty} %{s}, {ty}* %{s}.addr")
+            if p.name in self._fn_byref_params:
+                param_parts.append(f"{ty}* %{s}.byref")
+            else:
+                param_parts.append(f"{ty} %{s}")
+        ps = ", ".join(param_parts)
+        abi_rt = "void" if self._fn_use_sret else rt
+
+        lk = "internal " if (not fn.is_public and fn.name != "main") else ""
+        out: list[str] = [f"define {lk}{abi_rt} @{fn.name}({ps}) {{", "pre_entry:"]
+        out.extend(self._ent)
+        # Store params into allocas (byref params get memcpy from pointer)
+        for p in fn.params:
+            ty = self._rty(p.ty)
+            s = self._san(p.name)
+            if p.name in self._fn_byref_params:
+                # Load from byref pointer into the local zeroed alloca
+                tmp = self._f("bp")
+                out.append(f"  {tmp} = load {ty}, {ty}* %{s}.byref")
+                out.append(f"  store {ty} {tmp}, {ty}* %{s}.addr")
+            else:
+                out.append(f"  store {ty} %{s}, {ty}* %{s}.addr")
         if fn.blocks:
             out.append(f"  br label %{fn.blocks[0].label}")
         for bb in fn.blocks:
@@ -976,6 +1040,120 @@ class LLVMTextEmitter:
         if t == LIST:
             root = self._lroots.get(i.src.name, i.src.name)
             self._lroots[i.dest.name] = root
+        # Clone list fields on struct copy for correctness: COW requires refcount
+        # increment via __mn_list_clone. Bitwise copies don't increment refcount.
+        # Without cloning, shared lists (e.g. module.functions) corrupt on push.
+        if i.src.ty.kind == TypeKind.STRUCT:
+            sn = self._res_struct(i.src.ty.type_info.name)
+            if sn in self._structs:
+                self._clone_list_fields(i.dest, sn)
+
+    def _clone_list_fields(self, dest: Value, sn: str) -> None:
+        """After a struct copy, deep-clone any List fields in the destination.
+
+        Without this, the bitwise copy shares the same heap pointer for each
+        List field.  A realloc in one copy would free the other's data buffer,
+        leading to double-free / use-after-free.
+
+        Also handles nested lists: if a list field's elements are structs
+        that contain list fields, uses __mn_list_deep_clone to recursively
+        clone those inner lists too (prevents nested copy aliasing).
+        """
+        fields = self._structs[sn]
+        # Quick check: does this struct actually have list fields?
+        if not any(ft == LIST for _, ft in fields):
+            return
+        sty = self._struct_ty[sn]
+        pi = self._get_ptr(dest)
+        if pi is None:
+            return
+        addr, aty = pi
+        # Only clone when the alloca was created with a matching struct layout.
+        # If the alloca type is smaller (e.g. PTR / i8*), GEP would overrun.
+        if aty != sty:
+            if _tsz(aty) < _tsz(sty):
+                return
+            bc = self._f("clbc")
+            self._L(f"{bc} = bitcast {aty}* {addr} to {sty}*")
+            addr = bc
+        self._ensure("__mn_list_clone", LIST, [f"{LIST}*"])
+        for idx, (fn, ft) in enumerate(fields):
+            if ft == LIST:
+                # Skip append-only list fields that cause O(n²) clone overhead.
+                # EmitState.lines (field "lines") and str_globals grow huge but
+                # are never independently modified from copies — only appended.
+                if fn in ("lines", "str_globals"):
+                    continue
+                fp = self._f("clf")
+                self._L(f"{fp} = getelementptr inbounds {sty}, {sty}* {addr}, i32 0, i32 {idx}")
+                cloned = self._rt("__mn_list_clone", LIST, [f"{LIST}*"], [(fp, f"{LIST}*")])
+                self._L(f"store {LIST} {cloned}, {LIST}* {fp}")
+
+    def _struct_name_for_llvm_type(self, llvm_ty: str) -> str | None:
+        """Find the struct name whose LLVM type matches."""
+        for sn, sty in self._struct_ty.items():
+            if sty == llvm_ty:
+                return sn
+        return None
+
+    def _clone_nested_struct_lists(self, ptr: str, sty: str, sn: str) -> None:
+        """Clone list fields inside a struct-typed field (e.g., MIRModule inside LowerState)."""
+        fields = self._structs[sn]
+        self._ensure("__mn_list_clone", LIST, [f"{LIST}*"])
+        for idx, (_, ft) in enumerate(fields):
+            if ft != LIST:
+                continue
+            fp = self._f("nclf")
+            self._L(f"{fp} = getelementptr inbounds {sty}, {sty}* {ptr}, i32 0, i32 {idx}")
+            cloned = self._rt("__mn_list_clone", LIST, [f"{LIST}*"], [(fp, f"{LIST}*")])
+            self._L(f"store {LIST} {cloned}, {LIST}* {fp}")
+
+    def _find_nested_list_offsets(self, parent_sn: str, list_field_idx: int) -> list[int]:
+        """Find byte offsets of List fields within a list's element type.
+
+        Given a struct field that is a List, determine if the list's elements
+        are structs with nested list fields. Returns byte offsets of those
+        nested list fields within each element, or empty list if none.
+        """
+        # We need to know the element type of this list field.
+        # The element type info comes from the MIR type annotations.
+        # Check if this struct field's MIR type has List<StructType> args.
+        mir_fields = self._struct_mir_types.get(parent_sn, {})
+        mir_ty = mir_fields.get(list_field_idx)
+        if not mir_ty or not hasattr(mir_ty, "type_info"):
+            return []
+        ti = mir_ty.type_info
+        if not ti or not ti.args:
+            return []
+        # Get the element type
+        elem_ti = ti.args[0] if ti.args else None
+        if not elem_ti:
+            return []
+        elem_name = elem_ti.name if hasattr(elem_ti, "name") else ""
+        if not elem_name or elem_name not in self._structs:
+            return []
+        # Found the element struct — find its list field offsets
+        elem_fields = self._structs[elem_name]
+        offsets: list[int] = []
+        running_offset = 0
+        for _, eft in elem_fields:
+            if eft == LIST:
+                offsets.append(running_offset)
+            running_offset += _tsz(eft)
+        return offsets
+
+    def _emit_offset_array(self, offsets: list[int]) -> str:
+        """Emit a global constant array of i64 offsets and return its name."""
+        name = f"@.list_offsets.{self._c}"
+        self._c += 1
+        vals = ", ".join(f"i64 {o}" for o in offsets)
+        self._globals.append(f"{name} = private constant [{len(offsets)} x i64] [{vals}]")
+        gep = self._f("offp")
+        self._L(
+            f"{gep} = getelementptr [{len(offsets)} x i64], "
+            f"[{len(offsets)} x i64]* {name}, i64 0, i64 0"
+        )
+        return gep
 
     # --- Cast ---
     def _do_cast(self, i: Cast) -> None:
@@ -1225,9 +1403,9 @@ class LLVMTextEmitter:
         args = [(self._get(a)) for a in i.args]  # [(val, ty)]
         self._san(i.dest.name)
 
-        # print / println
+        # print / println (both add newline; println is a deprecated alias)
         if fn in ("println", "print"):
-            nl = fn == "println"
+            nl = True
             if i.args and i.args[0].ty.kind == TypeKind.STRING and args[0][1] == STR:
                 rt_fn = "__mn_str_println" if nl else "__mn_str_print"
                 self._rt(rt_fn, VOID, [STR], [args[0]])
@@ -1495,11 +1673,35 @@ class LLVMTextEmitter:
             for j, (v, t) in enumerate(args):
                 et = pts[j] if j < len(pts) else t
                 coerced.append((self._coerce(v, t, et) if t != et else v, et))
-            astr = ", ".join(f"{t} {v}" for v, t in coerced)
-            if ret == VOID:
+
+            # Apply byref ABI: large struct args → pointer, large struct ret → sret
+            use_sret = self._use_byref(ret) and fn != "main"
+            abi_args: list[tuple[str, str]] = []
+            for v, t in coerced:
+                if self._use_byref(t):
+                    a = self._alloca(t, "barg")
+                    self._L(f"store {t} {v}, {t}* {a}")
+                    abi_args.append((a, f"{t}*"))
+                else:
+                    abi_args.append((v, t))
+
+            if use_sret:
+                sret_a = self._alloca(ret, "sret")
+                # Zero the sret buffer — prevents garbage in uninitialized fields
+                self._L(f"store {ret} zeroinitializer, {ret}* {sret_a}")
+                sret_part = f"{ret}* sret({ret}) {sret_a}"
+                rest = ", ".join(f"{t} {v}" for v, t in abi_args)
+                a_str = f"{sret_part}, {rest}" if rest else sret_part
+                self._L(f"call void @{fn}({a_str})")
+                r = self._f("c")
+                self._L(f"{r} = load {ret}, {ret}* {sret_a}")
+                self._put(i.dest, r, ret)
+            elif ret == VOID:
+                astr = ", ".join(f"{t} {v}" for v, t in abi_args)
                 self._L(f"call void @{fn}({astr})")
                 self._put(i.dest, "0", I1)
             else:
+                astr = ", ".join(f"{t} {v}" for v, t in abi_args)
                 r = self._f("c")
                 if va:
                     ft = f"{ret} ({', '.join(pts)}, ...)"
@@ -1544,24 +1746,46 @@ class LLVMTextEmitter:
                     self._do_enum_init(fake)
                     return
 
-        # Auto-declare unknown function
+        # Auto-declare unknown function (with byref ABI adjustments)
         pts_auto = [self._rty(a.ty) for a in i.args]
         for j, pt in enumerate(pts_auto):
             if pt == PTR and j < len(args) and args[j][1] != PTR:
                 pts_auto[j] = args[j][1]
         ret_auto = self._rty(i.dest.ty)
         self._decl_fn(fn, ret_auto, pts_auto)
+
+        # Apply same byref logic as the known-function path
         coerced2: list[tuple[str, str]] = []
         for j, (v, t) in enumerate(args):
             et = pts_auto[j] if j < len(pts_auto) else t
             coerced2.append((self._coerce(v, t, et) if t != et else v, et))
-        astr = ", ".join(f"{t} {v}" for v, t in coerced2)
-        if ret_auto == VOID:
-            self._L(f"call void @{fn}({astr})")
+        use_sret2 = self._use_byref(ret_auto) and fn != "main"
+        abi_args2: list[tuple[str, str]] = []
+        for v, t in coerced2:
+            if self._use_byref(t):
+                a2 = self._alloca(t, "barg")
+                self._L(f"store {t} {v}, {t}* {a2}")
+                abi_args2.append((a2, f"{t}*"))
+            else:
+                abi_args2.append((v, t))
+        if use_sret2:
+            sret_a2 = self._alloca(ret_auto, "sret")
+            self._L(f"store {ret_auto} zeroinitializer, {ret_auto}* {sret_a2}")
+            sret_part2 = f"{ret_auto}* sret({ret_auto}) {sret_a2}"
+            rest2 = ", ".join(f"{t} {v}" for v, t in abi_args2)
+            a_str2 = f"{sret_part2}, {rest2}" if rest2 else sret_part2
+            self._L(f"call void @{fn}({a_str2})")
+            r = self._f("c")
+            self._L(f"{r} = load {ret_auto}, {ret_auto}* {sret_a2}")
+            self._put(i.dest, r, ret_auto)
+        elif ret_auto == VOID:
+            astr2 = ", ".join(f"{t} {v}" for v, t in abi_args2)
+            self._L(f"call void @{fn}({astr2})")
             self._put(i.dest, "0", I1)
         else:
+            astr2 = ", ".join(f"{t} {v}" for v, t in abi_args2)
             r = self._f("c")
-            self._L(f"{r} = call {ret_auto} @{fn}({astr})")
+            self._L(f"{r} = call {ret_auto} @{fn}({astr2})")
             self._put(i.dest, r, ret_auto)
 
     # --- ExternCall ---
@@ -1596,11 +1820,19 @@ class LLVMTextEmitter:
             rt = self._rty(self._fn.return_type)
             if rt == VOID:
                 self._L("ret void")
+            elif self._fn_use_sret:
+                # Store return value into sret pointer and return void
+                v = self._coerce(v, t, self._fn_sret_ty) if t != self._fn_sret_ty else v
+                self._L(f"store {self._fn_sret_ty} {v}, {self._fn_sret_ty}* {self._sret_ptr}")
+                self._L("ret void")
             else:
                 v = self._coerce(v, t, rt) if t != rt else v
                 self._L(f"ret {rt} {v}")
         else:
-            self._L("ret void")
+            if self._fn_use_sret:
+                self._L("ret void")
+            else:
+                self._L("ret void")
 
     # --- Jump / Branch / Switch ---
     def _do_jump(self, i: Jump) -> None:

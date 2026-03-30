@@ -89,16 +89,16 @@ mapanare --version
 ```mn
 fn main() {
     let name = "Mundo"
-    println("Hola, " + name + "!")
+    print("Hola, " + name + "!")
 
     let mut count = 0
     while count < 5 {
-        println(str(count))
+        print(str(count))
         count += 1
     }
 
     for i in 0..5 {
-        println(str(i))
+        print(str(i))
     }
 }
 ```

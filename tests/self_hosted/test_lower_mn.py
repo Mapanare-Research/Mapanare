@@ -16,6 +16,8 @@ import pytest
 
 SELF_DIR = Path(__file__).resolve().parent.parent.parent / "mapanare" / "self"
 LOWER_MN = SELF_DIR / "lower.mn"
+MIR_MN = SELF_DIR / "mir.mn"
+LOWER_STATE_MN = SELF_DIR / "lower_state.mn"
 
 
 @pytest.fixture
@@ -23,6 +25,17 @@ def lower_mn_source() -> str:
     """Read the lower.mn source file."""
     assert LOWER_MN.exists(), f"lower.mn not found at {LOWER_MN}"
     return LOWER_MN.read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def lower_combined() -> str:
+    """Read lower.mn, mir.mn, and lower_state.mn combined."""
+    src = LOWER_MN.read_text(encoding="utf-8")
+    if MIR_MN.exists():
+        src += "\n" + MIR_MN.read_text(encoding="utf-8")
+    if LOWER_STATE_MN.exists():
+        src += "\n" + LOWER_STATE_MN.read_text(encoding="utf-8")
+    return src
 
 
 # ===================================================================
@@ -44,29 +57,29 @@ class TestLowerMnStructure:
     def test_has_import_ast(self, lower_mn_source: str) -> None:
         assert "import self::ast" in lower_mn_source
 
-    def test_has_lower_state(self, lower_mn_source: str) -> None:
-        assert "struct LowerState" in lower_mn_source
+    def test_has_lower_state(self, lower_combined: str) -> None:
+        assert "struct LowerState" in lower_combined
 
-    def test_has_lower_result(self, lower_mn_source: str) -> None:
-        assert "struct LowerResult" in lower_mn_source
+    def test_has_lower_result(self, lower_combined: str) -> None:
+        assert "struct LowerResult" in lower_combined
 
-    def test_has_mir_module(self, lower_mn_source: str) -> None:
-        assert "struct MIRModule" in lower_mn_source
+    def test_has_mir_module(self, lower_combined: str) -> None:
+        assert "struct MIRModule" in lower_combined
 
-    def test_has_mir_function(self, lower_mn_source: str) -> None:
-        assert "struct MIRFunction" in lower_mn_source
+    def test_has_mir_function(self, lower_combined: str) -> None:
+        assert "struct MIRFunction" in lower_combined
 
-    def test_has_basic_block(self, lower_mn_source: str) -> None:
-        assert "struct BasicBlock" in lower_mn_source
+    def test_has_basic_block(self, lower_combined: str) -> None:
+        assert "struct BasicBlock" in lower_combined
 
-    def test_has_instruction_enum(self, lower_mn_source: str) -> None:
-        assert "enum Instruction" in lower_mn_source
+    def test_has_instruction_enum(self, lower_combined: str) -> None:
+        assert "enum Instruction" in lower_combined
 
-    def test_has_value_struct(self, lower_mn_source: str) -> None:
-        assert "struct Value" in lower_mn_source
+    def test_has_value_struct(self, lower_combined: str) -> None:
+        assert "struct Value" in lower_combined
 
-    def test_has_mir_type(self, lower_mn_source: str) -> None:
-        assert "struct MIRType" in lower_mn_source
+    def test_has_mir_type(self, lower_combined: str) -> None:
+        assert "struct MIRType" in lower_combined
 
     def test_has_public_lower_fn(self, lower_mn_source: str) -> None:
         assert "fn lower(program: Program, module_name: String) -> MIRModule" in lower_mn_source
@@ -199,8 +212,8 @@ class TestLowerMnStateManagement:
             "update_var",
         ],
     )
-    def test_has_state_fn(self, lower_mn_source: str, fn_name: str) -> None:
-        assert f"fn {fn_name}" in lower_mn_source, f"Missing state function: {fn_name}"
+    def test_has_state_fn(self, lower_combined: str, fn_name: str) -> None:
+        assert f"fn {fn_name}" in lower_combined, f"Missing state function: {fn_name}"
 
 
 # ===================================================================
@@ -254,8 +267,8 @@ class TestLowerMnTypeResolution:
             "resolve_type_name",
         ],
     )
-    def test_has_type_fn(self, lower_mn_source: str, type_fn: str) -> None:
-        assert f"fn {type_fn}" in lower_mn_source, f"Missing type function: {type_fn}"
+    def test_has_type_fn(self, lower_combined: str, type_fn: str) -> None:
+        assert f"fn {type_fn}" in lower_combined, f"Missing type function: {type_fn}"
 
 
 # ===================================================================
@@ -274,14 +287,14 @@ class TestLowerMnOperatorMapping:
             "stream_op_from_str",
         ],
     )
-    def test_has_operator_fn(self, lower_mn_source: str, op_fn: str) -> None:
-        assert f"fn {op_fn}" in lower_mn_source, f"Missing operator function: {op_fn}"
+    def test_has_operator_fn(self, lower_combined: str, op_fn: str) -> None:
+        assert f"fn {op_fn}" in lower_combined, f"Missing operator function: {op_fn}"
 
-    def test_binop_enum(self, lower_mn_source: str) -> None:
-        assert "enum BinOpKind" in lower_mn_source
+    def test_binop_enum(self, lower_combined: str) -> None:
+        assert "enum BinOpKind" in lower_combined
 
-    def test_unaryop_enum(self, lower_mn_source: str) -> None:
-        assert "enum UnaryOpKind" in lower_mn_source
+    def test_unaryop_enum(self, lower_combined: str) -> None:
+        assert "enum UnaryOpKind" in lower_combined
 
-    def test_streamop_enum(self, lower_mn_source: str) -> None:
-        assert "enum StreamOpKind" in lower_mn_source
+    def test_streamop_enum(self, lower_combined: str) -> None:
+        assert "enum StreamOpKind" in lower_combined

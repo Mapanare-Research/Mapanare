@@ -5,45 +5,37 @@
 //   mapanare run examples/gpu/matmul.mn         // CPU fallback
 //   mapanare build examples/gpu/matmul.mn --target x86_64-linux-gnu  // Native with GPU
 
-import gpu.tensor
-import gpu.device
+import gpu::tensor
+import gpu::device
 
 // Detect available GPU devices
-fn main():
+fn main() {
     let detection: DetectionResult = detect_gpus()
     let device: DeviceKind = preferred_device(detection)
-    println("Detected device: " + device_name(device))
+    print("Detected device: " + device_name(device))
 
     // Create two 4x4 matrices
-    let a: Tensor = from_list(
-        [1.0, 2.0, 3.0, 4.0,
-         5.0, 6.0, 7.0, 8.0,
-         9.0, 10.0, 11.0, 12.0,
-         13.0, 14.0, 15.0, 16.0],
-        [4, 4]
-    )
+    let a = from_list([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0], [4, 4])
 
-    let b: Tensor = identity(4)
+    let b = identity(4)
 
     // Matrix multiply -- dispatched to GPU if available
-    let c: Tensor = matmul(a, b)
+    let c = matmul(a, b)
 
     // Verify: A * I = A
-    println("A * I = A: " + str(c == a))
+    print("A * I = A: " + str(c == a))
 
     // Element-wise operations on GPU
-    let d: Tensor = add(a, a)
-    let e: Tensor = mul(a, from_list([2.0, 2.0, 2.0, 2.0,
-                                       2.0, 2.0, 2.0, 2.0,
-                                       2.0, 2.0, 2.0, 2.0,
-                                       2.0, 2.0, 2.0, 2.0], [4, 4]))
-    println("A + A == A * 2: " + str(d == e))
+    let d = add(a, a)
+    let e = mul(a, from_list([2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0], [4, 4]))
+    print("A + A == A * 2: " + str(d == e))
 
     // Large matrix benchmark
     let size: Int = 256
-    let big_a: Tensor = ones([size, size])
-    let big_b: Tensor = ones([size, size])
+    let big_a = ones([size, size])
+    let big_b = ones([size, size])
 
-    println("Computing " + str(size) + "x" + str(size) + " matmul...")
-    let result: Tensor = matmul(big_a, big_b)
-    println("Done. Result[0,0] = " + str(result))
+    print("Computing " + str(size) + "x" + str(size) + " matmul...")
+    let result = matmul(big_a, big_b)
+    print("Done. Result[0,0] = " + str(result))
+}

@@ -285,7 +285,7 @@ fn main() {
         src = """
 fn main() {
     let x: Int = 42
-    println(str(x))
+    print(str(x))
 }
 """
         analysis, errors = _analyze(src)

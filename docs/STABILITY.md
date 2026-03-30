@@ -17,8 +17,9 @@ guarantees described in this document:
   stable. Valid Mapanare v1.0 programs will remain valid in all v1.x releases.
 - **Semantics.** Type checking rules, scoping rules, pattern matching exhaustiveness,
   operator precedence, and evaluation order are fixed.
-- **Builtin functions.** The signatures and behavior of builtins (`print`, `println`,
-  `len`, `str`, `int`, `float`, `Some`, `Ok`, `Err`, `signal`, `stream`) are stable.
+- **Builtin functions.** The signatures and behavior of builtins (`print`, `len`, `str`,
+  `int`, `float`, `Some`, `Ok`, `Err`, `signal`, `stream`) are stable. `println` is
+  deprecated and is now an alias for `print` (both add a trailing newline).
 - **Stdlib public API.** The public function and type signatures of shipped stdlib modules
   (`encoding/json`, `encoding/csv`, `net/http`, `net/websocket`, `crypto`, `text/regex`)
   are stable. Return types, parameter types, and error variants will not change.

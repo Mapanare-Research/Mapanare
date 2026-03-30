@@ -77,7 +77,7 @@ class TestTwoFileCompilation:
 
             fn main() {
                 let result = add(2, 3)
-                println(str(result))
+                print(str(result))
             }
         """,
         )
@@ -106,7 +106,7 @@ class TestTwoFileCompilation:
 
             fn main() {
                 let msg = utils.greet()
-                println(msg)
+                print(msg)
             }
         """,
         )
@@ -156,7 +156,7 @@ class TestThreeLevelChain:
 
             fn main() {
                 let result = double_base()
-                println(str(result))
+                print(str(result))
             }
         """,
         )
@@ -233,7 +233,7 @@ class TestCrossModuleStruct:
 
             fn main() {
                 let p = make_point(10, 20)
-                println(str(p.x))
+                print(str(p.x))
             }
         """,
         )
@@ -273,7 +273,7 @@ class TestCrossModuleStruct:
             fn main() {
                 let c = Red(1)
                 let r = is_red(c)
-                println(str(r))
+                print(str(r))
             }
         """,
         )
@@ -307,7 +307,7 @@ class TestStdlibImport:
                 import crypto
 
                 fn main() {
-                    println("crypto imported")
+                    print("crypto imported")
                 }
             """))
             root = f.name
@@ -353,7 +353,7 @@ class TestPubVisibility:
 
             fn main() {
                 let x = internal_fn()
-                println(str(x))
+                print(str(x))
             }
         """,
         )
@@ -386,7 +386,7 @@ class TestPubVisibility:
 
             fn main() {
                 let x = public_api()
-                println(str(x))
+                print(str(x))
             }
         """,
         )

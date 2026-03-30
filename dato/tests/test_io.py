@@ -73,8 +73,8 @@ class TestCsvLoad:
         src = _dato_with_main("""\
             let result: Result<Table, DatoError> = csv("/tmp/test_data.csv")
             match result {
-                Ok(t) => { println(str(nrows(t))) },
-                Err(e) => { println(error_message(e)) }
+                Ok(t) => { print(str(nrows(t))) },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -99,11 +99,11 @@ class TestCsvWrite:
                 Ok(t) => {
                     let wr: Result<Bool, DatoError> = to_csv(t, "/tmp/test_out.csv")
                     match wr {
-                        Ok(ok) => { println("written") },
-                        Err(e) => { println(error_message(e)) }
+                        Ok(ok) => { print("written") },
+                        Err(e) => { print(error_message(e)) }
                     }
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -119,9 +119,9 @@ class TestCsvWrite:
                 Ok(t) => {
                     let wr: Result<Bool, DatoError> = to_csv(t, "/tmp/round_trip.csv")
                     let reread: Result<Table, DatoError> = csv("/tmp/round_trip.csv")
-                    println("ok")
+                    print("ok")
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -141,8 +141,8 @@ class TestFromRows:
             let names: List<String> = ["name", "city"]
             let rows: List<List<String>> = [["Alice", "NYC"], ["Bob", "LA"]]
             let t: Table = from_rows(names, rows)
-            println(str(nrows(t)))
-            println(str(ncols(t)))
+            print(str(nrows(t)))
+            print(str(ncols(t)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

@@ -5,65 +5,79 @@
 // Run:     wasmtime wasi_app.wasm
 //          wasmer run wasi_app.wasm
 
-import wasm.runtime
+import wasm::runtime
 
-fn factorial(n: Int) -> Int:
-    if n <= 1:
+fn factorial(n: Int) -> Int {
+    if n <= 1 {
         return 1
+    }
     return n * factorial(n - 1)
+}
 
-fn is_prime(n: Int) -> Bool:
-    if n < 2:
+fn is_prime(n: Int) -> Bool {
+    if n < 2 {
         return false
-    if n < 4:
+    }
+    if n < 4 {
         return true
-    if n % 2 == 0:
+    }
+    if n % 2 == 0 {
         return false
-    let i: Int = 3
-    while i * i <= n:
-        if n % i == 0:
+    }
+    let mut i: Int = 3
+    while i * i <= n {
+        if n % i == 0 {
             return false
+        }
         i = i + 2
+    }
     return true
+}
 
-fn sieve_primes(limit: Int) -> List<Int>:
-    let primes: List<Int> = []
-    for n in range(2, limit + 1):
-        if is_prime(n):
+fn sieve_primes(limit: Int) -> List<Int> {
+    let mut primes: List<Int> = []
+    for n in 2..limit + 1 {
+        if is_prime(n) {
             primes = primes + [n]
+        }
+    }
     return primes
+}
 
-fn main():
-    println("=== Mapanare on WASI ===")
-    println("Running as native WebAssembly via WASI")
-    println("")
+fn main() {
+    print("=== Mapanare on WASI ===")
+    print("Running as native WebAssembly via WASI")
+    print("")
 
     // WASI environment
-    let args: List<String> = wasi_args()
-    println("Arguments: " + str(len(args)))
-    for arg in args:
-        println("  " + arg)
+    let args: List<String> = runtime.wasi_args()
+    print("Arguments: " + str(len(args)))
+    for arg in args {
+        print("  " + arg)
+    }
 
-    println("")
+    print("")
 
     // Factorial computation
-    println("Factorials:")
-    for i in range(1, 13):
-        println("  " + str(i) + "! = " + str(factorial(i)))
+    print("Factorials:")
+    for i in 1..13 {
+        print("  " + str(i) + "! = " + str(factorial(i)))
+    }
 
-    println("")
+    print("")
 
     // Prime sieve
     let limit: Int = 100
     let primes: List<Int> = sieve_primes(limit)
-    println("Primes up to " + str(limit) + ": " + str(len(primes)) + " found")
-    println("First 10: " + str(primes))
+    print("Primes up to " + str(limit) + ": " + str(len(primes)) + " found")
+    print("First 10: " + str(primes))
 
-    println("")
+    print("")
 
     // Memory info
-    let pages: Int = memory_size()
-    println("WASM memory: " + str(pages) + " pages (" + str(pages * 64) + " KB)")
+    let pages: Int = runtime.memory_size()
+    print("WASM memory: " + str(pages) + " pages (" + str(pages * 64) + " KB)")
 
-    println("")
-    println("Done!")
+    print("")
+    print("Done!")
+}

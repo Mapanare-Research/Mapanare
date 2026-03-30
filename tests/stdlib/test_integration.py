@@ -73,8 +73,8 @@ class TestHttpRoundTrip:
             let raw_resp: String = "HTTP/1.1 200 OK\\r\\nContent-Length: 5\\r\\n\\r\\nhello"
             let result: Result<HttpResponse, HttpError> = parse_raw_response(raw_resp)
             match result {
-                Ok(resp) => { println(str(resp.status_code) + " " + resp.body) },
-                Err(e) => { println("error") }
+                Ok(resp) => { print(str(resp.status_code) + " " + resp.body) },
+                Err(e) => { print("error") }
             }
         """,
         )
@@ -88,7 +88,7 @@ class TestHttpRoundTrip:
             """\
             let raw: String = "GET /api/data HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n"
             let resp: String = build_response(200, #{}, "hello world")
-            println(resp)
+            print(resp)
         """,
         )
         ir_out = _compile_mir(src)
@@ -104,7 +104,7 @@ class TestHttpRoundTrip:
             router = router_add_route(router, "POST", "/api/data", "handle_data")
             let mr: MatchResult = match_route("/api/health", "/api/health", "GET", "GET")
             let resp: String = build_response(200, #{}, "ok")
-            println(resp)
+            print(resp)
         """,
         )
         ir_out = _compile_mir(src)
@@ -116,7 +116,7 @@ class TestHttpRoundTrip:
             _HTTP_MN,
             """\
             let result: Result<HttpResponse, HttpError> = get("http://localhost:8080/health")
-            println("compiled")
+            print("compiled")
         """,
         )
         ir_out = _compile_mir(src)
@@ -140,9 +140,9 @@ class TestJsonRoundTrip:
             match result {
                 Ok(val) => {
                     let output: String = encode(val)
-                    println(output)
+                    print(output)
                 },
-                Err(e) => { println(e.message) }
+                Err(e) => { print(e.message) }
             }
         """,
         )
@@ -159,9 +159,9 @@ class TestJsonRoundTrip:
             match result {
                 Ok(val) => {
                     let encoded: String = encode(val)
-                    println(encoded)
+                    print(encoded)
                 },
-                Err(e) => { println("error: " + e.message) }
+                Err(e) => { print("error: " + e.message) }
             }
         """,
         )
@@ -178,9 +178,9 @@ class TestJsonRoundTrip:
             match result {
                 Ok(val) => {
                     let pretty: String = encode_pretty(val, 2)
-                    println(pretty)
+                    print(pretty)
                 },
-                Err(e) => { println("error") }
+                Err(e) => { print("error") }
             }
         """,
         )
@@ -197,9 +197,9 @@ class TestJsonRoundTrip:
             match result {
                 Ok(val) => {
                     let output: String = encode(val)
-                    println(output)
+                    print(output)
                 },
-                Err(e) => { println("parse error") }
+                Err(e) => { print("parse error") }
             }
         """,
         )
@@ -214,7 +214,7 @@ class TestJsonRoundTrip:
             let v: JsonValue = Null()
             let encoded: String = encode(v)
             let decoded: Result<JsonValue, JsonError> = decode(encoded)
-            println("ok")
+            print("ok")
         """,
         )
         ir_out = _compile_mir(src)
@@ -228,7 +228,7 @@ class TestJsonRoundTrip:
             let v: JsonValue = Bool(true)
             let encoded: String = encode(v)
             let decoded: Result<JsonValue, JsonError> = decode(encoded)
-            println("ok")
+            print("ok")
         """,
         )
         ir_out = _compile_mir(src)
@@ -244,9 +244,9 @@ class TestJsonRoundTrip:
             match result {
                 Ok(val) => {
                     let back: String = encode(val)
-                    println(back)
+                    print(back)
                 },
-                Err(e) => { println("fail") }
+                Err(e) => { print("fail") }
             }
         """,
         )
@@ -271,9 +271,9 @@ class TestCsvPipeline:
             match result {
                 Ok(table) => {
                     let output: String = to_string(table, ",", "\\"")
-                    println(output)
+                    print(output)
                 },
-                Err(e) => { println("error: " + e.message) }
+                Err(e) => { print("error: " + e.message) }
             }
         """,
         )
@@ -289,8 +289,8 @@ class TestCsvPipeline:
             let config: CsvConfig = default_csv_config()
             let result: Result<CsvTable, CsvError> = parse_with(csv_data, config)
             match result {
-                Ok(table) => { println("rows parsed") },
-                Err(e) => { println("error") }
+                Ok(table) => { print("rows parsed") },
+                Err(e) => { print("error") }
             }
         """,
         )
@@ -308,9 +308,9 @@ class TestCsvPipeline:
                 Ok(table) => {
                     let h: List<String> = table.headers
                     let r: List<List<String>> = table.rows
-                    println("headers: " + str(len(h)) + " rows: " + str(len(r)))
+                    print("headers: " + str(len(h)) + " rows: " + str(len(r)))
                 },
-                Err(e) => { println("error") }
+                Err(e) => { print("error") }
             }
         """,
         )
@@ -327,9 +327,9 @@ class TestCsvPipeline:
             match result {
                 Ok(table) => {
                     let output: String = to_string(table, ",", "\\"")
-                    println(output)
+                    print(output)
                 },
-                Err(e) => { println("error") }
+                Err(e) => { print("error") }
             }
         """,
         )
@@ -350,7 +350,7 @@ class TestWebSocketEcho:
             _WS_MN,
             """\
             let msg: WsMessage = Text("hello")
-            println("compiled")
+            print("compiled")
         """,
         )
         ir_out = _compile_mir(src)
@@ -362,7 +362,7 @@ class TestWebSocketEcho:
             _WS_MN,
             """\
             let frame_data: String = build_send_frame(1, "test message", true)
-            println("frame built, len=" + str(len(frame_data)))
+            print("frame built, len=" + str(len(frame_data)))
         """,
         )
         ir_out = _compile_mir(src)
@@ -375,7 +375,7 @@ class TestWebSocketEcho:
             """\
             let headers: Map<String, String> = #{"Upgrade": "websocket", "Connection": "Upgrade"}
             let is_upgrade: Bool = is_websocket_upgrade(headers)
-            println("upgrade=" + str(is_upgrade))
+            print("upgrade=" + str(is_upgrade))
         """,
         )
         ir_out = _compile_mir(src)
@@ -390,7 +390,7 @@ class TestWebSocketEcho:
             let data: String = "hello"
             let masked: String = apply_mask(data, mask)
             let unmasked: String = apply_mask(masked, mask)
-            println("ok")
+            print("ok")
         """,
         )
         ir_out = _compile_mir(src)
@@ -403,7 +403,7 @@ class TestWebSocketEcho:
             """\
             let key: String = "dGVzdA=="
             let accept: String = compute_accept_key(key)
-            println("accept=" + accept)
+            print("accept=" + accept)
         """,
         )
         ir_out = _compile_mir(src)

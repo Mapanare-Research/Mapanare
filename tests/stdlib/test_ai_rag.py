@@ -63,9 +63,9 @@ class TestCoreTypes:
         """Chunk struct compiles."""
         src = _rag_source_with_main("""\
             let c: Chunk = new_chunk("c1", "Hello world", 0, 0, 11)
-            println(c.id)
-            println(c.text)
-            println(str(c.index))
+            print(c.id)
+            print(c.text)
+            print(str(c.index))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -74,7 +74,7 @@ class TestCoreTypes:
         """Document struct compiles."""
         src = _rag_source_with_main("""\
             let doc: Document = new_document("d1", "My Doc", "Some content here.")
-            println(doc.title)
+            print(doc.title)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -84,7 +84,7 @@ class TestCoreTypes:
         src = _rag_source_with_main("""\
             let meta: Map<String, String> = #{"author": "Juan"}
             let doc: Document = new_document_with_meta("d1", "My Doc", "Content", meta)
-            println(doc.id)
+            print(doc.id)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -93,8 +93,8 @@ class TestCoreTypes:
         """RetrievalContext struct compiles."""
         src = _rag_source_with_main("""\
             let ctx: RetrievalContext = build_context_simple(["chunk1", "chunk2"])
-            println(str(ctx.source_count))
-            println(ctx.text)
+            print(str(ctx.source_count))
+            print(ctx.text)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -112,7 +112,7 @@ class TestChunking:
         src = _rag_source_with_main("""\
             let text: String = "Hello world, this is a test document for chunking."
             let chunks: List<Chunk> = chunk_text(text, 20, 5)
-            println(str(len(chunks)))
+            print(str(len(chunks)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -121,7 +121,7 @@ class TestChunking:
         """Chunking without overlap compiles."""
         src = _rag_source_with_main("""\
             let chunks: List<Chunk> = chunk_text("abcdefghij", 5, 0)
-            println(str(len(chunks)))
+            print(str(len(chunks)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -131,7 +131,7 @@ class TestChunking:
         src = _rag_source_with_main("""\
             let text: String = "First sentence. Second sentence. Third sentence."
             let chunks: List<Chunk> = chunk_by_sentences(text, 100)
-            println(str(len(chunks)))
+            print(str(len(chunks)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -141,7 +141,7 @@ class TestChunking:
         src = _rag_source_with_main("""\
             let text: String = "First paragraph.\\n\\nSecond paragraph.\\n\\nThird paragraph."
             let chunks: List<Chunk> = chunk_by_paragraphs(text, 200)
-            println(str(len(chunks)))
+            print(str(len(chunks)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -150,7 +150,7 @@ class TestChunking:
         """Chunking empty text returns empty list."""
         src = _rag_source_with_main("""\
             let chunks: List<Chunk> = chunk_text("", 100, 0)
-            println(str(len(chunks)))
+            print(str(len(chunks)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -160,7 +160,7 @@ class TestChunking:
         src = _rag_source_with_main("""\
             let doc: Document = new_document("mydoc", "Title", "Some long content for chunking.")
             let chunks: List<Chunk> = chunk_document(doc, 15, 0)
-            println(str(len(chunks)))
+            print(str(len(chunks)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -172,7 +172,7 @@ class TestChunking:
             let d2: Document = new_document("d2", "Doc 2", "Second doc content.")
             let docs: List<Document> = [d1, d2]
             let chunks: List<Chunk> = chunk_documents(docs, 20, 0)
-            println(str(len(chunks)))
+            print(str(len(chunks)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -189,7 +189,7 @@ class TestTextHelpers:
         """trim_string removes leading/trailing whitespace."""
         src = _rag_source_with_main("""\
             let trimmed: String = trim_string("  hello  ")
-            println(trimmed)
+            print(trimmed)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -198,7 +198,7 @@ class TestTextHelpers:
         """split_sentences compiles."""
         src = _rag_source_with_main("""\
             let sents: List<String> = split_sentences("Hello. World! How?")
-            println(str(len(sents)))
+            print(str(len(sents)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -207,7 +207,7 @@ class TestTextHelpers:
         """split_paragraphs compiles."""
         src = _rag_source_with_main("""\
             let paras: List<String> = split_paragraphs("Para one.\\n\\nPara two.")
-            println(str(len(paras)))
+            print(str(len(paras)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -225,8 +225,8 @@ class TestContextBuilding:
         src = _rag_source_with_main("""\
             let texts: List<String> = ["First chunk", "Second chunk"]
             let ctx: RetrievalContext = build_context_simple(texts)
-            println(ctx.text)
-            println(str(ctx.source_count))
+            print(ctx.text)
+            print(str(ctx.source_count))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -238,7 +238,7 @@ class TestContextBuilding:
             let ids: List<String> = ["doc1_c0", "doc1_c1"]
             let scores: List<Float> = [0.95, 0.87]
             let ctx: RetrievalContext = build_context(texts, ids, scores)
-            println(ctx.text)
+            print(ctx.text)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -248,7 +248,7 @@ class TestContextBuilding:
         src = _rag_source_with_main("""\
             let texts: List<String> = ["Short.", "Also short.", "This is a longer text."]
             let ctx: RetrievalContext = build_context_budgeted(texts, 20)
-            println(str(ctx.source_count))
+            print(str(ctx.source_count))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -266,7 +266,7 @@ class TestPromptAugmentation:
         src = _rag_source_with_main("""\
             let ctx: RetrievalContext = build_context_simple(["Mapanare is a language."])
             let prompt: String = augment_prompt("What is Mapanare?", ctx)
-            println(prompt)
+            print(prompt)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -276,7 +276,7 @@ class TestPromptAugmentation:
         src = _rag_source_with_main("""\
             let ctx: RetrievalContext = build_context_simple(["Some data."])
             let prompt: String = augment_prompt_custom("Summarize", ctx, "You are a summarizer.")
-            println(prompt)
+            print(prompt)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -286,7 +286,7 @@ class TestPromptAugmentation:
         src = _rag_source_with_main("""\
             let ctx: RetrievalContext = build_context_simple(["Reference data."])
             let system: String = make_rag_system_prompt(ctx)
-            println(system)
+            print(system)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -303,7 +303,7 @@ class TestTokenEstimation:
         """estimate_tokens compiles."""
         src = _rag_source_with_main("""\
             let tokens: Int = estimate_tokens("Hello world, this is a test.")
-            println(str(tokens))
+            print(str(tokens))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -312,7 +312,7 @@ class TestTokenEstimation:
         """fits_in_budget compiles."""
         src = _rag_source_with_main("""\
             let fits: Bool = fits_in_budget("existing context", "new chunk", 100)
-            println(str(fits))
+            print(str(fits))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

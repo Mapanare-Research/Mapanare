@@ -30,10 +30,15 @@
 #else
   #define MAPANARE_EXPORT __attribute__((visibility("default")))
   #include <pthread.h>
-  #include <semaphore.h>
+  #if defined(__APPLE__)
+    #include <dispatch/dispatch.h>
+    typedef dispatch_semaphore_t  mapanare_semaphore_t;
+  #else
+    #include <semaphore.h>
+    typedef sem_t                 mapanare_semaphore_t;
+  #endif
   typedef pthread_t         mapanare_thread_t;
   typedef pthread_mutex_t   mapanare_mutex_t;
-  typedef sem_t             mapanare_semaphore_t;
   typedef struct { pthread_mutex_t m; pthread_cond_t c; int flag; } mapanare_event_t;
 #endif
 

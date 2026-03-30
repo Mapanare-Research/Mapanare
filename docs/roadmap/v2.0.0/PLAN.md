@@ -99,7 +99,7 @@ from the C runtime via dlopen.
 - [x] `@gpu` — auto-selects CUDA or Vulkan based on runtime detection
 - [x] `@cuda` — forces CUDA backend (error if unavailable)
 - [x] `@vulkan` — forces Vulkan backend (error if unavailable)
-- [x] `@metal` — reserved for future macOS/iOS Metal support (not implemented in v2.0.0)
+- [x] `@metal` — Metal compute backend for macOS/iOS (implemented: `mapanare_metal.h/.m`, MSL kernels, unified memory)
 - [x] Semantic pass validates GPU function constraints (max 1 device annotation per function)
 - [x] MIR lowering: decorators stored in `MirFunction.decorators`
 - [x] LLVM emitter: `@gpu`/`@cuda`/`@vulkan` functions auto-dispatch tensor ops to C runtime GPU calls
@@ -236,7 +236,7 @@ mobile-specific target triples and runtime adjustments.
   - [x] Generate `.a` static library: `mapanare build --target aarch64-apple-ios --lib -o libmapanare_app.a`
   - [x] C bridging header for FFI boundary (`examples/mobile/ios/mapanare_app-Bridging-Header.h`)
   - [x] Swift wrapper example (`examples/mobile/ios/ViewController.swift`)
-- [!] Tests: cross-compile hello world, verify Mach-O format, symbol visibility — Deferred: requires macOS
+- [x] Tests: cross-compile hello world, verify Mach-O format, symbol visibility (13 tests in `test_ios_crosscompile.py`)
 
 ### 3.2 Android Cross-Compilation (aarch64-linux-android)
 
@@ -263,7 +263,7 @@ mobile-specific target triples and runtime adjustments.
   - [x] `#ifdef __APPLE__` + `TARGET_OS_IOS` for iOS-specific paths
   - [x] `#ifdef __ANDROID__` for Android-specific paths
 - [x] Agent scheduler: cooperative only on mobile (no preemption)
-- [x] Event loop backend selection: no epoll on iOS (kqueue), no kqueue on Android (epoll)
+- [x] Event loop backend selection: kqueue on macOS/iOS, epoll on Linux/Android, select fallback
 - [x] Tests: arena size override, thread pool opt-in, event loop backend selection
 
 ### 3.4 Reduced Memory Footprint
@@ -361,15 +361,15 @@ tests every target triple.
 
 - [x] GitHub Actions matrix expansion:
   - [x] `x86_64-linux-gnu` — Ubuntu (existing)
-  - [!] `aarch64-apple-macos` — Deferred: needs macOS runner
+  - [x] `aarch64-apple-macos` — macOS native build + test in `macos` CI job
   - [x] `x86_64-windows-msvc` — Windows (existing in publish workflow)
   - [x] `wasm32-wasi` — compile + run on wasmtime
   - [x] `wasm32-unknown-unknown` — compile only (no runtime in CI)
-  - [!] `aarch64-apple-ios` — Deferred: needs macOS runner
+  - [x] `aarch64-apple-ios` — iOS cross-compile + Mach-O verification in `macos` CI job
   - [x] `aarch64-linux-android` — cross-compile with NDK
   - [x] `x86_64-linux-android` — cross-compile with NDK
 - [x] CI artifacts: upload `.wasm`, `.o` for WASM and Android targets
-- [!] Release matrix: build binaries for all 9 targets on tag push — Deferred: needs macOS + NDK runners
+- [~] Release matrix: build binaries for all 9 targets on tag push — macOS runner now available, NDK in CI
 - [x] Tests: CI workflow validates all targets compile successfully
 
 ### 5.4 Mobile App Examples

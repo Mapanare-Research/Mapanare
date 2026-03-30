@@ -39,7 +39,41 @@ jobs:
         run: mypy mapanare/ runtime/
 
       - name: Run tests
-        run: pytest tests/ -v
+        run: pytest tests/ -v -n auto --durations=20
+
+  # ---------------------------------------------------------------------------
+  # Self-hosted compiler: build mnc-stage1 and validate golden tests
+  # ---------------------------------------------------------------------------
+  self-hosted:
+    name: Self-Hosted Compiler
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Mapanare
+        run: pip install -e ".[dev]"
+
+      - name: Install LLVM tools
+        run: sudo apt-get update -qq && sudo apt-get install -y llvm-18 clang-18
+
+      - name: Build mnc-stage1
+        run: python scripts/build_stage1.py
+        continue-on-error: true
+
+      - name: Run golden tests (15/15)
+        if: success()
+        run: python scripts/ir_doctor.py golden
+
+      - name: Run stage2 validation
+        if: success()
+        run: python scripts/ir_doctor.py stage2 --timeout 30
+        continue-on-error: true
 
   native:
     name: C Runtime Tests
@@ -50,7 +84,7 @@ jobs:
 
       - name: Compile C runtime (plain)
         run: |
-          gcc -O2 -g -pthread \
+          gcc -O2 -g -Wall -Wextra -Werror -pthread \
             tests/native/test_c_runtime.c \
             runtime/native/mapanare_core.c \
             runtime/native/mapanare_runtime.c \
@@ -59,7 +93,7 @@ jobs:
 
       - name: Compile and run with AddressSanitizer
         run: |
-          gcc -fsanitize=address -fno-omit-frame-pointer -g -pthread \
+          gcc -fsanitize=address -fno-omit-frame-pointer -g -Wall -Wextra -Werror -pthread \
             tests/native/test_c_runtime.c \
             runtime/native/mapanare_core.c \
             runtime/native/mapanare_runtime.c \
@@ -68,7 +102,7 @@ jobs:
 
       - name: Compile and run with ThreadSanitizer
         run: |
-          gcc -fsanitize=thread -g -pthread \
+          gcc -fsanitize=thread -g -Wall -Wextra -Werror -pthread \
             tests/native/test_c_runtime.c \
             runtime/native/mapanare_core.c \
             runtime/native/mapanare_runtime.c \
@@ -242,6 +276,157 @@ jobs:
           name: android-artifacts
           path: |
             *_android_*.o
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # macOS native + iOS cross-compilation (aarch64-apple-macos, aarch64-apple-ios)
+  # ---------------------------------------------------------------------------
+  macos:
+    name: macOS & iOS Cross-Compilation
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Mapanare
+        run: pip install -e ".[dev]"
+
+      - name: Compile C runtime for macOS (native arm64)
+        run: |
+          echo "--- Compiling C runtime for aarch64-apple-macos ---"
+          cd runtime/native
+          clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_core.c -o mapanare_core.o
+          clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_runtime.c -o mapanare_runtime.o
+          clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_io.c -o mapanare_io.o
+          clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_gpu.c -o mapanare_gpu.o
+          ar rcs libmapanare.a mapanare_core.o mapanare_runtime.o mapanare_io.o mapanare_gpu.o
+          echo "Static library built:"
+          ls -la libmapanare.a
+          file mapanare_core.o
+          echo "macOS native build: OK"
+
+      - name: Run macOS C runtime tests
+        run: |
+          cd runtime/native
+          clang -std=c11 -O2 -Wall -Wextra -Werror -I. \
+            ../../tests/native/test_c_runtime.c \
+            mapanare_core.c mapanare_runtime.c \
+            -lpthread -o test_c_runtime_macos
+          ./test_c_runtime_macos
+
+      - name: Run with AddressSanitizer
+        run: |
+          cd runtime/native
+          clang -fsanitize=address -fno-omit-frame-pointer -g -Wall -Wextra -Werror -std=c11 -I. \
+            ../../tests/native/test_c_runtime.c \
+            mapanare_core.c mapanare_runtime.c \
+            -lpthread -o test_c_runtime_asan
+          ASAN_OPTIONS=detect_leaks=0 ./test_c_runtime_asan
+
+      - name: Run with ThreadSanitizer
+        run: |
+          cd runtime/native
+          clang -fsanitize=thread -g -Wall -Wextra -Werror -std=c11 -I. \
+            ../../tests/native/test_c_runtime.c \
+            mapanare_core.c mapanare_runtime.c \
+            -lpthread -o test_c_runtime_tsan
+          TSAN_OPTIONS=halt_on_error=1 ./test_c_runtime_tsan
+
+      - name: Build universal binary (arm64 + x86_64)
+        run: |
+          cd runtime/native
+          for arch in arm64 x86_64; do
+            for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c; do
+              clang -c -std=c11 -O2 -arch $arch "$src" -o "${src%.c}_${arch}.o"
+            done
+            ar rcs "libmapanare_${arch}.a" *_${arch}.o
+          done
+          lipo -create libmapanare_arm64.a libmapanare_x86_64.a -output libmapanare_universal.a
+          echo "Universal binary architectures:"
+          lipo -info libmapanare_universal.a
+          ls -la libmapanare_universal.a
+
+      - name: Compile Metal GPU backend
+        run: |
+          cd runtime/native
+          clang -c -O2 -Wall -fobjc-arc mapanare_metal.m -o mapanare_metal.o
+          file mapanare_metal.o
+          echo "Metal backend compiled"
+
+      - name: Cross-compile C runtime for iOS (aarch64-apple-ios)
+        run: |
+          IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "iOS SDK: $IOS_SDK"
+          cd runtime/native
+          for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c; do
+            echo "--- Compiling $src for iOS ---"
+            xcrun --sdk iphoneos clang -c -std=c11 -O2 -Wall \
+              -target arm64-apple-ios17.0 \
+              -isysroot "$IOS_SDK" \
+              "$src" -o "${src%.c}_ios.o"
+          done
+          ar rcs libmapanare_ios.a *_ios.o
+          echo "iOS static library built:"
+          ls -la libmapanare_ios.a
+
+      - name: Verify Mach-O format (iOS)
+        run: |
+          cd runtime/native
+          echo "=== File format ==="
+          file mapanare_core_ios.o
+          echo "=== Architecture ==="
+          lipo -info mapanare_core_ios.o
+          echo "=== Key symbols ==="
+          nm -g mapanare_runtime_ios.o | grep " T " | head -20
+          echo ""
+          echo "=== Verify dispatch_semaphore (not deprecated sem_init) ==="
+          nm -u mapanare_runtime_ios.o | grep -c dispatch_semaphore && echo "dispatch_semaphore: OK"
+          ! nm -u mapanare_runtime_ios.o | grep -q sem_init && echo "sem_init absent: OK"
+          echo ""
+          echo "=== Verify kqueue event loop (not epoll) ==="
+          ! nm -u mapanare_io_ios.o | grep -qi epoll && echo "No epoll references: OK"
+
+      - name: Emit LLVM IR with iOS target
+        run: |
+          if [ -f tests/golden/01_hello.mn ]; then
+            cp tests/golden/01_hello.mn /tmp/hello_ios_test.mn
+            mapanare emit-llvm --target aarch64-apple-ios /tmp/hello_ios_test.mn
+            grep 'target triple' /tmp/hello_ios_test.ll
+            echo "iOS LLVM IR emission: OK"
+          fi
+
+      - name: "End-to-end: .mn -> LLVM IR -> iOS Mach-O"
+        run: |
+          IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          if [ -f /tmp/hello_ios_test.ll ]; then
+            xcrun --sdk iphoneos clang -c \
+              -target arm64-apple-ios17.0 \
+              -isysroot "$IOS_SDK" \
+              /tmp/hello_ios_test.ll -o /tmp/hello_ios.o
+            file /tmp/hello_ios.o
+            nm -g /tmp/hello_ios.o
+            echo "End-to-end iOS compile: OK"
+          fi
+
+      - name: Run iOS cross-compilation tests
+        run: pytest tests/targets/test_ios_crosscompile.py -v
+
+      - name: Run full test suite on macOS
+        run: pytest tests/ -v --ignore=tests/bootstrap/
+
+      - name: Upload macOS/iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-ios-artifacts
+          path: |
+            runtime/native/libmapanare.a
+            runtime/native/libmapanare_ios.a
           retention-days: 7
           if-no-files-found: ignore
 

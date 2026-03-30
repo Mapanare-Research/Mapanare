@@ -70,7 +70,7 @@ class TestCoreTypes:
         """YamlValue::Null variant compiles."""
         src = _yaml_source_with_main("""\
             let v: YamlValue = Null()
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -79,7 +79,7 @@ class TestCoreTypes:
         """YamlValue::Bool variant compiles."""
         src = _yaml_source_with_main("""\
             let v: YamlValue = Bool(true)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -88,7 +88,7 @@ class TestCoreTypes:
         """YamlValue::Int variant compiles."""
         src = _yaml_source_with_main("""\
             let v: YamlValue = Int(42)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -97,7 +97,7 @@ class TestCoreTypes:
         """YamlValue::Float variant compiles."""
         src = _yaml_source_with_main("""\
             let v: YamlValue = Float(3.14)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -106,7 +106,7 @@ class TestCoreTypes:
         """YamlValue::Str variant compiles."""
         src = _yaml_source_with_main("""\
             let v: YamlValue = Str("hello")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -116,7 +116,7 @@ class TestCoreTypes:
         src = _yaml_source_with_main("""\
             let items: List<YamlValue> = [Int(1), Int(2)]
             let v: YamlValue = Seq(items)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -126,7 +126,7 @@ class TestCoreTypes:
         src = _yaml_source_with_main("""\
             let entries: List<YamlEntry> = []
             let v: YamlValue = Map(entries)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -135,7 +135,7 @@ class TestCoreTypes:
         """YamlError struct compiles."""
         src = _yaml_source_with_main("""\
             let e: YamlError = new_yaml_error("test error", 1, 1)
-            println(e.message)
+            print(e.message)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -144,7 +144,7 @@ class TestCoreTypes:
         """YamlEntry struct compiles."""
         src = _yaml_source_with_main("""\
             let entry: YamlEntry = new_yaml_entry("key", Int(42))
-            println(entry.key)
+            print(entry.key)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -161,7 +161,7 @@ class TestCharHelpers:
         """Digit classification helper compiles."""
         src = _yaml_source_with_main("""\
             let r: Bool = is_yaml_digit("5")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -170,7 +170,7 @@ class TestCharHelpers:
         """Hex digit classification helper compiles."""
         src = _yaml_source_with_main("""\
             let r: Bool = is_yaml_hex("a")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -179,7 +179,7 @@ class TestCharHelpers:
         """Space classification helper compiles."""
         src = _yaml_source_with_main("""\
             let r: Bool = is_space(" ")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -188,7 +188,7 @@ class TestCharHelpers:
         """Newline classification helper compiles."""
         src = _yaml_source_with_main("""\
             let r: Bool = is_newline("\\n")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -197,7 +197,7 @@ class TestCharHelpers:
         """Flow indicator classification helper compiles."""
         src = _yaml_source_with_main("""\
             let r: Bool = is_flow_indicator("{")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -214,7 +214,7 @@ class TestDecodeScalars:
         """Decode YAML null (word)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("null")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -223,7 +223,7 @@ class TestDecodeScalars:
         """Decode YAML null (~)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("~")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -232,7 +232,7 @@ class TestDecodeScalars:
         """Decode empty input as null."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -241,7 +241,7 @@ class TestDecodeScalars:
         """Decode YAML true."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("true")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -250,7 +250,7 @@ class TestDecodeScalars:
         """Decode YAML false."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("false")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -259,7 +259,7 @@ class TestDecodeScalars:
         """Decode YAML integer."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("42")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -268,7 +268,7 @@ class TestDecodeScalars:
         """Decode negative YAML integer."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("-7")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -277,7 +277,7 @@ class TestDecodeScalars:
         """Decode YAML float."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("3.14")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -286,7 +286,7 @@ class TestDecodeScalars:
         """Decode YAML float with scientific notation."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("2.5e10")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -295,7 +295,7 @@ class TestDecodeScalars:
         """Decode YAML plain (unquoted) string."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("hello world")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -304,7 +304,7 @@ class TestDecodeScalars:
         """Decode YAML double-quoted string."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("\\"hello world\\"")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -313,7 +313,7 @@ class TestDecodeScalars:
         """Decode YAML single-quoted string."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("'hello world'")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -330,7 +330,7 @@ class TestCoreSchemaResolution:
         """Core Schema: true -> Bool(true)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("true")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -339,7 +339,7 @@ class TestCoreSchemaResolution:
         """Core Schema: True -> Bool(true)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("True")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -348,7 +348,7 @@ class TestCoreSchemaResolution:
         """Core Schema: TRUE -> Bool(true)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("TRUE")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -357,7 +357,7 @@ class TestCoreSchemaResolution:
         """Core Schema: false -> Bool(false)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("false")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -366,7 +366,7 @@ class TestCoreSchemaResolution:
         """Core Schema: False -> Bool(false)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("False")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -375,7 +375,7 @@ class TestCoreSchemaResolution:
         """Core Schema: FALSE -> Bool(false)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("FALSE")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -384,7 +384,7 @@ class TestCoreSchemaResolution:
         """Core Schema: null -> Null."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("null")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -393,7 +393,7 @@ class TestCoreSchemaResolution:
         """Core Schema: Null -> Null."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("Null")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -402,7 +402,7 @@ class TestCoreSchemaResolution:
         """Core Schema: NULL -> Null."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("NULL")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -411,7 +411,7 @@ class TestCoreSchemaResolution:
         """Core Schema: ~ -> Null."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("~")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -420,7 +420,7 @@ class TestCoreSchemaResolution:
         """Core Schema: 0xFF -> Int(255)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("0xFF")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -429,7 +429,7 @@ class TestCoreSchemaResolution:
         """Core Schema: 0o77 -> Int(63)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("0o77")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -438,7 +438,7 @@ class TestCoreSchemaResolution:
         """Core Schema: .inf -> Float(+inf)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode(".inf")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -447,7 +447,7 @@ class TestCoreSchemaResolution:
         """Core Schema: -.inf -> Float(-inf)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("-.inf")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -456,7 +456,7 @@ class TestCoreSchemaResolution:
         """Core Schema: .nan -> Float(NaN)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode(".nan")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -465,7 +465,7 @@ class TestCoreSchemaResolution:
         """Core Schema: .NaN -> Float(NaN)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode(".NaN")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -474,7 +474,7 @@ class TestCoreSchemaResolution:
         """Core Schema: .Inf -> Float(+inf)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode(".Inf")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -483,7 +483,7 @@ class TestCoreSchemaResolution:
         """Core Schema: +42 -> Int(42)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("+42")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -500,7 +500,7 @@ class TestBlockMappings:
         """Decode simple block mapping."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("name: Mapanare\\nversion: 9")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -509,7 +509,7 @@ class TestBlockMappings:
         """Decode nested block mapping."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("server:\\n  host: localhost\\n  port: 8080")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -518,7 +518,7 @@ class TestBlockMappings:
         """Decode block mapping with null value (key with no value)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("key:")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -527,7 +527,7 @@ class TestBlockMappings:
         """Decode block mapping with quoted keys."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("\\"quoted key\\": value")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -536,7 +536,7 @@ class TestBlockMappings:
         """Decode block mapping with inline comment."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("key: value # this is a comment")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -553,7 +553,7 @@ class TestBlockSequences:
         """Decode simple block sequence."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("- one\\n- two\\n- three")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -562,7 +562,7 @@ class TestBlockSequences:
         """Decode block sequence of integers."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("- 1\\n- 2\\n- 3")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -571,7 +571,7 @@ class TestBlockSequences:
         """Decode nested block sequence."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("- - 1\\n  - 2\\n- - 3\\n  - 4")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -580,7 +580,7 @@ class TestBlockSequences:
         """Decode block sequence with mixed types."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("- hello\\n- 42\\n- true\\n- null")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -589,7 +589,7 @@ class TestBlockSequences:
         """Decode block mapping with sequence value."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("items:\\n  - one\\n  - two\\n  - three")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -598,7 +598,7 @@ class TestBlockSequences:
         """Decode block sequence of mappings."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("- name: alice\\n  age: 30\\n- name: bob\\n  age: 25")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -615,7 +615,7 @@ class TestFlowCollections:
         """Decode empty flow sequence []."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("[]")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -624,7 +624,7 @@ class TestFlowCollections:
         """Decode flow sequence of integers."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("[1, 2, 3]")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -633,7 +633,7 @@ class TestFlowCollections:
         """Decode flow sequence with mixed types."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("[hello, 42, true, null]")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -642,7 +642,7 @@ class TestFlowCollections:
         """Decode nested flow sequence."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("[[1, 2], [3, 4]]")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -651,7 +651,7 @@ class TestFlowCollections:
         """Decode empty flow mapping {}."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("{}")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -660,7 +660,7 @@ class TestFlowCollections:
         """Decode flow mapping."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("{name: Mapanare, version: 9}")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -669,7 +669,7 @@ class TestFlowCollections:
         """Decode nested flow mapping."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("{outer: {inner: value}}")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -678,7 +678,7 @@ class TestFlowCollections:
         """Decode flow sequence with trailing comma."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("[1, 2, 3,]")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -687,7 +687,7 @@ class TestFlowCollections:
         """Decode flow mapping with trailing comma."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("{a: 1, b: 2,}")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -696,7 +696,7 @@ class TestFlowCollections:
         """Decode flow mapping with quoted keys."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("{\\"key one\\": 1, 'key two': 2}")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -713,7 +713,7 @@ class TestBlockScalars:
         """Decode literal block scalar (|)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("content: |\\n  line1\\n  line2")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -722,7 +722,7 @@ class TestBlockScalars:
         """Decode folded block scalar (>)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("content: >\\n  line1\\n  line2")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -731,7 +731,7 @@ class TestBlockScalars:
         """Decode literal block scalar with strip chomp indicator (|-)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("content: |-\\n  line1\\n  line2")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -740,7 +740,7 @@ class TestBlockScalars:
         """Decode literal block scalar with keep chomp indicator (|+)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("content: |+\\n  line1\\n  line2\\n")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -749,7 +749,7 @@ class TestBlockScalars:
         """Decode folded block scalar with strip chomp indicator (>-)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("content: >-\\n  line1\\n  line2")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -758,7 +758,7 @@ class TestBlockScalars:
         """Decode folded block scalar with keep chomp indicator (>+)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("content: >+\\n  line1\\n  line2\\n")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -767,7 +767,7 @@ class TestBlockScalars:
         """Decode literal block scalar with explicit indent indicator (|2)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("content: |2\\n  line1\\n  line2")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -784,7 +784,7 @@ class TestAnchorsAliases:
         """Decode anchor (&name) and alias (*name)."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("- &anchor value\\n- *anchor")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -793,7 +793,7 @@ class TestAnchorsAliases:
         """Decode anchor on a mapping value."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("defaults: &defaults\\n  timeout: 30\\nserver:\\n  host: localhost")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -802,7 +802,7 @@ class TestAnchorsAliases:
         """Decode anchor on a plain scalar."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("name: &myname Alice\\nalias: *myname")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -819,7 +819,7 @@ class TestMultiDocument:
         """decode_all with a single document."""
         src = _yaml_source_with_main("""\
             let r: Result<List<YamlValue>, YamlError> = decode_all("hello")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -828,7 +828,7 @@ class TestMultiDocument:
         """decode_all with two documents separated by ---."""
         src = _yaml_source_with_main("""\
             let r: Result<List<YamlValue>, YamlError> = decode_all("---\\nhello\\n---\\nworld")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -837,7 +837,7 @@ class TestMultiDocument:
         """decode_all with document end marker (...)."""
         src = _yaml_source_with_main("""\
             let r: Result<List<YamlValue>, YamlError> = decode_all("---\\nhello\\n...\\n---\\nworld")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -846,7 +846,7 @@ class TestMultiDocument:
         """decode_all with empty document."""
         src = _yaml_source_with_main("""\
             let r: Result<List<YamlValue>, YamlError> = decode_all("---\\n...\\n---\\nvalue")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -855,7 +855,7 @@ class TestMultiDocument:
         """Decode single document with --- start marker."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("---\\nhello")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -872,7 +872,7 @@ class TestEncode:
         """Encode null."""
         src = _yaml_source_with_main("""\
             let s: String = encode(Null())
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -881,7 +881,7 @@ class TestEncode:
         """Encode boolean true."""
         src = _yaml_source_with_main("""\
             let s: String = encode(Bool(true))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -890,7 +890,7 @@ class TestEncode:
         """Encode boolean false."""
         src = _yaml_source_with_main("""\
             let s: String = encode(Bool(false))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -899,7 +899,7 @@ class TestEncode:
         """Encode integer."""
         src = _yaml_source_with_main("""\
             let s: String = encode(Int(42))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "__mn_str_from_int" in ir_out
@@ -908,7 +908,7 @@ class TestEncode:
         """Encode float."""
         src = _yaml_source_with_main("""\
             let s: String = encode(Float(3.14))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -917,7 +917,7 @@ class TestEncode:
         """Encode plain string (no quoting needed)."""
         src = _yaml_source_with_main("""\
             let s: String = encode(Str("hello"))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -926,7 +926,7 @@ class TestEncode:
         """Encode string that needs quoting."""
         src = _yaml_source_with_main("""\
             let s: String = encode(Str("true"))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -936,7 +936,7 @@ class TestEncode:
         src = _yaml_source_with_main("""\
             let items: List<YamlValue> = []
             let s: String = encode(Seq(items))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -946,7 +946,7 @@ class TestEncode:
         src = _yaml_source_with_main("""\
             let items: List<YamlValue> = [Int(1), Int(2), Int(3)]
             let s: String = encode(Seq(items))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -956,7 +956,7 @@ class TestEncode:
         src = _yaml_source_with_main("""\
             let entries: List<YamlEntry> = []
             let s: String = encode(Map(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -966,7 +966,7 @@ class TestEncode:
         src = _yaml_source_with_main("""\
             let entries: List<YamlEntry> = [new_yaml_entry("name", Str("Mapanare")), new_yaml_entry("version", Int(1))]
             let s: String = encode(Map(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -983,7 +983,7 @@ class TestEncodeFlow:
         """Encode null in flow style."""
         src = _yaml_source_with_main("""\
             let s: String = encode_flow(Null())
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -993,7 +993,7 @@ class TestEncodeFlow:
         src = _yaml_source_with_main("""\
             let items: List<YamlValue> = [Int(1), Str("two"), Bool(true)]
             let s: String = encode_flow(Seq(items))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1003,7 +1003,7 @@ class TestEncodeFlow:
         src = _yaml_source_with_main("""\
             let entries: List<YamlEntry> = [new_yaml_entry("a", Int(1)), new_yaml_entry("b", Int(2))]
             let s: String = encode_flow(Map(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1014,7 +1014,7 @@ class TestEncodeFlow:
             let inner: List<YamlValue> = [Int(1), Int(2)]
             let entries: List<YamlEntry> = [new_yaml_entry("items", Seq(inner))]
             let s: String = encode_flow(Map(entries))
-            println(s)
+            print(s)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1032,7 +1032,7 @@ class TestRoundTrip:
         src = _yaml_source_with_main("""\
             let encoded: String = encode(Int(42))
             let decoded: Result<YamlValue, YamlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1042,7 +1042,7 @@ class TestRoundTrip:
         src = _yaml_source_with_main("""\
             let encoded: String = encode(Str("hello"))
             let decoded: Result<YamlValue, YamlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1052,7 +1052,7 @@ class TestRoundTrip:
         src = _yaml_source_with_main("""\
             let encoded: String = encode(Bool(true))
             let decoded: Result<YamlValue, YamlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1062,7 +1062,7 @@ class TestRoundTrip:
         src = _yaml_source_with_main("""\
             let encoded: String = encode(Null())
             let decoded: Result<YamlValue, YamlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1073,7 +1073,7 @@ class TestRoundTrip:
             let items: List<YamlValue> = [Int(1), Int(2), Int(3)]
             let encoded: String = encode(Seq(items))
             let decoded: Result<YamlValue, YamlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1084,7 +1084,7 @@ class TestRoundTrip:
             let entries: List<YamlEntry> = [new_yaml_entry("key", Str("value"))]
             let encoded: String = encode(Map(entries))
             let decoded: Result<YamlValue, YamlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1095,7 +1095,7 @@ class TestRoundTrip:
             let items: List<YamlValue> = [Int(10), Str("hello"), Bool(false)]
             let encoded: String = encode_flow(Seq(items))
             let decoded: Result<YamlValue, YamlError> = decode(encoded)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1113,8 +1113,8 @@ class TestErrorCases:
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("\\"unterminated")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1125,8 +1125,8 @@ class TestErrorCases:
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("'unterminated")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1137,8 +1137,8 @@ class TestErrorCases:
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("[1, 2, 3")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1149,8 +1149,8 @@ class TestErrorCases:
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("{key: value")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1161,8 +1161,8 @@ class TestErrorCases:
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("\\"bad \\\\z escape\\"")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1173,8 +1173,8 @@ class TestErrorCases:
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("*nosuchanchor")
             match r {
-                Ok(v) => { println("unexpected ok") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("unexpected ok") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1186,8 +1186,8 @@ class TestErrorCases:
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]")
             match r {
-                Ok(v) => { println("parsed") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("parsed") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1205,7 +1205,7 @@ class TestStringParsing:
         """Parse double-quoted string with escape sequences."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("\\"line1\\\\nline2\\"")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1214,7 +1214,7 @@ class TestStringParsing:
         """Parse single-quoted string with escaped single quote ('')."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("'it''s a test'")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1223,7 +1223,7 @@ class TestStringParsing:
         """Parse double-quoted string with \\x hex escape."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("\\"\\\\x41\\"")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1232,7 +1232,7 @@ class TestStringParsing:
         """Parse double-quoted string with \\u unicode escape."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("\\"\\\\u0041\\"")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1249,7 +1249,7 @@ class TestWhitespace:
         """skip_ws_and_comments function compiles."""
         src = _yaml_source_with_main("""\
             let r: PosInfo = skip_ws_and_comments("  # comment\\nhello", 17, 0, 1, 1)
-            println(str(r.pos))
+            print(str(r.pos))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1258,7 +1258,7 @@ class TestWhitespace:
         """Decode YAML with leading comments."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("# comment\\nhello")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1267,7 +1267,7 @@ class TestWhitespace:
         """Decode YAML with blank lines."""
         src = _yaml_source_with_main("""\
             let r: Result<YamlValue, YamlError> = decode("\\n\\nhello\\n\\n")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1284,7 +1284,7 @@ class TestDocumentMarkers:
         """is_doc_start function compiles."""
         src = _yaml_source_with_main("""\
             let r: Bool = is_doc_start("--- hello", 9, 0)
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1293,7 +1293,7 @@ class TestDocumentMarkers:
         """is_doc_end function compiles."""
         src = _yaml_source_with_main("""\
             let r: Bool = is_doc_end("...", 3, 0)
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1310,7 +1310,7 @@ class TestInternalHelpers:
         """resolve_plain_scalar function compiles."""
         src = _yaml_source_with_main("""\
             let v: YamlValue = resolve_plain_scalar("42")
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1319,7 +1319,7 @@ class TestInternalHelpers:
         """yaml_needs_quoting function compiles."""
         src = _yaml_source_with_main("""\
             let r: Bool = yaml_needs_quoting("true")
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1328,7 +1328,7 @@ class TestInternalHelpers:
         """yaml_quote_string function compiles."""
         src = _yaml_source_with_main("""\
             let r: String = yaml_quote_string("hello world")
-            println(r)
+            print(r)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1337,7 +1337,7 @@ class TestInternalHelpers:
         """make_indent function compiles."""
         src = _yaml_source_with_main("""\
             let r: String = make_indent(3)
-            println(r)
+            print(r)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1346,7 +1346,7 @@ class TestInternalHelpers:
         """measure_indent function compiles."""
         src = _yaml_source_with_main("""\
             let r: Int = measure_indent("    hello", 9, 0)
-            println(str(r))
+            print(str(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1365,8 +1365,8 @@ class TestRealWorldCI:
             let yaml_str: String = "name: CI\\non:\\n  push:\\n    branches:\\n      - main\\n      - dev\\njobs:\\n  test:\\n    runs-on: ubuntu-latest\\n    steps:\\n      - checkout\\n      - run tests"
             let r: Result<YamlValue, YamlError> = decode(yaml_str)
             match r {
-                Ok(v) => { println("parsed ci config") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("parsed ci config") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1378,8 +1378,8 @@ class TestRealWorldCI:
             let yaml_str: String = "strategy:\\n  matrix:\\n    python-version: [3.11, 3.12]\\n    os: [ubuntu-latest]"
             let r: Result<YamlValue, YamlError> = decode(yaml_str)
             match r {
-                Ok(v) => { println("parsed matrix config") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("parsed matrix config") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1399,8 +1399,8 @@ class TestRealWorldDockerCompose:
             let yaml_str: String = "version: 3\\nservices:\\n  web:\\n    image: nginx\\n    ports:\\n      - 8080\\n      - 443\\n  db:\\n    image: postgres\\n    environment:\\n      POSTGRES_DB: mydb"
             let r: Result<YamlValue, YamlError> = decode(yaml_str)
             match r {
-                Ok(v) => { println("parsed compose config") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("parsed compose config") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1412,8 +1412,8 @@ class TestRealWorldDockerCompose:
             let yaml_str: String = "services:\\n  app:\\n    ports: [3000, 3001]\\n    labels: {env: prod, tier: frontend}"
             let r: Result<YamlValue, YamlError> = decode(yaml_str)
             match r {
-                Ok(v) => { println("parsed compose with flow") },
-                Err(e) => { println(e.message) }
+                Ok(v) => { print("parsed compose with flow") },
+                Err(e) => { print(e.message) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -1432,7 +1432,7 @@ class TestPerformance:
         src = _yaml_source_with_main("""\
             let big: String = "- 1\\n- 2\\n- 3\\n- 4\\n- 5\\n- 6\\n- 7\\n- 8\\n- 9\\n- 10"
             let r: Result<YamlValue, YamlError> = decode(big)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -1442,7 +1442,7 @@ class TestPerformance:
         src = _yaml_source_with_main("""\
             let big: String = "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"
             let r: Result<YamlValue, YamlError> = decode(big)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out

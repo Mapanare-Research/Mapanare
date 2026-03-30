@@ -86,7 +86,7 @@ fn max<T: Ord>(a: T, b: T) -> T {
 
 fn print_all<T: Display>(items: List<T>) {
     for item in items {
-        println(item.to_string())
+        print(item.to_string())
     }
 }
 ```

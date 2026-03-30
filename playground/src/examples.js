@@ -7,7 +7,7 @@ export const EXAMPLES = [
     name: "Hello World",
     code: `// Hello World in Mapanare
 fn main() {
-    println("Hello, Mapanare!")
+    print("Hello, Mapanare!")
 }`,
   },
   {
@@ -19,8 +19,8 @@ fn greet(name: String) -> String {
 
 fn main() {
     let name = "World"
-    println(greet(name))
-    println("2 + 3 = \${2 + 3}")
+    print(greet(name))
+    print("2 + 3 = \${2 + 3}")
 }`,
   },
   {
@@ -36,7 +36,7 @@ fn fib(n: Int) -> Int {
 fn main() {
     let mut i = 0
     while i < 10 {
-        println("fib(\${i}) = \${fib(i)}")
+        print("fib(\${i}) = \${fib(i)}")
         i = i + 1
     }
 }`,
@@ -63,8 +63,8 @@ fn describe(s: Shape) -> String {
 fn main() {
     let c = Shape_Circle(5.0)
     let r = Shape_Rect(4.0, 6.0)
-    println(describe(c))
-    println(describe(r))
+    print(describe(c))
+    print(describe(r))
 }`,
   },
   {
@@ -90,14 +90,14 @@ fn find_first(items: List<Int>, target: Int) -> Option<Int> {
 
 fn main() {
     let result = divide(10.0, 3.0)
-    println("10 / 3 = \${result}")
+    print("10 / 3 = \${result}")
 
     let err = divide(1.0, 0.0)
-    println("1 / 0 = \${err}")
+    print("1 / 0 = \${err}")
 
     let nums = [1, 2, 3, 4, 5]
-    println("find 3: \${find_first(nums, 3)}")
-    println("find 9: \${find_first(nums, 9)}")
+    print("find 3: \${find_first(nums, 3)}")
+    print("find 9: \${find_first(nums, 9)}")
 }`,
   },
   {
@@ -111,13 +111,13 @@ fn main() {
     let double = (x) => x * 2
     let square = (x) => x * x
 
-    println("double(5) = \${apply(double, 5)}")
-    println("square(5) = \${apply(square, 5)}")
+    print("double(5) = \${apply(double, 5)}")
+    print("square(5) = \${apply(square, 5)}")
 
     let nums = [1, 2, 3, 4, 5]
     let mut i = 0
     while i < len(nums) {
-        println("\${nums[i]} squared = \${apply(square, nums[i])}")
+        print("\${nums[i]} squared = \${apply(square, nums[i])}")
         i = i + 1
     }
 }`,
@@ -139,7 +139,7 @@ fn to_string(x: Int) -> String {
 
 fn main() {
     let result = 5 |> double |> add_one |> to_string
-    println(result)
+    print(result)
 }`,
   },
 ];

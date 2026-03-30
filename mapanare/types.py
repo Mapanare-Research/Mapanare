@@ -251,7 +251,7 @@ BUILTIN_GENERIC_KINDS = frozenset(
 # Built-in functions: name -> return TypeInfo
 BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "print": VOID_TYPE,
-    "println": VOID_TYPE,
+    "println": VOID_TYPE,  # deprecated: use print (both add newline)
     "len": INT_TYPE,
     "toString": STRING_TYPE,
     "str": STRING_TYPE,

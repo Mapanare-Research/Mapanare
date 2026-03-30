@@ -1,0 +1,531 @@
+// lower_state.mn — Lowerer state, scope management, lookups, and type resolution.
+// Extracted from lower.mn to reduce file size and share lookup utilities.
+
+import self::ast
+import self::mir
+
+// ---------------------------------------------------------------------------
+// Lowerer state — threaded through all lowering functions
+// ---------------------------------------------------------------------------
+
+struct LowerState {
+    module: MIRModule,
+    current_fn: Option<MIRFunction>,
+    current_block_idx: Int,
+    tmp_counter: Int,
+    block_counter: Int,
+    vars: List<VarInfo>,
+    scope_stack: List<Int>,
+    impl_methods: List<ImplEntry>,
+    struct_fields: List<StructFieldInfo>,
+    enum_variants: List<EnumVariantNames>,
+    lambda_vars: List<LambdaEntry>,
+}
+
+fn new_lower_state(module_name: String) -> LowerState {
+    let module: MIRModule = new_mir_module(module_name)
+    let vars: List<VarInfo> = []
+    let scope_stack: List<Int> = []
+    let impl_methods: List<ImplEntry> = []
+    let struct_fields: List<StructFieldInfo> = []
+    let enum_variants: List<EnumVariantNames> = []
+    let lambda_vars: List<LambdaEntry> = []
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars }
+}
+
+// Lower result: value + updated state
+struct LowerResult {
+    value: Value,
+    state: LowerState
+}
+
+fn new_lower_result(val: Value, st: LowerState) -> LowerResult {
+    return new LowerResult { value: val, state: st }
+}
+
+// ---------------------------------------------------------------------------
+// Name generation
+// ---------------------------------------------------------------------------
+
+fn fresh_tmp(st: LowerState, prefix: String) -> LowerResult {
+    let name: String = "%" + prefix + toString(st.tmp_counter)
+    let mut new_st: LowerState = st
+    new_st.tmp_counter = st.tmp_counter + 1
+    let val: Value = new_value(name, mir_unknown())
+    return new_lower_result(val, new_st)
+}
+
+fn fresh_block_label(st: LowerState, prefix: String) -> LowerResult {
+    let name: String = prefix + toString(st.block_counter)
+    let mut new_st: LowerState = st
+    new_st.block_counter = st.block_counter + 1
+    let val: Value = new_value(name, mir_unknown())
+    return new_lower_result(val, new_st)
+}
+
+fn make_value(st: LowerState, ty: MIRType, prefix: String) -> LowerResult {
+    let r: LowerResult = fresh_tmp(st, prefix)
+    let val: Value = new_value(r.value.name, ty)
+    return new_lower_result(val, r.state)
+}
+
+// ---------------------------------------------------------------------------
+// Block management
+// ---------------------------------------------------------------------------
+
+fn add_block(st: LowerState, label: String) -> LowerState {
+    let bb: BasicBlock = new_basic_block(label)
+    let mut new_st: LowerState = st
+    match st.current_fn {
+        Some(f) => {
+            let mut new_fn: MIRFunction = f
+            let mut blk_list: List<BasicBlock> = new_fn.blocks
+            blk_list.push(bb)
+            new_fn.blocks = blk_list
+            new_st.current_fn = Some(new_fn)
+            new_st.current_block_idx = len(f.blocks)
+        },
+        _ => {}
+    }
+    return new_st
+}
+
+fn set_block(st: LowerState, idx: Int) -> LowerState {
+    let mut new_st: LowerState = st
+    new_st.current_block_idx = idx
+    return new_st
+}
+
+fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
+    // Append instruction to current block in current function.
+    let mut new_st: LowerState = st
+    match st.current_fn {
+        Some(f) => {
+            if st.current_block_idx >= 0 {
+                if st.current_block_idx < len(f.blocks) {
+                    let bb: BasicBlock = f.blocks[st.current_block_idx]
+                    let mut instrs: List<Instruction> = bb.instructions
+                    instrs.push(instr)
+                    let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
+                    let mut blks: List<BasicBlock> = f.blocks
+                    blks[st.current_block_idx] = new_bb
+                    // Update the function in new_st with the modified blocks
+                    let mut new_fn: MIRFunction = f
+                    new_fn.blocks = blks
+                    new_st.current_fn = Some(new_fn)
+                }
+            }
+        },
+        _ => {}
+    }
+    return new_st
+}
+
+fn current_block_terminated(st: LowerState) -> Bool {
+    match st.current_fn {
+        Some(f) => {
+            if st.current_block_idx >= 0 {
+                if st.current_block_idx < len(f.blocks) {
+                    let bb: BasicBlock = f.blocks[st.current_block_idx]
+                    return block_terminated(bb)
+                }
+            }
+            return true
+        },
+        _ => { return true }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scope management
+// ---------------------------------------------------------------------------
+
+fn lower_push_scope(st: LowerState) -> LowerState {
+    // Save the current variable count. On pop, truncate vars back to this length.
+    // This avoids nested list aliasing (no List<List<VarInfo>> needed).
+    let mut new_st: LowerState = st
+    let var_count: Int = len(st.vars)
+    new_st.scope_stack.push(var_count)
+    return new_st
+}
+
+fn lower_pop_scope(st: LowerState) -> LowerState {
+    let mut new_st: LowerState = st
+    if len(st.scope_stack) > 0 {
+        let saved_len: Int = st.scope_stack[len(st.scope_stack) - 1]
+        // Truncate vars back to the saved length
+        // (removes variables defined in the inner scope)
+        let mut restored: List<VarInfo> = []
+        let mut i: Int = 0
+        for _ in 0..100000 {
+            if i >= saved_len { break }
+            if i >= len(st.vars) { break }
+            restored.push(st.vars[i])
+            i = i + 1
+        }
+        new_st.vars = restored
+    }
+    return new_st
+}
+
+fn define_var(st: LowerState, name: String, val: Value, mutable: Bool) -> LowerState {
+    let mut new_st: LowerState = st
+    let vi: VarInfo = new_var_info(name, val, mutable)
+    new_st.vars.push(vi)
+    return new_st
+}
+
+fn lookup_var(st: LowerState, name: String) -> Option<Value> {
+    let mut i: Int = len(st.vars) - 1
+    for _ in 0..100000 {
+        if i < 0 { return none }
+        let v: VarInfo = st.vars[i]
+        if v.name == name { return Some(v.current) }
+        i = i - 1
+    }
+    return none
+}
+
+fn update_var(st: LowerState, name: String, val: Value) -> LowerState {
+    let mut new_st: LowerState = st
+    let mut i: Int = len(st.vars) - 1
+    for _ in 0..100000 {
+        if i < 0 { return new_st }
+        let v: VarInfo = st.vars[i]
+        if v.name == name {
+            let updated: VarInfo = new_var_info(name, val, v.mutable)
+            st.vars[i] = updated
+            return new_st
+        }
+        i = i - 1
+    }
+    return new_st
+}
+
+// ---------------------------------------------------------------------------
+// Lookup helpers
+// ---------------------------------------------------------------------------
+
+fn find_struct_fields(st: LowerState, name: String) -> Option<List<String>> {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.struct_fields) { return none }
+        let sf: StructFieldInfo = st.struct_fields[i]
+        if sf.name == name { return Some(sf.field_names) }
+        i = i + 1
+    }
+    return none
+}
+
+fn is_struct_name(st: LowerState, name: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.struct_fields) { return false }
+        let sf: StructFieldInfo = st.struct_fields[i]
+        if sf.name == name { return true }
+        i = i + 1
+    }
+    return false
+}
+
+fn get_struct_field_names(st: LowerState, name: String) -> List<String> {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.struct_fields) { break }
+        let sf: StructFieldInfo = st.struct_fields[i]
+        if sf.name == name { return sf.field_names }
+        i = i + 1
+    }
+    let empty: List<String> = []
+    return empty
+}
+
+fn find_enum_variants(st: LowerState, name: String) -> Option<List<String>> {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.enum_variants) { return none }
+        let ev: EnumVariantNames = st.enum_variants[i]
+        if ev.enum_name == name { return Some(ev.variant_names) }
+        i = i + 1
+    }
+    return none
+}
+
+fn is_enum_variant(st: LowerState, name: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.enum_variants) { return false }
+        let ev: EnumVariantNames = st.enum_variants[i]
+        let mut j: Int = 0
+        for _ in 0..100000 {
+            if j >= len(ev.variant_names) { break }
+            let vn: String = ev.variant_names[j]
+            if vn == name { return true }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return false
+}
+
+fn variant_index(st: LowerState, variant: String) -> Int {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.enum_variants) { return 0 }
+        let ev: EnumVariantNames = st.enum_variants[i]
+        let mut j: Int = 0
+        for _ in 0..100000 {
+            if j >= len(ev.variant_names) { break }
+            if ev.variant_names[j] == variant { return j }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+fn enum_name_for_variant(st: LowerState, variant: String) -> String {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.enum_variants) { return "" }
+        let ev: EnumVariantNames = st.enum_variants[i]
+        let mut j: Int = 0
+        for _ in 0..100000 {
+            if j >= len(ev.variant_names) { break }
+            let vn: String = ev.variant_names[j]
+            if vn == variant { return ev.enum_name }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+fn find_impl_method(st: LowerState, type_name: String, method: String) -> Option<String> {
+    let key: String = type_name + "." + method
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.impl_methods) { return none }
+        let e: ImplEntry = st.impl_methods[i]
+        if e.key == key { return Some(e.mir_name) }
+        i = i + 1
+    }
+    return none
+}
+
+fn find_lambda(st: LowerState, name: String) -> Option<String> {
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(st.lambda_vars) { return none }
+        let e: LambdaEntry = st.lambda_vars[i]
+        if e.var_name == name { return Some(e.fn_name) }
+        i = i + 1
+    }
+    return none
+}
+
+// ---------------------------------------------------------------------------
+// Type resolution: AST TypeExpr -> MIRType
+// ---------------------------------------------------------------------------
+
+fn lower_resolve_type_expr(te: TypeExpr) -> MIRType {
+    match te {
+        Named(name) => {
+            return resolve_type_name(name)
+        },
+        Generic(name, args) => {
+            let mut resolved_args: List<MIRType> = []
+            let mut i: Int = 0
+            for _ in 0..100 {
+                if i >= len(args) {
+                    let kind: String = kind_from_name(name)
+                    if kind != "unknown" {
+                        return new_mir_type_with_args(name, kind, resolved_args)
+                    }
+                    return new_mir_type_with_args(name, "struct", resolved_args)
+                }
+                let arg: TypeExpr = args[i]
+                let resolved: MIRType = lower_resolve_type_expr(arg)
+                resolved_args.push(resolved)
+                i = i + 1
+            }
+            return mir_unknown()
+        },
+        FnTy(param_types, return_type) => {
+            return mir_fn_type()
+        },
+        _ => { return mir_unknown() }
+    }
+}
+
+fn resolve_type_name(name: String) -> MIRType {
+    if name == "Int" { return mir_int() }
+    if name == "Float" { return mir_float() }
+    if name == "Bool" { return mir_bool() }
+    if name == "String" { return mir_string() }
+    if name == "Char" { return mir_string() }
+    if name == "Void" { return mir_void() }
+    if name == "Option" { return mir_option() }
+    if name == "Result" { return mir_result() }
+    if name == "List" { return mir_list() }
+    if name == "Map" { return mir_map() }
+    if name == "Signal" { return mir_signal() }
+    return mir_struct(name)
+}
+
+// State-aware type resolution: distinguishes structs from enums
+fn resolve_type_name_checked(st: LowerState, name: String) -> MIRType {
+    if name == "Int" { return mir_int() }
+    if name == "Float" { return mir_float() }
+    if name == "Bool" { return mir_bool() }
+    if name == "String" { return mir_string() }
+    if name == "Char" { return mir_string() }
+    if name == "Void" { return mir_void() }
+    if name == "Option" { return mir_option() }
+    if name == "Result" { return mir_result() }
+    if name == "List" { return mir_list() }
+    if name == "Map" { return mir_map() }
+    if name == "Signal" { return mir_signal() }
+    // Check if this is a registered enum
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= len(st.enum_variants) { break }
+        if st.enum_variants[i].enum_name == name {
+            return mir_enum(name)
+        }
+        i = i + 1
+    }
+    return mir_struct(name)
+}
+
+fn kind_from_name(name: String) -> String {
+    if name == "Int" { return "int" }
+    if name == "Float" { return "float" }
+    if name == "Bool" { return "bool" }
+    if name == "String" { return "string" }
+    if name == "Char" { return "string" }
+    if name == "Void" { return "void" }
+    if name == "Option" { return "option" }
+    if name == "Result" { return "result" }
+    if name == "List" { return "list" }
+    if name == "Map" { return "map" }
+    if name == "Signal" { return "signal" }
+    if name == "Stream" { return "stream" }
+    if name == "Agent" { return "agent" }
+    if name == "Tensor" { return "tensor" }
+    if name == "Range" { return "range" }
+    return "unknown"
+}
+
+fn lower_resolve_type_opt(te: Option<TypeExpr>) -> MIRType {
+    match te {
+        Some(t) => { return lower_resolve_type_expr(t) },
+        _ => { return mir_unknown() }
+    }
+}
+
+fn lower_resolve_type_opt_checked(st: LowerState, te: Option<TypeExpr>) -> MIRType {
+    match te {
+        Some(t) => { return lower_resolve_type_checked(st, t) },
+        _ => { return mir_unknown() }
+    }
+}
+
+fn resolve_return_type(te: Option<TypeExpr>) -> MIRType {
+    match te {
+        Some(t) => { return lower_resolve_type_expr(t) },
+        _ => { return mir_void() }
+    }
+}
+
+// State-aware type expression resolver (distinguishes enums from structs)
+fn resolve_generic_args_rec(st: LowerState, args: List<TypeExpr>, idx: Int, acc: List<MIRType>) -> List<MIRType> {
+    if idx >= len(args) { return acc }
+    let arg: TypeExpr = args[idx]
+    let resolved: MIRType = lower_resolve_type_checked(st, arg)
+    acc.push(resolved)
+    return resolve_generic_args_rec(st, args, idx + 1, acc)
+}
+
+fn lower_resolve_type_checked(st: LowerState, te: TypeExpr) -> MIRType {
+    match te {
+        Named(name) => {
+            return resolve_type_name_checked(st, name)
+        },
+        Generic(name, args) => {
+            // Use recursion instead of for-loop to avoid the alloca aliasing bug
+            let init_args: List<MIRType> = []
+            let resolved_args: List<MIRType> = resolve_generic_args_rec(st, args, 0, init_args)
+            let kind: String = kind_from_name(name)
+            if kind != "unknown" {
+                return new_mir_type_with_args(name, kind, resolved_args)
+            }
+            let checked: MIRType = resolve_type_name_checked(st, name)
+            return new_mir_type_with_args(name, checked.kind, resolved_args)
+        },
+        FnTy(param_types, return_type) => {
+            return mir_fn_type()
+        },
+        _ => { return mir_unknown() }
+    }
+}
+
+fn resolve_return_type_checked(st: LowerState, te: Option<TypeExpr>) -> MIRType {
+    match te {
+        Some(t) => { return lower_resolve_type_checked(st, t) },
+        _ => { return mir_void() }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Operator mapping
+// ---------------------------------------------------------------------------
+
+fn binop_from_str(op: String) -> Option<BinOpKind> {
+    if op == "+" { return Some(BinOpKind::Add) }
+    if op == "-" { return Some(BinOpKind::Sub) }
+    if op == "*" { return Some(BinOpKind::Mul) }
+    if op == "/" { return Some(BinOpKind::Div) }
+    if op == "%" { return Some(BinOpKind::Mod) }
+    if op == "==" { return Some(BinOpKind::Eq) }
+    if op == "!=" { return Some(BinOpKind::Ne) }
+    if op == "<" { return Some(BinOpKind::Lt) }
+    if op == ">" { return Some(BinOpKind::Gt) }
+    if op == "<=" { return Some(BinOpKind::Le) }
+    if op == ">=" { return Some(BinOpKind::Ge) }
+    if op == "&&" { return Some(BinOpKind::And) }
+    if op == "||" { return Some(BinOpKind::Or) }
+    return none
+}
+
+fn unaryop_from_str(op: String) -> Option<UnaryOpKind> {
+    if op == "-" { return Some(UnaryOpKind::Neg) }
+    if op == "!" { return Some(UnaryOpKind::Not) }
+    return none
+}
+
+fn stream_op_from_str(name: String) -> Option<StreamOpKind> {
+    if name == "map" { return Some(StreamOpKind::Map) }
+    if name == "filter" { return Some(StreamOpKind::Filter) }
+    if name == "fold" { return Some(StreamOpKind::Fold) }
+    if name == "take" { return Some(StreamOpKind::Take) }
+    if name == "skip" { return Some(StreamOpKind::Skip) }
+    if name == "collect" { return Some(StreamOpKind::Collect) }
+    return none
+}
+
+fn is_comparison_binop(op: BinOpKind) -> Bool {
+    match op {
+        Eq => { return true },
+        Ne => { return true },
+        Lt => { return true },
+        Gt => { return true },
+        Le => { return true },
+        Ge => { return true },
+        And => { return true },
+        Or => { return true },
+        _ => { return false }
+    }
+}
+
+// binop_kind_to_str and unaryop_kind_to_str live in mir.mn (near the enums they convert)

@@ -62,27 +62,27 @@ def _crypto_source_with_main(main_body: str) -> str:
 class TestCryptoError:
     def test_invalid_input_compiles(self) -> None:
         """CryptoError::InvalidInput variant compiles."""
-        src = _crypto_source_with_main('let e: CryptoError = InvalidInput("bad")\nprintln("ok")')
+        src = _crypto_source_with_main('let e: CryptoError = InvalidInput("bad")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_decode_failed_compiles(self) -> None:
         """CryptoError::DecodeFailed variant compiles."""
-        src = _crypto_source_with_main('let e: CryptoError = DecodeFailed("fail")\nprintln("ok")')
+        src = _crypto_source_with_main('let e: CryptoError = DecodeFailed("fail")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_verification_failed_compiles(self) -> None:
         """CryptoError::VerificationFailed variant compiles."""
         src = _crypto_source_with_main(
-            'let e: CryptoError = VerificationFailed("sig")\nprintln("ok")'
+            'let e: CryptoError = VerificationFailed("sig")\nprint("ok")'
         )
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_hash_error_compiles(self) -> None:
         """CryptoError::HashError variant compiles."""
-        src = _crypto_source_with_main('let e: CryptoError = HashError("err")\nprintln("ok")')
+        src = _crypto_source_with_main('let e: CryptoError = HashError("err")\nprint("ok")')
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
@@ -98,7 +98,7 @@ class TestHashing:
         """sha1() hex digest compiles."""
         src = _crypto_source_with_main("""\
             let h: String = sha1("hello")
-            println(h)
+            print(h)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -108,7 +108,7 @@ class TestHashing:
         """sha256() hex digest compiles."""
         src = _crypto_source_with_main("""\
             let h: String = sha256("hello")
-            println(h)
+            print(h)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -118,7 +118,7 @@ class TestHashing:
         """sha512() hex digest compiles."""
         src = _crypto_source_with_main("""\
             let h: String = sha512("hello")
-            println(h)
+            print(h)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -128,7 +128,7 @@ class TestHashing:
         """sha256_raw() returns binary hash."""
         src = _crypto_source_with_main("""\
             let h: String = sha256_raw("test")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -137,26 +137,26 @@ class TestHashing:
         """sha512_raw() returns binary hash."""
         src = _crypto_source_with_main("""\
             let h: String = sha512_raw("test")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_sha256_extern_declared(self) -> None:
         """SHA-256 extern declaration present in compiled IR."""
-        src = _crypto_source_with_main('println("ok")')
+        src = _crypto_source_with_main('print("ok")')
         ir_out = _compile_mir(src)
         assert "__mn_sha256_str" in ir_out
 
     def test_sha512_extern_declared(self) -> None:
         """SHA-512 extern declaration present in compiled IR."""
-        src = _crypto_source_with_main('println("ok")')
+        src = _crypto_source_with_main('print("ok")')
         ir_out = _compile_mir(src)
         assert "__mn_sha512_str" in ir_out
 
     def test_hex_encode_extern_declared(self) -> None:
         """Hex encode extern declaration present (used by hash wrappers)."""
-        src = _crypto_source_with_main('println("ok")')
+        src = _crypto_source_with_main('print("ok")')
         ir_out = _compile_mir(src)
         assert "__mn_hex_encode_str" in ir_out
 
@@ -172,7 +172,7 @@ class TestHMAC:
         """hmac_sha256() hex digest compiles."""
         src = _crypto_source_with_main("""\
             let h: String = hmac_sha256("secret-key", "message")
-            println(h)
+            print(h)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -182,7 +182,7 @@ class TestHMAC:
         """hmac_sha256_raw() returns binary HMAC."""
         src = _crypto_source_with_main("""\
             let h: String = hmac_sha256_raw("key", "data")
-            println("ok")
+            print("ok")
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -199,7 +199,7 @@ class TestBase64:
         """base64_encode() compiles."""
         src = _crypto_source_with_main("""\
             let encoded: String = base64_encode("hello world")
-            println(encoded)
+            print(encoded)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -210,8 +210,8 @@ class TestBase64:
         src = _crypto_source_with_main("""\
             let r: Result<String, CryptoError> = base64_decode("aGVsbG8=")
             match r {
-                Ok(decoded) => { println(decoded) },
-                Err(e) => { println("error") }
+                Ok(decoded) => { print(decoded) },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -221,7 +221,7 @@ class TestBase64:
         """base64url_encode() (URL-safe, no padding) compiles."""
         src = _crypto_source_with_main("""\
             let encoded: String = base64url_encode("hello world!")
-            println(encoded)
+            print(encoded)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -231,8 +231,8 @@ class TestBase64:
         src = _crypto_source_with_main("""\
             let r: Result<String, CryptoError> = base64url_decode("aGVsbG8")
             match r {
-                Ok(decoded) => { println(decoded) },
-                Err(e) => { println("error") }
+                Ok(decoded) => { print(decoded) },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -244,8 +244,8 @@ class TestBase64:
             let encoded: String = base64_encode("round trip test")
             let r: Result<String, CryptoError> = base64_decode(encoded)
             match r {
-                Ok(decoded) => { println(decoded) },
-                Err(e) => { println("decode error") }
+                Ok(decoded) => { print(decoded) },
+                Err(e) => { print("decode error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -263,7 +263,7 @@ class TestHex:
         """hex_encode() compiles."""
         src = _crypto_source_with_main("""\
             let h: String = hex_encode("abc")
-            println(h)
+            print(h)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -273,8 +273,8 @@ class TestHex:
         src = _crypto_source_with_main("""\
             let r: Result<String, CryptoError> = hex_decode("616263")
             match r {
-                Ok(decoded) => { println(decoded) },
-                Err(e) => { println("error") }
+                Ok(decoded) => { print(decoded) },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -285,8 +285,8 @@ class TestHex:
         src = _crypto_source_with_main("""\
             let r: Result<String, CryptoError> = hex_decode("abc")
             match r {
-                Ok(decoded) => { println("should not happen") },
-                Err(e) => { println("expected error") }
+                Ok(decoded) => { print("should not happen") },
+                Err(e) => { print("expected error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -298,8 +298,8 @@ class TestHex:
             let encoded: String = hex_encode("hello")
             let r: Result<String, CryptoError> = hex_decode(encoded)
             match r {
-                Ok(decoded) => { println(decoded) },
-                Err(e) => { println("error") }
+                Ok(decoded) => { print(decoded) },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -317,7 +317,7 @@ class TestJWT:
         """jwt_encode() with JSON payload string compiles."""
         src = _crypto_source_with_main("""\
             let token: String = jwt_encode("{\\\"sub\\\":\\\"1234\\\"}", "secret")
-            println(token)
+            print(token)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -328,8 +328,8 @@ class TestJWT:
             let token: String = jwt_encode("{\\\"user\\\":\\\"alice\\\"}", "mykey")
             let r: Result<String, CryptoError> = jwt_decode(token, "mykey")
             match r {
-                Ok(payload) => { println(payload) },
-                Err(e) => { println("error") }
+                Ok(payload) => { print(payload) },
+                Err(e) => { print("error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -341,9 +341,9 @@ class TestJWT:
             let token: String = jwt_encode("{\\\"data\\\":\\\"test\\\"}", "key123")
             let valid: Bool = jwt_verify(token, "key123")
             if valid {
-                println("verified")
+                print("verified")
             } else {
-                println("invalid")
+                print("invalid")
             }
             """)
         ir_out = _compile_mir(src)
@@ -355,9 +355,9 @@ class TestJWT:
             let token: String = jwt_encode("{\\\"x\\\":\\\"y\\\"}", "correct-key")
             let valid: Bool = jwt_verify(token, "wrong-key")
             if valid {
-                println("should not verify")
+                print("should not verify")
             } else {
-                println("correctly rejected")
+                print("correctly rejected")
             }
             """)
         ir_out = _compile_mir(src)
@@ -368,8 +368,8 @@ class TestJWT:
         src = _crypto_source_with_main("""\
             let r: Result<String, CryptoError> = jwt_decode("not.a.valid.jwt", "key")
             match r {
-                Ok(payload) => { println(payload) },
-                Err(e) => { println("expected error") }
+                Ok(payload) => { print(payload) },
+                Err(e) => { print("expected error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -384,8 +384,8 @@ class TestJWT:
             let verified: Bool = jwt_verify(token, secret)
             let r: Result<String, CryptoError> = jwt_decode(token, secret)
             match r {
-                Ok(decoded) => { println(decoded) },
-                Err(e) => { println("decode error") }
+                Ok(decoded) => { print(decoded) },
+                Err(e) => { print("decode error") }
             }
             """)
         ir_out = _compile_mir(src)
@@ -403,7 +403,7 @@ class TestRandom:
         """random_bytes() returns List<Int> compiles."""
         src = _crypto_source_with_main("""\
             let bytes: List<Int> = random_bytes(16)
-            println(str(len(bytes)))
+            print(str(len(bytes)))
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -413,14 +413,14 @@ class TestRandom:
         """random_hex() returns hex string compiles."""
         src = _crypto_source_with_main("""\
             let h: String = random_hex(16)
-            println(h)
+            print(h)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
     def test_random_bytes_extern_declared(self) -> None:
         """Random bytes extern declaration present in compiled IR."""
-        src = _crypto_source_with_main('println("ok")')
+        src = _crypto_source_with_main('print("ok")')
         ir_out = _compile_mir(src)
         assert "__mn_random_bytes_str" in ir_out
 
@@ -437,7 +437,7 @@ class TestCryptoIntegration:
         src = _crypto_source_with_main("""\
             let h: String = sha256("input data")
             let b64: String = base64_encode(h)
-            println(b64)
+            print(b64)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -446,7 +446,7 @@ class TestCryptoIntegration:
         """HMAC → hex digest pipeline compiles."""
         src = _crypto_source_with_main("""\
             let mac: String = hmac_sha256("key", "message")
-            println(mac)
+            print(mac)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -457,9 +457,9 @@ class TestCryptoIntegration:
             let h1: String = sha1("test")
             let h2: String = sha256("test")
             let h3: String = sha512("test")
-            println(h1)
-            println(h2)
-            println(h3)
+            print(h1)
+            print(h2)
+            print(h3)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -469,7 +469,7 @@ class TestCryptoIntegration:
         src = _crypto_source_with_main("""\
             let nonce: String = random_hex(32)
             let h: String = sha256(nonce)
-            println(h)
+            print(h)
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -484,8 +484,8 @@ class TestCryptoIntegration:
             if ok {
                 let r: Result<String, CryptoError> = jwt_decode(token, secret)
                 match r {
-                    Ok(p) => { println(p) },
-                    Err(e) => { println("err") }
+                    Ok(p) => { print(p) },
+                    Err(e) => { print("err") }
                 }
             }
             """)

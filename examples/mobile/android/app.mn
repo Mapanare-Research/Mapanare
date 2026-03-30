@@ -7,21 +7,27 @@
 //   - Exported functions callable from Kotlin via JNI
 //   - Agent-based background computation
 
-pub fn greet(name: String) -> String:
+pub fn greet(name: String) -> String {
     return "Hello from Mapanare, " + name + "!"
+}
 
-agent Counter:
-    state: Int = 0
+agent Counter {
+    input increment: Int
+    output count: Int
 
-    on increment(n: Int):
+    let mut state: Int = 0
+
+    fn handle(n: Int) -> Int {
         state = state + n
-
-    on get_count() -> Int:
         return state
+    }
+}
 
-pub fn compute_in_background(input: Int) -> Int:
+pub fn compute_in_background(input: Int) -> Int {
     let c = spawn Counter()
-    for i in 0..input:
-        c <- increment(1)
-    let result = sync c <- get_count()
+    for i in 0..input {
+        c.increment <- 1
+    }
+    let result = sync c.count
     return result
+}

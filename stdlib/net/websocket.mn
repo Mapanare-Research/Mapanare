@@ -12,7 +12,7 @@
 //       let msg_r: Result<WsMessage, WsError> = ws_recv(conn)
 //       ws_close(conn, 1000, "bye")
 //     },
-//     Err(e) => { println("failed") }
+//     Err(e) => { print("failed") }
 //   }
 //
 // Usage (server upgrade from HTTP):

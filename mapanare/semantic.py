@@ -696,6 +696,12 @@ class SemanticChecker:
                 self._error(f"Undefined function '{expr.callee.name}'", expr.callee)
                 return UNKNOWN_TYPE
             if sym.kind == "function":
+                # println is deprecated — use print instead
+                if expr.callee.name == "println":
+                    self._warning(
+                        "println is deprecated, use print instead",
+                        expr,
+                    )
                 # Check for @deprecated decorator on the called function
                 if sym.node is not None and isinstance(sym.node, FnDef):
                     for dec in sym.node.decorators:
@@ -814,8 +820,8 @@ class SemanticChecker:
         return UNKNOWN_TYPE
 
     def _check_match_exhaustiveness(self, expr: MatchExpr, subject_type: TypeInfo) -> None:
-        """Warn if a match on an enum type does not cover all variants."""
-        from mapanare.ast_nodes import ConstructorPattern, WildcardPattern
+        """Error if a match on an enum type does not cover all variants."""
+        from mapanare.ast_nodes import ConstructorPattern, IdentPattern, WildcardPattern
 
         if subject_type.kind != TypeKind.ENUM or not subject_type.name:
             return
@@ -837,6 +843,8 @@ class SemanticChecker:
                 break
             if isinstance(arm.pattern, ConstructorPattern):
                 covered_variants.add(arm.pattern.name)
+            elif isinstance(arm.pattern, IdentPattern) and arm.pattern.name in all_variants:
+                covered_variants.add(arm.pattern.name)
 
         if has_wildcard:
             return
@@ -844,7 +852,7 @@ class SemanticChecker:
         missing = all_variants - covered_variants
         if missing:
             names = ", ".join(sorted(missing))
-            self._warning(
+            self._error(
                 f"Non-exhaustive match on '{subject_type.name}': " f"missing variant(s) {names}",
                 expr,
             )
@@ -1184,11 +1192,22 @@ class SemanticChecker:
         )
 
     def _check_for(self, loop: ForLoop) -> None:
-        self._infer_expr(loop.iterable)
+        iter_type = self._infer_expr(loop.iterable)
+        # Infer element type from iterable: List<T> → T, Range → Int, String → Char
+        if iter_type.kind == TypeKind.LIST and iter_type.args:
+            elem_type = iter_type.args[0]
+        elif iter_type.kind == TypeKind.RANGE:
+            elem_type = INT_TYPE
+        elif iter_type.kind == TypeKind.STRING:
+            elem_type = CHAR_TYPE
+        elif iter_type.kind == TypeKind.MAP and len(iter_type.args) >= 1:
+            elem_type = iter_type.args[0]
+        else:
+            elem_type = UNKNOWN_TYPE
         self._push_scope()
         self.current_scope.define(
             loop.var_name,
-            Symbol(name=loop.var_name, kind="variable", type_info=UNKNOWN_TYPE),
+            Symbol(name=loop.var_name, kind="variable", type_info=elem_type),
         )
         self._check_block(loop.body)
         self._pop_scope()

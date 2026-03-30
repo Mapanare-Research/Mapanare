@@ -179,6 +179,14 @@ MN_EXPORT int64_t __mn_list_len(MnList *list);
  *  Returns 0 on success, -1 if empty. */
 MN_EXPORT int64_t __mn_list_pop(MnList *list, void *out_ptr);
 
+/** Deep-clone a list: allocates a new data buffer and copies elements. */
+MN_EXPORT MnList __mn_list_clone(MnList *src);
+
+/** Deep-clone a list, also cloning nested MnList fields within each element.
+ *  list_offsets: array of byte offsets within each element where nested lists are.
+ *  num_offsets: number of offsets. */
+MN_EXPORT MnList __mn_list_deep_clone(MnList *src, const int64_t *list_offsets, int64_t num_offsets);
+
 /** Clear the list (set len to 0, keep capacity). */
 MN_EXPORT void __mn_list_clear(MnList *list);
 
@@ -227,6 +235,13 @@ MN_EXPORT void *__mn_realloc(void *ptr, int64_t new_size);
 
 /** Free memory. */
 MN_EXPORT void __mn_free(void *ptr);
+
+/* -----------------------------------------------------------------------
+ * Checked arithmetic — abort on integer overflow instead of wrapping.
+ * ----------------------------------------------------------------------- */
+
+int64_t mn_checked_mul(int64_t a, int64_t b);
+int64_t mn_checked_add(int64_t a, int64_t b);
 
 /* -----------------------------------------------------------------------
  * Arena Allocator
@@ -519,5 +534,27 @@ MN_EXPORT int8_t __iter_has_next(void *iter);
 
 /** Get the next element and advance. Returns value as i8* (inttoptr). */
 MN_EXPORT void *__iter_next(void *iter);
+
+/* -----------------------------------------------------------------------
+ * Function Type Registry — global, lives outside LowerState
+ *
+ * Used by the self-hosted compiler to track function return types
+ * without adding fields to LowerState (which causes OOM due to
+ * deep-clone on every copy).
+ * ----------------------------------------------------------------------- */
+
+/** Store a function name → return type mapping.
+ *  kind: "int", "string", "bool", "struct", "enum", "list", etc.
+ *  name: the type name (e.g., "Token" for struct Token) */
+MN_EXPORT void __mn_type_registry_put(MnString fn_name, MnString kind, MnString type_name);
+
+/** Look up a function's return type kind. Returns empty string if not found. */
+MN_EXPORT MnString __mn_type_registry_get_kind(MnString fn_name);
+
+/** Look up a function's return type name. Returns empty string if not found. */
+MN_EXPORT MnString __mn_type_registry_get_name(MnString fn_name);
+
+/** Clear the registry (call before each compilation). */
+MN_EXPORT void __mn_type_registry_clear(void);
 
 #endif /* MAPANARE_CORE_H */

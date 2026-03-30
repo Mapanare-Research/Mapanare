@@ -21,18 +21,18 @@ class TestStringDropGlue:
     """Verify string operations produce valid LLVM IR."""
 
     def test_str_from_int(self) -> None:
-        ir_text = _to_ir("fn main() { let x: Int = 42\n println(str(x)) }")
+        ir_text = _to_ir("fn main() { let x: Int = 42\n print(str(x)) }")
         assert "__mn_str_from_int" in ir_text
 
     def test_str_from_float(self) -> None:
-        ir_text = _to_ir("fn main() { let x: Float = 3.14\n println(str(x)) }")
+        ir_text = _to_ir("fn main() { let x: Float = 3.14\n print(str(x)) }")
         assert "__mn_str_from_float" in ir_text
 
     def test_str_concat(self) -> None:
         source = textwrap.dedent("""\
             fn show(name: String) {
                 let msg: String = "hello " + name
-                println(msg)
+                print(msg)
             }
             fn main() { show("world") }
         """)
@@ -44,7 +44,7 @@ class TestStringDropGlue:
             fn greet(name: String) -> String {
                 return "Hello, " + name
             }
-            fn main() { println(greet("world")) }
+            fn main() { print(greet("world")) }
         """)
         ir_text = _to_ir(source)
         assert "__mn_str_concat" in ir_text
@@ -59,7 +59,7 @@ class TestClosureDropGlue:
             fn main() {
                 let x: Int = 10
                 let add_x = (n) => n + x
-                println(str(add_x(5)))
+                print(str(add_x(5)))
             }
         """)
         ir_text = _to_ir(source)
@@ -75,8 +75,8 @@ class TestCombinedDropGlue:
                 let x: Int = 42
                 let msg: String = str(x)
                 let double = (n) => n * 2
-                println(msg)
-                println(str(double(5)))
+                print(msg)
+                print(str(double(5)))
             }
         """)
         ir_text = _to_ir(source)

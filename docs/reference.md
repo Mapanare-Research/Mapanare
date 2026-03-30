@@ -240,7 +240,7 @@ pub fn greet(name: String) -> String {
 
 // No return type means Void
 fn log_message(msg: String) {
-    println(msg)
+    print(msg)
 }
 ```
 
@@ -260,7 +260,7 @@ fn first<T>(items: List<T>) -> T {
 
 ```mn
 fn print_item<T: Display>(item: T) {
-    println(item.to_string())
+    print(item.to_string())
 }
 ```
 
@@ -272,11 +272,11 @@ fn print_item<T: Display>(item: T) {
 
 ```mn
 if x > 0 {
-    println("positive")
+    print("positive")
 } else if x == 0 {
-    println("zero")
+    print("zero")
 } else {
-    println("negative")
+    print("negative")
 }
 ```
 
@@ -285,17 +285,17 @@ if x > 0 {
 ```mn
 // Range (exclusive)
 for i in 0..5 {
-    println(str(i))    // 0, 1, 2, 3, 4
+    print(str(i))    // 0, 1, 2, 3, 4
 }
 
 // Range (inclusive)
 for i in 1..=3 {
-    println(str(i))    // 1, 2, 3
+    print(str(i))    // 1, 2, 3
 }
 
 // Over a list
 for item in items {
-    println(str(item))
+    print(str(item))
 }
 ```
 
@@ -304,7 +304,7 @@ for item in items {
 ```mn
 let mut i = 0
 while i < 10 {
-    println(str(i))
+    print(str(i))
     i += 1
 }
 ```
@@ -317,9 +317,9 @@ while i < 10 {
 
 ```mn
 match value {
-    1 => println("one"),
-    2 => println("two"),
-    _ => println("other"),
+    1 => print("one"),
+    2 => print("two"),
+    _ => print("other"),
 }
 ```
 
@@ -343,13 +343,13 @@ fn describe(s: Shape) -> String {
 
 ```mn
 match maybe_value {
-    Some(v) => println("got ${str(v)}"),
-    None => println("nothing"),
+    Some(v) => print("got ${str(v)}"),
+    None => print("nothing"),
 }
 
 match result {
-    Ok(v) => println("success: ${str(v)}"),
-    Err(e) => println("error: ${e}"),
+    Ok(v) => print("success: ${str(v)}"),
+    Err(e) => print("error: ${e}"),
 }
 ```
 
@@ -369,7 +369,7 @@ struct Point {
 let p = Point(1.0, 2.0)
 
 // Field access
-println(str(p.x))    // 1.0
+print(str(p.x))    // 1.0
 ```
 
 ### Methods via `impl`
@@ -489,7 +489,7 @@ let popped = list.pop()
 
 // Iteration
 for item in items {
-    println(str(item))
+    print(str(item))
 }
 ```
 
@@ -567,8 +567,8 @@ let y: Option<Int> = none
 
 // Pattern match to extract
 match x {
-    Some(v) => println(str(v)),
-    None => println("nothing"),
+    Some(v) => print(str(v)),
+    None => print("nothing"),
 }
 ```
 
@@ -672,7 +672,7 @@ let doubled = signal { count.value * 2 }
 
 // Update
 count.value = 5
-println(str(doubled.value))    // 10
+print(str(doubled.value))    // 10
 ```
 
 ### Batched Updates
@@ -959,8 +959,8 @@ data |> filter((x) => x > 0) |> map((x) => x * 10)
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `print(value)` | `(Any) -> Void` | Print without newline |
-| `println(value)` | `(Any) -> Void` | Print with newline |
+| `print(value)` | `(Any) -> Void` | Print with newline |
+| `println(value)` | `(Any) -> Void` | **Deprecated.** Alias for `print`. Use `print` instead |
 | `len(collection)` | `(List<T> \| String) -> Int` | Length of collection or string |
 | `str(value)` | `(Any) -> String` | Convert to string |
 | `toString(value)` | `(Any) -> String` | Convert to string (alias) |

@@ -140,7 +140,7 @@ class TestFunctions:
     def test_void_fn(self) -> None:
         _check_ok(textwrap.dedent("""\
             fn greet() {
-                println("hi")
+                print("hi")
             }
         """))
 
@@ -168,9 +168,9 @@ class TestControlFlow:
             fn main() {
                 let x = 5
                 if x > 0 {
-                    println("positive")
+                    print("positive")
                 } else {
-                    println("non-positive")
+                    print("non-positive")
                 }
             }
         """))
@@ -180,11 +180,11 @@ class TestControlFlow:
             fn main() {
                 let x = 5
                 if x > 10 {
-                    println("big")
+                    print("big")
                 } else if x > 0 {
-                    println("small")
+                    print("small")
                 } else {
-                    println("non-positive")
+                    print("non-positive")
                 }
             }
         """))
@@ -193,7 +193,7 @@ class TestControlFlow:
         _check_ok(textwrap.dedent("""\
             fn main() {
                 for i in 0..10 {
-                    println("hi")
+                    print("hi")
                 }
             }
         """))
@@ -250,8 +250,8 @@ class TestMatchExpressions:
             fn main() {
                 let x: Option<Int> = Some(42)
                 match x {
-                    Some(v) => { println("got it") },
-                    None => { println("nothing") }
+                    Some(v) => { print("got it") },
+                    None => { print("nothing") }
                 }
             }
         """))
@@ -261,8 +261,8 @@ class TestMatchExpressions:
             fn main() {
                 let r: Result<Int, String> = Ok(42)
                 match r {
-                    Ok(v) => { println("ok") },
-                    Err(e) => { println("err") }
+                    Ok(v) => { print("ok") },
+                    Err(e) => { print("err") }
                 }
             }
         """))
@@ -687,7 +687,7 @@ class TestOperators:
         _parse_ok(textwrap.dedent("""\
             fn main() {
                 for i in 0..10 {
-                    println("hi")
+                    print("hi")
                 }
             }
         """))
@@ -825,7 +825,7 @@ class TestLLVMCompilation:
     def test_hello_world_compiles(self) -> None:
         ir = _compile_ok(textwrap.dedent("""\
             fn main() {
-                println("Hello, Mapanare!")
+                print("Hello, Mapanare!")
             }
         """))
         assert "main" in ir
@@ -837,7 +837,7 @@ class TestLLVMCompilation:
             }
             fn main() {
                 let x = add(1, 2)
-                println(str(x))
+                print(str(x))
             }
         """))
         assert "add" in ir
@@ -850,7 +850,7 @@ class TestLLVMCompilation:
             }
             fn main() {
                 let p = new Point { x: 1.0, y: 2.0 }
-                println(str(p.x))
+                print(str(p.x))
             }
         """))
         assert "Point" in ir or "main" in ir
@@ -870,7 +870,7 @@ class TestLLVMCompilation:
                 }
             }
             fn main() {
-                println("ok")
+                print("ok")
             }
         """))
         assert "main" in ir
@@ -879,7 +879,7 @@ class TestLLVMCompilation:
         ir = _compile_ok(textwrap.dedent("""\
             fn main() {
                 let nums: List<Int> = [1, 2, 3]
-                println(str(len(nums)))
+                print(str(len(nums)))
             }
         """))
         assert "main" in ir
@@ -888,7 +888,7 @@ class TestLLVMCompilation:
         ir = _compile_ok(textwrap.dedent("""\
             fn main() {
                 let m = #{"a": 1, "b": 2}
-                println(str(len(m)))
+                print(str(len(m)))
             }
         """))
         assert "main" in ir
@@ -900,7 +900,7 @@ class TestLLVMCompilation:
                 while i < 10 {
                     i += 1
                 }
-                println(str(i))
+                print(str(i))
             }
         """))
         assert "main" in ir
@@ -909,7 +909,7 @@ class TestLLVMCompilation:
         ir = _compile_ok(textwrap.dedent("""\
             fn main() {
                 for i in 0..5 {
-                    println(str(i))
+                    print(str(i))
                 }
             }
         """))
@@ -921,8 +921,8 @@ class TestLLVMCompilation:
                 let x: Option<Int> = Some(42)
                 let y: Option<Int> = none
                 match x {
-                    Some(v) => { println(str(v)) },
-                    None => { println("none") }
+                    Some(v) => { print(str(v)) },
+                    None => { print("none") }
                 }
             }
         """))
@@ -933,8 +933,8 @@ class TestLLVMCompilation:
             fn main() {
                 let r: Result<Int, String> = Ok(42)
                 match r {
-                    Ok(v) => { println(str(v)) },
-                    Err(e) => { println(e) }
+                    Ok(v) => { print(str(v)) },
+                    Err(e) => { print(e) }
                 }
             }
         """))

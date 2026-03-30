@@ -10,10 +10,10 @@
 //   let result = embedding.embed(config, "What is Mapanare?")
 //   match result {
 //       Ok(emb) => {
-//           println("Dimensions: " + str(len(emb.vector)))
+//           print("Dimensions: " + str(len(emb.vector)))
 //           let sim = embedding.cosine_similarity(emb.vector, other_vector)
 //       },
-//       Err(e) => { println(embedding.error_message(e)) }
+//       Err(e) => { print(embedding.error_message(e)) }
 //   }
 //
 // Vector store:

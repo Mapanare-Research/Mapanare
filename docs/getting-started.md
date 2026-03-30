@@ -34,7 +34,7 @@ Create a file called `hello.mn`:
 
 ```mn
 fn main() {
-    println("Hello, Mapanare!")
+    print("Hello, Mapanare!")
 }
 ```
 
@@ -50,7 +50,7 @@ Output:
 Hello, Mapanare!
 ```
 
-`println` prints with a newline. `print` prints without one.
+`print` prints with a trailing newline. `println` is deprecated — use `print` instead.
 
 ---
 
@@ -65,14 +65,14 @@ fn main() {
     let pi: Float = 3.14159
     let active: Bool = true
 
-    println("Hello, " + name + "!")
-    println("x = " + str(x))
-    println("pi = " + str(pi))
+    print("Hello, " + name + "!")
+    print("x = " + str(x))
+    print("pi = " + str(pi))
 
     // Mutable variables use 'let mut'
     let mut count: Int = 0
     count += 1
-    println("count = " + str(count))
+    print("count = " + str(count))
 }
 ```
 
@@ -98,8 +98,8 @@ fn greet(name: String) -> String {
 }
 
 fn main() {
-    println(str(add(3, 4)))
-    println(greet("Mapanare"))
+    print(str(add(3, 4)))
+    print(greet("Mapanare"))
 }
 ```
 
@@ -128,9 +128,9 @@ fn classify(n: Int) -> String {
 }
 
 fn main() {
-    println(classify(-5))
-    println(classify(0))
-    println(classify(42))
+    print(classify(-5))
+    print(classify(0))
+    print(classify(42))
 }
 ```
 
@@ -140,7 +140,7 @@ fn main() {
 fn main() {
     let mut i: Int = 0
     while i < 5 {
-        println(str(i))
+        print(str(i))
         i += 1
     }
 }
@@ -152,7 +152,7 @@ fn main() {
 fn main() {
     // Exclusive range: 0, 1, 2, 3, 4
     for i in 0..5 {
-        println(str(i))
+        print(str(i))
     }
 
     // Inclusive range: 1, 2, 3, 4, 5
@@ -160,12 +160,12 @@ fn main() {
     for i in 1..=5 {
         sum += i
     }
-    println("sum = " + str(sum))
+    print("sum = " + str(sum))
 
     // Iterate over a list
     let items = [10, 20, 30]
     for item in items {
-        println(str(item))
+        print(str(item))
     }
 }
 ```
@@ -188,9 +188,9 @@ fn distance(p: Point) -> Float {
 
 fn main() {
     let p = Point(3.0, 4.0)
-    println("x = " + str(p.x))
-    println("y = " + str(p.y))
-    println("distance squared = " + str(distance(p)))
+    print("x = " + str(p.x))
+    print("y = " + str(p.y))
+    print("distance squared = " + str(distance(p)))
 }
 ```
 
@@ -218,8 +218,8 @@ fn area(s: Shape) -> Float {
 fn main() {
     let c = Shape_Circle(5.0)
     let r = Shape_Rect(3.0, 4.0)
-    println("circle area = " + str(area(c)))
-    println("rect area = " + str(area(r)))
+    print("circle area = " + str(area(c)))
+    print("rect area = " + str(area(r)))
 }
 ```
 
@@ -239,8 +239,8 @@ fn describe(n: Int) -> String {
 }
 
 fn main() {
-    println(describe(1))
-    println(describe(99))
+    print(describe(1))
+    print(describe(99))
 }
 ```
 
@@ -255,14 +255,14 @@ fn main() {
     items.push(20)
     items.push(30)
 
-    println("length = " + str(items.length()))
-    println("first = " + str(items[0]))
+    print("length = " + str(items.length()))
+    print("first = " + str(items[0]))
 
     let mut total: Int = 0
     for item in items {
         total += item
     }
-    println("total = " + str(total))
+    print("total = " + str(total))
 }
 ```
 
@@ -285,14 +285,14 @@ fn divide(a: Int, b: Int) -> Result<Int, String> {
 fn main() {
     let r1 = divide(10, 2)
     match r1 {
-        Ok(v) => { println("result = " + str(v)) },
-        Err(e) => { println("error: " + e) }
+        Ok(v) => { print("result = " + str(v)) },
+        Err(e) => { print("error: " + e) }
     }
 
     let r2 = divide(10, 0)
     match r2 {
-        Ok(v) => { println("result = " + str(v)) },
-        Err(e) => { println("error: " + e) }
+        Ok(v) => { print("result = " + str(v)) },
+        Err(e) => { print("error: " + e) }
     }
 }
 ```
@@ -323,7 +323,7 @@ fn do_work() -> Result<Int, String> {
 
 fn main() {
     let r = do_work()
-    println(str(r))
+    print(str(r))
 }
 ```
 
@@ -342,8 +342,8 @@ fn find_item(items: List<Int>, target: Int) -> Option<Int> {
 fn main() {
     let result = find_item([10, 20, 30], 20)
     match result {
-        Some(v) => { println("found: " + str(v)) },
-        _ => { println("not found") }
+        Some(v) => { print("found: " + str(v)) },
+        _ => { print("not found") }
     }
 }
 ```
@@ -368,7 +368,7 @@ fn main() {
     let g = spawn Greeter()
     g.name <- "World"
     let msg = sync g.greeting
-    println(msg)
+    print(msg)
     sync g.stop()
 }
 ```
@@ -401,9 +401,9 @@ agent Doubler {
 fn main() {
     let d = spawn Doubler()
     d.val <- 21
-    println(str(sync d.result))
+    print(str(sync d.result))
     d.val <- 50
-    println(str(sync d.result))
+    print(str(sync d.result))
     sync d.stop()
 }
 ```
@@ -449,7 +449,7 @@ fn main() {
     let mid = sync a.result
     d.val <- mid
     let final_val = sync d.result
-    println(str(final_val))
+    print(str(final_val))
 
     sync a.stop()
     sync d.stop()
@@ -493,7 +493,7 @@ pipe Transform {
 
 fn main() {
     let result = sync Transform(10)
-    println(str(result))
+    print(str(result))
 }
 ```
 
@@ -516,10 +516,10 @@ fn main() {
     let count = signal(0)
     let doubled = signal { count.value * 2 }
 
-    println("doubled = " + str(doubled.value))
+    print("doubled = " + str(doubled.value))
 
     count.value = 10
-    println("doubled = " + str(doubled.value))
+    print("doubled = " + str(doubled.value))
 }
 ```
 
@@ -541,7 +541,7 @@ fn main() {
     let s = stream([1, 2, 3, 4, 5])
     let result = s.map((x) => x * 2).filter((x) => x > 4)
     let collected = sync result.collect()
-    println(str(collected))
+    print(str(collected))
 }
 ```
 
@@ -567,9 +567,9 @@ import net/http
 fn main() {
     let response: HttpResponse = http::get("https://httpbin.org/get")
     if response.status == 200 {
-        println(response.body)
+        print(response.body)
     } else {
-        println("Request failed: " + str(response.status))
+        print("Request failed: " + str(response.status))
     }
 }
 ```
@@ -586,9 +586,9 @@ fn main() {
     match value {
         JsonValue::Object(obj) => {
             let name: JsonValue = json::get(obj, "name")
-            println("Name: " + json::to_string(name))
+            print("Name: " + json::to_string(name))
         },
-        _ => println("Expected object")
+        _ => print("Expected object")
     }
 }
 ```
@@ -602,7 +602,7 @@ fn main() {
     let data: String = "name,age\nAlice,30\nBob,25"
     let rows: List<List<String>> = csv::parse(data)
     for row in rows {
-        println(row[0] + " is " + row[1])
+        print(row[0] + " is " + row[1])
     }
 }
 ```

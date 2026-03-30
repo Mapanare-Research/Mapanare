@@ -31,7 +31,7 @@ The simplest Mapanare program, using string interpolation.
 fn main() {
     let name = "Mapanare"
     let version = "0.5.0"
-    println("Hello from ${name} v${version}!")
+    print("Hello from ${name} v${version}!")
 }
 ```
 
@@ -69,10 +69,10 @@ fn fib_iter(n: Int) -> Int {
 
 fn main() {
     for i in 0..10 {
-        println("fib(${str(i)}) = ${str(fib(i))}")
+        print("fib(${str(i)}) = ${str(fib(i))}")
     }
 
-    println("fib(40) = ${str(fib_iter(40))}")
+    print("fib(40) = ${str(fib_iter(40))}")
 }
 ```
 
@@ -103,8 +103,8 @@ fn main() {
         total += n
     }
 
-    println("even numbers: ${str(evens.length())}")
-    println("sum of evens: ${str(total)}")
+    print("even numbers: ${str(evens.length())}")
+    print("sum of evens: ${str(total)}")
 }
 ```
 
@@ -142,14 +142,14 @@ fn process(input: String) -> Result<Int, String> {
 fn main() {
     let result1 = process("42")
     match result1 {
-        Ok(v) => println("success: ${str(v)}"),
-        Err(e) => println("error: ${e}"),
+        Ok(v) => print("success: ${str(v)}"),
+        Err(e) => print("error: ${e}"),
     }
 
     let result2 = process("bad")
     match result2 {
-        Ok(v) => println("success: ${str(v)}"),
-        Err(e) => println("error: ${e}"),
+        Ok(v) => print("success: ${str(v)}"),
+        Err(e) => print("error: ${e}"),
     }
 }
 ```
@@ -192,12 +192,12 @@ impl Rectangle {
 
 fn main() {
     let rect = Rectangle(5.0, 3.0)
-    println("area: ${str(rect.area())}")
-    println("perimeter: ${str(rect.perimeter())}")
-    println("is square: ${str(rect.is_square())}")
+    print("area: ${str(rect.area())}")
+    print("perimeter: ${str(rect.perimeter())}")
+    print("is square: ${str(rect.is_square())}")
 
     let big = rect.scale(2.0)
-    println("scaled area: ${str(big.area())}")
+    print("scaled area: ${str(big.area())}")
 }
 ```
 
@@ -238,10 +238,10 @@ fn advance(status: OrderStatus) -> OrderStatus {
 fn main() {
     let mut order = OrderStatus_Pending
     for _ in 0..3 {
-        println(describe_status(order))
+        print(describe_status(order))
         order = advance(order)
     }
-    println(describe_status(order))
+    print(describe_status(order))
 }
 ```
 
@@ -283,11 +283,11 @@ fn main() {
     s = push(s, 20)
     s = push(s, 30)
 
-    println("size: ${str(size(s))}")
+    print("size: ${str(size(s))}")
 
     match peek(s) {
-        Some(v) => println("top: ${str(v)}"),
-        None => println("empty"),
+        Some(v) => print("top: ${str(v)}"),
+        None => print("empty"),
     }
 }
 ```
@@ -322,7 +322,7 @@ fn main() {
     for input in inputs {
         v.data <- input
         let result = sync v.result
-        println(result)
+        print(result)
     }
 
     sync v.stop()
@@ -379,7 +379,7 @@ fn main() {
     f.value <- transformed
     let output = sync f.text
 
-    println(output)
+    print(output)
 
     sync p.stop()
     sync t.stop()
@@ -407,13 +407,13 @@ fn main() {
     let temp_fahrenheit = signal { temp_celsius.value * 9.0 / 5.0 + 32.0 }
     let is_hot = signal { temp_celsius.value > 30.0 }
 
-    println("${str(temp_celsius.value)}C = ${str(temp_fahrenheit.value)}F")
-    println("hot: ${str(is_hot.value)}")
+    print("${str(temp_celsius.value)}C = ${str(temp_fahrenheit.value)}F")
+    print("hot: ${str(is_hot.value)}")
 
     // Update the source — derived values recompute automatically
     temp_celsius.value = 35.0
-    println("${str(temp_celsius.value)}C = ${str(temp_fahrenheit.value)}F")
-    println("hot: ${str(is_hot.value)}")
+    print("${str(temp_celsius.value)}C = ${str(temp_fahrenheit.value)}F")
+    print("hot: ${str(is_hot.value)}")
 }
 ```
 
@@ -441,7 +441,7 @@ fn main() {
         |> map((n) => n * n)
 
     let collected = sync result.collect()
-    println(str(collected))
+    print(str(collected))
 }
 ```
 
@@ -458,7 +458,7 @@ fn main() {
 
     // Sum all elements
     let total = data |> fold(0, (acc, x) => acc + x)
-    println("sum: ${str(sync total)}")
+    print("sum: ${str(sync total)}")
 }
 ```
 
@@ -480,7 +480,7 @@ fn distance(x1: Float, y1: Float, x2: Float, y2: Float) -> Float {
 
 fn main() {
     let d = distance(0.0, 0.0, 3.0, 4.0)
-    println("distance: ${str(d)}")
+    print("distance: ${str(d)}")
 }
 ```
 
@@ -492,14 +492,14 @@ extern "Python" fn json::loads(s: String) -> Result<String, String>
 fn main() {
     let valid = json::loads("{\"name\": \"Mapanare\"}")
     match valid {
-        Ok(data) => println("parsed: ${data}"),
-        Err(e) => println("error: ${e}"),
+        Ok(data) => print("parsed: ${data}"),
+        Err(e) => print("error: ${e}"),
     }
 
     let invalid = json::loads("not json")
     match invalid {
-        Ok(data) => println("parsed: ${data}"),
-        Err(e) => println("parse error: ${e}"),
+        Ok(data) => print("parsed: ${data}"),
+        Err(e) => print("parse error: ${e}"),
     }
 }
 ```
@@ -541,7 +541,7 @@ impl Describable for Cat {
 }
 
 fn print_description<T: Describable>(item: T) {
-    println(item.describe())
+    print(item.describe())
 }
 
 fn main() {
@@ -594,14 +594,14 @@ fn calculate(a: Float, op: Op, b: Float) -> Result<Float, String> {
 fn main() {
     let result = calculate(10.0, Op_Add, 5.0)
     match result {
-        Ok(v) => println("10 + 5 = ${str(v)}"),
-        Err(e) => println("error: ${e}"),
+        Ok(v) => print("10 + 5 = ${str(v)}"),
+        Err(e) => print("error: ${e}"),
     }
 
     let result2 = calculate(10.0, Op_Div, 0.0)
     match result2 {
-        Ok(v) => println("10 / 0 = ${str(v)}"),
-        Err(e) => println("error: ${e}"),
+        Ok(v) => print("10 / 0 = ${str(v)}"),
+        Err(e) => print("error: ${e}"),
     }
 }
 ```
@@ -641,10 +641,10 @@ let result = data |> transform |> validate |> format
 
 ```mn
 // Prefer this:
-println("Hello, ${name}! You are ${str(age)} years old.")
+print("Hello, ${name}! You are ${str(age)} years old.")
 
 // Over this:
-println("Hello, " + name + "! You are " + str(age) + " years old.")
+print("Hello, " + name + "! You are " + str(age) + " years old.")
 ```
 
 ---

@@ -77,7 +77,7 @@ class TestTableConstruction:
             let c2: Col = col_str("name", ["Alice", "Bob", "Carol"])
             let cols: List<Col> = [c1, c2]
             let result: Result<Table, DatoError> = table(cols)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -90,8 +90,8 @@ class TestTableConstruction:
             let cols: List<Col> = [c1, c2]
             let result: Result<Table, DatoError> = table(cols)
             match result {
-                Ok(t) => { println("unexpected ok") },
-                Err(e) => { println(error_message(e)) }
+                Ok(t) => { print("unexpected ok") },
+                Err(e) => { print(error_message(e)) }
             }
         """)
         ir_out = _compile_mir(src)
@@ -101,8 +101,8 @@ class TestTableConstruction:
         """empty() creates a table with zero rows and columns."""
         src = _dato_with_main("""\
             let t: Table = empty()
-            println(str(nrows(t)))
-            println(str(ncols(t)))
+            print(str(nrows(t)))
+            print(str(ncols(t)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -122,8 +122,8 @@ class TestAccessors:
             let c2: Col = col_i64("b", [3, 4])
             let result: Result<Table, DatoError> = table([c1, c2])
             match result {
-                Ok(t) => { println(str(ncols(t))) },
-                Err(e) => { println("err") }
+                Ok(t) => { print(str(ncols(t))) },
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -135,8 +135,8 @@ class TestAccessors:
             let c1: Col = col_i64("a", [1, 2, 3])
             let result: Result<Table, DatoError> = table([c1])
             match result {
-                Ok(t) => { println(str(nrows(t))) },
-                Err(e) => { println("err") }
+                Ok(t) => { print(str(nrows(t))) },
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -151,11 +151,11 @@ class TestAccessors:
                 Ok(t) => {
                     let maybe: Option<Col> = get_col(t, "age")
                     match maybe {
-                        Some(c) => { println(c.name) },
-                        None => { println("not found") }
+                        Some(c) => { print(c.name) },
+                        None => { print("not found") }
                     }
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -170,11 +170,11 @@ class TestAccessors:
                 Ok(t) => {
                     let maybe: Option<Col> = get_col(t, "name")
                     match maybe {
-                        Some(c) => { println("unexpected") },
-                        None => { println("not found") }
+                        Some(c) => { print("unexpected") },
+                        None => { print("not found") }
                     }
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -189,9 +189,9 @@ class TestAccessors:
             match result {
                 Ok(t) => {
                     let names: List<String> = col_names(t)
-                    println(str(len(names)))
+                    print(str(len(names)))
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)
@@ -207,9 +207,9 @@ class TestAccessors:
             match result {
                 Ok(t) => {
                     let dts: List<String> = dtypes(t)
-                    println(str(len(dts)))
+                    print(str(len(dts)))
                 },
-                Err(e) => { println("err") }
+                Err(e) => { print("err") }
             }
         """)
         ir_out = _compile_mir(src)

@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 /* -----------------------------------------------------------------------
  * Memory helpers
@@ -47,8 +49,23 @@ MN_EXPORT void __mn_free(void *ptr) {
  * Checked arithmetic — abort on integer overflow instead of wrapping.
  * ----------------------------------------------------------------------- */
 
-static int64_t mn_checked_mul(int64_t a, int64_t b) {
+int64_t mn_checked_mul(int64_t a, int64_t b) {
     if (a > 0 && b > 0 && a > INT64_MAX / b) {
+        fprintf(stderr, "mapanare: integer overflow in %lld * %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
+    if (a > 0 && b < 0 && b < INT64_MIN / a) {
+        fprintf(stderr, "mapanare: integer overflow in %lld * %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
+    if (a < 0 && b > 0 && a < INT64_MIN / b) {
+        fprintf(stderr, "mapanare: integer overflow in %lld * %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
+    if (a < 0 && b < 0 && a < INT64_MAX / b) {
         fprintf(stderr, "mapanare: integer overflow in %lld * %lld\n",
                 (long long)a, (long long)b);
         exit(1);
@@ -56,8 +73,13 @@ static int64_t mn_checked_mul(int64_t a, int64_t b) {
     return a * b;
 }
 
-static int64_t mn_checked_add(int64_t a, int64_t b) {
-    if (a > 0 && b > INT64_MAX - a) {
+int64_t mn_checked_add(int64_t a, int64_t b) {
+    if (b > 0 && a > INT64_MAX - b) {
+        fprintf(stderr, "mapanare: integer overflow in %lld + %lld\n",
+                (long long)a, (long long)b);
+        exit(1);
+    }
+    if (b < 0 && a < INT64_MIN - b) {
         fprintf(stderr, "mapanare: integer overflow in %lld + %lld\n",
                 (long long)a, (long long)b);
         exit(1);
@@ -660,27 +682,137 @@ MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts) {
 }
 
 /* -----------------------------------------------------------------------
- * MnList
+ * MnList — Copy-On-Write (COW) Implementation
+ *
+ * Layout: the refcount is stored in a header BEFORE the data pointer.
+ *   Allocation: [8 bytes refcount][element data...]
+ *   list.data points to element data (after the header).
+ *   Refcount is at ((int64_t *)list.data)[-1].
+ *
+ * This keeps MnList at 32 bytes {data, len, cap, elem_size} — no layout change.
+ * Clone is O(1): copy header, increment refcount.
+ * Mutation (push/set/pop) detaches if refcount > 1: allocate new buffer, copy.
  * ----------------------------------------------------------------------- */
 
 #define MN_LIST_INITIAL_CAP 8
+#define MN_LIST_HEADER_SIZE 16  /* [magic: i64][refcount: i64] */
+#define MN_COW_MAGIC ((int64_t)0x434F574C495354LL)  /* "COWLIST" in ASCII */
+
+/* Access the refcount for a list's data buffer */
+static int64_t *mn_list_rc(MnList *list) {
+    if (!list->data) return NULL;
+    return ((int64_t *)list->data) - 1;
+}
+
+/* Check if the buffer has a valid COW magic header.
+ * MUST only be called after validating len > 0, cap > 0, elem_size > 0. */
+static int mn_list_has_magic(MnList *list) {
+    if (!list->data) return 0;
+    uintptr_t p = (uintptr_t)list->data;
+    /* Reject garbage pointers: must be 8-byte aligned, in reasonable heap range */
+    if ((p & 7) != 0) return 0;
+    if (p < 0x10000) return 0;  /* too low (near NULL) */
+    /* Use write(2) trick: try reading from the address. If it segfaults,
+     * the kernel returns EFAULT. This is the only portable safe probe. */
+#ifdef __linux__
+    /* Probe: can we read 16 bytes before data? */
+    {
+        /* Use /dev/null fd trick: write() returns EFAULT for unmapped memory */
+        static int devnull_fd = -1;
+        if (devnull_fd < 0) devnull_fd = open("/dev/null", 1 /*O_WRONLY*/);
+        if (devnull_fd >= 0) {
+            ssize_t r = write(devnull_fd, ((char *)list->data) - 16, 16);
+            if (r < 0) return 0;  /* EFAULT: unmapped memory */
+        }
+    }
+#endif
+    int64_t *magic = ((int64_t *)list->data) - 2;
+    return *magic == MN_COW_MAGIC;
+}
+
+/* Allocate a new COW buffer: [magic][refcount=1][cap * elem_size] */
+static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
+    int64_t data_bytes = mn_checked_mul(cap, elem_size);
+    char *raw = (char *)__mn_alloc(mn_checked_add(MN_LIST_HEADER_SIZE, data_bytes));
+    int64_t *header = (int64_t *)raw;
+    header[0] = MN_COW_MAGIC;  /* magic */
+    header[1] = 1;             /* refcount = 1 */
+    return raw + MN_LIST_HEADER_SIZE;  /* data pointer past the header */
+}
+
+static int mn_list_is_managed(MnList *list);
+static int64_t cow_shares, cow_fallbacks, cow_detaches;
+
+/* Detach: if refcount > 1, allocate a private copy of the data.
+ * Also handles lists that were zero-initialized (data == NULL). */
+static void mn_list_detach(MnList *list) {
+    if (!list->data) {
+        /* Zero-initialized list — allocate a fresh buffer */
+        int64_t cap = list->cap > 0 ? list->cap : MN_LIST_INITIAL_CAP;
+        list->data = mn_list_alloc_buf(cap, list->elem_size > 0 ? list->elem_size : 8);
+        list->cap = cap;
+        return;
+    }
+    if (!mn_list_is_managed(list)) return;  /* unmanaged buffer — nothing to detach */
+    int64_t *rc = mn_list_rc(list);
+    if (*rc <= 1) return;  /* sole owner, no detach needed */
+    cow_detaches++;
+    /* Shared — make a private copy */
+    (*rc)--;  /* decrement original's refcount */
+    int64_t cap = list->cap > 0 ? list->cap : MN_LIST_INITIAL_CAP;
+    char *new_data = mn_list_alloc_buf(cap, list->elem_size);
+    if (list->len > 0) {
+        memcpy(new_data, list->data, (size_t)(list->len * list->elem_size));
+    }
+    list->data = new_data;
+    list->cap = cap;
+}
 
 MN_EXPORT MnList __mn_list_new(int64_t elem_size) {
     MnList list;
     list.elem_size = elem_size;
     list.len = 0;
-    list.cap = MN_LIST_INITIAL_CAP;
-    list.data = (char *)__mn_alloc(mn_checked_mul(list.cap, elem_size));
+    list.cap = 0;
+    list.data = NULL;  /* Lazy allocation: first push allocates */
     return list;
 }
 
 static void mn_list_grow(MnList *list) {
-    int64_t new_cap = list->cap * 2;
-    list->data = (char *)__mn_realloc(list->data, mn_checked_mul(new_cap, list->elem_size));
+    int64_t new_cap = list->cap > 0 ? list->cap * 2 : MN_LIST_INITIAL_CAP;
+    if (list->data && mn_list_is_managed(list)) {
+        /* Detach first if shared */
+        mn_list_detach(list);
+        /* After detach, we're sole owner — safe to realloc */
+        int64_t new_bytes = mn_checked_add(MN_LIST_HEADER_SIZE,
+                                mn_checked_mul(new_cap, list->elem_size));
+        char *raw = ((char *)list->data) - MN_LIST_HEADER_SIZE;
+        raw = (char *)__mn_realloc(raw, new_bytes);
+        list->data = raw + MN_LIST_HEADER_SIZE;
+    } else {
+        /* Unmanaged or NULL — allocate fresh COW buffer */
+        char *new_data = mn_list_alloc_buf(new_cap, list->elem_size);
+        if (list->data && list->len > 0) {
+            memcpy(new_data, list->data, (size_t)(list->len * list->elem_size));
+        }
+        list->data = new_data;
+    }
     list->cap = new_cap;
 }
 
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
+    /* Validate list fields before any operation. Garbage from uninitialized
+     * struct fields (lambda/recursive lowering) must not cause huge allocs. */
+    if (!list->data || list->cap <= 0 || list->elem_size <= 0
+        || list->elem_size > 65536 || list->cap > 100000000
+        || list->len < 0 || list->len > list->cap) {
+        /* Reinitialize: treat as empty list */
+        if (list->elem_size <= 0 || list->elem_size > 65536) list->elem_size = 8;
+        list->data = mn_list_alloc_buf(MN_LIST_INITIAL_CAP, list->elem_size);
+        list->cap = MN_LIST_INITIAL_CAP;
+        list->len = 0;
+    } else {
+        mn_list_detach(list);  /* COW: ensure sole ownership */
+    }
     if (list->len >= list->cap) {
         mn_list_grow(list);
     }
@@ -698,8 +830,26 @@ MN_EXPORT void *__mn_list_get(MnList *list, int64_t i) {
 
 MN_EXPORT void __mn_list_set(MnList *list, int64_t i, const void *elem_ptr) {
     if (i < 0 || i >= list->len) return;
+    mn_list_detach(list);  /* COW: ensure sole ownership */
     memcpy(list->data + i * list->elem_size,
            elem_ptr, (size_t)list->elem_size);
+}
+
+MN_EXPORT void __mn_debug_i64(int64_t val) {
+    fprintf(stderr, "[DEBUG] i64=%ld\n", (long)val);
+}
+
+MN_EXPORT void __mn_debug_str(MnString s) {
+    if (s.data && s.len > 0) {
+        fprintf(stderr, "[DEBUG] str='%.*s' len=%ld\n", (int)s.len, mn_untag(s.data), (long)s.len);
+    } else {
+        fprintf(stderr, "[DEBUG] str=<empty> len=%ld data=%p\n", (long)s.len, (void*)s.data);
+    }
+}
+
+MN_EXPORT void __mn_debug_list(MnList list) {
+    fprintf(stderr, "[DEBUG] list data=%p len=%ld cap=%ld esz=%ld\n",
+            (void*)list.data, (long)list.len, (long)list.cap, (long)list.elem_size);
 }
 
 MN_EXPORT int64_t __mn_list_len(MnList *list) {
@@ -708,6 +858,7 @@ MN_EXPORT int64_t __mn_list_len(MnList *list) {
 
 MN_EXPORT int64_t __mn_list_pop(MnList *list, void *out_ptr) {
     if (list->len <= 0) return -1;
+    mn_list_detach(list);  /* COW */
     list->len--;
     memcpy(out_ptr, list->data + list->len * list->elem_size,
            (size_t)list->elem_size);
@@ -715,16 +866,109 @@ MN_EXPORT int64_t __mn_list_pop(MnList *list, void *out_ptr) {
 }
 
 MN_EXPORT void __mn_list_clear(MnList *list) {
+    mn_list_detach(list);  /* COW */
     list->len = 0;
 }
 
 MN_EXPORT void __mn_list_free(MnList *list) {
     if (list->data) {
-        __mn_free(list->data);
+        int64_t *rc = mn_list_rc(list);
+        if (rc) {
+            (*rc)--;
+            if (*rc <= 0) {
+                __mn_free(((char *)list->data) - MN_LIST_HEADER_SIZE);
+            }
+        }
         list->data = NULL;
     }
     list->len = 0;
     list->cap = 0;
+}
+
+/* Check if a list looks like it was properly allocated with a COW header */
+static int mn_list_is_managed(MnList *list) {
+    if (!list->data) return 0;
+    /* The magic number check is the ONLY way to know if data[-16..-8] is valid.
+     * Without it, reading data[-8] on a non-COW buffer is undefined behavior. */
+    return mn_list_has_magic(list);
+}
+
+static int64_t cow_shares = 0;
+static int64_t cow_fallbacks = 0;
+static int64_t cow_detaches = 0;
+
+MN_EXPORT void __mn_cow_stats(void) {
+    fprintf(stderr, "[COW] shares=%ld fallbacks=%ld detaches=%ld\n",
+            (long)cow_shares, (long)cow_fallbacks, (long)cow_detaches);
+}
+
+MN_EXPORT MnList __mn_list_clone(MnList *src) {
+    /* If the buffer is a managed COW buffer, share it (O(1)).
+     * Otherwise, just copy the header (no allocation). */
+    MnList dst;
+    dst.elem_size = src->elem_size;
+    dst.len = src->len;
+
+    /* Validate ALL fields before touching data. Uninitialised struct fields
+     * from lambda/recursive state passing can have garbage in every field. */
+    if (!src->data || src->elem_size <= 0 || src->elem_size > 65536
+        || src->cap <= 0 || src->cap > 100000000
+        || src->len < 0 || src->len > src->cap) {
+        /* Garbage or empty — just copy the raw header */
+        dst.cap = src->cap;
+        dst.data = src->data;
+        cow_fallbacks++;
+        return dst;
+    }
+    if (mn_list_has_magic(src)) {
+        int64_t *rc = mn_list_rc(src);
+        if (rc && *rc > 0 && *rc < 10000000) {
+            dst.cap = src->cap;
+            dst.data = src->data;
+            (*rc)++;
+            cow_shares++;
+            return dst;
+        }
+    }
+
+    /* Not managed by COW — do a full memcpy clone for safety.
+     * Extra size check: cap*elem_size must be reasonable (< 256MB). */
+    {
+        int64_t total = src->cap * src->elem_size;
+        if (total <= 0 || total > 256 * 1024 * 1024) {
+            /* Unreasonable size — just copy header */
+            dst.cap = src->cap;
+            dst.data = src->data;
+            cow_fallbacks++;
+            return dst;
+        }
+        dst.cap = src->cap;
+        dst.data = mn_list_alloc_buf(dst.cap, src->elem_size);
+        if (src->len > 0) {
+            memcpy(dst.data, src->data, (size_t)(src->len * src->elem_size));
+        }
+    }
+    cow_fallbacks++;
+    return dst;
+}
+
+MN_EXPORT MnList __mn_list_deep_clone(MnList *src, const int64_t *list_offsets, int64_t num_offsets) {
+    MnList dst = __mn_list_clone(src);
+    if (num_offsets <= 0 || list_offsets == NULL || dst.len <= 0) return dst;
+    /* Detach first — we're about to modify element data (nested list headers) */
+    mn_list_detach(&dst);
+    /* After detaching, recursively clone any nested MnList fields
+     * at the given byte offsets within each element. */
+    for (int64_t i = 0; i < dst.len; i++) {
+        char *elem = dst.data + i * dst.elem_size;
+        for (int64_t j = 0; j < num_offsets; j++) {
+            MnList *nested = (MnList *)(elem + list_offsets[j]);
+            if (nested->data && nested->len > 0) {
+                *nested = __mn_list_clone(nested);
+            }
+        }
+    }
+    return dst;
 }
 
 MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
@@ -732,8 +976,12 @@ MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
     MnList result = __mn_list_new(es);
     int64_t total = mn_checked_add(a->len, b->len);
     if (total > result.cap) {
+        /* Grow: realloc must include the COW header */
+        int64_t new_bytes = mn_checked_add(MN_LIST_HEADER_SIZE, mn_checked_mul(total, es));
+        char *raw = ((char *)result.data) - MN_LIST_HEADER_SIZE;
+        raw = (char *)__mn_realloc(raw, new_bytes);
+        result.data = raw + MN_LIST_HEADER_SIZE;
         result.cap = total;
-        result.data = (char *)__mn_realloc(result.data, mn_checked_mul(result.cap, es));
     }
     if (a->len > 0) {
         memcpy(result.data, a->data, (size_t)(a->len * es));
@@ -987,8 +1235,13 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
     int64_t idx = (int64_t)(h & (uint64_t)mask);
     uint8_t psl = 0;
 
-    /* Copy key/val into temp buffer for potential swaps */
-    char *temp = (char *)__mn_alloc(map->key_size + map->val_size);
+    /* Stack buffer for Robin Hood swaps (avoids malloc per insert).
+     * Falls back to heap for very large keys+values (> 512 bytes). */
+    char stack_buf[512];
+    int64_t entry_size = map->key_size + map->val_size;
+    char *temp = (entry_size <= (int64_t)sizeof(stack_buf))
+        ? stack_buf
+        : (char *)__mn_alloc(entry_size);
     memcpy(temp, key, (size_t)map->key_size);
     memcpy(temp + map->key_size, val, (size_t)map->val_size);
 
@@ -1004,7 +1257,7 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
             memcpy(mn_bucket_val(bucket, map->key_size),
                    temp + map->key_size, (size_t)map->val_size);
             map->len++;
-            __mn_free(temp);
+            if (temp != stack_buf) __mn_free(temp);
             return;
         }
 
@@ -1012,7 +1265,7 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
         if (status == MN_BUCKET_OCCUPIED && eq(mn_bucket_key(bucket), temp)) {
             memcpy(mn_bucket_val(bucket, map->key_size),
                    temp + map->key_size, (size_t)map->val_size);
-            __mn_free(temp);
+            if (temp != stack_buf) __mn_free(temp);
             return;
         }
 
@@ -1023,8 +1276,12 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
             char *old_key = mn_bucket_key(bucket);
             char *old_val = mn_bucket_val(bucket, map->key_size);
 
-            /* Save old bucket data */
-            char *swap = (char *)__mn_alloc(map->key_size + map->val_size);
+            /* Save old bucket data into temp via in-place swap.
+             * We reuse the same temp buffer — no extra allocation needed. */
+            char swap_buf[512];
+            char *swap = (entry_size <= (int64_t)sizeof(swap_buf))
+                ? swap_buf
+                : (char *)__mn_alloc(entry_size);
             memcpy(swap, old_key, (size_t)map->key_size);
             memcpy(swap + map->key_size, old_val, (size_t)map->val_size);
 
@@ -1034,9 +1291,9 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
             memcpy(old_val, temp + map->key_size, (size_t)map->val_size);
 
             /* Continue inserting displaced entry */
-            memcpy(temp, swap, (size_t)(map->key_size + map->val_size));
+            memcpy(temp, swap, (size_t)entry_size);
             psl = old_psl;
-            __mn_free(swap);
+            if (swap != swap_buf) __mn_free(swap);
         }
 
         psl++;
@@ -1833,4 +2090,97 @@ MN_EXPORT void *__iter_next(void *iter_ptr) {
     int64_t val = iter->current;
     iter->current++;
     return (void *)(intptr_t)val;
+}
+
+/* -----------------------------------------------------------------------
+ * Function Type Registry — global, static, outside LowerState
+ *
+ * Simple open-addressing hash table. Fixed capacity of 4096 entries.
+ * Used by the self-hosted compiler to track fn name → return type
+ * without polluting LowerState (which gets deep-cloned on every copy).
+ * ----------------------------------------------------------------------- */
+
+#define MN_TYPEREG_CAP 4096
+
+typedef struct {
+    char     fn_name[256];
+    char     kind[64];
+    char     type_name[256];
+    int      occupied;
+} MnTypeRegEntry;
+
+static MnTypeRegEntry mn_type_reg[MN_TYPEREG_CAP];
+
+static uint32_t mn_typereg_hash(const char *s, int64_t len) {
+    uint32_t h = 5381;
+    for (int64_t i = 0; i < len; i++)
+        h = ((h << 5) + h) + (uint8_t)s[i];
+    return h;
+}
+
+MN_EXPORT void __mn_type_registry_put(MnString fn_name, MnString kind, MnString type_name) {
+    if (fn_name.len <= 0 || fn_name.data == NULL) return;
+    const char *fdata = mn_untag(fn_name.data);
+    int64_t flen = fn_name.len > 255 ? 255 : fn_name.len;
+    uint32_t idx = mn_typereg_hash(fdata, fn_name.len) % MN_TYPEREG_CAP;
+
+    for (int probe = 0; probe < MN_TYPEREG_CAP; probe++) {
+        uint32_t i = (idx + probe) % MN_TYPEREG_CAP;
+        if (!mn_type_reg[i].occupied ||
+            (mn_type_reg[i].fn_name[flen] == '\0' &&
+             memcmp(mn_type_reg[i].fn_name, fdata, (size_t)flen) == 0)) {
+            memcpy(mn_type_reg[i].fn_name, fdata, (size_t)flen);
+            mn_type_reg[i].fn_name[flen] = '\0';
+
+            const char *kdata = mn_untag(kind.data);
+            int64_t klen = kind.len > 63 ? 63 : kind.len;
+            if (kdata && klen > 0) {
+                memcpy(mn_type_reg[i].kind, kdata, (size_t)klen);
+            }
+            mn_type_reg[i].kind[klen] = '\0';
+
+            const char *tdata = mn_untag(type_name.data);
+            int64_t tlen = type_name.len > 255 ? 255 : type_name.len;
+            if (tdata && tlen > 0) {
+                memcpy(mn_type_reg[i].type_name, tdata, (size_t)tlen);
+            }
+            mn_type_reg[i].type_name[tlen] = '\0';
+
+            mn_type_reg[i].occupied = 1;
+            return;
+        }
+    }
+}
+
+static MnTypeRegEntry *mn_typereg_find(MnString fn_name) {
+    if (fn_name.len <= 0 || fn_name.data == NULL) return NULL;
+    const char *fdata = mn_untag(fn_name.data);
+    uint32_t idx = mn_typereg_hash(fdata, fn_name.len) % MN_TYPEREG_CAP;
+
+    for (int probe = 0; probe < MN_TYPEREG_CAP; probe++) {
+        uint32_t i = (idx + probe) % MN_TYPEREG_CAP;
+        if (!mn_type_reg[i].occupied) return NULL;
+        int64_t flen = fn_name.len > 255 ? 255 : fn_name.len;
+        if (mn_type_reg[i].fn_name[flen] == '\0' &&
+            memcmp(mn_type_reg[i].fn_name, fdata, (size_t)flen) == 0) {
+            return &mn_type_reg[i];
+        }
+    }
+    return NULL;
+}
+
+MN_EXPORT MnString __mn_type_registry_get_kind(MnString fn_name) {
+    MnTypeRegEntry *e = mn_typereg_find(fn_name);
+    if (e) return __mn_str_from_cstr(e->kind);
+    return __mn_str_empty();
+}
+
+MN_EXPORT MnString __mn_type_registry_get_name(MnString fn_name) {
+    MnTypeRegEntry *e = mn_typereg_find(fn_name);
+    if (e) return __mn_str_from_cstr(e->type_name);
+    return __mn_str_empty();
+}
+
+MN_EXPORT void __mn_type_registry_clear(void) {
+    memset(mn_type_reg, 0, sizeof(mn_type_reg));
 }

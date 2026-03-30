@@ -71,7 +71,7 @@ class TestCoreTypes:
         """Provider enum compiles."""
         src = _llm_source_with_main("""\
             let p: Provider = OpenAI()
-            println(provider_to_string(p))
+            print(provider_to_string(p))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -80,7 +80,7 @@ class TestCoreTypes:
         """Role enum compiles."""
         src = _llm_source_with_main("""\
             let r: Role = User()
-            println(role_to_string(r))
+            print(role_to_string(r))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -89,7 +89,7 @@ class TestCoreTypes:
         """LLMError enum compiles."""
         src = _llm_source_with_main("""\
             let e: LLMError = ApiError("test error")
-            println(error_message(e))
+            print(error_message(e))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -98,7 +98,7 @@ class TestCoreTypes:
         """ChatMessage struct compiles."""
         src = _llm_source_with_main("""\
             let msg: ChatMessage = user_msg("Hello")
-            println(msg.content)
+            print(msg.content)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -107,7 +107,7 @@ class TestCoreTypes:
         """TokenUsage struct compiles."""
         src = _llm_source_with_main("""\
             let u: TokenUsage = new_token_usage(100, 50)
-            println(str(u.total_tokens))
+            print(str(u.total_tokens))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -116,7 +116,7 @@ class TestCoreTypes:
         """ToolDef struct compiles."""
         src = _llm_source_with_main("""\
             let t: ToolDef = tool("search", "Search the web", "{}")
-            println(t.name)
+            print(t.name)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -133,7 +133,7 @@ class TestConfigConstructors:
         """openai() config constructor compiles."""
         src = _llm_source_with_main("""\
             let c: LLMConfig = openai("sk-test", "gpt-4o")
-            println(c.model)
+            print(c.model)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -142,7 +142,7 @@ class TestConfigConstructors:
         """anthropic() config constructor compiles."""
         src = _llm_source_with_main("""\
             let c: LLMConfig = anthropic("sk-test", "claude-sonnet-4-20250514")
-            println(c.host)
+            print(c.host)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -151,7 +151,7 @@ class TestConfigConstructors:
         """groq() config constructor compiles."""
         src = _llm_source_with_main("""\
             let c: LLMConfig = groq("gsk-test", "llama-3.1-70b-versatile")
-            println(c.path)
+            print(c.path)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -160,7 +160,7 @@ class TestConfigConstructors:
         """ollama() config constructor compiles."""
         src = _llm_source_with_main("""\
             let c: LLMConfig = ollama("llama3")
-            println(str(c.port))
+            print(str(c.port))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -169,7 +169,7 @@ class TestConfigConstructors:
         """custom() config constructor compiles."""
         src = _llm_source_with_main("""\
             let c: LLMConfig = custom("localhost", 8080, "/v1/chat", "key", "model")
-            println(c.host)
+            print(c.host)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -187,7 +187,7 @@ class TestConfigModifiers:
         src = _llm_source_with_main("""\
             let c: LLMConfig = openai("sk-test", "gpt-4o")
             let c2: LLMConfig = with_max_tokens(c, 8192)
-            println(str(c2.max_tokens))
+            print(str(c2.max_tokens))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -197,7 +197,7 @@ class TestConfigModifiers:
         src = _llm_source_with_main("""\
             let c: LLMConfig = openai("sk-test", "gpt-4o")
             let c2: LLMConfig = with_temperature(c, 0.5)
-            println("ok")
+            print("ok")
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -207,7 +207,7 @@ class TestConfigModifiers:
         src = _llm_source_with_main("""\
             let c: LLMConfig = openai("sk-test", "gpt-4o")
             let c2: LLMConfig = with_system(c, "You are helpful")
-            println(c2.system_prompt)
+            print(c2.system_prompt)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -217,7 +217,7 @@ class TestConfigModifiers:
         src = _llm_source_with_main("""\
             let c: LLMConfig = openai("sk-test", "gpt-4o")
             let c2: LLMConfig = with_timeout(c, 60000)
-            println(str(c2.timeout_ms))
+            print(str(c2.timeout_ms))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -237,10 +237,10 @@ class TestMessageConstructors:
             let m2: ChatMessage = user_msg("Hello")
             let m3: ChatMessage = assistant_msg("Hi there")
             let m4: ChatMessage = tool_msg("result data")
-            println(m1.content)
-            println(m2.content)
-            println(m3.content)
-            println(m4.content)
+            print(m1.content)
+            print(m2.content)
+            print(m3.content)
+            print(m4.content)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -263,13 +263,13 @@ class TestErrorHandling:
             let e5: LLMError = RateLimited("rate limited")
             let e6: LLMError = InvalidRequest("bad request")
             let e7: LLMError = Timeout("timed out")
-            println(error_message(e1))
-            println(error_message(e2))
-            println(error_message(e3))
-            println(error_message(e4))
-            println(error_message(e5))
-            println(error_message(e6))
-            println(error_message(e7))
+            print(error_message(e1))
+            print(error_message(e2))
+            print(error_message(e3))
+            print(error_message(e4))
+            print(error_message(e5))
+            print(error_message(e6))
+            print(error_message(e7))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -286,7 +286,7 @@ class TestJSONHelpers:
         """escape_json function compiles."""
         src = _llm_source_with_main("""\
             let escaped: String = escape_json("hello \\"world\\"")
-            println(escaped)
+            print(escaped)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -296,7 +296,7 @@ class TestJSONHelpers:
         src = _llm_source_with_main("""\
             let json: String = "{\\"name\\": \\"Alice\\", \\"age\\": 30}"
             let val: String = jget(json, "name")
-            println(val)
+            print(val)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -306,7 +306,7 @@ class TestJSONHelpers:
         src = _llm_source_with_main("""\
             let json: String = "{\\"model\\": \\"gpt-4o\\"}"
             let model: String = jget_str(json, "model")
-            println(model)
+            print(model)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -316,7 +316,7 @@ class TestJSONHelpers:
         src = _llm_source_with_main("""\
             let json: String = "{\\"count\\": 42}"
             let count: Int = jget_int(json, "count")
-            println(str(count))
+            print(str(count))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -326,7 +326,7 @@ class TestJSONHelpers:
         src = _llm_source_with_main("""\
             let json: String = "{\\"items\\": [{\\"id\\": 1}, {\\"id\\": 2}]}"
             let first: String = jget_first(json, "items")
-            println(first)
+            print(first)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -337,7 +337,7 @@ class TestJSONHelpers:
             let json: String = "{\\"data\\": {\\"name\\": \\"test\\"}}"
             let inner: String = jget(json, "data")
             let name: String = jget_str(inner, "name")
-            println(name)
+            print(name)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -354,10 +354,10 @@ class TestUsageAndCost:
         """TokenUsage creation and field access."""
         src = _llm_source_with_main("""\
             let u: TokenUsage = new_token_usage(100, 50)
-            println(str(u.input_tokens))
-            println(str(u.output_tokens))
-            println(str(u.total_tokens))
-            println(usage_summary(u))
+            print(str(u.input_tokens))
+            print(str(u.output_tokens))
+            print(str(u.total_tokens))
+            print(usage_summary(u))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -366,7 +366,7 @@ class TestUsageAndCost:
         """estimate_cost with known model pricing."""
         src = _llm_source_with_main("""\
             let cost: Float = estimate_cost("gpt-4o", 1000, 500)
-            println(str(cost))
+            print(str(cost))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -384,7 +384,7 @@ class TestConversations:
         src = _llm_source_with_main("""\
             let c: LLMConfig = openai("sk-test", "gpt-4o")
             let conv: Conversation = new_conversation(c)
-            println(str(conv.turn_count))
+            print(str(conv.turn_count))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -395,7 +395,7 @@ class TestConversations:
             let c: LLMConfig = openai("sk-test", "gpt-4o")
             let conv: Conversation = new_conversation(c)
             let conv2: Conversation = set_system_prompt(conv, "You are helpful")
-            println(str(len(conv2.history)))
+            print(str(len(conv2.history)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -406,7 +406,7 @@ class TestConversations:
             let c: LLMConfig = openai("sk-test", "gpt-4o")
             let conv: Conversation = new_conversation(c)
             let trimmed: Conversation = trim_history(conv, 5)
-            println(str(trimmed.turn_count))
+            print(str(trimmed.turn_count))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -423,7 +423,7 @@ class TestReasoningStrategies:
         """plan_and_solve prompt augmentation compiles."""
         src = _llm_source_with_main("""\
             let augmented: String = apply_reasoning("plan_and_solve", "How to sort a list?")
-            println(augmented)
+            print(augmented)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -432,7 +432,7 @@ class TestReasoningStrategies:
         """self_discover prompt augmentation compiles."""
         src = _llm_source_with_main("""\
             let augmented: String = apply_reasoning("self_discover", "Analyze this data")
-            println(augmented)
+            print(augmented)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -441,7 +441,7 @@ class TestReasoningStrategies:
         """cot prompt augmentation compiles."""
         src = _llm_source_with_main("""\
             let augmented: String = apply_reasoning("cot", "What is 2+2?")
-            println(augmented)
+            print(augmented)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -450,7 +450,7 @@ class TestReasoningStrategies:
         """Unknown strategy returns prompt unchanged."""
         src = _llm_source_with_main("""\
             let result: String = apply_reasoning("unknown", "test")
-            println(result)
+            print(result)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -468,7 +468,7 @@ class TestChainTypes:
         src = _llm_source_with_main("""\
             let c: LLMConfig = openai("sk-test", "gpt-4o")
             let step: ChainStep = chain_step(c, "Analyze: {prompt}")
-            println(step.prompt_template)
+            print(step.prompt_template)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -477,7 +477,7 @@ class TestChainTypes:
         """Template placeholder replacement compiles."""
         src = _llm_source_with_main("""\
             let result: String = replace_placeholder("Hello {name}!", "name", "World")
-            println(result)
+            print(result)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -495,7 +495,7 @@ class TestRequestBuilding:
         src = _llm_source_with_main("""\
             let msg: ChatMessage = user_msg("Hello world")
             let json: String = message_to_json(msg)
-            println(json)
+            print(json)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -507,7 +507,7 @@ class TestRequestBuilding:
             msgs = msgs + [system_msg("Be helpful")]
             msgs = msgs + [user_msg("Hi")]
             let json: String = messages_to_json(msgs)
-            println(json)
+            print(json)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -518,7 +518,7 @@ class TestRequestBuilding:
             let c: LLMConfig = openai("sk-test", "gpt-4o")
             let msgs: List<ChatMessage> = [user_msg("Hello")]
             let body: String = build_openai_body(c, msgs)
-            println(body)
+            print(body)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -529,7 +529,7 @@ class TestRequestBuilding:
             let c: LLMConfig = anthropic("sk-test", "claude-sonnet-4-20250514")
             let msgs: List<ChatMessage> = [user_msg("Hello")]
             let body: String = build_anthropic_body(c, msgs)
-            println(body)
+            print(body)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -540,7 +540,7 @@ class TestRequestBuilding:
             let c: LLMConfig = ollama("llama3")
             let msgs: List<ChatMessage> = [user_msg("Hello")]
             let body: String = build_ollama_body(c, msgs)
-            println(body)
+            print(body)
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -558,7 +558,7 @@ class TestMultiModelHelpers:
         src = _llm_source_with_main("""\
             let c: LLMConfig = openai("sk-test", "gpt-4o")
             let req: LLMRequest = make_chat_request(c, [user_msg("Hi")])
-            println(str(len(req.messages)))
+            print(str(len(req.messages)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
@@ -568,7 +568,7 @@ class TestMultiModelHelpers:
         src = _llm_source_with_main("""\
             let c: LLMConfig = openai("sk-test", "gpt-4o")
             let req: LLMRequest = make_complete_request(c, "Hello")
-            println(str(len(req.messages)))
+            print(str(len(req.messages)))
         """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
