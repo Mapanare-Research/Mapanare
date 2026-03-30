@@ -142,6 +142,18 @@ fn find_struct_entry(st: EmitState, name: String) -> Option<StructEntry> {
 }
 
 // ---------------------------------------------------------------------------
+// State-aware type resolution (corrects struct→enum misclassification)
+// ---------------------------------------------------------------------------
+
+fn resolve_type(st: EmitState, ty: MIRType) -> String {
+    let resolved: String = resolve_mir_type(ty)
+    if resolved.starts_with("%struct.") && is_enum_type(st, ty.name) {
+        return "%enum." + ty.name
+    }
+    return resolved
+}
+
+// ---------------------------------------------------------------------------
 // Runtime function declarations
 // ---------------------------------------------------------------------------
 
@@ -558,7 +570,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
         let arr_ty: String = "[" + toString(slen) + " x i8]"
         s = emit_global(s, gname + " = private constant " + arr_ty + " c\"" + val + "\"")
         let ptr_name: String = dn + ".ptr"
-        s = emit_line(s, "  " + ptr_name + " = getelementptr " + arr_ty + ", " + arr_ty + "* " + gname + ", i64 0, i64 0")
+        s = emit_line(s, "  " + ptr_name + " = getelementptr " + arr_ty + ", " + "ptr " + gname + ", i64 0, i64 0")
         let s1_name: String = dn + ".s1"
         s = emit_line(s, emit_insertvalue(s1_name, llvm_string(), "undef", ptr_name, "ptr", "0"))
         s = emit_line(s, emit_insertvalue(dn, llvm_string(), s1_name, toString(slen), "i64", "1"))
@@ -606,8 +618,8 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
 
 fn emit_copy(st: EmitState, dest: Value, src: Value) -> EmitState {
     let mut s: EmitState = st
-    let ty: String = resolve_mir_type(dest.ty)
-    let src_ty: String = resolve_mir_type(src.ty)
+    let ty: String = resolve_type(st, dest.ty)
+    let src_ty: String = resolve_type(st, src.ty)
     // Use source type when dest is unknown/scalar but source is aggregate.
     // This handles match pattern bindings where the payload type is known
     // from enum info but the pattern variable type is unknown.
@@ -628,8 +640,8 @@ fn emit_copy(st: EmitState, dest: Value, src: Value) -> EmitState {
     if use_ty.starts_with("%struct.") || use_ty.starts_with("%enum.") || use_ty.starts_with("{") {
         let tmp_a: String = dest.name + ".cpy"
         s = emit_line(s, "  " + tmp_a + " = alloca " + use_ty)
-        s = emit_line(s, "  store " + use_ty + " " + src.name + ", " + use_ty + "* " + tmp_a)
-        return emit_line(s, "  " + dest.name + " = load " + use_ty + ", " + use_ty + "* " + tmp_a)
+        s = emit_line(s, "  store " + use_ty + " " + src.name + ", " + "ptr " + tmp_a)
+        return emit_line(s, "  " + dest.name + " = load " + use_ty + ", " + "ptr " + tmp_a)
     }
     // Scalars (i64, double, ptr, etc.): use add 0 identity
     return emit_line(s, "  " + dest.name + " = add " + use_ty + " 0, " + src.name)
@@ -678,6 +690,8 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     let dn: String = dest.name
     let is_float: Bool = lhs.ty.kind == "float"
     let is_string: Bool = lhs.ty.kind == "string"
+    let is_bool: Bool = lhs.ty.kind == "bool"
+    let cmp_ty: String = if is_bool { "i1" } else { llvm_int() }
 
     // Use binop_kind_to_str (defined in lower.mn where BinOpKind is local)
     // to convert the enum tag to a string, then dispatch with if/else
@@ -703,7 +717,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
             s = emit_line(s, emit_call_ir(eq_raw, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
             s = emit_line(s, emit_icmp(dn, "ne", llvm_int(), eq_raw, "0"))
         } else {
-            if is_float { s = emit_line(s, emit_fcmp(dn, "eq", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "eq", llvm_int(), ln, rn)) }
+            if is_float { s = emit_line(s, emit_fcmp(dn, "eq", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "eq", cmp_ty, ln, rn)) }
         }
     } else if op_str == "ne" {
         if is_string {
@@ -711,7 +725,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
             s = emit_line(s, emit_call_ir(eq_raw, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
             s = emit_line(s, emit_icmp(dn, "eq", llvm_int(), eq_raw, "0"))
         } else {
-            if is_float { s = emit_line(s, emit_fcmp(dn, "ne", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "ne", llvm_int(), ln, rn)) }
+            if is_float { s = emit_line(s, emit_fcmp(dn, "ne", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "ne", cmp_ty, ln, rn)) }
         }
     } else if op_str == "lt" {
         if is_string {
@@ -818,8 +832,8 @@ fn emit_struct_init(st: EmitState, dest: Value, ty: MIRType, fields: List<FieldP
     if nfields > 0 {
         let cpy_a: String = dn + ".si"
         s = emit_line(s, "  " + cpy_a + " = alloca " + struct_ty)
-        s = emit_line(s, "  store " + struct_ty + " " + agg + ", " + struct_ty + "* " + cpy_a)
-        s = emit_line(s, "  " + dn + " = load " + struct_ty + ", " + struct_ty + "* " + cpy_a)
+        s = emit_line(s, "  store " + struct_ty + " " + agg + ", " + "ptr " + cpy_a)
+        s = emit_line(s, "  " + dn + " = load " + struct_ty + ", " + "ptr " + cpy_a)
     }
     return s
 }
@@ -832,7 +846,7 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
     let mut s: EmitState = st
     let on: String = obj.name
     let dn: String = dest.name
-    let obj_ty: String = resolve_mir_type(obj.ty)
+    let obj_ty: String = resolve_type(st, obj.ty)
 
     // String .len → extractvalue index 1
     if obj.ty.kind == "string" {
@@ -852,8 +866,8 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
             let lt: String = llvm_list_rt()
             let tmp: String = dn + ".lp"
             s = emit_line(s, "  " + tmp + " = alloca " + lt)
-            s = emit_line(s, "  store " + lt + " " + on + ", " + lt + "* " + tmp)
-            s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", lt + "* " + tmp))
+            s = emit_line(s, "  store " + lt + " " + on + ", " + "ptr " + tmp)
+            s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", "ptr " + tmp))
             return s
         }
         // List methods (push, etc.) — pass object through
@@ -972,8 +986,8 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
     if nfields > 0 {
         let cpy_a: String = dn + ".si"
         s = emit_line(s, "  " + cpy_a + " = alloca " + struct_ty)
-        s = emit_line(s, "  store " + struct_ty + " " + agg + ", " + struct_ty + "* " + cpy_a)
-        s = emit_line(s, "  " + dn + " = load " + struct_ty + ", " + struct_ty + "* " + cpy_a)
+        s = emit_line(s, "  store " + struct_ty + " " + agg + ", " + "ptr " + cpy_a)
+        s = emit_line(s, "  " + dn + " = load " + struct_ty + ", " + "ptr " + cpy_a)
     }
     return s
 }
@@ -1007,7 +1021,7 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
         s = emit_line(s, llvm_store(ety, elem.name, elem_alloca))
         let cast_name: String = dn + ".c" + toString(i)
         s = emit_line(s, emit_bitcast(cast_name, ety + "*", elem_alloca, "ptr"))
-        s = emit_line(s, emit_call_void("__mn_list_push", llvm_list_rt() + "* " + alloca_name + ", ptr " + cast_name))
+        s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + alloca_name + ", ptr " + cast_name))
         i = i + 1
     }
     return s
@@ -1031,18 +1045,17 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
     let lt: String = llvm_list_rt()
     let tmp: String = dn + ".lp"
     s = emit_line(s, "  " + tmp + " = alloca " + lt)
-    s = emit_line(s, "  store " + lt + " " + obj.name + ", " + lt + "* " + tmp)
+    s = emit_line(s, "  store " + lt + " " + obj.name + ", " + "ptr " + tmp)
 
-    // If dest type is known (struct/enum), cast ptr → element_type* and load
-    let dest_ty: String = resolve_mir_type(dest.ty)
+    // If dest type is known, load from the ptr returned by list_get
+    let dest_ty: String = resolve_type(st, dest.ty)
     if dest_ty != llvm_int() && dest_ty != "ptr" && dest_ty != "void" {
         let raw: String = dn + ".raw"
-        s = emit_line(s, emit_call_ir(raw, "ptr", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
-        let cast: String = dn + ".ep"
-        s = emit_line(s, "  " + cast + " = bitcast ptr " + raw + " to " + dest_ty + "*")
-        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", " + dest_ty + "* " + cast)
+        s = emit_line(s, emit_call_ir(raw, "ptr", "__mn_list_get", "ptr " + tmp + ", i64 " + idx.name))
+        // Opaque pointers: load directly from ptr, no bitcast needed
+        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + raw)
     } else {
-        s = emit_line(s, emit_call_ir(dn, "ptr", "__mn_list_get", lt + "* " + tmp + ", i64 " + idx.name))
+        s = emit_line(s, emit_call_ir(dn, "ptr", "__mn_list_get", "ptr " + tmp + ", i64 " + idx.name))
     }
     return s
 }
@@ -1061,21 +1074,21 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
 // ---------------------------------------------------------------------------
 
 fn emit_alloca(st: EmitState, dest: Value, ty: MIRType) -> EmitState {
-    return emit_line(st, llvm_alloca(dest.name, resolve_mir_type(ty)))
+    return emit_line(st, llvm_alloca(dest.name, resolve_type(st, ty)))
 }
 
 fn emit_load(st: EmitState, dest: Value, ptr: Value) -> EmitState {
-    return emit_line(st, llvm_load(dest.name, resolve_mir_type(dest.ty), ptr.name))
+    return emit_line(st, llvm_load(dest.name, resolve_type(st, dest.ty), ptr.name))
 }
 
 fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState {
-    let val_ty: String = resolve_mir_type(val.ty)
-    let ptr_ty: String = resolve_mir_type(ptr.ty)
+    let val_ty: String = resolve_type(st, val.ty)
+    let ptr_ty: String = resolve_type(st, ptr.ty)
     // When storing a generic None ({i1, ptr}) to a specific Option alloca
     // ({i1, %enum.T}), use zeroinitializer with the alloca's type instead.
     // None has tag=0 and null payload — zeroinitializer is equivalent.
     if val.ty.kind == "option" && ptr_ty != val_ty && ptr_ty.starts_with("{") {
-        return emit_line(st, "  store " + ptr_ty + " zeroinitializer, " + ptr_ty + "* " + ptr.name)
+        return emit_line(st, "  store " + ptr_ty + " zeroinitializer, " + "ptr " + ptr.name)
     }
     return emit_line(st, llvm_store(val_ty, val.name, ptr.name))
 }
@@ -1108,10 +1121,10 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
     let ea: String = dn + ".ea"
     s = emit_line(s, "  " + ea + " = alloca " + enum_ty)
     // Zero-initialize to avoid garbage in unused payload slots
-    s = emit_line(s, "  store " + enum_ty + " zeroinitializer, " + enum_ty + "* " + ea)
+    s = emit_line(s, "  store " + enum_ty + " zeroinitializer, " + "ptr " + ea)
     // Store tag via GEP into field 0
     let tag_ptr: String = dn + ".tp"
-    s = emit_line(s, "  " + tag_ptr + " = getelementptr inbounds " + enum_ty + ", " + enum_ty + "* " + ea + ", i32 0, i32 0")
+    s = emit_line(s, "  " + tag_ptr + " = getelementptr inbounds " + enum_ty + ", " + "ptr " + ea + ", i32 0, i32 0")
     s = emit_line(s, "  store i64 " + tag_val + ", i64* " + tag_ptr)
 
     // Store payload values through bitcast: skip past the i64 tag (8 bytes).
@@ -1132,18 +1145,17 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
         }
         // Bitcast past tag to get payload pointer
         let bp: String = dn + ".bp" + toString(i)
-        s = emit_line(s, "  " + bp + " = bitcast " + enum_ty + "* " + ea + " to ptr")
+        s = emit_line(s, "  " + bp + " = bitcast " + "ptr " + ea + " to ptr")
         let pp: String = dn + ".pp" + toString(i)
         let offset: String = toString(8 + i * 8)
         s = emit_line(s, "  " + pp + " = getelementptr inbounds i8, ptr " + bp + ", i64 " + offset)
-        let tp: String = dn + ".pt" + toString(i)
-        s = emit_line(s, "  " + tp + " = bitcast ptr " + pp + " to " + pty + "*")
-        s = emit_line(s, "  store " + pty + " " + pname + ", " + pty + "* " + tp)
+        // Opaque pointers: store directly to ptr, no bitcast needed
+        s = emit_line(s, "  store " + pty + " " + pname + ", ptr " + pp)
         i = i + 1
     }
 
     // Load the complete enum value
-    s = emit_line(s, "  " + dn + " = load " + enum_ty + ", " + enum_ty + "* " + ea)
+    s = emit_line(s, "  " + dn + " = load " + enum_ty + ", " + "ptr " + ea)
     return s
 }
 
@@ -1218,7 +1230,16 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
     }
     if val.ty.kind == "option" {
         // Option = {i1, inner_ty}. Extract inner at index 1.
-        s = emit_line(s, "  " + dn + " = extractvalue " + enum_ty + " " + val.name + ", 1")
+        // With type erasure, Option<Struct/Enum> = {i1, ptr}. The extracted
+        // value is ptr. If the dest expects a concrete struct/enum, dereference.
+        let dest_ty_opt: String = resolve_mir_type(dest.ty)
+        if dest_ty_opt.starts_with("%struct.") || dest_ty_opt.starts_with("%enum.") {
+            let ptr_name: String = dn + ".ptr"
+            s = emit_line(s, "  " + ptr_name + " = extractvalue " + enum_ty + " " + val.name + ", 1")
+            s = emit_line(s, "  " + dn + " = load " + dest_ty_opt + ", ptr " + ptr_name)
+        } else {
+            s = emit_line(s, "  " + dn + " = extractvalue " + enum_ty + " " + val.name + ", 1")
+        }
         return s
     }
 
@@ -1249,12 +1270,18 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
             ei2 = ei2 + 1
         }
     }
+    // Correct struct→enum misclassification: if the payload type resolves to
+    // %struct.X but a %enum.X type is registered, use the enum type.
+    if dest_ty.starts_with("%struct.") {
+        let payload_name: String = dest.ty.name
+        if is_enum_type(s, payload_name) {
+            dest_ty = "%enum." + payload_name
+        }
+    }
     s = emit_line(s, "  " + dn + ".ea = alloca " + enum_ty)
-    s = emit_line(s, "  store " + enum_ty + " " + val.name + ", " + enum_ty + "* " + dn + ".ea")
-    s = emit_line(s, "  " + dn + ".bp = bitcast " + enum_ty + "* " + dn + ".ea to ptr")
-    s = emit_line(s, "  " + dn + ".pp = getelementptr inbounds i8, ptr " + dn + ".bp, i64 8")
-    s = emit_line(s, "  " + dn + ".tp = bitcast ptr " + dn + ".pp to " + dest_ty + "*")
-    s = emit_line(s, "  " + dn + " = load " + dest_ty + ", " + dest_ty + "* " + dn + ".tp")
+    s = emit_line(s, "  store " + enum_ty + " " + val.name + ", ptr " + dn + ".ea")
+    s = emit_line(s, "  " + dn + ".pp = getelementptr inbounds i8, ptr " + dn + ".ea, i64 8")
+    s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + dn + ".pp")
     return s
 }
 
@@ -1264,7 +1291,7 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
 
 fn emit_wrap_some(st: EmitState, dest: Value, val: Value) -> EmitState {
     let mut s: EmitState = st
-    let val_ty: String = resolve_mir_type(val.ty)
+    let val_ty: String = resolve_type(st, val.ty)
     let dn: String = dest.name
 
     // Type erasure: compound types (struct/enum) use ptr in Options.
@@ -1592,8 +1619,8 @@ fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
         let tmp: String = dn + ".lp"
         let lt: String = llvm_list_rt()
         s = emit_line(s, "  " + tmp + " = alloca " + lt)
-        s = emit_line(s, "  store " + lt + " " + an + ", " + lt + "* " + tmp)
-        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", lt + "* " + tmp))
+        s = emit_line(s, "  store " + lt + " " + an + ", " + "ptr " + tmp)
+        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", "ptr " + tmp))
     }
     return s
 }
@@ -2014,11 +2041,10 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     for _ in 0..100000 {
         if fi >= total_fns { break }
         let f: MIRFunction = module.functions[fi]
-        // Progress: print every 50th function to stderr (avoids stdout pollution)
-        // Uses println which goes to stdout — but the user redirects stdout to .ll
-        // so this effectively goes to the terminal if not redirected.
-        // TODO: use proper stderr when available
-        st = emit_mir_function(st, f)
+        // Skip stub functions (registered in pass 1 for return type lookup only)
+        if len(f.blocks) > 0 {
+            st = emit_mir_function(st, f)
+        }
         fi = fi + 1
     }
 

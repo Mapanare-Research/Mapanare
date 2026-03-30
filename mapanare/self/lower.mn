@@ -67,8 +67,18 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
                 _ => { return st }
             }
         },
-        FnDef(_) => {
-            return st
+        FnDef(fd) => {
+            // Register function signature (return type) for fn-ret lookup.
+            // This lets lower_call_by_name resolve return types before pass 2.
+            let ret_ty: MIRType = resolve_return_type_checked(st, fd.return_type)
+            let empty_params: List<MIRParam> = []
+            let empty_decorators: List<String> = []
+            let stub_fn: MIRFunction = new_mir_function(fd.name, empty_params, ret_ty, empty_decorators, fd.public)
+            let mut new_st: LowerState = st
+            let mut mod_tmp: MIRModule = new_st.module
+            mod_tmp.functions.push(stub_fn)
+            new_st.module = mod_tmp
+            return new_st
         },
         _ => { return st }
     }
@@ -978,9 +988,21 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         _ => { fn_name }
     }
 
-    // For non-lambda calls, emit directly (no state copy needed)
+    // For non-lambda calls, emit directly (no state copy needed).
+    // Look up function return type from module's registered functions.
     if resolved.find(":") < 0 {
-        let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
+        let mut call_ret: MIRType = mir_unknown()
+        let mut fri: Int = 0
+        for _ in 0..100000 {
+            if fri >= len(st.module.functions) { break }
+            let mfn: MIRFunction = st.module.functions[fri]
+            if mfn.name == resolved {
+                call_ret = mfn.return_type
+                break
+            }
+            fri = fri + 1
+        }
+        let dest_r: LowerResult = make_value(st, call_ret, "t")
         let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, resolved, args))
         return new_lower_result(dest_r.value, s)
     }
@@ -1512,7 +1534,14 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
             let var_opt: Option<Value> = lookup_var(s, name)
             match var_opt {
                 Some(addr) => {
-                    s = emit_instr(s, Instruction::Store(addr, val_r.value))
+                    // Update var type if the new value is more specific
+                    // (e.g. from unknown/i64 to a concrete struct type)
+                    let mut store_addr: Value = addr
+                    if addr.ty.kind == "unknown" && val_r.value.ty.kind != "unknown" {
+                        store_addr = new_value(addr.name, val_r.value.ty)
+                        s = define_var(s, name, store_addr, true)
+                    }
+                    s = emit_instr(s, Instruction::Store(store_addr, val_r.value))
                     return new_lower_result(val_r.value, s)
                 },
                 _ => {}
@@ -1805,8 +1834,9 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                             let payload_r: LowerResult = make_value(s, pay_ty, var_name)
                             s = payload_r.state
                             s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject_r.value, name))
-                            // Store payload to alloca so lower_identifier can load from it
-                            let payload_addr: Value = new_value("%" + var_name + ".addr", pay_ty)
+                            // Store payload to alloca (counter suffix for unique names)
+                            let payload_addr: Value = new_value("%" + var_name + toString(s.tmp_counter) + ".addr", pay_ty)
+                            s.tmp_counter = s.tmp_counter + 1
                             s = emit_instr(s, Instruction::Alloca(payload_addr, pay_ty))
                             s = emit_instr(s, Instruction::Store(payload_addr, payload_r.value))
                             s = define_var(s, var_name, payload_addr, false)
