@@ -124,7 +124,7 @@ self-hosted emitter's struct init handling, not the .mn source.
 | 3 | Fix Option type erasure inconsistency | `[x]` | Universal {i1, ptr} |
 | 4 | Fix struct/enum name mismatch | `[x]` | resolve_type in tag/payload |
 | 5 | Fix nested match in lower_if | `[x]` | Extracted else helpers |
-| 6 | Fix MatchBuildResult struct init | `[ ]` | 5-field struct init bug |
+| 6 | Fix MatchBuildResult struct init | `[!]` | Root cause: self-hosted lowerer's loop pushes only 3 of 5 values — runtime list push bug beyond 3 iterations in struct constructor arg build. Requires runtime/list debugging. |
 | 7 | Verify `llvm-as` accepts all stage2 IR | `[ ]` | 1 error remaining |
 
 **Done when:** `llvm-as /tmp/stage2.ll` exits 0.
