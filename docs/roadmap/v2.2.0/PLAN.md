@@ -51,9 +51,9 @@ consumers to producers. See `docs/ARCHITECTURE_DECISIONS.md`.
 | Phase | Name | Status | Effort | Impact |
 |-------|------|--------|--------|--------|
 | 1 | Python text emitter opaque pointers | `Done` | Large | Eliminates ALL typed-pointer type mismatches |
-| 2 | Fix stage2 errors | `In progress` | Medium | 7/8 fixed, 1 remaining (list element type) |
-| 3 | Build mnc-stage2 binary | `Not started` | Small | First native-compiled native compiler |
-| 4 | Fixed-point verification | `Not started` | Medium | stage2 == stage3 → Python independence |
+| 2 | Fix stage2 errors | `Done` | Large | All parse errors fixed. 20 PHI verification warnings remain (match merge blocks) |
+| 3 | Build mnc-stage2 binary | `Done` | Medium | 3.8MB ELF, compiles via clang -O0, crashes at runtime (PHI issues) |
+| 4 | Fixed-point verification | `Blocked` | Medium | Requires PHI predecessor fix for mnc-stage2 to run |
 | 5 | Fix Python lowerer control flow bugs | `Not started` | Medium | Enables clean .mn code without workarounds |
 | 6 | Native test migration | `Not started` | X-Large | 10-50x test speed |
 
