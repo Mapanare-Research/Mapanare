@@ -971,11 +971,17 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
     for _ in 0..1000 {
         if i >= nfields { break }
         let v: Value = values[i]
-        let mut fty: String = resolve_mir_type(v.ty)
+        let mut fty: String = resolve_type(st, v.ty)
         let vname: String = v.name
-        // If MIR type is unknown, use the registered struct field type
-        if fty == "i64" && v.ty.kind == "unknown" && i < len(field_types) {
-            fty = field_types[i]
+        // Always prefer registered field types for struct construction.
+        // MIR value types are often wrong (unknown/empty name) due to
+        // COW corruption in nested lists. The emitter's struct registry
+        // (from type definitions) is authoritative.
+        if i < len(field_types) {
+            let rft: String = field_types[i]
+            if len(rft) > 2 && rft != "i64" {
+                fty = rft
+            }
         }
         let tmp_name: String = dn + ".f" + toString(i)
         s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, agg, vname, fty, toString(i)))
@@ -1839,7 +1845,7 @@ fn emit_interp_concat(st: EmitState, dest: Value, parts: List<Value>) -> EmitSta
 // ---------------------------------------------------------------------------
 
 fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitState {
-    let ty: String = resolve_mir_type(dest.ty)
+    let ty: String = resolve_type(st, dest.ty)
     let dn: String = dest.name
 
     if len(incoming) == 0 {

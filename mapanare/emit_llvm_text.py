@@ -1044,11 +1044,13 @@ class LLVMTextEmitter:
         if t == LIST:
             root = self._lroots.get(i.src.name, i.src.name)
             self._lroots[i.dest.name] = root
-        # No explicit list cloning needed — the C runtime's __mn_list_push
-        # and __mn_list_set call mn_list_detach() (COW) before mutation,
-        # so shared list buffers are automatically copied on write.
-        # The previous _clone_list_fields call here caused O(n²) memory
-        # (57 GB for mnc_all.mn) by cloning growing lists on every state copy.
+        # Clone list fields on struct copy for correctness: COW requires refcount
+        # increment via __mn_list_clone. Bitwise copies don't increment refcount.
+        # Without cloning, shared lists (e.g. module.functions) corrupt on push.
+        if i.src.ty.kind == TypeKind.STRUCT:
+            sn = self._res_struct(i.src.ty.type_info.name)
+            if sn in self._structs:
+                self._clone_list_fields(i.dest, sn)
 
     def _clone_list_fields(self, dest: Value, sn: str) -> None:
         """After a struct copy, deep-clone any List fields in the destination.
@@ -1081,14 +1083,16 @@ class LLVMTextEmitter:
         self._ensure("__mn_list_clone", LIST, [f"{LIST}*"])
         for idx, (fn, ft) in enumerate(fields):
             if ft == LIST:
+                # Skip append-only list fields that cause O(n²) clone overhead.
+                # EmitState.lines (field "lines") and str_globals grow huge but
+                # are never independently modified from copies — only appended.
+                if fn in ("lines", "str_globals"):
+                    continue
                 fp = self._f("clf")
                 self._L(f"{fp} = getelementptr inbounds {sty}, {sty}* {addr}, i32 0, i32 {idx}")
                 cloned = self._f("clr")
                 self._L(f"{cloned} = call {LIST} @__mn_list_clone({LIST}* {fp})")
                 self._L(f"store {LIST} {cloned}, {LIST}* {fp}")
-        # Note: MIRModule's list fields (enums, structs, extern_fns, etc.) are
-        # static after registration pass 1 — they don't need cloning because
-        # they're never modified during pass 2. Cloning them causes OOM.
 
     def _struct_name_for_llvm_type(self, llvm_ty: str) -> str | None:
         """Find the struct name whose LLVM type matches."""

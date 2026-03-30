@@ -68,16 +68,15 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
             }
         },
         FnDef(fd) => {
-            // Register function signature (return type) for fn-ret lookup.
-            // This lets lower_call_by_name resolve return types before pass 2.
+            // Register function return type via lambda_vars (top-level list,
+            // properly COW-cloned). Using "__ret__fn_name" as the key.
+            // This avoids the nested MIRModule.functions COW corruption issue.
             let ret_ty: MIRType = resolve_return_type_checked(st, fd.return_type)
-            let empty_params: List<MIRParam> = []
-            let empty_decorators: List<String> = []
-            let stub_fn: MIRFunction = new_mir_function(fd.name, empty_params, ret_ty, empty_decorators, fd.public)
+            let ret_key: String = "__ret__" + fd.name
+            let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+            let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
             let mut new_st: LowerState = st
-            let mut mod_tmp: MIRModule = new_st.module
-            mod_tmp.functions.push(stub_fn)
-            new_st.module = mod_tmp
+            new_st.lambda_vars.push(entry)
             return new_st
         },
         _ => { return st }
@@ -989,18 +988,31 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
     }
 
     // For non-lambda calls, emit directly (no state copy needed).
-    // Look up function return type from module's registered functions.
+    // Look up function return type from lambda_vars registry (__ret__fn_name).
     if resolved.find(":") < 0 {
         let mut call_ret: MIRType = mir_unknown()
-        let mut fri: Int = 0
-        for _ in 0..100000 {
-            if fri >= len(st.module.functions) { break }
-            let mfn: MIRFunction = st.module.functions[fri]
-            if mfn.name == resolved {
-                call_ret = mfn.return_type
-                break
-            }
-            fri = fri + 1
+        let ret_key: String = "__ret__" + resolved
+        let ret_opt: Option<String> = find_lambda(st, ret_key)
+        match ret_opt {
+            Some(ret_encoded) => {
+                // Decode "kind:name" → MIRType
+                let colon: Int = ret_encoded.find(":")
+                if colon >= 0 {
+                    let kind: String = ret_encoded.substr(0, colon)
+                    let name: String = ret_encoded.substr(colon + 1, len(ret_encoded) - colon - 1)
+                    if kind == "struct" { call_ret = mir_struct(name) }
+                    if kind == "enum" { call_ret = mir_enum(name) }
+                    if kind == "int" { call_ret = mir_int() }
+                    if kind == "float" { call_ret = mir_float() }
+                    if kind == "string" { call_ret = mir_string() }
+                    if kind == "bool" { call_ret = mir_bool() }
+                    if kind == "void" { call_ret = mir_void() }
+                    if kind == "option" { call_ret = mir_option() }
+                    if kind == "result" { call_ret = mir_result() }
+                    if kind == "list" { call_ret = mir_list() }
+                }
+            },
+            _ => {}
         }
         let dest_r: LowerResult = make_value(st, call_ret, "t")
         let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, resolved, args))
