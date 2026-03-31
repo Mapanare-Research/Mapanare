@@ -1153,12 +1153,15 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
         if elem_ty == "i64" { elem_ty = resolve_mir_type(args[1].ty) }
         let cnt: String = toString(s.counter)
         s.counter = s.counter + 1
-        let mut list_ptr: String = list_ref
-        // If args[0] is a struct alloca (from FieldAccess push like st.lines.push),
-        // GEP to the first list field (index 0 = lines field for EmitState).
-        // The struct type is resolved from the args[0] MIR type.
+
+        // Alloca element
+        let ea: String = "%push_ea" + cnt
+        s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
+        s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ea)
+
         if list_ref.contains(".addr") && list_ty_kind == "struct" {
-            // The type name may be "StructName:field_name" — strip the field part
+            // Struct field push: GEP to field, load list to temp, push to temp,
+            // WRITE BACK to struct field (matches Python text emitter pattern).
             let type_name: String = args[0].ty.name
             let cp: Int = type_name.find(":")
             let base_name: String = if cp > 0 { type_name.substr(0, cp) } else { type_name }
@@ -1166,19 +1169,36 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
             let field_idx: String = find_list_field_index(st, type_name, dest)
             let gep: String = "%push_gep" + cnt
             s = emit_line(s, "  " + gep + " = getelementptr inbounds " + struct_ty + ", ptr " + list_ref + ", i32 0, i32 " + field_idx)
-            list_ptr = gep
-        }
-        if !list_ref.contains(".addr") {
+            // Load list to temp alloca
+            let tmp: String = "%push_tmp" + cnt
+            s = emit_line(s, "  " + tmp + " = alloca " + llvm_list_rt())
+            let ld: String = "%push_ld" + cnt
+            s = emit_line(s, "  " + ld + " = load " + llvm_list_rt() + ", ptr " + gep)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + ld + ", ptr " + tmp)
+            // Push to temp
+            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp + ", ptr " + ea))
+            // Write back to struct field
+            let wb: String = "%push_wb" + cnt
+            s = emit_line(s, "  " + wb + " = load " + llvm_list_rt() + ", ptr " + tmp)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + wb + ", ptr " + gep)
+        } else if list_ref.contains(".addr") {
+            // Simple alloca push: same temp+writeback pattern
+            let tmp: String = "%push_tmp" + cnt
+            s = emit_line(s, "  " + tmp + " = alloca " + llvm_list_rt())
+            let ld: String = "%push_ld" + cnt
+            s = emit_line(s, "  " + ld + " = load " + llvm_list_rt() + ", ptr " + list_ref)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + ld + ", ptr " + tmp)
+            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp + ", ptr " + ea))
+            let wb: String = "%push_wb" + cnt
+            s = emit_line(s, "  " + wb + " = load " + llvm_list_rt() + ", ptr " + tmp)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + wb + ", ptr " + list_ref)
+        } else {
             // Loaded list value — create temp alloca
             let la: String = "%push_la" + cnt
             s = emit_line(s, "  " + la + " = alloca " + llvm_list_rt())
             s = emit_line(s, "  store " + llvm_list_rt() + " " + list_ref + ", ptr " + la)
-            list_ptr = la
+            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + la + ", ptr " + ea))
         }
-        let ea: String = "%push_ea" + cnt
-        s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
-        s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ea)
-        s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + list_ptr + ", ptr " + ea))
     }
     return s
 }
