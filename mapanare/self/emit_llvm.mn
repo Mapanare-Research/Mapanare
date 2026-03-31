@@ -1194,7 +1194,7 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
     let mut elem_sz: Int = llvm_type_size(elem_llvm_ty)
-    if elem_sz < 16 { elem_sz = 256 }
+    if elem_sz < 16 { elem_sz = 16 }
     s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz)))
 
     // Alloca for push

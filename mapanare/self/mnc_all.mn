@@ -9335,7 +9335,7 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
     let mut elem_sz: Int = llvm_type_size(elem_llvm_ty)
-    if elem_sz < 16 { elem_sz = 256 }
+    if elem_sz < 16 { elem_sz = 16 }
     s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz)))
 
     // Alloca for push
@@ -10532,8 +10532,17 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
         st = emit_line(st, st.str_globals[gi])
         gi = gi + 1
     }
-    // Join all lines with newline
-    let result: String = str_join("\n", st.lines)
+    // Output all lines directly — bypass str_join which has stale list issues
+    let mut result: String = ""
+    let nlines: Int = len(st.lines)
+    let mut li: Int = 0
+    for _ in 0..1000000 {
+        if li >= nlines { return result }
+        let line: String = st.lines[li]
+        if li > 0 { result = result + "\n" }
+        result = result + line
+        li = li + 1
+    }
     return result
 }
 
