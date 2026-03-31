@@ -351,11 +351,11 @@ fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
         }
         return 4
     }
-    // Struct: look up from struct entries
+    // Struct: field_count * 4 (average 4 slots per field — covers Span=4, String=2, List=4)
     if ty.kind == "struct" {
         let struct_opt: Option<StructEntry> = find_struct_entry(st, ty.name)
         match struct_opt {
-            Some(se) => { return len(se.field_types) },
+            Some(se) => { return len(se.field_types) * 4 },
             _ => { return 8 }
         }
     }
@@ -363,16 +363,29 @@ fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
     return 8
 }
 
+// Compute actual i64 slot count for a variant's payload.
+// Extracted to a helper function because return-inside-for works,
+// but cross-scope variable assignment after a for loop does not.
+fn variant_payload_slots(st: EmitState, variant: EnumVariantInfo) -> Int {
+    let mut total: Int = 0
+    let mut pi: Int = 0
+    for _ in 0..100 {
+        if pi >= len(variant.payload_types) { return total }
+        total = total + type_size_in_slots(st, variant.payload_types[pi])
+        pi = pi + 1
+    }
+    return total
+}
+
 fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
     // Tagged union: { i64 tag, payload... }
-    // Each payload type gets 8 i64 slots (conservative) to handle
-    // struct payloads that expand to multiple fields.
+    // Compute max payload across all variants using actual slot counts.
     let mut max_payload: Int = 0
     let mut vi: Int = 0
     for _ in 0..1000 {
         if vi >= len(info.variants) { break }
         let variant: EnumVariantInfo = info.variants[vi]
-        let count: Int = len(variant.payload_types) * 8
+        let count: Int = variant_payload_slots(st, variant)
         if count > max_payload {
             max_payload = count
         }
@@ -1128,10 +1141,10 @@ fn llvm_type_size(ty: String) -> Int {
     if ty == llvm_string() { return 16 }
     // List = {ptr, i64, i64, i64} = 32
     if ty == llvm_list_rt() { return 32 }
-    // Structs: vary from 32 (Span) to 200+ (FnDefData). Use 256 as safe default.
-    if ty.starts_with("%struct.") { return 256 }
-    // Enums: vary from 8 (BinOpKind) to 328 (Stmt). Use 336 as safe default.
-    if ty.starts_with("%enum.") { return 336 }
+    // Structs/enums: use 8 per top-level entity for llvm_type_size.
+    // Detailed slot computation is in type_size_in_slots.
+    if ty.starts_with("%struct.") { return 64 }
+    if ty.starts_with("%enum.") { return 64 }
     // Aggregate types: count fields
     if ty.starts_with("{") { return llvm_aggregate_size(ty) }
     return 8
@@ -1215,10 +1228,10 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
     let mut elem_sz: Int = llvm_type_size(elem_llvm_ty)
-    // Minimum 336: covers all enums (max: Stmt=328) and structs (max: ~200).
+    // Minimum 384: covers all enums (max: Definition≈264) and structs (max: ~256).
     // Empty lists default to unknown (i64, size 8) — the floor ensures they
     // still work correctly when populated with large elements later.
-    if elem_sz < 336 { elem_sz = 336 }
+    if elem_sz < 384 { elem_sz = 384 }
     s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz)))
 
     // Alloca for push
