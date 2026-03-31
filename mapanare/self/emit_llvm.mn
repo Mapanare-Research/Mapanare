@@ -1733,13 +1733,13 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         if j >= len(args) { break }
         let mut aty: String = resolve_mir_type(args[j].ty)
         let mut an: String = args[j].name
-        // Use registered param type when available
+        // Use registered param type when available.
+        // Enum reinterpret: alloca+store+load for layout-compatible enums.
+        // NEVER set an=zeroinitializer (that was the bug causing empty args).
         if j < len(reg_param_types) {
             let rpt: String = reg_param_types[j]
             if rpt != aty && rpt != "i64" {
-                if aty.starts_with("{ i1, ptr") && rpt.starts_with("{ i1,") {
-                    an = "zeroinitializer"
-                }
+                // Enum type mismatch: reinterpret through memory
                 if aty.starts_with("%enum.") && rpt.starts_with("%enum.") && aty != rpt {
                     let rc_a: String = "%ecast" + toString(s.counter)
                     s.counter = s.counter + 1
