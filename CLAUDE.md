@@ -133,7 +133,7 @@ python scripts/build_stage1.py                   # Build mnc-stage1 from Python 
 bash scripts/verify_fixed_point.sh               # 3-stage self-compilation verification
 bash scripts/verify_fixed_point.sh --keep        # Keep intermediate IR for debugging
 
-# Culebra v0.3.0 — compiler diagnostics and template-driven IR scanning (Rust, installed in WSL)
+# Culebra v0.4.0 — compiler diagnostics and template-driven IR scanning (Rust, installed in WSL)
 # 29+ YAML templates across ABI, IR, Binary, Bootstrap categories. Nuclei-style pattern engine.
 # Repo: C:\Users\Juan\Documents\GitHub\Culebra (also at github.com/Mapanare-Research/Culebra)
 # crates.io: https://crates.io/crates/culebra
@@ -160,6 +160,18 @@ culebra bisect stage1.ll stage2.ll                          # Find divergent fun
 culebra bisect stage1.ll stage2.ll --top 30                 # Show more results
 culebra verify stage2.ll return-type-divergence             # PASS/FAIL — verify a fix worked
 culebra verify stage2.ll break-inside-nested-control --function tokenize  # Scoped verify
+
+# --- Baseline tracking (v0.4.0) — track progress across fix iterations ---
+culebra baseline save stage2.ll                             # Save current findings as baseline
+culebra baseline diff stage2.ll                             # Compare current scan vs baseline (Fixed/New/Remaining)
+culebra baseline diff stage2.ll -b my-baseline.json         # Compare against specific baseline file
+
+# --- Template assertions (v0.4.0) — CI gates and regression tests ---
+culebra lint-template stage2.ll return-type-divergence --expect   # FAIL if template doesn't fire
+culebra lint-template stage2.ll option-type-pun-zeroinit --reject # FAIL if template fires (regression)
+
+# --- Triage --brief (v0.4.0) — minimal output for AI token efficiency ---
+culebra triage stage2.ll --brief                            # One line: "9 root causes, 31 findings: ..."
 
 # --- Diagnostic map (symptom → templates) ---
 culebra map crash                                           # "what could cause this crash?"
