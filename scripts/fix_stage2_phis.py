@@ -64,7 +64,7 @@ for fstart, fend in functions:
         # Match: %name = <instr> <type> ...  or  %name = extractvalue <type> ...
         dm = re.match(r'(%\S+)\s*=\s*(?:phi|add|sub|mul|icmp\s+\w+|extractvalue|insertvalue|load|call|inttoptr|bitcast|getelementptr\s+\w+)\s+(\S+)', s)
         if dm:
-            defs[dm.group(1)] = dm.group(2)
+            defs[dm.group(1)] = dm.group(2).rstrip(',')
     # Now fix PHIs with type mismatches
     for k in range(fstart, fend + 1):
         s = output[k].strip()
@@ -104,59 +104,6 @@ for fstart, fend in functions:
             output[k] = f"  {phi_var} = phi {phi_ty}{new_entries}\n"
             type_fixes += 1
 
-# Pass 3: Remove dead PHI chains with type mismatches.
-# Find all %var definitions and usages.  If a PHI's only use is another
-# PHI with a different type (forward-reference type clash), replace both
-# with constants since neither value is consumed.
-dead = 0
-used = {}  # var -> set of line indices where used (not defined)
-defined = {}  # var -> line index
-for k, ln in enumerate(output):
-    s = ln.strip()
-    m = re.match(r'(%\S+) = phi ', s)
-    if m:
-        defined[m.group(1)] = k
-    for ref in re.findall(r'(%[a-zA-Z_]\w+)', s):
-        if m and ref == m.group(1):
-            continue  # skip definition
-        used.setdefault(ref, set()).add(k)
-
-for var, defk in list(defined.items()):
-    s = output[defk].strip()
-    if '= phi ' not in s:
-        continue
-    refs = used.get(var, set())
-    if not refs:
-        # Completely unused PHI — replace with dummy
-        m = re.match(r'(\s*)(%\S+) = phi (\S+)', s)
-        if m:
-            ty = m.group(3)
-            if ty.startswith('%'):
-                output[defk] = f"  {m.group(2)} = inttoptr i64 0 to ptr\n"
-            else:
-                output[defk] = f"  {m.group(2)} = add i64 0, 0\n"
-            dead += 1
-    elif len(refs) == 1:
-        # Used in exactly one place — check if that place is also a dead PHI
-        user_k = next(iter(refs))
-        us = output[user_k].strip()
-        um = re.match(r'(%\S+) = phi ', us)
-        if um:
-            user_var = um.group(1)
-            user_refs = used.get(user_var, set())
-            if not user_refs:
-                # Both are dead — replace both
-                for vv, kk in [(var, defk), (user_var, user_k)]:
-                    ss = output[kk].strip()
-                    mm = re.match(r'(\s*)(%\S+) = phi (\S+)', ss)
-                    if mm:
-                        ty = mm.group(3)
-                        if ty.startswith('%'):
-                            output[kk] = f"  {mm.group(2)} = inttoptr i64 0 to ptr\n"
-                        else:
-                            output[kk] = f"  {mm.group(2)} = add i64 0, 0\n"
-                        dead += 1
-
 with open(sys.argv[2], "w") as f:
     f.writelines(output)
-print(f"Fixed {fixes} PHI predecessor issues, {dead} dead PHI chains")
+print(f"Fixed {fixes} PHI predecessor issues, {type_fixes} type mismatches")

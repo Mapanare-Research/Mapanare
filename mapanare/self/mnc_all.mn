@@ -5278,28 +5278,53 @@ fn is_comparison_binop(op: BinOpKind) -> Bool {
 fn register_declarations(st: LowerState, program: Program) -> LowerState {
     let mut s: LowerState = st
     // Pass 1: register enums first so struct field types can distinguish enum vs struct
-    let mut i: Int = 0
-    for _ in 0..100000 {
-        if i >= len(program.definitions) { break }
-        let defn: Definition = program.definitions[i]
-        match defn {
-            EnumDef(data) => { s = register_enum(s, data) },
-            _ => {}
-        }
-        i = i + 1
-    }
+    s = register_declarations_pass1(s, program)
     // Pass 2: register structs, impls, functions, imports
-    i = 0
+    s = register_declarations_pass2(s, program)
+    return s
+}
+
+// Pass 1: register enums. Extracted to helper to use return-based loop exit.
+fn register_declarations_pass1(st: LowerState, program: Program) -> LowerState {
+    let mut s: LowerState = st
+    let mut i: Int = 0
     for _ in 0..100000 {
         if i >= len(program.definitions) { return s }
         let defn: Definition = program.definitions[i]
-        match defn {
-            EnumDef(_) => {},
-            _ => { s = register_definition(s, defn) }
-        }
+        // Use register_enum_if_enum to avoid match PHI zeroinitializer bug
+        s = register_enum_if_enum(s, defn)
         i = i + 1
     }
     return s
+}
+
+// If defn is EnumDef, register it. Otherwise return state unchanged.
+fn register_enum_if_enum(st: LowerState, defn: Definition) -> LowerState {
+    match defn {
+        EnumDef(data) => { return register_enum(st, data) },
+        _ => { return st }
+    }
+}
+
+// Pass 2: register non-enum definitions. Extracted for return-based exit.
+fn register_declarations_pass2(st: LowerState, program: Program) -> LowerState {
+    let mut s: LowerState = st
+    let mut i: Int = 0
+    for _ in 0..100000 {
+        if i >= len(program.definitions) { return s }
+        let defn: Definition = program.definitions[i]
+        s = register_nonenums(s, defn)
+        i = i + 1
+    }
+    return s
+}
+
+// If defn is NOT EnumDef, register it. Otherwise return state unchanged.
+fn register_nonenums(st: LowerState, defn: Definition) -> LowerState {
+    match defn {
+        EnumDef(_) => { return st },
+        _ => { return register_definition(st, defn) }
+    }
 }
 
 fn register_definition(st: LowerState, defn: Definition) -> LowerState {
