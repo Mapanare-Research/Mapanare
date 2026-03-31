@@ -8711,7 +8711,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
         let gname: String = next_str_name(s)
         s.str_counter = s.str_counter + 1
         let arr_ty: String = "[" + toString(slen) + " x i8]"
-        s = emit_global(s, gname + " = private constant " + arr_ty + " c\"" + escaped + "\"")
+        s = emit_global(s, gname + " = private constant " + arr_ty + " c\"" + escaped + "\", align 2")
         let ptr_name: String = dn + ".ptr"
         s = emit_line(s, "  " + ptr_name + " = getelementptr inbounds " + arr_ty + ", " + "ptr " + gname + ", i64 0, i64 0")
         let s1_name: String = dn + ".s1"
@@ -10445,11 +10445,11 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
 
 fn emit_format_constants(st: EmitState) -> EmitState {
     let mut s: EmitState = st
-    s = emit_line(s, "@.newline = private constant [2 x i8] c\"\\0A\\00\"")
-    s = emit_line(s, "@.fmt_int = private constant [4 x i8] c\"%ld\\00\"")
-    s = emit_line(s, "@.fmt_int_nl = private constant [5 x i8] c\"%ld\\0A\\00\"")
-    s = emit_line(s, "@.fmt_float = private constant [4 x i8] c\"%lf\\00\"")
-    s = emit_line(s, "@.fmt_float_nl = private constant [5 x i8] c\"%lf\\0A\\00\"")
+    s = emit_line(s, "@.newline = private constant [2 x i8] c\"\\0A\\00\", align 2")
+    s = emit_line(s, "@.fmt_int = private constant [4 x i8] c\"%ld\\00\", align 2")
+    s = emit_line(s, "@.fmt_int_nl = private constant [5 x i8] c\"%ld\\0A\\00\", align 2")
+    s = emit_line(s, "@.fmt_float = private constant [4 x i8] c\"%lf\\00\", align 2")
+    s = emit_line(s, "@.fmt_float_nl = private constant [5 x i8] c\"%lf\\0A\\00\", align 2")
     return emit_blank(s)
 }
 
