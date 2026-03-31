@@ -52,10 +52,27 @@ consumers to producers. See `docs/ARCHITECTURE_DECISIONS.md`.
 |-------|------|--------|--------|--------|
 | 1 | Python text emitter opaque pointers | `Done` | Large | Eliminates ALL typed-pointer type mismatches |
 | 2 | Fix stage2 errors | `Done` | Large | All parse errors fixed. 20 PHI verification warnings remain (match merge blocks) |
-| 3 | Build mnc-stage2 binary | `Done` | Medium | 3.8MB ELF, compiles via clang -O0, crashes at runtime (PHI issues) |
-| 4 | Fixed-point verification | `Blocked` | Medium | Requires PHI predecessor fix for mnc-stage2 to run |
+| 3 | Build mnc-stage2 binary | `Done` | Medium | 3.8MB ELF, compiles via clang -O0 |
+| 3b | Fix stage2 runtime bugs | `In progress` | Large | 5 root causes fixed, 1 remaining |
+| 4 | Fixed-point verification | `Blocked` | Medium | Requires stage2 semantic checker to complete |
 | 5 | Fix Python lowerer control flow bugs | `Not started` | Medium | Enables clean .mn code without workarounds |
 | 6 | Native test migration | `Not started` | X-Large | 10-50x test speed |
+
+### Phase 3b bugs fixed (session 36-37)
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| Else bodies dropped (TOKS=0) | Parser passes ElseClause where Option<ElseClause> expected. Python emitter's type-pun coercion puts ElseBlock tag=0 in is_some=i1 field | Explicit `Some(else_clause)` in parser.mn |
+| For loops never execute in stage2 | Self-hosted emitter declares `__mn_range → {i64,i64}` but C runtime returns `void*` | Inline range construction with insertvalue (no runtime call) |
+| Tokenizer infinite loop | `break` inside `if` inside `for` dropped by Python lowerer | Restructured tokenizer: single loop, no inner break, no nested else |
+| List element truncation | Empty list literal → `mir_unknown()` → elem_sz=16 but actual elements 200+ bytes | Floor elem_sz at 384; `type_size_in_slots` for structs uses field_count × 4 |
+| Recursive enum overflow | Value-based `{i64, [N x i64]}` can't hold nested Expr inside Expr variant | Migrated to `{i64, ptr}` — heap-allocated payloads (matches Python emitter) |
+
+### Phase 3b remaining: check_call_expr crash at 0x5
+
+mnc-stage2 tokenizes, parses, and reaches semantic checking. Crashes in `check_call_expr` reading address 0x5 (the Call variant tag used as a pointer). The enum `{i64, ptr}` migration is complete for construction and type definitions, but payload extraction for match destructuring may read the tag field instead of the payload pointer.
+
+Culebra triage shows: 60 break-inside-nested-control (systemic Python lowerer bug), 158 dropped-else-branch, 137 PHI type mismatches. The break bugs affect 60 functions including critical ones like `emit_mir_call`, `check_definitions`, `find_function`.
 
 ---
 
