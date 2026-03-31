@@ -1051,6 +1051,46 @@ fn find_alloca_by_search(lines: List<String>, value_name: String) -> String {
     return result
 }
 
+fn is_name_in_byref(byref_names: List<String>, name: String) -> Bool {
+    // Check if alloca name matches a byref param EXACTLY.
+    // Alloca names: "%{param_name}.addr" (params have no counter suffix).
+    // Local vars: "%{name}{counter}.addr" — these should NOT match.
+    let mut i: Int = 0
+    for _ in 0..100 {
+        if i >= len(byref_names) { return false }
+        let bn: String = byref_names[i]
+        // Exact match: the alloca is %{param_name}.addr
+        let expected: String = "%" + bn + ".addr"
+        if name == expected { return true }
+        i = i + 1
+    }
+    return false
+}
+
+fn is_byref_type(ty: String) -> Bool {
+    // Large struct types (> 64 bytes) should use byref/sret passing.
+    // Named structs: check by name against known large types.
+    if ty.starts_with("%struct.") {
+        // Only large structs: EmitState, LowerState, MIRModule, SemState, etc.
+        // Small structs (Token, Value, MIRType, CompileResult) stay by-value.
+        if ty.contains("EmitState") { return true }
+        if ty.contains("LowerState") { return true }
+        if ty.contains("LowerResult") { return true }
+        if ty.contains("MIRModule") { return true }
+        if ty.contains("MIRFunction") { return true }
+        if ty.contains("SemState") { return true }
+        if ty.contains("InferResult") { return true }
+        if ty.contains("SemanticChecker") { return true }
+        if ty.contains("MatchBuildResult") { return true }
+        return false
+    }
+    if ty.starts_with("{") {
+        let sz: Int = llvm_type_size(ty)
+        if sz > 64 { return true }
+    }
+    return false
+}
+
 fn find_alloca_for_value(st: EmitState, value_name: String) -> String {
     // Scan backward through emitted lines to find:
     //   %value_name =load TYPE, ptr %ALLOCA
@@ -1686,56 +1726,70 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         _ => {}
     }
 
-    // Build args string, using registered param types when MIR type is unknown
+    // Build args with byref: large struct args → alloca + pass pointer
     let mut args_str: String = ""
     let mut j: Int = 0
     for _ in 0..1000 {
         if j >= len(args) { break }
         let mut aty: String = resolve_mir_type(args[j].ty)
         let mut an: String = args[j].name
-        // Use registered param type when available and different.
-        // When types mismatch (e.g. generic Option vs specific), reinterpret
-        // through memory to coerce the value to the expected type.
+        // Use registered param type when available
         if j < len(reg_param_types) {
             let rpt: String = reg_param_types[j]
             if rpt != aty && rpt != "i64" {
-                // Type mismatch: use registered type.
-                // Generic None ({i1,ptr}) → zeroinitializer of specific type
                 if aty.starts_with("{ i1, ptr") && rpt.starts_with("{ i1,") {
                     an = "zeroinitializer"
                 }
-                // Enum type mismatch (e.g. LambdaBody vs MatchArmBody — same layout):
-                // reinterpret through memory alloca+bitcast+load
                 if aty.starts_with("%enum.") && rpt.starts_with("%enum.") && aty != rpt {
                     let rc_a: String = "%ecast" + toString(s.counter)
                     s.counter = s.counter + 1
-                    let rc_bp: String = "%ecast_bp" + toString(s.counter)
-                    s.counter = s.counter + 1
+                    s = emit_line(s, "  " + rc_a + " = alloca " + rpt)
+                    s = emit_line(s, "  store " + aty + " " + an + ", ptr " + rc_a)
                     let rc_ld: String = "%ecast_ld" + toString(s.counter)
                     s.counter = s.counter + 1
-                    s = emit_line(s, "  " + rc_a + " = alloca " + rpt)
-                    s = emit_line(s, "  " + rc_bp + " = bitcast " + rpt + "* " + rc_a + " to " + aty + "*")
-                    s = emit_line(s, "  store " + aty + " " + an + ", " + aty + "* " + rc_bp)
-                    s = emit_line(s, "  " + rc_ld + " = load " + rpt + ", " + rpt + "* " + rc_a)
+                    s = emit_line(s, "  " + rc_ld + " = load " + rpt + ", ptr " + rc_a)
                     an = rc_ld
                 }
                 aty = rpt
             }
         }
+        // Byref: large struct args → store to alloca, pass pointer
+        let mut pass_ty: String = aty
+        let mut pass_name: String = an
+        if is_byref_type(aty) {
+            let ba: String = "%barg" + toString(s.counter)
+            s.counter = s.counter + 1
+            s = emit_line(s, "  " + ba + " = alloca " + aty)
+            s = emit_line(s, "  store " + aty + " " + an + ", ptr " + ba)
+            pass_ty = "ptr"
+            pass_name = ba
+        }
         if j > 0 {
-            args_str = args_str + ", " + aty + " " + an
+            args_str = args_str + ", " + pass_ty + " " + pass_name
         } else {
-            args_str = aty + " " + an
+            args_str = pass_ty + " " + pass_name
         }
         j = j + 1
     }
 
-    // Look up return type from function registry
+    // Look up return type and handle sret for large struct returns
     let fn_opt: Option<FnEntry> = find_function(s, fn_name)
     match fn_opt {
         Some(fe) => {
             if fe.ret_type == "void" {
                 return emit_line(s, emit_call_void(fn_name, args_str))
+            }
+            // sret: large struct returns via hidden pointer
+            if is_byref_type(fe.ret_type) {
+                let sret_a: String = "%sret" + toString(s.counter)
+                s.counter = s.counter + 1
+                s = emit_line(s, "  " + sret_a + " = alloca " + fe.ret_type)
+                s = emit_line(s, "  store " + fe.ret_type + " zeroinitializer, ptr " + sret_a)
+                let sret_arg: String = "ptr sret(" + fe.ret_type + ") " + sret_a
+                let full_args: String = if len(args_str) > 0 { sret_arg + ", " + args_str } else { sret_arg }
+                s = emit_line(s, "  call void @" + fn_name + "(" + full_args + ")")
+                s = emit_line(s, "  " + dn + " = load " + fe.ret_type + ", ptr " + sret_a)
+                return s
             }
             s = emit_line(s, emit_call_ir(dn, fe.ret_type, fn_name, args_str))
             return s
@@ -1883,12 +1937,14 @@ fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitStat
 fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
     match val_opt {
         Some(val) => {
-            // Use the function's declared return type (current_ret_type), not the
-            // value's MIR type.  The value's type is often "unknown"/i64 for struct
-            // constructors whose type wasn't propagated through the lowerer.
             let ty: String = st.current_ret_type
             if ty == "void" {
                 return emit_line(st, emit_ret_void())
+            }
+            // If using sret (large struct return), store to sret pointer and ret void
+            if is_byref_type(ty) {
+                let mut s: EmitState = emit_line(st, "  store " + ty + " " + val.name + ", ptr %__sret__")
+                return emit_line(s, emit_ret_void())
             }
             return emit_line(st, emit_ret(ty, val.name))
         },
@@ -2100,26 +2156,7 @@ fn emit_mir_basic_block(st: EmitState, bb: BasicBlock) -> EmitState {
 // ---------------------------------------------------------------------------
 
 fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
-    // Build parameter list
-    let mut params_str: String = ""
-    let mut param_types: List<String> = []
-    let mut pi: Int = 0
-    for _ in 0..1000 {
-        if pi >= len(f.params) { break }
-        let p: MIRParam = f.params[pi]
-        let pty: String = resolve_mir_type(p.ty)
-        param_types.push(pty)
-        if pi > 0 {
-            params_str = params_str + ", " + pty + " %" + p.name
-        } else {
-            params_str = pty + " %" + p.name
-        }
-        pi = pi + 1
-    }
-
-    // Resolve return type. If the type resolves to %struct.X but the name
-    // refers to an enum, correct it to %enum.X (the lowerer sometimes
-    // misclassifies enums as structs due to type information loss).
+    // Resolve return type
     let mut ret_ty: String = resolve_mir_type(f.return_type)
     if ret_ty.starts_with("%struct.") {
         let ret_name: String = f.return_type.name
@@ -2128,21 +2165,53 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         }
     }
 
-    // Register function
+    // Determine byref/sret: large structs passed by pointer
+    let use_sret: Bool = is_byref_type(ret_ty) && f.name != "main"
+
+    // Build parameter list with byref adjustments
+    let mut params_str: String = ""
+    let mut param_types: List<String> = []
+    // If sret, first param is the return pointer
+    if use_sret {
+        params_str = "ptr sret(" + ret_ty + ") %__sret__"
+    }
+    let mut pi: Int = 0
+    for _ in 0..1000 {
+        if pi >= len(f.params) { break }
+        let p: MIRParam = f.params[pi]
+        let pty: String = resolve_mir_type(p.ty)
+        param_types.push(pty)
+        let need_sep: Bool = pi > 0 || use_sret
+        let sep: String = if need_sep { ", " } else { "" }
+        if is_byref_type(pty) {
+            // Large param: pass by pointer
+            params_str = params_str + sep + "ptr %" + p.name + ".byref"
+        } else {
+            params_str = params_str + sep + pty + " %" + p.name
+        }
+        pi = pi + 1
+    }
+
+    // Register function (with original types for caller resolution)
     let entry: FnEntry = new_fn_entry(f.name, ret_ty, param_types)
     let mut s: EmitState = st
     s.functions.push(entry)
 
-    // Track current function's return type for Return instruction
+    // Track current function's return type and sret flag
     s.current_ret_type = ret_ty
 
     // Emit function header
     let fn_name: String = strip_percent(f.name)
     let is_lambda: Bool = fn_name != f.name
     let visibility: String = if is_lambda { "define internal" } else { "define" }
-    s = emit_line(s, visibility + " " + ret_ty + " @" + fn_name + "(" + params_str + ") {")
+    let abi_ret: String = if use_sret { "void" } else { ret_ty }
+    s = emit_line(s, visibility + " " + abi_ret + " @" + fn_name + "(" + params_str + ") {")
 
-    // Emit basic blocks
+    // Emit basic blocks — with byref param fixup in the entry block.
+    // The MIR's entry block has Store(param_alloca, param_value) for each param.
+    // For byref params, param_value is a POINTER (not the actual value).
+    // We need to emit a load from the pointer before the store.
+    // Strategy: emit the entry block label, then byref loads, then regular block.
     let mut bi: Int = 0
     for _ in 0..100000 {
         if bi >= len(f.blocks) {
@@ -2150,7 +2219,57 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
             return emit_blank(s)
         }
         let bb: BasicBlock = f.blocks[bi]
-        s = emit_mir_basic_block(s, bb)
+        // For the first block (entry), add byref parameter loads
+        if bi == 0 {
+            s = emit_line(s, bb.label + ":")
+            // Emit byref loads: for each byref param, alloca + load from ptr + store
+            let mut pi3: Int = 0
+            for _ in 0..100 {
+                if pi3 >= len(f.params) { break }
+                let p: MIRParam = f.params[pi3]
+                let pty: String = resolve_mir_type(p.ty)
+                if is_byref_type(pty) {
+                    s = emit_line(s, "  %" + p.name + ".addr = alloca " + pty)
+                    s = emit_line(s, "  %" + p.name + ".bp = load " + pty + ", ptr %" + p.name + ".byref")
+                    s = emit_line(s, "  store " + pty + " %" + p.name + ".bp, ptr %" + p.name + ".addr")
+                }
+                pi3 = pi3 + 1
+            }
+            // Build set of byref param names for skip detection
+            let mut byref_names: List<String> = []
+            let mut pn: Int = 0
+            for _ in 0..100 {
+                if pn >= len(f.params) { break }
+                let pp: MIRParam = f.params[pn]
+                let ppty: String = resolve_mir_type(pp.ty)
+                if is_byref_type(ppty) {
+                    byref_names.push(pp.name)
+                }
+                pn = pn + 1
+            }
+            // Emit block instructions, skipping Alloca+Store ONLY for byref params
+            let mut ii: Int = 0
+            for _ in 0..100000 {
+                if ii >= len(bb.instructions) { break }
+                let inst: Instruction = bb.instructions[ii]
+                let mut should_skip: Bool = false
+                match inst {
+                    Alloca(dest, ty) => {
+                        should_skip = is_name_in_byref(byref_names, dest.name)
+                    },
+                    Store(ptr, val) => {
+                        should_skip = is_name_in_byref(byref_names, ptr.name)
+                    },
+                    _ => {}
+                }
+                if !should_skip {
+                    s = emit_mir_instruction(s, inst)
+                }
+                ii = ii + 1
+            }
+        } else {
+            s = emit_mir_basic_block(s, bb)
+        }
         bi = bi + 1
     }
 
