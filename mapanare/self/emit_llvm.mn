@@ -1399,7 +1399,13 @@ fn compute_field_offset(st: EmitState, payload: List<Value>, field_idx: Int) -> 
     let mut i: Int = 0
     for _ in 0..100 {
         if i >= field_idx { return offset }
-        let pty: String = resolve_mir_type(payload[i].ty)
+        let mut pty: String = resolve_mir_type(payload[i].ty)
+        // Fix struct→enum misclassification
+        if pty.starts_with("%struct.") {
+            if is_enum_type(st, payload[i].ty.name) {
+                pty = "%enum." + payload[i].ty.name
+            }
+        }
         offset = offset + llvm_type_size(pty)
         i = i + 1
     }
@@ -1485,7 +1491,14 @@ fn sum_field_sizes(st: EmitState, types: List<MIRType>, count: Int) -> Int {
     let mut i: Int = 0
     for _ in 0..100 {
         if i >= count { return total }
-        let pty: String = resolve_mir_type(types[i])
+        let mut pty: String = resolve_mir_type(types[i])
+        // Fix struct→enum misclassification: MIR may have kind:"struct" for enums
+        if pty.starts_with("%struct.") {
+            let tname: String = types[i].name
+            if is_enum_type(st, tname) {
+                pty = "%enum." + tname
+            }
+        }
         total = total + llvm_type_size(pty)
         i = i + 1
     }
