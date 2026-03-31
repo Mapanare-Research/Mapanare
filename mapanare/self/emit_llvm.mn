@@ -383,18 +383,13 @@ fn variant_payload_slots_max(st: EmitState, info: EnumInfo) -> Int {
 }
 
 fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
-    // Tagged union: { i64 tag, payload... }
-    // Use helper function to avoid cross-scope assignment bug.
-    let mut max_payload: Int = variant_payload_slots_max(st, info)
-    // Floor: recursive enums (Expr, Stmt) need at least 52 slots
-    // (e.g., Call(Expr=48, List=4)). The helper may undercount
-    // unregistered self-references.
-    if max_payload < 52 { max_payload = 52 }
-
+    // Pointer-based enum: { i64 tag, ptr payload }.
+    // Matches the Python text emitter. Payload is heap-allocated.
+    // This handles recursive enums (Expr contains Expr) correctly.
     let mut s: EmitState = st
     s.enum_names.push(info.name)
     s.enum_infos.push(info)
-    s = emit_line(s, "%enum." + info.name + " = type { i64, [" + toString(max_payload) + " x i64] }")
+    s = emit_line(s, "%enum." + info.name + " = type { i64, ptr }")
     return s
 }
 
@@ -1470,45 +1465,33 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         return s
     }
 
-    // Regular enum: byte-offset arithmetic (skip i64 tag).
-    // If dest type is unknown (i64), look up actual payload type from enum info.
+    // Pointer-based enum: { i64 tag, ptr payload }.
+    // Extract payload pointer, then GEP to the specific field, then load.
+    let pr: String = dn + ".pr"
+    s = emit_line(s, "  " + pr + " = extractvalue { i64, ptr } " + val.name + ", 1")
+
+    // Determine the dest type and payload index
     let mut dest_ty: String = resolve_mir_type(dest.ty)
-    if dest_ty == "i64" && dest.ty.kind == "unknown" {
-        let enum_name: String = val.ty.name
-        let mut ei2: Int = 0
-        for _ in 0..1000 {
-            if ei2 >= len(s.enum_infos) { break }
-            let einfo: EnumInfo = s.enum_infos[ei2]
-            if einfo.name == enum_name {
-                let mut vi2: Int = 0
-                for _ in 0..1000 {
-                    if vi2 >= len(einfo.variants) { break }
-                    let vinfo: EnumVariantInfo = einfo.variants[vi2]
-                    if vinfo.name == variant {
-                        if len(vinfo.payload_types) > 0 {
-                            dest_ty = resolve_mir_type(vinfo.payload_types[0])
-                        }
-                        break
-                    }
-                    vi2 = vi2 + 1
-                }
-                break
-            }
-            ei2 = ei2 + 1
-        }
-    }
-    // Correct struct→enum misclassification: if the payload type resolves to
-    // %struct.X but a %enum.X type is registered, use the enum type.
+    let mut payload_idx: Int = 0
+    // Correct struct→enum misclassification
     if dest_ty.starts_with("%struct.") {
         let payload_name: String = dest.ty.name
         if is_enum_type(s, payload_name) {
             dest_ty = "%enum." + payload_name
         }
     }
-    s = emit_line(s, "  " + dn + ".ea = alloca " + enum_ty)
-    s = emit_line(s, "  store " + enum_ty + " " + val.name + ", ptr " + dn + ".ea")
-    s = emit_line(s, "  " + dn + ".pp = getelementptr inbounds i8, ptr " + dn + ".ea, i64 8")
-    s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + dn + ".pp")
+
+    // Build payload struct type from variant info for GEP
+    let payload_struct_ty: String = lookup_payload_struct_type(s, val.ty.name, variant)
+    if payload_struct_ty != "" {
+        // Use GEP to index into the payload struct
+        let pf: String = dn + ".pf"
+        s = emit_line(s, "  " + pf + " = getelementptr inbounds " + payload_struct_ty + ", ptr " + pr + ", i32 0, i32 " + toString(dest.payload_idx))
+        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + pf)
+    } else {
+        // Fallback: load directly from payload pointer
+        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + pr)
+    }
     return s
 }
 

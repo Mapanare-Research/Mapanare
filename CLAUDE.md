@@ -132,6 +132,73 @@ python scripts/mir_trace.py tests/golden/10_result.mn divide --compare  # Compar
 python scripts/build_stage1.py                   # Build mnc-stage1 from Python bootstrap
 bash scripts/verify_fixed_point.sh               # 3-stage self-compilation verification
 bash scripts/verify_fixed_point.sh --keep        # Keep intermediate IR for debugging
+
+# Culebra v0.3.0 — compiler diagnostics and template-driven IR scanning (Rust, installed in WSL)
+# 29+ YAML templates across ABI, IR, Binary, Bootstrap categories. Nuclei-style pattern engine.
+# Repo: C:\Users\Juan\Documents\GitHub\Culebra (also at github.com/Mapanare-Research/Culebra)
+# crates.io: https://crates.io/crates/culebra
+
+# --- Core scanning ---
+culebra scan mapanare/self/main.ll                          # Run all templates against IR
+culebra scan mapanare/self/main.ll --tags abi               # ABI checks only
+culebra scan mapanare/self/main.ll --severity critical      # Critical findings only
+culebra scan mapanare/self/main.ll --id option-type-pun-zeroinit  # One specific template
+culebra scan mapanare/self/main.ll --autofix --dry-run      # Preview auto-fixes
+culebra scan mapanare/self/main.ll --autofix                # Apply auto-fixes
+culebra scan mapanare/self/main.ll --header runtime/native/mapanare_runtime.c  # Cross-ref IR vs C structs
+culebra scan mapanare/self/main.ll --format json            # JSON output
+culebra scan mapanare/self/main.ll --format sarif           # SARIF for GitHub Code Scanning
+
+# --- AI-optimized debugging (v0.3.0) ---
+culebra triage mapanare/self/main.ll                        # Group findings by root cause, deduplicate
+culebra triage mapanare/self/main.ll --format json          # Structured JSON for AI consumption
+culebra compare stage1.ll stage2.ll --metric calls          # Per-function metric comparison (flags drops)
+culebra compare stage1.ll stage2.ll --metric pushes --threshold 0.5  # Custom metric + threshold
+culebra explain stage2.ll return-type-divergence            # Show matched IR in context + remediation
+culebra explain stage2.ll option-type-pun-zeroinit --function parser  # Scoped to one function
+culebra bisect stage1.ll stage2.ll                          # Find divergent functions ranked by impact
+culebra bisect stage1.ll stage2.ll --top 30                 # Show more results
+culebra verify stage2.ll return-type-divergence             # PASS/FAIL — verify a fix worked
+culebra verify stage2.ll break-inside-nested-control --function tokenize  # Scoped verify
+
+# --- Diagnostic map (symptom → templates) ---
+culebra map crash                                           # "what could cause this crash?"
+culebra map "type mismatch"                                 # Search by symptom keyword
+culebra map "zero tokens"                                   # Maps to relevant templates
+culebra map phi                                             # PHI-related issues
+
+# --- Drain queue (Mapanare integration) ---
+culebra drain .culebra-queue.yaml                           # Process dynamically-queued checks
+culebra drain .culebra-queue.yaml --clear                   # Process and clear queue
+
+# --- IR analysis ---
+culebra strings mapanare/self/main.ll                       # Validate [N x i8] byte counts
+culebra audit mapanare/self/main.ll                         # Detect IR pathologies
+culebra check mapanare/self/main.ll                         # Validate IR with llvm-as
+culebra diff stage1.ll stage2.ll                            # Per-function structural diff
+culebra extract mapanare/self/main.ll my_function           # Extract one function's IR
+culebra table mapanare/self/main.ll --top 15                # Per-function metrics table
+
+# --- ABI + binary ---
+culebra abi mapanare/self/main.ll --header runtime/native/mapanare_runtime.c  # Struct layout + sret
+culebra binary ./mapanare/self/mnc-stage1 --ir main.ll      # ELF/PE inspection + .rodata cross-ref
+
+# --- Bootstrap pipeline ---
+culebra phi-check /tmp/stage2.ll                            # Validate transform preserves IR
+culebra pipeline                                            # Run full stage pipeline from culebra.toml
+culebra fixedpoint ./mnc-stage1 mapanare/self/mnc_all.mn    # Fixed-point convergence detection
+
+# --- Templates + workflows ---
+culebra templates list                                      # List all templates
+culebra templates show option-type-pun-zeroinit             # Full template details
+culebra workflow bootstrap-health-check --input stage1_output=stage1.ll  # Multi-step validation
+culebra workflow playground-mapanare --input stage2_output=stage2.ll     # Playground workflow
+
+# --- Misc ---
+culebra watch --patterns '*.ll,*.mn' culebra scan main.ll   # Watch + re-scan on change
+culebra test                                                # Run all [[tests]] from culebra.toml
+culebra run ./mnc-stage1 test.mn --expect "hello"           # Compile, run, check output
+culebra init                                                # Generate starter culebra.toml
 ```
 
 ## Testing the Native Compiler
@@ -314,3 +381,7 @@ These are invocable via `/skill-name` in Claude Code:
 | `/bump-version` | Bump version across VERSION, README, CHANGELOG, and all localized docs. |
 | `/code-review` | Run a full 7-reviewer panel code review of the codebase. |
 | `/create-pr` | Generate PR title and description from the current branch's commits. |
+| `/simplify` | Review changed code for reuse, quality, and efficiency, then fix issues found. |
+| `/autoresearch` | Autonomous experiment loop — iterative research with automatic follow-up. |
+| `/culebra-scan` | Run Culebra's 29+ YAML templates against IR — ABI, IR, Binary, Bootstrap checks with autofix and SARIF. |
+| `/culebra-triage` | Triage IR findings: group by root cause, deduplicate, actionable summary (text or JSON). |
