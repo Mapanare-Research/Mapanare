@@ -8365,6 +8365,9 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     // Panic
     s = declare_runtime_fn(s, "__mn_panic", "void", llvm_string())
 
+    // Malloc (for enum payload allocation)
+    s = declare_runtime_fn(s, "malloc", "ptr", "i64")
+
     // Printf
     s = declare_runtime_fn(s, "printf", "i32", "ptr, ...")
 
@@ -8542,18 +8545,13 @@ fn variant_payload_slots_max(st: EmitState, info: EnumInfo) -> Int {
 }
 
 fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
-    // Tagged union: { i64 tag, payload... }
-    // Use helper function to avoid cross-scope assignment bug.
-    let mut max_payload: Int = variant_payload_slots_max(st, info)
-    // Floor: recursive enums (Expr, Stmt) need at least 52 slots
-    // (e.g., Call(Expr=48, List=4)). The helper may undercount
-    // unregistered self-references.
-    if max_payload < 52 { max_payload = 52 }
-
+    // Pointer-based enum: { i64 tag, ptr payload }.
+    // Matches the Python text emitter. Payload is heap-allocated.
+    // This handles recursive enums (Expr contains Expr) correctly.
     let mut s: EmitState = st
     s.enum_names.push(info.name)
     s.enum_infos.push(info)
-    s = emit_line(s, "%enum." + info.name + " = type { i64, [" + toString(max_payload) + " x i64] }")
+    s = emit_line(s, "%enum." + info.name + " = type { i64, ptr }")
     return s
 }
 
@@ -9295,10 +9293,11 @@ fn llvm_type_size(ty: String) -> Int {
     if ty == llvm_string() { return 16 }
     // List = {ptr, i64, i64, i64} = 32
     if ty == llvm_list_rt() { return 32 }
-    // Structs/enums: use 8 per top-level entity for llvm_type_size.
-    // Detailed slot computation is in type_size_in_slots.
-    if ty.starts_with("%struct.") { return 64 }
-    if ty.starts_with("%enum.") { return 64 }
+    // Enums: now always {i64, ptr} = 16 bytes
+    if ty.starts_with("%enum.") { return 16 }
+    // Structs: use field_count * 32 as safe upper bound.
+    // This is used for malloc allocation, so must be >= actual size.
+    if ty.starts_with("%struct.") { return 256 }
     // Aggregate types: count fields
     if ty.starts_with("{") { return llvm_aggregate_size(ty) }
     return 8
@@ -9501,53 +9500,69 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
 // ---------------------------------------------------------------------------
 
 fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payload: List<Value>) -> EmitState {
-    let enum_ty: String = resolve_mir_type(ty)
     let mut s: EmitState = st
     let dn: String = dest.name
 
     // Resolve variant tag index
     let tag_val: String = toString(resolve_variant_index(s, ty.name, variant))
 
-    // Alloca for the enum value, zero-initialize
-    let ea: String = dn + ".ea"
-    s = emit_line(s, "  " + ea + " = alloca " + enum_ty)
-    // Zero-initialize to avoid garbage in unused payload slots
-    s = emit_line(s, "  store " + enum_ty + " zeroinitializer, " + "ptr " + ea)
-    // Store tag via GEP into field 0
-    let tag_ptr: String = dn + ".tp"
-    s = emit_line(s, "  " + tag_ptr + " = getelementptr inbounds " + enum_ty + ", " + "ptr " + ea + ", i32 0, i32 0")
-    s = emit_line(s, "  store i64 " + tag_val + ", i64* " + tag_ptr)
+    // Pointer-based enum: { i64 tag, ptr payload }.
+    // 1. Malloc payload struct, store each field via GEP.
+    // 2. Build {i64, ptr} with insertvalue.
+    // Use named type (%enum.X) for insertvalue, not inline { i64, ptr }
+    let enum_ty: String = resolve_mir_type(ty)
+    if len(payload) > 0 {
+        // Compute payload allocation size: sum field sizes
+        let alloc_size: String = toString(compute_payload_alloc_size(s, payload))
+        let ep: String = dn + ".ep"
+        s = emit_line(s, "  " + ep + " = call ptr @malloc(i64 " + alloc_size + ")")
+        // Store each payload field via byte-offset GEP
+        let mut i: Int = 0
+        for _ in 0..100 {
+            if i >= len(payload) { break }
+            let p: Value = payload[i]
+            let pty: String = resolve_mir_type(p.ty)
+            let ef: String = dn + ".ef" + toString(i)
+            let offset: String = toString(compute_field_offset(s, payload, i))
+            s = emit_line(s, "  " + ef + " = getelementptr inbounds i8, ptr " + ep + ", i64 " + offset)
+            s = emit_line(s, "  store " + pty + " " + p.name + ", ptr " + ef)
+            i = i + 1
+        }
+        // Build enum value using named type
+        let ei1: String = dn + ".ei1"
+        s = emit_line(s, "  " + ei1 + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
+        s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1 + ", ptr " + ep + ", 1")
+    } else {
+        // No payload: null pointer
+        let ei1: String = dn + ".ei1"
+        s = emit_line(s, "  " + ei1 + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
+        s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1 + ", ptr null, 1")
+    }
+    return s
+}
 
-    // Store payload values through bitcast: skip past the i64 tag (8 bytes).
-    // All payload slots are i64-sized. Non-i64 values (double, i1) are stored
-    // through type-punning (alloca+bitcast) to fit the i64 slot.
+fn compute_payload_alloc_size(st: EmitState, payload: List<Value>) -> Int {
+    let mut total: Int = 0
     let mut i: Int = 0
     for _ in 0..100 {
-        if i >= len(payload) { break }
-        let p: Value = payload[i]
-        let mut pty: String = resolve_mir_type(p.ty)
-        let mut pname: String = p.name
-        // Type erasure: double → bitcast to i64 for the enum slot
-        if pty == "double" {
-            let bc: String = dn + ".fti" + toString(i)
-            s = emit_line(s, "  " + bc + " = bitcast double " + pname + " to i64")
-            pname = bc
-            pty = "i64"
-        }
-        // Bitcast past tag to get payload pointer
-        let bp: String = dn + ".bp" + toString(i)
-        s = emit_line(s, "  " + bp + " = bitcast " + "ptr " + ea + " to ptr")
-        let pp: String = dn + ".pp" + toString(i)
-        let offset: String = toString(8 + i * 8)
-        s = emit_line(s, "  " + pp + " = getelementptr inbounds i8, ptr " + bp + ", i64 " + offset)
-        // Opaque pointers: store directly to ptr, no bitcast needed
-        s = emit_line(s, "  store " + pty + " " + pname + ", ptr " + pp)
+        if i >= len(payload) { return total }
+        let pty: String = resolve_mir_type(payload[i].ty)
+        total = total + llvm_type_size(pty)
         i = i + 1
     }
+    return total
+}
 
-    // Load the complete enum value
-    s = emit_line(s, "  " + dn + " = load " + enum_ty + ", " + "ptr " + ea)
-    return s
+fn compute_field_offset(st: EmitState, payload: List<Value>, field_idx: Int) -> Int {
+    let mut offset: Int = 0
+    let mut i: Int = 0
+    for _ in 0..100 {
+        if i >= field_idx { return offset }
+        let pty: String = resolve_mir_type(payload[i].ty)
+        offset = offset + llvm_type_size(pty)
+        i = i + 1
+    }
+    return offset
 }
 
 fn resolve_variant_index(st: EmitState, enum_name: String, variant: String) -> Int {
@@ -9629,45 +9644,26 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         return s
     }
 
-    // Regular enum: byte-offset arithmetic (skip i64 tag).
-    // If dest type is unknown (i64), look up actual payload type from enum info.
+    // Pointer-based enum: { i64 tag, ptr payload }.
+    // Extract payload pointer using the named enum type.
+    let pr: String = dn + ".pr"
+    s = emit_line(s, "  " + pr + " = extractvalue " + enum_ty + " " + val.name + ", 1")
+
+    // Determine the dest type
     let mut dest_ty: String = resolve_mir_type(dest.ty)
-    if dest_ty == "i64" && dest.ty.kind == "unknown" {
-        let enum_name: String = val.ty.name
-        let mut ei2: Int = 0
-        for _ in 0..1000 {
-            if ei2 >= len(s.enum_infos) { break }
-            let einfo: EnumInfo = s.enum_infos[ei2]
-            if einfo.name == enum_name {
-                let mut vi2: Int = 0
-                for _ in 0..1000 {
-                    if vi2 >= len(einfo.variants) { break }
-                    let vinfo: EnumVariantInfo = einfo.variants[vi2]
-                    if vinfo.name == variant {
-                        if len(vinfo.payload_types) > 0 {
-                            dest_ty = resolve_mir_type(vinfo.payload_types[0])
-                        }
-                        break
-                    }
-                    vi2 = vi2 + 1
-                }
-                break
-            }
-            ei2 = ei2 + 1
-        }
-    }
-    // Correct struct→enum misclassification: if the payload type resolves to
-    // %struct.X but a %enum.X type is registered, use the enum type.
+    // Correct struct→enum misclassification
     if dest_ty.starts_with("%struct.") {
         let payload_name: String = dest.ty.name
         if is_enum_type(s, payload_name) {
             dest_ty = "%enum." + payload_name
         }
     }
-    s = emit_line(s, "  " + dn + ".ea = alloca " + enum_ty)
-    s = emit_line(s, "  store " + enum_ty + " " + val.name + ", ptr " + dn + ".ea")
-    s = emit_line(s, "  " + dn + ".pp = getelementptr inbounds i8, ptr " + dn + ".ea, i64 8")
-    s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + dn + ".pp")
+
+    // Load the first payload field directly from the payload pointer.
+    // For single-field variants, this gives the entire payload.
+    // For multi-field variants, this gives field 0 — subsequent fields
+    // require payload_idx support in the MIR (TODO).
+    s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + pr)
     return s
 }
 
