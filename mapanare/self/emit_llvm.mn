@@ -1074,20 +1074,12 @@ fn is_name_in_byref(byref_names: List<String>, name: String) -> Bool {
 }
 
 fn is_byref_type(ty: String) -> Bool {
-    // Large struct types (> 64 bytes) should use byref/sret passing.
-    // Named structs: check by name against known large types.
+    // Large types (> 64 bytes) should use byref/sret passing.
+    // This prevents ABI issues with large struct copies.
     if ty.starts_with("%struct.") {
-        // Only large structs: EmitState, LowerState, MIRModule, SemState, etc.
-        // Small structs (Token, Value, MIRType, CompileResult) stay by-value.
-        if ty.contains("EmitState") { return true }
-        if ty.contains("LowerState") { return true }
-        if ty.contains("LowerResult") { return true }
-        if ty.contains("MIRModule") { return true }
-        if ty.contains("MIRFunction") { return true }
-        if ty.contains("SemState") { return true }
-        if ty.contains("InferResult") { return true }
-        if ty.contains("SemanticChecker") { return true }
-        if ty.contains("MatchBuildResult") { return true }
+        // All structs > 64 bytes use byref. Use llvm_type_size heuristic.
+        let sz: Int = llvm_type_size(ty)
+        if sz > 64 { return true }
         return false
     }
     if ty.starts_with("{") {

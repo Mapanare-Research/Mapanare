@@ -229,32 +229,60 @@ fn lower_definition(st: LowerState, defn: Definition) -> LowerState {
 // Function lowering
 // ---------------------------------------------------------------------------
 
-fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerState {
-    let fn_name: String = name_prefix + fn_def.name
-
-    // Build params
+// Helper: build MIR params from FnDefData.params (avoids break-in-for bug)
+fn build_mir_params(st: LowerState, fn_params: List<Param>) -> List<MIRParam> {
     let mut params: List<MIRParam> = []
     let mut pi: Int = 0
     for _ in 0..1000 {
-        if pi >= len(fn_def.params) { break }
-        let p: Param = fn_def.params[pi]
+        if pi >= len(fn_params) { return params }
+        let p: Param = fn_params[pi]
         let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
         let mp: MIRParam = new_mir_param(p.name, pty)
         params.push(mp)
         pi = pi + 1
     }
+    return params
+}
 
-    let ret_type: MIRType = resolve_return_type_checked(st, fn_def.return_type)
-
-    // Collect decorator names
-    let mut decorators: List<String> = []
+// Helper: collect decorator names (avoids break-in-for bug)
+fn collect_decorator_names(decorators: List<Decorator>) -> List<String> {
+    let mut names: List<String> = []
     let mut di: Int = 0
     for _ in 0..100 {
-        if di >= len(fn_def.decorators) { break }
-        let dec: Decorator = fn_def.decorators[di]
-        decorators.push(dec.name)
+        if di >= len(decorators) { return names }
+        let dec: Decorator = decorators[di]
+        names.push(dec.name)
         di = di + 1
     }
+    return names
+}
+
+// Helper: bind params as variables in entry block (avoids break-in-for bug)
+fn bind_fn_params(st: LowerState, fn_params: List<Param>) -> LowerState {
+    let mut s: LowerState = st
+    let mut bi: Int = 0
+    for _ in 0..1000 {
+        if bi >= len(fn_params) { return s }
+        let p: Param = fn_params[bi]
+        let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
+        let addr_name: String = "%" + p.name + ".addr"
+        let addr: Value = new_value(addr_name, pty)
+        let param_val: Value = new_value("%" + p.name, pty)
+        s = emit_instr(s, Instruction::Alloca(addr, pty))
+        s = emit_instr(s, Instruction::Store(addr, param_val))
+        s = define_var(s, p.name, addr, false)
+        bi = bi + 1
+    }
+    return s
+}
+
+fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerState {
+    let fn_name: String = name_prefix + fn_def.name
+
+    // Build params and decorators using helpers (avoid break-in-for bug)
+    let params: List<MIRParam> = build_mir_params(st, fn_def.params)
+    let ret_type: MIRType = resolve_return_type_checked(st, fn_def.return_type)
+    let decorators: List<String> = collect_decorator_names(fn_def.decorators)
 
     let mir_fn: MIRFunction = new_mir_function(fn_name, params, ret_type, decorators, fn_def.public)
 
@@ -278,20 +306,7 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
 
     // Bind params as variables
     let mut bi: Int = 0
-    for _ in 0..1000 {
-        if bi >= len(fn_def.params) { break }
-        let p: Param = fn_def.params[bi]
-        let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
-
-        let addr_name: String = "%" + p.name + ".addr"
-        let addr: Value = new_value(addr_name, pty)
-        let param_val: Value = new_value("%" + p.name, pty)
-        
-        s = emit_instr(s, Instruction::Alloca(addr, pty))
-        s = emit_instr(s, Instruction::Store(addr, param_val))
-        s = define_var(s, p.name, addr, false)
-        bi = bi + 1
-    }
+    s = bind_fn_params(s, fn_def.params)
 
     // Lower body
     let body_r: LowerResult = lower_block(s, fn_def.body)
@@ -388,25 +403,27 @@ fn lower_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lower
 // ---------------------------------------------------------------------------
 
 fn lower_block(st: LowerState, block: Block) -> LowerResult {
-    let mut s: LowerState = lower_push_scope(st)
+    let s: LowerState = lower_push_scope(st)
+    // Use helper to iterate statements (avoids return-inside-if-inside-for bug)
+    let r: LowerResult = lower_block_stmts(s, block.stmts)
+    let final_s: LowerState = lower_pop_scope(r.state)
+    return new_lower_result(r.value, final_s)
+}
+
+// Helper: iterate block statements. Uses return-based exit.
+fn lower_block_stmts(st: LowerState, stmts: List<Stmt>) -> LowerResult {
+    let mut s: LowerState = st
     let mut last_val: Value = void_value()
     let mut i: Int = 0
     for _ in 0..100000 {
-        if i >= len(block.stmts) {
-            s = lower_pop_scope(s)
-            return new_lower_result(last_val, s)
-        }
-        if current_block_terminated(s) {
-            s = lower_pop_scope(s)
-            return new_lower_result(last_val, s)
-        }
-        let stmt: Stmt = block.stmts[i]
+        if i >= len(stmts) { return new_lower_result(last_val, s) }
+        if current_block_terminated(s) { return new_lower_result(last_val, s) }
+        let stmt: Stmt = stmts[i]
         let r: LowerResult = lower_stmt(s, stmt)
         s = r.state
         last_val = r.value
         i = i + 1
     }
-    s = lower_pop_scope(s)
     return new_lower_result(last_val, s)
 }
 
