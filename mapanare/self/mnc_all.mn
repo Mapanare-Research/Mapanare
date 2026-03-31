@@ -10532,18 +10532,15 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
         st = emit_line(st, st.str_globals[gi])
         gi = gi + 1
     }
-    // Output all lines directly — bypass str_join which has stale list issues
-    let mut result: String = ""
+    // Print all lines directly to stdout
     let nlines: Int = len(st.lines)
     let mut li: Int = 0
     for _ in 0..1000000 {
-        if li >= nlines { return result }
-        let line: String = st.lines[li]
-        if li > 0 { result = result + "\n" }
-        result = result + line
+        if li >= nlines { break }
+        print(st.lines[li])
         li = li + 1
     }
-    return result
+    return ""
 }
 
 // ---------------------------------------------------------------------------

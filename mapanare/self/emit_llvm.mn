@@ -2391,9 +2391,15 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
         st = emit_line(st, st.str_globals[gi])
         gi = gi + 1
     }
-    // Join all lines with newline
-    let result: String = str_join("\n", st.lines)
-    return result
+    // Print all lines directly to stdout
+    let nlines: Int = len(st.lines)
+    let mut li: Int = 0
+    for _ in 0..1000000 {
+        if li >= nlines { break }
+        print(st.lines[li])
+        li = li + 1
+    }
+    return ""
 }
 
 // ---------------------------------------------------------------------------
