@@ -7374,26 +7374,9 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         // Bind pattern variables
         match arm.pattern {
             ConstructorPat(name, sub_patterns) => {
-                let mut pi: Int = 0
-                for _ in 0..100 {
-                    if pi >= len(sub_patterns) { break }
-                    let sub_pat: Pattern = sub_patterns[pi]
-                    match sub_pat {
-                        IdentPat(var_name) => {
-                            let pay_ty: MIRType = infer_variant_payload_type(s, subject_r.value, name, pi)
-                            let payload_r: LowerResult = make_value(s, pay_ty, var_name)
-                            s = payload_r.state
-                            s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject_r.value, name))
-                            let payload_addr: Value = new_value("%" + var_name + toString(s.tmp_counter) + ".addr", pay_ty)
-                            s.tmp_counter = s.tmp_counter + 1
-                            s = emit_instr(s, Instruction::Alloca(payload_addr, pay_ty))
-                            s = emit_instr(s, Instruction::Store(payload_addr, payload_r.value))
-                            s = define_var(s, var_name, payload_addr, false)
-                        },
-                        _ => {}
-                    }
-                    pi = pi + 1
-                }
+                // Bind each sub-pattern. Uses helper function to avoid
+                // break-inside-if-inside-for bug (break is dropped by Python lowerer).
+                s = bind_pattern_fields(s, subject_r.value, name, sub_patterns)
             },
             IdentPat(name) => {
                 if !is_enum_variant(s, name) {
@@ -7459,6 +7442,35 @@ fn get_literal_value(expr: Expr) -> String {
 // ---------------------------------------------------------------------------
 // Pretty-printer
 // ---------------------------------------------------------------------------
+
+// Bind pattern fields for a constructor pattern like Rect(w, h).
+// Extracted from inline loop to avoid break-inside-if-inside-for bug.
+// Uses return-based iteration (return works, break doesn't).
+fn bind_pattern_fields(st: LowerState, subject: Value, variant_name: String, sub_patterns: List<Pattern>) -> LowerState {
+    let mut s: LowerState = st
+    let mut pi: Int = 0
+    for _ in 0..100 {
+        if pi >= len(sub_patterns) { return s }
+        let sub_pat: Pattern = sub_patterns[pi]
+        match sub_pat {
+            IdentPat(var_name) => {
+                let pay_ty: MIRType = infer_variant_payload_type(s, subject, variant_name, pi)
+                let payload_r: LowerResult = make_value(s, pay_ty, var_name)
+                s = payload_r.state
+                let indexed_name: String = variant_name + ":" + toString(pi)
+                s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject, indexed_name))
+                let payload_addr: Value = new_value("%" + var_name + toString(s.tmp_counter) + ".addr", pay_ty)
+                s.tmp_counter = s.tmp_counter + 1
+                s = emit_instr(s, Instruction::Alloca(payload_addr, pay_ty))
+                s = emit_instr(s, Instruction::Store(payload_addr, payload_r.value))
+                s = define_var(s, var_name, payload_addr, false)
+            },
+            _ => {}
+        }
+        pi = pi + 1
+    }
+    return s
+}
 
 fn format_value(v: Value) -> String {
     return v.name
@@ -9566,6 +9578,12 @@ fn compute_field_offset(st: EmitState, payload: List<Value>, field_idx: Int) -> 
 }
 
 fn resolve_variant_index(st: EmitState, enum_name: String, variant: String) -> Int {
+    // Strip ":N" suffix if present (from indexed payload extraction)
+    let mut vname: String = variant
+    let colon: Int = variant.find(":")
+    if colon >= 0 {
+        vname = variant.substr(0, colon)
+    }
     let mut i: Int = 0
     for _ in 0..1000 {
         if i >= len(st.enum_infos) { break }
@@ -9574,13 +9592,54 @@ fn resolve_variant_index(st: EmitState, enum_name: String, variant: String) -> I
             let mut vi: Int = 0
             for _ in 0..1000 {
                 if vi >= len(info.variants) { break }
-                if info.variants[vi].name == variant {
+                if info.variants[vi].name == vname {
                     return vi
                 }
                 vi = vi + 1
             }
         }
         i = i + 1
+    }
+    return 0
+}
+
+// Parse "Variant:N" → compute byte offset to field N within the variant's payload.
+// Uses llvm_type_size for each prior field to sum the offset.
+fn compute_variant_field_offset(st: EmitState, enum_name: String, variant_with_idx: String) -> Int {
+    // Parse index from "Variant:N"
+    let colon_pos: Int = variant_with_idx.find(":")
+    if colon_pos < 0 { return 0 }
+    let idx_str: String = variant_with_idx.substr(colon_pos + 1, len(variant_with_idx) - colon_pos - 1)
+    let field_idx: Int = int(idx_str)
+    if field_idx == 0 { return 0 }
+
+    // Look up variant's payload types
+    let variant_name: String = variant_with_idx.substr(0, colon_pos)
+    let mut ei: Int = 0
+    for _ in 0..1000 {
+        if ei >= len(st.enum_infos) { return 0 }
+        let info: EnumInfo = st.enum_infos[ei]
+        if info.name == enum_name {
+            let mut vi: Int = 0
+            for _ in 0..1000 {
+                if vi >= len(info.variants) { return 0 }
+                if info.variants[vi].name == variant_name {
+                    // Sum sizes of fields 0..field_idx-1
+                    let mut offset: Int = 0
+                    let mut fi: Int = 0
+                    for _ in 0..100 {
+                        if fi >= field_idx { return offset }
+                        if fi >= len(info.variants[vi].payload_types) { return offset }
+                        let fty: String = resolve_mir_type(info.variants[vi].payload_types[fi])
+                        offset = offset + llvm_type_size(fty)
+                        fi = fi + 1
+                    }
+                    return offset
+                }
+                vi = vi + 1
+            }
+        }
+        ei = ei + 1
     }
     return 0
 }
@@ -9659,11 +9718,27 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         }
     }
 
-    // Load the first payload field directly from the payload pointer.
-    // For single-field variants, this gives the entire payload.
-    // For multi-field variants, this gives field 0 — subsequent fields
-    // require payload_idx support in the MIR (TODO).
-    s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + pr)
+    // Compute field byte offset by looking up the variant's payload types.
+    // The variant name may have ":N" suffix from the lowerer. Strip it for lookup.
+    let mut variant_name: String = variant
+    let colon_pos: Int = variant.find(":")
+    let mut field_idx: Int = 0
+    if colon_pos >= 0 {
+        variant_name = variant.substr(0, colon_pos)
+        let idx_str: String = variant.substr(colon_pos + 1, len(variant) - colon_pos - 1)
+        field_idx = int(idx_str)
+    }
+
+    if field_idx > 0 {
+        // Compute byte offset by summing sizes of fields 0..field_idx-1
+        let offset: Int = compute_variant_field_offset(s, val.ty.name, variant)
+        let pf: String = dn + ".pf"
+        s = emit_line(s, "  " + pf + " = getelementptr inbounds i8, ptr " + pr + ", i64 " + toString(offset))
+        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + pf)
+    } else {
+        // Field 0: load directly from payload pointer
+        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + pr)
+    }
     return s
 }
 

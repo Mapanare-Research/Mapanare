@@ -2112,26 +2112,9 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         // Bind pattern variables
         match arm.pattern {
             ConstructorPat(name, sub_patterns) => {
-                let mut pi: Int = 0
-                for _ in 0..100 {
-                    if pi >= len(sub_patterns) { break }
-                    let sub_pat: Pattern = sub_patterns[pi]
-                    match sub_pat {
-                        IdentPat(var_name) => {
-                            let pay_ty: MIRType = infer_variant_payload_type(s, subject_r.value, name, pi)
-                            let payload_r: LowerResult = make_value(s, pay_ty, var_name)
-                            s = payload_r.state
-                            s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject_r.value, name))
-                            let payload_addr: Value = new_value("%" + var_name + toString(s.tmp_counter) + ".addr", pay_ty)
-                            s.tmp_counter = s.tmp_counter + 1
-                            s = emit_instr(s, Instruction::Alloca(payload_addr, pay_ty))
-                            s = emit_instr(s, Instruction::Store(payload_addr, payload_r.value))
-                            s = define_var(s, var_name, payload_addr, false)
-                        },
-                        _ => {}
-                    }
-                    pi = pi + 1
-                }
+                // Bind each sub-pattern. Uses helper function to avoid
+                // break-inside-if-inside-for bug (break is dropped by Python lowerer).
+                s = bind_pattern_fields(s, subject_r.value, name, sub_patterns)
             },
             IdentPat(name) => {
                 if !is_enum_variant(s, name) {
@@ -2197,6 +2180,35 @@ fn get_literal_value(expr: Expr) -> String {
 // ---------------------------------------------------------------------------
 // Pretty-printer
 // ---------------------------------------------------------------------------
+
+// Bind pattern fields for a constructor pattern like Rect(w, h).
+// Extracted from inline loop to avoid break-inside-if-inside-for bug.
+// Uses return-based iteration (return works, break doesn't).
+fn bind_pattern_fields(st: LowerState, subject: Value, variant_name: String, sub_patterns: List<Pattern>) -> LowerState {
+    let mut s: LowerState = st
+    let mut pi: Int = 0
+    for _ in 0..100 {
+        if pi >= len(sub_patterns) { return s }
+        let sub_pat: Pattern = sub_patterns[pi]
+        match sub_pat {
+            IdentPat(var_name) => {
+                let pay_ty: MIRType = infer_variant_payload_type(s, subject, variant_name, pi)
+                let payload_r: LowerResult = make_value(s, pay_ty, var_name)
+                s = payload_r.state
+                let indexed_name: String = variant_name + ":" + toString(pi)
+                s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject, indexed_name))
+                let payload_addr: Value = new_value("%" + var_name + toString(s.tmp_counter) + ".addr", pay_ty)
+                s.tmp_counter = s.tmp_counter + 1
+                s = emit_instr(s, Instruction::Alloca(payload_addr, pay_ty))
+                s = emit_instr(s, Instruction::Store(payload_addr, payload_r.value))
+                s = define_var(s, var_name, payload_addr, false)
+            },
+            _ => {}
+        }
+        pi = pi + 1
+    }
+    return s
+}
 
 fn format_value(v: Value) -> String {
     return v.name

@@ -1407,6 +1407,12 @@ fn compute_field_offset(st: EmitState, payload: List<Value>, field_idx: Int) -> 
 }
 
 fn resolve_variant_index(st: EmitState, enum_name: String, variant: String) -> Int {
+    // Strip ":N" suffix if present (from indexed payload extraction)
+    let mut vname: String = variant
+    let colon: Int = variant.find(":")
+    if colon >= 0 {
+        vname = variant.substr(0, colon)
+    }
     let mut i: Int = 0
     for _ in 0..1000 {
         if i >= len(st.enum_infos) { break }
@@ -1415,13 +1421,54 @@ fn resolve_variant_index(st: EmitState, enum_name: String, variant: String) -> I
             let mut vi: Int = 0
             for _ in 0..1000 {
                 if vi >= len(info.variants) { break }
-                if info.variants[vi].name == variant {
+                if info.variants[vi].name == vname {
                     return vi
                 }
                 vi = vi + 1
             }
         }
         i = i + 1
+    }
+    return 0
+}
+
+// Parse "Variant:N" → compute byte offset to field N within the variant's payload.
+// Uses llvm_type_size for each prior field to sum the offset.
+fn compute_variant_field_offset(st: EmitState, enum_name: String, variant_with_idx: String) -> Int {
+    // Parse index from "Variant:N"
+    let colon_pos: Int = variant_with_idx.find(":")
+    if colon_pos < 0 { return 0 }
+    let idx_str: String = variant_with_idx.substr(colon_pos + 1, len(variant_with_idx) - colon_pos - 1)
+    let field_idx: Int = int(idx_str)
+    if field_idx == 0 { return 0 }
+
+    // Look up variant's payload types
+    let variant_name: String = variant_with_idx.substr(0, colon_pos)
+    let mut ei: Int = 0
+    for _ in 0..1000 {
+        if ei >= len(st.enum_infos) { return 0 }
+        let info: EnumInfo = st.enum_infos[ei]
+        if info.name == enum_name {
+            let mut vi: Int = 0
+            for _ in 0..1000 {
+                if vi >= len(info.variants) { return 0 }
+                if info.variants[vi].name == variant_name {
+                    // Sum sizes of fields 0..field_idx-1
+                    let mut offset: Int = 0
+                    let mut fi: Int = 0
+                    for _ in 0..100 {
+                        if fi >= field_idx { return offset }
+                        if fi >= len(info.variants[vi].payload_types) { return offset }
+                        let fty: String = resolve_mir_type(info.variants[vi].payload_types[fi])
+                        offset = offset + llvm_type_size(fty)
+                        fi = fi + 1
+                    }
+                    return offset
+                }
+                vi = vi + 1
+            }
+        }
+        ei = ei + 1
     }
     return 0
 }
@@ -1500,11 +1547,27 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         }
     }
 
-    // Load the first payload field directly from the payload pointer.
-    // For single-field variants, this gives the entire payload.
-    // For multi-field variants, this gives field 0 — subsequent fields
-    // require payload_idx support in the MIR (TODO).
-    s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + pr)
+    // Compute field byte offset by looking up the variant's payload types.
+    // The variant name may have ":N" suffix from the lowerer. Strip it for lookup.
+    let mut variant_name: String = variant
+    let colon_pos: Int = variant.find(":")
+    let mut field_idx: Int = 0
+    if colon_pos >= 0 {
+        variant_name = variant.substr(0, colon_pos)
+        let idx_str: String = variant.substr(colon_pos + 1, len(variant) - colon_pos - 1)
+        field_idx = int(idx_str)
+    }
+
+    if field_idx > 0 {
+        // Compute byte offset by summing sizes of fields 0..field_idx-1
+        let offset: Int = compute_variant_field_offset(s, val.ty.name, variant)
+        let pf: String = dn + ".pf"
+        s = emit_line(s, "  " + pf + " = getelementptr inbounds i8, ptr " + pr + ", i64 " + toString(offset))
+        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + pf)
+    } else {
+        // Field 0: load directly from payload pointer
+        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + pr)
+    }
     return s
 }
 
