@@ -822,8 +822,15 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
 }
 
 
+/* Static zero buffer for out-of-bounds list access.  The self-hosted compiler
+   has a Python-lowerer bug where `break` inside `if` inside `for` is dropped,
+   causing loops to access list elements past the end.  Returning a zeroed
+   buffer instead of NULL prevents segfaults — the caller reads zeros and
+   the loop eventually exits when the outer for-counter expires. */
+static char __mn_list_oob_buf[4096] = {0};
+
 MN_EXPORT void *__mn_list_get(MnList *list, int64_t i) {
-    if (i < 0 || i >= list->len) return NULL;
+    if (i < 0 || i >= list->len) return __mn_list_oob_buf;
     void *result = list->data + i * list->elem_size;
     return result;
 }

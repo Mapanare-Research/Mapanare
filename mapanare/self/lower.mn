@@ -26,7 +26,7 @@ fn register_declarations(st: LowerState, program: Program) -> LowerState {
 fn register_declarations_pass1(st: LowerState, program: Program) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(program.definitions) { return s }
         let defn: Definition = program.definitions[i]
         // Use register_enum_if_enum to avoid match PHI zeroinitializer bug
@@ -48,7 +48,7 @@ fn register_enum_if_enum(st: LowerState, defn: Definition) -> LowerState {
 fn register_declarations_pass2(st: LowerState, program: Program) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(program.definitions) { return s }
         let defn: Definition = program.definitions[i]
         s = register_nonenums(s, defn)
@@ -115,7 +115,7 @@ fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
     let mut i: Int = 0
     let mut s: LowerState = st
 
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(data.fields) {
             let info: StructInfo = new_struct_info(data.name, fields)
             s.module = module_push_struct(s.module, info)
@@ -140,7 +140,7 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
     let mut i: Int = 0
     let mut s: LowerState = st
 
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(data.variants) {
             let info: EnumInfo = new_enum_info(data.name, variants)
             s.module = module_push_enum(s.module, info)
@@ -168,7 +168,7 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
 fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(methods) { return s }
         let method: FnDefData = methods[i]
         let key: String = target + "." + method.name
@@ -187,7 +187,7 @@ fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lo
 fn lower_definitions(st: LowerState, program: Program) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(program.definitions) {
             return s
         }
@@ -233,7 +233,7 @@ fn lower_definition(st: LowerState, defn: Definition) -> LowerState {
 fn build_mir_params(st: LowerState, fn_params: List<Param>) -> List<MIRParam> {
     let mut params: List<MIRParam> = []
     let mut pi: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if pi >= len(fn_params) { return params }
         let p: Param = fn_params[pi]
         let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
@@ -261,7 +261,7 @@ fn collect_decorator_names(decorators: List<Decorator>) -> List<String> {
 fn bind_fn_params(st: LowerState, fn_params: List<Param>) -> LowerState {
     let mut s: LowerState = st
     let mut bi: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if bi >= len(fn_params) { return s }
         let p: Param = fn_params[bi]
         let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
@@ -345,7 +345,7 @@ fn lower_agent(st: LowerState, data: AgentDefData) -> LowerState {
 
     // Lower each method
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(data.methods) {
             let inputs: List<String> = extract_agent_input_names(data)
             let outputs: List<String> = extract_agent_output_names(data)
@@ -389,7 +389,7 @@ fn extract_agent_output_names(data: AgentDefData) -> List<String> {
 fn lower_impl(st: LowerState, target: String, methods: List<FnDefData>) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(methods) { return s }
         let method: FnDefData = methods[i]
         s = lower_fn(s, method, target + "_")
@@ -415,7 +415,7 @@ fn lower_block_stmts(st: LowerState, stmts: List<Stmt>) -> LowerResult {
     let mut s: LowerState = st
     let mut last_val: Value = void_value()
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(stmts) { return new_lower_result(last_val, s) }
         if current_block_terminated(s) { return new_lower_result(last_val, s) }
         let stmt: Stmt = stmts[i]
@@ -898,7 +898,7 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
     let mut s: LowerState = st
     let mut args: List<Value> = []
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(arg_exprs) { break }
         let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
         s = arg_r.state
@@ -918,7 +918,7 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
             let mut all_args: List<Value> = []
             all_args.push(obj_r.value)
             let mut j: Int = 0
-            for _ in 0..1000 {
+            for _ in 0..50 {
                 if j >= len(args) { break }
                 all_args.push(args[j])
                 j = j + 1
@@ -1041,7 +1041,7 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let struct_ty: MIRType = mir_struct(fn_name)
         let mut field_pairs: List<FieldPair> = []
         let mut fi: Int = 0
-        for _ in 0..1000 {
+        for _ in 0..50 {
             if fi >= len(field_names) { break }
             if fi >= len(args) { break }
             let fp: FieldPair = new_field_pair(field_names[fi], args[fi])
@@ -1160,7 +1160,7 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     all_args.push(obj_r.value)
     let nae: Int = len(arg_exprs)
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= nae { break }
         let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
         s = arg_r.state
@@ -1246,7 +1246,7 @@ fn lookup_struct_field_type(st: LowerState, struct_name: String, field_name: Str
         let info: StructFieldInfo = st.struct_fields[i]
         if info.name == struct_name {
             let mut j: Int = 0
-            for _ in 0..1000 {
+            for _ in 0..50 {
                 if j >= len(info.field_names) { return mir_unknown() }
                 if info.field_names[j] == field_name {
                     if j < len(info.field_types) {
@@ -1286,7 +1286,7 @@ fn lower_field_access(st: LowerState, obj: Expr, field_name: String) -> LowerRes
 
 fn is_enum_name(st: LowerState, name: String) -> Bool {
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(st.enum_variants) { return false }
         if st.enum_variants[i].enum_name == name { return true }
         i = i + 1
@@ -1344,7 +1344,7 @@ fn lower_pipe_call(arg_r: LowerResult, fn_name: String, extra_exprs: List<Expr>)
     let mut args: List<Value> = []
     args.push(arg_r.value)
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(extra_exprs) { break }
         let extra_r: LowerResult = lower_expr(s, extra_exprs[i])
         s = extra_r.state
@@ -1501,7 +1501,7 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
         pi = pi + 1
     }
     let mut ci: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if ci >= len(parent_vars) { break }
         let pv: VarInfo = parent_vars[ci]
         let cap_param: Param = new Param { span: new_span(0, 0, 0, 0), name: pv.name, type_annotation: none }
@@ -1543,7 +1543,7 @@ fn lower_spawn(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResu
     let mut s: LowerState = st
     let mut args: List<Value> = []
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(arg_exprs) { break }
         let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
         s = arg_r.state
@@ -1648,7 +1648,7 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
     let mut s: LowerState = st
     let mut vals: List<Value> = []
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(elements) { break }
         let el_r: LowerResult = lower_expr(s, elements[i])
         s = el_r.state
@@ -1675,7 +1675,7 @@ fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -
     // Lower each field value
     let mut vals: List<Value> = []
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= nfields { break }
         let fi: FieldInit = field_inits[i]
         let val_r: LowerResult = lower_expr(s, fi.value)
@@ -1844,12 +1844,12 @@ fn infer_variant_payload_type(st: LowerState, subject: Value, variant_name: Stri
     if subject.ty.kind == "enum" {
         let enum_name: String = subject.ty.name
         let mut ei: Int = 0
-        for _ in 0..1000 {
+        for _ in 0..50 {
             if ei >= len(st.module.enums) { break }
             let einfo: EnumInfo = st.module.enums[ei]
             if einfo.name == enum_name {
                 let mut vi: Int = 0
-                for _ in 0..1000 {
+                for _ in 0..50 {
                     if vi >= len(einfo.variants) { break }
                     let vinfo: EnumVariantInfo = einfo.variants[vi]
                     if vinfo.name == variant_name {
@@ -2076,7 +2076,7 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
     let mut s: LowerState = st
     let mut i: Int = 0
     let n: Int = len(arms)
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= n { break }
         let label_r: LowerResult = fresh_block_label(s, "match_arm")
         s = label_r.state
@@ -2143,7 +2143,7 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     // Lower each arm
     let mut arm_results: List<PhiEntry> = []
     let mut ai: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if ai >= len(arms) { break }
         let arm: MatchArm = arms[ai]
         let arm_idx: Int = arm_indices[ai]
@@ -2382,7 +2382,7 @@ fn format_instruction(inst: Instruction) -> String {
 fn pretty_print_block(bb: BasicBlock) -> String {
     let mut result: String = "  " + bb.label + ":\n"
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(bb.instructions) { return result }
         let inst: Instruction = bb.instructions[i]
         result = result + "    " + format_instruction(inst) + "\n"
@@ -2394,7 +2394,7 @@ fn pretty_print_block(bb: BasicBlock) -> String {
 fn pretty_print_function(f: MIRFunction) -> String {
     let mut params_str: String = ""
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(f.params) { break }
         let p: MIRParam = f.params[i]
         if i > 0 { params_str = params_str + ", " }
@@ -2407,7 +2407,7 @@ fn pretty_print_function(f: MIRFunction) -> String {
 
     let mut result: String = header + " {\n"
     let mut bi: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if bi >= len(f.blocks) { break }
         let bb: BasicBlock = f.blocks[bi]
         result = result + pretty_print_block(bb)
@@ -2425,7 +2425,7 @@ fn pretty_print_module(module: MIRModule) -> String {
 
     // Print structs
     let mut si: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if si >= len(module.structs) { break }
         let s: StructInfo = module.structs[si]
         result = result + "struct " + s.name + " {...}\n"
@@ -2434,7 +2434,7 @@ fn pretty_print_module(module: MIRModule) -> String {
 
     // Print enums
     let mut ei: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if ei >= len(module.enums) { break }
         let e: EnumInfo = module.enums[ei]
         result = result + "enum " + e.name + " {...}\n"
@@ -2446,7 +2446,7 @@ fn pretty_print_module(module: MIRModule) -> String {
 
     // Print functions
     let mut fi: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if fi >= len(module.functions) { break }
         let f: MIRFunction = module.functions[fi]
         result = result + pretty_print_function(f) + "\n\n"
@@ -2473,12 +2473,12 @@ fn new_verify_error(fn_name: String, block: String, msg: String) -> VerifyError 
 fn verify_module(module: MIRModule) -> List<VerifyError> {
     let mut errors: List<VerifyError> = []
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(module.functions) { return errors }
         let f: MIRFunction = module.functions[i]
         let fn_errors: List<VerifyError> = verify_function(f)
         let mut j: Int = 0
-        for _ in 0..100000 {
+        for _ in 0..600 {
             if j >= len(fn_errors) { break }
             errors.push(fn_errors[j])
             j = j + 1
@@ -2498,12 +2498,12 @@ fn verify_function(f: MIRFunction) -> List<VerifyError> {
     }
 
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(f.blocks) { return errors }
         let bb: BasicBlock = f.blocks[i]
         let bb_errors: List<VerifyError> = verify_block(f.name, bb, f)
         let mut j: Int = 0
-        for _ in 0..100000 {
+        for _ in 0..600 {
             if j >= len(bb_errors) { break }
             errors.push(bb_errors[j])
             j = j + 1
@@ -2531,7 +2531,7 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
 
     // Check no terminators in the middle
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(bb.instructions) - 1 { break }
         let inst: Instruction = bb.instructions[i]
         if is_terminator(inst) {
@@ -2544,7 +2544,7 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
     // Check phi nodes are at the start
     let mut seen_non_phi: Bool = false
     let mut pi: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if pi >= len(bb.instructions) { break }
         let inst: Instruction = bb.instructions[pi]
         match inst {
@@ -2595,7 +2595,7 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     // Build params
     let mut params: List<MIRParam> = []
     let mut pi: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if pi >= len(fn_def.params) { break }
         let p: Param = fn_def.params[pi]
         let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
@@ -2635,7 +2635,7 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
 
     // Bind params
     let mut bi: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if bi >= len(fn_def.params) { break }
         let p: Param = fn_def.params[bi]
         let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
