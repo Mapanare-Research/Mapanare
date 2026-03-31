@@ -417,6 +417,18 @@ fn scan_op(source: String, pos: Int, line: Int, col: Int) -> Token {
 // Public API
 // ---------------------------------------------------------------------------
 
+// Helper: skip to end of line comment, return new position.
+// Uses return (not break) to exit the loop — return works, break doesn't.
+fn skip_comment_to_eol(source: String, pos: Int, slen: Int) -> Int {
+    let mut p: Int = pos
+    for _ in 0..100000 {
+        if p >= slen { return p }
+        if source.char_at(p) == "\n" { return p + 1 }
+        p = p + 1
+    }
+    return p
+}
+
 fn tokenize(source: String, filename: String) -> List<Token> {
     let mut tokens: List<Token> = []
     let mut pos: Int = 0
@@ -424,78 +436,84 @@ fn tokenize(source: String, filename: String) -> List<Token> {
     let mut col: Int = 1
     let slen: Int = len(source)
 
-    for _ in 0..1000000 {
-        if pos >= slen { return tokens }
-
-        // Skip whitespace and comments
-        let mut skipped: Bool = true
-        for _ in 0..1000000 {
-            if pos >= slen { return tokens }
-            if !skipped { break }
-            skipped = false
-            let ws: String = source.char_at(pos)
-            if ws == " " { pos = pos + 1; col = col + 1; skipped = true }
-            if ws == "\t" { pos = pos + 1; col = col + 1; skipped = true }
-            if ws == "\r" { pos = pos + 1; skipped = true }
-            if ws == "\n" { pos = pos + 1; line = line + 1; col = 1; skipped = true }
-            // Skip line comments
-            if ws == "/" {
-                if lexer_peek(source, pos + 1) == "/" {
-                    pos = pos + 2
-                    skipped = true
-                    for _ in 0..100000 {
-                        if pos >= slen { return tokens }
-                        if source.char_at(pos) == "\n" {
-                            pos = pos + 1
-                            line = line + 1
-                            col = 1
-                            break
-                        }
-                        pos = pos + 1
-                    }
-                }
-            }
-        }
-
+    // Single loop: handles whitespace, comments, and tokens.
+    // No inner whitespace loop (avoids break-inside-if-inside-for bug).
+    // No nested else chain (avoids dropped else body pattern).
+    for _ in 0..2000000 {
         if pos >= slen { return tokens }
 
         let c: String = source.char_at(pos)
 
-        if is_alpha(c) {
-            let tok: Token = scan_ident(source, pos, line, col)
-            pos = pos + len(tok.value)
-            col = col + len(tok.value)
-            tokens.push(tok)
-        } else {
-            if is_digit(c) {
-                let tok: Token = scan_number(source, pos, line, col)
-                let width: Int = tok.end_column - tok.column
-                pos = pos + width
-                col = col + width
+        // --- Whitespace (one char per iteration, main loop repeats) ---
+        let mut skip: Bool = false
+        if c == " " { pos = pos + 1; col = col + 1; skip = true }
+        if c == "\t" { pos = pos + 1; col = col + 1; skip = true }
+        if c == "\r" { pos = pos + 1; skip = true }
+        if c == "\n" { pos = pos + 1; line = line + 1; col = 1; skip = true }
+
+        // --- Line comment (// to end of line) ---
+        if c == "/" {
+            if lexer_peek(source, pos + 1) == "/" {
+                let new_pos: Int = skip_comment_to_eol(source, pos + 2, slen)
+                pos = new_pos
+                line = line + 1
+                col = 1
+                skip = true
+            }
+        }
+
+        if !skip {
+            // --- Token classification (flat if-chain, no nested else) ---
+            let mut handled: Bool = false
+
+            if is_alpha(c) {
+                handled = true
+                let tok: Token = scan_ident(source, pos, line, col)
+                pos = pos + len(tok.value)
+                col = col + len(tok.value)
                 tokens.push(tok)
-            } else {
+            }
+
+            if !handled {
+                if is_digit(c) {
+                    handled = true
+                    let tok: Token = scan_number(source, pos, line, col)
+                    let width: Int = tok.end_column - tok.column
+                    pos = pos + width
+                    col = col + width
+                    tokens.push(tok)
+                }
+            }
+
+            if !handled {
                 if c == "\"" {
+                    handled = true
                     let tok: Token = scan_string(source, pos, line, col)
                     let width: Int = tok.end_column - tok.column
                     pos = pos + width
                     col = col + width
                     line = tok.end_line
                     tokens.push(tok)
-                } else {
-                    if c == "'" {
-                        let tok: Token = scan_char(source, pos, line, col)
-                        let width: Int = tok.end_column - tok.column
-                        pos = pos + width
-                        col = col + width
-                        tokens.push(tok)
-                    } else {
-                        let tok: Token = scan_op(source, pos, line, col)
-                        let width: Int = len(tok.value)
-                        pos = pos + width
-                        col = col + width
-                        tokens.push(tok)
-                    }
                 }
+            }
+
+            if !handled {
+                if c == "'" {
+                    handled = true
+                    let tok: Token = scan_char(source, pos, line, col)
+                    let width: Int = tok.end_column - tok.column
+                    pos = pos + width
+                    col = col + width
+                    tokens.push(tok)
+                }
+            }
+
+            if !handled {
+                let tok: Token = scan_op(source, pos, line, col)
+                let width: Int = len(tok.value)
+                pos = pos + width
+                col = col + width
+                tokens.push(tok)
             }
         }
     }

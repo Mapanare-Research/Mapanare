@@ -1128,9 +1128,10 @@ fn llvm_type_size(ty: String) -> Int {
     if ty == llvm_string() { return 16 }
     // List = {ptr, i64, i64, i64} = 32
     if ty == llvm_list_rt() { return 32 }
-    // Structs and enums: use pointer size (8) as they're passed by ptr
-    if ty.starts_with("%struct.") { return 8 }
-    if ty.starts_with("%enum.") { return 8 }
+    // Structs: vary from 32 (Span) to 200+ (FnDefData). Use 256 as safe default.
+    if ty.starts_with("%struct.") { return 256 }
+    // Enums: vary from 8 (BinOpKind) to 328 (Stmt). Use 336 as safe default.
+    if ty.starts_with("%enum.") { return 336 }
     // Aggregate types: count fields
     if ty.starts_with("{") { return llvm_aggregate_size(ty) }
     return 8
@@ -1214,7 +1215,10 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
     let mut elem_sz: Int = llvm_type_size(elem_llvm_ty)
-    if elem_sz < 16 { elem_sz = 16 }
+    // Minimum 336: covers all enums (max: Stmt=328) and structs (max: ~200).
+    // Empty lists default to unknown (i64, size 8) — the floor ensures they
+    // still work correctly when populated with large elements later.
+    if elem_sz < 336 { elem_sz = 336 }
     s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz)))
 
     // Alloca for push
@@ -1622,6 +1626,26 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     }
     if fn_name == "float" {
         return emit_builtin_float(st, dest, args)
+    }
+
+    // Range construction — inline to avoid ABI mismatch with C runtime
+    // C runtime __mn_range returns void* (ptr), but self-hosted expects {i64, i64}.
+    // Fix: construct the {i64, i64} directly instead of calling the C function.
+    if fn_name == "__mn_range" {
+        let mut s: EmitState = st
+        let tmp: String = dn + ".tmp"
+        s = emit_line(s, "  " + tmp + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
+        s = emit_line(s, "  " + dn + " = insertvalue { i64, i64 } " + tmp + ", i64 " + args[1].name + ", 1")
+        return s
+    }
+    if fn_name == "__mn_range_inclusive" {
+        let mut s: EmitState = st
+        let inc: String = dn + ".inc"
+        let tmp: String = dn + ".tmp"
+        s = emit_line(s, "  " + inc + " = add i64 " + args[1].name + ", 1")
+        s = emit_line(s, "  " + tmp + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
+        s = emit_line(s, "  " + dn + " = insertvalue { i64, i64 } " + tmp + ", i64 " + inc + ", 1")
+        return s
     }
 
     // Range field extraction (counter-based for-loops)

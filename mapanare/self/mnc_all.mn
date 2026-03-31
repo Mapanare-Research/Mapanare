@@ -699,6 +699,18 @@ fn scan_op(source: String, pos: Int, line: Int, col: Int) -> Token {
 // Public API
 // ---------------------------------------------------------------------------
 
+// Helper: skip to end of line comment, return new position.
+// Uses return (not break) to exit the loop — return works, break doesn't.
+fn skip_comment_to_eol(source: String, pos: Int, slen: Int) -> Int {
+    let mut p: Int = pos
+    for _ in 0..100000 {
+        if p >= slen { return p }
+        if source.char_at(p) == "\n" { return p + 1 }
+        p = p + 1
+    }
+    return p
+}
+
 fn tokenize(source: String, filename: String) -> List<Token> {
     let mut tokens: List<Token> = []
     let mut pos: Int = 0
@@ -706,78 +718,84 @@ fn tokenize(source: String, filename: String) -> List<Token> {
     let mut col: Int = 1
     let slen: Int = len(source)
 
-    for _ in 0..1000000 {
-        if pos >= slen { return tokens }
-
-        // Skip whitespace and comments
-        let mut skipped: Bool = true
-        for _ in 0..1000000 {
-            if pos >= slen { return tokens }
-            if !skipped { break }
-            skipped = false
-            let ws: String = source.char_at(pos)
-            if ws == " " { pos = pos + 1; col = col + 1; skipped = true }
-            if ws == "\t" { pos = pos + 1; col = col + 1; skipped = true }
-            if ws == "\r" { pos = pos + 1; skipped = true }
-            if ws == "\n" { pos = pos + 1; line = line + 1; col = 1; skipped = true }
-            // Skip line comments
-            if ws == "/" {
-                if lexer_peek(source, pos + 1) == "/" {
-                    pos = pos + 2
-                    skipped = true
-                    for _ in 0..100000 {
-                        if pos >= slen { return tokens }
-                        if source.char_at(pos) == "\n" {
-                            pos = pos + 1
-                            line = line + 1
-                            col = 1
-                            break
-                        }
-                        pos = pos + 1
-                    }
-                }
-            }
-        }
-
+    // Single loop: handles whitespace, comments, and tokens.
+    // No inner whitespace loop (avoids break-inside-if-inside-for bug).
+    // No nested else chain (avoids dropped else body pattern).
+    for _ in 0..2000000 {
         if pos >= slen { return tokens }
 
         let c: String = source.char_at(pos)
 
-        if is_alpha(c) {
-            let tok: Token = scan_ident(source, pos, line, col)
-            pos = pos + len(tok.value)
-            col = col + len(tok.value)
-            tokens.push(tok)
-        } else {
-            if is_digit(c) {
-                let tok: Token = scan_number(source, pos, line, col)
-                let width: Int = tok.end_column - tok.column
-                pos = pos + width
-                col = col + width
+        // --- Whitespace (one char per iteration, main loop repeats) ---
+        let mut skip: Bool = false
+        if c == " " { pos = pos + 1; col = col + 1; skip = true }
+        if c == "\t" { pos = pos + 1; col = col + 1; skip = true }
+        if c == "\r" { pos = pos + 1; skip = true }
+        if c == "\n" { pos = pos + 1; line = line + 1; col = 1; skip = true }
+
+        // --- Line comment (// to end of line) ---
+        if c == "/" {
+            if lexer_peek(source, pos + 1) == "/" {
+                let new_pos: Int = skip_comment_to_eol(source, pos + 2, slen)
+                pos = new_pos
+                line = line + 1
+                col = 1
+                skip = true
+            }
+        }
+
+        if !skip {
+            // --- Token classification (flat if-chain, no nested else) ---
+            let mut handled: Bool = false
+
+            if is_alpha(c) {
+                handled = true
+                let tok: Token = scan_ident(source, pos, line, col)
+                pos = pos + len(tok.value)
+                col = col + len(tok.value)
                 tokens.push(tok)
-            } else {
+            }
+
+            if !handled {
+                if is_digit(c) {
+                    handled = true
+                    let tok: Token = scan_number(source, pos, line, col)
+                    let width: Int = tok.end_column - tok.column
+                    pos = pos + width
+                    col = col + width
+                    tokens.push(tok)
+                }
+            }
+
+            if !handled {
                 if c == "\"" {
+                    handled = true
                     let tok: Token = scan_string(source, pos, line, col)
                     let width: Int = tok.end_column - tok.column
                     pos = pos + width
                     col = col + width
                     line = tok.end_line
                     tokens.push(tok)
-                } else {
-                    if c == "'" {
-                        let tok: Token = scan_char(source, pos, line, col)
-                        let width: Int = tok.end_column - tok.column
-                        pos = pos + width
-                        col = col + width
-                        tokens.push(tok)
-                    } else {
-                        let tok: Token = scan_op(source, pos, line, col)
-                        let width: Int = len(tok.value)
-                        pos = pos + width
-                        col = col + width
-                        tokens.push(tok)
-                    }
                 }
+            }
+
+            if !handled {
+                if c == "'" {
+                    handled = true
+                    let tok: Token = scan_char(source, pos, line, col)
+                    let width: Int = tok.end_column - tok.column
+                    pos = pos + width
+                    col = col + width
+                    tokens.push(tok)
+                }
+            }
+
+            if !handled {
+                let tok: Token = scan_op(source, pos, line, col)
+                let width: Int = len(tok.value)
+                pos = pos + width
+                col = col + width
+                tokens.push(tok)
             }
         }
     }
@@ -2359,12 +2377,12 @@ fn parse_if_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
         let else_stmts: List<Stmt> = [Stmt::ExprStmt(elif_r.expr)]
         let else_block: Block = new_block(new_span(0, 0, 0, 0), else_stmts)
         let else_clause: ElseClause = ElseClause::ElseBlock(else_block)
-        return new_expr_result(Expr::If(cond_r.expr, then_r.block, else_clause), elif_r.pos)
+        return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(else_clause)), elif_r.pos)
     }
 
     let else_r: BlockResult = parse_block(tokens, p, filename)
     let else_clause: ElseClause = ElseClause::ElseBlock(else_r.block)
-    return new_expr_result(Expr::If(cond_r.expr, then_r.block, else_clause), else_r.pos)
+    return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(else_clause)), else_r.pos)
 }
 
 // ---------------------------------------------------------------------------
@@ -9269,9 +9287,10 @@ fn llvm_type_size(ty: String) -> Int {
     if ty == llvm_string() { return 16 }
     // List = {ptr, i64, i64, i64} = 32
     if ty == llvm_list_rt() { return 32 }
-    // Structs and enums: use pointer size (8) as they're passed by ptr
-    if ty.starts_with("%struct.") { return 8 }
-    if ty.starts_with("%enum.") { return 8 }
+    // Structs: vary from 32 (Span) to 200+ (FnDefData). Use 256 as safe default.
+    if ty.starts_with("%struct.") { return 256 }
+    // Enums: vary from 8 (BinOpKind) to 328 (Stmt). Use 336 as safe default.
+    if ty.starts_with("%enum.") { return 336 }
     // Aggregate types: count fields
     if ty.starts_with("{") { return llvm_aggregate_size(ty) }
     return 8
@@ -9355,7 +9374,10 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
     let mut elem_sz: Int = llvm_type_size(elem_llvm_ty)
-    if elem_sz < 16 { elem_sz = 16 }
+    // Minimum 336: covers all enums (max: Stmt=328) and structs (max: ~200).
+    // Empty lists default to unknown (i64, size 8) — the floor ensures they
+    // still work correctly when populated with large elements later.
+    if elem_sz < 336 { elem_sz = 336 }
     s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz)))
 
     // Alloca for push
@@ -9763,6 +9785,26 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     }
     if fn_name == "float" {
         return emit_builtin_float(st, dest, args)
+    }
+
+    // Range construction — inline to avoid ABI mismatch with C runtime
+    // C runtime __mn_range returns void* (ptr), but self-hosted expects {i64, i64}.
+    // Fix: construct the {i64, i64} directly instead of calling the C function.
+    if fn_name == "__mn_range" {
+        let mut s: EmitState = st
+        let tmp: String = dn + ".tmp"
+        s = emit_line(s, "  " + tmp + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
+        s = emit_line(s, "  " + dn + " = insertvalue { i64, i64 } " + tmp + ", i64 " + args[1].name + ", 1")
+        return s
+    }
+    if fn_name == "__mn_range_inclusive" {
+        let mut s: EmitState = st
+        let inc: String = dn + ".inc"
+        let tmp: String = dn + ".tmp"
+        s = emit_line(s, "  " + inc + " = add i64 " + args[1].name + ", 1")
+        s = emit_line(s, "  " + tmp + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
+        s = emit_line(s, "  " + dn + " = insertvalue { i64, i64 } " + tmp + ", i64 " + inc + ", 1")
+        return s
     }
 
     // Range field extraction (counter-based for-loops)

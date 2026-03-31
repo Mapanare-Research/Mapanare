@@ -1569,12 +1569,12 @@ fn parse_if_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
         let else_stmts: List<Stmt> = [Stmt::ExprStmt(elif_r.expr)]
         let else_block: Block = new_block(new_span(0, 0, 0, 0), else_stmts)
         let else_clause: ElseClause = ElseClause::ElseBlock(else_block)
-        return new_expr_result(Expr::If(cond_r.expr, then_r.block, else_clause), elif_r.pos)
+        return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(else_clause)), elif_r.pos)
     }
 
     let else_r: BlockResult = parse_block(tokens, p, filename)
     let else_clause: ElseClause = ElseClause::ElseBlock(else_r.block)
-    return new_expr_result(Expr::If(cond_r.expr, then_r.block, else_clause), else_r.pos)
+    return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(else_clause)), else_r.pos)
 }
 
 // ---------------------------------------------------------------------------
