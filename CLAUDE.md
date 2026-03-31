@@ -115,6 +115,11 @@ python scripts/ir_doctor.py stage2 --timeout 60                      # With long
 python scripts/ir_doctor.py valgrind-map ./mapanare/self/mnc-stage1 tests/golden/07_enum_match.mn  # Run valgrind and map crash offsets to struct fields
 python scripts/ir_doctor.py valgrind-map --struct LowerState ./mnc some_file.mn  # Map against specific struct
 python scripts/ir_doctor.py valgrind-map --timeout 60 ./my_binary --flag arg     # With timeout
+python scripts/ir_doctor.py strings mapanare/self/main.ll                        # Validate string constant byte counts
+python scripts/ir_doctor.py strings mapanare/self/main.ll -v                     # Also show duplicate strings
+python scripts/ir_doctor.py xray                                                 # Full stage2 build + runtime test
+python scripts/ir_doctor.py xray --timeout 60                                    # With longer timeout
+python scripts/ir_doctor.py phi-check /tmp/stage2.ll                             # Validate PHI fix preserves structure
 
 # MIR Trace — debug type inference issues in the Python lowerer
 python scripts/mir_trace.py tests/golden/10_result.mn divide         # Trace types for one function
