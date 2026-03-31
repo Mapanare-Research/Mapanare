@@ -8478,37 +8478,21 @@ fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
     if ty.kind == "result" { return 4 }
     // Map: { ptr, i64 } = 2 slots
     if ty.kind == "map" { return 2 }
-    // Enum: look up declared size from enum_infos
+    // Enum: 1 (tag) + max_payload_slots.
+    // If registered, look up; otherwise return 48 (conservative for recursive enums).
     if ty.kind == "enum" {
-        // Search for the enum's type definition to get its actual slot count
         let mut ei: Int = 0
         for _ in 0..1000 {
             if ei >= len(st.enum_infos) { break }
             let e_info: EnumInfo = st.enum_infos[ei]
             if e_info.name == ty.name {
-                // Already registered — look up its slot count from the type string
-                // The type was emitted as { i64, [N x i64] } → N+1 total slots
-                // For now, iterate its variants to compute max payload
-                let mut mp: Int = 0
-                let mut evi: Int = 0
-                for _ in 0..1000 {
-                    if evi >= len(e_info.variants) { break }
-                    let ev: EnumVariantInfo = e_info.variants[evi]
-                    let mut vsize: Int = 0
-                    let mut pi: Int = 0
-                    for _ in 0..100 {
-                        if pi >= len(ev.payload_types) { break }
-                        vsize = vsize + type_size_in_slots(st, ev.payload_types[pi])
-                        pi = pi + 1
-                    }
-                    if vsize > mp { mp = vsize }
-                    evi = evi + 1
-                }
-                return 1 + mp
+                return 1 + variant_payload_slots_max(st, e_info)
             }
             ei = ei + 1
         }
-        return 4
+        // Not registered yet (recursive reference or forward ref): use 48 slots.
+        // This is conservative: Expr needs ~30, Stmt ~25, Definition ~32.
+        return 48
     }
     // Struct: field_count * 4 (average 4 slots per field — covers Span=4, String=2, List=4)
     if ty.kind == "struct" {
@@ -8536,29 +8520,40 @@ fn variant_payload_slots(st: EmitState, variant: EnumVariantInfo) -> Int {
     return total
 }
 
-fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
-    // Tagged union: { i64 tag, payload... }
-    // Compute max payload across all variants using actual slot counts.
-    let mut max_payload: Int = 0
+fn max_int(a: Int, b: Int) -> Int {
+    if a > b { return a }
+    return b
+}
+
+// Max payload slots across all variants of an enum.
+fn variant_payload_slots_max(st: EmitState, info: EnumInfo) -> Int {
+    let mut mx: Int = 0
     let mut vi: Int = 0
     for _ in 0..1000 {
-        if vi >= len(info.variants) { break }
-        let variant: EnumVariantInfo = info.variants[vi]
-        let count: Int = variant_payload_slots(st, variant)
-        if count > max_payload {
-            max_payload = count
-        }
+        if vi >= len(info.variants) { return mx }
+        let count: Int = variant_payload_slots(st, info.variants[vi])
+        // Use max_int instead of `if count > mx { mx = count }` because
+        // the Python lowerer generates `store i64 0` for conditional
+        // assignments inside for loops (cross-scope assignment bug).
+        mx = max_int(mx, count)
         vi = vi + 1
     }
+    return mx
+}
+
+fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
+    // Tagged union: { i64 tag, payload... }
+    // Use helper function to avoid cross-scope assignment bug.
+    let mut max_payload: Int = variant_payload_slots_max(st, info)
+    // Floor: recursive enums (Expr, Stmt) need at least 52 slots
+    // (e.g., Call(Expr=48, List=4)). The helper may undercount
+    // unregistered self-references.
+    if max_payload < 52 { max_payload = 52 }
 
     let mut s: EmitState = st
     s.enum_names.push(info.name)
     s.enum_infos.push(info)
-    if max_payload == 0 {
-        s = emit_line(s, "%enum." + info.name + " = type { i64 }")
-    } else {
-        s = emit_line(s, "%enum." + info.name + " = type { i64, [" + toString(max_payload) + " x i64] }")
-    }
+    s = emit_line(s, "%enum." + info.name + " = type { i64, [" + toString(max_payload) + " x i64] }")
     return s
 }
 
