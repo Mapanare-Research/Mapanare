@@ -8713,7 +8713,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
         let arr_ty: String = "[" + toString(slen) + " x i8]"
         s = emit_global(s, gname + " = private constant " + arr_ty + " c\"" + escaped + "\"")
         let ptr_name: String = dn + ".ptr"
-        s = emit_line(s, "  " + ptr_name + " = getelementptr " + arr_ty + ", " + "ptr " + gname + ", i64 0, i64 0")
+        s = emit_line(s, "  " + ptr_name + " = getelementptr inbounds " + arr_ty + ", " + "ptr " + gname + ", i64 0, i64 0")
         let s1_name: String = dn + ".s1"
         s = emit_line(s, emit_insertvalue(s1_name, llvm_string(), "undef", ptr_name, "ptr", "0"))
         s = emit_line(s, emit_insertvalue(dn, llvm_string(), s1_name, toString(slen), "i64", "1"))
@@ -9951,6 +9951,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
 // ---------------------------------------------------------------------------
 
 fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
+    // print() in Mapanare adds a newline (like Python's print)
     if len(args) == 0 {
         return emit_line(st, emit_call_void("printf", "ptr @.newline"))
     }
@@ -9959,19 +9960,19 @@ fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
     let an: String = arg.name
 
     if arg.ty.kind == "string" {
-        return emit_line(s, emit_call_void("__mn_str_print", llvm_string() + " " + an))
+        return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
     }
     if arg.ty.kind == "float" {
-        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_float, double " + an + ")")
+        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_float_nl, double " + an + ")")
     }
     if arg.ty.kind == "int" {
-        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 " + an + ")")
+        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
     }
     if arg.ty.kind == "bool" {
-        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 " + an + ")")
+        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
     }
     // Unknown type: assume string
-    return emit_line(s, emit_call_void("__mn_str_print", llvm_string() + " " + an))
+    return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
 }
 
 fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
