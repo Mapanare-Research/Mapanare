@@ -133,7 +133,7 @@ python scripts/build_stage1.py                   # Build mnc-stage1 from Python 
 bash scripts/verify_fixed_point.sh               # 3-stage self-compilation verification
 bash scripts/verify_fixed_point.sh --keep        # Keep intermediate IR for debugging
 
-# Culebra v0.4.0 — compiler diagnostics and template-driven IR scanning (Rust, installed in WSL)
+# Culebra v1.1.0 — compiler diagnostics and template-driven IR scanning (Rust, installed in WSL)
 # 29+ YAML templates across ABI, IR, Binary, Bootstrap categories. Nuclei-style pattern engine.
 # Repo: C:\Users\Juan\Documents\GitHub\Culebra (also at github.com/Mapanare-Research/Culebra)
 # crates.io: https://crates.io/crates/culebra
@@ -160,6 +160,52 @@ culebra bisect stage1.ll stage2.ll                          # Find divergent fun
 culebra bisect stage1.ll stage2.ll --top 30                 # Show more results
 culebra verify stage2.ll return-type-divergence             # PASS/FAIL — verify a fix worked
 culebra verify stage2.ll break-inside-nested-control --function tokenize  # Scoped verify
+
+# --- Semi-dynamic analysis (v1.1.0) — call functions, probe values, test returns ---
+culebra eval main.ll --function hardcoded_field_index --arg '"VarInfo"' --arg '"value"'  # Call and print return
+culebra eval main.ll --function find_field_index --arg 0 --arg 0      # Integer args
+culebra probe stage2.ll --function lower_fn --watch '%state'           # Inject printf, compile, run
+culebra probe stage2.ll --function lower_fn --stop-at if_merge         # Stop at specific block
+culebra test-fn main.ll --function hardcoded_field_index --arg 0 --arg 0 --expect-ret 1  # Unit test: PASS/FAIL
+
+# --- Summary (v1.0.0) — one command for everything ---
+culebra summary stage2.ll                                   # Scan + Types + Fields + Health + Score in 5 lines
+culebra summary stage2.ll --struct LowerState               # Filter health to one struct
+
+# --- Type inference + field audit (v0.9.0) — auto-generate types, detect index-0 bug ---
+culebra infer-types stage2.ll                               # Infer missing type defs from insertvalue chains
+culebra infer-types stage2.ll --ll                          # Output as valid LLVM IR (paste into file)
+culebra field-index-audit stage2.ll                         # Find structs where ALL accesses use index 0
+culebra field-index-audit stage2.ll --struct-filter LowerState  # Check specific struct
+
+# --- Display + Inspection (v0.8.0) — syntax-highlighted IR, variable dumps, block walk ---
+culebra pretty stage2.ll                                    # Module overview: stats, types, function size bars
+culebra pretty stage2.ll --function lower_fn                # Syntax-highlighted IR with colored types/labels/terminators
+culebra dump stage2.ll --function lower_fn                  # Variable dump: allocas, types, sizes, def-use counts, PHIs
+culebra dump stage2.ll --function lower_fn -v               # Verbose: also show GEP chains
+culebra inspect stage2.ll --function lower_fn               # Block-by-block control flow walk
+culebra inspect stage2.ll --function lower_fn --block if_alpha  # Detail view of one block
+culebra stacktrace crash.log --ir stage2.ll                 # Parse valgrind/ASAN/gdb output, map to IR
+
+# --- Missing types (v0.7.0) — find undefined struct/enum types blocking compilation ---
+culebra missing-types stage2.ll                             # Find all undefined named types
+culebra missing-types stage2.ll -v                          # Also show which functions reference each
+
+# --- Call graph + progress (v0.6.0) ---
+culebra callchain stage2.ll --from lower --to current_block_terminated  # Find call paths between functions
+culebra callchain stage2.ll --from lower_fn --to add_block --depth 5   # Shows struct types along chain
+culebra progress stage2.ll                                              # IR stats + findings + health score
+culebra progress stage2.ll -b my-baseline.json                         # Also compare against baseline
+
+# --- Crash debugging (v0.5.0) — offset mapping, variable tracing, struct health ---
+culebra crashmap stage2.ll --offset 0x20 --struct FnDefData  # "0x20 = field 4 (name: {ptr, i64})"
+culebra crashmap stage2.ll --offset 0x20                     # Check all structs for that offset
+culebra crashmap stage2.ll                                   # List all struct types with sizes
+culebra trace stage2.ll --function lower_fn --var '%state'   # Follow variable through basic blocks
+culebra trace stage2.ll --function tokenize --var '%pos'     # Shows every load/store/phi/call
+culebra health stage2.ll --struct LowerState                 # PHI zeroinit, type-pun, null loads
+culebra health stage2.ll                                     # Check all structs
+culebra suggest stage2.ll --function lower_definition        # Prioritized fix suggestions for a function
 
 # --- Baseline tracking (v0.4.0) — track progress across fix iterations ---
 culebra baseline save stage2.ll                             # Save current findings as baseline
