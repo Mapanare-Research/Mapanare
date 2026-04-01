@@ -9252,10 +9252,10 @@ fn hardcoded_field_index(struct_name: String, field_name: String) -> Int {
         if field_name == "value" { return 0 }
         if field_name == "state" { return 1 }
     }
-    // VarInfo: name(0) value(1) mutable(2)
+    // VarInfo: name(0) current(1) mutable(2)
     if struct_name == "VarInfo" {
         if field_name == "name" { return 0 }
-        if field_name == "value" { return 1 }
+        if field_name == "current" { return 1 }
         if field_name == "mutable" { return 2 }
     }
     // CompileResult: success(0) ir_text(1) errors(2)
@@ -9264,13 +9264,13 @@ fn hardcoded_field_index(struct_name: String, field_name: String) -> Int {
         if field_name == "ir_text" { return 1 }
         if field_name == "errors" { return 2 }
     }
-    // MatchBuildResult: state(0) arm_labels(1) arm_indices(2) arm_body_labels(3) merge_label(4)
+    // MatchBuildResult: state(0) arm_labels(1) arm_indices(2) cases(3) default_label(4)
     if struct_name == "MatchBuildResult" {
         if field_name == "state" { return 0 }
         if field_name == "arm_labels" { return 1 }
         if field_name == "arm_indices" { return 2 }
-        if field_name == "arm_body_labels" { return 3 }
-        if field_name == "merge_label" { return 4 }
+        if field_name == "cases" { return 3 }
+        if field_name == "default_label" { return 4 }
     }
     // FnEntry: name(0) ret_type(1) param_types(2)
     if struct_name == "FnEntry" {
@@ -9285,21 +9285,21 @@ fn hardcoded_field_index(struct_name: String, field_name: String) -> Int {
         if field_name == "field_types" { return 2 }
         if field_name == "llvm_type" { return 3 }
     }
-    // StructFieldInfo: struct_name(0) field_names(1) field_types(2)
+    // StructFieldInfo: name(0) field_names(1) field_types(2)
     if struct_name == "StructFieldInfo" {
-        if field_name == "struct_name" { return 0 }
+        if field_name == "name" { return 0 }
         if field_name == "field_names" { return 1 }
         if field_name == "field_types" { return 2 }
     }
-    // EnumVariantNames: name(0) variant_names(1)
+    // EnumVariantNames: enum_name(0) variant_names(1)
     if struct_name == "EnumVariantNames" {
-        if field_name == "name" { return 0 }
+        if field_name == "enum_name" { return 0 }
         if field_name == "variant_names" { return 1 }
     }
-    // LambdaEntry: var_name(0) body_name(1)
+    // LambdaEntry: var_name(0) fn_name(1)
     if struct_name == "LambdaEntry" {
         if field_name == "var_name" { return 0 }
-        if field_name == "body_name" { return 1 }
+        if field_name == "fn_name" { return 1 }
     }
     // ExternFnInfo: abi(0) module_name(1) fn_name(2) param_types(3) return_type(4)
     if struct_name == "ExternFnInfo" {
@@ -9309,28 +9309,28 @@ fn hardcoded_field_index(struct_name: String, field_name: String) -> Int {
         if field_name == "param_types" { return 3 }
         if field_name == "return_type" { return 4 }
     }
-    // VerifyError: fn_name(0) block_name(1) message(2)
+    // VerifyError: fn_name(0) block_label(1) message(2)
     if struct_name == "VerifyError" {
         if field_name == "fn_name" { return 0 }
-        if field_name == "block_name" { return 1 }
+        if field_name == "block_label" { return 1 }
         if field_name == "message" { return 2 }
     }
-    // ImplEntry: key(0) method_name(1)
+    // ImplEntry: key(0) mir_name(1)
     if struct_name == "ImplEntry" {
         if field_name == "key" { return 0 }
-        if field_name == "method_name" { return 1 }
+        if field_name == "mir_name" { return 1 }
     }
     // ImportInfo: path(0) items(1)
     if struct_name == "ImportInfo" {
         if field_name == "path" { return 0 }
         if field_name == "items" { return 1 }
     }
-    // AgentInfo: name(0) inputs(1) outputs(2) state_fields(3)
+    // AgentInfo: name(0) inputs(1) outputs(2) method_names(3)
     if struct_name == "AgentInfo" {
         if field_name == "name" { return 0 }
         if field_name == "inputs" { return 1 }
         if field_name == "outputs" { return 2 }
-        if field_name == "state_fields" { return 3 }
+        if field_name == "method_names" { return 3 }
     }
     // PipeInfo: name(0) stages(1)
     if struct_name == "PipeInfo" {
