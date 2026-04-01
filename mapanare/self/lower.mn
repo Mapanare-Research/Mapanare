@@ -152,10 +152,11 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
         let mut payload_types: List<MIRType> = []
         let mut j: Int = 0
         for _ in 0..100 {
-            if j >= len(variant.fields) { break }
-            let fty: MIRType = lower_resolve_type_expr(variant.fields[j])
-            payload_types.push(fty)
-            j = j + 1
+            if j < len(variant.fields) {
+                let fty: MIRType = lower_resolve_type_expr(variant.fields[j])
+                payload_types.push(fty)
+                j = j + 1
+            }
         }
         let vi: EnumVariantInfo = new_enum_variant_info(variant.name, payload_types)
         variants.push(vi)
@@ -675,7 +676,8 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
         },
         BoolLit(b) => {
             let r: LowerResult = make_value(st, mir_bool(), "t")
-            let val_str: String = if b { "true" } else { "false" }
+            let mut val_str: String = "false"
+            if b { val_str = "true" }
             let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_bool(), val_str))
             return new_lower_result(r.value, s)
         },
@@ -841,7 +843,8 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
             // Use string comparison on the operator (not enum match on BinOpKind)
             // because enum match falls through in the compiled binary
             let is_cmp: Bool = op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=" || op == "and" || op == "or"
-            let result_ty: MIRType = if is_cmp { mir_bool() } else { lhs_val.ty }
+            let mut result_ty: MIRType = lhs_val.ty
+            if is_cmp { result_ty = mir_bool() }
             let dest_r: LowerResult = make_value(rhs_r.state, result_ty, "t")
             let s: LowerState = emit_instr(dest_r.state, Instruction::BinOp(dest_r.value, binop, lhs_val, rhs_val))
             return new_lower_result(dest_r.value, s)
@@ -894,16 +897,18 @@ fn lower_unary(st: LowerState, op: String, operand: Expr) -> LowerResult {
 // ---------------------------------------------------------------------------
 
 fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResult {
-    // Lower all arguments first
+    // Lower all arguments first (guard pattern avoids break-in-for bug)
     let mut s: LowerState = st
     let mut args: List<Value> = []
     let mut i: Int = 0
+    let nae: Int = len(arg_exprs)
     for _ in 0..50 {
-        if i >= len(arg_exprs) { break }
-        let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
-        s = arg_r.state
-        args.push(arg_r.value)
-        i = i + 1
+        if i < nae {
+            let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
+            s = arg_r.state
+            args.push(arg_r.value)
+            i = i + 1
+        }
     }
 
     // Dispatch on callee type
@@ -918,10 +923,12 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
             let mut all_args: List<Value> = []
             all_args.push(obj_r.value)
             let mut j: Int = 0
+            let nargs_fa: Int = len(args)
             for _ in 0..50 {
-                if j >= len(args) { break }
-                all_args.push(args[j])
-                j = j + 1
+                if j < nargs_fa {
+                    all_args.push(args[j])
+                    j = j + 1
+                }
             }
             let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
             return new_lower_result(dest_r.value, new_s)
@@ -1041,12 +1048,16 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let struct_ty: MIRType = mir_struct(fn_name)
         let mut field_pairs: List<FieldPair> = []
         let mut fi: Int = 0
+        let nfn: Int = len(field_names)
+        let na: Int = len(args)
         for _ in 0..50 {
-            if fi >= len(field_names) { break }
-            if fi >= len(args) { break }
-            let fp: FieldPair = new_field_pair(field_names[fi], args[fi])
-            field_pairs.push(fp)
-            fi = fi + 1
+            if fi < nfn {
+                if fi < na {
+                    let fp: FieldPair = new_field_pair(field_names[fi], args[fi])
+                    field_pairs.push(fp)
+                    fi = fi + 1
+                }
+            }
         }
         let dest_r: LowerResult = make_value(st, struct_ty, "t")
         let s: LowerState = emit_instr(dest_r.state, Instruction::StructInit(dest_r.value, struct_ty, field_pairs))
@@ -1161,11 +1172,12 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     let nae: Int = len(arg_exprs)
     let mut i: Int = 0
     for _ in 0..50 {
-        if i >= nae { break }
-        let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
-        s = arg_r.state
-        all_args.push(arg_r.value)
-        i = i + 1
+        if i < nae {
+            let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
+            s = arg_r.state
+            all_args.push(arg_r.value)
+            i = i + 1
+        }
     }
 
     let mut ret_ty: MIRType = mir_unknown()
@@ -1344,12 +1356,14 @@ fn lower_pipe_call(arg_r: LowerResult, fn_name: String, extra_exprs: List<Expr>)
     let mut args: List<Value> = []
     args.push(arg_r.value)
     let mut i: Int = 0
+    let nee: Int = len(extra_exprs)
     for _ in 0..50 {
-        if i >= len(extra_exprs) { break }
-        let extra_r: LowerResult = lower_expr(s, extra_exprs[i])
-        s = extra_r.state
-        args.push(extra_r.value)
-        i = i + 1
+        if i < nee {
+            let extra_r: LowerResult = lower_expr(s, extra_exprs[i])
+            s = extra_r.state
+            args.push(extra_r.value)
+            i = i + 1
+        }
     }
     let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
@@ -1397,7 +1411,8 @@ fn lower_range(st: LowerState, start: Expr, end: Expr, inclusive: Bool) -> Lower
     let start_r: LowerResult = lower_expr(st, start)
     let end_r: LowerResult = lower_expr(start_r.state, end)
     let dest_r: LowerResult = make_value(end_r.state, mir_range(), "t")
-    let fn_name: String = if inclusive { "__mn_range_inclusive" } else { "__mn_range" }
+    let mut fn_name: String = "__mn_range"
+    if inclusive { fn_name = "__mn_range_inclusive" }
     let mut args: List<Value> = []
     args.push(start_r.value)
     args.push(end_r.value)
@@ -1495,23 +1510,27 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
     let mut all_params: List<Param> = []
     let mut capture_suffix: String = ""
     let mut pi: Int = 0
+    let np: Int = len(params)
     for _ in 0..100 {
-        if pi >= len(params) { break }
-        all_params.push(params[pi])
-        pi = pi + 1
+        if pi < np {
+            all_params.push(params[pi])
+            pi = pi + 1
+        }
     }
     let mut ci: Int = 0
+    let npv: Int = len(parent_vars)
     for _ in 0..50 {
-        if ci >= len(parent_vars) { break }
-        let pv: VarInfo = parent_vars[ci]
-        let cap_param: Param = new Param { span: new_span(0, 0, 0, 0), name: pv.name, type_annotation: none }
-        all_params.push(cap_param)
-        if ci == 0 {
-            capture_suffix = ":" + pv.name
-        } else {
-            capture_suffix = capture_suffix + "," + pv.name
+        if ci < npv {
+            let pv: VarInfo = parent_vars[ci]
+            let cap_param: Param = new Param { span: new_span(0, 0, 0, 0), name: pv.name, type_annotation: none }
+            all_params.push(cap_param)
+            if ci == 0 {
+                capture_suffix = ":" + pv.name
+            } else {
+                capture_suffix = capture_suffix + "," + pv.name
+            }
+            ci = ci + 1
         }
-        ci = ci + 1
     }
 
     // Create FnDefData with Int return type
@@ -1543,12 +1562,14 @@ fn lower_spawn(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResu
     let mut s: LowerState = st
     let mut args: List<Value> = []
     let mut i: Int = 0
+    let nae_sp: Int = len(arg_exprs)
     for _ in 0..50 {
-        if i >= len(arg_exprs) { break }
-        let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
-        s = arg_r.state
-        args.push(arg_r.value)
-        i = i + 1
+        if i < nae_sp {
+            let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
+            s = arg_r.state
+            args.push(arg_r.value)
+            i = i + 1
+        }
     }
 
     let agent_name: String = extract_ident_name(callee)
@@ -1648,15 +1669,18 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
     let mut s: LowerState = st
     let mut vals: List<Value> = []
     let mut i: Int = 0
+    let nel: Int = len(elements)
     for _ in 0..600 {
-        if i >= len(elements) { break }
-        let el_r: LowerResult = lower_expr(s, elements[i])
-        s = el_r.state
-        vals.push(el_r.value)
-        i = i + 1
+        if i < nel {
+            let el_r: LowerResult = lower_expr(s, elements[i])
+            s = el_r.state
+            vals.push(el_r.value)
+            i = i + 1
+        }
     }
 
-    let elem_type: MIRType = if len(vals) > 0 { vals[0].ty } else { mir_unknown() }
+    let mut elem_type: MIRType = mir_unknown()
+    if len(vals) > 0 { elem_type = vals[0].ty }
     let dest_r: LowerResult = make_value(s, mir_list(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::ListInit(dest_r.value, elem_type, vals))
     return new_lower_result(dest_r.value, new_s)
@@ -1676,12 +1700,13 @@ fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -
     let mut vals: List<Value> = []
     let mut i: Int = 0
     for _ in 0..50 {
-        if i >= nfields { break }
-        let fi: FieldInit = field_inits[i]
-        let val_r: LowerResult = lower_expr(s, fi.value)
-        s = val_r.state
-        vals.push(val_r.value)
-        i = i + 1
+        if i < nfields {
+            let fi: FieldInit = field_inits[i]
+            let val_r: LowerResult = lower_expr(s, fi.value)
+            s = val_r.state
+            vals.push(val_r.value)
+            i = i + 1
+        }
     }
 
     // Emit as Call to "__new_<StructName>" (emitter handles this specially)
@@ -1844,23 +1869,27 @@ fn infer_variant_payload_type(st: LowerState, subject: Value, variant_name: Stri
     if subject.ty.kind == "enum" {
         let enum_name: String = subject.ty.name
         let mut ei: Int = 0
+        let nei: Int = len(st.module.enums)
         for _ in 0..50 {
-            if ei >= len(st.module.enums) { break }
-            let einfo: EnumInfo = st.module.enums[ei]
-            if einfo.name == enum_name {
-                let mut vi: Int = 0
-                for _ in 0..50 {
-                    if vi >= len(einfo.variants) { break }
-                    let vinfo: EnumVariantInfo = einfo.variants[vi]
-                    if vinfo.name == variant_name {
-                        if field_idx < len(vinfo.payload_types) {
-                            return vinfo.payload_types[field_idx]
+            if ei < nei {
+                let einfo: EnumInfo = st.module.enums[ei]
+                if einfo.name == enum_name {
+                    let mut vi: Int = 0
+                    let nvi: Int = len(einfo.variants)
+                    for _ in 0..50 {
+                        if vi < nvi {
+                            let vinfo: EnumVariantInfo = einfo.variants[vi]
+                            if vinfo.name == variant_name {
+                                if field_idx < len(vinfo.payload_types) {
+                                    return vinfo.payload_types[field_idx]
+                                }
+                            }
+                            vi = vi + 1
                         }
                     }
-                    vi = vi + 1
                 }
+                ei = ei + 1
             }
-            ei = ei + 1
         }
     }
     return mir_unknown()
@@ -2077,27 +2106,28 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
     let mut i: Int = 0
     let n: Int = len(arms)
     for _ in 0..50 {
-        if i >= n { break }
-        let label_r: LowerResult = fresh_block_label(s, "match_arm")
-        s = label_r.state
-        let label: String = label_r.value.name
-        s = add_block(s, label)
-        init.arm_labels.push(label)
-        init.arm_indices.push(s.current_block_idx)
-        let arm: MatchArm = arms[i]
-        match arm.pattern {
-            ConstructorPat(name, _) => { init.cases.push(new_switch_case(name, label)) },
-            LiteralPat(expr) => { init.cases.push(new_switch_case(get_literal_value(expr), label)) },
-            IdentPat(name) => {
-                if is_enum_variant(s, name) {
-                    init.cases.push(new_switch_case(name, label))
-                } else {
-                    init.default_label = label
-                }
-            },
-            Wildcard => { init.default_label = label }
+        if i < n {
+            let label_r: LowerResult = fresh_block_label(s, "match_arm")
+            s = label_r.state
+            let label: String = label_r.value.name
+            s = add_block(s, label)
+            init.arm_labels.push(label)
+            init.arm_indices.push(s.current_block_idx)
+            let arm: MatchArm = arms[i]
+            match arm.pattern {
+                ConstructorPat(name, _) => { init.cases.push(new_switch_case(name, label)) },
+                LiteralPat(expr) => { init.cases.push(new_switch_case(get_literal_value(expr), label)) },
+                IdentPat(name) => {
+                    if is_enum_variant(s, name) {
+                        init.cases.push(new_switch_case(name, label))
+                    } else {
+                        init.default_label = label
+                    }
+                },
+                Wildcard => { init.default_label = label }
+            }
+            i = i + 1
         }
-        i = i + 1
     }
     init.state = s
     return init
@@ -2143,52 +2173,54 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     // Lower each arm
     let mut arm_results: List<PhiEntry> = []
     let mut ai: Int = 0
+    let na_match: Int = len(arms)
     for _ in 0..50 {
-        if ai >= len(arms) { break }
-        let arm: MatchArm = arms[ai]
-        let arm_idx: Int = arm_indices[ai]
+        if ai < na_match {
+            let arm: MatchArm = arms[ai]
+            let arm_idx: Int = arm_indices[ai]
 
-        s = set_block(s, arm_idx)
-        s = lower_push_scope(s)
+            s = set_block(s, arm_idx)
+            s = lower_push_scope(s)
 
-        // Bind pattern variables
-        match arm.pattern {
-            ConstructorPat(name, sub_patterns) => {
-                // Bind each sub-pattern. Uses helper function to avoid
-                // break-inside-if-inside-for bug (break is dropped by Python lowerer).
-                s = bind_pattern_fields(s, subject_r.value, name, sub_patterns)
-            },
-            IdentPat(name) => {
-                if !is_enum_variant(s, name) {
-                    // Store subject to alloca so lower_identifier can load from it
-                    let ident_addr: Value = new_value("%" + name + ".addr", subject_r.value.ty)
-                    s = emit_instr(s, Instruction::Alloca(ident_addr, subject_r.value.ty))
-                    s = emit_instr(s, Instruction::Store(ident_addr, subject_r.value))
-                    s = define_var(s, name, ident_addr, false)
-                }
-            },
-            _ => {}
+            // Bind pattern variables
+            match arm.pattern {
+                ConstructorPat(name, sub_patterns) => {
+                    // Bind each sub-pattern. Uses helper function to avoid
+                    // break-inside-if-inside-for bug (break is dropped by Python lowerer).
+                    s = bind_pattern_fields(s, subject_r.value, name, sub_patterns)
+                },
+                IdentPat(name) => {
+                    if !is_enum_variant(s, name) {
+                        // Store subject to alloca so lower_identifier can load from it
+                        let ident_addr: Value = new_value("%" + name + ".addr", subject_r.value.ty)
+                        s = emit_instr(s, Instruction::Alloca(ident_addr, subject_r.value.ty))
+                        s = emit_instr(s, Instruction::Store(ident_addr, subject_r.value))
+                        s = define_var(s, name, ident_addr, false)
+                    }
+                },
+                _ => {}
+            }
+
+            // Lower arm body
+            let arm_val_r: LowerResult = lower_arm_body(s, arm.body)
+            s = arm_val_r.state
+
+            let exit_label: String = get_block_label(s, s.current_block_idx)
+            let arm_terminated: Bool = current_block_terminated(s)
+
+            // Track arm results for phi
+            let arm_kind: String = arm_val_r.value.ty.kind
+            if !arm_terminated && arm_kind != "void" && arm_kind != "unknown" && arm_val_r.value.name != "%void" {
+                let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
+                arm_results.push(pe)
+            }
+
+            if !arm_terminated {
+                s = emit_instr(s, Instruction::Jump(merge_label))
+            }
+            s = lower_pop_scope(s)
+            ai = ai + 1
         }
-
-        // Lower arm body
-        let arm_val_r: LowerResult = lower_arm_body(s, arm.body)
-        s = arm_val_r.state
-
-        let exit_label: String = get_block_label(s, s.current_block_idx)
-        let arm_terminated: Bool = current_block_terminated(s)
-
-        // Track arm results for phi
-        let arm_kind: String = arm_val_r.value.ty.kind
-        if !arm_terminated && arm_kind != "void" && arm_kind != "unknown" && arm_val_r.value.name != "%void" {
-            let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
-            arm_results.push(pe)
-        }
-
-        if !arm_terminated {
-            s = emit_instr(s, Instruction::Jump(merge_label))
-        }
-        s = lower_pop_scope(s)
-        ai = ai + 1
     }
 
     // Merge block
@@ -2394,12 +2426,14 @@ fn pretty_print_block(bb: BasicBlock) -> String {
 fn pretty_print_function(f: MIRFunction) -> String {
     let mut params_str: String = ""
     let mut i: Int = 0
+    let nfp: Int = len(f.params)
     for _ in 0..50 {
-        if i >= len(f.params) { break }
-        let p: MIRParam = f.params[i]
-        if i > 0 { params_str = params_str + ", " }
-        params_str = params_str + p.name + ": " + format_type(p.ty)
-        i = i + 1
+        if i < nfp {
+            let p: MIRParam = f.params[i]
+            if i > 0 { params_str = params_str + ", " }
+            params_str = params_str + p.name + ": " + format_type(p.ty)
+            i = i + 1
+        }
     }
 
     let header: String = "fn " + f.name + "(" + params_str + ") -> " + format_type(f.return_type)
@@ -2407,11 +2441,13 @@ fn pretty_print_function(f: MIRFunction) -> String {
 
     let mut result: String = header + " {\n"
     let mut bi: Int = 0
+    let nfb: Int = len(f.blocks)
     for _ in 0..600 {
-        if bi >= len(f.blocks) { break }
-        let bb: BasicBlock = f.blocks[bi]
-        result = result + pretty_print_block(bb)
-        bi = bi + 1
+        if bi < nfb {
+            let bb: BasicBlock = f.blocks[bi]
+            result = result + pretty_print_block(bb)
+            bi = bi + 1
+        }
     }
     result = result + "}"
     return result
@@ -2425,20 +2461,24 @@ fn pretty_print_module(module: MIRModule) -> String {
 
     // Print structs
     let mut si: Int = 0
+    let nms: Int = len(module.structs)
     for _ in 0..50 {
-        if si >= len(module.structs) { break }
-        let s: StructInfo = module.structs[si]
-        result = result + "struct " + s.name + " {...}\n"
-        si = si + 1
+        if si < nms {
+            let s: StructInfo = module.structs[si]
+            result = result + "struct " + s.name + " {...}\n"
+            si = si + 1
+        }
     }
 
     // Print enums
     let mut ei: Int = 0
+    let nme: Int = len(module.enums)
     for _ in 0..50 {
-        if ei >= len(module.enums) { break }
-        let e: EnumInfo = module.enums[ei]
-        result = result + "enum " + e.name + " {...}\n"
-        ei = ei + 1
+        if ei < nme {
+            let e: EnumInfo = module.enums[ei]
+            result = result + "enum " + e.name + " {...}\n"
+            ei = ei + 1
+        }
     }
 
     if len(module.structs) > 0 { result = result + "\n" }
@@ -2446,11 +2486,13 @@ fn pretty_print_module(module: MIRModule) -> String {
 
     // Print functions
     let mut fi: Int = 0
+    let nmf: Int = len(module.functions)
     for _ in 0..600 {
-        if fi >= len(module.functions) { break }
-        let f: MIRFunction = module.functions[fi]
-        result = result + pretty_print_function(f) + "\n\n"
-        fi = fi + 1
+        if fi < nmf {
+            let f: MIRFunction = module.functions[fi]
+            result = result + pretty_print_function(f) + "\n\n"
+            fi = fi + 1
+        }
     }
 
     return result
@@ -2478,10 +2520,12 @@ fn verify_module(module: MIRModule) -> List<VerifyError> {
         let f: MIRFunction = module.functions[i]
         let fn_errors: List<VerifyError> = verify_function(f)
         let mut j: Int = 0
+        let nfe: Int = len(fn_errors)
         for _ in 0..600 {
-            if j >= len(fn_errors) { break }
-            errors.push(fn_errors[j])
-            j = j + 1
+            if j < nfe {
+                errors.push(fn_errors[j])
+                j = j + 1
+            }
         }
         i = i + 1
     }
@@ -2503,10 +2547,12 @@ fn verify_function(f: MIRFunction) -> List<VerifyError> {
         let bb: BasicBlock = f.blocks[i]
         let bb_errors: List<VerifyError> = verify_block(f.name, bb, f)
         let mut j: Int = 0
+        let nbe: Int = len(bb_errors)
         for _ in 0..600 {
-            if j >= len(bb_errors) { break }
-            errors.push(bb_errors[j])
-            j = j + 1
+            if j < nbe {
+                errors.push(bb_errors[j])
+                j = j + 1
+            }
         }
         i = i + 1
     }
@@ -2531,34 +2577,38 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
 
     // Check no terminators in the middle
     let mut i: Int = 0
+    let nbi_m1: Int = len(bb.instructions) - 1
     for _ in 0..600 {
-        if i >= len(bb.instructions) - 1 { break }
-        let inst: Instruction = bb.instructions[i]
-        if is_terminator(inst) {
-            let e: VerifyError = new_verify_error(fn_name, bb.label, "terminator at position " + toString(i) + " (not last)")
-            errors.push(e)
+        if i < nbi_m1 {
+            let inst: Instruction = bb.instructions[i]
+            if is_terminator(inst) {
+                let e: VerifyError = new_verify_error(fn_name, bb.label, "terminator at position " + toString(i) + " (not last)")
+                errors.push(e)
+            }
+            i = i + 1
         }
-        i = i + 1
     }
 
     // Check phi nodes are at the start
     let mut seen_non_phi: Bool = false
     let mut pi: Int = 0
+    let nbi_phi: Int = len(bb.instructions)
     for _ in 0..600 {
-        if pi >= len(bb.instructions) { break }
-        let inst: Instruction = bb.instructions[pi]
-        match inst {
-            Phi(_, _) => {
-                if seen_non_phi {
-                    let e: VerifyError = new_verify_error(fn_name, bb.label, "phi node after non-phi instruction")
-                    errors.push(e)
+        if pi < nbi_phi {
+            let inst: Instruction = bb.instructions[pi]
+            match inst {
+                Phi(_, _) => {
+                    if seen_non_phi {
+                        let e: VerifyError = new_verify_error(fn_name, bb.label, "phi node after non-phi instruction")
+                        errors.push(e)
+                    }
+                },
+                _ => {
+                    seen_non_phi = true
                 }
-            },
-            _ => {
-                seen_non_phi = true
             }
+            pi = pi + 1
         }
-        pi = pi + 1
     }
 
     return errors
@@ -2595,23 +2645,27 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     // Build params
     let mut params: List<MIRParam> = []
     let mut pi: Int = 0
+    let nfdp: Int = len(fn_def.params)
     for _ in 0..50 {
-        if pi >= len(fn_def.params) { break }
-        let p: Param = fn_def.params[pi]
-        let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
-        let mp: MIRParam = new_mir_param(p.name, pty)
-        params.push(mp)
-        pi = pi + 1
+        if pi < nfdp {
+            let p: Param = fn_def.params[pi]
+            let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
+            let mp: MIRParam = new_mir_param(p.name, pty)
+            params.push(mp)
+            pi = pi + 1
+        }
     }
 
     let ret_type: MIRType = resolve_return_type_checked(st, fn_def.return_type)
 
     let mut decorators: List<String> = []
     let mut di: Int = 0
+    let ndec: Int = len(fn_def.decorators)
     for _ in 0..100 {
-        if di >= len(fn_def.decorators) { break }
-        decorators.push(fn_def.decorators[di].name)
-        di = di + 1
+        if di < ndec {
+            decorators.push(fn_def.decorators[di].name)
+            di = di + 1
+        }
     }
 
     let mir_fn: MIRFunction = new_mir_function(fn_name, params, ret_type, decorators, fn_def.public)
@@ -2636,16 +2690,17 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     // Bind params
     let mut bi: Int = 0
     for _ in 0..50 {
-        if bi >= len(fn_def.params) { break }
-        let p: Param = fn_def.params[bi]
-        let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
-        let addr_name: String = "%" + p.name + ".addr"
-        let addr: Value = new_value(addr_name, pty)
-        let param_val: Value = new_value("%" + p.name, pty)
-        s = emit_instr(s, Instruction::Alloca(addr, pty))
-        s = emit_instr(s, Instruction::Store(addr, param_val))
-        s = define_var(s, p.name, addr, false)
-        bi = bi + 1
+        if bi < nfdp {
+            let p: Param = fn_def.params[bi]
+            let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
+            let addr_name: String = "%" + p.name + ".addr"
+            let addr: Value = new_value(addr_name, pty)
+            let param_val: Value = new_value("%" + p.name, pty)
+            s = emit_instr(s, Instruction::Alloca(addr, pty))
+            s = emit_instr(s, Instruction::Store(addr, param_val))
+            s = define_var(s, p.name, addr, false)
+            bi = bi + 1
+        }
     }
 
     // Lower body
