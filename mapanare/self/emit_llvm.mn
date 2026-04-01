@@ -68,11 +68,96 @@ struct EmitState {
 fn new_emit_state(module_name: String) -> EmitState {
     let lines: List<String> = []
     let functions: List<FnEntry> = []
-    let structs: List<StructEntry> = []
+    // Build internal struct entries BEFORE constructing EmitState.
+    // This avoids the circular dependency: pushing to st.structs needs
+    // EmitState field info, but EmitState isn't registered yet.
+    let structs: List<StructEntry> = build_internal_struct_list()
     let str_globals: List<String> = []
     let enum_names: List<String> = []
     let enum_infos: List<EnumInfo> = []
     return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos }
+}
+
+fn build_internal_struct_list() -> List<StructEntry> {
+    let mut list: List<StructEntry> = []
+    // StructEntry MUST be first — make_entry creates StructEntry values,
+    // and the emitter needs StructEntry's field info to generate correct
+    // insertvalue indices for subsequent make_entry calls.
+    list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
+    list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"]))
+    list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars"]))
+    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos"]))
+    list.push(make_entry("LowerResult", ["value", "state"]))
+    list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
+    list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "arm_body_labels", "merge_label"]))
+    list.push(make_entry("FnEntry", ["name", "ret_type", "param_types"]))
+    // StructEntry already registered first (above)
+    list.push(make_entry("VarInfo", ["name", "value", "mutable"]))
+    list.push(make_entry("StructFieldInfo", ["struct_name", "field_names", "field_types"]))
+    list.push(make_entry("EnumVariantNames", ["name", "variant_names"]))
+    list.push(make_entry("LambdaEntry", ["var_name", "body_name"]))
+    list.push(make_entry("ExternFnInfo", ["abi", "module_name", "fn_name", "param_types", "return_type"]))
+    list.push(make_entry("VerifyError", ["fn_name", "block_name", "message"]))
+    list.push(make_entry("ImplEntry", ["key", "method_name"]))
+    list.push(make_entry("ImportInfo", ["path", "items"]))
+    list.push(make_entry("AgentInfo", ["name", "inputs", "outputs", "state_fields"]))
+    list.push(make_entry("PipeInfo", ["name", "stages"]))
+    return list
+}
+
+fn make_entry(name: String, field_names: List<String>) -> StructEntry {
+    let types: List<String> = []
+    return new_struct_entry(name, field_names, types, "%struct." + name)
+}
+
+// Pre-register internal compiler struct types that may not be in the MIR module.
+// Without these, find_field_index returns 0 for all fields (index-0 bug).
+fn register_internal_struct(st: EmitState, name: String, fields: List<String>) -> EmitState {
+    let types: List<String> = []
+    let entry: StructEntry = new_struct_entry(name, fields, types, "%struct." + name)
+    st.structs.push(entry)
+    return st
+}
+
+fn register_all_internal_structs(st: EmitState) -> EmitState {
+    let mut s: EmitState = st
+    // MIRModule: name, functions, structs, enums, extern_fns, agents, pipes, imports, trait_names
+    s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"])
+    // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars
+    s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars"])
+    // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos
+    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos"])
+    // LowerResult: value, state
+    s = register_internal_struct(s, "LowerResult", ["value", "state"])
+    // CompileResult: success, ir_text, errors
+    s = register_internal_struct(s, "CompileResult", ["success", "ir_text", "errors"])
+    // MatchBuildResult: state, arm_labels, arm_indices, arm_body_labels, merge_label
+    s = register_internal_struct(s, "MatchBuildResult", ["state", "arm_labels", "arm_indices", "arm_body_labels", "merge_label"])
+    // FnEntry: name, ret_type, param_types
+    s = register_internal_struct(s, "FnEntry", ["name", "ret_type", "param_types"])
+    // StructEntry: name, field_names, field_types, llvm_type
+    s = register_internal_struct(s, "StructEntry", ["name", "field_names", "field_types", "llvm_type"])
+    // VarInfo: name, value, mutable
+    s = register_internal_struct(s, "VarInfo", ["name", "value", "mutable"])
+    // StructFieldInfo: struct_name, field_names, field_types
+    s = register_internal_struct(s, "StructFieldInfo", ["struct_name", "field_names", "field_types"])
+    // EnumVariantNames: name, variant_names
+    s = register_internal_struct(s, "EnumVariantNames", ["name", "variant_names"])
+    // LambdaEntry: var_name, body_name
+    s = register_internal_struct(s, "LambdaEntry", ["var_name", "body_name"])
+    // ExternFnInfo: abi, module_name, fn_name, param_types, return_type
+    s = register_internal_struct(s, "ExternFnInfo", ["abi", "module_name", "fn_name", "param_types", "return_type"])
+    // VerifyError: fn_name, block_name, message
+    s = register_internal_struct(s, "VerifyError", ["fn_name", "block_name", "message"])
+    // ImplEntry: key, method_name
+    s = register_internal_struct(s, "ImplEntry", ["key", "method_name"])
+    // ImportInfo: path, items
+    s = register_internal_struct(s, "ImportInfo", ["path", "items"])
+    // AgentInfo: name, inputs, outputs, state_fields
+    s = register_internal_struct(s, "AgentInfo", ["name", "inputs", "outputs", "state_fields"])
+    // PipeInfo: name, stages
+    s = register_internal_struct(s, "PipeInfo", ["name", "stages"])
+    return s
 }
 
 fn emit_global(st: EmitState, line: String) -> EmitState {
@@ -882,22 +967,164 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
         return emit_copy(s, dest, obj)
     }
 
-    // Look up field index from registered structs
+    // Look up field index: try hardcoded first (internal types), then registry
+    let hc_idx: Int = hardcoded_field_index(obj.ty.name, field_name)
+    if hc_idx > 0 {
+        // Hardcoded match — use it (overrides potentially broken registry)
+        s = emit_line(s, emit_extractvalue(dn, obj_ty, on, toString(hc_idx)))
+        return s
+    }
+    // Fall back to registered structs
     let struct_opt: Option<StructEntry> = find_struct_entry(s, obj.ty.name)
     match struct_opt {
         Some(se) => {
             let idx: Int = find_field_index(se.field_names, field_name)
-            // Use the resolved type (named struct form like %struct.Point)
-            // to match the value type from load instructions
             s = emit_line(s, emit_extractvalue(dn, obj_ty, on, toString(idx)))
             return s
         },
         _ => {
-            // Default: extract index 0
-            s = emit_line(s, emit_extractvalue(dn, obj_ty, on, "0"))
+            // Last resort: hardcoded (returns 0 for unknown)
+            s = emit_line(s, emit_extractvalue(dn, obj_ty, on, toString(hc_idx)))
             return s
         }
     }
+}
+
+// Hardcoded field indices for the 18 internal compiler struct types.
+// These are not in the MIR module's struct list due to a state accumulation
+// bug, so find_struct_entry returns None. This function provides the correct
+// indices as a workaround.
+fn hardcoded_field_index(struct_name: String, field_name: String) -> Int {
+    // LowerState: module(0) current_fn(1) current_block_idx(2) tmp_counter(3) block_counter(4) vars(5) scope_stack(6) impl_methods(7) struct_fields(8) enum_variants(9) lambda_vars(10)
+    if struct_name == "LowerState" {
+        if field_name == "module" { return 0 }
+        if field_name == "current_fn" { return 1 }
+        if field_name == "current_block_idx" { return 2 }
+        if field_name == "tmp_counter" { return 3 }
+        if field_name == "block_counter" { return 4 }
+        if field_name == "vars" { return 5 }
+        if field_name == "scope_stack" { return 6 }
+        if field_name == "impl_methods" { return 7 }
+        if field_name == "struct_fields" { return 8 }
+        if field_name == "enum_variants" { return 9 }
+        if field_name == "lambda_vars" { return 10 }
+    }
+    // EmitState: lines(0) counter(1) functions(2) structs(3) module_name(4) str_counter(5) str_globals(6) current_ret_type(7) enum_names(8) enum_infos(9)
+    if struct_name == "EmitState" {
+        if field_name == "lines" { return 0 }
+        if field_name == "counter" { return 1 }
+        if field_name == "functions" { return 2 }
+        if field_name == "structs" { return 3 }
+        if field_name == "module_name" { return 4 }
+        if field_name == "str_counter" { return 5 }
+        if field_name == "str_globals" { return 6 }
+        if field_name == "current_ret_type" { return 7 }
+        if field_name == "enum_names" { return 8 }
+        if field_name == "enum_infos" { return 9 }
+    }
+    // MIRModule: name(0) functions(1) structs(2) enums(3) extern_fns(4) agents(5) pipes(6) imports(7) trait_names(8)
+    if struct_name == "MIRModule" {
+        if field_name == "name" { return 0 }
+        if field_name == "functions" { return 1 }
+        if field_name == "structs" { return 2 }
+        if field_name == "enums" { return 3 }
+        if field_name == "extern_fns" { return 4 }
+        if field_name == "agents" { return 5 }
+        if field_name == "pipes" { return 6 }
+        if field_name == "imports" { return 7 }
+        if field_name == "trait_names" { return 8 }
+    }
+    // LowerResult: value(0) state(1)
+    if struct_name == "LowerResult" {
+        if field_name == "value" { return 0 }
+        if field_name == "state" { return 1 }
+    }
+    // VarInfo: name(0) value(1) mutable(2)
+    if struct_name == "VarInfo" {
+        if field_name == "name" { return 0 }
+        if field_name == "value" { return 1 }
+        if field_name == "mutable" { return 2 }
+    }
+    // CompileResult: success(0) ir_text(1) errors(2)
+    if struct_name == "CompileResult" {
+        if field_name == "success" { return 0 }
+        if field_name == "ir_text" { return 1 }
+        if field_name == "errors" { return 2 }
+    }
+    // MatchBuildResult: state(0) arm_labels(1) arm_indices(2) arm_body_labels(3) merge_label(4)
+    if struct_name == "MatchBuildResult" {
+        if field_name == "state" { return 0 }
+        if field_name == "arm_labels" { return 1 }
+        if field_name == "arm_indices" { return 2 }
+        if field_name == "arm_body_labels" { return 3 }
+        if field_name == "merge_label" { return 4 }
+    }
+    // FnEntry: name(0) ret_type(1) param_types(2)
+    if struct_name == "FnEntry" {
+        if field_name == "name" { return 0 }
+        if field_name == "ret_type" { return 1 }
+        if field_name == "param_types" { return 2 }
+    }
+    // StructEntry: name(0) field_names(1) field_types(2) llvm_type(3)
+    if struct_name == "StructEntry" {
+        if field_name == "name" { return 0 }
+        if field_name == "field_names" { return 1 }
+        if field_name == "field_types" { return 2 }
+        if field_name == "llvm_type" { return 3 }
+    }
+    // StructFieldInfo: struct_name(0) field_names(1) field_types(2)
+    if struct_name == "StructFieldInfo" {
+        if field_name == "struct_name" { return 0 }
+        if field_name == "field_names" { return 1 }
+        if field_name == "field_types" { return 2 }
+    }
+    // EnumVariantNames: name(0) variant_names(1)
+    if struct_name == "EnumVariantNames" {
+        if field_name == "name" { return 0 }
+        if field_name == "variant_names" { return 1 }
+    }
+    // LambdaEntry: var_name(0) body_name(1)
+    if struct_name == "LambdaEntry" {
+        if field_name == "var_name" { return 0 }
+        if field_name == "body_name" { return 1 }
+    }
+    // ExternFnInfo: abi(0) module_name(1) fn_name(2) param_types(3) return_type(4)
+    if struct_name == "ExternFnInfo" {
+        if field_name == "abi" { return 0 }
+        if field_name == "module_name" { return 1 }
+        if field_name == "fn_name" { return 2 }
+        if field_name == "param_types" { return 3 }
+        if field_name == "return_type" { return 4 }
+    }
+    // VerifyError: fn_name(0) block_name(1) message(2)
+    if struct_name == "VerifyError" {
+        if field_name == "fn_name" { return 0 }
+        if field_name == "block_name" { return 1 }
+        if field_name == "message" { return 2 }
+    }
+    // ImplEntry: key(0) method_name(1)
+    if struct_name == "ImplEntry" {
+        if field_name == "key" { return 0 }
+        if field_name == "method_name" { return 1 }
+    }
+    // ImportInfo: path(0) items(1)
+    if struct_name == "ImportInfo" {
+        if field_name == "path" { return 0 }
+        if field_name == "items" { return 1 }
+    }
+    // AgentInfo: name(0) inputs(1) outputs(2) state_fields(3)
+    if struct_name == "AgentInfo" {
+        if field_name == "name" { return 0 }
+        if field_name == "inputs" { return 1 }
+        if field_name == "outputs" { return 2 }
+        if field_name == "state_fields" { return 3 }
+    }
+    // PipeInfo: name(0) stages(1)
+    if struct_name == "PipeInfo" {
+        if field_name == "name" { return 0 }
+        if field_name == "stages" { return 1 }
+    }
+    return 0
 }
 
 fn find_field_index(fields: List<String>, name: String) -> Int {
@@ -919,30 +1146,31 @@ fn emit_field_set(st: EmitState, obj: Value, field_name: String, val: Value) -> 
 
     let val_ty: String = resolve_mir_type(val.ty)
 
+    // Try hardcoded index first (for internal types with broken registry)
+    let hc_idx: Int = hardcoded_field_index(obj.ty.name, field_name)
     let struct_opt: Option<StructEntry> = find_struct_entry(s, obj.ty.name)
+    let mut idx: Int = hc_idx
     match struct_opt {
         Some(se) => {
-            let idx: Int = find_field_index(se.field_names, field_name)
-            let struct_ty: String = resolve_type(s, obj.ty)
-            // If obj is an alloca address (from lowerer's find_expr_alloca),
-            // use GEP+store directly — no insertvalue needed.
-            if obj.name.contains(".addr") {
-                let gep: String = "%" + strip_percent(obj.name) + "_fp" + toString(s.counter)
-                s.counter = s.counter + 1
-                s = emit_line(s, "  " + gep + " = getelementptr inbounds " + struct_ty + ", ptr " + obj.name + ", i32 0, i32 " + toString(idx))
-                s = emit_line(s, "  store " + val_ty + " " + val.name + ", ptr " + gep)
-            } else {
-                // Fallback: insertvalue (doesn't write back to alloca)
-                let tmp_name: String = "%" + strip_percent(obj.name) + "_set" + toString(s.counter)
-                s.counter = s.counter + 1
-                s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, obj.name, val.name, val_ty, toString(idx)))
+            if hc_idx == 0 {
+                // Only use registry if hardcoded didn't find it (hc=0 might be field 0 OR unknown)
+                idx = find_field_index(se.field_names, field_name)
             }
-            return s
         },
-        _ => {
-            return s
-        }
+        _ => {}
     }
+    let struct_ty: String = resolve_type(s, obj.ty)
+    if obj.name.contains(".addr") {
+        let gep: String = "%" + strip_percent(obj.name) + "_fp" + toString(s.counter)
+        s.counter = s.counter + 1
+        s = emit_line(s, "  " + gep + " = getelementptr inbounds " + struct_ty + ", ptr " + obj.name + ", i32 0, i32 " + toString(idx))
+        s = emit_line(s, "  store " + val_ty + " " + val.name + ", ptr " + gep)
+    } else {
+        let tmp_name: String = "%" + strip_percent(obj.name) + "_set" + toString(s.counter)
+        s.counter = s.counter + 1
+        s = emit_line(s, emit_insertvalue(tmp_name, struct_ty, obj.name, val.name, val_ty, toString(idx)))
+    }
+    return s
 }
 
 // ---------------------------------------------------------------------------
@@ -2592,7 +2820,6 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
 
 pub fn emit_header(module: MIRModule, module_name: String) -> EmitState {
     let mut st: EmitState = new_emit_state(module_name)
-
     st = emit_line(st, "; ModuleID = '" + module_name + "'")
     st = emit_line(st, "source_filename = \"" + module_name + "\"")
     st = emit_blank(st)
