@@ -104,6 +104,51 @@ for fstart, fend in functions:
             output[k] = f"  {phi_var} = phi {phi_ty}{new_entries}\n"
             type_fixes += 1
 
+# Pass 3: Insert missing struct/enum type definitions.
+# The self-hosted emitter uses named types (%struct.X) but the lowerer
+# doesn't always register them in the MIR module's struct list.
+# Generate definitions from the insertvalue chains in constructor functions.
+missing_types = {
+    '%struct.EmitState': '{ { ptr, i64, i64, i64 }, i64, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64 }, i64, { ptr, i64, i64, i64 }, { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.LowerState': '{ %struct.MIRModule, { i1, ptr }, i64, i64, i64, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.LowerResult': '{ %struct.Value, %struct.LowerState }',
+    '%struct.MIRModule': '{ { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.FnEntry': '{ { ptr, i64 }, { ptr, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.VerifyError': '{ { ptr, i64 }, { ptr, i64 }, { ptr, i64 } }',
+    '%struct.StructEntry': '{ { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64 } }',
+    '%struct.EnumVariantNames': '{ { ptr, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.VarInfo': '{ { ptr, i64 }, %struct.Value, i1 }',
+    '%struct.StructFieldInfo': '{ { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.LambdaEntry': '{ { ptr, i64 }, { ptr, i64 } }',
+    '%struct.MatchBuildResult': '{ %struct.LowerState, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.CompileResult': '{ i1, { ptr, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.ExternFnInfo': '{ { ptr, i64 }, { ptr, i64 }, { ptr, i64 }, { ptr, i64, i64, i64 }, %struct.MIRType }',
+    '%struct.AgentInfo': '{ { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.ImplEntry': '{ { ptr, i64 }, { ptr, i64 } }',
+    '%struct.ImportInfo': '{ { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.PipeInfo': '{ { ptr, i64 }, { ptr, i64, i64, i64 } }',
+}
+# Find existing type definitions
+defined = set()
+for ln in output:
+    m = re.match(r'(%struct\.\w+|%enum\.\w+)\s*=\s*type\s', ln.strip())
+    if m:
+        defined.add(m.group(1))
+# Insert missing definitions after the last existing type definition
+type_defs_added = 0
+last_type_line = 0
+for k, ln in enumerate(output):
+    if re.match(r'(%struct\.\w+|%enum\.\w+)\s*=\s*type\s', ln.strip()):
+        last_type_line = k
+if last_type_line > 0:
+    inserts = []
+    for tname, tdef in missing_types.items():
+        if tname not in defined:
+            inserts.append(f"{tname} = type {tdef}\n")
+            type_defs_added += 1
+    if inserts:
+        output = output[:last_type_line+1] + inserts + output[last_type_line+1:]
+
 with open(sys.argv[2], "w") as f:
     f.writelines(output)
-print(f"Fixed {fixes} PHI predecessor issues, {type_fixes} type mismatches")
+print(f"Fixed {fixes} PHI predecessor issues, {type_fixes} type mismatches, {type_defs_added} type defs added")
