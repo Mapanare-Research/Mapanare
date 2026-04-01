@@ -108,25 +108,26 @@ for fstart, fend in functions:
 # The self-hosted emitter uses named types (%struct.X) but the lowerer
 # doesn't always register them in the MIR module's struct list.
 # Generate definitions from the insertvalue chains in constructor functions.
+# Type definitions inferred by `culebra infer-types` from insertvalue chains.
 missing_types = {
-    '%struct.EmitState': '{ { ptr, i64, i64, i64 }, i64, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64 }, i64, { ptr, i64, i64, i64 }, { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
-    '%struct.LowerState': '{ %struct.MIRModule, { i1, ptr }, i64, i64, i64, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
-    '%struct.LowerResult': '{ %struct.Value, %struct.LowerState }',
-    '%struct.MIRModule': '{ { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
-    '%struct.FnEntry': '{ { ptr, i64 }, { ptr, i64 }, { ptr, i64, i64, i64 } }',
-    '%struct.VerifyError': '{ { ptr, i64 }, { ptr, i64 }, { ptr, i64 } }',
-    '%struct.StructEntry': '{ { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64 } }',
-    '%struct.EnumVariantNames': '{ { ptr, i64 }, { ptr, i64, i64, i64 } }',
-    '%struct.VarInfo': '{ { ptr, i64 }, %struct.Value, i1 }',
-    '%struct.StructFieldInfo': '{ { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
-    '%struct.LambdaEntry': '{ { ptr, i64 }, { ptr, i64 } }',
-    '%struct.MatchBuildResult': '{ %struct.LowerState, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
-    '%struct.CompileResult': '{ i1, { ptr, i64 }, { ptr, i64, i64, i64 } }',
-    '%struct.ExternFnInfo': '{ { ptr, i64 }, { ptr, i64 }, { ptr, i64 }, { ptr, i64, i64, i64 }, %struct.MIRType }',
     '%struct.AgentInfo': '{ { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.CompileResult': '{ i1, { ptr, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.EmitState': '{ { ptr, i64, i64, i64 }, i64, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64 }, i64, { ptr, i64, i64, i64 }, { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.EnumVariantNames': '{ { ptr, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.ExternFnInfo': '{ { ptr, i64 }, { ptr, i64 }, { ptr, i64 }, { ptr, i64, i64, i64 }, %struct.MIRType }',
+    '%struct.FnEntry': '{ { ptr, i64 }, { ptr, i64 }, { ptr, i64, i64, i64 } }',
     '%struct.ImplEntry': '{ { ptr, i64 }, { ptr, i64 } }',
     '%struct.ImportInfo': '{ { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.LambdaEntry': '{ { ptr, i64 }, { ptr, i64 } }',
+    '%struct.LowerResult': '{ %struct.Value, %struct.LowerState }',
+    '%struct.LowerState': '{ %struct.MIRModule, { i1, ptr }, i64, i64, i64, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.MIRModule': '{ { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.MatchBuildResult': '{ %struct.LowerState, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64 } }',
     '%struct.PipeInfo': '{ { ptr, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.StructEntry': '{ { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 }, { ptr, i64 } }',
+    '%struct.StructFieldInfo': '{ { ptr, i64 }, { ptr, i64, i64, i64 }, { ptr, i64, i64, i64 } }',
+    '%struct.VarInfo': '{ { ptr, i64 }, %struct.Value, i1 }',
+    '%struct.VerifyError': '{ { ptr, i64 }, { ptr, i64 }, { ptr, i64 } }',
 }
 # Find existing type definitions
 defined = set()

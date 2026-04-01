@@ -1022,8 +1022,9 @@ fn find_list_field_index(st: EmitState, struct_name: String, dest: Value) -> Str
     // The struct_name may be "StructName:field_name" (encoded by lowerer)
     let colon_pos: Int = struct_name.find(":")
     if colon_pos > 0 {
-        let base: String = struct_name.substr(0, colon_pos)
-        let field: String = struct_name.substr(colon_pos + 1, len(struct_name) - colon_pos - 1)
+        // Use char-by-char builders to avoid C runtime substr bug
+        let base: String = strip_colon_suffix(struct_name)
+        let field: String = extract_after_colon(struct_name, colon_pos)
         let opt: Option<StructEntry> = find_struct_entry(st, base)
         match opt {
             Some(se) => {
@@ -1449,6 +1450,19 @@ fn strip_colon_suffix(s: String) -> String {
     let mut i: Int = 0
     for _ in 0..50 {
         if i >= colon_pos { return result }
+        result = result + s.char_at(i)
+        i = i + 1
+    }
+    return result
+}
+
+// Extract everything after ":" — char-by-char to avoid substr bug.
+fn extract_after_colon(s: String, colon_pos: Int) -> String {
+    let mut result: String = ""
+    let slen: Int = len(s)
+    let mut i: Int = colon_pos + 1
+    for _ in 0..200 {
+        if i >= slen { return result }
         result = result + s.char_at(i)
         i = i + 1
     }

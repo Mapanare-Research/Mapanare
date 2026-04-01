@@ -392,8 +392,10 @@ MN_EXPORT int64_t __mn_str_cmp(MnString a, MnString b) {
     return 0;
 }
 
-MN_EXPORT MnString __mn_str_substr(MnString s, int64_t start, int64_t end) {
+MN_EXPORT MnString __mn_str_substr(MnString s, int64_t start, int64_t count) {
     if (start < 0) start = 0;
+    if (start >= s.len) return __mn_str_empty();
+    int64_t end = start + count;
     if (end > s.len) end = s.len;
     if (start >= end) return __mn_str_empty();
     const char *data = mn_untag(s.data);
