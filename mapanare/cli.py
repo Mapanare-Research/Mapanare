@@ -387,7 +387,13 @@ def cmd_check(args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
-    """Compile and run an .mn source file via LLVM JIT."""
+    """Compile and run an .mn source file.
+
+    Default backend: C (emit C → gcc → run).
+    Use ``--release`` for LLVM JIT (requires llvmlite).
+    """
+    release = getattr(args, "release", False)
+
     # Enable tracing if --trace is passed
     trace_mode = getattr(args, "trace", None)
     if trace_mode:
@@ -412,8 +418,27 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    use_mir = not getattr(args, "no_mir", False)
     debug = getattr(args, "debug", False)
+
+    if not release:
+        # --- C backend (default) ---
+        try:
+            c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
+        except ParseError as e:
+            _emit_parse_error(e, source, args.source)
+            sys.exit(1)
+        except SemanticErrors as e:
+            _emit_semantic_errors(e, source)
+            sys.exit(1)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        _run_c_source(c_source, args.source)
+        return
+
+    # --- LLVM backend (--release) ---
+    use_mir = not getattr(args, "no_mir", False)
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -429,6 +454,13 @@ def cmd_run(args: argparse.Namespace) -> None:
         sys.exit(1)
     except SemanticErrors as e:
         _emit_semantic_errors(e, source)
+        sys.exit(1)
+    except ImportError:
+        print(
+            "error: LLVM backend requires llvmlite. "
+            "Install with: pip install mapanare[llvm]",
+            file=sys.stderr,
+        )
         sys.exit(1)
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -970,6 +1002,41 @@ def _compile_to_c(
     return emit_c(mir_module, debug=debug)
 
 
+def _run_c_source(c_source: str, source_file: str) -> None:
+    """Compile C source with gcc and run the resulting binary."""
+    import tempfile
+
+    # Find runtime headers
+    runtime_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "runtime", "native")
+    if not os.path.isdir(runtime_dir):
+        # Fallback: try relative to CWD
+        runtime_dir = os.path.join("runtime", "native")
+
+    runtime_c = os.path.join(runtime_dir, "mapanare_core.c")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        c_path = os.path.join(tmpdir, "program.c")
+        bin_path = os.path.join(tmpdir, "program")
+
+        with open(c_path, "w", encoding="utf-8") as f:
+            f.write(c_source)
+
+        # Compile
+        gcc_cmd = [
+            "gcc", "-O0", f"-I{runtime_dir}",
+            c_path, runtime_c,
+            "-o", bin_path, "-lm", "-lpthread",
+        ]
+        result = subprocess.run(gcc_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"error: gcc compilation failed:\n{result.stderr}", file=sys.stderr)
+            sys.exit(1)
+
+        # Run
+        result = subprocess.run([bin_path], capture_output=False)
+        sys.exit(result.returncode)
+
+
 def cmd_emit_c(args: argparse.Namespace) -> None:
     """Emit C source for an .mn source file."""
     source = _read_source(args.source)
@@ -1448,8 +1515,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Start Prometheus metrics endpoint (default :9090)",
     )
+    p_run.add_argument(
+        "--release",
+        action="store_true",
+        default=False,
+        help="Use LLVM backend (requires llvmlite). Default: C backend via gcc.",
+    )
     _add_opt_level_args(p_run)
     _add_mir_flag(p_run)
+    _add_debug_flag(p_run)
     _add_edition_flag(p_run)
     p_run.set_defaults(func=cmd_run)
 
