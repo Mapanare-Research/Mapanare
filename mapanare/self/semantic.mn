@@ -394,11 +394,11 @@ fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
         Generic(name, args) => {
             let mut resolved: List<TypeInfo> = []
             let mut i: Int = 0
-            for _ in 0..1000 {
+            for _ in 0..50 {
                 if i >= len(args) { return make_generic_type(name, resolved) }
                 let arg: TypeExpr = args[i]
                 let rt: TypeInfo = resolve_type_expr(arg)
-                // resolved.push(rt)
+                resolved.push(rt)
                 i = i + 1
             }
             return make_generic_type(name, resolved)
@@ -406,14 +406,14 @@ fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
         FnTy(param_types, return_type) => {
             let mut params: List<TypeInfo> = []
             let mut i: Int = 0
-            for _ in 0..1000 {
+            for _ in 0..50 {
                 if i >= len(param_types) {
                     let ret: TypeInfo = resolve_type_expr(return_type)
                     return make_fn_type(params, ret)
                 }
                 let pt: TypeExpr = param_types[i]
                 let rp: TypeInfo = resolve_type_expr(pt)
-                // params.push(rp)
+                params.push(rp)
                 i = i + 1
             }
             let ret2: TypeInfo = resolve_type_expr(return_type)
@@ -462,7 +462,7 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
             let obj_r: InferResult = infer_expr(st, obj)
             let mut st2: SemState = obj_r.st
             let mut i: Int = 0
-            for _ in 0..1000 {
+            for _ in 0..50 {
                 if i >= len(args) { return new_infer_result(unknown_type(), st2) }
                 let arg: Expr = args[i]
                 let ar: InferResult = infer_expr(st2, arg)
@@ -526,7 +526,7 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
                 let fr: InferResult = infer_expr(st, first)
                 let mut st2: SemState = fr.st
                 let mut i: Int = 1
-                for _ in 0..100000 {
+                for _ in 0..600 {
                     if i >= len(elements) {
                         let args: List<TypeInfo> = []
                         // args.push(fr.type_info)
@@ -547,7 +547,7 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
         Construct(name, fields) => {
             let mut st2: SemState = st
             let mut i: Int = 0
-            for _ in 0..1000 {
+            for _ in 0..50 {
                 if i >= len(fields) { return new_infer_result(make_type(name), st2) }
                 let fi: FieldInit = fields[i]
                 let fr: InferResult = infer_expr(st2, fi.value)
@@ -761,7 +761,7 @@ fn check_call_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult 
     let mut st2: SemState = st
     let mut arg_types: List<TypeInfo> = []
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(args) {
             return check_call_resolved(st2, callee, arg_types)
         }
@@ -910,7 +910,7 @@ fn check_match_expr(st: SemState, subject: Expr, arms: List<MatchArm>) -> InferR
     let sr: InferResult = infer_expr(st, subject)
     let mut st2: SemState = sr.st
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(arms) { return new_infer_result(unknown_type(), st2) }
         let arm: MatchArm = arms[i]
         let arm_st: SemState = push_scope(st2)
@@ -945,7 +945,7 @@ fn bind_pattern(st: SemState, pat: Pattern) -> SemState {
         ConstructorPat(name, args) => {
             let mut st2: SemState = st
             let mut i: Int = 0
-            for _ in 0..1000 {
+            for _ in 0..50 {
                 if i >= len(args) { return st2 }
                 let arg: Pattern = args[i]
                 st2 = bind_pattern(st2, arg)
@@ -967,7 +967,7 @@ fn check_lambda_expr(st: SemState, params: List<Param>, body: LambdaBody) -> Inf
     let mut i: Int = 0
 
     // Register parameters
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(params) {
             // Check body
             let body_result: InferResult = check_lambda_body(st2, body)
@@ -1005,7 +1005,7 @@ fn check_spawn_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult
     // Infer arguments
     let mut st2: SemState = st
     let mut i: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if i >= len(args) {
             // Check callee
             match callee {
@@ -1109,7 +1109,7 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
 fn check_block(st: SemState, block: Block) -> SemState {
     let mut st2: SemState = st
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(block.stmts) { return st2 }
         let stmt: Stmt = block.stmts[i]
         st2 = check_stmt(st2, stmt)
@@ -1237,7 +1237,7 @@ fn check_stream_decl(st: SemState, name: String, type_ann: Option<TypeExpr>, val
 fn register_definitions(st: SemState, program: Program) -> SemState {
     let mut st2: SemState = st
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(program.definitions) { return st2 }
         let def: Definition = program.definitions[i]
         st2 = register_def(st2, def)
@@ -1251,7 +1251,7 @@ fn register_def(st: SemState, def: Definition) -> SemState {
         FnDef(data) => {
             let mut params: List<TypeInfo> = []
             let mut pi: Int = 0
-            for _ in 0..1000 {
+            for _ in 0..50 {
                 if pi >= len(data.params) {
                     let ret: TypeInfo = resolve_type_opt(data.return_type)
                     let fn_type: TypeInfo = make_fn_type(params, ret)
@@ -1286,7 +1286,7 @@ fn register_def(st: SemState, def: Definition) -> SemState {
             let mut st2: SemState = define_in_scope(st, data.name, sym)
             // Register variants as constructors
             let mut vi: Int = 0
-            for _ in 0..1000 {
+            for _ in 0..50 {
                 if vi >= len(data.variants) { return st2 }
                 let v: EnumVariant = data.variants[vi]
                 let variant_type: TypeInfo = make_builtin_fn_type(make_type(data.name))
@@ -1307,7 +1307,7 @@ fn register_def(st: SemState, def: Definition) -> SemState {
             let mut st2: SemState = st
             if len(items) > 0 {
                 let mut ii: Int = 0
-                for _ in 0..1000 {
+                for _ in 0..50 {
                     if ii >= len(items) { return st2 }
                     let item: String = items[ii]
                     let sym: Symbol = new_symbol(item, "variable", unknown_type(), false)
@@ -1345,7 +1345,7 @@ fn register_def(st: SemState, def: Definition) -> SemState {
 fn check_definitions(st: SemState, program: Program) -> SemState {
     let mut st2: SemState = st
     let mut i: Int = 0
-    for _ in 0..100000 {
+    for _ in 0..600 {
         if i >= len(program.definitions) { return st2 }
         let def: Definition = program.definitions[i]
         st2 = check_def(st2, def)
@@ -1380,7 +1380,7 @@ fn check_fn_body(st: SemState, data: FnDefData) -> SemState {
 
     // Register parameters
     let mut pi: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if pi >= len(data.params) {
             // Check body
             let after: SemState = check_block(st2, data.body)
@@ -1410,19 +1410,19 @@ fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
 
     // Register inputs
     let mut ii: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if ii >= len(data.inputs) {
             // Register outputs
             let mut oi: Int = 0
-            for _ in 0..1000 {
+            for _ in 0..50 {
                 if oi >= len(data.outputs) {
                     // Check state bindings
                     let mut si: Int = 0
-                    for _ in 0..1000 {
+                    for _ in 0..50 {
                         if si >= len(data.state) {
                             // Check methods
                             let mut mi: Int = 0
-                            for _ in 0..1000 {
+                            for _ in 0..50 {
                                 if mi >= len(data.methods) {
                                     return pop_scope(st2)
                                 }
@@ -1471,7 +1471,7 @@ fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> Se
     }
 
     let mut mi: Int = 0
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if mi >= len(methods) { return st2 }
         let method: FnDefData = methods[mi]
         st2 = check_fn_body(st2, method)
@@ -1484,6 +1484,50 @@ fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> Se
 // Pipe definition checking
 // ---------------------------------------------------------------------------
 
+fn check_pipe_stage_type(st: SemState, stage: Expr, pipe_name: String) -> TypeInfo {
+    match stage {
+        Ident(name) => {
+            return resolve_pipe_ident_type(st, name)
+        },
+        _ => { return unknown_type() }
+    }
+}
+
+fn resolve_pipe_ident_type(st: SemState, name: String) -> TypeInfo {
+    let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+    match sym_opt {
+        Some(sym) => {
+            return resolve_sym_output_type(sym)
+        },
+        _ => { return unknown_type() }
+    }
+}
+
+fn resolve_sym_output_type(sym: Symbol) -> TypeInfo {
+    if sym.kind != "function" { return unknown_type() }
+    if !sym.type_info.is_function { return unknown_type() }
+    match sym.type_info.return_type {
+        Some(ret) => { return ret },
+        _ => { return unknown_type() }
+    }
+}
+
+fn check_pipe_stage_err(st: SemState, stage: Expr, pipe_name: String) -> SemState {
+    match stage {
+        Ident(name) => {
+            let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+            match sym_opt {
+                Some(sym) => { return st },
+                _ => { return add_error(st, "Undefined stage '" + name + "' in pipe '" + pipe_name + "'", 0, 0) }
+            }
+        },
+        _ => {
+            let sr: InferResult = infer_expr(st, stage)
+            return sr.st
+        }
+    }
+}
+
 fn check_pipe_stages(st: SemState, data: PipeDefData) -> SemState {
     if len(data.stages) < 2 { return st }
 
@@ -1491,39 +1535,12 @@ fn check_pipe_stages(st: SemState, data: PipeDefData) -> SemState {
     let mut prev_output: TypeInfo = unknown_type()
     let mut si: Int = 0
 
-    for _ in 0..1000 {
+    for _ in 0..50 {
         if si >= len(data.stages) { return st2 }
         let stage: Expr = data.stages[si]
-        match stage {
-            Ident(name) => {
-                let sym_opt: Option<Symbol> = scope_lookup(st2.scope, name)
-                match sym_opt {
-                    Some(sym) => {
-                        if sym.kind == "function" {
-                            if sym.type_info.is_function {
-                                match sym.type_info.return_type {
-                                    Some(ret) => { prev_output = ret },
-                                    _ => { prev_output = unknown_type() }
-                                }
-                            } else {
-                                prev_output = unknown_type()
-                            }
-                        } else {
-                            prev_output = unknown_type()
-                        }
-                    },
-                    _ => {
-                        st2 = add_error(st2, "Undefined stage '" + name + "' in pipe '" + data.name + "'", 0, 0)
-                        prev_output = unknown_type()
-                    }
-                }
-            },
-            _ => {
-                let sr: InferResult = infer_expr(st2, stage)
-                st2 = sr.st
-                prev_output = unknown_type()
-            }
-        }
+        prev_output = check_pipe_stage_type(st2, stage, data.name)
+        let stage_err: SemState = check_pipe_stage_err(st2, stage, data.name)
+        st2 = stage_err
         si = si + 1
     }
     return st2

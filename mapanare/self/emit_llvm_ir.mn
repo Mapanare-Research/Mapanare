@@ -77,16 +77,10 @@ fn resolve_mir_type(t: MIRType) -> String {
     if t.kind == "list" { return llvm_list_rt() }
     if t.kind == "map" { return llvm_map_type() }
     if t.kind == "option" {
-        if len(t.args) > 0 {
-            let inner: String = resolve_mir_type(t.args[0])
-            // Type erasure: Option<Struct/Enum> uses ptr payload to avoid
-            // recursive type definitions and typed pointer mismatches.
-            // With opaque pointers, {i1, ptr} is universal for all compound types.
-            if inner.starts_with("%struct.") || inner.starts_with("%enum.") {
-                return llvm_option_type(llvm_ptr())
-            }
-            return llvm_option_type(inner)
-        }
+        // Universal type erasure: all Option types use {i1, ptr}.
+        // The payload is stored via alloca and accessed through the ptr.
+        // This ensures Option types are always consistent between
+        // function signatures and match extraction.
         return llvm_option_type(llvm_ptr())
     }
     if t.kind == "result" {

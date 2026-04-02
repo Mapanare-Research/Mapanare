@@ -115,6 +115,11 @@ python scripts/ir_doctor.py stage2 --timeout 60                      # With long
 python scripts/ir_doctor.py valgrind-map ./mapanare/self/mnc-stage1 tests/golden/07_enum_match.mn  # Run valgrind and map crash offsets to struct fields
 python scripts/ir_doctor.py valgrind-map --struct LowerState ./mnc some_file.mn  # Map against specific struct
 python scripts/ir_doctor.py valgrind-map --timeout 60 ./my_binary --flag arg     # With timeout
+python scripts/ir_doctor.py strings mapanare/self/main.ll                        # Validate string constant byte counts
+python scripts/ir_doctor.py strings mapanare/self/main.ll -v                     # Also show duplicate strings
+python scripts/ir_doctor.py xray                                                 # Full stage2 build + runtime test
+python scripts/ir_doctor.py xray --timeout 60                                    # With longer timeout
+python scripts/ir_doctor.py phi-check /tmp/stage2.ll                             # Validate PHI fix preserves structure
 
 # MIR Trace — debug type inference issues in the Python lowerer
 python scripts/mir_trace.py tests/golden/10_result.mn divide         # Trace types for one function
@@ -127,6 +132,154 @@ python scripts/mir_trace.py tests/golden/10_result.mn divide --compare  # Compar
 python scripts/build_stage1.py                   # Build mnc-stage1 from Python bootstrap
 bash scripts/verify_fixed_point.sh               # 3-stage self-compilation verification
 bash scripts/verify_fixed_point.sh --keep        # Keep intermediate IR for debugging
+
+# Culebra v2.0.0 — compiler diagnostics for LLVM IR AND C source (Rust, installed in WSL)
+# 29+ YAML templates across ABI, IR, Binary, Bootstrap categories. Nuclei-style pattern engine.
+# Repo: C:\Users\Juan\Documents\GitHub\Culebra (also at github.com/Mapanare-Research/Culebra)
+# crates.io: https://crates.io/crates/culebra
+
+# --- Core scanning ---
+culebra scan mapanare/self/main.ll                          # Run all templates against IR
+culebra scan mapanare/self/main.ll --tags abi               # ABI checks only
+culebra scan mapanare/self/main.ll --severity critical      # Critical findings only
+culebra scan mapanare/self/main.ll --id option-type-pun-zeroinit  # One specific template
+culebra scan mapanare/self/main.ll --autofix --dry-run      # Preview auto-fixes
+culebra scan mapanare/self/main.ll --autofix                # Apply auto-fixes
+culebra scan mapanare/self/main.ll --header runtime/native/mapanare_runtime.c  # Cross-ref IR vs C structs
+culebra scan mapanare/self/main.ll --format json            # JSON output
+culebra scan mapanare/self/main.ll --format sarif           # SARIF for GitHub Code Scanning
+
+# --- AI-optimized debugging (v0.3.0) ---
+culebra triage mapanare/self/main.ll                        # Group findings by root cause, deduplicate
+culebra triage mapanare/self/main.ll --format json          # Structured JSON for AI consumption
+culebra compare stage1.ll stage2.ll --metric calls          # Per-function metric comparison (flags drops)
+culebra compare stage1.ll stage2.ll --metric pushes --threshold 0.5  # Custom metric + threshold
+culebra explain stage2.ll return-type-divergence            # Show matched IR in context + remediation
+culebra explain stage2.ll option-type-pun-zeroinit --function parser  # Scoped to one function
+culebra bisect stage1.ll stage2.ll                          # Find divergent functions ranked by impact
+culebra bisect stage1.ll stage2.ll --top 30                 # Show more results
+culebra verify stage2.ll return-type-divergence             # PASS/FAIL — verify a fix worked
+culebra verify stage2.ll break-inside-nested-control --function tokenize  # Scoped verify
+
+# --- C backend scanning (v2.0.0) — scan generated C for Mapanare v3.0.0 ---
+culebra scan stage2.c                                       # Auto-detects .c, runs 8 C-specific templates
+culebra scan stage2.c --tags c                              # C templates only
+culebra scan stage2.c --id switch-no-break                  # Check for switch fallthrough
+culebra scan stage2.c --id missing-typedef                  # Find undefined struct types
+culebra diff stage1.c stage2.c                              # Fixed-point: compare C text output
+culebra triage stage2.c --brief                             # Quick C summary
+culebra summary stage2.c                                    # Full diagnostic (works for .c and .ll)
+# C templates: switch-no-break, missing-typedef, null-deref-pattern, goto-dead-label,
+#   union-tag-mismatch, large-struct-by-value, missing-return, buffer-overflow-pattern
+
+# --- Debugging feedback loop (v1.2.0) — wrap commands, learn patterns, track journal ---
+culebra wrap -- clang -c -O1 stage2.ll -o stage2.o          # Proxy command + log to .culebra-session.jsonl
+culebra wrap -- valgrind /tmp/mnc-stage2 /tmp/tiny.mn        # Captures crashes, errors, output
+culebra wrap -- llvm-as stage2.ll -o /dev/null               # Log LLVM errors for analysis
+culebra learn                                                # Analyze session logs → extract error patterns + suggest templates
+culebra learn -v                                             # Verbose: show individual failure details
+culebra journal add "State doesn't persist in emit_instr" --action bug --tags "option,state" --function emit_instr
+culebra journal add "Fixed MIRFunction field indices" --action fix --tags "field-index"
+culebra journal add "mnc-stage2 runs!" --action milestone
+culebra journal show                                         # View timeline of bugs/fixes/milestones
+culebra journal show option                                  # Search journal by keyword
+
+# --- Semi-dynamic analysis (v1.1.0) — call functions, probe values, test returns ---
+culebra eval main.ll --function hardcoded_field_index --arg '"VarInfo"' --arg '"value"'  # Call and print return
+culebra eval main.ll --function find_field_index --arg 0 --arg 0      # Integer args
+culebra probe stage2.ll --function lower_fn --watch '%state'           # Inject printf, compile, run
+culebra probe stage2.ll --function lower_fn --stop-at if_merge         # Stop at specific block
+culebra test-fn main.ll --function hardcoded_field_index --arg 0 --arg 0 --expect-ret 1  # Unit test: PASS/FAIL
+
+# --- Summary (v1.0.0) — one command for everything ---
+culebra summary stage2.ll                                   # Scan + Types + Fields + Health + Score in 5 lines
+culebra summary stage2.ll --struct LowerState               # Filter health to one struct
+
+# --- Type inference + field audit (v0.9.0) — auto-generate types, detect index-0 bug ---
+culebra infer-types stage2.ll                               # Infer missing type defs from insertvalue chains
+culebra infer-types stage2.ll --ll                          # Output as valid LLVM IR (paste into file)
+culebra field-index-audit stage2.ll                         # Find structs where ALL accesses use index 0
+culebra field-index-audit stage2.ll --struct-filter LowerState  # Check specific struct
+
+# --- Display + Inspection (v0.8.0) — syntax-highlighted IR, variable dumps, block walk ---
+culebra pretty stage2.ll                                    # Module overview: stats, types, function size bars
+culebra pretty stage2.ll --function lower_fn                # Syntax-highlighted IR with colored types/labels/terminators
+culebra dump stage2.ll --function lower_fn                  # Variable dump: allocas, types, sizes, def-use counts, PHIs
+culebra dump stage2.ll --function lower_fn -v               # Verbose: also show GEP chains
+culebra inspect stage2.ll --function lower_fn               # Block-by-block control flow walk
+culebra inspect stage2.ll --function lower_fn --block if_alpha  # Detail view of one block
+culebra stacktrace crash.log --ir stage2.ll                 # Parse valgrind/ASAN/gdb output, map to IR
+
+# --- Missing types (v0.7.0) — find undefined struct/enum types blocking compilation ---
+culebra missing-types stage2.ll                             # Find all undefined named types
+culebra missing-types stage2.ll -v                          # Also show which functions reference each
+
+# --- Call graph + progress (v0.6.0) ---
+culebra callchain stage2.ll --from lower --to current_block_terminated  # Find call paths between functions
+culebra callchain stage2.ll --from lower_fn --to add_block --depth 5   # Shows struct types along chain
+culebra progress stage2.ll                                              # IR stats + findings + health score
+culebra progress stage2.ll -b my-baseline.json                         # Also compare against baseline
+
+# --- Crash debugging (v0.5.0) — offset mapping, variable tracing, struct health ---
+culebra crashmap stage2.ll --offset 0x20 --struct FnDefData  # "0x20 = field 4 (name: {ptr, i64})"
+culebra crashmap stage2.ll --offset 0x20                     # Check all structs for that offset
+culebra crashmap stage2.ll                                   # List all struct types with sizes
+culebra trace stage2.ll --function lower_fn --var '%state'   # Follow variable through basic blocks
+culebra trace stage2.ll --function tokenize --var '%pos'     # Shows every load/store/phi/call
+culebra health stage2.ll --struct LowerState                 # PHI zeroinit, type-pun, null loads
+culebra health stage2.ll                                     # Check all structs
+culebra suggest stage2.ll --function lower_definition        # Prioritized fix suggestions for a function
+
+# --- Baseline tracking (v0.4.0) — track progress across fix iterations ---
+culebra baseline save stage2.ll                             # Save current findings as baseline
+culebra baseline diff stage2.ll                             # Compare current scan vs baseline (Fixed/New/Remaining)
+culebra baseline diff stage2.ll -b my-baseline.json         # Compare against specific baseline file
+
+# --- Template assertions (v0.4.0) — CI gates and regression tests ---
+culebra lint-template stage2.ll return-type-divergence --expect   # FAIL if template doesn't fire
+culebra lint-template stage2.ll option-type-pun-zeroinit --reject # FAIL if template fires (regression)
+
+# --- Triage --brief (v0.4.0) — minimal output for AI token efficiency ---
+culebra triage stage2.ll --brief                            # One line: "9 root causes, 31 findings: ..."
+
+# --- Diagnostic map (symptom → templates) ---
+culebra map crash                                           # "what could cause this crash?"
+culebra map "type mismatch"                                 # Search by symptom keyword
+culebra map "zero tokens"                                   # Maps to relevant templates
+culebra map phi                                             # PHI-related issues
+
+# --- Drain queue (Mapanare integration) ---
+culebra drain .culebra-queue.yaml                           # Process dynamically-queued checks
+culebra drain .culebra-queue.yaml --clear                   # Process and clear queue
+
+# --- IR analysis ---
+culebra strings mapanare/self/main.ll                       # Validate [N x i8] byte counts
+culebra audit mapanare/self/main.ll                         # Detect IR pathologies
+culebra check mapanare/self/main.ll                         # Validate IR with llvm-as
+culebra diff stage1.ll stage2.ll                            # Per-function structural diff
+culebra extract mapanare/self/main.ll my_function           # Extract one function's IR
+culebra table mapanare/self/main.ll --top 15                # Per-function metrics table
+
+# --- ABI + binary ---
+culebra abi mapanare/self/main.ll --header runtime/native/mapanare_runtime.c  # Struct layout + sret
+culebra binary ./mapanare/self/mnc-stage1 --ir main.ll      # ELF/PE inspection + .rodata cross-ref
+
+# --- Bootstrap pipeline ---
+culebra phi-check /tmp/stage2.ll                            # Validate transform preserves IR
+culebra pipeline                                            # Run full stage pipeline from culebra.toml
+culebra fixedpoint ./mnc-stage1 mapanare/self/mnc_all.mn    # Fixed-point convergence detection
+
+# --- Templates + workflows ---
+culebra templates list                                      # List all templates
+culebra templates show option-type-pun-zeroinit             # Full template details
+culebra workflow bootstrap-health-check --input stage1_output=stage1.ll  # Multi-step validation
+culebra workflow playground-mapanare --input stage2_output=stage2.ll     # Playground workflow
+
+# --- Misc ---
+culebra watch --patterns '*.ll,*.mn' culebra scan main.ll   # Watch + re-scan on change
+culebra test                                                # Run all [[tests]] from culebra.toml
+culebra run ./mnc-stage1 test.mn --expect "hello"           # Compile, run, check output
+culebra init                                                # Generate starter culebra.toml
 ```
 
 ## Testing the Native Compiler
@@ -294,3 +447,21 @@ GitHub Actions on push/PR to `dev`:
 - **android** — Android cross-compilation: NDK setup, ARM64 + x86_64 `.o` generation, ELF format verification.
 
 4,465+ tests across the full pipeline.
+
+## Skills (slash commands)
+
+These are invocable via `/skill-name` in Claude Code:
+
+| Skill | Description |
+|-------|-------------|
+| `/golden` | Run the 15/15 golden test suite through mnc-stage1 + llvm-as. Shows delta from last run. |
+| `/stage2` | Compile all self-hosted modules through mnc-stage1, validate stage2 IR. Tests self-compilation. |
+| `/rebuild` | Full rebuild cycle: concat .mn sources → build mnc-stage1 → run golden tests. |
+| `/ir-audit` | Audit LLVM IR for known pathologies (ALLOCA_ALIAS, RET_TYPE_MISMATCH, etc.) with baseline tracking. |
+| `/valgrind-map` | Run valgrind on crashing binary, map byte offsets to struct fields automatically. |
+| `/bump-version` | Bump version across VERSION, README, CHANGELOG, and all localized docs. |
+| `/code-review` | Run a full 7-reviewer panel code review of the codebase. |
+| `/create-pr` | Generate PR title and description from the current branch's commits. |
+| `/simplify` | Review changed code for reuse, quality, and efficiency, then fix issues found. |
+| `/autoresearch` | Autonomous experiment loop — iterative research with automatic follow-up. |
+| `/culebra-scan` | Run Culebra v2.0.0 — 49 templates (41 IR + 8 C). Auto-detects .ll vs .c. Autofix, SARIF, triage. |

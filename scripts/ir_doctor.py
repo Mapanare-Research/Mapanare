@@ -2558,6 +2558,403 @@ def cmd_valgrind_map(args: argparse.Namespace) -> int:
     return 0 if r.returncode == 0 else 1
 
 
+def cmd_strings(args: argparse.Namespace) -> int:
+    """Validate all [N x i8] c"..." string constants in an IR file.
+
+    Checks that the declared array size N matches the actual byte count
+    of the c-string content (processing \\XX escape sequences as 1 byte each).
+    Also detects empty strings, suspiciously large constants, and
+    duplicate content.
+    """
+    text = pathlib.Path(args.file).read_text(encoding="utf-8")
+    pat = re.compile(
+        r'^(@[\w.]+)\s*=\s*(?:private|internal)?\s*(?:unnamed_addr\s+)?'
+        r'constant\s+\[(\d+)\s+x\s+i8\]\s+c"(.*)"',
+        re.MULTILINE,
+    )
+
+    total = 0
+    mismatches = []
+    duplicates: dict[str, list[str]] = defaultdict(list)
+    large: list[tuple[str, int]] = []
+
+    for m in pat.finditer(text):
+        name, declared, content = m.group(1), int(m.group(2)), m.group(3)
+        total += 1
+
+        # Count actual bytes: \XX = 1 byte, any other char = 1 byte
+        actual = 0
+        i = 0
+        while i < len(content):
+            if (
+                content[i] == "\\"
+                and i + 2 < len(content)
+                and all(c in "0123456789abcdefABCDEF" for c in content[i + 1 : i + 3])
+            ):
+                actual += 1
+                i += 3
+            else:
+                actual += 1
+                i += 1
+
+        if declared != actual:
+            lineno = text[: m.start()].count("\n") + 1
+            mismatches.append((name, declared, actual, lineno, content[:60]))
+
+        duplicates[content].append(name)
+        if declared > 512:
+            large.append((name, declared))
+
+    # Report
+    if mismatches:
+        print(f"BYTE-COUNT MISMATCHES ({len(mismatches)}):")
+        for name, decl, act, line, preview in mismatches:
+            delta = decl - act
+            print(f"  L{line} {name}: [{decl} x i8] but content is {act} bytes (off by {delta})")
+            print(f"    c\"{preview}{'...' if len(preview) == 60 else ''}\"")
+    else:
+        print(f"All {total} string constants have correct byte counts.")
+
+    # Duplicates
+    dups = {k: v for k, v in duplicates.items() if len(v) > 1}
+    if dups and not args.json:
+        n_dup = sum(len(v) - 1 for v in dups.values())
+        print(f"\n{n_dup} duplicate string constants ({len(dups)} unique values repeated).")
+        if args.verbose:
+            for content, names in sorted(dups.items(), key=lambda x: -len(x[1]))[:20]:
+                preview = content[:40].replace("\n", "\\n")
+                print(f"  {len(names)}x: c\"{preview}\" -> {', '.join(names[:3])}...")
+
+    # Large constants
+    if large and not args.json:
+        print(f"\n{len(large)} large constants (>512 bytes):")
+        for name, sz in sorted(large, key=lambda x: -x[1])[:10]:
+            print(f"  {name}: [{sz} x i8]")
+
+    if args.json:
+        result = {
+            "total": total,
+            "mismatches": len(mismatches),
+            "duplicates": sum(len(v) - 1 for v in dups.values()),
+            "large": len(large),
+            "details": [
+                {"name": n, "declared": d, "actual": a, "line": l}
+                for n, d, a, l, _ in mismatches
+            ],
+        }
+        print(json.dumps(result, indent=2))
+
+    return 1 if mismatches else 0
+
+
+def cmd_xray(args: argparse.Namespace) -> int:
+    """Build mnc-stage2 and test it end-to-end with a tiny program.
+
+    Full pipeline: mnc-stage1 -> stage2.ll -> fix PHIs -> clang -> mnc-stage2 -> run on test input.
+    Reports: compile success, function count, string output correctness, runtime behavior.
+    """
+    stage1 = pathlib.Path(args.stage1)
+    all_mn = ROOT / "mapanare" / "self" / "mnc_all.mn"
+    fix_script = ROOT / "scripts" / "fix_stage2_phis.py"
+    timeout_s = args.timeout
+
+    if not stage1.exists():
+        print(f"Stage1 binary not found: {stage1}", file=sys.stderr)
+        return 1
+    if not all_mn.exists():
+        print("mnc_all.mn not found. Run: python scripts/concat_self.py", file=sys.stderr)
+        return 1
+
+    print("=== Stage2 X-Ray ===\n")
+
+    # Step 1: Generate stage2 IR
+    print("1. Compiling mnc_all.mn through stage1...", end=" ", flush=True)
+    try:
+        r = subprocess.run(
+            [str(stage1), str(all_mn)],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s * 4,
+        )
+        stage2_ir = r.stdout
+    except subprocess.TimeoutExpired:
+        print(f"TIMEOUT ({timeout_s * 4}s)")
+        return 1
+    if not stage2_ir or r.returncode != 0:
+        print(f"FAIL (exit={r.returncode})")
+        return 1
+    n_lines = stage2_ir.count("\n")
+    mod = parse_ir(stage2_ir)
+    print(f"OK ({n_lines} lines, {len(mod.functions)} functions, {len(mod.globals)} globals)")
+
+    # Step 2: Validate raw IR
+    print("2. Validating raw stage2 IR...", end=" ", flush=True)
+    valid, err = validate_ir(stage2_ir)
+    if valid:
+        print("VALID")
+    else:
+        print(f"INVALID (expected — PHI issues)\n   {err}")
+
+    # Step 3: Run PHI fix script
+    print("3. Fixing PHI predecessors...", end=" ", flush=True)
+    if fix_script.exists():
+        try:
+            r = subprocess.run(
+                ["python3", str(fix_script), "-"],
+                input=stage2_ir,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            fixed_ir = r.stdout
+            fix_log = r.stderr.strip()
+        except (subprocess.TimeoutExpired, OSError) as e:
+            print(f"FAIL ({e})")
+            fixed_ir = stage2_ir
+            fix_log = ""
+    else:
+        fixed_ir = stage2_ir
+        fix_log = "script not found"
+
+    # Validate the fix didn't destroy the IR
+    fixed_mod = parse_ir(fixed_ir)
+    fn_before = len(mod.functions)
+    fn_after = len(fixed_mod.functions)
+    fixed_lines = fixed_ir.count("\n")
+    if fix_log:
+        print(fix_log)
+    if fn_after == 0 and fn_before > 0:
+        print(f"   CRITICAL: PHI fix deleted ALL {fn_before} functions! ({n_lines} -> {fixed_lines} lines)")
+        print("   The fix_stage2_phis.py script is destructive. Fix it before proceeding.")
+        return 1
+    elif fn_after < fn_before * 0.9:
+        print(f"   WARNING: PHI fix lost functions: {fn_before} -> {fn_after}")
+    else:
+        print(f"   Functions: {fn_before} -> {fn_after}, Lines: {n_lines} -> {fixed_lines}")
+
+    # Step 4: Validate fixed IR
+    print("4. Validating fixed stage2 IR...", end=" ", flush=True)
+    valid, err = validate_ir(fixed_ir)
+    if valid:
+        print("VALID")
+    else:
+        print(f"INVALID\n   {err}")
+        return 1
+
+    # Step 5: Compile to binary
+    print("5. Compiling stage2 binary with clang...", end=" ", flush=True)
+    with tempfile.NamedTemporaryFile(
+        suffix=".ll", mode="w", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(fixed_ir)
+        ll_path = f.name
+    s2_bin = "/tmp/mnc-stage2-xray"
+    runtime_c = ROOT / "runtime" / "native" / "mapanare_core.c"
+    try:
+        r = subprocess.run(
+            [
+                "clang",
+                "-O0",
+                "-Wno-override-module",
+                ll_path,
+                str(runtime_c),
+                "-o",
+                s2_bin,
+                "-lm",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if r.returncode != 0:
+            first_err = r.stderr.strip().split("\n")[0] if r.stderr else "unknown"
+            print(f"FAIL\n   {first_err}")
+            return 1
+        print("OK")
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(f"FAIL ({e})")
+        return 1
+    finally:
+        pathlib.Path(ll_path).unlink(missing_ok=True)
+
+    # Step 6: Run stage2 binary on test input
+    test_programs = [
+        ("empty", 'fn main() { }'),
+        ("hello", 'fn main() { print("HELLO_XRAY") }'),
+        ("math", 'fn main() { let x: Int = 2 + 3\nprint(x) }'),
+    ]
+
+    print("6. Runtime tests:")
+    all_ok = True
+    for label, src in test_programs:
+        with tempfile.NamedTemporaryFile(
+            suffix=".mn", mode="w", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(src)
+            test_path = f.name
+        try:
+            r = subprocess.run(
+                [s2_bin, test_path],
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+            )
+            stdout = r.stdout.strip()
+            stderr = r.stderr.strip()
+            ir_out = stdout
+
+            # Parse success/ir_len from stderr if present
+            success_match = re.search(r"success=(\d+)", stderr)
+            irlen_match = re.search(r"ir_len=(\d+)", stderr)
+            success = int(success_match.group(1)) if success_match else r.returncode == 0
+            ir_len = int(irlen_match.group(1)) if irlen_match else len(stdout)
+
+            # Check expected output
+            if label == "hello":
+                if "HELLO_XRAY" in stdout:
+                    status = "OK (correct output)"
+                elif stdout:
+                    # Check for off-by-N in the string
+                    expected = "HELLO_XRAY"
+                    raw = stdout.encode("utf-8", errors="replace")
+                    if len(raw) == len(expected):
+                        offsets = [
+                            i for i, (a, b) in enumerate(zip(raw, expected.encode()))
+                            if a != b
+                        ]
+                        status = f"STRING_SHIFT (got {repr(stdout[:20])}, wrong bytes at {offsets})"
+                    else:
+                        status = f"WRONG (got {repr(stdout[:40])}, len={len(stdout)})"
+                    all_ok = False
+                else:
+                    status = f"NO_OUTPUT (success={success}, ir_len={ir_len})"
+                    all_ok = False
+            elif label == "math":
+                if "5" in stdout:
+                    status = "OK"
+                elif stdout:
+                    status = f"WRONG (got {repr(stdout[:20])})"
+                    all_ok = False
+                else:
+                    status = f"NO_OUTPUT (success={success}, ir_len={ir_len})"
+                    all_ok = False
+            else:
+                status = f"exit={r.returncode}, ir_len={ir_len}"
+                if r.returncode != 0:
+                    all_ok = False
+            print(f"   {label}: {status}")
+        except subprocess.TimeoutExpired:
+            print(f"   {label}: TIMEOUT ({timeout_s}s)")
+            all_ok = False
+        finally:
+            pathlib.Path(test_path).unlink(missing_ok=True)
+
+    # Cleanup
+    pathlib.Path(s2_bin).unlink(missing_ok=True)
+
+    # Summary
+    print(f"\n{'PASS' if all_ok else 'FAIL'}: stage2 x-ray {'all tests passed' if all_ok else 'issues detected'}")
+    return 0 if all_ok else 1
+
+
+def cmd_phi_check(args: argparse.Namespace) -> int:
+    """Validate that fix_stage2_phis.py preserves IR structure.
+
+    Compares function count, global count, struct types, and string constants
+    before and after the PHI fix script. Catches destructive script bugs
+    (e.g., accidentally deleting all function bodies).
+    """
+    text = pathlib.Path(args.file).read_text(encoding="utf-8")
+    fix_script = ROOT / "scripts" / "fix_stage2_phis.py"
+
+    if not fix_script.exists():
+        print(f"PHI fix script not found: {fix_script}", file=sys.stderr)
+        return 1
+
+    # Parse original
+    mod_before = parse_ir(text)
+    n_lines_before = text.count("\n")
+
+    # Run fix script
+    try:
+        r = subprocess.run(
+            ["python3", str(fix_script), "-"],
+            input=text,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        fixed = r.stdout
+        log = r.stderr.strip()
+    except (subprocess.TimeoutExpired, OSError) as e:
+        print(f"Fix script failed: {e}")
+        return 1
+
+    if log:
+        print(f"Fix log: {log}")
+
+    # Parse fixed
+    mod_after = parse_ir(fixed)
+    n_lines_after = fixed.count("\n")
+
+    # Compare
+    print(f"\n{'Metric':<25s} {'Before':>10s} {'After':>10s} {'Delta':>10s}  Status")
+    print("-" * 70)
+
+    checks = [
+        ("Lines", n_lines_before, n_lines_after),
+        ("Functions", len(mod_before.functions), len(mod_after.functions)),
+        ("Declares", len(mod_before.declares), len(mod_after.declares)),
+        ("Globals", len(mod_before.globals), len(mod_after.globals)),
+        ("Struct types", len(mod_before.struct_types), len(mod_after.struct_types)),
+    ]
+
+    issues = 0
+    for label, before, after in checks:
+        delta = after - before
+        if label == "Functions" and after == 0 and before > 0:
+            status = "CRITICAL — all functions deleted!"
+            issues += 1
+        elif label == "Functions" and after < before * 0.9:
+            status = f"WARNING — lost {before - after} functions"
+            issues += 1
+        elif label == "Globals" and after < before * 0.9:
+            status = f"WARNING — lost globals"
+            issues += 1
+        elif delta == 0:
+            status = "OK"
+        else:
+            status = "changed"
+        print(f"{label:<25s} {before:>10d} {after:>10d} {delta:>+10d}  {status}")
+
+    # Check which functions were lost/gained
+    lost = set(mod_before.functions) - set(mod_after.functions)
+    gained = set(mod_after.functions) - set(mod_before.functions)
+    if lost:
+        print(f"\nLost functions ({len(lost)}):")
+        for name in sorted(lost)[:20]:
+            print(f"  - {name}")
+        if len(lost) > 20:
+            print(f"  ... and {len(lost) - 20} more")
+        issues += 1
+    if gained:
+        print(f"\nGained functions ({len(gained)}):")
+        for name in sorted(gained)[:10]:
+            print(f"  + {name}")
+
+    # Validate fixed IR
+    print("\nValidating fixed IR...", end=" ", flush=True)
+    valid, err = validate_ir(fixed)
+    if valid:
+        print("VALID")
+    else:
+        print(f"INVALID\n  {err}")
+        issues += 1
+
+    print(f"\n{'PASS' if issues == 0 else 'FAIL'}: {issues} issues found")
+    return 0 if issues == 0 else 1
+
+
 def main() -> int:
     p = argparse.ArgumentParser(
         prog="ir_doctor",
@@ -2650,6 +3047,25 @@ def main() -> int:
     )
     s_s2.add_argument("--timeout", type=int, default=30, help="Per-module timeout in seconds")
 
+    # strings
+    s_str = sub.add_parser(
+        "strings", help="Validate [N x i8] c\"...\" byte counts in IR file"
+    )
+    s_str.add_argument("file", help="Path to .ll file")
+    s_str.add_argument("-v", "--verbose", action="store_true", help="Show duplicate details")
+
+    # xray
+    s_xray = sub.add_parser(
+        "xray", help="Build mnc-stage2 end-to-end and test runtime output"
+    )
+    s_xray.add_argument("--timeout", type=int, default=30, help="Per-step timeout (default: 30)")
+
+    # phi-check
+    s_phic = sub.add_parser(
+        "phi-check", help="Validate fix_stage2_phis.py preserves IR structure"
+    )
+    s_phic.add_argument("file", help="Path to .ll file (before PHI fix)")
+
     # snapshot
     sub.add_parser("snapshot", help="Generate stage1 IR snapshots for golden tests (WSL)")
 
@@ -2691,6 +3107,9 @@ def main() -> int:
         "snapshot": cmd_snapshot,
         "table": cmd_table,
         "fingerprint": cmd_fingerprint,
+        "strings": cmd_strings,
+        "xray": cmd_xray,
+        "phi-check": cmd_phi_check,
     }
     return handlers[args.command](args)
 

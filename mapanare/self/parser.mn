@@ -1419,35 +1419,16 @@ fn parse_struct_fields_to_list(tokens: List<Token>, pos: Int, filename: String) 
     // Returns a ListLit of the field values (ignoring field names)
     let mut p: Int = pos
     let mut vals: List<Expr> = []
-    // Field 1
-    p = p + 1  // skip field name
-    p = expect(tokens, p, "COLON")
-    let e1: ExprResult = parse_expr(tokens, p, filename, 0)
-    p = e1.pos
-    vals.push(e1.expr)
-    if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-    if peek_type(tokens, p) == "RBRACE" {
-        return new_expr_result(Expr::ListLit(vals), p + 1)
-    }
-    // Field 2
-    p = p + 1
-    p = expect(tokens, p, "COLON")
-    let e2: ExprResult = parse_expr(tokens, p, filename, 0)
-    p = e2.pos
-    vals.push(e2.expr)
-    if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-    if peek_type(tokens, p) == "RBRACE" {
-        return new_expr_result(Expr::ListLit(vals), p + 1)
-    }
-    // Field 3+
-    p = p + 1
-    p = expect(tokens, p, "COLON")
-    let e3: ExprResult = parse_expr(tokens, p, filename, 0)
-    p = e3.pos
-    vals.push(e3.expr)
-    if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-    if peek_type(tokens, p) == "RBRACE" {
-        return new_expr_result(Expr::ListLit(vals), p + 1)
+    for _ in 0..100 {
+        if peek_type(tokens, p) == "RBRACE" {
+            return new_expr_result(Expr::ListLit(vals), p + 1)
+        }
+        p = p + 1  // skip field name
+        p = expect(tokens, p, "COLON")
+        let er: ExprResult = parse_expr(tokens, p, filename, 0)
+        p = er.pos
+        vals.push(er.expr)
+        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
     }
     return new_expr_result(Expr::ListLit(vals), p)
 }
@@ -1588,12 +1569,12 @@ fn parse_if_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
         let else_stmts: List<Stmt> = [Stmt::ExprStmt(elif_r.expr)]
         let else_block: Block = new_block(new_span(0, 0, 0, 0), else_stmts)
         let else_clause: ElseClause = ElseClause::ElseBlock(else_block)
-        return new_expr_result(Expr::If(cond_r.expr, then_r.block, else_clause), elif_r.pos)
+        return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(else_clause)), elif_r.pos)
     }
 
     let else_r: BlockResult = parse_block(tokens, p, filename)
     let else_clause: ElseClause = ElseClause::ElseBlock(else_r.block)
-    return new_expr_result(Expr::If(cond_r.expr, then_r.block, else_clause), else_r.pos)
+    return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(else_clause)), else_r.pos)
 }
 
 // ---------------------------------------------------------------------------
