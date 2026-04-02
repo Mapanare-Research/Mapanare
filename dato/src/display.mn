@@ -3,162 +3,142 @@
 // Aligned column output for tables. Respects max_rows to truncate
 // large datasets.
 
-import dato::src::col
-import dato::src::table
+usa dato::src::col
+usa dato::src::table
 
 // ---------------------------------------------------------------------------
 // Internal: string padding
 // ---------------------------------------------------------------------------
 
-fn pad_right(s: String, width: Int) -> String {
-    let slen: Int = len(s)
-    if slen >= width { return s }
-    let mut result: String = s
-    let mut i: Int = slen
-    while i < width {
+fn pad_right(s: String, width: Int) -> String:
+    pon slen: Int = len(s)
+    si slen >= width { da s }
+    pon mut result: String = s
+    pon mut i: Int = slen
+    mien i < width:
         result = result + " "
         i = i + 1
-    }
-    return result
-}
+    da result
 
 // ---------------------------------------------------------------------------
 // Internal: convert column values to strings for a row range
 // ---------------------------------------------------------------------------
 
-fn col_to_strings(c: col.Col, start: Int, end: Int) -> List<String> {
-    let mut result: List<String> = []
-    let mut i: Int = start
-    while i < end {
+fn col_to_strings(c: col.Col, start: Int, end: Int) -> List<String>:
+    pon mut result: List<String> = []
+    pon mut i: Int = start
+    mien i < end:
         result = result + [col.value_to_string(c, i)]
         i = i + 1
-    }
-    return result
-}
+    da result
 
 // ---------------------------------------------------------------------------
 // Internal: find widest string in a list
 // ---------------------------------------------------------------------------
 
-fn max_width(values: List<String>) -> Int {
-    let n: Int = len(values)
-    let mut widest: Int = 0
-    let mut i: Int = 0
-    while i < n {
-        let w: Int = len(values[i])
-        if w > widest { widest = w }
+fn max_width(values: List<String>) -> Int:
+    pon n: Int = len(values)
+    pon mut widest: Int = 0
+    pon mut i: Int = 0
+    mien i < n:
+        pon w: Int = len(values[i])
+        si w > widest { widest = w }
         i = i + 1
-    }
-    return widest
-}
+    da widest
 
 // ---------------------------------------------------------------------------
 // Internal: compute max of two ints
 // ---------------------------------------------------------------------------
 
-fn max_int(a: Int, b: Int) -> Int {
-    if a > b { return a }
-    return b
-}
+fn max_int(a: Int, b: Int) -> Int:
+    si a > b { da a }
+    da b
 
 // ---------------------------------------------------------------------------
 // Internal: build separator line
 // ---------------------------------------------------------------------------
 
-fn build_separator(widths: List<Int>, ncols: Int) -> String {
-    let mut result: String = "+"
-    let mut i: Int = 0
-    while i < ncols {
-        let w: Int = widths[i] + 2
-        let mut j: Int = 0
-        while j < w {
+fn build_separator(widths: List<Int>, ncols: Int) -> String:
+    pon mut result: String = "+"
+    pon mut i: Int = 0
+    mien i < ncols:
+        pon w: Int = widths[i] + 2
+        pon mut j: Int = 0
+        mien j < w:
             result = result + "-"
             j = j + 1
-        }
         result = result + "+"
         i = i + 1
-    }
-    return result
-}
+    da result
 
 // ---------------------------------------------------------------------------
 // Internal: build a data row line
 // ---------------------------------------------------------------------------
 
-fn build_row_line(values: List<String>, widths: List<Int>, ncols: Int) -> String {
-    let mut result: String = "|"
-    let mut i: Int = 0
-    while i < ncols {
+fn build_row_line(values: List<String>, widths: List<Int>, ncols: Int) -> String:
+    pon mut result: String = "|"
+    pon mut i: Int = 0
+    mien i < ncols:
         result = result + " " + pad_right(values[i], widths[i]) + " |"
         i = i + 1
-    }
-    return result
-}
+    da result
 
 // ---------------------------------------------------------------------------
 // show — pretty-print table to stdout with aligned columns
 // ---------------------------------------------------------------------------
 
-pub fn show(t: table.Table, max_rows: Int) -> String {
-    let nc: Int = len(t.cols)
-    if nc == 0 {
++fn show(t: table.Table, max_rows: Int) -> String:
+    pon nc: Int = len(t.cols)
+    si nc == 0:
         print("(empty table)")
-        return ""
-    }
+        da ""
 
-    let mut display_rows: Int = t.nrows
-    if display_rows > max_rows { display_rows = max_rows }
+    pon mut display_rows: Int = t.nrows
+    si display_rows > max_rows { display_rows = max_rows }
 
     // Compute column widths
-    let mut widths: List<Int> = []
-    let mut ci: Int = 0
-    while ci < nc {
-        let header_w: Int = len(t.cols[ci].name)
-        let values: List<String> = col_to_strings(t.cols[ci], 0, display_rows)
-        let data_w: Int = max_width(values)
+    pon mut widths: List<Int> = []
+    pon mut ci: Int = 0
+    mien ci < nc:
+        pon header_w: Int = len(t.cols[ci].name)
+        pon values: List<String> = col_to_strings(t.cols[ci], 0, display_rows)
+        pon data_w: Int = max_width(values)
         widths = widths + [max_int(header_w, data_w)]
         ci = ci + 1
-    }
 
     // Build header names list
-    let mut headers: List<String> = []
-    let mut hi: Int = 0
-    while hi < nc {
+    pon mut headers: List<String> = []
+    pon mut hi: Int = 0
+    mien hi < nc:
         headers = headers + [t.cols[hi].name]
         hi = hi + 1
-    }
 
     // Print
-    let sep: String = build_separator(widths, nc)
+    pon sep: String = build_separator(widths, nc)
     print(sep)
     print(build_row_line(headers, widths, nc))
     print(sep)
 
-    let mut ri: Int = 0
-    while ri < display_rows {
-        let mut row_vals: List<String> = []
-        let mut ci2: Int = 0
-        while ci2 < nc {
+    pon mut ri: Int = 0
+    mien ri < display_rows:
+        pon mut row_vals: List<String> = []
+        pon mut ci2: Int = 0
+        mien ci2 < nc:
             row_vals = row_vals + [col.value_to_string(t.cols[ci2], ri)]
             ci2 = ci2 + 1
-        }
         print(build_row_line(row_vals, widths, nc))
         ri = ri + 1
-    }
     print(sep)
 
-    if t.nrows > max_rows {
+    si t.nrows > max_rows:
         print("... " + str(t.nrows - max_rows) + " more rows")
-    }
 
     print(str(t.nrows) + " rows x " + str(nc) + " cols")
-    return ""
-}
+    da ""
 
 // ---------------------------------------------------------------------------
 // show_default — show first 20 rows
 // ---------------------------------------------------------------------------
 
-pub fn show_default(t: table.Table) -> String {
-    return show(t, 20)
-}
++fn show_default(t: table.Table) -> String:
+    da show(t, 20)

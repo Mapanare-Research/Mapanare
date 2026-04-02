@@ -1,12 +1,9 @@
-fn double(x: Int) -> Int {
-    return x * 2
-}
+fn double(x: Int) -> Int:
+    da x * 2
 
-fn triple(x: Int) -> Int {
-    return x * 3
-}
+fn triple(x: Int) -> Int:
+    da x * 3
 
-fn main() {
+fn main:
     print(str(double(5)))
     print(str(triple(5)))
-}

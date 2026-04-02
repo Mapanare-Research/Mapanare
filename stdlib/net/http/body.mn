@@ -5,373 +5,336 @@
 //
 // No external dependencies beyond text::string_utils for hex helpers.
 
-import text::string_utils
+usa text::string_utils
 
 // ---------------------------------------------------------------------------
 // FormPart struct (for multipart parsing)
 // ---------------------------------------------------------------------------
 
-pub struct FormPart {
++tipo FormPart:
     name: String,
     filename: String,
     content_type: String,
     data: String
-}
 
 // ---------------------------------------------------------------------------
 // Internal hex helpers
 // ---------------------------------------------------------------------------
 
-fn is_hex_digit(ch: String) -> Bool {
-    return string_utils.is_hex(ch)
-}
+fn is_hex_digit(ch: String) -> Bool:
+    da string_utils.is_hex(ch)
 
-fn hex_digit_val(ch: String) -> Int {
-    let v: Int = string_utils.hex_digit_value(ch)
-    if v < 0 { return 0 }
-    return v
-}
+fn hex_digit_val(ch: String) -> Int:
+    pon v: Int = string_utils.hex_digit_value(ch)
+    si v < 0 { da 0 }
+    da v
 
 // ---------------------------------------------------------------------------
 // URL decode — %XX -> byte, + -> space
 // ---------------------------------------------------------------------------
 
-pub fn url_decode(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
++fn url_decode(s: String) -> String:
+    pon slen: Int = len(s)
+    pon mut result: String = ""
+    pon mut i: Int = 0
 
-    while i < slen {
-        let ch: String = s.char_at(i)
+    mien i < slen:
+        pon ch: String = s.char_at(i)
 
-        if ch == "+" {
+        si ch == "+":
             result = result + " "
             i = i + 1
-        } else if ch == "%" {
+        sino si ch == "%":
             // Check for two hex digits following
-            if i + 2 < slen {
-                let h1: String = s.char_at(i + 1)
-                let h2: String = s.char_at(i + 2)
-                if is_hex_digit(h1) {
-                    if is_hex_digit(h2) {
-                        let byte_val: Int = hex_digit_val(h1) * 16 + hex_digit_val(h2)
+            si i + 2 < slen:
+                pon h1: String = s.char_at(i + 1)
+                pon h2: String = s.char_at(i + 2)
+                si is_hex_digit(h1):
+                    si is_hex_digit(h2):
+                        pon byte_val: Int = hex_digit_val(h1) * 16 + hex_digit_val(h2)
                         // Convert byte to character via str() of the byte
                         // For ASCII range (0-127), use char_from_byte approach
-                        if byte_val == 32 { result = result + " " }
-                        else if byte_val == 33 { result = result + "!" }
-                        else if byte_val == 34 { result = result + "\"" }
-                        else if byte_val == 35 { result = result + "#" }
-                        else if byte_val == 36 { result = result + "$" }
-                        else if byte_val == 37 { result = result + "%" }
-                        else if byte_val == 38 { result = result + "&" }
-                        else if byte_val == 39 { result = result + "'" }
-                        else if byte_val == 40 { result = result + "(" }
-                        else if byte_val == 41 { result = result + ")" }
-                        else if byte_val == 42 { result = result + "*" }
-                        else if byte_val == 43 { result = result + "+" }
-                        else if byte_val == 44 { result = result + "," }
-                        else if byte_val == 45 { result = result + "-" }
-                        else if byte_val == 46 { result = result + "." }
-                        else if byte_val == 47 { result = result + "/" }
-                        else if byte_val >= 48 {
-                            if byte_val <= 57 {
+                        si byte_val == 32 { result = result + " " }
+                        sino si byte_val == 33 { result = result + "!" }
+                        sino si byte_val == 34 { result = result + "\"" }
+                        sino si byte_val == 35 { result = result + "#" }
+                        sino si byte_val == 36 { result = result + "$" }
+                        sino si byte_val == 37 { result = result + "%" }
+                        sino si byte_val == 38 { result = result + "&" }
+                        sino si byte_val == 39 { result = result + "'" }
+                        sino si byte_val == 40 { result = result + "(" }
+                        sino si byte_val == 41 { result = result + ")" }
+                        sino si byte_val == 42 { result = result + "*" }
+                        sino si byte_val == 43 { result = result + "+" }
+                        sino si byte_val == 44 { result = result + "," }
+                        sino si byte_val == 45 { result = result + "-" }
+                        sino si byte_val == 46 { result = result + "." }
+                        sino si byte_val == 47 { result = result + "/" }
+                        sino si byte_val >= 48:
+                            si byte_val <= 57:
                                 // 0-9
-                                let digit: String = str(byte_val - 48)
+                                pon digit: String = str(byte_val - 48)
                                 result = result + digit
-                            } else if byte_val == 58 { result = result + ":" }
-                            else if byte_val == 59 { result = result + ";" }
-                            else if byte_val == 60 { result = result + "<" }
-                            else if byte_val == 61 { result = result + "=" }
-                            else if byte_val == 62 { result = result + ">" }
-                            else if byte_val == 63 { result = result + "?" }
-                            else if byte_val == 64 { result = result + "@" }
-                            else if byte_val >= 65 {
-                                if byte_val <= 90 {
+                            } sino si byte_val == 58 { result = result + ":" }
+                            sino si byte_val == 59 { result = result + ";" }
+                            sino si byte_val == 60 { result = result + "<" }
+                            sino si byte_val == 61 { result = result + "=" }
+                            sino si byte_val == 62 { result = result + ">" }
+                            sino si byte_val == 63 { result = result + "?" }
+                            sino si byte_val == 64 { result = result + "@" }
+                            sino si byte_val >= 65:
+                                si byte_val <= 90:
                                     // A-Z via lookup
-                                    let offset: Int = byte_val - 65
-                                    if offset == 0 { result = result + "A" }
-                                    else if offset == 1 { result = result + "B" }
-                                    else if offset == 2 { result = result + "C" }
-                                    else if offset == 3 { result = result + "D" }
-                                    else if offset == 4 { result = result + "E" }
-                                    else if offset == 5 { result = result + "F" }
-                                    else if offset == 6 { result = result + "G" }
-                                    else if offset == 7 { result = result + "H" }
-                                    else if offset == 8 { result = result + "I" }
-                                    else if offset == 9 { result = result + "J" }
-                                    else if offset == 10 { result = result + "K" }
-                                    else if offset == 11 { result = result + "L" }
-                                    else if offset == 12 { result = result + "M" }
-                                    else if offset == 13 { result = result + "N" }
-                                    else if offset == 14 { result = result + "O" }
-                                    else if offset == 15 { result = result + "P" }
-                                    else if offset == 16 { result = result + "Q" }
-                                    else if offset == 17 { result = result + "R" }
-                                    else if offset == 18 { result = result + "S" }
-                                    else if offset == 19 { result = result + "T" }
-                                    else if offset == 20 { result = result + "U" }
-                                    else if offset == 21 { result = result + "V" }
-                                    else if offset == 22 { result = result + "W" }
-                                    else if offset == 23 { result = result + "X" }
-                                    else if offset == 24 { result = result + "Y" }
-                                    else { result = result + "Z" }
-                                } else if byte_val == 91 { result = result + "[" }
-                                else if byte_val == 92 { result = result + "\\" }
-                                else if byte_val == 93 { result = result + "]" }
-                                else if byte_val == 94 { result = result + "^" }
-                                else if byte_val == 95 { result = result + "_" }
-                                else if byte_val == 96 { result = result + "`" }
-                                else if byte_val >= 97 {
-                                    if byte_val <= 122 {
+                                    pon offset: Int = byte_val - 65
+                                    si offset == 0 { result = result + "A" }
+                                    sino si offset == 1 { result = result + "B" }
+                                    sino si offset == 2 { result = result + "C" }
+                                    sino si offset == 3 { result = result + "D" }
+                                    sino si offset == 4 { result = result + "E" }
+                                    sino si offset == 5 { result = result + "F" }
+                                    sino si offset == 6 { result = result + "G" }
+                                    sino si offset == 7 { result = result + "H" }
+                                    sino si offset == 8 { result = result + "I" }
+                                    sino si offset == 9 { result = result + "J" }
+                                    sino si offset == 10 { result = result + "K" }
+                                    sino si offset == 11 { result = result + "L" }
+                                    sino si offset == 12 { result = result + "M" }
+                                    sino si offset == 13 { result = result + "N" }
+                                    sino si offset == 14 { result = result + "O" }
+                                    sino si offset == 15 { result = result + "P" }
+                                    sino si offset == 16 { result = result + "Q" }
+                                    sino si offset == 17 { result = result + "R" }
+                                    sino si offset == 18 { result = result + "S" }
+                                    sino si offset == 19 { result = result + "T" }
+                                    sino si offset == 20 { result = result + "U" }
+                                    sino si offset == 21 { result = result + "V" }
+                                    sino si offset == 22 { result = result + "W" }
+                                    sino si offset == 23 { result = result + "X" }
+                                    sino si offset == 24 { result = result + "Y" }
+                                    sino { result = result + "Z" }
+                                } sino si byte_val == 91 { result = result + "[" }
+                                sino si byte_val == 92 { result = result + "\\" }
+                                sino si byte_val == 93 { result = result + "]" }
+                                sino si byte_val == 94 { result = result + "^" }
+                                sino si byte_val == 95 { result = result + "_" }
+                                sino si byte_val == 96 { result = result + "`" }
+                                sino si byte_val >= 97:
+                                    si byte_val <= 122:
                                         // a-z via lookup
-                                        let offset2: Int = byte_val - 97
-                                        if offset2 == 0 { result = result + "a" }
-                                        else if offset2 == 1 { result = result + "b" }
-                                        else if offset2 == 2 { result = result + "c" }
-                                        else if offset2 == 3 { result = result + "d" }
-                                        else if offset2 == 4 { result = result + "e" }
-                                        else if offset2 == 5 { result = result + "f" }
-                                        else if offset2 == 6 { result = result + "g" }
-                                        else if offset2 == 7 { result = result + "h" }
-                                        else if offset2 == 8 { result = result + "i" }
-                                        else if offset2 == 9 { result = result + "j" }
-                                        else if offset2 == 10 { result = result + "k" }
-                                        else if offset2 == 11 { result = result + "l" }
-                                        else if offset2 == 12 { result = result + "m" }
-                                        else if offset2 == 13 { result = result + "n" }
-                                        else if offset2 == 14 { result = result + "o" }
-                                        else if offset2 == 15 { result = result + "p" }
-                                        else if offset2 == 16 { result = result + "q" }
-                                        else if offset2 == 17 { result = result + "r" }
-                                        else if offset2 == 18 { result = result + "s" }
-                                        else if offset2 == 19 { result = result + "t" }
-                                        else if offset2 == 20 { result = result + "u" }
-                                        else if offset2 == 21 { result = result + "v" }
-                                        else if offset2 == 22 { result = result + "w" }
-                                        else if offset2 == 23 { result = result + "x" }
-                                        else if offset2 == 24 { result = result + "y" }
-                                        else { result = result + "z" }
-                                    } else if byte_val == 123 { result = result + "{" }
-                                    else if byte_val == 124 { result = result + "|" }
-                                    else if byte_val == 125 { result = result + "}" }
-                                    else if byte_val == 126 { result = result + "~" }
-                                    else { result = result + "?" }
-                                } else { result = result + "?" }
-                            } else { result = result + "?" }
-                        } else { result = result + "?" }
+                                        pon offset2: Int = byte_val - 97
+                                        si offset2 == 0 { result = result + "a" }
+                                        sino si offset2 == 1 { result = result + "b" }
+                                        sino si offset2 == 2 { result = result + "c" }
+                                        sino si offset2 == 3 { result = result + "d" }
+                                        sino si offset2 == 4 { result = result + "e" }
+                                        sino si offset2 == 5 { result = result + "f" }
+                                        sino si offset2 == 6 { result = result + "g" }
+                                        sino si offset2 == 7 { result = result + "h" }
+                                        sino si offset2 == 8 { result = result + "i" }
+                                        sino si offset2 == 9 { result = result + "j" }
+                                        sino si offset2 == 10 { result = result + "k" }
+                                        sino si offset2 == 11 { result = result + "l" }
+                                        sino si offset2 == 12 { result = result + "m" }
+                                        sino si offset2 == 13 { result = result + "n" }
+                                        sino si offset2 == 14 { result = result + "o" }
+                                        sino si offset2 == 15 { result = result + "p" }
+                                        sino si offset2 == 16 { result = result + "q" }
+                                        sino si offset2 == 17 { result = result + "r" }
+                                        sino si offset2 == 18 { result = result + "s" }
+                                        sino si offset2 == 19 { result = result + "t" }
+                                        sino si offset2 == 20 { result = result + "u" }
+                                        sino si offset2 == 21 { result = result + "v" }
+                                        sino si offset2 == 22 { result = result + "w" }
+                                        sino si offset2 == 23 { result = result + "x" }
+                                        sino si offset2 == 24 { result = result + "y" }
+                                        sino { result = result + "z" }
+                                    } sino si byte_val == 123 { result = result + "{" }
+                                    sino si byte_val == 124 { result = result + "|" }
+                                    sino si byte_val == 125 { result = result + "}" }
+                                    sino si byte_val == 126 { result = result + "~" }
+                                    sino { result = result + "?" }
+                                } sino { result = result + "?" }
+                            } sino { result = result + "?" }
+                        } sino { result = result + "?" }
                         i = i + 3
-                    } else {
+                    sino:
                         result = result + ch
                         i = i + 1
-                    }
-                } else {
+                sino:
                     result = result + ch
                     i = i + 1
-                }
-            } else {
+            sino:
                 result = result + ch
                 i = i + 1
-            }
-        } else {
+        sino:
             result = result + ch
             i = i + 1
-        }
-    }
 
-    return result
-}
+    da result
 
 // ---------------------------------------------------------------------------
 // URL encode — special chars -> %XX, space -> %20
 // ---------------------------------------------------------------------------
 
-fn byte_to_hex(b: Int) -> String {
-    let hi: Int = b / 16
-    let lo: Int = b - hi * 16
-    return "%" + string_utils.hex_char(hi) + string_utils.hex_char(lo)
-}
+fn byte_to_hex(b: Int) -> String:
+    pon hi: Int = b / 16
+    pon lo: Int = b - hi * 16
+    da "%" + string_utils.hex_char(hi) + string_utils.hex_char(lo)
 
-fn is_url_safe(ch: String, b: Int) -> Bool {
+fn is_url_safe(ch: String, b: Int) -> Bool:
     // Unreserved characters: A-Z, a-z, 0-9, -, _, ., ~
-    if b >= 65 { if b <= 90 { return true } }
-    if b >= 97 { if b <= 122 { return true } }
-    if b >= 48 { if b <= 57 { return true } }
-    if ch == "-" { return true }
-    if ch == "_" { return true }
-    if ch == "." { return true }
-    if ch == "~" { return true }
-    return false
-}
+    si b >= 65 { si b <= 90 { da true } }
+    si b >= 97 { si b <= 122 { da true } }
+    si b >= 48 { si b <= 57 { da true } }
+    si ch == "-" { da true }
+    si ch == "_" { da true }
+    si ch == "." { da true }
+    si ch == "~" { da true }
+    da false
 
-pub fn url_encode(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
++fn url_encode(s: String) -> String:
+    pon slen: Int = len(s)
+    pon mut result: String = ""
+    pon mut i: Int = 0
 
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = s.byte_at(i)
+    mien i < slen:
+        pon ch: String = s.char_at(i)
+        pon b: Int = s.byte_at(i)
 
-        if is_url_safe(ch, b) {
+        si is_url_safe(ch, b):
             result = result + ch
-        } else {
+        sino:
             result = result + byte_to_hex(b)
-        }
         i = i + 1
-    }
 
-    return result
-}
+    da result
 
 // ---------------------------------------------------------------------------
 // Parse form-urlencoded body — "key1=value1&key2=value2"
 // ---------------------------------------------------------------------------
 
-pub fn parse_form_urlencoded(body: String) -> Map<String, String> {
-    let mut result: Map<String, String> = #{}
-    let slen: Int = len(body)
-    if slen == 0 { return result }
++fn parse_form_urlencoded(body: String) -> Map<String, String>:
+    pon mut result: Map<String, String> = #{}
+    pon slen: Int = len(body)
+    si slen == 0 { da result }
 
-    let mut pos: Int = 0
-    let mut current: String = ""
+    pon mut pos: Int = 0
+    pon mut current: String = ""
 
-    while pos <= slen {
-        let mut ch: String = ""
-        let mut at_end: Bool = false
-        if pos < slen {
+    mien pos <= slen:
+        pon mut ch: String = ""
+        pon mut at_end: Bool = false
+        si pos < slen:
             ch = body.char_at(pos)
-        } else {
+        sino:
             at_end = true
-        }
 
-        if ch == "&" {
+        si ch == "&":
             at_end = true
-        }
 
-        if at_end {
-            if len(current) > 0 {
-                let eq_pos: Int = current.find("=")
-                if eq_pos >= 0 {
-                    let raw_key: String = current.substr(0, eq_pos)
-                    let raw_val: String = current.substr(eq_pos + 1, len(current))
-                    let key: String = url_decode(raw_key)
-                    let val: String = url_decode(raw_val)
+        si at_end:
+            si len(current) > 0:
+                pon eq_pos: Int = current.find("=")
+                si eq_pos >= 0:
+                    pon raw_key: String = current.substr(0, eq_pos)
+                    pon raw_val: String = current.substr(eq_pos + 1, len(current))
+                    pon key: String = url_decode(raw_key)
+                    pon val: String = url_decode(raw_val)
                     result[key] = val
-                } else {
+                sino:
                     // Key with no value
-                    let key: String = url_decode(current)
+                    pon key: String = url_decode(current)
                     result[key] = ""
-                }
-            }
             current = ""
-            if ch == "&" {
+            si ch == "&":
                 pos = pos + 1
-            } else {
+            sino:
                 pos = pos + 1
-            }
-        } else {
+        sino:
             current = current + ch
             pos = pos + 1
-        }
-    }
 
-    return result
-}
+    da result
 
 // ---------------------------------------------------------------------------
 // Parse query string — same format as form-urlencoded
 // ---------------------------------------------------------------------------
 
-pub fn parse_query_string(query: String) -> Map<String, String> {
-    return parse_form_urlencoded(query)
-}
++fn parse_query_string(query: String) -> Map<String, String>:
+    da parse_form_urlencoded(query)
 
 // ---------------------------------------------------------------------------
 // Extract boundary from Content-Type header
 // "multipart/form-data; boundary=----WebKitFormBoundary..."
 // ---------------------------------------------------------------------------
 
-pub fn extract_boundary(content_type: String) -> Option<String> {
-    let slen: Int = len(content_type)
-    let needle: String = "boundary="
-    let nlen: Int = len(needle)
++fn extract_boundary(content_type: String) -> Option<String>:
+    pon slen: Int = len(content_type)
+    pon needle: String = "boundary="
+    pon nlen: Int = len(needle)
 
-    let pos: Int = content_type.find(needle)
-    if pos < 0 { return none }
+    pon pos: Int = content_type.find(needle)
+    si pos < 0 { da nada }
 
-    let start: Int = pos + nlen
-    if start >= slen { return none }
+    pon start: Int = pos + nlen
+    si start >= slen { da nada }
 
     // Extract boundary value (up to end of string or semicolon)
-    let mut boundary: String = ""
-    let mut i: Int = start
-    while i < slen {
-        let ch: String = content_type.char_at(i)
-        if ch == ";" { break }
-        if ch == " " { break }
+    pon mut boundary: String = ""
+    pon mut i: Int = start
+    mien i < slen:
+        pon ch: String = content_type.char_at(i)
+        si ch == ";" { sal }
+        si ch == " " { sal }
         boundary = boundary + ch
         i = i + 1
-    }
 
-    if len(boundary) == 0 { return none }
-    return Some(boundary)
-}
+    si len(boundary) == 0 { da nada }
+    da Some(boundary)
 
 // ---------------------------------------------------------------------------
 // Trim leading/trailing whitespace
 // ---------------------------------------------------------------------------
 
-fn trim_ws(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
+fn trim_ws(s: String) -> String:
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
 
-    let mut start: Int = 0
-    while start < slen {
-        let ch: String = s.char_at(start)
-        if ch != " " {
-            if ch != "\t" {
-                if ch != "\r" {
-                    if ch != "\n" { break }
-                }
-            }
-        }
+    pon mut start: Int = 0
+    mien start < slen:
+        pon ch: String = s.char_at(start)
+        si ch != " ":
+            si ch != "\t":
+                si ch != "\r":
+                    si ch != "\n" { sal }
         start = start + 1
-    }
 
-    let mut end: Int = slen - 1
-    while end >= start {
-        let ch: String = s.char_at(end)
-        if ch != " " {
-            if ch != "\t" {
-                if ch != "\r" {
-                    if ch != "\n" { break }
-                }
-            }
-        }
+    pon mut end: Int = slen - 1
+    mien end >= start:
+        pon ch: String = s.char_at(end)
+        si ch != " ":
+            si ch != "\t":
+                si ch != "\r":
+                    si ch != "\n" { sal }
         end = end - 1
-    }
 
-    if start > end { return "" }
-    return s.substr(start, end + 1)
-}
+    si start > end { da "" }
+    da s.substr(start, end + 1)
 
 // ---------------------------------------------------------------------------
 // Check if string starts with a given prefix
 // ---------------------------------------------------------------------------
 
-fn starts_with(s: String, prefix: String) -> Bool {
-    let slen: Int = len(s)
-    let plen: Int = len(prefix)
-    if plen > slen { return false }
-    let mut i: Int = 0
-    while i < plen {
-        if s.char_at(i) != prefix.char_at(i) {
-            return false
-        }
+fn starts_with(s: String, prefix: String) -> Bool:
+    pon slen: Int = len(s)
+    pon plen: Int = len(prefix)
+    si plen > slen { da false }
+    pon mut i: Int = 0
+    mien i < plen:
+        si s.char_at(i) != prefix.char_at(i):
+            da false
         i = i + 1
-    }
-    return true
-}
+    da true
 
 // ---------------------------------------------------------------------------
 // Parse multipart/form-data body
@@ -380,150 +343,129 @@ fn starts_with(s: String, prefix: String) -> Bool {
 // Content-Type headers for each part, extracts name/filename/data.
 // ---------------------------------------------------------------------------
 
-fn parse_part_headers(header_block: String) -> FormPart {
-    let mut name: String = ""
-    let mut filename: String = ""
-    let mut content_type: String = "text/plain"
+fn parse_part_headers(header_block: String) -> FormPart:
+    pon mut name: String = ""
+    pon mut filename: String = ""
+    pon mut content_type: String = "text/plain"
 
     // Extract name from Content-Disposition: form-data; name="field"
-    let name_needle: String = "name=\""
-    let name_pos: Int = header_block.find(name_needle)
-    if name_pos >= 0 {
-        let name_start: Int = name_pos + len(name_needle)
-        let hlen: Int = len(header_block)
-        let mut i: Int = name_start
-        while i < hlen {
-            let ch: String = header_block.char_at(i)
-            if ch == "\"" { break }
+    pon name_needle: String = "name=\""
+    pon name_pos: Int = header_block.find(name_needle)
+    si name_pos >= 0:
+        pon name_start: Int = name_pos + len(name_needle)
+        pon hlen: Int = len(header_block)
+        pon mut i: Int = name_start
+        mien i < hlen:
+            pon ch: String = header_block.char_at(i)
+            si ch == "\"" { sal }
             name = name + ch
             i = i + 1
-        }
-    }
 
     // Extract filename if present
-    let fn_needle: String = "filename=\""
-    let fn_pos: Int = header_block.find(fn_needle)
-    if fn_pos >= 0 {
-        let fn_start: Int = fn_pos + len(fn_needle)
-        let hlen2: Int = len(header_block)
-        let mut j: Int = fn_start
-        while j < hlen2 {
-            let ch: String = header_block.char_at(j)
-            if ch == "\"" { break }
+    pon fn_needle: String = "filename=\""
+    pon fn_pos: Int = header_block.find(fn_needle)
+    si fn_pos >= 0:
+        pon fn_start: Int = fn_pos + len(fn_needle)
+        pon hlen2: Int = len(header_block)
+        pon mut j: Int = fn_start
+        mien j < hlen2:
+            pon ch: String = header_block.char_at(j)
+            si ch == "\"" { sal }
             filename = filename + ch
             j = j + 1
-        }
-    }
 
     // Extract Content-Type if present
-    let ct_needle: String = "Content-Type:"
-    let ct_pos: Int = header_block.find(ct_needle)
-    if ct_pos >= 0 {
-        let ct_start: Int = ct_pos + len(ct_needle)
-        let hlen3: Int = len(header_block)
-        let mut ct_val: String = ""
-        let mut k: Int = ct_start
-        while k < hlen3 {
-            let ch: String = header_block.char_at(k)
-            if ch == "\r" { break }
-            if ch == "\n" { break }
+    pon ct_needle: String = "Content-Type:"
+    pon ct_pos: Int = header_block.find(ct_needle)
+    si ct_pos >= 0:
+        pon ct_start: Int = ct_pos + len(ct_needle)
+        pon hlen3: Int = len(header_block)
+        pon mut ct_val: String = ""
+        pon mut k: Int = ct_start
+        mien k < hlen3:
+            pon ch: String = header_block.char_at(k)
+            si ch == "\r" { sal }
+            si ch == "\n" { sal }
             ct_val = ct_val + ch
             k = k + 1
-        }
         content_type = trim_ws(ct_val)
-    }
 
-    return new FormPart {
+    da new FormPart:
         name: name,
         filename: filename,
         content_type: content_type,
         data: ""
-    }
-}
 
-pub fn parse_multipart(body: String, boundary: String) -> List<FormPart> {
-    let mut parts: List<FormPart> = []
-    let delimiter: String = "--" + boundary
-    let end_delimiter: String = "--" + boundary + "--"
-    let blen: Int = len(body)
-    let dlen: Int = len(delimiter)
++fn parse_multipart(body: String, boundary: String) -> List<FormPart>:
+    pon mut parts: List<FormPart> = []
+    pon delimiter: String = "--" + boundary
+    pon end_delimiter: String = "--" + boundary + "--"
+    pon blen: Int = len(body)
+    pon dlen: Int = len(delimiter)
 
     // Find each part between delimiters
-    let mut pos: Int = 0
-    let mut count: Int = 0
+    pon mut pos: Int = 0
+    pon mut count: Int = 0
 
-    while pos < blen {
+    mien pos < blen:
         count = count + 1
-        if count > 1000 { break }
+        si count > 1000 { sal }
 
         // Find next delimiter
-        let mut found_delim: Bool = false
-        let mut delim_pos: Int = -1
-        let mut search: Int = pos
-        while search <= blen - dlen {
-            if starts_with(body.substr(search, blen), delimiter) {
+        pon mut found_delim: Bool = false
+        pon mut delim_pos: Int = -1
+        pon mut search: Int = pos
+        mien search <= blen - dlen:
+            si starts_with(body.substr(search, blen), delimiter):
                 found_delim = true
                 delim_pos = search
-                break
-            }
+                sal
             search = search + 1
-        }
 
-        if found_delim == false { break }
+        si found_delim == false { sal }
 
         // Skip past delimiter and CRLF
-        let mut part_start: Int = delim_pos + dlen
-        if part_start < blen {
-            if body.char_at(part_start) == "\r" { part_start = part_start + 1 }
-        }
-        if part_start < blen {
-            if body.char_at(part_start) == "\n" { part_start = part_start + 1 }
-        }
+        pon mut part_start: Int = delim_pos + dlen
+        si part_start < blen:
+            si body.char_at(part_start) == "\r" { part_start = part_start + 1 }
+        si part_start < blen:
+            si body.char_at(part_start) == "\n" { part_start = part_start + 1 }
 
         // Check for end delimiter
-        if starts_with(body.substr(delim_pos, blen), end_delimiter) { break }
+        si starts_with(body.substr(delim_pos, blen), end_delimiter) { sal }
 
         // Find end of this part (next delimiter)
-        let mut part_end: Int = blen
-        let mut search2: Int = part_start
-        while search2 <= blen - dlen {
-            if starts_with(body.substr(search2, blen), delimiter) {
+        pon mut part_end: Int = blen
+        pon mut search2: Int = part_start
+        mien search2 <= blen - dlen:
+            si starts_with(body.substr(search2, blen), delimiter):
                 part_end = search2
-                break
-            }
+                sal
             search2 = search2 + 1
-        }
 
         // Remove trailing CRLF before delimiter
-        if part_end >= 2 {
-            if body.char_at(part_end - 2) == "\r" {
-                if body.char_at(part_end - 1) == "\n" {
+        si part_end >= 2:
+            si body.char_at(part_end - 2) == "\r":
+                si body.char_at(part_end - 1) == "\n":
                     part_end = part_end - 2
-                }
-            }
-        }
 
         // Extract part content
-        let part_content: String = body.substr(part_start, part_end)
+        pon part_content: String = body.substr(part_start, part_end)
 
         // Split part into headers and body at first blank line (\r\n\r\n)
-        let blank_line: String = "\r\n\r\n"
-        let blank_pos: Int = part_content.find(blank_line)
-        if blank_pos >= 0 {
-            let header_block: String = part_content.substr(0, blank_pos)
-            let part_data: String = part_content.substr(blank_pos + 4, len(part_content))
-            let fp: FormPart = parse_part_headers(header_block)
-            let complete: FormPart = new FormPart {
+        pon blank_line: String = "\r\n\r\n"
+        pon blank_pos: Int = part_content.find(blank_line)
+        si blank_pos >= 0:
+            pon header_block: String = part_content.substr(0, blank_pos)
+            pon part_data: String = part_content.substr(blank_pos + 4, len(part_content))
+            pon fp: FormPart = parse_part_headers(header_block)
+            pon complete: FormPart = new FormPart:
                 name: fp.name,
                 filename: fp.filename,
                 content_type: fp.content_type,
                 data: part_data
-            }
             parts = parts + [complete]
-        }
 
         pos = part_end
-    }
 
-    return parts
-}
+    da parts

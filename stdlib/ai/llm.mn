@@ -8,7 +8,7 @@
 //
 //   let config = llm.openai("sk-...", "gpt-4o")
 //   let resp = llm.chat(config, [llm.user_msg("What is Mapanare?")])
-//   match resp {
+//   match resp:
 //       Ok(r) => { print(r.content) },
 //       Err(e) => { print(llm.error_message(e)) }
 //   }
@@ -37,195 +37,165 @@ extern "C" fn __mn_tls_write_str(tls_ctx: Int, data: String) -> Int
 extern "C" fn __mn_tls_read_str(tls_ctx: Int, max_len: Int) -> String
 extern "C" fn __mn_tls_close_fd(tls_ctx: Int, fd: Int) -> Int
 
-import text::string_utils
+usa text::string_utils
 
 // ---------------------------------------------------------------------------
 // Provider enum
 // ---------------------------------------------------------------------------
 
-pub enum Provider {
-    OpenAI,
-    Anthropic,
-    Groq,
-    Ollama,
-    Custom
-}
++tipo Provider:
+    | OpenAI
+    | Anthropic
+    | Groq
+    | Ollama
+    | Custom
 
-fn provider_to_string(p: Provider) -> String {
-    match p {
-        OpenAI => { return "openai" },
-        Anthropic => { return "anthropic" },
-        Groq => { return "groq" },
-        Ollama => { return "ollama" },
-        Custom => { return "custom" }
-    }
-    return "unknown"
-}
+fn provider_to_string(p: Provider) -> String:
+    match p:
+        OpenAI => { da "openai" },
+        Anthropic => { da "anthropic" },
+        Groq => { da "groq" },
+        Ollama => { da "ollama" },
+        Custom => { da "custom" }
+    da "unknown"
 
 // ---------------------------------------------------------------------------
 // Message role enum
 // ---------------------------------------------------------------------------
 
-pub enum Role {
-    System,
-    User,
-    Assistant,
-    Tool
-}
++tipo Role:
+    | System
+    | User
+    | Assistant
+    | Tool
 
-fn role_to_string(r: Role) -> String {
-    match r {
-        System => { return "system" },
-        User => { return "user" },
-        Assistant => { return "assistant" },
-        Tool => { return "tool" }
-    }
-    return "user"
-}
+fn role_to_string(r: Role) -> String:
+    match r:
+        System => { da "system" },
+        User => { da "user" },
+        Assistant => { da "assistant" },
+        Tool => { da "tool" }
+    da "user"
 
 // ---------------------------------------------------------------------------
 // Error enum
 // ---------------------------------------------------------------------------
 
-pub enum LLMError {
-    ApiError(String),
-    NetworkError(String),
-    ParseError(String),
-    AuthError(String),
-    RateLimited(String),
-    InvalidRequest(String),
-    Timeout(String)
-}
++tipo LLMError:
+    | ApiError(String)
+    | NetworkError(String)
+    | ParseError(String)
+    | AuthError(String)
+    | RateLimited(String)
+    | InvalidRequest(String)
+    | Timeout(String)
 
-fn new_api_error(msg: String) -> LLMError {
-    return ApiError(msg)
-}
+fn new_api_error(msg: String) -> LLMError:
+    da ApiError(msg)
 
-fn new_network_error(msg: String) -> LLMError {
-    return NetworkError(msg)
-}
+fn new_network_error(msg: String) -> LLMError:
+    da NetworkError(msg)
 
-fn new_parse_error(msg: String) -> LLMError {
-    return ParseError(msg)
-}
+fn new_parse_error(msg: String) -> LLMError:
+    da ParseError(msg)
 
-fn new_auth_error(msg: String) -> LLMError {
-    return AuthError(msg)
-}
+fn new_auth_error(msg: String) -> LLMError:
+    da AuthError(msg)
 
-fn new_rate_limit_error(msg: String) -> LLMError {
-    return RateLimited(msg)
-}
+fn new_rate_limit_error(msg: String) -> LLMError:
+    da RateLimited(msg)
 
-fn new_invalid_request(msg: String) -> LLMError {
-    return InvalidRequest(msg)
-}
+fn new_invalid_request(msg: String) -> LLMError:
+    da InvalidRequest(msg)
 
-fn new_timeout_error(msg: String) -> LLMError {
-    return Timeout(msg)
-}
+fn new_timeout_error(msg: String) -> LLMError:
+    da Timeout(msg)
 
-pub fn error_message(e: LLMError) -> String {
-    match e {
-        ApiError(msg) => { return "API error: " + msg },
-        NetworkError(msg) => { return "Network error: " + msg },
-        ParseError(msg) => { return "Parse error: " + msg },
-        AuthError(msg) => { return "Auth error: " + msg },
-        RateLimited(msg) => { return "Rate limited: " + msg },
-        InvalidRequest(msg) => { return "Invalid request: " + msg },
-        Timeout(msg) => { return "Timeout: " + msg }
-    }
-    return "Unknown error"
-}
++fn error_message(e: LLMError) -> String:
+    match e:
+        ApiError(msg) => { da "API error: " + msg },
+        NetworkError(msg) => { da "Network error: " + msg },
+        ParseError(msg) => { da "Parse error: " + msg },
+        AuthError(msg) => { da "Auth error: " + msg },
+        RateLimited(msg) => { da "Rate limited: " + msg },
+        InvalidRequest(msg) => { da "Invalid request: " + msg },
+        Timeout(msg) => { da "Timeout: " + msg }
+    da "Unknown error"
 
 // ---------------------------------------------------------------------------
 // Chat message
 // ---------------------------------------------------------------------------
 
-pub struct ChatMessage {
++tipo ChatMessage:
     role: Role,
     content: String
-}
 
-pub fn system_msg(content: String) -> ChatMessage {
-    return new ChatMessage {role: System(), content: content}
-}
++fn system_msg(content: String) -> ChatMessage:
+    da new ChatMessage {role: System(), content: content}
 
-pub fn user_msg(content: String) -> ChatMessage {
-    return new ChatMessage {role: User(), content: content}
-}
++fn user_msg(content: String) -> ChatMessage:
+    da new ChatMessage {role: User(), content: content}
 
-pub fn assistant_msg(content: String) -> ChatMessage {
-    return new ChatMessage {role: Assistant(), content: content}
-}
++fn assistant_msg(content: String) -> ChatMessage:
+    da new ChatMessage {role: Assistant(), content: content}
 
-pub fn tool_msg(content: String) -> ChatMessage {
-    return new ChatMessage {role: Tool(), content: content}
-}
++fn tool_msg(content: String) -> ChatMessage:
+    da new ChatMessage {role: Tool(), content: content}
 
 // ---------------------------------------------------------------------------
 // Token usage
 // ---------------------------------------------------------------------------
 
-pub struct TokenUsage {
++tipo TokenUsage:
     input_tokens: Int,
     output_tokens: Int,
     total_tokens: Int
-}
 
-fn new_token_usage(input: Int, output: Int) -> TokenUsage {
-    return new TokenUsage {input_tokens: input, output_tokens: output, total_tokens: input + output}
-}
+fn new_token_usage(input: Int, output: Int) -> TokenUsage:
+    da new TokenUsage {input_tokens: input, output_tokens: output, total_tokens: input + output}
 
-fn empty_usage() -> TokenUsage {
-    return new TokenUsage {input_tokens: 0, output_tokens: 0, total_tokens: 0}
-}
+fn empty_usage() -> TokenUsage:
+    da new TokenUsage {input_tokens: 0, output_tokens: 0, total_tokens: 0}
 
 // ---------------------------------------------------------------------------
 // LLM response
 // ---------------------------------------------------------------------------
 
-pub struct LLMResponse {
++tipo LLMResponse:
     content: String,
     model: String,
     usage: TokenUsage,
     finish_reason: String,
     raw_body: String
-}
 
-fn new_llm_response(content: String, model: String, usage: TokenUsage, finish_reason: String, raw: String) -> LLMResponse {
-    return new LLMResponse {content: content, model: model, usage: usage, finish_reason: finish_reason, raw_body: raw}
-}
+fn new_llm_response(content: String, model: String, usage: TokenUsage, finish_reason: String, raw: String) -> LLMResponse:
+    da new LLMResponse {content: content, model: model, usage: usage, finish_reason: finish_reason, raw_body: raw}
 
 // ---------------------------------------------------------------------------
 // Tool definition (for function calling)
 // ---------------------------------------------------------------------------
 
-pub struct ToolDef {
++tipo ToolDef:
     name: String,
     description: String,
     parameters_json: String
-}
 
-pub fn tool(name: String, description: String, params_json: String) -> ToolDef {
-    return new ToolDef {name: name, description: description, parameters_json: params_json}
-}
++fn tool(name: String, description: String, params_json: String) -> ToolDef:
+    da new ToolDef {name: name, description: description, parameters_json: params_json}
 
-pub struct ToolCall {
++tipo ToolCall:
     id: String,
     name: String,
     arguments: String
-}
 
-fn new_tool_call(id: String, name: String, args: String) -> ToolCall {
-    return new ToolCall {id: id, name: name, arguments: args}
-}
+fn new_tool_call(id: String, name: String, args: String) -> ToolCall:
+    da new ToolCall {id: id, name: name, arguments: args}
 
 // ---------------------------------------------------------------------------
 // LLM configuration
 // ---------------------------------------------------------------------------
 
-pub struct LLMConfig {
++tipo LLMConfig:
     provider: Provider,
     api_key: String,
     model: String,
@@ -239,95 +209,79 @@ pub struct LLMConfig {
     timeout_ms: Int,
     tools: List<ToolDef>,
     has_tools: Bool
-}
 
-fn new_config(prov: Provider, key: String, model: String, host: String, port: Int, path: String) -> LLMConfig {
-    return new LLMConfig {provider: prov, api_key: key, model: model, host: host, port: port, path: path, max_tokens: 4096, temperature: 0.7, system_prompt: "", has_system: false, timeout_ms: 120000, tools: [], has_tools: false}
-}
+fn new_config(prov: Provider, key: String, model: String, host: String, port: Int, path: String) -> LLMConfig:
+    da new LLMConfig {provider: prov, api_key: key, model: model, host: host, port: port, path: path, max_tokens: 4096, temperature: 0.7, system_prompt: "", has_system: false, timeout_ms: 120000, tools: [], has_tools: false}
 
 // ---------------------------------------------------------------------------
 // Provider config constructors
 // ---------------------------------------------------------------------------
 
-pub fn openai(api_key: String, model: String) -> LLMConfig {
-    return new_config(OpenAI(), api_key, model, "api.openai.com", 443, "/v1/chat/completions")
-}
++fn openai(api_key: String, model: String) -> LLMConfig:
+    da new_config(OpenAI(), api_key, model, "api.openai.com", 443, "/v1/chat/completions")
 
-pub fn anthropic(api_key: String, model: String) -> LLMConfig {
-    return new_config(Anthropic(), api_key, model, "api.anthropic.com", 443, "/v1/messages")
-}
++fn anthropic(api_key: String, model: String) -> LLMConfig:
+    da new_config(Anthropic(), api_key, model, "api.anthropic.com", 443, "/v1/messages")
 
-pub fn groq(api_key: String, model: String) -> LLMConfig {
-    return new_config(Groq(), api_key, model, "api.groq.com", 443, "/openai/v1/chat/completions")
-}
++fn groq(api_key: String, model: String) -> LLMConfig:
+    da new_config(Groq(), api_key, model, "api.groq.com", 443, "/openai/v1/chat/completions")
 
-pub fn ollama(model: String) -> LLMConfig {
-    return new_config(Ollama(), "", model, "localhost", 11434, "/api/chat")
-}
++fn ollama(model: String) -> LLMConfig:
+    da new_config(Ollama(), "", model, "localhost", 11434, "/api/chat")
 
-pub fn ollama_at(host: String, port: Int, model: String) -> LLMConfig {
-    return new_config(Ollama(), "", model, host, port, "/api/chat")
-}
++fn ollama_at(host: String, port: Int, model: String) -> LLMConfig:
+    da new_config(Ollama(), "", model, host, port, "/api/chat")
 
-pub fn custom(base_host: String, port: Int, path: String, api_key: String, model: String) -> LLMConfig {
-    return new_config(Custom(), api_key, model, base_host, port, path)
-}
++fn custom(base_host: String, port: Int, path: String, api_key: String, model: String) -> LLMConfig:
+    da new_config(Custom(), api_key, model, base_host, port, path)
 
-pub fn openai_compatible(host: String, port: Int, path: String, api_key: String, model: String) -> LLMConfig {
-    return new_config(OpenAI(), api_key, model, host, port, path)
-}
++fn openai_compatible(host: String, port: Int, path: String, api_key: String, model: String) -> LLMConfig:
+    da new_config(OpenAI(), api_key, model, host, port, path)
 
 // ---------------------------------------------------------------------------
 // Config modifiers (immutable — return new config)
 // ---------------------------------------------------------------------------
 
-pub fn with_max_tokens(c: LLMConfig, max_tokens: Int) -> LLMConfig {
-    return new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: max_tokens, temperature: c.temperature, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: c.timeout_ms, tools: c.tools, has_tools: c.has_tools}
-}
++fn with_max_tokens(c: LLMConfig, max_tokens: Int) -> LLMConfig:
+    da new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: max_tokens, temperature: c.temperature, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: c.timeout_ms, tools: c.tools, has_tools: c.has_tools}
 
-pub fn with_temperature(c: LLMConfig, temp: Float) -> LLMConfig {
-    return new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: temp, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: c.timeout_ms, tools: c.tools, has_tools: c.has_tools}
-}
++fn with_temperature(c: LLMConfig, temp: Float) -> LLMConfig:
+    da new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: temp, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: c.timeout_ms, tools: c.tools, has_tools: c.has_tools}
 
-pub fn with_system(c: LLMConfig, system: String) -> LLMConfig {
-    return new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: c.temperature, system_prompt: system, has_system: true, timeout_ms: c.timeout_ms, tools: c.tools, has_tools: c.has_tools}
-}
++fn with_system(c: LLMConfig, system: String) -> LLMConfig:
+    da new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: c.temperature, system_prompt: system, has_system: true, timeout_ms: c.timeout_ms, tools: c.tools, has_tools: c.has_tools}
 
-pub fn with_timeout(c: LLMConfig, timeout_ms: Int) -> LLMConfig {
-    return new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: c.temperature, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: timeout_ms, tools: c.tools, has_tools: c.has_tools}
-}
++fn with_timeout(c: LLMConfig, timeout_ms: Int) -> LLMConfig:
+    da new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: c.temperature, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: timeout_ms, tools: c.tools, has_tools: c.has_tools}
 
-pub fn with_tools(c: LLMConfig, tools: List<ToolDef>) -> LLMConfig {
-    return new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: c.temperature, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: c.timeout_ms, tools: tools, has_tools: true}
-}
++fn with_tools(c: LLMConfig, tools: List<ToolDef>) -> LLMConfig:
+    da new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: c.temperature, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: c.timeout_ms, tools: tools, has_tools: true}
 
 // ---------------------------------------------------------------------------
 // JSON string escaping (for building request bodies)
 // ---------------------------------------------------------------------------
 
-fn escape_json(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        if ch == "\"" {
+fn escape_json(s: String) -> String:
+    pon slen: Int = len(s)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < slen:
+        pon ch: String = s.char_at(i)
+        si ch == "\"":
             result = result + "\\\""
-        } else { if ch == "\\" {
+        } sino { si ch == "\\":
             result = result + "\\\\"
-        } else { if ch == "\n" {
+        } sino { si ch == "\n":
             result = result + "\\n"
-        } else { if ch == "\r" {
+        } sino { si ch == "\r":
             result = result + "\\r"
-        } else { if ch == "\t" {
+        } sino { si ch == "\t":
             result = result + "\\t"
-        } else {
+        sino:
             result = result + ch
         } } } } }
         i = i + 1
-    }
-    return result
-}
+    da result
 
 // ---------------------------------------------------------------------------
 // JSON field extraction (for parsing response bodies)
@@ -337,877 +291,739 @@ fn escape_json(s: String) -> String {
 // ---------------------------------------------------------------------------
 
 // Skip past a JSON value starting at pos. Returns position after the value.
-fn skip_json_value(text: String, pos: Int, slen: Int) -> Int {
-    if pos >= slen { return pos }
-    let ch: String = text.char_at(pos)
+fn skip_json_value(text: String, pos: Int, slen: Int) -> Int:
+    si pos >= slen { da pos }
+    pon ch: String = text.char_at(pos)
 
     // String
-    if ch == "\"" {
-        let mut p: Int = pos + 1
-        while p < slen {
-            let sc: String = text.char_at(p)
-            if sc == "\\" { p = p + 2 } else {
-                if sc == "\"" { return p + 1 }
+    si ch == "\"":
+        pon mut p: Int = pos + 1
+        mien p < slen:
+            pon sc: String = text.char_at(p)
+            si sc == "\\" { p = p + 2 } sino:
+                si sc == "\"" { da p + 1 }
                 p = p + 1
-            }
-        }
-        return p
-    }
+        da p
 
     // Object
-    if ch == "{" {
-        let mut p: Int = pos + 1
-        let mut depth: Int = 1
-        while p < slen {
-            let c: String = text.char_at(p)
-            if c == "\"" {
+    si ch == "{":
+        pon mut p: Int = pos + 1
+        pon mut depth: Int = 1
+        mien p < slen:
+            pon c: String = text.char_at(p)
+            si c == "\"":
                 p = p + 1
-                while p < slen {
-                    let sc: String = text.char_at(p)
-                    if sc == "\\" { p = p + 2 } else {
-                        if sc == "\"" { p = p + 1; break }
+                mien p < slen:
+                    pon sc: String = text.char_at(p)
+                    si sc == "\\" { p = p + 2 } sino:
+                        si sc == "\"" { p = p + 1; sal }
                         p = p + 1
-                    }
-                }
-            } else {
-                if c == "{" { depth = depth + 1 }
-                if c == "}" {
+            sino:
+                si c == "{" { depth = depth + 1 }
+                si c == "}":
                     depth = depth - 1
-                    if depth == 0 { return p + 1 }
-                }
+                    si depth == 0 { da p + 1 }
                 p = p + 1
-            }
-        }
-        return p
-    }
+        da p
 
     // Array
-    if ch == "[" {
-        let mut p: Int = pos + 1
-        let mut depth: Int = 1
-        while p < slen {
-            let c: String = text.char_at(p)
-            if c == "\"" {
+    si ch == "[":
+        pon mut p: Int = pos + 1
+        pon mut depth: Int = 1
+        mien p < slen:
+            pon c: String = text.char_at(p)
+            si c == "\"":
                 p = p + 1
-                while p < slen {
-                    let sc: String = text.char_at(p)
-                    if sc == "\\" { p = p + 2 } else {
-                        if sc == "\"" { p = p + 1; break }
+                mien p < slen:
+                    pon sc: String = text.char_at(p)
+                    si sc == "\\" { p = p + 2 } sino:
+                        si sc == "\"" { p = p + 1; sal }
                         p = p + 1
-                    }
-                }
-            } else {
-                if c == "[" { depth = depth + 1 }
-                if c == "]" {
+            sino:
+                si c == "[" { depth = depth + 1 }
+                si c == "]":
                     depth = depth - 1
-                    if depth == 0 { return p + 1 }
-                }
+                    si depth == 0 { da p + 1 }
                 p = p + 1
-            }
-        }
-        return p
-    }
+        da p
 
     // Number, true, false, null — read until delimiter
-    let mut p: Int = pos
-    while p < slen {
-        let c: String = text.char_at(p)
-        if c == "," { return p }
-        if c == "}" { return p }
-        if c == "]" { return p }
-        if c == " " { return p }
-        if c == "\n" { return p }
-        if c == "\r" { return p }
-        if c == "\t" { return p }
+    pon mut p: Int = pos
+    mien p < slen:
+        pon c: String = text.char_at(p)
+        si c == "," { da p }
+        si c == "}" { da p }
+        si c == "]" { da p }
+        si c == " " { da p }
+        si c == "\n" { da p }
+        si c == "\r" { da p }
+        si c == "\t" { da p }
         p = p + 1
-    }
-    return p
-}
+    da p
 
 // Skip whitespace starting at pos
-fn skip_ws(text: String, pos: Int, slen: Int) -> Int {
-    let mut p: Int = pos
-    while p < slen {
-        let ch: String = text.char_at(p)
-        if ch == " " { p = p + 1 } else {
-            if ch == "\t" { p = p + 1 } else {
-                if ch == "\n" { p = p + 1 } else {
-                    if ch == "\r" { p = p + 1 } else {
-                        return p
-                    }
-                }
-            }
-        }
-    }
-    return p
-}
+fn skip_ws(text: String, pos: Int, slen: Int) -> Int:
+    pon mut p: Int = pos
+    mien p < slen:
+        pon ch: String = text.char_at(p)
+        si ch == " " { p = p + 1 } sino:
+            si ch == "\t" { p = p + 1 } sino:
+                si ch == "\n" { p = p + 1 } sino:
+                    si ch == "\r" { p = p + 1 } sino:
+                        da p
+    da p
 
 // Find the raw value string for a key in a JSON object.
 // text should be a JSON object string (starting with '{').
 // Returns the raw value substring, or "" if not found.
-fn jget(text: String, key: String) -> String {
-    let slen: Int = len(text)
-    let mut pos: Int = 0
+fn jget(text: String, key: String) -> String:
+    pon slen: Int = len(text)
+    pon mut pos: Int = 0
 
     // Skip to opening '{'
     pos = skip_ws(text, pos, slen)
-    if pos >= slen { return "" }
-    if text.char_at(pos) != "{" { return "" }
+    si pos >= slen { da "" }
+    si text.char_at(pos) != "{" { da "" }
     pos = pos + 1
 
-    let mut iter: Int = 0
-    while iter < 100000 {
+    pon mut iter: Int = 0
+    mien iter < 100000:
         iter = iter + 1
         pos = skip_ws(text, pos, slen)
-        if pos >= slen { return "" }
+        si pos >= slen { da "" }
 
-        let ch: String = text.char_at(pos)
-        if ch == "}" { return "" }
-        if ch == "," { pos = pos + 1; pos = skip_ws(text, pos, slen) }
+        pon ch: String = text.char_at(pos)
+        si ch == "}" { da "" }
+        si ch == "," { pos = pos + 1; pos = skip_ws(text, pos, slen) }
 
         // Expect a string key
-        if pos >= slen { return "" }
-        if text.char_at(pos) != "\"" { return "" }
-        let key_start: Int = pos + 1
-        let mut kp: Int = pos + 1
-        while kp < slen {
-            let kc: String = text.char_at(kp)
-            if kc == "\\" { kp = kp + 2 } else {
-                if kc == "\"" { break }
+        si pos >= slen { da "" }
+        si text.char_at(pos) != "\"" { da "" }
+        pon key_start: Int = pos + 1
+        pon mut kp: Int = pos + 1
+        mien kp < slen:
+            pon kc: String = text.char_at(kp)
+            si kc == "\\" { kp = kp + 2 } sino:
+                si kc == "\"" { sal }
                 kp = kp + 1
-            }
-        }
         // Extract key text between key_start and kp
-        let mut found_key: String = ""
-        let mut ki: Int = key_start
-        while ki < kp {
+        pon mut found_key: String = ""
+        pon mut ki: Int = key_start
+        mien ki < kp:
             found_key = found_key + text.char_at(ki)
             ki = ki + 1
-        }
         pos = kp + 1
 
         // Skip whitespace and colon
         pos = skip_ws(text, pos, slen)
-        if pos >= slen { return "" }
-        if text.char_at(pos) != ":" { return "" }
+        si pos >= slen { da "" }
+        si text.char_at(pos) != ":" { da "" }
         pos = pos + 1
         pos = skip_ws(text, pos, slen)
 
         // pos is now at start of value
-        let value_start: Int = pos
-        let value_end: Int = skip_json_value(text, pos, slen)
+        pon value_start: Int = pos
+        pon value_end: Int = skip_json_value(text, pos, slen)
 
-        if found_key == key {
+        si found_key == key:
             // Extract value substring
-            let mut val: String = ""
-            let mut vi: Int = value_start
-            while vi < value_end {
+            pon mut val: String = ""
+            pon mut vi: Int = value_start
+            mien vi < value_end:
                 val = val + text.char_at(vi)
                 vi = vi + 1
-            }
-            return val
-        }
+            da val
 
         pos = value_end
-    }
-    return ""
-}
+    da ""
 
 // Extract a string value (strips quotes and unescapes)
-fn jget_str(text: String, key: String) -> String {
-    let raw: String = jget(text, key)
-    let rlen: Int = len(raw)
-    if rlen < 2 { return "" }
-    if raw.char_at(0) != "\"" { return "" }
+fn jget_str(text: String, key: String) -> String:
+    pon raw: String = jget(text, key)
+    pon rlen: Int = len(raw)
+    si rlen < 2 { da "" }
+    si raw.char_at(0) != "\"" { da "" }
 
-    let mut result: String = ""
-    let mut i: Int = 1
-    while i < rlen {
-        let ch: String = raw.char_at(i)
-        if ch == "\"" { return result }
-        if ch == "\\" {
+    pon mut result: String = ""
+    pon mut i: Int = 1
+    mien i < rlen:
+        pon ch: String = raw.char_at(i)
+        si ch == "\"" { da result }
+        si ch == "\\":
             i = i + 1
-            if i < rlen {
-                let esc: String = raw.char_at(i)
-                if esc == "\"" { result = result + "\"" } else {
-                    if esc == "\\" { result = result + "\\" } else {
-                        if esc == "n" { result = result + "\n" } else {
-                            if esc == "t" { result = result + "\t" } else {
-                                if esc == "r" { result = result + "\r" } else {
+            si i < rlen:
+                pon esc: String = raw.char_at(i)
+                si esc == "\"" { result = result + "\"" } sino:
+                    si esc == "\\" { result = result + "\\" } sino:
+                        si esc == "n" { result = result + "\n" } sino:
+                            si esc == "t" { result = result + "\t" } sino:
+                                si esc == "r" { result = result + "\r" } sino:
                                     result = result + esc
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
+        sino:
             result = result + ch
-        }
         i = i + 1
-    }
-    return result
-}
+    da result
 
 // Extract an integer value
-fn jget_int(text: String, key: String) -> Int {
-    let raw: String = jget(text, key)
-    if len(raw) == 0 { return 0 }
-    return string_utils.parse_int_manual(raw)
-}
+fn jget_int(text: String, key: String) -> Int:
+    pon raw: String = jget(text, key)
+    si len(raw) == 0 { da 0 }
+    da string_utils.parse_int_manual(raw)
 
 // Get the first element of a JSON array value
-fn jget_first(text: String, key: String) -> String {
-    let raw: String = jget(text, key)
-    let rlen: Int = len(raw)
-    if rlen < 2 { return "" }
-    if raw.char_at(0) != "[" { return "" }
+fn jget_first(text: String, key: String) -> String:
+    pon raw: String = jget(text, key)
+    pon rlen: Int = len(raw)
+    si rlen < 2 { da "" }
+    si raw.char_at(0) != "[" { da "" }
 
-    let mut pos: Int = 1
+    pon mut pos: Int = 1
     pos = skip_ws(raw, pos, rlen)
-    if pos >= rlen { return "" }
-    if raw.char_at(pos) == "]" { return "" }
+    si pos >= rlen { da "" }
+    si raw.char_at(pos) == "]" { da "" }
 
-    let value_start: Int = pos
-    let value_end: Int = skip_json_value(raw, pos, rlen)
-    let mut result: String = ""
-    let mut i: Int = value_start
-    while i < value_end {
+    pon value_start: Int = pos
+    pon value_end: Int = skip_json_value(raw, pos, rlen)
+    pon mut result: String = ""
+    pon mut i: Int = value_start
+    mien i < value_end:
         result = result + raw.char_at(i)
         i = i + 1
-    }
-    return result
-}
+    da result
 
 // Extract all elements of a JSON array value as raw strings
-fn jget_array_elements(text: String, key: String) -> List<String> {
-    let raw: String = jget(text, key)
-    let rlen: Int = len(raw)
-    let mut elements: List<String> = []
-    if rlen < 2 { return elements }
-    if raw.char_at(0) != "[" { return elements }
+fn jget_array_elements(text: String, key: String) -> List<String>:
+    pon raw: String = jget(text, key)
+    pon rlen: Int = len(raw)
+    pon mut elements: List<String> = []
+    si rlen < 2 { da elements }
+    si raw.char_at(0) != "[" { da elements }
 
-    let mut pos: Int = 1
-    let mut iter: Int = 0
-    while iter < 100000 {
+    pon mut pos: Int = 1
+    pon mut iter: Int = 0
+    mien iter < 100000:
         iter = iter + 1
         pos = skip_ws(raw, pos, rlen)
-        if pos >= rlen { return elements }
-        if raw.char_at(pos) == "]" { return elements }
-        if raw.char_at(pos) == "," { pos = pos + 1; pos = skip_ws(raw, pos, rlen) }
+        si pos >= rlen { da elements }
+        si raw.char_at(pos) == "]" { da elements }
+        si raw.char_at(pos) == "," { pos = pos + 1; pos = skip_ws(raw, pos, rlen) }
 
-        let value_start: Int = pos
-        let value_end: Int = skip_json_value(raw, pos, rlen)
-        let mut elem: String = ""
-        let mut ei: Int = value_start
-        while ei < value_end {
+        pon value_start: Int = pos
+        pon value_end: Int = skip_json_value(raw, pos, rlen)
+        pon mut elem: String = ""
+        pon mut ei: Int = value_start
+        mien ei < value_end:
             elem = elem + raw.char_at(ei)
             ei = ei + 1
-        }
         elements = elements + [elem]
         pos = value_end
-    }
-    return elements
-}
+    da elements
 
 // ---------------------------------------------------------------------------
 // HTTP internals (HTTPS POST for API calls)
 // ---------------------------------------------------------------------------
 
-struct HttpResult {
+tipo HttpResult:
     status_code: Int,
     body: String,
     ok: Bool,
     error_msg: String
-}
 
-fn new_http_ok(status: Int, body: String) -> HttpResult {
-    return new HttpResult {status_code: status, body: body, ok: true, error_msg: ""}
-}
+fn new_http_ok(status: Int, body: String) -> HttpResult:
+    da new HttpResult {status_code: status, body: body, ok: true, error_msg: ""}
 
-fn new_http_err(msg: String) -> HttpResult {
-    return new HttpResult {status_code: 0, body: "", ok: false, error_msg: msg}
-}
+fn new_http_err(msg: String) -> HttpResult:
+    da new HttpResult {status_code: 0, body: "", ok: false, error_msg: msg}
 
-fn recv_full_tls(tls_ctx: Int) -> String {
-    let mut response: String = ""
-    let mut iterations: Int = 0
-    while iterations < 100000 {
+fn recv_full_tls(tls_ctx: Int) -> String:
+    pon mut response: String = ""
+    pon mut iterations: Int = 0
+    mien iterations < 100000:
         iterations = iterations + 1
-        let chunk: String = __mn_tls_read_str(tls_ctx, 8192)
-        if len(chunk) == 0 { break }
+        pon chunk: String = __mn_tls_read_str(tls_ctx, 8192)
+        si len(chunk) == 0 { sal }
         response = response + chunk
-    }
-    return response
-}
+    da response
 
-fn recv_full_tcp(fd: Int) -> String {
-    let mut response: String = ""
-    let mut iterations: Int = 0
-    while iterations < 100000 {
+fn recv_full_tcp(fd: Int) -> String:
+    pon mut response: String = ""
+    pon mut iterations: Int = 0
+    mien iterations < 100000:
         iterations = iterations + 1
-        let chunk: String = __mn_tcp_recv_str(fd, 8192)
-        if len(chunk) == 0 { break }
+        pon chunk: String = __mn_tcp_recv_str(fd, 8192)
+        si len(chunk) == 0 { sal }
         response = response + chunk
-    }
-    return response
-}
+    da response
 
-fn parse_http_status(raw: String) -> Int {
-    let slen: Int = len(raw)
-    if slen < 12 { return 0 }
+fn parse_http_status(raw: String) -> Int:
+    pon slen: Int = len(raw)
+    si slen < 12 { da 0 }
     // Skip past "HTTP/1.1 "
-    let mut pos: Int = 0
-    while pos < slen {
-        if raw.char_at(pos) == " " { break }
+    pon mut pos: Int = 0
+    mien pos < slen:
+        si raw.char_at(pos) == " " { sal }
         pos = pos + 1
-    }
     pos = pos + 1
-    let mut status_str: String = ""
-    while pos < slen {
-        let ch: String = raw.char_at(pos)
-        if ch == " " { break }
-        if ch == "\r" { break }
+    pon mut status_str: String = ""
+    mien pos < slen:
+        pon ch: String = raw.char_at(pos)
+        si ch == " " { sal }
+        si ch == "\r" { sal }
         status_str = status_str + ch
         pos = pos + 1
-    }
-    return string_utils.parse_int_manual(status_str)
-}
+    da string_utils.parse_int_manual(status_str)
 
-fn extract_http_body(raw: String) -> String {
-    let slen: Int = len(raw)
+fn extract_http_body(raw: String) -> String:
+    pon slen: Int = len(raw)
     // Find \r\n\r\n (end of headers)
-    let mut pos: Int = 0
-    while pos < slen - 3 {
-        if raw.char_at(pos) == "\r" {
-            if raw.char_at(pos + 1) == "\n" {
-                if raw.char_at(pos + 2) == "\r" {
-                    if raw.char_at(pos + 3) == "\n" {
+    pon mut pos: Int = 0
+    mien pos < slen - 3:
+        si raw.char_at(pos) == "\r":
+            si raw.char_at(pos + 1) == "\n":
+                si raw.char_at(pos + 2) == "\r":
+                    si raw.char_at(pos + 3) == "\n":
                         pos = pos + 4
                         // Extract body from pos to end
-                        let mut body: String = ""
-                        while pos < slen {
+                        pon mut body: String = ""
+                        mien pos < slen:
                             body = body + raw.char_at(pos)
                             pos = pos + 1
-                        }
-                        return body
-                    }
-                }
-            }
-        }
+                        da body
         pos = pos + 1
-    }
-    return ""
-}
+    da ""
 
-fn https_post(host: String, port: Int, path: String, headers: Map<String, String>, body: String, timeout_ms: Int) -> HttpResult {
-    let init_r: Int = __mn_net_init()
+fn https_post(host: String, port: Int, path: String, headers: Map<String, String>, body: String, timeout_ms: Int) -> HttpResult:
+    pon init_r: Int = __mn_net_init()
 
-    let fd: Int = __mn_tcp_connect_str(host, port)
-    if fd < 0 {
-        return new_http_err("Failed to connect to " + host + ":" + str(port))
-    }
+    pon fd: Int = __mn_tcp_connect_str(host, port)
+    si fd < 0:
+        da new_http_err("Failed to connect to " + host + ":" + str(port))
 
-    if timeout_ms > 0 {
-        let to_r: Int = __mn_tcp_set_timeout(fd, timeout_ms)
-    }
+    si timeout_ms > 0:
+        pon to_r: Int = __mn_tcp_set_timeout(fd, timeout_ms)
 
     // Build raw HTTP request
-    let mut raw: String = "POST " + path + " HTTP/1.1\r\n"
+    pon mut raw: String = "POST " + path + " HTTP/1.1\r\n"
     raw = raw + "Host: " + host + "\r\n"
     raw = raw + "Content-Length: " + str(len(body)) + "\r\n"
 
-    for key in headers {
+    cada key en headers:
         raw = raw + key + ": " + headers[key] + "\r\n"
-    }
 
     raw = raw + "Connection: close\r\n"
     raw = raw + "\r\n"
     raw = raw + body
 
-    if port == 443 {
+    si port == 443:
         // HTTPS
-        let tls_init: Int = __mn_tls_init()
-        let tls_ctx: Int = __mn_tls_connect_str(fd, host)
-        if tls_ctx == 0 {
-            let close_r: Int = __mn_tcp_close_fd(fd)
-            return new_http_err("TLS handshake failed for " + host)
-        }
+        pon tls_init: Int = __mn_tls_init()
+        pon tls_ctx: Int = __mn_tls_connect_str(fd, host)
+        si tls_ctx == 0:
+            pon close_r: Int = __mn_tcp_close_fd(fd)
+            da new_http_err("TLS handshake failed cada " + host)
 
-        let sent: Int = __mn_tls_write_str(tls_ctx, raw)
-        if sent < 0 {
-            let close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
-            return new_http_err("Failed to send request")
-        }
+        pon sent: Int = __mn_tls_write_str(tls_ctx, raw)
+        si sent < 0:
+            pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
+            da new_http_err("Failed to send request")
 
-        let response: String = recv_full_tls(tls_ctx)
-        let close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
-        let status: Int = parse_http_status(response)
-        let resp_body: String = extract_http_body(response)
-        return new_http_ok(status, resp_body)
-    } else {
+        pon response: String = recv_full_tls(tls_ctx)
+        pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
+        pon status: Int = parse_http_status(response)
+        pon resp_body: String = extract_http_body(response)
+        da new_http_ok(status, resp_body)
+    sino:
         // Plain HTTP (Ollama local)
-        let sent: Int = __mn_tcp_send_str(fd, raw)
-        if sent < 0 {
-            let close_r: Int = __mn_tcp_close_fd(fd)
-            return new_http_err("Failed to send request")
-        }
+        pon sent: Int = __mn_tcp_send_str(fd, raw)
+        si sent < 0:
+            pon close_r: Int = __mn_tcp_close_fd(fd)
+            da new_http_err("Failed to send request")
 
-        let response: String = recv_full_tcp(fd)
-        let close_r: Int = __mn_tcp_close_fd(fd)
-        let status: Int = parse_http_status(response)
-        let resp_body: String = extract_http_body(response)
-        return new_http_ok(status, resp_body)
-    }
+        pon response: String = recv_full_tcp(fd)
+        pon close_r: Int = __mn_tcp_close_fd(fd)
+        pon status: Int = parse_http_status(response)
+        pon resp_body: String = extract_http_body(response)
+        da new_http_ok(status, resp_body)
 
-    return new_http_err("Unreachable")
-}
+    da new_http_err("Unreachable")
 
 // ---------------------------------------------------------------------------
 // Request body builders (JSON string construction per provider)
 // ---------------------------------------------------------------------------
 
-fn message_to_json(msg: ChatMessage) -> String {
-    return "{\"role\":\"" + role_to_string(msg.role) + "\",\"content\":\"" + escape_json(msg.content) + "\"}"
-}
+fn message_to_json(msg: ChatMessage) -> String:
+    da "{\"role\":\"" + role_to_string(msg.role) + "\",\"content\":\"" + escape_json(msg.content) + "\"}"
 
-fn messages_to_json(messages: List<ChatMessage>) -> String {
-    let count: Int = len(messages)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < count {
-        if i > 0 { result = result + "," }
+fn messages_to_json(messages: List<ChatMessage>) -> String:
+    pon count: Int = len(messages)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < count:
+        si i > 0 { result = result + "," }
         result = result + message_to_json(messages[i])
         i = i + 1
-    }
-    return result
-}
+    da result
 
-fn tool_to_json(t: ToolDef) -> String {
-    let mut result: String = "{\"type\":\"function\",\"function\":{"
+fn tool_to_json(t: ToolDef) -> String:
+    pon mut result: String = "{\"type\":\"function\",\"function\":{"
     result = result + "\"name\":\"" + escape_json(t.name) + "\","
     result = result + "\"description\":\"" + escape_json(t.description) + "\","
     result = result + "\"parameters\":" + t.parameters_json
     result = result + "}}"
-    return result
-}
+    da result
 
-fn tools_to_json(tools: List<ToolDef>) -> String {
-    let count: Int = len(tools)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < count {
-        if i > 0 { result = result + "," }
+fn tools_to_json(tools: List<ToolDef>) -> String:
+    pon count: Int = len(tools)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < count:
+        si i > 0 { result = result + "," }
         result = result + tool_to_json(tools[i])
         i = i + 1
-    }
-    return result
-}
+    da result
 
-fn build_openai_body(config: LLMConfig, messages: List<ChatMessage>) -> String {
-    let mut body: String = "{\"model\":\"" + escape_json(config.model) + "\""
+fn build_openai_body(config: LLMConfig, messages: List<ChatMessage>) -> String:
+    pon mut body: String = "{\"model\":\"" + escape_json(config.model) + "\""
     body = body + ",\"messages\":[" + messages_to_json(messages) + "]"
     body = body + ",\"max_tokens\":" + str(config.max_tokens)
     body = body + ",\"temperature\":" + str(config.temperature)
-    if config.has_tools {
+    si config.has_tools:
         body = body + ",\"tools\":[" + tools_to_json(config.tools) + "]"
-    }
     body = body + "}"
-    return body
-}
+    da body
 
-fn build_anthropic_body(config: LLMConfig, messages: List<ChatMessage>) -> String {
+fn build_anthropic_body(config: LLMConfig, messages: List<ChatMessage>) -> String:
     // Anthropic uses a separate "system" field (not in messages array)
-    let mut non_system: List<ChatMessage> = []
-    let mut system_text: String = ""
-    let mut has_sys: Bool = false
+    pon mut non_system: List<ChatMessage> = []
+    pon mut system_text: String = ""
+    pon mut has_sys: Bool = false
 
-    let count: Int = len(messages)
-    let mut i: Int = 0
-    while i < count {
-        match messages[i].role {
-            System => {
+    pon count: Int = len(messages)
+    pon mut i: Int = 0
+    mien i < count:
+        match messages[i].role:
+            System =>:
                 system_text = messages[i].content
                 has_sys = true
-            },
-            _ => {
+            _ =>:
                 non_system = non_system + [messages[i]]
-            }
-        }
         i = i + 1
-    }
 
-    if config.has_system {
+    si config.has_system:
         system_text = config.system_prompt
         has_sys = true
-    }
 
-    let mut body: String = "{\"model\":\"" + escape_json(config.model) + "\""
+    pon mut body: String = "{\"model\":\"" + escape_json(config.model) + "\""
     body = body + ",\"messages\":[" + messages_to_json(non_system) + "]"
     body = body + ",\"max_tokens\":" + str(config.max_tokens)
-    if has_sys {
+    si has_sys:
         body = body + ",\"system\":\"" + escape_json(system_text) + "\""
-    }
-    if config.has_tools {
+    si config.has_tools:
         body = body + ",\"tools\":[" + tools_to_json_anthropic(config.tools) + "]"
-    }
     body = body + "}"
-    return body
-}
+    da body
 
-fn tools_to_json_anthropic(tools: List<ToolDef>) -> String {
-    let count: Int = len(tools)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < count {
-        if i > 0 { result = result + "," }
-        let t: ToolDef = tools[i]
-        let mut tj: String = "{\"name\":\"" + escape_json(t.name) + "\""
+fn tools_to_json_anthropic(tools: List<ToolDef>) -> String:
+    pon count: Int = len(tools)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < count:
+        si i > 0 { result = result + "," }
+        pon t: ToolDef = tools[i]
+        pon mut tj: String = "{\"name\":\"" + escape_json(t.name) + "\""
         tj = tj + ",\"description\":\"" + escape_json(t.description) + "\""
         tj = tj + ",\"input_schema\":" + t.parameters_json + "}"
         result = result + tj
         i = i + 1
-    }
-    return result
-}
+    da result
 
-fn build_ollama_body(config: LLMConfig, messages: List<ChatMessage>) -> String {
-    let mut body: String = "{\"model\":\"" + escape_json(config.model) + "\""
+fn build_ollama_body(config: LLMConfig, messages: List<ChatMessage>) -> String:
+    pon mut body: String = "{\"model\":\"" + escape_json(config.model) + "\""
     body = body + ",\"messages\":[" + messages_to_json(messages) + "]"
     body = body + ",\"stream\":false"
     body = body + "}"
-    return body
-}
+    da body
 
 // ---------------------------------------------------------------------------
 // Request headers per provider
 // ---------------------------------------------------------------------------
 
-fn openai_headers(config: LLMConfig) -> Map<String, String> {
-    let mut hdrs: Map<String, String> = #{}
+fn openai_headers(config: LLMConfig) -> Map<String, String>:
+    pon mut hdrs: Map<String, String> = #{}
     hdrs["Content-Type"] = "application/json"
     hdrs["Authorization"] = "Bearer " + config.api_key
-    return hdrs
-}
+    da hdrs
 
-fn anthropic_headers(config: LLMConfig) -> Map<String, String> {
-    let mut hdrs: Map<String, String> = #{}
+fn anthropic_headers(config: LLMConfig) -> Map<String, String>:
+    pon mut hdrs: Map<String, String> = #{}
     hdrs["Content-Type"] = "application/json"
     hdrs["x-api-key"] = config.api_key
     hdrs["anthropic-version"] = "2023-06-01"
-    return hdrs
-}
+    da hdrs
 
-fn ollama_headers() -> Map<String, String> {
-    let mut hdrs: Map<String, String> = #{}
+fn ollama_headers() -> Map<String, String>:
+    pon mut hdrs: Map<String, String> = #{}
     hdrs["Content-Type"] = "application/json"
-    return hdrs
-}
+    da hdrs
 
 // ---------------------------------------------------------------------------
 // Response parsers (per provider)
 // ---------------------------------------------------------------------------
 
-fn parse_openai_response(body: String) -> Result<LLMResponse, LLMError> {
+fn parse_openai_response(body: String) -> Result<LLMResponse, LLMError>:
     // OpenAI response format:
     // {"id":"...","choices":[{"message":{"content":"...","tool_calls":[...]},"finish_reason":"stop"}],
     //  "usage":{"prompt_tokens":N,"completion_tokens":N,"total_tokens":N},"model":"..."}
-    let first_choice: String = jget_first(body, "choices")
-    if len(first_choice) == 0 {
+    pon first_choice: String = jget_first(body, "choices")
+    si len(first_choice) == 0:
         // Check for error response
-        let err_msg: String = jget_str(jget(body, "error"), "message")
-        if len(err_msg) > 0 {
-            return Err(new_api_error(err_msg))
-        }
-        return Err(new_parse_error("No choices in response"))
-    }
+        pon err_msg: String = jget_str(jget(body, "error"), "message")
+        si len(err_msg) > 0:
+            da Err(new_api_error(err_msg))
+        da Err(new_parse_error("No choices en response"))
 
-    let message: String = jget(first_choice, "message")
-    let content: String = jget_str(message, "content")
-    let finish_reason: String = jget_str(first_choice, "finish_reason")
-    let model: String = jget_str(body, "model")
+    pon message: String = jget(first_choice, "message")
+    pon content: String = jget_str(message, "content")
+    pon finish_reason: String = jget_str(first_choice, "finish_reason")
+    pon model: String = jget_str(body, "model")
 
-    let usage_obj: String = jget(body, "usage")
-    let prompt_tokens: Int = jget_int(usage_obj, "prompt_tokens")
-    let completion_tokens: Int = jget_int(usage_obj, "completion_tokens")
-    let total_tokens: Int = jget_int(usage_obj, "total_tokens")
+    pon usage_obj: String = jget(body, "usage")
+    pon prompt_tokens: Int = jget_int(usage_obj, "prompt_tokens")
+    pon completion_tokens: Int = jget_int(usage_obj, "completion_tokens")
+    pon total_tokens: Int = jget_int(usage_obj, "total_tokens")
 
-    let mut usage: TokenUsage = new_token_usage(prompt_tokens, completion_tokens)
-    if total_tokens > 0 {
+    pon mut usage: TokenUsage = new_token_usage(prompt_tokens, completion_tokens)
+    si total_tokens > 0:
         usage = new TokenUsage {input_tokens: prompt_tokens, output_tokens: completion_tokens, total_tokens: total_tokens}
-    }
 
-    return Ok(new_llm_response(content, model, usage, finish_reason, body))
-}
+    da Ok(new_llm_response(content, model, usage, finish_reason, body))
 
-fn parse_anthropic_response(body: String) -> Result<LLMResponse, LLMError> {
+fn parse_anthropic_response(body: String) -> Result<LLMResponse, LLMError>:
     // Anthropic response format:
     // {"id":"...","type":"message","content":[{"type":"text","text":"..."}],
     //  "model":"...","stop_reason":"end_turn",
     //  "usage":{"input_tokens":N,"output_tokens":N}}
 
     // Check for error
-    let error_type: String = jget_str(body, "type")
-    if error_type == "error" {
-        let err_obj: String = jget(body, "error")
-        let err_msg: String = jget_str(err_obj, "message")
-        return Err(new_api_error(err_msg))
-    }
+    pon error_type: String = jget_str(body, "type")
+    si error_type == "error":
+        pon err_obj: String = jget(body, "error")
+        pon err_msg: String = jget_str(err_obj, "message")
+        da Err(new_api_error(err_msg))
 
     // Extract content from content array
-    let first_content: String = jget_first(body, "content")
-    let mut content: String = ""
-    if len(first_content) > 0 {
-        let content_type: String = jget_str(first_content, "type")
-        if content_type == "text" {
+    pon first_content: String = jget_first(body, "content")
+    pon mut content: String = ""
+    si len(first_content) > 0:
+        pon content_type: String = jget_str(first_content, "type")
+        si content_type == "text":
             content = jget_str(first_content, "text")
-        }
-    }
 
-    let model: String = jget_str(body, "model")
-    let stop_reason: String = jget_str(body, "stop_reason")
+    pon model: String = jget_str(body, "model")
+    pon stop_reason: String = jget_str(body, "stop_reason")
 
-    let usage_obj: String = jget(body, "usage")
-    let input_tokens: Int = jget_int(usage_obj, "input_tokens")
-    let output_tokens: Int = jget_int(usage_obj, "output_tokens")
-    let usage: TokenUsage = new_token_usage(input_tokens, output_tokens)
+    pon usage_obj: String = jget(body, "usage")
+    pon input_tokens: Int = jget_int(usage_obj, "input_tokens")
+    pon output_tokens: Int = jget_int(usage_obj, "output_tokens")
+    pon usage: TokenUsage = new_token_usage(input_tokens, output_tokens)
 
-    return Ok(new_llm_response(content, model, usage, stop_reason, body))
-}
+    da Ok(new_llm_response(content, model, usage, stop_reason, body))
 
-fn parse_ollama_response(body: String) -> Result<LLMResponse, LLMError> {
+fn parse_ollama_response(body: String) -> Result<LLMResponse, LLMError>:
     // Ollama response format:
     // {"model":"...","message":{"role":"assistant","content":"..."},
     //  "done":true,"total_duration":N,...,
     //  "prompt_eval_count":N,"eval_count":N}
-    let message: String = jget(body, "message")
-    if len(message) == 0 {
-        let err: String = jget_str(body, "error")
-        if len(err) > 0 {
-            return Err(new_api_error(err))
-        }
-        return Err(new_parse_error("No message in Ollama response"))
-    }
+    pon message: String = jget(body, "message")
+    si len(message) == 0:
+        pon err: String = jget_str(body, "error")
+        si len(err) > 0:
+            da Err(new_api_error(err))
+        da Err(new_parse_error("No message en Ollama response"))
 
-    let content: String = jget_str(message, "content")
-    let model: String = jget_str(body, "model")
-    let prompt_tokens: Int = jget_int(body, "prompt_eval_count")
-    let completion_tokens: Int = jget_int(body, "eval_count")
-    let usage: TokenUsage = new_token_usage(prompt_tokens, completion_tokens)
+    pon content: String = jget_str(message, "content")
+    pon model: String = jget_str(body, "model")
+    pon prompt_tokens: Int = jget_int(body, "prompt_eval_count")
+    pon completion_tokens: Int = jget_int(body, "eval_count")
+    pon usage: TokenUsage = new_token_usage(prompt_tokens, completion_tokens)
 
-    return Ok(new_llm_response(content, model, usage, "stop", body))
-}
+    da Ok(new_llm_response(content, model, usage, "stop", body))
 
 // ---------------------------------------------------------------------------
 // HTTP status code handling
 // ---------------------------------------------------------------------------
 
-fn check_http_status(status: Int, body: String) -> Result<String, LLMError> {
-    if status == 401 { return Err(new_auth_error("Invalid API key (401)")) }
-    if status == 403 { return Err(new_auth_error("Access denied (403)")) }
-    if status == 429 { return Err(new_rate_limit_error("Rate limited (429). Retry after a delay.")) }
-    if status == 400 {
-        let err_msg: String = jget_str(jget(body, "error"), "message")
-        if len(err_msg) > 0 {
-            return Err(new_invalid_request(err_msg))
-        }
-        return Err(new_invalid_request("Bad request (400)"))
-    }
-    if status == 404 { return Err(new_invalid_request("Model or endpoint not found (404)")) }
-    if status >= 500 { return Err(new_api_error("Server error (" + str(status) + ")")) }
-    if status >= 200 {
-        if status < 300 {
-            return Ok(body)
-        }
-    }
-    return Err(new_api_error("Unexpected HTTP status: " + str(status)))
-}
+fn check_http_status(status: Int, body: String) -> Result<String, LLMError>:
+    si status == 401 { da Err(new_auth_error("Invalid API key (401)")) }
+    si status == 403 { da Err(new_auth_error("Access denied (403)")) }
+    si status == 429 { da Err(new_rate_limit_error("Rate limited (429). Retry after a delay.")) }
+    si status == 400:
+        pon err_msg: String = jget_str(jget(body, "error"), "message")
+        si len(err_msg) > 0:
+            da Err(new_invalid_request(err_msg))
+        da Err(new_invalid_request("Bad request (400)"))
+    si status == 404 { da Err(new_invalid_request("Model or endpoint not found (404)")) }
+    si status >= 500 { da Err(new_api_error("Server error (" + str(status) + ")")) }
+    si status >= 200:
+        si status < 300:
+            da Ok(body)
+    da Err(new_api_error("Unexpected HTTP status: " + str(status)))
 
 // ---------------------------------------------------------------------------
 // Core API
 // ---------------------------------------------------------------------------
 
-fn prepend_system(config: LLMConfig, messages: List<ChatMessage>) -> List<ChatMessage> {
-    if config.has_system {
-        let mut result: List<ChatMessage> = [system_msg(config.system_prompt)]
-        let count: Int = len(messages)
-        let mut i: Int = 0
-        while i < count {
+fn prepend_system(config: LLMConfig, messages: List<ChatMessage>) -> List<ChatMessage>:
+    si config.has_system:
+        pon mut result: List<ChatMessage> = [system_msg(config.system_prompt)]
+        pon count: Int = len(messages)
+        pon mut i: Int = 0
+        mien i < count:
             result = result + [messages[i]]
             i = i + 1
-        }
-        return result
-    }
-    return messages
-}
+        da result
+    da messages
 
-pub fn chat(config: LLMConfig, messages: List<ChatMessage>) -> Result<LLMResponse, LLMError> {
++fn chat(config: LLMConfig, messages: List<ChatMessage>) -> Result<LLMResponse, LLMError>:
     // Build provider-specific request
-    let mut body: String = ""
-    let mut headers: Map<String, String> = #{}
+    pon mut body: String = ""
+    pon mut headers: Map<String, String> = #{}
 
-    match config.provider {
-        OpenAI => {
-            let msgs: List<ChatMessage> = prepend_system(config, messages)
+    match config.provider:
+        OpenAI =>:
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
             body = build_openai_body(config, msgs)
             headers = openai_headers(config)
-        },
-        Anthropic => {
+        Anthropic =>:
             body = build_anthropic_body(config, messages)
             headers = anthropic_headers(config)
-        },
-        Groq => {
-            let msgs: List<ChatMessage> = prepend_system(config, messages)
+        Groq =>:
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
             body = build_openai_body(config, msgs)
             headers = openai_headers(config)
-        },
-        Ollama => {
-            let msgs: List<ChatMessage> = prepend_system(config, messages)
+        Ollama =>:
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
             body = build_ollama_body(config, msgs)
             headers = ollama_headers()
-        },
-        Custom => {
-            let msgs: List<ChatMessage> = prepend_system(config, messages)
+        Custom =>:
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
             body = build_openai_body(config, msgs)
             headers = openai_headers(config)
-        }
-    }
 
     // Send request
-    let http_result: HttpResult = https_post(config.host, config.port, config.path, headers, body, config.timeout_ms)
-    if http_result.ok == false {
-        return Err(new_network_error(http_result.error_msg))
-    }
+    pon http_result: HttpResult = https_post(config.host, config.port, config.path, headers, body, config.timeout_ms)
+    si http_result.ok == false:
+        da Err(new_network_error(http_result.error_msg))
 
     // Check HTTP status
-    let status_check: Result<String, LLMError> = check_http_status(http_result.status_code, http_result.body)
-    match status_check {
-        Err(e) => { return Err(e) },
-        Ok(resp_body) => {
+    pon status_check: Result<String, LLMError> = check_http_status(http_result.status_code, http_result.body)
+    match status_check:
+        Err(e) => { da Err(e) },
+        Ok(resp_body) =>:
             // Parse provider-specific response
-            match config.provider {
-                OpenAI => { return parse_openai_response(resp_body) },
-                Anthropic => { return parse_anthropic_response(resp_body) },
-                Groq => { return parse_openai_response(resp_body) },
-                Ollama => { return parse_ollama_response(resp_body) },
-                Custom => { return parse_openai_response(resp_body) }
-            }
-        }
-    }
+            match config.provider:
+                OpenAI => { da parse_openai_response(resp_body) },
+                Anthropic => { da parse_anthropic_response(resp_body) },
+                Groq => { da parse_openai_response(resp_body) },
+                Ollama => { da parse_ollama_response(resp_body) },
+                Custom => { da parse_openai_response(resp_body) }
 
-    return Err(new_parse_error("Unreachable"))
-}
+    da Err(new_parse_error("Unreachable"))
 
-pub fn complete(config: LLMConfig, prompt: String) -> Result<LLMResponse, LLMError> {
-    return chat(config, [user_msg(prompt)])
-}
++fn complete(config: LLMConfig, prompt: String) -> Result<LLMResponse, LLMError>:
+    da chat(config, [user_msg(prompt)])
 
 // ---------------------------------------------------------------------------
 // Convenience wrappers
 // ---------------------------------------------------------------------------
 
-pub fn ask(config: LLMConfig, prompt: String) -> Result<String, LLMError> {
-    let result: Result<LLMResponse, LLMError> = complete(config, prompt)
-    match result {
-        Ok(resp) => { return Ok(resp.content) },
-        Err(e) => { return Err(e) }
-    }
-}
++fn ask(config: LLMConfig, prompt: String) -> Result<String, LLMError>:
+    pon result: Result<LLMResponse, LLMError> = complete(config, prompt)
+    match result:
+        Ok(resp) => { da Ok(resp.content) },
+        Err(e) => { da Err(e) }
 
-pub fn ask_with_system(config: LLMConfig, system: String, prompt: String) -> Result<String, LLMError> {
-    let c: LLMConfig = with_system(config, system)
-    return ask(c, prompt)
-}
++fn ask_with_system(config: LLMConfig, system: String, prompt: String) -> Result<String, LLMError>:
+    pon c: LLMConfig = with_system(config, system)
+    da ask(c, prompt)
 
 // ---------------------------------------------------------------------------
 // Tool call extraction
 // ---------------------------------------------------------------------------
 
-pub fn get_tool_calls(resp: LLMResponse) -> List<ToolCall> {
++fn get_tool_calls(resp: LLMResponse) -> List<ToolCall>:
     // Parse tool_calls from raw response body
     // OpenAI format: choices[0].message.tool_calls[{id, function: {name, arguments}}]
-    let first_choice: String = jget_first(resp.raw_body, "choices")
-    if len(first_choice) == 0 { return [] }
+    pon first_choice: String = jget_first(resp.raw_body, "choices")
+    si len(first_choice) == 0 { da [] }
 
-    let message: String = jget(first_choice, "message")
-    if len(message) == 0 { return [] }
+    pon message: String = jget(first_choice, "message")
+    si len(message) == 0 { da [] }
 
-    let tool_calls_raw: List<String> = jget_array_elements(message, "tool_calls")
-    let count: Int = len(tool_calls_raw)
-    let mut result: List<ToolCall> = []
-    let mut i: Int = 0
-    while i < count {
-        let tc: String = tool_calls_raw[i]
-        let id: String = jget_str(tc, "id")
-        let func: String = jget(tc, "function")
-        let name: String = jget_str(func, "name")
-        let args: String = jget_str(func, "arguments")
+    pon tool_calls_raw: List<String> = jget_array_elements(message, "tool_calls")
+    pon count: Int = len(tool_calls_raw)
+    pon mut result: List<ToolCall> = []
+    pon mut i: Int = 0
+    mien i < count:
+        pon tc: String = tool_calls_raw[i]
+        pon id: String = jget_str(tc, "id")
+        pon func: String = jget(tc, "function")
+        pon name: String = jget_str(func, "name")
+        pon args: String = jget_str(func, "arguments")
         result = result + [new_tool_call(id, name, args)]
         i = i + 1
-    }
-    return result
-}
+    da result
 
-pub fn has_tool_calls(resp: LLMResponse) -> Bool {
-    if resp.finish_reason == "tool_calls" { return true }
-    if resp.finish_reason == "tool_use" { return true }
-    let calls: List<ToolCall> = get_tool_calls(resp)
-    return len(calls) > 0
-}
++fn has_tool_calls(resp: LLMResponse) -> Bool:
+    si resp.finish_reason == "tool_calls" { da true }
+    si resp.finish_reason == "tool_use" { da true }
+    pon calls: List<ToolCall> = get_tool_calls(resp)
+    da len(calls) > 0
 
 // ---------------------------------------------------------------------------
 // LLM request struct (for agent usage)
 // ---------------------------------------------------------------------------
 
-pub struct LLMRequest {
++tipo LLMRequest:
     config: LLMConfig,
     messages: List<ChatMessage>
-}
 
-pub fn make_chat_request(config: LLMConfig, messages: List<ChatMessage>) -> LLMRequest {
-    return new LLMRequest {config: config, messages: messages}
-}
++fn make_chat_request(config: LLMConfig, messages: List<ChatMessage>) -> LLMRequest:
+    da new LLMRequest {config: config, messages: messages}
 
-pub fn make_complete_request(config: LLMConfig, prompt: String) -> LLMRequest {
-    return new LLMRequest {config: config, messages: [user_msg(prompt)]}
-}
++fn make_complete_request(config: LLMConfig, prompt: String) -> LLMRequest:
+    da new LLMRequest {config: config, messages: [user_msg(prompt)]}
 
-pub fn execute_request(req: LLMRequest) -> Result<LLMResponse, LLMError> {
-    return chat(req.config, req.messages)
-}
++fn execute_request(req: LLMRequest) -> Result<LLMResponse, LLMError>:
+    da chat(req.config, req.messages)
 
 // ---------------------------------------------------------------------------
 // Multi-model helpers
 // ---------------------------------------------------------------------------
 
-pub fn models_agree(responses: List<LLMResponse>) -> Bool {
-    let count: Int = len(responses)
-    if count < 2 { return true }
-    let first: String = responses[0].content
-    let mut i: Int = 1
-    while i < count {
-        if responses[i].content != first { return false }
++fn models_agree(responses: List<LLMResponse>) -> Bool:
+    pon count: Int = len(responses)
+    si count < 2 { da true }
+    pon first: String = responses[0].content
+    pon mut i: Int = 1
+    mien i < count:
+        si responses[i].content != first { da false }
         i = i + 1
-    }
-    return true
-}
+    da true
 
-pub fn total_usage(responses: List<LLMResponse>) -> TokenUsage {
-    let count: Int = len(responses)
-    let mut in_total: Int = 0
-    let mut out_total: Int = 0
-    let mut i: Int = 0
-    while i < count {
++fn total_usage(responses: List<LLMResponse>) -> TokenUsage:
+    pon count: Int = len(responses)
+    pon mut in_total: Int = 0
+    pon mut out_total: Int = 0
+    pon mut i: Int = 0
+    mien i < count:
         in_total = in_total + responses[i].usage.input_tokens
         out_total = out_total + responses[i].usage.output_tokens
         i = i + 1
-    }
-    return new_token_usage(in_total, out_total)
-}
+    da new_token_usage(in_total, out_total)
 
-pub fn usage_summary(usage: TokenUsage) -> String {
-    return "tokens: " + str(usage.input_tokens) + " in, " + str(usage.output_tokens) + " out, " + str(usage.total_tokens) + " total"
-}
++fn usage_summary(usage: TokenUsage) -> String:
+    da "tokens: " + str(usage.input_tokens) + " in, " + str(usage.output_tokens) + " out, " + str(usage.total_tokens) + " total"
 
 // ===========================================================================
 // CONVERSATIONS — Multi-turn stateful chat sessions
@@ -1224,92 +1040,75 @@ pub fn usage_summary(usage: TokenUsage) -> String {
 //   match r2 { Ok(turn) => { print(turn.content) }, Err(e) => {} }
 // ===========================================================================
 
-pub struct Conversation {
++tipo Conversation:
     config: LLMConfig,
     history: List<ChatMessage>,
     total_usage: TokenUsage,
     turn_count: Int
-}
 
-pub struct TurnResult {
++tipo TurnResult:
     content: String,
     response: LLMResponse,
     conversation: Conversation,
     turn_number: Int
-}
 
-pub fn new_conversation(config: LLMConfig) -> Conversation {
-    let mut initial_history: List<ChatMessage> = []
-    if config.has_system {
++fn new_conversation(config: LLMConfig) -> Conversation:
+    pon mut initial_history: List<ChatMessage> = []
+    si config.has_system:
         initial_history = [system_msg(config.system_prompt)]
-    }
-    return new Conversation {config: config, history: initial_history, total_usage: empty_usage(), turn_count: 0}
-}
+    da new Conversation {config: config, history: initial_history, total_usage: empty_usage(), turn_count: 0}
 
-pub fn set_system_prompt(conv: Conversation, system: String) -> Conversation {
++fn set_system_prompt(conv: Conversation, system: String) -> Conversation:
     // Replace or prepend system message
-    let mut new_history: List<ChatMessage> = [system_msg(system)]
-    let count: Int = len(conv.history)
-    let mut i: Int = 0
-    while i < count {
-        match conv.history[i].role {
+    pon mut new_history: List<ChatMessage> = [system_msg(system)]
+    pon count: Int = len(conv.history)
+    pon mut i: Int = 0
+    mien i < count:
+        match conv.history[i].role:
             System => {},
             _ => { new_history = new_history + [conv.history[i]] }
-        }
         i = i + 1
-    }
-    return new Conversation {config: conv.config, history: new_history, total_usage: conv.total_usage, turn_count: conv.turn_count}
-}
+    da new Conversation {config: conv.config, history: new_history, total_usage: conv.total_usage, turn_count: conv.turn_count}
 
-pub fn converse(conv: Conversation, prompt: String) -> Result<TurnResult, LLMError> {
-    let messages: List<ChatMessage> = conv.history + [user_msg(prompt)]
-    let result: Result<LLMResponse, LLMError> = chat(conv.config, messages)
-    match result {
-        Ok(resp) => {
-            let new_history: List<ChatMessage> = messages + [assistant_msg(resp.content)]
-            let new_usage: TokenUsage = new_token_usage(conv.total_usage.input_tokens + resp.usage.input_tokens, conv.total_usage.output_tokens + resp.usage.output_tokens)
-            let new_conv: Conversation = new Conversation {config: conv.config, history: new_history, total_usage: new_usage, turn_count: conv.turn_count + 1}
-            return Ok(new TurnResult {content: resp.content, response: resp, conversation: new_conv, turn_number: conv.turn_count + 1})
-        },
-        Err(e) => { return Err(e) }
-    }
-}
++fn converse(conv: Conversation, prompt: String) -> Result<TurnResult, LLMError>:
+    pon messages: List<ChatMessage> = conv.history + [user_msg(prompt)]
+    pon result: Result<LLMResponse, LLMError> = chat(conv.config, messages)
+    match result:
+        Ok(resp) =>:
+            pon new_history: List<ChatMessage> = messages + [assistant_msg(resp.content)]
+            pon new_usage: TokenUsage = new_token_usage(conv.total_usage.input_tokens + resp.usage.input_tokens, conv.total_usage.output_tokens + resp.usage.output_tokens)
+            pon new_conv: Conversation = new Conversation {config: conv.config, history: new_history, total_usage: new_usage, turn_count: conv.turn_count + 1}
+            da Ok(new TurnResult {content: resp.content, response: resp, conversation: new_conv, turn_number: conv.turn_count + 1})
+        Err(e) => { da Err(e) }
 
-pub fn conversation_history(conv: Conversation) -> List<ChatMessage> {
-    return conv.history
-}
++fn conversation_history(conv: Conversation) -> List<ChatMessage>:
+    da conv.history
 
-pub fn conversation_usage(conv: Conversation) -> TokenUsage {
-    return conv.total_usage
-}
++fn conversation_usage(conv: Conversation) -> TokenUsage:
+    da conv.total_usage
 
 // Trim conversation to last N user/assistant turns (keep system prompt)
-pub fn trim_history(conv: Conversation, max_turns: Int) -> Conversation {
-    let count: Int = len(conv.history)
-    if count <= max_turns * 2 + 1 { return conv }
++fn trim_history(conv: Conversation, max_turns: Int) -> Conversation:
+    pon count: Int = len(conv.history)
+    si count <= max_turns * 2 + 1 { da conv }
 
-    let mut trimmed: List<ChatMessage> = []
+    pon mut trimmed: List<ChatMessage> = []
     // Keep system message if present
-    if count > 0 {
-        match conv.history[0].role {
+    si count > 0:
+        match conv.history[0].role:
             System => { trimmed = [conv.history[0]] },
             _ => {}
-        }
-    }
 
     // Keep last max_turns * 2 messages (user + assistant pairs)
-    let start: Int = count - max_turns * 2
-    let mut i: Int = start
-    if i < 0 { i = 0 }
-    while i < count {
-        match conv.history[i].role {
+    pon start: Int = count - max_turns * 2
+    pon mut i: Int = start
+    si i < 0 { i = 0 }
+    mien i < count:
+        match conv.history[i].role:
             System => {},
             _ => { trimmed = trimmed + [conv.history[i]] }
-        }
         i = i + 1
-    }
-    return new Conversation {config: conv.config, history: trimmed, total_usage: conv.total_usage, turn_count: conv.turn_count}
-}
+    da new Conversation {config: conv.config, history: trimmed, total_usage: conv.total_usage, turn_count: conv.turn_count}
 
 // ===========================================================================
 // RETRY & FALLBACK — Automatic retry with model downgrade
@@ -1322,56 +1121,44 @@ pub fn trim_history(conv: Conversation, max_turns: Int) -> Conversation {
 //   let resp = llm.chat_with_fallback(configs, [llm.user_msg("Hello")])
 // ===========================================================================
 
-pub struct FallbackResult {
++tipo FallbackResult:
     response: LLMResponse,
     provider_index: Int,
     attempts: Int
-}
 
-pub fn chat_with_fallback(configs: List<LLMConfig>, messages: List<ChatMessage>) -> Result<FallbackResult, LLMError> {
-    let count: Int = len(configs)
-    let mut last_error: LLMError = new_invalid_request("No configs provided")
-    let mut i: Int = 0
-    while i < count {
-        let result: Result<LLMResponse, LLMError> = chat(configs[i], messages)
-        match result {
-            Ok(resp) => {
-                return Ok(new FallbackResult {response: resp, provider_index: i, attempts: i + 1})
-            },
-            Err(e) => {
++fn chat_with_fallback(configs: List<LLMConfig>, messages: List<ChatMessage>) -> Result<FallbackResult, LLMError>:
+    pon count: Int = len(configs)
+    pon mut last_error: LLMError = new_invalid_request("No configs provided")
+    pon mut i: Int = 0
+    mien i < count:
+        pon result: Result<LLMResponse, LLMError> = chat(configs[i], messages)
+        match result:
+            Ok(resp) =>:
+                da Ok(new FallbackResult {response: resp, provider_index: i, attempts: i + 1})
+            Err(e) =>:
                 last_error = e
-            }
-        }
         i = i + 1
-    }
-    return Err(last_error)
-}
+    da Err(last_error)
 
-pub fn complete_with_fallback(configs: List<LLMConfig>, prompt: String) -> Result<FallbackResult, LLMError> {
-    return chat_with_fallback(configs, [user_msg(prompt)])
-}
++fn complete_with_fallback(configs: List<LLMConfig>, prompt: String) -> Result<FallbackResult, LLMError>:
+    da chat_with_fallback(configs, [user_msg(prompt)])
 
 // Retry same config N times before failing
-pub fn chat_with_retry(config: LLMConfig, messages: List<ChatMessage>, max_retries: Int) -> Result<LLMResponse, LLMError> {
-    let mut last_error: LLMError = new_invalid_request("No attempts")
-    let mut i: Int = 0
-    while i < max_retries {
-        let result: Result<LLMResponse, LLMError> = chat(config, messages)
-        match result {
-            Ok(resp) => { return Ok(resp) },
-            Err(e) => {
++fn chat_with_retry(config: LLMConfig, messages: List<ChatMessage>, max_retries: Int) -> Result<LLMResponse, LLMError>:
+    pon mut last_error: LLMError = new_invalid_request("No attempts")
+    pon mut i: Int = 0
+    mien i < max_retries:
+        pon result: Result<LLMResponse, LLMError> = chat(config, messages)
+        match result:
+            Ok(resp) => { da Ok(resp) },
+            Err(e) =>:
                 // Don't retry auth errors or invalid requests
-                match e {
-                    AuthError(msg) => { return Err(e) },
-                    InvalidRequest(msg) => { return Err(e) },
+                match e:
+                    AuthError(msg) => { da Err(e) },
+                    InvalidRequest(msg) => { da Err(e) },
                     _ => { last_error = e }
-                }
-            }
-        }
         i = i + 1
-    }
-    return Err(last_error)
-}
+    da Err(last_error)
 
 // ===========================================================================
 // REASONING STRATEGIES — Pure prompt augmentation
@@ -1385,66 +1172,56 @@ pub fn chat_with_retry(config: LLMConfig, messages: List<ChatMessage>, max_retri
 //   let resp = llm.reason(config, "self_discover", "Analyze this code for bugs: ...")
 // ===========================================================================
 
-fn plan_and_solve_prompt(prompt: String) -> String {
-    let mut augmented: String = "Let's approach this step by step using the Plan-and-Solve method.\n\n"
+fn plan_and_solve_prompt(prompt: String) -> String:
+    pon mut augmented: String = "Let's approach this step by step using the Plan-and-Solve method.\n\n"
     augmented = augmented + "STEP 1 — DEVISE A PLAN: Before answering, outline a clear plan to solve this.\n"
     augmented = augmented + "STEP 2 — IDENTIFY KEY VARIABLES: What are the critical inputs, constraints, and unknowns?\n"
     augmented = augmented + "STEP 3 — LOCATE RELEVANT INFORMATION: What facts and context are needed?\n"
-    augmented = augmented + "STEP 4 — VERIFY REASONING: Check each step for logical errors.\n"
+    augmented = augmented + "STEP 4 — VERIFY REASONING: Check each step cada logical errors.\n"
     augmented = augmented + "STEP 5 — ASSEMBLE FINAL ANSWER: Synthesize into a clear, complete response.\n\n"
     augmented = augmented + "QUESTION:\n" + prompt
-    return augmented
-}
+    da augmented
 
-fn self_discover_prompt(prompt: String) -> String {
-    let mut augmented: String = "Apply the following reasoning framework to answer:\n\n"
+fn self_discover_prompt(prompt: String) -> String:
+    pon mut augmented: String = "Apply the following reasoning framework to answer:\n\n"
     augmented = augmented + "1. CRITICAL READING: Identify exactly what is being asked. Restate the question.\n"
     augmented = augmented + "2. DECOMPOSITION: Break the problem into sub-problems.\n"
     augmented = augmented + "3. EVIDENCE GROUNDING: For each claim, cite specific evidence or reasoning.\n"
     augmented = augmented + "4. TYPE CHECKING: Verify types and categories are consistent.\n"
     augmented = augmented + "5. SYNTHESIS: Combine sub-answers into a coherent response.\n\n"
     augmented = augmented + "QUESTION:\n" + prompt
-    return augmented
-}
+    da augmented
 
-fn chain_of_thought_prompt(prompt: String) -> String {
-    return prompt + "\n\nLet's think through this step by step."
-}
+fn chain_of_thought_prompt(prompt: String) -> String:
+    da prompt + "\n\nLet's think through this step by step."
 
-fn apply_reasoning(strategy: String, prompt: String) -> String {
-    if strategy == "plan_and_solve" { return plan_and_solve_prompt(prompt) }
-    if strategy == "self_discover" { return self_discover_prompt(prompt) }
-    if strategy == "cot" { return chain_of_thought_prompt(prompt) }
-    return prompt
-}
+fn apply_reasoning(strategy: String, prompt: String) -> String:
+    si strategy == "plan_and_solve" { da plan_and_solve_prompt(prompt) }
+    si strategy == "self_discover" { da self_discover_prompt(prompt) }
+    si strategy == "cot" { da chain_of_thought_prompt(prompt) }
+    da prompt
 
-pub fn reason(config: LLMConfig, strategy: String, prompt: String) -> Result<LLMResponse, LLMError> {
-    let augmented: String = apply_reasoning(strategy, prompt)
-    return complete(config, augmented)
-}
++fn reason(config: LLMConfig, strategy: String, prompt: String) -> Result<LLMResponse, LLMError>:
+    pon augmented: String = apply_reasoning(strategy, prompt)
+    da complete(config, augmented)
 
-pub fn reason_chat(config: LLMConfig, strategy: String, messages: List<ChatMessage>) -> Result<LLMResponse, LLMError> {
++fn reason_chat(config: LLMConfig, strategy: String, messages: List<ChatMessage>) -> Result<LLMResponse, LLMError>:
     // Augment the last user message with reasoning strategy
-    let count: Int = len(messages)
-    if count == 0 { return Err(new_invalid_request("No messages provided")) }
+    pon count: Int = len(messages)
+    si count == 0 { da Err(new_invalid_request("No messages provided")) }
 
-    let mut augmented_msgs: List<ChatMessage> = []
-    let mut i: Int = 0
-    while i < count {
-        if i == count - 1 {
-            match messages[i].role {
-                User => {
+    pon mut augmented_msgs: List<ChatMessage> = []
+    pon mut i: Int = 0
+    mien i < count:
+        si i == count - 1:
+            match messages[i].role:
+                User =>:
                     augmented_msgs = augmented_msgs + [user_msg(apply_reasoning(strategy, messages[i].content))]
-                },
                 _ => { augmented_msgs = augmented_msgs + [messages[i]] }
-            }
-        } else {
+        sino:
             augmented_msgs = augmented_msgs + [messages[i]]
-        }
         i = i + 1
-    }
-    return chat(config, augmented_msgs)
-}
+    da chat(config, augmented_msgs)
 
 // ===========================================================================
 // SEQUENTIAL CHAINS — Thread output from one model to the next
@@ -1460,84 +1237,71 @@ pub fn reason_chat(config: LLMConfig, strategy: String, messages: List<ChatMessa
 //   let result = llm.run_chain(steps, "quarterly sales data")
 // ===========================================================================
 
-pub struct ChainStep {
++tipo ChainStep:
     config: LLMConfig,
     prompt_template: String
-}
 
-pub struct ChainResult {
++tipo ChainResult:
     final_content: String,
     steps: List<LLMResponse>,
     total_usage: TokenUsage
-}
 
-pub fn chain_step(config: LLMConfig, prompt_template: String) -> ChainStep {
-    return new ChainStep {config: config, prompt_template: prompt_template}
-}
++fn chain_step(config: LLMConfig, prompt_template: String) -> ChainStep:
+    da new ChainStep {config: config, prompt_template: prompt_template}
 
-fn replace_placeholder(template: String, placeholder: String, value: String) -> String {
+fn replace_placeholder(template: String, placeholder: String, value: String) -> String:
     // Simple template replacement: find {placeholder} and replace with value
-    let needle: String = "{" + placeholder + "}"
-    let needle_len: Int = len(needle)
-    let tlen: Int = len(template)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < tlen {
-        let mut matched: Bool = true
-        if i + needle_len <= tlen {
-            let mut j: Int = 0
-            while j < needle_len {
-                if template.char_at(i + j) != needle.char_at(j) {
+    pon needle: String = "{" + placeholder + "}"
+    pon needle_len: Int = len(needle)
+    pon tlen: Int = len(template)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < tlen:
+        pon mut matched: Bool = true
+        si i + needle_len <= tlen:
+            pon mut j: Int = 0
+            mien j < needle_len:
+                si template.char_at(i + j) != needle.char_at(j):
                     matched = false
-                    break
-                }
+                    sal
                 j = j + 1
-            }
-        } else {
+        sino:
             matched = false
-        }
 
-        if matched {
+        si matched:
             result = result + value
             i = i + needle_len
-        } else {
+        sino:
             result = result + template.char_at(i)
             i = i + 1
-        }
-    }
-    return result
-}
+    da result
 
-pub fn run_chain(steps: List<ChainStep>, initial_prompt: String) -> Result<ChainResult, LLMError> {
-    let count: Int = len(steps)
-    let mut previous: String = ""
-    let mut responses: List<LLMResponse> = []
-    let mut in_total: Int = 0
-    let mut out_total: Int = 0
++fn run_chain(steps: List<ChainStep>, initial_prompt: String) -> Result<ChainResult, LLMError>:
+    pon count: Int = len(steps)
+    pon mut previous: String = ""
+    pon mut responses: List<LLMResponse> = []
+    pon mut in_total: Int = 0
+    pon mut out_total: Int = 0
 
-    let mut i: Int = 0
-    while i < count {
-        let step: ChainStep = steps[i]
-        let mut prompt: String = step.prompt_template
+    pon mut i: Int = 0
+    mien i < count:
+        pon step: ChainStep = steps[i]
+        pon mut prompt: String = step.prompt_template
         prompt = replace_placeholder(prompt, "prompt", initial_prompt)
         prompt = replace_placeholder(prompt, "previous", previous)
         prompt = replace_placeholder(prompt, "step", str(i + 1))
 
-        let result: Result<LLMResponse, LLMError> = complete(step.config, prompt)
-        match result {
-            Ok(resp) => {
+        pon result: Result<LLMResponse, LLMError> = complete(step.config, prompt)
+        match result:
+            Ok(resp) =>:
                 previous = resp.content
                 responses = responses + [resp]
                 in_total = in_total + resp.usage.input_tokens
                 out_total = out_total + resp.usage.output_tokens
-            },
-            Err(e) => { return Err(e) }
-        }
+            Err(e) => { da Err(e) }
         i = i + 1
-    }
 
-    return Ok(new ChainResult {final_content: previous, steps: responses, total_usage: new_token_usage(in_total, out_total)})
-}
+    da Ok(new ChainResult {final_content: previous, steps: responses, total_usage: new_token_usage(in_total, out_total)})
 
 // ===========================================================================
 // CONSENSUS — Run same prompt across multiple models, compare results
@@ -1552,94 +1316,78 @@ pub fn run_chain(steps: List<ChainStep>, initial_prompt: String) -> Result<Chain
 //   print("Answer: " + result.best_answer)
 // ===========================================================================
 
-pub struct ConsensusResult {
++tipo ConsensusResult:
     responses: List<LLMResponse>,
     all_agree: Bool,
     best_answer: String,
     total_usage: TokenUsage
-}
 
-pub fn consensus(configs: List<LLMConfig>, prompt: String) -> Result<ConsensusResult, LLMError> {
-    let count: Int = len(configs)
-    let mut responses: List<LLMResponse> = []
-    let mut in_total: Int = 0
-    let mut out_total: Int = 0
++fn consensus(configs: List<LLMConfig>, prompt: String) -> Result<ConsensusResult, LLMError>:
+    pon count: Int = len(configs)
+    pon mut responses: List<LLMResponse> = []
+    pon mut in_total: Int = 0
+    pon mut out_total: Int = 0
 
-    let mut i: Int = 0
-    while i < count {
-        let result: Result<LLMResponse, LLMError> = complete(configs[i], prompt)
-        match result {
-            Ok(resp) => {
+    pon mut i: Int = 0
+    mien i < count:
+        pon result: Result<LLMResponse, LLMError> = complete(configs[i], prompt)
+        match result:
+            Ok(resp) =>:
                 responses = responses + [resp]
                 in_total = in_total + resp.usage.input_tokens
                 out_total = out_total + resp.usage.output_tokens
-            },
-            Err(e) => { return Err(e) }
-        }
+            Err(e) => { da Err(e) }
         i = i + 1
-    }
 
-    let agree: Bool = models_agree(responses)
-    let mut best: String = ""
-    if len(responses) > 0 {
+    pon agree: Bool = models_agree(responses)
+    pon mut best: String = ""
+    si len(responses) > 0:
         best = responses[0].content
-    }
 
     // If models don't agree, pick the response from the model with most output tokens
     // (heuristic: longer = more thorough)
-    if agree == false {
-        let mut best_len: Int = 0
-        let mut j: Int = 0
-        while j < len(responses) {
-            let rlen: Int = len(responses[j].content)
-            if rlen > best_len {
+    si agree == false:
+        pon mut best_len: Int = 0
+        pon mut j: Int = 0
+        mien j < len(responses):
+            pon rlen: Int = len(responses[j].content)
+            si rlen > best_len:
                 best_len = rlen
                 best = responses[j].content
-            }
             j = j + 1
-        }
-    }
 
-    return Ok(new ConsensusResult {responses: responses, all_agree: agree, best_answer: best, total_usage: new_token_usage(in_total, out_total)})
-}
+    da Ok(new ConsensusResult {responses: responses, all_agree: agree, best_answer: best, total_usage: new_token_usage(in_total, out_total)})
 
-pub fn consensus_chat(configs: List<LLMConfig>, messages: List<ChatMessage>) -> Result<ConsensusResult, LLMError> {
-    let count: Int = len(configs)
-    let mut responses: List<LLMResponse> = []
-    let mut in_total: Int = 0
-    let mut out_total: Int = 0
++fn consensus_chat(configs: List<LLMConfig>, messages: List<ChatMessage>) -> Result<ConsensusResult, LLMError>:
+    pon count: Int = len(configs)
+    pon mut responses: List<LLMResponse> = []
+    pon mut in_total: Int = 0
+    pon mut out_total: Int = 0
 
-    let mut i: Int = 0
-    while i < count {
-        let result: Result<LLMResponse, LLMError> = chat(configs[i], messages)
-        match result {
-            Ok(resp) => {
+    pon mut i: Int = 0
+    mien i < count:
+        pon result: Result<LLMResponse, LLMError> = chat(configs[i], messages)
+        match result:
+            Ok(resp) =>:
                 responses = responses + [resp]
                 in_total = in_total + resp.usage.input_tokens
                 out_total = out_total + resp.usage.output_tokens
-            },
-            Err(e) => { return Err(e) }
-        }
+            Err(e) => { da Err(e) }
         i = i + 1
-    }
 
-    let agree: Bool = models_agree(responses)
-    let mut best: String = ""
-    if len(responses) > 0 { best = responses[0].content }
-    if agree == false {
-        let mut best_len: Int = 0
-        let mut j: Int = 0
-        while j < len(responses) {
-            if len(responses[j].content) > best_len {
+    pon agree: Bool = models_agree(responses)
+    pon mut best: String = ""
+    si len(responses) > 0 { best = responses[0].content }
+    si agree == false:
+        pon mut best_len: Int = 0
+        pon mut j: Int = 0
+        mien j < len(responses):
+            si len(responses[j].content) > best_len:
                 best_len = len(responses[j].content)
                 best = responses[j].content
-            }
             j = j + 1
-        }
-    }
 
-    return Ok(new ConsensusResult {responses: responses, all_agree: agree, best_answer: best, total_usage: new_token_usage(in_total, out_total)})
-}
+    da Ok(new ConsensusResult {responses: responses, all_agree: agree, best_answer: best, total_usage: new_token_usage(in_total, out_total)})
 
 // ===========================================================================
 // COST ESTIMATION — Per-model pricing (USD per 1M tokens)
@@ -1652,57 +1400,51 @@ pub fn consensus_chat(configs: List<LLMConfig>, messages: List<ChatMessage>) -> 
 //   print("Estimated: $" + str(cost))
 // ===========================================================================
 
-struct ModelRate {
+tipo ModelRate:
     input_rate: Float,
     output_rate: Float
-}
 
-fn new_rate(input_per_m: Float, output_per_m: Float) -> ModelRate {
-    return new ModelRate {input_rate: input_per_m, output_rate: output_per_m}
-}
+fn new_rate(input_per_m: Float, output_per_m: Float) -> ModelRate:
+    da new ModelRate {input_rate: input_per_m, output_rate: output_per_m}
 
-fn get_model_rate(model: String) -> ModelRate {
+fn get_model_rate(model: String) -> ModelRate:
     // Rates in USD per 1M tokens (as of 2025)
     // OpenAI
-    if model == "gpt-4o" { return new_rate(2.5, 10.0) }
-    if model == "gpt-4o-mini" { return new_rate(0.15, 0.6) }
-    if model == "gpt-4-turbo" { return new_rate(10.0, 30.0) }
-    if model == "gpt-4" { return new_rate(30.0, 60.0) }
-    if model == "gpt-3.5-turbo" { return new_rate(0.5, 1.5) }
-    if model == "o1" { return new_rate(15.0, 60.0) }
-    if model == "o1-mini" { return new_rate(3.0, 12.0) }
-    if model == "o3-mini" { return new_rate(1.1, 4.4) }
+    si model == "gpt-4o" { da new_rate(2.5, 10.0) }
+    si model == "gpt-4o-mini" { da new_rate(0.15, 0.6) }
+    si model == "gpt-4-turbo" { da new_rate(10.0, 30.0) }
+    si model == "gpt-4" { da new_rate(30.0, 60.0) }
+    si model == "gpt-3.5-turbo" { da new_rate(0.5, 1.5) }
+    si model == "o1" { da new_rate(15.0, 60.0) }
+    si model == "o1-mini" { da new_rate(3.0, 12.0) }
+    si model == "o3-mini" { da new_rate(1.1, 4.4) }
     // Anthropic
-    if model == "claude-opus-4-20250514" { return new_rate(15.0, 75.0) }
-    if model == "claude-sonnet-4-20250514" { return new_rate(3.0, 15.0) }
-    if model == "claude-3-5-sonnet-20241022" { return new_rate(3.0, 15.0) }
-    if model == "claude-3-5-haiku-20241022" { return new_rate(0.8, 4.0) }
-    if model == "claude-3-opus-20240229" { return new_rate(15.0, 75.0) }
-    if model == "claude-3-haiku-20240307" { return new_rate(0.25, 1.25) }
+    si model == "claude-opus-4-20250514" { da new_rate(15.0, 75.0) }
+    si model == "claude-sonnet-4-20250514" { da new_rate(3.0, 15.0) }
+    si model == "claude-3-5-sonnet-20241022" { da new_rate(3.0, 15.0) }
+    si model == "claude-3-5-haiku-20241022" { da new_rate(0.8, 4.0) }
+    si model == "claude-3-opus-20240229" { da new_rate(15.0, 75.0) }
+    si model == "claude-3-haiku-20240307" { da new_rate(0.25, 1.25) }
     // Google
-    if model == "gemini-2.0-flash" { return new_rate(0.1, 0.4) }
-    if model == "gemini-1.5-pro" { return new_rate(1.25, 5.0) }
-    if model == "gemini-1.5-flash" { return new_rate(0.075, 0.3) }
+    si model == "gemini-2.0-flash" { da new_rate(0.1, 0.4) }
+    si model == "gemini-1.5-pro" { da new_rate(1.25, 5.0) }
+    si model == "gemini-1.5-flash" { da new_rate(0.075, 0.3) }
     // Groq
-    if model == "llama-3.1-70b-versatile" { return new_rate(0.59, 0.79) }
-    if model == "llama-3.1-8b-instant" { return new_rate(0.05, 0.08) }
-    if model == "mixtral-8x7b-32768" { return new_rate(0.24, 0.24) }
+    si model == "llama-3.1-70b-versatile" { da new_rate(0.59, 0.79) }
+    si model == "llama-3.1-8b-instant" { da new_rate(0.05, 0.08) }
+    si model == "mixtral-8x7b-32768" { da new_rate(0.24, 0.24) }
     // Ollama (free, local)
-    return new_rate(0.0, 0.0)
-}
+    da new_rate(0.0, 0.0)
 
-pub fn estimate_cost(model: String, input_tokens: Int, output_tokens: Int) -> Float {
-    let rate: ModelRate = get_model_rate(model)
-    let in_cost: Float = float(input_tokens) * rate.input_rate / 1000000.0
-    let out_cost: Float = float(output_tokens) * rate.output_rate / 1000000.0
-    return in_cost + out_cost
-}
++fn estimate_cost(model: String, input_tokens: Int, output_tokens: Int) -> Float:
+    pon rate: ModelRate = get_model_rate(model)
+    pon in_cost: Float = float(input_tokens) * rate.input_rate / 1000000.0
+    pon out_cost: Float = float(output_tokens) * rate.output_rate / 1000000.0
+    da in_cost + out_cost
 
-pub fn response_cost(resp: LLMResponse) -> Float {
-    return estimate_cost(resp.model, resp.usage.input_tokens, resp.usage.output_tokens)
-}
++fn response_cost(resp: LLMResponse) -> Float:
+    da estimate_cost(resp.model, resp.usage.input_tokens, resp.usage.output_tokens)
 
-pub fn cost_summary(resp: LLMResponse) -> String {
-    let cost: Float = response_cost(resp)
-    return usage_summary(resp.usage) + ", cost: $" + str(cost)
-}
++fn cost_summary(resp: LLMResponse) -> String:
+    pon cost: Float = response_cost(resp)
+    da usage_summary(resp.usage) + ", cost: $" + str(cost)

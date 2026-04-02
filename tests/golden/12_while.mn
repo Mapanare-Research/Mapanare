@@ -1,7 +1,5 @@
-fn main() {
-    let mut i: Int = 0
-    while i < 5 {
+fn main:
+    pon mut i: Int = 0
+    mien i < 5:
         i = i + 1
-    }
     print(str(i))
-}

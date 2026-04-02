@@ -3,172 +3,143 @@
 // A Table is a collection of named columns, all of equal length.
 // This module provides construction, validation, and basic accessors.
 
-import dato::src::col
+usa dato::src::col
 
 // ---------------------------------------------------------------------------
 // Core Types
 // ---------------------------------------------------------------------------
 
-pub struct Table {
++tipo Table:
     cols: List<col.Col>,
     nrows: Int
-}
 
-pub enum DatoError {
-    ShapeMismatch(String),
-    ColumnNotFound(String),
-    TypeError(String),
-    IoError(String)
-}
++tipo DatoError:
+    | ShapeMismatch(String)
+    | ColumnNotFound(String)
+    | TypeError(String)
+    | IoError(String)
 
 // ---------------------------------------------------------------------------
 // Error helpers
 // ---------------------------------------------------------------------------
 
-pub fn error_message(err: DatoError) -> String {
-    match err {
-        ShapeMismatch(msg) => { return "ShapeMismatch: " + msg },
-        ColumnNotFound(msg) => { return "ColumnNotFound: " + msg },
-        TypeError(msg) => { return "TypeError: " + msg },
-        IoError(msg) => { return "IoError: " + msg }
-    }
-}
++fn error_message(err: DatoError) -> String:
+    match err:
+        ShapeMismatch(msg) => { da "ShapeMismatch: " + msg },
+        ColumnNotFound(msg) => { da "ColumnNotFound: " + msg },
+        TypeError(msg) => { da "TypeError: " + msg },
+        IoError(msg) => { da "IoError: " + msg }
 
-fn new_shape_error(msg: String) -> DatoError {
-    return ShapeMismatch(msg)
-}
+fn new_shape_error(msg: String) -> DatoError:
+    da ShapeMismatch(msg)
 
-fn new_col_not_found(msg: String) -> DatoError {
-    return ColumnNotFound(msg)
-}
+fn new_col_not_found(msg: String) -> DatoError:
+    da ColumnNotFound(msg)
 
-fn new_type_error(msg: String) -> DatoError {
-    return TypeError(msg)
-}
+fn new_type_error(msg: String) -> DatoError:
+    da TypeError(msg)
 
-fn new_io_error(msg: String) -> DatoError {
-    return IoError(msg)
-}
+fn new_io_error(msg: String) -> DatoError:
+    da IoError(msg)
 
 // ---------------------------------------------------------------------------
 // Constructors
 // ---------------------------------------------------------------------------
 
-pub fn table(cols: List<col.Col>) -> Result<Table, DatoError> {
-    let ncols: Int = len(cols)
-    if ncols == 0 {
-        return Ok(new Table { cols: cols, nrows: 0 })
-    }
++fn table(cols: List<col.Col>) -> Result<Table, DatoError>:
+    pon ncols: Int = len(cols)
+    si ncols == 0:
+        da Ok(new Table { cols: cols, nrows: 0 })
 
-    let expected_len: Int = col.col_len(cols[0])
-    let mut i: Int = 1
-    while i < ncols {
-        let clen: Int = col.col_len(cols[i])
-        if clen != expected_len {
-            return Err(new_shape_error("Column '" + cols[i].name + "' has " + str(clen) + " rows, expected " + str(expected_len)))
-        }
+    pon expected_len: Int = col.col_len(cols[0])
+    pon mut i: Int = 1
+    mien i < ncols:
+        pon clen: Int = col.col_len(cols[i])
+        si clen != expected_len:
+            da Err(new_shape_error("Column '" + cols[i].name + "' has " + str(clen) + " rows, expected " + str(expected_len)))
         i = i + 1
-    }
 
-    return Ok(new Table { cols: cols, nrows: expected_len })
-}
+    da Ok(new Table { cols: cols, nrows: expected_len })
 
-pub fn empty() -> Table {
-    let empty_cols: List<col.Col> = []
-    return new Table { cols: empty_cols, nrows: 0 }
-}
++fn empty() -> Table:
+    pon empty_cols: List<col.Col> = []
+    da new Table { cols: empty_cols, nrows: 0 }
 
 // ---------------------------------------------------------------------------
 // Accessors
 // ---------------------------------------------------------------------------
 
-pub fn ncols(t: Table) -> Int {
-    return len(t.cols)
-}
++fn ncols(t: Table) -> Int:
+    da len(t.cols)
 
-pub fn nrows(t: Table) -> Int {
-    return t.nrows
-}
++fn nrows(t: Table) -> Int:
+    da t.nrows
 
-pub fn get_col(t: Table, name: String) -> Option<col.Col> {
-    let n: Int = len(t.cols)
-    let mut i: Int = 0
-    while i < n {
-        if t.cols[i].name == name {
-            return Some(t.cols[i])
-        }
++fn get_col(t: Table, name: String) -> Option<col.Col>:
+    pon n: Int = len(t.cols)
+    pon mut i: Int = 0
+    mien i < n:
+        si t.cols[i].name == name:
+            da Some(t.cols[i])
         i = i + 1
-    }
-    return None
-}
+    da None
 
-pub fn col_names(t: Table) -> List<String> {
-    let n: Int = len(t.cols)
-    let mut result: List<String> = []
-    let mut i: Int = 0
-    while i < n {
++fn col_names(t: Table) -> List<String>:
+    pon n: Int = len(t.cols)
+    pon mut result: List<String> = []
+    pon mut i: Int = 0
+    mien i < n:
         result = result + [t.cols[i].name]
         i = i + 1
-    }
-    return result
-}
+    da result
 
-pub fn dtypes(t: Table) -> List<String> {
-    let n: Int = len(t.cols)
-    let mut result: List<String> = []
-    let mut i: Int = 0
-    while i < n {
++fn dtypes(t: Table) -> List<String>:
+    pon n: Int = len(t.cols)
+    pon mut result: List<String> = []
+    pon mut i: Int = 0
+    mien i < n:
         result = result + [col.dtype_name(t.cols[i].dtype)]
         i = i + 1
-    }
-    return result
-}
+    da result
 
 // ---------------------------------------------------------------------------
 // Column index lookup (internal helper)
 // ---------------------------------------------------------------------------
 
-pub fn col_index(t: Table, name: String) -> Int {
-    let n: Int = len(t.cols)
-    let mut i: Int = 0
-    while i < n {
-        if t.cols[i].name == name {
-            return i
-        }
++fn col_index(t: Table, name: String) -> Int:
+    pon n: Int = len(t.cols)
+    pon mut i: Int = 0
+    mien i < n:
+        si t.cols[i].name == name:
+            da i
         i = i + 1
-    }
-    return -1
-}
+    da -1
 
 // ---------------------------------------------------------------------------
 // Has column check
 // ---------------------------------------------------------------------------
 
-pub fn has_col(t: Table, name: String) -> Bool {
-    return col_index(t, name) >= 0
-}
++fn has_col(t: Table, name: String) -> Bool:
+    da col_index(t, name) >= 0
 
 // ---------------------------------------------------------------------------
 // Build a table from pre-validated columns (no length check)
 // ---------------------------------------------------------------------------
 
-pub fn table_unchecked(cols: List<col.Col>, nrows: Int) -> Table {
-    return new Table { cols: cols, nrows: nrows }
-}
++fn table_unchecked(cols: List<col.Col>, nrows: Int) -> Table:
+    da new Table { cols: cols, nrows: nrows }
 
 // ---------------------------------------------------------------------------
 // Schema comparison
 // ---------------------------------------------------------------------------
 
-pub fn schemas_match(a: Table, b: Table) -> Bool {
-    let na: Int = len(a.cols)
-    let nb: Int = len(b.cols)
-    if na != nb { return false }
-    let mut i: Int = 0
-    while i < na {
-        if a.cols[i].name != b.cols[i].name { return false }
-        if col.dtype_eq(a.cols[i].dtype, b.cols[i].dtype) == false { return false }
++fn schemas_match(a: Table, b: Table) -> Bool:
+    pon na: Int = len(a.cols)
+    pon nb: Int = len(b.cols)
+    si na != nb { da false }
+    pon mut i: Int = 0
+    mien i < na:
+        si a.cols[i].name != b.cols[i].name { da false }
+        si col.dtype_eq(a.cols[i].dtype, b.cols[i].dtype) == false { da false }
         i = i + 1
-    }
-    return true
-}
+    da true

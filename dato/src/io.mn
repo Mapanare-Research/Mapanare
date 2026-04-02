@@ -5,8 +5,8 @@
 // use encoding::csv; this module provides a simpler inline parser
 // with automatic type inference.
 
-import dato::src::col
-import dato::src::table
+usa dato::src::col
+usa dato::src::table
 
 extern "C" fn __mn_file_read(path: String) -> String
 extern "C" fn __mn_file_write(path: String, content: String) -> Int
@@ -15,472 +15,400 @@ extern "C" fn __mn_file_write(path: String, content: String) -> Int
 // Internal: simple CSV parser (split by comma/newline, no quoting)
 // ---------------------------------------------------------------------------
 
-fn parse_csv_simple(content: String) -> List<List<String>> {
-    let slen: Int = len(content)
-    let mut rows: List<List<String>> = []
-    let mut current_row: List<String> = []
-    let mut current_field: String = ""
-    let mut i: Int = 0
+fn parse_csv_simple(content: String) -> List<List<String>>:
+    pon slen: Int = len(content)
+    pon mut rows: List<List<String>> = []
+    pon mut current_row: List<String> = []
+    pon mut current_field: String = ""
+    pon mut i: Int = 0
 
-    while i < slen {
-        let ch: String = content.char_at(i)
-        if ch == "\n" {
+    mien i < slen:
+        pon ch: String = content.char_at(i)
+        si ch == "\n":
             current_row = current_row + [current_field]
             current_field = ""
-            if len(current_row) > 0 {
+            si len(current_row) > 0:
                 // Skip rows that are just a single empty string
-                let mut all_empty: Bool = true
-                let nr: Int = len(current_row)
-                let mut j: Int = 0
-                while j < nr {
-                    if len(current_row[j]) > 0 { all_empty = false }
+                pon mut all_empty: Bool = true
+                pon nr: Int = len(current_row)
+                pon mut j: Int = 0
+                mien j < nr:
+                    si len(current_row[j]) > 0 { all_empty = false }
                     j = j + 1
-                }
-                if all_empty == false {
+                si all_empty == false:
                     rows = rows + [current_row]
-                }
-            }
             current_row = []
-        } else { if ch == "\r" {
+        } sino { si ch == "\r":
             // Skip \r, handle \r\n
-            if i + 1 < slen {
-                if content.char_at(i + 1) == "\n" {
+            si i + 1 < slen:
+                si content.char_at(i + 1) == "\n":
                     i = i + 1
-                }
-            }
             current_row = current_row + [current_field]
             current_field = ""
-            if len(current_row) > 0 {
-                let mut all_empty: Bool = true
-                let nr: Int = len(current_row)
-                let mut j: Int = 0
-                while j < nr {
-                    if len(current_row[j]) > 0 { all_empty = false }
+            si len(current_row) > 0:
+                pon mut all_empty: Bool = true
+                pon nr: Int = len(current_row)
+                pon mut j: Int = 0
+                mien j < nr:
+                    si len(current_row[j]) > 0 { all_empty = false }
                     j = j + 1
-                }
-                if all_empty == false {
+                si all_empty == false:
                     rows = rows + [current_row]
-                }
-            }
             current_row = []
-        } else { if ch == "," {
+        } sino { si ch == ",":
             current_row = current_row + [current_field]
             current_field = ""
-        } else {
+        sino:
             current_field = current_field + ch
         } } }
         i = i + 1
-    }
 
     // Handle last field/row if no trailing newline
-    if len(current_field) > 0 {
+    si len(current_field) > 0:
         current_row = current_row + [current_field]
-    }
-    if len(current_row) > 0 {
+    si len(current_row) > 0:
         rows = rows + [current_row]
-    }
 
-    return rows
-}
+    da rows
 
 // ---------------------------------------------------------------------------
 // Internal: type inference
 // ---------------------------------------------------------------------------
 
-fn is_digit_char(ch: String) -> Bool {
-    if ch == "0" { return true }
-    if ch == "1" { return true }
-    if ch == "2" { return true }
-    if ch == "3" { return true }
-    if ch == "4" { return true }
-    if ch == "5" { return true }
-    if ch == "6" { return true }
-    if ch == "7" { return true }
-    if ch == "8" { return true }
-    if ch == "9" { return true }
-    return false
-}
+fn is_digit_char(ch: String) -> Bool:
+    si ch == "0" { da true }
+    si ch == "1" { da true }
+    si ch == "2" { da true }
+    si ch == "3" { da true }
+    si ch == "4" { da true }
+    si ch == "5" { da true }
+    si ch == "6" { da true }
+    si ch == "7" { da true }
+    si ch == "8" { da true }
+    si ch == "9" { da true }
+    da false
 
-fn is_int_string(s: String) -> Bool {
-    let slen: Int = len(s)
-    if slen == 0 { return false }
-    let mut start: Int = 0
-    if s.char_at(0) == "-" {
-        if slen == 1 { return false }
+fn is_int_string(s: String) -> Bool:
+    pon slen: Int = len(s)
+    si slen == 0 { da false }
+    pon mut start: Int = 0
+    si s.char_at(0) == "-":
+        si slen == 1 { da false }
         start = 1
-    }
-    let mut i: Int = start
-    while i < slen {
-        if is_digit_char(s.char_at(i)) == false { return false }
+    pon mut i: Int = start
+    mien i < slen:
+        si is_digit_char(s.char_at(i)) == false { da false }
         i = i + 1
-    }
-    return true
-}
+    da true
 
-fn is_float_string(s: String) -> Bool {
-    let slen: Int = len(s)
-    if slen == 0 { return false }
-    let mut start: Int = 0
-    if s.char_at(0) == "-" {
-        if slen == 1 { return false }
+fn is_float_string(s: String) -> Bool:
+    pon slen: Int = len(s)
+    si slen == 0 { da false }
+    pon mut start: Int = 0
+    si s.char_at(0) == "-":
+        si slen == 1 { da false }
         start = 1
-    }
-    let mut has_dot: Bool = false
-    let mut has_digit: Bool = false
-    let mut i: Int = start
-    while i < slen {
-        let ch: String = s.char_at(i)
-        if ch == "." {
-            if has_dot { return false }
+    pon mut has_dot: Bool = false
+    pon mut has_digit: Bool = false
+    pon mut i: Int = start
+    mien i < slen:
+        pon ch: String = s.char_at(i)
+        si ch == ".":
+            si has_dot { da false }
             has_dot = true
-        } else { if is_digit_char(ch) {
+        } sino { si is_digit_char(ch):
             has_digit = true
-        } else {
-            return false
+        sino:
+            da false
         } }
         i = i + 1
-    }
-    return has_dot
-}
+    da has_dot
 
-fn is_bool_string(s: String) -> Bool {
-    if s == "true" { return true }
-    if s == "false" { return true }
-    if s == "True" { return true }
-    if s == "False" { return true }
-    return false
-}
+fn is_bool_string(s: String) -> Bool:
+    si s == "true" { da true }
+    si s == "false" { da true }
+    si s == "True" { da true }
+    si s == "False" { da true }
+    da false
 
-fn infer_dtype(values: List<String>) -> col.Dtype {
-    let n: Int = len(values)
-    if n == 0 { return Null() }
+fn infer_dtype(values: List<String>) -> col.Dtype:
+    pon n: Int = len(values)
+    si n == 0 { da Null() }
 
     // Check if all are Int
-    let mut all_int: Bool = true
-    let mut all_float: Bool = true
-    let mut all_bool: Bool = true
+    pon mut all_int: Bool = true
+    pon mut all_float: Bool = true
+    pon mut all_bool: Bool = true
 
-    let mut i: Int = 0
-    while i < n {
-        let v: String = values[i].trim()
-        if len(v) == 0 { i = i + 1 } else {
-            if is_int_string(v) == false { all_int = false }
-            if is_float_string(v) == false {
-                if is_int_string(v) == false { all_float = false }
-            }
-            if is_bool_string(v) == false { all_bool = false }
+    pon mut i: Int = 0
+    mien i < n:
+        pon v: String = values[i].trim()
+        si len(v) == 0 { i = i + 1 } sino:
+            si is_int_string(v) == false { all_int = false }
+            si is_float_string(v) == false:
+                si is_int_string(v) == false { all_float = false }
+            si is_bool_string(v) == false { all_bool = false }
             i = i + 1
-        }
-    }
 
-    if all_int { return I64() }
-    if all_float { return F64() }
-    if all_bool { return Bool() }
-    return Str()
-}
+    si all_int { da I64() }
+    si all_float { da F64() }
+    si all_bool { da Bool() }
+    da Str()
 
 // ---------------------------------------------------------------------------
 // Internal: string to typed value conversion
 // ---------------------------------------------------------------------------
 
-fn parse_int_value(s: String) -> Int {
-    let trimmed: String = s.trim()
-    let slen: Int = len(trimmed)
-    let mut negative: Bool = false
-    let mut start: Int = 0
-    if slen > 0 {
-        if trimmed.char_at(0) == "-" {
+fn parse_int_value(s: String) -> Int:
+    pon trimmed: String = s.trim()
+    pon slen: Int = len(trimmed)
+    pon mut negative: Bool = false
+    pon mut start: Int = 0
+    si slen > 0:
+        si trimmed.char_at(0) == "-":
             negative = true
             start = 1
-        }
-    }
-    let mut result: Int = 0
-    let mut i: Int = start
-    while i < slen {
-        let ch: String = trimmed.char_at(i)
-        if ch == "0" { result = result * 10 } else { if ch == "1" { result = result * 10 + 1 } else { if ch == "2" { result = result * 10 + 2 } else { if ch == "3" { result = result * 10 + 3 } else { if ch == "4" { result = result * 10 + 4 } else { if ch == "5" { result = result * 10 + 5 } else { if ch == "6" { result = result * 10 + 6 } else { if ch == "7" { result = result * 10 + 7 } else { if ch == "8" { result = result * 10 + 8 } else { if ch == "9" { result = result * 10 + 9 } } } } } } } } } }
+    pon mut result: Int = 0
+    pon mut i: Int = start
+    mien i < slen:
+        pon ch: String = trimmed.char_at(i)
+        si ch == "0" { result = result * 10 } sino { si ch == "1" { result = result * 10 + 1 } sino { si ch == "2" { result = result * 10 + 2 } sino { si ch == "3" { result = result * 10 + 3 } sino { si ch == "4" { result = result * 10 + 4 } sino { si ch == "5" { result = result * 10 + 5 } sino { si ch == "6" { result = result * 10 + 6 } sino { si ch == "7" { result = result * 10 + 7 } sino { si ch == "8" { result = result * 10 + 8 } sino { si ch == "9" { result = result * 10 + 9 } } } } } } } } } }
         i = i + 1
-    }
-    if negative { return 0 - result }
-    return result
-}
+    si negative { da 0 - result }
+    da result
 
-fn digit_value(ch: String) -> Int {
-    if ch == "0" { return 0 }
-    if ch == "1" { return 1 }
-    if ch == "2" { return 2 }
-    if ch == "3" { return 3 }
-    if ch == "4" { return 4 }
-    if ch == "5" { return 5 }
-    if ch == "6" { return 6 }
-    if ch == "7" { return 7 }
-    if ch == "8" { return 8 }
-    if ch == "9" { return 9 }
-    return 0
-}
+fn digit_value(ch: String) -> Int:
+    si ch == "0" { da 0 }
+    si ch == "1" { da 1 }
+    si ch == "2" { da 2 }
+    si ch == "3" { da 3 }
+    si ch == "4" { da 4 }
+    si ch == "5" { da 5 }
+    si ch == "6" { da 6 }
+    si ch == "7" { da 7 }
+    si ch == "8" { da 8 }
+    si ch == "9" { da 9 }
+    da 0
 
-fn parse_float_value(s: String) -> Float {
-    let trimmed: String = s.trim()
-    let slen: Int = len(trimmed)
-    let mut negative: Bool = false
-    let mut start: Int = 0
-    if slen > 0 {
-        if trimmed.char_at(0) == "-" {
+fn parse_float_value(s: String) -> Float:
+    pon trimmed: String = s.trim()
+    pon slen: Int = len(trimmed)
+    pon mut negative: Bool = false
+    pon mut start: Int = 0
+    si slen > 0:
+        si trimmed.char_at(0) == "-":
             negative = true
             start = 1
-        }
-    }
-    let mut int_part: Int = 0
-    let mut frac_part: Float = 0.0
-    let mut frac_divisor: Float = 1.0
-    let mut past_dot: Bool = false
-    let mut i: Int = start
-    while i < slen {
-        let ch: String = trimmed.char_at(i)
-        if ch == "." {
+    pon mut int_part: Int = 0
+    pon mut frac_part: Float = 0.0
+    pon mut frac_divisor: Float = 1.0
+    pon mut past_dot: Bool = false
+    pon mut i: Int = start
+    mien i < slen:
+        pon ch: String = trimmed.char_at(i)
+        si ch == ".":
             past_dot = true
-        } else {
-            let dv: Int = digit_value(ch)
-            if past_dot {
+        sino:
+            pon dv: Int = digit_value(ch)
+            si past_dot:
                 frac_divisor = frac_divisor * 10.0
                 frac_part = frac_part + float(dv) / frac_divisor
-            } else {
+            sino:
                 int_part = int_part * 10 + dv
-            }
-        }
         i = i + 1
-    }
-    let mut result: Float = float(int_part) + frac_part
-    if negative { result = 0.0 - result }
-    return result
-}
+    pon mut result: Float = float(int_part) + frac_part
+    si negative { result = 0.0 - result }
+    da result
 
-fn parse_bool_value(s: String) -> Bool {
-    let trimmed: String = s.trim()
-    if trimmed == "true" { return true }
-    if trimmed == "True" { return true }
-    return false
-}
+fn parse_bool_value(s: String) -> Bool:
+    pon trimmed: String = s.trim()
+    si trimmed == "true" { da true }
+    si trimmed == "True" { da true }
+    da false
 
 // ---------------------------------------------------------------------------
 // Internal: build a typed column from string values
 // ---------------------------------------------------------------------------
 
-fn build_typed_col(name: String, values: List<String>, dtype: col.Dtype) -> col.Col {
-    let n: Int = len(values)
-    match dtype {
-        I64 => {
-            let mut data: List<Int> = []
-            let mut mask: List<Bool> = []
-            let mut i: Int = 0
-            while i < n {
-                let v: String = values[i].trim()
-                if len(v) == 0 {
+fn build_typed_col(name: String, values: List<String>, dtype: col.Dtype) -> col.Col:
+    pon n: Int = len(values)
+    match dtype:
+        I64 =>:
+            pon mut data: List<Int> = []
+            pon mut mask: List<Bool> = []
+            pon mut i: Int = 0
+            mien i < n:
+                pon v: String = values[i].trim()
+                si len(v) == 0:
                     data = data + [0]
                     mask = mask + [false]
-                } else {
+                sino:
                     data = data + [parse_int_value(v)]
                     mask = mask + [true]
-                }
                 i = i + 1
-            }
-            return col.col_i64_masked(name, data, mask)
-        },
-        F64 => {
-            let mut data: List<Float> = []
-            let mut mask: List<Bool> = []
-            let mut i: Int = 0
-            while i < n {
-                let v: String = values[i].trim()
-                if len(v) == 0 {
+            da col.col_i64_masked(name, data, mask)
+        F64 =>:
+            pon mut data: List<Float> = []
+            pon mut mask: List<Bool> = []
+            pon mut i: Int = 0
+            mien i < n:
+                pon v: String = values[i].trim()
+                si len(v) == 0:
                     data = data + [0.0]
                     mask = mask + [false]
-                } else {
+                sino:
                     data = data + [parse_float_value(v)]
                     mask = mask + [true]
-                }
                 i = i + 1
-            }
-            return col.col_f64_masked(name, data, mask)
-        },
-        Bool => {
-            let mut data: List<Bool> = []
-            let mut mask: List<Bool> = []
-            let mut i: Int = 0
-            while i < n {
-                let v: String = values[i].trim()
-                if len(v) == 0 {
+            da col.col_f64_masked(name, data, mask)
+        Bool =>:
+            pon mut data: List<Bool> = []
+            pon mut mask: List<Bool> = []
+            pon mut i: Int = 0
+            mien i < n:
+                pon v: String = values[i].trim()
+                si len(v) == 0:
                     data = data + [false]
                     mask = mask + [false]
-                } else {
+                sino:
                     data = data + [parse_bool_value(v)]
                     mask = mask + [true]
-                }
                 i = i + 1
-            }
-            return col.col_bool_masked(name, data, mask)
-        },
-        Str => {
-            return col.col_str(name, values)
-        },
-        Null => {
-            let mut mask: List<Bool> = []
-            let mut i: Int = 0
-            while i < n {
+            da col.col_bool_masked(name, data, mask)
+        Str =>:
+            da col.col_str(name, values)
+        Null =>:
+            pon mut mask: List<Bool> = []
+            pon mut i: Int = 0
+            mien i < n:
                 mask = mask + [false]
                 i = i + 1
-            }
-            return new col.Col { name: name, dtype: Null(), ints: [], floats: [], strs: [], bools: [], mask: mask }
-        }
-    }
-}
+            da new col.Col { name: name, dtype: Null(), ints: [], floats: [], strs: [], bools: [], mask: mask }
 
 // ---------------------------------------------------------------------------
 // csv — load CSV with auto-infer column types
 // ---------------------------------------------------------------------------
 
-pub fn csv(path: String) -> Result<table.Table, table.DatoError> {
-    let content: String = __mn_file_read(path)
-    if len(content) == 0 {
-        return Err(IoError("Failed to read file or file is empty: " + path))
-    }
++fn csv(path: String) -> Result<table.Table, table.DatoError>:
+    pon content: String = __mn_file_read(path)
+    si len(content) == 0:
+        da Err(IoError("Failed to read file or file is empty: " + path))
 
-    let rows: List<List<String>> = parse_csv_simple(content)
-    let nrows: Int = len(rows)
-    if nrows == 0 {
-        return Ok(table.empty())
-    }
+    pon rows: List<List<String>> = parse_csv_simple(content)
+    pon nrows: Int = len(rows)
+    si nrows == 0:
+        da Ok(table.empty())
 
     // First row is headers
-    let headers: List<String> = rows[0]
-    let ncols: Int = len(headers)
+    pon headers: List<String> = rows[0]
+    pon ncols: Int = len(headers)
 
-    if nrows < 2 {
+    si nrows < 2:
         // Headers only, no data
-        let mut empty_cols: List<col.Col> = []
-        let mut i: Int = 0
-        while i < ncols {
+        pon mut empty_cols: List<col.Col> = []
+        pon mut i: Int = 0
+        mien i < ncols:
             empty_cols = empty_cols + [col.col_str(headers[i], [])]
             i = i + 1
-        }
-        return Ok(table.table_unchecked(empty_cols, 0))
-    }
+        da Ok(table.table_unchecked(empty_cols, 0))
 
     // Transpose rows into column-wise lists
-    let data_rows: Int = nrows - 1
-    let mut col_values: List<List<String>> = []
-    let mut ci: Int = 0
-    while ci < ncols {
+    pon data_rows: Int = nrows - 1
+    pon mut col_values: List<List<String>> = []
+    pon mut ci: Int = 0
+    mien ci < ncols:
         col_values = col_values + [[]]
         ci = ci + 1
-    }
 
-    let mut ri: Int = 1
-    while ri < nrows {
-        let row: List<String> = rows[ri]
-        let row_len: Int = len(row)
-        let mut ci2: Int = 0
-        while ci2 < ncols {
-            if ci2 < row_len {
+    pon mut ri: Int = 1
+    mien ri < nrows:
+        pon row: List<String> = rows[ri]
+        pon row_len: Int = len(row)
+        pon mut ci2: Int = 0
+        mien ci2 < ncols:
+            si ci2 < row_len:
                 col_values[ci2] = col_values[ci2] + [row[ci2]]
-            } else {
+            sino:
                 col_values[ci2] = col_values[ci2] + [""]
-            }
             ci2 = ci2 + 1
-        }
         ri = ri + 1
-    }
 
     // Infer types and build columns
-    let mut out_cols: List<col.Col> = []
-    let mut ci3: Int = 0
-    while ci3 < ncols {
-        let dtype: col.Dtype = infer_dtype(col_values[ci3])
+    pon mut out_cols: List<col.Col> = []
+    pon mut ci3: Int = 0
+    mien ci3 < ncols:
+        pon dtype: col.Dtype = infer_dtype(col_values[ci3])
         out_cols = out_cols + [build_typed_col(headers[ci3], col_values[ci3], dtype)]
         ci3 = ci3 + 1
-    }
 
-    return Ok(table.table_unchecked(out_cols, data_rows))
-}
+    da Ok(table.table_unchecked(out_cols, data_rows))
 
 // ---------------------------------------------------------------------------
 // to_csv — write Table to CSV file
 // ---------------------------------------------------------------------------
 
-pub fn to_csv(t: table.Table, path: String) -> Result<Bool, table.DatoError> {
-    let nc: Int = len(t.cols)
-    if nc == 0 {
-        return Err(IoError("Cannot write empty table"))
-    }
++fn to_csv(t: table.Table, path: String) -> Result<Bool, table.DatoError>:
+    pon nc: Int = len(t.cols)
+    si nc == 0:
+        da Err(IoError("Cannot write empty table"))
 
-    let mut content: String = ""
+    pon mut content: String = ""
 
     // Header row
-    let mut ci: Int = 0
-    while ci < nc {
-        if ci > 0 { content = content + "," }
+    pon mut ci: Int = 0
+    mien ci < nc:
+        si ci > 0 { content = content + "," }
         content = content + t.cols[ci].name
         ci = ci + 1
-    }
     content = content + "\n"
 
     // Data rows
-    let mut ri: Int = 0
-    while ri < t.nrows {
-        let mut ci2: Int = 0
-        while ci2 < nc {
-            if ci2 > 0 { content = content + "," }
+    pon mut ri: Int = 0
+    mien ri < t.nrows:
+        pon mut ci2: Int = 0
+        mien ci2 < nc:
+            si ci2 > 0 { content = content + "," }
             content = content + col.value_to_string(t.cols[ci2], ri)
             ci2 = ci2 + 1
-        }
         content = content + "\n"
         ri = ri + 1
-    }
 
-    let wresult: Int = __mn_file_write(path, content)
-    if wresult == 0 {
-        return Err(IoError("Failed to write file: " + path))
-    }
-    return Ok(true)
-}
+    pon wresult: Int = __mn_file_write(path, content)
+    si wresult == 0:
+        da Err(IoError("Failed to write file: " + path))
+    da Ok(true)
 
 // ---------------------------------------------------------------------------
 // from_rows — construct from string rows (all Str columns)
 // ---------------------------------------------------------------------------
 
-pub fn from_rows(col_names: List<String>, rows: List<List<String>>) -> table.Table {
-    let ncols: Int = len(col_names)
-    let nrows: Int = len(rows)
++fn from_rows(col_names: List<String>, rows: List<List<String>>) -> table.Table:
+    pon ncols: Int = len(col_names)
+    pon nrows: Int = len(rows)
 
-    let mut col_values: List<List<String>> = []
-    let mut ci: Int = 0
-    while ci < ncols {
+    pon mut col_values: List<List<String>> = []
+    pon mut ci: Int = 0
+    mien ci < ncols:
         col_values = col_values + [[]]
         ci = ci + 1
-    }
 
-    let mut ri: Int = 0
-    while ri < nrows {
-        let row: List<String> = rows[ri]
-        let row_len: Int = len(row)
-        let mut ci2: Int = 0
-        while ci2 < ncols {
-            if ci2 < row_len {
+    pon mut ri: Int = 0
+    mien ri < nrows:
+        pon row: List<String> = rows[ri]
+        pon row_len: Int = len(row)
+        pon mut ci2: Int = 0
+        mien ci2 < ncols:
+            si ci2 < row_len:
                 col_values[ci2] = col_values[ci2] + [row[ci2]]
-            } else {
+            sino:
                 col_values[ci2] = col_values[ci2] + [""]
-            }
             ci2 = ci2 + 1
-        }
         ri = ri + 1
-    }
 
-    let mut out_cols: List<col.Col> = []
-    let mut ci3: Int = 0
-    while ci3 < ncols {
+    pon mut out_cols: List<col.Col> = []
+    pon mut ci3: Int = 0
+    mien ci3 < ncols:
         out_cols = out_cols + [col.col_str(col_names[ci3], col_values[ci3])]
         ci3 = ci3 + 1
-    }
 
-    return table.table_unchecked(out_cols, nrows)
-}
+    da table.table_unchecked(out_cols, nrows)

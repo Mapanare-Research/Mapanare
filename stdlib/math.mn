@@ -30,395 +30,316 @@ extern "C" fn fmod(x: Float, y: Float) -> Float
 // ---------------------------------------------------------------------------
 
 /// Pi (ratio of circumference to diameter).
-pub fn pi() -> Float {
-    return 3.141592653589793
-}
++fn pi() -> Float:
+    da 3.141592653589793
 
 /// Euler's number (base of the natural logarithm).
-pub fn e() -> Float {
-    return 2.718281828459045
-}
++fn e() -> Float:
+    da 2.718281828459045
 
 /// Tau (2 * pi, full turn in radians).
-pub fn tau() -> Float {
-    return 6.283185307179586
-}
++fn tau() -> Float:
+    da 6.283185307179586
 
 // ---------------------------------------------------------------------------
 // Wrapper functions — Mapanare-idiomatic names over libm externs
 // ---------------------------------------------------------------------------
 
 /// Sine of x (radians).
-pub fn mn_sin(x: Float) -> Float {
-    return sin(x)
-}
++fn mn_sin(x: Float) -> Float:
+    da sin(x)
 
 /// Cosine of x (radians).
-pub fn mn_cos(x: Float) -> Float {
-    return cos(x)
-}
++fn mn_cos(x: Float) -> Float:
+    da cos(x)
 
 /// Tangent of x (radians).
-pub fn mn_tan(x: Float) -> Float {
-    return tan(x)
-}
++fn mn_tan(x: Float) -> Float:
+    da tan(x)
 
 /// Arc sine (inverse sine), result in radians.
-pub fn mn_asin(x: Float) -> Float {
-    return asin(x)
-}
++fn mn_asin(x: Float) -> Float:
+    da asin(x)
 
 /// Arc cosine (inverse cosine), result in radians.
-pub fn mn_acos(x: Float) -> Float {
-    return acos(x)
-}
++fn mn_acos(x: Float) -> Float:
+    da acos(x)
 
 /// Arc tangent (inverse tangent), result in radians.
-pub fn mn_atan(x: Float) -> Float {
-    return atan(x)
-}
++fn mn_atan(x: Float) -> Float:
+    da atan(x)
 
 /// Two-argument arc tangent of y/x, result in radians.
-pub fn mn_atan2(y: Float, x: Float) -> Float {
-    return atan2(y, x)
-}
++fn mn_atan2(y: Float, x: Float) -> Float:
+    da atan2(y, x)
 
 /// Square root of x.
-pub fn mn_sqrt(x: Float) -> Float {
-    return sqrt(x)
-}
++fn mn_sqrt(x: Float) -> Float:
+    da sqrt(x)
 
 /// Raise base to the power exp.
-pub fn mn_pow(base: Float, exp: Float) -> Float {
-    return pow(base, exp)
-}
++fn mn_pow(base: Float, exp: Float) -> Float:
+    da pow(base, exp)
 
 /// Natural logarithm (base e) of x.
-pub fn mn_log(x: Float) -> Float {
-    return log(x)
-}
++fn mn_log(x: Float) -> Float:
+    da log(x)
 
 /// Base-2 logarithm of x.
-pub fn mn_log2(x: Float) -> Float {
-    return log2(x)
-}
++fn mn_log2(x: Float) -> Float:
+    da log2(x)
 
 /// Base-10 logarithm of x.
-pub fn mn_log10(x: Float) -> Float {
-    return log10(x)
-}
++fn mn_log10(x: Float) -> Float:
+    da log10(x)
 
 /// Floor: largest integer value not greater than x.
-pub fn mn_floor(x: Float) -> Float {
-    return floor(x)
-}
++fn mn_floor(x: Float) -> Float:
+    da floor(x)
 
 /// Ceiling: smallest integer value not less than x.
-pub fn mn_ceil(x: Float) -> Float {
-    return ceil(x)
-}
++fn mn_ceil(x: Float) -> Float:
+    da ceil(x)
 
 /// Absolute value of a float.
-pub fn mn_abs(x: Float) -> Float {
-    return fabs(x)
-}
++fn mn_abs(x: Float) -> Float:
+    da fabs(x)
 
 /// Floating-point remainder of x / y.
-pub fn mn_fmod(x: Float, y: Float) -> Float {
-    return fmod(x, y)
-}
++fn mn_fmod(x: Float, y: Float) -> Float:
+    da fmod(x, y)
 
 // ---------------------------------------------------------------------------
 // Pure Mapanare — integer helpers
 // ---------------------------------------------------------------------------
 
 /// Absolute value of an integer.
-pub fn abs_int(x: Int) -> Int {
-    if x < 0 {
-        return 0 - x
-    }
-    return x
-}
++fn abs_int(x: Int) -> Int:
+    si x < 0:
+        da 0 - x
+    da x
 
 /// Sign of an integer: returns -1, 0, or 1.
-pub fn sign_int(x: Int) -> Int {
-    if x < 0 {
-        return -1
-    }
-    if x > 0 {
-        return 1
-    }
-    return 0
-}
++fn sign_int(x: Int) -> Int:
+    si x < 0:
+        da -1
+    si x > 0:
+        da 1
+    da 0
 
 /// Minimum of two integers.
-pub fn min_int(a: Int, b: Int) -> Int {
-    if a <= b {
-        return a
-    }
-    return b
-}
++fn min_int(a: Int, b: Int) -> Int:
+    si a <= b:
+        da a
+    da b
 
 /// Maximum of two integers.
-pub fn max_int(a: Int, b: Int) -> Int {
-    if a >= b {
-        return a
-    }
-    return b
-}
++fn max_int(a: Int, b: Int) -> Int:
+    si a >= b:
+        da a
+    da b
 
 /// Clamp an integer to the range [lo, hi].
-pub fn clamp_int(x: Int, lo: Int, hi: Int) -> Int {
-    if x < lo {
-        return lo
-    }
-    if x > hi {
-        return hi
-    }
-    return x
-}
++fn clamp_int(x: Int, lo: Int, hi: Int) -> Int:
+    si x < lo:
+        da lo
+    si x > hi:
+        da hi
+    da x
 
 // ---------------------------------------------------------------------------
 // Pure Mapanare — float helpers
 // ---------------------------------------------------------------------------
 
 /// Sign of a float: returns -1.0, 0.0, or 1.0.
-pub fn sign(x: Float) -> Float {
-    if x < 0.0 {
-        return -1.0
-    }
-    if x > 0.0 {
-        return 1.0
-    }
-    return 0.0
-}
++fn sign(x: Float) -> Float:
+    si x < 0.0:
+        da -1.0
+    si x > 0.0:
+        da 1.0
+    da 0.0
 
 /// Minimum of two floats.
-pub fn min_float(a: Float, b: Float) -> Float {
-    if a <= b {
-        return a
-    }
-    return b
-}
++fn min_float(a: Float, b: Float) -> Float:
+    si a <= b:
+        da a
+    da b
 
 /// Maximum of two floats.
-pub fn max_float(a: Float, b: Float) -> Float {
-    if a >= b {
-        return a
-    }
-    return b
-}
++fn max_float(a: Float, b: Float) -> Float:
+    si a >= b:
+        da a
+    da b
 
 /// Clamp a float to the range [lo, hi].
-pub fn clamp(x: Float, lo: Float, hi: Float) -> Float {
-    if x < lo {
-        return lo
-    }
-    if x > hi {
-        return hi
-    }
-    return x
-}
++fn clamp(x: Float, lo: Float, hi: Float) -> Float:
+    si x < lo:
+        da lo
+    si x > hi:
+        da hi
+    da x
 
 /// Linear interpolation between a and b: a + (b - a) * t.
-pub fn lerp(a: Float, b: Float, t: Float) -> Float {
-    return a + (b - a) * t
-}
++fn lerp(a: Float, b: Float, t: Float) -> Float:
+    da a + (b - a) * t
 
 /// Remap x from range [in_lo, in_hi] to range [out_lo, out_hi].
-pub fn remap(x: Float, in_lo: Float, in_hi: Float, out_lo: Float, out_hi: Float) -> Float {
-    let t: Float = (x - in_lo) / (in_hi - in_lo)
-    return out_lo + (out_hi - out_lo) * t
-}
++fn remap(x: Float, in_lo: Float, in_hi: Float, out_lo: Float, out_hi: Float) -> Float:
+    pon t: Float = (x - in_lo) / (in_hi - in_lo)
+    da out_lo + (out_hi - out_lo) * t
 
 /// Convert radians to degrees.
-pub fn degrees(radians: Float) -> Float {
-    return radians * 180.0 / 3.141592653589793
-}
++fn degrees(radians: Float) -> Float:
+    da radians * 180.0 / 3.141592653589793
 
 /// Convert degrees to radians.
-pub fn radians(degrees: Float) -> Float {
-    return degrees * 3.141592653589793 / 180.0
-}
++fn radians(degrees: Float) -> Float:
+    da degrees * 3.141592653589793 / 180.0
 
 /// Round a float to N decimal places.
 /// Uses floor(x * factor + 0.5) / factor.
-pub fn round_to(x: Float, decimals: Int) -> Float {
-    let mut factor: Float = 1.0
-    let mut i: Int = 0
-    while i < decimals {
++fn round_to(x: Float, decimals: Int) -> Float:
+    pon mut factor: Float = 1.0
+    pon mut i: Int = 0
+    mien i < decimals:
         factor = factor * 10.0
         i = i + 1
-    }
-    return floor(x * factor + 0.5) / factor
-}
+    da floor(x * factor + 0.5) / factor
 
 // ---------------------------------------------------------------------------
 // Statistics — operate on List<Float>
 // ---------------------------------------------------------------------------
 
 /// Sum of all values in a list.
-pub fn sum(values: List<Float>) -> Float {
-    let n: Int = len(values)
-    let mut total: Float = 0.0
-    let mut i: Int = 0
-    while i < n {
++fn sum(values: List<Float>) -> Float:
+    pon n: Int = len(values)
+    pon mut total: Float = 0.0
+    pon mut i: Int = 0
+    mien i < n:
         total = total + values[i]
         i = i + 1
-    }
-    return total
-}
+    da total
 
 /// Arithmetic mean of a list of values.
-pub fn mean(values: List<Float>) -> Float {
-    let n: Int = len(values)
-    if n == 0 {
-        return 0.0
-    }
-    return sum(values) / float(n)
-}
++fn mean(values: List<Float>) -> Float:
+    pon n: Int = len(values)
+    si n == 0:
+        da 0.0
+    da sum(values) / float(n)
 
 /// Median of a list of values (sorts internally via insertion sort).
-pub fn median(values: List<Float>) -> Float {
-    let n: Int = len(values)
-    if n == 0 {
-        return 0.0
-    }
-    let sorted: List<Float> = sort_floats(values)
-    let mid: Int = n / 2
-    if n % 2 == 0 {
-        return (sorted[mid - 1] + sorted[mid]) / 2.0
-    }
-    return sorted[mid]
-}
++fn median(values: List<Float>) -> Float:
+    pon n: Int = len(values)
+    si n == 0:
+        da 0.0
+    pon sorted: List<Float> = sort_floats(values)
+    pon mid: Int = n / 2
+    si n % 2 == 0:
+        da (sorted[mid - 1] + sorted[mid]) / 2.0
+    da sorted[mid]
 
 /// Variance of a list of values.
 /// If population is true, divides by N (population variance).
 /// If population is false, divides by N-1 (sample variance).
-pub fn variance(values: List<Float>, population: Bool) -> Float {
-    let n: Int = len(values)
-    if n == 0 {
-        return 0.0
-    }
-    let m: Float = mean(values)
-    let mut sq_sum: Float = 0.0
-    let mut i: Int = 0
-    while i < n {
-        let diff: Float = values[i] - m
++fn variance(values: List<Float>, population: Bool) -> Float:
+    pon n: Int = len(values)
+    si n == 0:
+        da 0.0
+    pon m: Float = mean(values)
+    pon mut sq_sum: Float = 0.0
+    pon mut i: Int = 0
+    mien i < n:
+        pon diff: Float = values[i] - m
         sq_sum = sq_sum + diff * diff
         i = i + 1
-    }
-    if population {
-        return sq_sum / float(n)
-    }
-    if n == 1 {
-        return 0.0
-    }
-    return sq_sum / float(n - 1)
-}
+    si population:
+        da sq_sum / float(n)
+    si n == 1:
+        da 0.0
+    da sq_sum / float(n - 1)
 
 /// Standard deviation of a list of values.
 /// If population is true, uses population variance; otherwise sample variance.
-pub fn stddev(values: List<Float>, population: Bool) -> Float {
-    return sqrt(variance(values, population))
-}
++fn stddev(values: List<Float>, population: Bool) -> Float:
+    da sqrt(variance(values, population))
 
 /// Minimum value in a list.
-pub fn min_val(values: List<Float>) -> Float {
-    let n: Int = len(values)
-    if n == 0 {
-        return 0.0
-    }
-    let mut result: Float = values[0]
-    let mut i: Int = 1
-    while i < n {
-        if values[i] < result {
++fn min_val(values: List<Float>) -> Float:
+    pon n: Int = len(values)
+    si n == 0:
+        da 0.0
+    pon mut result: Float = values[0]
+    pon mut i: Int = 1
+    mien i < n:
+        si values[i] < result:
             result = values[i]
-        }
         i = i + 1
-    }
-    return result
-}
+    da result
 
 /// Maximum value in a list.
-pub fn max_val(values: List<Float>) -> Float {
-    let n: Int = len(values)
-    if n == 0 {
-        return 0.0
-    }
-    let mut result: Float = values[0]
-    let mut i: Int = 1
-    while i < n {
-        if values[i] > result {
++fn max_val(values: List<Float>) -> Float:
+    pon n: Int = len(values)
+    si n == 0:
+        da 0.0
+    pon mut result: Float = values[0]
+    pon mut i: Int = 1
+    mien i < n:
+        si values[i] > result:
             result = values[i]
-        }
         i = i + 1
-    }
-    return result
-}
+    da result
 
 /// Percentile of a sorted list using linear interpolation.
 /// p is in the range 0.0 to 100.0.
-pub fn percentile(values: List<Float>, p: Float) -> Float {
-    let n: Int = len(values)
-    if n == 0 {
-        return 0.0
-    }
-    if n == 1 {
-        return values[0]
-    }
-    let sorted: List<Float> = sort_floats(values)
-    let clamped: Float = clamp(p, 0.0, 100.0)
-    let rank: Float = (clamped / 100.0) * float(n - 1)
-    let lo: Int = int(floor(rank))
-    let hi: Int = int(ceil(rank))
-    if lo == hi {
-        return sorted[lo]
-    }
-    let frac: Float = rank - float(lo)
-    return sorted[lo] + (sorted[hi] - sorted[lo]) * frac
-}
++fn percentile(values: List<Float>, p: Float) -> Float:
+    pon n: Int = len(values)
+    si n == 0:
+        da 0.0
+    si n == 1:
+        da values[0]
+    pon sorted: List<Float> = sort_floats(values)
+    pon clamped: Float = clamp(p, 0.0, 100.0)
+    pon rank: Float = (clamped / 100.0) * float(n - 1)
+    pon lo: Int = int(floor(rank))
+    pon hi: Int = int(ceil(rank))
+    si lo == hi:
+        da sorted[lo]
+    pon frac: Float = rank - float(lo)
+    da sorted[lo] + (sorted[hi] - sorted[lo]) * frac
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
 /// Insertion sort for a list of floats (used by median and percentile).
-fn sort_floats(values: List<Float>) -> List<Float> {
-    let n: Int = len(values)
+fn sort_floats(values: List<Float>) -> List<Float>:
+    pon n: Int = len(values)
     // Copy into a mutable list
-    let mut arr: List<Float> = []
-    let mut k: Int = 0
-    while k < n {
+    pon mut arr: List<Float> = []
+    pon mut k: Int = 0
+    mien k < n:
         arr = arr + [values[k]]
         k = k + 1
-    }
     // Insertion sort
-    let mut i: Int = 1
-    while i < n {
-        let key: Float = arr[i]
-        let mut j: Int = i - 1
-        let mut insert_at: Int = 0
-        let mut found: Bool = false
-        while j >= 0 {
-            if found == false {
-                if arr[j] > key {
+    pon mut i: Int = 1
+    mien i < n:
+        pon key: Float = arr[i]
+        pon mut j: Int = i - 1
+        pon mut insert_at: Int = 0
+        pon mut found: Bool = false
+        mien j >= 0:
+            si found == false:
+                si arr[j] > key:
                     arr[j + 1] = arr[j]
                     j = j - 1
-                } else {
+                sino:
                     insert_at = j + 1
                     found = true
                     j = -1
-                }
-            } else {
+            sino:
                 j = -1
-            }
-        }
-        if found == false {
+        si found == false:
             insert_at = 0
-        }
         arr[insert_at] = key
         i = i + 1
-    }
-    return arr
-}
+    da arr

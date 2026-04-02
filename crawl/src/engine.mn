@@ -4,12 +4,12 @@
 // respects robots.txt, and enforces depth/page/domain limits.
 // Built on the C runtime TCP/TLS stack (net/http) and the crawler submodules.
 
-import crawl::src::config
-import crawl::src::page
-import crawl::src::url
-import crawl::src::extract
-import crawl::src::robots
-import crawl::src::frontier
+usa crawl::src::config
+usa crawl::src::page
+usa crawl::src::url
+usa crawl::src::extract
+usa crawl::src::robots
+usa crawl::src::frontier
 
 // ---------------------------------------------------------------------------
 // Extern C runtime functions
@@ -33,7 +33,7 @@ extern "C" fn __mn_tls_close_fd(tls_ctx: Int, fd: Int) -> Int
 // Internal: URL parsing helpers (reuse url module)
 // ---------------------------------------------------------------------------
 
-struct ParsedConn {
+tipo ParsedConn:
     scheme: String,
     host: String,
     port: Int,
@@ -41,414 +41,347 @@ struct ParsedConn {
     query: String,
     is_https: Bool,
     ok: Bool
-}
 
-fn parse_connection_url(raw: String) -> ParsedConn {
-    let u: url.Url = url.parse_url(raw)
-    if len(u.host) == 0 {
-        return new ParsedConn { scheme: "", host: "", port: 0, path: "/", query: "", is_https: false, ok: false }
-    }
-    let mut is_https: Bool = false
-    if u.scheme == "https" { is_https = true }
-    return new ParsedConn { scheme: u.scheme, host: u.host, port: u.port, path: u.path, query: u.query, is_https: is_https, ok: true }
-}
+fn parse_connection_url(raw: String) -> ParsedConn:
+    pon u: url.Url = url.parse_url(raw)
+    si len(u.host) == 0:
+        da new ParsedConn { scheme: "", host: "", port: 0, path: "/", query: "", is_https: false, ok: false }
+    pon mut is_https: Bool = false
+    si u.scheme == "https" { is_https = true }
+    da new ParsedConn { scheme: u.scheme, host: u.host, port: u.port, path: u.path, query: u.query, is_https: is_https, ok: true }
 
 // ---------------------------------------------------------------------------
 // Internal: HTTP request/response helpers
 // ---------------------------------------------------------------------------
 
 /// Build a raw HTTP/1.1 GET request string.
-fn build_get_request(parsed: ParsedConn, user_agent: String) -> String {
-    let mut request_line: String = "GET "
-    if len(parsed.query) > 0 {
+fn build_get_request(parsed: ParsedConn, user_agent: String) -> String:
+    pon mut request_line: String = "GET "
+    si len(parsed.query) > 0:
         request_line = request_line + parsed.path + "?" + parsed.query
-    } else {
+    sino:
         request_line = request_line + parsed.path
-    }
     request_line = request_line + " HTTP/1.1\r\n"
 
-    let mut host_val: String = parsed.host
-    let mut need_port: Bool = false
-    if parsed.is_https {
-        if parsed.port != 443 { need_port = true }
-    } else {
-        if parsed.port != 80 { need_port = true }
-    }
-    if need_port {
+    pon mut host_val: String = parsed.host
+    pon mut need_port: Bool = false
+    si parsed.is_https:
+        si parsed.port != 443 { need_port = true }
+    sino:
+        si parsed.port != 80 { need_port = true }
+    si need_port:
         host_val = host_val + ":" + str(parsed.port)
-    }
 
-    let mut raw: String = request_line
+    pon mut raw: String = request_line
     raw = raw + "Host: " + host_val + "\r\n"
     raw = raw + "User-Agent: " + user_agent + "\r\n"
     raw = raw + "Accept: text/html,application/xhtml+xml,*/*\r\n"
     raw = raw + "Connection: close\r\n"
     raw = raw + "\r\n"
-    return raw
-}
+    da raw
 
 /// Receive a full HTTP response (read until connection closes).
-fn recv_full(fd: Int) -> String {
-    let mut response: String = ""
-    let mut iterations: Int = 0
-    while iterations < 10000 {
+fn recv_full(fd: Int) -> String:
+    pon mut response: String = ""
+    pon mut iterations: Int = 0
+    mien iterations < 10000:
         iterations = iterations + 1
-        let chunk: String = __mn_tcp_recv_str(fd, 8192)
-        if len(chunk) == 0 { break }
+        pon chunk: String = __mn_tcp_recv_str(fd, 8192)
+        si len(chunk) == 0 { sal }
         response = response + chunk
-    }
-    return response
-}
+    da response
 
-fn recv_full_tls(tls_ctx: Int) -> String {
-    let mut response: String = ""
-    let mut iterations: Int = 0
-    while iterations < 10000 {
+fn recv_full_tls(tls_ctx: Int) -> String:
+    pon mut response: String = ""
+    pon mut iterations: Int = 0
+    mien iterations < 10000:
         iterations = iterations + 1
-        let chunk: String = __mn_tls_read_str(tls_ctx, 8192)
-        if len(chunk) == 0 { break }
+        pon chunk: String = __mn_tls_read_str(tls_ctx, 8192)
+        si len(chunk) == 0 { sal }
         response = response + chunk
-    }
-    return response
-}
+    da response
 
 /// Parse the HTTP status code from a raw response.
-fn parse_status_code(raw: String) -> Int {
-    let slen: Int = len(raw)
-    if slen < 12 { return 0 }
+fn parse_status_code(raw: String) -> Int:
+    pon slen: Int = len(raw)
+    si slen < 12 { da 0 }
 
     // Skip "HTTP/x.x "
-    let mut pos: Int = 0
-    while pos < slen {
-        if raw.char_at(pos) == " " { break }
+    pon mut pos: Int = 0
+    mien pos < slen:
+        si raw.char_at(pos) == " " { sal }
         pos = pos + 1
-    }
     pos = pos + 1
 
-    let mut status_str: String = ""
-    while pos < slen {
-        let ch: String = raw.char_at(pos)
-        if ch == " " { break }
-        if ch == "\r" { break }
+    pon mut status_str: String = ""
+    mien pos < slen:
+        pon ch: String = raw.char_at(pos)
+        si ch == " " { sal }
+        si ch == "\r" { sal }
         status_str = status_str + ch
         pos = pos + 1
-    }
 
-    return parse_int_simple(status_str)
-}
+    da parse_int_simple(status_str)
 
 /// Parse the response headers into a Map.
-fn parse_response_headers(raw: String) -> Map<String, String> {
-    let slen: Int = len(raw)
-    let mut headers: Map<String, String> = #{}
-    let mut pos: Int = 0
+fn parse_response_headers(raw: String) -> Map<String, String>:
+    pon slen: Int = len(raw)
+    pon mut headers: Map<String, String> = #{}
+    pon mut pos: Int = 0
 
     // Skip status line
-    while pos < slen {
-        if raw.char_at(pos) == "\n" {
+    mien pos < slen:
+        si raw.char_at(pos) == "\n":
             pos = pos + 1
-            break
-        }
+            sal
         pos = pos + 1
-    }
 
     // Parse headers until empty line
-    let mut count: Int = 0
-    while pos < slen {
+    pon mut count: Int = 0
+    mien pos < slen:
         count = count + 1
-        if count > 200 { break }
+        si count > 200 { sal }
 
         // Check for end of headers
-        if raw.char_at(pos) == "\r" {
-            if pos + 1 < slen {
-                if raw.char_at(pos + 1) == "\n" { break }
-            }
-        }
-        if raw.char_at(pos) == "\n" { break }
+        si raw.char_at(pos) == "\r":
+            si pos + 1 < slen:
+                si raw.char_at(pos + 1) == "\n" { sal }
+        si raw.char_at(pos) == "\n" { sal }
 
         // Parse header name
-        let mut name: String = ""
-        while pos < slen {
-            let ch: String = raw.char_at(pos)
-            if ch == ":" { pos = pos + 1; break }
-            if ch == "\r" { break }
-            if ch == "\n" { break }
+        pon mut name: String = ""
+        mien pos < slen:
+            pon ch: String = raw.char_at(pos)
+            si ch == ":" { pos = pos + 1; sal }
+            si ch == "\r" { sal }
+            si ch == "\n" { sal }
             name = name + ch
             pos = pos + 1
-        }
 
         // Skip whitespace
-        while pos < slen {
-            let ch: String = raw.char_at(pos)
-            if ch != " " {
-                if ch != "\t" { break }
-            }
+        mien pos < slen:
+            pon ch: String = raw.char_at(pos)
+            si ch != " ":
+                si ch != "\t" { sal }
             pos = pos + 1
-        }
 
         // Parse header value
-        let mut value: String = ""
-        while pos < slen {
-            let ch: String = raw.char_at(pos)
-            if ch == "\r" {
+        pon mut value: String = ""
+        mien pos < slen:
+            pon ch: String = raw.char_at(pos)
+            si ch == "\r":
                 pos = pos + 1
-                if pos < slen {
-                    if raw.char_at(pos) == "\n" { pos = pos + 1 }
-                }
-                break
-            }
-            if ch == "\n" {
+                si pos < slen:
+                    si raw.char_at(pos) == "\n" { pos = pos + 1 }
+                sal
+            si ch == "\n":
                 pos = pos + 1
-                break
-            }
+                sal
             value = value + ch
             pos = pos + 1
-        }
 
-        if len(name) > 0 {
+        si len(name) > 0:
             headers[to_lower_simple(name)] = value
-        }
-    }
 
-    return headers
-}
+    da headers
 
 /// Extract the body from a raw HTTP response (after the blank line).
-fn extract_response_body(raw: String) -> String {
-    let slen: Int = len(raw)
-    let mut pos: Int = 0
+fn extract_response_body(raw: String) -> String:
+    pon slen: Int = len(raw)
+    pon mut pos: Int = 0
 
     // Find the double CRLF that separates headers from body
-    while pos < slen {
-        if raw.char_at(pos) == "\r" {
-            if pos + 3 < slen {
-                if raw.char_at(pos + 1) == "\n" {
-                    if raw.char_at(pos + 2) == "\r" {
-                        if raw.char_at(pos + 3) == "\n" {
+    mien pos < slen:
+        si raw.char_at(pos) == "\r":
+            si pos + 3 < slen:
+                si raw.char_at(pos + 1) == "\n":
+                    si raw.char_at(pos + 2) == "\r":
+                        si raw.char_at(pos + 3) == "\n":
                             pos = pos + 4
-                            break
-                        }
-                    }
-                }
-            }
-        }
+                            sal
         pos = pos + 1
-    }
 
-    if pos >= slen { return "" }
+    si pos >= slen { da "" }
 
-    let mut body: String = ""
-    while pos < slen {
+    pon mut body: String = ""
+    mien pos < slen:
         body = body + raw.char_at(pos)
         pos = pos + 1
-    }
-    return body
-}
+    da body
 
 /// Simple integer parser.
-fn parse_int_simple(s: String) -> Int {
-    let slen: Int = len(s)
-    let mut result: Int = 0
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        if ch >= "0" {
-            if ch <= "9" {
+fn parse_int_simple(s: String) -> Int:
+    pon slen: Int = len(s)
+    pon mut result: Int = 0
+    pon mut i: Int = 0
+    mien i < slen:
+        pon ch: String = s.char_at(i)
+        si ch >= "0":
+            si ch <= "9":
                 result = result * 10 + (ch.byte_at(0) - 48)
-            } else {
-                break
-            }
-        } else {
-            break
-        }
+            sino:
+                sal
+        sino:
+            sal
         i = i + 1
-    }
-    return result
-}
+    da result
 
 /// Simple ASCII lowercase.
-fn to_lower_simple(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = ch.byte_at(0)
-        if b >= 65 {
-            if b <= 90 {
-                let lb: Int = b + 32
-                if lb == 97 { result = result + "a" } else { if lb == 98 { result = result + "b" } else { if lb == 99 { result = result + "c" } else { if lb == 100 { result = result + "d" } else { if lb == 101 { result = result + "e" } else { if lb == 102 { result = result + "f" } else { if lb == 103 { result = result + "g" } else { if lb == 104 { result = result + "h" } else { if lb == 105 { result = result + "i" } else { if lb == 106 { result = result + "j" } else { if lb == 107 { result = result + "k" } else { if lb == 108 { result = result + "l" } else { if lb == 109 { result = result + "m" } else { if lb == 110 { result = result + "n" } else { if lb == 111 { result = result + "o" } else { if lb == 112 { result = result + "p" } else { if lb == 113 { result = result + "q" } else { if lb == 114 { result = result + "r" } else { if lb == 115 { result = result + "s" } else { if lb == 116 { result = result + "t" } else { if lb == 117 { result = result + "u" } else { if lb == 118 { result = result + "v" } else { if lb == 119 { result = result + "w" } else { if lb == 120 { result = result + "x" } else { if lb == 121 { result = result + "y" } else { result = result + "z" } } } } } } } } } } } } } } } } } } } } } } } } } }
-            } else {
+fn to_lower_simple(s: String) -> String:
+    pon slen: Int = len(s)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < slen:
+        pon ch: String = s.char_at(i)
+        pon b: Int = ch.byte_at(0)
+        si b >= 65:
+            si b <= 90:
+                pon lb: Int = b + 32
+                si lb == 97 { result = result + "a" } sino { si lb == 98 { result = result + "b" } sino { si lb == 99 { result = result + "c" } sino { si lb == 100 { result = result + "d" } sino { si lb == 101 { result = result + "e" } sino { si lb == 102 { result = result + "f" } sino { si lb == 103 { result = result + "g" } sino { si lb == 104 { result = result + "h" } sino { si lb == 105 { result = result + "i" } sino { si lb == 106 { result = result + "j" } sino { si lb == 107 { result = result + "k" } sino { si lb == 108 { result = result + "l" } sino { si lb == 109 { result = result + "m" } sino { si lb == 110 { result = result + "n" } sino { si lb == 111 { result = result + "o" } sino { si lb == 112 { result = result + "p" } sino { si lb == 113 { result = result + "q" } sino { si lb == 114 { result = result + "r" } sino { si lb == 115 { result = result + "s" } sino { si lb == 116 { result = result + "t" } sino { si lb == 117 { result = result + "u" } sino { si lb == 118 { result = result + "v" } sino { si lb == 119 { result = result + "w" } sino { si lb == 120 { result = result + "x" } sino { si lb == 121 { result = result + "y" } sino { result = result + "z" } } } } } } } } } } } } } } } } } } } } } } } } } }
+            sino:
                 result = result + ch
-            }
-        } else {
+        sino:
             result = result + ch
-        }
         i = i + 1
-    }
-    return result
-}
+    da result
 
 // ---------------------------------------------------------------------------
 // Robots.txt cache
 // ---------------------------------------------------------------------------
 
-struct RobotsCache {
+tipo RobotsCache:
     entries: Map<String, robots.RobotRules>
-}
 
-fn new_robots_cache() -> RobotsCache {
-    return new RobotsCache { entries: #{} }
-}
+fn new_robots_cache() -> RobotsCache:
+    da new RobotsCache { entries: #{} }
 
 /// Fetch and parse robots.txt for a domain. Caches results.
-fn get_robots_rules(cache: RobotsCache, target_url: String, cfg: config.CrawlConfig) -> RobotsCache {
-    let domain: String = url.extract_host(target_url)
+fn get_robots_rules(cache: RobotsCache, target_url: String, cfg: config.CrawlConfig) -> RobotsCache:
+    pon domain: String = url.extract_host(target_url)
 
     // Check cache
-    let mut found: Bool = false
-    for key in cache.entries {
-        if key == domain { found = true }
-    }
-    if found { return cache }
+    pon mut found: Bool = false
+    cada key en cache.entries:
+        si key == domain { found = true }
+    si found { da cache }
 
     // Build robots.txt URL
-    let parsed: ParsedConn = parse_connection_url(target_url)
-    if parsed.ok == false {
-        let mut new_entries: Map<String, robots.RobotRules> = cache.entries
+    pon parsed: ParsedConn = parse_connection_url(target_url)
+    si parsed.ok == false:
+        pon mut new_entries: Map<String, robots.RobotRules> = cache.entries
         new_entries[domain] = robots.empty_rules()
-        return new RobotsCache { entries: new_entries }
-    }
+        da new RobotsCache { entries: new_entries }
 
-    let mut robots_url: String = parsed.scheme + "://" + parsed.host
-    if parsed.is_https {
-        if parsed.port != 443 { robots_url = robots_url + ":" + str(parsed.port) }
-    } else {
-        if parsed.port != 80 { robots_url = robots_url + ":" + str(parsed.port) }
-    }
+    pon mut robots_url: String = parsed.scheme + "://" + parsed.host
+    si parsed.is_https:
+        si parsed.port != 443 { robots_url = robots_url + ":" + str(parsed.port) }
+    sino:
+        si parsed.port != 80 { robots_url = robots_url + ":" + str(parsed.port) }
     robots_url = robots_url + "/robots.txt"
 
     // Fetch robots.txt
-    let robots_parsed: ParsedConn = parse_connection_url(robots_url)
-    let mut rules: robots.RobotRules = robots.empty_rules()
+    pon robots_parsed: ParsedConn = parse_connection_url(robots_url)
+    pon mut rules: robots.RobotRules = robots.empty_rules()
 
-    if robots_parsed.ok {
-        let init_r: Int = __mn_net_init()
-        let fd: Int = __mn_tcp_connect_str(robots_parsed.host, robots_parsed.port)
-        if fd >= 0 {
-            let timeout_r: Int = __mn_tcp_set_timeout(fd, cfg.timeout_ms)
-            let req: String = build_get_request(robots_parsed, cfg.user_agent)
+    si robots_parsed.ok:
+        pon init_r: Int = __mn_net_init()
+        pon fd: Int = __mn_tcp_connect_str(robots_parsed.host, robots_parsed.port)
+        si fd >= 0:
+            pon timeout_r: Int = __mn_tcp_set_timeout(fd, cfg.timeout_ms)
+            pon req: String = build_get_request(robots_parsed, cfg.user_agent)
 
-            if robots_parsed.is_https {
-                let tls_init: Int = __mn_tls_init()
-                let tls_ctx: Int = __mn_tls_connect_str(fd, robots_parsed.host)
-                if tls_ctx != 0 {
-                    let sent: Int = __mn_tls_write_str(tls_ctx, req)
-                    let raw_resp: String = recv_full_tls(tls_ctx)
-                    let close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
-                    let status: Int = parse_status_code(raw_resp)
-                    if status == 200 {
-                        let body: String = extract_response_body(raw_resp)
+            si robots_parsed.is_https:
+                pon tls_init: Int = __mn_tls_init()
+                pon tls_ctx: Int = __mn_tls_connect_str(fd, robots_parsed.host)
+                si tls_ctx != 0:
+                    pon sent: Int = __mn_tls_write_str(tls_ctx, req)
+                    pon raw_resp: String = recv_full_tls(tls_ctx)
+                    pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
+                    pon status: Int = parse_status_code(raw_resp)
+                    si status == 200:
+                        pon body: String = extract_response_body(raw_resp)
                         rules = robots.parse_robots(body)
-                    }
-                } else {
-                    let close_r: Int = __mn_tcp_close_fd(fd)
-                }
-            } else {
-                let sent: Int = __mn_tcp_send_str(fd, req)
-                let raw_resp: String = recv_full(fd)
-                let close_r: Int = __mn_tcp_close_fd(fd)
-                let status: Int = parse_status_code(raw_resp)
-                if status == 200 {
-                    let body: String = extract_response_body(raw_resp)
+                sino:
+                    pon close_r: Int = __mn_tcp_close_fd(fd)
+            sino:
+                pon sent: Int = __mn_tcp_send_str(fd, req)
+                pon raw_resp: String = recv_full(fd)
+                pon close_r: Int = __mn_tcp_close_fd(fd)
+                pon status: Int = parse_status_code(raw_resp)
+                si status == 200:
+                    pon body: String = extract_response_body(raw_resp)
                     rules = robots.parse_robots(body)
-                }
-            }
-        }
-    }
 
-    let mut new_entries: Map<String, robots.RobotRules> = cache.entries
+    pon mut new_entries: Map<String, robots.RobotRules> = cache.entries
     new_entries[domain] = rules
-    return new RobotsCache { entries: new_entries }
-}
+    da new RobotsCache { entries: new_entries }
 
 /// Look up cached rules for a domain.
-fn cached_rules(cache: RobotsCache, target_url: String) -> robots.RobotRules {
-    let domain: String = url.extract_host(target_url)
-    for key in cache.entries {
-        if key == domain {
-            return cache.entries[key]
-        }
-    }
-    return robots.empty_rules()
-}
+fn cached_rules(cache: RobotsCache, target_url: String) -> robots.RobotRules:
+    pon domain: String = url.extract_host(target_url)
+    cada key en cache.entries:
+        si key == domain:
+            da cache.entries[key]
+    da robots.empty_rules()
 
 // ---------------------------------------------------------------------------
 // Single page fetch
 // ---------------------------------------------------------------------------
 
 /// Fetch a single page via HTTP/1.1 GET. Returns the page or an error.
-pub fn fetch_page(target_url: String, cfg: config.CrawlConfig) -> Result<page.Page, page.CrawlError> {
-    let parsed: ParsedConn = parse_connection_url(target_url)
-    if parsed.ok == false {
-        return Err(page.new_fetch_error("Invalid URL: " + target_url))
-    }
++fn fetch_page(target_url: String, cfg: config.CrawlConfig) -> Result<page.Page, page.CrawlError>:
+    pon parsed: ParsedConn = parse_connection_url(target_url)
+    si parsed.ok == false:
+        da Err(page.new_fetch_error("Invalid URL: " + target_url))
 
-    let start_ms: Int = __mn_time_now_ms()
-    let init_r: Int = __mn_net_init()
+    pon start_ms: Int = __mn_time_now_ms()
+    pon init_r: Int = __mn_net_init()
 
-    let fd: Int = __mn_tcp_connect_str(parsed.host, parsed.port)
-    if fd < 0 {
-        return Err(page.new_fetch_error("Connection failed: " + parsed.host + ":" + str(parsed.port)))
-    }
+    pon fd: Int = __mn_tcp_connect_str(parsed.host, parsed.port)
+    si fd < 0:
+        da Err(page.new_fetch_error("Connection failed: " + parsed.host + ":" + str(parsed.port)))
 
-    let timeout_r: Int = __mn_tcp_set_timeout(fd, cfg.timeout_ms)
-    let req: String = build_get_request(parsed, cfg.user_agent)
+    pon timeout_r: Int = __mn_tcp_set_timeout(fd, cfg.timeout_ms)
+    pon req: String = build_get_request(parsed, cfg.user_agent)
 
-    let mut raw_response: String = ""
+    pon mut raw_response: String = ""
 
-    if parsed.is_https {
-        let tls_init: Int = __mn_tls_init()
-        let tls_ctx: Int = __mn_tls_connect_str(fd, parsed.host)
-        if tls_ctx == 0 {
-            let close_r: Int = __mn_tcp_close_fd(fd)
-            return Err(page.new_fetch_error("TLS handshake failed: " + parsed.host))
-        }
-        let sent: Int = __mn_tls_write_str(tls_ctx, req)
-        if sent < 0 {
-            let close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
-            return Err(page.new_fetch_error("Send failed"))
-        }
+    si parsed.is_https:
+        pon tls_init: Int = __mn_tls_init()
+        pon tls_ctx: Int = __mn_tls_connect_str(fd, parsed.host)
+        si tls_ctx == 0:
+            pon close_r: Int = __mn_tcp_close_fd(fd)
+            da Err(page.new_fetch_error("TLS handshake failed: " + parsed.host))
+        pon sent: Int = __mn_tls_write_str(tls_ctx, req)
+        si sent < 0:
+            pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
+            da Err(page.new_fetch_error("Send failed"))
         raw_response = recv_full_tls(tls_ctx)
-        let close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
-    } else {
-        let sent: Int = __mn_tcp_send_str(fd, req)
-        if sent < 0 {
-            let close_r: Int = __mn_tcp_close_fd(fd)
-            return Err(page.new_fetch_error("Send failed"))
-        }
+        pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
+    sino:
+        pon sent: Int = __mn_tcp_send_str(fd, req)
+        si sent < 0:
+            pon close_r: Int = __mn_tcp_close_fd(fd)
+            da Err(page.new_fetch_error("Send failed"))
         raw_response = recv_full(fd)
-        let close_r: Int = __mn_tcp_close_fd(fd)
-    }
+        pon close_r: Int = __mn_tcp_close_fd(fd)
 
-    if len(raw_response) == 0 {
-        return Err(page.new_fetch_error("Empty response from " + target_url))
-    }
+    si len(raw_response) == 0:
+        da Err(page.new_fetch_error("Empty response from " + target_url))
 
-    let end_ms: Int = __mn_time_now_ms()
-    let elapsed: Int = end_ms - start_ms
+    pon end_ms: Int = __mn_time_now_ms()
+    pon elapsed: Int = end_ms - start_ms
 
-    let status: Int = parse_status_code(raw_response)
-    let headers: Map<String, String> = parse_response_headers(raw_response)
-    let body: String = extract_response_body(raw_response)
+    pon status: Int = parse_status_code(raw_response)
+    pon headers: Map<String, String> = parse_response_headers(raw_response)
+    pon body: String = extract_response_body(raw_response)
 
     // Extract title and links from HTML body
-    let title: String = extract.extract_title(body)
-    let links: List<String> = extract.extract_links(body, target_url)
+    pon title: String = extract.extract_title(body)
+    pon links: List<String> = extract.extract_links(body, target_url)
 
-    let result_page: page.Page = page.new_page(target_url, status, headers, body, title, links, 0, elapsed)
-    return Ok(result_page)
-}
+    pon result_page: page.Page = page.new_page(target_url, status, headers, body, title, links, 0, elapsed)
+    da Ok(result_page)
 
 // ---------------------------------------------------------------------------
 // Main crawl loop
@@ -456,69 +389,66 @@ pub fn fetch_page(target_url: String, cfg: config.CrawlConfig) -> Result<page.Pa
 
 /// Crawl starting from seed URLs. Returns all successfully fetched pages.
 /// Respects max_depth, max_pages, domain restrictions, robots.txt, and delay.
-pub fn crawl(cfg: config.CrawlConfig) -> List<page.Page> {
-    let mut pages: List<page.Page> = []
-    let mut f: frontier.Frontier = frontier.new_frontier()
-    let mut rcache: RobotsCache = new_robots_cache()
-    let mut stats: page.CrawlStats = page.empty_stats()
++fn crawl(cfg: config.CrawlConfig) -> List<page.Page>:
+    pon mut pages: List<page.Page> = []
+    pon mut f: frontier.Frontier = frontier.new_frontier()
+    pon mut rcache: RobotsCache = new_robots_cache()
+    pon mut stats: page.CrawlStats = page.empty_stats()
 
     // Seed the frontier
-    let seed_count: Int = len(cfg.seed_urls)
-    let mut si: Int = 0
-    while si < seed_count {
+    pon seed_count: Int = len(cfg.seed_urls)
+    pon mut si: Int = 0
+    mien si < seed_count:
         f = frontier.frontier_add(f, cfg.seed_urls[si], 0)
         si = si + 1
-    }
 
     // Main loop
-    let mut guard: Int = 0
-    let max_iterations: Int = cfg.max_pages * 2
+    pon mut guard: Int = 0
+    pon max_iterations: Int = cfg.max_pages * 2
 
-    while frontier.frontier_is_empty(f) == false {
+    mien frontier.frontier_is_empty(f) == false:
         guard = guard + 1
-        if guard > max_iterations { break }
+        si guard > max_iterations { sal }
 
         // Check max_pages limit
-        if stats.pages_crawled >= cfg.max_pages { break }
+        si stats.pages_crawled >= cfg.max_pages { sal }
 
-        let now: Int = __mn_time_now_ms()
+        pon now: Int = __mn_time_now_ms()
         f = frontier.frontier_next(f, now, cfg.delay_ms)
 
-        let popped: Option<frontier.FrontierEntry> = frontier.frontier_last_popped(f)
-        match popped {
-            None => {
+        pon popped: Option<frontier.FrontierEntry> = frontier.frontier_last_popped(f)
+        match popped:
+            None =>:
                 // All domains on cooldown — sleep and retry
                 __mn_sleep_ms(100)
-            },
-            Some(entry) => {
+            Some(entry) =>:
                 // Check depth limit
-                if entry.depth > cfg.max_depth {
+                si entry.depth > cfg.max_depth:
                     stats = page.stats_add_skip(stats)
-                } else {
+                sino:
                     // Check domain restriction
-                    let domain_ok: Bool = check_domain_allowed(entry.url, cfg)
-                    if domain_ok == false {
+                    pon domain_ok: Bool = check_domain_allowed(entry.url, cfg)
+                    si domain_ok == false:
                         stats = page.stats_add_skip(stats)
-                    } else {
+                    sino:
                         // Check robots.txt
-                        let mut robots_ok: Bool = true
-                        if cfg.respect_robots {
+                        pon mut robots_ok: Bool = true
+                        si cfg.respect_robots:
                             rcache = get_robots_rules(rcache, entry.url, cfg)
-                            let rules: robots.RobotRules = cached_rules(rcache, entry.url)
-                            let entry_parsed: url.Url = url.parse_url(entry.url)
+                            pon rules: robots.RobotRules = cached_rules(rcache, entry.url)
+                            pon entry_parsed: url.Url = url.parse_url(entry.url)
                             robots_ok = robots.is_allowed(rules, cfg.user_agent, entry_parsed.path)
-                        }
 
-                        if robots_ok == false {
+                        si robots_ok == false:
                             stats = page.stats_add_skip(stats)
-                        } else {
+                        sino:
                             // Fetch the page
-                            let result: Result<page.Page, page.CrawlError> = fetch_page(entry.url, cfg)
+                            pon result: Result<page.Page, page.CrawlError> = fetch_page(entry.url, cfg)
 
-                            match result {
-                                Ok(p) => {
+                            match result:
+                                Ok(p) =>:
                                     // Update page with correct depth
-                                    let fetched: page.Page = page.new_page(
+                                    pon fetched: page.Page = page.new_page(
                                         p.url, p.status, p.headers, p.body,
                                         p.title, p.links, entry.depth, p.elapsed_ms
                                     )
@@ -526,45 +456,31 @@ pub fn crawl(cfg: config.CrawlConfig) -> List<page.Page> {
                                     stats = page.stats_add_success(stats, len(p.body))
 
                                     // Add discovered links to frontier
-                                    let link_count: Int = len(fetched.links)
-                                    let mut li: Int = 0
-                                    while li < link_count {
-                                        let link: String = fetched.links[li]
+                                    pon link_count: Int = len(fetched.links)
+                                    pon mut li: Int = 0
+                                    mien li < link_count:
+                                        pon link: String = fetched.links[li]
                                         f = frontier.frontier_add(f, link, entry.depth + 1)
                                         li = li + 1
-                                    }
-                                },
-                                Err(e) => {
+                                Err(e) =>:
                                     stats = page.stats_add_failure(stats)
-                                }
-                            }
 
                             // Respect delay between fetches
-                            if cfg.delay_ms > 0 {
+                            si cfg.delay_ms > 0:
                                 __mn_sleep_ms(cfg.delay_ms)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 
-    return pages
-}
+    da pages
 
 /// Convenience: crawl and return just the URLs of all fetched pages.
-pub fn crawl_urls(cfg: config.CrawlConfig) -> List<String> {
-    let pages: List<page.Page> = crawl(cfg)
-    let mut urls: List<String> = []
-    let count: Int = len(pages)
-    let mut i: Int = 0
-    while i < count {
++fn crawl_urls(cfg: config.CrawlConfig) -> List<String>:
+    pon pages: List<page.Page> = crawl(cfg)
+    pon mut urls: List<String> = []
+    pon count: Int = len(pages)
+    pon mut i: Int = 0
+    mien i < count:
         urls = urls + [pages[i].url]
         i = i + 1
-    }
-    return urls
-}
+    da urls
 
 // ---------------------------------------------------------------------------
 // Internal: domain restriction check
@@ -572,19 +488,15 @@ pub fn crawl_urls(cfg: config.CrawlConfig) -> List<String> {
 
 /// Check if a URL's domain is in the allowed_domains list.
 /// If allowed_domains is empty, all domains are allowed.
-fn check_domain_allowed(target_url: String, cfg: config.CrawlConfig) -> Bool {
-    let allowed_count: Int = len(cfg.allowed_domains)
-    if allowed_count == 0 {
-        return true
-    }
+fn check_domain_allowed(target_url: String, cfg: config.CrawlConfig) -> Bool:
+    pon allowed_count: Int = len(cfg.allowed_domains)
+    si allowed_count == 0:
+        da true
 
-    let domain: String = url.extract_host(target_url)
-    let mut i: Int = 0
-    while i < allowed_count {
-        if cfg.allowed_domains[i] == domain {
-            return true
-        }
+    pon domain: String = url.extract_host(target_url)
+    pon mut i: Int = 0
+    mien i < allowed_count:
+        si cfg.allowed_domains[i] == domain:
+            da true
         i = i + 1
-    }
-    return false
-}
+    da false

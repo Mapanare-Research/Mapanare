@@ -11,179 +11,141 @@
 // Error type
 // ---------------------------------------------------------------------------
 
-pub struct KVError {
++tipo KVError:
     message: String
-}
 
-fn new_kv_error(msg: String) -> KVError {
-    return new KVError { message: msg }
-}
+fn new_kv_error(msg: String) -> KVError:
+    da new KVError { message: msg }
 
 // ---------------------------------------------------------------------------
 // Entry type — a key-value pair
 // ---------------------------------------------------------------------------
 
-pub struct KVEntry {
++tipo KVEntry:
     key: String,
     value: String
-}
 
-fn new_kv_entry(k: String, v: String) -> KVEntry {
-    return new KVEntry { key: k, value: v }
-}
+fn new_kv_entry(k: String, v: String) -> KVEntry:
+    da new KVEntry { key: k, value: v }
 
 // ---------------------------------------------------------------------------
 // Backend-specific store structs
 // ---------------------------------------------------------------------------
 
-pub struct RedisStore {
++tipo RedisStore:
     handle: Int,
     host: String,
     port: Int
-}
 
-pub struct EmbeddedStore {
++tipo EmbeddedStore:
     data: Map<String, String>
-}
 
 // ---------------------------------------------------------------------------
 // Tagged KVStore enum — dispatches to the correct backend
 // ---------------------------------------------------------------------------
 
-pub enum KVStore {
-    Redis(RedisStore),
-    Embedded(EmbeddedStore)
-}
++tipo KVStore:
+    | Redis(RedisStore)
+    | Embedded(EmbeddedStore)
 
 // ---------------------------------------------------------------------------
 // Unified dispatch: kv_get
 // ---------------------------------------------------------------------------
 
-pub fn kv_get(store: KVStore, key: String) -> Option<String> {
-    match store {
-        Redis(rs) => {
-            return redis_get(rs, key)
-        },
-        Embedded(es) => {
-            return embedded_get(es, key)
-        }
-    }
-    return none
-}
++fn kv_get(store: KVStore, key: String) -> Option<String>:
+    match store:
+        Redis(rs) =>:
+            da redis_get(rs, key)
+        Embedded(es) =>:
+            da embedded_get(es, key)
+    da nada
 
 // ---------------------------------------------------------------------------
 // Unified dispatch: kv_set
 // ---------------------------------------------------------------------------
 
-pub fn kv_set(store: KVStore, key: String, value: String) -> Result<Bool, KVError> {
-    match store {
-        Redis(rs) => {
-            return redis_set(rs, key, value)
-        },
-        Embedded(es) => {
++fn kv_set(store: KVStore, key: String, value: String) -> Result<Bool, KVError>:
+    match store:
+        Redis(rs) =>:
+            da redis_set(rs, key, value)
+        Embedded(es) =>:
             // Embedded store uses functional update — we set in the map directly
             es.data[key] = value
-            return Ok(true)
-        }
-    }
-    return Err(new_kv_error("Unknown store backend"))
-}
+            da Ok(true)
+    da Err(new_kv_error("Unknown store backend"))
 
 // ---------------------------------------------------------------------------
 // Unified dispatch: kv_del
 // ---------------------------------------------------------------------------
 
-pub fn kv_del(store: KVStore, key: String) -> Result<Bool, KVError> {
-    match store {
-        Redis(rs) => {
-            return redis_del(rs, key)
-        },
-        Embedded(es) => {
++fn kv_del(store: KVStore, key: String) -> Result<Bool, KVError>:
+    match store:
+        Redis(rs) =>:
+            da redis_del(rs, key)
+        Embedded(es) =>:
             // For embedded, check existence first
-            let mut found: Bool = false
-            for k in es.data {
-                if k == key { found = true }
-            }
-            if found == false {
-                return Ok(false)
-            }
+            pon mut found: Bool = false
+            cada k en es.data:
+                si k == key { found = true }
+            si found == false:
+                da Ok(false)
             // Rebuild map without the key
-            let mut new_data: Map<String, String> = #{}
-            for k in es.data {
-                if k != key {
+            pon mut new_data: Map<String, String> = #{}
+            cada k en es.data:
+                si k != key:
                     new_data[k] = es.data[k]
-                }
-            }
             es.data = new_data
-            return Ok(true)
-        }
-    }
-    return Err(new_kv_error("Unknown store backend"))
-}
+            da Ok(true)
+    da Err(new_kv_error("Unknown store backend"))
 
 // ---------------------------------------------------------------------------
 // Unified dispatch: kv_exists
 // ---------------------------------------------------------------------------
 
-pub fn kv_exists(store: KVStore, key: String) -> Bool {
-    match store {
-        Redis(rs) => {
-            return redis_exists(rs, key)
-        },
-        Embedded(es) => {
-            for k in es.data {
-                if k == key { return true }
-            }
-            return false
-        }
-    }
-    return false
-}
++fn kv_exists(store: KVStore, key: String) -> Bool:
+    match store:
+        Redis(rs) =>:
+            da redis_exists(rs, key)
+        Embedded(es) =>:
+            cada k en es.data:
+                si k == key { da true }
+            da false
+    da false
 
 // ---------------------------------------------------------------------------
 // Unified dispatch: kv_keys
 // ---------------------------------------------------------------------------
 
-pub fn kv_keys(store: KVStore) -> List<String> {
-    match store {
-        Redis(rs) => {
-            return redis_keys(rs, "*")
-        },
-        Embedded(es) => {
-            let mut result: List<String> = []
-            for k in es.data {
++fn kv_keys(store: KVStore) -> List<String>:
+    match store:
+        Redis(rs) =>:
+            da redis_keys(rs, "*")
+        Embedded(es) =>:
+            pon mut result: List<String> = []
+            cada k en es.data:
                 result = result + [k]
-            }
-            return result
-        }
-    }
-    return []
-}
+            da result
+    da []
 
 // ---------------------------------------------------------------------------
 // Unified dispatch: kv_close
 // ---------------------------------------------------------------------------
 
-pub fn kv_close(store: KVStore) -> Result<Bool, KVError> {
-    match store {
-        Redis(rs) => {
-            return redis_close(rs)
-        },
-        Embedded(es) => {
++fn kv_close(store: KVStore) -> Result<Bool, KVError>:
+    match store:
+        Redis(rs) =>:
+            da redis_close(rs)
+        Embedded(es) =>:
             // Nothing to close for in-process store
-            return Ok(true)
-        }
-    }
-    return Err(new_kv_error("Unknown store backend"))
-}
+            da Ok(true)
+    da Err(new_kv_error("Unknown store backend"))
 
 // ---------------------------------------------------------------------------
 // Error helper
 // ---------------------------------------------------------------------------
 
-pub fn error_message(err: KVError) -> String {
-    return err.message
-}
++fn error_message(err: KVError) -> String:
+    da err.message
 
 // ---------------------------------------------------------------------------
 // Internal: Redis backend stubs (implemented in db::redis)
@@ -192,26 +154,20 @@ pub fn error_message(err: KVError) -> String {
 // For now, these return error/empty to satisfy the type checker.
 // ---------------------------------------------------------------------------
 
-fn redis_get(rs: RedisStore, key: String) -> Option<String> {
-    return none
-}
+fn redis_get(rs: RedisStore, key: String) -> Option<String>:
+    da nada
 
-fn redis_set(rs: RedisStore, key: String, value: String) -> Result<Bool, KVError> {
-    return Err(new_kv_error("Redis backend not linked"))
-}
+fn redis_set(rs: RedisStore, key: String, value: String) -> Result<Bool, KVError>:
+    da Err(new_kv_error("Redis backend not linked"))
 
-fn redis_del(rs: RedisStore, key: String) -> Result<Bool, KVError> {
-    return Err(new_kv_error("Redis backend not linked"))
-}
+fn redis_del(rs: RedisStore, key: String) -> Result<Bool, KVError>:
+    da Err(new_kv_error("Redis backend not linked"))
 
-fn redis_exists(rs: RedisStore, key: String) -> Bool {
-    return false
-}
+fn redis_exists(rs: RedisStore, key: String) -> Bool:
+    da false
 
-fn redis_keys(rs: RedisStore, pattern: String) -> List<String> {
-    return []
-}
+fn redis_keys(rs: RedisStore, pattern: String) -> List<String>:
+    da []
 
-fn redis_close(rs: RedisStore) -> Result<Bool, KVError> {
-    return Err(new_kv_error("Redis backend not linked"))
-}
+fn redis_close(rs: RedisStore) -> Result<Bool, KVError>:
+    da Err(new_kv_error("Redis backend not linked"))

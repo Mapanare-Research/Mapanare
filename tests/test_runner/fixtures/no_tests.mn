@@ -1,5 +1,4 @@
 // File with no test functions
 
-fn helper(x: Int) -> Int {
-    return x + 1
-}
+fn helper(x: Int) -> Int:
+    da x + 1

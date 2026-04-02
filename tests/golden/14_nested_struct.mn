@@ -1,9 +1,7 @@
-struct Pair {
+tipo Pair:
     first: Int,
     second: Int
-}
 
-fn main() {
-    let p: Pair = new Pair { first: 10, second: 20 }
+fn main:
+    pon p: Pair = new Pair { first: 10, second: 20 }
     print(str(p.first))
-}

@@ -1,13 +1,10 @@
-enum Color {
-    Red,
-    Green,
-    Blue
-}
+tipo Color:
+    | Red
+    | Green
+    | Blue
 
-fn main() {
-    let c: Color = Color::Green
-    match c {
+fn main:
+    pon c: Color = Color::Green
+    match c:
         Green => { print("green") },
         _ => { print("other") }
-    }
-}

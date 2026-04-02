@@ -14,7 +14,7 @@
 //   let d = tensor.matmul(a, b)
 //   let s = tensor.sum(c)
 
-import gpu::device
+usa gpu::device
 
 // ---------------------------------------------------------------------------
 // Extern C runtime functions
@@ -50,123 +50,99 @@ extern "C" fn __mn_tensor_eq(a: Int, b: Int, size: Int) -> Int
 // TensorError enum
 // ---------------------------------------------------------------------------
 
-pub enum TensorError {
-    ShapeMismatch(String),
-    InvalidShape(String),
-    DeviceError(String),
-    IndexOutOfBounds(String),
-    AllocationFailed(String)
-}
++tipo TensorError:
+    | ShapeMismatch(String)
+    | InvalidShape(String)
+    | DeviceError(String)
+    | IndexOutOfBounds(String)
+    | AllocationFailed(String)
 
-fn new_shape_mismatch(msg: String) -> TensorError {
-    return ShapeMismatch(msg)
-}
+fn new_shape_mismatch(msg: String) -> TensorError:
+    da ShapeMismatch(msg)
 
-fn new_invalid_shape(msg: String) -> TensorError {
-    return InvalidShape(msg)
-}
+fn new_invalid_shape(msg: String) -> TensorError:
+    da InvalidShape(msg)
 
-fn new_device_error(msg: String) -> TensorError {
-    return DeviceError(msg)
-}
+fn new_device_error(msg: String) -> TensorError:
+    da DeviceError(msg)
 
-fn new_index_oob(msg: String) -> TensorError {
-    return IndexOutOfBounds(msg)
-}
+fn new_index_oob(msg: String) -> TensorError:
+    da IndexOutOfBounds(msg)
 
-fn new_alloc_failed(msg: String) -> TensorError {
-    return AllocationFailed(msg)
-}
+fn new_alloc_failed(msg: String) -> TensorError:
+    da AllocationFailed(msg)
 
 // ---------------------------------------------------------------------------
 // Tensor struct
 // ---------------------------------------------------------------------------
 
-pub struct Tensor {
++tipo Tensor:
     data: Int,
     shape: List<Int>,
     ndim: Int,
     size: Int,
     device: device.DeviceKind
-}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
 /// Compute the total number of elements from a shape list.
-fn compute_size(shape: List<Int>) -> Int {
-    let mut total: Int = 1
-    let mut i: Int = 0
-    while i < len(shape) {
+fn compute_size(shape: List<Int>) -> Int:
+    pon mut total: Int = 1
+    pon mut i: Int = 0
+    mien i < len(shape):
         total = total * shape[i]
         i = i + 1
-    }
-    return total
-}
+    da total
 
 /// Validate that a shape has no zero or negative dimensions.
-fn validate_shape(shape: List<Int>) -> Bool {
-    if len(shape) == 0 {
-        return false
-    }
-    let mut i: Int = 0
-    while i < len(shape) {
-        if shape[i] <= 0 {
-            return false
-        }
+fn validate_shape(shape: List<Int>) -> Bool:
+    si len(shape) == 0:
+        da false
+    pon mut i: Int = 0
+    mien i < len(shape):
+        si shape[i] <= 0:
+            da false
         i = i + 1
-    }
-    return true
-}
+    da true
 
 /// Check whether two shapes are identical.
-fn shapes_equal(a: List<Int>, b: List<Int>) -> Bool {
-    if len(a) != len(b) {
-        return false
-    }
-    let mut i: Int = 0
-    while i < len(a) {
-        if a[i] != b[i] {
-            return false
-        }
+fn shapes_equal(a: List<Int>, b: List<Int>) -> Bool:
+    si len(a) != len(b):
+        da false
+    pon mut i: Int = 0
+    mien i < len(a):
+        si a[i] != b[i]:
+            da false
         i = i + 1
-    }
-    return true
-}
+    da true
 
 /// Format a shape as a string for error messages.
-fn shape_to_string(shape: List<Int>) -> String {
-    let mut result: String = "["
-    let mut i: Int = 0
-    while i < len(shape) {
-        if i > 0 {
+fn shape_to_string(shape: List<Int>) -> String:
+    pon mut result: String = "["
+    pon mut i: Int = 0
+    mien i < len(shape):
+        si i > 0:
             result = result + ", "
-        }
         result = result + str(shape[i])
         i = i + 1
-    }
     result = result + "]"
-    return result
-}
+    da result
 
-fn device_int(d: device.DeviceKind) -> Int {
-    return device.device_kind_to_int(d)
-}
+fn device_int(d: device.DeviceKind) -> Int:
+    da device.device_kind_to_int(d)
 
 /// Allocate a tensor with the given shape on the specified device.
-fn alloc_tensor(shape: List<Int>, dev: device.DeviceKind) -> Result<Tensor, TensorError> {
-    if validate_shape(shape) == false {
-        return Err(new_invalid_shape("invalid shape: " + shape_to_string(shape)))
-    }
-    let total: Int = compute_size(shape)
-    let ptr: Int = __mn_tensor_alloc(total, device_int(dev))
-    if ptr == 0 {
-        return Err(new_alloc_failed("failed to allocate tensor of size " + str(total)))
-    }
-    let t: Tensor = new Tensor { data: ptr, shape: shape, ndim: len(shape), size: total, device: dev }
-    return Ok(t)
-}
+fn alloc_tensor(shape: List<Int>, dev: device.DeviceKind) -> Result<Tensor, TensorError>:
+    si validate_shape(shape) == false:
+        da Err(new_invalid_shape("invalid shape: " + shape_to_string(shape)))
+    pon total: Int = compute_size(shape)
+    pon ptr: Int = __mn_tensor_alloc(total, device_int(dev))
+    si ptr == 0:
+        da Err(new_alloc_failed("failed to allocate tensor of size " + str(total)))
+    pon t: Tensor = new Tensor { data: ptr, shape: shape, ndim: len(shape), size: total, device: dev }
+    da Ok(t)
 
 // ---------------------------------------------------------------------------
 // Creation functions
@@ -174,121 +150,93 @@ fn alloc_tensor(shape: List<Int>, dev: device.DeviceKind) -> Result<Tensor, Tens
 
 /// Create a tensor filled with zeros.
 @gpu
-pub fn zeros(shape: List<Int>) -> Result<Tensor, TensorError> {
-    let result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
-    match result {
-        Ok(t) => {
-            let rc: Int = __mn_tensor_zeros(t.data, t.size, device_int(t.device))
-            if rc < 0 {
-                return Err(new_device_error("zeros fill failed"))
-            }
-            return Ok(t)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn zeros(shape: List<Int>) -> Result<Tensor, TensorError>:
+    pon result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
+    match result:
+        Ok(t) =>:
+            pon rc: Int = __mn_tensor_zeros(t.data, t.size, device_int(t.device))
+            si rc < 0:
+                da Err(new_device_error("zeros fill failed"))
+            da Ok(t)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Create a tensor filled with ones.
 @gpu
-pub fn ones(shape: List<Int>) -> Result<Tensor, TensorError> {
-    let result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
-    match result {
-        Ok(t) => {
-            let rc: Int = __mn_tensor_ones(t.data, t.size, device_int(t.device))
-            if rc < 0 {
-                return Err(new_device_error("ones fill failed"))
-            }
-            return Ok(t)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn ones(shape: List<Int>) -> Result<Tensor, TensorError>:
+    pon result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
+    match result:
+        Ok(t) =>:
+            pon rc: Int = __mn_tensor_ones(t.data, t.size, device_int(t.device))
+            si rc < 0:
+                da Err(new_device_error("ones fill failed"))
+            da Ok(t)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Create a tensor filled with a constant value.
 @gpu
-pub fn full(shape: List<Int>, value: Float) -> Result<Tensor, TensorError> {
-    let result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
-    match result {
-        Ok(t) => {
-            let rc: Int = __mn_tensor_fill(t.data, t.size, value, device_int(t.device))
-            if rc < 0 {
-                return Err(new_device_error("fill failed"))
-            }
-            return Ok(t)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn full(shape: List<Int>, value: Float) -> Result<Tensor, TensorError>:
+    pon result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
+    match result:
+        Ok(t) =>:
+            pon rc: Int = __mn_tensor_fill(t.data, t.size, value, device_int(t.device))
+            si rc < 0:
+                da Err(new_device_error("fill failed"))
+            da Ok(t)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Create a tensor from a flat list of floats and a shape.
-pub fn from_list(data: List<Float>, shape: List<Int>) -> Result<Tensor, TensorError> {
-    if validate_shape(shape) == false {
-        return Err(new_invalid_shape("invalid shape: " + shape_to_string(shape)))
-    }
-    let total: Int = compute_size(shape)
-    if len(data) != total {
-        return Err(new_shape_mismatch("data length " + str(len(data)) + " does not match shape " + shape_to_string(shape)))
-    }
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
-    match alloc_result {
-        Ok(t) => {
-            let mut i: Int = 0
-            while i < total {
++fn from_list(data: List<Float>, shape: List<Int>) -> Result<Tensor, TensorError>:
+    si validate_shape(shape) == false:
+        da Err(new_invalid_shape("invalid shape: " + shape_to_string(shape)))
+    pon total: Int = compute_size(shape)
+    si len(data) != total:
+        da Err(new_shape_mismatch("data length " + str(len(data)) + " does not match shape " + shape_to_string(shape)))
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
+    match alloc_result:
+        Ok(t) =>:
+            pon mut i: Int = 0
+            mien i < total:
                 __mn_tensor_set(t.data, i, data[i])
                 i = i + 1
-            }
-            return Ok(t)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
+            da Ok(t)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Create an n x n identity matrix.
-pub fn identity(n: Int) -> Result<Tensor, TensorError> {
-    if n <= 0 {
-        return Err(new_invalid_shape("identity matrix size must be positive"))
-    }
-    let shape: List<Int> = [n, n]
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
-    match alloc_result {
-        Ok(t) => {
-            let rc: Int = __mn_tensor_zeros(t.data, t.size, device_int(t.device))
-            if rc < 0 {
-                return Err(new_device_error("zeros fill failed for identity"))
-            }
-            let mut i: Int = 0
-            while i < n {
-                let idx: Int = i * n + i
++fn identity(n: Int) -> Result<Tensor, TensorError>:
+    si n <= 0:
+        da Err(new_invalid_shape("identity matrix size must be positive"))
+    pon shape: List<Int> = [n, n]
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
+    match alloc_result:
+        Ok(t) =>:
+            pon rc: Int = __mn_tensor_zeros(t.data, t.size, device_int(t.device))
+            si rc < 0:
+                da Err(new_device_error("zeros fill failed cada identity"))
+            pon mut i: Int = 0
+            mien i < n:
+                pon idx: Int = i * n + i
                 __mn_tensor_set(t.data, idx, 1.0)
                 i = i + 1
-            }
-            return Ok(t)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
+            da Ok(t)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Create a tensor of a given shape on a specific device.
 @gpu
-pub fn zeros_on(shape: List<Int>, dev: device.DeviceKind) -> Result<Tensor, TensorError> {
-    let result: Result<Tensor, TensorError> = alloc_tensor(shape, dev)
-    match result {
-        Ok(t) => {
-            let rc: Int = __mn_tensor_zeros(t.data, t.size, device_int(t.device))
-            if rc < 0 {
-                return Err(new_device_error("zeros fill failed on device"))
-            }
-            return Ok(t)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn zeros_on(shape: List<Int>, dev: device.DeviceKind) -> Result<Tensor, TensorError>:
+    pon result: Result<Tensor, TensorError> = alloc_tensor(shape, dev)
+    match result:
+        Ok(t) =>:
+            pon rc: Int = __mn_tensor_zeros(t.data, t.size, device_int(t.device))
+            si rc < 0:
+                da Err(new_device_error("zeros fill failed on device"))
+            da Ok(t)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 // ---------------------------------------------------------------------------
 // Element-wise arithmetic
@@ -296,121 +244,92 @@ pub fn zeros_on(shape: List<Int>, dev: device.DeviceKind) -> Result<Tensor, Tens
 
 /// Element-wise addition of two tensors.
 @gpu
-pub fn add(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
-    if shapes_equal(a.shape, b.shape) == false {
-        return Err(new_shape_mismatch("add: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
-    }
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_add(out.data, a.data, b.data, a.size, device_int(a.device))
-            if rc < 0 {
-                return Err(new_device_error("add kernel failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn add(a: Tensor, b: Tensor) -> Result<Tensor, TensorError>:
+    si shapes_equal(a.shape, b.shape) == false:
+        da Err(new_shape_mismatch("add: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_add(out.data, a.data, b.data, a.size, device_int(a.device))
+            si rc < 0:
+                da Err(new_device_error("add kernel failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Element-wise subtraction of two tensors.
 @gpu
-pub fn sub(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
-    if shapes_equal(a.shape, b.shape) == false {
-        return Err(new_shape_mismatch("sub: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
-    }
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_sub(out.data, a.data, b.data, a.size, device_int(a.device))
-            if rc < 0 {
-                return Err(new_device_error("sub kernel failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn sub(a: Tensor, b: Tensor) -> Result<Tensor, TensorError>:
+    si shapes_equal(a.shape, b.shape) == false:
+        da Err(new_shape_mismatch("sub: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_sub(out.data, a.data, b.data, a.size, device_int(a.device))
+            si rc < 0:
+                da Err(new_device_error("sub kernel failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Element-wise multiplication of two tensors.
 @gpu
-pub fn mul(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
-    if shapes_equal(a.shape, b.shape) == false {
-        return Err(new_shape_mismatch("mul: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
-    }
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_mul(out.data, a.data, b.data, a.size, device_int(a.device))
-            if rc < 0 {
-                return Err(new_device_error("mul kernel failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn mul(a: Tensor, b: Tensor) -> Result<Tensor, TensorError>:
+    si shapes_equal(a.shape, b.shape) == false:
+        da Err(new_shape_mismatch("mul: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_mul(out.data, a.data, b.data, a.size, device_int(a.device))
+            si rc < 0:
+                da Err(new_device_error("mul kernel failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Element-wise division of two tensors.
 @gpu
-pub fn div(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
-    if shapes_equal(a.shape, b.shape) == false {
-        return Err(new_shape_mismatch("div: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
-    }
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_div(out.data, a.data, b.data, a.size, device_int(a.device))
-            if rc < 0 {
-                return Err(new_device_error("div kernel failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn div(a: Tensor, b: Tensor) -> Result<Tensor, TensorError>:
+    si shapes_equal(a.shape, b.shape) == false:
+        da Err(new_shape_mismatch("div: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_div(out.data, a.data, b.data, a.size, device_int(a.device))
+            si rc < 0:
+                da Err(new_device_error("div kernel failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Scalar multiplication: multiply every element by a constant.
 @gpu
-pub fn scale(t: Tensor, scalar: Float) -> Result<Tensor, TensorError> {
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_copy(out.data, t.data, t.size)
-            if rc < 0 {
-                return Err(new_device_error("copy failed in scale"))
-            }
-            let rc2: Int = __mn_tensor_scale(out.data, out.size, scalar, device_int(out.device))
-            if rc2 < 0 {
-                return Err(new_device_error("scale kernel failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn scale(t: Tensor, scalar: Float) -> Result<Tensor, TensorError>:
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_copy(out.data, t.data, t.size)
+            si rc < 0:
+                da Err(new_device_error("copy failed en scale"))
+            pon rc2: Int = __mn_tensor_scale(out.data, out.size, scalar, device_int(out.device))
+            si rc2 < 0:
+                da Err(new_device_error("scale kernel failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Element-wise negation.
 @gpu
-pub fn negate(t: Tensor) -> Result<Tensor, TensorError> {
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_negate(out.data, t.data, t.size, device_int(t.device))
-            if rc < 0 {
-                return Err(new_device_error("negate kernel failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn negate(t: Tensor) -> Result<Tensor, TensorError>:
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_negate(out.data, t.data, t.size, device_int(t.device))
+            si rc < 0:
+                da Err(new_device_error("negate kernel failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 // ---------------------------------------------------------------------------
 // Unary math operations
@@ -418,71 +337,55 @@ pub fn negate(t: Tensor) -> Result<Tensor, TensorError> {
 
 /// Element-wise absolute value.
 @gpu
-pub fn abs(t: Tensor) -> Result<Tensor, TensorError> {
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_abs(out.data, t.data, t.size, device_int(t.device))
-            if rc < 0 {
-                return Err(new_device_error("abs kernel failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn abs(t: Tensor) -> Result<Tensor, TensorError>:
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_abs(out.data, t.data, t.size, device_int(t.device))
+            si rc < 0:
+                da Err(new_device_error("abs kernel failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Element-wise square root.
 @gpu
-pub fn sqrt(t: Tensor) -> Result<Tensor, TensorError> {
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_sqrt(out.data, t.data, t.size, device_int(t.device))
-            if rc < 0 {
-                return Err(new_device_error("sqrt kernel failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn sqrt(t: Tensor) -> Result<Tensor, TensorError>:
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_sqrt(out.data, t.data, t.size, device_int(t.device))
+            si rc < 0:
+                da Err(new_device_error("sqrt kernel failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Element-wise exponential (e^x).
 @gpu
-pub fn exp(t: Tensor) -> Result<Tensor, TensorError> {
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_exp(out.data, t.data, t.size, device_int(t.device))
-            if rc < 0 {
-                return Err(new_device_error("exp kernel failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn exp(t: Tensor) -> Result<Tensor, TensorError>:
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_exp(out.data, t.data, t.size, device_int(t.device))
+            si rc < 0:
+                da Err(new_device_error("exp kernel failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Element-wise natural logarithm.
 @gpu
-pub fn log(t: Tensor) -> Result<Tensor, TensorError> {
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_log(out.data, t.data, t.size, device_int(t.device))
-            if rc < 0 {
-                return Err(new_device_error("log kernel failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn log(t: Tensor) -> Result<Tensor, TensorError>:
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_log(out.data, t.data, t.size, device_int(t.device))
+            si rc < 0:
+                da Err(new_device_error("log kernel failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 // ---------------------------------------------------------------------------
 // Matrix operations
@@ -491,100 +394,80 @@ pub fn log(t: Tensor) -> Result<Tensor, TensorError> {
 /// Matrix multiplication of two 2D tensors.
 /// For a [M, K] * [K, N] operation, returns a [M, N] tensor.
 @gpu
-pub fn matmul(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
-    if a.ndim != 2 {
-        return Err(new_shape_mismatch("matmul: first operand must be 2D, got " + shape_to_string(a.shape)))
-    }
-    if b.ndim != 2 {
-        return Err(new_shape_mismatch("matmul: second operand must be 2D, got " + shape_to_string(b.shape)))
-    }
-    let m: Int = a.shape[0]
-    let k1: Int = a.shape[1]
-    let k2: Int = b.shape[0]
-    let n: Int = b.shape[1]
-    if k1 != k2 {
-        return Err(new_shape_mismatch("matmul: inner dimensions mismatch: " + str(k1) + " vs " + str(k2)))
-    }
-    let out_shape: List<Int> = [m, n]
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(out_shape, a.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_matmul(out.data, a.data, b.data, m, k1, n, device_int(a.device))
-            if rc < 0 {
-                return Err(new_device_error("matmul kernel failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn matmul(a: Tensor, b: Tensor) -> Result<Tensor, TensorError>:
+    si a.ndim != 2:
+        da Err(new_shape_mismatch("matmul: first operand must be 2D, got " + shape_to_string(a.shape)))
+    si b.ndim != 2:
+        da Err(new_shape_mismatch("matmul: second operand must be 2D, got " + shape_to_string(b.shape)))
+    pon m: Int = a.shape[0]
+    pon k1: Int = a.shape[1]
+    pon k2: Int = b.shape[0]
+    pon n: Int = b.shape[1]
+    si k1 != k2:
+        da Err(new_shape_mismatch("matmul: inner dimensions mismatch: " + str(k1) + " vs " + str(k2)))
+    pon out_shape: List<Int> = [m, n]
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(out_shape, a.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_matmul(out.data, a.data, b.data, m, k1, n, device_int(a.device))
+            si rc < 0:
+                da Err(new_device_error("matmul kernel failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 /// Dot product of two 1D tensors (vectors).
 @gpu
-pub fn dot(a: Tensor, b: Tensor) -> Result<Float, TensorError> {
-    if a.ndim != 1 {
-        return Err(new_shape_mismatch("dot: first operand must be 1D"))
-    }
-    if b.ndim != 1 {
-        return Err(new_shape_mismatch("dot: second operand must be 1D"))
-    }
-    if a.size != b.size {
-        return Err(new_shape_mismatch("dot: lengths must match: " + str(a.size) + " vs " + str(b.size)))
-    }
-    let result: Float = __mn_tensor_dot(a.data, b.data, a.size, device_int(a.device))
-    return Ok(result)
-}
++fn dot(a: Tensor, b: Tensor) -> Result<Float, TensorError>:
+    si a.ndim != 1:
+        da Err(new_shape_mismatch("dot: first operand must be 1D"))
+    si b.ndim != 1:
+        da Err(new_shape_mismatch("dot: second operand must be 1D"))
+    si a.size != b.size:
+        da Err(new_shape_mismatch("dot: lengths must match: " + str(a.size) + " vs " + str(b.size)))
+    pon result: Float = __mn_tensor_dot(a.data, b.data, a.size, device_int(a.device))
+    da Ok(result)
 
 // ---------------------------------------------------------------------------
 // Reshaping and layout
 // ---------------------------------------------------------------------------
 
 /// Reshape a tensor to a new shape (same total number of elements).
-pub fn reshape(t: Tensor, shape: List<Int>) -> Result<Tensor, TensorError> {
-    if validate_shape(shape) == false {
-        return Err(new_invalid_shape("invalid target shape: " + shape_to_string(shape)))
-    }
-    let new_size: Int = compute_size(shape)
-    if new_size != t.size {
-        return Err(new_shape_mismatch("reshape: size " + str(t.size) + " cannot reshape to " + shape_to_string(shape)))
-    }
++fn reshape(t: Tensor, shape: List<Int>) -> Result<Tensor, TensorError>:
+    si validate_shape(shape) == false:
+        da Err(new_invalid_shape("invalid target shape: " + shape_to_string(shape)))
+    pon new_size: Int = compute_size(shape)
+    si new_size != t.size:
+        da Err(new_shape_mismatch("reshape: size " + str(t.size) + " cannot reshape to " + shape_to_string(shape)))
     // Reshape is a view operation — share data pointer, new shape metadata
-    let reshaped: Tensor = new Tensor { data: t.data, shape: shape, ndim: len(shape), size: t.size, device: t.device }
-    return Ok(reshaped)
-}
+    pon reshaped: Tensor = new Tensor { data: t.data, shape: shape, ndim: len(shape), size: t.size, device: t.device }
+    da Ok(reshaped)
 
 /// Transpose a 2D matrix (swap rows and columns).
 @gpu
-pub fn transpose(t: Tensor) -> Result<Tensor, TensorError> {
-    if t.ndim != 2 {
-        return Err(new_shape_mismatch("transpose: requires 2D tensor, got " + shape_to_string(t.shape)))
-    }
-    let rows: Int = t.shape[0]
-    let cols: Int = t.shape[1]
-    let out_shape: List<Int> = [cols, rows]
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(out_shape, t.device)
-    match alloc_result {
-        Ok(out) => {
++fn transpose(t: Tensor) -> Result<Tensor, TensorError>:
+    si t.ndim != 2:
+        da Err(new_shape_mismatch("transpose: requires 2D tensor, got " + shape_to_string(t.shape)))
+    pon rows: Int = t.shape[0]
+    pon cols: Int = t.shape[1]
+    pon out_shape: List<Int> = [cols, rows]
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(out_shape, t.device)
+    match alloc_result:
+        Ok(out) =>:
             // Manual transpose: out[j][i] = t[i][j]
-            let mut i: Int = 0
-            while i < rows {
-                let mut j: Int = 0
-                while j < cols {
-                    let src_idx: Int = i * cols + j
-                    let dst_idx: Int = j * rows + i
-                    let val: Float = __mn_tensor_get(t.data, src_idx)
+            pon mut i: Int = 0
+            mien i < rows:
+                pon mut j: Int = 0
+                mien j < cols:
+                    pon src_idx: Int = i * cols + j
+                    pon dst_idx: Int = j * rows + i
+                    pon val: Float = __mn_tensor_get(t.data, src_idx)
                     __mn_tensor_set(out.data, dst_idx, val)
                     j = j + 1
-                }
                 i = i + 1
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 // ---------------------------------------------------------------------------
 // Reductions
@@ -592,28 +475,24 @@ pub fn transpose(t: Tensor) -> Result<Tensor, TensorError> {
 
 /// Sum of all elements in the tensor.
 @gpu
-pub fn sum(t: Tensor) -> Float {
-    return __mn_tensor_sum(t.data, t.size, device_int(t.device))
-}
++fn sum(t: Tensor) -> Float:
+    da __mn_tensor_sum(t.data, t.size, device_int(t.device))
 
 /// Mean of all elements in the tensor.
 @gpu
-pub fn mean(t: Tensor) -> Float {
-    let s: Float = __mn_tensor_sum(t.data, t.size, device_int(t.device))
-    return s / float(t.size)
-}
++fn mean(t: Tensor) -> Float:
+    pon s: Float = __mn_tensor_sum(t.data, t.size, device_int(t.device))
+    da s / float(t.size)
 
 /// Maximum element in the tensor.
 @gpu
-pub fn max(t: Tensor) -> Float {
-    return __mn_tensor_max(t.data, t.size, device_int(t.device))
-}
++fn max(t: Tensor) -> Float:
+    da __mn_tensor_max(t.data, t.size, device_int(t.device))
 
 /// Minimum element in the tensor.
 @gpu
-pub fn min(t: Tensor) -> Float {
-    return __mn_tensor_min(t.data, t.size, device_int(t.device))
-}
++fn min(t: Tensor) -> Float:
+    da __mn_tensor_min(t.data, t.size, device_int(t.device))
 
 // ---------------------------------------------------------------------------
 // Device transfer
@@ -621,79 +500,61 @@ pub fn min(t: Tensor) -> Float {
 
 /// Move a tensor to a different device (e.g., CPU -> CUDA).
 @gpu
-pub fn to_device(t: Tensor, dev: device.DeviceKind) -> Result<Tensor, TensorError> {
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, dev)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_copy_to_device(out.data, t.data, t.size, device_int(dev), device_int(t.device))
-            if rc < 0 {
-                return Err(new_device_error("device transfer failed"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn to_device(t: Tensor, dev: device.DeviceKind) -> Result<Tensor, TensorError>:
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, dev)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_copy_to_device(out.data, t.data, t.size, device_int(dev), device_int(t.device))
+            si rc < 0:
+                da Err(new_device_error("device transfer failed"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))
 
 // ---------------------------------------------------------------------------
 // Element access
 // ---------------------------------------------------------------------------
 
 /// Get the value at a flat index.
-pub fn get(t: Tensor, index: Int) -> Result<Float, TensorError> {
-    if index < 0 {
-        return Err(new_index_oob("negative index: " + str(index)))
-    }
-    if index >= t.size {
-        return Err(new_index_oob("index " + str(index) + " out of bounds for size " + str(t.size)))
-    }
-    let val: Float = __mn_tensor_get(t.data, index)
-    return Ok(val)
-}
++fn get(t: Tensor, index: Int) -> Result<Float, TensorError>:
+    si index < 0:
+        da Err(new_index_oob("negative index: " + str(index)))
+    si index >= t.size:
+        da Err(new_index_oob("index " + str(index) + " out of bounds cada size " + str(t.size)))
+    pon val: Float = __mn_tensor_get(t.data, index)
+    da Ok(val)
 
 /// Set the value at a flat index (mutates in-place).
-pub fn set(t: Tensor, index: Int, value: Float) -> Result<Int, TensorError> {
-    if index < 0 {
-        return Err(new_index_oob("negative index: " + str(index)))
-    }
-    if index >= t.size {
-        return Err(new_index_oob("index " + str(index) + " out of bounds for size " + str(t.size)))
-    }
++fn set(t: Tensor, index: Int, value: Float) -> Result<Int, TensorError>:
+    si index < 0:
+        da Err(new_index_oob("negative index: " + str(index)))
+    si index >= t.size:
+        da Err(new_index_oob("index " + str(index) + " out of bounds cada size " + str(t.size)))
     __mn_tensor_set(t.data, index, value)
-    return Ok(0)
-}
+    da Ok(0)
 
 /// Check element-wise equality of two tensors.
-pub fn equal(a: Tensor, b: Tensor) -> Bool {
-    if shapes_equal(a.shape, b.shape) == false {
-        return false
-    }
-    let rc: Int = __mn_tensor_eq(a.data, b.data, a.size)
-    return rc == 1
-}
++fn equal(a: Tensor, b: Tensor) -> Bool:
+    si shapes_equal(a.shape, b.shape) == false:
+        da false
+    pon rc: Int = __mn_tensor_eq(a.data, b.data, a.size)
+    da rc == 1
 
 /// Free the memory backing a tensor.
-pub fn free(t: Tensor) -> Result<Int, TensorError> {
-    let rc: Int = __mn_tensor_free(t.data, device_int(t.device))
-    if rc < 0 {
-        return Err(new_device_error("failed to free tensor memory"))
-    }
-    return Ok(0)
-}
++fn free(t: Tensor) -> Result<Int, TensorError>:
+    pon rc: Int = __mn_tensor_free(t.data, device_int(t.device))
+    si rc < 0:
+        da Err(new_device_error("failed to free tensor memory"))
+    da Ok(0)
 
 /// Clone a tensor (deep copy to a new allocation).
-pub fn clone(t: Tensor) -> Result<Tensor, TensorError> {
-    let alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
-    match alloc_result {
-        Ok(out) => {
-            let rc: Int = __mn_tensor_copy(out.data, t.data, t.size)
-            if rc < 0 {
-                return Err(new_device_error("copy failed in clone"))
-            }
-            return Ok(out)
-        },
-        Err(e) => { return Err(e) }
-    }
-    return Err(new_alloc_failed("unreachable"))
-}
++fn clone(t: Tensor) -> Result<Tensor, TensorError>:
+    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+    match alloc_result:
+        Ok(out) =>:
+            pon rc: Int = __mn_tensor_copy(out.data, t.data, t.size)
+            si rc < 0:
+                da Err(new_device_error("copy failed en clone"))
+            da Ok(out)
+        Err(e) => { da Err(e) }
+    da Err(new_alloc_failed("unreachable"))

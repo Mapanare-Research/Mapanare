@@ -6,28 +6,23 @@
 // A simple HTTP request handler that runs as a Cloudflare Worker.
 // Demonstrates Mapanare compiled to WASM for edge compute.
 
-import wasm::bridge
+usa wasm::bridge
 
-pub fn handle_request(method: String, path: String) -> String {
-    if path == "/" {
-        return json_response(200, "Welcome to Mapanare on Cloudflare Workers!")
-    } else if path == "/health" {
-        return json_response(200, "ok")
-    } else if path == "/fib" {
-        let result = fibonacci(30)
-        return json_response(200, "fibonacci(30) = " + str(result))
-    } else {
-        return json_response(404, "Not found: " + path)
-    }
-}
++fn handle_request(method: String, path: String) -> String:
+    si path == "/":
+        da json_response(200, "Welcome to Mapanare on Cloudflare Workers!")
+    sino si path == "/health":
+        da json_response(200, "ok")
+    sino si path == "/fib":
+        pon result = fibonacci(30)
+        da json_response(200, "fibonacci(30) = " + str(result))
+    sino:
+        da json_response(404, "Not found: " + path)
 
-fn json_response(status: Int, message: String) -> String {
-    return "{\"status\": " + str(status) + ", \"message\": \"" + message + "\"}"
-}
+fn json_response(status: Int, message: String) -> String:
+    da "{\"status\": " + str(status) + ", \"message\": \"" + message + "\"}"
 
-fn fibonacci(n: Int) -> Int {
-    if n <= 1 {
-        return n
-    }
-    return fibonacci(n - 1) + fibonacci(n - 2)
-}
+fn fibonacci(n: Int) -> Int:
+    si n <= 1:
+        da n
+    da fibonacci(n - 1) + fibonacci(n - 2)

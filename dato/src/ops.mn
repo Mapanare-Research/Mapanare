@@ -3,434 +3,364 @@
 // All public functions follow the Table -> Table pattern for pipe-friendliness:
 //   table |> ops.head(10) |> ops.select(["name", "age"])
 
-import dato::src::col
-import dato::src::table
+usa dato::src::col
+usa dato::src::table
 
 // ---------------------------------------------------------------------------
 // Internal: list slicing helpers
 // ---------------------------------------------------------------------------
 
-fn slice_int_list(data: List<Int>, start: Int, end: Int) -> List<Int> {
-    let mut result: List<Int> = []
-    let mut i: Int = start
-    while i < end {
+fn slice_int_list(data: List<Int>, start: Int, end: Int) -> List<Int>:
+    pon mut result: List<Int> = []
+    pon mut i: Int = start
+    mien i < end:
         result = result + [data[i]]
         i = i + 1
-    }
-    return result
-}
+    da result
 
-fn slice_float_list(data: List<Float>, start: Int, end: Int) -> List<Float> {
-    let mut result: List<Float> = []
-    let mut i: Int = start
-    while i < end {
+fn slice_float_list(data: List<Float>, start: Int, end: Int) -> List<Float>:
+    pon mut result: List<Float> = []
+    pon mut i: Int = start
+    mien i < end:
         result = result + [data[i]]
         i = i + 1
-    }
-    return result
-}
+    da result
 
-fn slice_str_list(data: List<String>, start: Int, end: Int) -> List<String> {
-    let mut result: List<String> = []
-    let mut i: Int = start
-    while i < end {
+fn slice_str_list(data: List<String>, start: Int, end: Int) -> List<String>:
+    pon mut result: List<String> = []
+    pon mut i: Int = start
+    mien i < end:
         result = result + [data[i]]
         i = i + 1
-    }
-    return result
-}
+    da result
 
-fn slice_bool_list(data: List<Bool>, start: Int, end: Int) -> List<Bool> {
-    let mut result: List<Bool> = []
-    let mut i: Int = start
-    while i < end {
+fn slice_bool_list(data: List<Bool>, start: Int, end: Int) -> List<Bool>:
+    pon mut result: List<Bool> = []
+    pon mut i: Int = start
+    mien i < end:
         result = result + [data[i]]
         i = i + 1
-    }
-    return result
-}
+    da result
 
-fn slice_col(c: col.Col, start: Int, end: Int) -> col.Col {
-    let new_mask: List<Bool> = slice_bool_list(c.mask, start, end)
-    match c.dtype {
-        I64 => {
-            let new_ints: List<Int> = slice_int_list(c.ints, start, end)
-            return new col.Col { name: c.name, dtype: c.dtype, ints: new_ints, floats: [], strs: [], bools: [], mask: new_mask }
-        },
-        F64 => {
-            let new_floats: List<Float> = slice_float_list(c.floats, start, end)
-            return new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: new_floats, strs: [], bools: [], mask: new_mask }
-        },
-        Str => {
-            let new_strs: List<String> = slice_str_list(c.strs, start, end)
-            return new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: new_strs, bools: [], mask: new_mask }
-        },
-        Bool => {
-            let new_bools: List<Bool> = slice_bool_list(c.bools, start, end)
-            return new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: [], bools: new_bools, mask: new_mask }
-        },
-        Null => {
-            return new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: [], bools: [], mask: new_mask }
-        }
-    }
-}
+fn slice_col(c: col.Col, start: Int, end: Int) -> col.Col:
+    pon new_mask: List<Bool> = slice_bool_list(c.mask, start, end)
+    match c.dtype:
+        I64 =>:
+            pon new_ints: List<Int> = slice_int_list(c.ints, start, end)
+            da new col.Col { name: c.name, dtype: c.dtype, ints: new_ints, floats: [], strs: [], bools: [], mask: new_mask }
+        F64 =>:
+            pon new_floats: List<Float> = slice_float_list(c.floats, start, end)
+            da new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: new_floats, strs: [], bools: [], mask: new_mask }
+        Str =>:
+            pon new_strs: List<String> = slice_str_list(c.strs, start, end)
+            da new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: new_strs, bools: [], mask: new_mask }
+        Bool =>:
+            pon new_bools: List<Bool> = slice_bool_list(c.bools, start, end)
+            da new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: [], bools: new_bools, mask: new_mask }
+        Null =>:
+            da new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: [], bools: [], mask: new_mask }
 
 // ---------------------------------------------------------------------------
 // Internal: gather rows by index list
 // ---------------------------------------------------------------------------
 
-fn gather_int_list(data: List<Int>, indices: List<Int>) -> List<Int> {
-    let n: Int = len(indices)
-    let mut result: List<Int> = []
-    let mut i: Int = 0
-    while i < n {
+fn gather_int_list(data: List<Int>, indices: List<Int>) -> List<Int>:
+    pon n: Int = len(indices)
+    pon mut result: List<Int> = []
+    pon mut i: Int = 0
+    mien i < n:
         result = result + [data[indices[i]]]
         i = i + 1
-    }
-    return result
-}
+    da result
 
-fn gather_float_list(data: List<Float>, indices: List<Int>) -> List<Float> {
-    let n: Int = len(indices)
-    let mut result: List<Float> = []
-    let mut i: Int = 0
-    while i < n {
+fn gather_float_list(data: List<Float>, indices: List<Int>) -> List<Float>:
+    pon n: Int = len(indices)
+    pon mut result: List<Float> = []
+    pon mut i: Int = 0
+    mien i < n:
         result = result + [data[indices[i]]]
         i = i + 1
-    }
-    return result
-}
+    da result
 
-fn gather_str_list(data: List<String>, indices: List<Int>) -> List<String> {
-    let n: Int = len(indices)
-    let mut result: List<String> = []
-    let mut i: Int = 0
-    while i < n {
+fn gather_str_list(data: List<String>, indices: List<Int>) -> List<String>:
+    pon n: Int = len(indices)
+    pon mut result: List<String> = []
+    pon mut i: Int = 0
+    mien i < n:
         result = result + [data[indices[i]]]
         i = i + 1
-    }
-    return result
-}
+    da result
 
-fn gather_bool_list(data: List<Bool>, indices: List<Int>) -> List<Bool> {
-    let n: Int = len(indices)
-    let mut result: List<Bool> = []
-    let mut i: Int = 0
-    while i < n {
+fn gather_bool_list(data: List<Bool>, indices: List<Int>) -> List<Bool>:
+    pon n: Int = len(indices)
+    pon mut result: List<Bool> = []
+    pon mut i: Int = 0
+    mien i < n:
         result = result + [data[indices[i]]]
         i = i + 1
-    }
-    return result
-}
+    da result
 
-fn gather_col(c: col.Col, indices: List<Int>) -> col.Col {
-    let new_mask: List<Bool> = gather_bool_list(c.mask, indices)
-    match c.dtype {
-        I64 => {
-            let new_ints: List<Int> = gather_int_list(c.ints, indices)
-            return new col.Col { name: c.name, dtype: c.dtype, ints: new_ints, floats: [], strs: [], bools: [], mask: new_mask }
-        },
-        F64 => {
-            let new_floats: List<Float> = gather_float_list(c.floats, indices)
-            return new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: new_floats, strs: [], bools: [], mask: new_mask }
-        },
-        Str => {
-            let new_strs: List<String> = gather_str_list(c.strs, indices)
-            return new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: new_strs, bools: [], mask: new_mask }
-        },
-        Bool => {
-            let new_bools: List<Bool> = gather_bool_list(c.bools, indices)
-            return new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: [], bools: new_bools, mask: new_mask }
-        },
-        Null => {
-            return new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: [], bools: [], mask: new_mask }
-        }
-    }
-}
+fn gather_col(c: col.Col, indices: List<Int>) -> col.Col:
+    pon new_mask: List<Bool> = gather_bool_list(c.mask, indices)
+    match c.dtype:
+        I64 =>:
+            pon new_ints: List<Int> = gather_int_list(c.ints, indices)
+            da new col.Col { name: c.name, dtype: c.dtype, ints: new_ints, floats: [], strs: [], bools: [], mask: new_mask }
+        F64 =>:
+            pon new_floats: List<Float> = gather_float_list(c.floats, indices)
+            da new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: new_floats, strs: [], bools: [], mask: new_mask }
+        Str =>:
+            pon new_strs: List<String> = gather_str_list(c.strs, indices)
+            da new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: new_strs, bools: [], mask: new_mask }
+        Bool =>:
+            pon new_bools: List<Bool> = gather_bool_list(c.bools, indices)
+            da new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: [], bools: new_bools, mask: new_mask }
+        Null =>:
+            da new col.Col { name: c.name, dtype: c.dtype, ints: [], floats: [], strs: [], bools: [], mask: new_mask }
 
-fn gather_table(t: table.Table, indices: List<Int>) -> table.Table {
-    let nc: Int = len(t.cols)
-    let mut new_cols: List<col.Col> = []
-    let mut i: Int = 0
-    while i < nc {
+fn gather_table(t: table.Table, indices: List<Int>) -> table.Table:
+    pon nc: Int = len(t.cols)
+    pon mut new_cols: List<col.Col> = []
+    pon mut i: Int = 0
+    mien i < nc:
         new_cols = new_cols + [gather_col(t.cols[i], indices)]
         i = i + 1
-    }
-    return table.table_unchecked(new_cols, len(indices))
-}
+    da table.table_unchecked(new_cols, len(indices))
 
 // ---------------------------------------------------------------------------
 // select — keep named columns
 // ---------------------------------------------------------------------------
 
-pub fn select(t: table.Table, cols: List<String>) -> table.Table {
-    let n: Int = len(cols)
-    let mut new_cols: List<col.Col> = []
-    let mut i: Int = 0
-    while i < n {
-        let idx: Int = table.col_index(t, cols[i])
-        if idx >= 0 {
++fn select(t: table.Table, cols: List<String>) -> table.Table:
+    pon n: Int = len(cols)
+    pon mut new_cols: List<col.Col> = []
+    pon mut i: Int = 0
+    mien i < n:
+        pon idx: Int = table.col_index(t, cols[i])
+        si idx >= 0:
             new_cols = new_cols + [t.cols[idx]]
-        }
         i = i + 1
-    }
-    return table.table_unchecked(new_cols, t.nrows)
-}
+    da table.table_unchecked(new_cols, t.nrows)
 
 // ---------------------------------------------------------------------------
 // drop_cols — remove named columns
 // ---------------------------------------------------------------------------
 
-pub fn drop_cols(t: table.Table, cols: List<String>) -> table.Table {
-    let nc: Int = len(t.cols)
-    let ndrop: Int = len(cols)
-    let mut new_cols: List<col.Col> = []
-    let mut i: Int = 0
-    while i < nc {
-        let mut should_drop: Bool = false
-        let mut j: Int = 0
-        while j < ndrop {
-            if t.cols[i].name == cols[j] {
++fn drop_cols(t: table.Table, cols: List<String>) -> table.Table:
+    pon nc: Int = len(t.cols)
+    pon ndrop: Int = len(cols)
+    pon mut new_cols: List<col.Col> = []
+    pon mut i: Int = 0
+    mien i < nc:
+        pon mut should_drop: Bool = false
+        pon mut j: Int = 0
+        mien j < ndrop:
+            si t.cols[i].name == cols[j]:
                 should_drop = true
-            }
             j = j + 1
-        }
-        if should_drop == false {
+        si should_drop == false:
             new_cols = new_cols + [t.cols[i]]
-        }
         i = i + 1
-    }
-    return table.table_unchecked(new_cols, t.nrows)
-}
+    da table.table_unchecked(new_cols, t.nrows)
 
 // ---------------------------------------------------------------------------
 // rename — rename a column
 // ---------------------------------------------------------------------------
 
-pub fn rename(t: table.Table, old_name: String, new_name: String) -> table.Table {
-    let nc: Int = len(t.cols)
-    let mut new_cols: List<col.Col> = []
-    let mut i: Int = 0
-    while i < nc {
-        if t.cols[i].name == old_name {
-            let c: col.Col = t.cols[i]
-            let renamed: col.Col = new col.Col { name: new_name, dtype: c.dtype, ints: c.ints, floats: c.floats, strs: c.strs, bools: c.bools, mask: c.mask }
++fn rename(t: table.Table, old_name: String, new_name: String) -> table.Table:
+    pon nc: Int = len(t.cols)
+    pon mut new_cols: List<col.Col> = []
+    pon mut i: Int = 0
+    mien i < nc:
+        si t.cols[i].name == old_name:
+            pon c: col.Col = t.cols[i]
+            pon renamed: col.Col = new col.Col { name: new_name, dtype: c.dtype, ints: c.ints, floats: c.floats, strs: c.strs, bools: c.bools, mask: c.mask }
             new_cols = new_cols + [renamed]
-        } else {
+        sino:
             new_cols = new_cols + [t.cols[i]]
-        }
         i = i + 1
-    }
-    return table.table_unchecked(new_cols, t.nrows)
-}
+    da table.table_unchecked(new_cols, t.nrows)
 
 // ---------------------------------------------------------------------------
 // add_col — append a column, validate length
 // ---------------------------------------------------------------------------
 
-pub fn add_col(t: table.Table, c: col.Col) -> Result<table.Table, table.DatoError> {
-    let clen: Int = col.col_len(c)
-    if t.nrows > 0 {
-        if clen != t.nrows {
-            return Err(ShapeMismatch("New column '" + c.name + "' has " + str(clen) + " rows, expected " + str(t.nrows)))
-        }
-    }
-    let mut new_cols: List<col.Col> = []
-    let nc: Int = len(t.cols)
-    let mut i: Int = 0
-    while i < nc {
++fn add_col(t: table.Table, c: col.Col) -> Result<table.Table, table.DatoError>:
+    pon clen: Int = col.col_len(c)
+    si t.nrows > 0:
+        si clen != t.nrows:
+            da Err(ShapeMismatch("New column '" + c.name + "' has " + str(clen) + " rows, expected " + str(t.nrows)))
+    pon mut new_cols: List<col.Col> = []
+    pon nc: Int = len(t.cols)
+    pon mut i: Int = 0
+    mien i < nc:
         new_cols = new_cols + [t.cols[i]]
         i = i + 1
-    }
     new_cols = new_cols + [c]
-    let new_nrows: Int = clen
-    if t.nrows > 0 { return Ok(table.table_unchecked(new_cols, t.nrows)) }
-    return Ok(table.table_unchecked(new_cols, new_nrows))
-}
+    pon new_nrows: Int = clen
+    si t.nrows > 0 { da Ok(table.table_unchecked(new_cols, t.nrows)) }
+    da Ok(table.table_unchecked(new_cols, new_nrows))
 
 // ---------------------------------------------------------------------------
 // head — first N rows
 // ---------------------------------------------------------------------------
 
-pub fn head(t: table.Table, n: Int) -> table.Table {
-    let mut end: Int = n
-    if end > t.nrows { end = t.nrows }
-    if end < 0 { end = 0 }
-    let nc: Int = len(t.cols)
-    let mut new_cols: List<col.Col> = []
-    let mut i: Int = 0
-    while i < nc {
++fn head(t: table.Table, n: Int) -> table.Table:
+    pon mut end: Int = n
+    si end > t.nrows { end = t.nrows }
+    si end < 0 { end = 0 }
+    pon nc: Int = len(t.cols)
+    pon mut new_cols: List<col.Col> = []
+    pon mut i: Int = 0
+    mien i < nc:
         new_cols = new_cols + [slice_col(t.cols[i], 0, end)]
         i = i + 1
-    }
-    return table.table_unchecked(new_cols, end)
-}
+    da table.table_unchecked(new_cols, end)
 
 // ---------------------------------------------------------------------------
 // tail — last N rows
 // ---------------------------------------------------------------------------
 
-pub fn tail(t: table.Table, n: Int) -> table.Table {
-    let mut start: Int = t.nrows - n
-    if start < 0 { start = 0 }
-    let nc: Int = len(t.cols)
-    let mut new_cols: List<col.Col> = []
-    let mut i: Int = 0
-    while i < nc {
++fn tail(t: table.Table, n: Int) -> table.Table:
+    pon mut start: Int = t.nrows - n
+    si start < 0 { start = 0 }
+    pon nc: Int = len(t.cols)
+    pon mut new_cols: List<col.Col> = []
+    pon mut i: Int = 0
+    mien i < nc:
         new_cols = new_cols + [slice_col(t.cols[i], start, t.nrows)]
         i = i + 1
-    }
-    return table.table_unchecked(new_cols, t.nrows - start)
-}
+    da table.table_unchecked(new_cols, t.nrows - start)
 
 // ---------------------------------------------------------------------------
 // slice — row range [start, end)
 // ---------------------------------------------------------------------------
 
-pub fn slice(t: table.Table, start: Int, end: Int) -> table.Table {
-    let mut s: Int = start
-    let mut e: Int = end
-    if s < 0 { s = 0 }
-    if e > t.nrows { e = t.nrows }
-    if s >= e { return table.empty() }
-    let nc: Int = len(t.cols)
-    let mut new_cols: List<col.Col> = []
-    let mut i: Int = 0
-    while i < nc {
++fn slice(t: table.Table, start: Int, end: Int) -> table.Table:
+    pon mut s: Int = start
+    pon mut e: Int = end
+    si s < 0 { s = 0 }
+    si e > t.nrows { e = t.nrows }
+    si s >= e { da table.empty() }
+    pon nc: Int = len(t.cols)
+    pon mut new_cols: List<col.Col> = []
+    pon mut i: Int = 0
+    mien i < nc:
         new_cols = new_cols + [slice_col(t.cols[i], s, e)]
         i = i + 1
-    }
-    return table.table_unchecked(new_cols, e - s)
-}
+    da table.table_unchecked(new_cols, e - s)
 
 // ---------------------------------------------------------------------------
 // sort_by_int — sort by Int column (insertion sort)
 // ---------------------------------------------------------------------------
 
-pub fn sort_by_int(t: table.Table, col_name: String, ascending: Bool) -> table.Table {
-    let idx: Int = table.col_index(t, col_name)
-    if idx < 0 { return t }
++fn sort_by_int(t: table.Table, col_name: String, ascending: Bool) -> table.Table:
+    pon idx: Int = table.col_index(t, col_name)
+    si idx < 0 { da t }
 
-    let c: col.Col = t.cols[idx]
-    let n: Int = t.nrows
+    pon c: col.Col = t.cols[idx]
+    pon n: Int = t.nrows
 
     // Build index array
-    let mut indices: List<Int> = []
-    let mut i: Int = 0
-    while i < n {
+    pon mut indices: List<Int> = []
+    pon mut i: Int = 0
+    mien i < n:
         indices = indices + [i]
         i = i + 1
-    }
 
     // Insertion sort on indices by c.ints values
-    let mut j: Int = 1
-    while j < n {
-        let key_idx: Int = indices[j]
-        let key_val: Int = c.ints[key_idx]
-        let mut k: Int = j - 1
-        let mut done: Bool = false
-        while k >= 0 {
-            if done { break }
-            let cur_val: Int = c.ints[indices[k]]
-            let mut should_swap: Bool = false
-            if ascending {
-                if cur_val > key_val { should_swap = true }
-            } else {
-                if cur_val < key_val { should_swap = true }
-            }
-            if should_swap {
+    pon mut j: Int = 1
+    mien j < n:
+        pon key_idx: Int = indices[j]
+        pon key_val: Int = c.ints[key_idx]
+        pon mut k: Int = j - 1
+        pon mut done: Bool = false
+        mien k >= 0:
+            si done { sal }
+            pon cur_val: Int = c.ints[indices[k]]
+            pon mut should_swap: Bool = false
+            si ascending:
+                si cur_val > key_val { should_swap = true }
+            sino:
+                si cur_val < key_val { should_swap = true }
+            si should_swap:
                 indices[k + 1] = indices[k]
                 k = k - 1
-            } else {
+            sino:
                 done = true
-            }
-        }
         indices[k + 1] = key_idx
         j = j + 1
-    }
 
-    return gather_table(t, indices)
-}
+    da gather_table(t, indices)
 
 // ---------------------------------------------------------------------------
 // unique_by — deduplicate by column value
 // ---------------------------------------------------------------------------
 
-pub fn unique_by(t: table.Table, col_name: String) -> table.Table {
-    let idx: Int = table.col_index(t, col_name)
-    if idx < 0 { return t }
++fn unique_by(t: table.Table, col_name: String) -> table.Table:
+    pon idx: Int = table.col_index(t, col_name)
+    si idx < 0 { da t }
 
-    let c: col.Col = t.cols[idx]
-    let n: Int = t.nrows
-    let mut seen: Map<String, Bool> = #{}
-    let mut indices: List<Int> = []
+    pon c: col.Col = t.cols[idx]
+    pon n: Int = t.nrows
+    pon mut seen: Map<String, Bool> = #{}
+    pon mut indices: List<Int> = []
 
-    let mut i: Int = 0
-    while i < n {
-        let key: String = col.value_to_string(c, i)
-        let mut already: Bool = false
-        for k in seen {
-            if k == key { already = true }
-        }
-        if already == false {
+    pon mut i: Int = 0
+    mien i < n:
+        pon key: String = col.value_to_string(c, i)
+        pon mut already: Bool = false
+        cada k en seen:
+            si k == key { already = true }
+        si already == false:
             seen[key] = true
             indices = indices + [i]
-        }
         i = i + 1
-    }
 
-    return gather_table(t, indices)
-}
+    da gather_table(t, indices)
 
 // ---------------------------------------------------------------------------
 // filter_by_int — filter rows where int col > or < threshold
 // ---------------------------------------------------------------------------
 
-pub fn filter_by_int(t: table.Table, col_name: String, threshold: Int, above: Bool) -> table.Table {
-    let idx: Int = table.col_index(t, col_name)
-    if idx < 0 { return t }
++fn filter_by_int(t: table.Table, col_name: String, threshold: Int, above: Bool) -> table.Table:
+    pon idx: Int = table.col_index(t, col_name)
+    si idx < 0 { da t }
 
-    let c: col.Col = t.cols[idx]
-    let n: Int = t.nrows
-    let mut indices: List<Int> = []
+    pon c: col.Col = t.cols[idx]
+    pon n: Int = t.nrows
+    pon mut indices: List<Int> = []
 
-    let mut i: Int = 0
-    while i < n {
-        let val: Int = c.ints[i]
-        let mut keep: Bool = false
-        if above {
-            if val > threshold { keep = true }
-        } else {
-            if val < threshold { keep = true }
-        }
-        if keep {
+    pon mut i: Int = 0
+    mien i < n:
+        pon val: Int = c.ints[i]
+        pon mut keep: Bool = false
+        si above:
+            si val > threshold { keep = true }
+        sino:
+            si val < threshold { keep = true }
+        si keep:
             indices = indices + [i]
-        }
         i = i + 1
-    }
 
-    return gather_table(t, indices)
-}
+    da gather_table(t, indices)
 
 // ---------------------------------------------------------------------------
 // filter_by_str — filter where string col == value
 // ---------------------------------------------------------------------------
 
-pub fn filter_by_str(t: table.Table, col_name: String, value: String) -> table.Table {
-    let idx: Int = table.col_index(t, col_name)
-    if idx < 0 { return t }
++fn filter_by_str(t: table.Table, col_name: String, value: String) -> table.Table:
+    pon idx: Int = table.col_index(t, col_name)
+    si idx < 0 { da t }
 
-    let c: col.Col = t.cols[idx]
-    let n: Int = t.nrows
-    let mut indices: List<Int> = []
+    pon c: col.Col = t.cols[idx]
+    pon n: Int = t.nrows
+    pon mut indices: List<Int> = []
 
-    let mut i: Int = 0
-    while i < n {
-        if c.strs[i] == value {
+    pon mut i: Int = 0
+    mien i < n:
+        si c.strs[i] == value:
             indices = indices + [i]
-        }
         i = i + 1
-    }
 
-    return gather_table(t, indices)
-}
+    da gather_table(t, indices)

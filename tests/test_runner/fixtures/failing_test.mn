@@ -1,11 +1,9 @@
 // Test file with a failing test
 
 @test
-fn test_pass() {
+fn test_pass():
     assert 1 == 1
-}
 
 @test
-fn test_fail() {
+fn test_fail():
     assert 1 == 2, "this should fail"
-}

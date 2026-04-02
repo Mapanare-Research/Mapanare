@@ -1,14 +1,10 @@
-fn divide(a: Int, b: Int) -> Result<Int, String> {
-    if b == 0 {
-        return Err("division by zero")
-    }
-    return Ok(a / b)
-}
+fn divide(a: Int, b: Int) -> Result<Int, String>:
+    si b == 0:
+        da Err("division by zero")
+    da Ok(a / b)
 
-fn main() {
-    let r: Result<Int, String> = divide(10, 2)
-    match r {
+fn main:
+    pon r: Result<Int, String> = divide(10, 2)
+    match r:
         Ok(v) => { print(str(v)) },
         Err(e) => { print(e) }
-    }
-}

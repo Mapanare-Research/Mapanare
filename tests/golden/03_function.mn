@@ -1,8 +1,6 @@
-fn add(a: Int, b: Int) -> Int {
-    return a + b
-}
+fn add(a: Int, b: Int) -> Int:
+    da a + b
 
-fn main() {
-    let r: Int = add(10, 20)
+fn main:
+    pon r: Int = add(10, 20)
     print(str(r))
-}

@@ -11,162 +11,136 @@
 // Core struct
 // ---------------------------------------------------------------------------
 
-pub struct RateLimiter {
++tipo RateLimiter:
     window_ms: Int,
     max_requests: Int,
     counters: Map<String, Int>,
     window_starts: Map<String, Int>
-}
 
 // ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
 
-pub fn new_rate_limiter(window_ms: Int, max_requests: Int) -> RateLimiter {
-    return new RateLimiter {
++fn new_rate_limiter(window_ms: Int, max_requests: Int) -> RateLimiter:
+    da new RateLimiter:
         window_ms: window_ms,
         max_requests: max_requests,
         counters: #{},
         window_starts: #{}
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Internal: check if a key's window has expired
 // ---------------------------------------------------------------------------
 
-fn is_window_expired(limiter: RateLimiter, key: String, now_ms: Int) -> Bool {
-    let mut has_key: Bool = false
-    for k in limiter.window_starts {
-        if k == key { has_key = true }
-    }
-    if has_key == false { return true }
-    let start: Int = limiter.window_starts[key]
-    if now_ms - start >= limiter.window_ms {
-        return true
-    }
-    return false
-}
+fn is_window_expired(limiter: RateLimiter, key: String, now_ms: Int) -> Bool:
+    pon mut has_key: Bool = false
+    cada k en limiter.window_starts:
+        si k == key { has_key = true }
+    si has_key == false { da true }
+    pon start: Int = limiter.window_starts[key]
+    si now_ms - start >= limiter.window_ms:
+        da true
+    da false
 
 // ---------------------------------------------------------------------------
 // Internal: get current counter for a key (0 if not present or expired)
 // ---------------------------------------------------------------------------
 
-fn get_counter(limiter: RateLimiter, key: String, now_ms: Int) -> Int {
-    if is_window_expired(limiter, key, now_ms) {
-        return 0
-    }
-    let mut has_key: Bool = false
-    for k in limiter.counters {
-        if k == key { has_key = true }
-    }
-    if has_key == false { return 0 }
-    return limiter.counters[key]
-}
+fn get_counter(limiter: RateLimiter, key: String, now_ms: Int) -> Int:
+    si is_window_expired(limiter, key, now_ms):
+        da 0
+    pon mut has_key: Bool = false
+    cada k en limiter.counters:
+        si k == key { has_key = true }
+    si has_key == false { da 0 }
+    da limiter.counters[key]
 
 // ---------------------------------------------------------------------------
 // Check rate and increment counter — return updated limiter
 // ---------------------------------------------------------------------------
 
-pub fn check_rate(limiter: RateLimiter, key: String, now_ms: Int) -> RateLimiter {
-    let expired: Bool = is_window_expired(limiter, key, now_ms)
++fn check_rate(limiter: RateLimiter, key: String, now_ms: Int) -> RateLimiter:
+    pon expired: Bool = is_window_expired(limiter, key, now_ms)
 
     // Copy maps
-    let mut counters: Map<String, Int> = #{}
-    for k in limiter.counters {
+    pon mut counters: Map<String, Int> = #{}
+    cada k en limiter.counters:
         counters[k] = limiter.counters[k]
-    }
-    let mut window_starts: Map<String, Int> = #{}
-    for k in limiter.window_starts {
+    pon mut window_starts: Map<String, Int> = #{}
+    cada k en limiter.window_starts:
         window_starts[k] = limiter.window_starts[k]
-    }
 
-    if expired {
+    si expired:
         // Start new window
         counters[key] = 1
         window_starts[key] = now_ms
-    } else {
+    sino:
         // Increment existing counter
-        let current: Int = get_counter(limiter, key, now_ms)
+        pon current: Int = get_counter(limiter, key, now_ms)
         counters[key] = current + 1
-    }
 
-    return new RateLimiter {
+    da new RateLimiter:
         window_ms: limiter.window_ms,
         max_requests: limiter.max_requests,
         counters: counters,
         window_starts: window_starts
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Check if a request is allowed (without modifying state)
 // ---------------------------------------------------------------------------
 
-pub fn is_allowed(limiter: RateLimiter, key: String, now_ms: Int) -> Bool {
-    let current: Int = get_counter(limiter, key, now_ms)
-    if current < limiter.max_requests {
-        return true
-    }
-    return false
-}
++fn is_allowed(limiter: RateLimiter, key: String, now_ms: Int) -> Bool:
+    pon current: Int = get_counter(limiter, key, now_ms)
+    si current < limiter.max_requests:
+        da true
+    da false
 
 // ---------------------------------------------------------------------------
 // Remaining requests in current window
 // ---------------------------------------------------------------------------
 
-pub fn remaining(limiter: RateLimiter, key: String, now_ms: Int) -> Int {
-    let current: Int = get_counter(limiter, key, now_ms)
-    let rem: Int = limiter.max_requests - current
-    if rem < 0 { return 0 }
-    return rem
-}
++fn remaining(limiter: RateLimiter, key: String, now_ms: Int) -> Int:
+    pon current: Int = get_counter(limiter, key, now_ms)
+    pon rem: Int = limiter.max_requests - current
+    si rem < 0 { da 0 }
+    da rem
 
 // ---------------------------------------------------------------------------
 // Reset a specific key's counter
 // ---------------------------------------------------------------------------
 
-pub fn reset_key(limiter: RateLimiter, key: String) -> RateLimiter {
-    let mut counters: Map<String, Int> = #{}
-    for k in limiter.counters {
-        if k != key {
++fn reset_key(limiter: RateLimiter, key: String) -> RateLimiter:
+    pon mut counters: Map<String, Int> = #{}
+    cada k en limiter.counters:
+        si k != key:
             counters[k] = limiter.counters[k]
-        }
-    }
-    let mut window_starts: Map<String, Int> = #{}
-    for k in limiter.window_starts {
-        if k != key {
+    pon mut window_starts: Map<String, Int> = #{}
+    cada k en limiter.window_starts:
+        si k != key:
             window_starts[k] = limiter.window_starts[k]
-        }
-    }
-    return new RateLimiter {
+    da new RateLimiter:
         window_ms: limiter.window_ms,
         max_requests: limiter.max_requests,
         counters: counters,
         window_starts: window_starts
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Rate limit headers for HTTP response
 // ---------------------------------------------------------------------------
 
-pub fn rate_limit_headers(limiter: RateLimiter, key: String, now_ms: Int) -> Map<String, String> {
-    let mut headers: Map<String, String> = #{}
-    let rem: Int = remaining(limiter, key, now_ms)
++fn rate_limit_headers(limiter: RateLimiter, key: String, now_ms: Int) -> Map<String, String>:
+    pon mut headers: Map<String, String> = #{}
+    pon rem: Int = remaining(limiter, key, now_ms)
     headers["X-RateLimit-Limit"] = str(limiter.max_requests)
     headers["X-RateLimit-Remaining"] = str(rem)
 
     // Compute reset time
-    let mut has_key: Bool = false
-    for k in limiter.window_starts {
-        if k == key { has_key = true }
-    }
-    if has_key {
-        let start: Int = limiter.window_starts[key]
-        let reset_at: Int = start + limiter.window_ms
+    pon mut has_key: Bool = false
+    cada k en limiter.window_starts:
+        si k == key { has_key = true }
+    si has_key:
+        pon start: Int = limiter.window_starts[key]
+        pon reset_at: Int = start + limiter.window_ms
         headers["X-RateLimit-Reset"] = str(reset_at)
-    }
 
-    return headers
-}
+    da headers
