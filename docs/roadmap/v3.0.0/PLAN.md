@@ -856,4 +856,5 @@ La culebra se muerde la cola — through C, bilingual, stripped to the bone.
 
 | Date | Milestone | Details |
 |------|-----------|---------|
-| 2026-04-01 | Phase 2.1: `emit_c.py` complete | 15/15 golden tests pass through C backend. ~900 lines. Handles all 45 MIR instructions, structs, enums, Option/Result, closures, range iteration, pattern matching. CLI: `mapanare emit-c`. 878 existing pytest pass — no regressions. |
+| 2026-04-01 | Phase 2.1: `emit_c.py` complete | 15/15 golden tests pass through C backend. ~1,700 lines. Handles all 45 MIR instructions. CLI: `mapanare emit-c`. |
+| 2026-04-01 | Phase 1.2: Bilingual keywords | 17 keyword pairs (pon/let, si/if, da/return, etc.). Regex terminals with word-boundary lookahead. New `continue`/`sigue` keyword. 878 tests pass. Both forms produce identical output. |
