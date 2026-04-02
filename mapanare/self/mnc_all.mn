@@ -2562,9 +2562,9 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
             p = p + 1
             return new_expr_result(Expr::ListLit(elems), p)
         }
-        let en: ExprResult = parse_expr(tokens, p, filename, 0)
-        elems.push(en.expr)
-        p = en.pos
+        let en_val: ExprResult = parse_expr(tokens, p, filename, 0)
+        elems.push(en_val.expr)
+        p = en_val.pos
     }
 
     p = expect(tokens, p, "RBRACKET")
@@ -2594,9 +2594,9 @@ fn parse_paren_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
             return new_expr_result(Expr::ListLit(elems), p)
         }
         p = p + 1
-        let en: ExprResult = parse_expr(tokens, p, filename, 0)
-        elems.push(en.expr)
-        p = en.pos
+        let en_val: ExprResult = parse_expr(tokens, p, filename, 0)
+        elems.push(en_val.expr)
+        p = en_val.pos
     }
     p = expect(tokens, p, "RPAREN")
     return new_expr_result(Expr::ListLit(elems), p)
@@ -4094,9 +4094,9 @@ fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
             for _ in 0..50 {
                 if oi >= len(data.outputs) {
                     // Check state bindings
-                    let mut si: Int = 0
+                    let mut si_idx: Int = 0
                     for _ in 0..50 {
-                        if si >= len(data.state) {
+                        if si_idx >= len(data.state) {
                             // Check methods
                             let mut mi: Int = 0
                             for _ in 0..50 {
@@ -4109,9 +4109,9 @@ fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
                             }
                             return pop_scope(st2)
                         }
-                        let state_stmt: Stmt = data.state[si]
+                        let state_stmt: Stmt = data.state[si_idx]
                         st2 = check_stmt(st2, state_stmt)
-                        si = si + 1
+                        si_idx = si_idx + 1
                     }
                     return pop_scope(st2)
                 }
@@ -4210,15 +4210,15 @@ fn check_pipe_stages(st: SemState, data: PipeDefData) -> SemState {
 
     let mut st2: SemState = st
     let mut prev_output: TypeInfo = unknown_type()
-    let mut si: Int = 0
+    let mut si_idx: Int = 0
 
     for _ in 0..50 {
-        if si >= len(data.stages) { return st2 }
-        let stage: Expr = data.stages[si]
+        if si_idx >= len(data.stages) { return st2 }
+        let stage: Expr = data.stages[si_idx]
         prev_output = check_pipe_stage_type(st2, stage, data.name)
         let stage_err: SemState = check_pipe_stage_err(st2, stage, data.name)
         st2 = stage_err
-        si = si + 1
+        si_idx = si_idx + 1
     }
     return st2
 }
@@ -7751,13 +7751,13 @@ fn pretty_print_module(module: MIRModule) -> String {
     }
 
     // Print structs
-    let mut si: Int = 0
+    let mut si_idx: Int = 0
     let nms: Int = len(module.structs)
     for _ in 0..50 {
-        if si < nms {
-            let s: StructInfo = module.structs[si]
+        if si_idx < nms {
+            let s: StructInfo = module.structs[si_idx]
             result = result + "struct " + s.name + " {...}\n"
-            si = si + 1
+            si_idx = si_idx + 1
         }
     }
 
@@ -11100,12 +11100,12 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     st = declare_all_runtime(st)
 
     // Register struct types
-    let mut si: Int = 0
+    let mut si_idx: Int = 0
     let nmodstructs: Int = len(module.structs)
     for _ in 0..50 {
-        if si < nmodstructs {
-            st = register_mir_struct(st, module.structs[si])
-            si = si + 1
+        if si_idx < nmodstructs {
+            st = register_mir_struct(st, module.structs[si_idx])
+            si_idx = si_idx + 1
         }
     }
 
@@ -11215,12 +11215,12 @@ pub fn emit_header(module: MIRModule, module_name: String) -> EmitState {
     st = emit_format_constants(st)
     st = declare_all_runtime(st)
 
-    let mut si: Int = 0
+    let mut si_idx: Int = 0
     let nhstructs: Int = len(module.structs)
     for _ in 0..50 {
-        if si < nhstructs {
-            st = register_mir_struct(st, module.structs[si])
-            si = si + 1
+        if si_idx < nhstructs {
+            st = register_mir_struct(st, module.structs[si_idx])
+            si_idx = si_idx + 1
         }
     }
     let mut ei: Int = 0

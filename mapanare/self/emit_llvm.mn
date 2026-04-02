@@ -2803,12 +2803,12 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     st = declare_all_runtime(st)
 
     // Register struct types
-    let mut si: Int = 0
+    let mut si_idx: Int = 0
     let nmodstructs: Int = len(module.structs)
     for _ in 0..50 {
-        if si < nmodstructs {
-            st = register_mir_struct(st, module.structs[si])
-            si = si + 1
+        if si_idx < nmodstructs {
+            st = register_mir_struct(st, module.structs[si_idx])
+            si_idx = si_idx + 1
         }
     }
 
@@ -2918,12 +2918,12 @@ pub fn emit_header(module: MIRModule, module_name: String) -> EmitState {
     st = emit_format_constants(st)
     st = declare_all_runtime(st)
 
-    let mut si: Int = 0
+    let mut si_idx: Int = 0
     let nhstructs: Int = len(module.structs)
     for _ in 0..50 {
-        if si < nhstructs {
-            st = register_mir_struct(st, module.structs[si])
-            si = si + 1
+        if si_idx < nhstructs {
+            st = register_mir_struct(st, module.structs[si_idx])
+            si_idx = si_idx + 1
         }
     }
     let mut ei: Int = 0

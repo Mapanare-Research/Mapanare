@@ -2460,13 +2460,13 @@ fn pretty_print_module(module: MIRModule) -> String {
     }
 
     // Print structs
-    let mut si: Int = 0
+    let mut si_idx: Int = 0
     let nms: Int = len(module.structs)
     for _ in 0..50 {
-        if si < nms {
-            let s: StructInfo = module.structs[si]
+        if si_idx < nms {
+            let s: StructInfo = module.structs[si_idx]
             result = result + "struct " + s.name + " {...}\n"
-            si = si + 1
+            si_idx = si_idx + 1
         }
     }
 

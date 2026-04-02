@@ -1417,9 +1417,9 @@ fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
             for _ in 0..50 {
                 if oi >= len(data.outputs) {
                     // Check state bindings
-                    let mut si: Int = 0
+                    let mut si_idx: Int = 0
                     for _ in 0..50 {
-                        if si >= len(data.state) {
+                        if si_idx >= len(data.state) {
                             // Check methods
                             let mut mi: Int = 0
                             for _ in 0..50 {
@@ -1432,9 +1432,9 @@ fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
                             }
                             return pop_scope(st2)
                         }
-                        let state_stmt: Stmt = data.state[si]
+                        let state_stmt: Stmt = data.state[si_idx]
                         st2 = check_stmt(st2, state_stmt)
-                        si = si + 1
+                        si_idx = si_idx + 1
                     }
                     return pop_scope(st2)
                 }
@@ -1533,15 +1533,15 @@ fn check_pipe_stages(st: SemState, data: PipeDefData) -> SemState {
 
     let mut st2: SemState = st
     let mut prev_output: TypeInfo = unknown_type()
-    let mut si: Int = 0
+    let mut si_idx: Int = 0
 
     for _ in 0..50 {
-        if si >= len(data.stages) { return st2 }
-        let stage: Expr = data.stages[si]
+        if si_idx >= len(data.stages) { return st2 }
+        let stage: Expr = data.stages[si_idx]
         prev_output = check_pipe_stage_type(st2, stage, data.name)
         let stage_err: SemState = check_pipe_stage_err(st2, stage, data.name)
         st2 = stage_err
-        si = si + 1
+        si_idx = si_idx + 1
     }
     return st2
 }
