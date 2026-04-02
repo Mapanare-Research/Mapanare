@@ -864,3 +864,5 @@ La culebra se muerde la cola — through C, bilingual, stripped to the bone.
 | 2026-04-02 | Phase 2.4: LLVM optional | llvmlite moved to `[llvm]` extras. `mapanare run` defaults to C backend. `--release` for LLVM. `pip install mapanare` works without llvmlite. |
 | 2026-04-02 | Phase 3.1: Migration tool | `mapanare migrate --to=v3`. struct→tipo, enum→tipo with \|, trait→modo, keywords→spanglish. Keeps braces (robust). |
 | 2026-04-02 | Phase 3.2: Migrate 93 files | Golden tests, examples, stdlib, crawl, dato, scan, fuzz. Bilingual keywords applied. Self-hosted files fixed (si→si_idx, en→en_idx). |
+| 2026-04-02 | Phase 2.2: `emit_c.mn` | Self-hosted C emitter — 770 lines of Mapanare (replaces 3,248 lines LLVM emitter). 32 functions, parses clean. |
+| 2026-04-02 | Keyword conflict fixes | Fixed si/da/en variable name conflicts across stdlib, self-hosted, crawl, dato. 129 YAML tests recovered. |
