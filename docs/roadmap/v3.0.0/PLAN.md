@@ -706,14 +706,14 @@ Critical path: **1.1 -> 1.2 -> 1.3 -> 2.1 -> 2.2 -> 2.3** (~11 weeks)
 
 ### Must Ship
 
-- [ ] Radical parser handles all language features
-- [ ] All golden tests pass with new syntax
+- [x] Radical parser handles all language features (indent, tipo, modo, @agent — 2026-04-02)
+- [x] All golden tests pass with new syntax (15/15 survive migration — 2026-04-02)
 - [x] `emit_c.py` correct for all golden tests (15/15 — 2026-04-01)
 - [ ] `emit_c.mn` compiles through `emit_c.py`
 - [ ] 3-stage bootstrap reaches fixed point
-- [ ] `pip install mapanare` works without llvmlite
-- [ ] `mapanare migrate --to=v3` converts v2 code
-- [ ] Both Spanglish and English keywords produce identical output
+- [x] `pip install mapanare` works without llvmlite (2026-04-02)
+- [x] `mapanare migrate --to=v3` converts v2 code (2026-04-02)
+- [x] Both Spanglish and English keywords produce identical output (2026-04-01)
 - [ ] VS Code extension updated
 - [ ] CI green
 
@@ -861,3 +861,5 @@ La culebra se muerde la cola — through C, bilingual, stripped to the bone.
 | 2026-04-01 | Phase 1.1 (partial): `tipo` + `modo` | `tipo Name { fields }` → StructDef, `tipo Name { \| variants }` → EnumDef. `modo`/`way` accepted as trait keyword. BAR terminal added. Works end-to-end through C backend. |
 | 2026-04-02 | Phase 1.1 (partial): `@Agent` + channels | `@Name { ... }` agent syntax, `name -> Type` / `name <- Type` arrow channels. |
 | 2026-04-02 | Phase 1.1: Indentation preprocessor | Source-level colon+indent → brace converter. `fn main:`, `si x > 0:`, `sino:`, `cada i en:`, `mien:`, `tipo:`. Full backward compat with braces. Mixed syntax works. |
+| 2026-04-02 | Phase 2.4: LLVM optional | llvmlite moved to `[llvm]` extras. `mapanare run` defaults to C backend. `--release` for LLVM. `pip install mapanare` works without llvmlite. |
+| 2026-04-02 | Phase 3.1: Migration tool | `mapanare migrate --to=v3`. struct→tipo, enum→tipo with \|, trait→modo, braces→indent, keywords→spanglish. 15/15 golden tests survive migration with identical output. |
