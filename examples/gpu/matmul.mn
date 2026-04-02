@@ -9,7 +9,7 @@ usa gpu::tensor
 usa gpu::device
 
 // Detect available GPU devices
-fn main:
+fn main() {
     pon detection: DetectionResult = detect_gpus()
     pon device: DeviceKind = preferred_device(detection)
     print("Detected device: " + device_name(device))
@@ -38,3 +38,4 @@ fn main:
     print("Computing " + str(size) + "x" + str(size) + " matmul...")
     pon result = matmul(big_a, big_b)
     print("Done. Result[0,0] = " + str(result))
+}

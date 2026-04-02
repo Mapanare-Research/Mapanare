@@ -17,7 +17,7 @@ extern "C" fn __mn_file_read(path: String) -> String
 // Full server configuration struct
 // ---------------------------------------------------------------------------
 
-+tipo FullServerConfig:
+pub tipo FullServerConfig {
     host: String,
     port: Int,
     max_connections: Int,
@@ -29,13 +29,14 @@ extern "C" fn __mn_file_read(path: String) -> String
     rate_limit_max: Int,
     tls_cert: String,
     tls_key: String
+}
 
 // ---------------------------------------------------------------------------
 // Default configuration
 // ---------------------------------------------------------------------------
 
-+fn default_config() -> FullServerConfig:
-    da new FullServerConfig:
+pub fn default_config() -> FullServerConfig {
+    da new FullServerConfig {
         host: "0.0.0.0",
         port: 8080,
         max_connections: 128,
@@ -47,37 +48,44 @@ extern "C" fn __mn_file_read(path: String) -> String
         rate_limit_max: 100,
         tls_cert: "",
         tls_key: ""
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Internal: trim whitespace from a string
 // ---------------------------------------------------------------------------
 
-fn trim_ws(s: String) -> String:
+fn trim_ws(s: String) -> String {
     pon slen: Int = len(s)
     si slen == 0 { da s }
 
     pon mut start: Int = 0
-    mien start < slen:
+    mien start < slen {
         pon ch: String = s.char_at(start)
-        si ch != " ":
+        si ch != " " {
             si ch != "\t" { sal }
+        }
         start = start + 1
+    }
 
     pon mut end: Int = slen - 1
-    mien end >= start:
+    mien end >= start {
         pon ch: String = s.char_at(end)
-        si ch != " ":
+        si ch != " " {
             si ch != "\t" { sal }
+        }
         end = end - 1
+    }
 
     si start > end { da "" }
     da s.substr(start, end + 1)
+}
 
 // ---------------------------------------------------------------------------
 // Internal: parse an integer from a string (with fallback)
 // ---------------------------------------------------------------------------
 
-fn parse_int_safe(s: String, fallback: Int) -> Int:
+fn parse_int_safe(s: String, fallback: Int) -> Int {
     pon trimmed: String = trim_ws(s)
     si len(trimmed) == 0 { da fallback }
 
@@ -86,10 +94,10 @@ fn parse_int_safe(s: String, fallback: Int) -> Int:
     pon slen: Int = len(trimmed)
     pon mut valid: Bool = false
 
-    mien i < slen:
+    mien i < slen {
         pon ch: String = trimmed.char_at(i)
-        si ch >= "0":
-            si ch <= "9":
+        si ch >= "0" {
+            si ch <= "9" {
                 pon mut digit: Int = 0
                 si ch == "0" { digit = 0 }
                 sino si ch == "1" { digit = 1 }
@@ -104,13 +112,17 @@ fn parse_int_safe(s: String, fallback: Int) -> Int:
                 result = result * 10 + digit
                 valid = true
                 i = i + 1
-            sino:
+            } sino {
                 sal
-        sino:
+            }
+        } sino {
             sal
+        }
+    }
 
     si valid { da result }
     da fallback
+}
 
 // ---------------------------------------------------------------------------
 // Load configuration from a key=value text file
@@ -131,10 +143,11 @@ fn parse_int_safe(s: String, fallback: Int) -> Int:
 // Lines starting with # are comments. Unknown keys are ignored.
 // ---------------------------------------------------------------------------
 
-+fn load_config(path: String) -> Result<FullServerConfig, String>:
+pub fn load_config(path: String) -> Result<FullServerConfig, String> {
     pon content: String = __mn_file_read(path)
-    si len(content) == 0:
+    si len(content) == 0 {
         da Err("Failed to read config file: " + path)
+    }
 
     pon mut cfg: FullServerConfig = default_config()
 
@@ -144,29 +157,31 @@ fn parse_int_safe(s: String, fallback: Int) -> Int:
     pon mut line: String = ""
     pon mut count: Int = 0
 
-    mien pos <= slen:
+    mien pos <= slen {
         count = count + 1
         si count > 10000 { sal }
 
         pon mut ch: String = ""
         pon mut at_eol: Bool = false
-        si pos < slen:
+        si pos < slen {
             ch = content.char_at(pos)
-        sino:
+        } sino {
             at_eol = true
+        }
 
-        si ch == "\n":
+        si ch == "\n" {
             at_eol = true
+        }
 
-        si at_eol:
+        si at_eol {
             pon trimmed: String = trim_ws(line)
-            si len(trimmed) > 0:
+            si len(trimmed) > 0 {
                 // Skip comments
                 pon first: String = trimmed.char_at(0)
-                si first != "#":
+                si first != "#" {
                     // Split by first "="
                     pon eq_pos: Int = trimmed.find("=")
-                    si eq_pos > 0:
+                    si eq_pos > 0 {
                         pon key: String = trim_ws(trimmed.substr(0, eq_pos))
                         pon val: String = trim_ws(trimmed.substr(eq_pos + 1, len(trimmed)))
 
@@ -181,23 +196,32 @@ fn parse_int_safe(s: String, fallback: Int) -> Int:
                         sino si key == "rate_limit_max" { cfg = new FullServerConfig { host: cfg.host, port: cfg.port, max_connections: cfg.max_connections, read_timeout_ms: cfg.read_timeout_ms, session_cookie: cfg.session_cookie, session_max_age: cfg.session_max_age, cors_origins: cfg.cors_origins, rate_limit_window: cfg.rate_limit_window, rate_limit_max: parse_int_safe(val, cfg.rate_limit_max), tls_cert: cfg.tls_cert, tls_key: cfg.tls_key } }
                         sino si key == "tls_cert" { cfg = new FullServerConfig { host: cfg.host, port: cfg.port, max_connections: cfg.max_connections, read_timeout_ms: cfg.read_timeout_ms, session_cookie: cfg.session_cookie, session_max_age: cfg.session_max_age, cors_origins: cfg.cors_origins, rate_limit_window: cfg.rate_limit_window, rate_limit_max: cfg.rate_limit_max, tls_cert: val, tls_key: cfg.tls_key } }
                         sino si key == "tls_key" { cfg = new FullServerConfig { host: cfg.host, port: cfg.port, max_connections: cfg.max_connections, read_timeout_ms: cfg.read_timeout_ms, session_cookie: cfg.session_cookie, session_max_age: cfg.session_max_age, cors_origins: cfg.cors_origins, rate_limit_window: cfg.rate_limit_window, rate_limit_max: cfg.rate_limit_max, tls_cert: cfg.tls_cert, tls_key: val } }
+                    }
+                }
+            }
             line = ""
             pos = pos + 1
-        sino:
+        } sino {
             // Skip \r
-            si ch != "\r":
+            si ch != "\r" {
                 line = line + ch
+            }
             pos = pos + 1
+        }
+    }
 
     da Ok(cfg)
+}
 
 // ---------------------------------------------------------------------------
 // Convert FullServerConfig to the base ServerConfig from server.mn
 // ---------------------------------------------------------------------------
 
-+fn to_server_config(cfg: FullServerConfig) -> server.ServerConfig:
-    da new server.ServerConfig:
+pub fn to_server_config(cfg: FullServerConfig) -> server.ServerConfig {
+    da new server.ServerConfig {
         host: cfg.host,
         port: cfg.port,
         max_connections: cfg.max_connections,
         read_timeout_ms: cfg.read_timeout_ms
+    }
+}

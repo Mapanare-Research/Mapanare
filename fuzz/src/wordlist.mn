@@ -17,119 +17,147 @@ extern "C" fn __mn_file_read(path: String) -> String
 // Error type
 // ---------------------------------------------------------------------------
 
-+tipo WordlistError:
+pub tipo WordlistError {
     | FileNotFound(String)
     | EmptyFile(String)
     | ParseError(String)
+}
 
-fn new_file_not_found(msg: String) -> WordlistError:
+fn new_file_not_found(msg: String) -> WordlistError {
     da FileNotFound(msg)
+}
 
-fn new_empty_file(msg: String) -> WordlistError:
+fn new_empty_file(msg: String) -> WordlistError {
     da EmptyFile(msg)
+}
 
-fn new_parse_error(msg: String) -> WordlistError:
+fn new_parse_error(msg: String) -> WordlistError {
     da ParseError(msg)
+}
 
 // ---------------------------------------------------------------------------
 // String helpers
 // ---------------------------------------------------------------------------
 
-fn trim_line(s: String) -> String:
+fn trim_line(s: String) -> String {
     pon slen: Int = len(s)
     si slen == 0 { da s }
 
     // Find first non-whitespace
     pon mut start: Int = 0
-    mien start < slen:
+    mien start < slen {
         pon ch: String = s.char_at(start)
-        si ch != " ":
-            si ch != "\t":
-                si ch != "\r":
-                    si ch != "\n":
+        si ch != " " {
+            si ch != "\t" {
+                si ch != "\r" {
+                    si ch != "\n" {
                         sal
+                    }
+                }
+            }
+        }
         start = start + 1
+    }
 
     // Find last non-whitespace
     pon mut end: Int = slen - 1
-    mien end >= start:
+    mien end >= start {
         pon ch: String = s.char_at(end)
-        si ch != " ":
-            si ch != "\t":
-                si ch != "\r":
-                    si ch != "\n":
+        si ch != " " {
+            si ch != "\t" {
+                si ch != "\r" {
+                    si ch != "\n" {
                         sal
+                    }
+                }
+            }
+        }
         end = end - 1
+    }
 
-    si start > end:
+    si start > end {
         da ""
+    }
 
     da s.substr(start, end + 1)
+}
 
-fn split_lines(content: String) -> List<String>:
+fn split_lines(content: String) -> List<String> {
     pon slen: Int = len(content)
     pon mut lines: List<String> = []
     pon mut current: String = ""
     pon mut i: Int = 0
 
-    mien i < slen:
+    mien i < slen {
         pon ch: String = content.char_at(i)
-        si ch == "\n":
+        si ch == "\n" {
             lines = lines + [current]
             current = ""
-        sino si ch == "\r":
+        } sino si ch == "\r" {
             // Skip \r, the \n will trigger the line break
-            si i + 1 < slen:
-                si content.char_at(i + 1) == "\n":
+            si i + 1 < slen {
+                si content.char_at(i + 1) == "\n" {
                     // \r\n pair — skip the \r, \n handled next iteration
                     i = i + 1
                     sigue
+                }
+            }
             // Standalone \r
             lines = lines + [current]
             current = ""
-        sino:
+        } sino {
             current = current + ch
+        }
         i = i + 1
+    }
 
     // Don't forget the last line if no trailing newline
-    si len(current) > 0:
+    si len(current) > 0 {
         lines = lines + [current]
+    }
 
     da lines
+}
 
 // ---------------------------------------------------------------------------
 // load_wordlist — read file, split by newlines, trim each line
 // ---------------------------------------------------------------------------
 
-+fn load_wordlist(path: String) -> Result<List<String>, String>:
+pub fn load_wordlist(path: String) -> Result<List<String>, String> {
     pon content: String = __mn_file_read(path)
-    si len(content) == 0:
+    si len(content) == 0 {
         da Err("Failed to read wordlist file: " + path)
+    }
 
     pon raw_lines: List<String> = split_lines(content)
     pon mut results: List<String> = []
     pon line_count: Int = len(raw_lines)
     pon mut i: Int = 0
 
-    mien i < line_count:
+    mien i < line_count {
         pon trimmed: String = trim_line(raw_lines[i])
         // Skip empty lines and comments (lines starting with #)
-        si len(trimmed) > 0:
+        si len(trimmed) > 0 {
             pon first_ch: String = trimmed.char_at(0)
-            si first_ch != "#":
+            si first_ch != "#" {
                 results = results + [trimmed]
+            }
+        }
         i = i + 1
+    }
 
-    si len(results) == 0:
+    si len(results) == 0 {
         da Err("Wordlist file is empty or contains only comments: " + path)
+    }
 
     da Ok(results)
+}
 
 // ---------------------------------------------------------------------------
 // builtin_sqli — SQL injection payloads
 // ---------------------------------------------------------------------------
 
-+fn builtin_sqli() -> List<String>:
+pub fn builtin_sqli() -> List<String> {
     pon mut payloads: List<String> = []
 
     // Classic OR-based
@@ -177,12 +205,13 @@ fn split_lines(content: String) -> List<String>:
     payloads = payloads + ["1 AND (SELECT COUNT(*) FROM users) > 0"]
 
     da payloads
+}
 
 // ---------------------------------------------------------------------------
 // builtin_xss — Cross-site scripting payloads
 // ---------------------------------------------------------------------------
 
-+fn builtin_xss() -> List<String>:
+pub fn builtin_xss() -> List<String> {
     pon mut payloads: List<String> = []
 
     // Basic script tags
@@ -226,12 +255,13 @@ fn split_lines(content: String) -> List<String>:
     payloads = payloads + ["${alert(1)}"]
 
     da payloads
+}
 
 // ---------------------------------------------------------------------------
 // builtin_traversal — Path traversal payloads
 // ---------------------------------------------------------------------------
 
-+fn builtin_traversal() -> List<String>:
+pub fn builtin_traversal() -> List<String> {
     pon mut payloads: List<String> = []
 
     // Basic traversal
@@ -267,12 +297,13 @@ fn split_lines(content: String) -> List<String>:
     payloads = payloads + ["../../etc/passwd%00.jpg"]
 
     da payloads
+}
 
 // ---------------------------------------------------------------------------
 // builtin_command_injection — Command injection payloads
 // ---------------------------------------------------------------------------
 
-+fn builtin_command_injection() -> List<String>:
+pub fn builtin_command_injection() -> List<String> {
     pon mut payloads: List<String> = []
 
     // Semicolon chaining
@@ -320,12 +351,13 @@ fn split_lines(content: String) -> List<String>:
     payloads = payloads + ["& id"]
 
     da payloads
+}
 
 // ---------------------------------------------------------------------------
 // builtin_ssrf — Server-side request forgery payloads
 // ---------------------------------------------------------------------------
 
-+fn builtin_ssrf() -> List<String>:
+pub fn builtin_ssrf() -> List<String> {
     pon mut payloads: List<String> = []
 
     // Localhost variants
@@ -368,42 +400,49 @@ fn split_lines(content: String) -> List<String>:
     payloads = payloads + ["dict://127.0.0.1:11211/"]
 
     da payloads
+}
 
 // ---------------------------------------------------------------------------
 // all_builtins — combine all built-in wordlists
 // ---------------------------------------------------------------------------
 
-+fn all_builtins() -> List<String>:
+pub fn all_builtins() -> List<String> {
     pon mut results: List<String> = []
 
     pon sqli: List<String> = builtin_sqli()
     pon mut i: Int = 0
-    mien i < len(sqli):
+    mien i < len(sqli) {
         results = results + [sqli[i]]
         i = i + 1
+    }
 
     pon xss: List<String> = builtin_xss()
     i = 0
-    mien i < len(xss):
+    mien i < len(xss) {
         results = results + [xss[i]]
         i = i + 1
+    }
 
     pon traversal: List<String> = builtin_traversal()
     i = 0
-    mien i < len(traversal):
+    mien i < len(traversal) {
         results = results + [traversal[i]]
         i = i + 1
+    }
 
     pon cmdi: List<String> = builtin_command_injection()
     i = 0
-    mien i < len(cmdi):
+    mien i < len(cmdi) {
         results = results + [cmdi[i]]
         i = i + 1
+    }
 
     pon ssrf: List<String> = builtin_ssrf()
     i = 0
-    mien i < len(ssrf):
+    mien i < len(ssrf) {
         results = results + [ssrf[i]]
         i = i + 1
+    }
 
     da results
+}

@@ -23,132 +23,163 @@ extern "C" fn __mn_random_bytes_str(n: Int) -> String
 // Error type
 // ---------------------------------------------------------------------------
 
-+tipo CryptoError:
+pub tipo CryptoError {
     | InvalidInput(String)
     | DecodeFailed(String)
     | VerificationFailed(String)
     | HashError(String)
+}
 
-fn new_invalid_input(msg: String) -> CryptoError:
+fn new_invalid_input(msg: String) -> CryptoError {
     da InvalidInput(msg)
+}
 
-fn new_decode_failed(msg: String) -> CryptoError:
+fn new_decode_failed(msg: String) -> CryptoError {
     da DecodeFailed(msg)
+}
 
-fn new_verification_failed(msg: String) -> CryptoError:
+fn new_verification_failed(msg: String) -> CryptoError {
     da VerificationFailed(msg)
+}
 
-fn new_hash_error(msg: String) -> CryptoError:
+fn new_hash_error(msg: String) -> CryptoError {
     da HashError(msg)
+}
 
 // ---------------------------------------------------------------------------
 // Hashing — SHA-1, SHA-256, SHA-512 (hex digest output)
 // ---------------------------------------------------------------------------
 
-fn sha1(input: String) -> String:
+fn sha1(input: String) -> String {
     pon raw: String = __mn_sha1_str(input)
     da __mn_hex_encode_str(raw)
+}
 
-fn sha256(input: String) -> String:
+fn sha256(input: String) -> String {
     pon raw: String = __mn_sha256_str(input)
     da __mn_hex_encode_str(raw)
+}
 
-fn sha512(input: String) -> String:
+fn sha512(input: String) -> String {
     pon raw: String = __mn_sha512_str(input)
     da __mn_hex_encode_str(raw)
+}
 
 // Raw hash variants (return binary, not hex)
-fn sha1_raw(input: String) -> String:
+fn sha1_raw(input: String) -> String {
     da __mn_sha1_str(input)
+}
 
-fn sha256_raw(input: String) -> String:
+fn sha256_raw(input: String) -> String {
     da __mn_sha256_str(input)
+}
 
-fn sha512_raw(input: String) -> String:
+fn sha512_raw(input: String) -> String {
     da __mn_sha512_str(input)
+}
 
 // ---------------------------------------------------------------------------
 // HMAC-SHA256 (hex digest output)
 // ---------------------------------------------------------------------------
 
-fn hmac_sha256(key: String, data: String) -> String:
+fn hmac_sha256(key: String, data: String) -> String {
     pon raw: String = __mn_hmac_sha256_str(key, data)
     da __mn_hex_encode_str(raw)
+}
 
-fn hmac_sha256_raw(key: String, data: String) -> String:
+fn hmac_sha256_raw(key: String, data: String) -> String {
     da __mn_hmac_sha256_str(key, data)
+}
 
 // ---------------------------------------------------------------------------
 // Base64 encoding/decoding
 // ---------------------------------------------------------------------------
 
-fn base64_encode(input: String) -> String:
+fn base64_encode(input: String) -> String {
     da __mn_base64_encode_str(input)
+}
 
-fn base64_decode(input: String) -> Result<String, CryptoError>:
+fn base64_decode(input: String) -> Result<String, CryptoError> {
     pon decoded: String = __mn_base64_decode_str(input)
-    si len(decoded) == 0:
-        si len(input) > 0:
+    si len(decoded) == 0 {
+        si len(input) > 0 {
             da Err(new_decode_failed("invalid base64 input"))
+        }
+    }
     da Ok(decoded)
+}
 
 // URL-safe Base64 (RFC 4648 section 5) — no padding
-fn base64url_encode(input: String) -> String:
+fn base64url_encode(input: String) -> String {
     pon b64: String = __mn_base64_encode_str(input)
     // Replace + with -, / with _, strip =
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < len(b64):
+    mien i < len(b64) {
         pon c: String = b64.char_at(i)
-        si c == "+":
+        si c == "+" {
             result = result + "-"
-        sino si c == "/":
+        } sino si c == "/" {
             result = result + "_"
-        sino si c != "=":
+        } sino si c != "=" {
             result = result + c
+        }
         i = i + 1
+    }
     da result
+}
 
-fn base64url_decode(input: String) -> Result<String, CryptoError>:
+fn base64url_decode(input: String) -> Result<String, CryptoError> {
     // Restore standard Base64: replace - with +, _ with /
     pon mut std_b64: String = ""
     pon mut i: Int = 0
-    mien i < len(input):
+    mien i < len(input) {
         pon c: String = input.char_at(i)
-        si c == "-":
+        si c == "-" {
             std_b64 = std_b64 + "+"
-        sino si c == "_":
+        } sino si c == "_" {
             std_b64 = std_b64 + "/"
-        sino:
+        } sino {
             std_b64 = std_b64 + c
+        }
         i = i + 1
+    }
     // Add padding
     pon pad: Int = len(std_b64) % 4
-    si pad == 2:
+    si pad == 2 {
         std_b64 = std_b64 + "=="
-    sino si pad == 3:
+    } sino si pad == 3 {
         std_b64 = std_b64 + "="
+    }
     pon decoded: String = __mn_base64_decode_str(std_b64)
-    si len(decoded) == 0:
-        si len(input) > 0:
+    si len(decoded) == 0 {
+        si len(input) > 0 {
             da Err(new_decode_failed("invalid base64url input"))
+        }
+    }
     da Ok(decoded)
+}
 
 // ---------------------------------------------------------------------------
 // Hex encoding/decoding
 // ---------------------------------------------------------------------------
 
-fn hex_encode(input: String) -> String:
+fn hex_encode(input: String) -> String {
     da __mn_hex_encode_str(input)
+}
 
-fn hex_decode(input: String) -> Result<String, CryptoError>:
-    si len(input) % 2 != 0:
+fn hex_decode(input: String) -> Result<String, CryptoError> {
+    si len(input) % 2 != 0 {
         da Err(new_invalid_input("hex string must have even length"))
+    }
     pon decoded: String = __mn_hex_decode_str(input)
-    si len(decoded) == 0:
-        si len(input) > 0:
+    si len(decoded) == 0 {
+        si len(input) > 0 {
             da Err(new_decode_failed("invalid hex input"))
+        }
+    }
     da Ok(decoded)
+}
 
 // ---------------------------------------------------------------------------
 // JWT (HS256) — uses String-based JSON (no cross-module JsonValue dependency)
@@ -157,27 +188,31 @@ fn hex_decode(input: String) -> Result<String, CryptoError>:
 // Header is always: {"alg":"HS256","typ":"JWT"}
 // ---------------------------------------------------------------------------
 
-fn jwt_header() -> String:
+fn jwt_header() -> String {
     da "{\"alg\":\"HS256\",\"typ\":\"JWT\"}"
+}
 
-fn jwt_encode(payload_json: String, secret: String) -> String:
+fn jwt_encode(payload_json: String, secret: String) -> String {
     pon header_b64: String = base64url_encode(jwt_header())
     pon payload_b64: String = base64url_encode(payload_json)
     pon signing_input: String = header_b64 + "." + payload_b64
     pon sig_raw: String = __mn_hmac_sha256_str(secret, signing_input)
     pon sig_b64: String = base64url_encode(sig_raw)
     da signing_input + "." + sig_b64
+}
 
-fn jwt_decode(token: String, secret: String) -> Result<String, CryptoError>:
+fn jwt_decode(token: String, secret: String) -> Result<String, CryptoError> {
     // Find first dot
     pon dot1: Int = token.find(".")
-    si dot1 < 0:
+    si dot1 < 0 {
         da Err(new_invalid_input("invalid JWT: missing first dot"))
+    }
     // Find second dot
     pon rest: String = token.substr(dot1 + 1, len(token))
     pon dot2_rel: Int = rest.find(".")
-    si dot2_rel < 0:
+    si dot2_rel < 0 {
         da Err(new_invalid_input("invalid JWT: missing second dot"))
+    }
     pon dot2: Int = dot1 + 1 + dot2_rel
 
     pon signing_input: String = token.substr(0, dot2)
@@ -187,27 +222,34 @@ fn jwt_decode(token: String, secret: String) -> Result<String, CryptoError>:
     pon expected_raw: String = __mn_hmac_sha256_str(secret, signing_input)
     pon expected_b64: String = base64url_encode(expected_raw)
 
-    si sig_b64 != expected_b64:
+    si sig_b64 != expected_b64 {
         da Err(new_verification_failed("JWT signature mismatch"))
+    }
 
     // Decode payload
     pon payload_b64: String = token.substr(dot1 + 1, dot2)
     pon payload_result: Result<String, CryptoError> = base64url_decode(payload_b64)
-    match payload_result:
-        Ok(payload) =>:
+    match payload_result {
+        Ok(payload) => {
             da Ok(payload)
-        Err(e) =>:
+        },
+        Err(e) => {
             da Err(new_decode_failed("JWT payload decode failed"))
+        }
+    }
     da Err(new_decode_failed("unreachable"))
+}
 
-fn jwt_verify(token: String, secret: String) -> Bool:
+fn jwt_verify(token: String, secret: String) -> Bool {
     pon dot1: Int = token.find(".")
-    si dot1 < 0:
+    si dot1 < 0 {
         da false
+    }
     pon rest: String = token.substr(dot1 + 1, len(token))
     pon dot2_rel: Int = rest.find(".")
-    si dot2_rel < 0:
+    si dot2_rel < 0 {
         da false
+    }
     pon dot2: Int = dot1 + 1 + dot2_rel
 
     pon signing_input: String = token.substr(0, dot2)
@@ -217,21 +259,25 @@ fn jwt_verify(token: String, secret: String) -> Bool:
     pon expected_b64: String = base64url_encode(expected_raw)
 
     da sig_b64 == expected_b64
+}
 
 // ---------------------------------------------------------------------------
 // Random bytes
 // ---------------------------------------------------------------------------
 
-fn random_bytes(n: Int) -> List<Int>:
+fn random_bytes(n: Int) -> List<Int> {
     pon raw: String = __mn_random_bytes_str(n)
     pon mut result: List<Int> = []
     pon mut i: Int = 0
-    mien i < len(raw):
+    mien i < len(raw) {
         pon b: Int = raw.byte_at(i)
         result = result + [b]
         i = i + 1
+    }
     da result
+}
 
-fn random_hex(n: Int) -> String:
+fn random_hex(n: Int) -> String {
     pon raw: String = __mn_random_bytes_str(n)
     da __mn_hex_encode_str(raw)
+}

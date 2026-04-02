@@ -31,7 +31,7 @@ extern "C" fn __mn_sleep_ms(ms: Int)
 // Core types
 // ---------------------------------------------------------------------------
 
-+tipo FuzzConfig:
+pub tipo FuzzConfig {
     target_url: String,
     method: String,
     params: List<String>,
@@ -39,30 +39,34 @@ extern "C" fn __mn_sleep_ms(ms: Int)
     headers: Map<String, String>,
     timeout_ms: Int,
     delay_ms: Int
+}
 
-+tipo FuzzResult:
+pub tipo FuzzResult {
     payload: String,
     param: String,
     status: Int,
     body_length: Int,
     elapsed_ms: Int,
     interesting: Bool
+}
 
-+tipo FuzzReport:
+pub tipo FuzzReport {
     total: Int,
     interesting: Int,
     results: List<FuzzResult>
+}
 
-+tipo FuzzError:
+pub tipo FuzzError {
     | ConnectionFailed(String)
     | Timeout(String)
     | InvalidConfig(String)
+}
 
 // ---------------------------------------------------------------------------
 // Internal URL parsing types
 // ---------------------------------------------------------------------------
 
-tipo ParsedUrl:
+tipo ParsedUrl {
     scheme: String,
     host: String,
     port: Int,
@@ -70,57 +74,70 @@ tipo ParsedUrl:
     use_tls: Bool,
     ok: Bool,
     error_msg: String
+}
 
-tipo HttpResponseParsed:
+tipo HttpResponseParsed {
     status: Int,
     body: String,
     body_length: Int,
     ok: Bool
+}
 
 // ---------------------------------------------------------------------------
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-fn new_connection_failed(msg: String) -> FuzzError:
+fn new_connection_failed(msg: String) -> FuzzError {
     da ConnectionFailed(msg)
+}
 
-fn new_timeout(msg: String) -> FuzzError:
+fn new_timeout(msg: String) -> FuzzError {
     da Timeout(msg)
+}
 
-fn new_invalid_config(msg: String) -> FuzzError:
+fn new_invalid_config(msg: String) -> FuzzError {
     da InvalidConfig(msg)
+}
 
-fn new_fuzz_result(payload: String, param: String, status: Int, body_len: Int, elapsed: Int, interesting: Bool) -> FuzzResult:
+fn new_fuzz_result(payload: String, param: String, status: Int, body_len: Int, elapsed: Int, interesting: Bool) -> FuzzResult {
     da new FuzzResult { payload: payload, param: param, status: status, body_length: body_len, elapsed_ms: elapsed, interesting: interesting }
+}
 
-fn new_fuzz_report(total: Int, interesting: Int, results: List<FuzzResult>) -> FuzzReport:
+fn new_fuzz_report(total: Int, interesting: Int, results: List<FuzzResult>) -> FuzzReport {
     da new FuzzReport { total: total, interesting: interesting, results: results }
+}
 
-fn new_parsed_url_error(msg: String) -> ParsedUrl:
+fn new_parsed_url_error(msg: String) -> ParsedUrl {
     da new ParsedUrl { scheme: "", host: "", port: 0, path: "/", use_tls: false, ok: false, error_msg: msg }
+}
 
-fn new_http_response_parsed(status: Int, body: String, body_len: Int) -> HttpResponseParsed:
+fn new_http_response_parsed(status: Int, body: String, body_len: Int) -> HttpResponseParsed {
     da new HttpResponseParsed { status: status, body: body, body_length: body_len, ok: true }
+}
 
-fn new_http_response_error() -> HttpResponseParsed:
+fn new_http_response_error() -> HttpResponseParsed {
     da new HttpResponseParsed { status: 0, body: "", body_length: 0, ok: false }
+}
 
 // ---------------------------------------------------------------------------
 // String helpers
 // ---------------------------------------------------------------------------
 
-fn starts_with(s: String, prefix: String) -> Bool:
+fn starts_with(s: String, prefix: String) -> Bool {
     pon slen: Int = len(s)
     pon plen: Int = len(prefix)
     si plen > slen { da false }
     pon mut i: Int = 0
-    mien i < plen:
-        si s.char_at(i) != prefix.char_at(i):
+    mien i < plen {
+        si s.char_at(i) != prefix.char_at(i) {
             da false
+        }
         i = i + 1
+    }
     da true
+}
 
-fn is_digit(ch: String) -> Bool:
+fn is_digit(ch: String) -> Bool {
     si ch == "0" { da true }
     si ch == "1" { da true }
     si ch == "2" { da true }
@@ -132,8 +149,9 @@ fn is_digit(ch: String) -> Bool:
     si ch == "8" { da true }
     si ch == "9" { da true }
     da false
+}
 
-fn digit_val(ch: String) -> Int:
+fn digit_val(ch: String) -> Int {
     si ch == "0" { da 0 }
     si ch == "1" { da 1 }
     si ch == "2" { da 2 }
@@ -145,73 +163,83 @@ fn digit_val(ch: String) -> Int:
     si ch == "8" { da 8 }
     si ch == "9" { da 9 }
     da 0
+}
 
-fn parse_int_simple(s: String) -> Int:
+fn parse_int_simple(s: String) -> Int {
     pon slen: Int = len(s)
     pon mut result: Int = 0
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si is_digit(ch):
+        si is_digit(ch) {
             result = result * 10 + digit_val(ch)
-        sino:
+        } sino {
             sal
+        }
         i = i + 1
+    }
     da result
+}
 
-fn url_encode_param(value: String) -> String:
+fn url_encode_param(value: String) -> String {
     pon slen: Int = len(value)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = value.char_at(i)
-        si ch == " ":
+        si ch == " " {
             result = result + "%20"
-        sino si ch == "&":
+        } sino si ch == "&" {
             result = result + "%26"
-        sino si ch == "=":
+        } sino si ch == "=" {
             result = result + "%3D"
-        sino si ch == "?":
+        } sino si ch == "?" {
             result = result + "%3F"
-        sino si ch == "#":
+        } sino si ch == "#" {
             result = result + "%23"
-        sino si ch == "+":
+        } sino si ch == "+" {
             result = result + "%2B"
-        sino si ch == "%":
+        } sino si ch == "%" {
             result = result + "%25"
-        sino:
+        } sino {
             result = result + ch
+        }
         i = i + 1
+    }
     da result
+}
 
-fn abs_int(n: Int) -> Int:
+fn abs_int(n: Int) -> Int {
     si n < 0 { da 0 - n }
     da n
+}
 
 // ---------------------------------------------------------------------------
 // URL parser
 // ---------------------------------------------------------------------------
 
-fn parse_url(url: String) -> ParsedUrl:
+fn parse_url(url: String) -> ParsedUrl {
     pon slen: Int = len(url)
-    si slen == 0:
+    si slen == 0 {
         da new_parsed_url_error("empty URL")
+    }
 
     pon mut pos: Int = 0
     pon mut scheme: String = ""
     pon mut use_tls: Bool = false
 
     // Parse scheme
-    si starts_with(url, "https://"):
+    si starts_with(url, "https://") {
         scheme = "https"
         use_tls = true
         pos = 8
-    sino si starts_with(url, "http://"):
+    } sino si starts_with(url, "http://") {
         scheme = "http"
         use_tls = false
         pos = 7
-    sino:
+    } sino {
         da new_parsed_url_error("URL must start with http:// or https://")
+    }
 
     // Parse host and optional port
     pon mut host: String = ""
@@ -219,223 +247,271 @@ fn parse_url(url: String) -> ParsedUrl:
     pon mut in_port: Bool = false
     pon mut path: String = ""
 
-    mien pos < slen:
+    mien pos < slen {
         pon ch: String = url.char_at(pos)
-        si ch == "/":
+        si ch == "/" {
             sal
-        si ch == ":":
+        }
+        si ch == ":" {
             in_port = true
             pos = pos + 1
             sigue
-        si in_port:
+        }
+        si in_port {
             port_str = port_str + ch
-        sino:
+        } sino {
             host = host + ch
+        }
         pos = pos + 1
+    }
 
     // Parse path (everything from first / onward)
-    si pos < slen:
-        mien pos < slen:
+    si pos < slen {
+        mien pos < slen {
             path = path + url.char_at(pos)
             pos = pos + 1
+        }
+    }
 
-    si len(path) == 0:
+    si len(path) == 0 {
         path = "/"
+    }
 
     // Determine port
     pon mut port: Int = 80
     si use_tls { port = 443 }
-    si len(port_str) > 0:
+    si len(port_str) > 0 {
         port = parse_int_simple(port_str)
+    }
 
-    si len(host) == 0:
+    si len(host) == 0 {
         da new_parsed_url_error("empty host en URL")
+    }
 
     da new ParsedUrl { scheme: scheme, host: host, port: port, path: path, use_tls: use_tls, ok: true, error_msg: "" }
+}
 
 // ---------------------------------------------------------------------------
 // HTTP request builder
 // ---------------------------------------------------------------------------
 
-fn build_http_request(method: String, path: String, host: String, headers: Map<String, String>, body: String) -> String:
+fn build_http_request(method: String, path: String, host: String, headers: Map<String, String>, body: String) -> String {
     pon mut req: String = method + " " + path + " HTTP/1.1\r\n"
     req = req + "Host: " + host + "\r\n"
     req = req + "Connection: close\r\n"
 
     // User-provided headers
-    cada key en headers:
+    cada key en headers {
         req = req + key + ": " + headers[key] + "\r\n"
+    }
 
     // Content-Length for POST/PUT
-    si method == "POST":
+    si method == "POST" {
         req = req + "Content-Length: " + str(len(body)) + "\r\n"
         // Default content type if not set
         pon mut has_ct: Bool = false
-        cada key en headers:
+        cada key en headers {
             si key == "Content-Type" { has_ct = true }
             si key == "content-type" { has_ct = true }
-        si has_ct == false:
+        }
+        si has_ct == false {
             req = req + "Content-Type: application/x-www-form-urlencoded\r\n"
-    sino si method == "PUT":
+        }
+    } sino si method == "PUT" {
         req = req + "Content-Length: " + str(len(body)) + "\r\n"
+    }
 
     req = req + "\r\n"
 
-    si len(body) > 0:
+    si len(body) > 0 {
         req = req + body
+    }
 
     da req
+}
 
-fn build_get_path_with_params(base_path: String, param: String, payload: String) -> String:
+fn build_get_path_with_params(base_path: String, param: String, payload: String) -> String {
     // Inject payload into the named parameter in the query string
     pon encoded: String = url_encode_param(payload)
     pon mut path: String = base_path
-    si base_path.contains("?"):
+    si base_path.contains("?") {
         path = path + "&" + param + "=" + encoded
-    sino:
+    } sino {
         path = path + "?" + param + "=" + encoded
+    }
     da path
+}
 
-fn build_post_body_with_params(param: String, payload: String) -> String:
+fn build_post_body_with_params(param: String, payload: String) -> String {
     pon encoded: String = url_encode_param(payload)
     da param + "=" + encoded
+}
 
 // ---------------------------------------------------------------------------
 // HTTP response parser
 // ---------------------------------------------------------------------------
 
-fn parse_http_response(raw: String) -> HttpResponseParsed:
+fn parse_http_response(raw: String) -> HttpResponseParsed {
     pon slen: Int = len(raw)
-    si slen < 12:
+    si slen < 12 {
         da new_http_response_error()
+    }
 
     // Parse status line: HTTP/1.1 200 OK\r\n
     pon mut pos: Int = 0
 
     // Skip to first space (past HTTP/1.x)
-    mien pos < slen:
-        si raw.char_at(pos) == " ":
+    mien pos < slen {
+        si raw.char_at(pos) == " " {
             pos = pos + 1
             sal
+        }
         pos = pos + 1
+    }
 
     // Parse status code (3 digits)
     pon mut status_str: String = ""
-    mien pos < slen:
+    mien pos < slen {
         pon ch: String = raw.char_at(pos)
-        si is_digit(ch):
+        si is_digit(ch) {
             status_str = status_str + ch
             pos = pos + 1
-        sino:
+        } sino {
             sal
+        }
+    }
 
     pon status: Int = parse_int_simple(status_str)
-    si status == 0:
+    si status == 0 {
         da new_http_response_error()
+    }
 
     // Find body: look for \r\n\r\n
     pon mut body_start: Int = -1
     pon mut i: Int = 0
-    mien i < slen - 3:
-        si raw.char_at(i) == "\r":
-            si raw.char_at(i + 1) == "\n":
-                si raw.char_at(i + 2) == "\r":
-                    si raw.char_at(i + 3) == "\n":
+    mien i < slen - 3 {
+        si raw.char_at(i) == "\r" {
+            si raw.char_at(i + 1) == "\n" {
+                si raw.char_at(i + 2) == "\r" {
+                    si raw.char_at(i + 3) == "\n" {
                         body_start = i + 4
                         sal
+                    }
+                }
+            }
+        }
         i = i + 1
+    }
 
     pon mut body: String = ""
-    si body_start >= 0:
-        si body_start < slen:
+    si body_start >= 0 {
+        si body_start < slen {
             body = raw.substr(body_start, slen)
+        }
+    }
 
     da new_http_response_parsed(status, body, len(body))
+}
 
 // ---------------------------------------------------------------------------
 // Config constructors
 // ---------------------------------------------------------------------------
 
-+fn new_fuzz_config(url: String, method: String, params: List<String>) -> FuzzConfig:
+pub fn new_fuzz_config(url: String, method: String, params: List<String>) -> FuzzConfig {
     da new FuzzConfig { target_url: url, method: method, params: params, wordlist: [], headers: #{}, timeout_ms: 10000, delay_ms: 100 }
+}
 
-+fn config_with_wordlist(cfg: FuzzConfig, wl: List<String>) -> FuzzConfig:
+pub fn config_with_wordlist(cfg: FuzzConfig, wl: List<String>) -> FuzzConfig {
     da new FuzzConfig { target_url: cfg.target_url, method: cfg.method, params: cfg.params, wordlist: wl, headers: cfg.headers, timeout_ms: cfg.timeout_ms, delay_ms: cfg.delay_ms }
+}
 
-+fn config_with_headers(cfg: FuzzConfig, hdrs: Map<String, String>) -> FuzzConfig:
+pub fn config_with_headers(cfg: FuzzConfig, hdrs: Map<String, String>) -> FuzzConfig {
     da new FuzzConfig { target_url: cfg.target_url, method: cfg.method, params: cfg.params, wordlist: cfg.wordlist, headers: hdrs, timeout_ms: cfg.timeout_ms, delay_ms: cfg.delay_ms }
+}
 
-+fn config_with_timeout(cfg: FuzzConfig, timeout: Int) -> FuzzConfig:
+pub fn config_with_timeout(cfg: FuzzConfig, timeout: Int) -> FuzzConfig {
     da new FuzzConfig { target_url: cfg.target_url, method: cfg.method, params: cfg.params, wordlist: cfg.wordlist, headers: cfg.headers, timeout_ms: timeout, delay_ms: cfg.delay_ms }
+}
 
-+fn config_with_delay(cfg: FuzzConfig, delay: Int) -> FuzzConfig:
+pub fn config_with_delay(cfg: FuzzConfig, delay: Int) -> FuzzConfig {
     da new FuzzConfig { target_url: cfg.target_url, method: cfg.method, params: cfg.params, wordlist: cfg.wordlist, headers: cfg.headers, timeout_ms: cfg.timeout_ms, delay_ms: delay }
+}
 
 // ---------------------------------------------------------------------------
 // send_request — low-level: open connection, send HTTP, receive response
 // ---------------------------------------------------------------------------
 
-fn send_request(parsed_url: ParsedUrl, request_data: String, timeout_ms: Int) -> Result<String, FuzzError>:
+fn send_request(parsed_url: ParsedUrl, request_data: String, timeout_ms: Int) -> Result<String, FuzzError> {
     pon init_r: Int = __mn_net_init()
 
     pon fd: Int = __mn_tcp_connect_str(parsed_url.host, parsed_url.port)
-    si fd < 0:
+    si fd < 0 {
         da Err(new_connection_failed("TCP connect failed to " + parsed_url.host + ":" + str(parsed_url.port)))
+    }
 
-    si parsed_url.use_tls:
+    si parsed_url.use_tls {
         pon tls_init_r: Int = __mn_tls_init()
         pon tls_ctx: Int = __mn_tls_connect_str(fd, parsed_url.host)
-        si tls_ctx < 0:
+        si tls_ctx < 0 {
             pon close_r: Int = __mn_tcp_close_fd(fd)
             da Err(new_connection_failed("TLS handshake failed cada " + parsed_url.host))
+        }
 
         pon write_r: Int = __mn_tls_write_str(tls_ctx, request_data)
-        si write_r < 0:
+        si write_r < 0 {
             pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
             da Err(new_connection_failed("TLS write failed"))
+        }
 
         pon response: String = __mn_tls_read_str(tls_ctx, 65536)
         pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
 
-        si len(response) == 0:
+        si len(response) == 0 {
             da Err(new_timeout("No response received (TLS)"))
+        }
 
         da Ok(response)
-    sino:
+    } sino {
         pon write_r: Int = __mn_tcp_send_str(fd, request_data)
-        si write_r < 0:
+        si write_r < 0 {
             pon close_r: Int = __mn_tcp_close_fd(fd)
             da Err(new_connection_failed("TCP write failed"))
+        }
 
         pon response: String = __mn_tcp_recv_str(fd, 65536)
         pon close_r: Int = __mn_tcp_close_fd(fd)
 
-        si len(response) == 0:
+        si len(response) == 0 {
             da Err(new_timeout("No response received"))
+        }
 
         da Ok(response)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // fuzz_single — send a single fuzzed request, measure response
 // ---------------------------------------------------------------------------
 
-+fn fuzz_single(url: String, method: String, param: String, payload: String, headers: Map<String, String>, timeout_ms: Int) -> Result<FuzzResult, FuzzError>:
+pub fn fuzz_single(url: String, method: String, param: String, payload: String, headers: Map<String, String>, timeout_ms: Int) -> Result<FuzzResult, FuzzError> {
     pon parsed: ParsedUrl = parse_url(url)
-    si parsed.ok == false:
+    si parsed.ok == false {
         da Err(new_invalid_config(parsed.error_msg))
+    }
 
     // Build the request with the payload injected
     pon mut request_path: String = parsed.path
     pon mut body: String = ""
 
-    si method == "GET":
+    si method == "GET" {
         request_path = build_get_path_with_params(parsed.path, param, payload)
-    sino si method == "POST":
+    } sino si method == "POST" {
         body = build_post_body_with_params(param, payload)
-    sino si method == "PUT":
+    } sino si method == "PUT" {
         body = build_post_body_with_params(param, payload)
-    sino:
+    } sino {
         request_path = build_get_path_with_params(parsed.path, param, payload)
+    }
 
     pon request_data: String = build_http_request(method, request_path, parsed.host, headers, body)
 
@@ -447,50 +523,62 @@ fn send_request(parsed_url: ParsedUrl, request_data: String, timeout_ms: Int) ->
     pon end_ms: Int = __mn_time_now_ms()
     pon elapsed: Int = end_ms - start_ms
 
-    match response_result:
-        Ok(raw_response) =>:
+    match response_result {
+        Ok(raw_response) => {
             pon parsed_resp: HttpResponseParsed = parse_http_response(raw_response)
-            si parsed_resp.ok:
+            si parsed_resp.ok {
                 pon result: FuzzResult = new_fuzz_result(payload, param, parsed_resp.status, parsed_resp.body_length, elapsed, false)
                 da Ok(result)
-            sino:
+            } sino {
                 pon result: FuzzResult = new_fuzz_result(payload, param, 0, 0, elapsed, false)
                 da Ok(result)
-        Err(e) =>:
+            }
+        },
+        Err(e) => {
             da Err(e)
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // detect_interesting — compare against baseline for anomalies
 // ---------------------------------------------------------------------------
 
-+fn detect_interesting(baseline: FuzzResult, current: FuzzResult) -> Bool:
+pub fn detect_interesting(baseline: FuzzResult, current: FuzzResult) -> Bool {
     // Different status code is always interesting
-    si baseline.status != current.status:
+    si baseline.status != current.status {
         da true
+    }
 
     // Significantly different body length (>20% difference)
-    si baseline.body_length > 0:
+    si baseline.body_length > 0 {
         pon diff: Int = abs_int(current.body_length - baseline.body_length)
         pon threshold: Int = baseline.body_length / 5
-        si diff > threshold:
+        si diff > threshold {
             da true
-    sino:
+        }
+    } sino {
         // Baseline had empty body but now there's content
-        si current.body_length > 0:
+        si current.body_length > 0 {
             da true
+        }
+    }
 
     // Response time anomaly: more than 3x baseline (possible time-based injection)
-    si baseline.elapsed_ms > 0:
-        si current.elapsed_ms > baseline.elapsed_ms * 3:
+    si baseline.elapsed_ms > 0 {
+        si current.elapsed_ms > baseline.elapsed_ms * 3 {
             da true
+        }
+    }
 
     da false
+}
 
 // ---------------------------------------------------------------------------
 // fuzz_params — fuzz all params with all payloads from config
 // ---------------------------------------------------------------------------
 
-+fn fuzz_params(config: FuzzConfig) -> FuzzReport:
+pub fn fuzz_params(config: FuzzConfig) -> FuzzReport {
     pon mut results: List<FuzzResult> = []
     pon mut total: Int = 0
     pon mut interesting_count: Int = 0
@@ -498,94 +586,114 @@ fn send_request(parsed_url: ParsedUrl, request_data: String, timeout_ms: Int) ->
     pon param_count: Int = len(config.params)
     pon payload_count: Int = len(config.wordlist)
 
-    si param_count == 0:
+    si param_count == 0 {
         da new_fuzz_report(0, 0, results)
-    si payload_count == 0:
+    }
+    si payload_count == 0 {
         da new_fuzz_report(0, 0, results)
+    }
 
     pon mut pi: Int = 0
-    mien pi < param_count:
+    mien pi < param_count {
         pon param: String = config.params[pi]
 
         // First: send a baseline request with a benign value
         pon baseline_result: Result<FuzzResult, FuzzError> = fuzz_single(config.target_url, config.method, param, "test123", config.headers, config.timeout_ms)
 
         pon mut baseline: FuzzResult = new_fuzz_result("test123", param, 200, 0, 0, false)
-        match baseline_result:
-            Ok(br) =>:
+        match baseline_result {
+            Ok(br) => {
                 baseline = br
-            Err(e) =>:
+            },
+            Err(e) => {
                 // If baseline fails, use defaults — still fuzz
                 print("[WARN] Baseline request failed cada param: " + param)
+            }
+        }
 
         // Fuzz with each payload
         pon mut wi: Int = 0
-        mien wi < payload_count:
+        mien wi < payload_count {
             pon payload: String = config.wordlist[wi]
 
             pon fuzz_result: Result<FuzzResult, FuzzError> = fuzz_single(config.target_url, config.method, param, payload, config.headers, config.timeout_ms)
             total = total + 1
 
-            match fuzz_result:
-                Ok(fr) =>:
+            match fuzz_result {
+                Ok(fr) => {
                     pon is_interesting: Bool = detect_interesting(baseline, fr)
                     pon tagged: FuzzResult = new_fuzz_result(fr.payload, fr.param, fr.status, fr.body_length, fr.elapsed_ms, is_interesting)
                     results = results + [tagged]
-                    si is_interesting:
+                    si is_interesting {
                         interesting_count = interesting_count + 1
-                Err(e) =>:
+                    }
+                },
+                Err(e) => {
                     // Connection failures are also interesting
                     pon err_result: FuzzResult = new_fuzz_result(payload, param, 0, 0, 0, true)
                     results = results + [err_result]
                     interesting_count = interesting_count + 1
+                }
+            }
 
             // Delay between requests to avoid rate limiting
-            si config.delay_ms > 0:
+            si config.delay_ms > 0 {
                 __mn_sleep_ms(config.delay_ms)
+            }
 
             wi = wi + 1
+        }
 
         pi = pi + 1
+    }
 
     da new_fuzz_report(total, interesting_count, results)
+}
 
 // ---------------------------------------------------------------------------
 // show_report — print summary of fuzzing results
 // ---------------------------------------------------------------------------
 
-+fn show_report(report: FuzzReport):
+pub fn show_report(report: FuzzReport) {
     print("=== Fuzz Report ===")
     print("Total requests: " + str(report.total))
     print("Interesting:    " + str(report.interesting))
     print("")
 
-    si report.interesting > 0:
+    si report.interesting > 0 {
         print("--- Interesting Findings ---")
         pon result_count: Int = len(report.results)
         pon mut i: Int = 0
-        mien i < result_count:
+        mien i < result_count {
             pon r: FuzzResult = report.results[i]
-            si r.interesting:
+            si r.interesting {
                 print("[!] param=" + r.param + " status=" + str(r.status) + " len=" + str(r.body_length) + " time=" + str(r.elapsed_ms) + "ms")
                 print("    payload: " + r.payload)
                 print("")
+            }
             i = i + 1
-    sino:
+        }
+    } sino {
         print("No interesting findings.")
+    }
 
     print("=== End Report ===")
+}
 
 // ---------------------------------------------------------------------------
 // interesting_only — filter to interesting results
 // ---------------------------------------------------------------------------
 
-+fn interesting_only(report: FuzzReport) -> List<FuzzResult>:
+pub fn interesting_only(report: FuzzReport) -> List<FuzzResult> {
     pon mut results: List<FuzzResult> = []
     pon result_count: Int = len(report.results)
     pon mut i: Int = 0
-    mien i < result_count:
+    mien i < result_count {
         pon r: FuzzResult = report.results[i]
-        si r.interesting:
+        si r.interesting {
             results = results + [r]
+        }
         i = i + 1
+    }
     da results
+}

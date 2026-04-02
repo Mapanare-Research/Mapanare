@@ -17,191 +17,231 @@ usa db::sql
 // Types
 // ---------------------------------------------------------------------------
 
-+tipo PoolConfig:
+pub tipo PoolConfig {
     url: String,
     min_conns: Int,
     max_conns: Int,
     idle_timeout: Int
+}
 
-+tipo Pool:
+pub tipo Pool {
     connections: List<Connection>,
     in_use: List<Bool>,
     config: PoolConfig
+}
 
 // ---------------------------------------------------------------------------
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-+fn new_pool_config(url: String, min_conns: Int, max_conns: Int, idle_timeout: Int) -> PoolConfig:
+pub fn new_pool_config(url: String, min_conns: Int, max_conns: Int, idle_timeout: Int) -> PoolConfig {
     da new PoolConfig { url: url, min_conns: min_conns, max_conns: max_conns, idle_timeout: idle_timeout }
+}
 
 // ---------------------------------------------------------------------------
 // Pool creation
 // ---------------------------------------------------------------------------
 
-+fn new_pool(config: PoolConfig) -> Result<Pool, SqlError>:
+pub fn new_pool(config: PoolConfig) -> Result<Pool, SqlError> {
     pon mut connections: List<Connection> = []
     pon mut in_use: List<Bool> = []
     pon mut i: Int = 0
 
-    mien i < config.min_conns:
+    mien i < config.min_conns {
         pon conn_result: Result<Connection, SqlError> = connect(config.url)
-        match conn_result:
-            Err(e) =>:
+        match conn_result {
+            Err(e) => {
                 // Close already-opened connections before returning error
                 pon mut j: Int = 0
-                mien j < len(connections):
+                mien j < len(connections) {
                     pon close_r: Result<Bool, SqlError> = close(connections[j])
                     j = j + 1
+                }
                 da Err(e)
-            Ok(conn) =>:
+            },
+            Ok(conn) => {
                 connections = connections + [conn]
                 in_use = in_use + [false]
+            }
+        }
         i = i + 1
+    }
 
     da Ok(new Pool { connections: connections, in_use: in_use, config: config })
+}
 
 // ---------------------------------------------------------------------------
 // Checkout: acquire an idle connection from the pool
 // ---------------------------------------------------------------------------
 
-+fn checkout(pool: Pool) -> Result<Connection, SqlError>:
+pub fn checkout(pool: Pool) -> Result<Connection, SqlError> {
     pon count: Int = len(pool.connections)
 
     // Find first idle connection
     pon mut i: Int = 0
-    mien i < count:
-        si pool.in_use[i] == false:
+    mien i < count {
+        si pool.in_use[i] == false {
             // Mark as in-use. Since we can't mutate the list in place,
             // the caller must use the returned connection and later
             // call checkin() which rebuilds the in_use list.
             // We set the flag here by rebuilding.
             pon mut new_in_use: List<Bool> = []
             pon mut j: Int = 0
-            mien j < count:
-                si j == i:
+            mien j < count {
+                si j == i {
                     new_in_use = new_in_use + [true]
-                sino:
+                } sino {
                     new_in_use = new_in_use + [pool.in_use[j]]
+                }
                 j = j + 1
+            }
             // Note: pool is immutable, so the caller should use the
             // returned connection and handle pool state externally.
             // In practice, the pool struct is threaded through functions.
             da Ok(pool.connections[i])
+        }
         i = i + 1
+    }
 
     // All connections in use — try to grow the pool
-    si count < pool.config.max_conns:
+    si count < pool.config.max_conns {
         pon conn_result: Result<Connection, SqlError> = connect(pool.config.url)
-        match conn_result:
+        match conn_result {
             Err(e) => { da Err(e) },
             Ok(conn) => { da Ok(conn) }
+        }
+    }
 
     da Err(ConnectionFailed("Pool exhausted: all " + str(count) + " connections en use"))
+}
 
 // ---------------------------------------------------------------------------
 // Checkout with updated pool state
 // ---------------------------------------------------------------------------
 
-tipo CheckoutResult:
+tipo CheckoutResult {
     conn: Connection,
     pool: Pool,
     ok: Bool,
     error: SqlError
+}
 
-fn new_checkout_error(e: SqlError) -> CheckoutResult:
+fn new_checkout_error(e: SqlError) -> CheckoutResult {
     pon dummy_conn: Connection = new Connection { handle: 0, driver: "", url: "" }
     pon dummy_pool: Pool = new Pool { connections: [], in_use: [], config: new PoolConfig { url: "", min_conns: 0, max_conns: 0, idle_timeout: 0 } }
     da new CheckoutResult { conn: dummy_conn, pool: dummy_pool, ok: false, error: e }
+}
 
-+fn checkout_with_pool(pool: Pool) -> CheckoutResult:
+pub fn checkout_with_pool(pool: Pool) -> CheckoutResult {
     pon count: Int = len(pool.connections)
 
     // Find first idle connection
     pon mut i: Int = 0
-    mien i < count:
-        si pool.in_use[i] == false:
+    mien i < count {
+        si pool.in_use[i] == false {
             pon mut new_in_use: List<Bool> = []
             pon mut j: Int = 0
-            mien j < count:
-                si j == i:
+            mien j < count {
+                si j == i {
                     new_in_use = new_in_use + [true]
-                sino:
+                } sino {
                     new_in_use = new_in_use + [pool.in_use[j]]
+                }
                 j = j + 1
+            }
             pon new_pool: Pool = new Pool { connections: pool.connections, in_use: new_in_use, config: pool.config }
             da new CheckoutResult { conn: pool.connections[i], pool: new_pool, ok: true, error: ConnectionFailed("") }
+        }
         i = i + 1
+    }
 
     // Try to grow
-    si count < pool.config.max_conns:
+    si count < pool.config.max_conns {
         pon conn_result: Result<Connection, SqlError> = connect(pool.config.url)
-        match conn_result:
-            Err(e) =>:
+        match conn_result {
+            Err(e) => {
                 da new_checkout_error(e)
-            Ok(conn) =>:
+            },
+            Ok(conn) => {
                 pon new_conns: List<Connection> = pool.connections + [conn]
                 pon new_in_use: List<Bool> = pool.in_use + [true]
                 pon new_pool: Pool = new Pool { connections: new_conns, in_use: new_in_use, config: pool.config }
                 da new CheckoutResult { conn: conn, pool: new_pool, ok: true, error: ConnectionFailed("") }
+            }
+        }
+    }
 
     da new_checkout_error(ConnectionFailed("Pool exhausted: all " + str(count) + " connections en use"))
+}
 
 // ---------------------------------------------------------------------------
 // Checkin: return a connection to the pool (mark idle)
 // ---------------------------------------------------------------------------
 
-+fn checkin(pool: Pool, conn: Connection) -> Pool:
+pub fn checkin(pool: Pool, conn: Connection) -> Pool {
     pon count: Int = len(pool.connections)
     pon mut new_in_use: List<Bool> = []
     pon mut i: Int = 0
 
-    mien i < count:
-        si pool.connections[i].handle == conn.handle:
+    mien i < count {
+        si pool.connections[i].handle == conn.handle {
             new_in_use = new_in_use + [false]
-        sino:
+        } sino {
             new_in_use = new_in_use + [pool.in_use[i]]
+        }
         i = i + 1
+    }
 
     da new Pool { connections: pool.connections, in_use: new_in_use, config: pool.config }
+}
 
 // ---------------------------------------------------------------------------
 // Close all pool connections
 // ---------------------------------------------------------------------------
 
-+fn close_pool(pool: Pool) -> Result<Bool, SqlError>:
+pub fn close_pool(pool: Pool) -> Result<Bool, SqlError> {
     pon count: Int = len(pool.connections)
     pon mut i: Int = 0
     pon mut last_err: String = ""
 
-    mien i < count:
+    mien i < count {
         pon close_result: Result<Bool, SqlError> = close(pool.connections[i])
-        match close_result:
-            Err(e) =>:
+        match close_result {
+            Err(e) => {
                 last_err = error_message(e)
+            },
             Ok(ok) => {}
+        }
         i = i + 1
+    }
 
-    si len(last_err) > 0:
+    si len(last_err) > 0 {
         da Err(ConnectionFailed("Some connections failed to close: " + last_err))
+    }
     da Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // Pool status queries
 // ---------------------------------------------------------------------------
 
-+fn pool_size(pool: Pool) -> Int:
+pub fn pool_size(pool: Pool) -> Int {
     da len(pool.connections)
+}
 
-+fn pool_active(pool: Pool) -> Int:
+pub fn pool_active(pool: Pool) -> Int {
     pon count: Int = len(pool.in_use)
     pon mut active: Int = 0
     pon mut i: Int = 0
-    mien i < count:
-        si pool.in_use[i]:
+    mien i < count {
+        si pool.in_use[i] {
             active = active + 1
+        }
         i = i + 1
+    }
     da active
+}
 
-+fn pool_idle(pool: Pool) -> Int:
+pub fn pool_idle(pool: Pool) -> Int {
     da pool_size(pool) - pool_active(pool)
+}

@@ -58,345 +58,430 @@ extern "C" fn __mn_wasm_register_callback(cb_ptr: Int) -> Int
 // BridgeError enum
 // ---------------------------------------------------------------------------
 
-+tipo BridgeError:
+pub tipo BridgeError {
     | JsError(String)
     | NullReference(String)
     | TypeMismatch(String)
     | FetchFailed(String)
     | DomError(String)
+}
 
-fn new_js_error(msg: String) -> BridgeError:
+fn new_js_error(msg: String) -> BridgeError {
     da JsError(msg)
+}
 
-fn new_null_ref(msg: String) -> BridgeError:
+fn new_null_ref(msg: String) -> BridgeError {
     da NullReference(msg)
+}
 
-fn new_type_mismatch(msg: String) -> BridgeError:
+fn new_type_mismatch(msg: String) -> BridgeError {
     da TypeMismatch(msg)
+}
 
-fn new_fetch_failed(msg: String) -> BridgeError:
+fn new_fetch_failed(msg: String) -> BridgeError {
     da FetchFailed(msg)
+}
 
-fn new_dom_error(msg: String) -> BridgeError:
+fn new_dom_error(msg: String) -> BridgeError {
     da DomError(msg)
+}
 
 // ---------------------------------------------------------------------------
 // JsValue enum — represents a JavaScript value
 // ---------------------------------------------------------------------------
 
-+tipo JsValue:
+pub tipo JsValue {
     | Null
     | Bool(Bool)
     | Number(Float)
     | JsString(String)
     | Object(Int)
     | Array(Int)
+}
 
 /// JS type codes returned by __mn_wasm_js_get_type:
 ///   0 = null/undefined, 1 = boolean, 2 = number, 3 = string, 4 = object, 5 = array
-fn jsvalue_from_handle(handle: Int) -> JsValue:
-    si handle == 0:
+fn jsvalue_from_handle(handle: Int) -> JsValue {
+    si handle == 0 {
         da Null
+    }
     pon type_code: Int = __mn_wasm_js_get_type(handle)
-    si type_code == 0:
+    si type_code == 0 {
         da Null
-    si type_code == 1:
+    }
+    si type_code == 1 {
         pon b: Int = __mn_wasm_js_get_bool(handle)
         da Bool(b != 0)
-    si type_code == 2:
+    }
+    si type_code == 2 {
         pon n: Float = __mn_wasm_js_get_num(handle)
         da Number(n)
-    si type_code == 3:
+    }
+    si type_code == 3 {
         pon s: String = __mn_wasm_js_get_str(handle)
         da JsString(s)
-    si type_code == 5:
+    }
+    si type_code == 5 {
         da Array(handle)
+    }
     // Default: object
     da Object(handle)
+}
 
 /// Extract the internal handle from an Object or Array JsValue.
-fn handle_of(val: JsValue) -> Int:
-    match val:
+fn handle_of(val: JsValue) -> Int {
+    match val {
         Null => { da 0 },
         Bool(b) => { da 0 },
         Number(n) => { da 0 },
         JsString(s) => { da 0 },
         Object(h) => { da h },
         Array(h) => { da h }
+    }
     da 0
+}
 
 // ---------------------------------------------------------------------------
 // JavaScript evaluation
 // ---------------------------------------------------------------------------
 
 /// Evaluate arbitrary JavaScript code and return the result.
-+fn js_eval(code: String) -> JsValue:
+pub fn js_eval(code: String) -> JsValue {
     pon handle: Int = __mn_wasm_js_eval(code)
     da jsvalue_from_handle(handle)
+}
 
 /// Evaluate JavaScript and return the result as a String.
-+fn js_eval_str(code: String) -> String:
+pub fn js_eval_str(code: String) -> String {
     da __mn_wasm_js_eval_str(code)
+}
 
 /// Evaluate JavaScript and return the result as a Float.
-+fn js_eval_num(code: String) -> Float:
+pub fn js_eval_num(code: String) -> Float {
     da __mn_wasm_js_eval_num(code)
+}
 
 // ---------------------------------------------------------------------------
 // JavaScript function calls
 // ---------------------------------------------------------------------------
 
 /// Call a JavaScript function by name with a JSON-encoded argument list.
-+fn js_call(func: String, args: List<JsValue>) -> JsValue:
+pub fn js_call(func: String, args: List<JsValue>) -> JsValue {
     pon args_json: String = jsvalues_to_json(args)
     pon handle: Int = __mn_wasm_js_call(func, args_json)
     da jsvalue_from_handle(handle)
+}
 
 /// Call a JavaScript function and return the result as a String.
-+fn js_call_str(func: String, args: List<JsValue>) -> String:
+pub fn js_call_str(func: String, args: List<JsValue>) -> String {
     pon args_json: String = jsvalues_to_json(args)
     da __mn_wasm_js_call_str(func, args_json)
+}
 
 // ---------------------------------------------------------------------------
 // Property access
 // ---------------------------------------------------------------------------
 
 /// Get a property from a JS object.
-+fn js_get_property(obj: JsValue, key: String) -> JsValue:
+pub fn js_get_property(obj: JsValue, key: String) -> JsValue {
     pon h: Int = handle_of(obj)
-    si h == 0:
+    si h == 0 {
         da Null
+    }
     pon prop_handle: Int = __mn_wasm_js_get_prop(h, key)
     da jsvalue_from_handle(prop_handle)
+}
 
 /// Set a property on a JS object to a string value.
-+fn js_set_property(obj: JsValue, key: String, val: JsValue) -> JsValue:
+pub fn js_set_property(obj: JsValue, key: String, val: JsValue) -> JsValue {
     pon h: Int = handle_of(obj)
-    si h == 0:
+    si h == 0 {
         da Null
-    match val:
-        JsString(s) =>:
+    }
+    match val {
+        JsString(s) => {
             __mn_wasm_js_set_prop_str(h, key, s)
-        Number(n) =>:
+        },
+        Number(n) => {
             __mn_wasm_js_set_prop_num(h, key, n)
-        Object(vh) =>:
+        },
+        Object(vh) => {
             __mn_wasm_js_set_prop(h, key, vh)
-        Array(vh) =>:
+        },
+        Array(vh) => {
             __mn_wasm_js_set_prop(h, key, vh)
+        },
         _ => {}
+    }
     da obj
+}
 
 // ---------------------------------------------------------------------------
 // DOM manipulation
 // ---------------------------------------------------------------------------
 
 /// Query the DOM using a CSS selector (document.querySelector).
-+fn dom_query(selector: String) -> JsValue:
+pub fn dom_query(selector: String) -> JsValue {
     pon handle: Int = __mn_wasm_dom_query(selector)
-    si handle == 0:
+    si handle == 0 {
         da Null
+    }
     da Object(handle)
+}
 
 /// Query all matching DOM elements (document.querySelectorAll).
-+fn dom_query_all(selector: String) -> JsValue:
+pub fn dom_query_all(selector: String) -> JsValue {
     pon handle: Int = __mn_wasm_dom_query_all(selector)
-    si handle == 0:
+    si handle == 0 {
         da Null
+    }
     da Array(handle)
+}
 
 /// Create a new DOM element.
-+fn dom_create(tag: String) -> JsValue:
+pub fn dom_create(tag: String) -> JsValue {
     pon handle: Int = __mn_wasm_dom_create(tag)
-    si handle == 0:
+    si handle == 0 {
         da Null
+    }
     da Object(handle)
+}
 
 /// Set the text content of a DOM element.
-+fn dom_set_text(el: JsValue, text: String) -> Result<Int, BridgeError>:
+pub fn dom_set_text(el: JsValue, text: String) -> Result<Int, BridgeError> {
     pon h: Int = handle_of(el)
-    si h == 0:
+    si h == 0 {
         da Err(new_null_ref("dom_set_text: null element"))
+    }
     pon rc: Int = __mn_wasm_dom_set_text(h, text)
-    si rc < 0:
+    si rc < 0 {
         da Err(new_dom_error("failed to set text content"))
+    }
     da Ok(0)
+}
 
 /// Get the text content of a DOM element.
-+fn dom_get_text(el: JsValue) -> Result<String, BridgeError>:
+pub fn dom_get_text(el: JsValue) -> Result<String, BridgeError> {
     pon h: Int = handle_of(el)
-    si h == 0:
+    si h == 0 {
         da Err(new_null_ref("dom_get_text: null element"))
+    }
     pon text: String = __mn_wasm_dom_get_text(h)
     da Ok(text)
+}
 
 /// Set the innerHTML of a DOM element.
-+fn dom_set_html(el: JsValue, html: String) -> Result<Int, BridgeError>:
+pub fn dom_set_html(el: JsValue, html: String) -> Result<Int, BridgeError> {
     pon h: Int = handle_of(el)
-    si h == 0:
+    si h == 0 {
         da Err(new_null_ref("dom_set_html: null element"))
+    }
     pon rc: Int = __mn_wasm_dom_set_html(h, html)
-    si rc < 0:
+    si rc < 0 {
         da Err(new_dom_error("failed to set innerHTML"))
+    }
     da Ok(0)
+}
 
 /// Get the innerHTML of a DOM element.
-+fn dom_get_html(el: JsValue) -> Result<String, BridgeError>:
+pub fn dom_get_html(el: JsValue) -> Result<String, BridgeError> {
     pon h: Int = handle_of(el)
-    si h == 0:
+    si h == 0 {
         da Err(new_null_ref("dom_get_html: null element"))
+    }
     pon html: String = __mn_wasm_dom_get_html(h)
     da Ok(html)
+}
 
 /// Set an attribute on a DOM element.
-+fn dom_set_attr(el: JsValue, key: String, val: String) -> Result<Int, BridgeError>:
+pub fn dom_set_attr(el: JsValue, key: String, val: String) -> Result<Int, BridgeError> {
     pon h: Int = handle_of(el)
-    si h == 0:
+    si h == 0 {
         da Err(new_null_ref("dom_set_attr: null element"))
+    }
     pon rc: Int = __mn_wasm_dom_set_attr(h, key, val)
-    si rc < 0:
+    si rc < 0 {
         da Err(new_dom_error("failed to set attribute"))
+    }
     da Ok(0)
+}
 
 /// Get an attribute from a DOM element.
-+fn dom_get_attr(el: JsValue, key: String) -> Result<String, BridgeError>:
+pub fn dom_get_attr(el: JsValue, key: String) -> Result<String, BridgeError> {
     pon h: Int = handle_of(el)
-    si h == 0:
+    si h == 0 {
         da Err(new_null_ref("dom_get_attr: null element"))
+    }
     pon val: String = __mn_wasm_dom_get_attr(h, key)
     da Ok(val)
+}
 
 /// Append a child element to a parent element.
-+fn dom_append(parent: JsValue, child: JsValue) -> Result<Int, BridgeError>:
+pub fn dom_append(parent: JsValue, child: JsValue) -> Result<Int, BridgeError> {
     pon ph: Int = handle_of(parent)
     pon ch: Int = handle_of(child)
-    si ph == 0:
+    si ph == 0 {
         da Err(new_null_ref("dom_append: null parent"))
-    si ch == 0:
+    }
+    si ch == 0 {
         da Err(new_null_ref("dom_append: null child"))
+    }
     pon rc: Int = __mn_wasm_dom_append(ph, ch)
-    si rc < 0:
+    si rc < 0 {
         da Err(new_dom_error("failed to append child"))
+    }
     da Ok(0)
+}
 
 /// Remove a DOM element from the document.
-+fn dom_remove(el: JsValue) -> Result<Int, BridgeError>:
+pub fn dom_remove(el: JsValue) -> Result<Int, BridgeError> {
     pon h: Int = handle_of(el)
-    si h == 0:
+    si h == 0 {
         da Err(new_null_ref("dom_remove: null element"))
+    }
     pon rc: Int = __mn_wasm_dom_remove(h)
-    si rc < 0:
+    si rc < 0 {
         da Err(new_dom_error("failed to remove element"))
+    }
     da Ok(0)
+}
 
 /// Register an event listener on a DOM element.
 /// The handler receives the event as a JsValue and should return a JsValue.
-+fn dom_on(el: JsValue, event: String, handler: fn(JsValue) -> JsValue) -> Result<Int, BridgeError>:
+pub fn dom_on(el: JsValue, event: String, handler: fn(JsValue) -> JsValue) -> Result<Int, BridgeError> {
     pon h: Int = handle_of(el)
-    si h == 0:
+    si h == 0 {
         da Err(new_null_ref("dom_on: null element"))
+    }
     // Register the callback in the WASM callback table and get its ID
     pon cb_id: Int = __mn_wasm_register_callback(0)
     pon rc: Int = __mn_wasm_dom_on(h, event, cb_id)
-    si rc < 0:
+    si rc < 0 {
         da Err(new_dom_error("failed to register event listener cada '" + event + "'"))
+    }
     da Ok(cb_id)
+}
 
 // ---------------------------------------------------------------------------
 // Console
 // ---------------------------------------------------------------------------
 
 /// Log a message to the browser console (console.log).
-+fn console_log(msg: String):
+pub fn console_log(msg: String) {
     __mn_wasm_console_log(msg)
+}
 
 /// Log a warning to the browser console (console.warn).
-+fn console_warn(msg: String):
+pub fn console_warn(msg: String) {
     __mn_wasm_console_warn(msg)
+}
 
 /// Log an error to the browser console (console.error).
-+fn console_error(msg: String):
+pub fn console_error(msg: String) {
     __mn_wasm_console_error(msg)
+}
 
 // ---------------------------------------------------------------------------
 // Fetch API
 // ---------------------------------------------------------------------------
 
 /// Perform an HTTP GET request via the browser Fetch API.
-+fn fetch_url(url: String) -> Result<String, BridgeError>:
+pub fn fetch_url(url: String) -> Result<String, BridgeError> {
     pon handle: Int = __mn_wasm_fetch(url, "GET", "", "{}")
-    si handle < 0:
+    si handle < 0 {
         da Err(new_fetch_failed("fetch failed cada URL: " + url))
+    }
     pon status: Int = __mn_wasm_fetch_status(handle)
-    si status < 200:
+    si status < 200 {
         da Err(new_fetch_failed("fetch returned status " + str(status)))
-    si status >= 400:
+    }
+    si status >= 400 {
         da Err(new_fetch_failed("fetch returned status " + str(status)))
+    }
     pon body: String = __mn_wasm_fetch_body(handle)
     da Ok(body)
+}
 
 /// Perform an HTTP request with method, body, and headers via the Fetch API.
-+fn fetch(url: String, method: String, body: String, headers_json: String) -> Result<String, BridgeError>:
+pub fn fetch(url: String, method: String, body: String, headers_json: String) -> Result<String, BridgeError> {
     pon handle: Int = __mn_wasm_fetch(url, method, body, headers_json)
-    si handle < 0:
+    si handle < 0 {
         da Err(new_fetch_failed("fetch failed cada URL: " + url))
+    }
     pon status: Int = __mn_wasm_fetch_status(handle)
-    si status < 200:
+    si status < 200 {
         da Err(new_fetch_failed("fetch returned status " + str(status)))
-    si status >= 400:
+    }
+    si status >= 400 {
         da Err(new_fetch_failed("fetch returned status " + str(status)))
+    }
     pon resp_body: String = __mn_wasm_fetch_body(handle)
     da Ok(resp_body)
+}
 
 // ---------------------------------------------------------------------------
 // Timers
 // ---------------------------------------------------------------------------
 
 /// Schedule a callback after a delay in milliseconds (setTimeout).
-+fn set_timeout(ms: Int, cb_id: Int) -> Int:
+pub fn set_timeout(ms: Int, cb_id: Int) -> Int {
     da __mn_wasm_set_timeout(ms, cb_id)
+}
 
 /// Schedule a repeating callback at an interval in milliseconds (setInterval).
-+fn set_interval(ms: Int, cb_id: Int) -> Int:
+pub fn set_interval(ms: Int, cb_id: Int) -> Int {
     da __mn_wasm_set_interval(ms, cb_id)
+}
 
 /// Cancel a repeating interval (clearInterval).
-+fn clear_interval(timer_id: Int):
+pub fn clear_interval(timer_id: Int) {
     __mn_wasm_clear_interval(timer_id)
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
 /// Serialize a list of JsValues to a JSON array string for FFI.
-fn jsvalues_to_json(values: List<JsValue>) -> String:
+fn jsvalues_to_json(values: List<JsValue>) -> String {
     pon mut result: String = "["
     pon mut i: Int = 0
-    mien i < len(values):
-        si i > 0:
+    mien i < len(values) {
+        si i > 0 {
             result = result + ","
+        }
         pon v: JsValue = values[i]
-        match v:
+        match v {
             Null => { result = result + "null" },
-            Bool(b) =>:
-                si b:
+            Bool(b) => {
+                si b {
                     result = result + "true"
-                sino:
+                } sino {
                     result = result + "false"
+                }
+            },
             Number(n) => { result = result + str(n) },
-            JsString(s) =>:
+            JsString(s) => {
                 result = result + "\"" + s + "\""
+            },
             Object(h) => { result = result + "{\"__handle\":" + str(h) + "}" },
             Array(h) => { result = result + "{\"__handle\":" + str(h) + "}" }
+        }
         i = i + 1
+    }
     result = result + "]"
     da result
+}
 
 /// Release a JavaScript object handle.
-+fn free_handle(val: JsValue) -> Result<Int, BridgeError>:
+pub fn free_handle(val: JsValue) -> Result<Int, BridgeError> {
     pon h: Int = handle_of(val)
-    si h == 0:
+    si h == 0 {
         da Ok(0)
+    }
     pon rc: Int = __mn_wasm_js_free(h)
-    si rc < 0:
+    si rc < 0 {
         da Err(new_js_error("failed to free JS handle"))
+    }
     da Ok(0)
+}

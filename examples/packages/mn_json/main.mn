@@ -4,9 +4,11 @@ extern "Python" fn json::loads(s: String) -> String
 extern "Python" fn json::dumps(obj: String) -> String
 
 /// Parse a JSON string. Returns Err on invalid JSON.
-fn parse(s: String) -> Result<String, String>:
+fn parse(s: String) -> Result<String, String> {
     da Ok(loads(s))
+}
 
 /// Serialize a value to a JSON string.
-fn stringify(obj: String) -> Result<String, String>:
+fn stringify(obj: String) -> Result<String, String> {
     da Ok(dumps(obj))
+}

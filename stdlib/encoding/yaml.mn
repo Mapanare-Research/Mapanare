@@ -16,12 +16,13 @@ usa text::string_utils
 // Core Types
 // ---------------------------------------------------------------------------
 
-+tipo YamlError:
+pub tipo YamlError {
     message: String,
     line: Int,
     col: Int
+}
 
-+tipo YamlValue:
+pub tipo YamlValue {
     | Null
     | Bool(Bool)
     | Int(Int)
@@ -29,26 +30,30 @@ usa text::string_utils
     | Str(String)
     | Seq(List<YamlValue>)
     | Map(List<YamlEntry>)
+}
 
-+tipo YamlEntry:
+pub tipo YamlEntry {
     key: String,
     value: YamlValue
+}
 
 // ---------------------------------------------------------------------------
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-fn new_yaml_error(message: String, line: Int, col: Int) -> YamlError:
+fn new_yaml_error(message: String, line: Int, col: Int) -> YamlError {
     da new YamlError { message: message, line: line, col: col }
+}
 
-fn new_yaml_entry(key: String, value: YamlValue) -> YamlEntry:
+fn new_yaml_entry(key: String, value: YamlValue) -> YamlEntry {
     da new YamlEntry { key: key, value: value }
+}
 
 // ---------------------------------------------------------------------------
 // Internal parse state
 // ---------------------------------------------------------------------------
 
-tipo ParseState:
+tipo ParseState {
     src: String,
     slen: Int,
     pos: Int,
@@ -56,202 +61,243 @@ tipo ParseState:
     col: Int,
     anchors: Map<String, YamlValue>,
     depth: Int
+}
 
-fn new_parse_state(src: String) -> ParseState:
+fn new_parse_state(src: String) -> ParseState {
     da new ParseState { src: src, slen: len(src), pos: 0, line: 1, col: 1, anchors: #{}, depth: 0 }
+}
 
 // Result of parsing a value — carries updated position
-tipo ParseResult:
+tipo ParseResult {
     value: YamlValue,
     pos: Int,
     line: Int,
     col: Int,
     ok: Bool,
     error: YamlError
+}
 
-fn ok_result(value: YamlValue, pos: Int, line: Int, col: Int) -> ParseResult:
+fn ok_result(value: YamlValue, pos: Int, line: Int, col: Int) -> ParseResult {
     da new ParseResult { value: value, pos: pos, line: line, col: col, ok: true, error: new_yaml_error("", 0, 0) }
+}
 
-fn err_result(msg: String, line: Int, col: Int) -> ParseResult:
+fn err_result(msg: String, line: Int, col: Int) -> ParseResult {
     da new ParseResult { value: Null(), pos: 0, line: line, col: col, ok: false, error: new_yaml_error(msg, line, col) }
+}
 
 // ---------------------------------------------------------------------------
 // Character classification helpers
 // ---------------------------------------------------------------------------
 
-fn is_yaml_digit(ch: String) -> Bool:
+fn is_yaml_digit(ch: String) -> Bool {
     da string_utils.is_digit(ch)
+}
 
-fn digit_val(ch: String) -> Int:
+fn digit_val(ch: String) -> Int {
     da string_utils.digit_value(ch)
+}
 
-fn hex_val(ch: String) -> Int:
+fn hex_val(ch: String) -> Int {
     da string_utils.hex_digit_value_or_zero(ch)
+}
 
-fn is_yaml_hex(ch: String) -> Bool:
+fn is_yaml_hex(ch: String) -> Bool {
     da string_utils.is_hex(ch)
+}
 
-fn is_space(ch: String) -> Bool:
+fn is_space(ch: String) -> Bool {
     si ch == " " { da true }
     da false
+}
 
-fn is_newline(ch: String) -> Bool:
+fn is_newline(ch: String) -> Bool {
     si ch == "\n" { da true }
     si ch == "\r" { da true }
     da false
+}
 
-fn is_ws(ch: String) -> Bool:
+fn is_ws(ch: String) -> Bool {
     si ch == " " { da true }
     si ch == "\t" { da true }
     da false
+}
 
-fn is_ws_or_newline(ch: String) -> Bool:
+fn is_ws_or_newline(ch: String) -> Bool {
     si ch == " " { da true }
     si ch == "\t" { da true }
     si ch == "\n" { da true }
     si ch == "\r" { da true }
     da false
+}
 
-fn is_flow_indicator(ch: String) -> Bool:
+fn is_flow_indicator(ch: String) -> Bool {
     si ch == "{" { da true }
     si ch == "}" { da true }
     si ch == "[" { da true }
     si ch == "]" { da true }
     si ch == "," { da true }
     da false
+}
 
 // ---------------------------------------------------------------------------
 // Low-level input helpers
 // ---------------------------------------------------------------------------
 
 // Advance past a single newline (\n or \r\n), return new pos/line/col
-tipo PosInfo:
+tipo PosInfo {
     pos: Int,
     line: Int,
     col: Int
+}
 
-fn skip_newline(src: String, slen: Int, pos: Int, line: Int) -> PosInfo:
+fn skip_newline(src: String, slen: Int, pos: Int, line: Int) -> PosInfo {
     si pos >= slen { da new PosInfo { pos: pos, line: line, col: 1 } }
     pon ch: String = src.char_at(pos)
-    si ch == "\n":
+    si ch == "\n" {
         da new PosInfo { pos: pos + 1, line: line + 1, col: 1 }
-    si ch == "\r":
-        si pos + 1 < slen:
-            si src.char_at(pos + 1) == "\n":
+    }
+    si ch == "\r" {
+        si pos + 1 < slen {
+            si src.char_at(pos + 1) == "\n" {
                 da new PosInfo { pos: pos + 2, line: line + 1, col: 1 }
+            }
+        }
         da new PosInfo { pos: pos + 1, line: line + 1, col: 1 }
+    }
     da new PosInfo { pos: pos, line: line, col: 1 }
+}
 
 // Skip spaces only (not tabs for indentation)
-fn skip_spaces(src: String, slen: Int, pos: Int, col: Int) -> PosInfo:
+fn skip_spaces(src: String, slen: Int, pos: Int, col: Int) -> PosInfo {
     pon mut p: Int = pos
     pon mut c: Int = col
-    mien p < slen:
-        si src.char_at(p) == " ":
+    mien p < slen {
+        si src.char_at(p) == " " {
             p = p + 1
             c = c + 1
-        sino:
+        } sino {
             da new PosInfo { pos: p, line: 0, col: c }
+        }
+    }
     da new PosInfo { pos: p, line: 0, col: c }
+}
 
 // Skip inline whitespace (spaces and tabs)
-fn skip_inline_ws(src: String, slen: Int, pos: Int, col: Int) -> PosInfo:
+fn skip_inline_ws(src: String, slen: Int, pos: Int, col: Int) -> PosInfo {
     pon mut p: Int = pos
     pon mut c: Int = col
-    mien p < slen:
+    mien p < slen {
         pon ch: String = src.char_at(p)
         si ch == " " { p = p + 1; c = c + 1
         } sino { si ch == "\t" { p = p + 1; c = c + 1
-        sino:
+        } sino {
             da new PosInfo { pos: p, line: 0, col: c }
         } }
+    }
     da new PosInfo { pos: p, line: 0, col: c }
+}
 
 // Skip a comment (# to end of line), does not consume the newline
-fn skip_comment(src: String, slen: Int, pos: Int, col: Int) -> PosInfo:
+fn skip_comment(src: String, slen: Int, pos: Int, col: Int) -> PosInfo {
     pon mut p: Int = pos
     pon mut c: Int = col
-    si p < slen:
-        si src.char_at(p) == "#":
-            mien p < slen:
+    si p < slen {
+        si src.char_at(p) == "#" {
+            mien p < slen {
                 pon ch: String = src.char_at(p)
                 si ch == "\n" { da new PosInfo { pos: p, line: 0, col: c } }
                 si ch == "\r" { da new PosInfo { pos: p, line: 0, col: c } }
                 p = p + 1
                 c = c + 1
+            }
+        }
+    }
     da new PosInfo { pos: p, line: 0, col: c }
+}
 
 // Skip whitespace, newlines, and comments — full blank-line skipper
-fn skip_ws_and_comments(src: String, slen: Int, pos: Int, line: Int, col: Int) -> PosInfo:
+fn skip_ws_and_comments(src: String, slen: Int, pos: Int, line: Int, col: Int) -> PosInfo {
     pon mut p: Int = pos
     pon mut ln: Int = line
     pon mut c: Int = col
-    mien p < slen:
+    mien p < slen {
         pon ch: String = src.char_at(p)
         si ch == " " { p = p + 1; c = c + 1
         } sino { si ch == "\t" { p = p + 1; c = c + 1
         } sino { si ch == "\n" { p = p + 1; ln = ln + 1; c = 1
-        } sino { si ch == "\r":
+        } sino { si ch == "\r" {
             pon nl: PosInfo = skip_newline(src, slen, p, ln)
             p = nl.pos
             ln = nl.line
             c = 1
-        } sino { si ch == "#":
+        } sino { si ch == "#" {
             pon cr: PosInfo = skip_comment(src, slen, p, c)
             p = cr.pos
             c = cr.col
-        sino:
+        } sino {
             da new PosInfo { pos: p, line: ln, col: c }
         } } } } }
+    }
     da new PosInfo { pos: p, line: ln, col: c }
+}
 
 // Skip rest of line (inline whitespace + optional comment + newline)
-fn skip_rest_of_line(src: String, slen: Int, pos: Int, line: Int, col: Int) -> PosInfo:
+fn skip_rest_of_line(src: String, slen: Int, pos: Int, line: Int, col: Int) -> PosInfo {
     pon ws: PosInfo = skip_inline_ws(src, slen, pos, col)
     pon mut p: Int = ws.pos
     pon mut c: Int = ws.col
     pon mut ln: Int = line
     // optional comment
-    si p < slen:
-        si src.char_at(p) == "#":
+    si p < slen {
+        si src.char_at(p) == "#" {
             pon cr: PosInfo = skip_comment(src, slen, p, c)
             p = cr.pos
             c = cr.col
+        }
+    }
     // consume newline
-    si p < slen:
+    si p < slen {
         pon ch: String = src.char_at(p)
-        si is_newline(ch):
+        si is_newline(ch) {
             pon nl: PosInfo = skip_newline(src, slen, p, ln)
             p = nl.pos
             ln = nl.line
             c = nl.col
+        }
+    }
     da new PosInfo { pos: p, line: ln, col: c }
+}
 
 // Measure indentation at current line start — count leading spaces
-fn measure_indent(src: String, slen: Int, pos: Int) -> Int:
+fn measure_indent(src: String, slen: Int, pos: Int) -> Int {
     pon mut p: Int = pos
     pon mut indent: Int = 0
-    mien p < slen:
-        si src.char_at(p) == " ":
+    mien p < slen {
+        si src.char_at(p) == " " {
             indent = indent + 1
             p = p + 1
-        sino:
+        } sino {
             da indent
+        }
+    }
     da indent
+}
 
 // ---------------------------------------------------------------------------
 // Escape sequence handler for double-quoted strings
 // ---------------------------------------------------------------------------
 
-tipo EscResult:
+tipo EscResult {
     value: String,
     advance: Int,
     ok: Bool,
     err_msg: String
+}
 
-fn handle_yaml_escape(src: String, pos: Int, slen: Int) -> EscResult:
-    si pos >= slen:
+fn handle_yaml_escape(src: String, pos: Int, slen: Int) -> EscResult {
+    si pos >= slen {
         da new EscResult { value: "", advance: 0, ok: false, err_msg: "Unexpected end en escape" }
+    }
     pon esc: String = src.char_at(pos)
     si esc == "\"" { da new EscResult { value: "\"", advance: 1, ok: true, err_msg: "" } }
     si esc == "\\" { da new EscResult { value: "\\", advance: 1, ok: true, err_msg: "" } }
@@ -266,21 +312,25 @@ fn handle_yaml_escape(src: String, pos: Int, slen: Int) -> EscResult:
     si esc == "e" { da new EscResult { value: "", advance: 1, ok: true, err_msg: "" } }
     si esc == " " { da new EscResult { value: " ", advance: 1, ok: true, err_msg: "" } }
     si esc == "0" { da new EscResult { value: "", advance: 1, ok: true, err_msg: "" } }
-    si esc == "x":
-        si pos + 2 >= slen:
+    si esc == "x" {
+        si pos + 2 >= slen {
             da new EscResult { value: "", advance: 0, ok: false, err_msg: "Incomplete \\x escape" }
+        }
         pon h0: String = src.char_at(pos + 1)
         pon h1: String = src.char_at(pos + 2)
         si is_yaml_hex(h0) == false { da new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex en \\x escape" } }
         si is_yaml_hex(h1) == false { da new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex en \\x escape" } }
         pon cp: Int = hex_val(h0) * 16 + hex_val(h1)
-        si cp < 128:
+        si cp < 128 {
             da new EscResult { value: str(cp), advance: 3, ok: true, err_msg: "" }
-        sino:
+        } sino {
             da new EscResult { value: "?", advance: 3, ok: true, err_msg: "" }
-    si esc == "u":
-        si pos + 4 >= slen:
+        }
+    }
+    si esc == "u" {
+        si pos + 4 >= slen {
             da new EscResult { value: "", advance: 0, ok: false, err_msg: "Incomplete \\u escape" }
+        }
         pon u0: String = src.char_at(pos + 1)
         pon u1: String = src.char_at(pos + 2)
         pon u2: String = src.char_at(pos + 3)
@@ -290,50 +340,59 @@ fn handle_yaml_escape(src: String, pos: Int, slen: Int) -> EscResult:
         si is_yaml_hex(u2) == false { da new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex en \\u escape" } }
         si is_yaml_hex(u3) == false { da new EscResult { value: "", advance: 0, ok: false, err_msg: "Invalid hex en \\u escape" } }
         pon cp2: Int = hex_val(u0) * 4096 + hex_val(u1) * 256 + hex_val(u2) * 16 + hex_val(u3)
-        si cp2 < 128:
+        si cp2 < 128 {
             da new EscResult { value: str(cp2), advance: 5, ok: true, err_msg: "" }
-        sino:
+        } sino {
             da new EscResult { value: "?", advance: 5, ok: true, err_msg: "" }
+        }
+    }
     // Line fold escape — backslash at end of line
     si esc == "\n" { da new EscResult { value: "", advance: 1, ok: true, err_msg: "" } }
-    si esc == "\r":
-        si pos + 1 < slen:
-            si src.char_at(pos + 1) == "\n":
+    si esc == "\r" {
+        si pos + 1 < slen {
+            si src.char_at(pos + 1) == "\n" {
                 da new EscResult { value: "", advance: 2, ok: true, err_msg: "" }
+            }
+        }
         da new EscResult { value: "", advance: 1, ok: true, err_msg: "" }
+    }
     da new EscResult { value: "", advance: 0, ok: false, err_msg: "Unknown escape character: \\" + esc }
+}
 
 // ---------------------------------------------------------------------------
 // Double-quoted string parser
 // ---------------------------------------------------------------------------
 
-tipo StrResult:
+tipo StrResult {
     value: String,
     pos: Int,
     line: Int,
     col: Int,
     ok: Bool,
     err_msg: String
+}
 
-fn parse_double_quoted(src: String, slen: Int, pos: Int, line: Int, col: Int) -> StrResult:
+fn parse_double_quoted(src: String, slen: Int, pos: Int, line: Int, col: Int) -> StrResult {
     // pos points at the opening "
     pon mut p: Int = pos + 1
     pon mut c: Int = col + 1
     pon mut ln: Int = line
     pon mut result: String = ""
 
-    mien p < slen:
+    mien p < slen {
         pon ch: String = src.char_at(p)
-        si ch == "\"":
+        si ch == "\"" {
             da new StrResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, err_msg: "" }
-        si ch == "\\":
+        }
+        si ch == "\\" {
             pon er: EscResult = handle_yaml_escape(src, p + 1, slen)
-            si er.ok == false:
+            si er.ok == false {
                 da new StrResult { value: "", pos: p, line: ln, col: c, ok: false, err_msg: er.err_msg }
+            }
             result = result + er.value
             p = p + 1 + er.advance
             c = c + 1 + er.advance
-        } sino { si ch == "\n":
+        } sino { si ch == "\n" {
             // Fold newline in double-quoted string
             result = result + " "
             p = p + 1
@@ -343,7 +402,7 @@ fn parse_double_quoted(src: String, slen: Int, pos: Int, line: Int, col: Int) ->
             pon ws: PosInfo = skip_spaces(src, slen, p, c)
             p = ws.pos
             c = ws.col
-        } sino { si ch == "\r":
+        } sino { si ch == "\r" {
             result = result + " "
             pon nl: PosInfo = skip_newline(src, slen, p, ln)
             p = nl.pos
@@ -352,38 +411,42 @@ fn parse_double_quoted(src: String, slen: Int, pos: Int, line: Int, col: Int) ->
             pon ws2: PosInfo = skip_spaces(src, slen, p, c)
             p = ws2.pos
             c = ws2.col
-        sino:
+        } sino {
             result = result + ch
             p = p + 1
             c = c + 1
         } } }
+    }
     da new StrResult { value: "", pos: p, line: ln, col: c, ok: false, err_msg: "Unterminated double-quoted string" }
+}
 
 // ---------------------------------------------------------------------------
 // Single-quoted string parser
 // ---------------------------------------------------------------------------
 
-fn parse_single_quoted(src: String, slen: Int, pos: Int, line: Int, col: Int) -> StrResult:
+fn parse_single_quoted(src: String, slen: Int, pos: Int, line: Int, col: Int) -> StrResult {
     // pos points at the opening '
     pon mut p: Int = pos + 1
     pon mut c: Int = col + 1
     pon mut ln: Int = line
     pon mut result: String = ""
 
-    mien p < slen:
+    mien p < slen {
         pon ch: String = src.char_at(p)
-        si ch == "'":
+        si ch == "'" {
             // Escaped single quote ''
-            si p + 1 < slen:
-                si src.char_at(p + 1) == "'":
+            si p + 1 < slen {
+                si src.char_at(p + 1) == "'" {
                     result = result + "'"
                     p = p + 2
                     c = c + 2
-                sino:
+                } sino {
                     da new StrResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, err_msg: "" }
-            sino:
+                }
+            } sino {
                 da new StrResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, err_msg: "" }
-        } sino { si ch == "\n":
+            }
+        } sino { si ch == "\n" {
             result = result + " "
             p = p + 1
             ln = ln + 1
@@ -391,7 +454,7 @@ fn parse_single_quoted(src: String, slen: Int, pos: Int, line: Int, col: Int) ->
             pon ws: PosInfo = skip_spaces(src, slen, p, c)
             p = ws.pos
             c = ws.col
-        } sino { si ch == "\r":
+        } sino { si ch == "\r" {
             result = result + " "
             pon nl: PosInfo = skip_newline(src, slen, p, ln)
             p = nl.pos
@@ -400,25 +463,27 @@ fn parse_single_quoted(src: String, slen: Int, pos: Int, line: Int, col: Int) ->
             pon ws2: PosInfo = skip_spaces(src, slen, p, c)
             p = ws2.pos
             c = ws2.col
-        sino:
+        } sino {
             result = result + ch
             p = p + 1
             c = c + 1
         } } }
+    }
     da new StrResult { value: "", pos: p, line: ln, col: c, ok: false, err_msg: "Unterminated single-quoted string" }
+}
 
 // ---------------------------------------------------------------------------
 // Plain scalar parser
 // ---------------------------------------------------------------------------
 
-fn parse_plain_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int, in_flow: Bool) -> StrResult:
+fn parse_plain_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int, in_flow: Bool) -> StrResult {
     pon mut p: Int = pos
     pon mut c: Int = col
     pon mut ln: Int = line
     pon mut result: String = ""
     pon mut had_newline: Bool = false
 
-    mien p < slen:
+    mien p < slen {
         pon ch: String = src.char_at(p)
 
         // End at newline
@@ -426,44 +491,51 @@ fn parse_plain_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int, in_
         si ch == "\r" { sal }
 
         // End at comment preceded by space
-        si ch == "#":
-            si p > pos:
+        si ch == "#" {
+            si p > pos {
                 si src.char_at(p - 1) == " " { sal }
+            }
+        }
 
         // In flow context, end at flow indicators
-        si in_flow:
+        si in_flow {
             si ch == "," { sal }
             si ch == "]" { sal }
             si ch == "}" { sal }
             si ch == "{" { sal }
             si ch == "[" { sal }
+        }
 
         // Colon followed by space or newline or end-of-input terminates
-        si ch == ":":
+        si ch == ":" {
             si p + 1 >= slen { sal }
             pon next: String = src.char_at(p + 1)
             si next == " " { sal }
             si next == "\t" { sal }
             si next == "\n" { sal }
             si next == "\r" { sal }
-            si in_flow:
+            si in_flow {
                 si next == "," { sal }
                 si next == "]" { sal }
                 si next == "}" { sal }
+            }
+        }
 
         result = result + ch
         p = p + 1
         c = c + 1
+    }
 
     // Trim trailing whitespace
     pon mut trimmed: String = result.trim()
     da new StrResult { value: trimmed, pos: p, line: ln, col: c, ok: true, err_msg: "" }
+}
 
 // ---------------------------------------------------------------------------
 // Core Schema type resolution
 // ---------------------------------------------------------------------------
 
-fn resolve_plain_scalar(raw: String) -> YamlValue:
+fn resolve_plain_scalar(raw: String) -> YamlValue {
     // Null
     si raw == "" { da Null() }
     si raw == "null" { da Null() }
@@ -506,171 +578,205 @@ fn resolve_plain_scalar(raw: String) -> YamlValue:
     } sino { si first_ch == "-" { sign = -1; start = 1
     } sino { start = 0 } }
 
-    si start < rlen:
+    si start < rlen {
         pon after_sign: String = raw.char_at(start)
 
         // Hex integer 0x
-        si after_sign == "0":
-            si start + 1 < rlen:
+        si after_sign == "0" {
+            si start + 1 < rlen {
                 pon prefix2: String = raw.char_at(start + 1)
-                si prefix2 == "x":
-                    si start + 2 < rlen:
+                si prefix2 == "x" {
+                    si start + 2 < rlen {
                         pon mut hex_ok: Bool = true
                         pon mut hex_val_acc: Int = 0
                         pon mut hi: Int = start + 2
-                        mien hi < rlen:
+                        mien hi < rlen {
                             pon hc: String = raw.char_at(hi)
-                            si is_yaml_hex(hc):
+                            si is_yaml_hex(hc) {
                                 hex_val_acc = hex_val_acc * 16 + hex_val(hc)
                                 hi = hi + 1
-                            sino:
+                            } sino {
                                 hex_ok = false
                                 sal
-                        si hex_ok:
-                            si hi > start + 2:
+                            }
+                        }
+                        si hex_ok {
+                            si hi > start + 2 {
                                 da Int(sign * hex_val_acc)
+                            }
+                        }
+                    }
+                }
                 // Octal integer 0o
-                si prefix2 == "o":
-                    si start + 2 < rlen:
+                si prefix2 == "o" {
+                    si start + 2 < rlen {
                         pon mut oct_ok: Bool = true
                         pon mut oct_val: Int = 0
                         pon mut oi: Int = start + 2
-                        mien oi < rlen:
+                        mien oi < rlen {
                             pon oc: String = raw.char_at(oi)
-                            si oc >= "0" { si oc <= "7":
+                            si oc >= "0" { si oc <= "7" {
                                 oct_val = oct_val * 8 + digit_val(oc)
                                 oi = oi + 1
                             } sino { oct_ok = false; sal }
                             } sino { oct_ok = false; sal }
-                        si oct_ok:
-                            si oi > start + 2:
+                        }
+                        si oct_ok {
+                            si oi > start + 2 {
                                 da Int(sign * oct_val)
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Decimal integer or float
-        si is_yaml_digit(after_sign):
+        si is_yaml_digit(after_sign) {
             pon mut all_digits: Bool = true
             pon mut has_dot: Bool = false
             pon mut has_exp: Bool = false
             pon mut di: Int = start
-            mien di < rlen:
+            mien di < rlen {
                 pon dc: String = raw.char_at(di)
-                si is_yaml_digit(dc):
+                si is_yaml_digit(dc) {
                     di = di + 1
-                } sino { si dc == ".":
+                } sino { si dc == "." {
                     has_dot = true
                     di = di + 1
-                } sino { si dc == "e":
+                } sino { si dc == "e" {
                     has_exp = true
                     di = di + 1
                     // optional sign after e
-                    si di < rlen:
+                    si di < rlen {
                         pon es: String = raw.char_at(di)
                         si es == "+" { di = di + 1 }
                         si es == "-" { di = di + 1 }
-                } sino { si dc == "E":
+                    }
+                } sino { si dc == "E" {
                     has_exp = true
                     di = di + 1
-                    si di < rlen:
+                    si di < rlen {
                         pon es2: String = raw.char_at(di)
                         si es2 == "+" { di = di + 1 }
                         si es2 == "-" { di = di + 1 }
-                sino:
+                    }
+                } sino {
                     all_digits = false
                     sal
                 } } } }
+            }
 
-            si all_digits:
-                si has_dot:
+            si all_digits {
+                si has_dot {
                     // Parse as float
                     pon fv: Float = parse_yaml_float(raw, start, rlen, sign)
                     da Float(fv)
-                } sino { si has_exp:
+                } sino { si has_exp {
                     pon fv2: Float = parse_yaml_float(raw, start, rlen, sign)
                     da Float(fv2)
-                sino:
+                } sino {
                     // Pure integer
                     pon mut int_acc: Int = 0
                     pon mut ii: Int = start
-                    mien ii < rlen:
+                    mien ii < rlen {
                         int_acc = int_acc * 10 + digit_val(raw.char_at(ii))
                         ii = ii + 1
+                    }
                     da Int(sign * int_acc)
                 } }
+            }
+        }
+    }
 
     da Str(raw)
+}
 
 // ---------------------------------------------------------------------------
 // Float parser helper
 // ---------------------------------------------------------------------------
 
-fn parse_yaml_float(raw: String, start: Int, rlen: Int, sign: Int) -> Float:
+fn parse_yaml_float(raw: String, start: Int, rlen: Int, sign: Int) -> Float {
     pon mut int_part: Float = 0.0
     pon mut p: Int = start
 
-    mien p < rlen:
+    mien p < rlen {
         pon ch: String = raw.char_at(p)
-        si is_yaml_digit(ch):
+        si is_yaml_digit(ch) {
             int_part = int_part * 10.0 + float(digit_val(ch))
             p = p + 1
-        sino:
+        } sino {
             sal
+        }
+    }
 
     pon mut frac: Float = 0.0
     pon mut frac_div: Float = 1.0
-    si p < rlen:
-        si raw.char_at(p) == ".":
+    si p < rlen {
+        si raw.char_at(p) == "." {
             p = p + 1
-            mien p < rlen:
+            mien p < rlen {
                 pon fc: String = raw.char_at(p)
-                si is_yaml_digit(fc):
+                si is_yaml_digit(fc) {
                     frac_div = frac_div * 10.0
                     frac = frac + float(digit_val(fc)) / frac_div
                     p = p + 1
-                sino:
+                } sino {
                     sal
+                }
+            }
+        }
+    }
 
     pon mut result: Float = int_part + frac
 
     // Exponent
-    si p < rlen:
+    si p < rlen {
         pon ec: String = raw.char_at(p)
         si ec == "e" { p = p + 1 } sino { si ec == "E" { p = p + 1 } }
         pon mut exp_neg: Bool = false
-        si p < rlen:
+        si p < rlen {
             pon es: String = raw.char_at(p)
             si es == "+" { p = p + 1 }
             si es == "-" { exp_neg = true; p = p + 1 }
+        }
         pon mut exp_val: Int = 0
-        mien p < rlen:
+        mien p < rlen {
             pon ed: String = raw.char_at(p)
-            si is_yaml_digit(ed):
+            si is_yaml_digit(ed) {
                 exp_val = exp_val * 10 + digit_val(ed)
                 p = p + 1
-            sino:
+            } sino {
                 sal
+            }
+        }
         pon mut mul: Float = 1.0
         pon mut ei: Int = 0
-        mien ei < exp_val:
+        mien ei < exp_val {
             mul = mul * 10.0
             ei = ei + 1
+        }
         si exp_neg { result = result / mul } sino { result = result * mul }
+    }
 
     si sign < 0 { result = 0.0 - result }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Block scalar parser (| and >)
 // ---------------------------------------------------------------------------
 
-tipo BlockScalarResult:
+tipo BlockScalarResult {
     value: String,
     pos: Int,
     line: Int,
     col: Int,
     ok: Bool,
     err_msg: String
+}
 
-fn parse_block_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int) -> BlockScalarResult:
+fn parse_block_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int) -> BlockScalarResult {
     // pos points at | or >
     pon indicator: String = src.char_at(pos)
     pon mut is_literal: Bool = false
@@ -687,24 +793,30 @@ fn parse_block_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int) -> 
     pon mut has_explicit_indent: Bool = false
 
     // Parse optional chomp and indent indicators
-    si p < slen:
+    si p < slen {
         pon ci: String = src.char_at(p)
         si ci == "-" { chomp = 1; p = p + 1; c = c + 1
         } sino { si ci == "+" { chomp = 2; p = p + 1; c = c + 1 } }
-    si p < slen:
+    }
+    si p < slen {
         pon di: String = src.char_at(p)
-        si is_yaml_digit(di):
-            si di != "0":
+        si is_yaml_digit(di) {
+            si di != "0" {
                 explicit_indent = digit_val(di)
                 has_explicit_indent = true
                 p = p + 1
                 c = c + 1
+            }
+        }
+    }
     // Check for chomp after indent
-    si has_explicit_indent:
-        si p < slen:
+    si has_explicit_indent {
+        si p < slen {
             pon ci2: String = src.char_at(p)
             si ci2 == "-" { chomp = 1; p = p + 1; c = c + 1
             } sino { si ci2 == "+" { chomp = 2; p = p + 1; c = c + 1 } }
+        }
+    }
 
     // Skip rest of header line (whitespace + comment)
     pon rl: PosInfo = skip_rest_of_line(src, slen, p, ln, c)
@@ -718,99 +830,110 @@ fn parse_block_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int) -> 
     pon mut blank_save_pos: Int = p
     pon mut blank_save_ln: Int = ln
 
-    mien p < slen:
+    mien p < slen {
         pon ind: Int = measure_indent(src, slen, p)
-        si p + ind >= slen:
+        si p + ind >= slen {
             // blank line at end
             p = p + ind
             pon nl2: PosInfo = skip_newline(src, slen, p, ln)
             p = nl2.pos
             ln = nl2.line
             c = nl2.col
-        sino:
+        } sino {
             pon after_ind: String = src.char_at(p + ind)
-            si after_ind == "\n":
+            si after_ind == "\n" {
                 p = p + ind + 1
                 ln = ln + 1
                 c = 1
-            } sino { si after_ind == "\r":
+            } sino { si after_ind == "\r" {
                 pon nl3: PosInfo = skip_newline(src, slen, p + ind, ln)
                 p = nl3.pos
                 ln = nl3.line
                 c = nl3.col
-            sino:
+            } sino {
                 // Found content
-                si has_explicit_indent:
+                si has_explicit_indent {
                     content_indent = explicit_indent
-                sino:
+                } sino {
                     content_indent = ind
+                }
                 found_content = true
                 sal
             } }
+        }
+    }
 
-    si found_content == false:
+    si found_content == false {
         da new BlockScalarResult { value: "", pos: p, line: ln, col: c, ok: true, err_msg: "" }
+    }
 
-    si content_indent == 0:
+    si content_indent == 0 {
         da new BlockScalarResult { value: "", pos: p, line: ln, col: c, ok: true, err_msg: "" }
+    }
 
     // Collect content lines
     pon mut lines: List<String> = []
     pon mut trailing_newlines: Int = 0
 
-    mien p < slen:
+    mien p < slen {
         pon line_indent: Int = measure_indent(src, slen, p)
 
         // Check for blank line
-        si p + line_indent >= slen:
+        si p + line_indent >= slen {
             lines = lines + [""]
             trailing_newlines = trailing_newlines + 1
             p = p + line_indent
-            si p < slen:
+            si p < slen {
                 pon nlb: PosInfo = skip_newline(src, slen, p, ln)
                 p = nlb.pos
                 ln = nlb.line
                 c = nlb.col
-        sino:
+            }
+        } sino {
             pon peek_ch: String = src.char_at(p + line_indent)
-            si peek_ch == "\n":
+            si peek_ch == "\n" {
                 lines = lines + [""]
                 trailing_newlines = trailing_newlines + 1
                 p = p + line_indent + 1
                 ln = ln + 1
                 c = 1
-            } sino { si peek_ch == "\r":
+            } sino { si peek_ch == "\r" {
                 lines = lines + [""]
                 trailing_newlines = trailing_newlines + 1
                 pon nlc: PosInfo = skip_newline(src, slen, p + line_indent, ln)
                 p = nlc.pos
                 ln = nlc.line
                 c = nlc.col
-            sino:
+            } sino {
                 // Non-blank line — check indentation
-                si line_indent < content_indent:
+                si line_indent < content_indent {
                     // Dedented — end of block scalar
                     sal
+                }
                 trailing_newlines = 0
 
                 // Extract line content (after content_indent spaces)
                 pon mut line_str: String = ""
                 pon mut li: Int = p + content_indent
-                mien li < slen:
+                mien li < slen {
                     pon lc: String = src.char_at(li)
                     si lc == "\n" { sal }
                     si lc == "\r" { sal }
                     line_str = line_str + lc
                     li = li + 1
+                }
                 lines = lines + [line_str]
 
                 p = li
-                si p < slen:
+                si p < slen {
                     pon nld: PosInfo = skip_newline(src, slen, p, ln)
                     p = nld.pos
                     ln = nld.line
                     c = nld.col
+                }
             } }
+        }
+    }
 
     // Build result based on literal vs folded
     pon line_count: Int = len(lines)
@@ -819,107 +942,126 @@ fn parse_block_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int) -> 
     si content_count < 0 { content_count = 0 }
 
     pon mut result: String = ""
-    si is_literal:
+    si is_literal {
         // Literal: preserve all newlines
         pon mut ri: Int = 0
-        mien ri < content_count:
+        mien ri < content_count {
             si ri > 0 { result = result + "\n" }
             result = result + lines[ri]
             ri = ri + 1
-    sino:
+        }
+    } sino {
         // Folded: collapse single newlines to spaces, preserve double+ newlines
         pon mut ri2: Int = 0
-        mien ri2 < content_count:
+        mien ri2 < content_count {
             pon cur_line: String = lines[ri2]
-            si cur_line == "":
+            si cur_line == "" {
                 // Empty line = paragraph break
                 result = result + "\n"
-            sino:
-                si ri2 > 0:
+            } sino {
+                si ri2 > 0 {
                     pon prev_line: String = lines[ri2 - 1]
-                    si prev_line == "":
+                    si prev_line == "" {
                         result = result + "\n" + cur_line
-                    sino:
+                    } sino {
                         result = result + " " + cur_line
-                sino:
+                    }
+                } sino {
                     result = result + cur_line
+                }
+            }
             ri2 = ri2 + 1
+        }
+    }
 
     // Apply chomping
-    si chomp == 0:
+    si chomp == 0 {
         // Clip: single trailing newline
         result = result + "\n"
-    } sino { si chomp == 2:
+    } sino { si chomp == 2 {
         // Keep: preserve all trailing newlines
         result = result + "\n"
         pon mut ti: Int = 0
-        mien ti < trailing_newlines:
+        mien ti < trailing_newlines {
             result = result + "\n"
             ti = ti + 1
+        }
     } }
     // chomp == 1 (strip): no trailing newline
 
     da new BlockScalarResult { value: result, pos: p, line: ln, col: c, ok: true, err_msg: "" }
+}
 
 // ---------------------------------------------------------------------------
 // Anchor name parser
 // ---------------------------------------------------------------------------
 
-fn parse_anchor_name(src: String, slen: Int, pos: Int) -> StrResult:
+fn parse_anchor_name(src: String, slen: Int, pos: Int) -> StrResult {
     pon mut p: Int = pos
     pon mut name: String = ""
-    mien p < slen:
+    mien p < slen {
         pon ch: String = src.char_at(p)
         si is_ws_or_newline(ch) { sal }
         si is_flow_indicator(ch) { sal }
         si ch == ":" { sal }
         name = name + ch
         p = p + 1
-    si len(name) == 0:
+    }
+    si len(name) == 0 {
         da new StrResult { value: "", pos: pos, line: 0, col: 0, ok: false, err_msg: "Empty anchor name" }
+    }
     da new StrResult { value: name, pos: p, line: 0, col: 0, ok: true, err_msg: "" }
+}
 
 // ---------------------------------------------------------------------------
 // Forward declarations — main parse dispatch
 // ---------------------------------------------------------------------------
 
 // Parse any YAML value (block or flow) at the given position and minimum indent
-fn parse_value(src: String, slen: Int, pos: Int, line: Int, col: Int, min_indent: Int, in_flow: Bool, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult:
-    si depth > 100:
+fn parse_value(src: String, slen: Int, pos: Int, line: Int, col: Int, min_indent: Int, in_flow: Bool, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+    si depth > 100 {
         da err_result("Maximum nesting depth exceeded (100)", line, col)
+    }
 
     pon ws: PosInfo = skip_ws_and_comments(src, slen, pos, line, col)
     pon mut p: Int = ws.pos
     pon mut ln: Int = ws.line
     pon mut c: Int = ws.col
 
-    si p >= slen:
+    si p >= slen {
         da ok_result(Null(), p, ln, c)
+    }
 
     pon ch: String = src.char_at(p)
 
     // Alias *name
-    si ch == "*":
+    si ch == "*" {
         pon anr: StrResult = parse_anchor_name(src, slen, p + 1)
-        si anr.ok == false:
+        si anr.ok == false {
             da err_result("Invalid alias: " + anr.err_msg, ln, c)
+        }
         pon alias_name: String = anr.value
         // Look up in anchors map
         pon mut found: Bool = false
         pon mut alias_val: YamlValue = Null()
-        cada akey en anchors:
-            si akey == alias_name:
+        cada akey en anchors {
+            si akey == alias_name {
                 found = true
                 alias_val = anchors[akey]
-        si found == false:
+            }
+        }
+        si found == false {
             da err_result("Undefined alias: *" + alias_name, ln, c)
+        }
         da ok_result(alias_val, anr.pos, ln, c + 1 + len(alias_name))
+    }
 
     // Anchor &name — parse it, then parse the value and store
-    si ch == "&":
+    si ch == "&" {
         pon anr2: StrResult = parse_anchor_name(src, slen, p + 1)
-        si anr2.ok == false:
+        si anr2.ok == false {
             da err_result("Invalid anchor: " + anr2.err_msg, ln, c)
+        }
         pon anchor_name: String = anr2.value
         pon new_c: Int = c + 1 + len(anchor_name)
         // Skip whitespace after anchor name
@@ -928,117 +1070,145 @@ fn parse_value(src: String, slen: Int, pos: Int, line: Int, col: Int, min_indent
         si val_r.ok == false { da val_r }
         anchors[anchor_name] = val_r.value
         da ok_result(val_r.value, val_r.pos, val_r.line, val_r.col)
+    }
 
     // Flow sequence [...]
-    si ch == "[":
+    si ch == "[" {
         da parse_flow_seq(src, slen, p, ln, c, anchors, depth)
+    }
 
     // Flow mapping {...}
-    si ch == "{":
+    si ch == "{" {
         da parse_flow_map(src, slen, p, ln, c, anchors, depth)
+    }
 
     // Double-quoted string
-    si ch == "\"":
+    si ch == "\"" {
         pon dq: StrResult = parse_double_quoted(src, slen, p, ln, c)
         si dq.ok == false { da err_result(dq.err_msg, ln, c) }
         da ok_result(Str(dq.value), dq.pos, dq.line, dq.col)
+    }
 
     // Single-quoted string
-    si ch == "'":
+    si ch == "'" {
         pon sq: StrResult = parse_single_quoted(src, slen, p, ln, c)
         si sq.ok == false { da err_result(sq.err_msg, ln, c) }
         da ok_result(Str(sq.value), sq.pos, sq.line, sq.col)
+    }
 
     // Block scalar | or >
-    si ch == "|":
+    si ch == "|" {
         pon bs: BlockScalarResult = parse_block_scalar(src, slen, p, ln, c)
         si bs.ok == false { da err_result(bs.err_msg, ln, c) }
         da ok_result(Str(bs.value), bs.pos, bs.line, bs.col)
-    si ch == ">":
+    }
+    si ch == ">" {
         pon bs2: BlockScalarResult = parse_block_scalar(src, slen, p, ln, c)
         si bs2.ok == false { da err_result(bs2.err_msg, ln, c) }
         da ok_result(Str(bs2.value), bs2.pos, bs2.line, bs2.col)
+    }
 
     // Block sequence — starts with "- " at this indent
-    si ch == "-":
-        si p + 1 < slen:
+    si ch == "-" {
+        si p + 1 < slen {
             pon after_dash: String = src.char_at(p + 1)
-            si after_dash == " ":
+            si after_dash == " " {
                 pon cur_indent: Int = c - 1
                 da parse_block_seq(src, slen, p, ln, c, cur_indent, anchors, depth)
-            si after_dash == "\n":
+            }
+            si after_dash == "\n" {
                 pon cur_indent2: Int = c - 1
                 da parse_block_seq(src, slen, p, ln, c, cur_indent2, anchors, depth)
-            si after_dash == "\r":
+            }
+            si after_dash == "\r" {
                 pon cur_indent3: Int = c - 1
                 da parse_block_seq(src, slen, p, ln, c, cur_indent3, anchors, depth)
-        sino:
+            }
+        } sino {
             // lone dash at end of input — empty sequence item
             pon cur_indent4: Int = c - 1
             da parse_block_seq(src, slen, p, ln, c, cur_indent4, anchors, depth)
+        }
+    }
 
     // Check for block mapping — look ahead for "key:" pattern
-    si in_flow == false:
+    si in_flow == false {
         pon is_map: Bool = looks_like_block_map(src, slen, p, ln, c)
-        si is_map:
+        si is_map {
             pon cur_indent5: Int = c - 1
             da parse_block_map(src, slen, p, ln, c, cur_indent5, anchors, depth)
+        }
+    }
 
     // Plain scalar
     pon ps: StrResult = parse_plain_scalar(src, slen, p, ln, c, in_flow)
     si ps.ok == false { da err_result(ps.err_msg, ln, c) }
     pon resolved: YamlValue = resolve_plain_scalar(ps.value)
     da ok_result(resolved, ps.pos, ps.line, ps.col)
+}
 
 // ---------------------------------------------------------------------------
 // Look-ahead: does the current position start a block mapping?
 // ---------------------------------------------------------------------------
 
-fn looks_like_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int) -> Bool:
+fn looks_like_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int) -> Bool {
     pon mut p: Int = pos
     pon ch: String = src.char_at(p)
 
     // Quoted key followed by ':'
-    si ch == "\"":
+    si ch == "\"" {
         pon dq: StrResult = parse_double_quoted(src, slen, p, line, col)
-        si dq.ok:
+        si dq.ok {
             pon ws: PosInfo = skip_inline_ws(src, slen, dq.pos, dq.col)
-            si ws.pos < slen:
-                si src.char_at(ws.pos) == ":":
+            si ws.pos < slen {
+                si src.char_at(ws.pos) == ":" {
                     da true
+                }
+            }
+        }
         da false
-    si ch == "'":
+    }
+    si ch == "'" {
         pon sq: StrResult = parse_single_quoted(src, slen, p, line, col)
-        si sq.ok:
+        si sq.ok {
             pon ws2: PosInfo = skip_inline_ws(src, slen, sq.pos, sq.col)
-            si ws2.pos < slen:
-                si src.char_at(ws2.pos) == ":":
+            si ws2.pos < slen {
+                si src.char_at(ws2.pos) == ":" {
                     da true
+                }
+            }
+        }
         da false
+    }
 
     // Plain key: scan for unquoted "key:" where : is followed by space/newline/eof
-    mien p < slen:
+    mien p < slen {
         pon sc: String = src.char_at(p)
         si sc == "\n" { da false }
         si sc == "\r" { da false }
-        si sc == "#":
-            si p > pos:
+        si sc == "#" {
+            si p > pos {
                 si src.char_at(p - 1) == " " { da false }
-        si sc == ":":
+            }
+        }
+        si sc == ":" {
             si p + 1 >= slen { da true }
             pon after: String = src.char_at(p + 1)
             si after == " " { da true }
             si after == "\t" { da true }
             si after == "\n" { da true }
             si after == "\r" { da true }
+        }
         p = p + 1
+    }
     da false
+}
 
 // ---------------------------------------------------------------------------
 // Flow sequence parser [item, item, ...]
 // ---------------------------------------------------------------------------
 
-fn parse_flow_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult:
+fn parse_flow_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
     pon mut p: Int = pos + 1
     pon mut ln: Int = line
     pon mut c: Int = col + 1
@@ -1049,12 +1219,14 @@ fn parse_flow_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors
     ln = ws1.line
     c = ws1.col
 
-    si p < slen:
-        si src.char_at(p) == "]":
+    si p < slen {
+        si src.char_at(p) == "]" {
             da ok_result(Seq(items), p + 1, ln, c + 1)
+        }
+    }
 
     pon mut count: Int = 0
-    mien count < 1000000:
+    mien count < 1000000 {
         count = count + 1
 
         pon val_r: ParseResult = parse_value(src, slen, p, ln, c, 0, true, anchors, depth + 1)
@@ -1073,7 +1245,7 @@ fn parse_flow_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors
 
         pon next: String = src.char_at(p)
         si next == "]" { da ok_result(Seq(items), p + 1, ln, c + 1) }
-        si next == ",":
+        si next == "," {
             p = p + 1
             c = c + 1
             // Handle trailing comma before ]
@@ -1081,18 +1253,23 @@ fn parse_flow_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors
             p = ws3.pos
             ln = ws3.line
             c = ws3.col
-            si p < slen:
-                si src.char_at(p) == "]":
+            si p < slen {
+                si src.char_at(p) == "]" {
                     da ok_result(Seq(items), p + 1, ln, c + 1)
-        sino:
+                }
+            }
+        } sino {
             da err_result("Expected ',' or ']' en flow sequence", ln, c)
+        }
+    }
     da err_result("Flow sequence too many elements", ln, c)
+}
 
 // ---------------------------------------------------------------------------
 // Flow mapping parser {key: value, key: value, ...}
 // ---------------------------------------------------------------------------
 
-fn parse_flow_map(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult:
+fn parse_flow_map(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
     pon mut p: Int = pos + 1
     pon mut ln: Int = line
     pon mut c: Int = col + 1
@@ -1103,12 +1280,14 @@ fn parse_flow_map(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors
     ln = ws1.line
     c = ws1.col
 
-    si p < slen:
-        si src.char_at(p) == "}":
+    si p < slen {
+        si src.char_at(p) == "}" {
             da ok_result(Map(entries), p + 1, ln, c + 1)
+        }
+    }
 
     pon mut count: Int = 0
-    mien count < 1000000:
+    mien count < 1000000 {
         count = count + 1
 
         pon ws_k: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
@@ -1121,21 +1300,21 @@ fn parse_flow_map(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors
         // Parse key
         pon mut key_str: String = ""
         pon kch: String = src.char_at(p)
-        si kch == "\"":
+        si kch == "\"" {
             pon dq: StrResult = parse_double_quoted(src, slen, p, ln, c)
             si dq.ok == false { da err_result(dq.err_msg, ln, c) }
             key_str = dq.value
             p = dq.pos
             ln = dq.line
             c = dq.col
-        } sino { si kch == "'":
+        } sino { si kch == "'" {
             pon sq: StrResult = parse_single_quoted(src, slen, p, ln, c)
             si sq.ok == false { da err_result(sq.err_msg, ln, c) }
             key_str = sq.value
             p = sq.pos
             ln = sq.line
             c = sq.col
-        sino:
+        } sino {
             // Plain key — read up to ':'
             pon ps: StrResult = parse_plain_scalar(src, slen, p, ln, c, true)
             key_str = ps.value
@@ -1172,7 +1351,7 @@ fn parse_flow_map(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors
 
         pon next: String = src.char_at(p)
         si next == "}" { da ok_result(Map(entries), p + 1, ln, c + 1) }
-        si next == ",":
+        si next == "," {
             p = p + 1
             c = c + 1
             // Handle trailing comma before }
@@ -1180,20 +1359,26 @@ fn parse_flow_map(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors
             p = ws3.pos
             ln = ws3.line
             c = ws3.col
-            si p < slen:
-                si src.char_at(p) == "}":
+            si p < slen {
+                si src.char_at(p) == "}" {
                     da ok_result(Map(entries), p + 1, ln, c + 1)
-        sino:
+                }
+            }
+        } sino {
             da err_result("Expected ',' or '}' en flow mapping", ln, c)
+        }
+    }
     da err_result("Flow mapping too many entries", ln, c)
+}
 
 // ---------------------------------------------------------------------------
 // Block sequence parser
 // ---------------------------------------------------------------------------
 
-fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_indent: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult:
-    si depth > 100:
+fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_indent: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+    si depth > 100 {
         da err_result("Maximum nesting depth exceeded (100)", line, col)
+    }
 
     pon mut items: List<YamlValue> = []
     pon mut p: Int = pos
@@ -1201,7 +1386,7 @@ fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_in
     pon mut c: Int = col
 
     pon mut count: Int = 0
-    mien count < 1000000:
+    mien count < 1000000 {
         count = count + 1
 
         // Skip blank lines and comments
@@ -1220,28 +1405,34 @@ fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_in
         si src.char_at(p) != "-" { sal }
 
         // Verify it's a sequence indicator (followed by space, newline, or eof)
-        si p + 1 < slen:
+        si p + 1 < slen {
             pon after: String = src.char_at(p + 1)
-            si after != " ":
-                si after != "\n":
-                    si after != "\r":
+            si after != " " {
+                si after != "\n" {
+                    si after != "\r" {
                         sal
+                    }
+                }
+            }
+        }
 
         p = p + 1
         c = c + 1
 
         // Skip space after dash
-        si p < slen:
-            si src.char_at(p) == " ":
+        si p < slen {
+            si src.char_at(p) == " " {
                 p = p + 1
                 c = c + 1
+            }
+        }
 
         // Parse item value — if at end of line, it's on the next line(s)
-        si p >= slen:
+        si p >= slen {
             items = items + [Null()]
-        sino:
+        } sino {
             pon item_ch: String = src.char_at(p)
-            si item_ch == "\n":
+            si item_ch == "\n" {
                 pon nl: PosInfo = skip_newline(src, slen, p, ln)
                 p = nl.pos
                 ln = nl.line
@@ -1251,20 +1442,22 @@ fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_in
                 p = ws2.pos
                 ln = ws2.line
                 c = ws2.col
-                si p >= slen:
+                si p >= slen {
                     items = items + [Null()]
-                sino:
+                } sino {
                     pon child_indent: Int = c - 1
-                    si child_indent <= seq_indent:
+                    si child_indent <= seq_indent {
                         items = items + [Null()]
-                    sino:
+                    } sino {
                         pon val_r: ParseResult = parse_value(src, slen, p, ln, c, child_indent, false, anchors, depth + 1)
                         si val_r.ok == false { da val_r }
                         items = items + [val_r.value]
                         p = val_r.pos
                         ln = val_r.line
                         c = val_r.col
-            } sino { si item_ch == "\r":
+                    }
+                }
+            } sino { si item_ch == "\r" {
                 pon nl2: PosInfo = skip_newline(src, slen, p, ln)
                 p = nl2.pos
                 ln = nl2.line
@@ -1273,20 +1466,22 @@ fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_in
                 p = ws3.pos
                 ln = ws3.line
                 c = ws3.col
-                si p >= slen:
+                si p >= slen {
                     items = items + [Null()]
-                sino:
+                } sino {
                     pon child_indent2: Int = c - 1
-                    si child_indent2 <= seq_indent:
+                    si child_indent2 <= seq_indent {
                         items = items + [Null()]
-                    sino:
+                    } sino {
                         pon val_r2: ParseResult = parse_value(src, slen, p, ln, c, child_indent2, false, anchors, depth + 1)
                         si val_r2.ok == false { da val_r2 }
                         items = items + [val_r2.value]
                         p = val_r2.pos
                         ln = val_r2.line
                         c = val_r2.col
-            sino:
+                    }
+                }
+            } sino {
                 // Inline value after "- "
                 pon val_r3: ParseResult = parse_value(src, slen, p, ln, c, seq_indent + 2, false, anchors, depth + 1)
                 si val_r3.ok == false { da val_r3 }
@@ -1295,16 +1490,20 @@ fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_in
                 ln = val_r3.line
                 c = val_r3.col
             } }
+        }
+    }
 
     da ok_result(Seq(items), p, ln, c)
+}
 
 // ---------------------------------------------------------------------------
 // Block mapping parser
 // ---------------------------------------------------------------------------
 
-fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_indent: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult:
-    si depth > 100:
+fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_indent: Int, anchors: Map<String, YamlValue>, depth: Int) -> ParseResult {
+    si depth > 100 {
         da err_result("Maximum nesting depth exceeded (100)", line, col)
+    }
 
     pon mut entries: List<YamlEntry> = []
     pon mut p: Int = pos
@@ -1312,7 +1511,7 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
     pon mut c: Int = col
 
     pon mut count: Int = 0
-    mien count < 1000000:
+    mien count < 1000000 {
         count = count + 1
 
         // Skip blank lines and comments
@@ -1330,37 +1529,39 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
         pon kch: String = src.char_at(p)
 
         // Sequence indicator means we're done (sibling seq at same indent)
-        si kch == "-":
-            si p + 1 < slen:
+        si kch == "-" {
+            si p + 1 < slen {
                 pon da: String = src.char_at(p + 1)
                 si da == " " { sal }
                 si da == "\n" { sal }
                 si da == "\r" { sal }
-            sino:
+            } sino {
                 sal
+            }
+        }
 
         // Parse key
         pon mut key_str: String = ""
-        si kch == "\"":
+        si kch == "\"" {
             pon dq: StrResult = parse_double_quoted(src, slen, p, ln, c)
             si dq.ok == false { da err_result(dq.err_msg, ln, c) }
             key_str = dq.value
             p = dq.pos
             ln = dq.line
             c = dq.col
-        } sino { si kch == "'":
+        } sino { si kch == "'" {
             pon sq: StrResult = parse_single_quoted(src, slen, p, ln, c)
             si sq.ok == false { da err_result(sq.err_msg, ln, c) }
             key_str = sq.value
             p = sq.pos
             ln = sq.line
             c = sq.col
-        sino:
+        } sino {
             // Plain key — collect until ':'
             pon mut key_buf: String = ""
-            mien p < slen:
+            mien p < slen {
                 pon pc: String = src.char_at(p)
-                si pc == ":":
+                si pc == ":" {
                     si p + 1 >= slen { sal }
                     pon ac: String = src.char_at(p + 1)
                     si ac == " " { sal }
@@ -1372,11 +1573,12 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
                     c = c + 1
                 } sino { si pc == "\n" { sal
                 } sino { si pc == "\r" { sal
-                sino:
+                } sino {
                     key_buf = key_buf + pc
                     p = p + 1
                     c = c + 1
                 } } }
+            }
             key_str = key_buf.trim()
         } }
 
@@ -1396,11 +1598,11 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
         c = ws2.col
 
         // Parse value
-        si p >= slen:
+        si p >= slen {
             entries = entries + [new_yaml_entry(key_str, Null())]
-        sino:
+        } sino {
             pon vch: String = src.char_at(p)
-            si vch == "\n":
+            si vch == "\n" {
                 // Value on next line(s)
                 pon nl: PosInfo = skip_newline(src, slen, p, ln)
                 p = nl.pos
@@ -1411,20 +1613,22 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
                 p = ws3.pos
                 ln = ws3.line
                 c = ws3.col
-                si p >= slen:
+                si p >= slen {
                     entries = entries + [new_yaml_entry(key_str, Null())]
-                sino:
+                } sino {
                     pon child_indent: Int = c - 1
-                    si child_indent <= map_indent:
+                    si child_indent <= map_indent {
                         entries = entries + [new_yaml_entry(key_str, Null())]
-                    sino:
+                    } sino {
                         pon val_r: ParseResult = parse_value(src, slen, p, ln, c, child_indent, false, anchors, depth + 1)
                         si val_r.ok == false { da val_r }
                         entries = entries + [new_yaml_entry(key_str, val_r.value)]
                         p = val_r.pos
                         ln = val_r.line
                         c = val_r.col
-            } sino { si vch == "\r":
+                    }
+                }
+            } sino { si vch == "\r" {
                 pon nl2: PosInfo = skip_newline(src, slen, p, ln)
                 p = nl2.pos
                 ln = nl2.line
@@ -1433,31 +1637,34 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
                 p = ws4.pos
                 ln = ws4.line
                 c = ws4.col
-                si p >= slen:
+                si p >= slen {
                     entries = entries + [new_yaml_entry(key_str, Null())]
-                sino:
+                } sino {
                     pon child_indent2: Int = c - 1
-                    si child_indent2 <= map_indent:
+                    si child_indent2 <= map_indent {
                         entries = entries + [new_yaml_entry(key_str, Null())]
-                    sino:
+                    } sino {
                         pon val_r2: ParseResult = parse_value(src, slen, p, ln, c, child_indent2, false, anchors, depth + 1)
                         si val_r2.ok == false { da val_r2 }
                         entries = entries + [new_yaml_entry(key_str, val_r2.value)]
                         p = val_r2.pos
                         ln = val_r2.line
                         c = val_r2.col
-            } sino { si vch == "#":
+                    }
+                }
+            } sino { si vch == "#" {
                 // Comment after colon — value is null
                 pon cr: PosInfo = skip_comment(src, slen, p, c)
                 p = cr.pos
                 c = cr.col
-                si p < slen:
+                si p < slen {
                     pon nl3: PosInfo = skip_newline(src, slen, p, ln)
                     p = nl3.pos
                     ln = nl3.line
                     c = nl3.col
+                }
                 entries = entries + [new_yaml_entry(key_str, Null())]
-            sino:
+            } sino {
                 // Inline value
                 pon val_r3: ParseResult = parse_value(src, slen, p, ln, c, map_indent + 1, false, anchors, depth + 1)
                 si val_r3.ok == false { da val_r3 }
@@ -1466,14 +1673,17 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
                 ln = val_r3.line
                 c = val_r3.col
             } } }
+        }
+    }
 
     da ok_result(Map(entries), p, ln, c)
+}
 
 // ---------------------------------------------------------------------------
 // Document marker handling
 // ---------------------------------------------------------------------------
 
-fn is_doc_start(src: String, slen: Int, pos: Int) -> Bool:
+fn is_doc_start(src: String, slen: Int, pos: Int) -> Bool {
     si pos + 2 >= slen { da false }
     si src.char_at(pos) != "-" { da false }
     si src.char_at(pos + 1) != "-" { da false }
@@ -1486,8 +1696,9 @@ fn is_doc_start(src: String, slen: Int, pos: Int) -> Bool:
     si after == "\n" { da true }
     si after == "\r" { da true }
     da false
+}
 
-fn is_doc_end(src: String, slen: Int, pos: Int) -> Bool:
+fn is_doc_end(src: String, slen: Int, pos: Int) -> Bool {
     si pos + 2 >= slen { da false }
     si src.char_at(pos) != "." { da false }
     si src.char_at(pos + 1) != "." { da false }
@@ -1499,9 +1710,10 @@ fn is_doc_end(src: String, slen: Int, pos: Int) -> Bool:
     si after == "\n" { da true }
     si after == "\r" { da true }
     da false
+}
 
 // Parse a single document — stops at next --- or ... or EOF
-fn parse_document(src: String, slen: Int, pos: Int, line: Int, col: Int) -> ParseResult:
+fn parse_document(src: String, slen: Int, pos: Int, line: Int, col: Int) -> ParseResult {
     pon mut p: Int = pos
     pon mut ln: Int = line
     pon mut c: Int = col
@@ -1514,14 +1726,16 @@ fn parse_document(src: String, slen: Int, pos: Int, line: Int, col: Int) -> Pars
     c = ws.col
 
     // Skip --- if present
-    si p < slen:
-        si is_doc_start(src, slen, p):
+    si p < slen {
+        si is_doc_start(src, slen, p) {
             p = p + 3
             c = c + 3
             pon rl: PosInfo = skip_rest_of_line(src, slen, p, ln, c)
             p = rl.pos
             ln = rl.line
             c = rl.col
+        }
+    }
 
     // Skip whitespace after ---
     pon ws2: PosInfo = skip_ws_and_comments(src, slen, p, ln, c)
@@ -1529,19 +1743,22 @@ fn parse_document(src: String, slen: Int, pos: Int, line: Int, col: Int) -> Pars
     ln = ws2.line
     c = ws2.col
 
-    si p >= slen:
+    si p >= slen {
         da ok_result(Null(), p, ln, c)
+    }
 
     // Check for immediate ... (empty document)
-    si is_doc_end(src, slen, p):
+    si is_doc_end(src, slen, p) {
         p = p + 3
         c = c + 3
         pon rl2: PosInfo = skip_rest_of_line(src, slen, p, ln, c)
         da ok_result(Null(), rl2.pos, rl2.line, rl2.col)
+    }
 
     // Check for immediate --- (empty document before next)
-    si is_doc_start(src, slen, p):
+    si is_doc_start(src, slen, p) {
         da ok_result(Null(), p, ln, c)
+    }
 
     // Parse document content
     pon val_r: ParseResult = parse_value(src, slen, p, ln, c, 0, false, anchors, 0)
@@ -1554,32 +1771,36 @@ fn parse_document(src: String, slen: Int, pos: Int, line: Int, col: Int) -> Pars
     c = ws3.col
 
     // Consume ... if present
-    si p < slen:
-        si is_doc_end(src, slen, p):
+    si p < slen {
+        si is_doc_end(src, slen, p) {
             p = p + 3
             c = c + 3
             pon rl3: PosInfo = skip_rest_of_line(src, slen, p, ln, c)
             p = rl3.pos
             ln = rl3.line
             c = rl3.col
+        }
+    }
 
     da ok_result(val_r.value, p, ln, c)
+}
 
 // ---------------------------------------------------------------------------
 // Public API — decode (single document)
 // ---------------------------------------------------------------------------
 
-+fn decode(src: String) -> Result<YamlValue, YamlError>:
+pub fn decode(src: String) -> Result<YamlValue, YamlError> {
     pon slen: Int = len(src)
     pon result: ParseResult = parse_document(src, slen, 0, 1, 1)
     si result.ok == false { da Err(result.error) }
     da Ok(result.value)
+}
 
 // ---------------------------------------------------------------------------
 // Public API — decode_all (multi-document)
 // ---------------------------------------------------------------------------
 
-+fn decode_all(src: String) -> Result<List<YamlValue>, YamlError>:
+pub fn decode_all(src: String) -> Result<List<YamlValue>, YamlError> {
     pon slen: Int = len(src)
     pon mut docs: List<YamlValue> = []
     pon mut p: Int = 0
@@ -1587,7 +1808,7 @@ fn parse_document(src: String, slen: Int, pos: Int, line: Int, col: Int) -> Pars
     pon mut c: Int = 1
 
     pon mut count: Int = 0
-    mien count < 10000:
+    mien count < 10000 {
         count = count + 1
 
         // Skip whitespace
@@ -1606,27 +1827,31 @@ fn parse_document(src: String, slen: Int, pos: Int, line: Int, col: Int) -> Pars
         c = result.col
 
         // If we didn't advance, break to prevent infinite loop
-        si p <= ws.pos:
+        si p <= ws.pos {
             si p >= slen { sal }
             // Force advance past any stuck character
             p = p + 1
             c = c + 1
+        }
+    }
 
     da Ok(docs)
+}
 
 // ---------------------------------------------------------------------------
 // Serializer — block style (encode)
 // ---------------------------------------------------------------------------
 
-fn yaml_needs_quoting(s: String) -> Bool:
+fn yaml_needs_quoting(s: String) -> Bool {
     pon slen: Int = len(s)
     si slen == 0 { da true }
 
     // Check if it would resolve to a non-string scalar
     pon resolved: YamlValue = resolve_plain_scalar(s)
-    match resolved:
+    match resolved {
         Str(sv) => {},
         _ => { da true }
+    }
 
     // Check for characters that need quoting
     pon first: String = s.char_at(0)
@@ -1646,197 +1871,251 @@ fn yaml_needs_quoting(s: String) -> Bool:
     si first == "]" { da true }
     si first == "," { da true }
     si first == "#" { da true }
-    si first == "-":
-        si slen > 1:
+    si first == "-" {
+        si slen > 1 {
             si s.char_at(1) == " " { da true }
-    si first == "?":
-        si slen > 1:
+        }
+    }
+    si first == "?" {
+        si slen > 1 {
             si s.char_at(1) == " " { da true }
+        }
+    }
 
     // Check for ': ' or ' #' inside the string
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si ch == ":":
-            si i + 1 < slen:
+        si ch == ":" {
+            si i + 1 < slen {
                 si s.char_at(i + 1) == " " { da true }
-        si ch == "#":
-            si i > 0:
+            }
+        }
+        si ch == "#" {
+            si i > 0 {
                 si s.char_at(i - 1) == " " { da true }
+            }
+        }
         si ch == "\n" { da true }
         si ch == "\r" { da true }
         si ch == "\t" { da true }
         i = i + 1
+    }
 
     da false
+}
 
-fn escape_yaml_double(s: String) -> String:
+fn escape_yaml_double(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         si ch == "\"" { result = result + "\\\"" } sino { si ch == "\\" { result = result + "\\\\" } sino { si ch == "\n" { result = result + "\\n" } sino { si ch == "\t" { result = result + "\\t" } sino { si ch == "\r" { result = result + "\\r" } sino { result = result + ch } } } } }
         i = i + 1
+    }
     da result
+}
 
-fn yaml_quote_string(s: String) -> String:
+fn yaml_quote_string(s: String) -> String {
     da "\"" + escape_yaml_double(s) + "\""
+}
 
-fn make_indent(level: Int) -> String:
+fn make_indent(level: Int) -> String {
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < level:
+    mien i < level {
         result = result + "  "
         i = i + 1
+    }
     da result
+}
 
-fn encode_value(value: YamlValue, indent: Int, inline: Bool) -> String:
-    match value:
+fn encode_value(value: YamlValue, indent: Int, inline: Bool) -> String {
+    match value {
         Null => { da "null" },
-        Bool(b) =>:
+        Bool(b) => {
             si b { da "true" } sino { da "false" }
+        },
         Int(n) => { da str(n) },
-        Float(f) =>:
+        Float(f) => {
             si f > 999999998.0 { da ".inf" }
             si f < -999999998.0 { da "-.inf" }
             da str(f)
-        Str(s) =>:
+        },
+        Str(s) => {
             // Check for multi-line strings — use literal block style
-            si s.contains("\n"):
-                si inline == false:
+            si s.contains("\n") {
+                si inline == false {
                     pon mut block: String = "|\n"
                     pon ind: String = make_indent(indent + 1)
                     pon slen: Int = len(s)
                     pon mut line_start: Int = 0
                     pon mut si: Int = 0
-                    mien si < slen:
+                    mien si < slen {
                         pon sc: String = s.char_at(si)
-                        si sc == "\n":
+                        si sc == "\n" {
                             block = block + ind + s.substr(line_start, si) + "\n"
                             line_start = si + 1
+                        }
                         si = si + 1
+                    }
                     // Last line (may not end with \n)
-                    si line_start < slen:
+                    si line_start < slen {
                         block = block + ind + s.substr(line_start, slen)
+                    }
                     da block
-            si yaml_needs_quoting(s):
+                }
+            }
+            si yaml_needs_quoting(s) {
                 da yaml_quote_string(s)
+            }
             da s
-        Seq(items) =>:
+        },
+        Seq(items) => {
             pon item_count: Int = len(items)
             si item_count == 0 { da "[]" }
-            si inline:
+            si inline {
                 // Flow style for inline
                 pon mut result: String = "["
                 pon mut i: Int = 0
-                mien i < item_count:
+                mien i < item_count {
                     si i > 0 { result = result + ", " }
                     result = result + encode_value(items[i], indent, true)
                     i = i + 1
+                }
                 da result + "]"
+            }
             pon mut result2: String = ""
             pon ind: String = make_indent(indent)
             pon mut i2: Int = 0
-            mien i2 < item_count:
+            mien i2 < item_count {
                 si i2 > 0 { result2 = result2 + "\n" }
                 pon item_str: String = encode_value(items[i2], indent + 1, false)
                 // Check if item is a complex type that needs newline
                 pon is_complex: Bool = is_complex_value(items[i2])
-                si is_complex:
+                si is_complex {
                     result2 = result2 + ind + "-\n" + make_indent(indent + 1) + item_str
-                sino:
+                } sino {
                     result2 = result2 + ind + "- " + item_str
+                }
                 i2 = i2 + 1
+            }
             da result2
-        Map(entries) =>:
+        },
+        Map(entries) => {
             pon entry_count: Int = len(entries)
             si entry_count == 0 { da "{}" }
-            si inline:
+            si inline {
                 pon mut result: String = "{"
                 pon mut i: Int = 0
-                mien i < entry_count:
+                mien i < entry_count {
                     si i > 0 { result = result + ", " }
                     pon entry: YamlEntry = entries[i]
                     pon key_out: String = encode_map_key(entry.key)
                     result = result + key_out + ": " + encode_value(entry.value, indent, true)
                     i = i + 1
+                }
                 da result + "}"
+            }
             pon mut result2: String = ""
             pon ind: String = make_indent(indent)
             pon mut i2: Int = 0
-            mien i2 < entry_count:
+            mien i2 < entry_count {
                 si i2 > 0 { result2 = result2 + "\n" }
                 pon entry2: YamlEntry = entries[i2]
                 pon key_out2: String = encode_map_key(entry2.key)
                 pon is_complex2: Bool = is_complex_value(entry2.value)
-                si is_complex2:
+                si is_complex2 {
                     pon val_str: String = encode_value(entry2.value, indent + 1, false)
                     result2 = result2 + ind + key_out2 + ":\n" + val_str
-                sino:
+                } sino {
                     pon val_str2: String = encode_value(entry2.value, indent + 1, false)
                     result2 = result2 + ind + key_out2 + ": " + val_str2
+                }
                 i2 = i2 + 1
+            }
             da result2
+        }
+    }
+}
 
-fn encode_map_key(key: String) -> String:
-    si yaml_needs_quoting(key):
+fn encode_map_key(key: String) -> String {
+    si yaml_needs_quoting(key) {
         da yaml_quote_string(key)
+    }
     da key
+}
 
-fn is_complex_value(value: YamlValue) -> Bool:
-    match value:
-        Seq(items) =>:
+fn is_complex_value(value: YamlValue) -> Bool {
+    match value {
+        Seq(items) => {
             si len(items) > 0 { da true }
             da false
-        Map(entries) =>:
+        },
+        Map(entries) => {
             si len(entries) > 0 { da true }
             da false
+        },
         _ => { da false }
+    }
+}
 
-+fn encode(value: YamlValue) -> String:
+pub fn encode(value: YamlValue) -> String {
     da encode_value(value, 0, false) + "\n"
+}
 
 // ---------------------------------------------------------------------------
 // Serializer — flow/compact style (encode_flow)
 // ---------------------------------------------------------------------------
 
-fn encode_flow_value(value: YamlValue) -> String:
-    match value:
+fn encode_flow_value(value: YamlValue) -> String {
+    match value {
         Null => { da "null" },
-        Bool(b) =>:
+        Bool(b) => {
             si b { da "true" } sino { da "false" }
+        },
         Int(n) => { da str(n) },
-        Float(f) =>:
+        Float(f) => {
             si f > 999999998.0 { da ".inf" }
             si f < -999999998.0 { da "-.inf" }
             da str(f)
-        Str(s) =>:
-            si yaml_needs_quoting(s):
+        },
+        Str(s) => {
+            si yaml_needs_quoting(s) {
                 da yaml_quote_string(s)
+            }
             da s
-        Seq(items) =>:
+        },
+        Seq(items) => {
             pon item_count: Int = len(items)
             si item_count == 0 { da "[]" }
             pon mut result: String = "["
             pon mut i: Int = 0
-            mien i < item_count:
+            mien i < item_count {
                 si i > 0 { result = result + ", " }
                 result = result + encode_flow_value(items[i])
                 i = i + 1
+            }
             da result + "]"
-        Map(entries) =>:
+        },
+        Map(entries) => {
             pon entry_count: Int = len(entries)
             si entry_count == 0 { da "{}" }
             pon mut result: String = "{"
             pon mut i: Int = 0
-            mien i < entry_count:
+            mien i < entry_count {
                 si i > 0 { result = result + ", " }
                 pon entry: YamlEntry = entries[i]
                 pon key_out: String = encode_map_key(entry.key)
                 result = result + key_out + ": " + encode_flow_value(entry.value)
                 i = i + 1
+            }
             da result + "}"
+        }
+    }
+}
 
-+fn encode_flow(value: YamlValue) -> String:
+pub fn encode_flow(value: YamlValue) -> String {
     da encode_flow_value(value) + "\n"
+}

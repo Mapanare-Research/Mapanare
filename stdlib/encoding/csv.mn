@@ -13,197 +13,234 @@
 // Task 1: CsvRow is List<String> used directly throughout.
 
 // Task 2: CsvTable struct
-+tipo CsvTable:
+pub tipo CsvTable {
     headers: List<String>,
     rows: List<List<String>>
+}
 
 // Task 3: CsvError struct
-+tipo CsvError:
+pub tipo CsvError {
     message: String,
     line: Int
+}
 
 // Task 4: CsvConfig struct
-+tipo CsvConfig:
+pub tipo CsvConfig {
     delimiter: String,
     quote_char: String,
     has_headers: Bool
+}
 
 // ---------------------------------------------------------------------------
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-fn new_csv_error(msg: String, ln: Int) -> CsvError:
+fn new_csv_error(msg: String, ln: Int) -> CsvError {
     da new CsvError { message: msg, line: ln }
+}
 
-fn default_csv_config() -> CsvConfig:
+fn default_csv_config() -> CsvConfig {
     da new CsvConfig { delimiter: ",", quote_char: "\"", has_headers: true }
+}
 
 // ---------------------------------------------------------------------------
 // Internal parsing: field parser
 // ---------------------------------------------------------------------------
 
 // Parse result for a single field — uses simple types to avoid codegen issues
-tipo FieldResult:
+tipo FieldResult {
     value: String,
     pos: Int,
     ln: Int,
     end_of_row: Bool,
     ok: Bool,
     err_msg: String
+}
 
-fn parse_csv_field(src: String, pos: Int, ln: Int, delim: String, qch: String) -> FieldResult:
+fn parse_csv_field(src: String, pos: Int, ln: Int, delim: String, qch: String) -> FieldResult {
     pon slen: Int = len(src)
 
-    si pos >= slen:
+    si pos >= slen {
         da new FieldResult { value: "", pos: pos, ln: ln, end_of_row: true, ok: true, err_msg: "" }
+    }
 
     pon ch: String = src.char_at(pos)
 
     // Task 7 & 8: Quoted field
-    si ch == qch:
+    si ch == qch {
         pon mut p: Int = pos + 1
         pon mut result: String = ""
         pon mut cur_ln: Int = ln
 
-        mien p < slen:
+        mien p < slen {
             pon c: String = src.char_at(p)
 
-            si c == qch:
+            si c == qch {
                 // Task 8: escaped quote ""
-                si p + 1 < slen:
-                    si src.char_at(p + 1) == qch:
+                si p + 1 < slen {
+                    si src.char_at(p + 1) == qch {
                         result = result + qch
                         p = p + 2
-                    sino:
+                    } sino {
                         // Closing quote
                         p = p + 1
-                        si p >= slen:
+                        si p >= slen {
                             da new FieldResult { value: result, pos: p, ln: cur_ln, end_of_row: true, ok: true, err_msg: "" }
+                        }
                         pon after: String = src.char_at(p)
-                        si after == delim:
+                        si after == delim {
                             da new FieldResult { value: result, pos: p + 1, ln: cur_ln, end_of_row: false, ok: true, err_msg: "" }
-                        si after == "\n":
+                        }
+                        si after == "\n" {
                             da new FieldResult { value: result, pos: p + 1, ln: cur_ln + 1, end_of_row: true, ok: true, err_msg: "" }
-                        si after == "\r":
-                            si p + 1 < slen:
-                                si src.char_at(p + 1) == "\n":
+                        }
+                        si after == "\r" {
+                            si p + 1 < slen {
+                                si src.char_at(p + 1) == "\n" {
                                     da new FieldResult { value: result, pos: p + 2, ln: cur_ln + 1, end_of_row: true, ok: true, err_msg: "" }
+                                }
+                            }
                             da new FieldResult { value: result, pos: p + 1, ln: cur_ln + 1, end_of_row: true, ok: true, err_msg: "" }
+                        }
                         da new FieldResult { value: "", pos: p, ln: cur_ln, end_of_row: false, ok: false, err_msg: "Unexpected character after closing quote" }
-                sino:
+                    }
+                } sino {
                     p = p + 1
                     da new FieldResult { value: result, pos: p, ln: cur_ln, end_of_row: true, ok: true, err_msg: "" }
-            } sino { si c == "\n":
+                }
+            } sino { si c == "\n" {
                 // Task 7: Embedded newline inside quoted field
                 result = result + c
                 p = p + 1
                 cur_ln = cur_ln + 1
-            } sino { si c == "\r":
-                si p + 1 < slen:
-                    si src.char_at(p + 1) == "\n":
+            } sino { si c == "\r" {
+                si p + 1 < slen {
+                    si src.char_at(p + 1) == "\n" {
                         result = result + "\r\n"
                         p = p + 2
                         cur_ln = cur_ln + 1
-                    sino:
+                    } sino {
                         result = result + c
                         p = p + 1
-                sino:
+                    }
+                } sino {
                     result = result + c
                     p = p + 1
-            sino:
+                }
+            } sino {
                 result = result + c
                 p = p + 1
             } } }
+        }
 
         da new FieldResult { value: "", pos: p, ln: cur_ln, end_of_row: true, ok: false, err_msg: "Unclosed quoted field" }
+    }
 
     // Unquoted field
     pon mut p2: Int = pos
     pon mut result2: String = ""
 
-    mien p2 < slen:
+    mien p2 < slen {
         pon c2: String = src.char_at(p2)
-        si c2 == delim:
+        si c2 == delim {
             da new FieldResult { value: result2, pos: p2 + 1, ln: ln, end_of_row: false, ok: true, err_msg: "" }
-        si c2 == "\n":
+        }
+        si c2 == "\n" {
             da new FieldResult { value: result2, pos: p2 + 1, ln: ln + 1, end_of_row: true, ok: true, err_msg: "" }
-        si c2 == "\r":
-            si p2 + 1 < slen:
-                si src.char_at(p2 + 1) == "\n":
+        }
+        si c2 == "\r" {
+            si p2 + 1 < slen {
+                si src.char_at(p2 + 1) == "\n" {
                     da new FieldResult { value: result2, pos: p2 + 2, ln: ln + 1, end_of_row: true, ok: true, err_msg: "" }
+                }
+            }
             da new FieldResult { value: result2, pos: p2 + 1, ln: ln + 1, end_of_row: true, ok: true, err_msg: "" }
+        }
         result2 = result2 + c2
         p2 = p2 + 1
+    }
 
     da new FieldResult { value: result2, pos: p2, ln: ln, end_of_row: true, ok: true, err_msg: "" }
+}
 
 // ---------------------------------------------------------------------------
 // Internal parsing: row parser
 // ---------------------------------------------------------------------------
 
-tipo RowResult:
+tipo RowResult {
     fields: List<String>,
     pos: Int,
     ln: Int,
     ok: Bool,
     err_msg: String
+}
 
-fn parse_csv_row(src: String, pos: Int, ln: Int, delim: String, qch: String) -> RowResult:
+fn parse_csv_row(src: String, pos: Int, ln: Int, delim: String, qch: String) -> RowResult {
     pon slen: Int = len(src)
     pon mut fields: List<String> = []
     pon mut p: Int = pos
     pon mut cur_ln: Int = ln
 
-    si p >= slen:
+    si p >= slen {
         da new RowResult { fields: fields, pos: p, ln: cur_ln, ok: true, err_msg: "" }
+    }
 
     // Check for empty line
     pon first: String = src.char_at(p)
-    si first == "\n":
+    si first == "\n" {
         da new RowResult { fields: fields, pos: p + 1, ln: cur_ln + 1, ok: true, err_msg: "" }
-    si first == "\r":
-        si p + 1 < slen:
-            si src.char_at(p + 1) == "\n":
+    }
+    si first == "\r" {
+        si p + 1 < slen {
+            si src.char_at(p + 1) == "\n" {
                 da new RowResult { fields: fields, pos: p + 2, ln: cur_ln + 1, ok: true, err_msg: "" }
+            }
+        }
         da new RowResult { fields: fields, pos: p + 1, ln: cur_ln + 1, ok: true, err_msg: "" }
+    }
 
     pon mut count: Int = 0
-    mien count < 1000000:
+    mien count < 1000000 {
         count = count + 1
 
         pon fr: FieldResult = parse_csv_field(src, p, cur_ln, delim, qch)
-        si fr.ok == false:
+        si fr.ok == false {
             da new RowResult { fields: fields, pos: fr.pos, ln: fr.ln, ok: false, err_msg: fr.err_msg }
+        }
 
         fields = fields + [fr.value]
         p = fr.pos
         cur_ln = fr.ln
 
         si fr.end_of_row { da new RowResult { fields: fields, pos: p, ln: cur_ln, ok: true, err_msg: "" } }
+    }
 
     da new RowResult { fields: fields, pos: p, ln: cur_ln, ok: false, err_msg: "Row too many fields" }
+}
 
 // ---------------------------------------------------------------------------
 // Parse all rows from a CSV string
 // ---------------------------------------------------------------------------
 
-fn parse_csv_all(src: String, delim: String, qch: String, has_headers: Bool) -> Result<CsvTable, CsvError>:
+fn parse_csv_all(src: String, delim: String, qch: String, has_headers: Bool) -> Result<CsvTable, CsvError> {
     pon slen: Int = len(src)
     pon mut pos: Int = 0
     pon mut ln: Int = 1
     pon mut headers: List<String> = []
     pon mut rows: List<List<String>> = []
 
-    si has_headers:
-        si pos < slen:
+    si has_headers {
+        si pos < slen {
             pon hr: RowResult = parse_csv_row(src, pos, ln, delim, qch)
             si hr.ok == false { da Err(new_csv_error(hr.err_msg, hr.ln)) }
             headers = hr.fields
             pos = hr.pos
             ln = hr.ln
+        }
+    }
 
     pon mut count: Int = 0
-    mien pos < slen:
+    mien pos < slen {
         count = count + 1
         si count > 10000000 { da Err(new_csv_error("Too many rows", ln)) }
 
@@ -212,20 +249,25 @@ fn parse_csv_all(src: String, delim: String, qch: String, has_headers: Bool) -> 
         pos = rr.pos
         ln = rr.ln
 
-        si len(rr.fields) > 0:
+        si len(rr.fields) > 0 {
             rows = rows + [rr.fields]
+        }
+    }
 
     da Ok(new CsvTable { headers: headers, rows: rows })
+}
 
 // ---------------------------------------------------------------------------
 // Public API — Parse from string
 // ---------------------------------------------------------------------------
 
-+fn parse(src: String) -> Result<CsvTable, CsvError>:
+pub fn parse(src: String) -> Result<CsvTable, CsvError> {
     da parse_csv_all(src, ",", "\"", true)
+}
 
-+fn parse_with(src: String, config: CsvConfig) -> Result<CsvTable, CsvError>:
+pub fn parse_with(src: String, config: CsvConfig) -> Result<CsvTable, CsvError> {
     da parse_csv_all(src, config.delimiter, config.quote_char, config.has_headers)
+}
 
 // ---------------------------------------------------------------------------
 // Tasks 5 & 6: File I/O (extern C runtime)
@@ -234,93 +276,108 @@ fn parse_csv_all(src: String, delim: String, qch: String, has_headers: Bool) -> 
 extern "C" fn __mn_file_read(path: String) -> String
 extern "C" fn __mn_file_write(path: String, content: String) -> Int
 
-+fn read(path: String) -> Result<CsvTable, CsvError>:
+pub fn read(path: String) -> Result<CsvTable, CsvError> {
     pon content: String = __mn_file_read(path)
     da parse_csv_all(content, ",", "\"", true)
+}
 
-+fn read_with(path: String, config: CsvConfig) -> Result<CsvTable, CsvError>:
+pub fn read_with(path: String, config: CsvConfig) -> Result<CsvTable, CsvError> {
     pon content: String = __mn_file_read(path)
     da parse_csv_all(content, config.delimiter, config.quote_char, config.has_headers)
+}
 
 // ---------------------------------------------------------------------------
 // Writer helpers
 // ---------------------------------------------------------------------------
 
-fn field_needs_quoting(value: String, delim: String, qch: String) -> Bool:
+fn field_needs_quoting(value: String, delim: String, qch: String) -> Bool {
     pon slen: Int = len(value)
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = value.char_at(i)
         si ch == delim { da true }
         si ch == qch { da true }
         si ch == "\n" { da true }
         si ch == "\r" { da true }
         i = i + 1
+    }
     da false
+}
 
-fn quote_field(value: String, qch: String) -> String:
+fn quote_field(value: String, qch: String) -> String {
     pon slen: Int = len(value)
     pon mut result: String = qch
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = value.char_at(i)
-        si ch == qch:
+        si ch == qch {
             result = result + qch + qch
-        sino:
+        } sino {
             result = result + ch
+        }
         i = i + 1
+    }
     result = result + qch
     da result
+}
 
-fn row_to_csv_string(fields: List<String>, delim: String, qch: String) -> String:
+fn row_to_csv_string(fields: List<String>, delim: String, qch: String) -> String {
     pon field_count: Int = len(fields)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < field_count:
+    mien i < field_count {
         si i > 0 { result = result + delim }
         pon field_val: String = fields[i]
-        si field_needs_quoting(field_val, delim, qch):
+        si field_needs_quoting(field_val, delim, qch) {
             result = result + quote_field(field_val, qch)
-        sino:
+        } sino {
             result = result + field_val
+        }
         i = i + 1
+    }
     da result
+}
 
-+fn to_string(data: CsvTable, delim: String, qch: String) -> String:
+pub fn to_string(data: CsvTable, delim: String, qch: String) -> String {
     pon mut result: String = ""
 
-    si len(data.headers) > 0:
+    si len(data.headers) > 0 {
         result = result + row_to_csv_string(data.headers, delim, qch) + "\n"
+    }
 
     pon row_count: Int = len(data.rows)
     pon mut i: Int = 0
-    mien i < row_count:
+    mien i < row_count {
         result = result + row_to_csv_string(data.rows[i], delim, qch) + "\n"
         i = i + 1
+    }
 
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Tasks 9 & 10: csv.write / csv.write_with
 // ---------------------------------------------------------------------------
 
-+fn write(data: CsvTable, path: String) -> Result<Bool, CsvError>:
+pub fn write(data: CsvTable, path: String) -> Result<Bool, CsvError> {
     pon content: String = to_string(data, ",", "\"")
     pon wresult: Int = __mn_file_write(path, content)
     si wresult == 0 { da Err(new_csv_error("Failed to write file", 0)) }
     da Ok(true)
+}
 
-+fn write_with(data: CsvTable, path: String, config: CsvConfig) -> Result<Bool, CsvError>:
+pub fn write_with(data: CsvTable, path: String, config: CsvConfig) -> Result<Bool, CsvError> {
     pon content: String = to_string(data, config.delimiter, config.quote_char)
     pon wresult: Int = __mn_file_write(path, content)
     si wresult == 0 { da Err(new_csv_error("Failed to write file", 0)) }
     da Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // Tasks 11 & 12: Streaming
 // ---------------------------------------------------------------------------
 
-tipo StreamState:
+tipo StreamState {
     src: String,
     pos: Int,
     ln: Int,
@@ -328,38 +385,44 @@ tipo StreamState:
     qch: String,
     done: Bool,
     skip_header: Bool
+}
 
-fn new_stream_state(src: String, delim: String, qch: String, skip_header: Bool) -> StreamState:
+fn new_stream_state(src: String, delim: String, qch: String, skip_header: Bool) -> StreamState {
     da new StreamState { src: src, pos: 0, ln: 1, delim: delim, qch: qch, done: false, skip_header: skip_header }
+}
 
-fn stream_next_row(state: StreamState) -> Result<List<String>, CsvError>:
+fn stream_next_row(state: StreamState) -> Result<List<String>, CsvError> {
     pon slen: Int = len(state.src)
-    si state.pos >= slen:
+    si state.pos >= slen {
         da Err(new_csv_error("end of stream", 0))
+    }
 
     pon rr: RowResult = parse_csv_row(state.src, state.pos, state.ln, state.delim, state.qch)
     si rr.ok == false { da Err(new_csv_error(rr.err_msg, rr.ln)) }
 
-    si len(rr.fields) == 0:
+    si len(rr.fields) == 0 {
         da Err(new_csv_error("empty row", 0))
+    }
 
     da Ok(rr.fields)
+}
 
-+fn collect_rows(src: String) -> Result<List<List<String>>, CsvError>:
+pub fn collect_rows(src: String) -> Result<List<List<String>>, CsvError> {
     pon slen: Int = len(src)
     pon mut pos: Int = 0
     pon mut ln: Int = 1
     pon mut rows: List<List<String>> = []
 
     // Skip header
-    si pos < slen:
+    si pos < slen {
         pon hr: RowResult = parse_csv_row(src, pos, ln, ",", "\"")
         si hr.ok == false { da Err(new_csv_error(hr.err_msg, hr.ln)) }
         pos = hr.pos
         ln = hr.ln
+    }
 
     pon mut count: Int = 0
-    mien pos < slen:
+    mien pos < slen {
         count = count + 1
         si count > 10000000 { da Err(new_csv_error("Too many rows", ln)) }
 
@@ -368,7 +431,10 @@ fn stream_next_row(state: StreamState) -> Result<List<String>, CsvError>:
         pos = rr.pos
         ln = rr.ln
 
-        si len(rr.fields) > 0:
+        si len(rr.fields) > 0 {
             rows = rows + [rr.fields]
+        }
+    }
 
     da Ok(rows)
+}

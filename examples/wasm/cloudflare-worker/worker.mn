@@ -8,21 +8,26 @@
 
 usa wasm::bridge
 
-+fn handle_request(method: String, path: String) -> String:
-    si path == "/":
+pub fn handle_request(method: String, path: String) -> String {
+    si path == "/" {
         da json_response(200, "Welcome to Mapanare on Cloudflare Workers!")
-    sino si path == "/health":
+    } sino si path == "/health" {
         da json_response(200, "ok")
-    sino si path == "/fib":
+    } sino si path == "/fib" {
         pon result = fibonacci(30)
         da json_response(200, "fibonacci(30) = " + str(result))
-    sino:
+    } sino {
         da json_response(404, "Not found: " + path)
+    }
+}
 
-fn json_response(status: Int, message: String) -> String:
+fn json_response(status: Int, message: String) -> String {
     da "{\"status\": " + str(status) + ", \"message\": \"" + message + "\"}"
+}
 
-fn fibonacci(n: Int) -> Int:
-    si n <= 1:
+fn fibonacci(n: Int) -> Int {
+    si n <= 1 {
         da n
+    }
     da fibonacci(n - 1) + fibonacci(n - 2)
+}

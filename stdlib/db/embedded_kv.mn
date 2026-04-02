@@ -24,112 +24,136 @@ extern "C" fn __mn_file_write(path: String, content: String) -> Int
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-fn new_embedded_store(data: Map<String, String>) -> EmbeddedStore:
+fn new_embedded_store(data: Map<String, String>) -> EmbeddedStore {
     da new EmbeddedStore { data: data }
+}
 
-fn new_kv_error(msg: String) -> KVError:
+fn new_kv_error(msg: String) -> KVError {
     da new KVError { message: msg }
+}
 
 // ---------------------------------------------------------------------------
 // create — create a new empty in-process KV store
 // ---------------------------------------------------------------------------
 
-+fn embedded_create() -> KVStore:
+pub fn embedded_create() -> KVStore {
     pon data: Map<String, String> = #{}
     pon store: EmbeddedStore = new_embedded_store(data)
     da Embedded(store)
+}
 
 // ---------------------------------------------------------------------------
 // get — retrieve a value by key
 // ---------------------------------------------------------------------------
 
-+fn embedded_get(store: EmbeddedStore, key: String) -> Option<String>:
+pub fn embedded_get(store: EmbeddedStore, key: String) -> Option<String> {
     pon mut found: Bool = false
-    cada k en store.data:
+    cada k en store.data {
         si k == key { found = true }
-    si found == false:
+    }
+    si found == false {
         da nada
+    }
     da Some(store.data[key])
+}
 
 // ---------------------------------------------------------------------------
 // set — returns a new EmbeddedStore with the key set (functional update)
 // ---------------------------------------------------------------------------
 
-+fn embedded_set(store: EmbeddedStore, key: String, value: String) -> EmbeddedStore:
+pub fn embedded_set(store: EmbeddedStore, key: String, value: String) -> EmbeddedStore {
     pon mut new_data: Map<String, String> = #{}
-    cada k en store.data:
+    cada k en store.data {
         new_data[k] = store.data[k]
+    }
     new_data[key] = value
     da new_embedded_store(new_data)
+}
 
 // ---------------------------------------------------------------------------
 // del — returns a new EmbeddedStore with the key removed
 // ---------------------------------------------------------------------------
 
-+fn embedded_del(store: EmbeddedStore, key: String) -> EmbeddedStore:
+pub fn embedded_del(store: EmbeddedStore, key: String) -> EmbeddedStore {
     pon mut new_data: Map<String, String> = #{}
-    cada k en store.data:
-        si k != key:
+    cada k en store.data {
+        si k != key {
             new_data[k] = store.data[k]
+        }
+    }
     da new_embedded_store(new_data)
+}
 
 // ---------------------------------------------------------------------------
 // exists — check if a key is present
 // ---------------------------------------------------------------------------
 
-+fn embedded_exists(store: EmbeddedStore, key: String) -> Bool:
-    cada k en store.data:
+pub fn embedded_exists(store: EmbeddedStore, key: String) -> Bool {
+    cada k en store.data {
         si k == key { da true }
+    }
     da false
+}
 
 // ---------------------------------------------------------------------------
 // keys — return all keys as a list
 // ---------------------------------------------------------------------------
 
-+fn embedded_keys(store: EmbeddedStore) -> List<String>:
+pub fn embedded_keys(store: EmbeddedStore) -> List<String> {
     pon mut result: List<String> = []
-    cada k en store.data:
+    cada k en store.data {
         result = result + [k]
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // size — return the number of entries
 // ---------------------------------------------------------------------------
 
-+fn embedded_size(store: EmbeddedStore) -> Int:
+pub fn embedded_size(store: EmbeddedStore) -> Int {
     pon mut count: Int = 0
-    cada k en store.data:
+    cada k en store.data {
         count = count + 1
+    }
     da count
+}
 
 // ---------------------------------------------------------------------------
 // save — serialize the store to a JSON file on disk
 // ---------------------------------------------------------------------------
 
-+fn embedded_save(store: EmbeddedStore, path: String) -> Result<Bool, KVError>:
+pub fn embedded_save(store: EmbeddedStore, path: String) -> Result<Bool, KVError> {
     pon json_str: String = map_to_json(store.data)
     pon wresult: Int = __mn_file_write(path, json_str)
-    si wresult == 0:
+    si wresult == 0 {
         da Err(new_kv_error("Failed to write KV store to file: " + path))
+    }
     da Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // load — deserialize a JSON file from disk into a KVStore
 // ---------------------------------------------------------------------------
 
-+fn embedded_load(path: String) -> Result<KVStore, KVError>:
+pub fn embedded_load(path: String) -> Result<KVStore, KVError> {
     pon content: String = __mn_file_read(path)
-    si len(content) == 0:
+    si len(content) == 0 {
         da Err(new_kv_error("Failed to read file or file is empty: " + path))
+    }
 
     pon parse_result: Result<Map<String, String>, KVError> = json_to_map(content)
-    match parse_result:
-        Ok(data) =>:
+    match parse_result {
+        Ok(data) => {
             pon store: EmbeddedStore = new_embedded_store(data)
             da Ok(Embedded(store))
-        Err(e) =>:
+        },
+        Err(e) => {
             da Err(e)
+        }
+    }
     da Err(new_kv_error("unreachable"))
+}
 
 // ---------------------------------------------------------------------------
 // Internal: map_to_json — serialize Map<String, String> to JSON string
@@ -138,45 +162,50 @@ fn new_kv_error(msg: String) -> KVError:
 // Escapes quotes and backslashes in keys and values.
 // ---------------------------------------------------------------------------
 
-fn map_to_json(data: Map<String, String>) -> String:
+fn map_to_json(data: Map<String, String>) -> String {
     pon mut result: String = "{"
     pon mut first: Bool = true
 
-    cada key en data:
-        si first:
+    cada key en data {
+        si first {
             first = false
-        sino:
+        } sino {
             result = result + ","
+        }
         result = result + "\"" + escape_json_str(key) + "\":\"" + escape_json_str(data[key]) + "\""
+    }
 
     result = result + "}"
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Internal: escape_json_str — escape special characters for JSON strings
 // ---------------------------------------------------------------------------
 
-fn escape_json_str(s: String) -> String:
+fn escape_json_str(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si ch == "\"":
+        si ch == "\"" {
             result = result + "\\\""
-        } sino { si ch == "\\":
+        } sino { si ch == "\\" {
             result = result + "\\\\"
-        } sino { si ch == "\n":
+        } sino { si ch == "\n" {
             result = result + "\\n"
-        } sino { si ch == "\t":
+        } sino { si ch == "\t" {
             result = result + "\\t"
-        } sino { si ch == "\r":
+        } sino { si ch == "\r" {
             result = result + "\\r"
-        sino:
+        } sino {
             result = result + ch
         } } } } }
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Internal: json_to_map — parse a JSON object of string values
@@ -186,31 +215,43 @@ fn escape_json_str(s: String) -> String:
 // Uses encoding::json for robust parsing, then extracts string values.
 // ---------------------------------------------------------------------------
 
-fn json_to_map(input: String) -> Result<Map<String, String>, KVError>:
+fn json_to_map(input: String) -> Result<Map<String, String>, KVError> {
     pon decode_result: Result<JsonValue, JsonError> = decode(input)
-    match decode_result:
-        Ok(value) =>:
+    match decode_result {
+        Ok(value) => {
             da extract_string_map(value)
-        Err(je) =>:
+        },
+        Err(je) => {
             da Err(new_kv_error("JSON parse error: " + je.message))
+        }
+    }
     da Err(new_kv_error("unreachable"))
+}
 
 // ---------------------------------------------------------------------------
 // Internal: extract_string_map — extract Map<String, String> from JsonValue
 // ---------------------------------------------------------------------------
 
-fn extract_string_map(value: JsonValue) -> Result<Map<String, String>, KVError>:
-    match value:
-        Object(entries) =>:
+fn extract_string_map(value: JsonValue) -> Result<Map<String, String>, KVError> {
+    match value {
+        Object(entries) => {
             pon mut result: Map<String, String> = #{}
-            cada key en entries:
+            cada key en entries {
                 pon entry_val: JsonValue = entries[key]
-                match entry_val:
-                    Str(s) =>:
+                match entry_val {
+                    Str(s) => {
                         result[key] = s
-                    _ =>:
+                    },
+                    _ => {
                         da Err(new_kv_error("Expected string value cada key: " + key))
+                    }
+                }
+            }
             da Ok(result)
-        _ =>:
+        },
+        _ => {
             da Err(new_kv_error("Expected JSON object at top level"))
+        }
+    }
     da Err(new_kv_error("unreachable"))
+}

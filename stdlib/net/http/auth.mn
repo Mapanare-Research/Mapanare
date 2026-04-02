@@ -12,34 +12,39 @@ usa net::http::session
 // Auth result enum
 // ---------------------------------------------------------------------------
 
-+tipo AuthResult:
+pub tipo AuthResult {
     | Authenticated(String)
     | Denied(String)
+}
 
 // ---------------------------------------------------------------------------
 // Extract message from AuthResult
 // ---------------------------------------------------------------------------
 
-+fn auth_result_message(r: AuthResult) -> String:
-    match r:
+pub fn auth_result_message(r: AuthResult) -> String {
+    match r {
         Authenticated(msg) => { da msg },
         Denied(msg) => { da msg }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Check if auth result is authenticated
 // ---------------------------------------------------------------------------
 
-+fn is_authenticated(r: AuthResult) -> Bool:
-    match r:
+pub fn is_authenticated(r: AuthResult) -> Bool {
+    match r {
         Authenticated(msg) => { da true },
         Denied(msg) => { da false }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Parse Basic Auth header — "Basic base64(user:pass)"
 // Returns [user, pass] or None
 // ---------------------------------------------------------------------------
 
-+fn parse_basic_auth(header: String) -> Option<List<String>>:
+pub fn parse_basic_auth(header: String) -> Option<List<String>> {
     pon slen: Int = len(header)
     si slen < 7 { da nada }
 
@@ -49,8 +54,8 @@ usa net::http::session
 
     pon encoded: String = header.substr(6, slen)
     pon decoded_result: Result<String, crypto.CryptoError> = crypto.base64_decode(encoded)
-    match decoded_result:
-        Ok(decoded) =>:
+    match decoded_result {
+        Ok(decoded) => {
             // Find the colon separator
             pon colon_pos: Int = decoded.find(":")
             si colon_pos < 0 { da nada }
@@ -60,15 +65,19 @@ usa net::http::session
             parts = parts + [user]
             parts = parts + [pass]
             da Some(parts)
-        Err(e) =>:
+        },
+        Err(e) => {
             da nada
+        }
+    }
     da nada
+}
 
 // ---------------------------------------------------------------------------
 // Extract Bearer token — "Bearer xxx"
 // ---------------------------------------------------------------------------
 
-+fn bearer_token(header: String) -> Option<String>:
+pub fn bearer_token(header: String) -> Option<String> {
     pon slen: Int = len(header)
     si slen < 8 { da nada }
 
@@ -79,76 +88,102 @@ usa net::http::session
     pon token: String = header.substr(7, slen)
     si len(token) == 0 { da nada }
     da Some(token)
+}
 
 // ---------------------------------------------------------------------------
 // JWT authentication — verify JWT and return claims or Denied
 // ---------------------------------------------------------------------------
 
-+fn jwt_auth(auth_header: String, secret: String) -> AuthResult:
+pub fn jwt_auth(auth_header: String, secret: String) -> AuthResult {
     // Extract Bearer token
     pon token_opt: Option<String> = bearer_token(auth_header)
-    match token_opt:
-        Some(token) =>:
+    match token_opt {
+        Some(token) => {
             // Verify and decode JWT
             pon result: Result<String, crypto.CryptoError> = crypto.jwt_decode(token, secret)
-            match result:
-                Ok(claims) =>:
+            match result {
+                Ok(claims) => {
                     da Authenticated(claims)
-                Err(e) =>:
+                },
+                Err(e) => {
                     da Denied("JWT verification failed")
+                }
+            }
             da Denied("unreachable")
-        _ =>:
+        },
+        _ => {
             da Denied("Missing or invalid Bearer token")
+        }
+    }
     da Denied("unreachable")
+}
 
 // ---------------------------------------------------------------------------
 // Verify a JWT token directly (without Bearer prefix extraction)
 // ---------------------------------------------------------------------------
 
-+fn jwt_verify_token(token: String, secret: String) -> AuthResult:
+pub fn jwt_verify_token(token: String, secret: String) -> AuthResult {
     pon result: Result<String, crypto.CryptoError> = crypto.jwt_decode(token, secret)
-    match result:
-        Ok(claims) =>:
+    match result {
+        Ok(claims) => {
             da Authenticated(claims)
-        Err(e) =>:
+        },
+        Err(e) => {
             da Denied("JWT verification failed")
+        }
+    }
     da Denied("unreachable")
+}
 
 // ---------------------------------------------------------------------------
 // Session-based authentication check
 // ---------------------------------------------------------------------------
 
-+fn check_session_auth(store: session.SessionStore, session_id: String, required_key: String) -> AuthResult:
+pub fn check_session_auth(store: session.SessionStore, session_id: String, required_key: String) -> AuthResult {
     pon session_opt: Option<session.Session> = session.get_session(store, session_id)
-    match session_opt:
-        Some(sess) =>:
+    match session_opt {
+        Some(sess) => {
             pon val_opt: Option<String> = session.get_value(sess, required_key)
-            match val_opt:
-                Some(val) =>:
+            match val_opt {
+                Some(val) => {
                     da Authenticated(val)
-                _ =>:
+                },
+                _ => {
                     da Denied("Session missing required key: " + required_key)
+                }
+            }
             da Denied("unreachable")
-        _ =>:
+        },
+        _ => {
             da Denied("Session not found: " + session_id)
+        }
+    }
     da Denied("unreachable")
+}
 
 // ---------------------------------------------------------------------------
 // Basic auth verification against expected credentials
 // ---------------------------------------------------------------------------
 
-+fn verify_basic_auth(header: String, expected_user: String, expected_pass: String) -> AuthResult:
+pub fn verify_basic_auth(header: String, expected_user: String, expected_pass: String) -> AuthResult {
     pon parts_opt: Option<List<String>> = parse_basic_auth(header)
-    match parts_opt:
-        Some(parts) =>:
-            si len(parts) < 2:
+    match parts_opt {
+        Some(parts) => {
+            si len(parts) < 2 {
                 da Denied("Malformed Basic auth credentials")
+            }
             pon user: String = parts[0]
             pon pass: String = parts[1]
-            si user == expected_user:
-                si pass == expected_pass:
+            si user == expected_user {
+                si pass == expected_pass {
                     da Authenticated(user)
+                }
+            }
             da Denied("Invalid credentials")
-        _ =>:
+        },
+        _ => {
             da Denied("Missing or invalid Basic auth header")
+        }
+    }
     da Denied("unreachable")
+}

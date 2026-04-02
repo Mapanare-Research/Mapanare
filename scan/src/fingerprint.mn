@@ -13,9 +13,10 @@ usa crypto
 // same fingerprint, regardless of header ordering or whitespace.
 // ---------------------------------------------------------------------------
 
-+fn fingerprint_request(method: String, url: String, body: String) -> String:
+pub fn fingerprint_request(method: String, url: String, body: String) -> String {
     pon input: String = method + "|" + url + "|" + body
     da crypto.sha256(input)
+}
 
 // ---------------------------------------------------------------------------
 // Response fingerprint: SHA-256 of status + body
@@ -24,9 +25,10 @@ usa crypto
 // timestamps, etc.) to focus on the semantic content of the response.
 // ---------------------------------------------------------------------------
 
-+fn fingerprint_response(status: Int, body: String) -> String:
+pub fn fingerprint_response(status: Int, body: String) -> String {
     pon input: String = str(status) + "|" + body
     da crypto.sha256(input)
+}
 
 // ---------------------------------------------------------------------------
 // Combined fingerprint: request + response together
@@ -35,18 +37,21 @@ usa crypto
 // match, the scan result can be reused without re-sending the request.
 // ---------------------------------------------------------------------------
 
-+fn fingerprint_combined(method: String, url: String, body: String, status: Int, resp_body: String) -> String:
+pub fn fingerprint_combined(method: String, url: String, body: String, status: Int, resp_body: String) -> String {
     pon req_fp: String = fingerprint_request(method, url, body)
     pon resp_fp: String = fingerprint_response(status, resp_body)
     pon combined: String = req_fp + "|" + resp_fp
     da crypto.sha256(combined)
+}
 
 // ---------------------------------------------------------------------------
 // Short fingerprint: first 16 hex chars (64 bits) for display purposes
 // ---------------------------------------------------------------------------
 
-+fn fingerprint_short(full_hash: String) -> String:
+pub fn fingerprint_short(full_hash: String) -> String {
     pon hash_len: Int = len(full_hash)
-    si hash_len >= 16:
+    si hash_len >= 16 {
         da full_hash.substr(0, 16)
+    }
     da full_hash
+}

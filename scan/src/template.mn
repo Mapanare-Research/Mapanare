@@ -36,7 +36,7 @@ extern "C" fn __mn_file_read(path: String) -> String
 // Core types
 // ---------------------------------------------------------------------------
 
-+tipo ScanTemplate:
+pub tipo ScanTemplate {
     id: String,
     name: String,
     severity: String,
@@ -45,247 +45,311 @@ extern "C" fn __mn_file_read(path: String) -> String
     requests: List<TemplateRequest>,
     matchers: List<Matcher>,
     extractors: List<Extractor>
+}
 
-+tipo TemplateRequest:
+pub tipo TemplateRequest {
     method: String,
     path: String,
     headers: Map<String, String>,
     body: String,
     follow_redirects: Bool
+}
 
-+tipo Matcher:
+pub tipo Matcher {
     matcher_type: String,
     condition: String,
     values: List<String>,
     negative: Bool
+}
 
-+tipo Extractor:
+pub tipo Extractor {
     extractor_type: String,
     name: String,
     pattern: String,
     group_idx: Int
+}
 
-+tipo ScanError:
+pub tipo ScanError {
     | TemplateParseError(String)
     | FetchError(String)
     | MatchError(String)
     | IoError(String)
+}
 
 // ---------------------------------------------------------------------------
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-fn new_scan_error_parse(msg: String) -> ScanError:
+fn new_scan_error_parse(msg: String) -> ScanError {
     da TemplateParseError(msg)
+}
 
-fn new_scan_error_io(msg: String) -> ScanError:
+fn new_scan_error_io(msg: String) -> ScanError {
     da IoError(msg)
+}
 
-fn new_template_request(method: String, path: String, headers: Map<String, String>, body: String, follow_redirects: Bool) -> TemplateRequest:
-    da new TemplateRequest:
+fn new_template_request(method: String, path: String, headers: Map<String, String>, body: String, follow_redirects: Bool) -> TemplateRequest {
+    da new TemplateRequest {
         method: method,
         path: path,
         headers: headers,
         body: body,
         follow_redirects: follow_redirects
+    }
+}
 
-fn new_matcher(matcher_type: String, condition: String, values: List<String>, negative: Bool) -> Matcher:
-    da new Matcher:
+fn new_matcher(matcher_type: String, condition: String, values: List<String>, negative: Bool) -> Matcher {
+    da new Matcher {
         matcher_type: matcher_type,
         condition: condition,
         values: values,
         negative: negative
+    }
+}
 
-fn new_extractor(extractor_type: String, name: String, pattern: String, group_idx: Int) -> Extractor:
-    da new Extractor:
+fn new_extractor(extractor_type: String, name: String, pattern: String, group_idx: Int) -> Extractor {
+    da new Extractor {
         extractor_type: extractor_type,
         name: name,
         pattern: pattern,
         group_idx: group_idx
+    }
+}
 
 // ---------------------------------------------------------------------------
 // YAML field extraction helpers
 // ---------------------------------------------------------------------------
 
-fn get_yaml_string(entries: List<yaml.YamlEntry>, key: String) -> String:
+fn get_yaml_string(entries: List<yaml.YamlEntry>, key: String) -> String {
     pon count: Int = len(entries)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon entry: yaml.YamlEntry = entries[i]
-        si entry.key == key:
-            match entry.value:
+        si entry.key == key {
+            match entry.value {
                 Str(s) => { da s },
                 Int(n) => { da str(n) },
-                Bool(b) =>:
+                Bool(b) => {
                     si b { da "true" } sino { da "false" }
+                },
                 _ => { da "" }
+            }
+        }
         i = i + 1
+    }
     da ""
+}
 
-fn get_yaml_bool(entries: List<yaml.YamlEntry>, key: String, default_val: Bool) -> Bool:
+fn get_yaml_bool(entries: List<yaml.YamlEntry>, key: String, default_val: Bool) -> Bool {
     pon count: Int = len(entries)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon entry: yaml.YamlEntry = entries[i]
-        si entry.key == key:
-            match entry.value:
+        si entry.key == key {
+            match entry.value {
                 Bool(b) => { da b },
-                Str(s) =>:
+                Str(s) => {
                     si s == "true" { da true }
                     si s == "yes" { da true }
                     da false
+                },
                 _ => { da default_val }
+            }
+        }
         i = i + 1
+    }
     da default_val
+}
 
-fn get_yaml_int(entries: List<yaml.YamlEntry>, key: String, default_val: Int) -> Int:
+fn get_yaml_int(entries: List<yaml.YamlEntry>, key: String, default_val: Int) -> Int {
     pon count: Int = len(entries)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon entry: yaml.YamlEntry = entries[i]
-        si entry.key == key:
-            match entry.value:
+        si entry.key == key {
+            match entry.value {
                 Int(n) => { da n },
                 _ => { da default_val }
+            }
+        }
         i = i + 1
+    }
     da default_val
+}
 
-fn get_yaml_list_strings(entries: List<yaml.YamlEntry>, key: String) -> List<String>:
+fn get_yaml_list_strings(entries: List<yaml.YamlEntry>, key: String) -> List<String> {
     pon count: Int = len(entries)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon entry: yaml.YamlEntry = entries[i]
-        si entry.key == key:
-            match entry.value:
-                Seq(items) =>:
+        si entry.key == key {
+            match entry.value {
+                Seq(items) => {
                     pon mut result: List<String> = []
                     pon item_count: Int = len(items)
                     pon mut j: Int = 0
-                    mien j < item_count:
-                        match items[j]:
+                    mien j < item_count {
+                        match items[j] {
                             Str(s) => { result = result + [s] },
                             Int(n) => { result = result + [str(n)] },
                             _ => {}
+                        }
                         j = j + 1
+                    }
                     da result
-                _ =>:
+                },
+                _ => {
                     pon empty: List<String> = []
                     da empty
+                }
+            }
+        }
         i = i + 1
+    }
     pon empty: List<String> = []
     da empty
+}
 
-fn get_yaml_map(entries: List<yaml.YamlEntry>, key: String) -> List<yaml.YamlEntry>:
+fn get_yaml_map(entries: List<yaml.YamlEntry>, key: String) -> List<yaml.YamlEntry> {
     pon count: Int = len(entries)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon entry: yaml.YamlEntry = entries[i]
-        si entry.key == key:
-            match entry.value:
+        si entry.key == key {
+            match entry.value {
                 Map(map_entries) => { da map_entries },
-                _ =>:
+                _ => {
                     pon empty: List<yaml.YamlEntry> = []
                     da empty
+                }
+            }
+        }
         i = i + 1
+    }
     pon empty: List<yaml.YamlEntry> = []
     da empty
+}
 
-fn get_yaml_seq(entries: List<yaml.YamlEntry>, key: String) -> List<yaml.YamlValue>:
+fn get_yaml_seq(entries: List<yaml.YamlEntry>, key: String) -> List<yaml.YamlValue> {
     pon count: Int = len(entries)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon entry: yaml.YamlEntry = entries[i]
-        si entry.key == key:
-            match entry.value:
+        si entry.key == key {
+            match entry.value {
                 Seq(items) => { da items },
-                _ =>:
+                _ => {
                     pon empty: List<yaml.YamlValue> = []
                     da empty
+                }
+            }
+        }
         i = i + 1
+    }
     pon empty: List<yaml.YamlValue> = []
     da empty
+}
 
 // ---------------------------------------------------------------------------
 // Parse a single YAML map into headers (Map<String, String>)
 // ---------------------------------------------------------------------------
 
-fn parse_headers_from_entries(entries: List<yaml.YamlEntry>) -> Map<String, String>:
+fn parse_headers_from_entries(entries: List<yaml.YamlEntry>) -> Map<String, String> {
     pon mut headers: Map<String, String> = #{}
     pon count: Int = len(entries)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon entry: yaml.YamlEntry = entries[i]
-        match entry.value:
+        match entry.value {
             Str(s) => { headers[entry.key] = s },
             Int(n) => { headers[entry.key] = str(n) },
             _ => {}
+        }
         i = i + 1
+    }
     da headers
+}
 
 // ---------------------------------------------------------------------------
 // Parse a single request entry from YAML
 // ---------------------------------------------------------------------------
 
-fn parse_request(value: yaml.YamlValue) -> Result<TemplateRequest, ScanError>:
-    match value:
-        Map(entries) =>:
+fn parse_request(value: yaml.YamlValue) -> Result<TemplateRequest, ScanError> {
+    match value {
+        Map(entries) => {
             pon method: String = get_yaml_string(entries, "method")
             pon path: String = get_yaml_string(entries, "path")
             pon body: String = get_yaml_string(entries, "body")
             pon follow: Bool = get_yaml_bool(entries, "follow_redirects", false)
             pon header_entries: List<yaml.YamlEntry> = get_yaml_map(entries, "headers")
             pon headers: Map<String, String> = parse_headers_from_entries(header_entries)
-            si len(method) == 0:
+            si len(method) == 0 {
                 da Err(new_scan_error_parse("request missing 'method' field"))
-            si len(path) == 0:
+            }
+            si len(path) == 0 {
                 da Err(new_scan_error_parse("request missing 'path' field"))
+            }
             da Ok(new_template_request(method, path, headers, body, follow))
-        _ =>:
+        },
+        _ => {
             da Err(new_scan_error_parse("request entry must be a YAML map"))
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Parse a single matcher entry from YAML
 // ---------------------------------------------------------------------------
 
-fn parse_matcher(value: yaml.YamlValue) -> Result<Matcher, ScanError>:
-    match value:
-        Map(entries) =>:
+fn parse_matcher(value: yaml.YamlValue) -> Result<Matcher, ScanError> {
+    match value {
+        Map(entries) => {
             pon mtype: String = get_yaml_string(entries, "type")
             pon condition: String = get_yaml_string(entries, "condition")
             pon negative: Bool = get_yaml_bool(entries, "negative", false)
             pon values: List<String> = get_yaml_list_strings(entries, "values")
             pon cond: String = condition
-            si len(cond) == 0:
+            si len(cond) == 0 {
                 da Ok(new_matcher(mtype, "and", values, negative))
+            }
             da Ok(new_matcher(mtype, cond, values, negative))
-        _ =>:
+        },
+        _ => {
             da Err(new_scan_error_parse("matcher entry must be a YAML map"))
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Parse a single extractor entry from YAML
 // ---------------------------------------------------------------------------
 
-fn parse_extractor(value: yaml.YamlValue) -> Result<Extractor, ScanError>:
-    match value:
-        Map(entries) =>:
+fn parse_extractor(value: yaml.YamlValue) -> Result<Extractor, ScanError> {
+    match value {
+        Map(entries) => {
             pon etype: String = get_yaml_string(entries, "type")
             pon name: String = get_yaml_string(entries, "name")
             pon pattern: String = get_yaml_string(entries, "pattern")
             pon group: Int = get_yaml_int(entries, "group", 0)
             da Ok(new_extractor(etype, name, pattern, group))
-        _ =>:
+        },
+        _ => {
             da Err(new_scan_error_parse("extractor entry must be a YAML map"))
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Load template from parsed YAML document
 // ---------------------------------------------------------------------------
 
-fn parse_template_from_yaml(doc: yaml.YamlValue) -> Result<ScanTemplate, ScanError>:
-    match doc:
-        Map(root_entries) =>:
+fn parse_template_from_yaml(doc: yaml.YamlValue) -> Result<ScanTemplate, ScanError> {
+    match doc {
+        Map(root_entries) => {
             pon id: String = get_yaml_string(root_entries, "id")
-            si len(id) == 0:
+            si len(id) == 0 {
                 da Err(new_scan_error_parse("template missing 'id' field"))
+            }
 
             // Parse info section
             pon info_entries: List<yaml.YamlEntry> = get_yaml_map(root_entries, "info")
@@ -299,38 +363,44 @@ fn parse_template_from_yaml(doc: yaml.YamlValue) -> Result<ScanTemplate, ScanErr
             pon mut requests: List<TemplateRequest> = []
             pon req_count: Int = len(request_values)
             pon mut ri: Int = 0
-            mien ri < req_count:
+            mien ri < req_count {
                 pon req_result: Result<TemplateRequest, ScanError> = parse_request(request_values[ri])
-                match req_result:
+                match req_result {
                     Ok(req) => { requests = requests + [req] },
                     Err(e) => { da Err(e) }
+                }
                 ri = ri + 1
+            }
 
             // Parse matchers
             pon matcher_values: List<yaml.YamlValue> = get_yaml_seq(root_entries, "matchers")
             pon mut matchers: List<Matcher> = []
             pon mat_count: Int = len(matcher_values)
             pon mut mi: Int = 0
-            mien mi < mat_count:
+            mien mi < mat_count {
                 pon mat_result: Result<Matcher, ScanError> = parse_matcher(matcher_values[mi])
-                match mat_result:
+                match mat_result {
                     Ok(m) => { matchers = matchers + [m] },
                     Err(e) => { da Err(e) }
+                }
                 mi = mi + 1
+            }
 
             // Parse extractors
             pon extractor_values: List<yaml.YamlValue> = get_yaml_seq(root_entries, "extractors")
             pon mut extractors: List<Extractor> = []
             pon ext_count: Int = len(extractor_values)
             pon mut ei: Int = 0
-            mien ei < ext_count:
+            mien ei < ext_count {
                 pon ext_result: Result<Extractor, ScanError> = parse_extractor(extractor_values[ei])
-                match ext_result:
+                match ext_result {
                     Ok(ex) => { extractors = extractors + [ex] },
                     Err(e) => { da Err(e) }
+                }
                 ei = ei + 1
+            }
 
-            da Ok(new ScanTemplate:
+            da Ok(new ScanTemplate {
                 id: id,
                 name: name,
                 severity: severity,
@@ -340,39 +410,51 @@ fn parse_template_from_yaml(doc: yaml.YamlValue) -> Result<ScanTemplate, ScanErr
                 matchers: matchers,
                 extractors: extractors
             })
-        _ =>:
+        },
+        _ => {
             da Err(new_scan_error_parse("template root must be a YAML mapping"))
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Public API: load a single template from a YAML file
 // ---------------------------------------------------------------------------
 
-+fn load_template(path: String) -> Result<ScanTemplate, ScanError>:
+pub fn load_template(path: String) -> Result<ScanTemplate, ScanError> {
     pon content: String = __mn_file_read(path)
-    si len(content) == 0:
+    si len(content) == 0 {
         da Err(new_scan_error_io("failed to read template file: " + path))
+    }
     pon yaml_result: Result<yaml.YamlValue, yaml.YamlError> = yaml.decode(content)
-    match yaml_result:
-        Ok(doc) =>:
+    match yaml_result {
+        Ok(doc) => {
             da parse_template_from_yaml(doc)
-        Err(ye) =>:
+        },
+        Err(ye) => {
             da Err(new_scan_error_parse("YAML parse error en " + path + ": " + ye.message))
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Public API: load multiple templates from a list of paths
 // ---------------------------------------------------------------------------
 
-+fn load_templates_from_list(paths: List<String>) -> Result<List<ScanTemplate>, ScanError>:
+pub fn load_templates_from_list(paths: List<String>) -> Result<List<ScanTemplate>, ScanError> {
     pon mut templates: List<ScanTemplate> = []
     pon count: Int = len(paths)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon result: Result<ScanTemplate, ScanError> = load_template(paths[i])
-        match result:
+        match result {
             Ok(tmpl) => { templates = templates + [tmpl] },
             Err(e) => { da Err(e) }
+        }
         i = i + 1
+    }
     da Ok(templates)
+}
 
 // ---------------------------------------------------------------------------
 // Public API: interpolate template variables
@@ -381,55 +463,67 @@ fn parse_template_from_yaml(doc: yaml.YamlValue) -> Result<ScanTemplate, ScanErr
 // and any custom {{VarName}} with values from the vars map.
 // ---------------------------------------------------------------------------
 
-+fn interpolate(s: String, vars: Map<String, String>) -> String:
+pub fn interpolate(s: String, vars: Map<String, String>) -> String {
     pon mut result: String = s
     pon slen: Int = len(result)
     pon mut out: String = ""
     pon mut pos: Int = 0
 
-    mien pos < len(result):
-        // Look for opening {:
-        si pos + 1 < len(result):
+    mien pos < len(result) {
+        // Look for opening {{
+        si pos + 1 < len(result) {
             pon c0: String = result.char_at(pos)
             pon c1: String = result.char_at(pos + 1)
-            si c0 == "{":
-                si c1 == "{":
+            si c0 == "{" {
+                si c1 == "{" {
                     // Find closing }}
                     pon mut end: Int = pos + 2
                     pon mut found_end: Bool = false
-                    mien end + 1 < len(result):
+                    mien end + 1 < len(result) {
                         pon e0: String = result.char_at(end)
                         pon e1: String = result.char_at(end + 1)
-                        si e0 == "}":
-                            si e1 == "}":
+                        si e0 == "}" {
+                            si e1 == "}" {
                                 found_end = true
                                 sal
+                            }
+                        }
                         end = end + 1
-                    si found_end:
+                    }
+                    si found_end {
                         pon var_name: String = result.substr(pos + 2, end)
                         // Look up in vars map
                         pon mut replacement: String = ""
                         pon mut var_found: Bool = false
-                        cada key en vars:
-                            si key == var_name:
+                        cada key en vars {
+                            si key == var_name {
                                 replacement = vars[key]
                                 var_found = true
-                        si var_found:
+                            }
+                        }
+                        si var_found {
                             out = out + replacement
-                        sino:
+                        } sino {
                             // Leave the placeholder as-is
                             out = out + "{{" + var_name + "}}"
+                        }
                         pos = end + 2
-                    sino:
+                    } sino {
                         out = out + c0
                         pos = pos + 1
-                sino:
+                    }
+                } sino {
                     out = out + c0
                     pos = pos + 1
-            sino:
+                }
+            } sino {
                 out = out + c0
                 pos = pos + 1
-        sino:
+            }
+        } sino {
             out = out + result.char_at(pos)
             pos = pos + 1
+        }
+    }
     da out
+}

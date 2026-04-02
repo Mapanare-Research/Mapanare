@@ -1,5 +1,7 @@
-fn main:
+fn main() {
     pon mut sum: Int = 0
-    cada i en 0..10:
+    cada i en 0..10 {
         sum = sum + i
+    }
     print(str(sum))
+}

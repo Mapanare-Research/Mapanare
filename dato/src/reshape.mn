@@ -9,21 +9,25 @@ usa dato::src::table
 // Internal: collect unique string values from a column
 // ---------------------------------------------------------------------------
 
-fn unique_values(c: col.Col, nrows: Int) -> List<String>:
+fn unique_values(c: col.Col, nrows: Int) -> List<String> {
     pon mut seen: List<String> = []
     pon mut i: Int = 0
-    mien i < nrows:
+    mien i < nrows {
         pon val: String = c.strs[i]
         pon mut found: Bool = false
         pon nseen: Int = len(seen)
         pon mut j: Int = 0
-        mien j < nseen:
+        mien j < nseen {
             si seen[j] == val { found = true }
             j = j + 1
-        si found == false:
+        }
+        si found == false {
             seen = seen + [val]
+        }
         i = i + 1
+    }
     da seen
+}
 
 // ---------------------------------------------------------------------------
 // pivot — wide format
@@ -35,7 +39,7 @@ fn unique_values(c: col.Col, nrows: Int) -> List<String>:
 // Only supports Int values_col for now.
 // ---------------------------------------------------------------------------
 
-+fn pivot(t: table.Table, index_col: String, columns_col: String, values_col: String) -> Result<table.Table, table.DatoError>:
+pub fn pivot(t: table.Table, index_col: String, columns_col: String, values_col: String) -> Result<table.Table, table.DatoError> {
     pon idx_ci: Int = table.col_index(t, index_col)
     si idx_ci < 0 { da Err(ColumnNotFound("Pivot index column '" + index_col + "' not found")) }
     pon col_ci: Int = table.col_index(t, columns_col)
@@ -59,42 +63,50 @@ fn unique_values(c: col.Col, nrows: Int) -> List<String>:
     // Build value columns (one per unique column key)
     pon mut value_cols: List<col.Col> = []
     pon mut cci: Int = 0
-    mien cci < ncol_keys:
+    mien cci < ncol_keys {
         // Initialize with zeros and null mask
         pon mut data: List<Int> = []
         pon mut mask: List<Bool> = []
         pon mut ri: Int = 0
-        mien ri < nrow_keys:
+        mien ri < nrow_keys {
             data = data + [0]
             mask = mask + [false]
             ri = ri + 1
+        }
 
         // Fill in values from source rows
         pon mut si: Int = 0
-        mien si < t.nrows:
+        mien si < t.nrows {
             pon src_col_val: String = col_c.strs[si]
-            si src_col_val == col_keys[cci]:
+            si src_col_val == col_keys[cci] {
                 pon src_idx_val: String = idx_c.strs[si]
                 // Find row index
                 pon mut rki: Int = 0
-                mien rki < nrow_keys:
-                    si row_keys[rki] == src_idx_val:
+                mien rki < nrow_keys {
+                    si row_keys[rki] == src_idx_val {
                         data[rki] = col.get_int(val_c, si)
                         mask[rki] = true
+                    }
                     rki = rki + 1
+                }
+            }
             si = si + 1
+        }
 
         value_cols = value_cols + [col.col_i64_masked(col_keys[cci], data, mask)]
         cci = cci + 1
+    }
 
     // Combine: index column + value columns
     pon mut out_cols: List<col.Col> = [index_out]
     pon mut vi: Int = 0
-    mien vi < ncol_keys:
+    mien vi < ncol_keys {
         out_cols = out_cols + [value_cols[vi]]
         vi = vi + 1
+    }
 
     da Ok(table.table_unchecked(out_cols, nrow_keys))
+}
 
 // ---------------------------------------------------------------------------
 // melt — long format
@@ -105,28 +117,32 @@ fn unique_values(c: col.Col, nrows: Int) -> List<String>:
 // Only supports Int value columns for now.
 // ---------------------------------------------------------------------------
 
-+fn melt(t: table.Table, id_vars: List<String>, value_vars: List<String>) -> Result<table.Table, table.DatoError>:
+pub fn melt(t: table.Table, id_vars: List<String>, value_vars: List<String>) -> Result<table.Table, table.DatoError> {
     pon n_id: Int = len(id_vars)
     pon n_val: Int = len(value_vars)
 
     // Validate all columns exist
     pon mut vi: Int = 0
-    mien vi < n_id:
-        si table.col_index(t, id_vars[vi]) < 0:
+    mien vi < n_id {
+        si table.col_index(t, id_vars[vi]) < 0 {
             da Err(ColumnNotFound("Melt id column '" + id_vars[vi] + "' not found"))
+        }
         vi = vi + 1
+    }
     pon mut vvi: Int = 0
-    mien vvi < n_val:
-        si table.col_index(t, value_vars[vvi]) < 0:
+    mien vvi < n_val {
+        si table.col_index(t, value_vars[vvi]) < 0 {
             da Err(ColumnNotFound("Melt value column '" + value_vars[vvi] + "' not found"))
+        }
         vvi = vvi + 1
+    }
 
     pon out_nrows: Int = t.nrows * n_val
 
     // Build id columns (repeated n_val times)
     pon mut out_id_cols: List<col.Col> = []
     pon mut ici: Int = 0
-    mien ici < n_id:
+    mien ici < n_id {
         pon src_ci: Int = table.col_index(t, id_vars[ici])
         pon src_c: col.Col = t.cols[src_ci]
         pon mut new_strs: List<String> = []
@@ -136,57 +152,68 @@ fn unique_values(c: col.Col, nrows: Int) -> List<String>:
         pon mut new_mask: List<Bool> = []
 
         pon mut vj: Int = 0
-        mien vj < n_val:
+        mien vj < n_val {
             pon mut ri: Int = 0
-            mien ri < t.nrows:
+            mien ri < t.nrows {
                 new_mask = new_mask + [src_c.mask[ri]]
-                match src_c.dtype:
+                match src_c.dtype {
                     I64 => { new_ints = new_ints + [src_c.ints[ri]] },
                     F64 => { new_floats = new_floats + [src_c.floats[ri]] },
                     Str => { new_strs = new_strs + [src_c.strs[ri]] },
                     Bool => { new_bools = new_bools + [src_c.bools[ri]] },
                     Null => {}
+                }
                 ri = ri + 1
+            }
             vj = vj + 1
+        }
 
         pon out_c: col.Col = new col.Col { name: src_c.name, dtype: src_c.dtype, ints: new_ints, floats: new_floats, strs: new_strs, bools: new_bools, mask: new_mask }
         out_id_cols = out_id_cols + [out_c]
         ici = ici + 1
+    }
 
     // Build "variable" column — name of the source value column
     pon mut var_data: List<String> = []
     pon mut vk: Int = 0
-    mien vk < n_val:
+    mien vk < n_val {
         pon mut ri: Int = 0
-        mien ri < t.nrows:
+        mien ri < t.nrows {
             var_data = var_data + [value_vars[vk]]
             ri = ri + 1
+        }
         vk = vk + 1
+    }
     pon var_col: col.Col = col.col_str("variable", var_data)
 
     // Build "value" column — actual values from each value column
     pon mut val_ints: List<Int> = []
     pon mut val_mask: List<Bool> = []
     pon mut vl: Int = 0
-    mien vl < n_val:
+    mien vl < n_val {
         pon src_ci: Int = table.col_index(t, value_vars[vl])
         pon src_c: col.Col = t.cols[src_ci]
         pon mut ri: Int = 0
-        mien ri < t.nrows:
+        mien ri < t.nrows {
             val_mask = val_mask + [src_c.mask[ri]]
-            match src_c.dtype:
+            match src_c.dtype {
                 I64 => { val_ints = val_ints + [src_c.ints[ri]] },
                 _ => { val_ints = val_ints + [0] }
+            }
             ri = ri + 1
+        }
         vl = vl + 1
+    }
     pon val_col: col.Col = col.col_i64_masked("value", val_ints, val_mask)
 
     // Combine all output columns
     pon mut out_cols: List<col.Col> = []
     pon mut oi: Int = 0
-    mien oi < n_id:
+    mien oi < n_id {
         out_cols = out_cols + [out_id_cols[oi]]
         oi = oi + 1
+    }
     out_cols = out_cols + [var_col, val_col]
 
     da Ok(table.table_unchecked(out_cols, out_nrows))
+}

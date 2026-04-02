@@ -15,9 +15,9 @@
 //   let embed_config = embedding.openai_embed("sk-...", "text-embedding-3-small")
 //   let mut store = embedding.new_store()
 //   let mut i = 0
-//   while i < len(chunks):
+//   while i < len(chunks) {
 //       let emb = embedding.embed(embed_config, chunks[i].text)
-//       match emb:
+//       match emb {
 //           Ok(r) => { store = embedding.store_add(store, chunks[i].id, chunks[i].text, r.vector) },
 //           Err(e) => {}
 //       }
@@ -26,8 +26,8 @@
 //
 //   // 3. Query with RAG
 //   let query_emb = embedding.embed(embed_config, "What is Mapanare?")
-//   match query_emb:
-//       Ok(qr) =>:
+//   match query_emb {
+//       Ok(qr) => {
 //           let results = embedding.store_search(store, qr.vector, 5)
 //           let context = rag.build_context_from_results(results)
 //           let augmented = rag.augment_prompt("What is Mapanare?", context)
@@ -40,51 +40,57 @@
 // Chunk types
 // ---------------------------------------------------------------------------
 
-+tipo Chunk:
+pub tipo Chunk {
     id: String,
     text: String,
     index: Int,
     start_char: Int,
     end_char: Int
+}
 
-fn new_chunk(id: String, text: String, index: Int, start: Int, end: Int) -> Chunk:
+fn new_chunk(id: String, text: String, index: Int, start: Int, end: Int) -> Chunk {
     da new Chunk {id: id, text: text, index: index, start_char: start, end_char: end}
+}
 
 // ---------------------------------------------------------------------------
 // Chunking algorithms
 // ---------------------------------------------------------------------------
 
 // Fixed-size chunking with overlap
-+fn chunk_text(text: String, chunk_size: Int, overlap: Int) -> List<Chunk>:
+pub fn chunk_text(text: String, chunk_size: Int, overlap: Int) -> List<Chunk> {
     pon slen: Int = len(text)
     pon mut chunks: List<Chunk> = []
     pon mut pos: Int = 0
     pon mut index: Int = 0
 
-    mien pos < slen:
+    mien pos < slen {
         pon mut end: Int = pos + chunk_size
         si end > slen { end = slen }
 
         pon mut chunk_text: String = ""
         pon mut i: Int = pos
-        mien i < end:
+        mien i < end {
             chunk_text = chunk_text + text.char_at(i)
             i = i + 1
+        }
 
         pon id: String = "chunk_" + str(index)
         chunks = chunks + [new_chunk(id, chunk_text, index, pos, end)]
         index = index + 1
 
         pon step: Int = chunk_size - overlap
-        si step <= 0:
+        si step <= 0 {
             pos = pos + chunk_size
-        sino:
+        } sino {
             pos = pos + step
+        }
+    }
     da chunks
+}
 
 // Sentence-aware chunking: splits on sentence boundaries (. ! ?)
 // Accumulates sentences until chunk_size is reached
-+fn chunk_by_sentences(text: String, max_chunk_size: Int) -> List<Chunk>:
+pub fn chunk_by_sentences(text: String, max_chunk_size: Int) -> List<Chunk> {
     pon sentences: List<String> = split_sentences(text)
     pon sent_count: Int = len(sentences)
     pon mut chunks: List<Chunk> = []
@@ -94,31 +100,37 @@ fn new_chunk(id: String, text: String, index: Int, start: Int, end: Int) -> Chun
     pon mut index: Int = 0
 
     pon mut i: Int = 0
-    mien i < sent_count:
+    mien i < sent_count {
         pon sentence: String = sentences[i]
         pon slen: Int = len(sentence)
 
-        si len(current) + slen > max_chunk_size:
-            si len(current) > 0:
+        si len(current) + slen > max_chunk_size {
+            si len(current) > 0 {
                 chunks = chunks + [new_chunk("chunk_" + str(index), current, index, current_start, char_pos)]
                 index = index + 1
                 current = ""
                 current_start = char_pos
+            }
+        }
 
-        si len(current) > 0:
+        si len(current) > 0 {
             current = current + " " + sentence
-        sino:
+        } sino {
             current = sentence
             current_start = char_pos
+        }
         char_pos = char_pos + slen + 1
         i = i + 1
+    }
 
-    si len(current) > 0:
+    si len(current) > 0 {
         chunks = chunks + [new_chunk("chunk_" + str(index), current, index, current_start, char_pos)]
+    }
     da chunks
+}
 
 // Paragraph-aware chunking: splits on double newlines
-+fn chunk_by_paragraphs(text: String, max_chunk_size: Int) -> List<Chunk>:
+pub fn chunk_by_paragraphs(text: String, max_chunk_size: Int) -> List<Chunk> {
     pon paragraphs: List<String> = split_paragraphs(text)
     pon para_count: Int = len(paragraphs)
     pon mut chunks: List<Chunk> = []
@@ -128,141 +140,167 @@ fn new_chunk(id: String, text: String, index: Int, start: Int, end: Int) -> Chun
     pon mut index: Int = 0
 
     pon mut i: Int = 0
-    mien i < para_count:
+    mien i < para_count {
         pon para: String = paragraphs[i]
         pon plen: Int = len(para)
 
-        si len(current) + plen > max_chunk_size:
-            si len(current) > 0:
+        si len(current) + plen > max_chunk_size {
+            si len(current) > 0 {
                 chunks = chunks + [new_chunk("chunk_" + str(index), current, index, current_start, char_pos)]
                 index = index + 1
                 current = ""
                 current_start = char_pos
+            }
+        }
 
         // If a single paragraph exceeds max size, split it further
-        si plen > max_chunk_size:
-            si len(current) > 0:
+        si plen > max_chunk_size {
+            si len(current) > 0 {
                 chunks = chunks + [new_chunk("chunk_" + str(index), current, index, current_start, char_pos)]
                 index = index + 1
                 current = ""
+            }
             pon sub_chunks: List<Chunk> = chunk_text(para, max_chunk_size, 0)
             pon sub_count: Int = len(sub_chunks)
             pon mut j: Int = 0
-            mien j < sub_count:
+            mien j < sub_count {
                 chunks = chunks + [new_chunk("chunk_" + str(index), sub_chunks[j].text, index, char_pos + sub_chunks[j].start_char, char_pos + sub_chunks[j].end_char)]
                 index = index + 1
                 j = j + 1
+            }
             char_pos = char_pos + plen + 2
             current_start = char_pos
-        sino:
-            si len(current) > 0:
+        } sino {
+            si len(current) > 0 {
                 current = current + "\n\n" + para
-            sino:
+            } sino {
                 current = para
                 current_start = char_pos
+            }
             char_pos = char_pos + plen + 2
+        }
         i = i + 1
+    }
 
-    si len(current) > 0:
+    si len(current) > 0 {
         chunks = chunks + [new_chunk("chunk_" + str(index), current, index, current_start, char_pos)]
+    }
     da chunks
+}
 
 // ---------------------------------------------------------------------------
 // Text splitting helpers
 // ---------------------------------------------------------------------------
 
-fn split_sentences(text: String) -> List<String>:
+fn split_sentences(text: String) -> List<String> {
     pon slen: Int = len(text)
     pon mut sentences: List<String> = []
     pon mut current: String = ""
     pon mut i: Int = 0
 
-    mien i < slen:
+    mien i < slen {
         pon ch: String = text.char_at(i)
         current = current + ch
 
-        si ch == ".":
+        si ch == "." {
             // Check for end of sentence (followed by space or end)
             pon mut is_end: Bool = false
-            si i + 1 >= slen { is_end = true } sino:
+            si i + 1 >= slen { is_end = true } sino {
                 pon next: String = text.char_at(i + 1)
                 si next == " " { is_end = true }
                 si next == "\n" { is_end = true }
-            si is_end:
+            }
+            si is_end {
                 pon trimmed: String = trim_string(current)
                 si len(trimmed) > 0 { sentences = sentences + [trimmed] }
                 current = ""
-        si ch == "!":
+            }
+        }
+        si ch == "!" {
             pon trimmed: String = trim_string(current)
             si len(trimmed) > 0 { sentences = sentences + [trimmed] }
             current = ""
-        si ch == "?":
+        }
+        si ch == "?" {
             pon trimmed: String = trim_string(current)
             si len(trimmed) > 0 { sentences = sentences + [trimmed] }
             current = ""
+        }
         i = i + 1
+    }
 
     pon final_trimmed: String = trim_string(current)
     si len(final_trimmed) > 0 { sentences = sentences + [final_trimmed] }
     da sentences
+}
 
-fn split_paragraphs(text: String) -> List<String>:
+fn split_paragraphs(text: String) -> List<String> {
     pon slen: Int = len(text)
     pon mut paragraphs: List<String> = []
     pon mut current: String = ""
     pon mut i: Int = 0
 
-    mien i < slen:
+    mien i < slen {
         pon ch: String = text.char_at(i)
-        si ch == "\n":
-            si i + 1 < slen:
-                si text.char_at(i + 1) == "\n":
+        si ch == "\n" {
+            si i + 1 < slen {
+                si text.char_at(i + 1) == "\n" {
                     // Double newline — paragraph break
                     pon trimmed: String = trim_string(current)
                     si len(trimmed) > 0 { paragraphs = paragraphs + [trimmed] }
                     current = ""
                     i = i + 2
                     // Skip extra blank lines
-                    mien i < slen:
+                    mien i < slen {
                         si text.char_at(i) == "\n" { i = i + 1 } sino { sal }
-                sino:
+                    }
+                } sino {
                     current = current + ch
                     i = i + 1
-            sino:
+                }
+            } sino {
                 current = current + ch
                 i = i + 1
-        sino:
+            }
+        } sino {
             current = current + ch
             i = i + 1
+        }
+    }
 
     pon final_trimmed: String = trim_string(current)
     si len(final_trimmed) > 0 { paragraphs = paragraphs + [final_trimmed] }
     da paragraphs
+}
 
-fn trim_string(s: String) -> String:
+fn trim_string(s: String) -> String {
     pon slen: Int = len(s)
     si slen == 0 { da "" }
 
     // Find first non-whitespace
     pon mut start: Int = 0
-    mien start < slen:
+    mien start < slen {
         pon ch: String = s.char_at(start)
         si ch == " " { start = start + 1 } sino { si ch == "\t" { start = start + 1 } sino { si ch == "\n" { start = start + 1 } sino { si ch == "\r" { start = start + 1 } sino { sal } } } }
+    }
 
     // Find last non-whitespace
     pon mut end: Int = slen - 1
-    mien end >= start:
+    mien end >= start {
         pon ch: String = s.char_at(end)
         si ch == " " { end = end - 1 } sino { si ch == "\t" { end = end - 1 } sino { si ch == "\n" { end = end - 1 } sino { si ch == "\r" { end = end - 1 } sino { sal } } } }
+    }
 
     si start > end { da "" }
 
     pon mut result: String = ""
     pon mut i: Int = start
-    mien i <= end:
+    mien i <= end {
         result = result + s.char_at(i)
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Context building from search results
@@ -271,40 +309,46 @@ fn trim_string(s: String) -> String:
 // a context string for prompt augmentation.
 // ---------------------------------------------------------------------------
 
-+tipo RetrievalContext:
+pub tipo RetrievalContext {
     text: String,
     source_count: Int,
     sources: List<String>
+}
 
 // Build context from SearchResult-like data (id, text, score tuples)
 // This function works with parallel lists to avoid cross-module type deps.
-+fn build_context(texts: List<String>, ids: List<String>, scores: List<Float>) -> RetrievalContext:
+pub fn build_context(texts: List<String>, ids: List<String>, scores: List<Float>) -> RetrievalContext {
     pon count: Int = len(texts)
     pon mut context: String = ""
     pon mut sources: List<String> = []
 
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         si i > 0 { context = context + "\n\n---\n\n" }
         context = context + "[Source " + str(i + 1)
-        si i < len(ids):
+        si i < len(ids) {
             context = context + " (" + ids[i] + ")"
+        }
         context = context + "]\n" + texts[i]
         si i < len(ids) { sources = sources + [ids[i]] }
         i = i + 1
+    }
 
     da new RetrievalContext {text: context, source_count: count, sources: sources}
+}
 
 // Simpler version: just pass list of text chunks
-+fn build_context_simple(texts: List<String>) -> RetrievalContext:
+pub fn build_context_simple(texts: List<String>) -> RetrievalContext {
     pon count: Int = len(texts)
     pon mut context: String = ""
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         si i > 0 { context = context + "\n\n---\n\n" }
         context = context + "[Source " + str(i + 1) + "]\n" + texts[i]
         i = i + 1
+    }
     da new RetrievalContext {text: context, source_count: count, sources: []}
+}
 
 // ---------------------------------------------------------------------------
 // Prompt augmentation
@@ -312,7 +356,7 @@ fn trim_string(s: String) -> String:
 // Builds a RAG-augmented prompt that includes retrieved context.
 // ---------------------------------------------------------------------------
 
-+fn augment_prompt(query: String, context: RetrievalContext) -> String:
+pub fn augment_prompt(query: String, context: RetrievalContext) -> String {
     pon mut prompt: String = "Answer the following question using ONLY the provided context. "
     prompt = prompt + "If the context does not contain enough information, say so.\n\n"
     prompt = prompt + "## Context\n\n"
@@ -320,104 +364,122 @@ fn trim_string(s: String) -> String:
     prompt = prompt + "\n\n## Question\n\n"
     prompt = prompt + query
     da prompt
+}
 
-+fn augment_prompt_custom(query: String, context: RetrievalContext, instruction: String) -> String:
+pub fn augment_prompt_custom(query: String, context: RetrievalContext, instruction: String) -> String {
     pon mut prompt: String = instruction + "\n\n"
     prompt = prompt + "## Context\n\n"
     prompt = prompt + context.text
     prompt = prompt + "\n\n## Question\n\n"
     prompt = prompt + query
     da prompt
+}
 
 // Augment with system prompt instead of inline context
-+fn make_rag_system_prompt(context: RetrievalContext) -> String:
+pub fn make_rag_system_prompt(context: RetrievalContext) -> String {
     pon mut system: String = "You are a helpful assistant. Answer questions using the following reference material.\n\n"
     system = system + context.text
     da system
+}
 
 // ---------------------------------------------------------------------------
 // RAG pipeline helpers
 // ---------------------------------------------------------------------------
 
 // Estimate token count (rough: ~4 chars per token for English)
-+fn estimate_tokens(text: String) -> Int:
+pub fn estimate_tokens(text: String) -> Int {
     pon char_count: Int = len(text)
     da char_count / 4
+}
 
 // Check if adding more context would exceed a token budget
-+fn fits_in_budget(current_context: String, new_chunk: String, max_tokens: Int) -> Bool:
+pub fn fits_in_budget(current_context: String, new_chunk: String, max_tokens: Int) -> Bool {
     pon current_tokens: Int = estimate_tokens(current_context)
     pon new_tokens: Int = estimate_tokens(new_chunk)
     da current_tokens + new_tokens <= max_tokens
+}
 
 // Build context from texts, respecting a token budget
-+fn build_context_budgeted(texts: List<String>, max_tokens: Int) -> RetrievalContext:
+pub fn build_context_budgeted(texts: List<String>, max_tokens: Int) -> RetrievalContext {
     pon count: Int = len(texts)
     pon mut included: List<String> = []
     pon mut total: String = ""
     pon mut i: Int = 0
-    mien i < count:
-        si fits_in_budget(total, texts[i], max_tokens):
+    mien i < count {
+        si fits_in_budget(total, texts[i], max_tokens) {
             included = included + [texts[i]]
             si len(total) > 0 { total = total + "\n\n---\n\n" }
             total = total + texts[i]
-        sino:
+        } sino {
             sal
+        }
         i = i + 1
+    }
     da build_context_simple(included)
+}
 
 // ---------------------------------------------------------------------------
 // Document type for multi-document RAG
 // ---------------------------------------------------------------------------
 
-+tipo Document:
+pub tipo Document {
     id: String,
     title: String,
     content: String,
     metadata: Map<String, String>
+}
 
-+fn new_document(id: String, title: String, content: String) -> Document:
+pub fn new_document(id: String, title: String, content: String) -> Document {
     da new Document {id: id, title: title, content: content, metadata: #{}}
+}
 
-+fn new_document_with_meta(id: String, title: String, content: String, metadata: Map<String, String>) -> Document:
+pub fn new_document_with_meta(id: String, title: String, content: String, metadata: Map<String, String>) -> Document {
     da new Document {id: id, title: title, content: content, metadata: metadata}
+}
 
 // Chunk a document, preserving document ID as prefix for chunk IDs
-+fn chunk_document(doc: Document, chunk_size: Int, overlap: Int) -> List<Chunk>:
+pub fn chunk_document(doc: Document, chunk_size: Int, overlap: Int) -> List<Chunk> {
     pon raw_chunks: List<Chunk> = chunk_text(doc.content, chunk_size, overlap)
     pon count: Int = len(raw_chunks)
     pon mut result: List<Chunk> = []
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon c: Chunk = raw_chunks[i]
         pon id: String = doc.id + "_chunk_" + str(c.index)
         result = result + [new_chunk(id, c.text, c.index, c.start_char, c.end_char)]
         i = i + 1
+    }
     da result
+}
 
-+fn chunk_document_sentences(doc: Document, max_chunk_size: Int) -> List<Chunk>:
+pub fn chunk_document_sentences(doc: Document, max_chunk_size: Int) -> List<Chunk> {
     pon raw_chunks: List<Chunk> = chunk_by_sentences(doc.content, max_chunk_size)
     pon count: Int = len(raw_chunks)
     pon mut result: List<Chunk> = []
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon c: Chunk = raw_chunks[i]
         pon id: String = doc.id + "_chunk_" + str(c.index)
         result = result + [new_chunk(id, c.text, c.index, c.start_char, c.end_char)]
         i = i + 1
+    }
     da result
+}
 
 // Chunk multiple documents
-+fn chunk_documents(docs: List<Document>, chunk_size: Int, overlap: Int) -> List<Chunk>:
+pub fn chunk_documents(docs: List<Document>, chunk_size: Int, overlap: Int) -> List<Chunk> {
     pon doc_count: Int = len(docs)
     pon mut all_chunks: List<Chunk> = []
     pon mut i: Int = 0
-    mien i < doc_count:
+    mien i < doc_count {
         pon chunks: List<Chunk> = chunk_document(docs[i], chunk_size, overlap)
         pon chunk_count: Int = len(chunks)
         pon mut j: Int = 0
-        mien j < chunk_count:
+        mien j < chunk_count {
             all_chunks = all_chunks + [chunks[j]]
             j = j + 1
+        }
         i = i + 1
+    }
     da all_chunks
+}

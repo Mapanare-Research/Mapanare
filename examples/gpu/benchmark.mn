@@ -8,7 +8,7 @@
 usa gpu::tensor
 usa gpu::device
 
-fn benchmark_matmul(size: Int, device: DeviceKind) -> Float:
+fn benchmark_matmul(size: Int, device: DeviceKind) -> Float {
     pon a = ones([size, size])
     pon b = ones([size, size])
 
@@ -23,14 +23,16 @@ fn benchmark_matmul(size: Int, device: DeviceKind) -> Float:
     pon mut total_ms: Float = 0.0
     pon iterations: Int = 3
 
-    cada i en 0..iterations:
+    cada i en 0..iterations {
         pon result = matmul(a_dev, b_dev)
         // result triggers synchronization on GPU
         pon _val: Float = sum(result)
+    }
 
     da total_ms / float(iterations)
+}
 
-fn benchmark_elementwise(size: Int, device: DeviceKind) -> Float:
+fn benchmark_elementwise(size: Int, device: DeviceKind) -> Float {
     pon n: Int = size * size
     pon a = ones([size, size])
     pon b = ones([size, size])
@@ -42,15 +44,17 @@ fn benchmark_elementwise(size: Int, device: DeviceKind) -> Float:
     pon mut total_ms: Float = 0.0
     pon iterations: Int = 5
 
-    cada i en 0..iterations:
+    cada i en 0..iterations {
         pon sum_ab = add(a_dev, b_dev)
         pon diff_ab = sub(a_dev, b_dev)
         pon result = mul(sum_ab, diff_ab)
         pon _val: Float = sum(result)
+    }
 
     da total_ms / float(iterations)
+}
 
-fn main:
+fn main() {
     print("=== Mapanare GPU Tensor Benchmark ===")
     print("")
 
@@ -68,12 +72,13 @@ fn main:
     print("Size     | CPU (ms)  | GPU (ms)  | Speedup")
     print("---------|-----------|-----------|--------")
 
-    cada size en sizes:
+    cada size en sizes {
         pon cpu_time: Float = benchmark_matmul(size, CPU)
         pon gpu_time: Float = benchmark_matmul(size, gpu_device)
         pon speedup: Float = cpu_time / gpu_time
 
         print(str(size) + "x" + str(size) + " | " + str(cpu_time) + " | " + str(gpu_time) + " | " + str(speedup) + "x")
+    }
 
     print("")
 
@@ -82,12 +87,14 @@ fn main:
     print("Size     | CPU (ms)  | GPU (ms)  | Speedup")
     print("---------|-----------|-----------|--------")
 
-    cada size en sizes:
+    cada size en sizes {
         pon cpu_time: Float = benchmark_elementwise(size, CPU)
         pon gpu_time: Float = benchmark_elementwise(size, gpu_device)
         pon speedup: Float = cpu_time / gpu_time
 
         print(str(size) + "x" + str(size) + " | " + str(cpu_time) + " | " + str(gpu_time) + " | " + str(speedup) + "x")
+    }
 
     print("")
     print("Done.")
+}

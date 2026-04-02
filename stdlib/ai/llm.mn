@@ -8,7 +8,7 @@
 //
 //   let config = llm.openai("sk-...", "gpt-4o")
 //   let resp = llm.chat(config, [llm.user_msg("What is Mapanare?")])
-//   match resp:
+//   match resp {
 //       Ok(r) => { print(r.content) },
 //       Err(e) => { print(llm.error_message(e)) }
 //   }
@@ -43,45 +43,51 @@ usa text::string_utils
 // Provider enum
 // ---------------------------------------------------------------------------
 
-+tipo Provider:
+pub tipo Provider {
     | OpenAI
     | Anthropic
     | Groq
     | Ollama
     | Custom
+}
 
-fn provider_to_string(p: Provider) -> String:
-    match p:
+fn provider_to_string(p: Provider) -> String {
+    match p {
         OpenAI => { da "openai" },
         Anthropic => { da "anthropic" },
         Groq => { da "groq" },
         Ollama => { da "ollama" },
         Custom => { da "custom" }
+    }
     da "unknown"
+}
 
 // ---------------------------------------------------------------------------
 // Message role enum
 // ---------------------------------------------------------------------------
 
-+tipo Role:
+pub tipo Role {
     | System
     | User
     | Assistant
     | Tool
+}
 
-fn role_to_string(r: Role) -> String:
-    match r:
+fn role_to_string(r: Role) -> String {
+    match r {
         System => { da "system" },
         User => { da "user" },
         Assistant => { da "assistant" },
         Tool => { da "tool" }
+    }
     da "user"
+}
 
 // ---------------------------------------------------------------------------
 // Error enum
 // ---------------------------------------------------------------------------
 
-+tipo LLMError:
+pub tipo LLMError {
     | ApiError(String)
     | NetworkError(String)
     | ParseError(String)
@@ -89,30 +95,38 @@ fn role_to_string(r: Role) -> String:
     | RateLimited(String)
     | InvalidRequest(String)
     | Timeout(String)
+}
 
-fn new_api_error(msg: String) -> LLMError:
+fn new_api_error(msg: String) -> LLMError {
     da ApiError(msg)
+}
 
-fn new_network_error(msg: String) -> LLMError:
+fn new_network_error(msg: String) -> LLMError {
     da NetworkError(msg)
+}
 
-fn new_parse_error(msg: String) -> LLMError:
+fn new_parse_error(msg: String) -> LLMError {
     da ParseError(msg)
+}
 
-fn new_auth_error(msg: String) -> LLMError:
+fn new_auth_error(msg: String) -> LLMError {
     da AuthError(msg)
+}
 
-fn new_rate_limit_error(msg: String) -> LLMError:
+fn new_rate_limit_error(msg: String) -> LLMError {
     da RateLimited(msg)
+}
 
-fn new_invalid_request(msg: String) -> LLMError:
+fn new_invalid_request(msg: String) -> LLMError {
     da InvalidRequest(msg)
+}
 
-fn new_timeout_error(msg: String) -> LLMError:
+fn new_timeout_error(msg: String) -> LLMError {
     da Timeout(msg)
+}
 
-+fn error_message(e: LLMError) -> String:
-    match e:
+pub fn error_message(e: LLMError) -> String {
+    match e {
         ApiError(msg) => { da "API error: " + msg },
         NetworkError(msg) => { da "Network error: " + msg },
         ParseError(msg) => { da "Parse error: " + msg },
@@ -120,82 +134,98 @@ fn new_timeout_error(msg: String) -> LLMError:
         RateLimited(msg) => { da "Rate limited: " + msg },
         InvalidRequest(msg) => { da "Invalid request: " + msg },
         Timeout(msg) => { da "Timeout: " + msg }
+    }
     da "Unknown error"
+}
 
 // ---------------------------------------------------------------------------
 // Chat message
 // ---------------------------------------------------------------------------
 
-+tipo ChatMessage:
+pub tipo ChatMessage {
     role: Role,
     content: String
+}
 
-+fn system_msg(content: String) -> ChatMessage:
+pub fn system_msg(content: String) -> ChatMessage {
     da new ChatMessage {role: System(), content: content}
+}
 
-+fn user_msg(content: String) -> ChatMessage:
+pub fn user_msg(content: String) -> ChatMessage {
     da new ChatMessage {role: User(), content: content}
+}
 
-+fn assistant_msg(content: String) -> ChatMessage:
+pub fn assistant_msg(content: String) -> ChatMessage {
     da new ChatMessage {role: Assistant(), content: content}
+}
 
-+fn tool_msg(content: String) -> ChatMessage:
+pub fn tool_msg(content: String) -> ChatMessage {
     da new ChatMessage {role: Tool(), content: content}
+}
 
 // ---------------------------------------------------------------------------
 // Token usage
 // ---------------------------------------------------------------------------
 
-+tipo TokenUsage:
+pub tipo TokenUsage {
     input_tokens: Int,
     output_tokens: Int,
     total_tokens: Int
+}
 
-fn new_token_usage(input: Int, output: Int) -> TokenUsage:
+fn new_token_usage(input: Int, output: Int) -> TokenUsage {
     da new TokenUsage {input_tokens: input, output_tokens: output, total_tokens: input + output}
+}
 
-fn empty_usage() -> TokenUsage:
+fn empty_usage() -> TokenUsage {
     da new TokenUsage {input_tokens: 0, output_tokens: 0, total_tokens: 0}
+}
 
 // ---------------------------------------------------------------------------
 // LLM response
 // ---------------------------------------------------------------------------
 
-+tipo LLMResponse:
+pub tipo LLMResponse {
     content: String,
     model: String,
     usage: TokenUsage,
     finish_reason: String,
     raw_body: String
+}
 
-fn new_llm_response(content: String, model: String, usage: TokenUsage, finish_reason: String, raw: String) -> LLMResponse:
+fn new_llm_response(content: String, model: String, usage: TokenUsage, finish_reason: String, raw: String) -> LLMResponse {
     da new LLMResponse {content: content, model: model, usage: usage, finish_reason: finish_reason, raw_body: raw}
+}
 
 // ---------------------------------------------------------------------------
 // Tool definition (for function calling)
 // ---------------------------------------------------------------------------
 
-+tipo ToolDef:
+pub tipo ToolDef {
     name: String,
     description: String,
     parameters_json: String
+}
 
-+fn tool(name: String, description: String, params_json: String) -> ToolDef:
+pub fn tool(name: String, description: String, params_json: String) -> ToolDef {
     da new ToolDef {name: name, description: description, parameters_json: params_json}
+}
 
-+tipo ToolCall:
+pub tipo ToolCall {
     id: String,
     name: String,
     arguments: String
+}
 
-fn new_tool_call(id: String, name: String, args: String) -> ToolCall:
+fn new_tool_call(id: String, name: String, args: String) -> ToolCall {
     da new ToolCall {id: id, name: name, arguments: args}
+}
 
 // ---------------------------------------------------------------------------
 // LLM configuration
 // ---------------------------------------------------------------------------
 
-+tipo LLMConfig:
+pub tipo LLMConfig {
     provider: Provider,
     api_key: String,
     model: String,
@@ -209,79 +239,95 @@ fn new_tool_call(id: String, name: String, args: String) -> ToolCall:
     timeout_ms: Int,
     tools: List<ToolDef>,
     has_tools: Bool
+}
 
-fn new_config(prov: Provider, key: String, model: String, host: String, port: Int, path: String) -> LLMConfig:
+fn new_config(prov: Provider, key: String, model: String, host: String, port: Int, path: String) -> LLMConfig {
     da new LLMConfig {provider: prov, api_key: key, model: model, host: host, port: port, path: path, max_tokens: 4096, temperature: 0.7, system_prompt: "", has_system: false, timeout_ms: 120000, tools: [], has_tools: false}
+}
 
 // ---------------------------------------------------------------------------
 // Provider config constructors
 // ---------------------------------------------------------------------------
 
-+fn openai(api_key: String, model: String) -> LLMConfig:
+pub fn openai(api_key: String, model: String) -> LLMConfig {
     da new_config(OpenAI(), api_key, model, "api.openai.com", 443, "/v1/chat/completions")
+}
 
-+fn anthropic(api_key: String, model: String) -> LLMConfig:
+pub fn anthropic(api_key: String, model: String) -> LLMConfig {
     da new_config(Anthropic(), api_key, model, "api.anthropic.com", 443, "/v1/messages")
+}
 
-+fn groq(api_key: String, model: String) -> LLMConfig:
+pub fn groq(api_key: String, model: String) -> LLMConfig {
     da new_config(Groq(), api_key, model, "api.groq.com", 443, "/openai/v1/chat/completions")
+}
 
-+fn ollama(model: String) -> LLMConfig:
+pub fn ollama(model: String) -> LLMConfig {
     da new_config(Ollama(), "", model, "localhost", 11434, "/api/chat")
+}
 
-+fn ollama_at(host: String, port: Int, model: String) -> LLMConfig:
+pub fn ollama_at(host: String, port: Int, model: String) -> LLMConfig {
     da new_config(Ollama(), "", model, host, port, "/api/chat")
+}
 
-+fn custom(base_host: String, port: Int, path: String, api_key: String, model: String) -> LLMConfig:
+pub fn custom(base_host: String, port: Int, path: String, api_key: String, model: String) -> LLMConfig {
     da new_config(Custom(), api_key, model, base_host, port, path)
+}
 
-+fn openai_compatible(host: String, port: Int, path: String, api_key: String, model: String) -> LLMConfig:
+pub fn openai_compatible(host: String, port: Int, path: String, api_key: String, model: String) -> LLMConfig {
     da new_config(OpenAI(), api_key, model, host, port, path)
+}
 
 // ---------------------------------------------------------------------------
 // Config modifiers (immutable — return new config)
 // ---------------------------------------------------------------------------
 
-+fn with_max_tokens(c: LLMConfig, max_tokens: Int) -> LLMConfig:
+pub fn with_max_tokens(c: LLMConfig, max_tokens: Int) -> LLMConfig {
     da new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: max_tokens, temperature: c.temperature, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: c.timeout_ms, tools: c.tools, has_tools: c.has_tools}
+}
 
-+fn with_temperature(c: LLMConfig, temp: Float) -> LLMConfig:
+pub fn with_temperature(c: LLMConfig, temp: Float) -> LLMConfig {
     da new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: temp, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: c.timeout_ms, tools: c.tools, has_tools: c.has_tools}
+}
 
-+fn with_system(c: LLMConfig, system: String) -> LLMConfig:
+pub fn with_system(c: LLMConfig, system: String) -> LLMConfig {
     da new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: c.temperature, system_prompt: system, has_system: true, timeout_ms: c.timeout_ms, tools: c.tools, has_tools: c.has_tools}
+}
 
-+fn with_timeout(c: LLMConfig, timeout_ms: Int) -> LLMConfig:
+pub fn with_timeout(c: LLMConfig, timeout_ms: Int) -> LLMConfig {
     da new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: c.temperature, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: timeout_ms, tools: c.tools, has_tools: c.has_tools}
+}
 
-+fn with_tools(c: LLMConfig, tools: List<ToolDef>) -> LLMConfig:
+pub fn with_tools(c: LLMConfig, tools: List<ToolDef>) -> LLMConfig {
     da new LLMConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, max_tokens: c.max_tokens, temperature: c.temperature, system_prompt: c.system_prompt, has_system: c.has_system, timeout_ms: c.timeout_ms, tools: tools, has_tools: true}
+}
 
 // ---------------------------------------------------------------------------
 // JSON string escaping (for building request bodies)
 // ---------------------------------------------------------------------------
 
-fn escape_json(s: String) -> String:
+fn escape_json(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si ch == "\"":
+        si ch == "\"" {
             result = result + "\\\""
-        } sino { si ch == "\\":
+        } sino { si ch == "\\" {
             result = result + "\\\\"
-        } sino { si ch == "\n":
+        } sino { si ch == "\n" {
             result = result + "\\n"
-        } sino { si ch == "\r":
+        } sino { si ch == "\r" {
             result = result + "\\r"
-        } sino { si ch == "\t":
+        } sino { si ch == "\t" {
             result = result + "\\t"
-        sino:
+        } sino {
             result = result + ch
         } } } } }
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // JSON field extraction (for parsing response bodies)
@@ -291,65 +337,80 @@ fn escape_json(s: String) -> String:
 // ---------------------------------------------------------------------------
 
 // Skip past a JSON value starting at pos. Returns position after the value.
-fn skip_json_value(text: String, pos: Int, slen: Int) -> Int:
+fn skip_json_value(text: String, pos: Int, slen: Int) -> Int {
     si pos >= slen { da pos }
     pon ch: String = text.char_at(pos)
 
     // String
-    si ch == "\"":
+    si ch == "\"" {
         pon mut p: Int = pos + 1
-        mien p < slen:
+        mien p < slen {
             pon sc: String = text.char_at(p)
-            si sc == "\\" { p = p + 2 } sino:
+            si sc == "\\" { p = p + 2 } sino {
                 si sc == "\"" { da p + 1 }
                 p = p + 1
+            }
+        }
         da p
+    }
 
     // Object
-    si ch == "{":
+    si ch == "{" {
         pon mut p: Int = pos + 1
         pon mut depth: Int = 1
-        mien p < slen:
+        mien p < slen {
             pon c: String = text.char_at(p)
-            si c == "\"":
+            si c == "\"" {
                 p = p + 1
-                mien p < slen:
+                mien p < slen {
                     pon sc: String = text.char_at(p)
-                    si sc == "\\" { p = p + 2 } sino:
+                    si sc == "\\" { p = p + 2 } sino {
                         si sc == "\"" { p = p + 1; sal }
                         p = p + 1
-            sino:
+                    }
+                }
+            } sino {
                 si c == "{" { depth = depth + 1 }
-                si c == "}":
+                si c == "}" {
                     depth = depth - 1
                     si depth == 0 { da p + 1 }
+                }
                 p = p + 1
+            }
+        }
         da p
+    }
 
     // Array
-    si ch == "[":
+    si ch == "[" {
         pon mut p: Int = pos + 1
         pon mut depth: Int = 1
-        mien p < slen:
+        mien p < slen {
             pon c: String = text.char_at(p)
-            si c == "\"":
+            si c == "\"" {
                 p = p + 1
-                mien p < slen:
+                mien p < slen {
                     pon sc: String = text.char_at(p)
-                    si sc == "\\" { p = p + 2 } sino:
+                    si sc == "\\" { p = p + 2 } sino {
                         si sc == "\"" { p = p + 1; sal }
                         p = p + 1
-            sino:
+                    }
+                }
+            } sino {
                 si c == "[" { depth = depth + 1 }
-                si c == "]":
+                si c == "]" {
                     depth = depth - 1
                     si depth == 0 { da p + 1 }
+                }
                 p = p + 1
+            }
+        }
         da p
+    }
 
     // Number, true, false, null — read until delimiter
     pon mut p: Int = pos
-    mien p < slen:
+    mien p < slen {
         pon c: String = text.char_at(p)
         si c == "," { da p }
         si c == "}" { da p }
@@ -359,24 +420,32 @@ fn skip_json_value(text: String, pos: Int, slen: Int) -> Int:
         si c == "\r" { da p }
         si c == "\t" { da p }
         p = p + 1
+    }
     da p
+}
 
 // Skip whitespace starting at pos
-fn skip_ws(text: String, pos: Int, slen: Int) -> Int:
+fn skip_ws(text: String, pos: Int, slen: Int) -> Int {
     pon mut p: Int = pos
-    mien p < slen:
+    mien p < slen {
         pon ch: String = text.char_at(p)
-        si ch == " " { p = p + 1 } sino:
-            si ch == "\t" { p = p + 1 } sino:
-                si ch == "\n" { p = p + 1 } sino:
-                    si ch == "\r" { p = p + 1 } sino:
+        si ch == " " { p = p + 1 } sino {
+            si ch == "\t" { p = p + 1 } sino {
+                si ch == "\n" { p = p + 1 } sino {
+                    si ch == "\r" { p = p + 1 } sino {
                         da p
+                    }
+                }
+            }
+        }
+    }
     da p
+}
 
 // Find the raw value string for a key in a JSON object.
 // text should be a JSON object string (starting with '{').
 // Returns the raw value substring, or "" if not found.
-fn jget(text: String, key: String) -> String:
+fn jget(text: String, key: String) -> String {
     pon slen: Int = len(text)
     pon mut pos: Int = 0
 
@@ -387,7 +456,7 @@ fn jget(text: String, key: String) -> String:
     pos = pos + 1
 
     pon mut iter: Int = 0
-    mien iter < 100000:
+    mien iter < 100000 {
         iter = iter + 1
         pos = skip_ws(text, pos, slen)
         si pos >= slen { da "" }
@@ -401,17 +470,20 @@ fn jget(text: String, key: String) -> String:
         si text.char_at(pos) != "\"" { da "" }
         pon key_start: Int = pos + 1
         pon mut kp: Int = pos + 1
-        mien kp < slen:
+        mien kp < slen {
             pon kc: String = text.char_at(kp)
-            si kc == "\\" { kp = kp + 2 } sino:
+            si kc == "\\" { kp = kp + 2 } sino {
                 si kc == "\"" { sal }
                 kp = kp + 1
+            }
+        }
         // Extract key text between key_start and kp
         pon mut found_key: String = ""
         pon mut ki: Int = key_start
-        mien ki < kp:
+        mien ki < kp {
             found_key = found_key + text.char_at(ki)
             ki = ki + 1
+        }
         pos = kp + 1
 
         // Skip whitespace and colon
@@ -425,20 +497,24 @@ fn jget(text: String, key: String) -> String:
         pon value_start: Int = pos
         pon value_end: Int = skip_json_value(text, pos, slen)
 
-        si found_key == key:
+        si found_key == key {
             // Extract value substring
             pon mut val: String = ""
             pon mut vi: Int = value_start
-            mien vi < value_end:
+            mien vi < value_end {
                 val = val + text.char_at(vi)
                 vi = vi + 1
+            }
             da val
+        }
 
         pos = value_end
+    }
     da ""
+}
 
 // Extract a string value (strips quotes and unescapes)
-fn jget_str(text: String, key: String) -> String:
+fn jget_str(text: String, key: String) -> String {
     pon raw: String = jget(text, key)
     pon rlen: Int = len(raw)
     si rlen < 2 { da "" }
@@ -446,32 +522,42 @@ fn jget_str(text: String, key: String) -> String:
 
     pon mut result: String = ""
     pon mut i: Int = 1
-    mien i < rlen:
+    mien i < rlen {
         pon ch: String = raw.char_at(i)
         si ch == "\"" { da result }
-        si ch == "\\":
+        si ch == "\\" {
             i = i + 1
-            si i < rlen:
+            si i < rlen {
                 pon esc: String = raw.char_at(i)
-                si esc == "\"" { result = result + "\"" } sino:
-                    si esc == "\\" { result = result + "\\" } sino:
-                        si esc == "n" { result = result + "\n" } sino:
-                            si esc == "t" { result = result + "\t" } sino:
-                                si esc == "r" { result = result + "\r" } sino:
+                si esc == "\"" { result = result + "\"" } sino {
+                    si esc == "\\" { result = result + "\\" } sino {
+                        si esc == "n" { result = result + "\n" } sino {
+                            si esc == "t" { result = result + "\t" } sino {
+                                si esc == "r" { result = result + "\r" } sino {
                                     result = result + esc
-        sino:
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } sino {
             result = result + ch
+        }
         i = i + 1
+    }
     da result
+}
 
 // Extract an integer value
-fn jget_int(text: String, key: String) -> Int:
+fn jget_int(text: String, key: String) -> Int {
     pon raw: String = jget(text, key)
     si len(raw) == 0 { da 0 }
     da string_utils.parse_int_manual(raw)
+}
 
 // Get the first element of a JSON array value
-fn jget_first(text: String, key: String) -> String:
+fn jget_first(text: String, key: String) -> String {
     pon raw: String = jget(text, key)
     pon rlen: Int = len(raw)
     si rlen < 2 { da "" }
@@ -486,13 +572,15 @@ fn jget_first(text: String, key: String) -> String:
     pon value_end: Int = skip_json_value(raw, pos, rlen)
     pon mut result: String = ""
     pon mut i: Int = value_start
-    mien i < value_end:
+    mien i < value_end {
         result = result + raw.char_at(i)
         i = i + 1
+    }
     da result
+}
 
 // Extract all elements of a JSON array value as raw strings
-fn jget_array_elements(text: String, key: String) -> List<String>:
+fn jget_array_elements(text: String, key: String) -> List<String> {
     pon raw: String = jget(text, key)
     pon rlen: Int = len(raw)
     pon mut elements: List<String> = []
@@ -501,7 +589,7 @@ fn jget_array_elements(text: String, key: String) -> List<String>:
 
     pon mut pos: Int = 1
     pon mut iter: Int = 0
-    mien iter < 100000:
+    mien iter < 100000 {
         iter = iter + 1
         pos = skip_ws(raw, pos, rlen)
         si pos >= rlen { da elements }
@@ -512,187 +600,223 @@ fn jget_array_elements(text: String, key: String) -> List<String>:
         pon value_end: Int = skip_json_value(raw, pos, rlen)
         pon mut elem: String = ""
         pon mut ei: Int = value_start
-        mien ei < value_end:
+        mien ei < value_end {
             elem = elem + raw.char_at(ei)
             ei = ei + 1
+        }
         elements = elements + [elem]
         pos = value_end
+    }
     da elements
+}
 
 // ---------------------------------------------------------------------------
 // HTTP internals (HTTPS POST for API calls)
 // ---------------------------------------------------------------------------
 
-tipo HttpResult:
+tipo HttpResult {
     status_code: Int,
     body: String,
     ok: Bool,
     error_msg: String
+}
 
-fn new_http_ok(status: Int, body: String) -> HttpResult:
+fn new_http_ok(status: Int, body: String) -> HttpResult {
     da new HttpResult {status_code: status, body: body, ok: true, error_msg: ""}
+}
 
-fn new_http_err(msg: String) -> HttpResult:
+fn new_http_err(msg: String) -> HttpResult {
     da new HttpResult {status_code: 0, body: "", ok: false, error_msg: msg}
+}
 
-fn recv_full_tls(tls_ctx: Int) -> String:
+fn recv_full_tls(tls_ctx: Int) -> String {
     pon mut response: String = ""
     pon mut iterations: Int = 0
-    mien iterations < 100000:
+    mien iterations < 100000 {
         iterations = iterations + 1
         pon chunk: String = __mn_tls_read_str(tls_ctx, 8192)
         si len(chunk) == 0 { sal }
         response = response + chunk
+    }
     da response
+}
 
-fn recv_full_tcp(fd: Int) -> String:
+fn recv_full_tcp(fd: Int) -> String {
     pon mut response: String = ""
     pon mut iterations: Int = 0
-    mien iterations < 100000:
+    mien iterations < 100000 {
         iterations = iterations + 1
         pon chunk: String = __mn_tcp_recv_str(fd, 8192)
         si len(chunk) == 0 { sal }
         response = response + chunk
+    }
     da response
+}
 
-fn parse_http_status(raw: String) -> Int:
+fn parse_http_status(raw: String) -> Int {
     pon slen: Int = len(raw)
     si slen < 12 { da 0 }
     // Skip past "HTTP/1.1 "
     pon mut pos: Int = 0
-    mien pos < slen:
+    mien pos < slen {
         si raw.char_at(pos) == " " { sal }
         pos = pos + 1
+    }
     pos = pos + 1
     pon mut status_str: String = ""
-    mien pos < slen:
+    mien pos < slen {
         pon ch: String = raw.char_at(pos)
         si ch == " " { sal }
         si ch == "\r" { sal }
         status_str = status_str + ch
         pos = pos + 1
+    }
     da string_utils.parse_int_manual(status_str)
+}
 
-fn extract_http_body(raw: String) -> String:
+fn extract_http_body(raw: String) -> String {
     pon slen: Int = len(raw)
     // Find \r\n\r\n (end of headers)
     pon mut pos: Int = 0
-    mien pos < slen - 3:
-        si raw.char_at(pos) == "\r":
-            si raw.char_at(pos + 1) == "\n":
-                si raw.char_at(pos + 2) == "\r":
-                    si raw.char_at(pos + 3) == "\n":
+    mien pos < slen - 3 {
+        si raw.char_at(pos) == "\r" {
+            si raw.char_at(pos + 1) == "\n" {
+                si raw.char_at(pos + 2) == "\r" {
+                    si raw.char_at(pos + 3) == "\n" {
                         pos = pos + 4
                         // Extract body from pos to end
                         pon mut body: String = ""
-                        mien pos < slen:
+                        mien pos < slen {
                             body = body + raw.char_at(pos)
                             pos = pos + 1
+                        }
                         da body
+                    }
+                }
+            }
+        }
         pos = pos + 1
+    }
     da ""
+}
 
-fn https_post(host: String, port: Int, path: String, headers: Map<String, String>, body: String, timeout_ms: Int) -> HttpResult:
+fn https_post(host: String, port: Int, path: String, headers: Map<String, String>, body: String, timeout_ms: Int) -> HttpResult {
     pon init_r: Int = __mn_net_init()
 
     pon fd: Int = __mn_tcp_connect_str(host, port)
-    si fd < 0:
+    si fd < 0 {
         da new_http_err("Failed to connect to " + host + ":" + str(port))
+    }
 
-    si timeout_ms > 0:
+    si timeout_ms > 0 {
         pon to_r: Int = __mn_tcp_set_timeout(fd, timeout_ms)
+    }
 
     // Build raw HTTP request
     pon mut raw: String = "POST " + path + " HTTP/1.1\r\n"
     raw = raw + "Host: " + host + "\r\n"
     raw = raw + "Content-Length: " + str(len(body)) + "\r\n"
 
-    cada key en headers:
+    cada key en headers {
         raw = raw + key + ": " + headers[key] + "\r\n"
+    }
 
     raw = raw + "Connection: close\r\n"
     raw = raw + "\r\n"
     raw = raw + body
 
-    si port == 443:
+    si port == 443 {
         // HTTPS
         pon tls_init: Int = __mn_tls_init()
         pon tls_ctx: Int = __mn_tls_connect_str(fd, host)
-        si tls_ctx == 0:
+        si tls_ctx == 0 {
             pon close_r: Int = __mn_tcp_close_fd(fd)
             da new_http_err("TLS handshake failed cada " + host)
+        }
 
         pon sent: Int = __mn_tls_write_str(tls_ctx, raw)
-        si sent < 0:
+        si sent < 0 {
             pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
             da new_http_err("Failed to send request")
+        }
 
         pon response: String = recv_full_tls(tls_ctx)
         pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
         pon status: Int = parse_http_status(response)
         pon resp_body: String = extract_http_body(response)
         da new_http_ok(status, resp_body)
-    sino:
+    } sino {
         // Plain HTTP (Ollama local)
         pon sent: Int = __mn_tcp_send_str(fd, raw)
-        si sent < 0:
+        si sent < 0 {
             pon close_r: Int = __mn_tcp_close_fd(fd)
             da new_http_err("Failed to send request")
+        }
 
         pon response: String = recv_full_tcp(fd)
         pon close_r: Int = __mn_tcp_close_fd(fd)
         pon status: Int = parse_http_status(response)
         pon resp_body: String = extract_http_body(response)
         da new_http_ok(status, resp_body)
+    }
 
     da new_http_err("Unreachable")
+}
 
 // ---------------------------------------------------------------------------
 // Request body builders (JSON string construction per provider)
 // ---------------------------------------------------------------------------
 
-fn message_to_json(msg: ChatMessage) -> String:
+fn message_to_json(msg: ChatMessage) -> String {
     da "{\"role\":\"" + role_to_string(msg.role) + "\",\"content\":\"" + escape_json(msg.content) + "\"}"
+}
 
-fn messages_to_json(messages: List<ChatMessage>) -> String:
+fn messages_to_json(messages: List<ChatMessage>) -> String {
     pon count: Int = len(messages)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         si i > 0 { result = result + "," }
         result = result + message_to_json(messages[i])
         i = i + 1
+    }
     da result
+}
 
-fn tool_to_json(t: ToolDef) -> String:
+fn tool_to_json(t: ToolDef) -> String {
     pon mut result: String = "{\"type\":\"function\",\"function\":{"
     result = result + "\"name\":\"" + escape_json(t.name) + "\","
     result = result + "\"description\":\"" + escape_json(t.description) + "\","
     result = result + "\"parameters\":" + t.parameters_json
     result = result + "}}"
     da result
+}
 
-fn tools_to_json(tools: List<ToolDef>) -> String:
+fn tools_to_json(tools: List<ToolDef>) -> String {
     pon count: Int = len(tools)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         si i > 0 { result = result + "," }
         result = result + tool_to_json(tools[i])
         i = i + 1
+    }
     da result
+}
 
-fn build_openai_body(config: LLMConfig, messages: List<ChatMessage>) -> String:
+fn build_openai_body(config: LLMConfig, messages: List<ChatMessage>) -> String {
     pon mut body: String = "{\"model\":\"" + escape_json(config.model) + "\""
     body = body + ",\"messages\":[" + messages_to_json(messages) + "]"
     body = body + ",\"max_tokens\":" + str(config.max_tokens)
     body = body + ",\"temperature\":" + str(config.temperature)
-    si config.has_tools:
+    si config.has_tools {
         body = body + ",\"tools\":[" + tools_to_json(config.tools) + "]"
+    }
     body = body + "}"
     da body
+}
 
-fn build_anthropic_body(config: LLMConfig, messages: List<ChatMessage>) -> String:
+fn build_anthropic_body(config: LLMConfig, messages: List<ChatMessage>) -> String {
     // Anthropic uses a separate "system" field (not in messages array)
     pon mut non_system: List<ChatMessage> = []
     pon mut system_text: String = ""
@@ -700,34 +824,42 @@ fn build_anthropic_body(config: LLMConfig, messages: List<ChatMessage>) -> Strin
 
     pon count: Int = len(messages)
     pon mut i: Int = 0
-    mien i < count:
-        match messages[i].role:
-            System =>:
+    mien i < count {
+        match messages[i].role {
+            System => {
                 system_text = messages[i].content
                 has_sys = true
-            _ =>:
+            },
+            _ => {
                 non_system = non_system + [messages[i]]
+            }
+        }
         i = i + 1
+    }
 
-    si config.has_system:
+    si config.has_system {
         system_text = config.system_prompt
         has_sys = true
+    }
 
     pon mut body: String = "{\"model\":\"" + escape_json(config.model) + "\""
     body = body + ",\"messages\":[" + messages_to_json(non_system) + "]"
     body = body + ",\"max_tokens\":" + str(config.max_tokens)
-    si has_sys:
+    si has_sys {
         body = body + ",\"system\":\"" + escape_json(system_text) + "\""
-    si config.has_tools:
+    }
+    si config.has_tools {
         body = body + ",\"tools\":[" + tools_to_json_anthropic(config.tools) + "]"
+    }
     body = body + "}"
     da body
+}
 
-fn tools_to_json_anthropic(tools: List<ToolDef>) -> String:
+fn tools_to_json_anthropic(tools: List<ToolDef>) -> String {
     pon count: Int = len(tools)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         si i > 0 { result = result + "," }
         pon t: ToolDef = tools[i]
         pon mut tj: String = "{\"name\":\"" + escape_json(t.name) + "\""
@@ -735,52 +867,60 @@ fn tools_to_json_anthropic(tools: List<ToolDef>) -> String:
         tj = tj + ",\"input_schema\":" + t.parameters_json + "}"
         result = result + tj
         i = i + 1
+    }
     da result
+}
 
-fn build_ollama_body(config: LLMConfig, messages: List<ChatMessage>) -> String:
+fn build_ollama_body(config: LLMConfig, messages: List<ChatMessage>) -> String {
     pon mut body: String = "{\"model\":\"" + escape_json(config.model) + "\""
     body = body + ",\"messages\":[" + messages_to_json(messages) + "]"
     body = body + ",\"stream\":false"
     body = body + "}"
     da body
+}
 
 // ---------------------------------------------------------------------------
 // Request headers per provider
 // ---------------------------------------------------------------------------
 
-fn openai_headers(config: LLMConfig) -> Map<String, String>:
+fn openai_headers(config: LLMConfig) -> Map<String, String> {
     pon mut hdrs: Map<String, String> = #{}
     hdrs["Content-Type"] = "application/json"
     hdrs["Authorization"] = "Bearer " + config.api_key
     da hdrs
+}
 
-fn anthropic_headers(config: LLMConfig) -> Map<String, String>:
+fn anthropic_headers(config: LLMConfig) -> Map<String, String> {
     pon mut hdrs: Map<String, String> = #{}
     hdrs["Content-Type"] = "application/json"
     hdrs["x-api-key"] = config.api_key
     hdrs["anthropic-version"] = "2023-06-01"
     da hdrs
+}
 
-fn ollama_headers() -> Map<String, String>:
+fn ollama_headers() -> Map<String, String> {
     pon mut hdrs: Map<String, String> = #{}
     hdrs["Content-Type"] = "application/json"
     da hdrs
+}
 
 // ---------------------------------------------------------------------------
 // Response parsers (per provider)
 // ---------------------------------------------------------------------------
 
-fn parse_openai_response(body: String) -> Result<LLMResponse, LLMError>:
+fn parse_openai_response(body: String) -> Result<LLMResponse, LLMError> {
     // OpenAI response format:
     // {"id":"...","choices":[{"message":{"content":"...","tool_calls":[...]},"finish_reason":"stop"}],
     //  "usage":{"prompt_tokens":N,"completion_tokens":N,"total_tokens":N},"model":"..."}
     pon first_choice: String = jget_first(body, "choices")
-    si len(first_choice) == 0:
+    si len(first_choice) == 0 {
         // Check for error response
         pon err_msg: String = jget_str(jget(body, "error"), "message")
-        si len(err_msg) > 0:
+        si len(err_msg) > 0 {
             da Err(new_api_error(err_msg))
+        }
         da Err(new_parse_error("No choices en response"))
+    }
 
     pon message: String = jget(first_choice, "message")
     pon content: String = jget_str(message, "content")
@@ -793,12 +933,14 @@ fn parse_openai_response(body: String) -> Result<LLMResponse, LLMError>:
     pon total_tokens: Int = jget_int(usage_obj, "total_tokens")
 
     pon mut usage: TokenUsage = new_token_usage(prompt_tokens, completion_tokens)
-    si total_tokens > 0:
+    si total_tokens > 0 {
         usage = new TokenUsage {input_tokens: prompt_tokens, output_tokens: completion_tokens, total_tokens: total_tokens}
+    }
 
     da Ok(new_llm_response(content, model, usage, finish_reason, body))
+}
 
-fn parse_anthropic_response(body: String) -> Result<LLMResponse, LLMError>:
+fn parse_anthropic_response(body: String) -> Result<LLMResponse, LLMError> {
     // Anthropic response format:
     // {"id":"...","type":"message","content":[{"type":"text","text":"..."}],
     //  "model":"...","stop_reason":"end_turn",
@@ -806,18 +948,21 @@ fn parse_anthropic_response(body: String) -> Result<LLMResponse, LLMError>:
 
     // Check for error
     pon error_type: String = jget_str(body, "type")
-    si error_type == "error":
+    si error_type == "error" {
         pon err_obj: String = jget(body, "error")
         pon err_msg: String = jget_str(err_obj, "message")
         da Err(new_api_error(err_msg))
+    }
 
     // Extract content from content array
     pon first_content: String = jget_first(body, "content")
     pon mut content: String = ""
-    si len(first_content) > 0:
+    si len(first_content) > 0 {
         pon content_type: String = jget_str(first_content, "type")
-        si content_type == "text":
+        si content_type == "text" {
             content = jget_str(first_content, "text")
+        }
+    }
 
     pon model: String = jget_str(body, "model")
     pon stop_reason: String = jget_str(body, "stop_reason")
@@ -828,18 +973,21 @@ fn parse_anthropic_response(body: String) -> Result<LLMResponse, LLMError>:
     pon usage: TokenUsage = new_token_usage(input_tokens, output_tokens)
 
     da Ok(new_llm_response(content, model, usage, stop_reason, body))
+}
 
-fn parse_ollama_response(body: String) -> Result<LLMResponse, LLMError>:
+fn parse_ollama_response(body: String) -> Result<LLMResponse, LLMError> {
     // Ollama response format:
     // {"model":"...","message":{"role":"assistant","content":"..."},
     //  "done":true,"total_duration":N,...,
     //  "prompt_eval_count":N,"eval_count":N}
     pon message: String = jget(body, "message")
-    si len(message) == 0:
+    si len(message) == 0 {
         pon err: String = jget_str(body, "error")
-        si len(err) > 0:
+        si len(err) > 0 {
             da Err(new_api_error(err))
+        }
         da Err(new_parse_error("No message en Ollama response"))
+    }
 
     pon content: String = jget_str(message, "content")
     pon model: String = jget_str(body, "model")
@@ -848,110 +996,134 @@ fn parse_ollama_response(body: String) -> Result<LLMResponse, LLMError>:
     pon usage: TokenUsage = new_token_usage(prompt_tokens, completion_tokens)
 
     da Ok(new_llm_response(content, model, usage, "stop", body))
+}
 
 // ---------------------------------------------------------------------------
 // HTTP status code handling
 // ---------------------------------------------------------------------------
 
-fn check_http_status(status: Int, body: String) -> Result<String, LLMError>:
+fn check_http_status(status: Int, body: String) -> Result<String, LLMError> {
     si status == 401 { da Err(new_auth_error("Invalid API key (401)")) }
     si status == 403 { da Err(new_auth_error("Access denied (403)")) }
     si status == 429 { da Err(new_rate_limit_error("Rate limited (429). Retry after a delay.")) }
-    si status == 400:
+    si status == 400 {
         pon err_msg: String = jget_str(jget(body, "error"), "message")
-        si len(err_msg) > 0:
+        si len(err_msg) > 0 {
             da Err(new_invalid_request(err_msg))
+        }
         da Err(new_invalid_request("Bad request (400)"))
+    }
     si status == 404 { da Err(new_invalid_request("Model or endpoint not found (404)")) }
     si status >= 500 { da Err(new_api_error("Server error (" + str(status) + ")")) }
-    si status >= 200:
-        si status < 300:
+    si status >= 200 {
+        si status < 300 {
             da Ok(body)
+        }
+    }
     da Err(new_api_error("Unexpected HTTP status: " + str(status)))
+}
 
 // ---------------------------------------------------------------------------
 // Core API
 // ---------------------------------------------------------------------------
 
-fn prepend_system(config: LLMConfig, messages: List<ChatMessage>) -> List<ChatMessage>:
-    si config.has_system:
+fn prepend_system(config: LLMConfig, messages: List<ChatMessage>) -> List<ChatMessage> {
+    si config.has_system {
         pon mut result: List<ChatMessage> = [system_msg(config.system_prompt)]
         pon count: Int = len(messages)
         pon mut i: Int = 0
-        mien i < count:
+        mien i < count {
             result = result + [messages[i]]
             i = i + 1
+        }
         da result
+    }
     da messages
+}
 
-+fn chat(config: LLMConfig, messages: List<ChatMessage>) -> Result<LLMResponse, LLMError>:
+pub fn chat(config: LLMConfig, messages: List<ChatMessage>) -> Result<LLMResponse, LLMError> {
     // Build provider-specific request
     pon mut body: String = ""
     pon mut headers: Map<String, String> = #{}
 
-    match config.provider:
-        OpenAI =>:
+    match config.provider {
+        OpenAI => {
             pon msgs: List<ChatMessage> = prepend_system(config, messages)
             body = build_openai_body(config, msgs)
             headers = openai_headers(config)
-        Anthropic =>:
+        },
+        Anthropic => {
             body = build_anthropic_body(config, messages)
             headers = anthropic_headers(config)
-        Groq =>:
+        },
+        Groq => {
             pon msgs: List<ChatMessage> = prepend_system(config, messages)
             body = build_openai_body(config, msgs)
             headers = openai_headers(config)
-        Ollama =>:
+        },
+        Ollama => {
             pon msgs: List<ChatMessage> = prepend_system(config, messages)
             body = build_ollama_body(config, msgs)
             headers = ollama_headers()
-        Custom =>:
+        },
+        Custom => {
             pon msgs: List<ChatMessage> = prepend_system(config, messages)
             body = build_openai_body(config, msgs)
             headers = openai_headers(config)
+        }
+    }
 
     // Send request
     pon http_result: HttpResult = https_post(config.host, config.port, config.path, headers, body, config.timeout_ms)
-    si http_result.ok == false:
+    si http_result.ok == false {
         da Err(new_network_error(http_result.error_msg))
+    }
 
     // Check HTTP status
     pon status_check: Result<String, LLMError> = check_http_status(http_result.status_code, http_result.body)
-    match status_check:
+    match status_check {
         Err(e) => { da Err(e) },
-        Ok(resp_body) =>:
+        Ok(resp_body) => {
             // Parse provider-specific response
-            match config.provider:
+            match config.provider {
                 OpenAI => { da parse_openai_response(resp_body) },
                 Anthropic => { da parse_anthropic_response(resp_body) },
                 Groq => { da parse_openai_response(resp_body) },
                 Ollama => { da parse_ollama_response(resp_body) },
                 Custom => { da parse_openai_response(resp_body) }
+            }
+        }
+    }
 
     da Err(new_parse_error("Unreachable"))
+}
 
-+fn complete(config: LLMConfig, prompt: String) -> Result<LLMResponse, LLMError>:
+pub fn complete(config: LLMConfig, prompt: String) -> Result<LLMResponse, LLMError> {
     da chat(config, [user_msg(prompt)])
+}
 
 // ---------------------------------------------------------------------------
 // Convenience wrappers
 // ---------------------------------------------------------------------------
 
-+fn ask(config: LLMConfig, prompt: String) -> Result<String, LLMError>:
+pub fn ask(config: LLMConfig, prompt: String) -> Result<String, LLMError> {
     pon result: Result<LLMResponse, LLMError> = complete(config, prompt)
-    match result:
+    match result {
         Ok(resp) => { da Ok(resp.content) },
         Err(e) => { da Err(e) }
+    }
+}
 
-+fn ask_with_system(config: LLMConfig, system: String, prompt: String) -> Result<String, LLMError>:
+pub fn ask_with_system(config: LLMConfig, system: String, prompt: String) -> Result<String, LLMError> {
     pon c: LLMConfig = with_system(config, system)
     da ask(c, prompt)
+}
 
 // ---------------------------------------------------------------------------
 // Tool call extraction
 // ---------------------------------------------------------------------------
 
-+fn get_tool_calls(resp: LLMResponse) -> List<ToolCall>:
+pub fn get_tool_calls(resp: LLMResponse) -> List<ToolCall> {
     // Parse tool_calls from raw response body
     // OpenAI format: choices[0].message.tool_calls[{id, function: {name, arguments}}]
     pon first_choice: String = jget_first(resp.raw_body, "choices")
@@ -964,7 +1136,7 @@ fn prepend_system(config: LLMConfig, messages: List<ChatMessage>) -> List<ChatMe
     pon count: Int = len(tool_calls_raw)
     pon mut result: List<ToolCall> = []
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon tc: String = tool_calls_raw[i]
         pon id: String = jget_str(tc, "id")
         pon func: String = jget(tc, "function")
@@ -972,58 +1144,70 @@ fn prepend_system(config: LLMConfig, messages: List<ChatMessage>) -> List<ChatMe
         pon args: String = jget_str(func, "arguments")
         result = result + [new_tool_call(id, name, args)]
         i = i + 1
+    }
     da result
+}
 
-+fn has_tool_calls(resp: LLMResponse) -> Bool:
+pub fn has_tool_calls(resp: LLMResponse) -> Bool {
     si resp.finish_reason == "tool_calls" { da true }
     si resp.finish_reason == "tool_use" { da true }
     pon calls: List<ToolCall> = get_tool_calls(resp)
     da len(calls) > 0
+}
 
 // ---------------------------------------------------------------------------
 // LLM request struct (for agent usage)
 // ---------------------------------------------------------------------------
 
-+tipo LLMRequest:
+pub tipo LLMRequest {
     config: LLMConfig,
     messages: List<ChatMessage>
+}
 
-+fn make_chat_request(config: LLMConfig, messages: List<ChatMessage>) -> LLMRequest:
+pub fn make_chat_request(config: LLMConfig, messages: List<ChatMessage>) -> LLMRequest {
     da new LLMRequest {config: config, messages: messages}
+}
 
-+fn make_complete_request(config: LLMConfig, prompt: String) -> LLMRequest:
+pub fn make_complete_request(config: LLMConfig, prompt: String) -> LLMRequest {
     da new LLMRequest {config: config, messages: [user_msg(prompt)]}
+}
 
-+fn execute_request(req: LLMRequest) -> Result<LLMResponse, LLMError>:
+pub fn execute_request(req: LLMRequest) -> Result<LLMResponse, LLMError> {
     da chat(req.config, req.messages)
+}
 
 // ---------------------------------------------------------------------------
 // Multi-model helpers
 // ---------------------------------------------------------------------------
 
-+fn models_agree(responses: List<LLMResponse>) -> Bool:
+pub fn models_agree(responses: List<LLMResponse>) -> Bool {
     pon count: Int = len(responses)
     si count < 2 { da true }
     pon first: String = responses[0].content
     pon mut i: Int = 1
-    mien i < count:
+    mien i < count {
         si responses[i].content != first { da false }
         i = i + 1
+    }
     da true
+}
 
-+fn total_usage(responses: List<LLMResponse>) -> TokenUsage:
+pub fn total_usage(responses: List<LLMResponse>) -> TokenUsage {
     pon count: Int = len(responses)
     pon mut in_total: Int = 0
     pon mut out_total: Int = 0
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         in_total = in_total + responses[i].usage.input_tokens
         out_total = out_total + responses[i].usage.output_tokens
         i = i + 1
+    }
     da new_token_usage(in_total, out_total)
+}
 
-+fn usage_summary(usage: TokenUsage) -> String:
+pub fn usage_summary(usage: TokenUsage) -> String {
     da "tokens: " + str(usage.input_tokens) + " in, " + str(usage.output_tokens) + " out, " + str(usage.total_tokens) + " total"
+}
 
 // ===========================================================================
 // CONVERSATIONS — Multi-turn stateful chat sessions
@@ -1040,75 +1224,92 @@ fn prepend_system(config: LLMConfig, messages: List<ChatMessage>) -> List<ChatMe
 //   match r2 { Ok(turn) => { print(turn.content) }, Err(e) => {} }
 // ===========================================================================
 
-+tipo Conversation:
+pub tipo Conversation {
     config: LLMConfig,
     history: List<ChatMessage>,
     total_usage: TokenUsage,
     turn_count: Int
+}
 
-+tipo TurnResult:
+pub tipo TurnResult {
     content: String,
     response: LLMResponse,
     conversation: Conversation,
     turn_number: Int
+}
 
-+fn new_conversation(config: LLMConfig) -> Conversation:
+pub fn new_conversation(config: LLMConfig) -> Conversation {
     pon mut initial_history: List<ChatMessage> = []
-    si config.has_system:
+    si config.has_system {
         initial_history = [system_msg(config.system_prompt)]
+    }
     da new Conversation {config: config, history: initial_history, total_usage: empty_usage(), turn_count: 0}
+}
 
-+fn set_system_prompt(conv: Conversation, system: String) -> Conversation:
+pub fn set_system_prompt(conv: Conversation, system: String) -> Conversation {
     // Replace or prepend system message
     pon mut new_history: List<ChatMessage> = [system_msg(system)]
     pon count: Int = len(conv.history)
     pon mut i: Int = 0
-    mien i < count:
-        match conv.history[i].role:
+    mien i < count {
+        match conv.history[i].role {
             System => {},
             _ => { new_history = new_history + [conv.history[i]] }
+        }
         i = i + 1
+    }
     da new Conversation {config: conv.config, history: new_history, total_usage: conv.total_usage, turn_count: conv.turn_count}
+}
 
-+fn converse(conv: Conversation, prompt: String) -> Result<TurnResult, LLMError>:
+pub fn converse(conv: Conversation, prompt: String) -> Result<TurnResult, LLMError> {
     pon messages: List<ChatMessage> = conv.history + [user_msg(prompt)]
     pon result: Result<LLMResponse, LLMError> = chat(conv.config, messages)
-    match result:
-        Ok(resp) =>:
+    match result {
+        Ok(resp) => {
             pon new_history: List<ChatMessage> = messages + [assistant_msg(resp.content)]
             pon new_usage: TokenUsage = new_token_usage(conv.total_usage.input_tokens + resp.usage.input_tokens, conv.total_usage.output_tokens + resp.usage.output_tokens)
             pon new_conv: Conversation = new Conversation {config: conv.config, history: new_history, total_usage: new_usage, turn_count: conv.turn_count + 1}
             da Ok(new TurnResult {content: resp.content, response: resp, conversation: new_conv, turn_number: conv.turn_count + 1})
+        },
         Err(e) => { da Err(e) }
+    }
+}
 
-+fn conversation_history(conv: Conversation) -> List<ChatMessage>:
+pub fn conversation_history(conv: Conversation) -> List<ChatMessage> {
     da conv.history
+}
 
-+fn conversation_usage(conv: Conversation) -> TokenUsage:
+pub fn conversation_usage(conv: Conversation) -> TokenUsage {
     da conv.total_usage
+}
 
 // Trim conversation to last N user/assistant turns (keep system prompt)
-+fn trim_history(conv: Conversation, max_turns: Int) -> Conversation:
+pub fn trim_history(conv: Conversation, max_turns: Int) -> Conversation {
     pon count: Int = len(conv.history)
     si count <= max_turns * 2 + 1 { da conv }
 
     pon mut trimmed: List<ChatMessage> = []
     // Keep system message if present
-    si count > 0:
-        match conv.history[0].role:
+    si count > 0 {
+        match conv.history[0].role {
             System => { trimmed = [conv.history[0]] },
             _ => {}
+        }
+    }
 
     // Keep last max_turns * 2 messages (user + assistant pairs)
     pon start: Int = count - max_turns * 2
     pon mut i: Int = start
     si i < 0 { i = 0 }
-    mien i < count:
-        match conv.history[i].role:
+    mien i < count {
+        match conv.history[i].role {
             System => {},
             _ => { trimmed = trimmed + [conv.history[i]] }
+        }
         i = i + 1
+    }
     da new Conversation {config: conv.config, history: trimmed, total_usage: conv.total_usage, turn_count: conv.turn_count}
+}
 
 // ===========================================================================
 // RETRY & FALLBACK — Automatic retry with model downgrade
@@ -1121,44 +1322,56 @@ fn prepend_system(config: LLMConfig, messages: List<ChatMessage>) -> List<ChatMe
 //   let resp = llm.chat_with_fallback(configs, [llm.user_msg("Hello")])
 // ===========================================================================
 
-+tipo FallbackResult:
+pub tipo FallbackResult {
     response: LLMResponse,
     provider_index: Int,
     attempts: Int
+}
 
-+fn chat_with_fallback(configs: List<LLMConfig>, messages: List<ChatMessage>) -> Result<FallbackResult, LLMError>:
+pub fn chat_with_fallback(configs: List<LLMConfig>, messages: List<ChatMessage>) -> Result<FallbackResult, LLMError> {
     pon count: Int = len(configs)
     pon mut last_error: LLMError = new_invalid_request("No configs provided")
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon result: Result<LLMResponse, LLMError> = chat(configs[i], messages)
-        match result:
-            Ok(resp) =>:
+        match result {
+            Ok(resp) => {
                 da Ok(new FallbackResult {response: resp, provider_index: i, attempts: i + 1})
-            Err(e) =>:
+            },
+            Err(e) => {
                 last_error = e
+            }
+        }
         i = i + 1
+    }
     da Err(last_error)
+}
 
-+fn complete_with_fallback(configs: List<LLMConfig>, prompt: String) -> Result<FallbackResult, LLMError>:
+pub fn complete_with_fallback(configs: List<LLMConfig>, prompt: String) -> Result<FallbackResult, LLMError> {
     da chat_with_fallback(configs, [user_msg(prompt)])
+}
 
 // Retry same config N times before failing
-+fn chat_with_retry(config: LLMConfig, messages: List<ChatMessage>, max_retries: Int) -> Result<LLMResponse, LLMError>:
+pub fn chat_with_retry(config: LLMConfig, messages: List<ChatMessage>, max_retries: Int) -> Result<LLMResponse, LLMError> {
     pon mut last_error: LLMError = new_invalid_request("No attempts")
     pon mut i: Int = 0
-    mien i < max_retries:
+    mien i < max_retries {
         pon result: Result<LLMResponse, LLMError> = chat(config, messages)
-        match result:
+        match result {
             Ok(resp) => { da Ok(resp) },
-            Err(e) =>:
+            Err(e) => {
                 // Don't retry auth errors or invalid requests
-                match e:
+                match e {
                     AuthError(msg) => { da Err(e) },
                     InvalidRequest(msg) => { da Err(e) },
                     _ => { last_error = e }
+                }
+            }
+        }
         i = i + 1
+    }
     da Err(last_error)
+}
 
 // ===========================================================================
 // REASONING STRATEGIES — Pure prompt augmentation
@@ -1172,7 +1385,7 @@ fn prepend_system(config: LLMConfig, messages: List<ChatMessage>) -> List<ChatMe
 //   let resp = llm.reason(config, "self_discover", "Analyze this code for bugs: ...")
 // ===========================================================================
 
-fn plan_and_solve_prompt(prompt: String) -> String:
+fn plan_and_solve_prompt(prompt: String) -> String {
     pon mut augmented: String = "Let's approach this step by step using the Plan-and-Solve method.\n\n"
     augmented = augmented + "STEP 1 — DEVISE A PLAN: Before answering, outline a clear plan to solve this.\n"
     augmented = augmented + "STEP 2 — IDENTIFY KEY VARIABLES: What are the critical inputs, constraints, and unknowns?\n"
@@ -1181,8 +1394,9 @@ fn plan_and_solve_prompt(prompt: String) -> String:
     augmented = augmented + "STEP 5 — ASSEMBLE FINAL ANSWER: Synthesize into a clear, complete response.\n\n"
     augmented = augmented + "QUESTION:\n" + prompt
     da augmented
+}
 
-fn self_discover_prompt(prompt: String) -> String:
+fn self_discover_prompt(prompt: String) -> String {
     pon mut augmented: String = "Apply the following reasoning framework to answer:\n\n"
     augmented = augmented + "1. CRITICAL READING: Identify exactly what is being asked. Restate the question.\n"
     augmented = augmented + "2. DECOMPOSITION: Break the problem into sub-problems.\n"
@@ -1191,37 +1405,46 @@ fn self_discover_prompt(prompt: String) -> String:
     augmented = augmented + "5. SYNTHESIS: Combine sub-answers into a coherent response.\n\n"
     augmented = augmented + "QUESTION:\n" + prompt
     da augmented
+}
 
-fn chain_of_thought_prompt(prompt: String) -> String:
+fn chain_of_thought_prompt(prompt: String) -> String {
     da prompt + "\n\nLet's think through this step by step."
+}
 
-fn apply_reasoning(strategy: String, prompt: String) -> String:
+fn apply_reasoning(strategy: String, prompt: String) -> String {
     si strategy == "plan_and_solve" { da plan_and_solve_prompt(prompt) }
     si strategy == "self_discover" { da self_discover_prompt(prompt) }
     si strategy == "cot" { da chain_of_thought_prompt(prompt) }
     da prompt
+}
 
-+fn reason(config: LLMConfig, strategy: String, prompt: String) -> Result<LLMResponse, LLMError>:
+pub fn reason(config: LLMConfig, strategy: String, prompt: String) -> Result<LLMResponse, LLMError> {
     pon augmented: String = apply_reasoning(strategy, prompt)
     da complete(config, augmented)
+}
 
-+fn reason_chat(config: LLMConfig, strategy: String, messages: List<ChatMessage>) -> Result<LLMResponse, LLMError>:
+pub fn reason_chat(config: LLMConfig, strategy: String, messages: List<ChatMessage>) -> Result<LLMResponse, LLMError> {
     // Augment the last user message with reasoning strategy
     pon count: Int = len(messages)
     si count == 0 { da Err(new_invalid_request("No messages provided")) }
 
     pon mut augmented_msgs: List<ChatMessage> = []
     pon mut i: Int = 0
-    mien i < count:
-        si i == count - 1:
-            match messages[i].role:
-                User =>:
+    mien i < count {
+        si i == count - 1 {
+            match messages[i].role {
+                User => {
                     augmented_msgs = augmented_msgs + [user_msg(apply_reasoning(strategy, messages[i].content))]
+                },
                 _ => { augmented_msgs = augmented_msgs + [messages[i]] }
-        sino:
+            }
+        } sino {
             augmented_msgs = augmented_msgs + [messages[i]]
+        }
         i = i + 1
+    }
     da chat(config, augmented_msgs)
+}
 
 // ===========================================================================
 // SEQUENTIAL CHAINS — Thread output from one model to the next
@@ -1237,46 +1460,55 @@ fn apply_reasoning(strategy: String, prompt: String) -> String:
 //   let result = llm.run_chain(steps, "quarterly sales data")
 // ===========================================================================
 
-+tipo ChainStep:
+pub tipo ChainStep {
     config: LLMConfig,
     prompt_template: String
+}
 
-+tipo ChainResult:
+pub tipo ChainResult {
     final_content: String,
     steps: List<LLMResponse>,
     total_usage: TokenUsage
+}
 
-+fn chain_step(config: LLMConfig, prompt_template: String) -> ChainStep:
+pub fn chain_step(config: LLMConfig, prompt_template: String) -> ChainStep {
     da new ChainStep {config: config, prompt_template: prompt_template}
+}
 
-fn replace_placeholder(template: String, placeholder: String, value: String) -> String:
+fn replace_placeholder(template: String, placeholder: String, value: String) -> String {
     // Simple template replacement: find {placeholder} and replace with value
     pon needle: String = "{" + placeholder + "}"
     pon needle_len: Int = len(needle)
     pon tlen: Int = len(template)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < tlen:
+    mien i < tlen {
         pon mut matched: Bool = true
-        si i + needle_len <= tlen:
+        si i + needle_len <= tlen {
             pon mut j: Int = 0
-            mien j < needle_len:
-                si template.char_at(i + j) != needle.char_at(j):
+            mien j < needle_len {
+                si template.char_at(i + j) != needle.char_at(j) {
                     matched = false
                     sal
+                }
                 j = j + 1
-        sino:
+            }
+        } sino {
             matched = false
+        }
 
-        si matched:
+        si matched {
             result = result + value
             i = i + needle_len
-        sino:
+        } sino {
             result = result + template.char_at(i)
             i = i + 1
+        }
+    }
     da result
+}
 
-+fn run_chain(steps: List<ChainStep>, initial_prompt: String) -> Result<ChainResult, LLMError>:
+pub fn run_chain(steps: List<ChainStep>, initial_prompt: String) -> Result<ChainResult, LLMError> {
     pon count: Int = len(steps)
     pon mut previous: String = ""
     pon mut responses: List<LLMResponse> = []
@@ -1284,7 +1516,7 @@ fn replace_placeholder(template: String, placeholder: String, value: String) -> 
     pon mut out_total: Int = 0
 
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon step: ChainStep = steps[i]
         pon mut prompt: String = step.prompt_template
         prompt = replace_placeholder(prompt, "prompt", initial_prompt)
@@ -1292,16 +1524,20 @@ fn replace_placeholder(template: String, placeholder: String, value: String) -> 
         prompt = replace_placeholder(prompt, "step", str(i + 1))
 
         pon result: Result<LLMResponse, LLMError> = complete(step.config, prompt)
-        match result:
-            Ok(resp) =>:
+        match result {
+            Ok(resp) => {
                 previous = resp.content
                 responses = responses + [resp]
                 in_total = in_total + resp.usage.input_tokens
                 out_total = out_total + resp.usage.output_tokens
+            },
             Err(e) => { da Err(e) }
+        }
         i = i + 1
+    }
 
     da Ok(new ChainResult {final_content: previous, steps: responses, total_usage: new_token_usage(in_total, out_total)})
+}
 
 // ===========================================================================
 // CONSENSUS — Run same prompt across multiple models, compare results
@@ -1316,78 +1552,94 @@ fn replace_placeholder(template: String, placeholder: String, value: String) -> 
 //   print("Answer: " + result.best_answer)
 // ===========================================================================
 
-+tipo ConsensusResult:
+pub tipo ConsensusResult {
     responses: List<LLMResponse>,
     all_agree: Bool,
     best_answer: String,
     total_usage: TokenUsage
+}
 
-+fn consensus(configs: List<LLMConfig>, prompt: String) -> Result<ConsensusResult, LLMError>:
+pub fn consensus(configs: List<LLMConfig>, prompt: String) -> Result<ConsensusResult, LLMError> {
     pon count: Int = len(configs)
     pon mut responses: List<LLMResponse> = []
     pon mut in_total: Int = 0
     pon mut out_total: Int = 0
 
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon result: Result<LLMResponse, LLMError> = complete(configs[i], prompt)
-        match result:
-            Ok(resp) =>:
+        match result {
+            Ok(resp) => {
                 responses = responses + [resp]
                 in_total = in_total + resp.usage.input_tokens
                 out_total = out_total + resp.usage.output_tokens
+            },
             Err(e) => { da Err(e) }
+        }
         i = i + 1
+    }
 
     pon agree: Bool = models_agree(responses)
     pon mut best: String = ""
-    si len(responses) > 0:
+    si len(responses) > 0 {
         best = responses[0].content
+    }
 
     // If models don't agree, pick the response from the model with most output tokens
     // (heuristic: longer = more thorough)
-    si agree == false:
+    si agree == false {
         pon mut best_len: Int = 0
         pon mut j: Int = 0
-        mien j < len(responses):
+        mien j < len(responses) {
             pon rlen: Int = len(responses[j].content)
-            si rlen > best_len:
+            si rlen > best_len {
                 best_len = rlen
                 best = responses[j].content
+            }
             j = j + 1
+        }
+    }
 
     da Ok(new ConsensusResult {responses: responses, all_agree: agree, best_answer: best, total_usage: new_token_usage(in_total, out_total)})
+}
 
-+fn consensus_chat(configs: List<LLMConfig>, messages: List<ChatMessage>) -> Result<ConsensusResult, LLMError>:
+pub fn consensus_chat(configs: List<LLMConfig>, messages: List<ChatMessage>) -> Result<ConsensusResult, LLMError> {
     pon count: Int = len(configs)
     pon mut responses: List<LLMResponse> = []
     pon mut in_total: Int = 0
     pon mut out_total: Int = 0
 
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon result: Result<LLMResponse, LLMError> = chat(configs[i], messages)
-        match result:
-            Ok(resp) =>:
+        match result {
+            Ok(resp) => {
                 responses = responses + [resp]
                 in_total = in_total + resp.usage.input_tokens
                 out_total = out_total + resp.usage.output_tokens
+            },
             Err(e) => { da Err(e) }
+        }
         i = i + 1
+    }
 
     pon agree: Bool = models_agree(responses)
     pon mut best: String = ""
     si len(responses) > 0 { best = responses[0].content }
-    si agree == false:
+    si agree == false {
         pon mut best_len: Int = 0
         pon mut j: Int = 0
-        mien j < len(responses):
-            si len(responses[j].content) > best_len:
+        mien j < len(responses) {
+            si len(responses[j].content) > best_len {
                 best_len = len(responses[j].content)
                 best = responses[j].content
+            }
             j = j + 1
+        }
+    }
 
     da Ok(new ConsensusResult {responses: responses, all_agree: agree, best_answer: best, total_usage: new_token_usage(in_total, out_total)})
+}
 
 // ===========================================================================
 // COST ESTIMATION — Per-model pricing (USD per 1M tokens)
@@ -1400,14 +1652,16 @@ fn replace_placeholder(template: String, placeholder: String, value: String) -> 
 //   print("Estimated: $" + str(cost))
 // ===========================================================================
 
-tipo ModelRate:
+tipo ModelRate {
     input_rate: Float,
     output_rate: Float
+}
 
-fn new_rate(input_per_m: Float, output_per_m: Float) -> ModelRate:
+fn new_rate(input_per_m: Float, output_per_m: Float) -> ModelRate {
     da new ModelRate {input_rate: input_per_m, output_rate: output_per_m}
+}
 
-fn get_model_rate(model: String) -> ModelRate:
+fn get_model_rate(model: String) -> ModelRate {
     // Rates in USD per 1M tokens (as of 2025)
     // OpenAI
     si model == "gpt-4o" { da new_rate(2.5, 10.0) }
@@ -1435,16 +1689,20 @@ fn get_model_rate(model: String) -> ModelRate:
     si model == "mixtral-8x7b-32768" { da new_rate(0.24, 0.24) }
     // Ollama (free, local)
     da new_rate(0.0, 0.0)
+}
 
-+fn estimate_cost(model: String, input_tokens: Int, output_tokens: Int) -> Float:
+pub fn estimate_cost(model: String, input_tokens: Int, output_tokens: Int) -> Float {
     pon rate: ModelRate = get_model_rate(model)
     pon in_cost: Float = float(input_tokens) * rate.input_rate / 1000000.0
     pon out_cost: Float = float(output_tokens) * rate.output_rate / 1000000.0
     da in_cost + out_cost
+}
 
-+fn response_cost(resp: LLMResponse) -> Float:
+pub fn response_cost(resp: LLMResponse) -> Float {
     da estimate_cost(resp.model, resp.usage.input_tokens, resp.usage.output_tokens)
+}
 
-+fn cost_summary(resp: LLMResponse) -> String:
+pub fn cost_summary(resp: LLMResponse) -> String {
     pon cost: Float = response_cost(resp)
     da usage_summary(resp.usage) + ", cost: $" + str(cost)
+}

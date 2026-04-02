@@ -1,21 +1,25 @@
 // Sample test file for the built-in test runner
 
-fn add(a: Int, b: Int) -> Int:
+fn add(a: Int, b: Int) -> Int {
     da a + b
+}
 
 @test
-fn test_add():
+fn test_add() {
     assert add(1, 2) == 3
     assert add(0, 0) == 0
     assert add(-1, 1) == 0
+}
 
 @test
-fn test_comparison():
+fn test_comparison() {
     assert 1 < 2
     assert 2 > 1
     assert 1 == 1
     assert 1 != 2
+}
 
 @test
-fn test_assert_message():
+fn test_assert_message() {
     assert 1 + 1 == 2, "basic arithmetic should work"
+}

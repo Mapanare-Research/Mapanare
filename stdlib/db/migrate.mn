@@ -20,79 +20,93 @@ usa db::sqlite
 // Types
 // ---------------------------------------------------------------------------
 
-+tipo Migration:
+pub tipo Migration {
     version: Int,
     name: String,
     up: String,
     down: String
+}
 
-+tipo MigrationInfo:
+pub tipo MigrationInfo {
     version: Int,
     name: String,
     applied: Bool
+}
 
 // ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
 
-+fn new_migration(version: Int, name: String, up: String, down: String) -> Migration:
+pub fn new_migration(version: Int, name: String, up: String, down: String) -> Migration {
     da new Migration { version: version, name: name, up: up, down: down }
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Create the migrations tracking table if it doesn't exist
 // ---------------------------------------------------------------------------
 
-+fn ensure_table(conn: Connection) -> Result<Bool, SqlError>:
+pub fn ensure_table(conn: Connection) -> Result<Bool, SqlError> {
     pon create_sql: String = "CREATE TABLE IF NOT EXISTS __mn_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT DEFAULT CURRENT_TIMESTAMP)"
     pon result: Result<Int, SqlError> = execute_simple(conn, create_sql)
-    match result:
+    match result {
         Err(e) => { da Err(e) },
         Ok(n) => { da Ok(true) }
+    }
     da Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Get list of already-applied migration versions
 // ---------------------------------------------------------------------------
 
-fn get_applied_versions(conn: Connection) -> Result<List<Int>, SqlError>:
+fn get_applied_versions(conn: Connection) -> Result<List<Int>, SqlError> {
     pon query_sql: String = "SELECT version FROM __mn_migrations ORDER BY version ASC"
     pon result: Result<QueryResult, SqlError> = query_simple(conn, query_sql)
 
-    match result:
+    match result {
         Err(e) => { da Err(e) },
-        Ok(qr) =>:
+        Ok(qr) => {
             pon mut versions: List<Int> = []
             pon row_count: Int = len(qr.rows)
             pon mut i: Int = 0
-            mien i < row_count:
+            mien i < row_count {
                 pon row: Row = qr.rows[i]
                 pon ver_opt: Option<Int> = row_get_int(row, "version")
-                match ver_opt:
-                    Some(v) =>:
+                match ver_opt {
+                    Some(v) => {
                         versions = versions + [v]
+                    },
                     _ => {}
+                }
                 i = i + 1
+            }
             da Ok(versions)
+        }
+    }
     da Ok([])
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Check if a version is in the applied list
 // ---------------------------------------------------------------------------
 
-fn version_is_applied(versions: List<Int>, version: Int) -> Bool:
+fn version_is_applied(versions: List<Int>, version: Int) -> Bool {
     pon count: Int = len(versions)
     pon mut i: Int = 0
-    mien i < count:
-        si versions[i] == version:
+    mien i < count {
+        si versions[i] == version {
             da true
+        }
         i = i + 1
+    }
     da false
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Sort migrations by version (simple insertion sort)
 // ---------------------------------------------------------------------------
 
-fn sort_migrations(migrations: List<Migration>) -> List<Migration>:
+fn sort_migrations(migrations: List<Migration>) -> List<Migration> {
     pon count: Int = len(migrations)
     si count <= 1 { da migrations }
 
@@ -100,58 +114,70 @@ fn sort_migrations(migrations: List<Migration>) -> List<Migration>:
     pon mut used: List<Bool> = []
 
     pon mut k: Int = 0
-    mien k < count:
+    mien k < count {
         used = used + [false]
         k = k + 1
+    }
 
     pon mut pass: Int = 0
-    mien pass < count:
+    mien pass < count {
         // Find the smallest unused version
         pon mut min_ver: Int = 999999999
         pon mut min_idx: Int = -1
         pon mut i: Int = 0
-        mien i < count:
-            si used[i] == false:
-                si migrations[i].version < min_ver:
+        mien i < count {
+            si used[i] == false {
+                si migrations[i].version < min_ver {
                     min_ver = migrations[i].version
                     min_idx = i
+                }
+            }
             i = i + 1
+        }
 
-        si min_idx >= 0:
+        si min_idx >= 0 {
             sorted = sorted + [migrations[min_idx]]
             // Rebuild used list with this index marked
             pon mut new_used: List<Bool> = []
             pon mut j: Int = 0
-            mien j < count:
-                si j == min_idx:
+            mien j < count {
+                si j == min_idx {
                     new_used = new_used + [true]
-                sino:
+                } sino {
                     new_used = new_used + [used[j]]
+                }
                 j = j + 1
+            }
             used = new_used
+        }
 
         pass = pass + 1
+    }
 
     da sorted
+}
 
 // ---------------------------------------------------------------------------
 // Migrate Up: Apply all pending migrations in version order
 // ---------------------------------------------------------------------------
 
-+fn migrate_up(conn: Connection, migrations: List<Migration>) -> Result<Int, SqlError>:
+pub fn migrate_up(conn: Connection, migrations: List<Migration>) -> Result<Int, SqlError> {
     // Ensure tracking table exists
     pon table_result: Result<Bool, SqlError> = ensure_table(conn)
-    match table_result:
+    match table_result {
         Err(e) => { da Err(e) },
         Ok(ok) => {}
+    }
 
     // Get already-applied versions
     pon applied_result: Result<List<Int>, SqlError> = get_applied_versions(conn)
     pon mut applied_versions: List<Int> = []
-    match applied_result:
+    match applied_result {
         Err(e) => { da Err(e) },
-        Ok(versions) =>:
+        Ok(versions) => {
             applied_versions = versions
+        }
+    }
 
     // Sort migrations by version
     pon sorted: List<Migration> = sort_migrations(migrations)
@@ -159,49 +185,59 @@ fn sort_migrations(migrations: List<Migration>) -> List<Migration>:
     pon mut applied_count: Int = 0
     pon mut i: Int = 0
 
-    mien i < count:
+    mien i < count {
         pon m: Migration = sorted[i]
 
-        si version_is_applied(applied_versions, m.version) == false:
+        si version_is_applied(applied_versions, m.version) == false {
             // Execute the UP migration
             pon exec_result: Result<Int, SqlError> = execute_simple(conn, m.up)
-            match exec_result:
-                Err(e) =>:
+            match exec_result {
+                Err(e) => {
                     da Err(QueryFailed("Migration " + str(m.version) + " (" + m.name + ") failed: " + error_message(e)))
+                },
                 Ok(n) => {}
+            }
 
             // Record it in the tracking table
             pon insert_sql: String = "INSERT INTO __mn_migrations (version, name) VALUES (" + str(m.version) + ", '" + m.name + "')"
             pon insert_result: Result<Int, SqlError> = execute_simple(conn, insert_sql)
-            match insert_result:
-                Err(e) =>:
+            match insert_result {
+                Err(e) => {
                     da Err(QueryFailed("Failed to record migration " + str(m.version) + ": " + error_message(e)))
+                },
                 Ok(n) => {}
+            }
 
             applied_count = applied_count + 1
+        }
 
         i = i + 1
+    }
 
     da Ok(applied_count)
+}
 
 // ---------------------------------------------------------------------------
 // Migrate Down: Rollback to a target version (exclusive)
 // ---------------------------------------------------------------------------
 
-+fn migrate_down(conn: Connection, migrations: List<Migration>, target: Int) -> Result<Int, SqlError>:
+pub fn migrate_down(conn: Connection, migrations: List<Migration>, target: Int) -> Result<Int, SqlError> {
     // Ensure tracking table exists
     pon table_result: Result<Bool, SqlError> = ensure_table(conn)
-    match table_result:
+    match table_result {
         Err(e) => { da Err(e) },
         Ok(ok) => {}
+    }
 
     // Get applied versions
     pon applied_result: Result<List<Int>, SqlError> = get_applied_versions(conn)
     pon mut applied_versions: List<Int> = []
-    match applied_result:
+    match applied_result {
         Err(e) => { da Err(e) },
-        Ok(versions) =>:
+        Ok(versions) => {
             applied_versions = versions
+        }
+    }
 
     // Sort migrations by version descending (reverse of sort_migrations)
     pon sorted_asc: List<Migration> = sort_migrations(migrations)
@@ -210,69 +246,83 @@ fn sort_migrations(migrations: List<Migration>) -> List<Migration>:
     // Build reversed list
     pon mut sorted_desc: List<Migration> = []
     pon mut k: Int = total - 1
-    mien k >= 0:
+    mien k >= 0 {
         sorted_desc = sorted_desc + [sorted_asc[k]]
         k = k - 1
+    }
 
     pon mut rolled_back: Int = 0
     pon mut i: Int = 0
 
-    mien i < total:
+    mien i < total {
         pon m: Migration = sorted_desc[i]
 
         // Only roll back migrations above the target that are applied
-        si m.version > target:
-            si version_is_applied(applied_versions, m.version):
+        si m.version > target {
+            si version_is_applied(applied_versions, m.version) {
                 // Execute the DOWN migration
                 pon exec_result: Result<Int, SqlError> = execute_simple(conn, m.down)
-                match exec_result:
-                    Err(e) =>:
+                match exec_result {
+                    Err(e) => {
                         da Err(QueryFailed("Rollback of migration " + str(m.version) + " (" + m.name + ") failed: " + error_message(e)))
+                    },
                     Ok(n) => {}
+                }
 
                 // Remove from tracking table
                 pon delete_sql: String = "DELETE FROM __mn_migrations WHERE version = " + str(m.version)
                 pon delete_result: Result<Int, SqlError> = execute_simple(conn, delete_sql)
-                match delete_result:
-                    Err(e) =>:
+                match delete_result {
+                    Err(e) => {
                         da Err(QueryFailed("Failed to remove migration record " + str(m.version) + ": " + error_message(e)))
+                    },
                     Ok(n) => {}
+                }
 
                 rolled_back = rolled_back + 1
+            }
+        }
 
         i = i + 1
+    }
 
     da Ok(rolled_back)
+}
 
 // ---------------------------------------------------------------------------
 // Migration status: show which migrations are applied and which are pending
 // ---------------------------------------------------------------------------
 
-+fn migration_status(conn: Connection, migrations: List<Migration>) -> Result<List<MigrationInfo>, SqlError>:
+pub fn migration_status(conn: Connection, migrations: List<Migration>) -> Result<List<MigrationInfo>, SqlError> {
     // Ensure tracking table exists
     pon table_result: Result<Bool, SqlError> = ensure_table(conn)
-    match table_result:
+    match table_result {
         Err(e) => { da Err(e) },
         Ok(ok) => {}
+    }
 
     // Get applied versions
     pon applied_result: Result<List<Int>, SqlError> = get_applied_versions(conn)
     pon mut applied_versions: List<Int> = []
-    match applied_result:
+    match applied_result {
         Err(e) => { da Err(e) },
-        Ok(versions) =>:
+        Ok(versions) => {
             applied_versions = versions
+        }
+    }
 
     pon sorted: List<Migration> = sort_migrations(migrations)
     pon count: Int = len(sorted)
     pon mut infos: List<MigrationInfo> = []
     pon mut i: Int = 0
 
-    mien i < count:
+    mien i < count {
         pon m: Migration = sorted[i]
         pon is_applied: Bool = version_is_applied(applied_versions, m.version)
         pon info: MigrationInfo = new MigrationInfo { version: m.version, name: m.name, applied: is_applied }
         infos = infos + [info]
         i = i + 1
+    }
 
     da Ok(infos)
+}

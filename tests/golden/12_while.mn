@@ -1,5 +1,7 @@
-fn main:
+fn main() {
     pon mut i: Int = 0
-    mien i < 5:
+    mien i < 5 {
         i = i + 1
+    }
     print(str(i))
+}

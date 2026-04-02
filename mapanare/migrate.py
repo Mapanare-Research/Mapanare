@@ -28,7 +28,6 @@ import os
 import re
 import sys
 
-
 # ---------------------------------------------------------------------------
 # Keyword mapping: English → Spanglish
 # ---------------------------------------------------------------------------
@@ -80,10 +79,8 @@ def migrate_source(source: str, style: str = "spanglish") -> str:
 
     result = "\n".join(out)
 
-    # Post-processing passes
-    result = _convert_braces_to_indent(result)
+    # Post-processing passes (keyword + structural only, braces kept)
     result = _convert_enum_variants(result)
-    result = _convert_agent_syntax(result)
     result = _strip_trailing_whitespace(result)
 
     return result
@@ -110,16 +107,16 @@ def _transform_line(line: str, style: str) -> str:
     result = re.sub(r"\bagent\s+(\w+)", r"@\1", result)
     # spawn Name( → @Name(
     result = re.sub(r"\bspawn\s+(\w+)\s*\(", r"@\1(", result)
-    # pub fn → +fn, pub tipo → +tipo, etc.
-    result = re.sub(r"\bpub\s+", "+", result)
+    # pub stays as-is (grammar doesn't support + prefix yet)
+    # result = re.sub(r"\bpub\s+", "+", result)  # Deferred to Phase 1.1
     # input name: Type → name -> Type (in agent bodies)
     result = re.sub(r"\binput\s+(\w+)\s*:\s*", r"\1 -> ", result)
     # output name: Type → name <- Type (in agent bodies)
     result = re.sub(r"\boutput\s+(\w+)\s*:\s*", r"\1 <- ", result)
-    # fn main() → fn main (remove empty parens)
-    result = re.sub(r"\bfn\s+main\s*\(\s*\)", "fn main", result)
-    # impl Name for Target → Target + Name
-    result = re.sub(r"\bimpl\s+(\w+)\s+for\s+(\w+)", r"\2 + \1", result)
+    # fn main() stays as-is with braces (parens only removable with colon syntax)
+    # result = re.sub(r"\bfn\s+main\s*\(\s*\)", "fn main", result)
+    # impl stays as-is (grammar doesn't support Y + X syntax yet)
+    # result = re.sub(r"\bimpl\s+(\w+)\s+for\s+(\w+)", r"\2 + \1", result)
 
     # Keyword transforms (only for spanglish style)
     if style == "spanglish":
@@ -136,12 +133,14 @@ def _transform_line(line: str, style: str) -> str:
 def _convert_braces_to_indent(source: str) -> str:
     """Convert brace-delimited blocks to colon+indentation.
 
+    Conservative approach: only convert top-level block-opening braces to colons.
+    Keep all closing braces and match arm braces intact — the indentation
+    preprocessor in the parser handles mixed brace/indent syntax.
+
     Rules:
-    - Line ending with ``{`` → replace ``{`` with ``:``
-    - Line that is just ``}`` → delete
-    - ``} else {`` → ``sino:`` (or ``else:`` for english)
-    - ``} else if`` → ``sino si`` (or ``else if:`` for english)
-    - Adjust indentation when closing braces are removed
+    - Line ending with ``{`` → replace ``{`` with ``:`` (except match arms)
+    - ``} else {`` → ``} sino:`` or ``} else:``
+    - Closing ``}`` lines kept as-is (parser preprocessor handles them)
     """
     lines = source.split("\n")
     out: list[str] = []
@@ -157,29 +156,26 @@ def _convert_braces_to_indent(source: str) -> str:
 
         content = stripped.strip()
 
-        # Line is just a closing brace (possibly with trailing comma)
-        if content in ("}", "},"):
-            # Don't emit — dedent handles this
-            continue
-
         # } else { or } sino {
         m = re.match(r"^\}\s*(else|sino)\s*(si\s+.*)?\{$", content)
         if m:
             kw = m.group(1)
             cond = m.group(2) or ""
             if cond:
-                out.append(f"{indent}{kw} {cond.rstrip()}:")
+                out.append(f"{indent}}} {kw} {cond.rstrip()} {{")
             else:
-                out.append(f"{indent}{kw}:")
+                out.append(f"{indent}}} {kw} {{")
             continue
 
-        # Line ending with {
+        # Line ending with { — convert to colon (except match arms and bare braces)
         if content.endswith("{"):
             body = content[:-1].rstrip()
-            if body:
-                out.append(f"{indent}{body}:")
-            else:
-                out.append(f"{indent}:")
+            # Keep match arm blocks: "Pattern => {" as-is
+            if body.endswith("=>") or not body:
+                out.append(stripped)
+                continue
+            # Keep standalone { (already a block opener)
+            out.append(f"{indent}{body}:")
             continue
 
         out.append(stripped)
@@ -200,23 +196,21 @@ def _convert_enum_variants(source: str) -> str:
     out: list[str] = []
     in_tipo = False
     tipo_indent = 0
-    has_fields = False
 
     for line in lines:
         stripped = line.strip()
         indent = line[: len(line) - len(line.lstrip())]
         spaces = len(indent)
 
-        if re.match(r"^[+]?tipo\s+\w+.*:$", stripped):
+        if re.match(r"^(?:pub\s+)?tipo\s+\w+.*[:{]$", stripped):
             in_tipo = True
             tipo_indent = spaces
-            has_fields = False
             out.append(line)
             continue
 
         if in_tipo:
-            # Check if we've dedented out of the tipo block
-            if stripped and spaces <= tipo_indent:
+            # Check if we've left the tipo block (dedent or closing brace)
+            if stripped == "}" or (stripped and spaces <= tipo_indent and not stripped.startswith("|")):
                 in_tipo = False
                 out.append(line)
                 continue
@@ -229,7 +223,6 @@ def _convert_enum_variants(source: str) -> str:
             # vs a field (has colon: name: Type)
             if ":" in stripped and not stripped.startswith("|"):
                 # It's a struct field — keep as-is
-                has_fields = True
                 out.append(line)
             elif stripped.startswith("|"):
                 # Already a variant
@@ -355,9 +348,11 @@ def migrate_cli(args: list[str] | None = None) -> None:
 
     target = parsed.path
     if os.path.isfile(target):
-        changed = 1 if migrate_file(
-            target, style=parsed.style, dry_run=parsed.dry, check=parsed.check
-        ) else 0
+        changed = (
+            1
+            if migrate_file(target, style=parsed.style, dry_run=parsed.dry, check=parsed.check)
+            else 0
+        )
     elif os.path.isdir(target):
         changed = migrate_directory(
             target, style=parsed.style, dry_run=parsed.dry, check=parsed.check

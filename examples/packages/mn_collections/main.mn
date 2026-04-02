@@ -1,33 +1,43 @@
 /// Extended collection utilities for Mapanare.
 
 /// Return the sum of all integers in a list.
-fn sum(xs: List<Int>) -> Int:
+fn sum(xs: List<Int>) -> Int {
     pon mut total: Int = 0
-    cada x en xs:
+    cada x en xs {
         total = total + x
+    }
     da total
+}
 
 /// Return the maximum value in a non-empty list.
-fn max(xs: List<Int>) -> Int:
+fn max(xs: List<Int>) -> Int {
     pon mut best: Int = xs[0]
-    cada x en xs:
-        si x > best:
+    cada x en xs {
+        si x > best {
             best = x
+        }
+    }
     da best
+}
 
 /// Return the minimum value in a non-empty list.
-fn min(xs: List<Int>) -> Int:
+fn min(xs: List<Int>) -> Int {
     pon mut best: Int = xs[0]
-    cada x en xs:
-        si x < best:
+    cada x en xs {
+        si x < best {
             best = x
+        }
+    }
     da best
+}
 
 /// Reverse a list of integers.
-fn reverse(xs: List<Int>) -> List<Int>:
+fn reverse(xs: List<Int>) -> List<Int> {
     pon mut result: List<Int> = []
     pon mut i: Int = len(xs) - 1
-    mien i >= 0:
+    mien i >= 0 {
         result = result + [xs[i]]
         i = i - 1
+    }
     da result
+}

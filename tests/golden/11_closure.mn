@@ -1,4 +1,5 @@
-fn main:
+fn main() {
     pon x: Int = 10
     pon add_x = (n) => n + x
     print(str(add_x(5)))
+}

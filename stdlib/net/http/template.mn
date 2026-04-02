@@ -28,59 +28,70 @@ extern "C" fn __mn_file_read(path: String) -> String
 // Core Types
 // ---------------------------------------------------------------------------
 
-+tipo TemplateContext:
+pub tipo TemplateContext {
     values: Map<String, String>,
     lists: Map<String, List<String>>
+}
 
-+tipo TemplateError:
+pub tipo TemplateError {
     | SyntaxError(String)
     | UndefinedVariable(String)
     | IoError(String)
+}
 
 // ---------------------------------------------------------------------------
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-+fn new_template_context() -> TemplateContext:
+pub fn new_template_context() -> TemplateContext {
     da new TemplateContext { values: #{}, lists: #{} }
+}
 
-+fn ctx_set(ctx: TemplateContext, key: String, value: String) -> TemplateContext:
+pub fn ctx_set(ctx: TemplateContext, key: String, value: String) -> TemplateContext {
     pon mut vals: Map<String, String> = #{}
-    cada k en ctx.values:
+    cada k en ctx.values {
         vals[k] = ctx.values[k]
+    }
     vals[key] = value
     da new TemplateContext { values: vals, lists: ctx.lists }
+}
 
-+fn ctx_set_list(ctx: TemplateContext, key: String, values: List<String>) -> TemplateContext:
+pub fn ctx_set_list(ctx: TemplateContext, key: String, values: List<String>) -> TemplateContext {
     pon mut lsts: Map<String, List<String>> = #{}
-    cada k en ctx.lists:
+    cada k en ctx.lists {
         lsts[k] = ctx.lists[k]
+    }
     lsts[key] = values
     da new TemplateContext { values: ctx.values, lists: lsts }
+}
 
 // ---------------------------------------------------------------------------
 // HTML escaping
 // ---------------------------------------------------------------------------
 
-+fn html_escape(s: String) -> String:
+pub fn html_escape(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         si ch == "&" { result = result + "&amp;" } sino { si ch == "<" { result = result + "&lt;" } sino { si ch == ">" { result = result + "&gt;" } sino { si ch == "\"" { result = result + "&quot;" } sino { si ch == "'" { result = result + "&#39;" } sino { result = result + ch } } } } }
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Error message helper
 // ---------------------------------------------------------------------------
 
-+fn error_message(err: TemplateError) -> String:
-    match err:
+pub fn error_message(err: TemplateError) -> String {
+    match err {
         SyntaxError(msg) => { da "SyntaxError: " + msg },
         UndefinedVariable(name) => { da "UndefinedVariable: " + name },
         IoError(msg) => { da "IoError: " + msg }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers: tag scanning
@@ -88,79 +99,95 @@ extern "C" fn __mn_file_read(path: String) -> String
 
 // Find the next occurrence of `{{` or `{%` starting at pos.
 // Returns the position of the `{`, or -1 if not found.
-fn find_tag_start(template: String, pos: Int) -> Int:
+fn find_tag_start(template: String, pos: Int) -> Int {
     pon slen: Int = len(template)
     pon mut i: Int = pos
-    mien i < slen - 1:
+    mien i < slen - 1 {
         pon ch: String = template.char_at(i)
-        si ch == "{":
+        si ch == "{" {
             pon next: String = template.char_at(i + 1)
             si next == "{" { da i }
             si next == "%" { da i }
+        }
         i = i + 1
+    }
     da -1
+}
 
 // Find the position of `end_marker` (either `}}` or `%}`) starting at pos.
 // Returns the position of the first character of the marker, or -1 if not found.
-fn find_tag_end(template: String, pos: Int, end_marker: String) -> Int:
+fn find_tag_end(template: String, pos: Int, end_marker: String) -> Int {
     pon slen: Int = len(template)
     pon m0: String = end_marker.char_at(0)
     pon m1: String = end_marker.char_at(1)
     pon mut i: Int = pos
-    mien i < slen - 1:
-        si template.char_at(i) == m0:
-            si template.char_at(i + 1) == m1:
+    mien i < slen - 1 {
+        si template.char_at(i) == m0 {
+            si template.char_at(i + 1) == m1 {
                 da i
+            }
+        }
         i = i + 1
+    }
     da -1
+}
 
 // Trim leading and trailing whitespace from a string.
-fn trim_tag_content(content: String) -> String:
+fn trim_tag_content(content: String) -> String {
     pon slen: Int = len(content)
     si slen == 0 { da content }
 
     // Find first non-whitespace
     pon mut start: Int = 0
-    mien start < slen:
+    mien start < slen {
         pon ch: String = content.char_at(start)
         si ch == " " { start = start + 1 } sino { si ch == "\t" { start = start + 1 } sino { si ch == "\r" { start = start + 1 } sino { si ch == "\n" { start = start + 1 } sino { sal } } } }
+    }
 
     // Find last non-whitespace
     pon mut end: Int = slen - 1
-    mien end >= start:
+    mien end >= start {
         pon ch: String = content.char_at(end)
         si ch == " " { end = end - 1 } sino { si ch == "\t" { end = end - 1 } sino { si ch == "\r" { end = end - 1 } sino { si ch == "\n" { end = end - 1 } sino { sal } } } }
+    }
 
     si start > end { da "" }
 
     // Extract substring
     pon mut result: String = ""
     pon mut i: Int = start
-    mien i <= end:
+    mien i <= end {
         result = result + content.char_at(i)
         i = i + 1
+    }
     da result
+}
 
 // Extract a substring from start (inclusive) to end (exclusive).
-fn substr(s: String, start: Int, end: Int) -> String:
+fn substr(s: String, start: Int, end: Int) -> String {
     pon mut result: String = ""
     pon mut i: Int = start
-    mien i < end:
+    mien i < end {
         result = result + s.char_at(i)
         i = i + 1
+    }
     da result
+}
 
 // Check if string s starts with prefix at the given position.
-fn starts_with_at(s: String, pos: Int, prefix: String) -> Bool:
+fn starts_with_at(s: String, pos: Int, prefix: String) -> Bool {
     pon slen: Int = len(s)
     pon plen: Int = len(prefix)
     si pos + plen > slen { da false }
     pon mut i: Int = 0
-    mien i < plen:
-        si s.char_at(pos + i) != prefix.char_at(i):
+    mien i < plen {
+        si s.char_at(pos + i) != prefix.char_at(i) {
             da false
+        }
         i = i + 1
+    }
     da true
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers: block finders (find matching endif/endfor)
@@ -169,72 +196,82 @@ fn starts_with_at(s: String, pos: Int, prefix: String) -> Bool:
 // Find the position of the matching `{% endif %}` tag, handling nesting.
 // `pos` should point to the character after the opening `{% if ... %}` tag.
 // Returns the position of the `{` in `{% endif %}`, or -1 if not found.
-fn find_endif(template: String, pos: Int) -> Int:
+fn find_endif(template: String, pos: Int) -> Int {
     pon slen: Int = len(template)
     pon mut i: Int = pos
     pon mut depth: Int = 1
 
-    mien i < slen - 1:
-        si template.char_at(i) == "{":
-            si template.char_at(i + 1) == "%":
+    mien i < slen - 1 {
+        si template.char_at(i) == "{" {
+            si template.char_at(i + 1) == "%" {
                 // Found a block tag — extract its content
                 pon tag_end: Int = find_tag_end(template, i + 2, "%}")
                 si tag_end < 0 { da -1 }
                 pon tag_content: String = trim_tag_content(substr(template, i + 2, tag_end))
 
                 // Check for nested if
-                si starts_with_at(tag_content, 0, "si "):
+                si starts_with_at(tag_content, 0, "si ") {
                     depth = depth + 1
-                } sino { si starts_with_at(tag_content, 0, "si\t"):
+                } sino { si starts_with_at(tag_content, 0, "si\t") {
                     depth = depth + 1
-                } sino { si tag_content == "endif":
+                } sino { si tag_content == "endif" {
                     depth = depth - 1
-                    si depth == 0:
+                    si depth == 0 {
                         da i
+                    }
                 } } }
 
                 // Skip past this tag
                 i = tag_end + 2
-            sino:
+            } sino {
                 i = i + 1
-        sino:
+            }
+        } sino {
             i = i + 1
+        }
+    }
     da -1
+}
 
 // Find the position of the matching `{% endfor %}` tag, handling nesting.
 // `pos` should point to the character after the opening `{% for ... %}` tag.
 // Returns the position of the `{` in `{% endfor %}`, or -1 if not found.
-fn find_endfor(template: String, pos: Int) -> Int:
+fn find_endfor(template: String, pos: Int) -> Int {
     pon slen: Int = len(template)
     pon mut i: Int = pos
     pon mut depth: Int = 1
 
-    mien i < slen - 1:
-        si template.char_at(i) == "{":
-            si template.char_at(i + 1) == "%":
+    mien i < slen - 1 {
+        si template.char_at(i) == "{" {
+            si template.char_at(i + 1) == "%" {
                 // Found a block tag — extract its content
                 pon tag_end: Int = find_tag_end(template, i + 2, "%}")
                 si tag_end < 0 { da -1 }
                 pon tag_content: String = trim_tag_content(substr(template, i + 2, tag_end))
 
                 // Check for nested for
-                si starts_with_at(tag_content, 0, "cada "):
+                si starts_with_at(tag_content, 0, "cada ") {
                     depth = depth + 1
-                } sino { si starts_with_at(tag_content, 0, "cada\t"):
+                } sino { si starts_with_at(tag_content, 0, "cada\t") {
                     depth = depth + 1
-                } sino { si tag_content == "endfor":
+                } sino { si tag_content == "endfor" {
                     depth = depth - 1
-                    si depth == 0:
+                    si depth == 0 {
                         da i
+                    }
                 } } }
 
                 // Skip past this tag
                 i = tag_end + 2
-            sino:
+            } sino {
                 i = i + 1
-        sino:
+            }
+        } sino {
             i = i + 1
+        }
+    }
     da -1
+}
 
 // ---------------------------------------------------------------------------
 // Internal: variable rendering with optional escape filter
@@ -242,115 +279,140 @@ fn find_endfor(template: String, pos: Int) -> Int:
 
 // Render a variable expression. Supports `name` and `name | escape`.
 // The `expr` should already be trimmed.
-fn render_variable(expr: String, ctx: TemplateContext) -> Result<String, TemplateError>:
+fn render_variable(expr: String, ctx: TemplateContext) -> Result<String, TemplateError> {
     pon elen: Int = len(expr)
 
     // Check for pipe — find "|" in the expression
     pon mut pipe_pos: Int = -1
     pon mut i: Int = 0
-    mien i < elen:
-        si expr.char_at(i) == "|":
+    mien i < elen {
+        si expr.char_at(i) == "|" {
             pipe_pos = i
             sal
+        }
         i = i + 1
+    }
 
     pon mut var_name: String = ""
     pon mut do_escape: Bool = false
 
-    si pipe_pos >= 0:
+    si pipe_pos >= 0 {
         // Has a filter
         var_name = trim_tag_content(substr(expr, 0, pipe_pos))
         pon filter: String = trim_tag_content(substr(expr, pipe_pos + 1, elen))
-        si filter == "escape":
+        si filter == "escape" {
             do_escape = true
-        sino:
+        } sino {
             da Err(SyntaxError("Unknown filter: " + filter))
-    sino:
+        }
+    } sino {
         var_name = expr
+    }
 
     // Look up variable in context
     pon mut found: Bool = false
     pon mut value: String = ""
-    cada k en ctx.values:
-        si k == var_name:
+    cada k en ctx.values {
+        si k == var_name {
             found = true
             value = ctx.values[k]
+        }
+    }
 
-    si found == false:
+    si found == false {
         da Err(UndefinedVariable(var_name))
+    }
 
-    si do_escape:
+    si do_escape {
         da Ok(html_escape(value))
+    }
     da Ok(value)
+}
 
 // ---------------------------------------------------------------------------
 // Internal: parse an `if` tag body — extract the condition key and negation.
 // Expects trimmed content like "if key" or "if not key".
 // ---------------------------------------------------------------------------
 
-tipo IfCondition:
+tipo IfCondition {
     key: String,
     negated: Bool,
     ok: Bool,
     error_msg: String
+}
 
-fn parse_if_condition(tag_content: String) -> IfCondition:
+fn parse_if_condition(tag_content: String) -> IfCondition {
     // tag_content starts with "if " — skip the "if " prefix
     pon tlen: Int = len(tag_content)
-    si tlen < 4:
+    si tlen < 4 {
         da new IfCondition { key: "", negated: false, ok: false, error_msg: "Empty si condition" }
+    }
 
     pon rest: String = trim_tag_content(substr(tag_content, 2, tlen))
     pon rlen: Int = len(rest)
 
     // Check for "not " prefix
-    si rlen > 4:
-        si starts_with_at(rest, 0, "not "):
+    si rlen > 4 {
+        si starts_with_at(rest, 0, "not ") {
             pon key: String = trim_tag_content(substr(rest, 4, rlen))
-            si len(key) == 0:
+            si len(key) == 0 {
                 da new IfCondition { key: "", negated: true, ok: false, error_msg: "Empty key after 'not'" }
+            }
             da new IfCondition { key: key, negated: true, ok: true, error_msg: "" }
+        }
+    }
 
     pon key: String = trim_tag_content(rest)
-    si len(key) == 0:
+    si len(key) == 0 {
         da new IfCondition { key: "", negated: false, ok: false, error_msg: "Empty si condition" }
+    }
     da new IfCondition { key: key, negated: false, ok: true, error_msg: "" }
+}
 
 // Evaluate an if condition: key exists in ctx.values and value is non-empty and not "false".
-fn eval_if_condition(key: String, negated: Bool, ctx: TemplateContext) -> Bool:
+fn eval_if_condition(key: String, negated: Bool, ctx: TemplateContext) -> Bool {
     pon mut found: Bool = false
     pon mut value: String = ""
-    cada k en ctx.values:
-        si k == key:
+    cada k en ctx.values {
+        si k == key {
             found = true
             value = ctx.values[k]
+        }
+    }
 
     pon mut truthy: Bool = false
-    si found:
-        si len(value) > 0:
-            si value != "false":
+    si found {
+        si len(value) > 0 {
+            si value != "false" {
                 truthy = true
+            }
+        }
+    }
 
-    si negated:
+    si negated {
         si truthy { da false } sino { da true }
+    }
     da truthy
+}
 
 // ---------------------------------------------------------------------------
 // Internal: parse a `for` tag body — extract item variable and list name.
 // Expects trimmed content like "for item in list_name".
 // ---------------------------------------------------------------------------
 
-tipo ForParams:
+tipo ForParams {
     item_var: String,
     list_name: String,
     ok: Bool,
     error_msg: String
+}
 
-fn parse_for_params(tag_content: String) -> ForParams:
+fn parse_for_params(tag_content: String) -> ForParams {
     // tag_content starts with "for " — skip the "for " prefix
     pon tlen: Int = len(tag_content)
-    si tlen < 8:
+    si tlen < 8 {
         da new ForParams { item_var: "", list_name: "", ok: false, error_msg: "Incomplete cada tag" }
+    }
 
     pon rest: String = trim_tag_content(substr(tag_content, 3, tlen))
     pon rlen: Int = len(rest)
@@ -358,52 +420,66 @@ fn parse_for_params(tag_content: String) -> ForParams:
     // Find " in " separator — scan for " in "
     pon mut in_pos: Int = -1
     pon mut i: Int = 0
-    mien i < rlen - 3:
-        si rest.char_at(i) == " ":
-            si rest.char_at(i + 1) == "i":
-                si rest.char_at(i + 2) == "n":
-                    si rest.char_at(i + 3) == " ":
+    mien i < rlen - 3 {
+        si rest.char_at(i) == " " {
+            si rest.char_at(i + 1) == "i" {
+                si rest.char_at(i + 2) == "n" {
+                    si rest.char_at(i + 3) == " " {
                         in_pos = i
                         sal
+                    }
+                }
+            }
+        }
         i = i + 1
+    }
 
-    si in_pos < 0:
+    si in_pos < 0 {
         da new ForParams { item_var: "", list_name: "", ok: false, error_msg: "Expected 'in' keyword en cada tag" }
+    }
 
     pon item_var: String = trim_tag_content(substr(rest, 0, in_pos))
     pon list_name: String = trim_tag_content(substr(rest, in_pos + 4, rlen))
 
-    si len(item_var) == 0:
+    si len(item_var) == 0 {
         da new ForParams { item_var: "", list_name: "", ok: false, error_msg: "Empty item variable en cada tag" }
-    si len(list_name) == 0:
+    }
+    si len(list_name) == 0 {
         da new ForParams { item_var: "", list_name: "", ok: false, error_msg: "Empty list name en cada tag" }
+    }
 
     da new ForParams { item_var: item_var, list_name: list_name, ok: true, error_msg: "" }
+}
 
 // ---------------------------------------------------------------------------
 // Internal: parse an `include` tag — extract the file path.
 // Expects trimmed content like `include "path/to/file.html"`.
 // ---------------------------------------------------------------------------
 
-fn parse_include_path(tag_content: String) -> Result<String, TemplateError>:
+fn parse_include_path(tag_content: String) -> Result<String, TemplateError> {
     // tag_content starts with "include " — skip the prefix
     pon tlen: Int = len(tag_content)
-    si tlen < 10:
+    si tlen < 10 {
         da Err(SyntaxError("Empty include path"))
+    }
 
     pon rest: String = trim_tag_content(substr(tag_content, 7, tlen))
     pon rlen: Int = len(rest)
 
     // Expect quoted string: "path"
-    si rlen < 2:
+    si rlen < 2 {
         da Err(SyntaxError("Include path must be a quoted string"))
-    si rest.char_at(0) != "\"":
+    }
+    si rest.char_at(0) != "\"" {
         da Err(SyntaxError("Include path must start with a quote"))
-    si rest.char_at(rlen - 1) != "\"":
+    }
+    si rest.char_at(rlen - 1) != "\"" {
         da Err(SyntaxError("Include path must end with a quote"))
+    }
 
     pon path: String = substr(rest, 1, rlen - 1)
     da Ok(path)
+}
 
 // ---------------------------------------------------------------------------
 // Internal: render a for-loop body with a single item replacement.
@@ -412,183 +488,213 @@ fn parse_include_path(tag_content: String) -> Result<String, TemplateError>:
 // the for-loop body. For full nesting, we call the main render function.
 // ---------------------------------------------------------------------------
 
-fn render_for_body(body: String, item_var: String, item_value: String, ctx: TemplateContext) -> Result<String, TemplateError>:
+fn render_for_body(body: String, item_var: String, item_value: String, ctx: TemplateContext) -> Result<String, TemplateError> {
     // Create a temporary context with the loop variable added
     pon mut loop_ctx: TemplateContext = ctx_set(ctx, item_var, item_value)
 
     // Re-render the body with the augmented context
     da render_section(body, loop_ctx)
+}
 
 // ---------------------------------------------------------------------------
 // Core rendering: render a template section (used by render and for-loops)
 // ---------------------------------------------------------------------------
 
-fn render_section(template: String, ctx: TemplateContext) -> Result<String, TemplateError>:
+fn render_section(template: String, ctx: TemplateContext) -> Result<String, TemplateError> {
     pon slen: Int = len(template)
     pon mut output: String = ""
     pon mut pos: Int = 0
     pon mut iterations: Int = 0
 
-    mien pos < slen:
+    mien pos < slen {
         iterations = iterations + 1
         si iterations > 1000000 { da Err(SyntaxError("Template too complex or infinite loop detected")) }
 
         // Find next tag start
         pon tag_start: Int = find_tag_start(template, pos)
 
-        si tag_start < 0:
+        si tag_start < 0 {
             // No more tags — append the rest as literal text
             output = output + substr(template, pos, slen)
             pos = slen
-        sino:
+        } sino {
             // Append literal text before this tag
-            si tag_start > pos:
+            si tag_start > pos {
                 output = output + substr(template, pos, tag_start)
+            }
 
             // Determine tag type: {{ or {%
             pon tag_type: String = template.char_at(tag_start + 1)
 
-            si tag_type == "{":
+            si tag_type == "{" {
                 // Variable tag: {{ ... }}
                 pon end_pos: Int = find_tag_end(template, tag_start + 2, "}}")
-                si end_pos < 0:
+                si end_pos < 0 {
                     da Err(SyntaxError("Unclosed variable tag '{{' at position " + str(tag_start)))
+                }
 
                 pon raw_expr: String = substr(template, tag_start + 2, end_pos)
                 pon expr: String = trim_tag_content(raw_expr)
 
-                si len(expr) == 0:
+                si len(expr) == 0 {
                     da Err(SyntaxError("Empty variable tag at position " + str(tag_start)))
+                }
 
                 pon var_result: Result<String, TemplateError> = render_variable(expr, ctx)
-                match var_result:
+                match var_result {
                     Ok(val) => { output = output + val },
                     Err(e) => { da Err(e) }
+                }
 
                 pos = end_pos + 2
-            sino:
+            } sino {
                 // Block tag: {% ... %}
                 pon end_pos: Int = find_tag_end(template, tag_start + 2, "%}")
-                si end_pos < 0:
+                si end_pos < 0 {
                     da Err(SyntaxError("Unclosed block tag '{%' at position " + str(tag_start)))
+                }
 
                 pon raw_content: String = substr(template, tag_start + 2, end_pos)
                 pon tag_content: String = trim_tag_content(raw_content)
                 pon after_tag: Int = end_pos + 2
 
-                si starts_with_at(tag_content, 0, "si "):
+                si starts_with_at(tag_content, 0, "si ") {
                     // ---- If block ----
                     pon cond: IfCondition = parse_if_condition(tag_content)
-                    si cond.ok == false:
+                    si cond.ok == false {
                         da Err(SyntaxError(cond.error_msg))
+                    }
 
                     // Find matching endif
                     pon endif_pos: Int = find_endif(template, after_tag)
-                    si endif_pos < 0:
+                    si endif_pos < 0 {
                         da Err(SyntaxError("Missing {% endif %} cada {% " + tag_content + " %}"))
+                    }
 
                     // Find the end of the endif tag itself
                     pon endif_tag_end: Int = find_tag_end(template, endif_pos + 2, "%}")
-                    si endif_tag_end < 0:
+                    si endif_tag_end < 0 {
                         da Err(SyntaxError("Unclosed endif tag"))
+                    }
 
                     pon truthy: Bool = eval_if_condition(cond.key, cond.negated, ctx)
 
-                    si truthy:
+                    si truthy {
                         // Render the body between {% if %} and {% endif %}
                         pon body: String = substr(template, after_tag, endif_pos)
                         pon body_result: Result<String, TemplateError> = render_section(body, ctx)
-                        match body_result:
+                        match body_result {
                             Ok(rendered) => { output = output + rendered },
                             Err(e) => { da Err(e) }
+                        }
+                    }
 
                     pos = endif_tag_end + 2
 
-                } sino { si starts_with_at(tag_content, 0, "cada "):
+                } sino { si starts_with_at(tag_content, 0, "cada ") {
                     // ---- For block ----
                     pon params: ForParams = parse_for_params(tag_content)
-                    si params.ok == false:
+                    si params.ok == false {
                         da Err(SyntaxError(params.error_msg))
+                    }
 
                     // Find matching endfor
                     pon endfor_pos: Int = find_endfor(template, after_tag)
-                    si endfor_pos < 0:
+                    si endfor_pos < 0 {
                         da Err(SyntaxError("Missing {% endfor %} cada {% " + tag_content + " %}"))
+                    }
 
                     // Find the end of the endfor tag itself
                     pon endfor_tag_end: Int = find_tag_end(template, endfor_pos + 2, "%}")
-                    si endfor_tag_end < 0:
+                    si endfor_tag_end < 0 {
                         da Err(SyntaxError("Unclosed endfor tag"))
+                    }
 
                     // Look up the list in context
                     pon mut list_found: Bool = false
                     pon mut list_items: List<String> = []
-                    cada k en ctx.lists:
-                        si k == params.list_name:
+                    cada k en ctx.lists {
+                        si k == params.list_name {
                             list_found = true
                             list_items = ctx.lists[k]
+                        }
+                    }
 
-                    si list_found == false:
+                    si list_found == false {
                         da Err(UndefinedVariable(params.list_name))
+                    }
 
                     // Render body for each item
                     pon body: String = substr(template, after_tag, endfor_pos)
                     pon item_count: Int = len(list_items)
                     pon mut idx: Int = 0
-                    mien idx < item_count:
+                    mien idx < item_count {
                         pon item_val: String = list_items[idx]
                         pon iter_result: Result<String, TemplateError> = render_for_body(body, params.item_var, item_val, ctx)
-                        match iter_result:
+                        match iter_result {
                             Ok(rendered) => { output = output + rendered },
                             Err(e) => { da Err(e) }
+                        }
                         idx = idx + 1
+                    }
 
                     pos = endfor_tag_end + 2
 
-                } sino { si starts_with_at(tag_content, 0, "include "):
+                } sino { si starts_with_at(tag_content, 0, "include ") {
                     // ---- Include block ----
                     pon path_result: Result<String, TemplateError> = parse_include_path(tag_content)
-                    match path_result:
-                        Ok(file_path) =>:
+                    match path_result {
+                        Ok(file_path) => {
                             pon content: String = __mn_file_read(file_path)
-                            si len(content) == 0:
+                            si len(content) == 0 {
                                 da Err(IoError("Failed to read include file: " + file_path))
+                            }
                             // Render the included content with the same context
                             pon inc_result: Result<String, TemplateError> = render_section(content, ctx)
-                            match inc_result:
+                            match inc_result {
                                 Ok(rendered) => { output = output + rendered },
                                 Err(e) => { da Err(e) }
+                            }
+                        },
                         Err(e) => { da Err(e) }
+                    }
 
                     pos = after_tag
 
-                } sino { si tag_content == "endif":
+                } sino { si tag_content == "endif" {
                     // Stray endif — error
                     da Err(SyntaxError("Unexpected {% endif %} without matching {% si %}"))
 
-                } sino { si tag_content == "endfor":
+                } sino { si tag_content == "endfor" {
                     // Stray endfor — error
                     da Err(SyntaxError("Unexpected {% endfor %} without matching {% cada %}"))
 
-                sino:
+                } sino {
                     da Err(SyntaxError("Unknown block tag: " + tag_content))
                 } } } } }
+            }
+        }
+    }
 
     da Ok(output)
+}
 
 // ---------------------------------------------------------------------------
 // Public API: render
 // ---------------------------------------------------------------------------
 
-+fn render(template: String, ctx: TemplateContext) -> Result<String, TemplateError>:
+pub fn render(template: String, ctx: TemplateContext) -> Result<String, TemplateError> {
     da render_section(template, ctx)
+}
 
 // ---------------------------------------------------------------------------
 // Public API: render_file — load a template from disk, then render
 // ---------------------------------------------------------------------------
 
-+fn render_file(path: String, ctx: TemplateContext) -> Result<String, TemplateError>:
+pub fn render_file(path: String, ctx: TemplateContext) -> Result<String, TemplateError> {
     pon content: String = __mn_file_read(path)
-    si len(content) == 0:
+    si len(content) == 0 {
         da Err(IoError("Failed to read template file: " + path))
+    }
     da render_section(content, ctx)
+}

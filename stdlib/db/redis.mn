@@ -7,7 +7,7 @@
 //   import db::redis
 //   import db::kv
 //   let store = redis.connect("127.0.0.1", 6379)
-//   match store:
+//   match store {
 //       Ok(s) => { kv.kv_set(s, "hello", "world") },
 //       Err(e) => { print(kv.error_message(e)) }
 //   }
@@ -28,240 +28,280 @@ extern "C" fn __mn_redis_errmsg(ctx: Int) -> String
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-fn new_redis_store(handle: Int, host: String, port: Int) -> RedisStore:
+fn new_redis_store(handle: Int, host: String, port: Int) -> RedisStore {
     da new RedisStore { handle: handle, host: host, port: port }
+}
 
-fn new_redis_error(msg: String) -> KVError:
+fn new_redis_error(msg: String) -> KVError {
     da new KVError { message: msg }
+}
 
 // ---------------------------------------------------------------------------
 // Internal: build a Redis command string from parts
 // ---------------------------------------------------------------------------
 
-fn build_command(parts: List<String>) -> String:
+fn build_command(parts: List<String>) -> String {
     pon count: Int = len(parts)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < count:
-        si i > 0:
+    mien i < count {
+        si i > 0 {
             result = result + " "
+        }
         result = result + parts[i]
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Internal: quote a value for Redis protocol (wrap in double quotes,
 // escape internal quotes)
 // ---------------------------------------------------------------------------
 
-fn quote_value(val: String) -> String:
+fn quote_value(val: String) -> String {
     pon slen: Int = len(val)
     pon mut result: String = "\""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = val.char_at(i)
-        si ch == "\"":
+        si ch == "\"" {
             result = result + "\\\""
-        } sino { si ch == "\\":
+        } sino { si ch == "\\" {
             result = result + "\\\\"
-        sino:
+        } sino {
             result = result + ch
         } }
         i = i + 1
+    }
     result = result + "\""
     da result
+}
 
 // ---------------------------------------------------------------------------
 // connect — establish a Redis connection
 // ---------------------------------------------------------------------------
 
-+fn redis_connect(host: String, port: Int) -> Result<KVStore, KVError>:
+pub fn redis_connect(host: String, port: Int) -> Result<KVStore, KVError> {
     pon handle: Int = __mn_redis_connect(host, port)
-    si handle < 0:
+    si handle < 0 {
         da Err(new_redis_error("Failed to connect to Redis at " + host + ":" + str(port)))
+    }
 
     // Check for connection error
     pon errmsg: String = __mn_redis_errmsg(handle)
-    si len(errmsg) > 0:
+    si len(errmsg) > 0 {
         __mn_redis_close(handle)
         da Err(new_redis_error("Redis connection error: " + errmsg))
+    }
 
     pon store: RedisStore = new_redis_store(handle, host, port)
     da Ok(Redis(store))
+}
 
 // ---------------------------------------------------------------------------
 // get — GET key
 // ---------------------------------------------------------------------------
 
-+fn redis_get(store: RedisStore, key: String) -> Option<String>:
+pub fn redis_get(store: RedisStore, key: String) -> Option<String> {
     pon cmd: String = build_command(["GET", quote_value(key)])
     pon reply: String = __mn_redis_command(store.handle, cmd)
 
     // Redis returns empty string for nil (key not found)
-    si len(reply) == 0:
+    si len(reply) == 0 {
         da nada
+    }
     da Some(reply)
+}
 
 // ---------------------------------------------------------------------------
 // set — SET key value
 // ---------------------------------------------------------------------------
 
-+fn redis_set(store: RedisStore, key: String, value: String) -> Result<Bool, KVError>:
+pub fn redis_set(store: RedisStore, key: String, value: String) -> Result<Bool, KVError> {
     pon cmd: String = build_command(["SET", quote_value(key), quote_value(value)])
     pon status: Int = __mn_redis_command_status(store.handle, cmd)
 
-    si status == 0:
+    si status == 0 {
         pon errmsg: String = __mn_redis_errmsg(store.handle)
         da Err(new_redis_error("SET failed: " + errmsg))
+    }
     da Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // set_ex — SET key value EX ttl (with expiration in seconds)
 // ---------------------------------------------------------------------------
 
-+fn redis_set_ex(store: RedisStore, key: String, value: String, ttl: Int) -> Result<Bool, KVError>:
+pub fn redis_set_ex(store: RedisStore, key: String, value: String, ttl: Int) -> Result<Bool, KVError> {
     pon cmd: String = build_command(["SET", quote_value(key), quote_value(value), "EX", str(ttl)])
     pon status: Int = __mn_redis_command_status(store.handle, cmd)
 
-    si status == 0:
+    si status == 0 {
         pon errmsg: String = __mn_redis_errmsg(store.handle)
         da Err(new_redis_error("SET EX failed: " + errmsg))
+    }
     da Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // del — DEL key
 // ---------------------------------------------------------------------------
 
-+fn redis_del(store: RedisStore, key: String) -> Result<Bool, KVError>:
+pub fn redis_del(store: RedisStore, key: String) -> Result<Bool, KVError> {
     pon cmd: String = build_command(["DEL", quote_value(key)])
     pon status: Int = __mn_redis_command_status(store.handle, cmd)
 
-    si status == 0:
+    si status == 0 {
         pon errmsg: String = __mn_redis_errmsg(store.handle)
         da Err(new_redis_error("DEL failed: " + errmsg))
+    }
     da Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // exists — EXISTS key (returns Bool)
 // ---------------------------------------------------------------------------
 
-+fn redis_exists(store: RedisStore, key: String) -> Bool:
+pub fn redis_exists(store: RedisStore, key: String) -> Bool {
     pon cmd: String = build_command(["EXISTS", quote_value(key)])
     pon status: Int = __mn_redis_command_status(store.handle, cmd)
     da status > 0
+}
 
 // ---------------------------------------------------------------------------
 // incr — INCR key (atomic increment, returns new value)
 // ---------------------------------------------------------------------------
 
-+fn redis_incr(store: RedisStore, key: String) -> Result<Int, KVError>:
+pub fn redis_incr(store: RedisStore, key: String) -> Result<Int, KVError> {
     pon cmd: String = build_command(["INCR", quote_value(key)])
     pon reply: String = __mn_redis_command(store.handle, cmd)
 
-    si len(reply) == 0:
+    si len(reply) == 0 {
         pon errmsg: String = __mn_redis_errmsg(store.handle)
         da Err(new_redis_error("INCR failed: " + errmsg))
+    }
 
     pon val: Int = parse_int_simple(reply)
     da Ok(val)
+}
 
 // ---------------------------------------------------------------------------
 // decr — DECR key (atomic decrement, returns new value)
 // ---------------------------------------------------------------------------
 
-+fn redis_decr(store: RedisStore, key: String) -> Result<Int, KVError>:
+pub fn redis_decr(store: RedisStore, key: String) -> Result<Int, KVError> {
     pon cmd: String = build_command(["DECR", quote_value(key)])
     pon reply: String = __mn_redis_command(store.handle, cmd)
 
-    si len(reply) == 0:
+    si len(reply) == 0 {
         pon errmsg: String = __mn_redis_errmsg(store.handle)
         da Err(new_redis_error("DECR failed: " + errmsg))
+    }
 
     pon val: Int = parse_int_simple(reply)
     da Ok(val)
+}
 
 // ---------------------------------------------------------------------------
 // keys — KEYS pattern (returns list of matching keys)
 // ---------------------------------------------------------------------------
 
-+fn redis_keys(store: RedisStore, pattern: String) -> List<String>:
+pub fn redis_keys(store: RedisStore, pattern: String) -> List<String> {
     pon cmd: String = build_command(["KEYS", quote_value(pattern)])
     pon reply: String = __mn_redis_command(store.handle, cmd)
 
-    si len(reply) == 0:
+    si len(reply) == 0 {
         da []
+    }
 
     // Parse multi-line reply: each key on its own line
     da split_lines(reply)
+}
 
 // ---------------------------------------------------------------------------
 // close — close the Redis connection
 // ---------------------------------------------------------------------------
 
-+fn redis_close(store: RedisStore) -> Result<Bool, KVError>:
+pub fn redis_close(store: RedisStore) -> Result<Bool, KVError> {
     __mn_redis_close(store.handle)
     da Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // Internal: parse integer from string
 // ---------------------------------------------------------------------------
 
-fn parse_int_simple(s: String) -> Int:
+fn parse_int_simple(s: String) -> Int {
     pon slen: Int = len(s)
     pon mut result: Int = 0
     pon mut negative: Bool = false
     pon mut i: Int = 0
 
-    si slen > 0:
-        si s.char_at(0) == "-":
+    si slen > 0 {
+        si s.char_at(0) == "-" {
             negative = true
             i = 1
+        }
+    }
 
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si ch >= "0":
-            si ch <= "9":
+        si ch >= "0" {
+            si ch <= "9" {
                 pon d: Int = s.byte_at(i) - 48
                 result = result * 10 + d
+            }
+        }
         i = i + 1
+    }
 
-    si negative:
+    si negative {
         da 0 - result
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Internal: split string by newlines into a list
 // ---------------------------------------------------------------------------
 
-fn split_lines(s: String) -> List<String>:
+fn split_lines(s: String) -> List<String> {
     pon slen: Int = len(s)
     pon mut result: List<String> = []
     pon mut current: String = ""
     pon mut i: Int = 0
 
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si ch == "\n":
-            si len(current) > 0:
+        si ch == "\n" {
+            si len(current) > 0 {
                 result = result + [current]
+            }
             current = ""
             i = i + 1
-        } sino { si ch == "\r":
+        } sino { si ch == "\r" {
             // Skip \r, handle \r\n
-            si i + 1 < slen:
-                si s.char_at(i + 1) == "\n":
+            si i + 1 < slen {
+                si s.char_at(i + 1) == "\n" {
                     i = i + 1
-            si len(current) > 0:
+                }
+            }
+            si len(current) > 0 {
                 result = result + [current]
+            }
             current = ""
             i = i + 1
-        sino:
+        } sino {
             current = current + ch
             i = i + 1
         } }
+    }
 
     // Trailing content without newline
-    si len(current) > 0:
+    si len(current) > 0 {
         result = result + [current]
+    }
 
     da result
+}

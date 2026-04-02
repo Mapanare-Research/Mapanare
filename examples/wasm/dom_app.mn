@@ -9,57 +9,69 @@ usa wasm::bridge
 // Counter state
 pon mut count: Int = 0
 
-fn increment():
+fn increment() {
     count = count + 1
     update_display()
+}
 
-fn decrement():
+fn decrement() {
     count = count - 1
     update_display()
+}
 
-fn reset():
+fn reset() {
     count = 0
     update_display()
+}
 
-fn update_display():
+fn update_display() {
     pon el: JsValue = dom_query("#counter-value")
     dom_set_text(el, str(count))
 
     // Update color based on value
     pon mut color: String = "black"
-    si count > 0:
+    si count > 0 {
         color = "green"
-    si count < 0:
+    }
+    si count < 0 {
         color = "red"
+    }
 
     js_eval("document.getElementById('counter-value').style.color = '" + color + "'")
+}
 
-fn setup_todo():
+fn setup_todo() {
     // Create a simple todo list
     pon container: JsValue = dom_query("#todo-app")
-    si container == nada:
+    si container == nada {
         da
+    }
 
     pon items: List<String> = ["Learn Mapanare", "Compile to WASM", "Build a web app", "Deploy everywhere"]
 
     pon mut html: String = "<h2>Todo List</h2><ul>"
-    cada item en items:
+    cada item en items {
         html = html + "<li>" + item + "</li>"
+    }
     html = html + "</ul>"
 
     dom_set_html(container, html)
+}
 
-fn on_increment(e: JsValue) -> JsValue:
+fn on_increment(e: JsValue) -> JsValue {
     increment()
     da nada
+}
 
-fn on_decrement(e: JsValue) -> JsValue:
+fn on_decrement(e: JsValue) -> JsValue {
     decrement()
     da nada
+}
 
-fn on_reset(e: JsValue) -> JsValue:
+fn on_reset(e: JsValue) -> JsValue {
     reset()
     da nada
+}
 
 // Application entry point (top-level statements)
 console_log("Mapanare WASM DOM app loaded!")

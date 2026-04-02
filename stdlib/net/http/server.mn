@@ -30,24 +30,27 @@ usa text::string_utils
 // Task 1: Route struct
 // ---------------------------------------------------------------------------
 
-+tipo Route:
+pub tipo Route {
     method: String,
     path_pattern: String,
     handler_name: String,
     is_static_file: Bool,
     static_dir: String
+}
 
-fn new_route(meth: String, pattern: String, handler: String) -> Route:
+fn new_route(meth: String, pattern: String, handler: String) -> Route {
     da new Route {method: meth, path_pattern: pattern, handler_name: handler, is_static_file: false, static_dir: ""}
+}
 
-fn new_static_route(prefix: String, dir: String) -> Route:
+fn new_static_route(prefix: String, dir: String) -> Route {
     da new Route {method: "GET", path_pattern: prefix, handler_name: "__static__", is_static_file: true, static_dir: dir}
+}
 
 // ---------------------------------------------------------------------------
 // Task 2: Router struct
 // ---------------------------------------------------------------------------
 
-+tipo Router:
+pub tipo Router {
     routes: List<Route>,
     route_count: Int,
     has_logging: Bool,
@@ -55,272 +58,323 @@ fn new_static_route(prefix: String, dir: String) -> Route:
     cors_origins: String,
     cors_methods: String,
     cors_headers: String
+}
 
-fn new_router() -> Router:
+fn new_router() -> Router {
     pon routes: List<Route> = []
     da new Router {routes: routes, route_count: 0, has_logging: false, has_cors: false, cors_origins: "*", cors_methods: "GET, POST, PUT, DELETE, PATCH, OPTIONS", cors_headers: "Content-Type, Authorization"}
+}
 
 // ---------------------------------------------------------------------------
 // Task 3: ServerConfig struct
 // ---------------------------------------------------------------------------
 
-+tipo ServerConfig:
+pub tipo ServerConfig {
     host: String,
     port: Int,
     max_connections: Int,
     read_timeout_ms: Int
+}
 
-fn new_server_config(h: String, p: Int) -> ServerConfig:
+fn new_server_config(h: String, p: Int) -> ServerConfig {
     da new ServerConfig {host: h, port: p, max_connections: 128, read_timeout_ms: 30000}
+}
 
 // ---------------------------------------------------------------------------
 // Task 4: Context struct and response builder
 // ---------------------------------------------------------------------------
 
-+tipo HttpRequest:
+pub tipo HttpRequest {
     method: String,
     path: String,
     headers: Map<String, String>,
     body: String,
     query: String,
     version: String
+}
 
-fn new_server_request(meth: String, p: String, hdrs: Map<String, String>, b: String, q: String) -> HttpRequest:
+fn new_server_request(meth: String, p: String, hdrs: Map<String, String>, b: String, q: String) -> HttpRequest {
     da new HttpRequest {method: meth, path: p, headers: hdrs, body: b, query: q, version: "HTTP/1.1"}
+}
 
-+tipo HttpResponse:
+pub tipo HttpResponse {
     status_code: Int,
     headers: Map<String, String>,
     body: String
+}
 
-fn new_server_response(sc: Int, b: String) -> HttpResponse:
+fn new_server_response(sc: Int, b: String) -> HttpResponse {
     da new HttpResponse {status_code: sc, headers: #{}, body: b}
+}
 
-+tipo Context:
+pub tipo Context {
     request: HttpRequest,
     path_params: Map<String, String>,
     response_status: Int,
     response_headers: Map<String, String>,
     response_body: String
+}
 
-fn new_context(req: HttpRequest, params: Map<String, String>) -> Context:
+fn new_context(req: HttpRequest, params: Map<String, String>) -> Context {
     da new Context {request: req, path_params: params, response_status: 200, response_headers: #{}, response_body: ""}
+}
 
 // ---------------------------------------------------------------------------
 // Task 19: ctx.respond — set response status and body
 // ---------------------------------------------------------------------------
 
-+fn ctx_respond(ctx: Context, status: Int, body: String) -> Context:
+pub fn ctx_respond(ctx: Context, status: Int, body: String) -> Context {
     da new Context {request: ctx.request, path_params: ctx.path_params, response_status: status, response_headers: ctx.response_headers, response_body: body}
+}
 
 // ---------------------------------------------------------------------------
 // Task 20: ctx.json — JSON response with correct Content-Type
 // ---------------------------------------------------------------------------
 
-+fn ctx_json(ctx: Context, status: Int, data: String) -> Context:
+pub fn ctx_json(ctx: Context, status: Int, data: String) -> Context {
     pon mut hdrs: Map<String, String> = #{}
-    cada key en ctx.response_headers:
+    cada key en ctx.response_headers {
         hdrs[key] = ctx.response_headers[key]
+    }
     hdrs["Content-Type"] = "application/json"
     da new Context {request: ctx.request, path_params: ctx.path_params, response_status: status, response_headers: hdrs, response_body: data}
+}
 
 // ---------------------------------------------------------------------------
 // Task 21: ctx.redirect — redirect response
 // ---------------------------------------------------------------------------
 
-+fn ctx_redirect(ctx: Context, url: String, status: Int) -> Context:
+pub fn ctx_redirect(ctx: Context, url: String, status: Int) -> Context {
     pon mut hdrs: Map<String, String> = #{}
-    cada key en ctx.response_headers:
+    cada key en ctx.response_headers {
         hdrs[key] = ctx.response_headers[key]
+    }
     hdrs["Location"] = url
     da new Context {request: ctx.request, path_params: ctx.path_params, response_status: status, response_headers: hdrs, response_body: ""}
+}
 
 // ---------------------------------------------------------------------------
 // Route registration helpers
 // ---------------------------------------------------------------------------
 
-+fn router_add_route(router: Router, meth: String, pattern: String, handler: String) -> Router:
+pub fn router_add_route(router: Router, meth: String, pattern: String, handler: String) -> Router {
     pon r: Route = new_route(meth, pattern, handler)
     pon mut routes: List<Route> = router.routes
     routes = routes + [r]
     da new Router {routes: routes, route_count: router.route_count + 1, has_logging: router.has_logging, has_cors: router.has_cors, cors_origins: router.cors_origins, cors_methods: router.cors_methods, cors_headers: router.cors_headers}
+}
 
 // Task 22: Static file serving
-+fn router_static_files(router: Router, prefix: String, dir: String) -> Router:
+pub fn router_static_files(router: Router, prefix: String, dir: String) -> Router {
     pon r: Route = new_static_route(prefix, dir)
     pon mut routes: List<Route> = router.routes
     routes = routes + [r]
     da new Router {routes: routes, route_count: router.route_count + 1, has_logging: router.has_logging, has_cors: router.has_cors, cors_origins: router.cors_origins, cors_methods: router.cors_methods, cors_headers: router.cors_headers}
+}
 
 // ---------------------------------------------------------------------------
 // Task 15-18: Middleware support
 // ---------------------------------------------------------------------------
 
 // Task 16: Enable logging middleware
-+fn router_use_logging(router: Router) -> Router:
+pub fn router_use_logging(router: Router) -> Router {
     da new Router {routes: router.routes, route_count: router.route_count, has_logging: true, has_cors: router.has_cors, cors_origins: router.cors_origins, cors_methods: router.cors_methods, cors_headers: router.cors_headers}
+}
 
 // Task 17: Enable CORS middleware with configurable origins, methods, headers
-+fn router_use_cors(router: Router, origins: String, methods: String, headers: String) -> Router:
+pub fn router_use_cors(router: Router, origins: String, methods: String, headers: String) -> Router {
     da new Router {routes: router.routes, route_count: router.route_count, has_logging: router.has_logging, has_cors: true, cors_origins: origins, cors_methods: methods, cors_headers: headers}
+}
 
 // Task 18: Middleware chain execution (outer -> inner -> handler -> inner -> outer)
 // Logging runs first (before handler), CORS headers added after handler.
-fn apply_middleware_before(router: Router, ctx: Context) -> Context:
+fn apply_middleware_before(router: Router, ctx: Context) -> Context {
     pon mut result: Context = ctx
     // Task 16: Logging middleware — log method and path
-    si router.has_logging:
+    si router.has_logging {
         print("[LOG] " + ctx.request.method + " " + ctx.request.path)
+    }
     da result
+}
 
-fn apply_middleware_after(router: Router, ctx: Context) -> Context:
+fn apply_middleware_after(router: Router, ctx: Context) -> Context {
     pon mut result: Context = ctx
     // Task 17: CORS middleware — add CORS headers to response
-    si router.has_cors:
+    si router.has_cors {
         pon mut hdrs: Map<String, String> = #{}
-        cada key en result.response_headers:
+        cada key en result.response_headers {
             hdrs[key] = result.response_headers[key]
+        }
         hdrs["Access-Control-Allow-Origin"] = router.cors_origins
         hdrs["Access-Control-Allow-Methods"] = router.cors_methods
         hdrs["Access-Control-Allow-Headers"] = router.cors_headers
         result = new Context {request: result.request, path_params: result.path_params, response_status: result.response_status, response_headers: hdrs, response_body: result.response_body}
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Tasks 5-7: Route matching and path parameter extraction
 // ---------------------------------------------------------------------------
 
 // Manual integer parsing — delegated to text::string_utils
-fn parse_int_manual(s: String) -> Int:
+fn parse_int_manual(s: String) -> Int {
     da string_utils.parse_int_manual(s)
+}
 
 // Task 5: Path pattern parsing — extract path segments
 // Pattern: /api/users/${id} → segments ["api", "users", "${id}"]
 // Request: /api/users/42 → params {"id": "42"}
 
-tipo MatchResult:
+tipo MatchResult {
     matched: Bool,
     params: Map<String, String>
+}
 
-fn new_match_ok(p: Map<String, String>) -> MatchResult:
+fn new_match_ok(p: Map<String, String>) -> MatchResult {
     da new MatchResult {matched: true, params: p}
+}
 
-fn new_match_fail() -> MatchResult:
+fn new_match_fail() -> MatchResult {
     da new MatchResult {matched: false, params: #{}}
+}
 
 // Split a path into segments by "/"
-fn split_path(path: String) -> List<String>:
+fn split_path(path: String) -> List<String> {
     pon slen: Int = len(path)
     pon mut segments: List<String> = []
     pon mut current: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = path.char_at(i)
-        si ch == "/":
-            si len(current) > 0:
+        si ch == "/" {
+            si len(current) > 0 {
                 segments = segments + [current]
                 current = ""
-        sino:
+            }
+        } sino {
             current = current + ch
+        }
         i = i + 1
-    si len(current) > 0:
+    }
+    si len(current) > 0 {
         segments = segments + [current]
+    }
     da segments
+}
 
 // Check if a segment is a path parameter (starts with "${" and ends with "}")
-fn is_param_segment(seg: String) -> Bool:
+fn is_param_segment(seg: String) -> Bool {
     pon slen: Int = len(seg)
     si slen < 4 { da false }
     si seg.char_at(0) != "$" { da false }
     si seg.char_at(1) != "{" { da false }
     si seg.char_at(slen - 1) != "}" { da false }
     da true
+}
 
 // Extract parameter name from "${name}" -> "name"
-fn extract_param_name(seg: String) -> String:
+fn extract_param_name(seg: String) -> String {
     pon slen: Int = len(seg)
     pon mut name: String = ""
     pon mut i: Int = 2
-    mien i < slen - 1:
+    mien i < slen - 1 {
         name = name + seg.char_at(i)
         i = i + 1
+    }
     da name
+}
 
 // Task 5+6+7: Match a request path against a route pattern
-fn match_route(pattern: String, request_path: String, route_method: String, req_method: String) -> MatchResult:
+fn match_route(pattern: String, request_path: String, route_method: String, req_method: String) -> MatchResult {
     // Check method match
-    si route_method != req_method:
+    si route_method != req_method {
         da new_match_fail()
+    }
 
     pon pattern_segs: List<String> = split_path(pattern)
     pon request_segs: List<String> = split_path(request_path)
 
     // Segment count must match
-    si len(pattern_segs) != len(request_segs):
+    si len(pattern_segs) != len(request_segs) {
         da new_match_fail()
+    }
 
     pon mut params: Map<String, String> = #{}
     pon seg_count: Int = len(pattern_segs)
     pon mut i: Int = 0
 
-    mien i < seg_count:
+    mien i < seg_count {
         pon pseg: String = pattern_segs[i]
         pon rseg: String = request_segs[i]
 
-        si is_param_segment(pseg):
+        si is_param_segment(pseg) {
             // Extract parameter
             pon pname: String = extract_param_name(pseg)
             params[pname] = rseg
-        sino:
+        } sino {
             // Task 6: Static path matching — segments must match exactly
-            si pseg != rseg:
+            si pseg != rseg {
                 da new_match_fail()
+            }
+        }
         i = i + 1
+    }
 
     da new_match_ok(params)
+}
 
 // Check if a path starts with a given prefix (for static file routes)
-fn starts_with(s: String, prefix: String) -> Bool:
+fn starts_with(s: String, prefix: String) -> Bool {
     pon slen: Int = len(s)
     pon plen: Int = len(prefix)
     si plen > slen { da false }
     pon mut i: Int = 0
-    mien i < plen:
-        si s.char_at(i) != prefix.char_at(i):
+    mien i < plen {
+        si s.char_at(i) != prefix.char_at(i) {
             da false
+        }
         i = i + 1
+    }
     da true
+}
 
 // Extract the path after a prefix
-fn path_after_prefix(s: String, prefix: String) -> String:
+fn path_after_prefix(s: String, prefix: String) -> String {
     pon plen: Int = len(prefix)
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = plen
-    mien i < slen:
+    mien i < slen {
         result = result + s.char_at(i)
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // HTTP request parsing (Task 10 — reuse Phase 3 patterns)
 // ---------------------------------------------------------------------------
 
 // ASCII case conversion — delegated to text::string_utils
-fn to_lower_char(ch: String, b: Int) -> String:
+fn to_lower_char(ch: String, b: Int) -> String {
     da string_utils.to_lower_char(ch, b)
+}
 
-fn to_lower(s: String) -> String:
+fn to_lower(s: String) -> String {
     da string_utils.to_lower(s)
+}
 
-fn to_upper_char(ch: String, b: Int) -> String:
+fn to_upper_char(ch: String, b: Int) -> String {
     da string_utils.to_upper_char(ch, b)
+}
 
-fn to_upper(s: String) -> String:
+fn to_upper(s: String) -> String {
     da string_utils.to_upper(s)
+}
 
 // Parse an incoming HTTP request from raw bytes
-tipo ParsedRequest:
+tipo ParsedRequest {
     method: String,
     path: String,
     query: String,
@@ -329,119 +383,142 @@ tipo ParsedRequest:
     body: String,
     ok: Bool,
     error_msg: String
+}
 
-fn new_parsed_request_error(msg: String) -> ParsedRequest:
+fn new_parsed_request_error(msg: String) -> ParsedRequest {
     da new ParsedRequest {method: "", path: "/", query: "", version: "", headers: #{}, body: "", ok: false, error_msg: msg}
+}
 
-fn parse_incoming_request(raw: String) -> ParsedRequest:
+fn parse_incoming_request(raw: String) -> ParsedRequest {
     pon slen: Int = len(raw)
-    si slen < 14:
+    si slen < 14 {
         da new_parsed_request_error("Request too short")
+    }
 
     pon mut pos: Int = 0
 
     // Parse method
     pon mut method: String = ""
-    mien pos < slen:
+    mien pos < slen {
         pon ch: String = raw.char_at(pos)
         si ch == " " { pos = pos + 1; sal }
         method = method + ch
         pos = pos + 1
+    }
 
     // Parse path and optional query string
     pon mut path: String = ""
     pon mut query: String = ""
     pon mut in_query: Bool = false
-    mien pos < slen:
+    mien pos < slen {
         pon ch: String = raw.char_at(pos)
         si ch == " " { pos = pos + 1; sal }
-        si ch == "?":
+        si ch == "?" {
             in_query = true
             pos = pos + 1
-        sino:
-            si in_query:
+        } sino {
+            si in_query {
                 query = query + ch
-            sino:
+            } sino {
                 path = path + ch
+            }
             pos = pos + 1
+        }
+    }
 
     // Parse HTTP version
     pon mut version: String = ""
-    mien pos < slen:
+    mien pos < slen {
         pon ch: String = raw.char_at(pos)
         si ch == "\r" { pos = pos + 1; sal }
         si ch == "\n" { pos = pos + 1; sal }
         version = version + ch
         pos = pos + 1
+    }
     // Skip \n after \r
-    si pos < slen:
+    si pos < slen {
         si raw.char_at(pos) == "\n" { pos = pos + 1 }
+    }
 
     // Parse headers
     pon mut headers: Map<String, String> = #{}
     pon mut count: Int = 0
-    mien pos < slen:
+    mien pos < slen {
         count = count + 1
         si count > 200 { sal }
 
         // Check for empty line (end of headers)
-        si raw.char_at(pos) == "\r":
-            si pos + 1 < slen:
-                si raw.char_at(pos + 1) == "\n":
+        si raw.char_at(pos) == "\r" {
+            si pos + 1 < slen {
+                si raw.char_at(pos + 1) == "\n" {
                     pos = pos + 2
                     sal
-        si raw.char_at(pos) == "\n":
+                }
+            }
+        }
+        si raw.char_at(pos) == "\n" {
             pos = pos + 1
             sal
+        }
 
         // Parse header name
         pon mut hdr_name: String = ""
-        mien pos < slen:
+        mien pos < slen {
             pon ch: String = raw.char_at(pos)
             si ch == ":" { pos = pos + 1; sal }
             si ch == "\r" { sal }
             si ch == "\n" { sal }
             hdr_name = hdr_name + ch
             pos = pos + 1
+        }
 
         // Skip whitespace after colon
-        mien pos < slen:
+        mien pos < slen {
             pon ch: String = raw.char_at(pos)
-            si ch != " ":
+            si ch != " " {
                 si ch != "\t" { sal }
+            }
             pos = pos + 1
+        }
 
         // Parse header value
         pon mut hdr_value: String = ""
-        mien pos < slen:
+        mien pos < slen {
             pon ch: String = raw.char_at(pos)
-            si ch == "\r":
+            si ch == "\r" {
                 pos = pos + 1
-                si pos < slen:
+                si pos < slen {
                     si raw.char_at(pos) == "\n" { pos = pos + 1 }
+                }
                 sal
-            si ch == "\n":
+            }
+            si ch == "\n" {
                 pos = pos + 1
                 sal
+            }
             hdr_value = hdr_value + ch
             pos = pos + 1
+        }
 
         pon lower_name: String = to_lower(hdr_name)
         headers[lower_name] = hdr_value
+    }
 
     // Extract body (everything after headers)
     pon mut body: String = ""
-    mien pos < slen:
+    mien pos < slen {
         body = body + raw.char_at(pos)
         pos = pos + 1
+    }
 
     da new ParsedRequest {method: to_upper(method), path: path, query: query, version: version, headers: headers, body: body, ok: true, error_msg: ""}
+}
 
 // ---------------------------------------------------------------------------
 // HTTP response building (Task 12)
 // ---------------------------------------------------------------------------
 
-fn status_reason(code: Int) -> String:
+fn status_reason(code: Int) -> String {
     si code == 200 { da "OK" }
     si code == 201 { da "Created" }
     si code == 204 { da "No Content" }
@@ -455,8 +532,9 @@ fn status_reason(code: Int) -> String:
     si code == 405 { da "Method Not Allowed" }
     si code == 500 { da "Internal Server Error" }
     da "Unknown"
+}
 
-fn build_response(status: Int, headers: Map<String, String>, body: String) -> String:
+fn build_response(status: Int, headers: Map<String, String>, body: String) -> String {
     pon mut resp: String = "HTTP/1.1 " + str(status) + " " + status_reason(status) + "\r\n"
 
     // Add content-length
@@ -466,53 +544,62 @@ fn build_response(status: Int, headers: Map<String, String>, body: String) -> St
     resp = resp + "Connection: close\r\n"
 
     // User-provided headers
-    cada key en headers:
+    cada key en headers {
         resp = resp + key + ": " + headers[key] + "\r\n"
+    }
 
     resp = resp + "\r\n"
     resp = resp + body
 
     da resp
+}
 
 // Build a 404 response
-fn build_404_response(path: String) -> String:
+fn build_404_response(path: String) -> String {
     pon body: String = "404 Not Found: " + path
     da build_response(404, #{}, body)
+}
 
 // Build a 405 response
-fn build_405_response() -> String:
+fn build_405_response() -> String {
     pon body: String = "405 Method Not Allowed"
     da build_response(405, #{}, body)
+}
 
 // Build a 500 response
-fn build_500_response(msg: String) -> String:
+fn build_500_response(msg: String) -> String {
     pon body: String = "500 Internal Server Error: " + msg
     da build_response(500, #{}, body)
+}
 
 // ---------------------------------------------------------------------------
 // Task 22: Static file serving
 // ---------------------------------------------------------------------------
 
-fn guess_content_type(file_path: String) -> String:
+fn guess_content_type(file_path: String) -> String {
     pon slen: Int = len(file_path)
     // Find last "." in path
     pon mut dot_pos: Int = -1
     pon mut i: Int = slen - 1
-    mien i >= 0:
-        si file_path.char_at(i) == ".":
+    mien i >= 0 {
+        si file_path.char_at(i) == "." {
             dot_pos = i
             sal
+        }
         i = i - 1
+    }
 
-    si dot_pos < 0:
+    si dot_pos < 0 {
         da "application/octet-stream"
+    }
 
     // Extract extension
     pon mut ext: String = ""
     pon mut j: Int = dot_pos + 1
-    mien j < slen:
+    mien j < slen {
         ext = ext + file_path.char_at(j)
         j = j + 1
+    }
 
     pon lower_ext: String = to_lower(ext)
 
@@ -530,98 +617,111 @@ fn guess_content_type(file_path: String) -> String:
     si lower_ext == "ico" { da "image/x-icon" }
     si lower_ext == "xml" { da "application/xml" }
     da "application/octet-stream"
+}
 
-fn serve_static_file(dir: String, rel_path: String) -> Context:
+fn serve_static_file(dir: String, rel_path: String) -> Context {
     pon file_path: String = dir + "/" + rel_path
     pon content: String = __mn_file_read(file_path)
-    si len(content) == 0:
+    si len(content) == 0 {
         pon ctx: Context = new_context(new_server_request("GET", rel_path, #{}, "", ""), #{})
         da ctx_respond(ctx, 404, "File not found: " + rel_path)
+    }
     pon ct: String = guess_content_type(file_path)
     pon ctx: Context = new_context(new_server_request("GET", rel_path, #{}, "", ""), #{})
     pon mut hdrs: Map<String, String> = #{}
     hdrs["Content-Type"] = ct
     da new Context {request: ctx.request, path_params: ctx.path_params, response_status: 200, response_headers: hdrs, response_body: content}
+}
 
 // ---------------------------------------------------------------------------
 // Task 7+11: Route dispatch — match request to handler, extract path params
 // ---------------------------------------------------------------------------
 
 // ServerError enum
-+tipo ServerError:
+pub tipo ServerError {
     | BindFailed(String)
     | AcceptFailed(String)
     | ReadFailed(String)
     | WriteFailed(String)
+}
 
 // Route dispatch result
-tipo DispatchResult:
+tipo DispatchResult {
     matched: Bool,
     route_idx: Int,
     params: Map<String, String>,
     is_static: Bool,
     static_dir: String,
     static_rel_path: String
+}
 
-fn dispatch_route(router: Router, method: String, path: String) -> DispatchResult:
+fn dispatch_route(router: Router, method: String, path: String) -> DispatchResult {
     pon mut i: Int = 0
     pon route_count: Int = len(router.routes)
 
-    mien i < route_count:
+    mien i < route_count {
         pon route: Route = router.routes[i]
 
-        si route.is_static_file:
+        si route.is_static_file {
             // Check if request path starts with the static prefix
-            si starts_with(path, route.path_pattern):
+            si starts_with(path, route.path_pattern) {
                 pon rel: String = path_after_prefix(path, route.path_pattern)
                 da new DispatchResult {matched: true, route_idx: i, params: #{}, is_static: true, static_dir: route.static_dir, static_rel_path: rel}
-        sino:
+            }
+        } sino {
             pon mr: MatchResult = match_route(route.path_pattern, path, route.method, method)
-            si mr.matched:
+            si mr.matched {
                 da new DispatchResult {matched: true, route_idx: i, params: mr.params, is_static: false, static_dir: "", static_rel_path: ""}
+            }
+        }
         i = i + 1
+    }
 
     da new DispatchResult {matched: false, route_idx: -1, params: #{}, is_static: false, static_dir: "", static_rel_path: ""}
+}
 
 // ---------------------------------------------------------------------------
 // Task 14: Connection handling
 // ---------------------------------------------------------------------------
 
-fn handle_connection(fd: Int, router: Router, read_timeout: Int) -> Int:
+fn handle_connection(fd: Int, router: Router, read_timeout: Int) -> Int {
     // Set read timeout
-    si read_timeout > 0:
+    si read_timeout > 0 {
         pon to_r: Int = __mn_tcp_set_timeout(fd, read_timeout)
+    }
 
     // Read the raw request
     pon raw: String = __mn_tcp_recv_str(fd, 65536)
-    si len(raw) == 0:
+    si len(raw) == 0 {
         pon close_r: Int = __mn_tcp_close_fd(fd)
         da 0
+    }
 
     // Parse the request
     pon parsed: ParsedRequest = parse_incoming_request(raw)
-    si parsed.ok == false:
+    si parsed.ok == false {
         pon resp: String = build_500_response(parsed.error_msg)
         pon sent: Int = __mn_tcp_send_str(fd, resp)
         pon close_r: Int = __mn_tcp_close_fd(fd)
         da 0
+    }
 
     // Dispatch to route
     pon dr: DispatchResult = dispatch_route(router, parsed.method, parsed.path)
 
     pon mut response_str: String = ""
 
-    si dr.matched == false:
+    si dr.matched == false {
         // Task 27: 404 for unmatched routes
         response_str = build_404_response(parsed.path)
-    sino:
-        si dr.is_static:
+    } sino {
+        si dr.is_static {
             // Static file serving
             pon ctx: Context = serve_static_file(dr.static_dir, dr.static_rel_path)
             // Apply middleware
             pon after_ctx: Context = apply_middleware_after(router, ctx)
             response_str = build_response(after_ctx.response_status, after_ctx.response_headers, after_ctx.response_body)
-        sino:
+        } sino {
             // Create context for handler
             pon req: HttpRequest = new_server_request(parsed.method, parsed.path, parsed.headers, parsed.body, parsed.query)
             pon ctx: Context = new_context(req, dr.params)
@@ -635,6 +735,8 @@ fn handle_connection(fd: Int, router: Router, read_timeout: Int) -> Int:
             // The route's handler_name is used for identification.
             pon after_ctx: Context = apply_middleware_after(router, before_ctx)
             response_str = build_response(after_ctx.response_status, after_ctx.response_headers, after_ctx.response_body)
+        }
+    }
 
     // Send response
     pon sent: Int = __mn_tcp_send_str(fd, response_str)
@@ -642,6 +744,7 @@ fn handle_connection(fd: Int, router: Router, read_timeout: Int) -> Int:
     // Graceful close
     pon close_r: Int = __mn_tcp_close_fd(fd)
     da 0
+}
 
 // ---------------------------------------------------------------------------
 // Handler execution — user-facing API
@@ -649,43 +752,49 @@ fn handle_connection(fd: Int, router: Router, read_timeout: Int) -> Int:
 
 // Process a single request: parse, match, run middleware, return context
 // This is the function that users override with their own logic.
-+fn process_request(router: Router, raw: String) -> Context:
+pub fn process_request(router: Router, raw: String) -> Context {
     pon parsed: ParsedRequest = parse_incoming_request(raw)
-    si parsed.ok == false:
+    si parsed.ok == false {
         pon ctx: Context = new_context(new_server_request("GET", "/", #{}, "", ""), #{})
         da ctx_respond(ctx, 500, "Parse error: " + parsed.error_msg)
+    }
 
     pon dr: DispatchResult = dispatch_route(router, parsed.method, parsed.path)
 
-    si dr.matched == false:
+    si dr.matched == false {
         pon ctx: Context = new_context(new_server_request(parsed.method, parsed.path, parsed.headers, parsed.body, parsed.query), #{})
         pon ctx2: Context = ctx_respond(ctx, 404, "Not Found: " + parsed.path)
         da apply_middleware_after(router, ctx2)
+    }
 
-    si dr.is_static:
+    si dr.is_static {
         pon ctx: Context = serve_static_file(dr.static_dir, dr.static_rel_path)
         da apply_middleware_after(router, ctx)
+    }
 
     pon req: HttpRequest = new_server_request(parsed.method, parsed.path, parsed.headers, parsed.body, parsed.query)
     pon ctx: Context = new_context(req, dr.params)
     pon before_ctx: Context = apply_middleware_before(router, ctx)
     da apply_middleware_after(router, before_ctx)
+}
 
 // Build an HTTP response string from a Context
-+fn context_to_response(ctx: Context) -> String:
+pub fn context_to_response(ctx: Context) -> String {
     da build_response(ctx.response_status, ctx.response_headers, ctx.response_body)
+}
 
 // ---------------------------------------------------------------------------
 // Tasks 8-9, 13: Server listen loop with agent-per-request
 // ---------------------------------------------------------------------------
 
-+fn server_listen(config: ServerConfig, router: Router) -> Result<Int, ServerError>:
+pub fn server_listen(config: ServerConfig, router: Router) -> Result<Int, ServerError> {
     pon init_r: Int = __mn_net_init()
 
     // Task 9: Bind and listen
     pon listen_fd: Int = __mn_tcp_listen_str(config.host, config.port, config.max_connections)
-    si listen_fd < 0:
+    si listen_fd < 0 {
         da Err(BindFailed("Failed to bind on " + config.host + ":" + str(config.port)))
+    }
 
     print("[SERVER] Listening on " + config.host + ":" + str(config.port))
 
@@ -696,14 +805,17 @@ fn handle_connection(fd: Int, router: Router, read_timeout: Int) -> Int:
     // integration with the LLVM backend.
     pon mut running: Bool = true
     pon mut iterations: Int = 0
-    mien running:
+    mien running {
         iterations = iterations + 1
         si iterations > 1000000 { sal }
 
         pon client_fd: Int = __mn_tcp_accept(listen_fd)
-        si client_fd >= 0:
+        si client_fd >= 0 {
             // Handle connection
             pon result: Int = handle_connection(client_fd, router, config.read_timeout_ms)
+        }
+    }
 
     pon close_r: Int = __mn_tcp_close_fd(listen_fd)
     da Ok(0)
+}

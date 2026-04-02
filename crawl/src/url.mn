@@ -8,129 +8,153 @@
 // Url struct
 // ---------------------------------------------------------------------------
 
-+tipo Url:
+pub tipo Url {
     scheme: String,
     host: String,
     port: Int,
     path: String,
     query: String,
     fragment: String
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
 /// Find the position of "://" in a URL string. Returns -1 if not found.
-fn find_scheme_end(raw: String) -> Int:
+fn find_scheme_end(raw: String) -> Int {
     pon slen: Int = len(raw)
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = raw.char_at(i)
-        si ch == ":":
-            si i + 2 < slen:
-                si raw.char_at(i + 1) == "/":
-                    si raw.char_at(i + 2) == "/":
+        si ch == ":" {
+            si i + 2 < slen {
+                si raw.char_at(i + 1) == "/" {
+                    si raw.char_at(i + 2) == "/" {
                         da i
+                    }
+                }
+            }
+        }
         i = i + 1
+    }
     da -1
+}
 
 /// Find the end of the host portion (stops at /, ?, #, or :port).
-fn find_host_end(raw: String, start: Int) -> Int:
+fn find_host_end(raw: String, start: Int) -> Int {
     pon slen: Int = len(raw)
     pon mut i: Int = start
-    mien i < slen:
+    mien i < slen {
         pon ch: String = raw.char_at(i)
         si ch == "/" { da i }
         si ch == "?" { da i }
         si ch == "#" { da i }
         si ch == ":" { da i }
         i = i + 1
+    }
     da slen
+}
 
 /// Extract a port number from the string starting at pos (after ':').
 /// Returns -1 if no valid digits found.
-fn extract_port(raw: String, start: Int) -> Int:
+fn extract_port(raw: String, start: Int) -> Int {
     pon slen: Int = len(raw)
     pon mut result: Int = 0
     pon mut i: Int = start
     pon mut found: Bool = false
-    mien i < slen:
+    mien i < slen {
         pon ch: String = raw.char_at(i)
-        si ch >= "0":
-            si ch <= "9":
+        si ch >= "0" {
+            si ch <= "9" {
                 result = result * 10 + (ch.byte_at(0) - 48)
                 found = true
                 i = i + 1
-            sino:
+            } sino {
                 sal
-        sino:
+            }
+        } sino {
             sal
+        }
+    }
     si found { da result }
     da -1
+}
 
 /// Convert a single ASCII character to lowercase.
-fn to_lower_char(ch: String) -> String:
+fn to_lower_char(ch: String) -> String {
     pon b: Int = ch.byte_at(0)
-    si b >= 65:
-        si b <= 90:
+    si b >= 65 {
+        si b <= 90 {
             da str(b + 32)
+        }
+    }
     da ch
+}
 
 /// Convert a string to ASCII lowercase.
-fn to_lower(s: String) -> String:
+fn to_lower(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         pon b: Int = ch.byte_at(0)
-        si b >= 65:
-            si b <= 90:
+        si b >= 65 {
+            si b <= 90 {
                 // A-Z -> a-z
                 pon mut lower: String = ""
                 pon lb: Int = b + 32
                 // Build lowercase char via char_at on a known mapping
                 si lb == 97 { lower = "a" } sino { si lb == 98 { lower = "b" } sino { si lb == 99 { lower = "c" } sino { si lb == 100 { lower = "d" } sino { si lb == 101 { lower = "e" } sino { si lb == 102 { lower = "f" } sino { si lb == 103 { lower = "g" } sino { si lb == 104 { lower = "h" } sino { si lb == 105 { lower = "i" } sino { si lb == 106 { lower = "j" } sino { si lb == 107 { lower = "k" } sino { si lb == 108 { lower = "l" } sino { si lb == 109 { lower = "m" } sino { si lb == 110 { lower = "n" } sino { si lb == 111 { lower = "o" } sino { si lb == 112 { lower = "p" } sino { si lb == 113 { lower = "q" } sino { si lb == 114 { lower = "r" } sino { si lb == 115 { lower = "s" } sino { si lb == 116 { lower = "t" } sino { si lb == 117 { lower = "u" } sino { si lb == 118 { lower = "v" } sino { si lb == 119 { lower = "w" } sino { si lb == 120 { lower = "x" } sino { si lb == 121 { lower = "y" } sino { lower = "z" } } } } } } } } } } } } } } } } } } } } } } } } } }
                 result = result + lower
-            sino:
+            } sino {
                 result = result + ch
-        sino:
+            }
+        } sino {
             result = result + ch
+        }
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // URL Parsing
 // ---------------------------------------------------------------------------
 
 /// Parse a raw URL string into its components.
-+fn parse_url(raw: String) -> Url:
+pub fn parse_url(raw: String) -> Url {
     pon slen: Int = len(raw)
-    si slen == 0:
+    si slen == 0 {
         da new Url { scheme: "", host: "", port: 0, path: "/", query: "", fragment: "" }
+    }
 
     // Parse scheme
     pon scheme_end: Int = find_scheme_end(raw)
     pon mut scheme: String = ""
     pon mut pos: Int = 0
-    si scheme_end >= 0:
+    si scheme_end >= 0 {
         pon mut si: Int = 0
-        mien si < scheme_end:
+        mien si < scheme_end {
             scheme = scheme + raw.char_at(si)
             si = si + 1
+        }
         scheme = to_lower(scheme)
         pos = scheme_end + 3
-    sino:
+    } sino {
         // No scheme — treat entire string as path
         da new Url { scheme: "", host: "", port: 0, path: raw, query: "", fragment: "" }
+    }
 
     // Parse host
     pon host_end: Int = find_host_end(raw, pos)
     pon mut host: String = ""
     pon mut hi: Int = pos
-    mien hi < host_end:
+    mien hi < host_end {
         host = host + raw.char_at(hi)
         hi = hi + 1
+    }
     host = to_lower(host)
     pos = host_end
 
@@ -138,57 +162,74 @@ fn to_lower(s: String) -> String:
     pon mut port: Int = 80
     si scheme == "https" { port = 443 }
 
-    si pos < slen:
-        si raw.char_at(pos) == ":":
+    si pos < slen {
+        si raw.char_at(pos) == ":" {
             pos = pos + 1
             pon extracted_port: Int = extract_port(raw, pos)
-            si extracted_port >= 0:
+            si extracted_port >= 0 {
                 port = extracted_port
+            }
             // Advance past port digits
-            mien pos < slen:
+            mien pos < slen {
                 pon pch: String = raw.char_at(pos)
-                si pch >= "0":
-                    si pch <= "9":
+                si pch >= "0" {
+                    si pch <= "9" {
                         pos = pos + 1
-                    sino:
+                    } sino {
                         sal
-                sino:
+                    }
+                } sino {
                     sal
+                }
+            }
+        }
+    }
 
     // Parse path
     pon mut path: String = ""
-    si pos < slen:
-        si raw.char_at(pos) == "/":
-            mien pos < slen:
+    si pos < slen {
+        si raw.char_at(pos) == "/" {
+            mien pos < slen {
                 pon ch: String = raw.char_at(pos)
                 si ch == "?" { sal }
                 si ch == "#" { sal }
                 path = path + ch
                 pos = pos + 1
-    si len(path) == 0:
+            }
+        }
+    }
+    si len(path) == 0 {
         path = "/"
+    }
 
     // Parse query
     pon mut query: String = ""
-    si pos < slen:
-        si raw.char_at(pos) == "?":
+    si pos < slen {
+        si raw.char_at(pos) == "?" {
             pos = pos + 1
-            mien pos < slen:
+            mien pos < slen {
                 pon ch: String = raw.char_at(pos)
                 si ch == "#" { sal }
                 query = query + ch
                 pos = pos + 1
+            }
+        }
+    }
 
     // Parse fragment
     pon mut fragment: String = ""
-    si pos < slen:
-        si raw.char_at(pos) == "#":
+    si pos < slen {
+        si raw.char_at(pos) == "#" {
             pos = pos + 1
-            mien pos < slen:
+            mien pos < slen {
                 fragment = fragment + raw.char_at(pos)
                 pos = pos + 1
+            }
+        }
+    }
 
     da new Url { scheme: scheme, host: host, port: port, path: path, query: query, fragment: fragment }
+}
 
 // ---------------------------------------------------------------------------
 // URL Normalization / Resolution
@@ -196,27 +237,32 @@ fn to_lower(s: String) -> String:
 
 /// Resolve a relative URL against a base URL.
 /// Handles "./", "../", "//host", absolute "/path", and full URLs.
-+fn normalize_url(base: String, relative: String) -> String:
+pub fn normalize_url(base: String, relative: String) -> String {
     pon rlen: Int = len(relative)
-    si rlen == 0:
+    si rlen == 0 {
         da base
+    }
 
     // Already absolute URL (has scheme)
     pon rscheme: Int = find_scheme_end(relative)
-    si rscheme >= 0:
+    si rscheme >= 0 {
         da relative
+    }
 
     pon base_parsed: Url = parse_url(base)
 
     // Protocol-relative: //host/path
-    si rlen > 1:
-        si relative.char_at(0) == "/":
-            si relative.char_at(1) == "/":
+    si rlen > 1 {
+        si relative.char_at(0) == "/" {
+            si relative.char_at(1) == "/" {
                 da base_parsed.scheme + ":" + relative
+            }
+        }
+    }
 
     // Absolute path: /path
-    si relative.char_at(0) == "/":
-        da url_to_string(new Url:
+    si relative.char_at(0) == "/" {
+        da url_to_string(new Url {
             scheme: base_parsed.scheme,
             host: base_parsed.host,
             port: base_parsed.port,
@@ -224,6 +270,7 @@ fn to_lower(s: String) -> String:
             query: "",
             fragment: ""
         })
+    }
 
     // Relative path — resolve against base directory
     // Get directory of base path
@@ -232,22 +279,26 @@ fn to_lower(s: String) -> String:
     pon bplen: Int = len(base_path)
     pon mut last_slash: Int = 0
     pon mut bi: Int = 0
-    mien bi < bplen:
-        si base_path.char_at(bi) == "/":
+    mien bi < bplen {
+        si base_path.char_at(bi) == "/" {
             last_slash = bi
+        }
         bi = bi + 1
-    si last_slash > 0:
+    }
+    si last_slash > 0 {
         pon mut di: Int = 0
         base_dir = ""
-        mien di <= last_slash:
+        mien di <= last_slash {
             base_dir = base_dir + base_path.char_at(di)
             di = di + 1
+        }
+    }
 
     // Combine base_dir + relative and resolve . and ..
     pon combined: String = base_dir + relative
     pon resolved_path: String = resolve_dot_segments(combined)
 
-    da url_to_string(new Url:
+    da url_to_string(new Url {
         scheme: base_parsed.scheme,
         host: base_parsed.host,
         port: base_parsed.port,
@@ -255,77 +306,90 @@ fn to_lower(s: String) -> String:
         query: "",
         fragment: ""
     })
+}
 
 /// Resolve "." and ".." segments in a path.
-fn resolve_dot_segments(path: String) -> String:
+fn resolve_dot_segments(path: String) -> String {
     // Split path into segments by "/"
     pon plen: Int = len(path)
     pon mut segments: List<String> = []
     pon mut current: String = ""
     pon mut i: Int = 0
 
-    mien i < plen:
+    mien i < plen {
         pon ch: String = path.char_at(i)
-        si ch == "/":
-            si len(current) > 0:
+        si ch == "/" {
+            si len(current) > 0 {
                 segments = segments + [current]
                 current = ""
+            }
             i = i + 1
-        sino:
+        } sino {
             current = current + ch
             i = i + 1
-    si len(current) > 0:
+        }
+    }
+    si len(current) > 0 {
         segments = segments + [current]
+    }
 
     // Process segments: skip ".", pop for ".."
     pon mut resolved: List<String> = []
     pon seg_count: Int = len(segments)
     pon mut si: Int = 0
-    mien si < seg_count:
+    mien si < seg_count {
         pon seg: String = segments[si]
-        si seg == ".":
+        si seg == "." {
             // Skip
             pon mut nop: Int = 0
-        } sino { si seg == "..":
+        } sino { si seg == ".." {
             // Pop last resolved segment if possible
             pon rlen: Int = len(resolved)
-            si rlen > 0:
+            si rlen > 0 {
                 pon mut new_resolved: List<String> = []
                 pon mut ri: Int = 0
-                mien ri < rlen - 1:
+                mien ri < rlen - 1 {
                     new_resolved = new_resolved + [resolved[ri]]
                     ri = ri + 1
+                }
                 resolved = new_resolved
-        sino:
+            }
+        } sino {
             resolved = resolved + [seg]
         } }
         si = si + 1
+    }
 
     // Reconstruct path
     pon mut result: String = "/"
     pon rcount: Int = len(resolved)
     pon mut ri: Int = 0
-    mien ri < rcount:
-        si ri > 0:
+    mien ri < rcount {
+        si ri > 0 {
             result = result + "/"
+        }
         result = result + resolved[ri]
         ri = ri + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Domain comparison
 // ---------------------------------------------------------------------------
 
 /// Check if two URLs belong to the same domain (host comparison).
-+fn same_domain(url1: String, url2: String) -> Bool:
+pub fn same_domain(url1: String, url2: String) -> Bool {
     pon parsed1: Url = parse_url(url1)
     pon parsed2: Url = parse_url(url2)
     da parsed1.host == parsed2.host
+}
 
 /// Extract just the host from a URL string.
-+fn extract_host(raw: String) -> String:
+pub fn extract_host(raw: String) -> String {
     pon parsed: Url = parse_url(raw)
     da parsed.host
+}
 
 // ---------------------------------------------------------------------------
 // Fingerprinting (dedup)
@@ -333,7 +397,7 @@ fn resolve_dot_segments(path: String) -> String:
 
 /// Normalize a URL for deduplication: lowercase host, strip fragment,
 /// sort query params, normalize path.
-+fn url_fingerprint(raw: String) -> String:
+pub fn url_fingerprint(raw: String) -> String {
     pon parsed: Url = parse_url(raw)
 
     // Rebuild without fragment, with lowercased host
@@ -341,100 +405,117 @@ fn resolve_dot_segments(path: String) -> String:
 
     // Include non-default port
     pon mut include_port: Bool = false
-    si parsed.scheme == "http":
+    si parsed.scheme == "http" {
         si parsed.port != 80 { include_port = true }
-    } sino { si parsed.scheme == "https":
+    } sino { si parsed.scheme == "https" {
         si parsed.port != 443 { include_port = true }
     } }
-    si include_port:
+    si include_port {
         result = result + ":" + str(parsed.port)
+    }
 
     result = result + parsed.path
 
     // Sort query params for stable fingerprint
-    si len(parsed.query) > 0:
+    si len(parsed.query) > 0 {
         pon sorted_query: String = sort_query_params(parsed.query)
         result = result + "?" + sorted_query
+    }
 
     // No fragment in fingerprint
     da result
+}
 
 /// Sort query parameters alphabetically by key.
 /// Input: "b=2&a=1" -> Output: "a=1&b=2"
-fn sort_query_params(query: String) -> String:
+fn sort_query_params(query: String) -> String {
     // Parse into key=value pairs
     pon qlen: Int = len(query)
     pon mut pairs: List<String> = []
     pon mut current: String = ""
     pon mut i: Int = 0
 
-    mien i < qlen:
+    mien i < qlen {
         pon ch: String = query.char_at(i)
-        si ch == "&":
-            si len(current) > 0:
+        si ch == "&" {
+            si len(current) > 0 {
                 pairs = pairs + [current]
+            }
             current = ""
-        sino:
+        } sino {
             current = current + ch
+        }
         i = i + 1
-    si len(current) > 0:
+    }
+    si len(current) > 0 {
         pairs = pairs + [current]
+    }
 
     // Simple insertion sort by string comparison
     pon pair_count: Int = len(pairs)
     pon mut sorted: List<String> = pairs
     pon mut si: Int = 1
-    mien si < pair_count:
+    mien si < pair_count {
         pon mut j: Int = si
-        mien j > 0:
-            si sorted[j] < sorted[j - 1]:
+        mien j > 0 {
+            si sorted[j] < sorted[j - 1] {
                 // Swap
                 pon tmp: String = sorted[j]
                 sorted[j] = sorted[j - 1]
                 sorted[j - 1] = tmp
                 j = j - 1
-            sino:
+            } sino {
                 sal
+            }
+        }
         si = si + 1
+    }
 
     // Rejoin
     pon mut result: String = ""
     pon mut ri: Int = 0
-    mien ri < pair_count:
+    mien ri < pair_count {
         si ri > 0 { result = result + "&" }
         result = result + sorted[ri]
         ri = ri + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // URL reconstruction
 // ---------------------------------------------------------------------------
 
 /// Reconstruct a URL string from a Url struct.
-+fn url_to_string(u: Url) -> String:
+pub fn url_to_string(u: Url) -> String {
     pon mut result: String = ""
 
-    si len(u.scheme) > 0:
+    si len(u.scheme) > 0 {
         result = result + u.scheme + "://"
+    }
 
     result = result + u.host
 
     // Include non-default port
     pon mut include_port: Bool = false
-    si u.scheme == "http":
+    si u.scheme == "http" {
         si u.port != 80 { include_port = true }
-    } sino { si u.scheme == "https":
+    } sino { si u.scheme == "https" {
         si u.port != 443 { include_port = true }
     } }
-    si include_port:
+    si include_port {
         result = result + ":" + str(u.port)
+    }
 
     result = result + u.path
 
-    si len(u.query) > 0:
+    si len(u.query) > 0 {
         result = result + "?" + u.query
+    }
 
-    si len(u.fragment) > 0:
+    si len(u.fragment) > 0 {
         result = result + "#" + u.fragment
+    }
 
     da result
+}

@@ -10,111 +10,134 @@ usa text::regex
 // Core types
 // ---------------------------------------------------------------------------
 
-+tipo ExtractorType:
+pub tipo ExtractorType {
     | RegexExtract
     | HeaderExtract
+}
 
-+tipo Extractor:
+pub tipo Extractor {
     extractor_type: ExtractorType,
     name: String,
     pattern: String,
     group_idx: Int
+}
 
 // Re-declare ScanResponse locally (mirrors matcher.mn)
-+tipo ScanResponse:
+pub tipo ScanResponse {
     url: String,
     status: Int,
     headers: Map<String, String>,
     body: String,
     elapsed_ms: Int
+}
 
 // ---------------------------------------------------------------------------
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-fn new_extractor(etype: ExtractorType, name: String, pattern: String, group_idx: Int) -> Extractor:
-    da new Extractor:
+fn new_extractor(etype: ExtractorType, name: String, pattern: String, group_idx: Int) -> Extractor {
+    da new Extractor {
         extractor_type: etype,
         name: name,
         pattern: pattern,
         group_idx: group_idx
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Parse extractor type from string
 // ---------------------------------------------------------------------------
 
-+fn parse_extractor_type(type_str: String) -> ExtractorType:
+pub fn parse_extractor_type(type_str: String) -> ExtractorType {
     si type_str == "regex" { da RegexExtract() }
     si type_str == "header" { da HeaderExtract() }
     // Default to header extraction
     da HeaderExtract()
+}
 
 // ---------------------------------------------------------------------------
 // Regex extractor: find all matches and return the specified capture group
 // ---------------------------------------------------------------------------
 
-+fn extract_regex(ext: Extractor, body: String) -> List<String>:
+pub fn extract_regex(ext: Extractor, body: String) -> List<String> {
     pon mut results: List<String> = []
     pon matches: List<regex.Match> = regex.find_all(ext.pattern, body)
     pon match_count: Int = len(matches)
     pon mut i: Int = 0
-    mien i < match_count:
+    mien i < match_count {
         pon m: regex.Match = matches[i]
-        si ext.group_idx == 0:
+        si ext.group_idx == 0 {
             // Group 0 = entire match
             results = results + [m.text]
-        sino:
+        } sino {
             // Specific capture group
             pon group_count: Int = len(m.groups)
             pon group_index: Int = ext.group_idx - 1
-            si group_index < group_count:
-                match m.groups[group_index]:
+            si group_index < group_count {
+                match m.groups[group_index] {
                     Some(val) => { results = results + [val] },
                     _ => {}
+                }
+            }
+        }
         i = i + 1
+    }
     da results
+}
 
 // ---------------------------------------------------------------------------
 // Header extractor: extract the value of a named header
 // ---------------------------------------------------------------------------
 
-+fn extract_header(ext: Extractor, headers: Map<String, String>) -> List<String>:
+pub fn extract_header(ext: Extractor, headers: Map<String, String>) -> List<String> {
     pon mut results: List<String> = []
     pon target: String = ext.pattern
-    cada hkey en headers:
-        si hkey == target:
+    cada hkey en headers {
+        si hkey == target {
             results = results + [headers[hkey]]
+        }
         // Also try case-insensitive comparison for common headers
-        si hkey.to_lower() == target.to_lower():
+        si hkey.to_lower() == target.to_lower() {
             // Avoid duplicates: only add if not already present
             pon val: String = headers[hkey]
             pon mut already: Bool = false
             pon rc: Int = len(results)
             pon mut ri: Int = 0
-            mien ri < rc:
-                si results[ri] == val:
+            mien ri < rc {
+                si results[ri] == val {
                     already = true
+                }
                 ri = ri + 1
-            si already == false:
+            }
+            si already == false {
                 results = results + [val]
+            }
+        }
+    }
     da results
+}
 
 // ---------------------------------------------------------------------------
 // Run all extractors against a response, returning name -> extracted values
 // ---------------------------------------------------------------------------
 
-+fn run_extractors(extractors: List<Extractor>, resp: ScanResponse) -> Map<String, List<String>>:
+pub fn run_extractors(extractors: List<Extractor>, resp: ScanResponse) -> Map<String, List<String>> {
     pon mut result: Map<String, List<String>> = #{}
     pon count: Int = len(extractors)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon ext: Extractor = extractors[i]
         pon mut values: List<String> = []
-        match ext.extractor_type:
-            RegexExtract =>:
+        match ext.extractor_type {
+            RegexExtract => {
                 values = extract_regex(ext, resp.body)
-            HeaderExtract =>:
+            },
+            HeaderExtract => {
                 values = extract_header(ext, resp.headers)
+            }
+        }
         result[ext.name] = values
         i = i + 1
+    }
     da result
+}

@@ -12,12 +12,13 @@ usa text::string_utils
 // Core Types
 // ---------------------------------------------------------------------------
 
-+tipo JsonError:
+pub tipo JsonError {
     message: String,
     line: Int,
     col: Int
+}
 
-+tipo JsonValue:
+pub tipo JsonValue {
     | Null
     | Bool(Bool)
     | Int(Int)
@@ -25,25 +26,28 @@ usa text::string_utils
     | Str(String)
     | Array(List<JsonValue>)
     | Object(Map<String, JsonValue>)
+}
 
 // Result struct for internal parser state (value + position after parsing)
-tipo DecodeResult:
+tipo DecodeResult {
     value: JsonValue,
     pos: Int,
     line: Int,
     col: Int
+}
 
 // Streaming parser events
-+tipo JsonEvent:
+pub tipo JsonEvent {
     | StartObject
     | EndObject
     | StartArray
     | EndArray
     | Key(String)
     | Value(JsonValue)
+}
 
 // Schema validation types
-+tipo JsonSchemaType:
+pub tipo JsonSchemaType {
     | SNull
     | SBool
     | SInt
@@ -52,74 +56,87 @@ tipo DecodeResult:
     | SArray
     | SObject
     | SAny
+}
 
-+tipo JsonSchema:
+pub tipo JsonSchema {
     schema_type: JsonSchemaType,
     required_fields: List<String>,
     min_value: Int,
     max_value: Int,
     has_min: Bool,
     has_max: Bool
+}
 
 // ---------------------------------------------------------------------------
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-fn new_json_error(message: String, line: Int, col: Int) -> JsonError:
+fn new_json_error(message: String, line: Int, col: Int) -> JsonError {
     da new JsonError { message: message, line: line, col: col }
+}
 
-fn new_decode_result(value: JsonValue, pos: Int, line: Int, col: Int) -> DecodeResult:
+fn new_decode_result(value: JsonValue, pos: Int, line: Int, col: Int) -> DecodeResult {
     da new DecodeResult { value: value, pos: pos, line: line, col: col }
+}
 
 // ---------------------------------------------------------------------------
 // Character classification helpers (delegated to text::string_utils)
 // ---------------------------------------------------------------------------
 
-fn is_json_digit(ch: String) -> Bool:
+fn is_json_digit(ch: String) -> Bool {
     da string_utils.is_digit(ch)
+}
 
-fn is_hex(ch: String) -> Bool:
+fn is_hex(ch: String) -> Bool {
     da string_utils.is_hex(ch)
+}
 
-fn digit_value(ch: String) -> Int:
+fn digit_value(ch: String) -> Int {
     da string_utils.digit_value(ch)
+}
 
-fn hex_digit_value(ch: String) -> Int:
+fn hex_digit_value(ch: String) -> Int {
     da string_utils.hex_digit_value_or_zero(ch)
+}
 
 // ---------------------------------------------------------------------------
 // Whitespace skipper (Task 9)
 // ---------------------------------------------------------------------------
 
-tipo SkipResult:
+tipo SkipResult {
     pos: Int,
     line: Int,
     col: Int
+}
 
-fn skip_whitespace(input: String, pos: Int, line: Int, col: Int) -> SkipResult:
+fn skip_whitespace(input: String, pos: Int, line: Int, col: Int) -> SkipResult {
     pon slen: Int = len(input)
     pon mut p: Int = pos
     pon mut ln: Int = line
     pon mut c: Int = col
-    mien p < slen:
+    mien p < slen {
         pon ch: String = input.char_at(p)
         si ch == " " { p = p + 1; c = c + 1 } sino { si ch == "\t" { p = p + 1; c = c + 1 } sino { si ch == "\r" { p = p + 1; c = c + 1 } sino { si ch == "\n" { p = p + 1; ln = ln + 1; c = 1 } sino { da new SkipResult { pos: p, line: ln, col: c } } } } }
+    }
     da new SkipResult { pos: p, line: ln, col: c }
+}
 
 // ---------------------------------------------------------------------------
 // Escape sequence handler (Task 5 helper)
 // ---------------------------------------------------------------------------
 
-tipo EscapeResult:
+tipo EscapeResult {
     value: String,
     advance: Int,
     ok: Bool,
     error_msg: String
+}
 
-fn handle_escape(input: String, pos: Int, slen: Int) -> EscapeResult:
+fn handle_escape(input: String, pos: Int, slen: Int) -> EscapeResult {
     // pos points to the character AFTER the backslash
-    si pos >= slen:
+    si pos >= slen {
         da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Unexpected end of input en escape" }
+    }
     pon esc: String = input.char_at(pos)
     si esc == "\"" { da new EscapeResult { value: "\"", advance: 1, ok: true, error_msg: "" } }
     si esc == "\\" { da new EscapeResult { value: "\\", advance: 1, ok: true, error_msg: "" } }
@@ -129,10 +146,11 @@ fn handle_escape(input: String, pos: Int, slen: Int) -> EscapeResult:
     si esc == "r" { da new EscapeResult { value: "\r", advance: 1, ok: true, error_msg: "" } }
     si esc == "b" { da new EscapeResult { value: "", advance: 1, ok: true, error_msg: "" } }
     si esc == "f" { da new EscapeResult { value: "", advance: 1, ok: true, error_msg: "" } }
-    si esc == "u":
+    si esc == "u" {
         // Unicode escape \uXXXX
-        si pos + 4 >= slen:
+        si pos + 4 >= slen {
             da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Incomplete unicode escape" }
+        }
         pon h0: String = input.char_at(pos + 1)
         pon h1: String = input.char_at(pos + 2)
         pon h2: String = input.char_at(pos + 3)
@@ -142,63 +160,73 @@ fn handle_escape(input: String, pos: Int, slen: Int) -> EscapeResult:
         si is_hex(h2) == false { da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit en unicode escape" } }
         si is_hex(h3) == false { da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit en unicode escape" } }
         pon codepoint: Int = hex_digit_value(h0) * 4096 + hex_digit_value(h1) * 256 + hex_digit_value(h2) * 16 + hex_digit_value(h3)
-        si codepoint < 128:
+        si codepoint < 128 {
             da new EscapeResult { value: str(codepoint), advance: 5, ok: true, error_msg: "" }
-        sino:
+        } sino {
             da new EscapeResult { value: "?", advance: 5, ok: true, error_msg: "" }
+        }
+    }
     da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid escape character" }
+}
 
 // ---------------------------------------------------------------------------
 // String parser (Task 5)
 // ---------------------------------------------------------------------------
 
-tipo StringResult:
+tipo StringResult {
     value: String,
     pos: Int,
     line: Int,
     col: Int,
     ok: Bool,
     error: JsonError
+}
 
-fn parse_json_string(input: String, pos: Int, line: Int, col: Int) -> StringResult:
+fn parse_json_string(input: String, pos: Int, line: Int, col: Int) -> StringResult {
     pon slen: Int = len(input)
-    si pos >= slen:
+    si pos >= slen {
         da new StringResult { value: "", pos: pos, line: line, col: col, ok: false, error: new_json_error("Unexpected end of input en string", line, col) }
-    si input.char_at(pos) != "\"":
+    }
+    si input.char_at(pos) != "\"" {
         da new StringResult { value: "", pos: pos, line: line, col: col, ok: false, error: new_json_error("Expected quote to start string", line, col) }
+    }
     pon mut p: Int = pos + 1
     pon mut c: Int = col + 1
     pon mut ln: Int = line
     pon mut result: String = ""
 
-    mien p < slen:
+    mien p < slen {
         pon ch: String = input.char_at(p)
-        si ch == "\"":
+        si ch == "\"" {
             da new StringResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
-        si ch == "\\":
+        }
+        si ch == "\\" {
             pon er: EscapeResult = handle_escape(input, p + 1, slen)
-            si er.ok == false:
+            si er.ok == false {
                 da new StringResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_json_error(er.error_msg, ln, c) }
+            }
             result = result + er.value
             p = p + 1 + er.advance
             c = c + 1 + er.advance
-        } sino { si ch == "\n":
+        } sino { si ch == "\n" {
             ln = ln + 1
             c = 1
             result = result + ch
             p = p + 1
-        sino:
+        } sino {
             result = result + ch
             p = p + 1
             c = c + 1
         } }
+    }
     da new StringResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_json_error("Unterminated string", line, col) }
+}
 
 // ---------------------------------------------------------------------------
 // Number parser (Task 6)
 // ---------------------------------------------------------------------------
 
-tipo NumberResult:
+tipo NumberResult {
     int_val: Int,
     float_val: Float,
     is_float: Bool,
@@ -206,108 +234,132 @@ tipo NumberResult:
     col: Int,
     ok: Bool,
     error: JsonError
+}
 
-fn parse_json_number(input: String, pos: Int, line: Int, col: Int) -> NumberResult:
+fn parse_json_number(input: String, pos: Int, line: Int, col: Int) -> NumberResult {
     pon slen: Int = len(input)
     pon mut p: Int = pos
     pon mut c: Int = col
     pon mut negative: Bool = false
 
-    si p < slen:
-        si input.char_at(p) == "-":
+    si p < slen {
+        si input.char_at(p) == "-" {
             negative = true
             p = p + 1
             c = c + 1
+        }
+    }
 
-    si p >= slen:
+    si p >= slen {
         da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Unexpected end of input en number", line, c) }
+    }
 
     pon first_digit: String = input.char_at(p)
-    si is_json_digit(first_digit) == false:
+    si is_json_digit(first_digit) == false {
         da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit en number", line, c) }
+    }
 
     // Integer part
     pon mut int_part: Int = 0
-    mien p < slen:
+    mien p < slen {
         pon ch: String = input.char_at(p)
-        si is_json_digit(ch):
+        si is_json_digit(ch) {
             int_part = int_part * 10 + digit_value(ch)
             p = p + 1
             c = c + 1
-        sino:
+        } sino {
             sal
+        }
+    }
 
     // Check for fractional part
     pon mut is_float: Bool = false
     pon mut frac_part: Float = 0.0
     pon mut frac_divisor: Float = 1.0
 
-    si p < slen:
-        si input.char_at(p) == ".":
+    si p < slen {
+        si input.char_at(p) == "." {
             is_float = true
             p = p + 1
             c = c + 1
-            si p >= slen:
+            si p >= slen {
                 da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit after decimal point", line, c) }
-            si is_json_digit(input.char_at(p)) == false:
+            }
+            si is_json_digit(input.char_at(p)) == false {
                 da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit after decimal point", line, c) }
-            mien p < slen:
+            }
+            mien p < slen {
                 pon fch: String = input.char_at(p)
-                si is_json_digit(fch):
+                si is_json_digit(fch) {
                     frac_divisor = frac_divisor * 10.0
                     frac_part = frac_part + float(digit_value(fch)) / frac_divisor
                     p = p + 1
                     c = c + 1
-                sino:
+                } sino {
                     sal
+                }
+            }
+        }
+    }
 
     // Check for exponent part
     pon mut exp_val: Int = 0
     pon mut exp_negative: Bool = false
     pon mut has_exp: Bool = false
 
-    si p < slen:
+    si p < slen {
         pon ech: String = input.char_at(p)
         si ech == "e" { has_exp = true; is_float = true; p = p + 1; c = c + 1 } sino { si ech == "E" { has_exp = true; is_float = true; p = p + 1; c = c + 1 } }
+    }
 
-    si has_exp:
-        si p < slen:
+    si has_exp {
+        si p < slen {
             pon sign_ch: String = input.char_at(p)
             si sign_ch == "+" { p = p + 1; c = c + 1 } sino { si sign_ch == "-" { exp_negative = true; p = p + 1; c = c + 1 } }
-        si p >= slen:
+        }
+        si p >= slen {
             da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit en exponent", line, c) }
-        si is_json_digit(input.char_at(p)) == false:
+        }
+        si is_json_digit(input.char_at(p)) == false {
             da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit en exponent", line, c) }
-        mien p < slen:
+        }
+        mien p < slen {
             pon ech2: String = input.char_at(p)
-            si is_json_digit(ech2):
+            si is_json_digit(ech2) {
                 exp_val = exp_val * 10 + digit_value(ech2)
                 p = p + 1
                 c = c + 1
-            sino:
+            } sino {
                 sal
+            }
+        }
+    }
 
-    si is_float:
+    si is_float {
         pon mut result_f: Float = float(int_part) + frac_part
-        si has_exp:
+        si has_exp {
             pon mut multiplier: Float = 1.0
             pon mut i: Int = 0
-            mien i < exp_val:
+            mien i < exp_val {
                 multiplier = multiplier * 10.0
                 i = i + 1
+            }
             si exp_negative { result_f = result_f / multiplier } sino { result_f = result_f * multiplier }
+        }
         si negative { result_f = 0.0 - result_f }
         da new NumberResult { int_val: 0, float_val: result_f, is_float: true, pos: p, col: c, ok: true, error: new_json_error("", 0, 0) }
-    sino:
+    } sino {
         pon mut result_i: Int = int_part
         si negative { result_i = 0 - result_i }
         da new NumberResult { int_val: result_i, float_val: 0.0, is_float: false, pos: p, col: c, ok: true, error: new_json_error("", 0, 0) }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Recursive descent parser (Tasks 4, 7, 8, 10)
 // ---------------------------------------------------------------------------
 
-+fn decode_value(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError>:
+pub fn decode_value(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
     pon slen: Int = len(input)
 
     pon ws: SkipResult = skip_whitespace(input, pos, line, col)
@@ -315,55 +367,75 @@ fn parse_json_number(input: String, pos: Int, line: Int, col: Int) -> NumberResu
     pon mut ln: Int = ws.line
     pon mut c: Int = ws.col
 
-    si p >= slen:
+    si p >= slen {
         da Err(new_json_error("Unexpected end of input", ln, c))
+    }
 
     pon ch: String = input.char_at(p)
 
     // Null
-    si ch == "n":
-        si p + 3 < slen:
-            si input.char_at(p + 1) == "u":
-                si input.char_at(p + 2) == "l":
-                    si input.char_at(p + 3) == "l":
+    si ch == "n" {
+        si p + 3 < slen {
+            si input.char_at(p + 1) == "u" {
+                si input.char_at(p + 2) == "l" {
+                    si input.char_at(p + 3) == "l" {
                         da Ok(new_decode_result(Null(), p + 4, ln, c + 4))
+                    }
+                }
+            }
+        }
         da Err(new_json_error("Invalid value: expected 'null'", ln, c))
+    }
 
     // True
-    si ch == "t":
-        si p + 3 < slen:
-            si input.char_at(p + 1) == "r":
-                si input.char_at(p + 2) == "u":
-                    si input.char_at(p + 3) == "e":
+    si ch == "t" {
+        si p + 3 < slen {
+            si input.char_at(p + 1) == "r" {
+                si input.char_at(p + 2) == "u" {
+                    si input.char_at(p + 3) == "e" {
                         da Ok(new_decode_result(Bool(true), p + 4, ln, c + 4))
+                    }
+                }
+            }
+        }
         da Err(new_json_error("Invalid value: expected 'true'", ln, c))
+    }
 
     // False
-    si ch == "f":
-        si p + 4 < slen:
-            si input.char_at(p + 1) == "a":
-                si input.char_at(p + 2) == "l":
-                    si input.char_at(p + 3) == "s":
-                        si input.char_at(p + 4) == "e":
+    si ch == "f" {
+        si p + 4 < slen {
+            si input.char_at(p + 1) == "a" {
+                si input.char_at(p + 2) == "l" {
+                    si input.char_at(p + 3) == "s" {
+                        si input.char_at(p + 4) == "e" {
                             da Ok(new_decode_result(Bool(false), p + 5, ln, c + 5))
+                        }
+                    }
+                }
+            }
+        }
         da Err(new_json_error("Invalid value: expected 'false'", ln, c))
+    }
 
     // String
-    si ch == "\"":
+    si ch == "\"" {
         pon sr: StringResult = parse_json_string(input, p, ln, c)
         si sr.ok { da Ok(new_decode_result(Str(sr.value), sr.pos, sr.line, sr.col)) } sino { da Err(sr.error) }
+    }
 
     // Number
-    si is_json_digit(ch):
+    si is_json_digit(ch) {
         pon nr: NumberResult = parse_json_number(input, p, ln, c)
-        si nr.ok:
+        si nr.ok {
             si nr.is_float { da Ok(new_decode_result(Float(nr.float_val), nr.pos, ln, nr.col)) } sino { da Ok(new_decode_result(Int(nr.int_val), nr.pos, ln, nr.col)) }
         } sino { da Err(nr.error) }
-    si ch == "-":
+    }
+    si ch == "-" {
         pon nr: NumberResult = parse_json_number(input, p, ln, c)
-        si nr.ok:
+        si nr.ok {
             si nr.is_float { da Ok(new_decode_result(Float(nr.float_val), nr.pos, ln, nr.col)) } sino { da Ok(new_decode_result(Int(nr.int_val), nr.pos, ln, nr.col)) }
         } sino { da Err(nr.error) }
+    }
 
     // Array
     si ch == "[" { da decode_array(input, p, ln, c) }
@@ -372,12 +444,13 @@ fn parse_json_number(input: String, pos: Int, line: Int, col: Int) -> NumberResu
     si ch == "{" { da decode_object(input, p, ln, c) }
 
     da Err(new_json_error("Unexpected character: " + ch, ln, c))
+}
 
 // ---------------------------------------------------------------------------
 // Array parser (Task 7)
 // ---------------------------------------------------------------------------
 
-fn decode_array(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError>:
+fn decode_array(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
     pon slen: Int = len(input)
     pon mut p: Int = pos + 1
     pon mut ln: Int = line
@@ -389,22 +462,26 @@ fn decode_array(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeRe
     ln = ws1.line
     c = ws1.col
 
-    si p < slen:
-        si input.char_at(p) == "]":
+    si p < slen {
+        si input.char_at(p) == "]" {
             da Ok(new_decode_result(Array(items), p + 1, ln, c + 1))
+        }
+    }
 
     pon mut count: Int = 0
-    mien count < 1000000:
+    mien count < 1000000 {
         count = count + 1
 
         pon val_result: Result<DecodeResult, JsonError> = decode_value(input, p, ln, c)
-        match val_result:
-            Ok(dr) =>:
+        match val_result {
+            Ok(dr) => {
                 items = items + [dr.value]
                 p = dr.pos
                 ln = dr.line
                 c = dr.col
+            },
             Err(e) => { da Err(e) }
+        }
 
         pon ws2: SkipResult = skip_whitespace(input, p, ln, c)
         p = ws2.pos
@@ -415,7 +492,7 @@ fn decode_array(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeRe
 
         pon next_ch: String = input.char_at(p)
         si next_ch == "]" { da Ok(new_decode_result(Array(items), p + 1, ln, c + 1)) }
-        si next_ch == ",":
+        si next_ch == "," {
             p = p + 1
             c = c + 1
             pon ws3: SkipResult = skip_whitespace(input, p, ln, c)
@@ -423,13 +500,15 @@ fn decode_array(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeRe
             ln = ws3.line
             c = ws3.col
         } sino { da Err(new_json_error("Expected comma or closing bracket en array", ln, c)) }
+    }
     da Err(new_json_error("Array too many elements", ln, c))
+}
 
 // ---------------------------------------------------------------------------
 // Object parser (Task 8)
 // ---------------------------------------------------------------------------
 
-fn decode_object(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError>:
+fn decode_object(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
     pon slen: Int = len(input)
     pon mut p: Int = pos + 1
     pon mut ln: Int = line
@@ -441,12 +520,14 @@ fn decode_object(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeR
     ln = ws1.line
     c = ws1.col
 
-    si p < slen:
-        si input.char_at(p) == "}":
+    si p < slen {
+        si input.char_at(p) == "}" {
             da Ok(new_decode_result(Object(entries), p + 1, ln, c + 1))
+        }
+    }
 
     pon mut count: Int = 0
-    mien count < 1000000:
+    mien count < 1000000 {
         count = count + 1
 
         pon ws_k: SkipResult = skip_whitespace(input, p, ln, c)
@@ -474,13 +555,15 @@ fn decode_object(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeR
         c = c + 1
 
         pon val_result: Result<DecodeResult, JsonError> = decode_value(input, p, ln, c)
-        match val_result:
-            Ok(dr) =>:
+        match val_result {
+            Ok(dr) => {
                 entries[key_result.value] = dr.value
                 p = dr.pos
                 ln = dr.line
                 c = dr.col
+            },
             Err(e) => { da Err(e) }
+        }
 
         pon ws3: SkipResult = skip_whitespace(input, p, ln, c)
         p = ws3.pos
@@ -491,88 +574,105 @@ fn decode_object(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeR
 
         pon next_ch: String = input.char_at(p)
         si next_ch == "}" { da Ok(new_decode_result(Object(entries), p + 1, ln, c + 1)) }
-        si next_ch == ",":
+        si next_ch == "," {
             p = p + 1
             c = c + 1
         } sino { da Err(new_json_error("Expected comma or closing brace en object", ln, c)) }
+    }
     da Err(new_json_error("Object too many keys", ln, c))
+}
 
 // ---------------------------------------------------------------------------
 // Top-level decode (Task 10)
 // ---------------------------------------------------------------------------
 
-+fn decode(input: String) -> Result<JsonValue, JsonError>:
+pub fn decode(input: String) -> Result<JsonValue, JsonError> {
     pon result: Result<DecodeResult, JsonError> = decode_value(input, 0, 1, 1)
-    match result:
-        Ok(dr) =>:
+    match result {
+        Ok(dr) => {
             pon ws: SkipResult = skip_whitespace(input, dr.pos, dr.line, dr.col)
             si ws.pos < len(input) { da Err(new_json_error("Unexpected trailing content", ws.line, ws.col)) }
             da Ok(dr.value)
+        },
         Err(e) => { da Err(e) }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Serializer (Task 14)
 // ---------------------------------------------------------------------------
 
-fn escape_json_string(s: String) -> String:
+fn escape_json_string(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         si ch == "\"" { result = result + "\\\"" } sino { si ch == "\\" { result = result + "\\\\" } sino { si ch == "\n" { result = result + "\\n" } sino { si ch == "\t" { result = result + "\\t" } sino { si ch == "\r" { result = result + "\\r" } sino { result = result + ch } } } } }
         i = i + 1
+    }
     da result
+}
 
-+fn encode(value: JsonValue) -> String:
-    match value:
+pub fn encode(value: JsonValue) -> String {
+    match value {
         Null => { da "null" },
-        Bool(b) =>:
+        Bool(b) => {
             si b { da "true" } sino { da "false" }
+        },
         Int(n) => { da str(n) },
         Float(f) => { da str(f) },
         Str(s) => { da "\"" + escape_json_string(s) + "\"" },
-        Array(items) =>:
+        Array(items) => {
             pon item_count: Int = len(items)
             si item_count == 0 { da "[]" }
             pon mut result: String = "["
             pon mut i: Int = 0
-            mien i < item_count:
+            mien i < item_count {
                 si i > 0 { result = result + "," }
                 result = result + encode(items[i])
                 i = i + 1
+            }
             result = result + "]"
             da result
-        Object(entries) =>:
+        },
+        Object(entries) => {
             pon mut result: String = "{"
             pon mut first: Bool = true
-            cada key en entries:
+            cada key en entries {
                 si first { first = false } sino { result = result + "," }
                 result = result + "\"" + escape_json_string(key) + "\":" + encode(entries[key])
+            }
             result = result + "}"
             da result
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Pretty-print serializer (Task 15)
 // ---------------------------------------------------------------------------
 
-fn make_indent(level: Int) -> String:
+fn make_indent(level: Int) -> String {
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < level:
+    mien i < level {
         result = result + "  "
         i = i + 1
+    }
     da result
+}
 
-fn encode_pretty_inner(value: JsonValue, indent: Int, level: Int) -> String:
-    match value:
+fn encode_pretty_inner(value: JsonValue, indent: Int, level: Int) -> String {
+    match value {
         Null => { da "null" },
-        Bool(b) =>:
+        Bool(b) => {
             si b { da "true" } sino { da "false" }
+        },
         Int(n) => { da str(n) },
         Float(f) => { da str(f) },
         Str(s) => { da "\"" + escape_json_string(s) + "\"" },
-        Array(items) =>:
+        Array(items) => {
             pon item_count: Int = len(items)
             si item_count == 0 { da "[]" }
             pon next_level: Int = level + 1
@@ -580,40 +680,48 @@ fn encode_pretty_inner(value: JsonValue, indent: Int, level: Int) -> String:
             pon outer_indent: String = make_indent(level)
             pon mut result: String = "[\n"
             pon mut i: Int = 0
-            mien i < item_count:
+            mien i < item_count {
                 si i > 0 { result = result + ",\n" }
                 result = result + inner_indent + encode_pretty_inner(items[i], indent, next_level)
                 i = i + 1
+            }
             result = result + "\n" + outer_indent + "]"
             da result
-        Object(entries) =>:
+        },
+        Object(entries) => {
             pon next_level: Int = level + 1
             pon inner_indent: String = make_indent(next_level)
             pon outer_indent: String = make_indent(level)
             pon mut result: String = "{\n"
             pon mut first: Bool = true
-            cada key en entries:
+            cada key en entries {
                 si first { first = false } sino { result = result + ",\n" }
                 result = result + inner_indent + "\"" + escape_json_string(key) + "\": " + encode_pretty_inner(entries[key], indent, next_level)
+            }
             result = result + "\n" + outer_indent + "}"
             da result
+        }
+    }
+}
 
-+fn encode_pretty(value: JsonValue, indent: Int) -> String:
+pub fn encode_pretty(value: JsonValue, indent: Int) -> String {
     da encode_pretty_inner(value, indent, 0)
+}
 
 // ---------------------------------------------------------------------------
 // Streaming parser (Task 17, 18) — SAX-style events
 // ---------------------------------------------------------------------------
 
-tipo EventResult:
+tipo EventResult {
     events: List<JsonEvent>,
     pos: Int,
     line: Int,
     col: Int,
     ok: Bool,
     error: JsonError
+}
 
-fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResult:
+fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResult {
     pon slen: Int = len(input)
     pon ws: SkipResult = skip_whitespace(input, pos, line, col)
     pon mut p: Int = ws.pos
@@ -621,13 +729,14 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
     pon mut c: Int = ws.col
     pon mut events: List<JsonEvent> = []
 
-    si p >= slen:
+    si p >= slen {
         da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Unexpected end of input", ln, c) }
+    }
 
     pon ch: String = input.char_at(p)
 
     // Object
-    si ch == "{":
+    si ch == "{" {
         events = events + [StartObject()]
         p = p + 1
         c = c + 1
@@ -637,13 +746,15 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
         ln = ws1.line
         c = ws1.col
 
-        si p < slen:
-            si input.char_at(p) == "}":
+        si p < slen {
+            si input.char_at(p) == "}" {
                 events = events + [EndObject()]
                 da new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
+            }
+        }
 
         pon mut count: Int = 0
-        mien count < 1000000:
+        mien count < 1000000 {
             count = count + 1
 
             pon ws_k: SkipResult = skip_whitespace(input, p, ln, c)
@@ -652,8 +763,9 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
             c = ws_k.col
 
             pon key_r: StringResult = parse_json_string(input, p, ln, c)
-            si key_r.ok == false:
+            si key_r.ok == false {
                 da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: key_r.error }
+            }
             events = events + [Key(key_r.value)]
             p = key_r.pos
             ln = key_r.line
@@ -663,10 +775,12 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
             p = ws_c.pos
             ln = ws_c.line
             c = ws_c.col
-            si p >= slen:
+            si p >= slen {
                 da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected colon", ln, c) }
-            si input.char_at(p) != ":":
+            }
+            si input.char_at(p) != ":" {
                 da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected colon", ln, c) }
+            }
             p = p + 1
             c = c + 1
 
@@ -682,18 +796,22 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
             ln = ws_n.line
             c = ws_n.col
 
-            si p >= slen:
+            si p >= slen {
                 da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Unterminated object", ln, c) }
-            si input.char_at(p) == "}":
+            }
+            si input.char_at(p) == "}" {
                 events = events + [EndObject()]
                 da new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
-            si input.char_at(p) == ",":
+            }
+            si input.char_at(p) == "," {
                 p = p + 1
                 c = c + 1
             } sino { da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected comma or closing brace", ln, c) } }
+        }
+    }
 
     // Array
-    si ch == "[":
+    si ch == "[" {
         events = events + [StartArray()]
         p = p + 1
         c = c + 1
@@ -703,13 +821,15 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
         ln = ws1.line
         c = ws1.col
 
-        si p < slen:
-            si input.char_at(p) == "]":
+        si p < slen {
+            si input.char_at(p) == "]" {
                 events = events + [EndArray()]
                 da new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
+            }
+        }
 
         pon mut count: Int = 0
-        mien count < 1000000:
+        mien count < 1000000 {
             count = count + 1
 
             pon val_r: EventResult = stream_parse_value(input, p, ln, c)
@@ -724,35 +844,44 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
             ln = ws_n.line
             c = ws_n.col
 
-            si p >= slen:
+            si p >= slen {
                 da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Unterminated array", ln, c) }
-            si input.char_at(p) == "]":
+            }
+            si input.char_at(p) == "]" {
                 events = events + [EndArray()]
                 da new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
-            si input.char_at(p) == ",":
+            }
+            si input.char_at(p) == "," {
                 p = p + 1
                 c = c + 1
             } sino { da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected comma or closing bracket", ln, c) } }
+        }
+    }
 
     // Primitive values — emit as Value event
     pon val_result: Result<DecodeResult, JsonError> = decode_value(input, p, ln, c)
-    match val_result:
-        Ok(dr) =>:
+    match val_result {
+        Ok(dr) => {
             events = events + [Value(dr.value)]
             da new EventResult { events: events, pos: dr.pos, line: dr.line, col: dr.col, ok: true, error: new_json_error("", 0, 0) }
-        Err(e) =>:
+        },
+        Err(e) => {
             da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: e }
+        }
+    }
+}
 
-+fn stream_parse(input: String) -> Result<List<JsonEvent>, JsonError>:
+pub fn stream_parse(input: String) -> Result<List<JsonEvent>, JsonError> {
     pon result: EventResult = stream_parse_value(input, 0, 1, 1)
     si result.ok { da Ok(result.events) } sino { da Err(result.error) }
+}
 
 // ---------------------------------------------------------------------------
 // Schema validation (Tasks 19, 20)
 // ---------------------------------------------------------------------------
 
-fn json_type_name(value: JsonValue) -> String:
-    match value:
+fn json_type_name(value: JsonValue) -> String {
+    match value {
         Null => { da "null" },
         Bool(b) => { da "bool" },
         Int(n) => { da "int" },
@@ -760,9 +889,11 @@ fn json_type_name(value: JsonValue) -> String:
         Str(s) => { da "string" },
         Array(items) => { da "array" },
         Object(entries) => { da "object" }
+    }
+}
 
-fn schema_type_matches(value: JsonValue, schema_type: JsonSchemaType) -> Bool:
-    match schema_type:
+fn schema_type_matches(value: JsonValue, schema_type: JsonSchemaType) -> Bool {
+    match schema_type {
         SAny => { da true },
         SNull => { match value { Null => { da true }, _ => { da false } } },
         SBool => { match value { Bool(b) => { da true }, _ => { da false } } },
@@ -771,32 +902,46 @@ fn schema_type_matches(value: JsonValue, schema_type: JsonSchemaType) -> Bool:
         SStr => { match value { Str(s) => { da true }, _ => { da false } } },
         SArray => { match value { Array(items) => { da true }, _ => { da false } } },
         SObject => { match value { Object(entries) => { da true }, _ => { da false } } }
+    }
+}
 
-+fn validate(value: JsonValue, schema: JsonSchema) -> Result<Bool, List<JsonError>>:
+pub fn validate(value: JsonValue, schema: JsonSchema) -> Result<Bool, List<JsonError>> {
     pon mut errors: List<JsonError> = []
 
-    si schema_type_matches(value, schema.schema_type) == false:
+    si schema_type_matches(value, schema.schema_type) == false {
         errors = errors + [new_json_error("Type mismatch: expected " + json_type_name(value), 0, 0)]
+    }
 
-    match value:
-        Int(n) =>:
-            si schema.has_min:
-                si n < schema.min_value:
+    match value {
+        Int(n) => {
+            si schema.has_min {
+                si n < schema.min_value {
                     errors = errors + [new_json_error("Value below minimum", 0, 0)]
-            si schema.has_max:
-                si n > schema.max_value:
+                }
+            }
+            si schema.has_max {
+                si n > schema.max_value {
                     errors = errors + [new_json_error("Value above maximum", 0, 0)]
-        Object(entries) =>:
+                }
+            }
+        },
+        Object(entries) => {
             pon req_count: Int = len(schema.required_fields)
             pon mut i: Int = 0
-            mien i < req_count:
+            mien i < req_count {
                 pon field_name: String = schema.required_fields[i]
                 pon mut found: Bool = false
-                cada key en entries:
+                cada key en entries {
                     si key == field_name { found = true }
-                si found == false:
+                }
+                si found == false {
                     errors = errors + [new_json_error("Missing required field: " + field_name, 0, 0)]
+                }
                 i = i + 1
+            }
+        },
         _ => {}
+    }
 
     si len(errors) == 0 { da Ok(true) } sino { da Err(errors) }
+}

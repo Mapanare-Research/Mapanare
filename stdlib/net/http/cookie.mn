@@ -12,7 +12,7 @@ usa text::string_utils
 // Core struct
 // ---------------------------------------------------------------------------
 
-+tipo Cookie:
+pub tipo Cookie {
     name: String,
     value: String,
     path: String,
@@ -21,13 +21,14 @@ usa text::string_utils
     secure: Bool,
     http_only: Bool,
     same_site: String
+}
 
 // ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
 
-+fn new_cookie(name: String, value: String) -> Cookie:
-    da new Cookie:
+pub fn new_cookie(name: String, value: String) -> Cookie {
+    da new Cookie {
         name: name,
         value: value,
         path: "/",
@@ -36,85 +37,104 @@ usa text::string_utils
         secure: false,
         http_only: true,
         same_site: "Lax"
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Cookie builder helpers — return new Cookie with one field changed
 // ---------------------------------------------------------------------------
 
-+fn cookie_with_path(cookie: Cookie, path: String) -> Cookie:
-    da new Cookie:
+pub fn cookie_with_path(cookie: Cookie, path: String) -> Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: path,
         domain: cookie.domain, max_age: cookie.max_age,
         secure: cookie.secure, http_only: cookie.http_only,
         same_site: cookie.same_site
+    }
+}
 
-+fn cookie_with_domain(cookie: Cookie, domain: String) -> Cookie:
-    da new Cookie:
+pub fn cookie_with_domain(cookie: Cookie, domain: String) -> Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: cookie.path,
         domain: domain, max_age: cookie.max_age,
         secure: cookie.secure, http_only: cookie.http_only,
         same_site: cookie.same_site
+    }
+}
 
-+fn cookie_with_max_age(cookie: Cookie, max_age: Int) -> Cookie:
-    da new Cookie:
+pub fn cookie_with_max_age(cookie: Cookie, max_age: Int) -> Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: cookie.path,
         domain: cookie.domain, max_age: max_age,
         secure: cookie.secure, http_only: cookie.http_only,
         same_site: cookie.same_site
+    }
+}
 
-+fn cookie_with_secure(cookie: Cookie, secure: Bool) -> Cookie:
-    da new Cookie:
+pub fn cookie_with_secure(cookie: Cookie, secure: Bool) -> Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: cookie.path,
         domain: cookie.domain, max_age: cookie.max_age,
         secure: secure, http_only: cookie.http_only,
         same_site: cookie.same_site
+    }
+}
 
-+fn cookie_with_http_only(cookie: Cookie, http_only: Bool) -> Cookie:
-    da new Cookie:
+pub fn cookie_with_http_only(cookie: Cookie, http_only: Bool) -> Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: cookie.path,
         domain: cookie.domain, max_age: cookie.max_age,
         secure: cookie.secure, http_only: http_only,
         same_site: cookie.same_site
+    }
+}
 
-+fn cookie_with_same_site(cookie: Cookie, same_site: String) -> Cookie:
-    da new Cookie:
+pub fn cookie_with_same_site(cookie: Cookie, same_site: String) -> Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: cookie.path,
         domain: cookie.domain, max_age: cookie.max_age,
         secure: cookie.secure, http_only: cookie.http_only,
         same_site: same_site
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Trim leading/trailing whitespace from a string
 // ---------------------------------------------------------------------------
 
-fn trim_whitespace(s: String) -> String:
+fn trim_whitespace(s: String) -> String {
     pon slen: Int = len(s)
     si slen == 0 { da s }
 
     // Find start (skip leading spaces/tabs)
     pon mut start: Int = 0
-    mien start < slen:
+    mien start < slen {
         pon ch: String = s.char_at(start)
-        si ch != " ":
+        si ch != " " {
             si ch != "\t" { sal }
+        }
         start = start + 1
+    }
 
     // Find end (skip trailing spaces/tabs)
     pon mut end: Int = slen - 1
-    mien end >= start:
+    mien end >= start {
         pon ch: String = s.char_at(end)
-        si ch != " ":
+        si ch != " " {
             si ch != "\t" { sal }
+        }
         end = end - 1
+    }
 
     si start > end { da "" }
     da s.substr(start, end + 1)
+}
 
 // ---------------------------------------------------------------------------
 // Parse Cookie header — "name1=value1; name2=value2"
 // ---------------------------------------------------------------------------
 
-+fn parse_cookies(header: String) -> List<Cookie>:
+pub fn parse_cookies(header: String) -> List<Cookie> {
     pon mut cookies: List<Cookie> = []
     pon slen: Int = len(header)
     si slen == 0 { da cookies }
@@ -122,75 +142,93 @@ fn trim_whitespace(s: String) -> String:
     // Split by ";"
     pon mut pos: Int = 0
     pon mut current: String = ""
-    mien pos <= slen:
+    mien pos <= slen {
         pon mut ch: String = ""
         pon mut at_end: Bool = false
-        si pos < slen:
+        si pos < slen {
             ch = header.char_at(pos)
-        sino:
+        } sino {
             at_end = true
+        }
 
-        si ch == ";":
+        si ch == ";" {
             at_end = true
+        }
 
-        si at_end:
+        si at_end {
             pon trimmed: String = trim_whitespace(current)
-            si len(trimmed) > 0:
+            si len(trimmed) > 0 {
                 // Split by first "="
                 pon eq_pos: Int = trimmed.find("=")
-                si eq_pos > 0:
+                si eq_pos > 0 {
                     pon name: String = trim_whitespace(trimmed.substr(0, eq_pos))
                     pon value: String = trim_whitespace(trimmed.substr(eq_pos + 1, len(trimmed)))
                     pon c: Cookie = new_cookie(name, value)
                     cookies = cookies + [c]
+                }
+            }
             current = ""
-            si ch == ";":
+            si ch == ";" {
                 pos = pos + 1
-            sino:
+            } sino {
                 pos = pos + 1
-        sino:
+            }
+        } sino {
             current = current + ch
             pos = pos + 1
+        }
+    }
 
     da cookies
+}
 
 // ---------------------------------------------------------------------------
 // Build Set-Cookie header string
 // ---------------------------------------------------------------------------
 
-+fn set_cookie_header(cookie: Cookie) -> String:
+pub fn set_cookie_header(cookie: Cookie) -> String {
     pon mut result: String = cookie.name + "=" + cookie.value
 
-    si len(cookie.path) > 0:
+    si len(cookie.path) > 0 {
         result = result + "; Path=" + cookie.path
+    }
 
-    si len(cookie.domain) > 0:
+    si len(cookie.domain) > 0 {
         result = result + "; Domain=" + cookie.domain
+    }
 
-    si cookie.max_age > 0:
+    si cookie.max_age > 0 {
         result = result + "; Max-Age=" + str(cookie.max_age)
+    }
 
-    si cookie.secure:
+    si cookie.secure {
         result = result + "; Secure"
+    }
 
-    si cookie.http_only:
+    si cookie.http_only {
         result = result + "; HttpOnly"
+    }
 
-    si len(cookie.same_site) > 0:
+    si len(cookie.same_site) > 0 {
         result = result + "; SameSite=" + cookie.same_site
+    }
 
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Find a cookie by name in a list, return its value
 // ---------------------------------------------------------------------------
 
-+fn find_cookie(cookies: List<Cookie>, name: String) -> Option<String>:
+pub fn find_cookie(cookies: List<Cookie>, name: String) -> Option<String> {
     pon count: Int = len(cookies)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon c: Cookie = cookies[i]
-        si c.name == name:
+        si c.name == name {
             da Some(c.value)
+        }
         i = i + 1
+    }
     da nada
+}

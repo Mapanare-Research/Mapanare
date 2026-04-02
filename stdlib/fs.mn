@@ -31,414 +31,517 @@ extern "C" fn __mn_dir_list(path: String) -> String
 // Error type
 // ---------------------------------------------------------------------------
 
-+tipo FsError:
+pub tipo FsError {
     | NotFound(String)
     | PermissionDenied(String)
     | IoError(String)
     | InvalidPath(String)
+}
 
-fn new_not_found(msg: String) -> FsError:
+fn new_not_found(msg: String) -> FsError {
     da NotFound(msg)
+}
 
-fn new_permission_denied(msg: String) -> FsError:
+fn new_permission_denied(msg: String) -> FsError {
     da PermissionDenied(msg)
+}
 
-fn new_io_error(msg: String) -> FsError:
+fn new_io_error(msg: String) -> FsError {
     da IoError(msg)
+}
 
-fn new_invalid_path(msg: String) -> FsError:
+fn new_invalid_path(msg: String) -> FsError {
     da InvalidPath(msg)
+}
 
 // ---------------------------------------------------------------------------
 // DirEntry type
 // ---------------------------------------------------------------------------
 
-+tipo DirEntry:
+pub tipo DirEntry {
     name: String,
     is_dir: Bool
+}
 
 // ---------------------------------------------------------------------------
 // Path type and methods
 // ---------------------------------------------------------------------------
 
-+tipo Path:
+pub tipo Path {
     raw: String
+}
 
 /// Construct a Path from a raw string.
-+fn path(s: String) -> Path:
+pub fn path(s: String) -> Path {
     da new Path { raw: s }
+}
 
 /// Join a path with another component, inserting `/` as separator.
-+fn join(p: Path, other: String) -> Path:
+pub fn join(p: Path, other: String) -> Path {
     pon raw: String = p.raw
-    si len(raw) == 0:
+    si len(raw) == 0 {
         da new Path { raw: other }
+    }
     // Check if raw already ends with /
     pon last: String = raw.char_at(len(raw) - 1)
-    si last == "/":
+    si last == "/" {
         da new Path { raw: raw + other }
+    }
     da new Path { raw: raw + "/" + other }
+}
 
 /// Return the parent directory of a path.
 /// For "/foo/bar" returns "/foo", for "foo" returns "", for "/" returns "/".
-+fn parent(p: Path) -> Path:
+pub fn parent(p: Path) -> Path {
     pon raw: String = p.raw
     pon slen: Int = len(raw)
-    si slen == 0:
+    si slen == 0 {
         da new Path { raw: "" }
+    }
 
     // Strip trailing slash (unless it's the root "/")
     pon mut end: Int = slen
-    si end > 1:
+    si end > 1 {
         pon last: String = raw.char_at(end - 1)
-        si last == "/":
+        si last == "/" {
             end = end - 1
+        }
+    }
 
     // Find last slash
     pon mut last_slash: Int = -1
     pon mut i: Int = 0
-    mien i < end:
+    mien i < end {
         pon c: String = raw.char_at(i)
-        si c == "/":
+        si c == "/" {
             last_slash = i
+        }
         i = i + 1
+    }
 
-    si last_slash < 0:
+    si last_slash < 0 {
         da new Path { raw: "" }
-    si last_slash == 0:
+    }
+    si last_slash == 0 {
         da new Path { raw: "/" }
+    }
     da new Path { raw: raw.substr(0, last_slash) }
+}
 
 /// Return the last component of the path (the filename).
 /// For "/foo/bar.txt" returns "bar.txt", for "/" returns "".
-+fn filename(p: Path) -> String:
+pub fn filename(p: Path) -> String {
     pon raw: String = p.raw
     pon slen: Int = len(raw)
-    si slen == 0:
+    si slen == 0 {
         da ""
+    }
 
     // Strip trailing slash
     pon mut end: Int = slen
-    si end > 1:
+    si end > 1 {
         pon last: String = raw.char_at(end - 1)
-        si last == "/":
+        si last == "/" {
             end = end - 1
+        }
+    }
 
     // Find last slash
     pon mut last_slash: Int = -1
     pon mut i: Int = 0
-    mien i < end:
+    mien i < end {
         pon c: String = raw.char_at(i)
-        si c == "/":
+        si c == "/" {
             last_slash = i
+        }
         i = i + 1
+    }
 
-    si last_slash < 0:
+    si last_slash < 0 {
         da raw.substr(0, end)
+    }
     da raw.substr(last_slash + 1, end)
+}
 
 /// Return the file extension without the leading dot.
 /// For "file.tar.gz" returns "gz", for "noext" returns "".
-+fn extension(p: Path) -> String:
+pub fn extension(p: Path) -> String {
     pon name: String = filename(p)
     pon slen: Int = len(name)
-    si slen == 0:
+    si slen == 0 {
         da ""
+    }
 
     // Find last dot
     pon mut last_dot: Int = -1
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon c: String = name.char_at(i)
-        si c == ".":
+        si c == "." {
             last_dot = i
+        }
         i = i + 1
+    }
 
     // No dot, or dot is first char (hidden file like ".gitignore")
-    si last_dot <= 0:
+    si last_dot <= 0 {
         da ""
+    }
     da name.substr(last_dot + 1, slen)
+}
 
 /// Return the filename without its extension.
 /// For "file.tar.gz" returns "file.tar", for "noext" returns "noext".
-+fn stem(p: Path) -> String:
+pub fn stem(p: Path) -> String {
     pon name: String = filename(p)
     pon slen: Int = len(name)
-    si slen == 0:
+    si slen == 0 {
         da ""
+    }
 
     // Find last dot
     pon mut last_dot: Int = -1
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon c: String = name.char_at(i)
-        si c == ".":
+        si c == "." {
             last_dot = i
+        }
         i = i + 1
+    }
 
-    si last_dot <= 0:
+    si last_dot <= 0 {
         da name
+    }
     da name.substr(0, last_dot)
+}
 
 /// Check whether the path is absolute (starts with `/`).
-+fn is_absolute(p: Path) -> Bool:
+pub fn is_absolute(p: Path) -> Bool {
     pon raw: String = p.raw
-    si len(raw) == 0:
+    si len(raw) == 0 {
         da false
+    }
     pon first: String = raw.char_at(0)
     da first == "/"
+}
 
 /// Resolve a path to its absolute, canonical form via the C runtime.
-+fn resolve(p: Path) -> Result<Path, FsError>:
+pub fn resolve(p: Path) -> Result<Path, FsError> {
     pon raw: String = p.raw
-    si len(raw) == 0:
+    si len(raw) == 0 {
         da Err(new_invalid_path("cannot resolve empty path"))
+    }
     pon resolved: String = __mn_realpath(raw)
-    si len(resolved) == 0:
+    si len(resolved) == 0 {
         da Err(new_not_found("cannot resolve path: " + raw))
+    }
     da Ok(new Path { raw: resolved })
+}
 
 /// Get the raw string representation of a Path.
-+fn to_string(p: Path) -> String:
+pub fn to_string(p: Path) -> String {
     da p.raw
+}
 
 // ---------------------------------------------------------------------------
 // File operations
 // ---------------------------------------------------------------------------
 
 /// Read the entire contents of a file as a string.
-+fn read_file(path: String) -> Result<String, FsError>:
-    si len(path) == 0:
+pub fn read_file(path: String) -> Result<String, FsError> {
+    si len(path) == 0 {
         da Err(new_invalid_path("empty file path"))
+    }
     pon ex: Int = __mn_file_exists(path)
-    si ex == 0:
+    si ex == 0 {
         da Err(new_not_found("file not found: " + path))
+    }
     pon content: String = __mn_file_read(path)
     da Ok(content)
+}
 
 /// Write content to a file, creating it if it doesn't exist and
 /// overwriting any previous content.
-+fn write_file(path: String, content: String) -> Result<Bool, FsError>:
-    si len(path) == 0:
+pub fn write_file(path: String, content: String) -> Result<Bool, FsError> {
+    si len(path) == 0 {
         da Err(new_invalid_path("empty file path"))
+    }
     pon result: Int = __mn_file_write(path, content)
-    si result == 0:
+    si result == 0 {
         da Err(new_io_error("failed to write file: " + path))
+    }
     da Ok(true)
+}
 
 /// Append content to an existing file. Creates the file if it does not exist.
-+fn append_file(path: String, content: String) -> Result<Bool, FsError>:
-    si len(path) == 0:
+pub fn append_file(path: String, content: String) -> Result<Bool, FsError> {
+    si len(path) == 0 {
         da Err(new_invalid_path("empty file path"))
+    }
     // mode 2 = append
     pon fd: Int = __mn_file_open(path, 2)
-    si fd < 0:
+    si fd < 0 {
         da Err(new_io_error("failed to open file cada append: " + path))
+    }
     pon written: Int = __mn_file_write_fd(fd, content)
     __mn_file_close(fd)
-    si written == 0:
+    si written == 0 {
         da Err(new_io_error("failed to append to file: " + path))
+    }
     da Ok(true)
+}
 
 /// Check whether a path exists on the filesystem.
-+fn exists(path: String) -> Bool:
+pub fn exists(path: String) -> Bool {
     pon result: Int = __mn_file_exists(path)
     da result != 0
+}
 
 /// Remove a file from the filesystem.
-+fn remove(path: String) -> Result<Bool, FsError>:
-    si len(path) == 0:
+pub fn remove(path: String) -> Result<Bool, FsError> {
+    si len(path) == 0 {
         da Err(new_invalid_path("empty file path"))
+    }
     pon ex: Int = __mn_file_exists(path)
-    si ex == 0:
+    si ex == 0 {
         da Err(new_not_found("file not found: " + path))
+    }
     pon result: Int = __mn_file_remove(path)
-    si result == 0:
+    si result == 0 {
         da Err(new_io_error("failed to remove file: " + path))
+    }
     da Ok(true)
+}
 
 /// Rename (move) a file or directory.
-+fn rename(old_path: String, new_path: String) -> Result<Bool, FsError>:
-    si len(old_path) == 0:
+pub fn rename(old_path: String, new_path: String) -> Result<Bool, FsError> {
+    si len(old_path) == 0 {
         da Err(new_invalid_path("empty source path"))
-    si len(new_path) == 0:
+    }
+    si len(new_path) == 0 {
         da Err(new_invalid_path("empty destination path"))
+    }
     pon ex: Int = __mn_file_exists(old_path)
-    si ex == 0:
+    si ex == 0 {
         da Err(new_not_found("source not found: " + old_path))
+    }
     pon result: Int = __mn_file_rename(old_path, new_path)
-    si result == 0:
+    si result == 0 {
         da Err(new_io_error("failed to rename: " + old_path + " -> " + new_path))
+    }
     da Ok(true)
+}
 
 /// Copy a file from src to dst.
-+fn copy(src: String, dst: String) -> Result<Bool, FsError>:
-    si len(src) == 0:
+pub fn copy(src: String, dst: String) -> Result<Bool, FsError> {
+    si len(src) == 0 {
         da Err(new_invalid_path("empty source path"))
-    si len(dst) == 0:
+    }
+    si len(dst) == 0 {
         da Err(new_invalid_path("empty destination path"))
+    }
     pon ex: Int = __mn_file_exists(src)
-    si ex == 0:
+    si ex == 0 {
         da Err(new_not_found("source file not found: " + src))
+    }
     pon result: Int = __mn_file_copy(src, dst)
-    si result == 0:
+    si result == 0 {
         da Err(new_io_error("failed to copy: " + src + " -> " + dst))
+    }
     da Ok(true)
+}
 
 /// Return the size of a file in bytes.
-+fn file_size(path: String) -> Result<Int, FsError>:
-    si len(path) == 0:
+pub fn file_size(path: String) -> Result<Int, FsError> {
+    si len(path) == 0 {
         da Err(new_invalid_path("empty file path"))
+    }
     pon ex: Int = __mn_file_exists(path)
-    si ex == 0:
+    si ex == 0 {
         da Err(new_not_found("file not found: " + path))
+    }
     pon sz: Int = __mn_file_size(path)
-    si sz < 0:
+    si sz < 0 {
         da Err(new_io_error("failed to get file size: " + path))
+    }
     da Ok(sz)
+}
 
 /// Return the last modification time of a file as a Unix timestamp.
-+fn file_mtime(path: String) -> Result<Int, FsError>:
-    si len(path) == 0:
+pub fn file_mtime(path: String) -> Result<Int, FsError> {
+    si len(path) == 0 {
         da Err(new_invalid_path("empty file path"))
+    }
     pon ex: Int = __mn_file_exists(path)
-    si ex == 0:
+    si ex == 0 {
         da Err(new_not_found("file not found: " + path))
+    }
     pon mt: Int = __mn_file_mtime(path)
-    si mt < 0:
+    si mt < 0 {
         da Err(new_io_error("failed to get modification time: " + path))
+    }
     da Ok(mt)
+}
 
 /// Check whether a path is a directory.
 /// Uses file_size heuristic: if path exists but size returns -1, it is a dir.
 /// A proper implementation will use __mn_file_stat once available.
-+fn is_dir(path: String) -> Bool:
+pub fn is_dir(path: String) -> Bool {
     pon ex: Int = __mn_file_exists(path)
-    si ex == 0:
+    si ex == 0 {
         da false
+    }
     // Try to list it as a directory; if dir_list returns non-empty, it's a dir
     pon listing: String = __mn_dir_list(path)
     // If we got any listing (even an empty dir gives ""), we check if create
     // would fail — simpler: try dir_list. If path is a file, dir_list returns "".
     // For now, use size heuristic: directories often return -1 or 0 for size.
     pon sz: Int = __mn_file_size(path)
-    si sz < 0:
+    si sz < 0 {
         da true
+    }
     // Also check if dir_list returned something other than empty for a file
-    si len(listing) > 0:
+    si len(listing) > 0 {
         da true
+    }
     da false
+}
 
 /// Check whether a path is a regular file.
-+fn is_file(path: String) -> Bool:
+pub fn is_file(path: String) -> Bool {
     pon ex: Int = __mn_file_exists(path)
-    si ex == 0:
+    si ex == 0 {
         da false
+    }
     // If it's not a directory, it's a file
-    si is_dir(path):
+    si is_dir(path) {
         da false
+    }
     da true
+}
 
 // ---------------------------------------------------------------------------
 // Directory operations
 // ---------------------------------------------------------------------------
 
 /// Create a single directory (parent must exist).
-+fn mkdir(path: String) -> Result<Bool, FsError>:
-    si len(path) == 0:
+pub fn mkdir(path: String) -> Result<Bool, FsError> {
+    si len(path) == 0 {
         da Err(new_invalid_path("empty directory path"))
+    }
     pon result: Int = __mn_dir_create(path, 0)
-    si result == 0:
+    si result == 0 {
         da Err(new_io_error("failed to create directory: " + path))
+    }
     da Ok(true)
+}
 
 /// Create a directory and all intermediate parents as needed.
-+fn mkdir_all(path: String) -> Result<Bool, FsError>:
-    si len(path) == 0:
+pub fn mkdir_all(path: String) -> Result<Bool, FsError> {
+    si len(path) == 0 {
         da Err(new_invalid_path("empty directory path"))
+    }
     pon result: Int = __mn_dir_create(path, 1)
-    si result == 0:
+    si result == 0 {
         da Err(new_io_error("failed to create directory tree: " + path))
+    }
     da Ok(true)
+}
 
 /// Remove an empty directory.
-+fn rmdir(path: String) -> Result<Bool, FsError>:
-    si len(path) == 0:
+pub fn rmdir(path: String) -> Result<Bool, FsError> {
+    si len(path) == 0 {
         da Err(new_invalid_path("empty directory path"))
+    }
     pon ex: Int = __mn_file_exists(path)
-    si ex == 0:
+    si ex == 0 {
         da Err(new_not_found("directory not found: " + path))
+    }
     pon result: Int = __mn_dir_remove(path)
-    si result == 0:
+    si result == 0 {
         da Err(new_io_error("failed to remove directory: " + path))
+    }
     da Ok(true)
+}
 
 /// List the contents of a directory.
 ///
 /// The C runtime returns entries as a newline-separated string with a trailing
 /// type indicator: "name\tD" for directories, "name\tF" for files.
 /// We parse that into a list of DirEntry structs.
-+fn list_dir(path: String) -> Result<List<DirEntry>, FsError>:
-    si len(path) == 0:
+pub fn list_dir(path: String) -> Result<List<DirEntry>, FsError> {
+    si len(path) == 0 {
         da Err(new_invalid_path("empty directory path"))
+    }
     pon ex: Int = __mn_file_exists(path)
-    si ex == 0:
+    si ex == 0 {
         da Err(new_not_found("directory not found: " + path))
+    }
 
     pon raw: String = __mn_dir_list(path)
     pon mut entries: List<DirEntry> = []
 
-    si len(raw) == 0:
+    si len(raw) == 0 {
         da Ok(entries)
+    }
 
     // Parse newline-separated entries: "name\tD\nname2\tF\n..."
     pon mut pos: Int = 0
     pon slen: Int = len(raw)
 
-    mien pos < slen:
+    mien pos < slen {
         pon remaining: String = raw.substr(pos, slen)
         pon nl_rel: Int = remaining.find("\n")
         pon mut line: String = ""
-        si nl_rel < 0:
+        si nl_rel < 0 {
             // Last line, no trailing newline
             line = remaining
             pos = slen
-        sino:
+        } sino {
             line = remaining.substr(0, nl_rel)
             pos = pos + nl_rel + 1
+        }
 
-        si len(line) > 0:
+        si len(line) > 0 {
             // Strip trailing \r if present
-            si line.ends_with("\r"):
+            si line.ends_with("\r") {
                 line = line.substr(0, len(line) - 1)
-            si len(line) > 0:
+            }
+            si len(line) > 0 {
                 // Look for tab separator
                 pon tab_pos: Int = line.find("\t")
-                si tab_pos >= 0:
+                si tab_pos >= 0 {
                     pon entry_name: String = line.substr(0, tab_pos)
                     pon entry_type: String = line.substr(tab_pos + 1, len(line))
                     pon entry_is_dir: Bool = entry_type == "D"
                     entries = entries + [new DirEntry { name: entry_name, is_dir: entry_is_dir }]
-                sino:
+                } sino {
                     // No type indicator — treat as file
                     entries = entries + [new DirEntry { name: line, is_dir: false }]
+                }
+            }
+        }
+    }
 
     da Ok(entries)
+}
 
 /// Recursively list all file paths under a directory.
 ///
 /// Returns a flat list of path strings. Directories are visited depth-first.
 /// Limited to 100,000 entries to prevent runaway traversal.
-+fn walk(path: String) -> List<String>:
+pub fn walk(path: String) -> List<String> {
     pon mut result: List<String> = []
     pon mut stack: List<String> = [path]
     pon mut guard: Int = 0
     pon max_entries: Int = 100000
 
-    mien len(stack) > 0:
+    mien len(stack) > 0 {
         guard = guard + 1
-        si guard > max_entries:
+        si guard > max_entries {
             da result
+        }
 
         // Pop last element from stack
         pon stack_len: Int = len(stack)
@@ -446,38 +549,49 @@ fn new_invalid_path(msg: String) -> FsError:
         stack = list_take(stack, stack_len - 1)
 
         pon listing_result: Result<List<DirEntry>, FsError> = list_dir(current)
-        match listing_result:
-            Ok(entries) =>:
+        match listing_result {
+            Ok(entries) => {
                 pon entry_count: Int = len(entries)
                 pon mut i: Int = 0
-                mien i < entry_count:
+                mien i < entry_count {
                     pon entry: DirEntry = entries[i]
                     pon full_path: String = current + "/" + entry.name
                     result = result + [full_path]
-                    si entry.is_dir:
+                    si entry.is_dir {
                         stack = stack + [full_path]
+                    }
                     i = i + 1
-            Err(e) =>:
+                }
+            },
+            Err(e) => {
                 // Skip directories we cannot read
                 pon mut skip: Int = 0
+            }
+        }
+    }
 
     da result
+}
 
 /// Helper: take the first n elements from a list.
-fn list_take(lst: List<String>, n: Int) -> List<String>:
+fn list_take(lst: List<String>, n: Int) -> List<String> {
     pon mut result: List<String> = []
     pon mut i: Int = 0
-    mien i < n:
+    mien i < n {
         result = result + [lst[i]]
         i = i + 1
+    }
     da result
+}
 
 /// Create a temporary file and return its path.
-+fn tmpfile() -> Result<String, FsError>:
+pub fn tmpfile() -> Result<String, FsError> {
     pon p: String = __mn_tmpfile_path()
-    si len(p) == 0:
+    si len(p) == 0 {
         da Err(new_io_error("failed to create temporary file"))
+    }
     da Ok(p)
+}
 
 // ---------------------------------------------------------------------------
 // Convenience helpers
@@ -485,50 +599,60 @@ fn list_take(lst: List<String>, n: Int) -> List<String>:
 
 /// Read a file and split its contents into lines.
 /// Handles both "\n" and "\r\n" line endings.
-+fn read_lines(path: String) -> Result<List<String>, FsError>:
+pub fn read_lines(path: String) -> Result<List<String>, FsError> {
     pon content_result: Result<String, FsError> = read_file(path)
-    match content_result:
-        Ok(content) =>:
+    match content_result {
+        Ok(content) => {
             pon lines: List<String> = split_lines(content)
             da Ok(lines)
-        Err(e) =>:
+        },
+        Err(e) => {
             da Err(e)
+        }
+    }
     da Err(new_io_error("unreachable"))
+}
 
 /// Split a string by newline characters, handling "\r\n" and "\n".
-fn split_lines(src: String) -> List<String>:
+fn split_lines(src: String) -> List<String> {
     pon slen: Int = len(src)
     pon mut lines: List<String> = []
     pon mut current: String = ""
     pon mut i: Int = 0
 
-    mien i < slen:
+    mien i < slen {
         pon c: String = src.char_at(i)
-        si c == "\r":
+        si c == "\r" {
             // Check for \r\n
-            si i + 1 < slen:
-                si src.char_at(i + 1) == "\n":
+            si i + 1 < slen {
+                si src.char_at(i + 1) == "\n" {
                     lines = lines + [current]
                     current = ""
                     i = i + 2
-                sino:
+                } sino {
                     lines = lines + [current]
                     current = ""
                     i = i + 1
-            sino:
+                }
+            } sino {
                 lines = lines + [current]
                 current = ""
                 i = i + 1
-        sino si c == "\n":
+            }
+        } sino si c == "\n" {
             lines = lines + [current]
             current = ""
             i = i + 1
-        sino:
+        } sino {
             current = current + c
             i = i + 1
+        }
+    }
 
     // Add final line if there is remaining content
-    si len(current) > 0:
+    si len(current) > 0 {
         lines = lines + [current]
+    }
 
     da lines
+}

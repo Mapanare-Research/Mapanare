@@ -6,8 +6,8 @@
 //
 // Usage (client):
 //   let conn_r: Result<WsConnection, WsError> = ws_connect("ws://echo.example.com/ws")
-//   match conn_r:
-//     Ok(conn) =>:
+//   match conn_r {
+//     Ok(conn) => {
 //       let send_r: Result<Int, WsError> = ws_send(conn, Text("hello"))
 //       let msg_r: Result<WsMessage, WsError> = ws_recv(conn)
 //       ws_close(conn, 1000, "bye")
@@ -44,18 +44,19 @@ extern "C" fn __mn_random_bytes_str(n: Int) -> String
 // Task 1: WsMessage enum
 // ---------------------------------------------------------------------------
 
-+tipo WsMessage:
+pub tipo WsMessage {
     | Text(String)
     | Binary(String)
     | Ping(String)
     | Pong(String)
     | Close(Int, String)
+}
 
 // ---------------------------------------------------------------------------
 // Task 2: WsConnection struct
 // ---------------------------------------------------------------------------
 
-+tipo WsConnection:
+pub tipo WsConnection {
     fd: Int,
     tls_ctx: Int,
     is_tls: Bool,
@@ -63,29 +64,32 @@ extern "C" fn __mn_random_bytes_str(n: Int) -> String
     state: Int,
     frag_buffer: String,
     frag_opcode: Int
+}
 
 // Connection states: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED
 
-fn new_ws_connection(socket_fd: Int, tls: Int, use_tls: Bool, server: Bool) -> WsConnection:
+fn new_ws_connection(socket_fd: Int, tls: Int, use_tls: Bool, server: Bool) -> WsConnection {
     da new WsConnection {fd: socket_fd, tls_ctx: tls, is_tls: use_tls, is_server: server, state: 1, frag_buffer: "", frag_opcode: 0}
+}
 
 // ---------------------------------------------------------------------------
 // Task 3: WsError enum
 // ---------------------------------------------------------------------------
 
-+tipo WsError:
+pub tipo WsError {
     | HandshakeFailed(String)
     | ConnectionClosed(String)
     | InvalidFrame(String)
     | ProtocolError(String)
     | SendFailed(String)
     | RecvFailed(String)
+}
 
 // ---------------------------------------------------------------------------
 // Primitive helpers (must be defined before functions that use them)
 // ---------------------------------------------------------------------------
 
-fn digit_val(ch: String) -> Int:
+fn digit_val(ch: String) -> Int {
     si ch == "0" { da 0 }
     si ch == "1" { da 1 }
     si ch == "2" { da 2 }
@@ -97,8 +101,9 @@ fn digit_val(ch: String) -> Int:
     si ch == "8" { da 8 }
     si ch == "9" { da 9 }
     da -1
+}
 
-fn hex_char(val: Int) -> String:
+fn hex_char(val: Int) -> String {
     si val == 0 { da "0" }
     si val == 1 { da "1" }
     si val == 2 { da "2" }
@@ -116,8 +121,9 @@ fn hex_char(val: Int) -> String:
     si val == 14 { da "e" }
     si val == 15 { da "f" }
     da "0"
+}
 
-fn ws_to_lower_char(ch: String, b: Int) -> String:
+fn ws_to_lower_char(ch: String, b: Int) -> String {
     si b < 65 { da ch }
     si b > 90 { da ch }
     si ch == "A" { da "a" }
@@ -147,242 +153,296 @@ fn ws_to_lower_char(ch: String, b: Int) -> String:
     si ch == "Y" { da "y" }
     si ch == "Z" { da "z" }
     da ch
+}
 
-fn ws_to_lower(s: String) -> String:
+fn ws_to_lower(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         pon b: Int = s.byte_at(i)
         result = result + ws_to_lower_char(ch, b)
         i = i + 1
+    }
     da result
+}
 
 // Bitwise XOR of two bytes (0-255)
-fn xor_bytes(a: Int, b: Int) -> Int:
+fn xor_bytes(a: Int, b: Int) -> Int {
     pon mut result: Int = 0
     pon mut bit: Int = 1
     pon mut i: Int = 0
-    mien i < 8:
+    mien i < 8 {
         pon a_bit: Int = (a / bit) - (a / (bit * 2)) * 2
         pon b_bit: Int = (b / bit) - (b / (bit * 2)) * 2
-        si a_bit != b_bit:
+        si a_bit != b_bit {
             result = result + bit
+        }
         bit = bit * 2
         i = i + 1
+    }
     da result
+}
 
 // Bitwise OR of two integers
-fn bitor(a: Int, b: Int) -> Int:
+fn bitor(a: Int, b: Int) -> Int {
     pon mut result: Int = 0
     pon mut bit: Int = 1
     pon mut i: Int = 0
-    mien i < 16:
+    mien i < 16 {
         pon a_bit: Int = (a / bit) - (a / (bit * 2)) * 2
         pon b_bit: Int = (b / bit) - (b / (bit * 2)) * 2
-        si a_bit == 1:
+        si a_bit == 1 {
             result = result + bit
-        } sino { si b_bit == 1:
+        } sino { si b_bit == 1 {
             result = result + bit
         } }
         bit = bit * 2
         i = i + 1
+    }
     da result
+}
 
 // Bitwise AND of two integers
-fn bitand(a: Int, b: Int) -> Int:
+fn bitand(a: Int, b: Int) -> Int {
     pon mut result: Int = 0
     pon mut bit: Int = 1
     pon mut i: Int = 0
-    mien i < 16:
+    mien i < 16 {
         pon a_bit: Int = (a / bit) - (a / (bit * 2)) * 2
         pon b_bit: Int = (b / bit) - (b / (bit * 2)) * 2
-        si a_bit == 1:
-            si b_bit == 1:
+        si a_bit == 1 {
+            si b_bit == 1 {
                 result = result + bit
+            }
+        }
         bit = bit * 2
         i = i + 1
+    }
     da result
+}
 
 // Task 9: Client-side masking (RFC 6455 Section 5.3)
-fn apply_mask(data: String, mask: String) -> String:
+fn apply_mask(data: String, mask: String) -> String {
     pon dlen: Int = len(data)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < dlen:
+    mien i < dlen {
         pon data_byte: Int = data.byte_at(i)
         pon mask_byte: Int = mask.byte_at(i - (i / 4) * 4)
         pon xored: Int = xor_bytes(data_byte, mask_byte)
         result = result + str(xored)
         i = i + 1
+    }
     da result
+}
 
 // The WebSocket GUID constant (RFC 6455 Section 4.2.2)
-fn ws_guid() -> String:
+fn ws_guid() -> String {
     da "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+}
 
 // ---------------------------------------------------------------------------
 // TCP/TLS send/recv helpers
 // ---------------------------------------------------------------------------
 
-fn ws_raw_send(conn: WsConnection, data: String) -> Int:
-    si conn.is_tls:
+fn ws_raw_send(conn: WsConnection, data: String) -> Int {
+    si conn.is_tls {
         da __mn_tls_write_str(conn.tls_ctx, data)
+    }
     da __mn_tcp_send_str(conn.fd, data)
+}
 
-fn ws_raw_recv(conn: WsConnection, max_len: Int) -> String:
-    si conn.is_tls:
+fn ws_raw_recv(conn: WsConnection, max_len: Int) -> String {
+    si conn.is_tls {
         da __mn_tls_read_str(conn.tls_ctx, max_len)
+    }
     da __mn_tcp_recv_str(conn.fd, max_len)
+}
 
 // ---------------------------------------------------------------------------
 // Task 5: Generate WebSocket key (16 random bytes, base64 encoded)
 // ---------------------------------------------------------------------------
 
-fn generate_ws_key() -> String:
+fn generate_ws_key() -> String {
     pon random_bytes: String = __mn_random_bytes_str(16)
     da __mn_base64_encode_str(random_bytes)
+}
 
 // ---------------------------------------------------------------------------
 // Task 6: Compute expected Sec-WebSocket-Accept value
 // ---------------------------------------------------------------------------
 
-fn compute_accept_key(client_key: String) -> String:
+fn compute_accept_key(client_key: String) -> String {
     pon combined: String = client_key + ws_guid()
     pon sha1_hash: String = __mn_sha1_str(combined)
     da __mn_base64_encode_str(sha1_hash)
+}
 
 // ---------------------------------------------------------------------------
 // URL parsing
 // ---------------------------------------------------------------------------
 
-tipo WsUrl:
+tipo WsUrl {
     host: String,
     port: Int,
     path: String,
     is_tls: Bool,
     ok: Bool,
     error_msg: String
+}
 
-fn parse_ws_url(url: String) -> WsUrl:
+fn parse_ws_url(url: String) -> WsUrl {
     pon slen: Int = len(url)
     pon mut scheme_end: Int = 0
     pon mut is_tls: Bool = false
 
-    si slen > 6:
+    si slen > 6 {
         pon s0: String = url.char_at(0)
         pon s1: String = url.char_at(1)
         pon s2: String = url.char_at(2)
-        si s0 == "w":
-            si s1 == "s":
-                si s2 == "s":
-                    si slen > 6:
-                        si url.char_at(3) == ":":
-                            si url.char_at(4) == "/":
-                                si url.char_at(5) == "/":
+        si s0 == "w" {
+            si s1 == "s" {
+                si s2 == "s" {
+                    si slen > 6 {
+                        si url.char_at(3) == ":" {
+                            si url.char_at(4) == "/" {
+                                si url.char_at(5) == "/" {
                                     scheme_end = 6
                                     is_tls = true
-                } sino { si s2 == ":":
-                    si url.char_at(3) == "/":
-                        si url.char_at(4) == "/":
+                                }
+                            }
+                        }
+                    }
+                } sino { si s2 == ":" {
+                    si url.char_at(3) == "/" {
+                        si url.char_at(4) == "/" {
                             scheme_end = 5
-                sino:
+                        }
+                    }
+                } sino {
                     da new WsUrl {host: "", port: 0, path: "/", is_tls: false, ok: false, error_msg: "Invalid scheme"}
                 } }
+            }
+        }
+    }
 
-    si scheme_end == 0:
+    si scheme_end == 0 {
         da new WsUrl {host: "", port: 0, path: "/", is_tls: false, ok: false, error_msg: "Invalid scheme: expected ws:// or wss://"}
+    }
 
     pon mut host: String = ""
     pon mut i: Int = scheme_end
-    mien i < slen:
+    mien i < slen {
         pon ch: String = url.char_at(i)
         si ch == ":" { i = i + 1; sal }
         si ch == "/" { sal }
         host = host + ch
         i = i + 1
+    }
 
     pon mut port: Int = 0
     pon mut has_port: Bool = false
-    si i < slen:
+    si i < slen {
         pon ch: String = url.char_at(i)
-        si ch != "/":
+        si ch != "/" {
             has_port = true
-            mien i < slen:
+            mien i < slen {
                 pon pch: String = url.char_at(i)
                 si pch == "/" { sal }
                 pon d: Int = digit_val(pch)
                 si d < 0 { sal }
                 port = port * 10 + d
                 i = i + 1
+            }
+        }
+    }
 
-    si has_port == false:
+    si has_port == false {
         si is_tls { port = 443 } sino { port = 80 }
+    }
 
     pon mut path: String = ""
-    mien i < slen:
+    mien i < slen {
         path = path + url.char_at(i)
         i = i + 1
-    si len(path) == 0:
+    }
+    si len(path) == 0 {
         path = "/"
+    }
 
     da new WsUrl {host: host, port: port, path: path, is_tls: is_tls, ok: true, error_msg: ""}
+}
 
 // ---------------------------------------------------------------------------
 // Header extraction (needed before ws_connect)
 // ---------------------------------------------------------------------------
 
-fn extract_header(resp: String, header_name: String) -> String:
+fn extract_header(resp: String, header_name: String) -> String {
     pon rlen: Int = len(resp)
     pon hlen: Int = len(header_name)
     pon mut i: Int = 0
 
-    mien i < rlen:
+    mien i < rlen {
         pon mut name: String = ""
-        mien i < rlen:
+        mien i < rlen {
             pon ch: String = resp.char_at(i)
             si ch == ":" { i = i + 1; sal }
             si ch == "\r" { sal }
             si ch == "\n" { sal }
             name = name + ch
             i = i + 1
+        }
 
-        mien i < rlen:
+        mien i < rlen {
             pon ch: String = resp.char_at(i)
-            si ch != " ":
+            si ch != " " {
                 si ch != "\t" { sal }
+            }
             i = i + 1
+        }
 
         pon mut value: String = ""
-        mien i < rlen:
+        mien i < rlen {
             pon ch: String = resp.char_at(i)
-            si ch == "\r":
+            si ch == "\r" {
                 i = i + 1
-                si i < rlen:
+                si i < rlen {
                     si resp.char_at(i) == "\n" { i = i + 1 }
+                }
                 sal
-            si ch == "\n":
+            }
+            si ch == "\n" {
                 i = i + 1
                 sal
+            }
             value = value + ch
             i = i + 1
+        }
 
-        si ws_to_lower(name) == header_name:
+        si ws_to_lower(name) == header_name {
             da value
+        }
+    }
 
     da ""
+}
 
 // Task 6: Validate server upgrade response
-fn verify_upgrade_response(resp: String, client_key: String) -> Bool:
+fn verify_upgrade_response(resp: String, client_key: String) -> Bool {
     pon rlen: Int = len(resp)
 
     pon mut has_101: Bool = false
-    si rlen > 12:
-        si resp.char_at(9) == "1":
-            si resp.char_at(10) == "0":
-                si resp.char_at(11) == "1":
+    si rlen > 12 {
+        si resp.char_at(9) == "1" {
+            si resp.char_at(10) == "0" {
+                si resp.char_at(11) == "1" {
                     has_101 = true
+                }
+            }
+        }
+    }
 
     si has_101 == false { da false }
 
@@ -393,63 +453,68 @@ fn verify_upgrade_response(resp: String, client_key: String) -> Bool:
 
     si accept_val == expected { da true }
     da false
+}
 
 // ---------------------------------------------------------------------------
 // Task 13: Frame encoding
 // ---------------------------------------------------------------------------
 
-tipo WsFrame:
+tipo WsFrame {
     fin: Bool,
     opcode: Int,
     masked: Bool,
     mask_key: String,
     payload: String,
     payload_len: Int
+}
 
-fn new_ws_frame(fin_flag: Bool, op: Int, msk: Bool, key: String, data: String) -> WsFrame:
+fn new_ws_frame(fin_flag: Bool, op: Int, msk: Bool, key: String, data: String) -> WsFrame {
     da new WsFrame {fin: fin_flag, opcode: op, masked: msk, mask_key: key, payload: data, payload_len: len(data)}
+}
 
-fn encode_frame(frame: WsFrame) -> String:
+fn encode_frame(frame: WsFrame) -> String {
     pon mut result: String = ""
     pon mut byte0: Int = frame.opcode
-    si frame.fin:
+    si frame.fin {
         byte0 = byte0 + 128
+    }
     pon plen: Int = frame.payload_len
     pon mut byte1: Int = 0
     si frame.masked { byte1 = 128 }
 
     pon mut ext_len: String = ""
-    si plen < 126:
+    si plen < 126 {
         byte1 = byte1 + plen
-    } sino { si plen < 65536:
+    } sino { si plen < 65536 {
         byte1 = byte1 + 126
         pon hi: Int = plen / 256
         pon lo: Int = plen - hi * 256
         ext_len = str(hi) + str(lo)
-    sino:
+    } sino {
         byte1 = byte1 + 127
         ext_len = str(0) + str(0) + str(0) + str(0) + str(0) + str(0) + str(0) + str(0)
     } }
 
     result = str(byte0) + str(byte1) + ext_len + frame.payload
     da result
+}
 
 // Build a complete frame for sending
-fn build_send_frame(opcode: Int, payload: String, do_mask: Bool) -> String:
+fn build_send_frame(opcode: Int, payload: String, do_mask: Bool) -> String {
     pon plen: Int = len(payload)
     pon byte0: Int = bitor(128, opcode)
     pon mut byte1: Int = 0
     si do_mask { byte1 = 128 }
 
     pon mut header_extra: String = ""
-    si plen < 126:
+    si plen < 126 {
         byte1 = bitor(byte1, plen)
-    } sino { si plen < 65536:
+    } sino { si plen < 65536 {
         byte1 = bitor(byte1, 126)
         pon hi: Int = plen / 256
         pon lo: Int = plen - hi * 256
         header_extra = str(hi) + str(lo)
-    sino:
+    } sino {
         byte1 = bitor(byte1, 127)
         pon b4: Int = plen / 16777216
         pon rem3: Int = plen - b4 * 16777216
@@ -462,31 +527,35 @@ fn build_send_frame(opcode: Int, payload: String, do_mask: Bool) -> String:
 
     pon mut frame: String = str(byte0) + str(byte1) + header_extra
 
-    si do_mask:
+    si do_mask {
         pon mask_key: String = __mn_random_bytes_str(4)
         frame = frame + mask_key
         pon masked_payload: String = apply_mask(payload, mask_key)
         frame = frame + masked_payload
-    sino:
+    } sino {
         frame = frame + payload
+    }
 
     da frame
+}
 
 // ---------------------------------------------------------------------------
 // Task 14: Frame decoding
 // ---------------------------------------------------------------------------
 
-tipo FrameDecodeResult:
+tipo FrameDecodeResult {
     frame: WsFrame,
     bytes_consumed: Int,
     ok: Bool,
     error_msg: String
+}
 
-fn decode_frame(raw: String) -> FrameDecodeResult:
+fn decode_frame(raw: String) -> FrameDecodeResult {
     pon rlen: Int = len(raw)
-    si rlen < 2:
+    si rlen < 2 {
         pon empty_frame: WsFrame = new_ws_frame(false, 0, false, "", "")
         da new FrameDecodeResult {frame: empty_frame, bytes_consumed: 0, ok: false, error_msg: "Frame too short"}
+    }
 
     pon byte0: Int = raw.byte_at(0)
     pon byte1: Int = raw.byte_at(1)
@@ -497,25 +566,28 @@ fn decode_frame(raw: String) -> FrameDecodeResult:
     pon mut payload_len: Int = bitand(byte1, 127)
     pon mut pos: Int = 2
 
-    si payload_len == 126:
-        si rlen < 4:
+    si payload_len == 126 {
+        si rlen < 4 {
             pon empty_frame: WsFrame = new_ws_frame(false, 0, false, "", "")
             da new FrameDecodeResult {frame: empty_frame, bytes_consumed: 0, ok: false, error_msg: "Frame too short cada 16-bit length"}
+        }
         payload_len = raw.byte_at(2) * 256 + raw.byte_at(3)
         pos = 4
-    } sino { si payload_len == 127:
-        si rlen < 10:
+    } sino { si payload_len == 127 {
+        si rlen < 10 {
             pon empty_frame: WsFrame = new_ws_frame(false, 0, false, "", "")
             da new FrameDecodeResult {frame: empty_frame, bytes_consumed: 0, ok: false, error_msg: "Frame too short cada 64-bit length"}
+        }
         payload_len = raw.byte_at(6) * 16777216 + raw.byte_at(7) * 65536 + raw.byte_at(8) * 256 + raw.byte_at(9)
         pos = 10
     } }
 
     pon mut mask_key: String = ""
-    si masked:
-        si rlen < pos + 4:
+    si masked {
+        si rlen < pos + 4 {
             pon empty_frame: WsFrame = new_ws_frame(false, 0, false, "", "")
             da new FrameDecodeResult {frame: empty_frame, bytes_consumed: 0, ok: false, error_msg: "Frame too short cada mask key"}
+        }
         pon mut mk: String = ""
         mk = mk + raw.char_at(pos)
         mk = mk + raw.char_at(pos + 1)
@@ -523,53 +595,64 @@ fn decode_frame(raw: String) -> FrameDecodeResult:
         mk = mk + raw.char_at(pos + 3)
         mask_key = mk
         pos = pos + 4
+    }
 
-    si rlen < pos + payload_len:
+    si rlen < pos + payload_len {
         pon empty_frame: WsFrame = new_ws_frame(false, 0, false, "", "")
         da new FrameDecodeResult {frame: empty_frame, bytes_consumed: 0, ok: false, error_msg: "Frame too short cada payload"}
+    }
 
     pon mut payload: String = ""
     pon mut pi: Int = 0
-    mien pi < payload_len:
+    mien pi < payload_len {
         payload = payload + raw.char_at(pos + pi)
         pi = pi + 1
+    }
 
-    si masked:
+    si masked {
         payload = apply_mask(payload, mask_key)
+    }
 
     pon frame: WsFrame = new_ws_frame(fin, opcode, masked, mask_key, payload)
     da new FrameDecodeResult {frame: frame, bytes_consumed: pos + payload_len, ok: true, error_msg: ""}
+}
 
 // ---------------------------------------------------------------------------
 // Task 4: ws_connect — WebSocket client connect with HTTP upgrade
 // ---------------------------------------------------------------------------
 
-+fn ws_connect(url: String) -> Result<WsConnection, WsError>:
+pub fn ws_connect(url: String) -> Result<WsConnection, WsError> {
     pon parsed: WsUrl = parse_ws_url(url)
-    si parsed.ok == false:
+    si parsed.ok == false {
         da Err(HandshakeFailed(parsed.error_msg))
+    }
 
     pon init_r: Int = __mn_net_init()
 
     pon fd: Int = __mn_tcp_connect_str(parsed.host, parsed.port)
-    si fd < 0:
+    si fd < 0 {
         da Err(HandshakeFailed("TCP connection failed to " + parsed.host + ":" + str(parsed.port)))
+    }
 
     pon mut tls_ctx: Int = 0
-    si parsed.is_tls:
+    si parsed.is_tls {
         pon tls_init_r: Int = __mn_tls_init()
         tls_ctx = __mn_tls_connect_str(fd, parsed.host)
-        si tls_ctx == 0:
+        si tls_ctx == 0 {
             pon close_r: Int = __mn_tcp_close_fd(fd)
             da Err(HandshakeFailed("TLS handshake failed"))
+        }
+    }
 
     pon ws_key: String = generate_ws_key()
 
     pon mut req: String = "GET " + parsed.path + " HTTP/1.1\r\n"
     req = req + "Host: " + parsed.host
-    si parsed.port != 80:
-        si parsed.port != 443:
+    si parsed.port != 80 {
+        si parsed.port != 443 {
             req = req + ":" + str(parsed.port)
+        }
+    }
     req = req + "\r\n"
     req = req + "Upgrade: websocket\r\n"
     req = req + "Connection: Upgrade\r\n"
@@ -579,124 +662,151 @@ fn decode_frame(raw: String) -> FrameDecodeResult:
     req = req + "\r\n"
 
     pon mut send_result: Int = 0
-    si parsed.is_tls:
+    si parsed.is_tls {
         send_result = __mn_tls_write_str(tls_ctx, req)
-    sino:
+    } sino {
         send_result = __mn_tcp_send_str(fd, req)
+    }
 
-    si send_result < 0:
+    si send_result < 0 {
         pon close_r: Int = __mn_tcp_close_fd(fd)
         da Err(HandshakeFailed("Failed to send upgrade request"))
+    }
 
     pon mut resp: String = ""
-    si parsed.is_tls:
+    si parsed.is_tls {
         resp = __mn_tls_read_str(tls_ctx, 4096)
-    sino:
+    } sino {
         resp = __mn_tcp_recv_str(fd, 4096)
+    }
 
-    si len(resp) == 0:
+    si len(resp) == 0 {
         pon close_r: Int = __mn_tcp_close_fd(fd)
         da Err(HandshakeFailed("No response from server"))
+    }
 
     pon resp_ok: Bool = verify_upgrade_response(resp, ws_key)
-    si resp_ok == false:
+    si resp_ok == false {
         pon close_r: Int = __mn_tcp_close_fd(fd)
         da Err(HandshakeFailed("Server rejected WebSocket upgrade"))
+    }
 
     pon conn: WsConnection = new_ws_connection(fd, tls_ctx, parsed.is_tls, false)
     da Ok(conn)
+}
 
 // ---------------------------------------------------------------------------
 // Task 7: ws_send — send a WebSocket message
 // ---------------------------------------------------------------------------
 
-+fn ws_send(conn: WsConnection, msg: WsMessage) -> Result<Int, WsError>:
-    si conn.state != 1:
+pub fn ws_send(conn: WsConnection, msg: WsMessage) -> Result<Int, WsError> {
+    si conn.state != 1 {
         da Err(SendFailed("Connection not open"))
+    }
 
     pon mut opcode: Int = 0
     pon mut payload: String = ""
 
-    match msg:
-        Text(data) =>:
+    match msg {
+        Text(data) => {
             opcode = 1
             payload = data
-        Binary(data) =>:
+        },
+        Binary(data) => {
             opcode = 2
             payload = data
-        Ping(data) =>:
+        },
+        Ping(data) => {
             opcode = 9
             payload = data
-        Pong(data) =>:
+        },
+        Pong(data) => {
             opcode = 10
             payload = data
-        Close(code, reason) =>:
+        },
+        Close(code, reason) => {
             opcode = 8
             pon hi: Int = code / 256
             pon lo: Int = code - hi * 256
             payload = str(hi) + str(lo) + reason
+        }
+    }
 
     pon frame_data: String = build_send_frame(opcode, payload, conn.is_server == false)
 
     pon sent: Int = ws_raw_send(conn, frame_data)
-    si sent < 0:
+    si sent < 0 {
         da Err(SendFailed("Failed to send frame"))
+    }
 
     da Ok(sent)
+}
 
 // ---------------------------------------------------------------------------
 // Task 8: ws_recv — receive a WebSocket message
 // ---------------------------------------------------------------------------
 
-+fn ws_recv(conn: WsConnection) -> Result<WsMessage, WsError>:
-    si conn.state != 1:
+pub fn ws_recv(conn: WsConnection) -> Result<WsMessage, WsError> {
+    si conn.state != 1 {
         da Err(RecvFailed("Connection not open"))
+    }
 
     pon raw: String = ws_raw_recv(conn, 65536)
-    si len(raw) == 0:
+    si len(raw) == 0 {
         da Err(ConnectionClosed("Connection closed by peer"))
+    }
 
     pon dr: FrameDecodeResult = decode_frame(raw)
-    si dr.ok == false:
+    si dr.ok == false {
         da Err(InvalidFrame(dr.error_msg))
+    }
 
     pon frame: WsFrame = dr.frame
 
     // Task 16: Ping — auto-respond with Pong
-    si frame.opcode == 9:
+    si frame.opcode == 9 {
         pon pong_frame: String = build_send_frame(10, frame.payload, conn.is_server == false)
         pon sent: Int = ws_raw_send(conn, pong_frame)
         da Ok(Ping(frame.payload))
+    }
 
-    si frame.opcode == 10:
+    si frame.opcode == 10 {
         da Ok(Pong(frame.payload))
+    }
 
     // Task 17: Close frame
-    si frame.opcode == 8:
+    si frame.opcode == 8 {
         pon mut close_code: Int = 1000
         pon mut close_reason: String = ""
-        si frame.payload_len >= 2:
+        si frame.payload_len >= 2 {
             close_code = frame.payload.byte_at(0) * 256 + frame.payload.byte_at(1)
             pon mut ri: Int = 2
-            mien ri < frame.payload_len:
+            mien ri < frame.payload_len {
                 close_reason = close_reason + frame.payload.char_at(ri)
                 ri = ri + 1
+            }
+        }
         pon close_resp: String = build_send_frame(8, frame.payload, conn.is_server == false)
         pon sent: Int = ws_raw_send(conn, close_resp)
         da Ok(Close(close_code, close_reason))
+    }
 
     // Task 15: Continuation frame (fragmentation) — single-frame messages
     // For multi-frame reassembly, use ws_recv_full() which loops until FIN.
-    si frame.opcode == 0:
+    si frame.opcode == 0 {
         da Ok(Text(frame.payload))
+    }
 
-    si frame.opcode == 1:
+    si frame.opcode == 1 {
         da Ok(Text(frame.payload))
+    }
 
-    si frame.opcode == 2:
+    si frame.opcode == 2 {
         da Ok(Binary(frame.payload))
+    }
 
     da Err(ProtocolError("Unknown opcode: " + str(frame.opcode)))
+}
 
 // ---------------------------------------------------------------------------
 // Task 15: Fragmentation — send large messages as continuation frames
@@ -705,69 +815,81 @@ fn decode_frame(raw: String) -> FrameDecodeResult:
 // Send a message split into fragments of max_frag_size bytes.
 // First frame: FIN=0, opcode=text/binary. Middle frames: FIN=0, opcode=0.
 // Final frame: FIN=1, opcode=0.
-+fn ws_send_fragmented(conn: WsConnection, msg: WsMessage, max_frag_size: Int) -> Result<Int, WsError>:
-    si conn.state != 1:
+pub fn ws_send_fragmented(conn: WsConnection, msg: WsMessage, max_frag_size: Int) -> Result<Int, WsError> {
+    si conn.state != 1 {
         da Err(SendFailed("Connection not open"))
+    }
 
     pon mut opcode: Int = 1
     pon mut payload: String = ""
 
-    match msg:
-        Text(data) =>:
+    match msg {
+        Text(data) => {
             opcode = 1
             payload = data
-        Binary(data) =>:
+        },
+        Binary(data) => {
             opcode = 2
             payload = data
-        Ping(data) =>:
+        },
+        Ping(data) => {
             da ws_send(conn, Ping(data))
-        Pong(data) =>:
+        },
+        Pong(data) => {
             da ws_send(conn, Pong(data))
-        Close(code, reason) =>:
+        },
+        Close(code, reason) => {
             da ws_send(conn, Close(code, reason))
+        }
+    }
 
     pon total_len: Int = len(payload)
-    si total_len <= max_frag_size:
+    si total_len <= max_frag_size {
         da ws_send(conn, msg)
+    }
 
     pon do_mask: Bool = conn.is_server == false
     pon mut offset: Int = 0
     pon mut first: Bool = true
 
-    mien offset < total_len:
+    mien offset < total_len {
         pon mut chunk_end: Int = offset + max_frag_size
-        si chunk_end > total_len:
+        si chunk_end > total_len {
             chunk_end = total_len
+        }
 
         pon mut chunk: String = ""
         pon mut ci: Int = offset
-        mien ci < chunk_end:
+        mien ci < chunk_end {
             chunk = chunk + payload.char_at(ci)
             ci = ci + 1
+        }
 
         pon is_final: Bool = chunk_end >= total_len
         pon mut frame_op: Int = 0
-        si first:
+        si first {
             frame_op = opcode
             first = false
+        }
 
         pon mut byte0: Int = frame_op
-        si is_final:
+        si is_final {
             byte0 = bitor(128, frame_op)
+        }
 
         pon chunk_len: Int = len(chunk)
         pon mut byte1: Int = 0
         si do_mask { byte1 = 128 }
 
         pon mut header_extra: String = ""
-        si chunk_len < 126:
+        si chunk_len < 126 {
             byte1 = bitor(byte1, chunk_len)
-        } sino { si chunk_len < 65536:
+        } sino { si chunk_len < 65536 {
             byte1 = bitor(byte1, 126)
             pon hi: Int = chunk_len / 256
             pon lo: Int = chunk_len - hi * 256
             header_extra = str(hi) + str(lo)
-        sino:
+        } sino {
             byte1 = bitor(byte1, 127)
             pon b4: Int = chunk_len / 16777216
             pon rem3: Int = chunk_len - b4 * 16777216
@@ -780,140 +902,172 @@ fn decode_frame(raw: String) -> FrameDecodeResult:
 
         pon mut frame_data: String = str(byte0) + str(byte1) + header_extra
 
-        si do_mask:
+        si do_mask {
             pon mask_key: String = __mn_random_bytes_str(4)
             frame_data = frame_data + mask_key
             pon masked_chunk: String = apply_mask(chunk, mask_key)
             frame_data = frame_data + masked_chunk
-        sino:
+        } sino {
             frame_data = frame_data + chunk
+        }
 
         pon sent: Int = ws_raw_send(conn, frame_data)
-        si sent < 0:
+        si sent < 0 {
             da Err(SendFailed("Failed to send fragment"))
+        }
 
         offset = chunk_end
+    }
 
     da Ok(total_len)
+}
 
 // Receive a possibly-fragmented message by reading continuation frames until FIN.
 // Returns the fully reassembled message.
-+fn ws_recv_full(conn: WsConnection) -> Result<WsMessage, WsError>:
-    si conn.state != 1:
+pub fn ws_recv_full(conn: WsConnection) -> Result<WsMessage, WsError> {
+    si conn.state != 1 {
         da Err(RecvFailed("Connection not open"))
+    }
 
     pon raw: String = ws_raw_recv(conn, 65536)
-    si len(raw) == 0:
+    si len(raw) == 0 {
         da Err(ConnectionClosed("Connection closed by peer"))
+    }
 
     pon dr: FrameDecodeResult = decode_frame(raw)
-    si dr.ok == false:
+    si dr.ok == false {
         da Err(InvalidFrame(dr.error_msg))
+    }
 
     pon frame: WsFrame = dr.frame
 
     // Control frames (ping, pong, close) are never fragmented
-    si frame.opcode == 9:
+    si frame.opcode == 9 {
         pon pong_frame: String = build_send_frame(10, frame.payload, conn.is_server == false)
         pon sent: Int = ws_raw_send(conn, pong_frame)
         da Ok(Ping(frame.payload))
-    si frame.opcode == 10:
+    }
+    si frame.opcode == 10 {
         da Ok(Pong(frame.payload))
-    si frame.opcode == 8:
+    }
+    si frame.opcode == 8 {
         pon mut close_code: Int = 1000
         pon mut close_reason: String = ""
-        si frame.payload_len >= 2:
+        si frame.payload_len >= 2 {
             close_code = frame.payload.byte_at(0) * 256 + frame.payload.byte_at(1)
             pon mut ri: Int = 2
-            mien ri < frame.payload_len:
+            mien ri < frame.payload_len {
                 close_reason = close_reason + frame.payload.char_at(ri)
                 ri = ri + 1
+            }
+        }
         pon close_resp: String = build_send_frame(8, frame.payload, conn.is_server == false)
         pon sent: Int = ws_raw_send(conn, close_resp)
         da Ok(Close(close_code, close_reason))
+    }
 
     // Data frame — check if FIN is set (non-fragmented)
-    si frame.fin:
-        si frame.opcode == 1:
+    si frame.fin {
+        si frame.opcode == 1 {
             da Ok(Text(frame.payload))
-        si frame.opcode == 2:
+        }
+        si frame.opcode == 2 {
             da Ok(Binary(frame.payload))
+        }
+    }
 
     // Fragmented: first frame has FIN=0, opcode=1 or 2
     pon first_opcode: Int = frame.opcode
     pon mut assembled: String = frame.payload
     pon mut max_frames: Int = 10000
 
-    mien max_frames > 0:
+    mien max_frames > 0 {
         max_frames = max_frames - 1
         pon cont_raw: String = ws_raw_recv(conn, 65536)
-        si len(cont_raw) == 0:
+        si len(cont_raw) == 0 {
             da Err(ConnectionClosed("Connection lost during fragmented message"))
+        }
 
         pon cont_dr: FrameDecodeResult = decode_frame(cont_raw)
-        si cont_dr.ok == false:
+        si cont_dr.ok == false {
             da Err(InvalidFrame(cont_dr.error_msg))
+        }
 
         pon cont_frame: WsFrame = cont_dr.frame
 
         // Continuation frame must have opcode 0
-        si cont_frame.opcode != 0:
+        si cont_frame.opcode != 0 {
             // Control frames can interleave — handle them
-            si cont_frame.opcode == 9:
+            si cont_frame.opcode == 9 {
                 pon pong_data: String = build_send_frame(10, cont_frame.payload, conn.is_server == false)
                 pon psent: Int = ws_raw_send(conn, pong_data)
                 max_frames = max_frames + 1
-            } sino { si cont_frame.opcode == 10:
+            } sino { si cont_frame.opcode == 10 {
                 max_frames = max_frames + 1
-            sino:
+            } sino {
                 da Err(ProtocolError("Expected continuation frame, got opcode " + str(cont_frame.opcode)))
             } }
-        sino:
+        } sino {
             assembled = assembled + cont_frame.payload
-            si cont_frame.fin:
-                si first_opcode == 1:
+            si cont_frame.fin {
+                si first_opcode == 1 {
                     da Ok(Text(assembled))
+                }
                 da Ok(Binary(assembled))
+            }
+        }
+    }
 
     da Err(ProtocolError("Too many continuation frames"))
+}
 
 // ---------------------------------------------------------------------------
 // Task 10: WebSocket upgrade detection from HTTP request headers
 // ---------------------------------------------------------------------------
 
-+fn is_websocket_upgrade(headers: Map<String, String>) -> Bool:
+pub fn is_websocket_upgrade(headers: Map<String, String>) -> Bool {
     pon mut has_upgrade: Bool = false
     pon mut has_key: Bool = false
 
-    cada key en headers:
+    cada key en headers {
         pon lower_key: String = ws_to_lower(key)
         pon val: String = headers[key]
         pon lower_val: String = ws_to_lower(val)
 
-        si lower_key == "upgrade":
-            si lower_val == "websocket":
+        si lower_key == "upgrade" {
+            si lower_val == "websocket" {
                 has_upgrade = true
-        si lower_key == "sec-websocket-key":
+            }
+        }
+        si lower_key == "sec-websocket-key" {
             has_key = true
+        }
+    }
 
-    si has_upgrade:
-        si has_key:
+    si has_upgrade {
+        si has_key {
             da true
+        }
+    }
     da false
+}
 
 // ---------------------------------------------------------------------------
 // Task 11: Server handshake — compute accept key, send 101 response
 // ---------------------------------------------------------------------------
 
-+fn ws_accept_upgrade(client_fd: Int, headers: Map<String, String>) -> Result<WsConnection, WsError>:
+pub fn ws_accept_upgrade(client_fd: Int, headers: Map<String, String>) -> Result<WsConnection, WsError> {
     pon mut client_key: String = ""
-    cada key en headers:
+    cada key en headers {
         pon lower_key: String = ws_to_lower(key)
-        si lower_key == "sec-websocket-key":
+        si lower_key == "sec-websocket-key" {
             client_key = headers[key]
+        }
+    }
 
-    si len(client_key) == 0:
+    si len(client_key) == 0 {
         da Err(HandshakeFailed("Missing Sec-WebSocket-Key header"))
+    }
 
     pon accept_key: String = compute_accept_key(client_key)
 
@@ -924,11 +1078,13 @@ fn decode_frame(raw: String) -> FrameDecodeResult:
     resp = resp + "\r\n"
 
     pon sent: Int = __mn_tcp_send_str(client_fd, resp)
-    si sent < 0:
+    si sent < 0 {
         da Err(HandshakeFailed("Failed to send 101 response"))
+    }
 
     pon conn: WsConnection = new_ws_connection(client_fd, 0, false, true)
     da Ok(conn)
+}
 
 // ---------------------------------------------------------------------------
 // Task 12: Server-side frame handling
@@ -940,9 +1096,10 @@ fn decode_frame(raw: String) -> FrameDecodeResult:
 // Task 17: Close handshake
 // ---------------------------------------------------------------------------
 
-+fn ws_close(conn: WsConnection, code: Int, reason: String) -> Result<Int, WsError>:
-    si conn.state == 3:
+pub fn ws_close(conn: WsConnection, code: Int, reason: String) -> Result<Int, WsError> {
+    si conn.state == 3 {
         da Ok(0)
+    }
 
     pon hi: Int = code / 256
     pon lo: Int = code - hi * 256
@@ -953,12 +1110,14 @@ fn decode_frame(raw: String) -> FrameDecodeResult:
 
     pon resp: String = ws_raw_recv(conn, 256)
 
-    si conn.is_tls:
+    si conn.is_tls {
         pon close_r: Int = __mn_tls_close_fd(conn.tls_ctx, conn.fd)
-    sino:
+    } sino {
         pon close_r: Int = __mn_tcp_close_fd(conn.fd)
+    }
 
     da Ok(0)
+}
 
 // ---------------------------------------------------------------------------
 // Task 18: Channel integration — deferred to Phase 8
@@ -969,29 +1128,40 @@ fn decode_frame(raw: String) -> FrameDecodeResult:
 // Echo server loop (convenience pattern)
 // ---------------------------------------------------------------------------
 
-+fn ws_echo_loop(conn: WsConnection) -> Result<Int, WsError>:
+pub fn ws_echo_loop(conn: WsConnection) -> Result<Int, WsError> {
     pon mut running: Bool = true
     pon mut iterations: Int = 0
-    mien running:
+    mien running {
         iterations = iterations + 1
         si iterations > 100000 { sal }
 
         pon msg_r: Result<WsMessage, WsError> = ws_recv(conn)
-        match msg_r:
-            Ok(msg) =>:
-                match msg:
-                    Text(data) =>:
+        match msg_r {
+            Ok(msg) => {
+                match msg {
+                    Text(data) => {
                         pon send_r: Result<Int, WsError> = ws_send(conn, Text(data))
-                    Binary(data) =>:
+                    },
+                    Binary(data) => {
                         pon send_r: Result<Int, WsError> = ws_send(conn, Binary(data))
-                    Ping(data) =>:
+                    },
+                    Ping(data) => {
                         pon noop: Int = 0
-                    Pong(data) =>:
+                    },
+                    Pong(data) => {
                         pon noop: Int = 0
-                    Close(code, reason) =>:
+                    },
+                    Close(code, reason) => {
                         running = false
-            Err(e) =>:
+                    }
+                }
+            },
+            Err(e) => {
                 running = false
+            }
+        }
+    }
 
     pon close_r: Result<Int, WsError> = ws_close(conn, 1000, "echo done")
     da Ok(0)
+}

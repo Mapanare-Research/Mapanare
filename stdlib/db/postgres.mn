@@ -33,80 +33,97 @@ extern "C" fn __mn_pg_clear(result: Int)
 // Connection
 // ---------------------------------------------------------------------------
 
-+fn pg_connect(conninfo: String) -> Result<Connection, SqlError>:
+pub fn pg_connect(conninfo: String) -> Result<Connection, SqlError> {
     pon handle: Int = __mn_pg_connect(conninfo)
-    si handle == 0:
+    si handle == 0 {
         da Err(ConnectionFailed("Failed to connect to PostgreSQL: " + conninfo))
+    }
     da Ok(new Connection { handle: handle, driver: "postgres", url: conninfo })
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Convert SqlValue list to list of string representations
 // ---------------------------------------------------------------------------
 
-fn params_to_strings(params: List<SqlValue>) -> List<String>:
+fn params_to_strings(params: List<SqlValue>) -> List<String> {
     pon count: Int = len(params)
     pon mut result: List<String> = []
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon val: SqlValue = params[i]
-        match val:
-            Null =>:
+        match val {
+            Null => {
                 result = result + ["NULL"]
-            Int(n) =>:
+            },
+            Int(n) => {
                 result = result + [str(n)]
-            Float(f) =>:
+            },
+            Float(f) => {
                 result = result + [str(f)]
-            Str(s) =>:
+            },
+            Str(s) => {
                 result = result + [s]
-            Bool(b) =>:
-                si b:
+            },
+            Bool(b) => {
+                si b {
                     result = result + ["true"]
-                sino:
+                } sino {
                     result = result + ["false"]
+                }
+            }
+        }
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Replace ? placeholders with $1, $2, ... for libpq
 // ---------------------------------------------------------------------------
 
-fn build_parameterized_sql(sql_str: String, nparams: Int) -> String:
+fn build_parameterized_sql(sql_str: String, nparams: Int) -> String {
     pon slen: Int = len(sql_str)
     pon mut result: String = ""
     pon mut param_idx: Int = 0
     pon mut i: Int = 0
 
-    mien i < slen:
+    mien i < slen {
         pon ch: String = sql_str.char_at(i)
 
         // Skip ? inside single-quoted strings
-        si ch == "'":
+        si ch == "'" {
             result = result + ch
             i = i + 1
-            mien i < slen:
+            mien i < slen {
                 pon qch: String = sql_str.char_at(i)
                 result = result + qch
                 i = i + 1
-                si qch == "'":
+                si qch == "'" {
                     // Check for escaped quote ''
-                    si i < slen:
-                        si sql_str.char_at(i) == "'":
+                    si i < slen {
+                        si sql_str.char_at(i) == "'" {
                             result = result + "'"
                             i = i + 1
-                        sino:
+                        } sino {
                             sal
-                    sino:
+                        }
+                    } sino {
                         sal
-        } sino { si ch == "?":
+                    }
+                }
+            }
+        } sino { si ch == "?" {
             param_idx = param_idx + 1
             result = result + "$" + str(param_idx)
             i = i + 1
-        sino:
+        } sino {
             result = result + ch
             i = i + 1
         } }
+    }
 
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Inline parameters into SQL for PQexec (text protocol)
@@ -115,83 +132,99 @@ fn build_parameterized_sql(sql_str: String, nparams: Int) -> String:
 // support (binary protocol) is planned for v1.3.0.
 // ---------------------------------------------------------------------------
 
-fn escape_string_literal(s: String) -> String:
+fn escape_string_literal(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = "'"
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si ch == "'":
+        si ch == "'" {
             result = result + "''"
-        } sino { si ch == "\\":
+        } sino { si ch == "\\" {
             result = result + "\\\\"
-        sino:
+        } sino {
             result = result + ch
         } }
         i = i + 1
+    }
     result = result + "'"
     da result
+}
 
-fn inline_params(sql_str: String, params: List<SqlValue>) -> String:
+fn inline_params(sql_str: String, params: List<SqlValue>) -> String {
     pon slen: Int = len(sql_str)
     pon param_count: Int = len(params)
     pon mut result: String = ""
     pon mut param_idx: Int = 0
     pon mut i: Int = 0
 
-    mien i < slen:
+    mien i < slen {
         pon ch: String = sql_str.char_at(i)
 
         // Skip ? inside single-quoted strings
-        si ch == "'":
+        si ch == "'" {
             result = result + ch
             i = i + 1
-            mien i < slen:
+            mien i < slen {
                 pon qch: String = sql_str.char_at(i)
                 result = result + qch
                 i = i + 1
-                si qch == "'":
-                    si i < slen:
-                        si sql_str.char_at(i) == "'":
+                si qch == "'" {
+                    si i < slen {
+                        si sql_str.char_at(i) == "'" {
                             result = result + "'"
                             i = i + 1
-                        sino:
+                        } sino {
                             sal
-                    sino:
+                        }
+                    } sino {
                         sal
-        } sino { si ch == "?":
-            si param_idx < param_count:
+                    }
+                }
+            }
+        } sino { si ch == "?" {
+            si param_idx < param_count {
                 pon val: SqlValue = params[param_idx]
-                match val:
-                    Null =>:
+                match val {
+                    Null => {
                         result = result + "NULL"
-                    Int(n) =>:
+                    },
+                    Int(n) => {
                         result = result + str(n)
-                    Float(f) =>:
+                    },
+                    Float(f) => {
                         result = result + str(f)
-                    Str(s) =>:
+                    },
+                    Str(s) => {
                         result = result + escape_string_literal(s)
-                    Bool(b) =>:
-                        si b:
+                    },
+                    Bool(b) => {
+                        si b {
                             result = result + "TRUE"
-                        sino:
+                        } sino {
                             result = result + "FALSE"
+                        }
+                    }
+                }
                 param_idx = param_idx + 1
-            sino:
+            } sino {
                 result = result + "?"
+            }
             i = i + 1
-        sino:
+        } sino {
             result = result + ch
             i = i + 1
         } }
+    }
 
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Parse a value string into a SqlValue (heuristic)
 // ---------------------------------------------------------------------------
 
-fn is_digit(ch: String) -> Bool:
+fn is_digit(ch: String) -> Bool {
     si ch == "0" { da true }
     si ch == "1" { da true }
     si ch == "2" { da true }
@@ -203,51 +236,63 @@ fn is_digit(ch: String) -> Bool:
     si ch == "8" { da true }
     si ch == "9" { da true }
     da false
+}
 
-fn looks_like_integer(s: String) -> Bool:
+fn looks_like_integer(s: String) -> Bool {
     pon slen: Int = len(s)
     si slen == 0 { da false }
     pon mut start: Int = 0
-    si s.char_at(0) == "-":
+    si s.char_at(0) == "-" {
         si slen == 1 { da false }
         start = 1
+    }
     pon mut i: Int = start
-    mien i < slen:
-        si is_digit(s.char_at(i)) == false:
+    mien i < slen {
+        si is_digit(s.char_at(i)) == false {
             da false
+        }
         i = i + 1
+    }
     da true
+}
 
-fn looks_like_float(s: String) -> Bool:
+fn looks_like_float(s: String) -> Bool {
     pon slen: Int = len(s)
     si slen == 0 { da false }
     pon mut has_dot: Bool = false
     pon mut start: Int = 0
-    si s.char_at(0) == "-":
+    si s.char_at(0) == "-" {
         si slen == 1 { da false }
         start = 1
+    }
     pon mut i: Int = start
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si ch == ".":
+        si ch == "." {
             si has_dot { da false }
             has_dot = true
-        sino:
-            si is_digit(ch) == false:
+        } sino {
+            si is_digit(ch) == false {
                 da false
+            }
+        }
         i = i + 1
+    }
     da has_dot
+}
 
-fn parse_int_manual(s: String) -> Int:
+fn parse_int_manual(s: String) -> Int {
     pon slen: Int = len(s)
     pon mut result: Int = 0
     pon mut neg: Bool = false
     pon mut i: Int = 0
-    si slen > 0:
-        si s.char_at(0) == "-":
+    si slen > 0 {
+        si s.char_at(0) == "-" {
             neg = true
             i = 1
-    mien i < slen:
+        }
+    }
+    mien i < slen {
         pon ch: String = s.char_at(i)
         pon mut d: Int = 0
         si ch == "1" { d = 1 }
@@ -261,10 +306,12 @@ fn parse_int_manual(s: String) -> Int:
         si ch == "9" { d = 9 }
         result = result * 10 + d
         i = i + 1
+    }
     si neg { da 0 - result }
     da result
+}
 
-fn parse_pg_value(s: String) -> SqlValue:
+fn parse_pg_value(s: String) -> SqlValue {
     // Check for boolean
     si s == "t" { da Bool(true) }
     si s == "f" { da Bool(false) }
@@ -272,138 +319,160 @@ fn parse_pg_value(s: String) -> SqlValue:
     si s == "false" { da Bool(false) }
 
     // Check for integer
-    si looks_like_integer(s):
+    si looks_like_integer(s) {
         pon n: Int = parse_int_manual(s)
         da Int(n)
+    }
 
     // Check for float
-    si looks_like_float(s):
+    si looks_like_float(s) {
         // Use string representation — precise float parsing deferred to C runtime
         da Str(s)
+    }
 
     // Default: string
     da Str(s)
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Collect rows from a PG result
 // ---------------------------------------------------------------------------
 
-fn collect_pg_rows(pg_result: Int) -> List<Row>:
+fn collect_pg_rows(pg_result: Int) -> List<Row> {
     pon nrows: Int = __mn_pg_ntuples(pg_result)
     pon ncols: Int = __mn_pg_nfields(pg_result)
 
     // Build column name list
     pon mut columns: List<String> = []
     pon mut c: Int = 0
-    mien c < ncols:
+    mien c < ncols {
         pon name: String = __mn_pg_fname(pg_result, c)
         columns = columns + [name]
         c = c + 1
+    }
 
     // Read all rows
     pon mut rows: List<Row> = []
     pon mut r: Int = 0
-    mien r < nrows:
+    mien r < nrows {
         pon mut values: List<SqlValue> = []
         pon mut col: Int = 0
-        mien col < ncols:
+        mien col < ncols {
             pon raw_val: String = __mn_pg_getvalue(pg_result, r, col)
             pon val: SqlValue = parse_pg_value(raw_val)
             values = values + [val]
             col = col + 1
+        }
         pon row: Row = new_row(columns, values)
         rows = rows + [row]
         r = r + 1
+    }
 
     da rows
+}
 
 // ---------------------------------------------------------------------------
 // Public API: Query (SELECT — returns rows)
 // ---------------------------------------------------------------------------
 
-+fn query(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<QueryResult, SqlError>:
+pub fn query(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<QueryResult, SqlError> {
     pon final_sql: String = inline_params(sql_str, params)
     pon pg_result: Int = __mn_pg_exec(conn.handle, final_sql)
 
-    si pg_result == 0:
+    si pg_result == 0 {
         pon errmsg: String = __mn_pg_errmsg(conn.handle)
         da Err(QueryFailed("Query failed: " + errmsg))
+    }
 
     pon status: Int = __mn_pg_status(pg_result)
     // PGRES_TUPLES_OK = 2
-    si status != 2:
+    si status != 2 {
         pon errmsg: String = __mn_pg_errmsg(conn.handle)
         __mn_pg_clear(pg_result)
         da Err(QueryFailed("Query returned error status: " + errmsg))
+    }
 
     pon rows: List<Row> = collect_pg_rows(pg_result)
     pon nrows: Int = __mn_pg_ntuples(pg_result)
     __mn_pg_clear(pg_result)
 
     da Ok(new QueryResult { rows: rows, affected: nrows })
+}
 
 // ---------------------------------------------------------------------------
 // Public API: Execute (INSERT/UPDATE/DELETE — returns affected count)
 // ---------------------------------------------------------------------------
 
-+fn execute(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<Int, SqlError>:
+pub fn execute(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<Int, SqlError> {
     pon final_sql: String = inline_params(sql_str, params)
     pon pg_result: Int = __mn_pg_exec(conn.handle, final_sql)
 
-    si pg_result == 0:
+    si pg_result == 0 {
         pon errmsg: String = __mn_pg_errmsg(conn.handle)
         da Err(QueryFailed("Execute failed: " + errmsg))
+    }
 
     pon status: Int = __mn_pg_status(pg_result)
     // PGRES_COMMAND_OK = 1
-    si status != 1:
+    si status != 1 {
         // Also accept PGRES_TUPLES_OK = 2 for RETURNING clauses
-        si status != 2:
+        si status != 2 {
             pon errmsg: String = __mn_pg_errmsg(conn.handle)
             __mn_pg_clear(pg_result)
             da Err(QueryFailed("Execute returned error status: " + errmsg))
+        }
+    }
 
     pon affected: Int = __mn_pg_ntuples(pg_result)
     __mn_pg_clear(pg_result)
 
     da Ok(affected)
+}
 
 // ---------------------------------------------------------------------------
 // Public API: Simple query/execute (no parameters)
 // ---------------------------------------------------------------------------
 
-+fn query_simple(conn: Connection, sql_str: String) -> Result<QueryResult, SqlError>:
+pub fn query_simple(conn: Connection, sql_str: String) -> Result<QueryResult, SqlError> {
     pon empty_params: List<SqlValue> = []
     da query(conn, sql_str, empty_params)
+}
 
-+fn execute_simple(conn: Connection, sql_str: String) -> Result<Int, SqlError>:
+pub fn execute_simple(conn: Connection, sql_str: String) -> Result<Int, SqlError> {
     pon empty_params: List<SqlValue> = []
     da execute(conn, sql_str, empty_params)
+}
 
 // ---------------------------------------------------------------------------
 // Transaction helpers
 // ---------------------------------------------------------------------------
 
-+fn begin(conn: Connection) -> Result<Bool, SqlError>:
+pub fn begin(conn: Connection) -> Result<Bool, SqlError> {
     pon pg_result: Int = __mn_pg_exec(conn.handle, "BEGIN")
-    si pg_result == 0:
+    si pg_result == 0 {
         pon errmsg: String = __mn_pg_errmsg(conn.handle)
         da Err(QueryFailed("BEGIN failed: " + errmsg))
+    }
     __mn_pg_clear(pg_result)
     da Ok(true)
+}
 
-+fn commit(conn: Connection) -> Result<Bool, SqlError>:
+pub fn commit(conn: Connection) -> Result<Bool, SqlError> {
     pon pg_result: Int = __mn_pg_exec(conn.handle, "COMMIT")
-    si pg_result == 0:
+    si pg_result == 0 {
         pon errmsg: String = __mn_pg_errmsg(conn.handle)
         da Err(QueryFailed("COMMIT failed: " + errmsg))
+    }
     __mn_pg_clear(pg_result)
     da Ok(true)
+}
 
-+fn rollback(conn: Connection) -> Result<Bool, SqlError>:
+pub fn rollback(conn: Connection) -> Result<Bool, SqlError> {
     pon pg_result: Int = __mn_pg_exec(conn.handle, "ROLLBACK")
-    si pg_result == 0:
+    si pg_result == 0 {
         pon errmsg: String = __mn_pg_errmsg(conn.handle)
         da Err(QueryFailed("ROLLBACK failed: " + errmsg))
+    }
     __mn_pg_clear(pg_result)
     da Ok(true)
+}

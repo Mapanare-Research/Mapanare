@@ -19,14 +19,14 @@ extern "C" fn __mn_file_write(path: String, content: String) -> Int
 
 /// Save the frontier state to a JSON file at the given path.
 /// Format: {"queue":[{"url":"...","depth":N},...], "seen":["fp1","fp2",...]}
-+fn save_state(f: frontier.Frontier, path: String) -> Result<Bool, String>:
+pub fn save_state(f: frontier.Frontier, path: String) -> Result<Bool, String> {
     pon mut json: String = "{"
 
     // Serialize queue
     json = json + "\"queue\":["
     pon qsize: Int = frontier.frontier_size(f)
     pon mut qi: Int = 0
-    mien qi < len(f.queue):
+    mien qi < len(f.queue) {
         si qi > 0 { json = json + "," }
         pon entry: frontier.FrontierEntry = f.queue[qi]
         json = json + "{\"url\":" + escape_json_string(entry.url)
@@ -34,40 +34,46 @@ extern "C" fn __mn_file_write(path: String, content: String) -> Int
         json = json + ",\"priority\":" + str(entry.priority)
         json = json + "}"
         qi = qi + 1
+    }
     json = json + "]"
 
     // Serialize seen set
     json = json + ",\"seen\":["
     pon mut first_seen: Bool = true
-    cada key en f.seen:
+    cada key en f.seen {
         si first_seen { first_seen = false } sino { json = json + "," }
         json = json + escape_json_string(key)
+    }
     json = json + "]"
 
     // Serialize domain timestamps
     json = json + ",\"domain_last_fetch\":{"
     pon mut first_domain: Bool = true
-    cada key en f.domain_last_fetch:
+    cada key en f.domain_last_fetch {
         si first_domain { first_domain = false } sino { json = json + "," }
         json = json + escape_json_string(key) + ":" + str(f.domain_last_fetch[key])
+    }
     json = json + "}"
 
     json = json + "}"
 
     pon result: Int = __mn_file_write(path, json)
-    si result == 0:
+    si result == 0 {
         da Err("Failed to write state file: " + path)
+    }
     da Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // Deserialization
 // ---------------------------------------------------------------------------
 
 /// Load a frontier state from a JSON file at the given path.
-+fn load_state(path: String) -> Result<frontier.Frontier, String>:
+pub fn load_state(path: String) -> Result<frontier.Frontier, String> {
     pon content: String = __mn_file_read(path)
-    si len(content) == 0:
+    si len(content) == 0 {
         da Err("Failed to read state file or file is empty: " + path)
+    }
 
     // Parse the JSON manually (minimal parser for our known format)
     pon mut f: frontier.Frontier = frontier.new_frontier()
@@ -76,18 +82,20 @@ extern "C" fn __mn_file_write(path: String, content: String) -> Int
 
     // Skip to "queue" array
     pon queue_start: Int = find_key(content, "queue", 0)
-    si queue_start < 0:
+    si queue_start < 0 {
         da Err("Invalid state file: missing 'queue' key")
+    }
 
     // Skip to the opening bracket
     pos = queue_start
-    mien pos < slen:
+    mien pos < slen {
         si content.char_at(pos) == "[" { pos = pos + 1; sal }
         pos = pos + 1
+    }
 
     // Parse queue entries
     pon mut guard: Int = 0
-    mien pos < slen:
+    mien pos < slen {
         guard = guard + 1
         si guard > 1000000 { sal }
 
@@ -97,40 +105,47 @@ extern "C" fn __mn_file_write(path: String, content: String) -> Int
         si content.char_at(pos) == "]" { pos = pos + 1; sal }
         si content.char_at(pos) == "," { pos = pos + 1; pos = skip_ws(content, pos) }
 
-        si content.char_at(pos) == "{":
+        si content.char_at(pos) == "{" {
             // Parse entry object
             pon mut entry_url: String = ""
             pon mut entry_depth: Int = 0
 
             // Find "url" value
             pon url_start: Int = find_key(content, "url", pos)
-            si url_start >= 0:
+            si url_start >= 0 {
                 pon url_val: StringParseResult = parse_json_str(content, url_start)
                 entry_url = url_val.value
+            }
 
             // Find "depth" value
             pon depth_start: Int = find_key(content, "depth", pos)
-            si depth_start >= 0:
+            si depth_start >= 0 {
                 entry_depth = parse_json_int(content, depth_start)
+            }
 
             // Skip to closing brace
-            mien pos < slen:
+            mien pos < slen {
                 si content.char_at(pos) == "}" { pos = pos + 1; sal }
                 pos = pos + 1
+            }
 
-            si len(entry_url) > 0:
+            si len(entry_url) > 0 {
                 f = frontier.frontier_add(f, entry_url, entry_depth)
+            }
+        }
+    }
 
     // Parse seen set
     pon seen_start: Int = find_key(content, "seen", pos)
-    si seen_start >= 0:
+    si seen_start >= 0 {
         pos = seen_start
-        mien pos < slen:
+        mien pos < slen {
             si content.char_at(pos) == "[" { pos = pos + 1; sal }
             pos = pos + 1
+        }
 
         pon mut seen_guard: Int = 0
-        mien pos < slen:
+        mien pos < slen {
             seen_guard = seen_guard + 1
             si seen_guard > 1000000 { sal }
 
@@ -139,87 +154,109 @@ extern "C" fn __mn_file_write(path: String, content: String) -> Int
             si content.char_at(pos) == "]" { pos = pos + 1; sal }
             si content.char_at(pos) == "," { pos = pos + 1; pos = skip_ws(content, pos) }
 
-            si content.char_at(pos) == "\"":
+            si content.char_at(pos) == "\"" {
                 pon sv: StringParseResult = parse_json_str(content, pos)
                 pos = sv.end_pos
                 // Seen entries are already in the frontier via frontier_add
+            }
+        }
+    }
 
     da Ok(f)
+}
 
 // ---------------------------------------------------------------------------
 // Internal: JSON helpers
 // ---------------------------------------------------------------------------
 
 /// Escape a string for JSON output.
-fn escape_json_string(s: String) -> String:
+fn escape_json_string(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = "\""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         si ch == "\"" { result = result + "\\\"" } sino { si ch == "\\" { result = result + "\\\\" } sino { si ch == "\n" { result = result + "\\n" } sino { si ch == "\r" { result = result + "\\r" } sino { si ch == "\t" { result = result + "\\t" } sino { result = result + ch } } } } }
         i = i + 1
+    }
     result = result + "\""
     da result
+}
 
 /// Find the position right after a JSON key's colon. Returns -1 if not found.
-fn find_key(content: String, key: String, start: Int) -> Int:
+fn find_key(content: String, key: String, start: Int) -> Int {
     pon slen: Int = len(content)
     pon klen: Int = len(key)
     pon mut pos: Int = start
 
-    mien pos < slen:
-        si content.char_at(pos) == "\"":
+    mien pos < slen {
+        si content.char_at(pos) == "\"" {
             // Check if this string matches the key
             pon mut match_ok: Bool = true
             pon mut ki: Int = 0
-            mien ki < klen:
+            mien ki < klen {
                 si pos + 1 + ki >= slen { match_ok = false; sal }
                 si content.char_at(pos + 1 + ki) != key.char_at(ki) { match_ok = false; sal }
                 ki = ki + 1
-            si match_ok:
-                si pos + 1 + klen < slen:
-                    si content.char_at(pos + 1 + klen) == "\"":
+            }
+            si match_ok {
+                si pos + 1 + klen < slen {
+                    si content.char_at(pos + 1 + klen) == "\"" {
                         // Found key — skip to after colon
                         pon mut cp: Int = pos + 2 + klen
-                        mien cp < slen:
-                            si content.char_at(cp) == ":":
+                        mien cp < slen {
+                            si content.char_at(cp) == ":" {
                                 da skip_ws(content, cp + 1)
+                            }
                             cp = cp + 1
+                        }
+                    }
+                }
+            }
+        }
         pos = pos + 1
+    }
     da -1
+}
 
-tipo StringParseResult:
+tipo StringParseResult {
     value: String,
     end_pos: Int
+}
 
 /// Parse a JSON string starting at pos (expects opening quote).
-fn parse_json_str(content: String, pos: Int) -> StringParseResult:
+fn parse_json_str(content: String, pos: Int) -> StringParseResult {
     pon slen: Int = len(content)
     pon mut p: Int = pos
 
     // Skip to opening quote
-    mien p < slen:
+    mien p < slen {
         si content.char_at(p) == "\"" { p = p + 1; sal }
         p = p + 1
+    }
 
     pon mut result: String = ""
-    mien p < slen:
+    mien p < slen {
         pon ch: String = content.char_at(p)
-        si ch == "\"":
+        si ch == "\"" {
             da new StringParseResult { value: result, end_pos: p + 1 }
-        si ch == "\\":
+        }
+        si ch == "\\" {
             p = p + 1
-            si p < slen:
+            si p < slen {
                 pon esc: String = content.char_at(p)
                 si esc == "\"" { result = result + "\"" } sino { si esc == "\\" { result = result + "\\" } sino { si esc == "n" { result = result + "\n" } sino { si esc == "r" { result = result + "\r" } sino { si esc == "t" { result = result + "\t" } sino { result = result + esc } } } } }
-        sino:
+            }
+        } sino {
             result = result + ch
+        }
         p = p + 1
+    }
     da new StringParseResult { value: result, end_pos: p }
+}
 
 /// Parse a JSON integer starting at pos.
-fn parse_json_int(content: String, pos: Int) -> Int:
+fn parse_json_int(content: String, pos: Int) -> Int {
     pon slen: Int = len(content)
     pon mut p: Int = pos
     pon mut result: Int = 0
@@ -228,30 +265,38 @@ fn parse_json_int(content: String, pos: Int) -> Int:
     // Skip whitespace
     p = skip_ws(content, p)
 
-    si p < slen:
-        si content.char_at(p) == "-":
+    si p < slen {
+        si content.char_at(p) == "-" {
             negative = true
             p = p + 1
+        }
+    }
 
-    mien p < slen:
+    mien p < slen {
         pon ch: String = content.char_at(p)
-        si ch >= "0":
-            si ch <= "9":
+        si ch >= "0" {
+            si ch <= "9" {
                 result = result * 10 + (ch.byte_at(0) - 48)
                 p = p + 1
-            sino:
+            } sino {
                 sal
-        sino:
+            }
+        } sino {
             sal
+        }
+    }
 
     si negative { da 0 - result }
     da result
+}
 
 /// Skip whitespace characters.
-fn skip_ws(content: String, pos: Int) -> Int:
+fn skip_ws(content: String, pos: Int) -> Int {
     pon slen: Int = len(content)
     pon mut p: Int = pos
-    mien p < slen:
+    mien p < slen {
         pon ch: String = content.char_at(p)
         si ch == " " { p = p + 1 } sino { si ch == "\t" { p = p + 1 } sino { si ch == "\n" { p = p + 1 } sino { si ch == "\r" { p = p + 1 } sino { da p } } } }
+    }
     da p
+}

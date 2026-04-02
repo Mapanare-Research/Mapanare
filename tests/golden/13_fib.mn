@@ -1,7 +1,10 @@
-fn fib(n: Int) -> Int:
-    si n <= 1:
+fn fib(n: Int) -> Int {
+    si n <= 1 {
         da n
+    }
     da fib(n - 1) + fib(n - 2)
+}
 
-fn main:
+fn main() {
     print(str(fib(10)))
+}

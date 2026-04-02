@@ -8,102 +8,119 @@
 // RobotRules struct
 // ---------------------------------------------------------------------------
 
-+tipo RobotRules:
+pub tipo RobotRules {
     user_agents: List<String>,
     disallow: List<String>,
     allow: List<String>,
     crawl_delay: Int,
     sitemaps: List<String>
+}
 
 // ---------------------------------------------------------------------------
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
 /// Create a permissive default (everything allowed, no delay).
-+fn empty_rules() -> RobotRules:
-    da new RobotRules:
+pub fn empty_rules() -> RobotRules {
+    da new RobotRules {
         user_agents: [],
         disallow: [],
         allow: [],
         crawl_delay: 0,
         sitemaps: []
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Internal: string helpers
 // ---------------------------------------------------------------------------
 
 /// Convert a string to ASCII lowercase.
-fn to_lower(s: String) -> String:
+fn to_lower(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         pon b: Int = ch.byte_at(0)
-        si b >= 65:
-            si b <= 90:
+        si b >= 65 {
+            si b <= 90 {
                 pon lb: Int = b + 32
                 si lb == 97 { result = result + "a" } sino { si lb == 98 { result = result + "b" } sino { si lb == 99 { result = result + "c" } sino { si lb == 100 { result = result + "d" } sino { si lb == 101 { result = result + "e" } sino { si lb == 102 { result = result + "f" } sino { si lb == 103 { result = result + "g" } sino { si lb == 104 { result = result + "h" } sino { si lb == 105 { result = result + "i" } sino { si lb == 106 { result = result + "j" } sino { si lb == 107 { result = result + "k" } sino { si lb == 108 { result = result + "l" } sino { si lb == 109 { result = result + "m" } sino { si lb == 110 { result = result + "n" } sino { si lb == 111 { result = result + "o" } sino { si lb == 112 { result = result + "p" } sino { si lb == 113 { result = result + "q" } sino { si lb == 114 { result = result + "r" } sino { si lb == 115 { result = result + "s" } sino { si lb == 116 { result = result + "t" } sino { si lb == 117 { result = result + "u" } sino { si lb == 118 { result = result + "v" } sino { si lb == 119 { result = result + "w" } sino { si lb == 120 { result = result + "x" } sino { si lb == 121 { result = result + "y" } sino { result = result + "z" } } } } } } } } } } } } } } } } } } } } } } } } } }
-            sino:
+            } sino {
                 result = result + ch
-        sino:
+            }
+        } sino {
             result = result + ch
+        }
         i = i + 1
+    }
     da result
+}
 
 /// Strip leading and trailing whitespace from a string.
-fn trim(s: String) -> String:
+fn trim(s: String) -> String {
     pon slen: Int = len(s)
     si slen == 0 { da s }
 
     // Find first non-whitespace
     pon mut start: Int = 0
-    mien start < slen:
+    mien start < slen {
         pon ch: String = s.char_at(start)
         si ch == " " { start = start + 1 } sino { si ch == "\t" { start = start + 1 } sino { si ch == "\r" { start = start + 1 } sino { sal } } }
+    }
 
     // Find last non-whitespace
     pon mut end: Int = slen
-    mien end > start:
+    mien end > start {
         pon ch: String = s.char_at(end - 1)
         si ch == " " { end = end - 1 } sino { si ch == "\t" { end = end - 1 } sino { si ch == "\r" { end = end - 1 } sino { sal } } }
+    }
 
     si start >= end { da "" }
 
     pon mut result: String = ""
     pon mut i: Int = start
-    mien i < end:
+    mien i < end {
         result = result + s.char_at(i)
         i = i + 1
+    }
     da result
+}
 
 /// Check if string starts with a given prefix.
-fn starts_with(s: String, prefix: String) -> Bool:
+fn starts_with(s: String, prefix: String) -> Bool {
     pon slen: Int = len(s)
     pon plen: Int = len(prefix)
     si plen > slen { da false }
     pon mut i: Int = 0
-    mien i < plen:
+    mien i < plen {
         si s.char_at(i) != prefix.char_at(i) { da false }
         i = i + 1
+    }
     da true
+}
 
 /// Parse an integer from a string.
-fn parse_int_manual(s: String) -> Int:
+fn parse_int_manual(s: String) -> Int {
     pon slen: Int = len(s)
     pon mut result: Int = 0
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si ch >= "0":
-            si ch <= "9":
+        si ch >= "0" {
+            si ch <= "9" {
                 result = result * 10 + (ch.byte_at(0) - 48)
-            sino:
+            } sino {
                 sal
-        sino:
+            }
+        } sino {
             sal
+        }
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Robots.txt parser
@@ -111,7 +128,7 @@ fn parse_int_manual(s: String) -> Int:
 
 /// Parse a robots.txt file content into RobotRules.
 /// Extracts directives for all user-agents (simplified: collects all rules).
-+fn parse_robots(content: String) -> RobotRules:
+pub fn parse_robots(content: String) -> RobotRules {
     pon slen: Int = len(content)
     pon mut user_agents: List<String> = []
     pon mut disallow_list: List<String> = []
@@ -123,100 +140,120 @@ fn parse_int_manual(s: String) -> Int:
     pon mut pos: Int = 0
     pon mut guard: Int = 0
 
-    mien pos < slen:
+    mien pos < slen {
         guard = guard + 1
         si guard > 100000 { sal }
 
         // Extract one line
         pon mut line: String = ""
-        mien pos < slen:
+        mien pos < slen {
             pon ch: String = content.char_at(pos)
-            si ch == "\n":
+            si ch == "\n" {
                 pos = pos + 1
                 sal
-            si ch == "\r":
+            }
+            si ch == "\r" {
                 pos = pos + 1
-                si pos < slen:
-                    si content.char_at(pos) == "\n":
+                si pos < slen {
+                    si content.char_at(pos) == "\n" {
                         pos = pos + 1
+                    }
+                }
                 sal
+            }
             line = line + ch
             pos = pos + 1
+        }
 
         // If we reached end of content without newline
-        si pos >= slen:
-            si len(line) == 0:
+        si pos >= slen {
+            si len(line) == 0 {
                 sal
+            }
+        }
 
         line = trim(line)
 
         // Skip empty lines and comments
-        si len(line) == 0:
+        si len(line) == 0 {
             pon mut skip: Int = 0
-        } sino { si line.char_at(0) == "#":
+        } sino { si line.char_at(0) == "#" {
             pon mut skip: Int = 0
-        sino:
+        } sino {
             // Strip inline comments
             pon mut clean_line: String = ""
             pon llen: Int = len(line)
             pon mut li: Int = 0
-            mien li < llen:
+            mien li < llen {
                 pon lch: String = line.char_at(li)
                 si lch == "#" { sal }
                 clean_line = clean_line + lch
                 li = li + 1
+            }
             clean_line = trim(clean_line)
 
-            si len(clean_line) > 0:
+            si len(clean_line) > 0 {
                 // Find the colon separator
                 pon mut colon_pos: Int = -1
                 pon clen: Int = len(clean_line)
                 pon mut ci: Int = 0
-                mien ci < clen:
-                    si clean_line.char_at(ci) == ":":
+                mien ci < clen {
+                    si clean_line.char_at(ci) == ":" {
                         colon_pos = ci
                         sal
+                    }
                     ci = ci + 1
+                }
 
-                si colon_pos > 0:
+                si colon_pos > 0 {
                     // Extract directive name and value
                     pon mut directive: String = ""
                     pon mut di: Int = 0
-                    mien di < colon_pos:
+                    mien di < colon_pos {
                         directive = directive + clean_line.char_at(di)
                         di = di + 1
+                    }
                     directive = to_lower(trim(directive))
 
                     pon mut value: String = ""
                     pon mut vi: Int = colon_pos + 1
-                    mien vi < clen:
+                    mien vi < clen {
                         value = value + clean_line.char_at(vi)
                         vi = vi + 1
+                    }
                     value = trim(value)
 
                     // Process directive
-                    si directive == "user-agent":
+                    si directive == "user-agent" {
                         user_agents = user_agents + [to_lower(value)]
-                    } sino { si directive == "disallow":
-                        si len(value) > 0:
+                    } sino { si directive == "disallow" {
+                        si len(value) > 0 {
                             disallow_list = disallow_list + [value]
-                    } sino { si directive == "allow":
-                        si len(value) > 0:
+                        }
+                    } sino { si directive == "allow" {
+                        si len(value) > 0 {
                             allow_list = allow_list + [value]
-                    } sino { si directive == "crawl-delay":
+                        }
+                    } sino { si directive == "crawl-delay" {
                         crawl_delay = parse_int_manual(value) * 1000
-                    } sino { si directive == "sitemap":
-                        si len(value) > 0:
+                    } sino { si directive == "sitemap" {
+                        si len(value) > 0 {
                             sitemaps = sitemaps + [value]
+                        }
                     } } } } }
+                }
+            }
         } }
+    }
 
-    da new RobotRules:
+    da new RobotRules {
         user_agents: user_agents,
         disallow: disallow_list,
         allow: allow_list,
         crawl_delay: crawl_delay,
         sitemaps: sitemaps
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Path matching
@@ -224,29 +261,32 @@ fn parse_int_manual(s: String) -> Int:
 
 /// Check if a path is allowed by the robot rules for a given user-agent.
 /// Uses most-specific-match-wins logic: longer matching rules take precedence.
-+fn is_allowed(rules: RobotRules, user_agent: String, path: String) -> Bool:
+pub fn is_allowed(rules: RobotRules, user_agent: String, path: String) -> Bool {
     // Check if these rules apply to our user-agent
     pon ua_lower: String = to_lower(user_agent)
     pon mut applies: Bool = false
     pon ua_count: Int = len(rules.user_agents)
 
-    si ua_count == 0:
+    si ua_count == 0 {
         // No user-agent specified — rules apply to everyone
         applies = true
-    sino:
+    } sino {
         pon mut ui: Int = 0
-        mien ui < ua_count:
+        mien ui < ua_count {
             pon rule_ua: String = rules.user_agents[ui]
-            si rule_ua == "*":
+            si rule_ua == "*" {
                 applies = true
-            } sino { si starts_with(ua_lower, rule_ua):
+            } sino { si starts_with(ua_lower, rule_ua) {
                 applies = true
             } }
             ui = ui + 1
+        }
+    }
 
-    si applies == false:
+    si applies == false {
         // Rules don't apply to us — everything allowed
         da true
+    }
 
     // Find the most specific matching rule
     pon mut best_match_len: Int = -1
@@ -255,68 +295,83 @@ fn parse_int_manual(s: String) -> Int:
     // Check allow rules
     pon allow_count: Int = len(rules.allow)
     pon mut ai: Int = 0
-    mien ai < allow_count:
+    mien ai < allow_count {
         pon rule: String = rules.allow[ai]
-        si path_matches(path, rule):
+        si path_matches(path, rule) {
             pon rule_len: Int = len(rule)
-            si rule_len > best_match_len:
+            si rule_len > best_match_len {
                 best_match_len = rule_len
                 best_is_allow = true
+            }
+        }
         ai = ai + 1
+    }
 
     // Check disallow rules
     pon disallow_count: Int = len(rules.disallow)
     pon mut di: Int = 0
-    mien di < disallow_count:
+    mien di < disallow_count {
         pon rule: String = rules.disallow[di]
-        si path_matches(path, rule):
+        si path_matches(path, rule) {
             pon rule_len: Int = len(rule)
-            si rule_len > best_match_len:
+            si rule_len > best_match_len {
                 best_match_len = rule_len
                 best_is_allow = false
+            }
+        }
         di = di + 1
+    }
 
     // If no rule matched, allow by default
-    si best_match_len < 0:
+    si best_match_len < 0 {
         da true
+    }
     da best_is_allow
+}
 
 /// Check if a URL path matches a robots.txt rule pattern.
 /// Supports prefix matching and wildcard (*) at end.
-fn path_matches(path: String, rule: String) -> Bool:
+fn path_matches(path: String, rule: String) -> Bool {
     pon rlen: Int = len(rule)
     si rlen == 0 { da false }
 
     // Check for trailing wildcard
-    si rule.char_at(rlen - 1) == "*":
+    si rule.char_at(rlen - 1) == "*" {
         // Prefix match without the wildcard
         pon mut prefix: String = ""
         pon mut i: Int = 0
-        mien i < rlen - 1:
+        mien i < rlen - 1 {
             prefix = prefix + rule.char_at(i)
             i = i + 1
+        }
         da starts_with(path, prefix)
+    }
 
     // Check for trailing $ (exact match)
-    si rule.char_at(rlen - 1) == "$":
+    si rule.char_at(rlen - 1) == "$" {
         pon mut pattern: String = ""
         pon mut i: Int = 0
-        mien i < rlen - 1:
+        mien i < rlen - 1 {
             pattern = pattern + rule.char_at(i)
             i = i + 1
+        }
         da path == pattern
+    }
 
     // Default: prefix match
     da starts_with(path, rule)
+}
 
 // ---------------------------------------------------------------------------
 // Accessors
 // ---------------------------------------------------------------------------
 
 /// Get the crawl delay from robot rules (in milliseconds).
-+fn get_crawl_delay(rules: RobotRules) -> Int:
+pub fn get_crawl_delay(rules: RobotRules) -> Int {
     da rules.crawl_delay
+}
 
 /// Get the sitemap URLs from robot rules.
-+fn get_sitemaps(rules: RobotRules) -> List<String>:
+pub fn get_sitemaps(rules: RobotRules) -> List<String> {
     da rules.sitemaps
+}

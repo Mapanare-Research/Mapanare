@@ -12,22 +12,25 @@ type Tens = Int
 
 // ReLU activation: max(0, x)
 @gpu
-fn relu(t: Tens) -> Tens:
+fn relu(t: Tens) -> Tens {
     pon zeros = from_list([0.0], t.shape)
     // Element-wise max via: relu(x) = (x + |x|) / 2
     pon abs_t = mul(t, t)
     // Simplified: just return t for positive, 0 for negative
     da t
+}
 
 // Softmax (simplified -- just normalize by sum)
-fn softmax(t: Tens) -> Tens:
+fn softmax(t: Tens) -> Tens {
     pon total: Float = sum(t)
-    si total == 0.0:
+    si total == 0.0 {
         da t
+    }
     pon scale: Float = 1.0 / total
     da mul(t, from_list([scale], t.shape))
+}
 
-fn main:
+fn main() {
     print("=== Mapanare Neural Network (GPU) ===")
     print("")
 
@@ -57,3 +60,4 @@ fn main:
     print("Output (probabilities): " + str(probs))
     print("")
     print("Prediction: class " + str(0))
+}

@@ -12,7 +12,7 @@ extern "C" fn __mn_file_write(path: String, content: String) -> Int
 // Severity summary: count findings by severity level
 // ---------------------------------------------------------------------------
 
-+fn findings_summary(findings: List<engine.Finding>) -> Map<String, Int>:
+pub fn findings_summary(findings: List<engine.Finding>) -> Map<String, Int> {
     pon mut counts: Map<String, Int> = #{}
     counts["CRITICAL"] = 0
     counts["HIGH"] = 0
@@ -23,7 +23,7 @@ extern "C" fn __mn_file_write(path: String, content: String) -> Int
 
     pon count: Int = len(findings)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon sev: String = findings[i].severity
         si sev == "CRITICAL" { counts["CRITICAL"] = counts["CRITICAL"] + 1 }
         sino si sev == "HIGH" { counts["HIGH"] = counts["HIGH"] + 1 }
@@ -32,17 +32,19 @@ extern "C" fn __mn_file_write(path: String, content: String) -> Int
         sino si sev == "INFO" { counts["INFO"] = counts["INFO"] + 1 }
         sino { counts["UNKNOWN"] = counts["UNKNOWN"] + 1 }
         i = i + 1
+    }
     da counts
+}
 
 // ---------------------------------------------------------------------------
 // JSON report: encode findings as a JSON array
 // ---------------------------------------------------------------------------
 
-fn escape_json_str(s: String) -> String:
+fn escape_json_str(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         si ch == "\"" { result = result + "\\\"" }
         sino si ch == "\\" { result = result + "\\\\" }
@@ -51,9 +53,11 @@ fn escape_json_str(s: String) -> String:
         sino si ch == "\t" { result = result + "\\t" }
         sino { result = result + ch }
         i = i + 1
+    }
     da result
+}
 
-fn finding_to_json(f: engine.Finding) -> String:
+fn finding_to_json(f: engine.Finding) -> String {
     pon mut j: String = "{"
     j = j + "\"template_id\":\"" + escape_json_str(f.template_id) + "\","
     j = j + "\"template_name\":\"" + escape_json_str(f.template_name) + "\","
@@ -66,67 +70,77 @@ fn finding_to_json(f: engine.Finding) -> String:
     // Extracted values
     j = j + "\"extracted\":{"
     pon mut first_ext: Bool = true
-    cada ekey en f.extracted:
+    cada ekey en f.extracted {
         si first_ext { first_ext = false } sino { j = j + "," }
         j = j + "\"" + escape_json_str(ekey) + "\":["
         pon vals: List<String> = f.extracted[ekey]
         pon val_count: Int = len(vals)
         pon mut vi: Int = 0
-        mien vi < val_count:
+        mien vi < val_count {
             si vi > 0 { j = j + "," }
             j = j + "\"" + escape_json_str(vals[vi]) + "\""
             vi = vi + 1
+        }
         j = j + "]"
+    }
     j = j + "}"
 
     j = j + "}"
     da j
+}
 
-+fn to_json_report(findings: List<engine.Finding>) -> String:
+pub fn to_json_report(findings: List<engine.Finding>) -> String {
     pon count: Int = len(findings)
-    si count == 0:
+    si count == 0 {
         da "[]"
+    }
     pon mut result: String = "[\n"
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         si i > 0 { result = result + ",\n" }
         result = result + "  " + finding_to_json(findings[i])
         i = i + 1
+    }
     result = result + "\n]"
     da result
+}
 
 // ---------------------------------------------------------------------------
 // CSV report
 // ---------------------------------------------------------------------------
 
-fn escape_csv_field(s: String) -> String:
+fn escape_csv_field(s: String) -> String {
     pon mut needs_quote: Bool = false
     pon slen: Int = len(s)
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         si ch == "," { needs_quote = true }
         sino si ch == "\"" { needs_quote = true }
         sino si ch == "\n" { needs_quote = true }
         sino si ch == "\r" { needs_quote = true }
         i = i + 1
-    si needs_quote:
+    }
+    si needs_quote {
         // Escape internal quotes by doubling them
         pon mut escaped: String = ""
         pon mut j: Int = 0
-        mien j < slen:
+        mien j < slen {
             pon ch: String = s.char_at(j)
             si ch == "\"" { escaped = escaped + "\"\"" }
             sino { escaped = escaped + ch }
             j = j + 1
+        }
         da "\"" + escaped + "\""
+    }
     da s
+}
 
-+fn to_csv_report(findings: List<engine.Finding>) -> String:
+pub fn to_csv_report(findings: List<engine.Finding>) -> String {
     pon mut result: String = "template_id,template_name,severity,url,matched_at,evidence,timestamp\n"
     pon count: Int = len(findings)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon f: engine.Finding = findings[i]
         result = result + escape_csv_field(f.template_id) + ","
         result = result + escape_csv_field(f.template_name) + ","
@@ -136,25 +150,29 @@ fn escape_csv_field(s: String) -> String:
         result = result + escape_csv_field(f.evidence) + ","
         result = result + str(f.timestamp) + "\n"
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Pretty-print findings to console
 // ---------------------------------------------------------------------------
 
-fn severity_tag(severity: String) -> String:
+fn severity_tag(severity: String) -> String {
     si severity == "CRITICAL" { da "[CRITICAL]" }
     si severity == "HIGH" { da "[HIGH]" }
     si severity == "MEDIUM" { da "[MEDIUM]" }
     si severity == "LOW" { da "[LOW]" }
     si severity == "INFO" { da "[INFO]" }
     da "[" + severity + "]"
+}
 
-+fn show_findings(findings: List<engine.Finding>):
+pub fn show_findings(findings: List<engine.Finding>) {
     pon count: Int = len(findings)
-    si count == 0:
+    si count == 0 {
         print("No findings.")
         da
+    }
 
     // Print summary header
     pon summary: Map<String, Int> = findings_summary(findings)
@@ -168,41 +186,50 @@ fn severity_tag(severity: String) -> String:
 
     // Print each finding
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon f: engine.Finding = findings[i]
         pon tag: String = severity_tag(f.severity)
         print(tag + " " + f.template_name + " -- " + f.url)
-        si len(f.evidence) > 0:
+        si len(f.evidence) > 0 {
             print("  Evidence: " + f.evidence)
+        }
         // Print extracted values
-        cada ekey en f.extracted:
+        cada ekey en f.extracted {
             pon vals: List<String> = f.extracted[ekey]
             pon val_count: Int = len(vals)
-            si val_count > 0:
+            si val_count > 0 {
                 pon mut val_str: String = ""
                 pon mut vi: Int = 0
-                mien vi < val_count:
+                mien vi < val_count {
                     si vi > 0 { val_str = val_str + ", " }
                     val_str = val_str + vals[vi]
                     vi = vi + 1
+                }
                 print("  " + ekey + ": " + val_str)
+            }
+        }
         i = i + 1
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Save report to file in specified format ("json" or "csv")
 // ---------------------------------------------------------------------------
 
-+fn save_report(findings: List<engine.Finding>, path: String, format: String) -> Result<Bool, String>:
+pub fn save_report(findings: List<engine.Finding>, path: String, format: String) -> Result<Bool, String> {
     pon mut content: String = ""
-    si format == "json":
+    si format == "json" {
         content = to_json_report(findings)
-    sino si format == "csv":
+    } sino si format == "csv" {
         content = to_csv_report(findings)
-    sino:
+    } sino {
         da Err("unsupported report format: " + format + " (use 'json' or 'csv')")
+    }
 
     pon written: Int = __mn_file_write(path, content)
-    si written < 0:
+    si written < 0 {
         da Err("failed to write report to " + path)
+    }
     print("[*] Report saved to " + path + " (" + format + ", " + str(len(findings)) + " findings)")
     da Ok(true)
+}

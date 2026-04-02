@@ -30,7 +30,7 @@ usa text::string_utils
 // Task 1: HttpMethod enum
 // ---------------------------------------------------------------------------
 
-+tipo HttpMethod:
+pub tipo HttpMethod {
     | GET
     | POST
     | PUT
@@ -38,9 +38,10 @@ usa text::string_utils
     | PATCH
     | HEAD
     | OPTIONS
+}
 
-fn method_to_string(m: HttpMethod) -> String:
-    match m:
+fn method_to_string(m: HttpMethod) -> String {
+    match m {
         GET => { da "GET" },
         POST => { da "POST" },
         PUT => { da "PUT" },
@@ -48,13 +49,15 @@ fn method_to_string(m: HttpMethod) -> String:
         PATCH => { da "PATCH" },
         HEAD => { da "HEAD" },
         OPTIONS => { da "OPTIONS" }
+    }
     da "GET"
+}
 
 // ---------------------------------------------------------------------------
 // Task 4: HttpError enum
 // ---------------------------------------------------------------------------
 
-+tipo HttpError:
+pub tipo HttpError {
     | ConnectionFailed(String)
     | Timeout(String)
     | TlsError(String)
@@ -63,80 +66,96 @@ fn method_to_string(m: HttpMethod) -> String:
     | ParseError(String)
     | SendError(String)
     | RecvError(String)
+}
 
-fn new_connection_error(msg: String) -> HttpError:
+fn new_connection_error(msg: String) -> HttpError {
     da ConnectionFailed(msg)
+}
 
-fn new_timeout_error(msg: String) -> HttpError:
+fn new_timeout_error(msg: String) -> HttpError {
     da Timeout(msg)
+}
 
-fn new_tls_error(msg: String) -> HttpError:
+fn new_tls_error(msg: String) -> HttpError {
     da TlsError(msg)
+}
 
-fn new_url_error(msg: String) -> HttpError:
+fn new_url_error(msg: String) -> HttpError {
     da InvalidUrl(msg)
+}
 
-fn new_redirect_error(msg: String) -> HttpError:
+fn new_redirect_error(msg: String) -> HttpError {
     da TooManyRedirects(msg)
+}
 
-fn new_parse_error(msg: String) -> HttpError:
+fn new_parse_error(msg: String) -> HttpError {
     da ParseError(msg)
+}
 
-fn new_send_error(msg: String) -> HttpError:
+fn new_send_error(msg: String) -> HttpError {
     da SendError(msg)
+}
 
-fn new_recv_error(msg: String) -> HttpError:
+fn new_recv_error(msg: String) -> HttpError {
     da RecvError(msg)
+}
 
 // ---------------------------------------------------------------------------
 // Task 2: HttpRequest struct
 // ---------------------------------------------------------------------------
 
-+tipo HttpRequest:
+pub tipo HttpRequest {
     method: HttpMethod,
     url: String,
     headers: Map<String, String>,
     body: String,
     has_body: Bool,
     timeout_ms: Int
+}
 
-fn new_http_request(meth: HttpMethod, u: String) -> HttpRequest:
+fn new_http_request(meth: HttpMethod, u: String) -> HttpRequest {
     da new HttpRequest {method: meth, url: u, headers: #{}, body: "", has_body: false, timeout_ms: 30000}
+}
 
-fn make_request_with_body(meth: HttpMethod, u: String, b: String, hdrs: Map<String, String>) -> HttpRequest:
+fn make_request_with_body(meth: HttpMethod, u: String, b: String, hdrs: Map<String, String>) -> HttpRequest {
     da new HttpRequest {method: meth, url: u, headers: hdrs, body: b, has_body: true, timeout_ms: 30000}
+}
 
 // ---------------------------------------------------------------------------
 // Task 3: HttpResponse struct
 // ---------------------------------------------------------------------------
 
-+tipo HttpResponse:
+pub tipo HttpResponse {
     status_code: Int,
     headers: Map<String, String>,
     body: String,
     elapsed_ms: Int
+}
 
-fn new_http_response(sc: Int, hdrs: Map<String, String>, b: String) -> HttpResponse:
+fn new_http_response(sc: Int, hdrs: Map<String, String>, b: String) -> HttpResponse {
     da new HttpResponse {status_code: sc, headers: hdrs, body: b, elapsed_ms: 0}
+}
 
 // ---------------------------------------------------------------------------
 // Task 5: HttpConfig struct
 // ---------------------------------------------------------------------------
 
-+tipo HttpConfig:
+pub tipo HttpConfig {
     timeout_ms: Int,
     max_redirects: Int,
     verify_ssl: Bool,
     user_agent: String
+}
 
-fn default_http_config() -> HttpConfig:
+fn default_http_config() -> HttpConfig {
     da new HttpConfig {timeout_ms: 30000, max_redirects: 10, verify_ssl: true, user_agent: "Mapanare/0.9.0"}
+}
 
 // ---------------------------------------------------------------------------
 // URL parsing types and functions (Tasks 6-8)
 // ---------------------------------------------------------------------------
 
-tipo ParsedUrl:
+tipo ParsedUrl {
     scheme: String,
     host: String,
     port: Int,
@@ -145,44 +164,54 @@ tipo ParsedUrl:
     is_https: Bool,
     ok: Bool,
     error_msg: String
+}
 
-fn new_parsed_url_error(msg: String) -> ParsedUrl:
+fn new_parsed_url_error(msg: String) -> ParsedUrl {
     da new ParsedUrl {scheme: "", host: "", port: 0, path: "/", query: "", is_https: false, ok: false, error_msg: msg}
+}
 
-fn new_parsed_url_ok(sc: String, h: String, p: Int, pa: String, q: String, https: Bool) -> ParsedUrl:
+fn new_parsed_url_ok(sc: String, h: String, p: Int, pa: String, q: String, https: Bool) -> ParsedUrl {
     da new ParsedUrl {scheme: sc, host: h, port: p, path: pa, query: q, is_https: https, ok: true, error_msg: ""}
+}
 
 // Task 6: Parse URL into components
-+fn parse_url(url: String) -> ParsedUrl:
+pub fn parse_url(url: String) -> ParsedUrl {
     pon slen: Int = len(url)
-    si slen == 0:
+    si slen == 0 {
         da new_parsed_url_error("Empty URL")
+    }
 
     // Parse scheme — find "://"
     pon mut pos: Int = 0
     pon mut scheme: String = ""
     pon mut found_scheme: Bool = false
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = url.char_at(i)
-        si ch == ":":
-            si i + 2 < slen:
-                si url.char_at(i + 1) == "/":
-                    si url.char_at(i + 2) == "/":
+        si ch == ":" {
+            si i + 2 < slen {
+                si url.char_at(i + 1) == "/" {
+                    si url.char_at(i + 2) == "/" {
                         found_scheme = true
                         pos = i + 3
                         sal
+                    }
+                }
+            }
+        }
         scheme = scheme + ch
         i = i + 1
+    }
 
-    si found_scheme == false:
+    si found_scheme == false {
         da new_parsed_url_error("Missing scheme (http:// or https://)")
+    }
 
     // Determine if HTTPS
     pon mut is_https: Bool = false
-    si scheme == "https":
+    si scheme == "https" {
         is_https = true
-    } sino { si scheme != "http":
+    } sino { si scheme != "http" {
         da new_parsed_url_error("Unsupported scheme: " + scheme)
     } }
 
@@ -191,57 +220,70 @@ fn new_parsed_url_ok(sc: String, h: String, p: Int, pa: String, q: String, https
     pon mut port: Int = 80
     si is_https { port = 443 }
 
-    mien pos < slen:
+    mien pos < slen {
         pon ch: String = url.char_at(pos)
         si ch == "/" { sal }
         si ch == "?" { sal }
-        si ch == ":":
+        si ch == ":" {
             // Port follows
             pos = pos + 1
             pon mut port_str: String = ""
-            mien pos < slen:
+            mien pos < slen {
                 pon pc: String = url.char_at(pos)
                 si pc == "/" { sal }
                 si pc == "?" { sal }
                 port_str = port_str + pc
                 pos = pos + 1
+            }
             port = parse_int_manual(port_str)
             sal
+        }
         host = host + ch
         pos = pos + 1
+    }
 
-    si len(host) == 0:
+    si len(host) == 0 {
         da new_parsed_url_error("Empty host")
+    }
 
     // Parse path
     pon mut path: String = ""
-    si pos < slen:
-        si url.char_at(pos) == "/":
-            mien pos < slen:
+    si pos < slen {
+        si url.char_at(pos) == "/" {
+            mien pos < slen {
                 pon ch: String = url.char_at(pos)
                 si ch == "?" { sal }
                 path = path + ch
                 pos = pos + 1
-    si len(path) == 0:
+            }
+        }
+    }
+    si len(path) == 0 {
         path = "/"
+    }
 
     // Parse query string
     pon mut query: String = ""
-    si pos < slen:
-        si url.char_at(pos) == "?":
+    si pos < slen {
+        si url.char_at(pos) == "?" {
             pos = pos + 1
-            mien pos < slen:
+            mien pos < slen {
                 query = query + url.char_at(pos)
                 pos = pos + 1
+            }
+        }
+    }
 
     da new_parsed_url_ok(scheme, host, port, path, query, is_https)
+}
 
 // Manual integer parsing — delegated to text::string_utils
-fn parse_int_manual(s: String) -> Int:
+fn parse_int_manual(s: String) -> Int {
     da string_utils.parse_int_manual(s)
+}
 
 // Task 7: URL percent-encoding
-fn is_unreserved(ch: String) -> Bool:
+fn is_unreserved(ch: String) -> Bool {
     si ch >= "a" { si ch <= "z" { da true } }
     si ch >= "A" { si ch <= "Z" { da true } }
     si ch >= "0" { si ch <= "9" { da true } }
@@ -250,570 +292,690 @@ fn is_unreserved(ch: String) -> Bool:
     si ch == "." { da true }
     si ch == "~" { da true }
     da false
+}
 
-fn hex_char(n: Int) -> String:
+fn hex_char(n: Int) -> String {
     da string_utils.hex_char(n)
+}
 
-fn hex_digit_value(ch: String) -> Int:
+fn hex_digit_value(ch: String) -> Int {
     da string_utils.hex_digit_value(ch)
+}
 
-+fn url_encode(s: String) -> String:
+pub fn url_encode(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si is_unreserved(ch):
+        si is_unreserved(ch) {
             result = result + ch
-        sino:
+        } sino {
             pon byte_val: Int = s.byte_at(i)
             pon hi: Int = byte_val / 16
             pon lo: Int = byte_val - hi * 16
             result = result + "%" + hex_char(hi) + hex_char(lo)
+        }
         i = i + 1
+    }
     da result
+}
 
-+fn url_decode(s: String) -> String:
+pub fn url_decode(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si ch == "%":
-            si i + 2 < slen:
+        si ch == "%" {
+            si i + 2 < slen {
                 pon hi: Int = hex_digit_value(s.char_at(i + 1))
                 pon lo: Int = hex_digit_value(s.char_at(i + 2))
-                si hi >= 0:
-                    si lo >= 0:
+                si hi >= 0 {
+                    si lo >= 0 {
                         pon byte_val: Int = hi * 16 + lo
                         result = result + str(byte_val)
                         i = i + 3
-                    sino:
+                    } sino {
                         result = result + ch
                         i = i + 1
-                sino:
+                    }
+                } sino {
                     result = result + ch
                     i = i + 1
-            sino:
+                }
+            } sino {
                 result = result + ch
                 i = i + 1
-        } sino { si ch == "+":
+            }
+        } sino { si ch == "+" {
             result = result + " "
             i = i + 1
-        sino:
+        } sino {
             result = result + ch
             i = i + 1
         } }
+    }
     da result
+}
 
 // Task 8: Query parameter builder
-+fn build_query(params: Map<String, String>) -> String:
+pub fn build_query(params: Map<String, String>) -> String {
     pon mut result: String = ""
     pon mut first: Bool = true
-    cada key en params:
-        si first == false:
+    cada key en params {
+        si first == false {
             result = result + "&"
+        }
         result = result + url_encode(key) + "=" + url_encode(params[key])
         first = false
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // HTTP/1.1 request building (Task 12)
 // ---------------------------------------------------------------------------
 
-fn build_http_request(meth: HttpMethod, parsed: ParsedUrl, headers: Map<String, String>, body: String, has_body: Bool) -> String:
+fn build_http_request(meth: HttpMethod, parsed: ParsedUrl, headers: Map<String, String>, body: String, has_body: Bool) -> String {
     pon method_str: String = method_to_string(meth)
     pon mut request_line: String = method_str + " "
 
-    si len(parsed.query) > 0:
+    si len(parsed.query) > 0 {
         request_line = request_line + parsed.path + "?" + parsed.query
-    sino:
+    } sino {
         request_line = request_line + parsed.path
+    }
     request_line = request_line + " HTTP/1.1\r\n"
 
     // Host header (required by HTTP/1.1)
     pon mut host_val: String = parsed.host
     pon mut need_port: Bool = false
-    si parsed.is_https:
+    si parsed.is_https {
         si parsed.port != 443 { need_port = true }
-    sino:
+    } sino {
         si parsed.port != 80 { need_port = true }
-    si need_port:
+    }
+    si need_port {
         host_val = host_val + ":" + str(parsed.port)
+    }
     pon mut raw: String = request_line + "Host: " + host_val + "\r\n"
 
     // User-provided headers
-    cada key en headers:
+    cada key en headers {
         raw = raw + key + ": " + headers[key] + "\r\n"
+    }
 
     // Content-Length for bodies
-    si has_body:
+    si has_body {
         raw = raw + "Content-Length: " + str(len(body)) + "\r\n"
+    }
 
     // Connection header
     raw = raw + "Connection: close\r\n"
 
     // End headers + body
     raw = raw + "\r\n"
-    si has_body:
+    si has_body {
         raw = raw + body
+    }
 
     da raw
+}
 
 // ---------------------------------------------------------------------------
 // HTTP/1.1 response parsing (Tasks 14-16)
 // ---------------------------------------------------------------------------
 
-tipo HeaderParseResult:
+tipo HeaderParseResult {
     status_code: Int,
     headers: Map<String, String>,
     body_start: Int,
     ok: Bool,
     error_msg: String
+}
 
-fn new_hdr_error(msg: String) -> HeaderParseResult:
+fn new_hdr_error(msg: String) -> HeaderParseResult {
     da new HeaderParseResult {status_code: 0, headers: #{}, body_start: 0, ok: false, error_msg: msg}
+}
 
-fn new_hdr_ok(sc: Int, hdrs: Map<String, String>, bs: Int) -> HeaderParseResult:
+fn new_hdr_ok(sc: Int, hdrs: Map<String, String>, bs: Int) -> HeaderParseResult {
     da new HeaderParseResult {status_code: sc, headers: hdrs, body_start: bs, ok: true, error_msg: ""}
+}
 
-fn parse_response_headers(raw: String) -> HeaderParseResult:
+fn parse_response_headers(raw: String) -> HeaderParseResult {
     pon slen: Int = len(raw)
     pon mut pos: Int = 0
 
-    si slen < 12:
+    si slen < 12 {
         da new_hdr_error("Response too short")
+    }
 
     // Skip to first space (past HTTP version)
-    mien pos < slen:
+    mien pos < slen {
         si raw.char_at(pos) == " " { sal }
         pos = pos + 1
+    }
     pos = pos + 1
 
     // Parse status code
     pon mut status_str: String = ""
-    mien pos < slen:
+    mien pos < slen {
         pon ch: String = raw.char_at(pos)
         si ch == " " { sal }
         si ch == "\r" { sal }
         status_str = status_str + ch
         pos = pos + 1
+    }
     pon status_code: Int = parse_int_manual(status_str)
 
     // Skip rest of status line
-    mien pos < slen:
-        si raw.char_at(pos) == "\n":
+    mien pos < slen {
+        si raw.char_at(pos) == "\n" {
             pos = pos + 1
             sal
+        }
         pos = pos + 1
+    }
 
     // Parse headers
     pon mut headers: Map<String, String> = #{}
     pon mut count: Int = 0
-    mien pos < slen:
+    mien pos < slen {
         count = count + 1
         si count > 200 { sal }
 
         // Check for empty line (end of headers)
-        si raw.char_at(pos) == "\r":
-            si pos + 1 < slen:
-                si raw.char_at(pos + 1) == "\n":
+        si raw.char_at(pos) == "\r" {
+            si pos + 1 < slen {
+                si raw.char_at(pos + 1) == "\n" {
                     pos = pos + 2
                     sal
-        si raw.char_at(pos) == "\n":
+                }
+            }
+        }
+        si raw.char_at(pos) == "\n" {
             pos = pos + 1
             sal
+        }
 
         // Parse header name
         pon mut hdr_name: String = ""
-        mien pos < slen:
+        mien pos < slen {
             pon ch: String = raw.char_at(pos)
             si ch == ":" { pos = pos + 1; sal }
             si ch == "\r" { sal }
             si ch == "\n" { sal }
             hdr_name = hdr_name + ch
             pos = pos + 1
+        }
 
         // Skip whitespace after colon
-        mien pos < slen:
+        mien pos < slen {
             pon ch: String = raw.char_at(pos)
-            si ch != " ":
+            si ch != " " {
                 si ch != "\t" { sal }
+            }
             pos = pos + 1
+        }
 
         // Parse header value
         pon mut hdr_value: String = ""
-        mien pos < slen:
+        mien pos < slen {
             pon ch: String = raw.char_at(pos)
-            si ch == "\r":
+            si ch == "\r" {
                 pos = pos + 1
-                si pos < slen:
+                si pos < slen {
                     si raw.char_at(pos) == "\n" { pos = pos + 1 }
+                }
                 sal
-            si ch == "\n":
+            }
+            si ch == "\n" {
                 pos = pos + 1
                 sal
+            }
             hdr_value = hdr_value + ch
             pos = pos + 1
+        }
 
         pon lower_name: String = to_lower(hdr_name)
         headers[lower_name] = hdr_value
+    }
 
     da new_hdr_ok(status_code, headers, pos)
+}
 
 // ASCII lowercase — delegated to text::string_utils
-fn to_lower_char(ch: String, b: Int) -> String:
+fn to_lower_char(ch: String, b: Int) -> String {
     da string_utils.to_lower_char(ch, b)
+}
 
-fn to_lower(s: String) -> String:
+fn to_lower(s: String) -> String {
     da string_utils.to_lower(s)
+}
 
 // Task 15: Content-Length body reading
-fn extract_body_content_length(raw: String, body_start: Int, content_length: Int) -> String:
+fn extract_body_content_length(raw: String, body_start: Int, content_length: Int) -> String {
     pon slen: Int = len(raw)
     pon mut body: String = ""
     pon mut i: Int = body_start
     pon mut count: Int = 0
-    mien i < slen:
+    mien i < slen {
         si count >= content_length { sal }
         body = body + raw.char_at(i)
         i = i + 1
         count = count + 1
+    }
     da body
+}
 
 // Task 16: Chunked transfer-encoding decoding
-fn decode_chunked_body(raw: String, body_start: Int) -> String:
+fn decode_chunked_body(raw: String, body_start: Int) -> String {
     pon slen: Int = len(raw)
     pon mut result: String = ""
     pon mut pos: Int = body_start
 
     pon mut iter: Int = 0
-    mien pos < slen:
+    mien pos < slen {
         iter = iter + 1
         si iter > 10000 { sal }
 
         // Read chunk size (hex)
         pon mut hex_str: String = ""
-        mien pos < slen:
+        mien pos < slen {
             pon ch: String = raw.char_at(pos)
-            si ch == "\r":
+            si ch == "\r" {
                 pos = pos + 1
-                si pos < slen:
+                si pos < slen {
                     si raw.char_at(pos) == "\n" { pos = pos + 1 }
+                }
                 sal
-            si ch == "\n":
+            }
+            si ch == "\n" {
                 pos = pos + 1
                 sal
+            }
             hex_str = hex_str + ch
             pos = pos + 1
+        }
 
         pon chunk_size: Int = parse_hex_int(hex_str)
         si chunk_size == 0 { sal }
 
         // Read chunk data
         pon mut count: Int = 0
-        mien count < chunk_size:
+        mien count < chunk_size {
             si pos >= slen { sal }
             result = result + raw.char_at(pos)
             pos = pos + 1
             count = count + 1
+        }
 
         // Skip trailing CRLF
-        si pos < slen:
+        si pos < slen {
             si raw.char_at(pos) == "\r" { pos = pos + 1 }
-        si pos < slen:
+        }
+        si pos < slen {
             si raw.char_at(pos) == "\n" { pos = pos + 1 }
+        }
+    }
 
     da result
+}
 
-fn parse_hex_int(s: String) -> Int:
+fn parse_hex_int(s: String) -> Int {
     pon slen: Int = len(s)
     pon mut result: Int = 0
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon d: Int = hex_digit_value(s.char_at(i))
         si d < 0 { sal }
         result = result * 16 + d
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Network I/O helpers
 // ---------------------------------------------------------------------------
 
-fn recv_full_response(fd: Int) -> String:
+fn recv_full_response(fd: Int) -> String {
     pon mut response: String = ""
     pon mut iterations: Int = 0
-    mien iterations < 10000:
+    mien iterations < 10000 {
         iterations = iterations + 1
         pon chunk: String = __mn_tcp_recv_str(fd, 8192)
         si len(chunk) == 0 { sal }
         response = response + chunk
+    }
     da response
+}
 
-fn recv_full_response_tls(tls_ctx: Int) -> String:
+fn recv_full_response_tls(tls_ctx: Int) -> String {
     pon mut response: String = ""
     pon mut iterations: Int = 0
-    mien iterations < 10000:
+    mien iterations < 10000 {
         iterations = iterations + 1
         pon chunk: String = __mn_tls_read_str(tls_ctx, 8192)
         si len(chunk) == 0 { sal }
         response = response + chunk
+    }
     da response
+}
 
 // ---------------------------------------------------------------------------
 // Core request execution (Tasks 9-16)
 // ---------------------------------------------------------------------------
 
-fn execute_raw_request(parsed: ParsedUrl, raw_request: String, timeout_ms: Int) -> Result<String, HttpError>:
+fn execute_raw_request(parsed: ParsedUrl, raw_request: String, timeout_ms: Int) -> Result<String, HttpError> {
     pon init_result: Int = __mn_net_init()
 
     pon fd: Int = __mn_tcp_connect_str(parsed.host, parsed.port)
-    si fd < 0:
+    si fd < 0 {
         da Err(new_connection_error("Failed to connect to " + parsed.host + ":" + str(parsed.port)))
+    }
 
-    si timeout_ms > 0:
+    si timeout_ms > 0 {
         pon to_result: Int = __mn_tcp_set_timeout(fd, timeout_ms)
+    }
 
-    si parsed.is_https:
+    si parsed.is_https {
         pon tls_init: Int = __mn_tls_init()
         pon tls_ctx: Int = __mn_tls_connect_str(fd, parsed.host)
-        si tls_ctx == 0:
+        si tls_ctx == 0 {
             pon close_r: Int = __mn_tcp_close_fd(fd)
             da Err(new_tls_error("TLS handshake failed cada " + parsed.host))
+        }
 
         pon sent: Int = __mn_tls_write_str(tls_ctx, raw_request)
-        si sent < 0:
+        si sent < 0 {
             pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
             da Err(new_send_error("Failed to send request"))
+        }
 
         pon response: String = recv_full_response_tls(tls_ctx)
         pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
         da Ok(response)
-    sino:
+    } sino {
         pon sent: Int = __mn_tcp_send_str(fd, raw_request)
-        si sent < 0:
+        si sent < 0 {
             pon close_r: Int = __mn_tcp_close_fd(fd)
             da Err(new_send_error("Failed to send request"))
+        }
 
         pon response: String = recv_full_response(fd)
         pon close_r: Int = __mn_tcp_close_fd(fd)
         da Ok(response)
+    }
 
     da Err(new_connection_error("Unreachable"))
+}
 
-fn parse_raw_response(raw: String) -> Result<HttpResponse, HttpError>:
-    si len(raw) == 0:
+fn parse_raw_response(raw: String) -> Result<HttpResponse, HttpError> {
+    si len(raw) == 0 {
         da Err(new_recv_error("Empty response"))
+    }
 
     pon hdr: HeaderParseResult = parse_response_headers(raw)
-    si hdr.ok == false:
+    si hdr.ok == false {
         da Err(new_parse_error(hdr.error_msg))
+    }
 
     pon mut body: String = ""
 
     // Check for Transfer-Encoding: chunked
     pon mut is_chunked: Bool = false
-    cada key en hdr.headers:
-        si key == "transfer-encoding":
+    cada key en hdr.headers {
+        si key == "transfer-encoding" {
             pon te_val: String = hdr.headers[key]
-            si te_val == "chunked":
+            si te_val == "chunked" {
                 is_chunked = true
+            }
+        }
+    }
 
-    si is_chunked:
+    si is_chunked {
         body = decode_chunked_body(raw, hdr.body_start)
-    sino:
+    } sino {
         pon mut content_length: Int = -1
-        cada key en hdr.headers:
-            si key == "content-length":
+        cada key en hdr.headers {
+            si key == "content-length" {
                 content_length = parse_int_manual(hdr.headers[key])
+            }
+        }
 
-        si content_length >= 0:
+        si content_length >= 0 {
             body = extract_body_content_length(raw, hdr.body_start, content_length)
-        sino:
+        } sino {
             pon slen: Int = len(raw)
             pon mut i: Int = hdr.body_start
-            mien i < slen:
+            mien i < slen {
                 body = body + raw.char_at(i)
                 i = i + 1
+            }
+        }
+    }
 
     da Ok(new_http_response(hdr.status_code, hdr.headers, body))
+}
 
 // ---------------------------------------------------------------------------
 // Task 17: Redirect following
 // ---------------------------------------------------------------------------
 
-fn is_redirect(status_code: Int) -> Bool:
+fn is_redirect(status_code: Int) -> Bool {
     si status_code == 301 { da true }
     si status_code == 302 { da true }
     si status_code == 307 { da true }
     si status_code == 308 { da true }
     da false
+}
 
-fn get_redirect_location(headers: Map<String, String>) -> String:
-    cada key en headers:
-        si key == "location":
+fn get_redirect_location(headers: Map<String, String>) -> String {
+    cada key en headers {
+        si key == "location" {
             da headers[key]
+        }
+    }
     da ""
+}
 
-fn resolve_redirect_url(base_url: String, location: String) -> String:
+fn resolve_redirect_url(base_url: String, location: String) -> String {
     // Check if location is absolute (starts with http:// or https://)
-    si len(location) > 7:
+    si len(location) > 7 {
         pon mut prefix: String = ""
         pon mut i: Int = 0
-        mien i < 8:
-            si i < len(location):
+        mien i < 8 {
+            si i < len(location) {
                 prefix = prefix + location.char_at(i)
+            }
             i = i + 1
+        }
         si prefix == "https://" { da location }
-    si len(location) > 6:
+    }
+    si len(location) > 6 {
         pon mut prefix2: String = ""
         pon mut j: Int = 0
-        mien j < 7:
-            si j < len(location):
+        mien j < 7 {
+            si j < len(location) {
                 prefix2 = prefix2 + location.char_at(j)
+            }
             j = j + 1
+        }
         si prefix2 == "http://" { da location }
+    }
 
     // Relative URL — resolve against base
     pon base: ParsedUrl = parse_url(base_url)
     si base.ok == false { da location }
 
     pon mut resolved: String = base.scheme + "://" + base.host
-    si base.is_https:
-        si base.port != 443:
+    si base.is_https {
+        si base.port != 443 {
             resolved = resolved + ":" + str(base.port)
-    sino:
-        si base.port != 80:
+        }
+    } sino {
+        si base.port != 80 {
             resolved = resolved + ":" + str(base.port)
+        }
+    }
 
-    si len(location) > 0:
-        si location.char_at(0) == "/":
+    si len(location) > 0 {
+        si location.char_at(0) == "/" {
             resolved = resolved + location
-        sino:
+        } sino {
             resolved = resolved + "/" + location
-    sino:
+        }
+    } sino {
         resolved = resolved + base.path
+    }
 
     da resolved
+}
 
 // ---------------------------------------------------------------------------
 // Task 11: Full request execution with redirects
 // ---------------------------------------------------------------------------
 
-+fn request(req: HttpRequest) -> Result<HttpResponse, HttpError>:
+pub fn request(req: HttpRequest) -> Result<HttpResponse, HttpError> {
     da request_with_config(req, default_http_config())
+}
 
-+fn request_with_config(req: HttpRequest, config: HttpConfig) -> Result<HttpResponse, HttpError>:
+pub fn request_with_config(req: HttpRequest, config: HttpConfig) -> Result<HttpResponse, HttpError> {
     pon mut current_url: String = req.url
     pon mut redirects: Int = 0
     pon mut current_method: HttpMethod = req.method
 
-    mien redirects <= config.max_redirects:
+    mien redirects <= config.max_redirects {
         pon parsed: ParsedUrl = parse_url(current_url)
-        si parsed.ok == false:
+        si parsed.ok == false {
             da Err(new_url_error(parsed.error_msg))
+        }
 
         // Task 19: Custom headers + User-Agent
         pon mut merged_headers: Map<String, String> = #{}
-        cada key en req.headers:
+        cada key en req.headers {
             merged_headers[key] = req.headers[key]
+        }
 
         pon mut has_ua: Bool = false
-        cada key en merged_headers:
+        cada key en merged_headers {
             pon lower_key: String = to_lower(key)
             si lower_key == "user-agent" { has_ua = true }
-        si has_ua == false:
+        }
+        si has_ua == false {
             merged_headers["User-Agent"] = config.user_agent
+        }
 
         pon raw_request: String = build_http_request(current_method, parsed, merged_headers, req.body, req.has_body)
         pon raw_result: Result<String, HttpError> = execute_raw_request(parsed, raw_request, config.timeout_ms)
 
-        match raw_result:
+        match raw_result {
             Err(e) => { da Err(e) },
-            Ok(raw_response) =>:
+            Ok(raw_response) => {
                 pon resp_result: Result<HttpResponse, HttpError> = parse_raw_response(raw_response)
 
-                match resp_result:
+                match resp_result {
                     Err(e2) => { da Err(e2) },
-                    Ok(resp) =>:
-                        si is_redirect(resp.status_code):
+                    Ok(resp) => {
+                        si is_redirect(resp.status_code) {
                             pon location: String = get_redirect_location(resp.headers)
-                            si len(location) == 0:
+                            si len(location) == 0 {
                                 da Ok(resp)
+                            }
                             current_url = resolve_redirect_url(current_url, location)
                             redirects = redirects + 1
 
-                            si resp.status_code == 301:
+                            si resp.status_code == 301 {
                                 current_method = GET()
-                            } sino { si resp.status_code == 302:
+                            } sino { si resp.status_code == 302 {
                                 current_method = GET()
                             } }
-                        sino:
+                        } sino {
                             da Ok(resp)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     da Err(new_redirect_error("Too many redirects (max " + str(config.max_redirects) + ")"))
+}
 
 // ---------------------------------------------------------------------------
 // Convenience functions (Tasks 9-10)
 // ---------------------------------------------------------------------------
 
-+fn get(url: String) -> Result<HttpResponse, HttpError>:
+pub fn get(url: String) -> Result<HttpResponse, HttpError> {
     pon req: HttpRequest = new_http_request(GET(), url)
     da request(req)
+}
 
-+fn post(url: String, body: String) -> Result<HttpResponse, HttpError>:
+pub fn post(url: String, body: String) -> Result<HttpResponse, HttpError> {
     pon req: HttpRequest = make_request_with_body(POST(), url, body, #{"Content-Type": "application/json"})
     da request(req)
+}
 
-+fn put(url: String, body: String) -> Result<HttpResponse, HttpError>:
+pub fn put(url: String, body: String) -> Result<HttpResponse, HttpError> {
     pon req: HttpRequest = make_request_with_body(PUT(), url, body, #{"Content-Type": "application/json"})
     da request(req)
+}
 
-+fn delete(url: String) -> Result<HttpResponse, HttpError>:
+pub fn delete(url: String) -> Result<HttpResponse, HttpError> {
     pon req: HttpRequest = new_http_request(DELETE(), url)
     da request(req)
+}
 
-+fn patch(url: String, body: String) -> Result<HttpResponse, HttpError>:
+pub fn patch(url: String, body: String) -> Result<HttpResponse, HttpError> {
     pon req: HttpRequest = make_request_with_body(PATCH(), url, body, #{"Content-Type": "application/json"})
     da request(req)
+}
 
-+fn head(url: String) -> Result<HttpResponse, HttpError>:
+pub fn head(url: String) -> Result<HttpResponse, HttpError> {
     pon req: HttpRequest = new_http_request(HEAD(), url)
     da request(req)
+}
 
-+fn options(url: String) -> Result<HttpResponse, HttpError>:
+pub fn options(url: String) -> Result<HttpResponse, HttpError> {
     pon req: HttpRequest = new_http_request(OPTIONS(), url)
     da request(req)
+}
 
 // ---------------------------------------------------------------------------
 // Task 22: Request fingerprinting
 // ---------------------------------------------------------------------------
 
-+fn request_fingerprint(meth: HttpMethod, url: String) -> String:
+pub fn request_fingerprint(meth: HttpMethod, url: String) -> String {
     pon method_str: String = method_to_string(meth)
     pon mut hash: Int = 5381
     pon combined: String = method_str + "|" + url
     pon clen: Int = len(combined)
     pon mut i: Int = 0
-    mien i < clen:
+    mien i < clen {
         pon b: Int = combined.byte_at(i)
         hash = hash * 33 + b
-        si hash > 1000000000:
+        si hash > 1000000000 {
             hash = hash - 1000000000
-        si hash < 0:
+        }
+        si hash < 0 {
             hash = 0 - hash
+        }
         i = i + 1
+    }
 
     pon mut result: String = ""
     pon mut remaining: Int = hash
     pon mut digits: Int = 0
-    mien digits < 8:
+    mien digits < 8 {
         pon d: Int = remaining - (remaining / 16) * 16
         result = hex_char(d) + result
         remaining = remaining / 16
         digits = digits + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Connection pooling (Tasks 23-25) — Simplified for v0.9.0
@@ -834,12 +996,12 @@ fn resolve_redirect_url(base_url: String, location: String) -> String:
 // When Phase 8 lands, uncomment the json imports and wire them up.
 
 // Task 20: POST with JSON body
-// pub fn post_json(url: String, data: JsonValue) -> Result<HttpResponse, HttpError>:
+// pub fn post_json(url: String, data: JsonValue) -> Result<HttpResponse, HttpError> {
 //     let body: String = json.encode(data)
 //     return post(url, body)
 // }
 
 // Task 21: Response body as JSON
-// pub fn response_json(resp: HttpResponse) -> Result<JsonValue, JsonError>:
+// pub fn response_json(resp: HttpResponse) -> Result<JsonValue, JsonError> {
 //     return json.decode(resp.body)
 // }

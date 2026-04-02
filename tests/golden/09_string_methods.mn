@@ -1,4 +1,5 @@
-fn main:
+fn main() {
     pon s: String = "hello world"
     print(str(s.contains("world")))
     print(s.to_upper())
+}

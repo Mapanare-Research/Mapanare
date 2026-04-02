@@ -8,8 +8,8 @@
 //
 //   let config = embedding.openai_embed("sk-...", "text-embedding-3-small")
 //   let result = embedding.embed(config, "What is Mapanare?")
-//   match result:
-//       Ok(emb) =>:
+//   match result {
+//       Ok(emb) => {
 //           print("Dimensions: " + str(len(emb.vector)))
 //           let sim = embedding.cosine_similarity(emb.vector, other_vector)
 //       },
@@ -43,52 +43,62 @@ usa text::string_utils
 // Error enum
 // ---------------------------------------------------------------------------
 
-+tipo EmbeddingError:
+pub tipo EmbeddingError {
     | ApiError(String)
     | NetworkError(String)
     | ParseError(String)
     | AuthError(String)
     | RateLimited(String)
     | InvalidInput(String)
+}
 
-fn new_api_error(msg: String) -> EmbeddingError:
+fn new_api_error(msg: String) -> EmbeddingError {
     da ApiError(msg)
+}
 
-fn new_network_error(msg: String) -> EmbeddingError:
+fn new_network_error(msg: String) -> EmbeddingError {
     da NetworkError(msg)
+}
 
-fn new_parse_error(msg: String) -> EmbeddingError:
+fn new_parse_error(msg: String) -> EmbeddingError {
     da ParseError(msg)
+}
 
-fn new_auth_error(msg: String) -> EmbeddingError:
+fn new_auth_error(msg: String) -> EmbeddingError {
     da AuthError(msg)
+}
 
-fn new_rate_limit_error(msg: String) -> EmbeddingError:
+fn new_rate_limit_error(msg: String) -> EmbeddingError {
     da RateLimited(msg)
+}
 
-fn new_invalid_input(msg: String) -> EmbeddingError:
+fn new_invalid_input(msg: String) -> EmbeddingError {
     da InvalidInput(msg)
+}
 
-+fn error_message(e: EmbeddingError) -> String:
-    match e:
+pub fn error_message(e: EmbeddingError) -> String {
+    match e {
         ApiError(msg) => { da "API error: " + msg },
         NetworkError(msg) => { da "Network error: " + msg },
         ParseError(msg) => { da "Parse error: " + msg },
         AuthError(msg) => { da "Auth error: " + msg },
         RateLimited(msg) => { da "Rate limited: " + msg },
         InvalidInput(msg) => { da "Invalid input: " + msg }
+    }
     da "Unknown error"
+}
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
-+tipo EmbedProvider:
+pub tipo EmbedProvider {
     | OpenAI
     | Ollama
     | Custom
+}
 
-+tipo EmbedConfig:
+pub tipo EmbedConfig {
     provider: EmbedProvider,
     api_key: String,
     model: String,
@@ -98,213 +108,256 @@ fn new_invalid_input(msg: String) -> EmbeddingError:
     timeout_ms: Int,
     dimensions: Int,
     has_dimensions: Bool
+}
 
-fn new_embed_config(prov: EmbedProvider, key: String, model: String, host: String, port: Int, path: String) -> EmbedConfig:
+fn new_embed_config(prov: EmbedProvider, key: String, model: String, host: String, port: Int, path: String) -> EmbedConfig {
     da new EmbedConfig {provider: prov, api_key: key, model: model, host: host, port: port, path: path, timeout_ms: 60000, dimensions: 0, has_dimensions: false}
+}
 
-+fn openai_embed(api_key: String, model: String) -> EmbedConfig:
+pub fn openai_embed(api_key: String, model: String) -> EmbedConfig {
     da new_embed_config(OpenAI(), api_key, model, "api.openai.com", 443, "/v1/embeddings")
+}
 
-+fn ollama_embed(model: String) -> EmbedConfig:
+pub fn ollama_embed(model: String) -> EmbedConfig {
     da new_embed_config(Ollama(), "", model, "localhost", 11434, "/api/embed")
+}
 
-+fn ollama_embed_at(host: String, port: Int, model: String) -> EmbedConfig:
+pub fn ollama_embed_at(host: String, port: Int, model: String) -> EmbedConfig {
     da new_embed_config(Ollama(), "", model, host, port, "/api/embed")
+}
 
-+fn custom_embed(host: String, port: Int, path: String, api_key: String, model: String) -> EmbedConfig:
+pub fn custom_embed(host: String, port: Int, path: String, api_key: String, model: String) -> EmbedConfig {
     da new_embed_config(Custom(), api_key, model, host, port, path)
+}
 
-+fn with_dimensions(c: EmbedConfig, dims: Int) -> EmbedConfig:
+pub fn with_dimensions(c: EmbedConfig, dims: Int) -> EmbedConfig {
     da new EmbedConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, timeout_ms: c.timeout_ms, dimensions: dims, has_dimensions: true}
+}
 
-+fn with_embed_timeout(c: EmbedConfig, timeout_ms: Int) -> EmbedConfig:
+pub fn with_embed_timeout(c: EmbedConfig, timeout_ms: Int) -> EmbedConfig {
     da new EmbedConfig {provider: c.provider, api_key: c.api_key, model: c.model, host: c.host, port: c.port, path: c.path, timeout_ms: timeout_ms, dimensions: c.dimensions, has_dimensions: c.has_dimensions}
+}
 
 // ---------------------------------------------------------------------------
 // Embedding result
 // ---------------------------------------------------------------------------
 
-+tipo EmbeddingResult:
+pub tipo EmbeddingResult {
     vector: List<Float>,
     tokens_used: Int,
     model: String,
     dimensions: Int
+}
 
-fn new_embedding_result(vec: List<Float>, tokens: Int, model: String) -> EmbeddingResult:
+fn new_embedding_result(vec: List<Float>, tokens: Int, model: String) -> EmbeddingResult {
     da new EmbeddingResult {vector: vec, tokens_used: tokens, model: model, dimensions: len(vec)}
+}
 
-+tipo BatchEmbeddingResult:
+pub tipo BatchEmbeddingResult {
     embeddings: List<List<Float>>,
     tokens_used: Int,
     model: String,
     count: Int
+}
 
-fn new_batch_result(vecs: List<List<Float>>, tokens: Int, model: String) -> BatchEmbeddingResult:
+fn new_batch_result(vecs: List<List<Float>>, tokens: Int, model: String) -> BatchEmbeddingResult {
     da new BatchEmbeddingResult {embeddings: vecs, tokens_used: tokens, model: model, count: len(vecs)}
+}
 
 // ---------------------------------------------------------------------------
 // Vector math
 // ---------------------------------------------------------------------------
 
-+fn dot_product(a: List<Float>, b: List<Float>) -> Float:
+pub fn dot_product(a: List<Float>, b: List<Float>) -> Float {
     pon n: Int = len(a)
     pon m: Int = len(b)
     pon mut size: Int = n
     si m < size { size = m }
     pon mut sum: Float = 0.0
     pon mut i: Int = 0
-    mien i < size:
+    mien i < size {
         sum = sum + a[i] * b[i]
         i = i + 1
+    }
     da sum
+}
 
-+fn magnitude(v: List<Float>) -> Float:
+pub fn magnitude(v: List<Float>) -> Float {
     pon mut sum: Float = 0.0
     pon n: Int = len(v)
     pon mut i: Int = 0
-    mien i < n:
+    mien i < n {
         sum = sum + v[i] * v[i]
         i = i + 1
+    }
     da sqrt_approx(sum)
+}
 
-fn sqrt_approx(x: Float) -> Float:
+fn sqrt_approx(x: Float) -> Float {
     si x <= 0.0 { da 0.0 }
     // Newton's method for square root
     pon mut guess: Float = x / 2.0
     si guess < 1.0 { guess = 1.0 }
     pon mut i: Int = 0
-    mien i < 50:
+    mien i < 50 {
         pon next: Float = (guess + x / guess) / 2.0
         pon mut diff: Float = next - guess
         si diff < 0.0 { diff = 0.0 - diff }
         si diff < 0.0000001 { da next }
         guess = next
         i = i + 1
+    }
     da guess
+}
 
-+fn cosine_similarity(a: List<Float>, b: List<Float>) -> Float:
+pub fn cosine_similarity(a: List<Float>, b: List<Float>) -> Float {
     pon dot: Float = dot_product(a, b)
     pon mag_a: Float = magnitude(a)
     pon mag_b: Float = magnitude(b)
     si mag_a < 0.0000001 { da 0.0 }
     si mag_b < 0.0000001 { da 0.0 }
     da dot / (mag_a * mag_b)
+}
 
-+fn euclidean_distance(a: List<Float>, b: List<Float>) -> Float:
+pub fn euclidean_distance(a: List<Float>, b: List<Float>) -> Float {
     pon n: Int = len(a)
     pon m: Int = len(b)
     pon mut size: Int = n
     si m < size { size = m }
     pon mut sum: Float = 0.0
     pon mut i: Int = 0
-    mien i < size:
+    mien i < size {
         pon diff: Float = a[i] - b[i]
         sum = sum + diff * diff
         i = i + 1
+    }
     da sqrt_approx(sum)
+}
 
-+fn normalize(v: List<Float>) -> List<Float>:
+pub fn normalize(v: List<Float>) -> List<Float> {
     pon mag: Float = magnitude(v)
     si mag < 0.0000001 { da v }
     pon n: Int = len(v)
     pon mut result: List<Float> = []
     pon mut i: Int = 0
-    mien i < n:
+    mien i < n {
         result = result + [v[i] / mag]
         i = i + 1
+    }
     da result
+}
 
-+fn vector_add(a: List<Float>, b: List<Float>) -> List<Float>:
+pub fn vector_add(a: List<Float>, b: List<Float>) -> List<Float> {
     pon n: Int = len(a)
     pon m: Int = len(b)
     pon mut size: Int = n
     si m < size { size = m }
     pon mut result: List<Float> = []
     pon mut i: Int = 0
-    mien i < size:
+    mien i < size {
         result = result + [a[i] + b[i]]
         i = i + 1
+    }
     da result
+}
 
-+fn vector_scale(v: List<Float>, scalar: Float) -> List<Float>:
+pub fn vector_scale(v: List<Float>, scalar: Float) -> List<Float> {
     pon n: Int = len(v)
     pon mut result: List<Float> = []
     pon mut i: Int = 0
-    mien i < n:
+    mien i < n {
         result = result + [v[i] * scalar]
         i = i + 1
+    }
     da result
+}
 
-+fn vector_mean(vectors: List<List<Float>>) -> List<Float>:
+pub fn vector_mean(vectors: List<List<Float>>) -> List<Float> {
     pon count: Int = len(vectors)
     si count == 0 { da [] }
     pon dims: Int = len(vectors[0])
     pon mut sums: List<Float> = []
     pon mut d: Int = 0
-    mien d < dims:
+    mien d < dims {
         sums = sums + [0.0]
         d = d + 1
+    }
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon mut j: Int = 0
-        mien j < dims:
-            si j < len(vectors[i]):
+        mien j < dims {
+            si j < len(vectors[i]) {
                 sums[j] = sums[j] + vectors[i][j]
+            }
             j = j + 1
+        }
         i = i + 1
+    }
     pon mut result: List<Float> = []
     pon mut k: Int = 0
-    mien k < dims:
+    mien k < dims {
         result = result + [sums[k] / float(count)]
         k = k + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // JSON helpers (minimal, for embedding API responses)
 // ---------------------------------------------------------------------------
 
-fn escape_json(s: String) -> String:
+fn escape_json(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         si ch == "\"" { result = result + "\\\"" } sino { si ch == "\\" { result = result + "\\\\" } sino { si ch == "\n" { result = result + "\\n" } sino { si ch == "\r" { result = result + "\\r" } sino { si ch == "\t" { result = result + "\\t" } sino { result = result + ch } } } } }
         i = i + 1
+    }
     da result
+}
 
-fn skip_ws(text: String, pos: Int, slen: Int) -> Int:
+fn skip_ws(text: String, pos: Int, slen: Int) -> Int {
     pon mut p: Int = pos
-    mien p < slen:
+    mien p < slen {
         pon ch: String = text.char_at(p)
         si ch == " " { p = p + 1 } sino { si ch == "\t" { p = p + 1 } sino { si ch == "\n" { p = p + 1 } sino { si ch == "\r" { p = p + 1 } sino { da p } } } }
+    }
     da p
+}
 
-fn skip_json_value(text: String, pos: Int, slen: Int) -> Int:
+fn skip_json_value(text: String, pos: Int, slen: Int) -> Int {
     si pos >= slen { da pos }
     pon ch: String = text.char_at(pos)
-    si ch == "\"":
+    si ch == "\"" {
         pon mut p: Int = pos + 1
-        mien p < slen:
+        mien p < slen {
             pon sc: String = text.char_at(p)
             si sc == "\\" { p = p + 2 } sino { si sc == "\"" { da p + 1 } sino { p = p + 1 } }
+        }
         da p
-    si ch == "{":
+    }
+    si ch == "{" {
         pon mut p: Int = pos + 1
         pon mut depth: Int = 1
-        mien p < slen:
+        mien p < slen {
             pon c: String = text.char_at(p)
             si c == "\"" { p = p + 1; mien p < slen { pon sc: String = text.char_at(p); si sc == "\\" { p = p + 2 } sino { si sc == "\"" { p = p + 1; sal } sino { p = p + 1 } } } } sino { si c == "{" { depth = depth + 1; p = p + 1 } sino { si c == "}" { depth = depth - 1; si depth == 0 { da p + 1 }; p = p + 1 } sino { p = p + 1 } } }
+        }
         da p
-    si ch == "[":
+    }
+    si ch == "[" {
         pon mut p: Int = pos + 1
         pon mut depth: Int = 1
-        mien p < slen:
+        mien p < slen {
             pon c: String = text.char_at(p)
             si c == "\"" { p = p + 1; mien p < slen { pon sc: String = text.char_at(p); si sc == "\\" { p = p + 2 } sino { si sc == "\"" { p = p + 1; sal } sino { p = p + 1 } } } } sino { si c == "[" { depth = depth + 1; p = p + 1 } sino { si c == "]" { depth = depth - 1; si depth == 0 { da p + 1 }; p = p + 1 } sino { p = p + 1 } } }
+        }
         da p
+    }
     pon mut p: Int = pos
-    mien p < slen:
+    mien p < slen {
         pon c: String = text.char_at(p)
         si c == "," { da p }
         si c == "}" { da p }
@@ -312,9 +365,11 @@ fn skip_json_value(text: String, pos: Int, slen: Int) -> Int:
         si c == " " { da p }
         si c == "\n" { da p }
         p = p + 1
+    }
     da p
+}
 
-fn jget(text: String, key: String) -> String:
+fn jget(text: String, key: String) -> String {
     pon slen: Int = len(text)
     pon mut pos: Int = 0
     pos = skip_ws(text, pos, slen)
@@ -322,7 +377,7 @@ fn jget(text: String, key: String) -> String:
     si text.char_at(pos) != "{" { da "" }
     pos = pos + 1
     pon mut iter: Int = 0
-    mien iter < 100000:
+    mien iter < 100000 {
         iter = iter + 1
         pos = skip_ws(text, pos, slen)
         si pos >= slen { da "" }
@@ -333,9 +388,10 @@ fn jget(text: String, key: String) -> String:
         si text.char_at(pos) != "\"" { da "" }
         pon key_start: Int = pos + 1
         pon mut kp: Int = pos + 1
-        mien kp < slen:
+        mien kp < slen {
             pon kc: String = text.char_at(kp)
             si kc == "\\" { kp = kp + 2 } sino { si kc == "\"" { sal } sino { kp = kp + 1 } }
+        }
         pon mut found_key: String = ""
         pon mut ki: Int = key_start
         mien ki < kp { found_key = found_key + text.char_at(ki); ki = ki + 1 }
@@ -347,34 +403,40 @@ fn jget(text: String, key: String) -> String:
         pos = skip_ws(text, pos, slen)
         pon value_start: Int = pos
         pon value_end: Int = skip_json_value(text, pos, slen)
-        si found_key == key:
+        si found_key == key {
             pon mut val: String = ""
             pon mut vi: Int = value_start
             mien vi < value_end { val = val + text.char_at(vi); vi = vi + 1 }
             da val
+        }
         pos = value_end
+    }
     da ""
+}
 
-fn jget_str(text: String, key: String) -> String:
+fn jget_str(text: String, key: String) -> String {
     pon raw: String = jget(text, key)
     pon rlen: Int = len(raw)
     si rlen < 2 { da "" }
     si raw.char_at(0) != "\"" { da "" }
     pon mut result: String = ""
     pon mut i: Int = 1
-    mien i < rlen:
+    mien i < rlen {
         pon ch: String = raw.char_at(i)
         si ch == "\"" { da result }
         si ch == "\\" { i = i + 1; si i < rlen { result = result + raw.char_at(i) } } sino { result = result + ch }
         i = i + 1
+    }
     da result
+}
 
-fn jget_int(text: String, key: String) -> Int:
+fn jget_int(text: String, key: String) -> Int {
     pon raw: String = jget(text, key)
     si len(raw) == 0 { da 0 }
     da string_utils.parse_int_manual(raw)
+}
 
-fn jget_first(text: String, key: String) -> String:
+fn jget_first(text: String, key: String) -> String {
     pon raw: String = jget(text, key)
     pon rlen: Int = len(raw)
     si rlen < 2 { da "" }
@@ -389,9 +451,10 @@ fn jget_first(text: String, key: String) -> String:
     pon mut i: Int = value_start
     mien i < value_end { result = result + raw.char_at(i); i = i + 1 }
     da result
+}
 
 // Parse a JSON array of numbers into List<Float>
-fn parse_float_array(text: String) -> List<Float>:
+fn parse_float_array(text: String) -> List<Float> {
     pon slen: Int = len(text)
     pon mut result: List<Float> = []
     si slen < 2 { da result }
@@ -399,7 +462,7 @@ fn parse_float_array(text: String) -> List<Float>:
 
     pon mut pos: Int = 1
     pon mut iter: Int = 0
-    mien iter < 100000:
+    mien iter < 100000 {
         iter = iter + 1
         pos = skip_ws(text, pos, slen)
         si pos >= slen { da result }
@@ -408,7 +471,7 @@ fn parse_float_array(text: String) -> List<Float>:
 
         // Read number token
         pon mut num_str: String = ""
-        mien pos < slen:
+        mien pos < slen {
             pon ch: String = text.char_at(pos)
             si ch == "," { sal }
             si ch == "]" { sal }
@@ -416,49 +479,60 @@ fn parse_float_array(text: String) -> List<Float>:
             si ch == "\n" { sal }
             num_str = num_str + ch
             pos = pos + 1
+        }
 
-        si len(num_str) > 0:
+        si len(num_str) > 0 {
             pon val: Float = float(num_str)
             result = result + [val]
+        }
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // HTTP internals
 // ---------------------------------------------------------------------------
 
-tipo HttpResult:
+tipo HttpResult {
     status_code: Int,
     body: String,
     ok: Bool,
     error_msg: String
+}
 
-fn new_http_ok(status: Int, body: String) -> HttpResult:
+fn new_http_ok(status: Int, body: String) -> HttpResult {
     da new HttpResult {status_code: status, body: body, ok: true, error_msg: ""}
+}
 
-fn new_http_err(msg: String) -> HttpResult:
+fn new_http_err(msg: String) -> HttpResult {
     da new HttpResult {status_code: 0, body: "", ok: false, error_msg: msg}
+}
 
-fn recv_full_tls(tls_ctx: Int) -> String:
+fn recv_full_tls(tls_ctx: Int) -> String {
     pon mut response: String = ""
     pon mut iterations: Int = 0
-    mien iterations < 100000:
+    mien iterations < 100000 {
         iterations = iterations + 1
         pon chunk: String = __mn_tls_read_str(tls_ctx, 8192)
         si len(chunk) == 0 { sal }
         response = response + chunk
+    }
     da response
+}
 
-fn recv_full_tcp(fd: Int) -> String:
+fn recv_full_tcp(fd: Int) -> String {
     pon mut response: String = ""
     pon mut iterations: Int = 0
-    mien iterations < 100000:
+    mien iterations < 100000 {
         iterations = iterations + 1
         pon chunk: String = __mn_tcp_recv_str(fd, 8192)
         si len(chunk) == 0 { sal }
         response = response + chunk
+    }
     da response
+}
 
-fn parse_http_status(raw: String) -> Int:
+fn parse_http_status(raw: String) -> Int {
     pon slen: Int = len(raw)
     si slen < 12 { da 0 }
     pon mut pos: Int = 0
@@ -467,21 +541,24 @@ fn parse_http_status(raw: String) -> Int:
     pon mut status_str: String = ""
     mien pos < slen { pon ch: String = raw.char_at(pos); si ch == " " { sal }; si ch == "\r" { sal }; status_str = status_str + ch; pos = pos + 1 }
     da string_utils.parse_int_manual(status_str)
+}
 
-fn extract_http_body(raw: String) -> String:
+fn extract_http_body(raw: String) -> String {
     pon slen: Int = len(raw)
     pon mut pos: Int = 0
-    mien pos < slen - 3:
-        si raw.char_at(pos) == "\r" { si raw.char_at(pos + 1) == "\n" { si raw.char_at(pos + 2) == "\r" { si raw.char_at(pos + 3) == "\n":
+    mien pos < slen - 3 {
+        si raw.char_at(pos) == "\r" { si raw.char_at(pos + 1) == "\n" { si raw.char_at(pos + 2) == "\r" { si raw.char_at(pos + 3) == "\n" {
             pos = pos + 4
             pon mut body: String = ""
             mien pos < slen { body = body + raw.char_at(pos); pos = pos + 1 }
             da body
         } } } }
         pos = pos + 1
+    }
     da ""
+}
 
-fn https_post(host: String, port: Int, path: String, headers: Map<String, String>, body: String, timeout_ms: Int) -> HttpResult:
+fn https_post(host: String, port: Int, path: String, headers: Map<String, String>, body: String, timeout_ms: Int) -> HttpResult {
     pon init_r: Int = __mn_net_init()
     pon fd: Int = __mn_tcp_connect_str(host, port)
     si fd < 0 { da new_http_err("Failed to connect to " + host + ":" + str(port)) }
@@ -493,7 +570,7 @@ fn https_post(host: String, port: Int, path: String, headers: Map<String, String
     cada key en headers { raw = raw + key + ": " + headers[key] + "\r\n" }
     raw = raw + "Connection: close\r\n\r\n" + body
 
-    si port == 443:
+    si port == 443 {
         pon tls_init: Int = __mn_tls_init()
         pon tls_ctx: Int = __mn_tls_connect_str(fd, host)
         si tls_ctx == 0 { pon close_r: Int = __mn_tcp_close_fd(fd); da new_http_err("TLS handshake failed") }
@@ -502,70 +579,81 @@ fn https_post(host: String, port: Int, path: String, headers: Map<String, String
         pon response: String = recv_full_tls(tls_ctx)
         pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
         da new_http_ok(parse_http_status(response), extract_http_body(response))
-    sino:
+    } sino {
         pon sent: Int = __mn_tcp_send_str(fd, raw)
         si sent < 0 { pon close_r: Int = __mn_tcp_close_fd(fd); da new_http_err("Failed to send request") }
         pon response: String = recv_full_tcp(fd)
         pon close_r: Int = __mn_tcp_close_fd(fd)
         da new_http_ok(parse_http_status(response), extract_http_body(response))
+    }
     da new_http_err("Unreachable")
+}
 
 // ---------------------------------------------------------------------------
 // Request builders
 // ---------------------------------------------------------------------------
 
-fn build_openai_embed_body(config: EmbedConfig, texts: List<String>) -> String:
+fn build_openai_embed_body(config: EmbedConfig, texts: List<String>) -> String {
     pon count: Int = len(texts)
     pon mut body: String = "{\"model\":\"" + escape_json(config.model) + "\""
 
-    si count == 1:
+    si count == 1 {
         body = body + ",\"input\":\"" + escape_json(texts[0]) + "\""
-    sino:
+    } sino {
         body = body + ",\"input\":["
         pon mut i: Int = 0
-        mien i < count:
+        mien i < count {
             si i > 0 { body = body + "," }
             body = body + "\"" + escape_json(texts[i]) + "\""
             i = i + 1
+        }
         body = body + "]"
+    }
 
-    si config.has_dimensions:
+    si config.has_dimensions {
         body = body + ",\"dimensions\":" + str(config.dimensions)
+    }
     body = body + "}"
     da body
+}
 
-fn build_ollama_embed_body(config: EmbedConfig, texts: List<String>) -> String:
+fn build_ollama_embed_body(config: EmbedConfig, texts: List<String>) -> String {
     pon count: Int = len(texts)
     pon mut body: String = "{\"model\":\"" + escape_json(config.model) + "\""
-    si count == 1:
+    si count == 1 {
         body = body + ",\"input\":\"" + escape_json(texts[0]) + "\""
-    sino:
+    } sino {
         body = body + ",\"input\":["
         pon mut i: Int = 0
-        mien i < count:
+        mien i < count {
             si i > 0 { body = body + "," }
             body = body + "\"" + escape_json(texts[i]) + "\""
             i = i + 1
+        }
         body = body + "]"
+    }
     body = body + "}"
     da body
+}
 
-fn openai_embed_headers(config: EmbedConfig) -> Map<String, String>:
+fn openai_embed_headers(config: EmbedConfig) -> Map<String, String> {
     pon mut hdrs: Map<String, String> = #{}
     hdrs["Content-Type"] = "application/json"
     hdrs["Authorization"] = "Bearer " + config.api_key
     da hdrs
+}
 
-fn ollama_embed_headers() -> Map<String, String>:
+fn ollama_embed_headers() -> Map<String, String> {
     pon mut hdrs: Map<String, String> = #{}
     hdrs["Content-Type"] = "application/json"
     da hdrs
+}
 
 // ---------------------------------------------------------------------------
 // Response parsers
 // ---------------------------------------------------------------------------
 
-fn check_http_status(status: Int, body: String) -> Result<String, EmbeddingError>:
+fn check_http_status(status: Int, body: String) -> Result<String, EmbeddingError> {
     si status == 401 { da Err(new_auth_error("Invalid API key (401)")) }
     si status == 403 { da Err(new_auth_error("Access denied (403)")) }
     si status == 429 { da Err(new_rate_limit_error("Rate limited (429)")) }
@@ -573,8 +661,9 @@ fn check_http_status(status: Int, body: String) -> Result<String, EmbeddingError
     si status >= 500 { da Err(new_api_error("Server error (" + str(status) + ")")) }
     si status >= 200 { si status < 300 { da Ok(body) } }
     da Err(new_api_error("Unexpected status: " + str(status)))
+}
 
-fn parse_openai_embed_response(body: String) -> Result<List<List<Float>>, EmbeddingError>:
+fn parse_openai_embed_response(body: String) -> Result<List<List<Float>>, EmbeddingError> {
     // {"data":[{"embedding":[0.1,...],"index":0}],"usage":{"prompt_tokens":N}}
     pon data_raw: String = jget(body, "data")
     si len(data_raw) < 2 { da Err(new_parse_error("No data en response")) }
@@ -586,7 +675,7 @@ fn parse_openai_embed_response(body: String) -> Result<List<List<Float>>, Embedd
     pon mut vectors: List<List<Float>> = []
     pon mut pos: Int = 1
     pon mut iter: Int = 0
-    mien iter < 10000:
+    mien iter < 10000 {
         iter = iter + 1
         pos = skip_ws(data_raw, pos, dlen)
         si pos >= dlen { da Ok(vectors) }
@@ -604,9 +693,11 @@ fn parse_openai_embed_response(body: String) -> Result<List<List<Float>>, Embedd
         vectors = vectors + [vec]
 
         pos = value_end
+    }
     da Ok(vectors)
+}
 
-fn parse_ollama_embed_response(body: String) -> Result<List<List<Float>>, EmbeddingError>:
+fn parse_ollama_embed_response(body: String) -> Result<List<List<Float>>, EmbeddingError> {
     // {"embeddings":[[0.1,...]]}
     pon emb_raw: String = jget(body, "embeddings")
     si len(emb_raw) < 2 { da Err(new_parse_error("No embeddings en response")) }
@@ -617,15 +708,15 @@ fn parse_ollama_embed_response(body: String) -> Result<List<List<Float>>, Embedd
     pon mut vectors: List<List<Float>> = []
     pon mut pos: Int = 1
     pon mut iter: Int = 0
-    mien iter < 10000:
+    mien iter < 10000 {
         iter = iter + 1
         pos = skip_ws(emb_raw, pos, elen)
         si pos >= elen { da Ok(vectors) }
         si emb_raw.char_at(pos) == "]" { da Ok(vectors) }
         si emb_raw.char_at(pos) == "," { pos = pos + 1; pos = skip_ws(emb_raw, pos, elen) }
 
-        si pos < elen:
-            si emb_raw.char_at(pos) == "[":
+        si pos < elen {
+            si emb_raw.char_at(pos) == "[" {
                 pon value_start: Int = pos
                 pon value_end: Int = skip_json_value(emb_raw, pos, elen)
                 pon mut arr_str: String = ""
@@ -634,115 +725,140 @@ fn parse_ollama_embed_response(body: String) -> Result<List<List<Float>>, Embedd
                 pon vec: List<Float> = parse_float_array(arr_str)
                 vectors = vectors + [vec]
                 pos = value_end
-            sino:
+            } sino {
                 pos = pos + 1
+            }
+        }
+    }
     da Ok(vectors)
+}
 
 // ---------------------------------------------------------------------------
 // Core API
 // ---------------------------------------------------------------------------
 
-+fn embed(config: EmbedConfig, text: String) -> Result<EmbeddingResult, EmbeddingError>:
+pub fn embed(config: EmbedConfig, text: String) -> Result<EmbeddingResult, EmbeddingError> {
     pon texts: List<String> = [text]
     pon mut body: String = ""
     pon mut headers: Map<String, String> = #{}
 
-    match config.provider:
+    match config.provider {
         OpenAI => { body = build_openai_embed_body(config, texts); headers = openai_embed_headers(config) },
         Ollama => { body = build_ollama_embed_body(config, texts); headers = ollama_embed_headers() },
         Custom => { body = build_openai_embed_body(config, texts); headers = openai_embed_headers(config) }
+    }
 
     pon http_result: HttpResult = https_post(config.host, config.port, config.path, headers, body, config.timeout_ms)
     si http_result.ok == false { da Err(new_network_error(http_result.error_msg)) }
 
     pon status_check: Result<String, EmbeddingError> = check_http_status(http_result.status_code, http_result.body)
-    match status_check:
+    match status_check {
         Err(e) => { da Err(e) },
-        Ok(resp_body) =>:
+        Ok(resp_body) => {
             pon mut parse_result: Result<List<List<Float>>, EmbeddingError> = Err(new_parse_error("Unknown provider"))
-            match config.provider:
+            match config.provider {
                 OpenAI => { parse_result = parse_openai_embed_response(resp_body) },
                 Ollama => { parse_result = parse_ollama_embed_response(resp_body) },
                 Custom => { parse_result = parse_openai_embed_response(resp_body) }
-            match parse_result:
+            }
+            match parse_result {
                 Err(e) => { da Err(e) },
-                Ok(vectors) =>:
+                Ok(vectors) => {
                     si len(vectors) == 0 { da Err(new_parse_error("No vectors returned")) }
                     pon tokens: Int = jget_int(jget(resp_body, "usage"), "prompt_tokens")
                     da Ok(new_embedding_result(vectors[0], tokens, config.model))
+                }
+            }
+        }
+    }
     da Err(new_parse_error("Unreachable"))
+}
 
-+fn embed_batch(config: EmbedConfig, texts: List<String>) -> Result<BatchEmbeddingResult, EmbeddingError>:
+pub fn embed_batch(config: EmbedConfig, texts: List<String>) -> Result<BatchEmbeddingResult, EmbeddingError> {
     si len(texts) == 0 { da Err(new_invalid_input("No texts provided")) }
 
     pon mut body: String = ""
     pon mut headers: Map<String, String> = #{}
 
-    match config.provider:
+    match config.provider {
         OpenAI => { body = build_openai_embed_body(config, texts); headers = openai_embed_headers(config) },
         Ollama => { body = build_ollama_embed_body(config, texts); headers = ollama_embed_headers() },
         Custom => { body = build_openai_embed_body(config, texts); headers = openai_embed_headers(config) }
+    }
 
     pon http_result: HttpResult = https_post(config.host, config.port, config.path, headers, body, config.timeout_ms)
     si http_result.ok == false { da Err(new_network_error(http_result.error_msg)) }
 
     pon status_check: Result<String, EmbeddingError> = check_http_status(http_result.status_code, http_result.body)
-    match status_check:
+    match status_check {
         Err(e) => { da Err(e) },
-        Ok(resp_body) =>:
+        Ok(resp_body) => {
             pon mut parse_result: Result<List<List<Float>>, EmbeddingError> = Err(new_parse_error("Unknown provider"))
-            match config.provider:
+            match config.provider {
                 OpenAI => { parse_result = parse_openai_embed_response(resp_body) },
                 Ollama => { parse_result = parse_ollama_embed_response(resp_body) },
                 Custom => { parse_result = parse_openai_embed_response(resp_body) }
-            match parse_result:
+            }
+            match parse_result {
                 Err(e) => { da Err(e) },
-                Ok(vectors) =>:
+                Ok(vectors) => {
                     pon tokens: Int = jget_int(jget(resp_body, "usage"), "prompt_tokens")
                     da Ok(new_batch_result(vectors, tokens, config.model))
+                }
+            }
+        }
+    }
     da Err(new_parse_error("Unreachable"))
+}
 
 // ---------------------------------------------------------------------------
 // Vector Store — In-memory vector index with brute-force search
 // ---------------------------------------------------------------------------
 
-+tipo VectorEntry:
+pub tipo VectorEntry {
     id: String,
     text: String,
     vector: List<Float>,
     metadata: Map<String, String>
+}
 
-+tipo VectorStore:
+pub tipo VectorStore {
     entries: List<VectorEntry>,
     count: Int
+}
 
-+tipo SearchResult:
+pub tipo SearchResult {
     id: String,
     text: String,
     score: Float,
     metadata: Map<String, String>
+}
 
-+fn new_store() -> VectorStore:
+pub fn new_store() -> VectorStore {
     da new VectorStore {entries: [], count: 0}
+}
 
-+fn store_add(store: VectorStore, id: String, text: String, vector: List<Float>) -> VectorStore:
+pub fn store_add(store: VectorStore, id: String, text: String, vector: List<Float>) -> VectorStore {
     pon entry: VectorEntry = new VectorEntry {id: id, text: text, vector: vector, metadata: #{}}
     da new VectorStore {entries: store.entries + [entry], count: store.count + 1}
+}
 
-+fn store_add_with_meta(store: VectorStore, id: String, text: String, vector: List<Float>, metadata: Map<String, String>) -> VectorStore:
+pub fn store_add_with_meta(store: VectorStore, id: String, text: String, vector: List<Float>, metadata: Map<String, String>) -> VectorStore {
     pon entry: VectorEntry = new VectorEntry {id: id, text: text, vector: vector, metadata: metadata}
     da new VectorStore {entries: store.entries + [entry], count: store.count + 1}
+}
 
-+fn store_search(store: VectorStore, query: List<Float>, top_k: Int) -> List<SearchResult>:
+pub fn store_search(store: VectorStore, query: List<Float>, top_k: Int) -> List<SearchResult> {
     // Compute cosine similarity against all entries
     pon count: Int = store.count
     pon mut scored: List<SearchResult> = []
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon score: Float = cosine_similarity(query, store.entries[i].vector)
         pon sr: SearchResult = new SearchResult {id: store.entries[i].id, text: store.entries[i].text, score: score, metadata: store.entries[i].metadata}
         scored = scored + [sr]
         i = i + 1
+    }
 
     // Selection sort for top-K (fine for small stores)
     pon scored_count: Int = len(scored)
@@ -752,45 +868,58 @@ fn parse_ollama_embed_response(body: String) -> Result<List<List<Float>>, Embedd
     mien si < scored_count { selected = selected + [false]; si = si + 1 }
 
     pon mut k: Int = 0
-    mien k < top_k:
+    mien k < top_k {
         si k >= scored_count { sal }
         pon mut best_idx: Int = -1
         pon mut best_score: Float = -2.0
         pon mut j: Int = 0
-        mien j < scored_count:
-            si selected[j] == false:
-                si scored[j].score > best_score:
+        mien j < scored_count {
+            si selected[j] == false {
+                si scored[j].score > best_score {
                     best_score = scored[j].score
                     best_idx = j
+                }
+            }
             j = j + 1
-        si best_idx >= 0:
+        }
+        si best_idx >= 0 {
             selected[best_idx] = true
             results = results + [scored[best_idx]]
+        }
         k = k + 1
+    }
 
     da results
+}
 
-+fn store_search_threshold(store: VectorStore, query: List<Float>, min_score: Float) -> List<SearchResult>:
+pub fn store_search_threshold(store: VectorStore, query: List<Float>, min_score: Float) -> List<SearchResult> {
     pon count: Int = store.count
     pon mut results: List<SearchResult> = []
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon score: Float = cosine_similarity(query, store.entries[i].vector)
-        si score >= min_score:
+        si score >= min_score {
             pon sr: SearchResult = new SearchResult {id: store.entries[i].id, text: store.entries[i].text, score: score, metadata: store.entries[i].metadata}
             results = results + [sr]
+        }
         i = i + 1
+    }
     da results
+}
 
-+fn store_remove(store: VectorStore, id: String) -> VectorStore:
+pub fn store_remove(store: VectorStore, id: String) -> VectorStore {
     pon mut new_entries: List<VectorEntry> = []
     pon count: Int = store.count
     pon mut i: Int = 0
-    mien i < count:
-        si store.entries[i].id != id:
+    mien i < count {
+        si store.entries[i].id != id {
             new_entries = new_entries + [store.entries[i]]
+        }
         i = i + 1
+    }
     da new VectorStore {entries: new_entries, count: len(new_entries)}
+}
 
-+fn store_size(store: VectorStore) -> Int:
+pub fn store_size(store: VectorStore) -> Int {
     da store.count
+}

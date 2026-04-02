@@ -3,22 +3,26 @@
 // Run: node --experimental-wasi-unstable-preview1 hello.wasm
 //   or: load hello.wasm in browser via playground
 
-fn greet(name: String) -> String:
+fn greet(name: String) -> String {
     da "Hello, " + name + "! Welcome to Mapanare on WASM."
+}
 
-fn fibonacci(n: Int) -> Int:
-    si n <= 1:
+fn fibonacci(n: Int) -> Int {
+    si n <= 1 {
         da n
+    }
     da fibonacci(n - 1) + fibonacci(n - 2)
+}
 
-fn main:
+fn main() {
     print(greet("World"))
     print("")
 
     // Fibonacci sequence
     print("Fibonacci sequence:")
-    cada i en 0..15:
+    cada i en 0..15 {
         print("  fib(" + str(i) + ") = " + str(fibonacci(i)))
+    }
 
     // String operations
     pon msg: String = "Mapanare runs everywhere"
@@ -35,3 +39,4 @@ fn main:
     print("e  = " + str(y))
     print("pi + e = " + str(x + y))
     print("pi * e = " + str(x * y))
+}

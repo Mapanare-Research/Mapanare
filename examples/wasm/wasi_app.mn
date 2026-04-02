@@ -7,33 +7,44 @@
 
 usa wasm::runtime
 
-fn factorial(n: Int) -> Int:
-    si n <= 1:
+fn factorial(n: Int) -> Int {
+    si n <= 1 {
         da 1
+    }
     da n * factorial(n - 1)
+}
 
-fn is_prime(n: Int) -> Bool:
-    si n < 2:
+fn is_prime(n: Int) -> Bool {
+    si n < 2 {
         da false
-    si n < 4:
+    }
+    si n < 4 {
         da true
-    si n % 2 == 0:
+    }
+    si n % 2 == 0 {
         da false
+    }
     pon mut i: Int = 3
-    mien i * i <= n:
-        si n % i == 0:
+    mien i * i <= n {
+        si n % i == 0 {
             da false
+        }
         i = i + 2
+    }
     da true
+}
 
-fn sieve_primes(limit: Int) -> List<Int>:
+fn sieve_primes(limit: Int) -> List<Int> {
     pon mut primes: List<Int> = []
-    cada n en 2..limit + 1:
-        si is_prime(n):
+    cada n en 2..limit + 1 {
+        si is_prime(n) {
             primes = primes + [n]
+        }
+    }
     da primes
+}
 
-fn main:
+fn main() {
     print("=== Mapanare on WASI ===")
     print("Running as native WebAssembly via WASI")
     print("")
@@ -41,15 +52,17 @@ fn main:
     // WASI environment
     pon args: List<String> = runtime.wasi_args()
     print("Arguments: " + str(len(args)))
-    cada arg en args:
+    cada arg en args {
         print("  " + arg)
+    }
 
     print("")
 
     // Factorial computation
     print("Factorials:")
-    cada i en 1..13:
+    cada i en 1..13 {
         print("  " + str(i) + "! = " + str(factorial(i)))
+    }
 
     print("")
 
@@ -67,3 +80,4 @@ fn main:
 
     print("")
     print("Done!")
+}

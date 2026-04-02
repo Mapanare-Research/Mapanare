@@ -11,7 +11,7 @@
 // Mutation strategy enum
 // ---------------------------------------------------------------------------
 
-+tipo MutationStrategy:
+pub tipo MutationStrategy {
     | FlipCase
     | Repeat
     | Truncate
@@ -20,40 +20,49 @@
     | BoundaryInt
     | BoundaryStr
     | Unicode
+}
 
 // ---------------------------------------------------------------------------
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-fn new_flip_case() -> MutationStrategy:
+fn new_flip_case() -> MutationStrategy {
     da FlipCase()
+}
 
-fn new_repeat() -> MutationStrategy:
+fn new_repeat() -> MutationStrategy {
     da Repeat()
+}
 
-fn new_truncate() -> MutationStrategy:
+fn new_truncate() -> MutationStrategy {
     da Truncate()
+}
 
-fn new_null_byte() -> MutationStrategy:
+fn new_null_byte() -> MutationStrategy {
     da NullByte()
+}
 
-fn new_overflow() -> MutationStrategy:
+fn new_overflow() -> MutationStrategy {
     da Overflow()
+}
 
-fn new_boundary_int() -> MutationStrategy:
+fn new_boundary_int() -> MutationStrategy {
     da BoundaryInt()
+}
 
-fn new_boundary_str() -> MutationStrategy:
+fn new_boundary_str() -> MutationStrategy {
     da BoundaryStr()
+}
 
-fn new_unicode() -> MutationStrategy:
+fn new_unicode() -> MutationStrategy {
     da Unicode()
+}
 
 // ---------------------------------------------------------------------------
 // Character helpers
 // ---------------------------------------------------------------------------
 
-fn is_upper(ch: String) -> Bool:
+fn is_upper(ch: String) -> Bool {
     si ch == "A" { da true }
     si ch == "B" { da true }
     si ch == "C" { da true }
@@ -81,8 +90,9 @@ fn is_upper(ch: String) -> Bool:
     si ch == "Y" { da true }
     si ch == "Z" { da true }
     da false
+}
 
-fn is_lower(ch: String) -> Bool:
+fn is_lower(ch: String) -> Bool {
     si ch == "a" { da true }
     si ch == "b" { da true }
     si ch == "c" { da true }
@@ -110,55 +120,64 @@ fn is_lower(ch: String) -> Bool:
     si ch == "y" { da true }
     si ch == "z" { da true }
     da false
+}
 
 // ---------------------------------------------------------------------------
 // flip_case — toggle ASCII case of each character
 // ---------------------------------------------------------------------------
 
-+fn flip_case(input: String) -> String:
+pub fn flip_case(input: String) -> String {
     pon slen: Int = len(input)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = input.char_at(i)
-        si is_upper(ch):
+        si is_upper(ch) {
             result = result + ch.to_lower()
-        sino si is_lower(ch):
+        } sino si is_lower(ch) {
             result = result + ch.to_upper()
-        sino:
+        } sino {
             result = result + ch
+        }
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // repeat_string — repeat input N times (buffer overflow testing)
 // ---------------------------------------------------------------------------
 
-+fn repeat_string(input: String, n: Int) -> String:
+pub fn repeat_string(input: String, n: Int) -> String {
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < n:
+    mien i < n {
         result = result + input
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // truncate — truncate to N characters
 // ---------------------------------------------------------------------------
 
-+fn truncate(input: String, n: Int) -> String:
+pub fn truncate(input: String, n: Int) -> String {
     pon slen: Int = len(input)
-    si n >= slen:
+    si n >= slen {
         da input
-    si n <= 0:
+    }
+    si n <= 0 {
         da ""
+    }
     da input.substr(0, n)
+}
 
 // ---------------------------------------------------------------------------
 // null_byte_inject — return variants with \0 at start, middle, end
 // ---------------------------------------------------------------------------
 
-+fn null_byte_inject(input: String) -> List<String>:
+pub fn null_byte_inject(input: String) -> List<String> {
     pon slen: Int = len(input)
     pon null_ch: String = "\0"
     pon mut results: List<String> = []
@@ -167,13 +186,14 @@ fn is_lower(ch: String) -> Bool:
     results = results + [null_ch + input]
 
     // Null byte in the middle
-    si slen > 0:
+    si slen > 0 {
         pon mid: Int = slen / 2
         pon left: String = input.substr(0, mid)
         pon right: String = input.substr(mid, slen)
         results = results + [left + null_ch + right]
-    sino:
+    } sino {
         results = results + [null_ch]
+    }
 
     // Null byte at end
     results = results + [input + null_ch]
@@ -183,24 +203,27 @@ fn is_lower(ch: String) -> Bool:
     results = results + [input + null_ch + null_ch]
 
     da results
+}
 
 // ---------------------------------------------------------------------------
 // overflow_string — generate string of N "A" chars
 // ---------------------------------------------------------------------------
 
-+fn overflow_string(n: Int) -> String:
+pub fn overflow_string(n: Int) -> String {
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < n:
+    mien i < n {
         result = result + "A"
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // boundary_ints — common integer boundary values as strings
 // ---------------------------------------------------------------------------
 
-+fn boundary_ints() -> List<String>:
+pub fn boundary_ints() -> List<String> {
     pon mut results: List<String> = []
     results = results + ["0"]
     results = results + ["-1"]
@@ -225,12 +248,13 @@ fn is_lower(ch: String) -> Bool:
     results = results + ["00"]
     results = results + ["01"]
     da results
+}
 
 // ---------------------------------------------------------------------------
 // boundary_strings — common string boundary/edge cases
 // ---------------------------------------------------------------------------
 
-+fn boundary_strings() -> List<String>:
+pub fn boundary_strings() -> List<String> {
     pon mut results: List<String> = []
 
     // Empty and whitespace
@@ -255,9 +279,10 @@ fn is_lower(ch: String) -> Bool:
     pon unicode_variants: List<String> = generate_unicode_variants()
     pon ucount: Int = len(unicode_variants)
     pon mut i: Int = 0
-    mien i < ucount:
+    mien i < ucount {
         results = results + [unicode_variants[i]]
         i = i + 1
+    }
 
     // Special characters
     results = results + ["'"]
@@ -270,12 +295,13 @@ fn is_lower(ch: String) -> Bool:
     results = results + ["%n%n%n%n"]
 
     da results
+}
 
 // ---------------------------------------------------------------------------
 // generate_unicode_variants — common unicode edge cases
 // ---------------------------------------------------------------------------
 
-fn generate_unicode_variants() -> List<String>:
+fn generate_unicode_variants() -> List<String> {
     pon mut results: List<String> = []
 
     // Common unicode test strings
@@ -308,97 +334,118 @@ fn generate_unicode_variants() -> List<String>:
     results = results + ["\u2602"]
 
     da results
+}
 
 // ---------------------------------------------------------------------------
 // mutate — dispatch to a strategy, return all variants
 // ---------------------------------------------------------------------------
 
-+fn mutate(input: String, strategy: MutationStrategy) -> List<String>:
+pub fn mutate(input: String, strategy: MutationStrategy) -> List<String> {
     pon mut results: List<String> = []
 
-    match strategy:
-        FlipCase =>:
+    match strategy {
+        FlipCase => {
             results = results + [flip_case(input)]
-        Repeat =>:
+        },
+        Repeat => {
             results = results + [repeat_string(input, 2)]
             results = results + [repeat_string(input, 10)]
             results = results + [repeat_string(input, 100)]
             results = results + [repeat_string(input, 1000)]
-        Truncate =>:
+        },
+        Truncate => {
             pon slen: Int = len(input)
-            si slen > 0:
+            si slen > 0 {
                 results = results + [truncate(input, 1)]
                 results = results + [truncate(input, slen / 2)]
+            }
             results = results + [truncate(input, 0)]
-        NullByte =>:
+        },
+        NullByte => {
             results = null_byte_inject(input)
-        Overflow =>:
+        },
+        Overflow => {
             results = results + [overflow_string(256)]
             results = results + [overflow_string(1024)]
             results = results + [overflow_string(4096)]
             results = results + [overflow_string(65536)]
-        BoundaryInt =>:
+        },
+        BoundaryInt => {
             results = boundary_ints()
-        BoundaryStr =>:
+        },
+        BoundaryStr => {
             results = boundary_strings()
-        Unicode =>:
+        },
+        Unicode => {
             results = generate_unicode_variants()
+        }
+    }
 
     da results
+}
 
 // ---------------------------------------------------------------------------
 // mutate_all — apply ALL strategies, return combined list
 // ---------------------------------------------------------------------------
 
-+fn mutate_all(input: String) -> List<String>:
+pub fn mutate_all(input: String) -> List<String> {
     pon mut results: List<String> = []
 
     pon flip_results: List<String> = mutate(input, FlipCase())
     pon mut i: Int = 0
-    mien i < len(flip_results):
+    mien i < len(flip_results) {
         results = results + [flip_results[i]]
         i = i + 1
+    }
 
     pon repeat_results: List<String> = mutate(input, Repeat())
     i = 0
-    mien i < len(repeat_results):
+    mien i < len(repeat_results) {
         results = results + [repeat_results[i]]
         i = i + 1
+    }
 
     pon trunc_results: List<String> = mutate(input, Truncate())
     i = 0
-    mien i < len(trunc_results):
+    mien i < len(trunc_results) {
         results = results + [trunc_results[i]]
         i = i + 1
+    }
 
     pon null_results: List<String> = mutate(input, NullByte())
     i = 0
-    mien i < len(null_results):
+    mien i < len(null_results) {
         results = results + [null_results[i]]
         i = i + 1
+    }
 
     pon overflow_results: List<String> = mutate(input, Overflow())
     i = 0
-    mien i < len(overflow_results):
+    mien i < len(overflow_results) {
         results = results + [overflow_results[i]]
         i = i + 1
+    }
 
     pon bint_results: List<String> = mutate(input, BoundaryInt())
     i = 0
-    mien i < len(bint_results):
+    mien i < len(bint_results) {
         results = results + [bint_results[i]]
         i = i + 1
+    }
 
     pon bstr_results: List<String> = mutate(input, BoundaryStr())
     i = 0
-    mien i < len(bstr_results):
+    mien i < len(bstr_results) {
         results = results + [bstr_results[i]]
         i = i + 1
+    }
 
     pon unicode_results: List<String> = mutate(input, Unicode())
     i = 0
-    mien i < len(unicode_results):
+    mien i < len(unicode_results) {
         results = results + [unicode_results[i]]
         i = i + 1
+    }
 
     da results
+}

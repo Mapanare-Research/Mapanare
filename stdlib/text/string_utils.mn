@@ -10,7 +10,7 @@
 // Callers that want 0-on-invalid should clamp: if val < 0 { val = 0 }.
 // ---------------------------------------------------------------------------
 
-+fn hex_digit_value(ch: String) -> Int:
+pub fn hex_digit_value(ch: String) -> Int {
     si ch == "0" { da 0 }
     si ch == "1" { da 1 }
     si ch == "2" { da 2 }
@@ -34,23 +34,25 @@
     si ch == "E" { da 14 }
     si ch == "F" { da 15 }
     da -1
+}
 
 // ---------------------------------------------------------------------------
 // Hex digit value (zero-default) — same as hex_digit_value but returns 0
 // for invalid hex digits.  Used by json.mn's unicode escape parser.
 // ---------------------------------------------------------------------------
 
-+fn hex_digit_value_or_zero(ch: String) -> Int:
+pub fn hex_digit_value_or_zero(ch: String) -> Int {
     pon v: Int = hex_digit_value(ch)
     si v < 0 { da 0 }
     da v
+}
 
 // ---------------------------------------------------------------------------
 // to_lower_char — convert a single ASCII uppercase character to lowercase.
 // Takes the character and its byte value (from byte_at).
 // ---------------------------------------------------------------------------
 
-+fn to_lower_char(ch: String, b: Int) -> String:
+pub fn to_lower_char(ch: String, b: Int) -> String {
     si b < 65 { da ch }
     si b > 90 { da ch }
     si ch == "A" { da "a" }
@@ -80,28 +82,31 @@
     si ch == "Y" { da "y" }
     si ch == "Z" { da "z" }
     da ch
+}
 
 // ---------------------------------------------------------------------------
 // to_lower — convert an entire ASCII string to lowercase.
 // ---------------------------------------------------------------------------
 
-+fn to_lower(s: String) -> String:
+pub fn to_lower(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         pon b: Int = s.byte_at(i)
         result = result + to_lower_char(ch, b)
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // to_upper_char — convert a single ASCII lowercase character to uppercase.
 // Takes the character and its byte value (from byte_at).
 // ---------------------------------------------------------------------------
 
-+fn to_upper_char(ch: String, b: Int) -> String:
+pub fn to_upper_char(ch: String, b: Int) -> String {
     si b < 97 { da ch }
     si b > 122 { da ch }
     si ch == "a" { da "A" }
@@ -131,32 +136,35 @@
     si ch == "y" { da "Y" }
     si ch == "z" { da "Z" }
     da ch
+}
 
 // ---------------------------------------------------------------------------
 // to_upper — convert an entire ASCII string to uppercase.
 // ---------------------------------------------------------------------------
 
-+fn to_upper(s: String) -> String:
+pub fn to_upper(s: String) -> String {
     pon slen: Int = len(s)
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         pon b: Int = s.byte_at(i)
         result = result + to_upper_char(ch, b)
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // parse_int_manual — parse a decimal integer from a string of digits.
 // Stops at the first non-digit character.
 // ---------------------------------------------------------------------------
 
-+fn parse_int_manual(s: String) -> Int:
+pub fn parse_int_manual(s: String) -> Int {
     pon slen: Int = len(s)
     pon mut result: Int = 0
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
         pon mut digit: Int = 0
         si ch == "0" { digit = 0
@@ -169,19 +177,21 @@
         } sino { si ch == "7" { digit = 7
         } sino { si ch == "8" { digit = 8
         } sino { si ch == "9" { digit = 9
-        sino:
+        } sino {
             da result
         } } } } } } } } } }
         result = result * 10 + digit
         i = i + 1
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // digit_value — convert a single decimal digit character to its integer value.
 // Returns 0 for non-digit characters.
 // ---------------------------------------------------------------------------
 
-+fn digit_value(ch: String) -> Int:
+pub fn digit_value(ch: String) -> Int {
     si ch == "0" { da 0 }
     si ch == "1" { da 1 }
     si ch == "2" { da 2 }
@@ -193,30 +203,33 @@
     si ch == "8" { da 8 }
     si ch == "9" { da 9 }
     da 0
+}
 
 // ---------------------------------------------------------------------------
 // is_digit — check if a character is an ASCII decimal digit.
 // ---------------------------------------------------------------------------
 
-+fn is_digit(ch: String) -> Bool:
+pub fn is_digit(ch: String) -> Bool {
     si ch >= "0" { si ch <= "9" { da true } }
     da false
+}
 
 // ---------------------------------------------------------------------------
 // is_hex — check if a character is a hexadecimal digit.
 // ---------------------------------------------------------------------------
 
-+fn is_hex(ch: String) -> Bool:
+pub fn is_hex(ch: String) -> Bool {
     si is_digit(ch) { da true }
     si ch >= "a" { si ch <= "f" { da true } }
     si ch >= "A" { si ch <= "F" { da true } }
     da false
+}
 
 // ---------------------------------------------------------------------------
 // hex_char — convert an integer 0-15 to its hex character (uppercase).
 // ---------------------------------------------------------------------------
 
-+fn hex_char(n: Int) -> String:
+pub fn hex_char(n: Int) -> String {
     si n == 0 { da "0" }
     si n == 1 { da "1" }
     si n == 2 { da "2" }
@@ -234,3 +247,4 @@
     si n == 14 { da "E" }
     si n == 15 { da "F" }
     da "0"
+}

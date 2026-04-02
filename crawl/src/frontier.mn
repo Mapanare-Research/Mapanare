@@ -9,36 +9,40 @@ usa crawl::src::url
 // FrontierEntry struct
 // ---------------------------------------------------------------------------
 
-+tipo FrontierEntry:
+pub tipo FrontierEntry {
     url: String,
     depth: Int,
     priority: Int
+}
 
 // ---------------------------------------------------------------------------
 // Frontier struct
 // ---------------------------------------------------------------------------
 
-+tipo Frontier:
+pub tipo Frontier {
     queue: List<FrontierEntry>,
     seen: Map<String, Bool>,
     domain_last_fetch: Map<String, Int>,
     last_popped: String,
     last_popped_depth: Int,
     last_popped_valid: Bool
+}
 
 // ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
 
 /// Create a new empty Frontier.
-+fn new_frontier() -> Frontier:
-    da new Frontier:
+pub fn new_frontier() -> Frontier {
+    da new Frontier {
         queue: [],
         seen: #{},
         domain_last_fetch: #{},
         last_popped: "",
         last_popped_depth: 0,
         last_popped_valid: false
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Core operations
@@ -46,17 +50,20 @@ usa crawl::src::url
 
 /// Add a URL to the frontier if it hasn't been seen before.
 /// Deduplicates by URL fingerprint.
-+fn frontier_add(f: Frontier, target_url: String, depth: Int) -> Frontier:
+pub fn frontier_add(f: Frontier, target_url: String, depth: Int) -> Frontier {
     pon fingerprint: String = url.url_fingerprint(target_url)
 
     // Check if already seen
     pon mut already_seen: Bool = false
-    cada key en f.seen:
-        si key == fingerprint:
+    cada key en f.seen {
+        si key == fingerprint {
             already_seen = true
+        }
+    }
 
-    si already_seen:
+    si already_seen {
         da f
+    }
 
     // Calculate priority: lower depth = higher priority (lower number)
     pon priority: Int = depth
@@ -69,79 +76,94 @@ usa crawl::src::url
     pon mut inserted: Bool = false
     pon mut i: Int = 0
 
-    mien i < qlen:
+    mien i < qlen {
         pon existing: FrontierEntry = f.queue[i]
-        si inserted == false:
-            si entry.priority <= existing.priority:
+        si inserted == false {
+            si entry.priority <= existing.priority {
                 new_queue = new_queue + [entry]
                 inserted = true
+            }
+        }
         new_queue = new_queue + [existing]
         i = i + 1
+    }
 
-    si inserted == false:
+    si inserted == false {
         new_queue = new_queue + [entry]
+    }
 
     // Mark as seen
     pon mut new_seen: Map<String, Bool> = f.seen
     new_seen[fingerprint] = true
 
-    da new Frontier:
+    da new Frontier {
         queue: new_queue,
         seen: new_seen,
         domain_last_fetch: f.domain_last_fetch,
         last_popped: f.last_popped,
         last_popped_depth: f.last_popped_depth,
         last_popped_valid: false
+    }
+}
 
 /// Pop the next URL from the frontier, respecting per-domain delay.
 /// The popped entry is accessible via frontier_last_popped().
 /// If no entry is ready (all domains on cooldown), returns frontier with
 /// last_popped_valid = false.
-+fn frontier_next(f: Frontier, now_ms: Int, delay_ms: Int) -> Frontier:
+pub fn frontier_next(f: Frontier, now_ms: Int, delay_ms: Int) -> Frontier {
     pon qlen: Int = len(f.queue)
-    si qlen == 0:
-        da new Frontier:
+    si qlen == 0 {
+        da new Frontier {
             queue: f.queue,
             seen: f.seen,
             domain_last_fetch: f.domain_last_fetch,
             last_popped: "",
             last_popped_depth: 0,
             last_popped_valid: false
+        }
+    }
 
     // Find the first entry whose domain is not on cooldown
     pon mut found_idx: Int = -1
     pon mut i: Int = 0
-    mien i < qlen:
+    mien i < qlen {
         pon entry: FrontierEntry = f.queue[i]
         pon domain: String = extract_domain(entry.url)
 
         pon mut last_fetch: Int = 0
         pon mut has_last: Bool = false
-        cada key en f.domain_last_fetch:
-            si key == domain:
+        cada key en f.domain_last_fetch {
+            si key == domain {
                 last_fetch = f.domain_last_fetch[key]
                 has_last = true
+            }
+        }
 
-        si has_last == false:
+        si has_last == false {
             // Never fetched this domain — good to go
             found_idx = i
             sal
-        sino:
+        } sino {
             pon elapsed: Int = now_ms - last_fetch
-            si elapsed >= delay_ms:
+            si elapsed >= delay_ms {
                 found_idx = i
                 sal
+            }
+        }
         i = i + 1
+    }
 
-    si found_idx < 0:
+    si found_idx < 0 {
         // All domains on cooldown
-        da new Frontier:
+        da new Frontier {
             queue: f.queue,
             seen: f.seen,
             domain_last_fetch: f.domain_last_fetch,
             last_popped: "",
             last_popped_depth: 0,
             last_popped_valid: false
+        }
+    }
 
     pon popped: FrontierEntry = f.queue[found_idx]
     pon popped_domain: String = extract_domain(popped.url)
@@ -149,56 +171,69 @@ usa crawl::src::url
     // Remove from queue
     pon mut new_queue: List<FrontierEntry> = []
     pon mut j: Int = 0
-    mien j < qlen:
-        si j != found_idx:
+    mien j < qlen {
+        si j != found_idx {
             new_queue = new_queue + [f.queue[j]]
+        }
         j = j + 1
+    }
 
     // Update domain timestamp
     pon mut new_domain_ts: Map<String, Int> = f.domain_last_fetch
     new_domain_ts[popped_domain] = now_ms
 
-    da new Frontier:
+    da new Frontier {
         queue: new_queue,
         seen: new_seen_copy(f.seen),
         domain_last_fetch: new_domain_ts,
         last_popped: popped.url,
         last_popped_depth: popped.depth,
         last_popped_valid: true
+    }
+}
 
 /// Get the entry that was just popped by frontier_next.
 /// Returns None if no entry was popped (empty queue or all on cooldown).
-+fn frontier_last_popped(f: Frontier) -> Option<FrontierEntry>:
-    si f.last_popped_valid:
+pub fn frontier_last_popped(f: Frontier) -> Option<FrontierEntry> {
+    si f.last_popped_valid {
         da Some(new FrontierEntry { url: f.last_popped, depth: f.last_popped_depth, priority: f.last_popped_depth })
+    }
     da None()
+}
 
 /// Return the number of pending URLs in the frontier.
-+fn frontier_size(f: Frontier) -> Int:
+pub fn frontier_size(f: Frontier) -> Int {
     da len(f.queue)
+}
 
 /// Check if the frontier queue is empty.
-+fn frontier_is_empty(f: Frontier) -> Bool:
+pub fn frontier_is_empty(f: Frontier) -> Bool {
     da len(f.queue) == 0
+}
 
 /// Return the total number of URLs seen (including already crawled).
-+fn frontier_seen_count(f: Frontier) -> Int:
+pub fn frontier_seen_count(f: Frontier) -> Int {
     pon mut count: Int = 0
-    cada key en f.seen:
+    cada key en f.seen {
         count = count + 1
+    }
     da count
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
 /// Extract the domain (host) from a URL string.
-fn extract_domain(target_url: String) -> String:
+fn extract_domain(target_url: String) -> String {
     da url.extract_host(target_url)
+}
 
 /// Copy a seen map (identity copy — maps are value types in Mapanare).
-fn new_seen_copy(seen: Map<String, Bool>) -> Map<String, Bool>:
+fn new_seen_copy(seen: Map<String, Bool>) -> Map<String, Bool> {
     pon mut copy: Map<String, Bool> = #{}
-    cada key en seen:
+    cada key en seen {
         copy[key] = seen[key]
+    }
     da copy
+}

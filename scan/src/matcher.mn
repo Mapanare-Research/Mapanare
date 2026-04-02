@@ -10,61 +10,70 @@ usa text::regex
 // Core types
 // ---------------------------------------------------------------------------
 
-+tipo MatcherType:
+pub tipo MatcherType {
     | Status
     | Header
     | Body
     | Regex
     | ResponseTime
     | WordCount
+}
 
-+tipo Matcher:
+pub tipo Matcher {
     matcher_type: MatcherType,
     condition: String,
     values: List<String>,
     negative: Bool
+}
 
-+tipo ScanResponse:
+pub tipo ScanResponse {
     url: String,
     status: Int,
     headers: Map<String, String>,
     body: String,
     elapsed_ms: Int
+}
 
 // ---------------------------------------------------------------------------
 // Constructor helpers
 // ---------------------------------------------------------------------------
 
-fn new_matcher(mtype: MatcherType, condition: String, values: List<String>, negative: Bool) -> Matcher:
-    da new Matcher:
+fn new_matcher(mtype: MatcherType, condition: String, values: List<String>, negative: Bool) -> Matcher {
+    da new Matcher {
         matcher_type: mtype,
         condition: condition,
         values: values,
         negative: negative
+    }
+}
 
-fn new_scan_response(url: String, status: Int, headers: Map<String, String>, body: String, elapsed_ms: Int) -> ScanResponse:
-    da new ScanResponse:
+fn new_scan_response(url: String, status: Int, headers: Map<String, String>, body: String, elapsed_ms: Int) -> ScanResponse {
+    da new ScanResponse {
         url: url,
         status: status,
         headers: headers,
         body: body,
         elapsed_ms: elapsed_ms
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Internal: parse an integer from a string (simple decimal)
 // ---------------------------------------------------------------------------
 
-fn parse_int_value(s: String) -> Int:
+fn parse_int_value(s: String) -> Int {
     pon slen: Int = len(s)
-    si slen == 0:
+    si slen == 0 {
         da 0
+    }
     pon mut result: Int = 0
     pon mut i: Int = 0
     pon mut negative: Bool = false
-    si s.char_at(0) == "-":
+    si s.char_at(0) == "-" {
         negative = true
         i = 1
-    mien i < slen:
+    }
+    mien i < slen {
         pon ch: String = s.char_at(i)
         si ch == "0" { result = result * 10 }
         sino si ch == "1" { result = result * 10 + 1 }
@@ -78,147 +87,179 @@ fn parse_int_value(s: String) -> Int:
         sino si ch == "9" { result = result * 10 + 9 }
         sino { sal }
         i = i + 1
-    si negative:
+    }
+    si negative {
         da 0 - result
+    }
     da result
+}
 
 // ---------------------------------------------------------------------------
 // Internal: count words (whitespace-delimited tokens) in a string
 // ---------------------------------------------------------------------------
 
-fn count_words(s: String) -> Int:
+fn count_words(s: String) -> Int {
     pon slen: Int = len(s)
-    si slen == 0:
+    si slen == 0 {
         da 0
+    }
     pon mut count: Int = 0
     pon mut in_word: Bool = false
     pon mut i: Int = 0
-    mien i < slen:
+    mien i < slen {
         pon ch: String = s.char_at(i)
-        si ch == " ":
-            si in_word:
+        si ch == " " {
+            si in_word {
                 count = count + 1
                 in_word = false
-        sino si ch == "\t":
-            si in_word:
+            }
+        } sino si ch == "\t" {
+            si in_word {
                 count = count + 1
                 in_word = false
-        sino si ch == "\n":
-            si in_word:
+            }
+        } sino si ch == "\n" {
+            si in_word {
                 count = count + 1
                 in_word = false
-        sino si ch == "\r":
-            si in_word:
+            }
+        } sino si ch == "\r" {
+            si in_word {
                 count = count + 1
                 in_word = false
-        sino:
+            }
+        } sino {
             in_word = true
+        }
         i = i + 1
-    si in_word:
+    }
+    si in_word {
         count = count + 1
+    }
     da count
+}
 
 // ---------------------------------------------------------------------------
 // Internal: check if a string contains a substring
 // ---------------------------------------------------------------------------
 
-fn string_contains(haystack: String, needle: String) -> Bool:
+fn string_contains(haystack: String, needle: String) -> Bool {
     pon idx: Int = haystack.find(needle)
     da idx >= 0
+}
 
 // ---------------------------------------------------------------------------
 // Status matcher: check if the response status matches any value in the list
 // ---------------------------------------------------------------------------
 
-+fn match_status(m: Matcher, status: Int) -> Bool:
+pub fn match_status(m: Matcher, status: Int) -> Bool {
     pon status_str: String = str(status)
     pon count: Int = len(m.values)
     pon mut i: Int = 0
-    mien i < count:
-        si m.values[i] == status_str:
+    mien i < count {
+        si m.values[i] == status_str {
             si m.negative { da false } sino { da true }
+        }
         i = i + 1
+    }
     si m.negative { da true } sino { da false }
+}
 
 // ---------------------------------------------------------------------------
 // Header matcher: check if any header contains any of the specified values
 // ---------------------------------------------------------------------------
 
-+fn match_header(m: Matcher, headers: Map<String, String>) -> Bool:
+pub fn match_header(m: Matcher, headers: Map<String, String>) -> Bool {
     pon val_count: Int = len(m.values)
     pon mut matched: Int = 0
     pon mut vi: Int = 0
-    mien vi < val_count:
+    mien vi < val_count {
         pon target: String = m.values[vi]
         pon mut found: Bool = false
-        cada hkey en headers:
+        cada hkey en headers {
             pon header_line: String = hkey + ": " + headers[hkey]
-            si string_contains(header_line, target):
+            si string_contains(header_line, target) {
                 found = true
-        si found:
+            }
+        }
+        si found {
             matched = matched + 1
+        }
         vi = vi + 1
+    }
 
     pon mut result: Bool = false
-    si m.condition == "or":
+    si m.condition == "or" {
         result = matched > 0
-    sino:
+    } sino {
         // AND: all must match
         result = matched == val_count
+    }
     si m.negative { da result == false } sino { da result }
+}
 
 // ---------------------------------------------------------------------------
 // Body matcher: check if the body contains all/any of the specified strings
 // ---------------------------------------------------------------------------
 
-+fn match_body(m: Matcher, body: String) -> Bool:
+pub fn match_body(m: Matcher, body: String) -> Bool {
     pon val_count: Int = len(m.values)
     pon mut matched: Int = 0
     pon mut vi: Int = 0
-    mien vi < val_count:
-        si string_contains(body, m.values[vi]):
+    mien vi < val_count {
+        si string_contains(body, m.values[vi]) {
             matched = matched + 1
+        }
         vi = vi + 1
+    }
 
     pon mut result: Bool = false
-    si m.condition == "or":
+    si m.condition == "or" {
         result = matched > 0
-    sino:
+    } sino {
         result = matched == val_count
+    }
     si m.negative { da result == false } sino { da result }
+}
 
 // ---------------------------------------------------------------------------
 // Regex matcher: check if body matches any/all regex patterns
 // ---------------------------------------------------------------------------
 
-+fn match_regex(m: Matcher, body: String) -> Bool:
+pub fn match_regex(m: Matcher, body: String) -> Bool {
     pon val_count: Int = len(m.values)
     pon mut matched: Int = 0
     pon mut vi: Int = 0
-    mien vi < val_count:
+    mien vi < val_count {
         pon is_hit: Bool = regex.is_match(m.values[vi], body)
-        si is_hit:
+        si is_hit {
             matched = matched + 1
+        }
         vi = vi + 1
+    }
 
     pon mut result: Bool = false
-    si m.condition == "or":
+    si m.condition == "or" {
         result = matched > 0
-    sino:
+    } sino {
         result = matched == val_count
+    }
     si m.negative { da result == false } sino { da result }
+}
 
 // ---------------------------------------------------------------------------
 // Response time matcher: check if elapsed time exceeds threshold
 // ---------------------------------------------------------------------------
 
-+fn match_response_time(m: Matcher, elapsed_ms: Int) -> Bool:
+pub fn match_response_time(m: Matcher, elapsed_ms: Int) -> Bool {
     pon val_count: Int = len(m.values)
-    si val_count == 0:
+    si val_count == 0 {
         si m.negative { da true } sino { da false }
+    }
     pon threshold: Int = parse_int_value(m.values[0])
     pon result: Bool = elapsed_ms > threshold
     si m.negative { da result == false } sino { da result }
+}
 
 // ---------------------------------------------------------------------------
 // Word count matcher: check if body word count meets condition
@@ -227,10 +268,11 @@ fn string_contains(haystack: String, needle: String) -> Bool:
 // values[1] = threshold number
 // ---------------------------------------------------------------------------
 
-+fn match_word_count(m: Matcher, body: String) -> Bool:
+pub fn match_word_count(m: Matcher, body: String) -> Bool {
     pon val_count: Int = len(m.values)
-    si val_count < 2:
+    si val_count < 2 {
         si m.negative { da true } sino { da false }
+    }
     pon op: String = m.values[0]
     pon threshold: Int = parse_int_value(m.values[1])
     pon wc: Int = count_words(body)
@@ -244,41 +286,48 @@ fn string_contains(haystack: String, needle: String) -> Bool:
     sino { result = false }
 
     si m.negative { da result == false } sino { da result }
+}
 
 // ---------------------------------------------------------------------------
 // Evaluate a single matcher against a response
 // ---------------------------------------------------------------------------
 
-+fn evaluate_single(m: Matcher, resp: ScanResponse) -> Bool:
-    match m.matcher_type:
+pub fn evaluate_single(m: Matcher, resp: ScanResponse) -> Bool {
+    match m.matcher_type {
         Status => { da match_status(m, resp.status) },
         Header => { da match_header(m, resp.headers) },
         Body => { da match_body(m, resp.body) },
         Regex => { da match_regex(m, resp.body) },
         ResponseTime => { da match_response_time(m, resp.elapsed_ms) },
         WordCount => { da match_word_count(m, resp.body) }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Evaluate all matchers (AND logic: all must pass)
 // ---------------------------------------------------------------------------
 
-+fn evaluate_matchers(matchers: List<Matcher>, resp: ScanResponse) -> Bool:
+pub fn evaluate_matchers(matchers: List<Matcher>, resp: ScanResponse) -> Bool {
     pon count: Int = len(matchers)
-    si count == 0:
+    si count == 0 {
         da false
+    }
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon passed: Bool = evaluate_single(matchers[i], resp)
-        si passed == false:
+        si passed == false {
             da false
+        }
         i = i + 1
+    }
     da true
+}
 
 // ---------------------------------------------------------------------------
 // Parse a matcher type string into the MatcherType enum
 // ---------------------------------------------------------------------------
 
-+fn parse_matcher_type(type_str: String) -> MatcherType:
+pub fn parse_matcher_type(type_str: String) -> MatcherType {
     si type_str == "status" { da Status() }
     si type_str == "header" { da Header() }
     si type_str == "body" { da Body() }
@@ -287,3 +336,4 @@ fn string_contains(haystack: String, needle: String) -> Bool:
     si type_str == "word_count" { da WordCount() }
     // Default to body matcher for unknown types
     da Body()
+}

@@ -1,3 +1,4 @@
-fn main:
+fn main() {
     pon x: Int = 2 + 3 * 4
     print(str(x))
+}

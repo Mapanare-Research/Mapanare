@@ -42,199 +42,239 @@ extern "C" fn __mn_sqlite3_errmsg(handle: Int) -> String
 // Connection
 // ---------------------------------------------------------------------------
 
-+fn sqlite_connect(path: String) -> Result<Connection, SqlError>:
+pub fn sqlite_connect(path: String) -> Result<Connection, SqlError> {
     pon handle: Int = __mn_sqlite3_open(path)
-    si handle == 0:
+    si handle == 0 {
         da Err(ConnectionFailed("Failed to open SQLite database: " + path))
+    }
     da Ok(new Connection { handle: handle, driver: "sqlite", url: "sqlite:///" + path })
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Bind parameters to a prepared statement
 // ---------------------------------------------------------------------------
 
-fn bind_params(stmt: Int, params: List<SqlValue>) -> Result<Bool, SqlError>:
+fn bind_params(stmt: Int, params: List<SqlValue>) -> Result<Bool, SqlError> {
     pon count: Int = len(params)
     pon mut i: Int = 0
-    mien i < count:
+    mien i < count {
         pon idx: Int = i + 1
         pon val: SqlValue = params[i]
         pon mut rc: Int = 0
 
-        match val:
-            Null =>:
+        match val {
+            Null => {
                 rc = __mn_sqlite3_bind_null(stmt, idx)
-            Int(n) =>:
+            },
+            Int(n) => {
                 rc = __mn_sqlite3_bind_int(stmt, idx, n)
-            Float(f) =>:
+            },
+            Float(f) => {
                 rc = __mn_sqlite3_bind_float(stmt, idx, f)
-            Str(s) =>:
+            },
+            Str(s) => {
                 rc = __mn_sqlite3_bind_str(stmt, idx, s)
-            Bool(b) =>:
-                si b:
+            },
+            Bool(b) => {
+                si b {
                     rc = __mn_sqlite3_bind_int(stmt, idx, 1)
-                sino:
+                } sino {
                     rc = __mn_sqlite3_bind_int(stmt, idx, 0)
+                }
+            }
+        }
 
-        si rc != 0:
+        si rc != 0 {
             da Err(QueryFailed("Failed to bind parameter at index " + str(idx)))
+        }
 
         i = i + 1
+    }
     da Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Read a single column value by type
 // ---------------------------------------------------------------------------
 
-fn read_column_value(stmt: Int, col: Int) -> SqlValue:
+fn read_column_value(stmt: Int, col: Int) -> SqlValue {
     pon col_type: Int = __mn_sqlite3_column_type(stmt, col)
 
     // SQLITE_NULL = 5
-    si col_type == 5:
+    si col_type == 5 {
         da Null()
+    }
     // SQLITE_INTEGER = 1
-    si col_type == 1:
+    si col_type == 1 {
         pon n: Int = __mn_sqlite3_column_int(stmt, col)
         da Int(n)
+    }
     // SQLITE_FLOAT = 2
-    si col_type == 2:
+    si col_type == 2 {
         pon f: Float = __mn_sqlite3_column_float(stmt, col)
         da Float(f)
+    }
     // SQLITE_TEXT = 3
-    si col_type == 3:
+    si col_type == 3 {
         pon s: String = __mn_sqlite3_column_str(stmt, col)
         da Str(s)
+    }
     // SQLITE_BLOB = 4 — read as string for now
-    si col_type == 4:
+    si col_type == 4 {
         pon s: String = __mn_sqlite3_column_str(stmt, col)
         da Str(s)
+    }
 
     da Null()
+}
 
 // ---------------------------------------------------------------------------
 // Internal: Collect all result rows from a stepped statement
 // ---------------------------------------------------------------------------
 
-fn collect_rows(stmt: Int) -> List<Row>:
+fn collect_rows(stmt: Int) -> List<Row> {
     pon mut rows: List<Row> = []
     pon col_count: Int = __mn_sqlite3_column_count(stmt)
 
     // Build column name list
     pon mut columns: List<String> = []
     pon mut c: Int = 0
-    mien c < col_count:
+    mien c < col_count {
         pon name: String = __mn_sqlite3_column_name(stmt, c)
         columns = columns + [name]
         c = c + 1
+    }
 
     // Step through rows (SQLITE_ROW = 100)
     pon mut iter: Int = 0
-    mien iter < 10000000:
+    mien iter < 10000000 {
         iter = iter + 1
         pon step_rc: Int = __mn_sqlite3_step(stmt)
 
-        si step_rc != 100:
+        si step_rc != 100 {
             sal
+        }
 
         // Read values for this row
         pon mut values: List<SqlValue> = []
         pon mut col: Int = 0
-        mien col < col_count:
+        mien col < col_count {
             pon val: SqlValue = read_column_value(stmt, col)
             values = values + [val]
             col = col + 1
+        }
 
         pon row: Row = new_row(columns, values)
         rows = rows + [row]
+    }
 
     da rows
+}
 
 // ---------------------------------------------------------------------------
 // Public API: Query (SELECT — returns rows)
 // ---------------------------------------------------------------------------
 
-+fn query(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<QueryResult, SqlError>:
+pub fn query(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<QueryResult, SqlError> {
     pon stmt: Int = __mn_sqlite3_prepare(conn.handle, sql_str)
-    si stmt == 0:
+    si stmt == 0 {
         pon errmsg: String = __mn_sqlite3_errmsg(conn.handle)
         da Err(QueryFailed("Prepare failed: " + errmsg))
+    }
 
     // Bind parameters
     pon bind_result: Result<Bool, SqlError> = bind_params(stmt, params)
-    match bind_result:
-        Err(e) =>:
+    match bind_result {
+        Err(e) => {
             pon fin_rc: Int = __mn_sqlite3_finalize(stmt)
             da Err(e)
+        },
         Ok(ok) => {}
+    }
 
     // Collect results
     pon rows: List<Row> = collect_rows(stmt)
     pon fin_rc: Int = __mn_sqlite3_finalize(stmt)
 
     da Ok(new QueryResult { rows: rows, affected: len(rows) })
+}
 
 // ---------------------------------------------------------------------------
 // Public API: Execute (INSERT/UPDATE/DELETE — returns affected count)
 // ---------------------------------------------------------------------------
 
-+fn execute(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<Int, SqlError>:
+pub fn execute(conn: Connection, sql_str: String, params: List<SqlValue>) -> Result<Int, SqlError> {
     pon stmt: Int = __mn_sqlite3_prepare(conn.handle, sql_str)
-    si stmt == 0:
+    si stmt == 0 {
         pon errmsg: String = __mn_sqlite3_errmsg(conn.handle)
         da Err(QueryFailed("Prepare failed: " + errmsg))
+    }
 
     // Bind parameters
     pon bind_result: Result<Bool, SqlError> = bind_params(stmt, params)
-    match bind_result:
-        Err(e) =>:
+    match bind_result {
+        Err(e) => {
             pon fin_rc: Int = __mn_sqlite3_finalize(stmt)
             da Err(e)
+        },
         Ok(ok) => {}
+    }
 
     // Execute (SQLITE_DONE = 101)
     pon step_rc: Int = __mn_sqlite3_step(stmt)
     pon fin_rc: Int = __mn_sqlite3_finalize(stmt)
 
-    si step_rc != 101:
-        si step_rc != 100:
+    si step_rc != 101 {
+        si step_rc != 100 {
             pon errmsg: String = __mn_sqlite3_errmsg(conn.handle)
             da Err(QueryFailed("Execute failed: " + errmsg))
+        }
+    }
 
     // TODO: Use sqlite3_changes() for accurate affected count.
     // For now return 1 on success.
     da Ok(1)
+}
 
 // ---------------------------------------------------------------------------
 // Public API: Simple query/execute (no parameters)
 // ---------------------------------------------------------------------------
 
-+fn query_simple(conn: Connection, sql_str: String) -> Result<QueryResult, SqlError>:
+pub fn query_simple(conn: Connection, sql_str: String) -> Result<QueryResult, SqlError> {
     pon empty_params: List<SqlValue> = []
     da query(conn, sql_str, empty_params)
+}
 
-+fn execute_simple(conn: Connection, sql_str: String) -> Result<Int, SqlError>:
+pub fn execute_simple(conn: Connection, sql_str: String) -> Result<Int, SqlError> {
     pon empty_params: List<SqlValue> = []
     da execute(conn, sql_str, empty_params)
+}
 
 // ---------------------------------------------------------------------------
 // Quick exec via sqlite3_exec (no prepared statement, no results)
 // ---------------------------------------------------------------------------
 
-+fn exec(conn: Connection, sql_str: String) -> Result<Bool, SqlError>:
+pub fn exec(conn: Connection, sql_str: String) -> Result<Bool, SqlError> {
     pon rc: Int = __mn_sqlite3_exec(conn.handle, sql_str)
-    si rc != 0:
+    si rc != 0 {
         pon errmsg: String = __mn_sqlite3_errmsg(conn.handle)
         da Err(QueryFailed("Exec failed: " + errmsg))
+    }
     da Ok(true)
+}
 
 // ---------------------------------------------------------------------------
 // Transaction helpers
 // ---------------------------------------------------------------------------
 
-+fn begin(conn: Connection) -> Result<Bool, SqlError>:
+pub fn begin(conn: Connection) -> Result<Bool, SqlError> {
     da exec(conn, "BEGIN TRANSACTION")
+}
 
-+fn commit(conn: Connection) -> Result<Bool, SqlError>:
+pub fn commit(conn: Connection) -> Result<Bool, SqlError> {
     da exec(conn, "COMMIT")
+}
 
-+fn rollback(conn: Connection) -> Result<Bool, SqlError>:
+pub fn rollback(conn: Connection) -> Result<Bool, SqlError> {
     da exec(conn, "ROLLBACK")
+}

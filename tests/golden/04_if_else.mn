@@ -1,6 +1,8 @@
-fn main:
+fn main() {
     pon x: Int = 10
-    si x > 5:
+    si x > 5 {
         print("big")
-    sino:
+    } sino {
         print("small")
+    }
+}

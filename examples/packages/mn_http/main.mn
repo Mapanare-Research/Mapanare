@@ -5,12 +5,15 @@
 extern "Python" fn urllib_request::urlopen(url: String) -> String
 
 /// Perform a GET request and return the response body as a string.
-fn get(url: String) -> Result<String, String>:
+fn get(url: String) -> Result<String, String> {
     da Ok(urlopen(url))
+}
 
 /// Check if a URL is reachable.
-fn ping(url: String) -> Bool:
+fn ping(url: String) -> Bool {
     pon result = get(url)
-    da match result:
+    da match result {
         Ok(_) => true,
         Err(_) => false
+    }
+}
