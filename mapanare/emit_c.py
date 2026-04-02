@@ -440,12 +440,10 @@ class CEmitter:
     def _inst_values(inst: Instruction) -> list[Value]:
         """Extract all Value fields from an instruction."""
         vals: list[Value] = []
-        if hasattr(inst, "dest") and isinstance(inst.dest, Value):  # type: ignore[union-attr]
-            vals.append(inst.dest)  # type: ignore[union-attr]
-        if hasattr(inst, "src") and isinstance(inst.src, Value):  # type: ignore[union-attr]
-            vals.append(inst.src)  # type: ignore[union-attr]
-        if hasattr(inst, "val") and isinstance(inst.val, Value):  # type: ignore[union-attr]
-            vals.append(inst.val)  # type: ignore[union-attr]
+        for attr in ("dest", "src", "val"):
+            v = getattr(inst, attr, None)
+            if isinstance(v, Value):
+                vals.append(v)
         return vals
 
     # ------------------------------------------------------------------
@@ -1507,10 +1505,10 @@ class CEmitter:
                 parts_converted.append(f"__mn_str_from_int((int64_t){pv})")
 
         # Build chain: concat(concat(a, b), c)
-        result = parts_converted[0]
-        for p in parts_converted[1:]:
-            result = f"__mn_str_concat({result}, {p})"
-        self._w(f"{dest} = {result};")
+        chain: str = parts_converted[0]
+        for part_str in parts_converted[1:]:
+            chain = f"__mn_str_concat({chain}, {part_str})"
+        self._w(f"{dest} = {chain};")
 
     # --- Assert ---
 

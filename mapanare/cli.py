@@ -457,8 +457,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         sys.exit(1)
     except ImportError:
         print(
-            "error: LLVM backend requires llvmlite. "
-            "Install with: pip install mapanare[llvm]",
+            "error: LLVM backend requires llvmlite. " "Install with: pip install mapanare[llvm]",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1023,9 +1022,15 @@ def _run_c_source(c_source: str, source_file: str) -> None:
 
         # Compile
         gcc_cmd = [
-            "gcc", "-O0", f"-I{runtime_dir}",
-            c_path, runtime_c,
-            "-o", bin_path, "-lm", "-lpthread",
+            "gcc",
+            "-O0",
+            f"-I{runtime_dir}",
+            c_path,
+            runtime_c,
+            "-o",
+            bin_path,
+            "-lm",
+            "-lpthread",
         ]
         result = subprocess.run(gcc_cmd, capture_output=True, text=True)
         if result.returncode != 0:
@@ -1033,8 +1038,8 @@ def _run_c_source(c_source: str, source_file: str) -> None:
             sys.exit(1)
 
         # Run
-        result = subprocess.run([bin_path], capture_output=False)
-        sys.exit(result.returncode)
+        run_result = subprocess.run([bin_path])
+        sys.exit(run_result.returncode)
 
 
 def cmd_emit_c(args: argparse.Namespace) -> None:
@@ -1786,16 +1791,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_lint.set_defaults(func=cmd_lint)
 
     # migrate
-    p_migrate = subparsers.add_parser(
-        "migrate", help="Migrate .mn source from v2 to v3 syntax"
-    )
+    p_migrate = subparsers.add_parser("migrate", help="Migrate .mn source from v2 to v3 syntax")
     p_migrate.add_argument("path", help="File or directory to migrate")
     p_migrate.add_argument(
         "--to", default="v3", choices=["v3"], help="Target version (default: v3)"
     )
-    p_migrate.add_argument(
-        "--dry", action="store_true", help="Preview changes without writing"
-    )
+    p_migrate.add_argument("--dry", action="store_true", help="Preview changes without writing")
     p_migrate.add_argument(
         "--check",
         action="store_true",

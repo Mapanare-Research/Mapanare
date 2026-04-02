@@ -210,7 +210,10 @@ def _convert_enum_variants(source: str) -> str:
 
         if in_tipo:
             # Check if we've left the tipo block (dedent or closing brace)
-            if stripped == "}" or (stripped and spaces <= tipo_indent and not stripped.startswith("|")):
+            is_end = stripped == "}" or (
+                stripped and spaces <= tipo_indent and not stripped.startswith("|")
+            )
+            if is_end:
                 in_tipo = False
                 out.append(line)
                 continue
