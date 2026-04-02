@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 from mapanare.mir import (
     AgentSend,
@@ -54,7 +53,6 @@ from mapanare.mir import (
     MapInit,
     MIRFunction,
     MIRModule,
-    MIRParam,
     MIRType,
     Phi,
     Return,
@@ -83,14 +81,48 @@ from mapanare.types import TypeKind
 # Constants
 # ---------------------------------------------------------------------------
 
-_C_RESERVED = frozenset({
-    "auto", "break", "case", "char", "const", "continue", "default", "do",
-    "double", "else", "enum", "extern", "float", "for", "goto", "if",
-    "inline", "int", "long", "register", "restrict", "return", "short",
-    "signed", "sizeof", "static", "struct", "switch", "typedef", "union",
-    "unsigned", "void", "volatile", "while", "_Bool", "_Complex",
-    "_Imaginary", "main",
-})
+_C_RESERVED = frozenset(
+    {
+        "auto",
+        "break",
+        "case",
+        "char",
+        "const",
+        "continue",
+        "default",
+        "do",
+        "double",
+        "else",
+        "enum",
+        "extern",
+        "float",
+        "for",
+        "goto",
+        "if",
+        "inline",
+        "int",
+        "long",
+        "register",
+        "restrict",
+        "return",
+        "short",
+        "signed",
+        "sizeof",
+        "static",
+        "struct",
+        "switch",
+        "typedef",
+        "union",
+        "unsigned",
+        "void",
+        "volatile",
+        "while",
+        "_Bool",
+        "_Complex",
+        "_Imaginary",
+        "main",
+    }
+)
 
 _BINOP_C: dict[BinOpKind, str] = {
     BinOpKind.ADD: "+",
@@ -456,7 +488,8 @@ class CEmitter:
             ok_t = parts[0] if parts else "int64_t"
             err_t = parts[1] if len(parts) > 1 else "MnString"
             safe_key = _safe_name(ok_t) + "_" + _safe_name(err_t)
-            self._w(f"typedef struct {{ int64_t is_ok; union {{ {ok_t} ok; {err_t} err; }} as; }} MnResult_{safe_key};")
+            body = f"int64_t is_ok; union {{ {ok_t} ok; {err_t} err; }} as;"
+            self._w(f"typedef struct {{ {body} }} MnResult_{safe_key};")
         if self._result_types:
             self._w()
 
@@ -491,7 +524,7 @@ class CEmitter:
 
     def _emit_enum_defs(self, module: MIRModule) -> None:
         for name, variants in module.enums.items():
-            self._w(f"typedef struct {{")
+            self._w("typedef struct {")
             self._indent_inc()
             self._w("int64_t tag;")
             # Union of variant payloads
@@ -558,9 +591,7 @@ class CEmitter:
         ret = self._c_type(fn.return_type)
         name = self._fn_c_name(fn.name)
         if fn.params:
-            params = ", ".join(
-                f"{self._c_type(p.ty)} {_safe_name(p.name)}" for p in fn.params
-            )
+            params = ", ".join(f"{self._c_type(p.ty)} {_safe_name(p.name)}" for p in fn.params)
         else:
             params = "void"
         return f"{ret} {name}({params})"
@@ -915,16 +946,17 @@ class CEmitter:
 
         # String comparison
         if lhs_kind == TypeKind.STRING and inst.op in (
-            BinOpKind.LT, BinOpKind.GT, BinOpKind.LE, BinOpKind.GE
+            BinOpKind.LT,
+            BinOpKind.GT,
+            BinOpKind.LE,
+            BinOpKind.GE,
         ):
             cmp_op = _BINOP_C[inst.op]
             self._w(f"{dest} = (__mn_str_cmp({lhs}, {rhs}) {cmp_op} 0);")
             return
 
         # Float modulo
-        if inst.op == BinOpKind.MOD and (
-            lhs_kind == TypeKind.FLOAT or rhs_kind == TypeKind.FLOAT
-        ):
+        if inst.op == BinOpKind.MOD and (lhs_kind == TypeKind.FLOAT or rhs_kind == TypeKind.FLOAT):
             self._w(f"{dest} = fmod({lhs}, {rhs});")
             return
 
@@ -985,7 +1017,9 @@ class CEmitter:
         # Push initial elements
         for elem in inst.elements:
             ev = self._val(elem)
-            self._w(f"{{ {self._c_type(elem.ty)} __tmp_elem = {ev}; __mn_list_push(&{dest}, &__tmp_elem); }}")
+            et = self._c_type(elem.ty)
+            self._w(f"{{ {et} __tmp_elem = {ev};")
+            self._w(f"  __mn_list_push(&{dest}, &__tmp_elem); }}")
 
     def _emit_list_push(self, inst: ListPush) -> None:
         dest = self._val(inst.dest)
@@ -1006,7 +1040,8 @@ class CEmitter:
             self._w(f"{dest} = *({ct}*)__mn_list_get(&{obj}, {idx});")
         elif obj_kind == TypeKind.MAP:
             ct = self._c_type(inst.dest.ty)
-            self._w(f"{{ void *__map_val = __mn_map_get({obj}, &{idx}); if (__map_val) {dest} = *({ct}*)__map_val; }}")
+            self._w(f"{{ void *__map_val = __mn_map_get({obj}, &{idx});")
+            self._w(f"  if (__map_val) {dest} = *({ct}*)__map_val; }}")
         elif obj_kind == TypeKind.STRING:
             self._w(f"{dest} = __mn_str_char_at({obj}, {idx});")
         else:
@@ -1025,7 +1060,7 @@ class CEmitter:
             ct = self._c_type(inst.val.ty)
             self._w(f"{{ {ct} __tmp_set = {val}; __mn_map_set({obj}, &{idx}, &__tmp_set); }}")
         else:
-            self._w(f"/* index_set: unsupported obj type */")
+            self._w("/* index_set: unsupported obj type */")
 
     # --- Map ---
 
@@ -1040,7 +1075,8 @@ class CEmitter:
             vname = self._val(vv)
             kt = self._c_type(kv.ty)
             vt = self._c_type(vv.ty)
-            self._w(f"{{ {kt} __mk = {kname}; {vt} __mv = {vname}; __mn_map_set({dest}, &__mk, &__mv); }}")
+            self._w(f"{{ {kt} __mk = {kname}; {vt} __mv = {vname};")
+            self._w(f"  __mn_map_set({dest}, &__mk, &__mv); }}")
 
     # --- Enum ---
 
@@ -1311,10 +1347,9 @@ class CEmitter:
                         self._w(f"{dest} = ({enum_name}){{.tag = {tag}}};")
                     else:
                         sv = _safe_name(vname)
-                        field_inits = ", ".join(
-                            f"._{i} = {args[i]}" for i in range(len(args))
-                        )
-                        self._w(f"{dest} = ({enum_name}){{.tag = {tag}, .as = {{.{sv} = {{{field_inits}}}}}}};")
+                        fi = ", ".join(f"._{i} = {args[i]}" for i in range(len(args)))
+                        init = f".tag = {tag}, .as = {{.{sv} = {{{fi}}}}}"
+                        self._w(f"{dest} = ({enum_name}){{{init}}};")
                     return
 
         # --- User-defined or runtime function call ---
@@ -1391,26 +1426,21 @@ class CEmitter:
             return
 
         # Allocate environment struct
-        captures_size = " + ".join(
-            f"sizeof({self._c_type(ct)})" for ct in inst.capture_types
-        )
-        self._w(f"{{")
+        captures_size = " + ".join(f"sizeof({self._c_type(ct)})" for ct in inst.capture_types)
+        self._w("{")
         self._indent_inc()
         self._w(f"void *__env = malloc({captures_size});")
-        self._w(f"char *__envp = (char*)__env;")
+        self._w("char *__envp = (char*)__env;")
         offset = 0
         for i, (cv, ct) in enumerate(zip(inst.captures, inst.capture_types)):
             ctype = self._c_type(ct)
             cv_name = self._val(cv)
             self._w(f"*({ctype}*)(__envp + {offset}) = {cv_name};")
-            offset_expr = " + ".join(
-                f"sizeof({self._c_type(inst.capture_types[j])})"
-                for j in range(i + 1)
-            )
+            " + ".join(f"sizeof({self._c_type(inst.capture_types[j])})" for j in range(i + 1))
             # We track offset symbolically using sizeof
         self._w(f"{dest} = (MnClosure){{(void*){fn_name}, __env}};")
         self._indent_dec()
-        self._w(f"}}")
+        self._w("}")
 
     def _emit_closure_call(self, inst: ClosureCall) -> None:
         dest = self._val(inst.dest)
@@ -1488,9 +1518,15 @@ class CEmitter:
         cond = self._val(inst.cond)
         if inst.message is not None:
             msg = self._val(inst.message)
-            self._w(f'if (!{cond}) {{ fprintf(stderr, "assertion failed: %.*s\\n", (int){msg}.len, {msg}.data); exit(1); }}')
+            self._w(f"if (!{cond}) {{")
+            fmt = '"assertion failed: %.*s\\n"'
+            self._w(f"  fprintf(stderr, {fmt}, (int){msg}.len, {msg}.data);")
+            self._w("  exit(1); }")
         else:
-            self._w(f'if (!{cond}) {{ fprintf(stderr, "assertion failed at {inst.filename}:{inst.line}\\n"); exit(1); }}')
+            loc = f"{inst.filename}:{inst.line}"
+            self._w(f"if (!{cond}) {{")
+            self._w(f'  fprintf(stderr, "assertion failed at {loc}\\n");')
+            self._w("  exit(1); }")
 
     # --- Agents ---
 
@@ -1505,13 +1541,17 @@ class CEmitter:
         agent = self._val(inst.agent)
         val = self._val(inst.val)
         ct = self._c_type(inst.val.ty)
-        self._w(f"{{ {ct} *__msg = malloc(sizeof({ct})); *__msg = {val}; mapanare_agent_send({agent}, __msg); }}")
+        self._w(f"{{ {ct} *__msg = malloc(sizeof({ct}));")
+        self._w(f"  *__msg = {val};")
+        self._w(f"  mapanare_agent_send({agent}, __msg); }}")
 
     def _emit_agent_sync(self, inst: AgentSync) -> None:
         dest = self._val(inst.dest)
         agent = self._val(inst.agent)
         ct = self._c_type(inst.dest.ty)
-        self._w(f"{{ void *__out = NULL; mapanare_agent_recv_blocking({agent}, &__out); if (__out) {dest} = *({ct}*)__out; }}")
+        self._w("{ void *__out = NULL;")
+        self._w(f"  mapanare_agent_recv_blocking({agent}, &__out);")
+        self._w(f"  if (__out) {dest} = *({ct}*)__out; }}")
 
     # --- Signals ---
 
@@ -1519,7 +1559,9 @@ class CEmitter:
         dest = self._val(inst.dest)
         val = self._val(inst.initial_val)
         ct = self._c_type(inst.signal_type)
-        self._w(f"{{ {ct} __sig_init = {val}; {dest} = __mn_signal_new(&__sig_init, sizeof({ct})); }}")
+        self._w(
+            f"{{ {ct} __sig_init = {val}; {dest} = __mn_signal_new(&__sig_init, sizeof({ct})); }}"
+        )
 
     def _emit_signal_get(self, inst: SignalGet) -> None:
         dest = self._val(inst.dest)
@@ -1538,7 +1580,10 @@ class CEmitter:
         fn_name = self._fn_c_name(inst.compute_fn)
         n_deps = len(inst.deps)
         deps_arr = ", ".join(self._val(d) for d in inst.deps)
-        self._w(f"{{ MnSignal *__deps[] = {{{deps_arr}}}; {dest} = __mn_signal_computed((MnSignalComputeFn){fn_name}, NULL, __deps, {n_deps}, {inst.val_size}); }}")
+        self._w(f"{{ MnSignal *__deps[] = {{{deps_arr}}};")
+        compute = f"(MnSignalComputeFn){fn_name}"
+        self._w(f"  {dest} = __mn_signal_computed({compute}, NULL,")
+        self._w(f"    __deps, {n_deps}, {inst.val_size}); }}")
 
     def _emit_signal_subscribe(self, inst: SignalSubscribe) -> None:
         signal = self._val(inst.signal)
@@ -1570,13 +1615,13 @@ class CEmitter:
             count = self._val(inst.args[0]) if inst.args else "0"
             self._w(f"{dest} = __mn_stream_skip({source}, {count});")
         elif inst.op_kind == StreamOpKind.COLLECT:
-            self._w(f"/* stream collect */")
+            self._w("/* stream collect */")
             # collect returns MnList
             self._w(f"{dest} = __mn_stream_collect({source}, 0, 0);")
         elif inst.op_kind == StreamOpKind.FOLD:
             fn = self._fn_c_name(inst.fn_name) if inst.fn_name else "NULL"
             init_val = self._val(inst.args[0]) if inst.args else "NULL"
-            self._w(f"/* stream fold */")
+            self._w("/* stream fold */")
             self._w(f"{dest} = __mn_stream_fold({source}, &{init_val}, (void*){fn}, 0, 0);")
         else:
             self._w(f"/* unhandled stream op: {inst.op_kind} */")
