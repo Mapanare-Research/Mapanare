@@ -940,6 +940,59 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     print(f"emitted {args.source} -> {out_path} (target: {target.triple})")
 
 
+def _compile_to_c(
+    source: str,
+    filename: str,
+    opt_level: OptLevel = OptLevel.O2,
+    debug: bool = False,
+) -> str:
+    """Parse, check, optimize, and emit C source from Mapanare source."""
+    from mapanare.emit_c import emit_c
+    from mapanare.lower import lower as build_mir
+    from mapanare.mir_opt import MIROptLevel
+    from mapanare.mir_opt import optimize_module as mir_optimize
+
+    ast = parse(source, filename=filename)
+    check_or_raise(ast, filename=filename)
+
+    module_name = os.path.splitext(os.path.basename(filename))[0]
+    source_file = os.path.basename(filename)
+    source_dir = os.path.dirname(os.path.abspath(filename))
+    mir_module = build_mir(
+        ast,
+        module_name=module_name,
+        source_file=source_file,
+        source_directory=source_dir,
+    )
+    mir_opt_level = MIROptLevel(opt_level.value)
+    mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+
+    return emit_c(mir_module, debug=debug)
+
+
+def cmd_emit_c(args: argparse.Namespace) -> None:
+    """Emit C source for an .mn source file."""
+    source = _read_source(args.source)
+    opt_level = _parse_opt_level(args)
+    debug = getattr(args, "debug", False)
+    try:
+        c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
+    except ParseError as e:
+        _emit_parse_error(e, source, args.source)
+        sys.exit(1)
+    except SemanticErrors as e:
+        _emit_semantic_errors(e, source)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    out_path = args.o or args.source.replace(".mn", ".c")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(c_source)
+    print(f"emitted {args.source} -> {out_path} (backend: C)")
+
+
 def cmd_emit_mir(args: argparse.Namespace) -> None:
     """Emit MIR (Mid-level IR) for an .mn source file."""
     from mapanare.lower import lower as build_mir
@@ -1552,6 +1605,15 @@ def build_parser() -> argparse.ArgumentParser:
     _add_debug_flag(p_emit_llvm)
     _add_edition_flag(p_emit_llvm)
     p_emit_llvm.set_defaults(func=cmd_emit_llvm)
+
+    # emit-c
+    p_emit_c = subparsers.add_parser("emit-c", help="Emit C source for .mn source (v3.0.0)")
+    p_emit_c.add_argument("source", help="Path to .mn source file")
+    p_emit_c.add_argument("-o", metavar="OUTPUT", help="Output .c file path", default=None)
+    _add_opt_level_args(p_emit_c)
+    _add_debug_flag(p_emit_c)
+    _add_edition_flag(p_emit_c)
+    p_emit_c.set_defaults(func=cmd_emit_c)
 
     # emit-mir
     p_emit_mir = subparsers.add_parser("emit-mir", help="Emit MIR (mid-level IR) for .mn source")
