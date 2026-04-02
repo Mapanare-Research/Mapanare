@@ -1340,6 +1340,94 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             name=name, public=public, methods=methods, span=_span_from_children(children)
         )
 
+    # ------------------------------------------------------------------
+    # Tipo definition (v3.0.0 — unifies struct + enum)
+    # ------------------------------------------------------------------
+
+    def tipo_def(self, children: list[Any]) -> StructDef | EnumDef:
+        """Parse a `tipo Name { ... }` definition.
+
+        If the body contains `|`-prefixed variants → EnumDef.
+        If it contains plain fields → StructDef.
+        """
+        items = _filter(children)
+        public = False
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
+            public = True
+            idx += 1
+        name = str(items[idx])
+        idx += 1
+        type_params: list[str] = []
+        if (
+            idx < len(items)
+            and isinstance(items[idx], list)
+            and items[idx]
+            and isinstance(items[idx][0], (str, TypeParam))
+        ):
+            raw_tps = items[idx]
+            if raw_tps and isinstance(raw_tps[0], TypeParam):
+                type_params = [tp.name for tp in raw_tps]
+            else:
+                type_params = raw_tps
+            idx += 1
+        # Collect remaining members
+        members = items[idx:]
+        fields: list[StructField] = []
+        variants: list[EnumVariant] = []
+        for m in members:
+            if isinstance(m, StructField):
+                fields.append(m)
+            elif isinstance(m, EnumVariant):
+                variants.append(m)
+            elif isinstance(m, list):
+                for item in m:
+                    if isinstance(item, StructField):
+                        fields.append(item)
+                    elif isinstance(item, EnumVariant):
+                        variants.append(item)
+        span = _span_from_children(children)
+        if variants:
+            return EnumDef(
+                name=name,
+                public=public,
+                type_params=type_params,
+                variants=variants,
+                span=span,
+            )
+        return StructDef(
+            name=name,
+            public=public,
+            type_params=type_params,
+            fields=fields,
+            span=span,
+        )
+
+    def tipo_members(self, children: list[Any]) -> list[StructField | EnumVariant]:
+        return [c for c in children if isinstance(c, (StructField, EnumVariant))]
+
+    def tipo_field(self, children: list[Any]) -> StructField:
+        items = _filter(children)
+        return StructField(
+            name=str(items[0]),
+            type_annotation=items[1],
+            span=_span_from_children(children),
+        )
+
+    def tipo_variant(self, children: list[Any]) -> EnumVariant:
+        items = _filter(children)
+        name = str(items[0])
+        fields = items[1] if len(items) > 1 and isinstance(items[1], list) else []
+        return EnumVariant(name=name, fields=fields, span=_span_from_children(children))
+
+    # ------------------------------------------------------------------
+    # Modo definition (v3.0.0 — alias for trait)
+    # ------------------------------------------------------------------
+
+    def modo_def(self, children: list[Any]) -> TraitDef:
+        """Parse `modo Name { ... }` — identical to trait_def."""
+        return self.trait_def(children)
+
     def trait_method(self, children: list[Any]) -> TraitMethod:
         items = _filter(children)
         name = str(items[0])
