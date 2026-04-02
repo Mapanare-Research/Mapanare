@@ -3,7 +3,7 @@
 > The snake bites its own tail. The compiler compiles itself — through C.
 > The syntax sheds everything that doesn't earn its place.
 
-**Status:** DRAFT
+**Status:** IN PROGRESS
 **Author:** Juan Denis
 **Date:** April 2026
 **Breaking:** YES (full syntax overhaul + backend change)
@@ -708,7 +708,7 @@ Critical path: **1.1 -> 1.2 -> 1.3 -> 2.1 -> 2.2 -> 2.3** (~11 weeks)
 
 - [ ] Radical parser handles all language features
 - [ ] All golden tests pass with new syntax
-- [ ] `emit_c.py` correct for all golden tests
+- [x] `emit_c.py` correct for all golden tests (15/15 — 2026-04-01)
 - [ ] `emit_c.mn` compiles through `emit_c.py`
 - [ ] 3-stage bootstrap reaches fixed point
 - [ ] `pip install mapanare` works without llvmlite
@@ -849,3 +849,11 @@ Both compile. Both produce the same binary. The old syntax is an alias.
 The new syntax is the identity.
 
 La culebra se muerde la cola — through C, bilingual, stripped to the bone.
+
+---
+
+## Progress Log
+
+| Date | Milestone | Details |
+|------|-----------|---------|
+| 2026-04-01 | Phase 2.1: `emit_c.py` complete | 15/15 golden tests pass through C backend. ~900 lines. Handles all 45 MIR instructions, structs, enums, Option/Result, closures, range iteration, pattern matching. CLI: `mapanare emit-c`. 878 existing pytest pass — no regressions. |
