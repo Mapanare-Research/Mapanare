@@ -133,7 +133,7 @@ python scripts/build_stage1.py                   # Build mnc-stage1 from Python 
 bash scripts/verify_fixed_point.sh               # 3-stage self-compilation verification
 bash scripts/verify_fixed_point.sh --keep        # Keep intermediate IR for debugging
 
-# Culebra v1.1.0 — compiler diagnostics and template-driven IR scanning (Rust, installed in WSL)
+# Culebra v2.0.0 — compiler diagnostics for LLVM IR AND C source (Rust, installed in WSL)
 # 29+ YAML templates across ABI, IR, Binary, Bootstrap categories. Nuclei-style pattern engine.
 # Repo: C:\Users\Juan\Documents\GitHub\Culebra (also at github.com/Mapanare-Research/Culebra)
 # crates.io: https://crates.io/crates/culebra
@@ -160,6 +160,29 @@ culebra bisect stage1.ll stage2.ll                          # Find divergent fun
 culebra bisect stage1.ll stage2.ll --top 30                 # Show more results
 culebra verify stage2.ll return-type-divergence             # PASS/FAIL — verify a fix worked
 culebra verify stage2.ll break-inside-nested-control --function tokenize  # Scoped verify
+
+# --- C backend scanning (v2.0.0) — scan generated C for Mapanare v3.0.0 ---
+culebra scan stage2.c                                       # Auto-detects .c, runs 8 C-specific templates
+culebra scan stage2.c --tags c                              # C templates only
+culebra scan stage2.c --id switch-no-break                  # Check for switch fallthrough
+culebra scan stage2.c --id missing-typedef                  # Find undefined struct types
+culebra diff stage1.c stage2.c                              # Fixed-point: compare C text output
+culebra triage stage2.c --brief                             # Quick C summary
+culebra summary stage2.c                                    # Full diagnostic (works for .c and .ll)
+# C templates: switch-no-break, missing-typedef, null-deref-pattern, goto-dead-label,
+#   union-tag-mismatch, large-struct-by-value, missing-return, buffer-overflow-pattern
+
+# --- Debugging feedback loop (v1.2.0) — wrap commands, learn patterns, track journal ---
+culebra wrap -- clang -c -O1 stage2.ll -o stage2.o          # Proxy command + log to .culebra-session.jsonl
+culebra wrap -- valgrind /tmp/mnc-stage2 /tmp/tiny.mn        # Captures crashes, errors, output
+culebra wrap -- llvm-as stage2.ll -o /dev/null               # Log LLVM errors for analysis
+culebra learn                                                # Analyze session logs → extract error patterns + suggest templates
+culebra learn -v                                             # Verbose: show individual failure details
+culebra journal add "State doesn't persist in emit_instr" --action bug --tags "option,state" --function emit_instr
+culebra journal add "Fixed MIRFunction field indices" --action fix --tags "field-index"
+culebra journal add "mnc-stage2 runs!" --action milestone
+culebra journal show                                         # View timeline of bugs/fixes/milestones
+culebra journal show option                                  # Search journal by keyword
 
 # --- Semi-dynamic analysis (v1.1.0) — call functions, probe values, test returns ---
 culebra eval main.ll --function hardcoded_field_index --arg '"VarInfo"' --arg '"value"'  # Call and print return
@@ -441,5 +464,4 @@ These are invocable via `/skill-name` in Claude Code:
 | `/create-pr` | Generate PR title and description from the current branch's commits. |
 | `/simplify` | Review changed code for reuse, quality, and efficiency, then fix issues found. |
 | `/autoresearch` | Autonomous experiment loop — iterative research with automatic follow-up. |
-| `/culebra-scan` | Run Culebra's 29+ YAML templates against IR — ABI, IR, Binary, Bootstrap checks with autofix and SARIF. |
-| `/culebra-triage` | Triage IR findings: group by root cause, deduplicate, actionable summary (text or JSON). |
+| `/culebra-scan` | Run Culebra v2.0.0 — 49 templates (41 IR + 8 C). Auto-detects .ll vs .c. Autofix, SARIF, triage. |

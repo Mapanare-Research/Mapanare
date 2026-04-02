@@ -1,116 +1,104 @@
 ---
 name: culebra-scan
-description: Run Culebra template-driven IR scan — 26 templates across ABI, IR, Binary, and Bootstrap categories. Detects unaligned strings, byte-count mismatches, struct layout divergence, empty switches, and more. Supports autofix, SARIF, and workflows.
+description: Run Culebra v2.0.0 template-driven scan on LLVM IR (.ll) or generated C (.c) — 49 templates across ABI, IR, Binary, Bootstrap, and C categories. Auto-detects file type. Supports autofix, SARIF, and workflows.
 ---
 
 # Culebra Scan
 
-Run the Culebra template engine against the self-hosted compiler's IR output.
+Run the Culebra template engine against compiler output. Auto-detects `.ll` (LLVM IR) or `.c` (generated C) files.
 
 ## Instructions
 
-### 1. Full scan (all 26 templates)
-
-Run inside WSL:
+### 1. Quick summary (start here)
 
 ```bash
+culebra summary /tmp/stage2.ll       # One command: scan + types + fields + health + score
+culebra summary /tmp/stage2.c        # Same for C output (v3.0.0)
+culebra triage /tmp/stage2.ll --brief  # One-line root cause summary
+```
+
+### 2. Full scan
+
+```bash
+# LLVM IR (41 templates)
 culebra scan mapanare/self/main.ll
+
+# Generated C (8 templates) — auto-detected from .c extension
+culebra scan /tmp/stage2.c
+
+# Filter by category
+culebra scan main.ll --tags abi
+culebra scan main.ll --tags ir
+culebra scan stage2.c --tags c
+culebra scan main.ll --severity critical,high
+culebra scan main.ll --id option-type-pun-zeroinit
 ```
 
-### 2. Filtered scans
+### 3. Debugging workflow
 
 ```bash
-# By category
-culebra scan mapanare/self/main.ll --tags abi
-culebra scan mapanare/self/main.ll --tags ir
-culebra scan mapanare/self/main.ll --tags bootstrap
-culebra scan mapanare/self/main.ll --tags binary
+# Find what's wrong
+culebra triage stage2.ll --brief             # Root causes in one line
+culebra explain stage2.ll return-type-divergence  # Show matched IR in context
+culebra suggest stage2.ll --function lower_fn     # Prioritized fix suggestions
 
-# By severity
-culebra scan mapanare/self/main.ll --severity critical
-culebra scan mapanare/self/main.ll --severity critical,high
+# Understand the code
+culebra pretty stage2.ll --function lower_fn      # Syntax-highlighted IR
+culebra inspect stage2.ll --function lower_fn     # Block-by-block control flow
+culebra dump stage2.ll --function lower_fn        # Variable state dump
+culebra trace stage2.ll --function lower_fn --var '%state'  # Follow a variable
 
-# Specific template
-culebra scan mapanare/self/main.ll --id unaligned-string-constant
-culebra scan mapanare/self/main.ll --id direct-push-no-writeback
-culebra scan mapanare/self/main.ll --id empty-switch-body
+# Compare stages
+culebra diff main.ll stage2.ll                    # Per-function structural diff
+culebra compare main.ll stage2.ll --metric calls  # Which functions lost calls?
+culebra bisect main.ll stage2.ll                  # Rank divergent functions by impact
+
+# For C backend (v3.0.0)
+culebra diff stage2.c stage3.c                    # Fixed-point check on C output
+culebra compare stage1.c stage2.c --metric calls  # C metric comparison
+
+# After fixing
+culebra verify stage2.ll break-inside-nested-control  # Confirm fix: PASS/FAIL
+culebra baseline save stage2.ll                       # Save snapshot
+culebra baseline diff stage2.ll                       # Compare after rebuild
+
+# Semi-dynamic
+culebra eval main.ll --function hardcoded_field_index --arg '"VarInfo"' --arg '"value"'
+culebra test-fn main.ll --function fn_name --arg 0 --expect-ret 1
+
+# Session logging
+culebra wrap -- clang -c -O1 stage2.ll -o stage2.o   # Log command output
+culebra learn                                          # Analyze logs for patterns
+culebra journal add "fixed field indices" --action fix
 ```
 
-### 3. Auto-fix
+### 4. Auto-fix
 
 ```bash
-# Preview fixes
-culebra scan mapanare/self/main.ll --autofix --dry-run
-
-# Apply fixes
-culebra scan mapanare/self/main.ll --autofix
+culebra scan main.ll --autofix --dry-run    # Preview
+culebra scan main.ll --autofix              # Apply
 ```
 
-### 4. Cross-reference against C runtime
+### 5. Type analysis
 
 ```bash
-culebra scan mapanare/self/main.ll --header runtime/native/mapanare_runtime.c
-culebra abi mapanare/self/main.ll --header runtime/native/mapanare_runtime.c
+culebra missing-types stage2.ll              # Find undefined types
+culebra missing-types stage2.ll -v           # Show which functions use them
+culebra infer-types stage2.ll --ll           # Generate type defs from insertvalue chains
+culebra field-index-audit stage2.ll          # Find structs stuck at index 0
+culebra health stage2.ll --struct LowerState # PHI zeroinit, type-pun, null loads
+culebra crashmap stage2.ll --offset 0x20 --struct FnDefData  # Map crash to field
 ```
 
-### 5. Companion commands
+### 6. Key templates
 
-```bash
-# Validate IR
-culebra check mapanare/self/main.ll
-
-# Validate string byte counts
-culebra strings mapanare/self/main.ll
-
-# Detect IR pathologies
-culebra audit mapanare/self/main.ll
-
-# Per-function diff between stages
-culebra diff stage1.ll stage2.ll
-
-# Extract one function
-culebra extract mapanare/self/main.ll function_name
-
-# Per-function metrics
-culebra table mapanare/self/main.ll --top 15
-```
-
-### 6. Workflows
-
-```bash
-culebra workflow bootstrap-health-check --input stage1_output=main.ll
-culebra workflow pre-commit --input ir_file=main.ll
-culebra workflow ci-full --input ir_file=main.ll --format sarif
-```
-
-### 7. Output formats
-
-```bash
-culebra scan mapanare/self/main.ll --format text      # Default, colored terminal
-culebra scan mapanare/self/main.ll --format json      # Structured JSON
-culebra scan mapanare/self/main.ll --format sarif     # GitHub Code Scanning
-culebra scan mapanare/self/main.ll --format markdown  # CI reports
-```
-
-### 8. Interpret results
-
-- Exit code **0** — no critical or high findings
-- Exit code **1** — one or more critical/high findings detected
-
-Key templates to watch for:
-| ID | Severity | What it catches |
-|---|---|---|
-| `unaligned-string-constant` | Critical | String constants at odd addresses break pointer tagging |
-| `empty-switch-body` | Critical | Switch with 0 cases — match arms not generated |
-| `struct-layout-mismatch` | Critical | IR struct vs C header divergence |
-| `byte-count-mismatch` | High | `[N x i8]` declared size vs actual content differs |
-| `direct-push-no-writeback` | High | List push through GEP without temp writeback |
-| `phi-predecessor-mismatch` | High | PHI references non-existent predecessor block |
-
-### 9. Browse templates
-
-```bash
-culebra templates list
-culebra templates list --tags abi
-culebra templates show unaligned-string-constant
-```
+| Category | Template | Severity | What |
+|---|---|---|---|
+| **IR** | `break-inside-nested-control` | Critical | Break dropped in if-inside-for |
+| **IR** | `match-phi-zeroinit-corruption` | Critical | PHI corrupts state struct |
+| **IR** | `option-type-pun-zeroinit` | Critical | Option discriminant clobbered |
+| **ABI** | `return-type-divergence` | Critical | fn return type differs between stages |
+| **ABI** | `sret-zeroinitializer-return` | Critical | match_merge zeros sret return |
+| **C** | `switch-no-break` | High | Switch fallthrough in generated C |
+| **C** | `missing-typedef` | Critical | Struct used but not defined in C |
+| **C** | `union-tag-mismatch` | Critical | Wrong union member for tag |
