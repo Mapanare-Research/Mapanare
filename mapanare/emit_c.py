@@ -391,10 +391,20 @@ class CEmitter:
         self._w()
         self._emit_closure_type()
         self._emit_range_type()
-        self._emit_option_result_types()
+        # Forward declarations (all types must be declared before any definition)
         self._emit_struct_forward_decls(module)
-        self._emit_struct_defs(module)
-        self._emit_enum_defs(module)
+        self._emit_enum_forward_decls(module)
+        self._emit_option_result_forward_decls()
+        self._w()
+        # Full definitions: structs and enums in dependency order, then Option/Result
+        type_order = self._topo_sort_types(module)
+        for tname in type_order:
+            if tname in module.structs:
+                self._emit_one_struct(tname, module.structs[tname])
+            elif tname in module.enums:
+                self._emit_one_enum(tname, module.enums[tname])
+        # Option/Result AFTER all structs and enums are fully defined
+        self._emit_option_result_types()
         self._w()
         self._emit_string_constants()
         self._w()
@@ -476,18 +486,17 @@ class CEmitter:
     def _emit_option_result_types(self) -> None:
         for inner in sorted(self._option_types):
             safe = _safe_name(inner)
-            self._w(f"typedef struct {{ int64_t has_value; {inner} value; }} MnOption_{safe};")
+            self._w(f"struct MnOption_{safe}_s {{ int64_t has_value; {inner} value; }};")
         if self._option_types:
             self._w()
 
         for key in sorted(self._result_types):
-            # key is "ok_type___err_type" with actual C type names
             parts = key.split("___", 1)
             ok_t = parts[0] if parts else "int64_t"
             err_t = parts[1] if len(parts) > 1 else "MnString"
             safe_key = _safe_name(ok_t) + "_" + _safe_name(err_t)
             body = f"int64_t is_ok; union {{ {ok_t} ok; {err_t} err; }} as;"
-            self._w(f"typedef struct {{ {body} }} MnResult_{safe_key};")
+            self._w(f"struct MnResult_{safe_key}_s {{ {body} }};")
         if self._result_types:
             self._w()
 
@@ -499,55 +508,157 @@ class CEmitter:
         for name in module.structs:
             self._w(f"typedef struct {name} {name};")
 
+    def _emit_enum_forward_decls(self, module: MIRModule) -> None:
+        for name in module.enums:
+            self._w(f"typedef struct {name}_s {name};")
+
+    def _emit_option_result_forward_decls(self) -> None:
+        for inner in sorted(self._option_types):
+            safe = _safe_name(inner)
+            self._w(f"typedef struct MnOption_{safe}_s MnOption_{safe};")
+        for key in sorted(self._result_types):
+            parts = key.split("___", 1)
+            ok_t = parts[0] if parts else "int64_t"
+            err_t = parts[1] if len(parts) > 1 else "MnString"
+            safe_key = _safe_name(ok_t) + "_" + _safe_name(err_t)
+            self._w(f"typedef struct MnResult_{safe_key}_s MnResult_{safe_key};")
+
+    def _topo_sort_types(self, module: MIRModule) -> list[str]:
+        """Topologically sort struct/enum names by dependency.
+
+        A type X depends on Y if X has a by-value field of type Y.
+        Self-referential fields (X contains X) are handled as pointers.
+        """
+        all_types = set(module.structs.keys()) | set(module.enums.keys())
+        # Also include Option/Result wrapper types
+        for inner in self._option_types:
+            all_types.add(f"MnOption_{_safe_name(inner)}")
+        for key in self._result_types:
+            parts = key.split("___", 1)
+            ok_t = parts[0] if parts else "int64_t"
+            err_t = parts[1] if len(parts) > 1 else "MnString"
+            safe_key = _safe_name(ok_t) + "_" + _safe_name(err_t)
+            all_types.add(f"MnResult_{safe_key}")
+
+        # Build dependency graph
+        deps: dict[str, set[str]] = {t: set() for t in all_types}
+        for name, fields in module.structs.items():
+            for _, ftype in fields:
+                ct = self._c_type(ftype)
+                if ct != name and ct in all_types:
+                    deps[name].add(ct)
+        for name, variants in module.enums.items():
+            for _, payload_types in variants:
+                for pt in payload_types:
+                    ct = self._c_type(pt)
+                    if ct != name and ct in all_types:
+                        deps[name].add(ct)
+
+        # Kahn's algorithm
+        in_degree = {t: 0 for t in all_types}
+        for t, d in deps.items():
+            for dep in d:
+                if dep in in_degree:
+                    in_degree[dep] = in_degree.get(dep, 0)  # ensure exists
+
+        # Recompute: in_degree[t] = number of types that depend on t... no,
+        # in_degree[t] = number of types t depends on
+        in_degree = {t: len(d) for t, d in deps.items()}
+        queue = [t for t in all_types if in_degree[t] == 0]
+        order: list[str] = []
+        while queue:
+            t = queue.pop(0)
+            order.append(t)
+            for other, d in deps.items():
+                if t in d:
+                    in_degree[other] -= 1
+                    if in_degree[other] == 0:
+                        queue.append(other)
+
+        # Add any remaining (cyclic) types at the end
+        for t in all_types:
+            if t not in order:
+                order.append(t)
+        return order
+
+    def _emit_one_struct(self, name: str, fields: list[tuple[str, MIRType]]) -> None:
+        self._w(f"struct {name} {{")
+        self._indent_inc()
+        for fname, ftype in fields:
+            ct = self._c_type(ftype)
+            if ct == name:
+                ct = f"{name}*"  # Self-referential → pointer
+            self._w(f"{ct} {_safe_name(fname)};")
+        self._indent_dec()
+        self._w("};")
+        self._w()
+
     def _emit_struct_defs(self, module: MIRModule) -> None:
         if not module.structs:
             return
         self._w()
         for name, fields in module.structs.items():
-            self._w(f"struct {name} {{")
-            self._indent_inc()
-            for fname, ftype in fields:
-                # Self-referential fields become pointers
-                ct = self._c_type(ftype)
-                if ct == name:
-                    ct = f"{name}*"
-                self._w(f"{ct} {_safe_name(fname)};")
-            self._indent_dec()
-            self._w("};")
-            self._w()
+            self._emit_one_struct(name, fields)
 
     # ------------------------------------------------------------------
     # Enum definitions (tagged unions)
     # ------------------------------------------------------------------
 
-    def _emit_enum_defs(self, module: MIRModule) -> None:
-        for name, variants in module.enums.items():
-            self._w("typedef struct {")
+    def _emit_one_enum(self, name: str, variants: list[tuple[str, list[MIRType]]]) -> None:
+        # Detect recursive types in payloads
+        all_types = set(self._structs.keys()) | set(self._enums.keys())
+        self._w(f"struct {name}_s {{")
+        self._indent_inc()
+        self._w("int64_t tag;")
+        has_payload = any(payload_types for _, payload_types in variants)
+        if has_payload:
+            self._w("union {")
             self._indent_inc()
-            self._w("int64_t tag;")
-            # Union of variant payloads
-            has_payload = any(payload_types for _, payload_types in variants)
-            if has_payload:
-                self._w("union {")
-                self._indent_inc()
-                for vname, payload_types in variants:
-                    if payload_types:
-                        self._w("struct {")
-                        self._indent_inc()
-                        for i, pt in enumerate(payload_types):
-                            self._w(f"{self._c_type(pt)} _{i};")
-                        self._indent_dec()
-                        self._w(f"}} {_safe_name(vname)};")
-                    else:
-                        self._w(f"char {_safe_name(vname)}_empty;  /* no payload */")
-                self._indent_dec()
-                self._w("} as;")
+            for vname, payload_types in variants:
+                if payload_types:
+                    self._w("struct {")
+                    self._indent_inc()
+                    for i, pt in enumerate(payload_types):
+                        ct = self._c_type(pt)
+                        # Recursive or forward-ref: use pointer
+                        if ct == name or (ct in all_types and ct != name):
+                            ct = f"{ct}*"
+                        self._w(f"{ct} _{i};")
+                    self._indent_dec()
+                    self._w(f"}} {_safe_name(vname)};")
+                else:
+                    self._w(f"char {_safe_name(vname)}_empty;  /* no payload */")
             self._indent_dec()
-            self._w(f"}} {name};")
-            self._w()
-            # Tag constants
-            for i, (vname, _) in enumerate(variants):
-                self._w(f"#define {name}_{_safe_name(vname)}_TAG {i}")
+            self._w("} as;")
+        self._indent_dec()
+        self._w("};")
+        self._w()
+        # Tag constants
+        for i, (vname, _) in enumerate(variants):
+            self._w(f"#define {name}_{_safe_name(vname)}_TAG {i}")
+
+    def _emit_one_option(self, tname: str) -> None:
+        """Emit a single Option type definition (struct already forward-declared)."""
+        # Find the inner type from the name: MnOption_<safe_inner>
+        for inner in self._option_types:
+            safe = _safe_name(inner)
+            if tname == f"MnOption_{safe}":
+                self._w(f"struct MnOption_{safe}_s {{ int64_t has_value; {inner} value; }};")
+                self._w()
+                return
+
+    def _emit_one_result(self, tname: str) -> None:
+        """Emit a single Result type definition."""
+        for key in self._result_types:
+            parts = key.split("___", 1)
+            ok_t = parts[0] if parts else "int64_t"
+            err_t = parts[1] if len(parts) > 1 else "MnString"
+            safe_key = _safe_name(ok_t) + "_" + _safe_name(err_t)
+            if tname == f"MnResult_{safe_key}":
+                body = f"int64_t is_ok; union {{ {ok_t} ok; {err_t} err; }} as;"
+                self._w(f"struct MnResult_{safe_key}_s {{ {body} }};")
+                self._w()
+                return
 
     # ------------------------------------------------------------------
     # String constants
