@@ -20,6 +20,7 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     BreakStmt,
     CallExpr,
+    ContinueStmt,
     CharLiteral,
     ConstructExpr,
     ConstructorPattern,
@@ -375,6 +376,7 @@ class MIRLowerer:
         self._current_span: SourceSpan | None = None
         # Loop exit label stack for break statements
         self._loop_exit_stack: list[str] = []
+        self._loop_header_stack: list[str] = []
         # Function return types: fn_name → MIRType (populated in first pass).
         # Pre-seed with imported function return types so cross-module calls
         # get correct dest types during lowering.
@@ -928,6 +930,10 @@ class MIRLowerer:
             if self._loop_exit_stack:
                 self._emit(Jump(target=self._loop_exit_stack[-1]))
             return None
+        if isinstance(stmt, ContinueStmt):
+            if self._loop_header_stack:
+                self._emit(Jump(target=self._loop_header_stack[-1]))
+            return None
         if isinstance(stmt, AssertStmt):
             self._lower_assert(stmt)
             return None
@@ -1034,6 +1040,7 @@ class MIRLowerer:
         self._define_var(loop.var_name, next_val)
         self._push_scope()
         self._loop_exit_stack.append(exit_bb.label)
+        self._loop_header_stack.append(header.label)
         # Track which variables were updated via ListPush during this loop
         _list_push_vars: set[str] = set()
         _orig_update = self._update_var
@@ -1045,6 +1052,7 @@ class MIRLowerer:
         self._update_var = _tracking_update  # type: ignore[method-assign]
         self._lower_block(loop.body)
         self._update_var = _orig_update  # type: ignore[method-assign]
+        self._loop_header_stack.pop()
         self._loop_exit_stack.pop()
         # Capture list-pushed variable values BEFORE pop
         _pushed_vals = {vn: self._vars[vn].current for vn in _list_push_vars if vn in self._vars}
@@ -1083,7 +1091,9 @@ class MIRLowerer:
         # Body
         self._set_block(body)
         self._loop_exit_stack.append(exit_bb.label)
+        self._loop_header_stack.append(header.label)
         self._lower_block(loop.body)
+        self._loop_header_stack.pop()
         self._loop_exit_stack.pop()
         if not self._block_terminated():
             self._emit(Jump(target=header.label))

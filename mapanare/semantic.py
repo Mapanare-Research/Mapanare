@@ -18,6 +18,7 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     BreakStmt,
     CallExpr,
+    ContinueStmt,
     CharLiteral,
     ConstructExpr,
     Definition,
@@ -1155,6 +1156,8 @@ class SemanticChecker:
             self._check_signal_decl(stmt)
         elif isinstance(stmt, BreakStmt):
             pass  # break is valid in for/while loops
+        elif isinstance(stmt, ContinueStmt):
+            pass  # continue is valid in for/while loops
         elif isinstance(stmt, AssertStmt):
             self._infer_expr(stmt.condition)
             if stmt.message is not None:

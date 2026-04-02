@@ -20,6 +20,7 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     BreakStmt,
     CallExpr,
+    ContinueStmt,
     CharLiteral,
     ConstructExpr,
     ConstructorPattern,
@@ -566,6 +567,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def break_stmt(self, children: list[Any]) -> BreakStmt:
         return BreakStmt(span=_span_from_children(children))
+
+    def continue_stmt(self, children: list[Any]) -> ContinueStmt:
+        return ContinueStmt(span=_span_from_children(children))
 
     def assert_stmt(self, children: list[Any]) -> AssertStmt:
         items = _filter(children)

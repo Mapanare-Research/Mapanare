@@ -149,6 +149,7 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
      | while_stmt
      | return_stmt
      | break_stmt
+     | continue_stmt
      | assert_stmt
      | expr_stmt
 
@@ -156,6 +157,7 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
 let_stmt: KW_LET KW_MUT? NAME (COLON type_expr)? ASSIGN expr
 return_stmt: KW_RETURN expr?
 break_stmt: KW_BREAK
+continue_stmt: KW_CONTINUE
 assert_stmt: KW_ASSERT expr (COMMA expr)?
 for_stmt: KW_FOR NAME KW_IN expr block
 while_stmt: KW_WHILE expr block
@@ -307,41 +309,44 @@ paren_expr: LPAREN expr RPAREN
 tuple_expr: LPAREN expr COMMA expr (COMMA expr)* RPAREN
 
 // ============================================================
-// Keywords (28 total — includes contextual keywords)
+// Keywords — bilingual (Spanglish primary, English alias)
+// Both forms produce the same token and compile identically.
+// Priority .2 ensures bilingual keywords beat the NAME regex.
 // ============================================================
 
-KW_LET: "let"
+KW_LET.2: /(?:let|pon)(?![a-zA-Z0-9_])/
 KW_MUT: "mut"
 KW_FN: "fn"
-KW_RETURN: "return"
+KW_RETURN.2: /(?:return|da)(?![a-zA-Z0-9_])/
 KW_PUB: "pub"
-KW_SELF: "self"
+KW_SELF.2: /(?:self|yo)(?![a-zA-Z0-9_])/
 KW_AGENT: "agent"
 KW_SPAWN: "spawn"
 KW_SYNC: "sync"
 KW_SIGNAL: "signal"
 KW_STREAM: "stream"
 KW_PIPE: "pipe"
-KW_IF: "if"
-KW_ELSE: "else"
+KW_IF.2: /(?:if|si)(?![a-zA-Z0-9_])/
+KW_ELSE.2: /(?:else|sino)(?![a-zA-Z0-9_])/
 KW_MATCH: "match"
-KW_FOR: "for"
-KW_WHILE: "while"
-KW_IN: "in"
-KW_TYPE: "type"
+KW_FOR.2: /(?:for|cada)(?![a-zA-Z0-9_])/
+KW_WHILE.2: /(?:while|mien)(?![a-zA-Z0-9_])/
+KW_IN.2: /(?:in|en)(?![a-zA-Z0-9_])/
+KW_TYPE.2: /(?:type|tipo)(?![a-zA-Z0-9_])/
 KW_STRUCT: "struct"
 KW_ENUM: "enum"
 KW_IMPL: "impl"
-KW_TRAIT: "trait"
-KW_IMPORT: "import"
+KW_TRAIT.2: /(?:trait|modo|way)(?![a-zA-Z0-9_])/
+KW_IMPORT.2: /(?:import|usa)(?![a-zA-Z0-9_])/
 KW_EXPORT: "export"
 KW_EXTERN: "extern"
 KW_TRUE: "true"
 KW_FALSE: "false"
-KW_NONE: "none"
+KW_NONE.2: /(?:none|nada)(?![a-zA-Z0-9_])/
 KW_NEW: "new"
 KW_ASSERT: "assert"
-KW_BREAK: "break"
+KW_BREAK.2: /(?:break|sal)(?![a-zA-Z0-9_])/
+KW_CONTINUE.2: /(?:continue|sigue)(?![a-zA-Z0-9_])/
 
 // Contextual keywords (used in specific grammar positions)
 KW_INPUT: "input"

@@ -373,7 +373,13 @@ class ReturnStmt(Stmt):
 
 @dataclass
 class BreakStmt(Stmt):
-    """Break statement: `break`."""
+    """Break statement: `break` / `sal`."""
+
+    pass
+
+
+class ContinueStmt(Stmt):
+    """Continue statement: `continue` / `sigue`."""
 
     pass
 
