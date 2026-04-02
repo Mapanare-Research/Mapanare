@@ -862,4 +862,5 @@ La culebra se muerde la cola — through C, bilingual, stripped to the bone.
 | 2026-04-02 | Phase 1.1 (partial): `@Agent` + channels | `@Name { ... }` agent syntax, `name -> Type` / `name <- Type` arrow channels. |
 | 2026-04-02 | Phase 1.1: Indentation preprocessor | Source-level colon+indent → brace converter. `fn main:`, `si x > 0:`, `sino:`, `cada i en:`, `mien:`, `tipo:`. Full backward compat with braces. Mixed syntax works. |
 | 2026-04-02 | Phase 2.4: LLVM optional | llvmlite moved to `[llvm]` extras. `mapanare run` defaults to C backend. `--release` for LLVM. `pip install mapanare` works without llvmlite. |
-| 2026-04-02 | Phase 3.1: Migration tool | `mapanare migrate --to=v3`. struct→tipo, enum→tipo with \|, trait→modo, braces→indent, keywords→spanglish. 15/15 golden tests survive migration with identical output. |
+| 2026-04-02 | Phase 3.1: Migration tool | `mapanare migrate --to=v3`. struct→tipo, enum→tipo with \|, trait→modo, keywords→spanglish. Keeps braces (robust). |
+| 2026-04-02 | Phase 3.2: Migrate 93 files | Golden tests, examples, stdlib, crawl, dato, scan, fuzz. Bilingual keywords applied. Self-hosted files fixed (si→si_idx, en→en_idx). |
