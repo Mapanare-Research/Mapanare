@@ -859,4 +859,5 @@ La culebra se muerde la cola — through C, bilingual, stripped to the bone.
 | 2026-04-01 | Phase 2.1: `emit_c.py` complete | 15/15 golden tests pass through C backend. ~1,700 lines. Handles all 45 MIR instructions. CLI: `mapanare emit-c`. |
 | 2026-04-01 | Phase 1.2: Bilingual keywords | 17 keyword pairs (pon/let, si/if, da/return, etc.). Regex terminals with word-boundary lookahead. New `continue`/`sigue` keyword. 878 tests pass. Both forms produce identical output. |
 | 2026-04-01 | Phase 1.1 (partial): `tipo` + `modo` | `tipo Name { fields }` → StructDef, `tipo Name { \| variants }` → EnumDef. `modo`/`way` accepted as trait keyword. BAR terminal added. Works end-to-end through C backend. |
-| 2026-04-02 | Phase 1.1 (partial): `@Agent` + channels | `@Name { ... }` agent syntax, `name -> Type` / `name <- Type` arrow channels. Deferred: si-as-match (needs indent), @spawn (conflicts with decorator). |
+| 2026-04-02 | Phase 1.1 (partial): `@Agent` + channels | `@Name { ... }` agent syntax, `name -> Type` / `name <- Type` arrow channels. |
+| 2026-04-02 | Phase 1.1: Indentation preprocessor | Source-level colon+indent → brace converter. `fn main:`, `si x > 0:`, `sino:`, `cada i en:`, `mien:`, `tipo:`. Full backward compat with braces. Mixed syntax works. |
