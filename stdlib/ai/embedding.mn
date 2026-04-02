@@ -864,8 +864,8 @@ pub fn store_search(store: VectorStore, query: List<Float>, top_k: Int) -> List<
     pon scored_count: Int = len(scored)
     pon mut results: List<SearchResult> = []
     pon mut selected: List<Bool> = []
-    pon mut si: Int = 0
-    mien si < scored_count { selected = selected + [false]; si = si + 1 }
+    pon mut si_idx: Int = 0
+    mien si_idx < scored_count { selected = selected + [false]; si = si_idx + 1 }
 
     pon mut k: Int = 0
     mien k < top_k {

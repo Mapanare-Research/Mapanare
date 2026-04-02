@@ -75,22 +75,22 @@ pub fn pivot(t: table.Table, index_col: String, columns_col: String, values_col:
         }
 
         // Fill in values from source rows
-        pon mut si: Int = 0
-        mien si < t.nrows {
-            pon src_col_val: String = col_c.strs[si]
+        pon mut si_idx: Int = 0
+        mien si_idx < t.nrows {
+            pon src_col_val: String = col_c.strs[si_idx]
             si src_col_val == col_keys[cci] {
-                pon src_idx_val: String = idx_c.strs[si]
+                pon src_idx_val: String = idx_c.strs[si_idx]
                 // Find row index
                 pon mut rki: Int = 0
                 mien rki < nrow_keys {
                     si row_keys[rki] == src_idx_val {
-                        data[rki] = col.get_int(val_c, si)
+                        data[rki] = col.get_int(val_c, si_idx)
                         mask[rki] = true
                     }
                     rki = rki + 1
                 }
             }
-            si = si + 1
+            si_idx = si_idx + 1
         }
 
         value_cols = value_cols + [col.col_i64_masked(col_keys[cci], data, mask)]

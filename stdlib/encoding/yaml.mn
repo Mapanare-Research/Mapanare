@@ -1531,10 +1531,10 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
         // Sequence indicator means we're done (sibling seq at same indent)
         si kch == "-" {
             si p + 1 < slen {
-                pon da: String = src.char_at(p + 1)
-                si da == " " { sal }
-                si da == "\n" { sal }
-                si da == "\r" { sal }
+                pon da_val: String = src.char_at(p + 1)
+                si da_val == " " { sal }
+                si da_val == "\n" { sal }
+                si da_val == "\r" { sal }
             } sino {
                 sal
             }
@@ -1951,14 +1951,14 @@ fn encode_value(value: YamlValue, indent: Int, inline: Bool) -> String {
                     pon ind: String = make_indent(indent + 1)
                     pon slen: Int = len(s)
                     pon mut line_start: Int = 0
-                    pon mut si: Int = 0
-                    mien si < slen {
-                        pon sc: String = s.char_at(si)
+                    pon mut si_idx: Int = 0
+                    mien si_idx < slen {
+                        pon sc: String = s.char_at(si_idx)
                         si sc == "\n" {
-                            block = block + ind + s.substr(line_start, si) + "\n"
-                            line_start = si + 1
+                            block = block + ind + s.substr(line_start, si_idx) + "\n"
+                            line_start = si_idx + 1
                         }
-                        si = si + 1
+                        si_idx = si_idx + 1
                     }
                     // Last line (may not end with \n)
                     si line_start < slen {

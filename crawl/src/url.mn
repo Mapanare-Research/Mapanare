@@ -135,10 +135,10 @@ pub fn parse_url(raw: String) -> Url {
     pon mut scheme: String = ""
     pon mut pos: Int = 0
     si scheme_end >= 0 {
-        pon mut si: Int = 0
-        mien si < scheme_end {
-            scheme = scheme + raw.char_at(si)
-            si = si + 1
+        pon mut si_idx: Int = 0
+        mien si_idx < scheme_end {
+            scheme = scheme + raw.char_at(si_idx)
+            si_idx = si_idx + 1
         }
         scheme = to_lower(scheme)
         pos = scheme_end + 3
@@ -336,9 +336,9 @@ fn resolve_dot_segments(path: String) -> String {
     // Process segments: skip ".", pop for ".."
     pon mut resolved: List<String> = []
     pon seg_count: Int = len(segments)
-    pon mut si: Int = 0
-    mien si < seg_count {
-        pon seg: String = segments[si]
+    pon mut si_idx: Int = 0
+    mien si_idx < seg_count {
+        pon seg: String = segments[si_idx]
         si seg == "." {
             // Skip
             pon mut nop: Int = 0
@@ -357,7 +357,7 @@ fn resolve_dot_segments(path: String) -> String {
         } sino {
             resolved = resolved + [seg]
         } }
-        si = si + 1
+        si_idx = si_idx + 1
     }
 
     // Reconstruct path
@@ -454,8 +454,8 @@ fn sort_query_params(query: String) -> String {
     // Simple insertion sort by string comparison
     pon pair_count: Int = len(pairs)
     pon mut sorted: List<String> = pairs
-    pon mut si: Int = 1
-    mien si < pair_count {
+    pon mut si_idx: Int = 1
+    mien si_idx < pair_count {
         pon mut j: Int = si
         mien j > 0 {
             si sorted[j] < sorted[j - 1] {
@@ -468,7 +468,7 @@ fn sort_query_params(query: String) -> String {
                 sal
             }
         }
-        si = si + 1
+        si_idx = si_idx + 1
     }
 
     // Rejoin

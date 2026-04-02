@@ -464,10 +464,10 @@ pub fn crawl(cfg: config.CrawlConfig) -> List<page.Page> {
 
     // Seed the frontier
     pon seed_count: Int = len(cfg.seed_urls)
-    pon mut si: Int = 0
-    mien si < seed_count {
-        f = frontier.frontier_add(f, cfg.seed_urls[si], 0)
-        si = si + 1
+    pon mut si_idx: Int = 0
+    mien si_idx < seed_count {
+        f = frontier.frontier_add(f, cfg.seed_urls[si_idx], 0)
+        si_idx = si_idx + 1
     }
 
     // Main loop
