@@ -288,6 +288,7 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_list_push", "void", "ptr, ptr")
     s = declare_runtime_fn(s, "__mn_list_get", "ptr", "ptr, i64")
     s = declare_runtime_fn(s, "__mn_list_len", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_list_set", "void", "ptr, i64, ptr")
 
     // Iterator runtime
     s = declare_runtime_fn(s, "__iter_has_next", llvm_bool(), "{ i64, i64 }")
@@ -1567,7 +1568,8 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
 // ---------------------------------------------------------------------------
 
 fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitState {
-    // List index set not yet implemented in runtime
+    // Stub: indexed list store not yet working in stage2
+    // (any non-trivial implementation triggers layout-sensitive binary corruption)
     return st
 }
 

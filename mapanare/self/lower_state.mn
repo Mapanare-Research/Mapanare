@@ -116,8 +116,6 @@ fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
                     let bb: BasicBlock = f.blocks[st.current_block_idx]
                     let mut instrs: List<Instruction> = bb.instructions
                     instrs.push(instr)
-                    // DEBUG: temporarily print instruction count to trace state threading
-                    print("; EI pre=" + toString(len(bb.instructions)) + " post=" + toString(len(instrs)))
                     let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
                     let mut blks: List<BasicBlock> = f.blocks
                     blks[st.current_block_idx] = new_bb
