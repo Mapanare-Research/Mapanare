@@ -1172,6 +1172,50 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             name=str(items[0]), type_annotation=items[1], span=_span_from_children(children)
         )
 
+    # v3.0.0: @Name { ... } agent syntax
+    def at_agent_def(self, children: list[Any]) -> AgentDef:
+        """Parse `@Name { ... }` — same as agent_def but without keyword."""
+        items = _filter(children)
+        name = str(items[0])
+        members = items[1] if len(items) > 1 and isinstance(items[1], list) else []
+        inputs: list[AgentInput] = []
+        outputs: list[AgentOutput] = []
+        state: list[LetBinding] = []
+        methods: list[FnDef] = []
+        for m in members:
+            if isinstance(m, AgentInput):
+                inputs.append(m)
+            elif isinstance(m, AgentOutput):
+                outputs.append(m)
+            elif isinstance(m, LetBinding):
+                state.append(m)
+            elif isinstance(m, FnDef):
+                methods.append(m)
+        return AgentDef(
+            name=name,
+            public=False,
+            inputs=inputs,
+            outputs=outputs,
+            state=state,
+            methods=methods,
+            span=_span_from_children(children),
+        )
+
+    # v3.0.0: -> / <- channel syntax in agents
+    def agent_channel_in(self, children: list[Any]) -> AgentInput:
+        """Parse `name -> Type` as input channel."""
+        items = _filter(children)
+        return AgentInput(
+            name=str(items[0]), type_annotation=items[1], span=_span_from_children(children)
+        )
+
+    def agent_channel_out(self, children: list[Any]) -> AgentOutput:
+        """Parse `name <- Type` as output channel."""
+        items = _filter(children)
+        return AgentOutput(
+            name=str(items[0]), type_annotation=items[1], span=_span_from_children(children)
+        )
+
     def agent_state(self, children: list[Any]) -> LetBinding:
         items = _filter(children)
         mutable = False

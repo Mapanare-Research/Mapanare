@@ -16,6 +16,7 @@ start: (_nl* (definition | stmt))* _nl*
            | decorated_def
            | doc_commented_def
            | agent_def
+           | at_agent_def
            | pipe_def
            | fn_def
            | extern_fn_def
@@ -69,14 +70,21 @@ param: NAME COLON type_expr
 // ------------------------------------------------------------
 
 agent_def: KW_PUB? KW_AGENT NAME LBRACE _nl* agent_body _nl* RBRACE
+// v3.0.0: @Name { ... } agent syntax (AT + NAME + LBRACE disambiguates from decorator)
+at_agent_def: AT NAME LBRACE _nl* agent_body _nl* RBRACE
 agent_body: (agent_member _nl*)*
 ?agent_member: agent_input
              | agent_output
+             | agent_channel_in
+             | agent_channel_out
              | agent_state
              | fn_def
 
 agent_input: KW_INPUT NAME COLON type_expr
 agent_output: KW_OUTPUT NAME COLON type_expr
+// v3.0.0: -> / <- channel syntax
+agent_channel_in: NAME ARROW type_expr
+agent_channel_out: NAME SEND type_expr
 agent_state: KW_LET KW_MUT? NAME (COLON type_expr)? ASSIGN expr
 
 // ------------------------------------------------------------
