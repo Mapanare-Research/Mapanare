@@ -620,8 +620,8 @@ class CEmitter:
                     self._indent_inc()
                     for i, pt in enumerate(payload_types):
                         ct = self._c_type(pt)
-                        # Recursive or forward-ref: use pointer
-                        if ct == name or (ct in all_types and ct != name):
+                        # Self-referential: must be pointer
+                        if ct == name:
                             ct = f"{ct}*"
                         self._w(f"{ct} _{i};")
                     self._indent_dec()
@@ -818,6 +818,8 @@ class CEmitter:
                     continue
                 dest_name = self._val(inst.dest)
                 ctype = self._c_type(inst.dest.ty)
+                if ctype == "void":
+                    continue  # Skip void phi variables
                 info.declarations[dest_name] = ctype
                 for pred_label, incoming_val in inst.incoming:
                     stores = info.stores.setdefault(pred_label, [])
@@ -950,7 +952,15 @@ class CEmitter:
         """Emit phi variable assignments before a terminator."""
         stores = self._phi_info.stores.get(block_label, [])
         for phi_dest, src_name in stores:
-            self._w(f"{phi_dest} = {src_name};")
+            # Skip void phi variables (not declared)
+            if phi_dest not in self._declared_locals:
+                continue
+            # Skip void/undefined phi values
+            if src_name in ("mn_void", "mn_return"):
+                ctype = self._local_types.get(phi_dest, "int64_t")
+                self._w(f"{phi_dest} = {self._zero_init(ctype)};")
+            else:
+                self._w(f"{phi_dest} = {src_name};")
 
     # ------------------------------------------------------------------
     # Instruction handlers
@@ -1200,7 +1210,17 @@ class CEmitter:
         if inst.payload:
             vname = _safe_name(inst.variant)
             for i, pv in enumerate(inst.payload):
-                self._w(f"{dest}.as.{vname}._{i} = {self._val(pv)};")
+                pval = self._val(pv)
+                # Check if this payload field is self-referential (boxed as pointer)
+                pt = inst.payload[i].ty
+                payload_ct = self._c_type(pt)
+                if payload_ct == enum_name and enum_name in self._enums:
+                    # Allocate on heap and store pointer
+                    self._w(f"{{ {enum_name} *__box = malloc(sizeof({enum_name}));")
+                    self._w(f"  *__box = {pval};")
+                    self._w(f"  {dest}.as.{vname}._{i} = __box; }}")
+                else:
+                    self._w(f"{dest}.as.{vname}._{i} = {pval};")
 
     def _emit_enum_tag(self, inst: EnumTag) -> None:
         ev = self._val(inst.enum_val)
@@ -1229,7 +1249,14 @@ class CEmitter:
         else:
             vname = _safe_name(inst.variant)
             idx = inst.payload_idx
-            self._w(f"{dest} = {ev}.as.{vname}._{idx};")
+            # Check if payload was auto-boxed (self-referential enum)
+            enum_name = inst.enum_val.ty.type_info.name
+            dest_ct = self._c_type(inst.dest.ty)
+            payload_boxed = (dest_ct == enum_name) and enum_name in self._enums
+            if payload_boxed:
+                self._w(f"{dest} = *{ev}.as.{vname}._{idx};")
+            else:
+                self._w(f"{dest} = {ev}.as.{vname}._{idx};")
 
     # --- Option/Result wrappers ---
 
@@ -1310,7 +1337,7 @@ class CEmitter:
             return
 
         # str (type conversion to string)
-        if fn_name == "str":
+        if fn_name in ("str", "toString"):
             if inst.args:
                 kind = inst.args[0].ty.type_info.kind
                 av = args[0]
@@ -1456,9 +1483,17 @@ class CEmitter:
                         self._w(f"{dest} = ({enum_name}){{.tag = {tag}}};")
                     else:
                         sv = _safe_name(vname)
-                        fi = ", ".join(f"._{i} = {args[i]}" for i in range(len(args)))
-                        init = f".tag = {tag}, .as = {{.{sv} = {{{fi}}}}}"
-                        self._w(f"{dest} = ({enum_name}){{{init}}};")
+                        # Handle self-referential boxing
+                        self._w(f"{dest}.tag = {tag};")
+                        for pi in range(min(len(args), len(payload_types))):
+                            pt_ct = self._c_type(payload_types[pi])
+                            if pt_ct == enum_name:
+                                # Box: heap-allocate
+                                self._w(f"{{ {enum_name} *__bp = malloc(sizeof({enum_name}));")
+                                self._w(f"  *__bp = {args[pi]};")
+                                self._w(f"  {dest}.as.{sv}._{pi} = __bp; }}")
+                            else:
+                                self._w(f"{dest}.as.{sv}._{pi} = {args[pi]};")
                     return
 
         # --- User-defined or runtime function call ---
