@@ -1575,6 +1575,116 @@ _parser = Lark(
 )
 
 
+def _indent_to_braces(source: str) -> str:
+    """Convert indentation-based syntax to brace-based syntax.
+
+    This preprocessor handles the v3.0.0 colon+indent syntax:
+    - Lines ending with ``:`` open a block (replaced with ``{``)
+    - Dedent closes blocks (``}`` inserted)
+    - If source contains ``{`` at definition level, it's already brace-based
+
+    Falls back to the original source if no colon blocks are detected.
+    """
+    # Quick check: if no colon-ending lines, return as-is
+    lines = source.split("\n")
+    has_colon_blocks = any(
+        line.rstrip().endswith(":") and not line.lstrip().startswith(("#", "//"))
+        for line in lines
+        if line.strip()
+    )
+    if not has_colon_blocks:
+        return source
+
+    out: list[str] = []
+    indent_stack: list[int] = [0]  # Stack of indent levels
+
+    # Keywords that continue a previous block (else, sino, sino si)
+    _CONTINUATION_KW = ("else", "sino", "sino si", "else if")
+
+    i = 0
+    while i < len(lines):
+        raw = lines[i]
+        stripped = raw.rstrip()
+        if not stripped or stripped.lstrip().startswith(("#", "//")):
+            out.append(raw)
+            i += 1
+            continue
+
+        # Compute indent level (spaces / 4)
+        spaces = len(raw) - len(raw.lstrip())
+        level = spaces // 4
+
+        content = stripped.lstrip()
+
+        # Check if this line is a continuation (else/sino) before closing blocks
+        is_continuation = False
+        for kw in _CONTINUATION_KW:
+            if content.startswith(kw) and (
+                len(content) == len(kw)
+                or content[len(kw)] in (" ", ":", "{")
+            ):
+                is_continuation = True
+                break
+
+        if is_continuation:
+            # Close ONE block level and merge with this continuation
+            if indent_stack[-1] > level:
+                indent_stack.pop()
+                prefix = "    " * level
+                if stripped.endswith(":"):
+                    body = content[:-1].rstrip()
+                    out.append(f"{prefix}}} {body} {{")
+                    indent_stack.append(level + 1)
+                else:
+                    out.append(f"{prefix}}} {content}")
+            else:
+                prefix = "    " * level
+                out.append(f"{prefix}{content}")
+            i += 1
+            continue
+
+        # Close blocks for dedent
+        while level < indent_stack[-1]:
+            indent_stack.pop()
+            close_indent = "    " * indent_stack[-1]
+            out.append(f"{close_indent}}}")
+
+        if stripped.endswith(":"):
+            # This line opens a block
+            body = content[:-1].rstrip()  # Remove trailing colon
+            prefix = "    " * level
+
+            # Handle `fn name:` (zero-arg function, needs parens)
+            if body.startswith("fn ") and "(" not in body:
+                parts = body.split(None, 1)
+                fn_name = parts[1] if len(parts) > 1 else ""
+                if "->" in fn_name:
+                    name_part, ret_part = fn_name.split("->", 1)
+                    out.append(
+                        f"{prefix}fn {name_part.strip()}() -> {ret_part.strip()} {{"
+                    )
+                else:
+                    out.append(f"{prefix}fn {fn_name}() {{")
+            else:
+                out.append(f"{prefix}{body} {{")
+
+            indent_stack.append(level + 1)
+        else:
+            prefix = "    " * level
+            out.append(f"{prefix}{content}")
+
+        i += 1
+
+    # Close remaining open blocks
+    while len(indent_stack) > 1:
+        indent_stack.pop()
+        close_indent = "    " * indent_stack[-1]
+        out.append(f"{close_indent}}}")
+
+    result = "\n".join(out)
+    return result
+
+
 def parse(source: str, *, filename: str = "<input>") -> Program:
     """Parse Mapanare source code into an AST Program node.
 
@@ -1588,6 +1698,7 @@ def parse(source: str, *, filename: str = "<input>") -> Program:
     Raises:
         ParseError: If the source has syntax errors.
     """
+    source = _indent_to_braces(source)
     try:
         result = _parser.parse(source)
         if isinstance(result, Program):
