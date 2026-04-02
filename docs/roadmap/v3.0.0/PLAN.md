@@ -1,39 +1,35 @@
 # Mapanare v3.0.0 — "La Culebra Se Muerde La Cola"
 
 > The snake bites its own tail. The compiler compiles itself — through C.
-> The syntax sheds its skin — no braces, no noise, every token earns its place.
+> The syntax sheds everything that doesn't earn its place.
 
 **Status:** DRAFT
 **Author:** Juan Denis
 **Date:** April 2026
-**Breaking:** YES (syntax overhaul + backend change)
+**Breaking:** YES (full syntax overhaul + backend change)
 **Codename:** Culebra
+**Philosophy:** RADICAL. Zero users, zero backwards compatibility concerns. Every
+token must justify its existence or die.
 
 ---
 
 ## Why v3.0.0
 
-Two problems have been eating us alive:
+Two problems:
 
-**Problem 1: LLVM IR is the wrong bootstrap target.** The self-hosted compiler (9,400+
-lines of .mn) has been stuck at 99% for months. 137 PHI mismatches, 158 dropped else
-branches, 60 break-inside-nested-control bugs. Every LLM we consulted independently
-said the same thing: emit C instead.
+**Problem 1: LLVM IR is the wrong bootstrap target.** 137 PHI mismatches, 158 dropped
+else branches, 60 break-inside-nested-control. Emit C instead.
 
-**Problem 2: The syntax wastes tokens.** Mapanare's thesis is "AI-native." If an LLM
-is reading, writing, and reasoning about this language, every unnecessary character
-burns context window for zero semantic value. Curly braces, closing brackets,
-redundant `return` statements, verbose keywords — all of it is noise.
-
-v3.0.0 fixes both. C backend for the compiler. Indentation-based syntax for the language.
+**Problem 2: The syntax is bloated.** Mapanare claims to be AI-native but looks like
+Rust with Spanish variables. Every `fn`, every `{`, every `struct`, every `impl X for Y`
+is a token an LLM pays for and gets nothing back. We have 2 GitHub stars. No users to
+break. This is the one moment we can burn it all down and rebuild from scratch.
 
 ---
 
 ## The Token Argument
 
-This is not a style preference. This is a measurable engineering decision.
-
-A fibonacci function in current Mapanare:
+Current Mapanare (v2.0):
 
 ```
 fn fibonacci(n: Int) -> Int {
@@ -51,14 +47,13 @@ fn fibonacci(n: Int) -> Int {
 }
 ```
 
-**198 characters. 13 lines. 6 brace tokens. 2 return keywords (12 chars).**
+**198 characters. 13 lines.**
 
-The same function in v3.0.0:
+Radical Mapanare (v3.0):
 
 ```
-fn fibonacci(n: Int) -> Int:
-    si n <= 1:
-        da n
+fibonacci(n: Int) -> Int:
+    si n <= 1: da n
     pon a = 0
     pon b = 1
     for i en range(2, n + 1):
@@ -68,66 +63,49 @@ fn fibonacci(n: Int) -> Int:
     b
 ```
 
-**~165 characters. 10 lines. 0 brace tokens. `da` instead of `return` (8 chars saved).**
+**~148 characters. 9 lines.**
 
-That's roughly **17% fewer characters** on a small function. On the self-hosted
-compiler (9,400 lines), the savings compound:
-
-| Metric | v2.0 (braces) | v3.0 (indentation) | Savings |
-|--------|---------------|-------------------|---------|
-| Lines | 9,400 | ~7,800 | ~17% fewer lines |
-| Characters | ~280K est. | ~225K est. | ~20% fewer chars |
-| LLM tokens | ~70K est. | ~58K est. | ~12-15% fewer tokens |
-| Closing-brace-only lines | ~1,400 | 0 | Eliminated |
-
-**12-15% fewer tokens means the LLM can hold more of your program in context at once.**
-That's not aesthetics. That's the LLM seeing 15% more code in a single pass, catching
-15% more bugs, understanding 15% more of the program structure.
-
-For a language that claims to be AI-native, this is table stakes.
+That's **25% fewer characters** and **30% fewer lines**. At scale (9,400 line compiler),
+that's ~2,350 lines eliminated. ~17,500 tokens freed up for the LLM.
 
 ---
 
-## The Three Changes
-
-In priority order:
+## The Changes
 
 1. **C emit backend** — bootstrap through C, not LLVM IR
-2. **Indentation-based syntax** — colons + indentation, no braces
-3. **Bilingual keywords** — Spanglish primary, English accepted. Every keyword has both forms.
+2. **Indentation syntax** — colons + indentation, no braces
+3. **Radical keyword reduction** — kill every keyword that can be inferred
+4. **Bilingual** — Spanglish primary, English accepted
 
 ---
 
 ## Part 1: Syntax Overhaul
 
+### What Dies
+
+| Killed | Replacement | Why |
+|--------|-------------|-----|
+| `struct` keyword | `tipo` for both structs and enums | One keyword for all type definitions. `tipo` is 4 chars vs 6. |
+| `enum` keyword | `tipo` with variants | If a `tipo` has variant syntax, it's an enum. No separate keyword needed. |
+| `trait` keyword | `modo` (Spanish "way/manner") | 4 chars vs 5. "A modo is a way types can behave." |
+| `impl X for Y` | `Y + Modo:` | `+` means "add this capability." 1 char vs 8 (`impl for`). |
+| `match` keyword | Overload `si` | Pattern matching IS conditional checking. `si value:` with arms = match. |
+| `agent X` keyword | `@X:` | `@` prefix = concurrent. Shorter, visually distinct. |
+| `spawn X()` | `@X()` | Spawning is just calling an `@` type. |
+| `fn main() {}` | `fn main:` | Entry point. No parens, no braces. |
+| Mandatory parens on calls | Optional when unambiguous | `di "hello"` not `di("hello")`. `server.run` not `server.run()`. |
+| `pub` keyword | `+` prefix on name | `+name` = public. Shorter than `pub name`. |
+| `input`/`output` in agents | `->` and `<-` | Arrow direction = data flow direction. Already used for send. |
+
 ### Design Principles
 
-1. **Every token must carry meaning.** If a token exists only for the parser's benefit
-   and an LLM/human can infer it from structure, remove it.
-2. **Indentation IS the structure.** Like Python, like Haskell, like Nim. Whitespace
-   is not decoration, it's syntax. Colons open blocks. Dedent closes them.
-3. **Implicit returns.** The last expression in a block is its value. `da` (return)
-   is only needed for early returns.
-4. **No semicolons.** One statement per line. Newline is the terminator.
-5. **No parentheses on control flow.** `si x > 0:` not `si (x > 0):`.
-6. **Minimal punctuation overall.** Parentheses only for function calls and grouping math.
-
-### Syntax Changes
-
-| Feature | v2.0 (current) | v3.0 (new) | Tokens saved |
-|---------|----------------|------------|-------------|
-| Block delimiters | `{ ... }` | `:` + indentation | 2 per block |
-| Function body | `fn foo() { ... }` | `fn foo():` + indent | 2 |
-| If/else | `si x { ... } sino { ... }` | `si x:` ... `sino:` | 4 |
-| For loop | `cada i en list { ... }` | `cada i en list:` + indent | 2 |
-| While loop | `mien x > 0 { ... }` | `mien x > 0:` + indent | 2 |
-| Match arms | `Ok(v) => { ... }` | `Ok(v) =>` + indent (or single line) | 2 per arm |
-| Agent body | `agent Foo { ... }` | `agent Foo:` + indent | 2 |
-| Trait body | `trait Foo { ... }` | `trait Foo:` + indent | 2 |
-| Impl body | `impl Foo for Bar { ... }` | `impl Foo for Bar:` + indent | 2 |
-| Return | `return value` / `da value` | Last expression is implicit. `da` for early return only. | 1 per function |
-| Print | `di(value)` | `di value` (keyword, not function call) | 2 (parens) |
-| Main | `fn main() { ... }` | `fn main:` | 4 (`()` + `{}`) |
+1. **One keyword per concept.** Not `struct` + `enum`. Just `tipo`.
+   Not `if` + `match`. Just `si`. But `fn` stays — it's 2 chars and every language has one.
+2. **Indentation IS structure.** Colons open blocks. Dedent closes them.
+3. **Last expression = return value.** `da`/`return` only for early exits.
+4. **Symbols over words when shorter.** `@` for agents, `+` for pub/impl.
+5. **Parens only when needed.** Function calls with a single argument or no arguments
+   don't need them.
 
 ### Syntax Reference
 
@@ -141,8 +119,7 @@ fn greet(name: String) -> String:
     "Hello, " + name + "!"
 
 fn fibonacci(n: Int) -> Int:
-    si n <= 1:
-        da n
+    si n <= 1: da n
     pon a = 0
     pon b = 1
     for i en range(2, n + 1):
@@ -150,12 +127,61 @@ fn fibonacci(n: Int) -> Int:
         b = a + b
         a = temp
     b
+
+fn main:
+    di "Hello, Mapanare!"
 ```
 
-No braces. No explicit return for the last expression. `da` only for early returns.
-`fn main:` has no `()` because main takes no arguments.
+`fn` stays — it's 2 characters and every language has a function keyword.
+`fn main:` has no `()` because main takes no arguments. No braces — colon + indentation.
 
-#### Control Flow
+#### Types (`tipo` unifies struct + enum)
+
+**Structs** (tipo with fields):
+
+```
+tipo Point:
+    x: Float
+    y: Float
+
+tipo Config:
+    host: String
+    port: Int
+    debug: Bool
+```
+
+**Enums** (tipo with variants using `|`):
+
+```
+tipo Shape:
+    | Circle(Float)
+    | Rect(Float, Float)
+    | Triangle(Float, Float, Float)
+
+tipo Option<T>:
+    | Some(T)
+    | None
+
+tipo Result<T, E>:
+    | Ok(T)
+    | Err(E)
+```
+
+The `|` prefix on lines inside a `tipo` means "this is a variant." No `|` means
+"this is a field." You can even mix them if you need a base struct with variants
+(tagged union with shared fields):
+
+```
+tipo Event:
+    timestamp: Int
+    | Click(x: Int, y: Int)
+    | Keypress(key: String)
+    | Scroll(delta: Float)
+```
+
+#### Control Flow (`si` handles both if/else AND match)
+
+**Simple conditionals:**
 
 ```
 si temperature > 100:
@@ -164,113 +190,105 @@ sino si temperature < 0:
     di "freezing"
 sino:
     di "just right"
-
-for item en inventory:
-    si item.quantity == 0:
-        di item.name + " is out of stock"
-        sigue
-    process(item)
-
-mien queue.length() > 0:
-    pon task = queue.pop()
-    si task == nada:
-        sal
-    execute(task)
 ```
 
-`si`/`sino` = if/else. `for`/`en` = for/in (or `cada`/`en`). `mien` = while. `sal` = break.
-`sigue` = continue. `nada` = null/none. No parentheses around conditions.
-
-#### Structs and Enums
+**Pattern matching** (si + arms with `=>`):
 
 ```
-struct Point:
-    x: Float
-    y: Float
+si shape:
+    Circle(r) => 3.14159 * r * r
+    Rect(w, h) => w * h
+    Triangle(a, b, c) => heron(a, b, c)
 
-enum Shape:
-    Circle(Float)
-    Rect(Float, Float)
-
-fn area(s: Shape) -> Float:
-    match s:
-        Circle(r) => 3.14159 * r * r
-        Rect(w, h) => w * h
-```
-
-Match arms use `=>` for single expressions. Multi-line arms use indentation:
-
-```
-match result:
+si result:
     Ok(value) =>
         di "got: " + str(value)
-        process(value)
+        process value
     Err(e) =>
         di "error: " + e
         da nada
 ```
 
-#### Agents
+How does the parser tell the difference? If the block after `si expr:` contains
+`=>` arms, it's a pattern match. Otherwise it's a conditional. Simple.
+
+**Loops:**
 
 ```
-agent Classifier:
-    input text: String
-    output label: String
+for item en inventory:
+    si item.quantity == 0:
+        di item.name + " is out of stock"
+        sigue
+    process item
+
+mien queue.length > 0:
+    pon task = queue.pop
+    si task == nada: sal
+    execute task
+```
+
+#### Agents (`@` prefix)
+
+```
+@Classifier:
+    text -> String
+    label <- String
 
     fn handle(yo, text: String) -> String:
-        si text.contains("bueno"):
+        si text.contains "bueno":
             da "positive"
         "negative"
 
 fn main:
-    pon cls = spawn Classifier()
+    pon cls = @Classifier()
     cls.text <- "Mapanare es bueno"
     pon result = sync cls.label
     di result
 ```
 
-`yo` = self. Agents use `:` + indentation like everything else.
+`@Name:` defines a concurrent agent. `->` = input channel. `<-` = output channel.
+`@Name()` spawns an instance (replaces `spawn`). The `@` is the visual signal that
+says "this thing runs concurrently."
 
-#### Signals and Streams
+`sync` stays as a keyword because it's a blocking operation that deserves to be visible.
 
-```
-pon mut count = signal(0)
-pon doubled = signal:
-    count * 2
-
-pon data = stream([1, 2, 3, 4, 5])
-pon result = data
-    |> filter fn(x): x > 2
-    |> map fn(x): x * 10
-    |> collect
-```
-
-Inline lambdas: `fn(params): expression`. Multi-line lambdas use indentation:
+#### Traits (`modo`) and Impl (`+`)
 
 ```
-pon result = data |> map fn(x):
-    pon processed = transform(x)
-    validate(processed)
-    processed
-```
-
-#### Traits and Impl
-
-```
-trait Display:
+modo Display:
     fn show(yo) -> String
 
-trait Eq:
+modo Eq:
     fn equals(yo, other: Self) -> Bool
 
-impl Display for Point:
+Point + Display:
     fn show(yo) -> String:
         "(" + str(yo.x) + ", " + str(yo.y) + ")"
 
-impl Eq for Point:
+Point + Eq:
     fn equals(yo, other: Point) -> Bool:
         yo.x == other.x and yo.y == other.y
 ```
+
+`modo` = "way" (a modo defines a way types can behave). `Point + Display:` means
+"add the Display capability to Point." Reads naturally.
+
+#### Visibility (`+` prefix instead of `pub`)
+
+```
+tipo Server:
+    +host: String          # public field
+    +port: Int             # public field
+    secret_key: String     # private (default)
+
+    +fn new(host: String, port: Int) -> Server:   # public method
+        Server { host, port, secret_key: "" }
+
+    fn validate(yo) -> Bool:                     # private method
+        yo.secret_key.length > 0
+```
+
+`+` before a name = public. No `+` = private. One character vs three (`pub`).
 
 #### Imports
 
@@ -280,24 +298,47 @@ usa encoding::json de parse, encode
 usa ai::llm de LLMDriver
 ```
 
-`usa` = import/use. `de` = from.
+Unchanged from before. `usa`/`import` and `de`/`from` both work.
+
+#### Signals and Streams
+
+```
+pon mut count = signal 0
+pon doubled = signal:
+    count * 2
+
+pon data = stream [1, 2, 3, 4, 5]
+pon result = data
+    |> filter fn(x): x > 2
+    |> map fn(x): x * 10
+    |> collect
+```
+
+**Lambdas** use `fn(params): expr` inline:
+
+```
+pon result = data |> map fn(x):
+    pon processed = transform x
+    validate processed
+    processed
+```
 
 #### Error Handling
 
 ```
 fn divide(a: Float, b: Float) -> Result<Float, String>:
     si b == 0.0:
-        da Err("division by zero")
+        da Err "division by zero"
     Ok(a / b)
 
 fn main:
     pon value = divide(10.0, 3.0)?
-    di str(value)
+    di str value
 ```
 
-`?` operator unchanged. `try`/`catch` if we add them later also use `:` + indent.
+`?` operator unchanged. `try`/`catch` use `:` + indent if we add them.
 
-#### GPU and WASM (unchanged semantics, new syntax)
+#### GPU
 
 ```
 @gpu
@@ -305,347 +346,310 @@ fn matmul(a: Tensor<Float>[M, K], b: Tensor<Float>[K, N]) -> Tensor<Float>[M, N]
     a @ b
 ```
 
+`@gpu` is a decorator on a function.
+
 #### Complete Example: HTTP Server
 
 ```
 usa net::http::server de Server, route
 usa encoding::json
 
-agent ApiHandler:
-    input request: Request
-    output response: Response
+@ApiHandler:
+    request -> Request
+    response <- Response
 
     fn handle(yo, req: Request) -> Response:
-        match req.path:
-            "/health" => Response.ok("alive")
+        si req.path:
+            "/health" => Response.ok "alive"
             "/api/users" =>
                 pon users = fetch_users()
-                Response.json(json.encode(users))
-            _ => Response.not_found("nope")
+                Response.json(json.encode users)
+            _ => Response.not_found "nope"
 
 fn main:
-    pon server = Server.new(":8080")
-    server.route("/", ApiHandler)
+    pon server = Server.new ":8080"
+    server.route "/", @ApiHandler
     di "listening on :8080"
-    server.run()
+    server.run
+```
+
+#### Complete Example: AI Agent Pipeline
+
+```
+usa ai::llm de LLMDriver
+
+@Analyst:
+    question -> String
+    answer <- String
+
+    fn handle(yo, q: String) -> String:
+        pon driver = LLMDriver.new "anthropic"
+        pon response = driver.complete(q)?
+        response.text
+
+@Translator:
+    text -> String
+    translated <- String
+
+    fn handle(yo, text: String) -> String:
+        pon driver = LLMDriver.new "anthropic"
+        driver.complete("translate to Spanish: " + text)?
+            .text
+
+fn main:
+    pon analyst = @Analyst()
+    pon translator = @Translator()
+
+    analyst.question <- "what is mapanare?"
+    pon answer = sync analyst.answer
+
+    translator.text <- answer
+    di sync translator.translated
 ```
 
 ### Indentation Rules
 
-1. **One indent level = 4 spaces.** Tabs are a syntax error.
-2. **Colon opens a block.** The next line must be indented.
+1. **4 spaces per indent level.** Tabs = syntax error.
+2. **Colon opens a block.** Next line must be indented.
 3. **Dedent closes a block.** No explicit closing token.
-4. **Blank lines are allowed** anywhere and don't affect indentation.
-5. **Line continuation:** A line ending with an operator (`+`, `|>`, `and`, `or`, etc.)
-   continues on the next line at the current or deeper indentation.
-6. **Single-line blocks** are allowed: `si x > 0: da x` (everything on one line after the colon).
+4. **Blank lines** don't affect indentation.
+5. **Line continuation:** lines ending with an operator (`+`, `|>`, `and`, `or`, `<-`)
+   continue on the next line.
+6. **Single-line blocks:** `si x > 0: da x` (everything after colon on same line).
 
-### What About `match` Arms?
+### Optional Parentheses Rules
 
-Match is the one place where indentation-only gets slightly verbose. Two options:
+Parens are optional when:
 
-**Option A: Indentation (chosen)**
+1. **Single-argument function calls:** `di "hello"` = `di("hello")`
+2. **Zero-argument method calls:** `server.run` = `server.run()`
+3. **String/literal arguments:** `Err "not found"` = `Err("not found")`
 
-```
-match shape:
-    Circle(r) => 3.14 * r * r
-    Rect(w, h) => w * h
-```
+Parens are required when:
 
-Single-expression arms stay on one line after `=>`. Multi-line arms indent:
+1. **Multiple arguments:** `add(1, 2)` (need comma separation)
+2. **Nested calls:** `di(str(x))` (ambiguity without parens)
+3. **Chained after result:** `driver.complete(q)?.text` (need to mark call boundary)
 
-```
-match result:
-    Ok(v) =>
-        di v
-        process(v)
-    Err(e) =>
-        log_error(e)
-        nada
-```
-
-**Option B: Was considered and rejected** — using `|` like Haskell/OCaml.
-Too unfamiliar, adds a new sigil for no savings.
+**Rule of thumb:** if removing parens creates ambiguity, keep them.
 
 ---
 
 ## Part 2: Bilingual Keywords
 
-### The Big Idea
-
-Every keyword has two forms: Spanglish (primary, used in official docs/examples) and
-English (accepted, for developers who prefer it). The compiler treats both identically.
-Same AST, same MIR, same binary. Write whichever feels natural.
-
-```
-# These compile to the exact same thing:
-
-pon x = 42          let x = 42
-si x > 0:           if x > 0:
-    di x                print x
-sino:               else:
-    di "nope"           print "nope"
-```
-
-### Grammar Rule
-
-For the parser, each bilingual keyword is just an OR:
-
-```
-var_decl:  ("pon" | "let") IDENT "=" expr
-if_stmt:   ("si" | "if") expr ":" block [("sino" | "else") ":" block]
-for_stmt:  ("for" | "cada") IDENT ("en" | "in") expr ":" block
-while_stmt: ("mien" | "while") expr ":" block
-...
-```
-
-One line per keyword in the grammar. Zero runtime cost. The lexer emits the same
-token type regardless of which spelling was used.
+Every keyword has two forms. Both compile identically. Official docs use Spanglish.
 
 ### The Keyword Table
 
-| Spanglish (primary) | English (alias) | Chars | Notes |
-|---------------------|-----------------|-------|-------|
-| `pon` | `let` | 3 | "Put." `pon x = 0` / `let x = 0` |
-| `da` | `return` | 2 | "Gives." Only for early returns. |
-| `si` | `if` | 2 | |
-| `sino` | `else` | 4 | `sino si` / `else if` both work for elif |
-| `for` | `cada` | 3/4 | `for` is primary because it's shorter. `cada` accepted as alias. |
-| `en` | `in` | 2 | Pairs with both `for` and `cada` |
-| `mien` | `while` | 4 | Abbrev "mientras" |
-| `sal` | `break` | 3 | "Get out" |
-| `sigue` | `continue` | 5 | "Keep going" |
-| `nada` | `null` | 4 | "Nothing" |
-| `no` | `not` | 2 | Universal |
-| `usa` | `import` | 3 | "Use" |
-| `de` | `from` | 2 | "From/of" |
-| `yo` | `self` | 2 | "I/me" |
-| `di` | `print` | 2 | "Say/tell." Keyword: `di value` not `di(value)` |
+| Spanglish (primary) | English (alias) | Chars | Role |
+|---------------------|-----------------|-------|------|
+| `pon` | `let` | 3 | Variable declaration |
+| `da` | `return` | 2 | Early return only |
+| `si` | `if` | 2 | Conditionals AND pattern matching |
+| `sino` | `else` | 4 | Else branch |
+| `for` | `cada` | 3/4 | Loop (`for` is primary, `cada` is alias) |
+| `en` | `in` | 2 | Loop iteration |
+| `mien` | `while` | 4 | While loop |
+| `sal` | `break` | 3 | Break |
+| `sigue` | `continue` | 5 | Continue |
+| `nada` | `null` | 4 | Null/none |
+| `no` | `not` | 2 | Negation |
+| `usa` | `import` | 3 | Import |
+| `de` | `from` | 2 | From |
+| `yo` | `self` | 2 | Self reference |
+| `di` | `print` | 2 | Print (keyword, not function call) |
+| `tipo` | `type` | 4 | Type definition (structs + enums) |
+| `modo` | `way` | 4 | Trait/interface definition |
 
 ### Unchanged Keywords (no alias needed)
 
-These are already short, universal, or identical in both languages:
-
 ```
-fn  mut  true  false  and  or  struct  enum  match  trait  impl  pub
-agent  spawn  sync  signal  stream  pipe  try  catch  throw  tipo
+fn  mut  true  false  and  or  sync  signal  stream  pipe
+try  catch  throw  pub
 ```
 
-### Rejected Single-Character Keywords
+### Symbols (no aliases, universal)
 
-| Proposed | Rejected Because |
-|----------|-----------------|
-| `v` for true | Collides with variable names |
-| `f` for false | Collides with variable names |
-| `n` for null | Collides with variable names |
-| `o` for or | Parser ambiguity with identifiers |
-| `y` for and | Parser ambiguity with identifiers |
+| Symbol | Meaning |
+|--------|---------|
+| `@Name` | Agent definition or spawn |
+| `+name` | Public visibility |
+| `->` | Input channel / return type arrow |
+| `<-` | Output channel / send operator |
+| `\|>` | Pipe operator |
+| `=>` | Pattern match arm |
+| `?` | Error propagation |
+| `...` | Empty block (like Python's `pass`) |
 
-### Style Modes (optional, via `mapanare fmt`)
-
-The formatter can normalize to a preferred style:
+### Style Modes (`mapanare fmt`)
 
 ```bash
-mapanare fmt --style=spanglish src/    # pon, si, da, di, mien, sal, usa
-mapanare fmt --style=english src/      # let, if, return, print, while, break, import
-mapanare fmt --style=mixed src/        # No changes, accept whatever is written
+mapanare fmt --style=spanglish src/    # pon, si, da, di, mien, sal, usa, tipo, modo
+mapanare fmt --style=english src/      # let, if, return, print, while, break, import, type, way
+mapanare fmt --style=mixed src/        # No changes (default)
 ```
 
-Default is `mixed` (accept anything). The linter does NOT enforce consistency within
-a file. People can mix freely. This is a feature, not a bug: it means an LLM can
-write whichever keyword is shortest in context, and a human can write whichever
-keyword they think in.
+### Both Styles Side by Side
 
-### Before and After
-
-**Spanglish style (primary, used in docs):**
+**Spanglish:**
 
 ```
 usa ai::llm de LLMDriver
 
+@Analyst:
+    question -> String
+    answer <- String
+
+    fn handle(yo, q: String) -> String:
+        pon driver = LLMDriver.new "anthropic"
+        pon response = driver.complete(q)?
+        response.text
+
 fn main:
-    pon driver = LLMDriver.new("anthropic")
-    pon response = driver.complete("que es mapanare?")?
-    di response.text
+    pon bot = @Analyst()
+    bot.question <- "que es mapanare?"
+    di sync bot.answer
 ```
 
-**English style (accepted, same AST):**
+**English:**
 
 ```
 import ai::llm from LLMDriver
 
-fn main:
-    let driver = LLMDriver.new("anthropic")
-    let response = driver.complete("que es mapanare?")?
-    print response.text
-```
+@Analyst:
+    question -> String
+    answer <- String
 
-**Mixed style (also valid, LLMs will naturally do this):**
-
-```
-usa ai::llm de LLMDriver
+    fn handle(self, q: String) -> String:
+        let driver = LLMDriver.new "anthropic"
+        let response = driver.complete(q)?
+        response.text
 
 fn main:
-    let driver = LLMDriver.new("anthropic")
-    pon response = driver.complete("que es mapanare?")?
-    di response.text
+    let bot = @Analyst()
+    bot.question <- "que es mapanare?"
+    print sync bot.answer
 ```
 
-All three compile to the same binary.
+Same AST. Same binary.
 
 ---
 
 ## Part 3: C Emit Backend
 
-### The Problem (Numbers)
+### The Problem
 
 | Issue | Count | Why C Fixes It |
 |-------|-------|----------------|
-| PHI node mismatches | 137 | C has no PHI nodes. Assign in predecessor blocks. |
-| Dropped else branches | 158 | `if/else` in C is just `if/else`. No block terminators. |
-| Break inside nested control | 60 | `break` in C is just `break`. LLVM blocks don't nest. |
-| Stage2 runtime crashes | 1 | Tagged unions in C are explicit. No GEP-on-null. |
+| PHI node mismatches | 137 | C has no PHI nodes |
+| Dropped else branches | 158 | `if/else` in C is just `if/else` |
+| Break inside nested control | 60 | `break` in C is just `break` |
+| Stage2 runtime crashes | 1 | Tagged unions in C are explicit |
 | main.ll size | 53K lines | main.c will be ~15K lines |
 
-### Backend Roles After v3.0.0
+### Backend Roles
 
 | Backend | Role | CLI |
 |---------|------|-----|
 | `emit_c.py` | Default builds, bootstrap | `mapanare build` |
-| `emit_c.mn` | Self-hosted bootstrap target | Fixed-point |
-| `emit_llvm_mir.py` | Optimized release builds | `mapanare build --release` |
-| `emit_wasm.py` | WebAssembly (unchanged) | `mapanare emit-wasm` |
-| `emit_llvm.py` | Archived (AST-based) | Removed |
-| `emit_python*.py` | Archived | Already gone |
+| `emit_c.mn` | Self-hosted bootstrap | Fixed-point target |
+| `emit_llvm_mir.py` | Optimized release | `mapanare build --release` |
+| `emit_wasm.py` | WebAssembly | `mapanare emit-wasm` |
+| Everything else | Archived | Gone |
 
 ### MIR to C Mapping
 
 | MIR Construct | C Output |
 |---------------|----------|
 | `MIRFunction` | `ReturnType func_name(params) { ... }` |
-| `MIRBlock` | `label: { ... }` or sequential statements |
+| `MIRBlock` | Sequential statements or `label:` with goto |
 | `MIRAlloca` | Local variable declaration |
-| `MIRStore`/`MIRLoad` | Assignment / variable read |
+| `MIRStore`/`MIRLoad` | Assignment / read |
 | `MIRCall` | Function call |
 | `MIRBranch` | `if (cond) goto t; else goto f;` |
 | `MIRJump` | `goto label;` |
 | `MIRReturn` | `return value;` |
-| `MIRPhi` | **Eliminated** — assign in predecessor blocks |
+| `MIRPhi` | **Eliminated** — assign in predecessors |
 | `MIRGetField`/`MIRSetField` | `value.field` / `value->field` |
 | `MIRSwitch` | `switch (tag) { case 0: ...; }` |
 | Struct types | `typedef struct { ... } TypeName;` |
-| Enum types | `typedef struct { int tag; union { ... } data; } EnumName;` |
+| Enum types | `typedef struct { int tag; union { ... } } EnumName;` |
 | String literals | `(MnString){.ptr = "...", .len = N}` |
-| Closures | Struct with function pointer + environment pointer |
+| Closures | Struct with fn pointer + env pointer |
 
 ### Emitted C Quality Checklist
 
-Five things that determine whether gcc/clang can optimize our output well:
+1. **Stack locals for non-escaping values.** `int x = ...` not `malloc`.
+2. **Direct function calls.** When target is known, emit `mn_add(a, b)` directly.
+3. **Clean loops.** Emit `for`/`while`, not goto webs.
+4. **Small structs by value.** Under 16 bytes = by value.
+5. **`restrict` on non-aliasing pointers.** Enables vectorization.
 
-1. **Stack locals for non-escaping values.** Emit `int x = ...;` not `int* x = malloc(...)`.
-2. **Direct function calls.** When MIR knows the exact target, emit `mn_add(a, b)` not a function pointer.
-3. **Clean loops.** When MIR has loop structure, emit `for`/`while` in C, not goto webs.
-4. **Small structs by value.** Under 16 bytes = pass by value. Larger = pass by pointer.
-5. **`restrict` on non-aliasing pointers.** Tells the C compiler it can vectorize.
-
-Everything else (register allocation, instruction selection, SIMD, inlining) gcc/clang handles.
-
-### Bootstrap Path
+### Bootstrap
 
 ```
-Stage 0: Python compiler compiles .mn --> C --> gcc --> mnc-stage1
-Stage 1: mnc-stage1 compiles .mn --> C --> gcc --> mnc-stage2
-Stage 2: mnc-stage2 compiles .mn --> C (compare to Stage 1 C output)
-
-diff stage1-output.c stage2-output.c  ==>  EMPTY  ==>  FIXED POINT
+Stage 0: Python compiler --> .mn to C --> gcc --> mnc-stage1
+Stage 1: mnc-stage1      --> .mn to C --> gcc --> mnc-stage2
+Stage 2: mnc-stage2      --> .mn to C --> diff stage2.c stage3.c --> FIXED POINT
 ```
-
-Compare C source, not binaries. C text is deterministic and human-diffable.
 
 ### Build Modes
 
 | Command | Backend | Compiler | Use Case |
 |---------|---------|----------|----------|
-| `mapanare run file.mn` | C | `gcc -O0` (or TCC) | Dev iteration |
-| `mapanare build file.mn` | C | `gcc -O1` | Default builds |
-| `mapanare build --release file.mn` | LLVM | `clang -O2 -flto` | Production |
-| `mapanare build --release --backend=c` | C | `gcc -O3` | Fast release without LLVM |
+| `mapanare run file.mn` | C | `gcc -O0` / TCC | Dev |
+| `mapanare build file.mn` | C | `gcc -O1` | Default |
+| `mapanare build --release` | LLVM | `clang -O2 -flto` | Production |
+| `mapanare build --release --backend=c` | C | `gcc -O3` | Fast release |
 
 ---
 
-## Part 4: Runtime Consolidation
+## Part 4: Runtime
 
 ### Memory Model
 
-| Category | Strategy | Example |
-|----------|----------|---------|
-| Stack-local values | Stack allocation | `pon x = 42` |
-| Escaping values | Arena + automatic free | Closures, returned structs |
-| Shared values (across agents) | Reference counting (ARC) | Agent messages |
-| Collections | Arena-backed, COW on mutation | Lists, maps, strings |
-| FFI values | Manual | C interop pointers |
+| Category | Strategy |
+|----------|----------|
+| Stack locals | Stack allocation |
+| Escaping values | Arena + auto free |
+| Shared (across agents) | ARC (reference counting) |
+| Collections | Arena-backed, COW on mutation |
+| FFI | Manual |
 
-No tracing GC. The C runtime already uses arenas. ARC is injected by the emitter
-for values that cross agent boundaries. Same strategy as Swift and Nim.
+No GC. Arenas + ARC. Same as Swift and Nim.
 
-### Concurrency Model (already implemented, needs docs)
+### Concurrency
 
-- **Agents:** Cooperative scheduling on thread pool with work stealing
-- **Signals:** Reactive dependency graph with batched updates
-- **Streams:** Async iterators with backpressure (SPSC ring buffer)
-- **Channels:** Lock-free SPSC for agent-to-agent messaging
+Agents = cooperative scheduling on thread pool. Signals = reactive dependency graph.
+Streams = async iterators with backpressure. Channels = lock-free SPSC ring buffers.
+All already implemented in the C runtime.
 
 ---
 
 ## Part 5: Migration
 
-### Automated Tool
-
 ```
-mapanare migrate --to=v3 src/         # Rewrites .mn files in-place
-mapanare migrate --to=v3 --dry src/   # Preview changes
-mapanare migrate --to=v3 --check src/ # CI gate: fail if old syntax found
+mapanare migrate --to=v3 src/
+mapanare migrate --to=v3 --dry src/
+mapanare migrate --to=v3 --check src/
 ```
 
-The migration handles:
+Handles: `struct`/`enum` -> `tipo`, `trait` -> `modo`, `impl X for Y` -> `Y + X`,
+`match` -> `si`, `agent` -> `@`, `spawn` -> `@`, brace removal, keyword replacement,
+implicit return insertion, `pub` -> `+`, paren removal where safe, `fn main()` -> `fn main`.
 
-1. **Keyword replacement:** `let` -> `pon`, `return` -> `da`, `if` -> `si`, etc.
-   (English keywords still compile, but migration converts to Spanglish primary style.)
-2. **Brace removal:** `{` at end of line becomes `:`. Closing `}` lines deleted.
-   Indentation preserved (it's already there in properly formatted code).
-3. **Implicit return insertion:** Final `da value` at end of function body where
-   it's the last expression becomes just `value`.
-4. **`di` parenthesis removal:** `di(x)` becomes `di x`.
-5. **`fn main()` simplification:** `fn main()` becomes `fn main`.
-6. **`for...in` to `for...en`:** Updates the preposition (optional, since `in` still works).
-
-Deterministic and reversible. `mapanare migrate --style=english` migrates only the
-syntax (braces, implicit returns) while keeping English keywords. Estimated ~400 lines.
-
-### What Breaks
-
-Everything. Every `.mn` file, VS Code extension, llms.txt, all documentation, AI agent
-skills, tree-sitter grammar. This is acceptable because the community is small (2 GitHub
-stars) and the migration tool makes it a one-command fix. Better to break now than after adoption.
+~600 lines of Python (more complex now due to structural changes, not just keywords).
 
 ---
 
-## Part 6: Culebra Updates (v2.0.0 — DONE)
+## Part 6: Culebra Updates
 
-- [x] `culebra scan output.c` — scan generated C for issues (8 C templates)
-- [x] `culebra diff stage2.c stage3.c` — structural diff for C files
-- [x] `culebra compare stage1.c stage2.c` — metric comparison for C
-- [x] `culebra summary stage2.c` — full diagnostic for C (auto-detected)
-- [x] `culebra triage stage2.c --brief` — one-line summary for C
-- [x] C parser (`c_parser.rs`) — extracts functions, structs, enums, metrics
-- [x] 8 C-specific templates: switch-no-break, missing-typedef, null-deref-pattern,
-      goto-dead-label, union-tag-mismatch, large-struct-by-value, missing-return,
-      buffer-overflow-pattern
-- [x] Auto-detect .c vs .ll — zero configuration
-- [ ] Generates test cases using both Spanglish and English keyword forms
-- [ ] Validates that both keyword forms produce identical AST/MIR/output
-- [ ] `culebra fixedpoint ./mnc mnc_all.mn --backend=c` — automated convergence
-- [ ] Migration validation: v2 code -> migrate -> compile -> identical semantics
+- [ ] Generate tests using radical syntax
+- [ ] Validate both Spanglish and English keyword forms produce identical output
+- [ ] `culebra scan output.c` — generated C analysis
+- [ ] `culebra compare stage2.c stage3.c` — structural diff
+- [ ] `culebra fixedpoint` — automated bootstrap convergence
+- [ ] Migration validation: v2 -> migrate -> compile -> identical semantics
 
 ---
 
@@ -653,24 +657,24 @@ stars) and the migration tool makes it a one-command fix. Better to break now th
 
 | Phase | Description | Est. Lines | Weeks |
 |-------|-------------|-----------|-------|
-| 1.1 | Indentation parser (replace brace grammar) | ~600 | 2 |
-| 1.2 | Bilingual lexer (dual keywords, both forms accepted) | ~200 | 0.5 |
-| 1.3 | Semantic checker updates | ~100 | 0.5 |
-| 2.1 | `emit_c.py` — Python C emitter | ~1,500 | 3 |
-| 2.2 | `emit_c.mn` — self-hosted C emitter | ~1,200 | 2 |
-| 2.3 | Bootstrap verification (3-stage) | ~300 | 1 |
+| 1.1 | Radical parser rewrite (indentation, tipo, modo, @agents, si-as-match) | ~1,200 | 3 |
+| 1.2 | Bilingual lexer | ~300 | 1 |
+| 1.3 | Semantic checker updates | ~400 | 1 |
+| 2.1 | `emit_c.py` | ~1,500 | 3 |
+| 2.2 | `emit_c.mn` | ~1,200 | 2 |
+| 2.3 | Bootstrap verification | ~300 | 1 |
 | 2.4 | LLVM as optional | ~200 | 0.5 |
-| 3.1 | Migration tool | ~400 | 1 |
+| 3.1 | Migration tool | ~600 | 1.5 |
 | 3.2 | Migrate all sources | Automated | 0.5 |
-| 3.3 | Docs, llms.txt, VS Code extension | Docs | 1 |
-| 3.4 | Culebra updates | ~200 | 0.5 |
-| 3.5 | Runtime docs | ~300 (docs) | 0.5 |
-| **Total** | | **~5,000** | **~13** |
+| 3.3 | Docs, llms.txt, VS Code extension | Docs | 1.5 |
+| 3.4 | Culebra updates | ~300 | 1 |
+| 3.5 | Runtime docs | ~300 | 0.5 |
+| **Total** | | **~6,300** | **~16** |
 
 ### Dependency Chain
 
 ```
-Phase 1.1 (indentation parser)
+Phase 1.1 (radical parser)
     |
     +-- Phase 1.2 (bilingual lexer)
     |       |
@@ -680,21 +684,21 @@ Phase 1.1 (indentation parser)
     |                       |
     |                       +-- Phase 3.2 (migrate all sources)
     |
-    +-- Phase 2.1 (emit_c.py)  [can start in parallel with 1.1]
+    +-- Phase 2.1 (emit_c.py)  [parallel with 1.1]
             |
             +-- Phase 2.2 (emit_c.mn)
             |       |
-            |       +-- Phase 2.3 (bootstrap verification)
+            |       +-- Phase 2.3 (bootstrap)
             |               |
             |               +-- Phase 2.4 (LLVM optional)
             |
-            +-- Phase 3.4 (Culebra updates)
+            +-- Phase 3.4 (Culebra)
 
 Phase 3.3 (docs) -- parallel
 Phase 3.5 (runtime docs) -- parallel
 ```
 
-Critical path: **1.1 -> 2.1 -> 2.2 -> 2.3** (~8 weeks)
+Critical path: **1.1 -> 1.2 -> 1.3 -> 2.1 -> 2.2 -> 2.3** (~11 weeks)
 
 ---
 
@@ -702,61 +706,70 @@ Critical path: **1.1 -> 2.1 -> 2.2 -> 2.3** (~8 weeks)
 
 ### Must Ship
 
-- [ ] Indentation parser handles all language features
-- [ ] All 15 golden tests pass with new syntax + keywords
-- [ ] `emit_c.py` produces correct output for all golden tests
-- [ ] `emit_c.mn` exists and compiles through `emit_c.py`
+- [ ] Radical parser handles all language features
+- [ ] All golden tests pass with new syntax
+- [ ] `emit_c.py` correct for all golden tests
+- [ ] `emit_c.mn` compiles through `emit_c.py`
 - [ ] 3-stage bootstrap reaches fixed point
 - [ ] `pip install mapanare` works without llvmlite
-- [ ] `mapanare migrate --to=v3` correctly converts v2 code
+- [ ] `mapanare migrate --to=v3` converts v2 code
+- [ ] Both Spanglish and English keywords produce identical output
 - [ ] VS Code extension updated
-- [ ] CI passes: golden tests, bootstrap, migration
+- [ ] CI green
 
 ### Nice-to-Have (v3.1)
 
 - [ ] TCC integration for sub-100ms dev builds
-- [ ] Benchmark comparison: C vs LLVM backend
+- [ ] Benchmark: C vs LLVM backend
+- [ ] Playground updated
 - [ ] Cranelift / QBE evaluation
-- [ ] Playground updated with new syntax
 
 ---
 
 ## Risks
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Indentation parsing harder than braces | Parser rewrite takes longer | Python/Nim solved this. INDENT/DEDENT token approach is well-documented. |
-| Spanglish keywords reduce adoption | Fewer English-only devs | Bilingual: English keywords always accepted. Zero friction. Spanglish is the brand, not a requirement. |
-| C backend perf gap vs LLVM | Slower programs | C -O2 is ~90% of LLVM -O2. Keep LLVM as `--release`. |
-| Migration tool misses edge cases | Some .mn files break | Test on 9,400-line self-hosted compiler. If that works, everything works. |
-| Indentation annoys some devs | Preference war | Language is for LLMs first. LLMs have token budgets, not brace preferences. |
+| Risk | Mitigation |
+|------|------------|
+| `si` overloaded (if + match) confuses people | Arms with `=>` = match. No arms = if. LLMs handle this fine. Humans learn in 5 min. |
+| `@` for agents looks like decorators | It IS a decorator-like concept. Python devs already understand `@` as "special behavior." |
+| `+` for pub is unfamiliar | One-time learning cost. 2 chars saved on every public declaration. |
+| `tipo` unifying struct+enum is weird | `|` prefix on variants makes it unambiguous. Algebraic data types work this way in ML/Haskell. |
+| Optional parens cause ambiguity | Strict rules: optional only for 0-1 args with literals/strings. Required for multi-arg and nesting. |
+| Parser rewrite takes longer (3 weeks) | More radical = more parser work. But we're rewriting anyway for indentation. Marginal cost. |
+| Migration tool is harder (~600 lines) | Structural transforms (not just keyword swap). But still mechanical and testable. |
 
 ---
 
 ## What Dies
 
-| Component | Action |
-|-----------|--------|
-| Curly brace block delimiters | Replaced by `:` + indentation |
-| `emit_llvm.py` (AST-based) | Archived |
-| `emit_llvm.mn` (self-hosted LLVM emitter) | Replaced by `emit_c.mn` |
-| English-only keywords | Replaced by bilingual system (Spanglish primary + English accepted) |
-| llvmlite as hard dependency | Optional (`mapanare[llvm]`) |
-| `main.ll` (53K lines) | Replaced by `main.c` (~15K lines) |
-| Explicit return at function end | Implicit last expression |
-| Parentheses on `di()` | `di` is a keyword |
-| `fn main()` empty parens | `fn main:` |
+| Killed | Replacement |
+|--------|-------------|
+| `struct` keyword | `tipo` |
+| `enum` keyword | `tipo` with `\|` variants |
+| `trait` keyword | `modo` |
+| `impl X for Y` | `Y + X:` |
+| `match` keyword | `si` with `=>` arms |
+| `agent` keyword | `@Name:` |
+| `spawn` keyword | `@Name()` |
+| `pub` keyword | `+` prefix |
+| `input`/`output` in agents | `->` / `<-` |
+| Curly braces | `:` + indentation |
+| Mandatory parens | Optional for 0-1 args |
+| `fn main()` | `fn main:` |
+| English-only keywords | Bilingual (both accepted) |
+| llvmlite hard dependency | Optional |
+| LLVM as bootstrap | C backend |
 
 ## What Lives
 
 | Component | Role |
 |-----------|------|
-| `emit_llvm_mir.py` | Optimized release builds |
-| `emit_wasm.py` | WebAssembly (unchanged) |
-| `emit_c.py` + `emit_c.mn` | Primary bootstrap + default |
-| C runtime | Foundation (unchanged) |
-| Culebra | Validation for C + LLVM |
-| MIR pipeline | Unchanged (backend-agnostic) |
+| `emit_c.py` + `emit_c.mn` | Primary backend |
+| `emit_llvm_mir.py` | Release builds |
+| `emit_wasm.py` | WebAssembly |
+| C runtime | Foundation |
+| MIR pipeline | Backend-agnostic IR |
+| Culebra | Validation |
 
 ---
 
@@ -764,63 +777,75 @@ Critical path: **1.1 -> 2.1 -> 2.2 -> 2.3** (~8 weeks)
 
 | Question | Leaning | Notes |
 |----------|---------|-------|
-| Allow optional braces for one-liners? | No | Clean break. One style. |
 | Tab vs spaces? | 4 spaces. Tabs = error. | No ambiguity. |
-| `sino si` or `sinosi` for elif? | `sino si` (two words) | Reads naturally. `else if` also works. |
-| Empty blocks? | `...` (like Python's `pass`) | `si debug: ...` |
-| Trailing colon on `fn main:`? | Yes, always | Consistency. |
-| Enforce keyword consistency per file? | No | Let people mix. LLMs will optimize naturally. |
-| `mapanare fmt` default style? | `mixed` (no normalization) | `--style=spanglish` and `--style=english` available. |
-| `pon mut` or just `mut`? | `pon mut` | Consistent with `let mut` pattern. `mut x = 0` alone is too implicit. |
+| `sino si` or `sinosi`? | `sino si` / `else if` | Two words. No new keyword. |
+| Empty blocks? | `...` | Like Python's `pass`. |
+| `pon mut` or just `mut`? | `pon mut` / `let mut` | Explicit declaration keyword always required. |
+| Enforce keyword consistency per file? | No | Mix freely. |
+| Keep `spawn` as alias for `@Name()`? | Yes | Bilingual: `spawn` works too. |
+| Keep `agent` as alias for `@Name:`? | Yes | Bilingual: `agent Name:` works too. |
+| Keep `pub` as alias for `+`? | Yes | Bilingual: `pub` works too. |
+| Keep `struct`/`enum` as aliases for `tipo`? | Yes | Bilingual: all old keywords still compile. |
+| Keep `trait` as alias for `modo`? | Yes | Bilingual: `trait` still compiles. |
+| Keep `impl X for Y` as alias? | Yes | Bilingual: old syntax still compiles. |
+| Keep `match` as alias for `si`-with-arms? | Yes | Bilingual: `match` still compiles. |
+
+**The bilingual rule applies to EVERYTHING.** Every radical change has the old syntax
+as an accepted alias. The radical syntax is primary (used in docs, examples, `fmt --style=spanglish`).
+The conservative syntax always works. Nobody is forced. But the default is radical.
 
 ---
 
 ## The Punchline
 
-Mapanare v2.0 looks like Rust with Spanish variable names.
-Mapanare v3.0 looks like nothing else. And it speaks both languages.
-
-**Spanglish (official style):**
+v2.0 Mapanare (conservative):
 
 ```
-usa ai::llm de LLMDriver
+import ai::llm
 
-agent Analyst:
+agent Analyst {
     input question: String
     output answer: String
 
+    fn handle(self, q: String) -> String {
+        let driver = LLMDriver.new("anthropic")
+        let response = driver.complete(q)?
+        return response.text
+    }
+}
+
+fn main() {
+    let bot = spawn Analyst()
+    bot.question <- "what is mapanare?"
+    print(sync bot.answer)
+}
+```
+
+**17 lines. 411 characters.**
+
+v3.0 Mapanare (radical):
+
+```
+usa ai::llm
+
+@Analyst:
+    question -> String
+    answer <- String
+
     fn handle(yo, q: String) -> String:
-        pon driver = LLMDriver.new("anthropic")
+        pon driver = LLMDriver.new "anthropic"
         pon response = driver.complete(q)?
         response.text
 
 fn main:
-    pon bot = spawn Analyst()
+    pon bot = @Analyst()
     bot.question <- "que es mapanare?"
     di sync bot.answer
 ```
 
-**English (same program, same binary):**
+**14 lines. ~310 characters. ~25% shorter.**
 
-```
-import ai::llm from LLMDriver
+Both compile. Both produce the same binary. The old syntax is an alias.
+The new syntax is the identity.
 
-agent Analyst:
-    input question: String
-    output answer: String
-
-    fn handle(self, q: String) -> String:
-        let driver = LLMDriver.new("anthropic")
-        let response = driver.complete(q)?
-        response.text
-
-fn main:
-    let bot = spawn Analyst()
-    bot.question <- "que es mapanare?"
-    print sync bot.answer
-```
-
-9 lines either way. Zero braces. Zero semicolons. Zero wasted tokens.
-Every character carries meaning. Write in the language you think in.
-
-La culebra se muerde la cola — through C, bilingual, without the noise.
+La culebra se muerde la cola — through C, bilingual, stripped to the bone.
