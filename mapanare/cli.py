@@ -1244,6 +1244,32 @@ def cmd_lint(args: argparse.Namespace) -> None:
         print(f"lint: {args.source} OK — no warnings")
 
 
+def cmd_migrate(args: argparse.Namespace) -> None:
+    """Migrate .mn source from v2 to v3 syntax."""
+    from mapanare.migrate import migrate_directory, migrate_file
+
+    target = args.path
+    style = getattr(args, "style", "spanglish")
+    dry_run = getattr(args, "dry", False)
+    check = getattr(args, "check", False)
+
+    if os.path.isfile(target):
+        changed = 1 if migrate_file(target, style=style, dry_run=dry_run, check=check) else 0
+    elif os.path.isdir(target):
+        changed = migrate_directory(target, style=style, dry_run=dry_run, check=check)
+    else:
+        print(f"error: {target} not found", file=sys.stderr)
+        sys.exit(1)
+
+    if check and changed > 0:
+        print(f"\n{changed} file(s) need migration", file=sys.stderr)
+        sys.exit(1)
+
+    if not check:
+        mode = "would migrate" if dry_run else "migrated"
+        print(f"\n{changed} file(s) {mode}")
+
+
 def cmd_lsp(args: argparse.Namespace) -> None:
     """Start the Mapanare language server (LSP over stdio)."""
     from mapanare.lsp.server import main as lsp_main
@@ -1758,6 +1784,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Auto-fix lint warnings (unused imports, unnecessary mut)",
     )
     p_lint.set_defaults(func=cmd_lint)
+
+    # migrate
+    p_migrate = subparsers.add_parser(
+        "migrate", help="Migrate .mn source from v2 to v3 syntax"
+    )
+    p_migrate.add_argument("path", help="File or directory to migrate")
+    p_migrate.add_argument(
+        "--to", default="v3", choices=["v3"], help="Target version (default: v3)"
+    )
+    p_migrate.add_argument(
+        "--dry", action="store_true", help="Preview changes without writing"
+    )
+    p_migrate.add_argument(
+        "--check",
+        action="store_true",
+        help="Check mode: fail if old syntax found (for CI)",
+    )
+    p_migrate.add_argument(
+        "--style",
+        default="spanglish",
+        choices=["spanglish", "english"],
+        help="Keyword style: spanglish (default) or english",
+    )
+    p_migrate.set_defaults(func=cmd_migrate)
 
     # build-multi
     p_build_multi = subparsers.add_parser(
