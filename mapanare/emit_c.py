@@ -1696,12 +1696,28 @@ class CEmitter:
 
         # --- User-defined or runtime function call ---
         c_name = self._fn_c_name(fn_name)
-        args_str = ", ".join(args)
+        # Coerce arguments to match function parameter types
+        coerced_args = list(args)
+        if fn_name in self._fn_map:
+            fn_params = self._fn_map[fn_name].params
+            for pi in range(min(len(coerced_args), len(fn_params))):
+                param_ct = self._c_type(fn_params[pi].ty)
+                arg_ct = self._local_types.get(args[pi], "int64_t")
+                if param_ct != arg_ct and param_ct not in ("int64_t", "double", "void"):
+                    # Cast via temporary variable
+                    tmp = f"__coerce_{pi}"
+                    self._w(f"{{ {param_ct} {tmp};")
+                    self._w(f"  memcpy(&{tmp}, &{args[pi]}, sizeof({tmp}));")
+                    coerced_args[pi] = tmp
+        args_str = ", ".join(coerced_args)
         ret_type = self._c_type(inst.dest.ty)
+        need_close = any(a.startswith("__coerce_") for a in coerced_args)
         if ret_type == "void":
             self._w(f"{c_name}({args_str});")
         else:
             self._w(f"{dest} = {c_name}({args_str});")
+        if need_close:
+            self._w("}")
 
     def _emit_extern_call(self, inst: ExternCall) -> None:
         dest = self._val(inst.dest)
