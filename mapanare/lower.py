@@ -13,6 +13,7 @@ from typing import Any
 from mapanare.ast_nodes import (
     AgentDef,
     AssertStmt,
+    PrintStmt,
     AssignExpr,
     ASTNode,
     BinaryExpr,
@@ -762,7 +763,9 @@ class MIRLowerer:
         # Lower body
         last_val = self._lower_block(fn_def.body)
 
-        # Add implicit return if block isn't terminated
+        # Add implicit return if block isn't terminated.
+        # For functions with a return type, the last expression becomes
+        # the return value (implicit return). For void functions, emit bare return.
         is_lambda = fn_name.startswith("%lambda") or fn_name.startswith("lambda")
         if not self._block_terminated():
             if is_lambda and last_val is not None and ret_type.kind == TypeKind.VOID:
@@ -770,10 +773,11 @@ class MIRLowerer:
                 if last_val.ty.kind != TypeKind.VOID and last_val.ty.kind != TypeKind.UNKNOWN:
                     mir_fn.return_type = last_val.ty
                 self._emit(Return(val=last_val))
+            elif ret_type.kind != TypeKind.VOID and last_val is not None:
+                # Implicit return: last expression in a typed function
+                self._emit(Return(val=last_val))
             elif ret_type.kind == TypeKind.VOID:
                 self._emit(Return())
-            elif last_val is not None:
-                self._emit(Return(val=last_val))
             else:
                 self._emit(Return())
 
@@ -948,6 +952,11 @@ class MIRLowerer:
             return None
         if isinstance(stmt, AssertStmt):
             self._lower_assert(stmt)
+            return None
+        if isinstance(stmt, PrintStmt):
+            val = self._lower_expr(stmt.expr)
+            dest = self._make_value(ty=mir_void())
+            self._emit(Call(dest=dest, fn_name="print", args=[val]))
             return None
         if isinstance(stmt, StreamDecl):
             self._lower_stream_decl(stmt)

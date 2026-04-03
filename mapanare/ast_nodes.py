@@ -393,6 +393,13 @@ class AssertStmt(Stmt):
 
 
 @dataclass
+class PrintStmt(Stmt):
+    """Print statement: `di expr`."""
+
+    expr: Expr = field(default_factory=Expr)
+
+
+@dataclass
 class ForLoop(Stmt):
     """For loop: `for x in items { ... }`."""
 

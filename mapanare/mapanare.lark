@@ -51,7 +51,7 @@ export_names: NAME (COMMA NAME)* COMMA?
 // Function definition
 // ------------------------------------------------------------
 
-fn_def: KW_PUB? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
+fn_def: (KW_PUB | PLUS)? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
 
 // FFI: extern "C" fn name(params) -> RetType
 // Python interop: extern "Python" fn module::name(params) -> RetType
@@ -69,7 +69,7 @@ param: NAME COLON type_expr
 // Agent definition
 // ------------------------------------------------------------
 
-agent_def: KW_PUB? KW_AGENT NAME LBRACE _nl* agent_body _nl* RBRACE
+agent_def: (KW_PUB | PLUS)? KW_AGENT NAME LBRACE _nl* agent_body _nl* RBRACE
 // v3.0.0: @Name { ... } agent syntax (AT + NAME + LBRACE disambiguates from decorator)
 at_agent_def: AT NAME LBRACE _nl* agent_body _nl* RBRACE
 agent_body: (agent_member _nl*)*
@@ -91,14 +91,14 @@ agent_state: KW_LET KW_MUT? NAME (COLON type_expr)? ASSIGN expr
 // Pipe definition
 // ------------------------------------------------------------
 
-pipe_def: KW_PUB? KW_PIPE NAME LBRACE _nl* pipe_chain _nl* RBRACE
+pipe_def: (KW_PUB | PLUS)? KW_PIPE NAME LBRACE _nl* pipe_chain _nl* RBRACE
 pipe_chain: NAME (PIPE_OP NAME)*
 
 // ------------------------------------------------------------
 // Struct definition
 // ------------------------------------------------------------
 
-struct_def: KW_PUB? KW_STRUCT NAME type_params? LBRACE _nl* struct_fields _nl* RBRACE
+struct_def: (KW_PUB | PLUS)? KW_STRUCT NAME type_params? LBRACE _nl* struct_fields _nl* RBRACE
 struct_fields: (struct_field COMMA _nl*)* struct_field?
 struct_field: NAME COLON type_expr
 
@@ -106,7 +106,7 @@ struct_field: NAME COLON type_expr
 // Enum definition
 // ------------------------------------------------------------
 
-enum_def: KW_PUB? KW_ENUM NAME type_params? LBRACE _nl* enum_variants _nl* RBRACE
+enum_def: (KW_PUB | PLUS)? KW_ENUM NAME type_params? LBRACE _nl* enum_variants _nl* RBRACE
 enum_variants: (enum_variant COMMA _nl*)* enum_variant?
 enum_variant: NAME (LPAREN type_list RPAREN)?
 type_list: type_expr (COMMA type_expr)*
@@ -117,7 +117,7 @@ type_list: type_expr (COMMA type_expr)*
 // tipo/type keyword dispatches here when followed by NAME LBRACE.
 // ------------------------------------------------------------
 
-tipo_def: KW_PUB? KW_TYPE NAME type_params? LBRACE _nl* tipo_members _nl* RBRACE
+tipo_def: (KW_PUB | PLUS)? KW_TYPE NAME type_params? LBRACE _nl* tipo_members _nl* RBRACE
 tipo_members: (tipo_member (_nl | COMMA _nl*))*
 ?tipo_member: tipo_field | tipo_variant
 tipo_field: NAME COLON type_expr
@@ -133,7 +133,7 @@ type_alias: KW_PUB? KW_TYPE NAME ASSIGN type_expr
 // Trait definition
 // ------------------------------------------------------------
 
-trait_def: KW_PUB? KW_TRAIT NAME LBRACE _nl* (trait_method _nl*)* RBRACE
+trait_def: (KW_PUB | PLUS)? KW_TRAIT NAME LBRACE _nl* (trait_method _nl*)* RBRACE
 trait_method: KW_FN NAME LPAREN trait_param_list? RPAREN (ARROW type_expr)?
 trait_param_list: trait_param (COMMA trait_param)* COMMA?
 ?trait_param: param | KW_SELF
@@ -164,6 +164,7 @@ fn_type: KW_FN LPAREN (type_expr (COMMA type_expr)*)? RPAREN ARROW type_expr
 // ------------------------------------------------------------
 
 block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOLON)*)? RBRACE
+     | LBRACE ELLIPSIS RBRACE
 
 ?stmt: let_stmt
      | for_stmt
@@ -172,6 +173,7 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
      | break_stmt
      | continue_stmt
      | assert_stmt
+     | di_stmt
      | expr_stmt
 
 
@@ -180,6 +182,7 @@ return_stmt: KW_RETURN expr?
 break_stmt: KW_BREAK
 continue_stmt: KW_CONTINUE
 assert_stmt: KW_ASSERT expr (COMMA expr)?
+di_stmt: KW_DI expr
 for_stmt: KW_FOR NAME KW_IN expr block
 while_stmt: KW_WHILE expr block
 expr_stmt: expr
@@ -368,6 +371,8 @@ KW_NEW: "new"
 KW_ASSERT: "assert"
 KW_BREAK.2: /(?:break|sal)(?![a-zA-Z0-9_])/
 KW_CONTINUE.2: /(?:continue|sigue)(?![a-zA-Z0-9_])/
+KW_DI.2: /di(?![a-zA-Z0-9_])/
+ELLIPSIS: "..."
 
 // Contextual keywords (used in specific grammar positions)
 KW_INPUT: "input"

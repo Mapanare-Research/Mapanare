@@ -369,6 +369,17 @@ def _filter(args: tuple[Any, ...] | list[Any]) -> list[Any]:
     return [a for a in args if not isinstance(a, Token) or a.type in _KEEP]
 
 
+def _has_pub_prefix(children: list[Any]) -> bool:
+    """Check if children start with KW_PUB or PLUS (+ pub prefix)."""
+    for c in children:
+        if isinstance(c, Token):
+            if c.type in ("KW_PUB", "PLUS"):
+                return True
+            if c.type not in ("_NL", "SEMICOLON", "NEWLINE"):
+                return False
+    return False
+
+
 class MapanareTransformer(Transformer):  # type: ignore[type-arg]
     """Transforms Lark parse tree into Mapanare AST nodes."""
 
@@ -576,6 +587,12 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         condition = items[0]
         message = items[1] if len(items) > 1 else None
         return AssertStmt(condition=condition, message=message, span=_span_from_children(children))
+
+    def di_stmt(self, children: list[Any]) -> "PrintStmt":
+        from mapanare.ast_nodes import PrintStmt
+
+        items = _filter(children)
+        return PrintStmt(expr=items[0], span=_span_from_children(children))
 
     def for_stmt(self, children: list[Any]) -> ForLoop:
         items = _filter(children)
@@ -1027,11 +1044,10 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
     # ------------------------------------------------------------------
 
     def fn_def(self, children: list[Any]) -> FnDef:
+        public = _has_pub_prefix(children)
         items = _filter(children)
-        public = False
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         idx += 1
@@ -1125,10 +1141,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def agent_def(self, children: list[Any]) -> AgentDef:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         idx += 1
@@ -1244,10 +1259,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def pipe_def(self, children: list[Any]) -> PipeDef:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         idx += 1
@@ -1264,10 +1278,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def struct_def(self, children: list[Any]) -> StructDef:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         idx += 1
@@ -1308,10 +1321,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def enum_def(self, children: list[Any]) -> EnumDef:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         idx += 1
@@ -1355,10 +1367,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def type_alias(self, children: list[Any]) -> TypeAlias:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         return TypeAlias(
             name=str(items[idx]),
@@ -1373,10 +1384,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def trait_def(self, children: list[Any]) -> TraitDef:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         methods = [m for m in items[idx + 1 :] if isinstance(m, TraitMethod)]
@@ -1395,10 +1405,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         If it contains plain fields → StructDef.
         """
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         idx += 1
