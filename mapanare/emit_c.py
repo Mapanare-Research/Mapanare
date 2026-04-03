@@ -398,7 +398,7 @@ class CEmitter:
         self._w()
         # Full definitions in dependency order
         self._emitted_types: set[str] = set()
-        self._boxed_fields: set[tuple[str, str]] = set()  # (struct_name, field_name) → void*
+        self._boxed_fields: set[tuple[str, ...]] = set()  # struct: (name, field) | enum: (name, variant, idx)
         type_order = self._topo_sort_types(module)
         for tname in type_order:
             if tname in module.structs:
@@ -669,7 +669,7 @@ class CEmitter:
                             and ct not in self._emitted_types
                         ):
                             if hasattr(self, "_boxed_fields"):
-                                self._boxed_fields.add((name, f"_{i}"))
+                                self._boxed_fields.add((name, _safe_name(vname), i))
                             ct = "void*"  # Forward ref in cycle → opaque ptr
                         self._w(f"{ct} _{i};")
                     self._indent_dec()
@@ -1231,7 +1231,13 @@ class CEmitter:
                 dest_ct = self._local_types.get(phi_dest, "int64_t")
                 src_ct = self._local_types.get(src_name, "int64_t")
                 if dest_ct != src_ct and dest_ct not in ("int64_t", "double"):
-                    self._w(f"memcpy(&{phi_dest}, &{src_name}, sizeof({phi_dest}));")
+                    if src_ct in ("int64_t", "double"):
+                        # Source is scalar, dest is struct — zero-init then copy scalar
+                        self._w(f"memset(&{phi_dest}, 0, sizeof({phi_dest}));")
+                    else:
+                        # Both are structs but different — copy min(sizeof(src), sizeof(dest))
+                        self._w(f"memset(&{phi_dest}, 0, sizeof({phi_dest}));")
+                        self._w(f"memcpy(&{phi_dest}, &{src_name}, sizeof({src_name}));")
                 else:
                     self._w(f"{phi_dest} = {src_name};")
 
@@ -1462,9 +1468,11 @@ class CEmitter:
                     field_type = self._c_type(sft)
                     break
         if field_type and field_type != dest_ct:
-            self._w(f"memcpy(&{dest}, &{obj}.{fname}, sizeof({dest}));")
+            # Use sizeof(field) to avoid reading past the actual field
+            self._w(f"memset(&{dest}, 0, sizeof({dest}));")
+            self._w(f"memcpy(&{dest}, &{obj}.{fname}, sizeof({obj}.{fname}));")
         elif dest_ct not in ("int64_t", "double", "MnString", "MnList", "void*", "void"):
-            self._w(f"memcpy(&{dest}, &{obj}.{fname}, sizeof({dest}));")
+            self._w(f"memcpy(&{dest}, &{obj}.{fname}, sizeof({obj}.{fname}));")
         else:
             self._w(f"{dest} = {obj}.{fname};")
 
@@ -1574,14 +1582,22 @@ class CEmitter:
                 pt = inst.payload[i].ty
                 payload_ct = self._c_type(pt)
                 if payload_ct == enum_name and enum_name in self._enums:
-                    # Allocate on heap and store pointer
+                    # Allocate on heap and store pointer (self-referential)
                     self._w(f"{{ {enum_name} *__box = malloc(sizeof({enum_name}));")
                     self._w(f"  *__box = {pval};")
                     self._w(f"  {dest}.as.{vname}._{i} = __box; }}")
                 else:
-                    # Use memcpy for potential type mismatches
-                    self._w(f"memcpy(&{dest}.as.{vname}._{i}, &{pval},")
-                    self._w(f"  sizeof({dest}.as.{vname}._{i}));")
+                    # Check if the field is void*-boxed by comparing payload type
+                    # to the actual field's declared C type in the enum variant
+                    field_is_boxed = self._is_enum_field_boxed(enum_name, inst.variant, i)
+                    if field_is_boxed:
+                        pt_ct = self._local_types.get(pval, payload_ct)
+                        self._w(f"{{ {pt_ct} *__box = malloc(sizeof({pt_ct}));")
+                        self._w(f"  *__box = {pval};")
+                        self._w(f"  {dest}.as.{vname}._{i} = __box; }}")
+                    else:
+                        self._w(f"memcpy(&{dest}.as.{vname}._{i}, &{pval},")
+                        self._w(f"  sizeof({dest}.as.{vname}._{i}));")
 
     def _emit_enum_tag(self, inst: EnumTag) -> None:
         ev = self._val(inst.enum_val)
@@ -1622,8 +1638,12 @@ class CEmitter:
             if payload_boxed:
                 self._w(f"{dest} = *{ev}.as.{vname}._{idx};")
             else:
-                # Use memcpy for void* opaque fields (forward-ref boxing)
-                self._w(f"memcpy(&{dest}, &{ev}.as.{vname}._{idx}, sizeof({dest}));")
+                field_is_boxed = self._is_enum_field_boxed(enum_name, inst.variant, idx)
+                if field_is_boxed:
+                    self._w(f"if ({ev}.as.{vname}._{idx}) {dest} = *({dest_ct}*){ev}.as.{vname}._{idx};")
+                else:
+                    self._w(f"memset(&{dest}, 0, sizeof({dest}));")
+                    self._w(f"memcpy(&{dest}, &{ev}.as.{vname}._{idx}, sizeof({ev}.as.{vname}._{idx}));")
 
     # --- Option/Result wrappers ---
 
@@ -1651,6 +1671,12 @@ class CEmitter:
             self._w(f"  {dest}.has_value = 1; {dest}.value = __opt_box; }}")
         else:
             self._w(f"{dest} = ({ct}){{1, {val}}};")
+
+    def _is_enum_field_boxed(self, enum_name: str, variant: str, field_idx: int) -> bool:
+        """Check if a specific enum variant field is void*-boxed (forward ref)."""
+        boxed = getattr(self, "_boxed_fields", set())
+        sv = _safe_name(variant)
+        return (enum_name, sv, field_idx) in boxed
 
     def _is_circular_option(self, inner: str) -> bool:
         """Check if Option<inner> is circular (inner contains Option<inner>)."""
@@ -1936,9 +1962,10 @@ class CEmitter:
                 or fn_ret_ct in self._structs
                 or fn_ret_ct in self._enums
             ):
-                # Type mismatch: use temp + memcpy
+                # Type mismatch: zero dest first, then copy only sizeof(source)
                 self._w(f"{{ {fn_ret_ct} __call_tmp = {c_name}({args_str});")
-                self._w(f"  memcpy(&{dest}, &__call_tmp, sizeof({dest})); }}")
+                self._w(f"  memset(&{dest}, 0, sizeof({dest}));")
+                self._w(f"  memcpy(&{dest}, &__call_tmp, sizeof(__call_tmp)); }}")
             else:
                 self._w(f"{dest} = {c_name}({args_str});")
         for _ in range(n_coerced):
