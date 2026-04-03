@@ -763,8 +763,15 @@ class CEmitter:
                     continue
                 vname = self._val(dest)
 
-                # Already resolved from MIR type?
+                # Resolve from MIR type
                 ct = self._c_type(dest.ty)
+
+                # Fix generic MnOption_int64_t when function returns specific Option
+                if ct == "MnOption_int64_t" and fn_ret.startswith("MnOption_") and fn_ret != ct:
+                    if isinstance(inst, (WrapSome, WrapNone)):
+                        types[vname] = fn_ret
+                        continue
+
                 if ct != "int64_t" or dest.ty.type_info.kind != TypeKind.UNKNOWN:
                     types[vname] = ct
                     continue
@@ -793,11 +800,16 @@ class CEmitter:
                         types[vname] = types[src_name]
                         continue
 
-                # WrapSome/WrapNone: use function return type
+                # WrapSome/WrapNone: use function return type when MIR type is generic
                 if isinstance(inst, (WrapSome, WrapNone)):
                     if fn_ret.startswith("MnOption_"):
                         types[vname] = fn_ret
                         continue
+
+                # Already resolved but might be wrong Option variant
+                if ct.startswith("MnOption_int64_t") and fn_ret.startswith("MnOption_"):
+                    types[vname] = fn_ret
+                    continue
 
                 # EnumPayload: result type from the enum definition
                 if isinstance(inst, EnumPayload):
