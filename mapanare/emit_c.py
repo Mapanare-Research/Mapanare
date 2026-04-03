@@ -960,6 +960,7 @@ class CEmitter:
 
     def _collect_phis(self, fn: MIRFunction) -> _PhiInfo:
         info = _PhiInfo()
+        prop = getattr(self, "_propagated_types", {})
         for block in fn.blocks:
             for inst in block.instructions:
                 if not isinstance(inst, Phi):
@@ -967,7 +968,19 @@ class CEmitter:
                 dest_name = self._val(inst.dest)
                 ctype = self._c_type(inst.dest.ty)
                 if ctype == "void":
-                    continue  # Skip void phi variables
+                    continue
+                # Use propagated type for phi dest if available
+                if ctype == "int64_t" and dest_name in prop:
+                    ctype = prop[dest_name]
+                # Also try to infer from non-void incoming values
+                if ctype == "int64_t":
+                    for _, incoming_val in inst.incoming:
+                        iv_name = self._val(incoming_val)
+                        if iv_name not in ("mn_void", "mn_return") and iv_name in prop:
+                            iv_ct = prop[iv_name]
+                            if iv_ct != "int64_t":
+                                ctype = iv_ct
+                                break
                 info.declarations[dest_name] = ctype
                 for pred_label, incoming_val in inst.incoming:
                     stores = info.stores.setdefault(pred_label, [])
