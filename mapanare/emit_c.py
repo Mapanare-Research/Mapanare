@@ -744,10 +744,77 @@ class CEmitter:
     # Function body emission
     # ------------------------------------------------------------------
 
+    def _propagate_types(self, fn: MIRFunction) -> dict[str, str]:
+        """Pre-pass: infer C types for all values by propagating from known sources.
+
+        Resolves UNKNOWN MIR types by looking at:
+        - Enum variant constructors (always known type)
+        - Function return types (from _fn_map)
+        - Copy instructions (propagate src type)
+        - WrapSome/WrapNone (infer Option type from function return)
+        """
+        types: dict[str, str] = {}
+        fn_ret = self._c_type(fn.return_type)
+
+        for block in fn.blocks:
+            for inst in block.instructions:
+                dest = getattr(inst, "dest", None)
+                if dest is None or not isinstance(dest, Value):
+                    continue
+                vname = self._val(dest)
+
+                # Already resolved from MIR type?
+                ct = self._c_type(dest.ty)
+                if ct != "int64_t" or dest.ty.type_info.kind != TypeKind.UNKNOWN:
+                    types[vname] = ct
+                    continue
+
+                # Enum variant constructor
+                if isinstance(inst, Call):
+                    for enum_name in self._enums:
+                        for vn, _ in self._enums[enum_name]:
+                            if inst.fn_name == f"{enum_name}_{vn}":
+                                types[vname] = enum_name
+                                break
+                    if vname in types:
+                        continue
+                    # Known function return type
+                    if inst.fn_name in self._fn_map:
+                        ret_ty = self._fn_map[inst.fn_name].return_type
+                        ret_ct = self._c_type(ret_ty)
+                        if ret_ct != "int64_t" or ret_ty.type_info.kind != TypeKind.UNKNOWN:
+                            types[vname] = ret_ct
+                            continue
+
+                # Copy: inherit source type
+                if isinstance(inst, Copy):
+                    src_name = self._val(inst.src)
+                    if src_name in types:
+                        types[vname] = types[src_name]
+                        continue
+
+                # WrapSome/WrapNone: use function return type
+                if isinstance(inst, (WrapSome, WrapNone)):
+                    if fn_ret.startswith("MnOption_"):
+                        types[vname] = fn_ret
+                        continue
+
+                # EnumPayload: result type from the enum definition
+                if isinstance(inst, EnumPayload):
+                    pass  # Already handled by MIR type
+
+                # Default
+                types[vname] = ct
+
+        return types
+
     def _emit_function(self, fn: MIRFunction) -> None:
         self._cur_fn = fn
         self._local_types = {}
         self._declared_locals = set()
+
+        # Pre-propagate types
+        self._propagated_types = self._propagate_types(fn)
 
         # Collect PHI info
         self._phi_info = self._collect_phis(fn)
@@ -795,47 +862,42 @@ class CEmitter:
                     if vname not in self._declared_locals:
                         ctype = self._infer_decl_type(inst, dest)
                         if ctype == "void":
-                            continue  # Cannot declare void variables
+                            ctype = "int64_t"  # Fallback for void dests
                         self._w(f"{ctype} {vname} = {self._zero_init(ctype)};")
                         self._declared_locals.add(vname)
+                        self._local_types[vname] = ctype
                         self._local_types[vname] = ctype
 
     def _infer_decl_type(self, inst: Instruction, dest: Value) -> str:
         """Infer the correct C type for a variable declaration.
 
-        Handles cases where the MIR type info is UNKNOWN or misleading.
+        Uses propagated types only for struct/Option/Result types (not enums,
+        which are often used interchangeably with int64_t in MIR).
         """
+        vname = self._val(dest)
+
         # EnumTag always returns an integer tag
         if isinstance(inst, EnumTag):
             return "int64_t"
 
-        if isinstance(inst, Call):
-            fn_name = inst.fn_name
-            # Call to enum variant constructor — infer from enum name
-            for enum_name in self._enums:
-                for vname, _ in self._enums[enum_name]:
-                    if fn_name == f"{enum_name}_{vname}":
-                        return enum_name
-            # Call to known function — use its return type when dest is UNKNOWN
-            # Only override if the function returns a named type (struct/enum/Option)
-            if fn_name in self._fn_map and dest.ty.type_info.kind == TypeKind.UNKNOWN:
-                ret_ty = self._fn_map[fn_name].return_type
-                ret_ct = self._c_type(ret_ty)
-                if (
-                    ret_ct in self._structs
-                    or ret_ct in self._enums
-                    or ret_ct.startswith("MnOption_")
-                    or ret_ct.startswith("MnResult_")
-                    or ret_ct == "MnString"
-                    or ret_ct == "MnList"
-                ):
-                    return ret_ct
+        # Use propagated type for structs, Options, Results (not enums)
+        if hasattr(self, "_propagated_types") and vname in self._propagated_types:
+            pt = self._propagated_types[vname]
+            if (
+                pt in self._structs
+                or pt.startswith("MnOption_")
+                or pt.startswith("MnResult_")
+                or pt == "MnString"
+                or pt == "MnList"
+            ):
+                return pt
 
-        # Copy inherits src type if dest is UNKNOWN
-        if isinstance(inst, Copy) and dest.ty.type_info.kind == TypeKind.UNKNOWN:
-            src_name = self._val(inst.src)
-            if src_name in self._local_types:
-                return self._local_types[src_name]
+        # Call to enum variant constructor — use enum type
+        if isinstance(inst, Call):
+            for enum_name in self._enums:
+                for vn, _ in self._enums[enum_name]:
+                    if inst.fn_name == f"{enum_name}_{vn}":
+                        return enum_name
 
         return self._c_type(dest.ty)
 
