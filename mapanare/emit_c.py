@@ -397,6 +397,7 @@ class CEmitter:
         self._emit_option_result_forward_decls()
         self._w()
         # Full definitions in dependency order (structs, enums, Option, Result interleaved)
+        self._emitted_types: set[str] = set()
         type_order = self._topo_sort_types(module)
         for tname in type_order:
             if tname in module.structs:
@@ -622,6 +623,7 @@ class CEmitter:
         self._indent_dec()
         self._w("};")
         self._w()
+        self._emitted_types.add(name)
 
     def _emit_struct_defs(self, module: MIRModule) -> None:
         if not module.structs:
@@ -666,6 +668,7 @@ class CEmitter:
         # Tag constants
         for i, (vname, _) in enumerate(variants):
             self._w(f"#define {name}_{_safe_name(vname)}_TAG {i}")
+        self._emitted_types.add(name)
 
     def _emit_one_option(self, tname: str) -> None:
         """Emit a single Option type definition (struct already forward-declared)."""
@@ -684,6 +687,7 @@ class CEmitter:
                 else:
                     self._w(f"struct MnOption_{safe}_s {{ int64_t has_value; {inner} value; }};")
                 self._w()
+                self._emitted_types.add(tname)
                 return
 
     def _emit_one_result(self, tname: str) -> None:
@@ -776,11 +780,20 @@ class CEmitter:
                 # Resolve from MIR type
                 ct = self._c_type(dest.ty)
 
-                # Fix generic MnOption_int64_t when function returns specific Option
-                if ct == "MnOption_int64_t" and fn_ret.startswith("MnOption_") and fn_ret != ct:
-                    if isinstance(inst, (WrapSome, WrapNone)):
-                        types[vname] = fn_ret
-                        continue
+                # Fix generic MnOption_int64_t by inferring from wrapped value or fn return
+                if ct == "MnOption_int64_t":
+                    if isinstance(inst, WrapSome):
+                        # Try to infer from the wrapped value's type
+                        wrapped = self._val(inst.val)
+                        wrapped_ct = types.get(wrapped, self._c_type(inst.val.ty))
+                        if wrapped_ct != "int64_t":
+                            opt_ct = f"MnOption_{_safe_name(wrapped_ct)}"
+                            types[vname] = opt_ct
+                            continue
+                    if fn_ret.startswith("MnOption_") and fn_ret != ct:
+                        if isinstance(inst, (WrapSome, WrapNone)):
+                            types[vname] = fn_ret
+                            continue
 
                 if ct != "int64_t" or dest.ty.type_info.kind != TypeKind.UNKNOWN:
                     types[vname] = ct
