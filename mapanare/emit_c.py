@@ -726,11 +726,18 @@ class CEmitter:
     def _emit_string_constants(self) -> None:
         if not self._string_pool:
             return
-        self._w("/* String constants */")
+        self._w("/* String constants (aligned to 2 for pointer tagging) */")
         for text, gname in self._string_pool.items():
             escaped = _escape_c_string(text)
             length = len(text.encode("utf-8"))
-            self._w(f'static MnString {gname} = {{(const char*)"{escaped}", {length}}};')
+            # Use aligned char arrays so the data pointer always has even alignment.
+            # The runtime's mn_tag_heap/mn_untag tagging scheme requires LSB=0 for
+            # static strings (LSB=1 means heap-allocated).
+            data_name = f"{gname}_data"
+            self._w(
+                f'static const char {data_name}[] __attribute__((aligned(2))) = "{escaped}";'
+            )
+            self._w(f"static MnString {gname} = {{(const char*){data_name}, {length}}};")
 
     # ------------------------------------------------------------------
     # Forward declarations
