@@ -1635,6 +1635,12 @@ class CEmitter:
         fn_name = inst.fn_name
         args = [self._val(a) for a in inst.args]
 
+        # --- Resolve namespaced calls (e.g., Program_start → start) ---
+        if fn_name not in self._fn_map and "_" in fn_name:
+            parts = fn_name.split("_", 1)
+            if len(parts) == 2 and parts[1] in self._fn_map:
+                fn_name = parts[1]
+
         # --- Builtin dispatch ---
 
         # print / println
@@ -2144,17 +2150,32 @@ class CEmitter:
     # ------------------------------------------------------------------
 
     def _emit_main_wrapper(self, module: MIRModule) -> None:
-        # Check if there's a user-defined main function
         has_main = any(fn.name == "main" for fn in module.functions)
-        if not has_main:
-            return
+        has_compile = any(fn.name == "compile_and_print" for fn in module.functions)
 
-        self._w("int main(int argc, char **argv) {")
-        self._indent_inc()
-        self._w("mn_main();")
-        self._w("return 0;")
-        self._indent_dec()
-        self._w("}")
+        if has_main:
+            self._w("int main(int argc, char **argv) {")
+            self._indent_inc()
+            self._w("mn_main();")
+            self._w("return 0;")
+            self._indent_dec()
+            self._w("}")
+        elif has_compile:
+            # Self-hosted compiler: read file from argv, call compile_and_print
+            self._w("int main(int argc, char **argv) {")
+            self._indent_inc()
+            self._w('if (argc < 2) { fprintf(stderr, "usage: mnc <file.mn>\\n"); return 1; }')
+            self._w("FILE *f = fopen(argv[1], \"r\");")
+            self._w('if (!f) { fprintf(stderr, "error: cannot open %s\\n", argv[1]); return 1; }')
+            self._w("fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET);")
+            self._w("char *buf = malloc(sz + 1); fread(buf, 1, sz, f); buf[sz] = 0; fclose(f);")
+            self._w("MnString source = __mn_str_from_cstr(buf);")
+            self._w("MnString filename = __mn_str_from_cstr(argv[1]);")
+            self._w("compile_and_print(source, filename);")
+            self._w("free(buf);")
+            self._w("return 0;")
+            self._indent_dec()
+            self._w("}")
 
     # ------------------------------------------------------------------
     # Helpers
