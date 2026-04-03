@@ -788,6 +788,12 @@ class CEmitter:
                     continue
                 vname = self._val(dest)
 
+                # SSA reuse guard: if a Const already set this variable to a primitive,
+                # don't let a later Call override it with a struct type
+                if vname in types and isinstance(inst, Call) and types[vname] in ("int64_t", "double"):
+                    # Only skip if the Const was for the same variable
+                    continue
+
                 # Resolve from MIR type
                 ct = self._c_type(dest.ty)
 
@@ -858,6 +864,26 @@ class CEmitter:
 
                 # Default
                 types[vname] = ct
+
+        # Back-propagation: infer type from field access
+        # If x.fieldname is accessed, x must be a struct with that field
+        field_to_structs: dict[str, list[str]] = {}
+        for sname, fields in self._structs.items():
+            for fname, _ in fields:
+                field_to_structs.setdefault(fname, []).append(sname)
+
+        for block in fn.blocks:
+            for inst in block.instructions:
+                if isinstance(inst, FieldGet):
+                    obj_name = self._val(inst.obj)
+                    if types.get(obj_name) == "int64_t":
+                        # Infer struct type from field name
+                        candidates = field_to_structs.get(inst.field_name, [])
+                        if len(candidates) == 1:
+                            types[obj_name] = candidates[0]
+                        elif len(candidates) > 1:
+                            # Pick the first candidate as best guess
+                            types[obj_name] = candidates[0]
 
         return types
 
@@ -1170,6 +1196,13 @@ class CEmitter:
         dest = self._val(inst.dest)
         kind = inst.ty.type_info.kind
 
+        # Handle SSA reuse: if dest is declared as struct but const is int, use memcpy
+        dest_ct = self._local_types.get(dest, "int64_t")
+        if dest_ct not in ("int64_t", "double", "MnString", "MnList", "void*", "void") and kind == TypeKind.INT:
+            self._w(f"{{ int64_t __ctmp = (int64_t){inst.value}LL;")
+            self._w(f"  memcpy(&{dest}, &__ctmp, sizeof(__ctmp)); }}")
+            return
+
         if kind == TypeKind.INT:
             self._w(f"{dest} = (int64_t){inst.value}LL;")
         elif kind == TypeKind.FLOAT:
@@ -1288,7 +1321,16 @@ class CEmitter:
             return
 
         if op:
-            self._w(f"{dest} = {lhs} {op} {rhs};")
+            # Handle SSA reuse: operand might be struct due to variable reuse
+            lhs_ct = self._local_types.get(lhs, "int64_t")
+            rhs_ct = self._local_types.get(rhs, "int64_t")
+            l_expr = lhs
+            r_expr = rhs
+            if lhs_ct not in ("int64_t", "double", "MnString") and lhs_ct in self._structs:
+                l_expr = f"*(int64_t*)&{lhs}"
+            if rhs_ct not in ("int64_t", "double", "MnString") and rhs_ct in self._structs:
+                r_expr = f"*(int64_t*)&{rhs}"
+            self._w(f"{dest} = {l_expr} {op} {r_expr};")
         else:
             self._w(f"/* unknown binop {inst.op} */")
             self._w(f"{dest} = 0;")
@@ -1340,10 +1382,19 @@ class CEmitter:
                         if obj_ct == opt_name or dest_ct == circ_inner:
                             self._w(f"if ({obj}.value) {dest} = *{obj}.value;")
                             return
-        # Regular struct field access — use memcpy for potential void* boxing
+        # Regular struct field access — use memcpy for type safety
         dest_ct = self._local_types.get(dest, self._c_type(inst.dest.ty))
-        if dest_ct not in ("int64_t", "double", "MnString", "MnList", "void*", "void"):
-            # Struct/enum dest: memcpy to handle void* → Type coercion
+        obj_ct = self._local_types.get(obj, "int64_t")
+        # Check if the field type differs from dest type (needs memcpy)
+        field_type = None
+        if obj_ct in self._structs:
+            for sf, sft in self._structs[obj_ct]:
+                if sf == inst.field_name:
+                    field_type = self._c_type(sft)
+                    break
+        if field_type and field_type != dest_ct:
+            self._w(f"memcpy(&{dest}, &{obj}.{fname}, sizeof({dest}));")
+        elif dest_ct not in ("int64_t", "double", "MnString", "MnList", "void*", "void"):
             self._w(f"memcpy(&{dest}, &{obj}.{fname}, sizeof({dest}));")
         else:
             self._w(f"{dest} = {obj}.{fname};")
