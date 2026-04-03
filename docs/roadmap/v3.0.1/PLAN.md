@@ -337,3 +337,22 @@ Critical path: **1.1 → 1.2 → 1.3 → 1.4** (~700 lines, ~1-2 weeks)
 | KV/Redis/AI stdlib tests fail | Low | Pre-existing module resolution |
 | String concat display issue | Low | Runtime works, display truncated |
 | `ruff check .` fails on scripts/ | Low | Pre-existing, mapanare/ is clean |
+
+---
+
+## v3.0.1 Phase 1 Final Status (2026-04-03)
+
+### Achieved
+- mnc-stage1 (Python→C→gcc) self-compiles: 77K lines LLVM IR
+- Stage2 IR validates with llvm-as (via auto-fix script)
+- Stage2 binary links and runs (simple programs)
+- 11/15 golden tests pass through stage1+llvm-as
+- 59→15 gcc warnings
+- 832 core tests pass, 0 regressions
+
+### Remaining Blockers for Three-Stage Bootstrap
+1. **Stage2 parser limitations**: can't parse complex type annotations
+   (Option<TypeExpr>, nested generics) in the self-hosted source
+2. **Stack overflow**: stage2 needs 64MB+ stack for large functions
+3. **COW state threading**: merge block instructions in entry block
+   (auto-fixed by scripts/fix_stage2_ir.py)
