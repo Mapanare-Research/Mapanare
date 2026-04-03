@@ -430,6 +430,16 @@ class CEmitter:
     # ------------------------------------------------------------------
 
     def _prescan_module(self, module: MIRModule) -> None:
+        # Scan struct fields for Option/Result types
+        for _name, fields in module.structs.items():
+            for _fname, ftype in fields:
+                self._c_type(ftype)  # Triggers Option/Result registration
+        # Scan function signatures
+        for fn in module.functions:
+            self._c_type(fn.return_type)
+            for p in fn.params:
+                self._c_type(p.ty)
+        # Scan instructions
         for fn in module.functions:
             for block in fn.blocks:
                 for inst in block.instructions:
@@ -1133,7 +1143,15 @@ class CEmitter:
                 self._w(f"{dest} = (int64_t){inst.value};")
 
     def _emit_copy(self, inst: Copy) -> None:
-        self._w(f"{self._val(inst.dest)} = {self._val(inst.src)};")
+        dest_name = self._val(inst.dest)
+        src_name = self._val(inst.src)
+        dest_ct = self._local_types.get(dest_name, "int64_t")
+        src_ct = self._local_types.get(src_name, "int64_t")
+        # Type mismatch: use memcpy for struct-to-struct copies
+        if dest_ct != src_ct and dest_ct not in ("int64_t", "double", "void"):
+            self._w(f"memcpy(&{dest_name}, &{src_name}, sizeof({dest_name}));")
+        else:
+            self._w(f"{dest_name} = {src_name};")
 
     def _emit_cast(self, inst: Cast) -> None:
         dest = self._val(inst.dest)
@@ -1271,8 +1289,10 @@ class CEmitter:
         dest = self._val(inst.dest)
         list_v = self._val(inst.list_val)
         elem_v = self._val(inst.element)
-        elem_type = self._c_type(inst.element.ty)
-        self._w(f"{{ {elem_type} __tmp_push = {elem_v}; __mn_list_push(&{list_v}, &__tmp_push); }}")
+        # Use propagated type for element (MIR often marks as UNKNOWN)
+        elem_type = self._local_types.get(elem_v, self._c_type(inst.element.ty))
+        self._w(f"{{ {elem_type} __tmp_push = {elem_v};")
+        self._w(f"  __mn_list_push(&{list_v}, &__tmp_push); }}")
         self._w(f"{dest} = {list_v};")
 
     def _emit_index_get(self, inst: IndexGet) -> None:
@@ -1347,7 +1367,9 @@ class CEmitter:
                     self._w(f"  *__box = {pval};")
                     self._w(f"  {dest}.as.{vname}._{i} = __box; }}")
                 else:
-                    self._w(f"{dest}.as.{vname}._{i} = {pval};")
+                    # Use memcpy for potential type mismatches
+                    self._w(f"memcpy(&{dest}.as.{vname}._{i}, &{pval},")
+                    self._w(f"  sizeof({dest}.as.{vname}._{i}));")
 
     def _emit_enum_tag(self, inst: EnumTag) -> None:
         ev = self._val(inst.enum_val)
@@ -1636,7 +1658,8 @@ class CEmitter:
                                 self._w(f"  *__bp = {args[pi]};")
                                 self._w(f"  {dest}.as.{sv}._{pi} = __bp; }}")
                             else:
-                                self._w(f"{dest}.as.{sv}._{pi} = {args[pi]};")
+                                self._w(f"memcpy(&{dest}.as.{sv}._{pi}, &{args[pi]},")
+                                self._w(f"  sizeof({dest}.as.{sv}._{pi}));")
                     return
 
         # --- User-defined or runtime function call ---
