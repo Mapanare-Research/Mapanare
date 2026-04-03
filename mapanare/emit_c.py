@@ -1097,7 +1097,13 @@ class CEmitter:
                     continue  # Can't assign to void
                 self._w(f"memset(&{phi_dest}, 0, sizeof({phi_dest}));")
             else:
-                self._w(f"{phi_dest} = {src_name};")
+                # Use memcpy for potential type mismatches in phi stores
+                dest_ct = self._local_types.get(phi_dest, "int64_t")
+                src_ct = self._local_types.get(src_name, "int64_t")
+                if dest_ct != src_ct and dest_ct not in ("int64_t", "double"):
+                    self._w(f"memcpy(&{phi_dest}, &{src_name}, sizeof({phi_dest}));")
+                else:
+                    self._w(f"{phi_dest} = {src_name};")
 
     # ------------------------------------------------------------------
     # Instruction handlers
