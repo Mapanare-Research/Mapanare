@@ -2071,8 +2071,24 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
         let result_r: LowerResult = make_value(s, mir_void(), "t")
         s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
         final_val = result_r.value
+        // Both branches terminated — merge block is unreachable.
+        // Emit return terminator AFTER const so current_block_terminated returns true
+        // and callers don't emit additional jumps to this block's successors.
+        let both_terminated: Bool = then_terminated && else_terminated
+        if both_terminated {
+            let fn_ret: MIRType = get_current_fn_ret_type(s)
+            let dummy_val: Value = new_value("zeroinitializer", fn_ret)
+            s = emit_instr(s, Instruction::Return(Some(dummy_val)))
+        }
     }
     return new_lower_result(final_val, s)
+}
+
+fn get_current_fn_ret_type(st: LowerState) -> MIRType {
+    match st.current_fn {
+        Some(f) => { return f.return_type },
+        _ => { return mir_void() }
+    }
 }
 
 fn get_block_label(st: LowerState, idx: Int) -> String {
@@ -2213,15 +2229,20 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             let exit_label: String = get_block_label(s, s.current_block_idx)
             let arm_terminated: Bool = current_block_terminated(s)
 
-            // Track arm results for phi
-            let arm_kind: String = arm_val_r.value.ty.kind
-            if !arm_terminated && arm_kind != "void" && arm_kind != "unknown" && arm_val_r.value.name != "%void" {
-                let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
-                arm_results.push(pe)
-            }
-
+            // Jump to merge if not terminated
             if !arm_terminated {
                 s = emit_instr(s, Instruction::Jump(merge_label))
+                // Track arm result for phi (include all arms that reach merge)
+                // Use zeroinitializer for void/unknown results to avoid referencing %void
+                let arm_kind: String = arm_val_r.value.ty.kind
+                if arm_kind == "void" || arm_kind == "unknown" || arm_val_r.value.name == "%void" {
+                    let zero_v: Value = new_value("zeroinitializer", arm_val_r.value.ty)
+                    let pe: PhiEntry = new_phi_entry(exit_label, zero_v)
+                    arm_results.push(pe)
+                } else {
+                    let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
+                    arm_results.push(pe)
+                }
             }
             s = lower_pop_scope(s)
             ai = ai + 1
@@ -2237,13 +2258,16 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         return new_lower_result(result_r.value, s)
     }
 
-    // All arms terminated. Merge block is unreachable.
-    // Emit a dummy return to terminate the block. Any code the caller
-    // emits after this will be in a dead block (after a terminator).
-    let dummy_val: Value = new_value("zeroinitializer", mir_unknown())
-    s = emit_instr(s, Instruction::Return(Some(dummy_val)))
-    let void_r: LowerResult = make_value(s, mir_void(), "t")
-    return new_lower_result(void_r.value, void_r.state)
+    // All arms terminated (all have return/break). Merge block is unreachable
+    // but callers may reference the result. Use the function's return type
+    // to create a properly-typed dummy value (alloca+load of zeroed memory).
+    let fn_ret: MIRType = get_current_fn_ret_type(s)
+    let result_r: LowerResult = make_value(s, fn_ret, "match_result")
+    s = result_r.state
+    let dummy_addr: Value = new_value(result_r.value.name + ".dummy", fn_ret)
+    s = emit_instr(s, Instruction::Alloca(dummy_addr, fn_ret))
+    s = emit_instr(s, Instruction::Load(result_r.value, dummy_addr))
+    return new_lower_result(result_r.value, s)
 }
 
 fn get_literal_value(expr: Expr) -> String {
