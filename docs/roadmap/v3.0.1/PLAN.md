@@ -326,7 +326,9 @@ Critical path: **1.1 → 1.2 → 1.3 → 1.4** (~700 lines, ~1-2 weeks)
 | Issue | Severity | Workaround |
 |-------|----------|------------|
 | ~~Binary segfaults at runtime~~ | ~~Critical~~ | FIXED — runs, outputs IR |
-| String truncation in emitted IR | Medium | Token names garbled, IR declarations truncated |
+| ~~String truncation in emitted IR~~ | ~~Medium~~ | FIXED — aligned string constants |
+| 34 remaining memcpy size warnings | Medium | From unreachable match defaults + remaining Option<T> mismatches |
+| 12/15 golden tests fail through stage1 | Medium | Self-hosted IR emitter: undefined SSA vars, missing features |
 | O0 bootstrap: 8 compile errors | Medium | Use O2 (0 errors, links) |
 | dom_app.mn WASM fails | Low | Pre-existing, not v3 regression |
 | KV/Redis/AI stdlib tests fail | Low | Pre-existing module resolution |
