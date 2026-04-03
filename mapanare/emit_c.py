@@ -867,6 +867,8 @@ class CEmitter:
 
         # Declare phi variables at function scope
         for phi_dest, phi_ctype in self._phi_info.declarations.items():
+            if phi_ctype == "void":
+                phi_ctype = "int64_t"  # Can't declare void variables
             self._w(f"{phi_ctype} {phi_dest} = {self._zero_init(phi_ctype)};")
             self._declared_locals.add(phi_dest)
             self._local_types[phi_dest] = phi_ctype
@@ -1711,12 +1713,12 @@ class CEmitter:
                     coerced_args[pi] = tmp
         args_str = ", ".join(coerced_args)
         ret_type = self._c_type(inst.dest.ty)
-        need_close = any(a.startswith("__coerce_") for a in coerced_args)
+        n_coerced = sum(1 for a in coerced_args if a.startswith("__coerce_"))
         if ret_type == "void":
             self._w(f"{c_name}({args_str});")
         else:
             self._w(f"{dest} = {c_name}({args_str});")
-        if need_close:
+        for _ in range(n_coerced):
             self._w("}")
 
     def _emit_extern_call(self, inst: ExternCall) -> None:
