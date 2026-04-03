@@ -554,11 +554,19 @@ class CEmitter:
                     deps[name].add(ct)
                 elif ct.startswith("MnResult_") and ct in all_types:
                     deps[name].add(ct)
-        # Option depends on its inner type
+        # Option depends on its inner type (unless circular)
         for inner in self._option_types:
             opt_name = f"MnOption_{_safe_name(inner)}"
             if inner in all_types and opt_name in all_types:
-                deps[opt_name].add(inner)
+                # Check for circular: does inner contain this Option?
+                is_circular = False
+                if inner in module.structs:
+                    for _, ftype in module.structs[inner]:
+                        if self._c_type(ftype) == opt_name:
+                            is_circular = True
+                            break
+                if not is_circular:
+                    deps[opt_name].add(inner)
         for name, variants in module.enums.items():
             for _, payload_types in variants:
                 for pt in payload_types:
@@ -566,29 +574,29 @@ class CEmitter:
                     if ct != name and ct in all_types:
                         deps[name].add(ct)
 
-        # Kahn's algorithm
-        in_degree = {t: 0 for t in all_types}
+        # Kahn's algorithm — proper topological sort
+        in_degree: dict[str, int] = {t: 0 for t in all_types}
+        # Build reverse adjacency: for each dep, track who depends on it
+        dependents: dict[str, list[str]] = {t: [] for t in all_types}
         for t, d in deps.items():
-            for dep in d:
-                if dep in in_degree:
-                    in_degree[dep] = in_degree.get(dep, 0)  # ensure exists
+            # Only count deps that are in our type set
+            real_deps = d & all_types
+            in_degree[t] = len(real_deps)
+            for dep in real_deps:
+                dependents[dep].append(t)
 
-        # Recompute: in_degree[t] = number of types that depend on t... no,
-        # in_degree[t] = number of types t depends on
-        in_degree = {t: len(d) for t, d in deps.items()}
-        queue = [t for t in all_types if in_degree[t] == 0]
+        queue = sorted(t for t in all_types if in_degree[t] == 0)
         order: list[str] = []
         while queue:
             t = queue.pop(0)
             order.append(t)
-            for other, d in deps.items():
-                if t in d:
-                    in_degree[other] -= 1
-                    if in_degree[other] == 0:
-                        queue.append(other)
+            for dependent in dependents.get(t, []):
+                in_degree[dependent] -= 1
+                if in_degree[dependent] == 0:
+                    queue.append(dependent)
 
         # Add any remaining (cyclic) types at the end
-        for t in all_types:
+        for t in sorted(all_types):
             if t not in order:
                 order.append(t)
         return order
@@ -654,7 +662,17 @@ class CEmitter:
         for inner in self._option_types:
             safe = _safe_name(inner)
             if tname == f"MnOption_{safe}":
-                self._w(f"struct MnOption_{safe}_s {{ int64_t has_value; {inner} value; }};")
+                # If the inner type contains this Option (circular), use pointer
+                is_circular = False
+                if inner in self._structs:
+                    for _, ftype in self._structs[inner]:
+                        if self._c_type(ftype) == tname:
+                            is_circular = True
+                            break
+                if is_circular:
+                    self._w(f"struct MnOption_{safe}_s {{ int64_t has_value; {inner} *value; }};")
+                else:
+                    self._w(f"struct MnOption_{safe}_s {{ int64_t has_value; {inner} value; }};")
                 self._w()
                 return
 
@@ -798,10 +816,19 @@ class CEmitter:
                 for vname, _ in self._enums[enum_name]:
                     if fn_name == f"{enum_name}_{vname}":
                         return enum_name
-            # Call to known function — use its return type
-            if fn_name in self._fn_map:
-                ret_ct = self._c_type(self._fn_map[fn_name].return_type)
-                if ret_ct != "int64_t" or dest.ty.type_info.kind != TypeKind.UNKNOWN:
+            # Call to known function — use its return type when dest is UNKNOWN
+            # Only override if the function returns a named type (struct/enum/Option)
+            if fn_name in self._fn_map and dest.ty.type_info.kind == TypeKind.UNKNOWN:
+                ret_ty = self._fn_map[fn_name].return_type
+                ret_ct = self._c_type(ret_ty)
+                if (
+                    ret_ct in self._structs
+                    or ret_ct in self._enums
+                    or ret_ct.startswith("MnOption_")
+                    or ret_ct.startswith("MnResult_")
+                    or ret_ct == "MnString"
+                    or ret_ct == "MnList"
+                ):
                     return ret_ct
 
         # Copy inherits src type if dest is UNKNOWN
@@ -1289,10 +1316,17 @@ class CEmitter:
     def _emit_wrap_some(self, inst: WrapSome) -> None:
         dest = self._val(inst.dest)
         val = self._val(inst.val)
-        # Use the dest variable's declared type (most accurate)
+        # Try declared type first
         dest_decl_ct = self._local_types.get(dest)
         if dest_decl_ct and dest_decl_ct.startswith("MnOption_"):
             ct = dest_decl_ct
+        elif self._cur_fn:
+            # Try function return type if this is likely a return value
+            fn_ret = self._c_type(self._cur_fn.return_type)
+            if fn_ret.startswith("MnOption_"):
+                ct = fn_ret
+            else:
+                ct = self._c_type(inst.dest.ty)
         else:
             ct = self._c_type(inst.dest.ty)
         self._w(f"{dest} = ({ct}){{1, {val}}};")
