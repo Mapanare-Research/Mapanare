@@ -1290,9 +1290,12 @@ class CEmitter:
         src_name = self._val(inst.src)
         dest_ct = self._local_types.get(dest_name, "int64_t")
         src_ct = self._local_types.get(src_name, "int64_t")
-        # Type mismatch: use memcpy for struct-to-struct copies
         if dest_ct != src_ct and dest_ct not in ("int64_t", "double", "void"):
-            self._w(f"memcpy(&{dest_name}, &{src_name}, sizeof({dest_name}));")
+            if src_ct in ("int64_t", "double"):
+                # Source is scalar, dest is struct — zero-initialize dest
+                self._w(f"memset(&{dest_name}, 0, sizeof({dest_name}));")
+            else:
+                self._w(f"memcpy(&{dest_name}, &{src_name}, sizeof({dest_name}));")
         else:
             self._w(f"{dest_name} = {src_name};")
 
@@ -1962,6 +1965,11 @@ class CEmitter:
                 val_ct = prop.get(val_name, self._local_types.get(val_name, self._c_type(inst.val.ty)))
                 if val_ct == fn_ret or fn_ret in ("void", "int64_t"):
                     self._w(f"return {val_name};")
+                elif val_ct in ("int64_t", "double") and fn_ret not in ("int64_t", "double", "void"):
+                    # Source is a scalar but return type is a struct — zero-initialize
+                    # This handles unreachable match defaults that return 0
+                    self._w(f"{{ {fn_ret} __rv; memset(&__rv, 0, sizeof(__rv));")
+                    self._w("  return __rv; }")
                 else:
                     self._w(f"{{ {fn_ret} __rv; memcpy(&__rv, &{val_name}, sizeof(__rv));")
                     self._w("  return __rv; }")
