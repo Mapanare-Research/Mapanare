@@ -1662,7 +1662,17 @@ class CEmitter:
     def _emit_return(self, inst: Return, block_label: str) -> None:
         self._emit_phi_stores(block_label)
         if inst.val is not None:
-            self._w(f"return {self._val(inst.val)};")
+            val_name = self._val(inst.val)
+            # Check if return value type matches function return type
+            if self._cur_fn:
+                fn_ret = self._c_type(self._cur_fn.return_type)
+                val_ct = self._local_types.get(val_name, "int64_t")
+                if val_ct != fn_ret and fn_ret not in ("void", "int64_t"):
+                    # Cast via memcpy for struct types
+                    self._w(f"{{ {fn_ret} __rv; memcpy(&__rv, &{val_name}, sizeof(__rv));")
+                    self._w("  return __rv; }")
+                    return
+            self._w(f"return {val_name};")
         else:
             self._w("return;")
 
