@@ -845,6 +845,13 @@ class CEmitter:
                     types[vname] = fn_ret
                     continue
 
+                # EnumInit: use the enum type directly
+                if isinstance(inst, EnumInit):
+                    ename = inst.enum_type.type_info.name
+                    if ename and ename in self._enums:
+                        types[vname] = ename
+                        continue
+
                 # EnumPayload: result type from the enum definition
                 if isinstance(inst, EnumPayload):
                     pass  # Already handled by MIR type
@@ -1365,7 +1372,8 @@ class CEmitter:
         list_v = self._val(inst.list_val)
         elem_v = self._val(inst.element)
         # Use propagated type for element (MIR often marks as UNKNOWN)
-        elem_type = self._local_types.get(elem_v, self._c_type(inst.element.ty))
+        prop = getattr(self, "_propagated_types", {})
+        elem_type = prop.get(elem_v, self._local_types.get(elem_v, self._c_type(inst.element.ty)))
         self._w(f"{{ {elem_type} __tmp_push = {elem_v};")
         self._w(f"  __mn_list_push(&{list_v}, &__tmp_push); }}")
         self._w(f"{dest} = {list_v};")
@@ -1377,8 +1385,15 @@ class CEmitter:
         obj_kind = inst.obj.ty.type_info.kind
 
         if obj_kind == TypeKind.LIST:
-            ct = self._c_type(inst.dest.ty)
-            self._w(f"{dest} = *({ct}*)__mn_list_get(&{obj}, {idx});")
+            # Use declared/propagated type (may be more accurate than MIR type)
+            prop = getattr(self, "_propagated_types", {})
+            ct = prop.get(dest, self._local_types.get(dest, self._c_type(inst.dest.ty)))
+            if ct in self._structs or ct in self._enums or ct.startswith("MnOption_"):
+                # Struct/enum element: memcpy from void* pointer
+                self._w(f"{{ void *__elem = __mn_list_get(&{obj}, {idx});")
+                self._w(f"  if (__elem) memcpy(&{dest}, __elem, sizeof({dest})); }}")
+            else:
+                self._w(f"{dest} = *({ct}*)__mn_list_get(&{obj}, {idx});")
         elif obj_kind == TypeKind.MAP:
             ct = self._c_type(inst.dest.ty)
             self._w(f"{{ void *__map_val = __mn_map_get({obj}, &{idx});")
@@ -1785,7 +1800,15 @@ class CEmitter:
         if ret_type == "void":
             self._w(f"{c_name}({args_str});")
         else:
-            self._w(f"{dest} = {c_name}({args_str});")
+            # Check if dest type matches function return type
+            dest_ct = self._local_types.get(dest, ret_type)
+            fn_ret_ct = self._c_type(self._fn_map[fn_name].return_type) if fn_name in self._fn_map else ret_type
+            if dest_ct != fn_ret_ct and dest_ct not in ("int64_t", "double"):
+                # Type mismatch: use temp + memcpy
+                self._w(f"{{ {fn_ret_ct} __call_tmp = {c_name}({args_str});")
+                self._w(f"  memcpy(&{dest}, &__call_tmp, sizeof({dest})); }}")
+            else:
+                self._w(f"{dest} = {c_name}({args_str});")
         for _ in range(n_coerced):
             self._w("}")
 
