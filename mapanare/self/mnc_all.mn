@@ -7340,8 +7340,11 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     if only_then {
         let mut entries: List<PhiEntry> = []
         entries.push(new_phi_entry(then_exit_label, then_val))
-        let zero_v: Value = new_value("zeroinitializer", then_val.ty)
-        entries.push(new_phi_entry(else_exit_label, zero_v))
+        // Only include else branch if it's not terminated (reaches merge)
+        if !else_terminated {
+            let zero_v: Value = new_value("zeroinitializer", then_val.ty)
+            entries.push(new_phi_entry(else_exit_label, zero_v))
+        }
         let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
         s = result_r.state
         s = emit_instr(s, Instruction::Phi(result_r.value, entries))
@@ -7349,8 +7352,11 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     }
     if only_else {
         let mut entries: List<PhiEntry> = []
-        let zero_v: Value = new_value("zeroinitializer", else_val.ty)
-        entries.push(new_phi_entry(then_exit_label, zero_v))
+        // Only include then branch if it's not terminated (reaches merge)
+        if !then_terminated {
+            let zero_v: Value = new_value("zeroinitializer", else_val.ty)
+            entries.push(new_phi_entry(then_exit_label, zero_v))
+        }
         entries.push(new_phi_entry(else_exit_label, else_val))
         let result_r: LowerResult = make_value(s, else_val.ty, "if_result")
         s = result_r.state
@@ -7538,6 +7544,15 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             s = lower_pop_scope(s)
             ai = ai + 1
         }
+    }
+
+    // Add zeroinitializer entry for switch default→merge path
+    if default_label == merge_label && len(arm_results) > 0 {
+        let entry_label: String = get_block_label(s, match_entry_idx)
+        let zero_ty: MIRType = arm_results[0].val.ty
+        let zero_v: Value = new_value("zeroinitializer", zero_ty)
+        let def_pe: PhiEntry = new_phi_entry(entry_label, zero_v)
+        arm_results.push(def_pe)
     }
 
     // Merge block
