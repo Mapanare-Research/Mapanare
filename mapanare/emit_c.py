@@ -1861,7 +1861,11 @@ class CEmitter:
             # Check if dest type matches function return type
             dest_ct = self._local_types.get(dest, ret_type)
             fn_ret_ct = self._c_type(self._fn_map[fn_name].return_type) if fn_name in self._fn_map else ret_type
-            if dest_ct != fn_ret_ct and dest_ct not in ("int64_t", "double"):
+            if dest_ct != fn_ret_ct and (
+                dest_ct not in ("int64_t", "double")
+                or fn_ret_ct in self._structs
+                or fn_ret_ct in self._enums
+            ):
                 # Type mismatch: use temp + memcpy
                 self._w(f"{{ {fn_ret_ct} __call_tmp = {c_name}({args_str});")
                 self._w(f"  memcpy(&{dest}, &__call_tmp, sizeof({dest})); }}")
