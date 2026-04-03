@@ -398,6 +398,7 @@ class CEmitter:
         self._w()
         # Full definitions in dependency order
         self._emitted_types: set[str] = set()
+        self._boxed_fields: set[tuple[str, str]] = set()  # (struct_name, field_name) → void*
         type_order = self._topo_sort_types(module)
         for tname in type_order:
             if tname in module.structs:
@@ -619,11 +620,13 @@ class CEmitter:
             ct = self._c_type(ftype)
             if ct == name:
                 ct = f"{name}*"  # Self-referential → pointer
+                self._boxed_fields.add((name, fname))
             elif (
                 hasattr(self, "_emitted_types")
                 and (ct in self._enums or ct in self._structs or ct.startswith("MnOption_"))
                 and ct not in self._emitted_types
             ):
+                self._boxed_fields.add((name, fname))
                 ct = "void*"  # Forward ref in cycle → opaque ptr
             self._w(f"{ct} {_safe_name(fname)};")
         self._indent_dec()
@@ -665,6 +668,8 @@ class CEmitter:
                             and (ct in self._enums or ct in self._structs or ct.startswith("MnOption_"))
                             and ct not in self._emitted_types
                         ):
+                            if hasattr(self, "_boxed_fields"):
+                                self._boxed_fields.add((name, f"_{i}"))
                             ct = "void*"  # Forward ref in cycle → opaque ptr
                         self._w(f"{ct} _{i};")
                     self._indent_dec()
@@ -884,6 +889,41 @@ class CEmitter:
                         elif len(candidates) > 1:
                             # Pick the first candidate as best guess
                             types[obj_name] = candidates[0]
+
+        # Back-propagation: infer Option/Result types from struct field types and fn param types
+        for block in fn.blocks:
+            for inst in block.instructions:
+                if isinstance(inst, StructInit):
+                    sname = inst.struct_type.type_info.name
+                    struct_fields = self._structs.get(sname, [])
+                    for (sfn, sft), (_, fval) in zip(struct_fields, inst.fields):
+                        fvn = self._val(fval)
+                        fv_ct = types.get(fvn, "int64_t")
+                        sf_ct = self._c_type(sft)
+                        # If value is MnOption_int64_t but field expects a different Option
+                        if fv_ct == "MnOption_int64_t" and sf_ct.startswith("MnOption_") and sf_ct != fv_ct:
+                            types[fvn] = sf_ct
+                elif isinstance(inst, Call):
+                    if inst.fn_name in self._fn_map:
+                        params = self._fn_map[inst.fn_name].params
+                        for param, arg in zip(params, inst.args):
+                            avn = self._val(arg)
+                            av_ct = types.get(avn, "int64_t")
+                            pt_ct = self._c_type(param.ty)
+                            if av_ct == "MnOption_int64_t" and pt_ct.startswith("MnOption_") and pt_ct != av_ct:
+                                types[avn] = pt_ct
+                elif isinstance(inst, EnumInit):
+                    ename = inst.enum_type.type_info.name
+                    evariants = self._enums.get(ename, [])
+                    for vn, ptypes in evariants:
+                        if vn == inst.variant:
+                            for pt, pval in zip(ptypes, inst.payload):
+                                pvn = self._val(pval)
+                                pv_ct = types.get(pvn, "int64_t")
+                                p_ct = self._c_type(pt)
+                                if pv_ct == "MnOption_int64_t" and p_ct.startswith("MnOption_") and p_ct != pv_ct:
+                                    types[pvn] = p_ct
+                            break
 
         return types
 
@@ -1350,12 +1390,26 @@ class CEmitter:
     def _emit_struct_init(self, inst: StructInit) -> None:
         dest = self._val(inst.dest)
         struct_name = inst.struct_type.type_info.name
-        # Use per-field assignment with memcpy for type safety
         self._w(f"memset(&{dest}, 0, sizeof({dest}));")
+        struct_fields = self._structs.get(struct_name, [])
+        field_type_map = {fn: ft for fn, ft in struct_fields}
+        boxed = getattr(self, "_boxed_fields", set())
         for fname, fval in inst.fields:
             sf = _safe_name(fname)
             fv = self._val(fval)
-            self._w(f"memcpy(&{dest}.{sf}, &{fv}, sizeof({dest}.{sf}));")
+            fval_ct = self._local_types.get(fv, self._c_type(fval.ty))
+            field_ct = field_type_map.get(fname, "")
+            # Check if this field is void*-boxed (forward reference)
+            if (struct_name, fname) in boxed:
+                # Heap-allocate the value and store the pointer
+                self._w(f"{{ {fval_ct} *__bp = malloc(sizeof({fval_ct}));")
+                self._w(f"  *__bp = {fv}; {dest}.{sf} = __bp; }}")
+            elif field_ct and fval_ct == field_ct:
+                self._w(f"{dest}.{sf} = {fv};")
+            elif fval_ct in ("int64_t", "double", "MnString", "MnList"):
+                self._w(f"{dest}.{sf} = {fv};")
+            else:
+                self._w(f"memcpy(&{dest}.{sf}, &{fv}, sizeof({dest}.{sf}));")
 
     def _emit_field_get(self, inst: FieldGet) -> None:
         dest = self._val(inst.dest)
@@ -1382,9 +1436,14 @@ class CEmitter:
                         if obj_ct == opt_name or dest_ct == circ_inner:
                             self._w(f"if ({obj}.value) {dest} = *{obj}.value;")
                             return
-        # Regular struct field access — use memcpy for type safety
+        # Regular struct field access
         dest_ct = self._local_types.get(dest, self._c_type(inst.dest.ty))
         obj_ct = self._local_types.get(obj, "int64_t")
+        boxed = getattr(self, "_boxed_fields", set())
+        # Check if this field is void*-boxed (forward reference)
+        if (obj_ct, inst.field_name) in boxed:
+            self._w(f"if ({obj}.{fname}) {dest} = *({dest_ct}*){obj}.{fname};")
+            return
         # Check if the field type differs from dest type (needs memcpy)
         field_type = None
         if obj_ct in self._structs:
@@ -1398,6 +1457,7 @@ class CEmitter:
             self._w(f"memcpy(&{dest}, &{obj}.{fname}, sizeof({dest}));")
         else:
             self._w(f"{dest} = {obj}.{fname};")
+
 
     def _emit_field_set(self, inst: FieldSet) -> None:
         obj = self._val(inst.obj)
@@ -1889,15 +1949,16 @@ class CEmitter:
         self._emit_phi_stores(block_label)
         if inst.val is not None:
             val_name = self._val(inst.val)
-            # Check if return value type matches function return type
             if self._cur_fn:
                 fn_ret = self._c_type(self._cur_fn.return_type)
-                val_ct = self._local_types.get(val_name, "int64_t")
-                if val_ct != fn_ret and fn_ret not in ("void", "int64_t"):
-                    # Cast via memcpy for struct types
+                prop = getattr(self, "_propagated_types", {})
+                val_ct = prop.get(val_name, self._local_types.get(val_name, self._c_type(inst.val.ty)))
+                if val_ct == fn_ret or fn_ret in ("void", "int64_t"):
+                    self._w(f"return {val_name};")
+                else:
                     self._w(f"{{ {fn_ret} __rv; memcpy(&__rv, &{val_name}, sizeof(__rv));")
                     self._w("  return __rv; }")
-                    return
+                return
             self._w(f"return {val_name};")
         else:
             self._w("return;")
