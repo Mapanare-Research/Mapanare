@@ -13,7 +13,6 @@ from typing import Any
 from mapanare.ast_nodes import (
     AgentDef,
     AssertStmt,
-    PrintStmt,
     AssignExpr,
     ASTNode,
     BinaryExpr,
@@ -60,6 +59,7 @@ from mapanare.ast_nodes import (
     OkExpr,
     PipeDef,
     PipeExpr,
+    PrintStmt,
     Program,
     RangeExpr,
     ReturnStmt,
@@ -649,7 +649,11 @@ class MIRLowerer:
                     self._fn_return_types[actual.name] = _resolve_type_expr(actual.return_type)
                 if actual.params:
                     self._fn_param_types[actual.name] = [
-                        _resolve_type_expr(p.type_annotation) if p.type_annotation else mir_unknown()
+                        (
+                            _resolve_type_expr(p.type_annotation)
+                            if p.type_annotation
+                            else mir_unknown()
+                        )
                         for p in actual.params
                     ]
             elif isinstance(actual, ImplDef):
@@ -659,7 +663,11 @@ class MIRLowerer:
                         self._fn_return_types[mir_name] = _resolve_type_expr(method.return_type)
                     if method.params:
                         self._fn_param_types[mir_name] = [
-                            _resolve_type_expr(p.type_annotation) if p.type_annotation else mir_unknown()
+                            (
+                                _resolve_type_expr(p.type_annotation)
+                                if p.type_annotation
+                                else mir_unknown()
+                            )
                             for p in method.params
                         ]
 
@@ -1236,7 +1244,11 @@ class MIRLowerer:
 
         if isinstance(expr, SomeExpr):
             val = self._lower_expr(expr.value)
-            inner_ti = val.ty.type_info if val.ty.type_info.kind != TypeKind.UNKNOWN else TypeInfo(kind=TypeKind.INT)
+            inner_ti = (
+                val.ty.type_info
+                if val.ty.type_info.kind != TypeKind.UNKNOWN
+                else TypeInfo(kind=TypeKind.INT)
+            )
             opt_ty = MIRType(TypeInfo(kind=TypeKind.OPTION, args=[inner_ti]))
             dest = self._make_value(ty=opt_ty)
             self._emit(WrapSome(dest=dest, val=val))
@@ -1244,16 +1256,28 @@ class MIRLowerer:
 
         if isinstance(expr, OkExpr):
             val = self._lower_expr(expr.value)
-            ok_ti = val.ty.type_info if val.ty.type_info.kind != TypeKind.UNKNOWN else TypeInfo(kind=TypeKind.INT)
-            res_ty = MIRType(TypeInfo(kind=TypeKind.RESULT, args=[ok_ti, TypeInfo(kind=TypeKind.STRING)]))
+            ok_ti = (
+                val.ty.type_info
+                if val.ty.type_info.kind != TypeKind.UNKNOWN
+                else TypeInfo(kind=TypeKind.INT)
+            )
+            res_ty = MIRType(
+                TypeInfo(kind=TypeKind.RESULT, args=[ok_ti, TypeInfo(kind=TypeKind.STRING)])
+            )
             dest = self._make_value(ty=res_ty)
             self._emit(WrapOk(dest=dest, val=val))
             return dest
 
         if isinstance(expr, ErrExpr):
             val = self._lower_expr(expr.value)
-            err_ti = val.ty.type_info if val.ty.type_info.kind != TypeKind.UNKNOWN else TypeInfo(kind=TypeKind.STRING)
-            res_ty = MIRType(TypeInfo(kind=TypeKind.RESULT, args=[TypeInfo(kind=TypeKind.INT), err_ti]))
+            err_ti = (
+                val.ty.type_info
+                if val.ty.type_info.kind != TypeKind.UNKNOWN
+                else TypeInfo(kind=TypeKind.STRING)
+            )
+            res_ty = MIRType(
+                TypeInfo(kind=TypeKind.RESULT, args=[TypeInfo(kind=TypeKind.INT), err_ti])
+            )
             dest = self._make_value(ty=res_ty)
             self._emit(WrapErr(dest=dest, val=val))
             return dest
@@ -1486,20 +1510,36 @@ class MIRLowerer:
 
             # Handle Option/Result builtins
             if fn_name == "Some" and len(args) == 1:
-                inner_ti = args[0].ty.type_info if args[0].ty.type_info.kind != TypeKind.UNKNOWN else TypeInfo(kind=TypeKind.INT)
+                inner_ti = (
+                    args[0].ty.type_info
+                    if args[0].ty.type_info.kind != TypeKind.UNKNOWN
+                    else TypeInfo(kind=TypeKind.INT)
+                )
                 opt_ty = MIRType(TypeInfo(kind=TypeKind.OPTION, args=[inner_ti]))
                 dest = self._make_value(ty=opt_ty)
                 self._emit(WrapSome(dest=dest, val=args[0]))
                 return dest
             if fn_name == "Ok" and len(args) == 1:
-                ok_ti = args[0].ty.type_info if args[0].ty.type_info.kind != TypeKind.UNKNOWN else TypeInfo(kind=TypeKind.INT)
-                res_ty = MIRType(TypeInfo(kind=TypeKind.RESULT, args=[ok_ti, TypeInfo(kind=TypeKind.STRING)]))
+                ok_ti = (
+                    args[0].ty.type_info
+                    if args[0].ty.type_info.kind != TypeKind.UNKNOWN
+                    else TypeInfo(kind=TypeKind.INT)
+                )
+                res_ty = MIRType(
+                    TypeInfo(kind=TypeKind.RESULT, args=[ok_ti, TypeInfo(kind=TypeKind.STRING)])
+                )
                 dest = self._make_value(ty=res_ty)
                 self._emit(WrapOk(dest=dest, val=args[0]))
                 return dest
             if fn_name == "Err" and len(args) == 1:
-                err_ti = args[0].ty.type_info if args[0].ty.type_info.kind != TypeKind.UNKNOWN else TypeInfo(kind=TypeKind.STRING)
-                res_ty = MIRType(TypeInfo(kind=TypeKind.RESULT, args=[TypeInfo(kind=TypeKind.INT), err_ti]))
+                err_ti = (
+                    args[0].ty.type_info
+                    if args[0].ty.type_info.kind != TypeKind.UNKNOWN
+                    else TypeInfo(kind=TypeKind.STRING)
+                )
+                res_ty = MIRType(
+                    TypeInfo(kind=TypeKind.RESULT, args=[TypeInfo(kind=TypeKind.INT), err_ti])
+                )
                 dest = self._make_value(ty=res_ty)
                 self._emit(WrapErr(dest=dest, val=args[0]))
                 return dest
@@ -1585,8 +1625,9 @@ class MIRLowerer:
                 self._emit(EnumInit(dest=dest, enum_type=enum_ty, variant=member, payload=args))
                 return dest
             # Look up return type: try NS_Member first, then bare Member
-            ns_ret = self._fn_return_types.get(fn_name,
-                self._fn_return_types.get(member, mir_unknown()))
+            ns_ret = self._fn_return_types.get(
+                fn_name, self._fn_return_types.get(member, mir_unknown())
+            )
             if ns_ret.kind != TypeKind.UNKNOWN:
                 dest = self._make_value(ty=ns_ret)
             self._emit(Call(dest=dest, fn_name=fn_name, args=args))
@@ -2079,8 +2120,9 @@ class MIRLowerer:
             return dest
         # General namespace access — try to look up return type
         fn_name = f"{ns}_{member}"
-        ret_ty = self._fn_return_types.get(fn_name,
-            self._fn_return_types.get(member, mir_unknown()))
+        ret_ty = self._fn_return_types.get(
+            fn_name, self._fn_return_types.get(member, mir_unknown())
+        )
         dest = self._make_value(ty=ret_ty)
         self._emit(Call(dest=dest, fn_name=fn_name, args=[]))
         return dest
@@ -2348,13 +2390,27 @@ class MIRLowerer:
             arg_kind = arg_val.ty.type_info.kind
             param_kind = ptype.kind
             # Patch bare Option args: Option() → Option<T> from param
-            if arg_kind == TypeKind.OPTION and not arg_val.ty.type_info.args and param_kind == TypeKind.OPTION and ptype.type_info.args:
-                arg_val.ty = MIRType(TypeInfo(kind=TypeKind.OPTION, args=list(ptype.type_info.args)))
+            if (
+                arg_kind == TypeKind.OPTION
+                and not arg_val.ty.type_info.args
+                and param_kind == TypeKind.OPTION
+                and ptype.type_info.args
+            ):
+                arg_val.ty = MIRType(
+                    TypeInfo(kind=TypeKind.OPTION, args=list(ptype.type_info.args))
+                )
                 # Also patch the WrapNone/WrapSome instruction
                 self._patch_wrap_inst(arg_val, arg_val.ty)
             # Patch bare Result args
-            elif arg_kind == TypeKind.RESULT and not arg_val.ty.type_info.args and param_kind == TypeKind.RESULT and ptype.type_info.args:
-                arg_val.ty = MIRType(TypeInfo(kind=TypeKind.RESULT, args=list(ptype.type_info.args)))
+            elif (
+                arg_kind == TypeKind.RESULT
+                and not arg_val.ty.type_info.args
+                and param_kind == TypeKind.RESULT
+                and ptype.type_info.args
+            ):
+                arg_val.ty = MIRType(
+                    TypeInfo(kind=TypeKind.RESULT, args=list(ptype.type_info.args))
+                )
                 self._patch_wrap_inst(arg_val, arg_val.ty)
             # Patch list element types
             if ptype.kind == TypeKind.LIST and ptype.type_info.args:

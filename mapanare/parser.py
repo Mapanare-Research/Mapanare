@@ -64,6 +64,7 @@ from mapanare.ast_nodes import (
     Param,
     PipeDef,
     PipeExpr,
+    PrintStmt,
     Program,
     RangeExpr,
     ReturnStmt,
@@ -588,9 +589,7 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         message = items[1] if len(items) > 1 else None
         return AssertStmt(condition=condition, message=message, span=_span_from_children(children))
 
-    def di_stmt(self, children: list[Any]) -> "PrintStmt":
-        from mapanare.ast_nodes import PrintStmt
-
+    def di_stmt(self, children: list[Any]) -> Any:
         items = _filter(children)
         return PrintStmt(expr=items[0], span=_span_from_children(children))
 

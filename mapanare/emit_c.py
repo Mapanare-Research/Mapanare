@@ -398,7 +398,7 @@ class CEmitter:
         self._w()
         # Full definitions in dependency order
         self._emitted_types: set[str] = set()
-        self._boxed_fields: set[tuple[str, ...]] = set()  # struct: (name, field) | enum: (name, variant, idx)
+        self._boxed_fields: set[object] = set()  # (struct, field) | (enum, variant, idx)
         type_order = self._topo_sort_types(module)
         for tname in type_order:
             if tname in module.structs:
@@ -646,8 +646,6 @@ class CEmitter:
     # ------------------------------------------------------------------
 
     def _emit_one_enum(self, name: str, variants: list[tuple[str, list[MIRType]]]) -> None:
-        # Detect recursive types in payloads
-        all_types = set(self._structs.keys()) | set(self._enums.keys())
         self._w(f"struct {name}_s {{")
         self._indent_inc()
         self._w("int64_t tag;")
@@ -665,7 +663,11 @@ class CEmitter:
                             ct = f"{ct}*"  # Self-referential
                         elif (
                             hasattr(self, "_emitted_types")
-                            and (ct in self._enums or ct in self._structs or ct.startswith("MnOption_"))
+                            and (
+                                ct in self._enums
+                                or ct in self._structs
+                                or ct.startswith("MnOption_")
+                            )
                             and ct not in self._emitted_types
                         ):
                             if hasattr(self, "_boxed_fields"):
@@ -734,9 +736,7 @@ class CEmitter:
             # The runtime's mn_tag_heap/mn_untag tagging scheme requires LSB=0 for
             # static strings (LSB=1 means heap-allocated).
             data_name = f"{gname}_data"
-            self._w(
-                f'static const char {data_name}[] __attribute__((aligned(2))) = "{escaped}";'
-            )
+            self._w(f'static const char {data_name}[] __attribute__((aligned(2))) = "{escaped}";')
             self._w(f"static MnString {gname} = {{(const char*){data_name}, {length}}};")
 
     # ------------------------------------------------------------------
@@ -802,7 +802,11 @@ class CEmitter:
 
                 # SSA reuse guard: if a Const already set this variable to a primitive,
                 # don't let a later Call override it with a struct type
-                if vname in types and isinstance(inst, Call) and types[vname] in ("int64_t", "double"):
+                if (
+                    vname in types
+                    and isinstance(inst, Call)
+                    and types[vname] in ("int64_t", "double")
+                ):
                     # Only skip if the Const was for the same variable
                     continue
 
@@ -908,7 +912,11 @@ class CEmitter:
                         fv_ct = types.get(fvn, "int64_t")
                         sf_ct = self._c_type(sft)
                         # If value is MnOption_int64_t but field expects a different Option
-                        if fv_ct == "MnOption_int64_t" and sf_ct.startswith("MnOption_") and sf_ct != fv_ct:
+                        if (
+                            fv_ct == "MnOption_int64_t"
+                            and sf_ct.startswith("MnOption_")
+                            and sf_ct != fv_ct
+                        ):
                             types[fvn] = sf_ct
                 elif isinstance(inst, Call):
                     if inst.fn_name in self._fn_map:
@@ -917,7 +925,11 @@ class CEmitter:
                             avn = self._val(arg)
                             av_ct = types.get(avn, "int64_t")
                             pt_ct = self._c_type(param.ty)
-                            if av_ct == "MnOption_int64_t" and pt_ct.startswith("MnOption_") and pt_ct != av_ct:
+                            if (
+                                av_ct == "MnOption_int64_t"
+                                and pt_ct.startswith("MnOption_")
+                                and pt_ct != av_ct
+                            ):
                                 types[avn] = pt_ct
                 elif isinstance(inst, EnumInit):
                     ename = inst.enum_type.type_info.name
@@ -928,7 +940,11 @@ class CEmitter:
                                 pvn = self._val(pval)
                                 pv_ct = types.get(pvn, "int64_t")
                                 p_ct = self._c_type(pt)
-                                if pv_ct == "MnOption_int64_t" and p_ct.startswith("MnOption_") and p_ct != pv_ct:
+                                if (
+                                    pv_ct == "MnOption_int64_t"
+                                    and p_ct.startswith("MnOption_")
+                                    and p_ct != pv_ct
+                                ):
                                     types[pvn] = p_ct
                             break
 
@@ -1251,7 +1267,10 @@ class CEmitter:
 
         # Handle SSA reuse: if dest is declared as struct but const is int, use memcpy
         dest_ct = self._local_types.get(dest, "int64_t")
-        if dest_ct not in ("int64_t", "double", "MnString", "MnList", "void*", "void") and kind == TypeKind.INT:
+        if (
+            dest_ct not in ("int64_t", "double", "MnString", "MnList", "void*", "void")
+            and kind == TypeKind.INT
+        ):
             self._w(f"{{ int64_t __ctmp = (int64_t){inst.value}LL;")
             self._w(f"  memcpy(&{dest}, &__ctmp, sizeof(__ctmp)); }}")
             return
@@ -1409,7 +1428,7 @@ class CEmitter:
         self._w(f"memset(&{dest}, 0, sizeof({dest}));")
         struct_fields = self._structs.get(struct_name, [])
         field_type_map = {fn: ft for fn, ft in struct_fields}
-        boxed = getattr(self, "_boxed_fields", set())
+        boxed: set[object] = getattr(self, "_boxed_fields", set())
         for fname, fval in inst.fields:
             sf = _safe_name(fname)
             fv = self._val(fval)
@@ -1455,7 +1474,7 @@ class CEmitter:
         # Regular struct field access
         dest_ct = self._local_types.get(dest, self._c_type(inst.dest.ty))
         obj_ct = self._local_types.get(obj, "int64_t")
-        boxed = getattr(self, "_boxed_fields", set())
+        boxed: set[object] = getattr(self, "_boxed_fields", set())
         # Check if this field is void*-boxed (forward reference)
         if (obj_ct, inst.field_name) in boxed:
             self._w(f"if ({obj}.{fname}) {dest} = *({dest_ct}*){obj}.{fname};")
@@ -1475,7 +1494,6 @@ class CEmitter:
             self._w(f"memcpy(&{dest}, &{obj}.{fname}, sizeof({obj}.{fname}));")
         else:
             self._w(f"{dest} = {obj}.{fname};")
-
 
     def _emit_field_set(self, inst: FieldSet) -> None:
         obj = self._val(inst.obj)
@@ -1640,10 +1658,14 @@ class CEmitter:
             else:
                 field_is_boxed = self._is_enum_field_boxed(enum_name, inst.variant, idx)
                 if field_is_boxed:
-                    self._w(f"if ({ev}.as.{vname}._{idx}) {dest} = *({dest_ct}*){ev}.as.{vname}._{idx};")
+                    self._w(
+                        f"if ({ev}.as.{vname}._{idx}) {dest} = *({dest_ct}*){ev}.as.{vname}._{idx};"
+                    )
                 else:
                     self._w(f"memset(&{dest}, 0, sizeof({dest}));")
-                    self._w(f"memcpy(&{dest}, &{ev}.as.{vname}._{idx}, sizeof({ev}.as.{vname}._{idx}));")
+                    self._w(
+                        f"memcpy(&{dest}, &{ev}.as.{vname}._{idx}, sizeof({ev}.as.{vname}._{idx}));"
+                    )
 
     # --- Option/Result wrappers ---
 
@@ -1674,7 +1696,7 @@ class CEmitter:
 
     def _is_enum_field_boxed(self, enum_name: str, variant: str, field_idx: int) -> bool:
         """Check if a specific enum variant field is void*-boxed (forward ref)."""
-        boxed = getattr(self, "_boxed_fields", set())
+        boxed: set[object] = getattr(self, "_boxed_fields", set())
         sv = _safe_name(variant)
         return (enum_name, sv, field_idx) in boxed
 
@@ -1691,9 +1713,7 @@ class CEmitter:
         dest = self._val(inst.dest)
         dest_decl_ct = self._local_types.get(dest)
         if dest_decl_ct and dest_decl_ct.startswith("MnOption_"):
-            ct = dest_decl_ct
-        else:
-            ct = self._c_type(inst.dest.ty)
+            pass  # dest_decl_ct used for declaration
         self._w(f"memset(&{dest}, 0, sizeof({dest}));")
 
     def _emit_wrap_ok(self, inst: WrapOk) -> None:
@@ -1956,7 +1976,11 @@ class CEmitter:
         else:
             # Check if dest type matches function return type
             dest_ct = self._local_types.get(dest, ret_type)
-            fn_ret_ct = self._c_type(self._fn_map[fn_name].return_type) if fn_name in self._fn_map else ret_type
+            fn_ret_ct = (
+                self._c_type(self._fn_map[fn_name].return_type)
+                if fn_name in self._fn_map
+                else ret_type
+            )
             if dest_ct != fn_ret_ct and (
                 dest_ct not in ("int64_t", "double")
                 or fn_ret_ct in self._structs
@@ -1989,10 +2013,16 @@ class CEmitter:
             if self._cur_fn:
                 fn_ret = self._c_type(self._cur_fn.return_type)
                 prop = getattr(self, "_propagated_types", {})
-                val_ct = prop.get(val_name, self._local_types.get(val_name, self._c_type(inst.val.ty)))
+                val_ct = prop.get(
+                    val_name, self._local_types.get(val_name, self._c_type(inst.val.ty))
+                )
                 if val_ct == fn_ret or fn_ret in ("void", "int64_t"):
                     self._w(f"return {val_name};")
-                elif val_ct in ("int64_t", "double") and fn_ret not in ("int64_t", "double", "void"):
+                elif val_ct in ("int64_t", "double") and fn_ret not in (
+                    "int64_t",
+                    "double",
+                    "void",
+                ):
                     # Source is a scalar but return type is a struct — zero-initialize
                     # This handles unreachable match defaults that return 0
                     self._w(f"{{ {fn_ret} __rv; memset(&__rv, 0, sizeof(__rv));")
@@ -2272,7 +2302,7 @@ class CEmitter:
             self._w("int main(int argc, char **argv) {")
             self._indent_inc()
             self._w('if (argc < 2) { fprintf(stderr, "usage: mnc <file.mn>\\n"); return 1; }')
-            self._w("FILE *f = fopen(argv[1], \"r\");")
+            self._w('FILE *f = fopen(argv[1], "r");')
             self._w('if (!f) { fprintf(stderr, "error: cannot open %s\\n", argv[1]); return 1; }')
             self._w("fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET);")
             self._w("char *buf = malloc(sz + 1); fread(buf, 1, sz, f); buf[sz] = 0; fclose(f);")
