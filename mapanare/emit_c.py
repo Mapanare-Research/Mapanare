@@ -396,7 +396,7 @@ class CEmitter:
         self._emit_enum_forward_decls(module)
         self._emit_option_result_forward_decls()
         self._w()
-        # Full definitions in dependency order (structs, enums, Option, Result interleaved)
+        # Full definitions in dependency order
         self._emitted_types: set[str] = set()
         type_order = self._topo_sort_types(module)
         for tname in type_order:
@@ -619,6 +619,12 @@ class CEmitter:
             ct = self._c_type(ftype)
             if ct == name:
                 ct = f"{name}*"  # Self-referential → pointer
+            elif (
+                hasattr(self, "_emitted_types")
+                and (ct in self._enums or ct in self._structs or ct.startswith("MnOption_"))
+                and ct not in self._emitted_types
+            ):
+                ct = "void*"  # Forward ref in cycle → opaque ptr
             self._w(f"{ct} {_safe_name(fname)};")
         self._indent_dec()
         self._w("};")
@@ -652,9 +658,14 @@ class CEmitter:
                     self._indent_inc()
                     for i, pt in enumerate(payload_types):
                         ct = self._c_type(pt)
-                        # Self-referential: must be pointer
                         if ct == name:
-                            ct = f"{ct}*"
+                            ct = f"{ct}*"  # Self-referential
+                        elif (
+                            hasattr(self, "_emitted_types")
+                            and (ct in self._enums or ct in self._structs or ct.startswith("MnOption_"))
+                            and ct not in self._emitted_types
+                        ):
+                            ct = "void*"  # Forward ref in cycle → opaque ptr
                         self._w(f"{ct} _{i};")
                     self._indent_dec()
                     self._w(f"}} {_safe_name(vname)};")
@@ -1290,10 +1301,12 @@ class CEmitter:
     def _emit_struct_init(self, inst: StructInit) -> None:
         dest = self._val(inst.dest)
         struct_name = inst.struct_type.type_info.name
-        fields_str = ", ".join(
-            f".{_safe_name(fname)} = {self._val(fval)}" for fname, fval in inst.fields
-        )
-        self._w(f"{dest} = ({struct_name}){{{fields_str}}};")
+        # Use per-field assignment with memcpy for type safety
+        self._w(f"memset(&{dest}, 0, sizeof({dest}));")
+        for fname, fval in inst.fields:
+            sf = _safe_name(fname)
+            fv = self._val(fval)
+            self._w(f"memcpy(&{dest}.{sf}, &{fv}, sizeof({dest}.{sf}));")
 
     def _emit_field_get(self, inst: FieldGet) -> None:
         dest = self._val(inst.dest)
@@ -1309,15 +1322,24 @@ class CEmitter:
                 self._w(f"{dest} = *({ct}*)__mn_signal_get({obj});")
                 return
         # Check if accessing .value on a circular Option (value is pointer)
-        if fname == "value":
+        if fname == "value" or fname == "has_value":
             obj_ct = self._local_types.get(obj, "")
-            if obj_ct.startswith("MnOption_"):
-                inner_name = obj_ct.replace("MnOption_", "")
-                if inner_name in self._structs and self._is_circular_option(inner_name):
-                    self._w(f"{dest} = *{obj}.value;")
-                    return
-        # Regular struct field access
-        self._w(f"{dest} = {obj}.{fname};")
+            dest_ct = self._local_types.get(dest, self._c_type(inst.dest.ty))
+            # Check all known circular Option types
+            if fname == "value":
+                for circ_inner in list(self._structs.keys()):
+                    if self._is_circular_option(circ_inner):
+                        opt_name = f"MnOption_{_safe_name(circ_inner)}"
+                        if obj_ct == opt_name or dest_ct == circ_inner:
+                            self._w(f"if ({obj}.value) {dest} = *{obj}.value;")
+                            return
+        # Regular struct field access — use memcpy for potential void* boxing
+        dest_ct = self._local_types.get(dest, self._c_type(inst.dest.ty))
+        if dest_ct not in ("int64_t", "double", "MnString", "MnList", "void*", "void"):
+            # Struct/enum dest: memcpy to handle void* → Type coercion
+            self._w(f"memcpy(&{dest}, &{obj}.{fname}, sizeof({dest}));")
+        else:
+            self._w(f"{dest} = {obj}.{fname};")
 
     def _emit_field_set(self, inst: FieldSet) -> None:
         obj = self._val(inst.obj)
@@ -1442,7 +1464,12 @@ class CEmitter:
         val_kind = inst.enum_val.ty.type_info.kind
         # Option/Result use different extraction
         if val_kind == TypeKind.OPTION:
-            self._w(f"{dest} = {ev}.value;")
+            # For circular Options, .value is a pointer — dereference
+            dest_ct = self._local_types.get(dest, self._c_type(inst.dest.ty))
+            if dest_ct in self._structs and self._is_circular_option(dest_ct):
+                self._w(f"if ({ev}.value) {dest} = *{ev}.value;")
+            else:
+                self._w(f"{dest} = {ev}.value;")
         elif val_kind == TypeKind.RESULT:
             if inst.variant in ("Ok", "ok"):
                 self._w(f"{dest} = {ev}.as.ok;")
@@ -1458,7 +1485,8 @@ class CEmitter:
             if payload_boxed:
                 self._w(f"{dest} = *{ev}.as.{vname}._{idx};")
             else:
-                self._w(f"{dest} = {ev}.as.{vname}._{idx};")
+                # Use memcpy for void* opaque fields (forward-ref boxing)
+                self._w(f"memcpy(&{dest}, &{ev}.as.{vname}._{idx}, sizeof({dest}));")
 
     # --- Option/Result wrappers ---
 
