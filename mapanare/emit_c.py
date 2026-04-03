@@ -396,15 +396,17 @@ class CEmitter:
         self._emit_enum_forward_decls(module)
         self._emit_option_result_forward_decls()
         self._w()
-        # Full definitions: structs and enums in dependency order, then Option/Result
+        # Full definitions in dependency order (structs, enums, Option, Result interleaved)
         type_order = self._topo_sort_types(module)
         for tname in type_order:
             if tname in module.structs:
                 self._emit_one_struct(tname, module.structs[tname])
             elif tname in module.enums:
                 self._emit_one_enum(tname, module.enums[tname])
-        # Option/Result AFTER all structs and enums are fully defined
-        self._emit_option_result_types()
+            elif tname.startswith("MnOption_"):
+                self._emit_one_option(tname)
+            elif tname.startswith("MnResult_"):
+                self._emit_one_result(tname)
         self._w()
         self._emit_string_constants()
         self._w()
@@ -547,6 +549,16 @@ class CEmitter:
                 ct = self._c_type(ftype)
                 if ct != name and ct in all_types:
                     deps[name].add(ct)
+                # Also check Option/Result wrapper dependencies
+                if ct.startswith("MnOption_") and ct in all_types:
+                    deps[name].add(ct)
+                elif ct.startswith("MnResult_") and ct in all_types:
+                    deps[name].add(ct)
+        # Option depends on its inner type
+        for inner in self._option_types:
+            opt_name = f"MnOption_{_safe_name(inner)}"
+            if inner in all_types and opt_name in all_types:
+                deps[opt_name].add(inner)
         for name, variants in module.enums.items():
             for _, payload_types in variants:
                 for pt in payload_types:
@@ -639,7 +651,6 @@ class CEmitter:
 
     def _emit_one_option(self, tname: str) -> None:
         """Emit a single Option type definition (struct already forward-declared)."""
-        # Find the inner type from the name: MnOption_<safe_inner>
         for inner in self._option_types:
             safe = _safe_name(inner)
             if tname == f"MnOption_{safe}":
@@ -780,13 +791,24 @@ class CEmitter:
         if isinstance(inst, EnumTag):
             return "int64_t"
 
-        # Call to enum variant constructor — infer from enum name
         if isinstance(inst, Call):
             fn_name = inst.fn_name
+            # Call to enum variant constructor — infer from enum name
             for enum_name in self._enums:
                 for vname, _ in self._enums[enum_name]:
                     if fn_name == f"{enum_name}_{vname}":
                         return enum_name
+            # Call to known function — use its return type
+            if fn_name in self._fn_map:
+                ret_ct = self._c_type(self._fn_map[fn_name].return_type)
+                if ret_ct != "int64_t" or dest.ty.type_info.kind != TypeKind.UNKNOWN:
+                    return ret_ct
+
+        # Copy inherits src type if dest is UNKNOWN
+        if isinstance(inst, Copy) and dest.ty.type_info.kind == TypeKind.UNKNOWN:
+            src_name = self._val(inst.src)
+            if src_name in self._local_types:
+                return self._local_types[src_name]
 
         return self._c_type(dest.ty)
 
@@ -794,6 +816,8 @@ class CEmitter:
         """Zero-initializer expression for a C type."""
         if ctype in ("int64_t", "double"):
             return "0"
+        if ctype == "void":
+            return "0"  # Can't zero-init void; use 0 as placeholder
         if ctype == "MnString":
             return "(MnString){NULL, 0}"
         if ctype == "MnList":
@@ -955,10 +979,12 @@ class CEmitter:
             # Skip void phi variables (not declared)
             if phi_dest not in self._declared_locals:
                 continue
-            # Skip void/undefined phi values
+            # Skip void/undefined phi values — use memset to zero
             if src_name in ("mn_void", "mn_return"):
                 ctype = self._local_types.get(phi_dest, "int64_t")
-                self._w(f"{phi_dest} = {self._zero_init(ctype)};")
+                if ctype == "void":
+                    continue  # Can't assign to void
+                self._w(f"memset(&{phi_dest}, 0, sizeof({phi_dest}));")
             else:
                 self._w(f"{phi_dest} = {src_name};")
 
@@ -1263,13 +1289,22 @@ class CEmitter:
     def _emit_wrap_some(self, inst: WrapSome) -> None:
         dest = self._val(inst.dest)
         val = self._val(inst.val)
-        ct = self._c_type(inst.dest.ty)
+        # Use the dest variable's declared type (most accurate)
+        dest_decl_ct = self._local_types.get(dest)
+        if dest_decl_ct and dest_decl_ct.startswith("MnOption_"):
+            ct = dest_decl_ct
+        else:
+            ct = self._c_type(inst.dest.ty)
         self._w(f"{dest} = ({ct}){{1, {val}}};")
 
     def _emit_wrap_none(self, inst: WrapNone) -> None:
         dest = self._val(inst.dest)
-        ct = self._c_type(inst.dest.ty)
-        self._w(f"{dest} = ({ct}){{0}};")
+        dest_decl_ct = self._local_types.get(dest)
+        if dest_decl_ct and dest_decl_ct.startswith("MnOption_"):
+            ct = dest_decl_ct
+        else:
+            ct = self._c_type(inst.dest.ty)
+        self._w(f"memset(&{dest}, 0, sizeof({dest}));")
 
     def _emit_wrap_ok(self, inst: WrapOk) -> None:
         dest = self._val(inst.dest)
