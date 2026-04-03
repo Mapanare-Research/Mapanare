@@ -20,10 +20,10 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     BreakStmt,
     CallExpr,
-    ContinueStmt,
     CharLiteral,
     ConstructExpr,
     ConstructorPattern,
+    ContinueStmt,
     Decorator,
     Definition,
     DocComment,
@@ -1605,7 +1605,7 @@ def _indent_to_braces(source: str) -> str:
     while i < len(lines):
         raw = lines[i]
         stripped = raw.rstrip()
-        if not stripped or stripped.lstrip().startswith(("#", "//")):
+        if not stripped:
             out.append(raw)
             i += 1
             continue
@@ -1614,14 +1614,23 @@ def _indent_to_braces(source: str) -> str:
         spaces = len(raw) - len(raw.lstrip())
         level = spaces // 4
 
+        # For comment lines, still close blocks on dedent, then pass through
+        if stripped.lstrip().startswith(("#", "//")):
+            while level < indent_stack[-1]:
+                indent_stack.pop()
+                close_indent = "    " * indent_stack[-1]
+                out.append(f"{close_indent}}}")
+            out.append(raw)
+            i += 1
+            continue
+
         content = stripped.lstrip()
 
         # Check if this line is a continuation (else/sino) before closing blocks
         is_continuation = False
         for kw in _CONTINUATION_KW:
             if content.startswith(kw) and (
-                len(content) == len(kw)
-                or content[len(kw)] in (" ", ":", "{")
+                len(content) == len(kw) or content[len(kw)] in (" ", ":", "{")
             ):
                 is_continuation = True
                 break
@@ -1660,9 +1669,7 @@ def _indent_to_braces(source: str) -> str:
                 fn_name = parts[1] if len(parts) > 1 else ""
                 if "->" in fn_name:
                     name_part, ret_part = fn_name.split("->", 1)
-                    out.append(
-                        f"{prefix}fn {name_part.strip()}() -> {ret_part.strip()} {{"
-                    )
+                    out.append(f"{prefix}fn {name_part.strip()}() -> {ret_part.strip()} {{")
                 else:
                     out.append(f"{prefix}fn {fn_name}() {{")
             else:
