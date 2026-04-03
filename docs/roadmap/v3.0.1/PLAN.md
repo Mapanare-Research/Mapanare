@@ -308,8 +308,8 @@ Critical path: **1.1 → 1.2 → 1.3 → 1.4** (~700 lines, ~1-2 weeks)
 - [x] `+fn`, `+tipo` work as pub prefix ✓ (2026-04-03)
 - [x] Implicit return ✓ (2026-04-03)
 - [x] `...` empty block ✓ (2026-04-03)
-- [ ] `si expr:` with `=>` arms works as match
-- [ ] CI green on push to dev
+- [ ] `si expr:` with `=>` arms works as match (DEFERRED → v3.2, needs indent preprocessor)
+- [x] CI green on push to dev ✓ (ruff + black + mypy + 832 tests + WASM)
 - [ ] VS Code extension highlights v3 syntax
 - [ ] All golden tests pass through C backend (already done in v3.0.0)
 
