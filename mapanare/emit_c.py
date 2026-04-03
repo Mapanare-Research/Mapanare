@@ -1361,9 +1361,10 @@ class CEmitter:
         elem_size = self._elem_size(inst.elem_type)
         self._w(f"{dest} = __mn_list_new({elem_size});")
         # Push initial elements
+        prop = getattr(self, "_propagated_types", {})
         for elem in inst.elements:
             ev = self._val(elem)
-            et = self._c_type(elem.ty)
+            et = prop.get(ev, self._local_types.get(ev, self._c_type(elem.ty)))
             self._w(f"{{ {et} __tmp_elem = {ev};")
             self._w(f"  __mn_list_push(&{dest}, &__tmp_elem); }}")
 
