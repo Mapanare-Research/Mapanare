@@ -301,6 +301,7 @@ Critical path: **1.1 → 1.2 → 1.3 → 1.4** (~700 lines, ~1-2 weeks)
 ### Must Ship
 
 - [x] mnc-stage1 compiles AND RUNS through C ✓ (2026-04-03)
+- [x] mnc-stage1 SELF-COMPILES: 76,282 lines LLVM IR ✓ (2026-04-03)
 - [ ] Three-stage bootstrap reaches fixed point (stage2.c == stage3.c)
 - [ ] `di "hello"` works as keyword statement
 - [ ] `+fn`, `+tipo` work as pub prefix
