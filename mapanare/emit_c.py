@@ -969,8 +969,19 @@ class CEmitter:
                     continue
                 dest_name = self._val(inst.dest)
                 ctype = self._c_type(inst.dest.ty)
+                # Void phis: try to infer from incoming or fn return
                 if ctype == "void":
-                    continue
+                    for _, iv in inst.incoming:
+                        iv_name = self._val(iv)
+                        if iv_name in prop and prop[iv_name] != "int64_t":
+                            ctype = prop[iv_name]
+                            break
+                    if ctype == "void" and self._cur_fn:
+                        fn_ret = self._c_type(self._cur_fn.return_type)
+                        if fn_ret not in ("void", "int64_t"):
+                            ctype = fn_ret
+                    if ctype == "void":
+                        continue  # Truly void, skip
                 # Use propagated type for phi dest if available
                 if ctype == "int64_t" and dest_name in prop:
                     ctype = prop[dest_name]
@@ -1297,6 +1308,14 @@ class CEmitter:
                 ct = self._c_type(inst.dest.ty)
                 self._w(f"{dest} = *({ct}*)__mn_signal_get({obj});")
                 return
+        # Check if accessing .value on a circular Option (value is pointer)
+        if fname == "value":
+            obj_ct = self._local_types.get(obj, "")
+            if obj_ct.startswith("MnOption_"):
+                inner_name = obj_ct.replace("MnOption_", "")
+                if inner_name in self._structs and self._is_circular_option(inner_name):
+                    self._w(f"{dest} = *{obj}.value;")
+                    return
         # Regular struct field access
         self._w(f"{dest} = {obj}.{fname};")
 
@@ -1459,7 +1478,23 @@ class CEmitter:
                 ct = self._c_type(inst.dest.ty)
         else:
             ct = self._c_type(inst.dest.ty)
-        self._w(f"{dest} = ({ct}){{1, {val}}};")
+        # For circular Options (value field is pointer), heap-allocate
+        inner_name = ct.replace("MnOption_", "")
+        if inner_name in self._structs and self._is_circular_option(inner_name):
+            self._w(f"{{ {inner_name} *__opt_box = malloc(sizeof({inner_name}));")
+            self._w(f"  *__opt_box = {val};")
+            self._w(f"  {dest}.has_value = 1; {dest}.value = __opt_box; }}")
+        else:
+            self._w(f"{dest} = ({ct}){{1, {val}}};")
+
+    def _is_circular_option(self, inner: str) -> bool:
+        """Check if Option<inner> is circular (inner contains Option<inner>)."""
+        opt_name = f"MnOption_{_safe_name(inner)}"
+        if inner in self._structs:
+            for _, ftype in self._structs[inner]:
+                if self._c_type(ftype) == opt_name:
+                    return True
+        return False
 
     def _emit_wrap_none(self, inst: WrapNone) -> None:
         dest = self._val(inst.dest)
@@ -1487,7 +1522,12 @@ class CEmitter:
         val = self._val(inst.val)
         val_kind = inst.val.ty.type_info.kind
         if val_kind == TypeKind.OPTION:
-            self._w(f"{dest} = {val}.value;")
+            # For circular Options, value is a pointer — dereference
+            dest_ct = self._local_types.get(dest, self._c_type(inst.dest.ty))
+            if dest_ct in self._structs and self._is_circular_option(dest_ct):
+                self._w(f"{dest} = *{val}.value;")
+            else:
+                self._w(f"{dest} = {val}.value;")
         elif val_kind == TypeKind.RESULT:
             self._w(f"{dest} = {val}.as.ok;")
         else:
