@@ -732,7 +732,7 @@ def dead_function_elimination(module: MIRModule, stats: MIRPassStats) -> bool:
                     called.add(inst.compute_fn)
 
     # Also keep known entry points for the C bootstrap
-    _ENTRY_POINTS = {"main", "compile_and_print", "compile", "version"}
+    _ENTRY_POINTS = {"main", "compile_and_print", "compile", "version", "mn_main", "format_error"}
     new_fns: list[MIRFunction] = []
     changed = False
     for fn in module.functions:

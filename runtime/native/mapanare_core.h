@@ -128,6 +128,9 @@ MN_EXPORT void __mn_str_println(MnString s);
 /** Print a string to stderr with newline (for diagnostics). */
 MN_EXPORT void __mn_str_eprintln(MnString s);
 
+/** Print a string to stderr (no newline). */
+MN_EXPORT void __mn_str_eprint(MnString s);
+
 /** Return the ASCII/byte value of the first character. Returns -1 if empty. */
 MN_EXPORT int64_t __mn_str_ord(MnString s);
 
@@ -219,6 +222,10 @@ MN_EXPORT MnString __mn_list_str_get(MnList *list, int64_t i);
 /** Read an entire file into a string. Returns empty string on error.
  *  The `ok` flag is set to 1 on success, 0 on failure. */
 MN_EXPORT MnString __mn_file_read(MnString path, int64_t *ok);
+
+/** Read a file, returning content or empty string with len == -1 on error.
+ *  Pointer-free alternative to __mn_file_read for Mapanare code. */
+MN_EXPORT MnString __mn_file_read_or_empty(MnString path);
 
 /** Write a string to a file. Returns 0 on success, -1 on error. */
 MN_EXPORT int64_t __mn_file_write(MnString path, MnString content);
@@ -515,6 +522,15 @@ MN_EXPORT void __mn_intern_destroy(void);
 /* -----------------------------------------------------------------------
  * Process
  * ----------------------------------------------------------------------- */
+
+/** Initialize CLI argument storage (call from main before any Mapanare code). */
+MN_EXPORT void __mn_argv_init(int argc, char **argv);
+
+/** Get the number of CLI arguments. */
+MN_EXPORT int64_t __mn_argc(void);
+
+/** Get CLI argument at index as a string. Returns empty string if OOB. */
+MN_EXPORT MnString __mn_argv(int64_t index);
 
 /** Exit with status code. */
 MN_EXPORT void __mn_exit(int64_t code);

@@ -1008,6 +1008,33 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         return new_lower_result(dr_len.value, s_len)
     }
 
+    // Runtime: process + file I/O
+    if fn_name == "__mn_argc" {
+        let dr_argc: LowerResult = make_value(st, mir_int(), "t")
+        let s_argc: LowerState = emit_instr(dr_argc.state, Instruction::Call(dr_argc.value, fn_name, args))
+        return new_lower_result(dr_argc.value, s_argc)
+    }
+    if fn_name == "__mn_argv" {
+        let dr_argv: LowerResult = make_value(st, mir_string(), "t")
+        let s_argv: LowerState = emit_instr(dr_argv.state, Instruction::Call(dr_argv.value, fn_name, args))
+        return new_lower_result(dr_argv.value, s_argv)
+    }
+    if fn_name == "__mn_file_read_or_empty" {
+        let dr_fr: LowerResult = make_value(st, mir_string(), "t")
+        let s_fr: LowerState = emit_instr(dr_fr.state, Instruction::Call(dr_fr.value, fn_name, args))
+        return new_lower_result(dr_fr.value, s_fr)
+    }
+    if fn_name == "__mn_exit" {
+        let dr_exit: LowerResult = make_value(st, mir_void(), "t")
+        let s_exit: LowerState = emit_instr(dr_exit.state, Instruction::Call(dr_exit.value, fn_name, args))
+        return new_lower_result(dr_exit.value, s_exit)
+    }
+    if fn_name == "__mn_str_eprint" {
+        let dr_epr: LowerResult = make_value(st, mir_void(), "t")
+        let s_epr: LowerState = emit_instr(dr_epr.state, Instruction::Call(dr_epr.value, fn_name, args))
+        return new_lower_result(dr_epr.value, s_epr)
+    }
+
     // Handle Option/Result builtins
     if fn_name == "Some" {
         if len(args) == 1 {

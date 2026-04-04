@@ -1512,6 +1512,37 @@ class LLVMTextEmitter:
             self._put(i.dest, r, STR)
             return
 
+        # C runtime: process + file I/O (self-hosted compiler driver)
+        if fn == "__mn_argc":
+            r = self._rt("__mn_argc", I64, [], [])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_argv" and args:
+            a = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
+            r = self._rt("__mn_argv", STR, [I64], [(a, I64)])
+            self._put(i.dest, r, STR)
+            return
+        if fn == "__mn_file_read_or_empty" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_file_read_or_empty", STR, [STR], [(a, STR)])
+            self._put(i.dest, r, STR)
+            return
+        if fn == "__mn_exit" and args:
+            a = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
+            self._rt("__mn_exit", VOID, [I64], [(a, I64)])
+            self._put(i.dest, "0", I1)
+            return
+        if fn == "__mn_str_eprint" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            self._rt("__mn_str_eprint", VOID, [STR], [(a, STR)])
+            self._put(i.dest, "0", I1)
+            return
+        if fn == "__mn_str_eprintln" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            self._rt("__mn_str_eprintln", VOID, [STR], [(a, STR)])
+            self._put(i.dest, "0", I1)
+            return
+
         # join
         if fn == "join" and len(i.args) >= 2:
             sep = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]

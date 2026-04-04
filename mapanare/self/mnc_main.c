@@ -91,9 +91,12 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  Compiles a Mapanare source file and prints LLVM IR to stdout.\n");
 }
 
+extern void __mn_argv_init(int argc, char **argv);
+
 int main(int argc, char *argv[]) {
     signal(SIGSEGV, crash_handler);
     signal(SIGABRT, crash_handler);
+    __mn_argv_init(argc, argv);
     if (argc < 2) {
         print_usage(argv[0]);
         return 1;

@@ -637,6 +637,12 @@ MN_EXPORT void __mn_str_eprintln(MnString s) {
     fputc('\n', stderr);
 }
 
+MN_EXPORT void __mn_str_eprint(MnString s) {
+    if (s.len > 0) {
+        fwrite(mn_untag(s.data), 1, (size_t)s.len, stderr);
+    }
+}
+
 MN_EXPORT int64_t __mn_str_ord(MnString s) {
     if (s.len <= 0) return -1;
     return (int64_t)(unsigned char)mn_untag(s.data)[0];
@@ -2049,8 +2055,42 @@ MN_EXPORT void __mn_stream_free(MnStream *stream) {
 }
 
 /* -----------------------------------------------------------------------
- * Process
+ * Process + CLI arguments
  * ----------------------------------------------------------------------- */
+
+/* Saved by __mn_argv_init() (called from mnc_main.c or a Mapanare main). */
+static int    g_argc = 0;
+static char **g_argv = NULL;
+
+MN_EXPORT void __mn_argv_init(int argc, char **argv) {
+    g_argc = argc;
+    g_argv = argv;
+}
+
+MN_EXPORT int64_t __mn_argc(void) {
+    return (int64_t)g_argc;
+}
+
+MN_EXPORT MnString __mn_argv(int64_t index) {
+    if (index < 0 || index >= g_argc || !g_argv) {
+        return __mn_str_empty();
+    }
+    return __mn_str_from_cstr(g_argv[index]);
+}
+
+/** Read a file, returning its content. Returns empty string on error.
+ *  Unlike __mn_file_read which uses a pointer param, this returns a
+ *  sentinel (empty string with len == -1) on failure so Mapanare code
+ *  can call it without pointer types. */
+MN_EXPORT MnString __mn_file_read_or_empty(MnString path) {
+    int64_t ok = 0;
+    MnString result = __mn_file_read(path, &ok);
+    if (!ok) {
+        MnString empty = { "", -1 };  /* len == -1 signals failure */
+        return empty;
+    }
+    return result;
+}
 
 MN_EXPORT void __mn_exit(int64_t code) {
     exit((int)code);

@@ -6480,6 +6480,33 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         return new_lower_result(dr_len.value, s_len)
     }
 
+    // Runtime: process + file I/O
+    if fn_name == "__mn_argc" {
+        let dr_argc: LowerResult = make_value(st, mir_int(), "t")
+        let s_argc: LowerState = emit_instr(dr_argc.state, Instruction::Call(dr_argc.value, fn_name, args))
+        return new_lower_result(dr_argc.value, s_argc)
+    }
+    if fn_name == "__mn_argv" {
+        let dr_argv: LowerResult = make_value(st, mir_string(), "t")
+        let s_argv: LowerState = emit_instr(dr_argv.state, Instruction::Call(dr_argv.value, fn_name, args))
+        return new_lower_result(dr_argv.value, s_argv)
+    }
+    if fn_name == "__mn_file_read_or_empty" {
+        let dr_fr: LowerResult = make_value(st, mir_string(), "t")
+        let s_fr: LowerState = emit_instr(dr_fr.state, Instruction::Call(dr_fr.value, fn_name, args))
+        return new_lower_result(dr_fr.value, s_fr)
+    }
+    if fn_name == "__mn_exit" {
+        let dr_exit: LowerResult = make_value(st, mir_void(), "t")
+        let s_exit: LowerState = emit_instr(dr_exit.state, Instruction::Call(dr_exit.value, fn_name, args))
+        return new_lower_result(dr_exit.value, s_exit)
+    }
+    if fn_name == "__mn_str_eprint" {
+        let dr_epr: LowerResult = make_value(st, mir_void(), "t")
+        let s_epr: LowerState = emit_instr(dr_epr.state, Instruction::Call(dr_epr.value, fn_name, args))
+        return new_lower_result(dr_epr.value, s_epr)
+    }
+
     // Handle Option/Result builtins
     if fn_name == "Some" {
         if len(args) == 1 {
@@ -8854,8 +8881,14 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_trim", llvm_string(), llvm_string())
     s = declare_runtime_fn(s, "__mn_str_contains", llvm_bool(), llvm_string() + ", " + llvm_string())
 
-    // Panic
+    // Panic / process
     s = declare_runtime_fn(s, "__mn_panic", "void", llvm_string())
+    s = declare_runtime_fn(s, "__mn_exit", "void", "i64")
+    s = declare_runtime_fn(s, "__mn_argc", "i64", "")
+    s = declare_runtime_fn(s, "__mn_argv", llvm_string(), "i64")
+    s = declare_runtime_fn(s, "__mn_file_read_or_empty", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
 
     // Malloc (for enum payload allocation)
     s = declare_runtime_fn(s, "malloc", "ptr", "i64")
@@ -9226,7 +9259,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     // String constant: emit global at module level, build struct inline
     if ty.kind == "string" {
         // Escape special chars for LLVM IR string constants
-        let escaped: String = val.replace("\\", "\\5C").replace("\"", "\\22").replace("\n", "\\0A")
+        let escaped: String = val.replace("\\", "\\5C").replace("\"", "\\22").replace("\n", "\\0A").replace("\t", "\\09").replace("\r", "\\0D").replace("\0", "\\00")
         let slen: Int = len(val)
         let gname: String = next_str_name(s)
         s.str_counter = s.str_counter + 1
@@ -10638,6 +10671,26 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_builtin_float(st, dest, args)
     }
 
+    // Runtime: process + file I/O
+    if fn_name == "__mn_argc" {
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_argc", ""))
+    }
+    if fn_name == "__mn_argv" {
+        let as_argv: String = "i64 " + args[0].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_argv", as_argv))
+    }
+    if fn_name == "__mn_file_read_or_empty" {
+        let as_fr: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_file_read_or_empty", as_fr))
+    }
+    if fn_name == "__mn_exit" {
+        return emit_line(st, emit_call_void("__mn_exit", "i64 " + args[0].name))
+    }
+    if fn_name == "__mn_str_eprint" {
+        let as_epr: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_void("__mn_str_eprint", as_epr))
+    }
+
     // Range construction — inline to avoid ABI mismatch with C runtime
     // C runtime __mn_range returns void* (ptr), but self-hosted expects {i64, i64}.
     // Fix: construct the {i64, i64} directly instead of calling the C function.
@@ -11637,7 +11690,7 @@ fn format_error(err: SemanticError) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// compile_and_print — compile and print result or errors to stdout
+// compile_and_print — compile and print result or errors
 // ---------------------------------------------------------------------------
 
 fn compile_and_print(source: String, filename: String) -> CompileResult {
@@ -11652,4 +11705,37 @@ fn compile_and_print(source: String, filename: String) -> CompileResult {
         }
     }
     return cr
+}
+
+// ---------------------------------------------------------------------------
+// mn_main — native compiler entry point (called from C shim)
+//
+// Reads source file from argv[1], compiles to LLVM IR, prints to stdout.
+// Errors go to stderr. Returns exit code via __mn_exit.
+// ---------------------------------------------------------------------------
+
+fn mn_main() {
+    if __mn_argc() < 2 {
+        __mn_str_eprint("usage: mnc <file.mn>\n")
+        __mn_exit(1)
+    }
+    let filename: String = __mn_argv(1)
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) < 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+    let cr: CompileResult = compile(source, filename)
+    if cr.success {
+        print(cr.ir_text)
+    } else {
+        for i in 0..len(cr.errors) {
+            let err: SemanticError = cr.errors[i]
+            __mn_str_eprint(format_error(err))
+            __mn_str_eprint("\n")
+        }
+        __mn_exit(1)
+    }
 }

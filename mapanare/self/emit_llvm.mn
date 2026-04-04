@@ -303,8 +303,14 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_trim", llvm_string(), llvm_string())
     s = declare_runtime_fn(s, "__mn_str_contains", llvm_bool(), llvm_string() + ", " + llvm_string())
 
-    // Panic
+    // Panic / process
     s = declare_runtime_fn(s, "__mn_panic", "void", llvm_string())
+    s = declare_runtime_fn(s, "__mn_exit", "void", "i64")
+    s = declare_runtime_fn(s, "__mn_argc", "i64", "")
+    s = declare_runtime_fn(s, "__mn_argv", llvm_string(), "i64")
+    s = declare_runtime_fn(s, "__mn_file_read_or_empty", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
+    s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
 
     // Malloc (for enum payload allocation)
     s = declare_runtime_fn(s, "malloc", "ptr", "i64")
@@ -675,7 +681,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     // String constant: emit global at module level, build struct inline
     if ty.kind == "string" {
         // Escape special chars for LLVM IR string constants
-        let escaped: String = val.replace("\\", "\\5C").replace("\"", "\\22").replace("\n", "\\0A")
+        let escaped: String = val.replace("\\", "\\5C").replace("\"", "\\22").replace("\n", "\\0A").replace("\t", "\\09").replace("\r", "\\0D").replace("\0", "\\00")
         let slen: Int = len(val)
         let gname: String = next_str_name(s)
         s.str_counter = s.str_counter + 1
@@ -2085,6 +2091,26 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     }
     if fn_name == "float" {
         return emit_builtin_float(st, dest, args)
+    }
+
+    // Runtime: process + file I/O
+    if fn_name == "__mn_argc" {
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_argc", ""))
+    }
+    if fn_name == "__mn_argv" {
+        let as_argv: String = "i64 " + args[0].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_argv", as_argv))
+    }
+    if fn_name == "__mn_file_read_or_empty" {
+        let as_fr: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_file_read_or_empty", as_fr))
+    }
+    if fn_name == "__mn_exit" {
+        return emit_line(st, emit_call_void("__mn_exit", "i64 " + args[0].name))
+    }
+    if fn_name == "__mn_str_eprint" {
+        let as_epr: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_void("__mn_str_eprint", as_epr))
     }
 
     // Range construction — inline to avoid ABI mismatch with C runtime

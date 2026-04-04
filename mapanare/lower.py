@@ -1486,6 +1486,13 @@ class MIRLowerer:
             "len": mir_int(),
             "print": mir_void(),
             "println": mir_void(),
+            # C runtime functions used by self-hosted compiler driver
+            "__mn_argc": mir_int(),
+            "__mn_argv": mir_string(),
+            "__mn_file_read_or_empty": mir_string(),
+            "__mn_exit": mir_void(),
+            "__mn_str_eprint": mir_void(),
+            "__mn_str_eprintln": mir_void(),
         }
         _call_ret_ty = mir_unknown()
         if isinstance(expr.callee, Identifier):

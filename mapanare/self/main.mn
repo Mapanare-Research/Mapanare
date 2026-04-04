@@ -63,7 +63,7 @@ fn format_error(err: SemanticError) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// compile_and_print — compile and print result or errors to stdout
+// compile_and_print — compile and print result or errors
 // ---------------------------------------------------------------------------
 
 fn compile_and_print(source: String, filename: String) -> CompileResult {
@@ -78,4 +78,37 @@ fn compile_and_print(source: String, filename: String) -> CompileResult {
         }
     }
     return cr
+}
+
+// ---------------------------------------------------------------------------
+// mn_main — native compiler entry point (called from C shim)
+//
+// Reads source file from argv[1], compiles to LLVM IR, prints to stdout.
+// Errors go to stderr. Returns exit code via __mn_exit.
+// ---------------------------------------------------------------------------
+
+fn mn_main() {
+    if __mn_argc() < 2 {
+        __mn_str_eprint("usage: mnc <file.mn>\n")
+        __mn_exit(1)
+    }
+    let filename: String = __mn_argv(1)
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) < 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+    let cr: CompileResult = compile(source, filename)
+    if cr.success {
+        print(cr.ir_text)
+    } else {
+        for i in 0..len(cr.errors) {
+            let err: SemanticError = cr.errors[i]
+            __mn_str_eprint(format_error(err))
+            __mn_str_eprint("\n")
+        }
+        __mn_exit(1)
+    }
 }

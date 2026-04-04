@@ -265,6 +265,13 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "ord": INT_TYPE,
     "chr": STRING_TYPE,
     "join": STRING_TYPE,
+    # C runtime functions used by the self-hosted compiler driver (main.mn)
+    "__mn_argc": INT_TYPE,
+    "__mn_argv": STRING_TYPE,
+    "__mn_file_read_or_empty": STRING_TYPE,
+    "__mn_exit": VOID_TYPE,
+    "__mn_str_eprint": VOID_TYPE,
+    "__mn_str_eprintln": VOID_TYPE,
 }
 
 # Builtin call name mapping (Mapanare name -> Python name) for emit_python.py
