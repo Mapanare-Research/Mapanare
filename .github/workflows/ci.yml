@@ -62,11 +62,11 @@ jobs:
       - name: Install LLVM tools
         run: sudo apt-get update -qq && sudo apt-get install -y llvm-18 clang-18
 
-      - name: Build mnc-stage1
-        run: python scripts/build_stage1.py
+      - name: Build mnc-stage1 (Python bootstrap)
+        run: python scripts/build_stage1.py --skip-check
         continue-on-error: true
 
-      - name: Run golden tests (15/15)
+      - name: Run golden tests (25/25)
         if: success()
         run: python scripts/ir_doctor.py golden
 
@@ -74,6 +74,25 @@ jobs:
         if: success()
         run: python scripts/ir_doctor.py stage2 --timeout 30
         continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # Native bootstrap: build from seed binary, no Python
+  # ---------------------------------------------------------------------------
+  bootstrap:
+    name: Bootstrap (No Python)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install LLVM + clang
+        run: sudo apt-get update -qq && sudo apt-get install -y llvm-18 clang-18
+
+      - name: Symlink clang
+        run: sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+
+      - name: Two-stage bootstrap + verify
+        run: bash scripts/build_from_seed.sh --verify
 
   native:
     name: C Runtime Tests
