@@ -2113,6 +2113,29 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_line(st, emit_call_void("__mn_str_eprint", as_epr))
     }
 
+    // BinOp fallback: when enum tag mismatch causes BinOp to reach Call dispatch,
+    // the fn_name is "__op_<operator>". Convert to inline LLVM arithmetic.
+    if fn_name.starts_with("__op_") {
+        let op_ch: String = fn_name.replace("__op_", "")
+        let an: String = args[0].name
+        let bn: String = args[1].name
+        if op_ch == "+" { return emit_line(st, emit_add(dn, llvm_int(), an, bn)) }
+        if op_ch == "-" { return emit_line(st, emit_sub(dn, llvm_int(), an, bn)) }
+        if op_ch == "*" { return emit_line(st, emit_mul(dn, llvm_int(), an, bn)) }
+        if op_ch == "/" { return emit_line(st, emit_sdiv(dn, llvm_int(), an, bn)) }
+        if op_ch == "%" { return emit_line(st, emit_srem(dn, llvm_int(), an, bn)) }
+        if op_ch == "==" { return emit_line(st, emit_icmp(dn, "eq", llvm_int(), an, bn)) }
+        if op_ch == "!=" { return emit_line(st, emit_icmp(dn, "ne", llvm_int(), an, bn)) }
+        if op_ch == "<" { return emit_line(st, emit_icmp(dn, "slt", llvm_int(), an, bn)) }
+        if op_ch == ">" { return emit_line(st, emit_icmp(dn, "sgt", llvm_int(), an, bn)) }
+        if op_ch == "<=" { return emit_line(st, emit_icmp(dn, "sle", llvm_int(), an, bn)) }
+        if op_ch == ">=" { return emit_line(st, emit_icmp(dn, "sge", llvm_int(), an, bn)) }
+        if op_ch == "&&" { return emit_line(st, emit_and_instr(dn, an, bn)) }
+        if op_ch == "||" { return emit_line(st, emit_or_instr(dn, an, bn)) }
+        // Fallback for unknown operator
+        return emit_line(st, emit_add(dn, llvm_int(), an, bn))
+    }
+
     // Range construction — inline to avoid ABI mismatch with C runtime
     // C runtime __mn_range returns void* (ptr), but self-hosted expects {i64, i64}.
     // Fix: construct the {i64, i64} directly instead of calling the C function.
@@ -2632,10 +2655,10 @@ fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitSta
     let mut skip: Bool = false
     if len(incoming) == 0 { skip = true }
     if ty == "void" { skip = true }
-    // For Phis with i64 type (unresolved): recover the actual type from
-    // the incoming values. Uses a flag instead of break to avoid the
-    // Python lowerer's control flow bug that swallows break-inside-if.
-    if ty == "i64" && len(incoming) > 0 {
+    // For Phis with i64 type (unresolved or unknown): recover the actual type
+    // from the incoming values. Any struct/enum type in incoming is better than
+    // the default i64 that resolve_mir_type assigns to unknown types.
+    if len(incoming) > 0 {
         let mut found: Bool = false
         let mut ci: Int = 0
         for _ in 0..100 {
@@ -2643,8 +2666,10 @@ fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitSta
             if !found && ci < len(incoming) {
                 let inc_ty: String = resolve_type(st, incoming[ci].val.ty)
                 if inc_ty != "i64" && inc_ty != "void" {
-                    ty = inc_ty
-                    found = true
+                    if ty == "i64" {
+                        ty = inc_ty
+                        found = true
+                    }
                 }
             }
             ci = ci + 1

@@ -1001,42 +1001,46 @@ fn check_lambda_body(st: SemState, body: LambdaBody) -> InferResult {
 // Spawn / Send
 // ---------------------------------------------------------------------------
 
+fn check_spawn_callee(st: SemState, callee: Expr) -> InferResult {
+    match callee {
+        Ident(name) => {
+            let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+            match sym_opt {
+                Some(sym) => {
+                    let mut st2: SemState = st
+                    if sym.kind != "agent" {
+                        if sym.kind != "variable" {
+                            st2 = add_error(st2, "'spawn' requires an agent, but '" + name + "' is a " + sym.kind, 0, 0)
+                        }
+                    }
+                    return new_infer_result(make_type(sym.name), st2)
+                },
+                _ => {
+                    let st_err: SemState = add_error(st, "Undefined agent '" + name + "'", 0, 0)
+                    return new_infer_result(unknown_type(), st_err)
+                }
+            }
+        },
+        _ => {
+            return new_infer_result(unknown_type(), st)
+        }
+    }
+}
+
 fn check_spawn_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult {
-    // Infer arguments
+    // Infer arguments first
     let mut st2: SemState = st
     let mut i: Int = 0
     for _ in 0..200 {
-        if i >= len(args) {
-            // Check callee
-            match callee {
-                Ident(name) => {
-                    let sym_opt: Option<Symbol> = scope_lookup(st2.scope, name)
-                    match sym_opt {
-                        Some(sym) => {
-                            if sym.kind != "agent" {
-                                if sym.kind != "variable" {
-                                    st2 = add_error(st2, "'spawn' requires an agent, but '" + name + "' is a " + sym.kind, 0, 0)
-                                }
-                            }
-                            return new_infer_result(make_type(sym.name), st2)
-                        },
-                        _ => {
-                            st2 = add_error(st2, "Undefined agent '" + name + "'", 0, 0)
-                            return new_infer_result(unknown_type(), st2)
-                        }
-                    }
-                },
-                _ => {
-                    return new_infer_result(unknown_type(), st2)
-                }
-            }
+        if i < len(args) {
+            let arg: Expr = args[i]
+            let ar: InferResult = infer_expr(st2, arg)
+            st2 = ar.st
+            i = i + 1
         }
-        let arg: Expr = args[i]
-        let ar: InferResult = infer_expr(st2, arg)
-        st2 = ar.st
-        i = i + 1
     }
-    return new_infer_result(unknown_type(), st2)
+    // Then check callee (no nested match-in-if-in-for)
+    return check_spawn_callee(st2, callee)
 }
 
 fn check_send_expr(st: SemState, value: Expr, target: Expr) -> SemState {
