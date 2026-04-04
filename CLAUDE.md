@@ -4,19 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language (v3.0.0 "La Culebra Se Muerde La Cola") with first-class agents, signals, streams, and tensors. It compiles to C (default backend via gcc) and LLVM IR (release builds via optional llvmlite). A WebAssembly backend exists for browser/server targets. The self-hosted compiler is 9,400+ lines of `.mn` across 10 modules in `mapanare/self/`. v3.0.0 features bilingual keywords (Spanglish/English), indentation-based syntax, `tipo`/`modo` type unification, `@Agent` syntax, and a C emit backend.
+Mapanare is an AI-native compiled programming language (v3.3.0 "Fixed Point") with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (primary) and C (fallback via gcc). A WebAssembly backend exists for browser/server targets. The self-hosted compiler is 9,400+ lines of `.mn` across 10 modules in `mapanare/self/`. The compiler compiles itself — `bash scripts/build_from_seed.sh` builds from source with no Python.
 
 ## Current Version & Roadmap
 
-- **v1.0.0** — Language freeze, self-hosted fixed-point, formal memory model, stability guarantees
-- **v1.1.0** — AI native: LLM drivers, embeddings, RAG as stdlib
-- **v1.2.0** — Data & storage: SQL drivers, Dato v1.0, YAML/TOML
-- **v1.3.0** — Web platform & security: crawler, vulnerability scanner, web framework
-- **v2.0.0** — GPU compute (CUDA/Vulkan via dlopen), WebAssembly backend, mobile targets, Python backend deprecated
-- **v2.1.0** — Self-hosted compiler approaching fixed-point, stage2 validation, valgrind-based crash diagnostics
-- **v3.0.0** (current) — C emit backend, bilingual keywords, indentation syntax, tipo/modo, @Agent, migration tool
+- **v3.3.0** (current) — **Fixed point reached.** Self-hosted compiler compiles itself (stage3 == stage4). String-tagged dispatch, sret ABI fix, COW write-back. Two-stage bootstrap from seed, no Python.
+- **v3.4.0** (next) — Native module imports in self-hosted compiler, stdlib compilation, real programs from .mn source
 
-See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v3.0.0/PLAN.md` for the current execution plan.
+See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v3.3.0/PLAN.md` for the current execution plan.
 
 ## Pre-Push Validation (MANDATORY)
 
@@ -384,7 +379,7 @@ All type definitions, builtin registries, and type-name mappings live in `types.
 - Builtins are dispatched via `BUILTIN_CALL_MAP` in both emitters
 - Self-hosted compiler sources are in `mapanare/self/*.mn`
 - Language spec: `docs/SPEC.md` | Design philosophy: `docs/manifesto.md` | RFCs: `docs/rfcs/`
-- Roadmap: `docs/roadmap/ROADMAP.md` | Current plan: `docs/roadmap/v2.0.0/PLAN.md`
+- Roadmap: `docs/roadmap/ROADMAP.md` | Current plan: `docs/roadmap/v3.3.0/PLAN.md`
 - Version tracked in `VERSION` file
 - Bootstrap frozen at v0.6.0 in `bootstrap/`
 

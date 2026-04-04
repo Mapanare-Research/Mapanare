@@ -7,21 +7,25 @@
 
 ---
 
-## Where We Are (v2.0.1)
+## Where We Are (v3.3.0 — Fixed Point)
 
-Mapanare v2.0.0 is published. v2.0.1 is the trust restoration patch — fixing WASM correctness,
-GPU security, toolchain honesty, and silent failures identified by the
-[7-reviewer code review](../../.reviews/v2.0.0/README.md) (7.86/10 median).
-See [v2.0.1 Plan](v2.0.1/PLAN.md) for the full execution plan.
+**The compiler compiles itself.** Mapanare v3.3.0 achieves self-hosting
+fixed point: the self-compiled binary produces identical output when it
+compiles itself again (stage3 == stage4). No Python is needed to build
+the compiler — `bash scripts/build_from_seed.sh --verify` does a
+two-stage bootstrap from the seed binary.
 
-The language specification remains frozen at v1.0 Final — syntax,
-semantics, and type system changes require RFC + deprecation cycle. v2.0.0 brings three new
-compilation targets (WebAssembly, WASI, mobile), GPU compute via CUDA and Vulkan, and a
-massively expanded stdlib spanning AI, data, databases, encoding, web, and security.
+v3.0.0 introduced the C emit backend, bilingual keywords (Spanglish/English),
+indentation-based syntax, tipo/modo type unification, and @Agent syntax.
+v3.1.0-v3.2.0 achieved 25/25 golden tests on the self-hosted compiler.
+v3.3.0 solved the enum tag mismatch via string-tagged dispatch, fixed
+sret ABI, COW write-back, and field index bugs — enabling the fixed point.
 
-The Python transpiler backends are now deprecated. LLVM and WebAssembly are the production targets.
+**37 stdlib modules** in native `.mn` span AI, databases, encoding, HTTP,
+filesystem, crypto, GPU, and WebAssembly. The self-hosted compiler is
+9,400+ lines across 10 modules.
 
-**No Python required at runtime.** **4,465+ tests pass** across the full pipeline.
+**No Python required to build.** **4,465+ tests pass** across the full pipeline.
 
 ### What works today
 
@@ -124,6 +128,15 @@ The Python transpiler backends are now deprecated. LLVM and WebAssembly are the 
 | **v1.2.0** ✅ | Data & Storage | Dato data engine (tables, aggregations, joins, reshape, I/O), database drivers (SQLite, PostgreSQL, Redis, KV, pooling, migrations), TOML/YAML encoding, filesystem stdlib |
 | **v1.3.0** ✅ | Web & Security | Web crawler (robots.txt, frontier, extraction), vulnerability scanner (template-driven, fingerprinting), HTTP fuzzer (mutation engine), HTTP server toolkit (auth, body, cookies, sessions, rate limiting, SSE, templates) |
 | **v2.0.0** ✅ | Beyond the Machine | WebAssembly backend (MIR-to-WAT, WASI, JS bridge, wasm-ld multi-module linking), GPU compute (CUDA + Vulkan via dlopen, MIR GpuKernel metadata, PTX/SPIR-V codegen), cross-compilation targets (wasm32, iOS, Android), mobile runtime (cooperative scheduler, epoll event loop, string interning cap, memory profiling), CI matrix (WASM + Android), Python backends deprecated, playground dual-mode (WASM+Pyodide), 4,465+ tests |
+| **v2.1.0** ✅ | Self-Compilation Progress | Stage2 IR validates (llvm-as), 8 root causes fixed, mnc-stage2 reaches lowerer, systemic Python lowerer bugs documented |
+| **v2.2.0** ✅ | Stage2 Debugging | Valgrind-based crash diagnostics, struct field offset mapping, PHI type recovery |
+| **v3.0.0** ✅ | La Culebra Se Muerde La Cola | C emit backend, bilingual keywords (Spanglish/English), indentation syntax, tipo/modo type unification, @Agent syntax, migration tool |
+| **v3.0.1** ✅ | Bootstrap Runs | mnc-stage1 runs, string truncation blocks bootstrap |
+| **v3.0.2** ✅ | Golden Tests | 15/15 golden tests, struct names fixed |
+| **v3.0.3** ✅ | Self-Compilation Fixes | 25/25 golden tests, PHI type recovery, __op_* fallback |
+| **v3.1.0** ✅ | Native File I/O | Native file I/O, string escapes, runtime functions |
+| **v3.2.0** ✅ | Seed Update | Seed binary updated, 25/25 golden verified |
+| **v3.3.0** ✅ | **Fixed Point** | String-tagged dispatch (enum tag mismatch solved), sret ABI fix, COW write-back fix, field index fix, two-stage bootstrap from seed (no Python), fixed point: stage3 == stage4 |
 
 ---
 
