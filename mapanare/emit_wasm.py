@@ -307,11 +307,11 @@ class WasmEmitter:
         lines: list[str] = []
         lines.append(f"(module ${self._options.module_name}")
 
+        # Imports (JS bridge) — must come before all non-import definitions
+        lines.extend(self._emit_import_section())
+
         # Memory declaration
         lines.extend(self._emit_memory_section())
-
-        # Imports (JS bridge)
-        lines.extend(self._emit_import_section())
 
         # Global variables (heap pointer)
         lines.extend(self._emit_globals_section())
@@ -898,7 +898,9 @@ class WasmEmitter:
 
         # Build local declarations (excluding params)
         local_decls: list[str] = []
-        param_names = {p.name for p in mir_fn.params}
+        param_names = {p.name for p in mir_fn.params} | {
+            f"%{p.name}" for p in mir_fn.params if not p.name.startswith("%")
+        }
         for local_name, wasm_ty in self._locals.items():
             if local_name not in param_names and wasm_ty:
                 safe_local = _sanitize_name(local_name)

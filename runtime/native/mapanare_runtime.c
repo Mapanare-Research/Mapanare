@@ -37,6 +37,7 @@ static inline int32_t atomic_load_i32(mapanare_atomic_i32 *p) {
 static inline void atomic_store_i32(mapanare_atomic_i32 *p, int32_t v) {
     __atomic_store_n(p, v, __ATOMIC_RELEASE);
 }
+__attribute__((unused))
 static inline int32_t atomic_add_i32(mapanare_atomic_i32 *p, int32_t v) {
     return __atomic_fetch_add(p, v, __ATOMIC_ACQ_REL);
 }
