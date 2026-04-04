@@ -624,6 +624,7 @@ def compile_multi_module_mir(
     target_name: str | None = None,
     debug: bool = False,
     emitter_backend: str = "text",
+    skip_check: bool = False,
 ) -> str:
     """Compile a root .mn file and all its imports into a single LLVM IR string.
 
@@ -647,7 +648,12 @@ def compile_multi_module_mir(
     # 1. Parse and semantic check (resolver resolves all imports)
     resolver = ModuleResolver()
     ast = parse(root_source, filename=root_file)
-    check_or_raise(ast, filename=root_file, resolver=resolver)
+    if skip_check:
+        # Run check for import resolution but ignore semantic errors
+        from mapanare.semantic import check
+        check(ast, filename=root_file, resolver=resolver)
+    else:
+        check_or_raise(ast, filename=root_file, resolver=resolver)
 
     # 2. Build dependency order
     deps = build_dependency_order(resolver, root_file, ast)

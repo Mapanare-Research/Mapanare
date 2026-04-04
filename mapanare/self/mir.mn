@@ -417,3 +417,375 @@ pub fn unaryop_kind_to_str(op: UnaryOpKind) -> String {
         Not => { return "not" }
     }
 }
+
+pub fn streamop_kind_to_str(op: StreamOpKind) -> String {
+    match op {
+        Map => { return "map" },
+        Filter => { return "filter" },
+        Fold => { return "fold" },
+        Take => { return "take" },
+        Skip => { return "skip" },
+        Collect => { return "collect" }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// String-tagged dispatch: instr_kind + field accessors
+// These functions use match WITHIN mir.mn (same module as the Instruction
+// enum), so enum tags are always correct regardless of which compiler
+// produced this binary.  Consumers in other modules (emit_llvm.mn,
+// lower.mn) call these instead of matching on Instruction directly.
+// ---------------------------------------------------------------------------
+
+pub fn instr_kind(i: Instruction) -> String {
+    match i {
+        Const(_, _, _) => { return "const" },
+        Copy(_, _) => { return "copy" },
+        Cast(_, _, _) => { return "cast" },
+        BinOp(_, _, _, _) => { return "binop" },
+        UnaryOp(_, _, _) => { return "unaryop" },
+        StructInit(_, _, _) => { return "struct_init" },
+        FieldGet(_, _, _) => { return "field_get" },
+        FieldSet(_, _, _) => { return "field_set" },
+        ListInit(_, _, _) => { return "list_init" },
+        IndexGet(_, _, _) => { return "index_get" },
+        IndexSet(_, _, _) => { return "index_set" },
+        Alloca(_, _) => { return "alloca" },
+        Load(_, _) => { return "load" },
+        Store(_, _) => { return "store" },
+        MapInit(_, _, _, _) => { return "map_init" },
+        EnumInit(_, _, _, _) => { return "enum_init" },
+        EnumTag(_, _) => { return "enum_tag" },
+        EnumPayload(_, _, _) => { return "enum_payload" },
+        WrapSome(_, _) => { return "wrap_some" },
+        WrapNone(_, _) => { return "wrap_none" },
+        WrapOk(_, _) => { return "wrap_ok" },
+        WrapErr(_, _) => { return "wrap_err" },
+        Unwrap(_, _) => { return "unwrap" },
+        Call(_, _, _) => { return "call" },
+        Return(_) => { return "return" },
+        Jump(_) => { return "jump" },
+        Branch(_, _, _) => { return "branch" },
+        Switch(_, _, _) => { return "switch" },
+        AgentSpawn(_, _, _) => { return "agent_spawn" },
+        AgentSend(_, _, _) => { return "agent_send" },
+        AgentSync(_, _, _) => { return "agent_sync" },
+        SignalInit(_, _, _) => { return "signal_init" },
+        SignalGet(_, _) => { return "signal_get" },
+        SignalSet(_, _) => { return "signal_set" },
+        StreamOp(_, _, _, _) => { return "stream_op" },
+        InterpConcat(_, _) => { return "interp_concat" },
+        Phi(_, _) => { return "phi" }
+    }
+}
+
+// --- Instruction field accessors ---
+// Each function extracts one field from a specific variant (or group of
+// variants).  The _ => default is never reached when callers check
+// instr_kind() first.
+
+pub fn instr_dest(i: Instruction) -> Value {
+    match i {
+        Const(d, _, _) => { return d },
+        Copy(d, _) => { return d },
+        Cast(d, _, _) => { return d },
+        BinOp(d, _, _, _) => { return d },
+        UnaryOp(d, _, _) => { return d },
+        StructInit(d, _, _) => { return d },
+        FieldGet(d, _, _) => { return d },
+        ListInit(d, _, _) => { return d },
+        IndexGet(d, _, _) => { return d },
+        Alloca(d, _) => { return d },
+        Load(d, _) => { return d },
+        MapInit(d, _, _, _) => { return d },
+        EnumInit(d, _, _, _) => { return d },
+        EnumTag(d, _) => { return d },
+        EnumPayload(d, _, _) => { return d },
+        WrapSome(d, _) => { return d },
+        WrapNone(d, _) => { return d },
+        WrapOk(d, _) => { return d },
+        WrapErr(d, _) => { return d },
+        Unwrap(d, _) => { return d },
+        Call(d, _, _) => { return d },
+        AgentSpawn(d, _, _) => { return d },
+        AgentSync(d, _, _) => { return d },
+        SignalInit(d, _, _) => { return d },
+        SignalGet(d, _) => { return d },
+        StreamOp(d, _, _, _) => { return d },
+        InterpConcat(d, _) => { return d },
+        Phi(d, _) => { return d },
+        _ => { return void_value() }
+    }
+}
+
+// Const
+pub fn instr_const_type(i: Instruction) -> MIRType {
+    match i { Const(_, t, _) => { return t }, _ => { return mir_void() } }
+}
+pub fn instr_const_val(i: Instruction) -> String {
+    match i { Const(_, _, v) => { return v }, _ => { return "" } }
+}
+
+// Copy
+pub fn instr_copy_src(i: Instruction) -> Value {
+    match i { Copy(_, s) => { return s }, _ => { return void_value() } }
+}
+
+// Cast
+pub fn instr_cast_src(i: Instruction) -> Value {
+    match i { Cast(_, s, _) => { return s }, _ => { return void_value() } }
+}
+pub fn instr_cast_type(i: Instruction) -> MIRType {
+    match i { Cast(_, _, t) => { return t }, _ => { return mir_void() } }
+}
+
+// BinOp
+pub fn instr_binop_op(i: Instruction) -> BinOpKind {
+    match i { BinOp(_, o, _, _) => { return o }, _ => { return BinOpKind::Add } }
+}
+pub fn instr_binop_lhs(i: Instruction) -> Value {
+    match i { BinOp(_, _, l, _) => { return l }, _ => { return void_value() } }
+}
+pub fn instr_binop_rhs(i: Instruction) -> Value {
+    match i { BinOp(_, _, _, r) => { return r }, _ => { return void_value() } }
+}
+
+// UnaryOp
+pub fn instr_unaryop_op(i: Instruction) -> UnaryOpKind {
+    match i { UnaryOp(_, o, _) => { return o }, _ => { return UnaryOpKind::Neg } }
+}
+pub fn instr_unaryop_operand(i: Instruction) -> Value {
+    match i { UnaryOp(_, _, v) => { return v }, _ => { return void_value() } }
+}
+
+// StructInit
+pub fn instr_struct_type(i: Instruction) -> MIRType {
+    match i { StructInit(_, t, _) => { return t }, _ => { return mir_void() } }
+}
+pub fn instr_struct_fields(i: Instruction) -> List<FieldPair> {
+    match i { StructInit(_, _, f) => { return f }, _ => { let empty: List<FieldPair> = []; return empty } }
+}
+
+// FieldGet
+pub fn instr_fieldget_obj(i: Instruction) -> Value {
+    match i { FieldGet(_, o, _) => { return o }, _ => { return void_value() } }
+}
+pub fn instr_fieldget_name(i: Instruction) -> String {
+    match i { FieldGet(_, _, n) => { return n }, _ => { return "" } }
+}
+
+// FieldSet
+pub fn instr_fieldset_obj(i: Instruction) -> Value {
+    match i { FieldSet(o, _, _) => { return o }, _ => { return void_value() } }
+}
+pub fn instr_fieldset_name(i: Instruction) -> String {
+    match i { FieldSet(_, n, _) => { return n }, _ => { return "" } }
+}
+pub fn instr_fieldset_val(i: Instruction) -> Value {
+    match i { FieldSet(_, _, v) => { return v }, _ => { return void_value() } }
+}
+
+// ListInit
+pub fn instr_list_type(i: Instruction) -> MIRType {
+    match i { ListInit(_, t, _) => { return t }, _ => { return mir_void() } }
+}
+pub fn instr_list_elements(i: Instruction) -> List<Value> {
+    match i { ListInit(_, _, e) => { return e }, _ => { let empty: List<Value> = []; return empty } }
+}
+
+// IndexGet
+pub fn instr_indexget_obj(i: Instruction) -> Value {
+    match i { IndexGet(_, o, _) => { return o }, _ => { return void_value() } }
+}
+pub fn instr_indexget_idx(i: Instruction) -> Value {
+    match i { IndexGet(_, _, x) => { return x }, _ => { return void_value() } }
+}
+
+// IndexSet
+pub fn instr_indexset_obj(i: Instruction) -> Value {
+    match i { IndexSet(o, _, _) => { return o }, _ => { return void_value() } }
+}
+pub fn instr_indexset_idx(i: Instruction) -> Value {
+    match i { IndexSet(_, x, _) => { return x }, _ => { return void_value() } }
+}
+pub fn instr_indexset_val(i: Instruction) -> Value {
+    match i { IndexSet(_, _, v) => { return v }, _ => { return void_value() } }
+}
+
+// Alloca
+pub fn instr_alloca_type(i: Instruction) -> MIRType {
+    match i { Alloca(_, t) => { return t }, _ => { return mir_void() } }
+}
+
+// Load
+pub fn instr_load_ptr(i: Instruction) -> Value {
+    match i { Load(_, p) => { return p }, _ => { return void_value() } }
+}
+
+// Store
+pub fn instr_store_ptr(i: Instruction) -> Value {
+    match i { Store(p, _) => { return p }, _ => { return void_value() } }
+}
+pub fn instr_store_val(i: Instruction) -> Value {
+    match i { Store(_, v) => { return v }, _ => { return void_value() } }
+}
+
+// MapInit
+pub fn instr_map_key_type(i: Instruction) -> MIRType {
+    match i { MapInit(_, k, _, _) => { return k }, _ => { return mir_void() } }
+}
+pub fn instr_map_val_type(i: Instruction) -> MIRType {
+    match i { MapInit(_, _, v, _) => { return v }, _ => { return mir_void() } }
+}
+pub fn instr_map_pairs(i: Instruction) -> List<KVPair> {
+    match i { MapInit(_, _, _, p) => { return p }, _ => { let empty: List<KVPair> = []; return empty } }
+}
+
+// EnumInit
+pub fn instr_enum_type(i: Instruction) -> MIRType {
+    match i { EnumInit(_, t, _, _) => { return t }, _ => { return mir_void() } }
+}
+pub fn instr_enum_variant(i: Instruction) -> String {
+    match i { EnumInit(_, _, v, _) => { return v }, _ => { return "" } }
+}
+pub fn instr_enum_payload(i: Instruction) -> List<Value> {
+    match i { EnumInit(_, _, _, p) => { return p }, _ => { let empty: List<Value> = []; return empty } }
+}
+
+// EnumTag
+pub fn instr_enumtag_val(i: Instruction) -> Value {
+    match i { EnumTag(_, v) => { return v }, _ => { return void_value() } }
+}
+
+// EnumPayload
+pub fn instr_enumpayload_val(i: Instruction) -> Value {
+    match i { EnumPayload(_, v, _) => { return v }, _ => { return void_value() } }
+}
+pub fn instr_enumpayload_variant(i: Instruction) -> String {
+    match i { EnumPayload(_, _, v) => { return v }, _ => { return "" } }
+}
+
+// WrapSome / WrapOk / WrapErr / Unwrap — all have (dest, val)
+pub fn instr_wrap_val(i: Instruction) -> Value {
+    match i {
+        WrapSome(_, v) => { return v },
+        WrapOk(_, v) => { return v },
+        WrapErr(_, v) => { return v },
+        Unwrap(_, v) => { return v },
+        _ => { return void_value() }
+    }
+}
+
+// WrapNone
+pub fn instr_wrapnone_type(i: Instruction) -> MIRType {
+    match i { WrapNone(_, t) => { return t }, _ => { return mir_void() } }
+}
+
+// Call
+pub fn instr_call_fn(i: Instruction) -> String {
+    match i { Call(_, f, _) => { return f }, _ => { return "" } }
+}
+pub fn instr_call_args(i: Instruction) -> List<Value> {
+    match i { Call(_, _, a) => { return a }, _ => { let empty: List<Value> = []; return empty } }
+}
+
+// Return
+pub fn instr_return_val(i: Instruction) -> Option<Value> {
+    match i { Return(v) => { return v }, _ => { return none } }
+}
+
+// Jump
+pub fn instr_jump_target(i: Instruction) -> String {
+    match i { Jump(t) => { return t }, _ => { return "" } }
+}
+
+// Branch
+pub fn instr_branch_cond(i: Instruction) -> Value {
+    match i { Branch(c, _, _) => { return c }, _ => { return void_value() } }
+}
+pub fn instr_branch_true(i: Instruction) -> String {
+    match i { Branch(_, t, _) => { return t }, _ => { return "" } }
+}
+pub fn instr_branch_false(i: Instruction) -> String {
+    match i { Branch(_, _, f) => { return f }, _ => { return "" } }
+}
+
+// Switch
+pub fn instr_switch_tag(i: Instruction) -> Value {
+    match i { Switch(t, _, _) => { return t }, _ => { return void_value() } }
+}
+pub fn instr_switch_cases(i: Instruction) -> List<SwitchCase> {
+    match i { Switch(_, c, _) => { return c }, _ => { let empty: List<SwitchCase> = []; return empty } }
+}
+pub fn instr_switch_default(i: Instruction) -> String {
+    match i { Switch(_, _, d) => { return d }, _ => { return "" } }
+}
+
+// AgentSpawn
+pub fn instr_agent_type(i: Instruction) -> MIRType {
+    match i { AgentSpawn(_, t, _) => { return t }, _ => { return mir_void() } }
+}
+pub fn instr_agent_args(i: Instruction) -> List<Value> {
+    match i { AgentSpawn(_, _, a) => { return a }, _ => { let empty: List<Value> = []; return empty } }
+}
+
+// AgentSend
+pub fn instr_agentsend_agent(i: Instruction) -> Value {
+    match i { AgentSend(a, _, _) => { return a }, _ => { return void_value() } }
+}
+pub fn instr_agentsend_channel(i: Instruction) -> String {
+    match i { AgentSend(_, c, _) => { return c }, _ => { return "" } }
+}
+pub fn instr_agentsend_val(i: Instruction) -> Value {
+    match i { AgentSend(_, _, v) => { return v }, _ => { return void_value() } }
+}
+
+// AgentSync
+pub fn instr_agentsync_agent(i: Instruction) -> Value {
+    match i { AgentSync(_, a, _) => { return a }, _ => { return void_value() } }
+}
+pub fn instr_agentsync_channel(i: Instruction) -> String {
+    match i { AgentSync(_, _, c) => { return c }, _ => { return "" } }
+}
+
+// SignalInit
+pub fn instr_signal_type(i: Instruction) -> MIRType {
+    match i { SignalInit(_, t, _) => { return t }, _ => { return mir_void() } }
+}
+pub fn instr_signal_val(i: Instruction) -> Value {
+    match i { SignalInit(_, _, v) => { return v }, _ => { return void_value() } }
+}
+
+// SignalGet
+pub fn instr_signalget_sig(i: Instruction) -> Value {
+    match i { SignalGet(_, s) => { return s }, _ => { return void_value() } }
+}
+
+// SignalSet
+pub fn instr_signalset_sig(i: Instruction) -> Value {
+    match i { SignalSet(s, _) => { return s }, _ => { return void_value() } }
+}
+pub fn instr_signalset_val(i: Instruction) -> Value {
+    match i { SignalSet(_, v) => { return v }, _ => { return void_value() } }
+}
+
+// StreamOp
+pub fn instr_streamop_kind(i: Instruction) -> StreamOpKind {
+    match i { StreamOp(_, k, _, _) => { return k }, _ => { return StreamOpKind::Map } }
+}
+pub fn instr_streamop_source(i: Instruction) -> Value {
+    match i { StreamOp(_, _, s, _) => { return s }, _ => { return void_value() } }
+}
+pub fn instr_streamop_args(i: Instruction) -> List<Value> {
+    match i { StreamOp(_, _, _, a) => { return a }, _ => { let empty: List<Value> = []; return empty } }
+}
+
+// InterpConcat
+pub fn instr_concat_parts(i: Instruction) -> List<Value> {
+    match i { InterpConcat(_, p) => { return p }, _ => { let empty: List<Value> = []; return empty } }
+}
+
+// Phi
+pub fn instr_phi_entries(i: Instruction) -> List<PhiEntry> {
+    match i { Phi(_, e) => { return e }, _ => { let empty: List<PhiEntry> = []; return empty } }
+}

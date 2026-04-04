@@ -275,3 +275,472 @@ fn new_block(span: Span, stmts: List<Stmt>) -> Block {
 fn new_fn_def_data(span: Span, name: String, public: Bool, type_params: List<String>, params: List<Param>, return_type: Option<TypeExpr>, body: Block, decorators: List<Decorator>) -> FnDefData {
     return new FnDefData { span: span, name: name, public: public, type_params: type_params, params: params, return_type: return_type, body: body, decorators: decorators }
 }
+
+// ---------------------------------------------------------------------------
+// String-tagged dispatch: kind functions + field accessors
+// These functions use match WITHIN ast.mn (same module as the enum defs),
+// so enum tags are always correct.  Consumers in other modules call these
+// instead of matching on Expr/Stmt/Definition directly.
+// ---------------------------------------------------------------------------
+
+// ---- Expr kind + accessors ------------------------------------------------
+
+pub fn expr_kind(e: Expr) -> String {
+    match e {
+        IntLit(_) => { return "int_lit" },
+        FloatLit(_) => { return "float_lit" },
+        StringLit(_) => { return "string_lit" },
+        CharLit(_) => { return "char_lit" },
+        BoolLit(_) => { return "bool_lit" },
+        NoneLit => { return "none_lit" },
+        Ident(_) => { return "ident" },
+        Binary(_, _, _) => { return "binary" },
+        Unary(_, _) => { return "unary" },
+        Call(_, _) => { return "call" },
+        MethodCall(_, _, _) => { return "method_call" },
+        FieldAccess(_, _) => { return "field_access" },
+        NamespaceAccess(_, _) => { return "namespace_access" },
+        Index(_, _) => { return "index" },
+        Pipe(_, _) => { return "pipe" },
+        Range(_, _, _) => { return "range" },
+        Lambda(_, _) => { return "lambda" },
+        Spawn(_, _) => { return "spawn" },
+        Sync(_) => { return "sync" },
+        Send(_, _) => { return "send" },
+        ErrorProp(_) => { return "error_prop" },
+        ListLit(_) => { return "list_lit" },
+        Construct(_, _) => { return "construct" },
+        SomeWrap(_) => { return "some_wrap" },
+        OkWrap(_) => { return "ok_wrap" },
+        ErrWrap(_) => { return "err_wrap" },
+        SignalVal(_, _) => { return "signal_val" },
+        Assign(_, _, _) => { return "assign" },
+        If(_, _, _) => { return "if" },
+        Match(_, _) => { return "match" }
+    }
+}
+
+// Literal accessors
+pub fn expr_int_val(e: Expr) -> Int {
+    match e { IntLit(n) => { return n }, _ => { return 0 } }
+}
+pub fn expr_float_val(e: Expr) -> Float {
+    match e { FloatLit(f) => { return f }, _ => { return 0.0 } }
+}
+pub fn expr_string_val(e: Expr) -> String {
+    match e { StringLit(s) => { return s }, _ => { return "" } }
+}
+pub fn expr_char_val(e: Expr) -> String {
+    match e { CharLit(c) => { return c }, _ => { return "" } }
+}
+pub fn expr_bool_val(e: Expr) -> Bool {
+    match e { BoolLit(b) => { return b }, _ => { return false } }
+}
+
+// Ident
+pub fn expr_ident_name(e: Expr) -> String {
+    match e { Ident(n) => { return n }, _ => { return "" } }
+}
+
+// Binary
+pub fn expr_binary_left(e: Expr) -> Expr {
+    match e { Binary(l, _, _) => { return l }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_binary_op(e: Expr) -> String {
+    match e { Binary(_, o, _) => { return o }, _ => { return "" } }
+}
+pub fn expr_binary_right(e: Expr) -> Expr {
+    match e { Binary(_, _, r) => { return r }, _ => { return Expr::NoneLit } }
+}
+
+// Unary
+pub fn expr_unary_op(e: Expr) -> String {
+    match e { Unary(o, _) => { return o }, _ => { return "" } }
+}
+pub fn expr_unary_operand(e: Expr) -> Expr {
+    match e { Unary(_, x) => { return x }, _ => { return Expr::NoneLit } }
+}
+
+// Call
+pub fn expr_call_callee(e: Expr) -> Expr {
+    match e { Call(c, _) => { return c }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_call_args(e: Expr) -> List<Expr> {
+    match e { Call(_, a) => { return a }, _ => { let empty: List<Expr> = []; return empty } }
+}
+
+// MethodCall
+pub fn expr_method_obj(e: Expr) -> Expr {
+    match e { MethodCall(o, _, _) => { return o }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_method_name(e: Expr) -> String {
+    match e { MethodCall(_, n, _) => { return n }, _ => { return "" } }
+}
+pub fn expr_method_args(e: Expr) -> List<Expr> {
+    match e { MethodCall(_, _, a) => { return a }, _ => { let empty: List<Expr> = []; return empty } }
+}
+
+// FieldAccess
+pub fn expr_field_obj(e: Expr) -> Expr {
+    match e { FieldAccess(o, _) => { return o }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_field_name(e: Expr) -> String {
+    match e { FieldAccess(_, n) => { return n }, _ => { return "" } }
+}
+
+// NamespaceAccess
+pub fn expr_ns_name(e: Expr) -> String {
+    match e { NamespaceAccess(n, _) => { return n }, _ => { return "" } }
+}
+pub fn expr_ns_member(e: Expr) -> String {
+    match e { NamespaceAccess(_, m) => { return m }, _ => { return "" } }
+}
+
+// Index
+pub fn expr_index_obj(e: Expr) -> Expr {
+    match e { Index(o, _) => { return o }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_index_idx(e: Expr) -> Expr {
+    match e { Index(_, x) => { return x }, _ => { return Expr::NoneLit } }
+}
+
+// Pipe
+pub fn expr_pipe_left(e: Expr) -> Expr {
+    match e { Pipe(l, _) => { return l }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_pipe_right(e: Expr) -> Expr {
+    match e { Pipe(_, r) => { return r }, _ => { return Expr::NoneLit } }
+}
+
+// Range
+pub fn expr_range_start(e: Expr) -> Expr {
+    match e { Range(s, _, _) => { return s }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_range_end(e: Expr) -> Expr {
+    match e { Range(_, x, _) => { return x }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_range_inclusive(e: Expr) -> Bool {
+    match e { Range(_, _, i) => { return i }, _ => { return false } }
+}
+
+// Lambda
+pub fn expr_lambda_params(e: Expr) -> List<Param> {
+    match e { Lambda(p, _) => { return p }, _ => { let empty: List<Param> = []; return empty } }
+}
+pub fn expr_lambda_body(e: Expr) -> LambdaBody {
+    match e { Lambda(_, b) => { return b }, _ => { let s: List<Stmt> = []; return LambdaBody::BlockBody(new_block(make_span(0,0,0,0), s)) } }
+}
+
+// Spawn
+pub fn expr_spawn_callee(e: Expr) -> Expr {
+    match e { Spawn(c, _) => { return c }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_spawn_args(e: Expr) -> List<Expr> {
+    match e { Spawn(_, a) => { return a }, _ => { let empty: List<Expr> = []; return empty } }
+}
+
+// Sync
+pub fn expr_sync_inner(e: Expr) -> Expr {
+    match e { Sync(x) => { return x }, _ => { return Expr::NoneLit } }
+}
+
+// Send
+pub fn expr_send_target(e: Expr) -> Expr {
+    match e { Send(t, _) => { return t }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_send_value(e: Expr) -> Expr {
+    match e { Send(_, v) => { return v }, _ => { return Expr::NoneLit } }
+}
+
+// ErrorProp
+pub fn expr_errorprop_inner(e: Expr) -> Expr {
+    match e { ErrorProp(x) => { return x }, _ => { return Expr::NoneLit } }
+}
+
+// ListLit
+pub fn expr_list_elements(e: Expr) -> List<Expr> {
+    match e { ListLit(l) => { return l }, _ => { let empty: List<Expr> = []; return empty } }
+}
+
+// Construct
+pub fn expr_construct_name(e: Expr) -> String {
+    match e { Construct(n, _) => { return n }, _ => { return "" } }
+}
+pub fn expr_construct_fields(e: Expr) -> List<FieldInit> {
+    match e { Construct(_, f) => { return f }, _ => { let empty: List<FieldInit> = []; return empty } }
+}
+
+// SomeWrap / OkWrap / ErrWrap — single inner Expr
+pub fn expr_wrap_inner(e: Expr) -> Expr {
+    match e {
+        SomeWrap(x) => { return x },
+        OkWrap(x) => { return x },
+        ErrWrap(x) => { return x },
+        _ => { return Expr::NoneLit }
+    }
+}
+
+// SignalVal
+pub fn expr_signal_inner(e: Expr) -> Expr {
+    match e { SignalVal(x, _) => { return x }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_signal_computed(e: Expr) -> Bool {
+    match e { SignalVal(_, c) => { return c }, _ => { return false } }
+}
+
+// Assign
+pub fn expr_assign_target(e: Expr) -> Expr {
+    match e { Assign(t, _, _) => { return t }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_assign_op(e: Expr) -> String {
+    match e { Assign(_, o, _) => { return o }, _ => { return "" } }
+}
+pub fn expr_assign_value(e: Expr) -> Expr {
+    match e { Assign(_, _, v) => { return v }, _ => { return Expr::NoneLit } }
+}
+
+// If
+pub fn expr_if_cond(e: Expr) -> Expr {
+    match e { If(c, _, _) => { return c }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_if_then(e: Expr) -> Block {
+    match e { If(_, b, _) => { return b }, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+}
+pub fn expr_if_else(e: Expr) -> Option<ElseClause> {
+    match e { If(_, _, ec) => { return ec }, _ => { return none } }
+}
+
+// Match
+pub fn expr_match_subject(e: Expr) -> Expr {
+    match e { Match(s, _) => { return s }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_match_arms(e: Expr) -> List<MatchArm> {
+    match e { Match(_, a) => { return a }, _ => { let empty: List<MatchArm> = []; return empty } }
+}
+
+// ---- Stmt kind + accessors ------------------------------------------------
+
+pub fn stmt_kind(s: Stmt) -> String {
+    match s {
+        Let(_, _, _, _) => { return "let" },
+        ExprStmt(_) => { return "expr_stmt" },
+        Return(_) => { return "return" },
+        For(_, _, _) => { return "for" },
+        SignalDecl(_, _, _, _, _) => { return "signal_decl" },
+        StreamDecl(_, _, _) => { return "stream_decl" }
+    }
+}
+
+pub fn stmt_let_name(s: Stmt) -> String {
+    match s { Let(n, _, _, _) => { return n }, _ => { return "" } }
+}
+pub fn stmt_let_mutable(s: Stmt) -> Bool {
+    match s { Let(_, m, _, _) => { return m }, _ => { return false } }
+}
+pub fn stmt_let_type(s: Stmt) -> Option<TypeExpr> {
+    match s { Let(_, _, t, _) => { return t }, _ => { return none } }
+}
+pub fn stmt_let_value(s: Stmt) -> Expr {
+    match s { Let(_, _, _, v) => { return v }, _ => { return Expr::NoneLit } }
+}
+pub fn stmt_expr(s: Stmt) -> Expr {
+    match s { ExprStmt(e) => { return e }, _ => { return Expr::NoneLit } }
+}
+pub fn stmt_return_val(s: Stmt) -> Option<Expr> {
+    match s { Return(v) => { return v }, _ => { return none } }
+}
+pub fn stmt_for_var(s: Stmt) -> String {
+    match s { For(v, _, _) => { return v }, _ => { return "" } }
+}
+pub fn stmt_for_iter(s: Stmt) -> Expr {
+    match s { For(_, e, _) => { return e }, _ => { return Expr::NoneLit } }
+}
+pub fn stmt_for_body(s: Stmt) -> Block {
+    match s { For(_, _, b) => { return b }, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
+}
+pub fn stmt_signal_name(s: Stmt) -> String {
+    match s { SignalDecl(n, _, _, _, _) => { return n }, _ => { return "" } }
+}
+pub fn stmt_signal_mutable(s: Stmt) -> Bool {
+    match s { SignalDecl(_, m, _, _, _) => { return m }, _ => { return false } }
+}
+pub fn stmt_signal_type(s: Stmt) -> Option<TypeExpr> {
+    match s { SignalDecl(_, _, t, _, _) => { return t }, _ => { return none } }
+}
+pub fn stmt_signal_value(s: Stmt) -> Expr {
+    match s { SignalDecl(_, _, _, v, _) => { return v }, _ => { return Expr::NoneLit } }
+}
+pub fn stmt_signal_computed(s: Stmt) -> Bool {
+    match s { SignalDecl(_, _, _, _, c) => { return c }, _ => { return false } }
+}
+pub fn stmt_stream_name(s: Stmt) -> String {
+    match s { StreamDecl(n, _, _) => { return n }, _ => { return "" } }
+}
+pub fn stmt_stream_type(s: Stmt) -> Option<TypeExpr> {
+    match s { StreamDecl(_, t, _) => { return t }, _ => { return none } }
+}
+pub fn stmt_stream_value(s: Stmt) -> Expr {
+    match s { StreamDecl(_, _, v) => { return v }, _ => { return Expr::NoneLit } }
+}
+
+// ---- Definition kind + accessors ------------------------------------------
+
+pub fn def_kind(d: Definition) -> String {
+    match d {
+        FnDef(_) => { return "fn_def" },
+        AgentDef(_) => { return "agent_def" },
+        PipeDef(_) => { return "pipe_def" },
+        StructDef(_) => { return "struct_def" },
+        EnumDef(_) => { return "enum_def" },
+        TypeAlias(_, _) => { return "type_alias" },
+        ImplDef(_, _) => { return "impl_def" },
+        ImportDef(_, _) => { return "import_def" },
+        ExportDef(_, _) => { return "export_def" }
+    }
+}
+
+pub fn def_fn_data(d: Definition) -> FnDefData {
+    match d { FnDef(data) => { return data }, _ => { let e: List<String> = []; let p: List<Param> = []; let dc: List<Decorator> = []; let st: List<Stmt> = []; return new_fn_def_data(make_span(0,0,0,0), "", false, e, p, none, new_block(make_span(0,0,0,0), st), dc) } }
+}
+pub fn def_agent_data(d: Definition) -> AgentDefData {
+    match d { AgentDef(data) => { return data }, _ => { let i: List<AgentInput> = []; let o: List<AgentOutput> = []; let s: List<Stmt> = []; let m: List<FnDefData> = []; let dc: List<Decorator> = []; return new AgentDefData { span: make_span(0,0,0,0), name: "", public: false, inputs: i, outputs: o, state: s, methods: m, decorators: dc } } }
+}
+pub fn def_pipe_data(d: Definition) -> PipeDefData {
+    match d { PipeDef(data) => { return data }, _ => { let s: List<Expr> = []; return new PipeDefData { span: make_span(0,0,0,0), name: "", public: false, stages: s } } }
+}
+pub fn def_struct_data(d: Definition) -> StructDefData {
+    match d { StructDef(data) => { return data }, _ => { let tp: List<String> = []; let f: List<StructField> = []; return new StructDefData { span: make_span(0,0,0,0), name: "", public: false, type_params: tp, fields: f } } }
+}
+pub fn def_enum_data(d: Definition) -> EnumDefData {
+    match d { EnumDef(data) => { return data }, _ => { let tp: List<String> = []; let v: List<EnumVariant> = []; return new EnumDefData { span: make_span(0,0,0,0), name: "", public: false, type_params: tp, variants: v } } }
+}
+pub fn def_impl_target(d: Definition) -> String {
+    match d { ImplDef(t, _) => { return t }, _ => { return "" } }
+}
+pub fn def_impl_methods(d: Definition) -> List<FnDefData> {
+    match d { ImplDef(_, m) => { return m }, _ => { let empty: List<FnDefData> = []; return empty } }
+}
+pub fn def_import_path(d: Definition) -> List<String> {
+    match d { ImportDef(p, _) => { return p }, _ => { let empty: List<String> = []; return empty } }
+}
+pub fn def_import_items(d: Definition) -> List<String> {
+    match d { ImportDef(_, i) => { return i }, _ => { let empty: List<String> = []; return empty } }
+}
+pub fn def_export_inner(d: Definition) -> Option<Definition> {
+    match d { ExportDef(i, _) => { return i }, _ => { return none } }
+}
+pub fn def_export_names(d: Definition) -> List<String> {
+    match d { ExportDef(_, n) => { return n }, _ => { let empty: List<String> = []; return empty } }
+}
+pub fn def_type_alias_name(d: Definition) -> String {
+    match d { TypeAlias(n, _) => { return n }, _ => { return "" } }
+}
+pub fn def_type_alias_type(d: Definition) -> TypeExpr {
+    match d { TypeAlias(_, t) => { return t }, _ => { return TypeExpr::Named("Void") } }
+}
+
+// ---- TypeExpr kind + accessors --------------------------------------------
+
+pub fn type_expr_kind(te: TypeExpr) -> String {
+    match te {
+        Named(_) => { return "named" },
+        Generic(_, _) => { return "generic" },
+        TensorTy(_, _) => { return "tensor" },
+        FnTy(_, _) => { return "fn" }
+    }
+}
+
+pub fn type_expr_name(te: TypeExpr) -> String {
+    match te {
+        Named(n) => { return n },
+        Generic(n, _) => { return n },
+        _ => { return "" }
+    }
+}
+pub fn type_expr_args(te: TypeExpr) -> List<TypeExpr> {
+    match te { Generic(_, a) => { return a }, _ => { let empty: List<TypeExpr> = []; return empty } }
+}
+pub fn type_expr_fn_params(te: TypeExpr) -> List<TypeExpr> {
+    match te { FnTy(p, _) => { return p }, _ => { let empty: List<TypeExpr> = []; return empty } }
+}
+pub fn type_expr_fn_ret(te: TypeExpr) -> TypeExpr {
+    match te { FnTy(_, r) => { return r }, _ => { return TypeExpr::Named("Void") } }
+}
+
+// ---- Pattern kind + accessors ---------------------------------------------
+
+pub fn pattern_kind(p: Pattern) -> String {
+    match p {
+        Wildcard => { return "wildcard" },
+        IdentPat(_) => { return "ident" },
+        LiteralPat(_) => { return "literal" },
+        ConstructorPat(_, _) => { return "constructor" }
+    }
+}
+
+pub fn pattern_ident_name(p: Pattern) -> String {
+    match p { IdentPat(n) => { return n }, _ => { return "" } }
+}
+pub fn pattern_literal_expr(p: Pattern) -> Expr {
+    match p { LiteralPat(e) => { return e }, _ => { return Expr::NoneLit } }
+}
+pub fn pattern_ctor_name(p: Pattern) -> String {
+    match p { ConstructorPat(n, _) => { return n }, _ => { return "" } }
+}
+pub fn pattern_ctor_args(p: Pattern) -> List<Pattern> {
+    match p { ConstructorPat(_, a) => { return a }, _ => { let empty: List<Pattern> = []; return empty } }
+}
+
+// ---- MatchArmBody kind + accessors ----------------------------------------
+
+pub fn match_arm_body_kind(b: MatchArmBody) -> String {
+    match b {
+        ExprBody(_) => { return "expr" },
+        BlockBody(_) => { return "block" }
+    }
+}
+
+pub fn match_arm_body_expr(b: MatchArmBody) -> Expr {
+    match b { ExprBody(e) => { return e }, _ => { return Expr::NoneLit } }
+}
+pub fn match_arm_body_block(b: MatchArmBody) -> Block {
+    match b { BlockBody(bl) => { return bl }, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+}
+
+// ---- LambdaBody kind + accessors ------------------------------------------
+
+pub fn lambda_body_kind(b: LambdaBody) -> String {
+    match b {
+        ExprBody(_) => { return "expr" },
+        BlockBody(_) => { return "block" }
+    }
+}
+
+pub fn lambda_body_expr(b: LambdaBody) -> Expr {
+    match b { ExprBody(e) => { return e }, _ => { return Expr::NoneLit } }
+}
+pub fn lambda_body_block(b: LambdaBody) -> Block {
+    match b { BlockBody(bl) => { return bl }, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+}
+
+// ---- ElseClause kind + accessors ------------------------------------------
+
+pub fn else_clause_kind(ec: ElseClause) -> String {
+    match ec {
+        ElseBlock(_) => { return "else_block" },
+        ElseIf(_, _, _) => { return "else_if" }
+    }
+}
+
+pub fn else_clause_block(ec: ElseClause) -> Block {
+    match ec { ElseBlock(b) => { return b }, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+}
+pub fn else_clause_cond(ec: ElseClause) -> Expr {
+    match ec { ElseIf(c, _, _) => { return c }, _ => { return Expr::NoneLit } }
+}
+pub fn else_clause_then(ec: ElseClause) -> Block {
+    match ec { ElseIf(_, b, _) => { return b }, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+}
+pub fn else_clause_else(ec: ElseClause) -> Option<ElseClause> {
+    match ec { ElseIf(_, _, e) => { return e }, _ => { return none } }
+}

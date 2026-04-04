@@ -532,136 +532,75 @@ fn declare_mir_extern(st: EmitState, info: ExternFnInfo) -> EmitState {
 // ---------------------------------------------------------------------------
 
 fn emit_mir_instruction(st: EmitState, inst: Instruction) -> EmitState {
-    match inst {
-        Const(dest, ty, val) => {
-            return emit_const(st, dest, ty, val)
-        },
-        Copy(dest, src) => {
-            return emit_copy(st, dest, src)
-        },
-        Cast(dest, src, target_ty) => {
-            return emit_cast(st, dest, src, target_ty)
-        },
-        BinOp(dest, op, lhs, rhs) => {
-            return emit_binop(st, dest, op, lhs, rhs)
-        },
-        UnaryOp(dest, op, operand) => {
-            return emit_unaryop(st, dest, op, operand)
-        },
-        StructInit(dest, ty, fields) => {
-            return emit_struct_init(st, dest, ty, fields)
-        },
-        FieldGet(dest, obj, field_name) => {
-            return emit_field_get(st, dest, obj, field_name)
-        },
-        FieldSet(obj, field_name, val) => {
-            return emit_field_set(st, obj, field_name, val)
-        },
-        ListInit(dest, elem_ty, elements) => {
-            // Check if this is a struct init by looking up dest type name
-            // in the struct registry. Enum payload types get corrupted, so
-            // we check elem_ty.name and dest.ty.name against known structs.
-            let struct_check: Option<StructEntry> = find_struct_entry(st, dest.ty.name)
-            let struct_check2: Option<StructEntry> = find_struct_entry(st, elem_ty.name)
-            match struct_check {
-                Some(_) => {
-                    return emit_struct_init_from_values(st, dest, dest.ty, elements)
-                },
-                _ => {}
-            }
-            match struct_check2 {
-                Some(_) => {
-                    return emit_struct_init_from_values(st, dest, elem_ty, elements)
-                },
-                _ => {}
-            }
-            return emit_list_init(st, dest, elem_ty, elements)
-        },
-        IndexGet(dest, obj, idx) => {
-            return emit_index_get(st, dest, obj, idx)
-        },
-        IndexSet(obj, idx, val) => {
-            return emit_index_set(st, obj, idx, val)
-        },
-        Alloca(dest, ty) => {
-            return emit_alloca(st, dest, ty)
-        },
-        Load(dest, ptr) => {
-            return emit_load(st, dest, ptr)
-        },
-        Store(ptr, val) => {
-            return emit_store(st, ptr, val)
-        },
-        MapInit(dest, key_ty, val_ty, pairs) => {
-            return emit_map_init(st, dest, key_ty, val_ty, pairs)
-        },
-        EnumInit(dest, ty, variant, payload) => {
-            return emit_enum_init(st, dest, ty, variant, payload)
-        },
-        EnumTag(dest, val) => {
-            return emit_enum_tag(st, dest, val)
-        },
-        EnumPayload(dest, val, variant) => {
-            return emit_enum_payload(st, dest, val, variant)
-        },
-        WrapSome(dest, val) => {
-            return emit_wrap_some(st, dest, val)
-        },
-        WrapNone(dest, ty) => {
-            return emit_wrap_none(st, dest, ty)
-        },
-        WrapOk(dest, val) => {
-            return emit_wrap_ok(st, dest, val)
-        },
-        WrapErr(dest, val) => {
-            return emit_wrap_err(st, dest, val)
-        },
-        Unwrap(dest, val) => {
-            return emit_unwrap(st, dest, val)
-        },
-        Call(dest, fn_name, args) => {
-            return emit_mir_call(st, dest, fn_name, args)
-        },
-        Return(val_opt) => {
-            return emit_mir_return(st, val_opt)
-        },
-        Jump(target) => {
-            return emit_line(st, emit_br(target))
-        },
-        Branch(cond, true_bb, false_bb) => {
-            return emit_line(st, emit_cbranch(cond.name, true_bb, false_bb))
-        },
-        Switch(tag, cases, default_bb) => {
-            return emit_mir_switch(st, tag, cases, default_bb)
-        },
-        AgentSpawn(dest, ty, args) => {
-            return emit_agent_spawn(st, dest, ty, args)
-        },
-        AgentSend(ag, channel, val) => {
-            return emit_agent_send(st, ag, channel, val)
-        },
-        AgentSync(dest, ag, channel) => {
-            return emit_agent_sync(st, dest, ag, channel)
-        },
-        SignalInit(dest, ty, val) => {
-            return emit_signal_init(st, dest, ty, val)
-        },
-        SignalGet(dest, sig) => {
-            return emit_signal_get(st, dest, sig)
-        },
-        SignalSet(sig, val) => {
-            return emit_signal_set(st, sig, val)
-        },
-        StreamOp(dest, kind, source, args) => {
-            return emit_stream_op(st, dest, kind, source, args)
-        },
-        InterpConcat(dest, parts) => {
-            return emit_interp_concat(st, dest, parts)
-        },
-        Phi(dest, incoming) => {
-            return emit_mir_phi(st, dest, incoming)
-        }
+    // String-tagged dispatch: uses instr_kind() from mir.mn (same module as
+    // the Instruction enum) so that enum tags are always correct regardless
+    // of which compiler produced this binary.  Dispatches via match-on-string
+    // (not match-on-enum) for cross-compilation stability.
+    let kind: String = instr_kind(inst)
+    return emit_mir_by_kind(st, inst, kind)
+}
+
+fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState {
+    if kind == "const" { return emit_const(st, instr_dest(inst), instr_const_type(inst), instr_const_val(inst)) }
+    if kind == "copy" { return emit_copy(st, instr_dest(inst), instr_copy_src(inst)) }
+    if kind == "cast" { return emit_cast(st, instr_dest(inst), instr_cast_src(inst), instr_cast_type(inst)) }
+    if kind == "binop" { return emit_binop(st, instr_dest(inst), instr_binop_op(inst), instr_binop_lhs(inst), instr_binop_rhs(inst)) }
+    if kind == "unaryop" { return emit_unaryop(st, instr_dest(inst), instr_unaryop_op(inst), instr_unaryop_operand(inst)) }
+    if kind == "struct_init" { return emit_struct_init(st, instr_dest(inst), instr_struct_type(inst), instr_struct_fields(inst)) }
+    if kind == "field_get" { return emit_field_get(st, instr_dest(inst), instr_fieldget_obj(inst), instr_fieldget_name(inst)) }
+    if kind == "field_set" { return emit_field_set(st, instr_fieldset_obj(inst), instr_fieldset_name(inst), instr_fieldset_val(inst)) }
+    if kind == "list_init" { return emit_list_init_checked(st, inst) }
+    if kind == "index_get" { return emit_index_get(st, instr_dest(inst), instr_indexget_obj(inst), instr_indexget_idx(inst)) }
+    if kind == "index_set" { return emit_index_set(st, instr_indexset_obj(inst), instr_indexset_idx(inst), instr_indexset_val(inst)) }
+    if kind == "alloca" { return emit_alloca(st, instr_dest(inst), instr_alloca_type(inst)) }
+    if kind == "load" { return emit_load(st, instr_dest(inst), instr_load_ptr(inst)) }
+    if kind == "store" { return emit_store(st, instr_store_ptr(inst), instr_store_val(inst)) }
+    if kind == "map_init" { return emit_map_init(st, instr_dest(inst), instr_map_key_type(inst), instr_map_val_type(inst), instr_map_pairs(inst)) }
+    if kind == "enum_init" { return emit_enum_init(st, instr_dest(inst), instr_enum_type(inst), instr_enum_variant(inst), instr_enum_payload(inst)) }
+    if kind == "enum_tag" { return emit_enum_tag(st, instr_dest(inst), instr_enumtag_val(inst)) }
+    if kind == "enum_payload" { return emit_enum_payload(st, instr_dest(inst), instr_enumpayload_val(inst), instr_enumpayload_variant(inst)) }
+    if kind == "wrap_some" { return emit_wrap_some(st, instr_dest(inst), instr_wrap_val(inst)) }
+    if kind == "wrap_none" { return emit_wrap_none(st, instr_dest(inst), instr_wrapnone_type(inst)) }
+    if kind == "wrap_ok" { return emit_wrap_ok(st, instr_dest(inst), instr_wrap_val(inst)) }
+    if kind == "wrap_err" { return emit_wrap_err(st, instr_dest(inst), instr_wrap_val(inst)) }
+    if kind == "unwrap" { return emit_unwrap(st, instr_dest(inst), instr_wrap_val(inst)) }
+    if kind == "call" { return emit_mir_call(st, instr_dest(inst), instr_call_fn(inst), instr_call_args(inst)) }
+    if kind == "return" { return emit_mir_return(st, instr_return_val(inst)) }
+    if kind == "jump" { return emit_line(st, emit_br(instr_jump_target(inst))) }
+    if kind == "branch" { return emit_mir_branch(st, inst) }
+    if kind == "switch" { return emit_mir_switch(st, instr_switch_tag(inst), instr_switch_cases(inst), instr_switch_default(inst)) }
+    if kind == "agent_spawn" { return emit_agent_spawn(st, instr_dest(inst), instr_agent_type(inst), instr_agent_args(inst)) }
+    if kind == "agent_send" { return emit_agent_send(st, instr_agentsend_agent(inst), instr_agentsend_channel(inst), instr_agentsend_val(inst)) }
+    if kind == "agent_sync" { return emit_agent_sync(st, instr_dest(inst), instr_agentsync_agent(inst), instr_agentsync_channel(inst)) }
+    if kind == "signal_init" { return emit_signal_init(st, instr_dest(inst), instr_signal_type(inst), instr_signal_val(inst)) }
+    if kind == "signal_get" { return emit_signal_get(st, instr_dest(inst), instr_signalget_sig(inst)) }
+    if kind == "signal_set" { return emit_signal_set(st, instr_signalset_sig(inst), instr_signalset_val(inst)) }
+    if kind == "stream_op" { return emit_stream_op(st, instr_dest(inst), instr_streamop_kind(inst), instr_streamop_source(inst), instr_streamop_args(inst)) }
+    if kind == "interp_concat" { return emit_interp_concat(st, instr_dest(inst), instr_concat_parts(inst)) }
+    if kind == "phi" { return emit_mir_phi(st, instr_dest(inst), instr_phi_entries(inst)) }
+    return st
+}
+
+fn emit_mir_branch(st: EmitState, inst: Instruction) -> EmitState {
+    let cond: Value = instr_branch_cond(inst)
+    return emit_line(st, emit_cbranch(cond.name, instr_branch_true(inst), instr_branch_false(inst)))
+}
+
+fn emit_list_init_checked(st: EmitState, inst: Instruction) -> EmitState {
+    let dest: Value = instr_dest(inst)
+    let elem_ty: MIRType = instr_list_type(inst)
+    let elements: List<Value> = instr_list_elements(inst)
+    let struct_check: Option<StructEntry> = find_struct_entry(st, dest.ty.name)
+    let struct_check2: Option<StructEntry> = find_struct_entry(st, elem_ty.name)
+    match struct_check {
+        Some(_) => { return emit_struct_init_from_values(st, dest, dest.ty, elements) },
+        _ => {}
     }
+    match struct_check2 {
+        Some(_) => { return emit_struct_init_from_values(st, dest, elem_ty, elements) },
+        _ => {}
+    }
+    return emit_list_init(st, dest, elem_ty, elements)
 }
 
 // ---------------------------------------------------------------------------
@@ -710,8 +649,11 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     }
 
     // Float constant: emit `%dest = fadd double 0.0, <val>`
+    // Ensure the value has a decimal point (toString(0.0) may produce "0")
     if ty.kind == "float" {
-        s = emit_line(s, "  " + dn + " = fadd double 0.0, " + val)
+        let mut fval: String = val
+        if !fval.contains(".") { fval = fval + ".0" }
+        s = emit_line(s, "  " + dn + " = fadd double 0.0, " + fval)
         return s
     }
 
@@ -2824,14 +2766,12 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
             if ii < ninsts {
                 let inst: Instruction = bb0.instructions[ii]
                 let mut should_skip: Bool = false
-                match inst {
-                    Alloca(dest, ty) => {
-                        should_skip = is_name_in_byref(byref_names, dest.name)
-                    },
-                    Store(ptr, val) => {
-                        should_skip = is_name_in_byref(byref_names, ptr.name)
-                    },
-                    _ => {}
+                let ik: String = instr_kind(inst)
+                if ik == "alloca" {
+                    should_skip = is_name_in_byref(byref_names, instr_dest(inst).name)
+                }
+                if ik == "store" {
+                    should_skip = is_name_in_byref(byref_names, instr_store_ptr(inst).name)
                 }
                 if !should_skip {
                     s = emit_mir_instruction(s, inst)
@@ -2928,7 +2868,7 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     // Forward-declare all functions (for mutual recursion)
     let mut dix: Int = 0
     let nmodfns: Int = len(module.functions)
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if dix < nmodfns {
             let f_decl: MIRFunction = module.functions[dix]
             let ret_ty: String = resolve_mir_type(f_decl.return_type)
@@ -2964,7 +2904,7 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     // Emit function bodies
     let total_fns: Int = len(module.functions)
     let mut fi: Int = 0
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if fi < total_fns {
             let f_emit: MIRFunction = module.functions[fi]
             if len(f_emit.blocks) > 0 {
