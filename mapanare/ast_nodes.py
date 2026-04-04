@@ -373,7 +373,13 @@ class ReturnStmt(Stmt):
 
 @dataclass
 class BreakStmt(Stmt):
-    """Break statement: `break`."""
+    """Break statement: `break` / `sal`."""
+
+    pass
+
+
+class ContinueStmt(Stmt):
+    """Continue statement: `continue` / `sigue`."""
 
     pass
 
@@ -384,6 +390,13 @@ class AssertStmt(Stmt):
 
     condition: Expr = field(default_factory=Expr)
     message: Expr | None = None
+
+
+@dataclass
+class PrintStmt(Stmt):
+    """Print statement: `di expr`."""
+
+    expr: Expr = field(default_factory=Expr)
 
 
 @dataclass

@@ -1,6 +1,6 @@
 fn main() {
-    let mut sum: Int = 0
-    for i in 0..10 {
+    pon mut sum: Int = 0
+    cada i en 0..10 {
         sum = sum + i
     }
     print(str(sum))

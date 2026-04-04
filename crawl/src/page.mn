@@ -7,7 +7,7 @@
 // Page struct — represents a fetched web page
 // ---------------------------------------------------------------------------
 
-pub struct Page {
+pub tipo Page {
     url: String,
     status: Int,
     headers: Map<String, String>,
@@ -20,7 +20,7 @@ pub struct Page {
 
 /// Construct a Page with all fields.
 pub fn new_page(u: String, st: Int, hdrs: Map<String, String>, b: String, t: String, lnks: List<String>, d: Int, ms: Int) -> Page {
-    return new Page {
+    da new Page {
         url: u,
         status: st,
         headers: hdrs,
@@ -34,7 +34,7 @@ pub fn new_page(u: String, st: Int, hdrs: Map<String, String>, b: String, t: Str
 
 /// Construct a minimal Page (no headers, no links).
 fn new_simple_page(u: String, st: Int, b: String, d: Int) -> Page {
-    return new Page {
+    da new Page {
         url: u,
         status: st,
         headers: #{},
@@ -50,39 +50,39 @@ fn new_simple_page(u: String, st: Int, b: String, d: Int) -> Page {
 // CrawlError enum — all failure modes
 // ---------------------------------------------------------------------------
 
-pub enum CrawlError {
-    FetchFailed(String),
-    ParseFailed(String),
-    RobotsBlocked(String),
-    Timeout(String),
-    MaxDepth(String)
+pub tipo CrawlError {
+    | FetchFailed(String)
+    | ParseFailed(String)
+    | RobotsBlocked(String)
+    | Timeout(String)
+    | MaxDepth(String)
 }
 
 fn new_fetch_error(msg: String) -> CrawlError {
-    return FetchFailed(msg)
+    da FetchFailed(msg)
 }
 
 fn new_parse_error(msg: String) -> CrawlError {
-    return ParseFailed(msg)
+    da ParseFailed(msg)
 }
 
 fn new_robots_error(msg: String) -> CrawlError {
-    return RobotsBlocked(msg)
+    da RobotsBlocked(msg)
 }
 
 fn new_timeout_error(msg: String) -> CrawlError {
-    return Timeout(msg)
+    da Timeout(msg)
 }
 
 fn new_max_depth_error(msg: String) -> CrawlError {
-    return MaxDepth(msg)
+    da MaxDepth(msg)
 }
 
 // ---------------------------------------------------------------------------
 // CrawlStats struct — aggregate crawl metrics
 // ---------------------------------------------------------------------------
 
-pub struct CrawlStats {
+pub tipo CrawlStats {
     pages_crawled: Int,
     pages_failed: Int,
     pages_skipped: Int,
@@ -92,7 +92,7 @@ pub struct CrawlStats {
 
 /// Construct an empty CrawlStats.
 pub fn empty_stats() -> CrawlStats {
-    return new CrawlStats {
+    da new CrawlStats {
         pages_crawled: 0,
         pages_failed: 0,
         pages_skipped: 0,
@@ -103,7 +103,7 @@ pub fn empty_stats() -> CrawlStats {
 
 /// Increment crawled count and add bytes.
 pub fn stats_add_success(s: CrawlStats, bytes: Int) -> CrawlStats {
-    return new CrawlStats {
+    da new CrawlStats {
         pages_crawled: s.pages_crawled + 1,
         pages_failed: s.pages_failed,
         pages_skipped: s.pages_skipped,
@@ -114,7 +114,7 @@ pub fn stats_add_success(s: CrawlStats, bytes: Int) -> CrawlStats {
 
 /// Increment failed count.
 pub fn stats_add_failure(s: CrawlStats) -> CrawlStats {
-    return new CrawlStats {
+    da new CrawlStats {
         pages_crawled: s.pages_crawled,
         pages_failed: s.pages_failed + 1,
         pages_skipped: s.pages_skipped,
@@ -125,7 +125,7 @@ pub fn stats_add_failure(s: CrawlStats) -> CrawlStats {
 
 /// Increment skipped count.
 pub fn stats_add_skip(s: CrawlStats) -> CrawlStats {
-    return new CrawlStats {
+    da new CrawlStats {
         pages_crawled: s.pages_crawled,
         pages_failed: s.pages_failed,
         pages_skipped: s.pages_skipped + 1,
@@ -136,7 +136,7 @@ pub fn stats_add_skip(s: CrawlStats) -> CrawlStats {
 
 /// Set the total elapsed time.
 pub fn stats_set_elapsed(s: CrawlStats, ms: Int) -> CrawlStats {
-    return new CrawlStats {
+    da new CrawlStats {
         pages_crawled: s.pages_crawled,
         pages_failed: s.pages_failed,
         pages_skipped: s.pages_skipped,

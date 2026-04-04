@@ -8,26 +8,26 @@
 //   - Agent-based background computation
 
 pub fn greet(name: String) -> String {
-    return "Hello from Mapanare, " + name + "!"
+    da "Hello from Mapanare, " + name + "!"
 }
 
-agent Counter {
-    input increment: Int
-    output count: Int
+@Counter {
+    increment -> Int
+    count <- Int
 
-    let mut state: Int = 0
+    pon mut state: Int = 0
 
     fn handle(n: Int) -> Int {
         state = state + n
-        return state
+        da state
     }
 }
 
 pub fn compute_in_background(input: Int) -> Int {
-    let c = spawn Counter()
-    for i in 0..input {
+    pon c = @Counter()
+    cada i en 0..input {
         c.increment <- 1
     }
-    let result = sync c.count
-    return result
+    pon result = sync c.count
+    da result
 }

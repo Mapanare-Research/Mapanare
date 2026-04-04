@@ -6,21 +6,21 @@
 //
 // Immutable data model: all mutations return a new SessionStore/Session.
 
-import crypto
-import net::http::cookie
+usa crypto
+usa net::http::cookie
 
 // ---------------------------------------------------------------------------
 // Core structs
 // ---------------------------------------------------------------------------
 
-pub struct Session {
+pub tipo Session {
     id: String,
     data: Map<String, String>,
     created_at: Int,
     expires_at: Int
 }
 
-pub struct SessionStore {
+pub tipo SessionStore {
     sessions: Map<String, Session>,
     cookie_name: String,
     max_age: Int,
@@ -32,7 +32,7 @@ pub struct SessionStore {
 // ---------------------------------------------------------------------------
 
 fn new_session(id: String, created_at: Int, expires_at: Int) -> Session {
-    return new Session {
+    da new Session {
         id: id,
         data: #{},
         created_at: created_at,
@@ -41,7 +41,7 @@ fn new_session(id: String, created_at: Int, expires_at: Int) -> Session {
 }
 
 pub fn new_session_store(cookie_name: String, max_age: Int) -> SessionStore {
-    return new SessionStore {
+    da new SessionStore {
         sessions: #{},
         cookie_name: cookie_name,
         max_age: max_age,
@@ -54,18 +54,18 @@ pub fn new_session_store(cookie_name: String, max_age: Int) -> SessionStore {
 // ---------------------------------------------------------------------------
 
 pub fn create_session(store: SessionStore) -> SessionStore {
-    let id: String = crypto.random_hex(16)
+    pon id: String = crypto.random_hex(16)
 
     // Use 0 for timestamps — caller provides real time via cleanup_expired
-    let session: Session = new_session(id, 0, store.max_age)
+    pon session: Session = new_session(id, 0, store.max_age)
 
-    let mut sessions: Map<String, Session> = #{}
-    for key in store.sessions {
+    pon mut sessions: Map<String, Session> = #{}
+    cada key en store.sessions {
         sessions[key] = store.sessions[key]
     }
     sessions[id] = session
 
-    return new SessionStore {
+    da new SessionStore {
         sessions: sessions,
         cookie_name: store.cookie_name,
         max_age: store.max_age,
@@ -78,17 +78,17 @@ pub fn create_session(store: SessionStore) -> SessionStore {
 // ---------------------------------------------------------------------------
 
 pub fn create_session_at(store: SessionStore, now: Int) -> SessionStore {
-    let id: String = crypto.random_hex(16)
-    let expires: Int = now + store.max_age
-    let session: Session = new_session(id, now, expires)
+    pon id: String = crypto.random_hex(16)
+    pon expires: Int = now + store.max_age
+    pon session: Session = new_session(id, now, expires)
 
-    let mut sessions: Map<String, Session> = #{}
-    for key in store.sessions {
+    pon mut sessions: Map<String, Session> = #{}
+    cada key en store.sessions {
         sessions[key] = store.sessions[key]
     }
     sessions[id] = session
 
-    return new SessionStore {
+    da new SessionStore {
         sessions: sessions,
         cookie_name: store.cookie_name,
         max_age: store.max_age,
@@ -101,17 +101,17 @@ pub fn create_session_at(store: SessionStore, now: Int) -> SessionStore {
 // ---------------------------------------------------------------------------
 
 pub fn get_session(store: SessionStore, id: String) -> Option<Session> {
-    let mut found: Bool = false
-    for key in store.sessions {
-        if key == id {
+    pon mut found: Bool = false
+    cada key en store.sessions {
+        si key == id {
             found = true
         }
     }
-    if found == false {
-        return none
+    si found == false {
+        da nada
     }
-    let session: Session = store.sessions[id]
-    return Some(session)
+    pon session: Session = store.sessions[id]
+    da Some(session)
 }
 
 // ---------------------------------------------------------------------------
@@ -119,12 +119,12 @@ pub fn get_session(store: SessionStore, id: String) -> Option<Session> {
 // ---------------------------------------------------------------------------
 
 pub fn set_value(session: Session, key: String, value: String) -> Session {
-    let mut data: Map<String, String> = #{}
-    for k in session.data {
+    pon mut data: Map<String, String> = #{}
+    cada k en session.data {
         data[k] = session.data[k]
     }
     data[key] = value
-    return new Session {
+    da new Session {
         id: session.id,
         data: data,
         created_at: session.created_at,
@@ -137,17 +137,17 @@ pub fn set_value(session: Session, key: String, value: String) -> Session {
 // ---------------------------------------------------------------------------
 
 pub fn get_value(session: Session, key: String) -> Option<String> {
-    let mut found: Bool = false
-    for k in session.data {
-        if k == key {
+    pon mut found: Bool = false
+    cada k en session.data {
+        si k == key {
             found = true
         }
     }
-    if found == false {
-        return none
+    si found == false {
+        da nada
     }
-    let val: String = session.data[key]
-    return Some(val)
+    pon val: String = session.data[key]
+    da Some(val)
 }
 
 // ---------------------------------------------------------------------------
@@ -155,13 +155,13 @@ pub fn get_value(session: Session, key: String) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 pub fn destroy_session(store: SessionStore, id: String) -> SessionStore {
-    let mut sessions: Map<String, Session> = #{}
-    for key in store.sessions {
-        if key != id {
+    pon mut sessions: Map<String, Session> = #{}
+    cada key en store.sessions {
+        si key != id {
             sessions[key] = store.sessions[key]
         }
     }
-    return new SessionStore {
+    da new SessionStore {
         sessions: sessions,
         cookie_name: store.cookie_name,
         max_age: store.max_age,
@@ -174,7 +174,7 @@ pub fn destroy_session(store: SessionStore, id: String) -> SessionStore {
 // ---------------------------------------------------------------------------
 
 pub fn last_session_id(store: SessionStore) -> String {
-    return store.last_id
+    da store.last_id
 }
 
 // ---------------------------------------------------------------------------
@@ -182,18 +182,18 @@ pub fn last_session_id(store: SessionStore) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn cleanup_expired(store: SessionStore, now: Int) -> SessionStore {
-    let mut sessions: Map<String, Session> = #{}
-    for key in store.sessions {
-        let session: Session = store.sessions[key]
-        if session.expires_at > now {
+    pon mut sessions: Map<String, Session> = #{}
+    cada key en store.sessions {
+        pon session: Session = store.sessions[key]
+        si session.expires_at > now {
             sessions[key] = session
         }
         // expires_at == 0 means no explicit expiration (max_age-based)
-        if session.expires_at == 0 {
+        si session.expires_at == 0 {
             sessions[key] = session
         }
     }
-    return new SessionStore {
+    da new SessionStore {
         sessions: sessions,
         cookie_name: store.cookie_name,
         max_age: store.max_age,
@@ -206,11 +206,11 @@ pub fn cleanup_expired(store: SessionStore, now: Int) -> SessionStore {
 // ---------------------------------------------------------------------------
 
 pub fn session_cookie(store: SessionStore, session_id: String) -> String {
-    let c: cookie.Cookie = cookie.new_cookie(store.cookie_name, session_id)
-    let c2: cookie.Cookie = cookie.cookie_with_max_age(c, store.max_age)
-    let c3: cookie.Cookie = cookie.cookie_with_http_only(c2, true)
-    let c4: cookie.Cookie = cookie.cookie_with_same_site(c3, "Lax")
-    return cookie.set_cookie_header(c4)
+    pon c: cookie.Cookie = cookie.new_cookie(store.cookie_name, session_id)
+    pon c2: cookie.Cookie = cookie.cookie_with_max_age(c, store.max_age)
+    pon c3: cookie.Cookie = cookie.cookie_with_http_only(c2, true)
+    pon c4: cookie.Cookie = cookie.cookie_with_same_site(c3, "Lax")
+    da cookie.set_cookie_header(c4)
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +218,6 @@ pub fn session_cookie(store: SessionStore, session_id: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn session_id_from_cookies(store: SessionStore, cookie_header: String) -> Option<String> {
-    let cookies: List<cookie.Cookie> = cookie.parse_cookies(cookie_header)
-    return cookie.find_cookie(cookies, store.cookie_name)
+    pon cookies: List<cookie.Cookie> = cookie.parse_cookies(cookie_header)
+    da cookie.find_cookie(cookies, store.cookie_name)
 }

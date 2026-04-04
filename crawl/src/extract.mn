@@ -4,7 +4,7 @@
 // lexbor HTML parser when available, with a fallback string scanner for
 // environments without the native library.
 
-import crawl::src::url
+usa crawl::src::url
 
 // ---------------------------------------------------------------------------
 // Extern C runtime functions — lexbor HTML parser bindings
@@ -25,7 +25,7 @@ extern "C" fn __mn_html_collection_free(coll: Int)
 // Element struct — wraps a native HTML element handle
 // ---------------------------------------------------------------------------
 
-pub struct Element {
+pub tipo Element {
     handle: Int,
     doc_handle: Int
 }
@@ -37,31 +37,31 @@ pub struct Element {
 /// Extract all links from HTML, resolving relative URLs against base_url.
 /// Tries the native lexbor parser first; falls back to string scanning.
 pub fn extract_links(html: String, base_url: String) -> List<String> {
-    let doc: Int = __mn_html_parse(html)
-    if doc == 0 {
+    pon doc: Int = __mn_html_parse(html)
+    si doc == 0 {
         // Native parser unavailable or failed — use fallback
-        return extract_links_fallback(html, base_url)
+        da extract_links_fallback(html, base_url)
     }
 
-    let coll: Int = __mn_html_query(doc, "a")
-    if coll == 0 {
+    pon coll: Int = __mn_html_query(doc, "a")
+    si coll == 0 {
         __mn_html_free(doc)
-        return extract_links_fallback(html, base_url)
+        da extract_links_fallback(html, base_url)
     }
 
-    let count: Int = __mn_html_collection_len(coll)
-    let mut links: List<String> = []
-    let mut i: Int = 0
+    pon count: Int = __mn_html_collection_len(coll)
+    pon mut links: List<String> = []
+    pon mut i: Int = 0
 
-    while i < count {
-        let elem: Int = __mn_html_collection_get(coll, i)
-        if elem != 0 {
-            let href: String = __mn_html_element_attr(elem, "href")
-            if len(href) > 0 {
+    mien i < count {
+        pon elem: Int = __mn_html_collection_get(coll, i)
+        si elem != 0 {
+            pon href: String = __mn_html_element_attr(elem, "href")
+            si len(href) > 0 {
                 // Skip javascript:, mailto:, tel:, data: links
-                let skip: Bool = should_skip_href(href)
-                if skip == false {
-                    let resolved: String = url.normalize_url(base_url, href)
+                pon skip: Bool = should_skip_href(href)
+                si skip == false {
+                    pon resolved: String = url.normalize_url(base_url, href)
                     links = links + [resolved]
                 }
             }
@@ -71,70 +71,70 @@ pub fn extract_links(html: String, base_url: String) -> List<String> {
 
     __mn_html_collection_free(coll)
     __mn_html_free(doc)
-    return links
+    da links
 }
 
 /// Check if an href should be skipped (non-HTTP schemes).
 fn should_skip_href(href: String) -> Bool {
-    let hlen: Int = len(href)
-    if hlen == 0 { return true }
+    pon hlen: Int = len(href)
+    si hlen == 0 { da true }
 
     // Check for javascript:
-    if hlen > 10 {
-        let mut prefix: String = ""
-        let mut i: Int = 0
-        while i < 11 {
-            if i < hlen {
+    si hlen > 10 {
+        pon mut prefix: String = ""
+        pon mut i: Int = 0
+        mien i < 11 {
+            si i < hlen {
                 prefix = prefix + href.char_at(i)
             }
             i = i + 1
         }
-        if prefix == "javascript:" { return true }
+        si prefix == "javascript:" { da true }
     }
 
     // Check for mailto:
-    if hlen > 6 {
-        let mut prefix2: String = ""
-        let mut j: Int = 0
-        while j < 7 {
-            if j < hlen {
+    si hlen > 6 {
+        pon mut prefix2: String = ""
+        pon mut j: Int = 0
+        mien j < 7 {
+            si j < hlen {
                 prefix2 = prefix2 + href.char_at(j)
             }
             j = j + 1
         }
-        if prefix2 == "mailto:" { return true }
+        si prefix2 == "mailto:" { da true }
     }
 
     // Check for tel:
-    if hlen > 3 {
-        let mut prefix3: String = ""
-        let mut k: Int = 0
-        while k < 4 {
-            if k < hlen {
+    si hlen > 3 {
+        pon mut prefix3: String = ""
+        pon mut k: Int = 0
+        mien k < 4 {
+            si k < hlen {
                 prefix3 = prefix3 + href.char_at(k)
             }
             k = k + 1
         }
-        if prefix3 == "tel:" { return true }
+        si prefix3 == "tel:" { da true }
     }
 
     // Check for data:
-    if hlen > 4 {
-        let mut prefix4: String = ""
-        let mut m: Int = 0
-        while m < 5 {
-            if m < hlen {
+    si hlen > 4 {
+        pon mut prefix4: String = ""
+        pon mut m: Int = 0
+        mien m < 5 {
+            si m < hlen {
                 prefix4 = prefix4 + href.char_at(m)
             }
             m = m + 1
         }
-        if prefix4 == "data:" { return true }
+        si prefix4 == "data:" { da true }
     }
 
     // Check for # (fragment-only)
-    if href.char_at(0) == "#" { return true }
+    si href.char_at(0) == "#" { da true }
 
-    return false
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -144,129 +144,129 @@ fn should_skip_href(href: String) -> Bool {
 /// Fallback link extractor: scans for href="..." patterns in raw HTML.
 /// Used when the native lexbor parser is unavailable.
 fn extract_links_fallback(html: String, base_url: String) -> List<String> {
-    let slen: Int = len(html)
-    let mut links: List<String> = []
-    let mut pos: Int = 0
+    pon slen: Int = len(html)
+    pon mut links: List<String> = []
+    pon mut pos: Int = 0
 
-    while pos < slen {
+    mien pos < slen {
         // Look for href=" or href='
-        let found_pos: Int = find_href(html, pos)
-        if found_pos < 0 { break }
+        pon found_pos: Int = find_href(html, pos)
+        si found_pos < 0 { sal }
 
         pos = found_pos
         // pos now points to the character after href=
-        if pos >= slen { break }
+        si pos >= slen { sal }
 
-        let quote: String = html.char_at(pos)
-        let mut end_quote: String = "\""
-        if quote == "'" {
+        pon quote: String = html.char_at(pos)
+        pon mut end_quote: String = "\""
+        si quote == "'" {
             end_quote = "'"
             pos = pos + 1
-        } else { if quote == "\"" {
+        } sino { si quote == "\"" {
             pos = pos + 1
-        } else {
+        } sino {
             // No quote — skip to next whitespace or >
-            let mut href_val: String = ""
-            while pos < slen {
-                let ch: String = html.char_at(pos)
-                if ch == " " { break }
-                if ch == ">" { break }
-                if ch == "\t" { break }
-                if ch == "\n" { break }
+            pon mut href_val: String = ""
+            mien pos < slen {
+                pon ch: String = html.char_at(pos)
+                si ch == " " { sal }
+                si ch == ">" { sal }
+                si ch == "\t" { sal }
+                si ch == "\n" { sal }
                 href_val = href_val + ch
                 pos = pos + 1
             }
-            if len(href_val) > 0 {
-                let skip: Bool = should_skip_href(href_val)
-                if skip == false {
-                    let resolved: String = url.normalize_url(base_url, href_val)
+            si len(href_val) > 0 {
+                pon skip: Bool = should_skip_href(href_val)
+                si skip == false {
+                    pon resolved: String = url.normalize_url(base_url, href_val)
                     links = links + [resolved]
                 }
             }
             pos = pos + 1
             // Continue loop — skip the rest of the if/else chain
-            let mut cont: Int = 0
+            pon mut cont: Int = 0
         } }
 
         // Only execute if we had a proper quote
-        if quote == "\"" {
-            let mut href_val: String = ""
-            while pos < slen {
-                let ch: String = html.char_at(pos)
-                if ch == "\"" { break }
+        si quote == "\"" {
+            pon mut href_val: String = ""
+            mien pos < slen {
+                pon ch: String = html.char_at(pos)
+                si ch == "\"" { sal }
                 href_val = href_val + ch
                 pos = pos + 1
             }
             pos = pos + 1
-            if len(href_val) > 0 {
-                let skip: Bool = should_skip_href(href_val)
-                if skip == false {
-                    let resolved: String = url.normalize_url(base_url, href_val)
+            si len(href_val) > 0 {
+                pon skip: Bool = should_skip_href(href_val)
+                si skip == false {
+                    pon resolved: String = url.normalize_url(base_url, href_val)
                     links = links + [resolved]
                 }
             }
-        } else { if quote == "'" {
-            let mut href_val: String = ""
-            while pos < slen {
-                let ch: String = html.char_at(pos)
-                if ch == "'" { break }
+        } sino { si quote == "'" {
+            pon mut href_val: String = ""
+            mien pos < slen {
+                pon ch: String = html.char_at(pos)
+                si ch == "'" { sal }
                 href_val = href_val + ch
                 pos = pos + 1
             }
             pos = pos + 1
-            if len(href_val) > 0 {
-                let skip: Bool = should_skip_href(href_val)
-                if skip == false {
-                    let resolved: String = url.normalize_url(base_url, href_val)
+            si len(href_val) > 0 {
+                pon skip: Bool = should_skip_href(href_val)
+                si skip == false {
+                    pon resolved: String = url.normalize_url(base_url, href_val)
                     links = links + [resolved]
                 }
             }
         } }
     }
 
-    return links
+    da links
 }
 
 /// Find the next occurrence of `href=` (case-insensitive) starting at pos.
 /// Returns the position right after the '=' character, or -1 if not found.
 fn find_href(html: String, start: Int) -> Int {
-    let slen: Int = len(html)
-    let mut pos: Int = start
+    pon slen: Int = len(html)
+    pon mut pos: Int = start
 
-    while pos < slen {
-        let ch: String = html.char_at(pos)
+    mien pos < slen {
+        pon ch: String = html.char_at(pos)
         // Look for 'h' or 'H'
-        if ch == "h" {
-            if pos + 5 < slen {
-                if html.char_at(pos + 1) == "r" {
-                    if html.char_at(pos + 2) == "e" {
-                        if html.char_at(pos + 3) == "f" {
-                            if html.char_at(pos + 4) == "=" {
-                                return pos + 5
+        si ch == "h" {
+            si pos + 5 < slen {
+                si html.char_at(pos + 1) == "r" {
+                    si html.char_at(pos + 2) == "e" {
+                        si html.char_at(pos + 3) == "f" {
+                            si html.char_at(pos + 4) == "=" {
+                                da pos + 5
                             }
                         }
                     }
                 }
             }
-        } else { if ch == "H" {
-            if pos + 5 < slen {
-                let c1: String = html.char_at(pos + 1)
-                let c2: String = html.char_at(pos + 2)
-                let c3: String = html.char_at(pos + 3)
-                let c4: String = html.char_at(pos + 4)
-                if c1 == "R" {
-                    if c2 == "E" {
-                        if c3 == "F" {
-                            if c4 == "=" {
-                                return pos + 5
+        } sino { si ch == "H" {
+            si pos + 5 < slen {
+                pon c1: String = html.char_at(pos + 1)
+                pon c2: String = html.char_at(pos + 2)
+                pon c3: String = html.char_at(pos + 3)
+                pon c4: String = html.char_at(pos + 4)
+                si c1 == "R" {
+                    si c2 == "E" {
+                        si c3 == "F" {
+                            si c4 == "=" {
+                                da pos + 5
                             }
                         }
                     }
-                } else { if c1 == "r" {
-                    if c2 == "e" {
-                        if c3 == "f" {
-                            if c4 == "=" {
-                                return pos + 5
+                } sino { si c1 == "r" {
+                    si c2 == "e" {
+                        si c3 == "f" {
+                            si c4 == "=" {
+                                da pos + 5
                             }
                         }
                     }
@@ -275,7 +275,7 @@ fn find_href(html: String, start: Int) -> Int {
         } }
         pos = pos + 1
     }
-    return -1
+    da -1
 }
 
 // ---------------------------------------------------------------------------
@@ -284,18 +284,18 @@ fn find_href(html: String, start: Int) -> Int {
 
 /// Extract the content of the <title> tag from HTML.
 pub fn extract_title(html: String) -> String {
-    let doc: Int = __mn_html_parse(html)
-    if doc != 0 {
-        let coll: Int = __mn_html_query(doc, "title")
-        if coll != 0 {
-            let count: Int = __mn_html_collection_len(coll)
-            if count > 0 {
-                let elem: Int = __mn_html_collection_get(coll, 0)
-                if elem != 0 {
-                    let title: String = __mn_html_element_text(elem)
+    pon doc: Int = __mn_html_parse(html)
+    si doc != 0 {
+        pon coll: Int = __mn_html_query(doc, "title")
+        si coll != 0 {
+            pon count: Int = __mn_html_collection_len(coll)
+            si count > 0 {
+                pon elem: Int = __mn_html_collection_get(coll, 0)
+                si elem != 0 {
+                    pon title: String = __mn_html_element_text(elem)
                     __mn_html_collection_free(coll)
                     __mn_html_free(doc)
-                    return title
+                    da title
                 }
             }
             __mn_html_collection_free(coll)
@@ -304,43 +304,43 @@ pub fn extract_title(html: String) -> String {
     }
 
     // Fallback: scan for <title>...</title>
-    return extract_title_fallback(html)
+    da extract_title_fallback(html)
 }
 
 /// Fallback title extraction: scan for <title>...</title> in raw HTML.
 fn extract_title_fallback(html: String) -> String {
-    let slen: Int = len(html)
-    let mut pos: Int = 0
+    pon slen: Int = len(html)
+    pon mut pos: Int = 0
 
-    while pos < slen {
-        let ch: String = html.char_at(pos)
-        if ch == "<" {
-            if pos + 6 < slen {
+    mien pos < slen {
+        pon ch: String = html.char_at(pos)
+        si ch == "<" {
+            si pos + 6 < slen {
                 // Check for <title> (case-insensitive first letter)
-                let c1: String = html.char_at(pos + 1)
-                if c1 == "t" {
-                    if html.char_at(pos + 2) == "i" {
-                        if html.char_at(pos + 3) == "t" {
-                            if html.char_at(pos + 4) == "l" {
-                                if html.char_at(pos + 5) == "e" {
-                                    if html.char_at(pos + 6) == ">" {
+                pon c1: String = html.char_at(pos + 1)
+                si c1 == "t" {
+                    si html.char_at(pos + 2) == "i" {
+                        si html.char_at(pos + 3) == "t" {
+                            si html.char_at(pos + 4) == "l" {
+                                si html.char_at(pos + 5) == "e" {
+                                    si html.char_at(pos + 6) == ">" {
                                         // Found <title> — extract until </title>
-                                        let start: Int = pos + 7
-                                        let mut content: String = ""
-                                        let mut ci: Int = start
-                                        while ci < slen {
-                                            let tch: String = html.char_at(ci)
-                                            if tch == "<" {
+                                        pon start: Int = pos + 7
+                                        pon mut content: String = ""
+                                        pon mut ci: Int = start
+                                        mien ci < slen {
+                                            pon tch: String = html.char_at(ci)
+                                            si tch == "<" {
                                                 // Check for </title>
-                                                if ci + 7 < slen {
-                                                    if html.char_at(ci + 1) == "/" {
-                                                        if html.char_at(ci + 2) == "t" {
-                                                            if html.char_at(ci + 3) == "i" {
-                                                                if html.char_at(ci + 4) == "t" {
-                                                                    if html.char_at(ci + 5) == "l" {
-                                                                        if html.char_at(ci + 6) == "e" {
-                                                                            if html.char_at(ci + 7) == ">" {
-                                                                                return content
+                                                si ci + 7 < slen {
+                                                    si html.char_at(ci + 1) == "/" {
+                                                        si html.char_at(ci + 2) == "t" {
+                                                            si html.char_at(ci + 3) == "i" {
+                                                                si html.char_at(ci + 4) == "t" {
+                                                                    si html.char_at(ci + 5) == "l" {
+                                                                        si html.char_at(ci + 6) == "e" {
+                                                                            si html.char_at(ci + 7) == ">" {
+                                                                                da content
                                                                             }
                                                                         }
                                                                     }
@@ -353,28 +353,28 @@ fn extract_title_fallback(html: String) -> String {
                                             content = content + tch
                                             ci = ci + 1
                                         }
-                                        return content
+                                        da content
                                     }
                                 }
                             }
                         }
                     }
-                } else { if c1 == "T" {
-                    if html.char_at(pos + 2) == "I" {
-                        if html.char_at(pos + 3) == "T" {
-                            if html.char_at(pos + 4) == "L" {
-                                if html.char_at(pos + 5) == "E" {
-                                    if html.char_at(pos + 6) == ">" {
-                                        let start: Int = pos + 7
-                                        let mut content: String = ""
-                                        let mut ci: Int = start
-                                        while ci < slen {
-                                            let tch: String = html.char_at(ci)
-                                            if tch == "<" { break }
+                } sino { si c1 == "T" {
+                    si html.char_at(pos + 2) == "I" {
+                        si html.char_at(pos + 3) == "T" {
+                            si html.char_at(pos + 4) == "L" {
+                                si html.char_at(pos + 5) == "E" {
+                                    si html.char_at(pos + 6) == ">" {
+                                        pon start: Int = pos + 7
+                                        pon mut content: String = ""
+                                        pon mut ci: Int = start
+                                        mien ci < slen {
+                                            pon tch: String = html.char_at(ci)
+                                            si tch == "<" { sal }
                                             content = content + tch
                                             ci = ci + 1
                                         }
-                                        return content
+                                        da content
                                     }
                                 }
                             }
@@ -386,7 +386,7 @@ fn extract_title_fallback(html: String) -> String {
         pos = pos + 1
     }
 
-    return ""
+    da ""
 }
 
 // ---------------------------------------------------------------------------
@@ -395,23 +395,23 @@ fn extract_title_fallback(html: String) -> String {
 
 /// Query HTML with a CSS selector, returning a list of Element handles.
 pub fn select(html: String, selector: String) -> List<Element> {
-    let mut elements: List<Element> = []
-    let doc: Int = __mn_html_parse(html)
-    if doc == 0 {
-        return elements
+    pon mut elements: List<Element> = []
+    pon doc: Int = __mn_html_parse(html)
+    si doc == 0 {
+        da elements
     }
 
-    let coll: Int = __mn_html_query(doc, selector)
-    if coll == 0 {
+    pon coll: Int = __mn_html_query(doc, selector)
+    si coll == 0 {
         __mn_html_free(doc)
-        return elements
+        da elements
     }
 
-    let count: Int = __mn_html_collection_len(coll)
-    let mut i: Int = 0
-    while i < count {
-        let elem_handle: Int = __mn_html_collection_get(coll, i)
-        if elem_handle != 0 {
+    pon count: Int = __mn_html_collection_len(coll)
+    pon mut i: Int = 0
+    mien i < count {
+        pon elem_handle: Int = __mn_html_collection_get(coll, i)
+        si elem_handle != 0 {
             elements = elements + [new Element { handle: elem_handle, doc_handle: doc }]
         }
         i = i + 1
@@ -420,25 +420,25 @@ pub fn select(html: String, selector: String) -> List<Element> {
     __mn_html_collection_free(coll)
     // NOTE: doc handle stays alive as long as elements reference it.
     // Caller should call free_elements() when done.
-    return elements
+    da elements
 }
 
 /// Get the inner text of an Element.
 pub fn element_text(elem: Element) -> String {
-    return __mn_html_element_text(elem.handle)
+    da __mn_html_element_text(elem.handle)
 }
 
 /// Get an attribute value from an Element.
 pub fn element_attr(elem: Element, name: String) -> String {
-    return __mn_html_element_attr(elem.handle, name)
+    da __mn_html_element_attr(elem.handle, name)
 }
 
 /// Get the tag name of an Element.
 pub fn element_tag(elem: Element) -> String {
-    return __mn_html_element_tag(elem.handle)
+    da __mn_html_element_tag(elem.handle)
 }
 
 /// Get the inner HTML of an Element.
 pub fn element_html(elem: Element) -> String {
-    return __mn_html_element_html(elem.handle)
+    da __mn_html_element_html(elem.handle)
 }

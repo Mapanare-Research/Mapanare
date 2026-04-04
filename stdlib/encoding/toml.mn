@@ -8,39 +8,39 @@
 // arrays, inline tables, standard tables [x], array-of-tables [[x]],
 // dotted keys, bare keys, quoted keys, comments.
 
-import text::string_utils
+usa text::string_utils
 
 // ---------------------------------------------------------------------------
 // Core Types
 // ---------------------------------------------------------------------------
 
-pub struct TomlError {
+pub tipo TomlError {
     message: String,
     line: Int,
     col: Int
 }
 
-pub enum TomlValue {
-    Str(String),
-    Int(Int),
-    Float(Float),
-    Bool(Bool),
-    DateTime(String),
-    Array(List<TomlValue>),
-    Table(Map<String, TomlValue>)
+pub tipo TomlValue {
+    | Str(String)
+    | Int(Int)
+    | Float(Float)
+    | Bool(Bool)
+    | DateTime(String)
+    | Array(List<TomlValue>)
+    | Table(Map<String, TomlValue>)
 }
 
 // ---------------------------------------------------------------------------
 // Internal parse state structs
 // ---------------------------------------------------------------------------
 
-struct ParseState {
+tipo ParseState {
     pos: Int,
     line: Int,
     col: Int
 }
 
-struct ValueResult {
+tipo ValueResult {
     value: TomlValue,
     pos: Int,
     line: Int,
@@ -49,7 +49,7 @@ struct ValueResult {
     error: TomlError
 }
 
-struct KeyResult {
+tipo KeyResult {
     key: String,
     pos: Int,
     line: Int,
@@ -58,7 +58,7 @@ struct KeyResult {
     error: TomlError
 }
 
-struct DottedKeyResult {
+tipo DottedKeyResult {
     keys: List<String>,
     pos: Int,
     line: Int,
@@ -67,7 +67,7 @@ struct DottedKeyResult {
     error: TomlError
 }
 
-struct StringParseResult {
+tipo StringParseResult {
     value: String,
     pos: Int,
     line: Int,
@@ -81,11 +81,11 @@ struct StringParseResult {
 // ---------------------------------------------------------------------------
 
 fn new_toml_error(message: String, line: Int, col: Int) -> TomlError {
-    return new TomlError { message: message, line: line, col: col }
+    da new TomlError { message: message, line: line, col: col }
 }
 
 fn new_parse_state(pos: Int, line: Int, col: Int) -> ParseState {
-    return new ParseState { pos: pos, line: line, col: col }
+    da new ParseState { pos: pos, line: line, col: col }
 }
 
 // ---------------------------------------------------------------------------
@@ -93,52 +93,52 @@ fn new_parse_state(pos: Int, line: Int, col: Int) -> ParseState {
 // ---------------------------------------------------------------------------
 
 fn is_toml_digit(ch: String) -> Bool {
-    return string_utils.is_digit(ch)
+    da string_utils.is_digit(ch)
 }
 
 fn is_hex(ch: String) -> Bool {
-    return string_utils.is_hex(ch)
+    da string_utils.is_hex(ch)
 }
 
 fn digit_value(ch: String) -> Int {
-    return string_utils.digit_value(ch)
+    da string_utils.digit_value(ch)
 }
 
 fn hex_value(ch: String) -> Int {
-    return string_utils.hex_digit_value_or_zero(ch)
+    da string_utils.hex_digit_value_or_zero(ch)
 }
 
 fn is_octal_digit(ch: String) -> Bool {
-    if ch >= "0" { if ch <= "7" { return true } }
-    return false
+    si ch >= "0" { si ch <= "7" { da true } }
+    da false
 }
 
 fn is_binary_digit(ch: String) -> Bool {
-    if ch == "0" { return true }
-    if ch == "1" { return true }
-    return false
+    si ch == "0" { da true }
+    si ch == "1" { da true }
+    da false
 }
 
 fn is_bare_key_char(ch: String) -> Bool {
     // Bare keys may contain ASCII letters, digits, dashes, underscores
-    if ch >= "a" { if ch <= "z" { return true } }
-    if ch >= "A" { if ch <= "Z" { return true } }
-    if ch >= "0" { if ch <= "9" { return true } }
-    if ch == "-" { return true }
-    if ch == "_" { return true }
-    return false
+    si ch >= "a" { si ch <= "z" { da true } }
+    si ch >= "A" { si ch <= "Z" { da true } }
+    si ch >= "0" { si ch <= "9" { da true } }
+    si ch == "-" { da true }
+    si ch == "_" { da true }
+    da false
 }
 
 fn is_whitespace(ch: String) -> Bool {
-    if ch == " " { return true }
-    if ch == "\t" { return true }
-    return false
+    si ch == " " { da true }
+    si ch == "\t" { da true }
+    da false
 }
 
 fn is_newline(ch: String) -> Bool {
-    if ch == "\n" { return true }
-    if ch == "\r" { return true }
-    return false
+    si ch == "\n" { da true }
+    si ch == "\r" { da true }
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -147,76 +147,76 @@ fn is_newline(ch: String) -> Bool {
 
 fn skip_ws(input: String, pos: Int, line: Int, col: Int) -> ParseState {
     // Skip spaces and tabs only (not newlines)
-    let slen: Int = len(input)
-    let mut p: Int = pos
-    let mut c: Int = col
-    while p < slen {
-        let ch: String = input.char_at(p)
-        if ch == " " { p = p + 1; c = c + 1 } else { if ch == "\t" { p = p + 1; c = c + 1 } else { return new_parse_state(p, line, c) } }
+    pon slen: Int = len(input)
+    pon mut p: Int = pos
+    pon mut c: Int = col
+    mien p < slen {
+        pon ch: String = input.char_at(p)
+        si ch == " " { p = p + 1; c = c + 1 } sino { si ch == "\t" { p = p + 1; c = c + 1 } sino { da new_parse_state(p, line, c) } }
     }
-    return new_parse_state(p, line, c)
+    da new_parse_state(p, line, c)
 }
 
 fn skip_ws_and_comments(input: String, pos: Int, line: Int, col: Int) -> ParseState {
     // Skip spaces, tabs, and # comments to end of line (but not newlines themselves)
-    let slen: Int = len(input)
-    let mut p: Int = pos
-    let mut ln: Int = line
-    let mut c: Int = col
-    while p < slen {
-        let ch: String = input.char_at(p)
-        if ch == " " { p = p + 1; c = c + 1 } else { if ch == "\t" { p = p + 1; c = c + 1 } else { if ch == "#" {
+    pon slen: Int = len(input)
+    pon mut p: Int = pos
+    pon mut ln: Int = line
+    pon mut c: Int = col
+    mien p < slen {
+        pon ch: String = input.char_at(p)
+        si ch == " " { p = p + 1; c = c + 1 } sino { si ch == "\t" { p = p + 1; c = c + 1 } sino { si ch == "#" {
             // Skip to end of line
-            while p < slen {
-                let cc: String = input.char_at(p)
-                if cc == "\n" { break }
-                if cc == "\r" { break }
+            mien p < slen {
+                pon cc: String = input.char_at(p)
+                si cc == "\n" { sal }
+                si cc == "\r" { sal }
                 p = p + 1
                 c = c + 1
             }
-        } else {
-            return new_parse_state(p, ln, c)
+        } sino {
+            da new_parse_state(p, ln, c)
         } } }
     }
-    return new_parse_state(p, ln, c)
+    da new_parse_state(p, ln, c)
 }
 
 fn skip_ws_comments_newlines(input: String, pos: Int, line: Int, col: Int) -> ParseState {
     // Skip whitespace, comments, and newlines
-    let slen: Int = len(input)
-    let mut p: Int = pos
-    let mut ln: Int = line
-    let mut c: Int = col
-    while p < slen {
-        let ch: String = input.char_at(p)
-        if ch == " " { p = p + 1; c = c + 1 } else { if ch == "\t" { p = p + 1; c = c + 1 } else { if ch == "\n" { p = p + 1; ln = ln + 1; c = 1 } else { if ch == "\r" {
+    pon slen: Int = len(input)
+    pon mut p: Int = pos
+    pon mut ln: Int = line
+    pon mut c: Int = col
+    mien p < slen {
+        pon ch: String = input.char_at(p)
+        si ch == " " { p = p + 1; c = c + 1 } sino { si ch == "\t" { p = p + 1; c = c + 1 } sino { si ch == "\n" { p = p + 1; ln = ln + 1; c = 1 } sino { si ch == "\r" {
             p = p + 1
-            if p < slen {
-                if input.char_at(p) == "\n" { p = p + 1 }
+            si p < slen {
+                si input.char_at(p) == "\n" { p = p + 1 }
             }
             ln = ln + 1
             c = 1
-        } else { if ch == "#" {
+        } sino { si ch == "#" {
             // Skip to end of line
-            while p < slen {
-                let cc: String = input.char_at(p)
-                if cc == "\n" { break }
-                if cc == "\r" { break }
+            mien p < slen {
+                pon cc: String = input.char_at(p)
+                si cc == "\n" { sal }
+                si cc == "\r" { sal }
                 p = p + 1
                 c = c + 1
             }
-        } else {
-            return new_parse_state(p, ln, c)
+        } sino {
+            da new_parse_state(p, ln, c)
         } } } } }
     }
-    return new_parse_state(p, ln, c)
+    da new_parse_state(p, ln, c)
 }
 
 // ---------------------------------------------------------------------------
 // Escape sequence handler for basic strings
 // ---------------------------------------------------------------------------
 
-struct EscapeResult {
+tipo EscapeResult {
     value: String,
     advance: Int,
     ok: Bool,
@@ -225,53 +225,53 @@ struct EscapeResult {
 
 fn handle_toml_escape(input: String, pos: Int, slen: Int) -> EscapeResult {
     // pos points to the character AFTER the backslash
-    if pos >= slen {
-        return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Unexpected end of input in escape" }
+    si pos >= slen {
+        da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Unexpected end of input en escape" }
     }
-    let esc: String = input.char_at(pos)
-    if esc == "\"" { return new EscapeResult { value: "\"", advance: 1, ok: true, error_msg: "" } }
-    if esc == "\\" { return new EscapeResult { value: "\\", advance: 1, ok: true, error_msg: "" } }
-    if esc == "b" { return new EscapeResult { value: "", advance: 1, ok: true, error_msg: "" } }
-    if esc == "f" { return new EscapeResult { value: "", advance: 1, ok: true, error_msg: "" } }
-    if esc == "n" { return new EscapeResult { value: "\n", advance: 1, ok: true, error_msg: "" } }
-    if esc == "r" { return new EscapeResult { value: "\r", advance: 1, ok: true, error_msg: "" } }
-    if esc == "t" { return new EscapeResult { value: "\t", advance: 1, ok: true, error_msg: "" } }
-    if esc == "u" {
+    pon esc: String = input.char_at(pos)
+    si esc == "\"" { da new EscapeResult { value: "\"", advance: 1, ok: true, error_msg: "" } }
+    si esc == "\\" { da new EscapeResult { value: "\\", advance: 1, ok: true, error_msg: "" } }
+    si esc == "b" { da new EscapeResult { value: "", advance: 1, ok: true, error_msg: "" } }
+    si esc == "f" { da new EscapeResult { value: "", advance: 1, ok: true, error_msg: "" } }
+    si esc == "n" { da new EscapeResult { value: "\n", advance: 1, ok: true, error_msg: "" } }
+    si esc == "r" { da new EscapeResult { value: "\r", advance: 1, ok: true, error_msg: "" } }
+    si esc == "t" { da new EscapeResult { value: "\t", advance: 1, ok: true, error_msg: "" } }
+    si esc == "u" {
         // \uXXXX — 4 hex digits
-        if pos + 4 >= slen {
-            return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Incomplete \\u escape" }
+        si pos + 4 >= slen {
+            da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Incomplete \\u escape" }
         }
-        let h0: String = input.char_at(pos + 1)
-        let h1: String = input.char_at(pos + 2)
-        let h2: String = input.char_at(pos + 3)
-        let h3: String = input.char_at(pos + 4)
-        if is_hex(h0) == false { return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit in \\u escape" } }
-        if is_hex(h1) == false { return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit in \\u escape" } }
-        if is_hex(h2) == false { return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit in \\u escape" } }
-        if is_hex(h3) == false { return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit in \\u escape" } }
-        let codepoint: Int = hex_value(h0) * 4096 + hex_value(h1) * 256 + hex_value(h2) * 16 + hex_value(h3)
-        if codepoint < 128 {
-            return new EscapeResult { value: str(codepoint), advance: 5, ok: true, error_msg: "" }
-        } else {
-            return new EscapeResult { value: "?", advance: 5, ok: true, error_msg: "" }
+        pon h0: String = input.char_at(pos + 1)
+        pon h1: String = input.char_at(pos + 2)
+        pon h2: String = input.char_at(pos + 3)
+        pon h3: String = input.char_at(pos + 4)
+        si is_hex(h0) == false { da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit en \\u escape" } }
+        si is_hex(h1) == false { da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit en \\u escape" } }
+        si is_hex(h2) == false { da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit en \\u escape" } }
+        si is_hex(h3) == false { da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit en \\u escape" } }
+        pon codepoint: Int = hex_value(h0) * 4096 + hex_value(h1) * 256 + hex_value(h2) * 16 + hex_value(h3)
+        si codepoint < 128 {
+            da new EscapeResult { value: str(codepoint), advance: 5, ok: true, error_msg: "" }
+        } sino {
+            da new EscapeResult { value: "?", advance: 5, ok: true, error_msg: "" }
         }
     }
-    if esc == "U" {
+    si esc == "U" {
         // \UXXXXXXXX — 8 hex digits
-        if pos + 8 >= slen {
-            return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Incomplete \\U escape" }
+        si pos + 8 >= slen {
+            da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Incomplete \\U escape" }
         }
-        let mut valid: Bool = true
-        let mut i: Int = 1
-        while i <= 8 {
-            if is_hex(input.char_at(pos + i)) == false { valid = false }
+        pon mut valid: Bool = true
+        pon mut i: Int = 1
+        mien i <= 8 {
+            si is_hex(input.char_at(pos + i)) == false { valid = false }
             i = i + 1
         }
-        if valid == false { return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit in \\U escape" } }
+        si valid == false { da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit en \\U escape" } }
         // Simplified: just use "?" for non-ASCII codepoints
-        return new EscapeResult { value: "?", advance: 9, ok: true, error_msg: "" }
+        da new EscapeResult { value: "?", advance: 9, ok: true, error_msg: "" }
     }
-    return new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid escape character: \\" + esc }
+    da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid escape character: \\" + esc }
 }
 
 // ---------------------------------------------------------------------------
@@ -280,94 +280,94 @@ fn handle_toml_escape(input: String, pos: Int, slen: Int) -> EscapeResult {
 
 // Basic string: "..." with escape sequences
 fn parse_basic_string(input: String, pos: Int, line: Int, col: Int) -> StringParseResult {
-    let slen: Int = len(input)
+    pon slen: Int = len(input)
     // pos should point to the opening "
-    let mut p: Int = pos + 1
-    let mut c: Int = col + 1
-    let mut ln: Int = line
-    let mut result: String = ""
+    pon mut p: Int = pos + 1
+    pon mut c: Int = col + 1
+    pon mut ln: Int = line
+    pon mut result: String = ""
 
-    while p < slen {
-        let ch: String = input.char_at(p)
-        if ch == "\"" {
-            return new StringParseResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+    mien p < slen {
+        pon ch: String = input.char_at(p)
+        si ch == "\"" {
+            da new StringParseResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
         }
-        if ch == "\\" {
-            let er: EscapeResult = handle_toml_escape(input, p + 1, slen)
-            if er.ok == false {
-                return new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error(er.error_msg, ln, c) }
+        si ch == "\\" {
+            pon er: EscapeResult = handle_toml_escape(input, p + 1, slen)
+            si er.ok == false {
+                da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error(er.error_msg, ln, c) }
             }
             result = result + er.value
             p = p + 1 + er.advance
             c = c + 1 + er.advance
-        } else { if ch == "\n" {
-            return new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Newline in basic string (use multi-line \"\"\")", ln, c) }
-        } else {
+        } sino { si ch == "\n" {
+            da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Newline en basic string (use multi-line \"\"\")", ln, c) }
+        } sino {
             result = result + ch
             p = p + 1
             c = c + 1
         } }
     }
-    return new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated basic string", line, col) }
+    da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated basic string", line, col) }
 }
 
 // Literal string: '...' no escape sequences
 fn parse_literal_string(input: String, pos: Int, line: Int, col: Int) -> StringParseResult {
-    let slen: Int = len(input)
+    pon slen: Int = len(input)
     // pos should point to the opening '
-    let mut p: Int = pos + 1
-    let mut c: Int = col + 1
-    let mut result: String = ""
+    pon mut p: Int = pos + 1
+    pon mut c: Int = col + 1
+    pon mut result: String = ""
 
-    while p < slen {
-        let ch: String = input.char_at(p)
-        if ch == "'" {
-            return new StringParseResult { value: result, pos: p + 1, line: line, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+    mien p < slen {
+        pon ch: String = input.char_at(p)
+        si ch == "'" {
+            da new StringParseResult { value: result, pos: p + 1, line: line, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
         }
-        if ch == "\n" {
-            return new StringParseResult { value: "", pos: p, line: line, col: c, ok: false, error: new_toml_error("Newline in literal string (use multi-line ''')", line, c) }
+        si ch == "\n" {
+            da new StringParseResult { value: "", pos: p, line: line, col: c, ok: false, error: new_toml_error("Newline en literal string (use multi-line ''')", line, c) }
         }
         result = result + ch
         p = p + 1
         c = c + 1
     }
-    return new StringParseResult { value: "", pos: p, line: line, col: c, ok: false, error: new_toml_error("Unterminated literal string", line, col) }
+    da new StringParseResult { value: "", pos: p, line: line, col: c, ok: false, error: new_toml_error("Unterminated literal string", line, col) }
 }
 
 // Multi-line basic string: """..."""
 fn parse_ml_basic_string(input: String, pos: Int, line: Int, col: Int) -> StringParseResult {
-    let slen: Int = len(input)
+    pon slen: Int = len(input)
     // pos points to the first " of """
-    let mut p: Int = pos + 3
-    let mut c: Int = col + 3
-    let mut ln: Int = line
-    let mut result: String = ""
+    pon mut p: Int = pos + 3
+    pon mut c: Int = col + 3
+    pon mut ln: Int = line
+    pon mut result: String = ""
 
     // Trim first newline after opening """ if present
-    if p < slen {
-        if input.char_at(p) == "\n" {
+    si p < slen {
+        si input.char_at(p) == "\n" {
             p = p + 1
             ln = ln + 1
             c = 1
-        } else { if input.char_at(p) == "\r" {
+        } sino { si input.char_at(p) == "\r" {
             p = p + 1
-            if p < slen {
-                if input.char_at(p) == "\n" { p = p + 1 }
+            si p < slen {
+                si input.char_at(p) == "\n" { p = p + 1 }
             }
             ln = ln + 1
             c = 1
         } }
     }
 
-    while p < slen {
-        let ch: String = input.char_at(p)
+    mien p < slen {
+        pon ch: String = input.char_at(p)
 
         // Check for closing """
-        if ch == "\"" {
-            if p + 2 < slen {
-                if input.char_at(p + 1) == "\"" {
-                    if input.char_at(p + 2) == "\"" {
-                        return new StringParseResult { value: result, pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+        si ch == "\"" {
+            si p + 2 < slen {
+                si input.char_at(p + 1) == "\"" {
+                    si input.char_at(p + 2) == "\"" {
+                        da new StringParseResult { value: result, pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
                     }
                 }
             }
@@ -375,116 +375,116 @@ fn parse_ml_basic_string(input: String, pos: Int, line: Int, col: Int) -> String
             result = result + ch
             p = p + 1
             c = c + 1
-        } else { if ch == "\\" {
+        } sino { si ch == "\\" {
             // Check for line-ending backslash (trim whitespace continuation)
-            let mut next_p: Int = p + 1
-            if next_p < slen {
-                let next_ch: String = input.char_at(next_p)
-                if next_ch == "\n" {
+            pon mut next_p: Int = p + 1
+            si next_p < slen {
+                pon next_ch: String = input.char_at(next_p)
+                si next_ch == "\n" {
                     // Line ending backslash — skip newline and leading whitespace on next line
                     next_p = next_p + 1
                     ln = ln + 1
                     c = 1
-                    while next_p < slen {
-                        let wch: String = input.char_at(next_p)
-                        if wch == " " { next_p = next_p + 1; c = c + 1 } else { if wch == "\t" { next_p = next_p + 1; c = c + 1 } else { if wch == "\n" { next_p = next_p + 1; ln = ln + 1; c = 1 } else { if wch == "\r" {
+                    mien next_p < slen {
+                        pon wch: String = input.char_at(next_p)
+                        si wch == " " { next_p = next_p + 1; c = c + 1 } sino { si wch == "\t" { next_p = next_p + 1; c = c + 1 } sino { si wch == "\n" { next_p = next_p + 1; ln = ln + 1; c = 1 } sino { si wch == "\r" {
                             next_p = next_p + 1
-                            if next_p < slen {
-                                if input.char_at(next_p) == "\n" { next_p = next_p + 1 }
+                            si next_p < slen {
+                                si input.char_at(next_p) == "\n" { next_p = next_p + 1 }
                             }
                             ln = ln + 1
                             c = 1
-                        } else { break } } } }
+                        } sino { sal } } } }
                     }
                     p = next_p
-                } else { if next_ch == "\r" {
+                } sino { si next_ch == "\r" {
                     next_p = next_p + 1
-                    if next_p < slen {
-                        if input.char_at(next_p) == "\n" { next_p = next_p + 1 }
+                    si next_p < slen {
+                        si input.char_at(next_p) == "\n" { next_p = next_p + 1 }
                     }
                     ln = ln + 1
                     c = 1
-                    while next_p < slen {
-                        let wch: String = input.char_at(next_p)
-                        if wch == " " { next_p = next_p + 1; c = c + 1 } else { if wch == "\t" { next_p = next_p + 1; c = c + 1 } else { if wch == "\n" { next_p = next_p + 1; ln = ln + 1; c = 1 } else { if wch == "\r" {
+                    mien next_p < slen {
+                        pon wch: String = input.char_at(next_p)
+                        si wch == " " { next_p = next_p + 1; c = c + 1 } sino { si wch == "\t" { next_p = next_p + 1; c = c + 1 } sino { si wch == "\n" { next_p = next_p + 1; ln = ln + 1; c = 1 } sino { si wch == "\r" {
                             next_p = next_p + 1
-                            if next_p < slen {
-                                if input.char_at(next_p) == "\n" { next_p = next_p + 1 }
+                            si next_p < slen {
+                                si input.char_at(next_p) == "\n" { next_p = next_p + 1 }
                             }
                             ln = ln + 1
                             c = 1
-                        } else { break } } } }
+                        } sino { sal } } } }
                     }
                     p = next_p
-                } else {
+                } sino {
                     // Regular escape
-                    let er: EscapeResult = handle_toml_escape(input, p + 1, slen)
-                    if er.ok == false {
-                        return new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error(er.error_msg, ln, c) }
+                    pon er: EscapeResult = handle_toml_escape(input, p + 1, slen)
+                    si er.ok == false {
+                        da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error(er.error_msg, ln, c) }
                     }
                     result = result + er.value
                     p = p + 1 + er.advance
                     c = c + 1 + er.advance
                 } }
-            } else {
-                return new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unexpected end of input after backslash", ln, c) }
+            } sino {
+                da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unexpected end of input after backslash", ln, c) }
             }
-        } else { if ch == "\n" {
+        } sino { si ch == "\n" {
             result = result + "\n"
             p = p + 1
             ln = ln + 1
             c = 1
-        } else { if ch == "\r" {
+        } sino { si ch == "\r" {
             p = p + 1
-            if p < slen {
-                if input.char_at(p) == "\n" { p = p + 1 }
+            si p < slen {
+                si input.char_at(p) == "\n" { p = p + 1 }
             }
             result = result + "\n"
             ln = ln + 1
             c = 1
-        } else {
+        } sino {
             result = result + ch
             p = p + 1
             c = c + 1
         } } } }
     }
-    return new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated multi-line basic string", line, col) }
+    da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated multi-line basic string", line, col) }
 }
 
 // Multi-line literal string: '''...'''
 fn parse_ml_literal_string(input: String, pos: Int, line: Int, col: Int) -> StringParseResult {
-    let slen: Int = len(input)
+    pon slen: Int = len(input)
     // pos points to the first ' of '''
-    let mut p: Int = pos + 3
-    let mut c: Int = col + 3
-    let mut ln: Int = line
-    let mut result: String = ""
+    pon mut p: Int = pos + 3
+    pon mut c: Int = col + 3
+    pon mut ln: Int = line
+    pon mut result: String = ""
 
     // Trim first newline after opening ''' if present
-    if p < slen {
-        if input.char_at(p) == "\n" {
+    si p < slen {
+        si input.char_at(p) == "\n" {
             p = p + 1
             ln = ln + 1
             c = 1
-        } else { if input.char_at(p) == "\r" {
+        } sino { si input.char_at(p) == "\r" {
             p = p + 1
-            if p < slen {
-                if input.char_at(p) == "\n" { p = p + 1 }
+            si p < slen {
+                si input.char_at(p) == "\n" { p = p + 1 }
             }
             ln = ln + 1
             c = 1
         } }
     }
 
-    while p < slen {
-        let ch: String = input.char_at(p)
+    mien p < slen {
+        pon ch: String = input.char_at(p)
 
         // Check for closing '''
-        if ch == "'" {
-            if p + 2 < slen {
-                if input.char_at(p + 1) == "'" {
-                    if input.char_at(p + 2) == "'" {
-                        return new StringParseResult { value: result, pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+        si ch == "'" {
+            si p + 2 < slen {
+                si input.char_at(p + 1) == "'" {
+                    si input.char_at(p + 2) == "'" {
+                        da new StringParseResult { value: result, pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
                     }
                 }
             }
@@ -492,56 +492,56 @@ fn parse_ml_literal_string(input: String, pos: Int, line: Int, col: Int) -> Stri
             result = result + ch
             p = p + 1
             c = c + 1
-        } else { if ch == "\n" {
+        } sino { si ch == "\n" {
             result = result + "\n"
             p = p + 1
             ln = ln + 1
             c = 1
-        } else { if ch == "\r" {
+        } sino { si ch == "\r" {
             p = p + 1
-            if p < slen {
-                if input.char_at(p) == "\n" { p = p + 1 }
+            si p < slen {
+                si input.char_at(p) == "\n" { p = p + 1 }
             }
             result = result + "\n"
             ln = ln + 1
             c = 1
-        } else {
+        } sino {
             result = result + ch
             p = p + 1
             c = c + 1
         } } }
     }
-    return new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated multi-line literal string", line, col) }
+    da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated multi-line literal string", line, col) }
 }
 
 // Dispatch to appropriate string parser based on opening characters
 fn parse_toml_string(input: String, pos: Int, line: Int, col: Int) -> StringParseResult {
-    let slen: Int = len(input)
-    let ch: String = input.char_at(pos)
+    pon slen: Int = len(input)
+    pon ch: String = input.char_at(pos)
 
-    if ch == "\"" {
+    si ch == "\"" {
         // Check for multi-line """
-        if pos + 2 < slen {
-            if input.char_at(pos + 1) == "\"" {
-                if input.char_at(pos + 2) == "\"" {
-                    return parse_ml_basic_string(input, pos, line, col)
+        si pos + 2 < slen {
+            si input.char_at(pos + 1) == "\"" {
+                si input.char_at(pos + 2) == "\"" {
+                    da parse_ml_basic_string(input, pos, line, col)
                 }
             }
         }
-        return parse_basic_string(input, pos, line, col)
+        da parse_basic_string(input, pos, line, col)
     }
-    if ch == "'" {
+    si ch == "'" {
         // Check for multi-line '''
-        if pos + 2 < slen {
-            if input.char_at(pos + 1) == "'" {
-                if input.char_at(pos + 2) == "'" {
-                    return parse_ml_literal_string(input, pos, line, col)
+        si pos + 2 < slen {
+            si input.char_at(pos + 1) == "'" {
+                si input.char_at(pos + 2) == "'" {
+                    da parse_ml_literal_string(input, pos, line, col)
                 }
             }
         }
-        return parse_literal_string(input, pos, line, col)
+        da parse_literal_string(input, pos, line, col)
     }
-    return new StringParseResult { value: "", pos: pos, line: line, col: col, ok: false, error: new_toml_error("Expected string", line, col) }
+    da new StringParseResult { value: "", pos: pos, line: line, col: col, ok: false, error: new_toml_error("Expected string", line, col) }
 }
 
 // ---------------------------------------------------------------------------
@@ -550,95 +550,95 @@ fn parse_toml_string(input: String, pos: Int, line: Int, col: Int) -> StringPars
 
 // Parse a bare key: letters, digits, dashes, underscores
 fn parse_bare_key(input: String, pos: Int, line: Int, col: Int) -> KeyResult {
-    let slen: Int = len(input)
-    let mut p: Int = pos
-    let mut c: Int = col
-    let mut key: String = ""
+    pon slen: Int = len(input)
+    pon mut p: Int = pos
+    pon mut c: Int = col
+    pon mut key: String = ""
 
-    while p < slen {
-        let ch: String = input.char_at(p)
-        if is_bare_key_char(ch) {
+    mien p < slen {
+        pon ch: String = input.char_at(p)
+        si is_bare_key_char(ch) {
             key = key + ch
             p = p + 1
             c = c + 1
-        } else {
-            break
+        } sino {
+            sal
         }
     }
 
-    if len(key) == 0 {
-        return new KeyResult { key: "", pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected key", line, col) }
+    si len(key) == 0 {
+        da new KeyResult { key: "", pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected key", line, col) }
     }
-    return new KeyResult { key: key, pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+    da new KeyResult { key: key, pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
 }
 
 // Parse a single key segment (bare or quoted)
 fn parse_simple_key(input: String, pos: Int, line: Int, col: Int) -> KeyResult {
-    let slen: Int = len(input)
-    if pos >= slen {
-        return new KeyResult { key: "", pos: pos, line: line, col: col, ok: false, error: new_toml_error("Expected key", line, col) }
+    pon slen: Int = len(input)
+    si pos >= slen {
+        da new KeyResult { key: "", pos: pos, line: line, col: col, ok: false, error: new_toml_error("Expected key", line, col) }
     }
-    let ch: String = input.char_at(pos)
-    if ch == "\"" {
-        let sr: StringParseResult = parse_basic_string(input, pos, line, col)
-        if sr.ok {
-            return new KeyResult { key: sr.value, pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: new_toml_error("", 0, 0) }
-        } else {
-            return new KeyResult { key: "", pos: sr.pos, line: sr.line, col: sr.col, ok: false, error: sr.error }
+    pon ch: String = input.char_at(pos)
+    si ch == "\"" {
+        pon sr: StringParseResult = parse_basic_string(input, pos, line, col)
+        si sr.ok {
+            da new KeyResult { key: sr.value, pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: new_toml_error("", 0, 0) }
+        } sino {
+            da new KeyResult { key: "", pos: sr.pos, line: sr.line, col: sr.col, ok: false, error: sr.error }
         }
     }
-    if ch == "'" {
-        let sr: StringParseResult = parse_literal_string(input, pos, line, col)
-        if sr.ok {
-            return new KeyResult { key: sr.value, pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: new_toml_error("", 0, 0) }
-        } else {
-            return new KeyResult { key: "", pos: sr.pos, line: sr.line, col: sr.col, ok: false, error: sr.error }
+    si ch == "'" {
+        pon sr: StringParseResult = parse_literal_string(input, pos, line, col)
+        si sr.ok {
+            da new KeyResult { key: sr.value, pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: new_toml_error("", 0, 0) }
+        } sino {
+            da new KeyResult { key: "", pos: sr.pos, line: sr.line, col: sr.col, ok: false, error: sr.error }
         }
     }
-    return parse_bare_key(input, pos, line, col)
+    da parse_bare_key(input, pos, line, col)
 }
 
 // Parse a dotted key: key1.key2.key3
 fn parse_dotted_key(input: String, pos: Int, line: Int, col: Int) -> DottedKeyResult {
-    let slen: Int = len(input)
-    let mut p: Int = pos
-    let mut ln: Int = line
-    let mut c: Int = col
-    let mut keys: List<String> = []
+    pon slen: Int = len(input)
+    pon mut p: Int = pos
+    pon mut ln: Int = line
+    pon mut c: Int = col
+    pon mut keys: List<String> = []
 
-    let first: KeyResult = parse_simple_key(input, p, ln, c)
-    if first.ok == false {
-        return new DottedKeyResult { keys: keys, pos: first.pos, line: first.line, col: first.col, ok: false, error: first.error }
+    pon first: KeyResult = parse_simple_key(input, p, ln, c)
+    si first.ok == false {
+        da new DottedKeyResult { keys: keys, pos: first.pos, line: first.line, col: first.col, ok: false, error: first.error }
     }
     keys = keys + [first.key]
     p = first.pos
     ln = first.line
     c = first.col
 
-    let mut count: Int = 0
-    while count < 100000 {
+    pon mut count: Int = 0
+    mien count < 100000 {
         count = count + 1
 
         // Skip whitespace around dot
-        let ws1: ParseState = skip_ws(input, p, ln, c)
+        pon ws1: ParseState = skip_ws(input, p, ln, c)
         p = ws1.pos
         ln = ws1.line
         c = ws1.col
 
-        if p >= slen { break }
-        if input.char_at(p) != "." { break }
+        si p >= slen { sal }
+        si input.char_at(p) != "." { sal }
 
         p = p + 1
         c = c + 1
 
-        let ws2: ParseState = skip_ws(input, p, ln, c)
+        pon ws2: ParseState = skip_ws(input, p, ln, c)
         p = ws2.pos
         ln = ws2.line
         c = ws2.col
 
-        let next_key: KeyResult = parse_simple_key(input, p, ln, c)
-        if next_key.ok == false {
-            return new DottedKeyResult { keys: keys, pos: next_key.pos, line: next_key.line, col: next_key.col, ok: false, error: next_key.error }
+        pon next_key: KeyResult = parse_simple_key(input, p, ln, c)
+        si next_key.ok == false {
+            da new DottedKeyResult { keys: keys, pos: next_key.pos, line: next_key.line, col: next_key.col, ok: false, error: next_key.error }
         }
         keys = keys + [next_key.key]
         p = next_key.pos
@@ -646,7 +646,7 @@ fn parse_dotted_key(input: String, pos: Int, line: Int, col: Int) -> DottedKeyRe
         c = next_key.col
     }
 
-    return new DottedKeyResult { keys: keys, pos: p, line: ln, col: c, ok: true, error: new_toml_error("", 0, 0) }
+    da new DottedKeyResult { keys: keys, pos: p, line: ln, col: c, ok: true, error: new_toml_error("", 0, 0) }
 }
 
 // ---------------------------------------------------------------------------
@@ -654,174 +654,174 @@ fn parse_dotted_key(input: String, pos: Int, line: Int, col: Int) -> DottedKeyRe
 // ---------------------------------------------------------------------------
 
 fn parse_toml_number(input: String, pos: Int, line: Int, col: Int) -> ValueResult {
-    let slen: Int = len(input)
-    let mut p: Int = pos
-    let mut c: Int = col
-    let mut negative: Bool = false
-    let mut positive: Bool = false
+    pon slen: Int = len(input)
+    pon mut p: Int = pos
+    pon mut c: Int = col
+    pon mut negative: Bool = false
+    pon mut positive: Bool = false
 
     // Check sign
-    if p < slen {
-        let ch: String = input.char_at(p)
-        if ch == "+" { positive = true; p = p + 1; c = c + 1 }
-        if ch == "-" { negative = true; p = p + 1; c = c + 1 }
+    si p < slen {
+        pon ch: String = input.char_at(p)
+        si ch == "+" { positive = true; p = p + 1; c = c + 1 }
+        si ch == "-" { negative = true; p = p + 1; c = c + 1 }
     }
 
-    if p >= slen {
-        return new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected number", line, c) }
+    si p >= slen {
+        da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected number", line, c) }
     }
 
     // Check for special float values: inf and nan
-    if p + 2 < slen {
-        let c0: String = input.char_at(p)
-        let c1: String = input.char_at(p + 1)
-        let c2: String = input.char_at(p + 2)
-        if c0 == "i" {
-            if c1 == "n" {
-                if c2 == "f" {
+    si p + 2 < slen {
+        pon c0: String = input.char_at(p)
+        pon c1: String = input.char_at(p + 1)
+        pon c2: String = input.char_at(p + 2)
+        si c0 == "i" {
+            si c1 == "n" {
+                si c2 == "f" {
                     // inf, +inf, -inf
-                    if negative {
+                    si negative {
                         // Use a very large negative number as approximation
-                        return new ValueResult { value: Float(0.0 - 1.0e308), pos: p + 3, line: line, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
-                    } else {
-                        return new ValueResult { value: Float(1.0e308), pos: p + 3, line: line, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+                        da new ValueResult { value: Float(0.0 - 1.0e308), pos: p + 3, line: line, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+                    } sino {
+                        da new ValueResult { value: Float(1.0e308), pos: p + 3, line: line, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
                     }
                 }
             }
         }
-        if c0 == "n" {
-            if c1 == "a" {
-                if c2 == "n" {
+        si c0 == "n" {
+            si c1 == "a" {
+                si c2 == "n" {
                     // nan, +nan, -nan
-                    return new ValueResult { value: Float(0.0), pos: p + 3, line: line, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+                    da new ValueResult { value: Float(0.0), pos: p + 3, line: line, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
                 }
             }
         }
     }
 
-    let first: String = input.char_at(p)
+    pon first: String = input.char_at(p)
 
     // Check for hex, octal, binary prefixes: 0x, 0o, 0b
-    if first == "0" {
-        if p + 1 < slen {
-            let prefix: String = input.char_at(p + 1)
-            if prefix == "x" {
+    si first == "0" {
+        si p + 1 < slen {
+            pon prefix: String = input.char_at(p + 1)
+            si prefix == "x" {
                 // Hexadecimal
                 p = p + 2
                 c = c + 2
-                let mut hex_val: Int = 0
-                let mut hex_count: Int = 0
-                while p < slen {
-                    let hch: String = input.char_at(p)
-                    if is_hex(hch) {
+                pon mut hex_val: Int = 0
+                pon mut hex_count: Int = 0
+                mien p < slen {
+                    pon hch: String = input.char_at(p)
+                    si is_hex(hch) {
                         hex_val = hex_val * 16 + hex_value(hch)
                         p = p + 1
                         c = c + 1
                         hex_count = hex_count + 1
-                    } else { if hch == "_" {
+                    } sino { si hch == "_" {
                         p = p + 1
                         c = c + 1
-                    } else { break } }
+                    } sino { sal } }
                 }
-                if hex_count == 0 {
-                    return new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected hex digit after 0x", line, c) }
+                si hex_count == 0 {
+                    da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected hex digit after 0x", line, c) }
                 }
-                if negative { hex_val = 0 - hex_val }
-                return new ValueResult { value: Int(hex_val), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+                si negative { hex_val = 0 - hex_val }
+                da new ValueResult { value: Int(hex_val), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
             }
-            if prefix == "o" {
+            si prefix == "o" {
                 // Octal
                 p = p + 2
                 c = c + 2
-                let mut oct_val: Int = 0
-                let mut oct_count: Int = 0
-                while p < slen {
-                    let och: String = input.char_at(p)
-                    if is_octal_digit(och) {
+                pon mut oct_val: Int = 0
+                pon mut oct_count: Int = 0
+                mien p < slen {
+                    pon och: String = input.char_at(p)
+                    si is_octal_digit(och) {
                         oct_val = oct_val * 8 + digit_value(och)
                         p = p + 1
                         c = c + 1
                         oct_count = oct_count + 1
-                    } else { if och == "_" {
+                    } sino { si och == "_" {
                         p = p + 1
                         c = c + 1
-                    } else { break } }
+                    } sino { sal } }
                 }
-                if oct_count == 0 {
-                    return new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected octal digit after 0o", line, c) }
+                si oct_count == 0 {
+                    da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected octal digit after 0o", line, c) }
                 }
-                if negative { oct_val = 0 - oct_val }
-                return new ValueResult { value: Int(oct_val), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+                si negative { oct_val = 0 - oct_val }
+                da new ValueResult { value: Int(oct_val), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
             }
-            if prefix == "b" {
+            si prefix == "b" {
                 // Binary
                 p = p + 2
                 c = c + 2
-                let mut bin_val: Int = 0
-                let mut bin_count: Int = 0
-                while p < slen {
-                    let bch: String = input.char_at(p)
-                    if is_binary_digit(bch) {
+                pon mut bin_val: Int = 0
+                pon mut bin_count: Int = 0
+                mien p < slen {
+                    pon bch: String = input.char_at(p)
+                    si is_binary_digit(bch) {
                         bin_val = bin_val * 2 + digit_value(bch)
                         p = p + 1
                         c = c + 1
                         bin_count = bin_count + 1
-                    } else { if bch == "_" {
+                    } sino { si bch == "_" {
                         p = p + 1
                         c = c + 1
-                    } else { break } }
+                    } sino { sal } }
                 }
-                if bin_count == 0 {
-                    return new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected binary digit after 0b", line, c) }
+                si bin_count == 0 {
+                    da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected binary digit after 0b", line, c) }
                 }
-                if negative { bin_val = 0 - bin_val }
-                return new ValueResult { value: Int(bin_val), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+                si negative { bin_val = 0 - bin_val }
+                da new ValueResult { value: Int(bin_val), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
             }
         }
     }
 
     // Decimal integer or float
-    if is_toml_digit(first) == false {
-        return new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected digit", line, c) }
+    si is_toml_digit(first) == false {
+        da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected digit", line, c) }
     }
 
-    let mut int_part: Int = 0
-    while p < slen {
-        let dch: String = input.char_at(p)
-        if is_toml_digit(dch) {
+    pon mut int_part: Int = 0
+    mien p < slen {
+        pon dch: String = input.char_at(p)
+        si is_toml_digit(dch) {
             int_part = int_part * 10 + digit_value(dch)
             p = p + 1
             c = c + 1
-        } else { if dch == "_" {
+        } sino { si dch == "_" {
             p = p + 1
             c = c + 1
-        } else { break } }
+        } sino { sal } }
     }
 
     // Check for fractional or exponent part (makes it a float)
-    let mut is_float: Bool = false
-    let mut frac_part: Float = 0.0
-    let mut frac_divisor: Float = 1.0
+    pon mut is_float: Bool = false
+    pon mut frac_part: Float = 0.0
+    pon mut frac_divisor: Float = 1.0
 
-    if p < slen {
-        if input.char_at(p) == "." {
+    si p < slen {
+        si input.char_at(p) == "." {
             // Could be a dotted key — only treat as float if followed by a digit
-            if p + 1 < slen {
-                if is_toml_digit(input.char_at(p + 1)) {
+            si p + 1 < slen {
+                si is_toml_digit(input.char_at(p + 1)) {
                     is_float = true
                     p = p + 1
                     c = c + 1
-                    while p < slen {
-                        let fch: String = input.char_at(p)
-                        if is_toml_digit(fch) {
+                    mien p < slen {
+                        pon fch: String = input.char_at(p)
+                        si is_toml_digit(fch) {
                             frac_divisor = frac_divisor * 10.0
                             frac_part = frac_part + float(digit_value(fch)) / frac_divisor
                             p = p + 1
                             c = c + 1
-                        } else { if fch == "_" {
+                        } sino { si fch == "_" {
                             p = p + 1
                             c = c + 1
-                        } else { break } }
+                        } sino { sal } }
                     }
                 }
             }
@@ -829,58 +829,58 @@ fn parse_toml_number(input: String, pos: Int, line: Int, col: Int) -> ValueResul
     }
 
     // Exponent
-    let mut exp_val: Int = 0
-    let mut exp_negative: Bool = false
-    let mut has_exp: Bool = false
+    pon mut exp_val: Int = 0
+    pon mut exp_negative: Bool = false
+    pon mut has_exp: Bool = false
 
-    if p < slen {
-        let ech: String = input.char_at(p)
-        if ech == "e" { has_exp = true; is_float = true; p = p + 1; c = c + 1 }
-        if ech == "E" { has_exp = true; is_float = true; p = p + 1; c = c + 1 }
+    si p < slen {
+        pon ech: String = input.char_at(p)
+        si ech == "e" { has_exp = true; is_float = true; p = p + 1; c = c + 1 }
+        si ech == "E" { has_exp = true; is_float = true; p = p + 1; c = c + 1 }
     }
 
-    if has_exp {
-        if p < slen {
-            let sign_ch: String = input.char_at(p)
-            if sign_ch == "+" { p = p + 1; c = c + 1 }
-            if sign_ch == "-" { exp_negative = true; p = p + 1; c = c + 1 }
+    si has_exp {
+        si p < slen {
+            pon sign_ch: String = input.char_at(p)
+            si sign_ch == "+" { p = p + 1; c = c + 1 }
+            si sign_ch == "-" { exp_negative = true; p = p + 1; c = c + 1 }
         }
-        if p >= slen {
-            return new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected digit in exponent", line, c) }
+        si p >= slen {
+            da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected digit en exponent", line, c) }
         }
-        if is_toml_digit(input.char_at(p)) == false {
-            return new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected digit in exponent", line, c) }
+        si is_toml_digit(input.char_at(p)) == false {
+            da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected digit en exponent", line, c) }
         }
-        while p < slen {
-            let ech2: String = input.char_at(p)
-            if is_toml_digit(ech2) {
+        mien p < slen {
+            pon ech2: String = input.char_at(p)
+            si is_toml_digit(ech2) {
                 exp_val = exp_val * 10 + digit_value(ech2)
                 p = p + 1
                 c = c + 1
-            } else { if ech2 == "_" {
+            } sino { si ech2 == "_" {
                 p = p + 1
                 c = c + 1
-            } else { break } }
+            } sino { sal } }
         }
     }
 
-    if is_float {
-        let mut result_f: Float = float(int_part) + frac_part
-        if has_exp {
-            let mut multiplier: Float = 1.0
-            let mut i: Int = 0
-            while i < exp_val {
+    si is_float {
+        pon mut result_f: Float = float(int_part) + frac_part
+        si has_exp {
+            pon mut multiplier: Float = 1.0
+            pon mut i: Int = 0
+            mien i < exp_val {
                 multiplier = multiplier * 10.0
                 i = i + 1
             }
-            if exp_negative { result_f = result_f / multiplier } else { result_f = result_f * multiplier }
+            si exp_negative { result_f = result_f / multiplier } sino { result_f = result_f * multiplier }
         }
-        if negative { result_f = 0.0 - result_f }
-        return new ValueResult { value: Float(result_f), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
-    } else {
-        let mut result_i: Int = int_part
-        if negative { result_i = 0 - result_i }
-        return new ValueResult { value: Int(result_i), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+        si negative { result_f = 0.0 - result_f }
+        da new ValueResult { value: Float(result_f), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+    } sino {
+        pon mut result_i: Int = int_part
+        si negative { result_i = 0 - result_i }
+        da new ValueResult { value: Int(result_i), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
     }
 }
 
@@ -890,54 +890,54 @@ fn parse_toml_number(input: String, pos: Int, line: Int, col: Int) -> ValueResul
 
 fn looks_like_datetime(input: String, pos: Int) -> Bool {
     // Heuristic: 4 digits followed by - (date) or 2 digits followed by : (time)
-    let slen: Int = len(input)
-    if pos + 4 >= slen { return false }
+    pon slen: Int = len(input)
+    si pos + 4 >= slen { da false }
     // Check for YYYY-MM pattern
-    if is_toml_digit(input.char_at(pos)) {
-        if is_toml_digit(input.char_at(pos + 1)) {
-            if is_toml_digit(input.char_at(pos + 2)) {
-                if is_toml_digit(input.char_at(pos + 3)) {
-                    if input.char_at(pos + 4) == "-" {
-                        return true
+    si is_toml_digit(input.char_at(pos)) {
+        si is_toml_digit(input.char_at(pos + 1)) {
+            si is_toml_digit(input.char_at(pos + 2)) {
+                si is_toml_digit(input.char_at(pos + 3)) {
+                    si input.char_at(pos + 4) == "-" {
+                        da true
                     }
                 }
             }
             // Check for HH:MM (local time)
-            if input.char_at(pos + 2) == ":" {
-                return true
+            si input.char_at(pos + 2) == ":" {
+                da true
             }
         }
     }
-    return false
+    da false
 }
 
 fn parse_datetime(input: String, pos: Int, line: Int, col: Int) -> ValueResult {
     // Consume valid datetime characters: digits, -, :, T, t, Z, z, +, .
-    let slen: Int = len(input)
-    let mut p: Int = pos
-    let mut c: Int = col
-    let mut result: String = ""
+    pon slen: Int = len(input)
+    pon mut p: Int = pos
+    pon mut c: Int = col
+    pon mut result: String = ""
 
-    while p < slen {
-        let ch: String = input.char_at(p)
-        if is_toml_digit(ch) { result = result + ch; p = p + 1; c = c + 1 } else { if ch == "-" { result = result + ch; p = p + 1; c = c + 1 } else { if ch == ":" { result = result + ch; p = p + 1; c = c + 1 } else { if ch == "T" { result = result + ch; p = p + 1; c = c + 1 } else { if ch == "t" { result = result + ch; p = p + 1; c = c + 1 } else { if ch == "Z" { result = result + ch; p = p + 1; c = c + 1 } else { if ch == "z" { result = result + ch; p = p + 1; c = c + 1 } else { if ch == "+" { result = result + ch; p = p + 1; c = c + 1 } else { if ch == "." { result = result + ch; p = p + 1; c = c + 1 } else { if ch == " " {
+    mien p < slen {
+        pon ch: String = input.char_at(p)
+        si is_toml_digit(ch) { result = result + ch; p = p + 1; c = c + 1 } sino { si ch == "-" { result = result + ch; p = p + 1; c = c + 1 } sino { si ch == ":" { result = result + ch; p = p + 1; c = c + 1 } sino { si ch == "T" { result = result + ch; p = p + 1; c = c + 1 } sino { si ch == "t" { result = result + ch; p = p + 1; c = c + 1 } sino { si ch == "Z" { result = result + ch; p = p + 1; c = c + 1 } sino { si ch == "z" { result = result + ch; p = p + 1; c = c + 1 } sino { si ch == "+" { result = result + ch; p = p + 1; c = c + 1 } sino { si ch == "." { result = result + ch; p = p + 1; c = c + 1 } sino { si ch == " " {
             // Space separator between date and time (allowed in TOML)
-            if len(result) >= 10 {
-                if p + 1 < slen {
-                    if is_toml_digit(input.char_at(p + 1)) {
+            si len(result) >= 10 {
+                si p + 1 < slen {
+                    si is_toml_digit(input.char_at(p + 1)) {
                         result = result + ch
                         p = p + 1
                         c = c + 1
-                    } else { break }
-                } else { break }
-            } else { break }
-        } else { break } } } } } } } } } }
+                    } sino { sal }
+                } sino { sal }
+            } sino { sal }
+        } sino { sal } } } } } } } } } }
     }
 
-    if len(result) == 0 {
-        return new ValueResult { value: Str(""), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected datetime", line, col) }
+    si len(result) == 0 {
+        da new ValueResult { value: Str(""), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected datetime", line, col) }
     }
-    return new ValueResult { value: DateTime(result), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+    da new ValueResult { value: DateTime(result), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
 }
 
 // ---------------------------------------------------------------------------
@@ -945,97 +945,97 @@ fn parse_datetime(input: String, pos: Int, line: Int, col: Int) -> ValueResult {
 // ---------------------------------------------------------------------------
 
 fn parse_toml_value(input: String, pos: Int, line: Int, col: Int) -> ValueResult {
-    let slen: Int = len(input)
+    pon slen: Int = len(input)
 
-    let ws: ParseState = skip_ws(input, pos, line, col)
-    let mut p: Int = ws.pos
-    let mut ln: Int = ws.line
-    let mut c: Int = ws.col
+    pon ws: ParseState = skip_ws(input, pos, line, col)
+    pon mut p: Int = ws.pos
+    pon mut ln: Int = ws.line
+    pon mut c: Int = ws.col
 
-    if p >= slen {
-        return new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unexpected end of input", ln, c) }
+    si p >= slen {
+        da new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unexpected end of input", ln, c) }
     }
 
-    let ch: String = input.char_at(p)
+    pon ch: String = input.char_at(p)
 
     // Strings
-    if ch == "\"" { return parse_toml_string_value(input, p, ln, c) }
-    if ch == "'" { return parse_toml_string_value(input, p, ln, c) }
+    si ch == "\"" { da parse_toml_string_value(input, p, ln, c) }
+    si ch == "'" { da parse_toml_string_value(input, p, ln, c) }
 
     // Booleans
-    if ch == "t" {
-        if p + 3 < slen {
-            if input.char_at(p + 1) == "r" {
-                if input.char_at(p + 2) == "u" {
-                    if input.char_at(p + 3) == "e" {
-                        return new ValueResult { value: Bool(true), pos: p + 4, line: ln, col: c + 4, ok: true, error: new_toml_error("", 0, 0) }
+    si ch == "t" {
+        si p + 3 < slen {
+            si input.char_at(p + 1) == "r" {
+                si input.char_at(p + 2) == "u" {
+                    si input.char_at(p + 3) == "e" {
+                        da new ValueResult { value: Bool(true), pos: p + 4, line: ln, col: c + 4, ok: true, error: new_toml_error("", 0, 0) }
                     }
                 }
             }
         }
-        return new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Invalid value", ln, c) }
+        da new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Invalid value", ln, c) }
     }
-    if ch == "f" {
-        if p + 4 < slen {
-            if input.char_at(p + 1) == "a" {
-                if input.char_at(p + 2) == "l" {
-                    if input.char_at(p + 3) == "s" {
-                        if input.char_at(p + 4) == "e" {
-                            return new ValueResult { value: Bool(false), pos: p + 5, line: ln, col: c + 5, ok: true, error: new_toml_error("", 0, 0) }
+    si ch == "f" {
+        si p + 4 < slen {
+            si input.char_at(p + 1) == "a" {
+                si input.char_at(p + 2) == "l" {
+                    si input.char_at(p + 3) == "s" {
+                        si input.char_at(p + 4) == "e" {
+                            da new ValueResult { value: Bool(false), pos: p + 5, line: ln, col: c + 5, ok: true, error: new_toml_error("", 0, 0) }
                         }
                     }
                 }
             }
         }
-        return new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Invalid value", ln, c) }
+        da new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Invalid value", ln, c) }
     }
 
     // Arrays
-    if ch == "[" { return parse_toml_array(input, p, ln, c) }
+    si ch == "[" { da parse_toml_array(input, p, ln, c) }
 
     // Inline tables
-    if ch == "{" { return parse_inline_table(input, p, ln, c) }
+    si ch == "{" { da parse_inline_table(input, p, ln, c) }
 
     // inf and nan (without sign)
-    if ch == "i" {
-        if p + 2 < slen {
-            if input.char_at(p + 1) == "n" {
-                if input.char_at(p + 2) == "f" {
-                    return new ValueResult { value: Float(1.0e308), pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+    si ch == "i" {
+        si p + 2 < slen {
+            si input.char_at(p + 1) == "n" {
+                si input.char_at(p + 2) == "f" {
+                    da new ValueResult { value: Float(1.0e308), pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
                 }
             }
         }
     }
-    if ch == "n" {
-        if p + 2 < slen {
-            if input.char_at(p + 1) == "a" {
-                if input.char_at(p + 2) == "n" {
-                    return new ValueResult { value: Float(0.0), pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+    si ch == "n" {
+        si p + 2 < slen {
+            si input.char_at(p + 1) == "a" {
+                si input.char_at(p + 2) == "n" {
+                    da new ValueResult { value: Float(0.0), pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
                 }
             }
         }
     }
 
     // Numbers, dates, signed inf/nan
-    if is_toml_digit(ch) {
+    si is_toml_digit(ch) {
         // Could be datetime or number — check heuristic
-        if looks_like_datetime(input, p) {
-            return parse_datetime(input, p, ln, c)
+        si looks_like_datetime(input, p) {
+            da parse_datetime(input, p, ln, c)
         }
-        return parse_toml_number(input, p, ln, c)
+        da parse_toml_number(input, p, ln, c)
     }
-    if ch == "+" { return parse_toml_number(input, p, ln, c) }
-    if ch == "-" { return parse_toml_number(input, p, ln, c) }
+    si ch == "+" { da parse_toml_number(input, p, ln, c) }
+    si ch == "-" { da parse_toml_number(input, p, ln, c) }
 
-    return new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unexpected character: " + ch, ln, c) }
+    da new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unexpected character: " + ch, ln, c) }
 }
 
 fn parse_toml_string_value(input: String, pos: Int, line: Int, col: Int) -> ValueResult {
-    let sr: StringParseResult = parse_toml_string(input, pos, line, col)
-    if sr.ok {
-        return new ValueResult { value: Str(sr.value), pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: new_toml_error("", 0, 0) }
-    } else {
-        return new ValueResult { value: Str(""), pos: sr.pos, line: sr.line, col: sr.col, ok: false, error: sr.error }
+    pon sr: StringParseResult = parse_toml_string(input, pos, line, col)
+    si sr.ok {
+        da new ValueResult { value: Str(sr.value), pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: new_toml_error("", 0, 0) }
+    } sino {
+        da new ValueResult { value: Str(""), pos: sr.pos, line: sr.line, col: sr.col, ok: false, error: sr.error }
     }
 }
 
@@ -1044,68 +1044,68 @@ fn parse_toml_string_value(input: String, pos: Int, line: Int, col: Int) -> Valu
 // ---------------------------------------------------------------------------
 
 fn parse_toml_array(input: String, pos: Int, line: Int, col: Int) -> ValueResult {
-    let slen: Int = len(input)
-    let mut p: Int = pos + 1
-    let mut ln: Int = line
-    let mut c: Int = col + 1
-    let mut items: List<TomlValue> = []
+    pon slen: Int = len(input)
+    pon mut p: Int = pos + 1
+    pon mut ln: Int = line
+    pon mut c: Int = col + 1
+    pon mut items: List<TomlValue> = []
 
-    let ws1: ParseState = skip_ws_comments_newlines(input, p, ln, c)
+    pon ws1: ParseState = skip_ws_comments_newlines(input, p, ln, c)
     p = ws1.pos
     ln = ws1.line
     c = ws1.col
 
-    if p < slen {
-        if input.char_at(p) == "]" {
-            return new ValueResult { value: Array(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+    si p < slen {
+        si input.char_at(p) == "]" {
+            da new ValueResult { value: Array(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
         }
     }
 
-    let mut count: Int = 0
-    while count < 1000000 {
+    pon mut count: Int = 0
+    mien count < 1000000 {
         count = count + 1
 
-        let val_r: ValueResult = parse_toml_value(input, p, ln, c)
-        if val_r.ok == false {
-            return val_r
+        pon val_r: ValueResult = parse_toml_value(input, p, ln, c)
+        si val_r.ok == false {
+            da val_r
         }
         items = items + [val_r.value]
         p = val_r.pos
         ln = val_r.line
         c = val_r.col
 
-        let ws2: ParseState = skip_ws_comments_newlines(input, p, ln, c)
+        pon ws2: ParseState = skip_ws_comments_newlines(input, p, ln, c)
         p = ws2.pos
         ln = ws2.line
         c = ws2.col
 
-        if p >= slen {
-            return new ValueResult { value: Array(items), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated array", ln, c) }
+        si p >= slen {
+            da new ValueResult { value: Array(items), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated array", ln, c) }
         }
 
-        let next_ch: String = input.char_at(p)
-        if next_ch == "]" {
-            return new ValueResult { value: Array(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+        pon next_ch: String = input.char_at(p)
+        si next_ch == "]" {
+            da new ValueResult { value: Array(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
         }
-        if next_ch == "," {
+        si next_ch == "," {
             p = p + 1
             c = c + 1
             // Skip whitespace/comments/newlines after comma
-            let ws3: ParseState = skip_ws_comments_newlines(input, p, ln, c)
+            pon ws3: ParseState = skip_ws_comments_newlines(input, p, ln, c)
             p = ws3.pos
             ln = ws3.line
             c = ws3.col
             // Allow trailing comma before ]
-            if p < slen {
-                if input.char_at(p) == "]" {
-                    return new ValueResult { value: Array(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+            si p < slen {
+                si input.char_at(p) == "]" {
+                    da new ValueResult { value: Array(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
                 }
             }
-        } else {
-            return new ValueResult { value: Array(items), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected comma or ] in array", ln, c) }
+        } sino {
+            da new ValueResult { value: Array(items), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected comma or ] en array", ln, c) }
         }
     }
-    return new ValueResult { value: Array(items), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Array too many elements", ln, c) }
+    da new ValueResult { value: Array(items), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Array too many elements", ln, c) }
 }
 
 // ---------------------------------------------------------------------------
@@ -1113,59 +1113,59 @@ fn parse_toml_array(input: String, pos: Int, line: Int, col: Int) -> ValueResult
 // ---------------------------------------------------------------------------
 
 fn parse_inline_table(input: String, pos: Int, line: Int, col: Int) -> ValueResult {
-    let slen: Int = len(input)
-    let mut p: Int = pos + 1
-    let mut ln: Int = line
-    let mut c: Int = col + 1
-    let mut entries: Map<String, TomlValue> = #{}
+    pon slen: Int = len(input)
+    pon mut p: Int = pos + 1
+    pon mut ln: Int = line
+    pon mut c: Int = col + 1
+    pon mut entries: Map<String, TomlValue> = #{}
 
-    let ws1: ParseState = skip_ws(input, p, ln, c)
+    pon ws1: ParseState = skip_ws(input, p, ln, c)
     p = ws1.pos
     ln = ws1.line
     c = ws1.col
 
-    if p < slen {
-        if input.char_at(p) == "}" {
-            return new ValueResult { value: Table(entries), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+    si p < slen {
+        si input.char_at(p) == "}" {
+            da new ValueResult { value: Table(entries), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
         }
     }
 
-    let mut count: Int = 0
-    while count < 1000000 {
+    pon mut count: Int = 0
+    mien count < 1000000 {
         count = count + 1
 
-        let ws_k: ParseState = skip_ws(input, p, ln, c)
+        pon ws_k: ParseState = skip_ws(input, p, ln, c)
         p = ws_k.pos
         ln = ws_k.line
         c = ws_k.col
 
         // Parse dotted key
-        let dk: DottedKeyResult = parse_dotted_key(input, p, ln, c)
-        if dk.ok == false {
-            return new ValueResult { value: Table(entries), pos: dk.pos, line: dk.line, col: dk.col, ok: false, error: dk.error }
+        pon dk: DottedKeyResult = parse_dotted_key(input, p, ln, c)
+        si dk.ok == false {
+            da new ValueResult { value: Table(entries), pos: dk.pos, line: dk.line, col: dk.col, ok: false, error: dk.error }
         }
         p = dk.pos
         ln = dk.line
         c = dk.col
 
         // Expect =
-        let ws_eq: ParseState = skip_ws(input, p, ln, c)
+        pon ws_eq: ParseState = skip_ws(input, p, ln, c)
         p = ws_eq.pos
         ln = ws_eq.line
         c = ws_eq.col
 
-        if p >= slen {
-            return new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected = after key", ln, c) }
+        si p >= slen {
+            da new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected = after key", ln, c) }
         }
-        if input.char_at(p) != "=" {
-            return new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected = after key", ln, c) }
+        si input.char_at(p) != "=" {
+            da new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected = after key", ln, c) }
         }
         p = p + 1
         c = c + 1
 
         // Parse value
-        let val_r: ValueResult = parse_toml_value(input, p, ln, c)
-        if val_r.ok == false { return val_r }
+        pon val_r: ValueResult = parse_toml_value(input, p, ln, c)
+        si val_r.ok == false { da val_r }
         p = val_r.pos
         ln = val_r.line
         c = val_r.col
@@ -1173,27 +1173,27 @@ fn parse_inline_table(input: String, pos: Int, line: Int, col: Int) -> ValueResu
         // Set nested value via dotted key
         set_dotted_value(entries, dk.keys, val_r.value, 0)
 
-        let ws2: ParseState = skip_ws(input, p, ln, c)
+        pon ws2: ParseState = skip_ws(input, p, ln, c)
         p = ws2.pos
         ln = ws2.line
         c = ws2.col
 
-        if p >= slen {
-            return new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated inline table", ln, c) }
+        si p >= slen {
+            da new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated inline table", ln, c) }
         }
 
-        let next_ch: String = input.char_at(p)
-        if next_ch == "}" {
-            return new ValueResult { value: Table(entries), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+        pon next_ch: String = input.char_at(p)
+        si next_ch == "}" {
+            da new ValueResult { value: Table(entries), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
         }
-        if next_ch == "," {
+        si next_ch == "," {
             p = p + 1
             c = c + 1
-        } else {
-            return new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected comma or } in inline table", ln, c) }
+        } sino {
+            da new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected comma or } en inline table", ln, c) }
         }
     }
-    return new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Inline table too many keys", ln, c) }
+    da new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Inline table too many keys", ln, c) }
 }
 
 // ---------------------------------------------------------------------------
@@ -1201,39 +1201,39 @@ fn parse_inline_table(input: String, pos: Int, line: Int, col: Int) -> ValueResu
 // ---------------------------------------------------------------------------
 
 fn set_dotted_value(table: Map<String, TomlValue>, keys: List<String>, value: TomlValue, idx: Int) -> Bool {
-    let key_count: Int = len(keys)
-    if idx >= key_count { return false }
+    pon key_count: Int = len(keys)
+    si idx >= key_count { da false }
 
-    let key: String = keys[idx]
+    pon key: String = keys[idx]
 
-    if idx == key_count - 1 {
+    si idx == key_count - 1 {
         // Last key — set the value
         table[key] = value
-        return true
+        da true
     }
 
     // Intermediate key — ensure it's a table
-    let mut found: Bool = false
-    for k in table {
-        if k == key { found = true }
+    pon mut found: Bool = false
+    cada k en table {
+        si k == key { found = true }
     }
 
-    if found == false {
+    si found == false {
         // Create intermediate table
-        let mut sub: Map<String, TomlValue> = #{}
+        pon mut sub: Map<String, TomlValue> = #{}
         table[key] = Table(sub)
-        return set_dotted_value(sub, keys, value, idx + 1)
+        da set_dotted_value(sub, keys, value, idx + 1)
     }
 
     // Key exists — must be a table
-    let existing: TomlValue = table[key]
+    pon existing: TomlValue = table[key]
     match existing {
         Table(sub_map) => {
-            return set_dotted_value(sub_map, keys, value, idx + 1)
+            da set_dotted_value(sub_map, keys, value, idx + 1)
         },
         _ => {
             // Not a table — error (key redefinition)
-            return false
+            da false
         }
     }
 }
@@ -1243,43 +1243,43 @@ fn set_dotted_value(table: Map<String, TomlValue>, keys: List<String>, value: To
 // ---------------------------------------------------------------------------
 
 fn ensure_table_path(root: Map<String, TomlValue>, keys: List<String>, idx: Int, key_count: Int) -> Map<String, TomlValue> {
-    if idx >= key_count { return root }
+    si idx >= key_count { da root }
 
-    let key: String = keys[idx]
+    pon key: String = keys[idx]
 
-    let mut found: Bool = false
-    for k in root {
-        if k == key { found = true }
+    pon mut found: Bool = false
+    cada k en root {
+        si k == key { found = true }
     }
 
-    if found == false {
-        let mut sub: Map<String, TomlValue> = #{}
+    si found == false {
+        pon mut sub: Map<String, TomlValue> = #{}
         root[key] = Table(sub)
-        return ensure_table_path(sub, keys, idx + 1, key_count)
+        da ensure_table_path(sub, keys, idx + 1, key_count)
     }
 
-    let existing: TomlValue = root[key]
+    pon existing: TomlValue = root[key]
     match existing {
         Table(sub_map) => {
-            return ensure_table_path(sub_map, keys, idx + 1, key_count)
+            da ensure_table_path(sub_map, keys, idx + 1, key_count)
         },
         Array(arr) => {
             // Array of tables — get the last element
-            let arr_len: Int = len(arr)
-            if arr_len > 0 {
-                let last: TomlValue = arr[arr_len - 1]
+            pon arr_len: Int = len(arr)
+            si arr_len > 0 {
+                pon last: TomlValue = arr[arr_len - 1]
                 match last {
                     Table(last_map) => {
-                        return ensure_table_path(last_map, keys, idx + 1, key_count)
+                        da ensure_table_path(last_map, keys, idx + 1, key_count)
                     },
-                    _ => { return root }
+                    _ => { da root }
                 }
             }
-            return root
+            da root
         },
         _ => {
             // Key exists but is not a table — return root (caller will detect error)
-            return root
+            da root
         }
     }
 }
@@ -1289,179 +1289,179 @@ fn ensure_table_path(root: Map<String, TomlValue>, keys: List<String>, idx: Int,
 // ---------------------------------------------------------------------------
 
 fn parse_toml_document(input: String) -> Result<Map<String, TomlValue>, TomlError> {
-    let slen: Int = len(input)
-    let mut p: Int = 0
-    let mut ln: Int = 1
-    let mut c: Int = 1
-    let mut root: Map<String, TomlValue> = #{}
-    let mut current_table: Map<String, TomlValue> = root
+    pon slen: Int = len(input)
+    pon mut p: Int = 0
+    pon mut ln: Int = 1
+    pon mut c: Int = 1
+    pon mut root: Map<String, TomlValue> = #{}
+    pon mut current_table: Map<String, TomlValue> = root
 
-    let mut guard: Int = 0
-    while guard < 10000000 {
+    pon mut guard: Int = 0
+    mien guard < 10000000 {
         guard = guard + 1
 
         // Skip whitespace, comments, newlines
-        let ws: ParseState = skip_ws_comments_newlines(input, p, ln, c)
+        pon ws: ParseState = skip_ws_comments_newlines(input, p, ln, c)
         p = ws.pos
         ln = ws.line
         c = ws.col
 
-        if p >= slen { break }
+        si p >= slen { sal }
 
-        let ch: String = input.char_at(p)
+        pon ch: String = input.char_at(p)
 
         // Table header [key] or [[key]]
-        if ch == "[" {
-            if p + 1 < slen {
-                if input.char_at(p + 1) == "[" {
+        si ch == "[" {
+            si p + 1 < slen {
+                si input.char_at(p + 1) == "[" {
                     // Array of tables [[key]]
                     p = p + 2
                     c = c + 2
 
-                    let ws_k: ParseState = skip_ws(input, p, ln, c)
+                    pon ws_k: ParseState = skip_ws(input, p, ln, c)
                     p = ws_k.pos
                     c = ws_k.col
 
-                    let dk: DottedKeyResult = parse_dotted_key(input, p, ln, c)
-                    if dk.ok == false { return Err(dk.error) }
+                    pon dk: DottedKeyResult = parse_dotted_key(input, p, ln, c)
+                    si dk.ok == false { da Err(dk.error) }
                     p = dk.pos
                     ln = dk.line
                     c = dk.col
 
-                    let ws_a: ParseState = skip_ws(input, p, ln, c)
+                    pon ws_a: ParseState = skip_ws(input, p, ln, c)
                     p = ws_a.pos
                     c = ws_a.col
 
-                    if p + 1 >= slen {
-                        return Err(new_toml_error("Expected ]]", ln, c))
+                    si p + 1 >= slen {
+                        da Err(new_toml_error("Expected ]]", ln, c))
                     }
-                    if input.char_at(p) != "]" {
-                        return Err(new_toml_error("Expected ]]", ln, c))
+                    si input.char_at(p) != "]" {
+                        da Err(new_toml_error("Expected ]]", ln, c))
                     }
-                    if input.char_at(p + 1) != "]" {
-                        return Err(new_toml_error("Expected ]]", ln, c))
+                    si input.char_at(p + 1) != "]" {
+                        da Err(new_toml_error("Expected ]]", ln, c))
                     }
                     p = p + 2
                     c = c + 2
 
                     // Handle array of tables
-                    let aot_key_count: Int = len(dk.keys)
-                    let last_key: String = dk.keys[aot_key_count - 1]
-                    let parent: Map<String, TomlValue> = ensure_table_path(root, dk.keys, 0, aot_key_count - 1)
+                    pon aot_key_count: Int = len(dk.keys)
+                    pon last_key: String = dk.keys[aot_key_count - 1]
+                    pon parent: Map<String, TomlValue> = ensure_table_path(root, dk.keys, 0, aot_key_count - 1)
 
                     // Check if array exists for last key
-                    let mut arr_found: Bool = false
-                    for k in parent {
-                        if k == last_key { arr_found = true }
+                    pon mut arr_found: Bool = false
+                    cada k en parent {
+                        si k == last_key { arr_found = true }
                     }
 
-                    let mut new_table: Map<String, TomlValue> = #{}
-                    if arr_found == false {
+                    pon mut new_table: Map<String, TomlValue> = #{}
+                    si arr_found == false {
                         // Create new array with one empty table
-                        let mut arr: List<TomlValue> = []
+                        pon mut arr: List<TomlValue> = []
                         arr = arr + [Table(new_table)]
                         parent[last_key] = Array(arr)
-                    } else {
+                    } sino {
                         // Append new table to existing array
-                        let existing: TomlValue = parent[last_key]
+                        pon existing: TomlValue = parent[last_key]
                         match existing {
                             Array(arr) => {
-                                let mut new_arr: List<TomlValue> = arr + [Table(new_table)]
+                                pon mut new_arr: List<TomlValue> = arr + [Table(new_table)]
                                 parent[last_key] = Array(new_arr)
                             },
                             _ => {
-                                return Err(new_toml_error("Key already exists and is not an array of tables: " + last_key, ln, c))
+                                da Err(new_toml_error("Key already exists and is not an array of tables: " + last_key, ln, c))
                             }
                         }
                     }
                     current_table = new_table
-                } else {
+                } sino {
                     // Standard table [key]
                     p = p + 1
                     c = c + 1
 
-                    let ws_k: ParseState = skip_ws(input, p, ln, c)
+                    pon ws_k: ParseState = skip_ws(input, p, ln, c)
                     p = ws_k.pos
                     c = ws_k.col
 
-                    let dk: DottedKeyResult = parse_dotted_key(input, p, ln, c)
-                    if dk.ok == false { return Err(dk.error) }
+                    pon dk: DottedKeyResult = parse_dotted_key(input, p, ln, c)
+                    si dk.ok == false { da Err(dk.error) }
                     p = dk.pos
                     ln = dk.line
                     c = dk.col
 
-                    let ws_b: ParseState = skip_ws(input, p, ln, c)
+                    pon ws_b: ParseState = skip_ws(input, p, ln, c)
                     p = ws_b.pos
                     c = ws_b.col
 
-                    if p >= slen {
-                        return Err(new_toml_error("Expected ]", ln, c))
+                    si p >= slen {
+                        da Err(new_toml_error("Expected ]", ln, c))
                     }
-                    if input.char_at(p) != "]" {
-                        return Err(new_toml_error("Expected ]", ln, c))
+                    si input.char_at(p) != "]" {
+                        da Err(new_toml_error("Expected ]", ln, c))
                     }
                     p = p + 1
                     c = c + 1
 
-                    let target: Map<String, TomlValue> = ensure_table_path(root, dk.keys, 0, len(dk.keys))
+                    pon target: Map<String, TomlValue> = ensure_table_path(root, dk.keys, 0, len(dk.keys))
                     current_table = target
                 }
-            } else {
-                return Err(new_toml_error("Unexpected end of input after [", ln, c))
+            } sino {
+                da Err(new_toml_error("Unexpected end of input after [", ln, c))
             }
-        } else {
+        } sino {
             // Key = value pair
-            let dk: DottedKeyResult = parse_dotted_key(input, p, ln, c)
-            if dk.ok == false { return Err(dk.error) }
+            pon dk: DottedKeyResult = parse_dotted_key(input, p, ln, c)
+            si dk.ok == false { da Err(dk.error) }
             p = dk.pos
             ln = dk.line
             c = dk.col
 
             // Expect =
-            let ws_eq: ParseState = skip_ws(input, p, ln, c)
+            pon ws_eq: ParseState = skip_ws(input, p, ln, c)
             p = ws_eq.pos
             c = ws_eq.col
 
-            if p >= slen {
-                return Err(new_toml_error("Expected = after key", ln, c))
+            si p >= slen {
+                da Err(new_toml_error("Expected = after key", ln, c))
             }
-            if input.char_at(p) != "=" {
-                return Err(new_toml_error("Expected = after key", ln, c))
+            si input.char_at(p) != "=" {
+                da Err(new_toml_error("Expected = after key", ln, c))
             }
             p = p + 1
             c = c + 1
 
-            let val_r: ValueResult = parse_toml_value(input, p, ln, c)
-            if val_r.ok == false { return Err(val_r.error) }
+            pon val_r: ValueResult = parse_toml_value(input, p, ln, c)
+            si val_r.ok == false { da Err(val_r.error) }
             p = val_r.pos
             ln = val_r.line
             c = val_r.col
 
             // Set value in current table via dotted key
-            let dk_count: Int = len(dk.keys)
-            if dk_count == 1 {
-                let key: String = dk.keys[0]
+            pon dk_count: Int = len(dk.keys)
+            si dk_count == 1 {
+                pon key: String = dk.keys[0]
                 // Check for duplicate keys
-                let mut dup: Bool = false
-                for k in current_table {
-                    if k == key { dup = true }
+                pon mut dup: Bool = false
+                cada k en current_table {
+                    si k == key { dup = true }
                 }
-                if dup {
-                    return Err(new_toml_error("Duplicate key: " + key, ln, c))
+                si dup {
+                    da Err(new_toml_error("Duplicate key: " + key, ln, c))
                 }
                 current_table[key] = val_r.value
-            } else {
+            } sino {
                 set_dotted_value(current_table, dk.keys, val_r.value, 0)
             }
 
             // Expect end of line, comment, or end of file
-            let ws_end: ParseState = skip_ws_and_comments(input, p, ln, c)
+            pon ws_end: ParseState = skip_ws_and_comments(input, p, ln, c)
             p = ws_end.pos
             c = ws_end.col
         }
     }
 
-    return Ok(root)
+    da Ok(root)
 }
 
 // ---------------------------------------------------------------------------
@@ -1469,10 +1469,10 @@ fn parse_toml_document(input: String) -> Result<Map<String, TomlValue>, TomlErro
 // ---------------------------------------------------------------------------
 
 pub fn decode(input: String) -> Result<TomlValue, TomlError> {
-    let result: Result<Map<String, TomlValue>, TomlError> = parse_toml_document(input)
+    pon result: Result<Map<String, TomlValue>, TomlError> = parse_toml_document(input)
     match result {
-        Ok(table) => { return Ok(Table(table)) },
-        Err(e) => { return Err(e) }
+        Ok(table) => { da Ok(Table(table)) },
+        Err(e) => { da Err(e) }
     }
 }
 
@@ -1481,67 +1481,67 @@ pub fn decode(input: String) -> Result<TomlValue, TomlError> {
 // ---------------------------------------------------------------------------
 
 fn escape_toml_basic_string(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        if ch == "\"" { result = result + "\\\"" } else { if ch == "\\" { result = result + "\\\\" } else { if ch == "\n" { result = result + "\\n" } else { if ch == "\t" { result = result + "\\t" } else { if ch == "\r" { result = result + "\\r" } else { result = result + ch } } } } }
+    pon slen: Int = len(s)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        si ch == "\"" { result = result + "\\\"" } sino { si ch == "\\" { result = result + "\\\\" } sino { si ch == "\n" { result = result + "\\n" } sino { si ch == "\t" { result = result + "\\t" } sino { si ch == "\r" { result = result + "\\r" } sino { result = result + ch } } } } }
         i = i + 1
     }
-    return result
+    da result
 }
 
 fn needs_quoting(key: String) -> Bool {
-    let klen: Int = len(key)
-    if klen == 0 { return true }
-    let mut i: Int = 0
-    while i < klen {
-        let ch: String = key.char_at(i)
-        if is_bare_key_char(ch) == false { return true }
+    pon klen: Int = len(key)
+    si klen == 0 { da true }
+    pon mut i: Int = 0
+    mien i < klen {
+        pon ch: String = key.char_at(i)
+        si is_bare_key_char(ch) == false { da true }
         i = i + 1
     }
-    return false
+    da false
 }
 
 fn encode_key(key: String) -> String {
-    if needs_quoting(key) {
-        return "\"" + escape_toml_basic_string(key) + "\""
+    si needs_quoting(key) {
+        da "\"" + escape_toml_basic_string(key) + "\""
     }
-    return key
+    da key
 }
 
 fn is_simple_value(value: TomlValue) -> Bool {
     match value {
-        Table(m) => { return false },
+        Table(m) => { da false },
         Array(items) => {
             // Check if array contains tables
-            let item_count: Int = len(items)
-            let mut i: Int = 0
-            while i < item_count {
+            pon item_count: Int = len(items)
+            pon mut i: Int = 0
+            mien i < item_count {
                 match items[i] {
-                    Table(t) => { return false },
+                    Table(t) => { da false },
                     _ => {}
                 }
                 i = i + 1
             }
-            return true
+            da true
         },
-        _ => { return true }
+        _ => { da true }
     }
 }
 
 fn is_table_array(value: TomlValue) -> Bool {
     match value {
         Array(items) => {
-            let item_count: Int = len(items)
-            if item_count == 0 { return false }
+            pon item_count: Int = len(items)
+            si item_count == 0 { da false }
             match items[0] {
-                Table(t) => { return true },
-                _ => { return false }
+                Table(t) => { da true },
+                _ => { da false }
             }
         },
-        _ => { return false }
+        _ => { da false }
     }
 }
 
@@ -1551,35 +1551,35 @@ fn is_table_array(value: TomlValue) -> Bool {
 
 fn encode_value_inline(value: TomlValue) -> String {
     match value {
-        Str(s) => { return "\"" + escape_toml_basic_string(s) + "\"" },
-        Int(n) => { return str(n) },
-        Float(f) => { return str(f) },
+        Str(s) => { da "\"" + escape_toml_basic_string(s) + "\"" },
+        Int(n) => { da str(n) },
+        Float(f) => { da str(f) },
         Bool(b) => {
-            if b { return "true" } else { return "false" }
+            si b { da "true" } sino { da "false" }
         },
-        DateTime(dt) => { return dt },
+        DateTime(dt) => { da dt },
         Array(items) => {
-            let item_count: Int = len(items)
-            if item_count == 0 { return "[]" }
-            let mut result: String = "["
-            let mut i: Int = 0
-            while i < item_count {
-                if i > 0 { result = result + ", " }
+            pon item_count: Int = len(items)
+            si item_count == 0 { da "[]" }
+            pon mut result: String = "["
+            pon mut i: Int = 0
+            mien i < item_count {
+                si i > 0 { result = result + ", " }
                 result = result + encode_value_inline(items[i])
                 i = i + 1
             }
             result = result + "]"
-            return result
+            da result
         },
         Table(entries) => {
-            let mut result: String = "{"
-            let mut first: Bool = true
-            for key in entries {
-                if first { first = false } else { result = result + ", " }
+            pon mut result: String = "{"
+            pon mut first: Bool = true
+            cada key en entries {
+                si first { first = false } sino { result = result + ", " }
                 result = result + encode_key(key) + " = " + encode_value_inline(entries[key])
             }
             result = result + "}"
-            return result
+            da result
         }
     }
 }
@@ -1589,25 +1589,25 @@ fn encode_value_inline(value: TomlValue) -> String {
 // ---------------------------------------------------------------------------
 
 fn encode_table_section(table: Map<String, TomlValue>, path: String) -> String {
-    let mut result: String = ""
+    pon mut result: String = ""
 
     // First pass: emit simple key = value pairs
-    for key in table {
-        let val: TomlValue = table[key]
-        if is_simple_value(val) {
+    cada key en table {
+        pon val: TomlValue = table[key]
+        si is_simple_value(val) {
             result = result + encode_key(key) + " = " + encode_value_inline(val) + "\n"
         }
     }
 
     // Second pass: emit sub-tables
-    for key in table {
-        let val: TomlValue = table[key]
+    cada key en table {
+        pon val: TomlValue = table[key]
         match val {
             Table(sub) => {
-                let mut sub_path: String = ""
-                if len(path) == 0 {
+                pon mut sub_path: String = ""
+                si len(path) == 0 {
                     sub_path = encode_key(key)
-                } else {
+                } sino {
                     sub_path = path + "." + encode_key(key)
                 }
                 result = result + "\n[" + sub_path + "]\n"
@@ -1618,18 +1618,18 @@ fn encode_table_section(table: Map<String, TomlValue>, path: String) -> String {
     }
 
     // Third pass: emit array-of-tables
-    for key in table {
-        let val: TomlValue = table[key]
-        if is_table_array(val) {
+    cada key en table {
+        pon val: TomlValue = table[key]
+        si is_table_array(val) {
             match val {
                 Array(items) => {
-                    let item_count: Int = len(items)
-                    let mut i: Int = 0
-                    while i < item_count {
-                        let mut aot_path: String = ""
-                        if len(path) == 0 {
+                    pon item_count: Int = len(items)
+                    pon mut i: Int = 0
+                    mien i < item_count {
+                        pon mut aot_path: String = ""
+                        si len(path) == 0 {
                             aot_path = encode_key(key)
-                        } else {
+                        } sino {
                             aot_path = path + "." + encode_key(key)
                         }
                         result = result + "\n[[" + aot_path + "]]\n"
@@ -1647,7 +1647,7 @@ fn encode_table_section(table: Map<String, TomlValue>, path: String) -> String {
         }
     }
 
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -1657,11 +1657,11 @@ fn encode_table_section(table: Map<String, TomlValue>, path: String) -> String {
 pub fn encode(value: TomlValue) -> String {
     match value {
         Table(table) => {
-            return encode_table_section(table, "")
+            da encode_table_section(table, "")
         },
         _ => {
             // TOML top-level must be a table
-            return encode_value_inline(value) + "\n"
+            da encode_value_inline(value) + "\n"
         }
     }
 }
@@ -1671,50 +1671,50 @@ pub fn encode(value: TomlValue) -> String {
 // ---------------------------------------------------------------------------
 
 fn max_key_len(table: Map<String, TomlValue>) -> Int {
-    let mut max_len: Int = 0
-    for key in table {
-        let val: TomlValue = table[key]
-        if is_simple_value(val) {
-            let kl: Int = len(encode_key(key))
-            if kl > max_len { max_len = kl }
+    pon mut max_len: Int = 0
+    cada key en table {
+        pon val: TomlValue = table[key]
+        si is_simple_value(val) {
+            pon kl: Int = len(encode_key(key))
+            si kl > max_len { max_len = kl }
         }
     }
-    return max_len
+    da max_len
 }
 
 fn make_padding(count: Int) -> String {
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < count {
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < count {
         result = result + " "
         i = i + 1
     }
-    return result
+    da result
 }
 
 fn encode_table_pretty(table: Map<String, TomlValue>, path: String) -> String {
-    let mut result: String = ""
-    let max_kl: Int = max_key_len(table)
+    pon mut result: String = ""
+    pon max_kl: Int = max_key_len(table)
 
     // First pass: simple key = value with aligned =
-    for key in table {
-        let val: TomlValue = table[key]
-        if is_simple_value(val) {
-            let encoded_key: String = encode_key(key)
-            let padding: String = make_padding(max_kl - len(encoded_key))
+    cada key en table {
+        pon val: TomlValue = table[key]
+        si is_simple_value(val) {
+            pon encoded_key: String = encode_key(key)
+            pon padding: String = make_padding(max_kl - len(encoded_key))
             result = result + encoded_key + padding + " = " + encode_value_inline(val) + "\n"
         }
     }
 
     // Second pass: sub-tables
-    for key in table {
-        let val: TomlValue = table[key]
+    cada key en table {
+        pon val: TomlValue = table[key]
         match val {
             Table(sub) => {
-                let mut sub_path: String = ""
-                if len(path) == 0 {
+                pon mut sub_path: String = ""
+                si len(path) == 0 {
                     sub_path = encode_key(key)
-                } else {
+                } sino {
                     sub_path = path + "." + encode_key(key)
                 }
                 result = result + "\n[" + sub_path + "]\n"
@@ -1725,18 +1725,18 @@ fn encode_table_pretty(table: Map<String, TomlValue>, path: String) -> String {
     }
 
     // Third pass: array-of-tables
-    for key in table {
-        let val: TomlValue = table[key]
-        if is_table_array(val) {
+    cada key en table {
+        pon val: TomlValue = table[key]
+        si is_table_array(val) {
             match val {
                 Array(items) => {
-                    let item_count: Int = len(items)
-                    let mut i: Int = 0
-                    while i < item_count {
-                        let mut aot_path: String = ""
-                        if len(path) == 0 {
+                    pon item_count: Int = len(items)
+                    pon mut i: Int = 0
+                    mien i < item_count {
+                        pon mut aot_path: String = ""
+                        si len(path) == 0 {
                             aot_path = encode_key(key)
-                        } else {
+                        } sino {
                             aot_path = path + "." + encode_key(key)
                         }
                         result = result + "\n[[" + aot_path + "]]\n"
@@ -1754,16 +1754,16 @@ fn encode_table_pretty(table: Map<String, TomlValue>, path: String) -> String {
         }
     }
 
-    return result
+    da result
 }
 
 pub fn encode_pretty(value: TomlValue) -> String {
     match value {
         Table(table) => {
-            return encode_table_pretty(table, "")
+            da encode_table_pretty(table, "")
         },
         _ => {
-            return encode_value_inline(value) + "\n"
+            da encode_value_inline(value) + "\n"
         }
     }
 }
@@ -1775,128 +1775,128 @@ pub fn encode_pretty(value: TomlValue) -> String {
 pub fn get_string(table: TomlValue, key: String) -> Result<String, TomlError> {
     match table {
         Table(entries) => {
-            let mut found: Bool = false
-            for k in entries {
-                if k == key { found = true }
+            pon mut found: Bool = false
+            cada k en entries {
+                si k == key { found = true }
             }
-            if found == false {
-                return Err(new_toml_error("Key not found: " + key, 0, 0))
+            si found == false {
+                da Err(new_toml_error("Key not found: " + key, 0, 0))
             }
-            let val: TomlValue = entries[key]
+            pon val: TomlValue = entries[key]
             match val {
-                Str(s) => { return Ok(s) },
-                _ => { return Err(new_toml_error("Expected string for key: " + key, 0, 0)) }
+                Str(s) => { da Ok(s) },
+                _ => { da Err(new_toml_error("Expected string cada key: " + key, 0, 0)) }
             }
         },
-        _ => { return Err(new_toml_error("Not a table", 0, 0)) }
+        _ => { da Err(new_toml_error("Not a table", 0, 0)) }
     }
 }
 
 pub fn get_int(table: TomlValue, key: String) -> Result<Int, TomlError> {
     match table {
         Table(entries) => {
-            let mut found: Bool = false
-            for k in entries {
-                if k == key { found = true }
+            pon mut found: Bool = false
+            cada k en entries {
+                si k == key { found = true }
             }
-            if found == false {
-                return Err(new_toml_error("Key not found: " + key, 0, 0))
+            si found == false {
+                da Err(new_toml_error("Key not found: " + key, 0, 0))
             }
-            let val: TomlValue = entries[key]
+            pon val: TomlValue = entries[key]
             match val {
-                Int(n) => { return Ok(n) },
-                _ => { return Err(new_toml_error("Expected integer for key: " + key, 0, 0)) }
+                Int(n) => { da Ok(n) },
+                _ => { da Err(new_toml_error("Expected integer cada key: " + key, 0, 0)) }
             }
         },
-        _ => { return Err(new_toml_error("Not a table", 0, 0)) }
+        _ => { da Err(new_toml_error("Not a table", 0, 0)) }
     }
 }
 
 pub fn get_float(table: TomlValue, key: String) -> Result<Float, TomlError> {
     match table {
         Table(entries) => {
-            let mut found: Bool = false
-            for k in entries {
-                if k == key { found = true }
+            pon mut found: Bool = false
+            cada k en entries {
+                si k == key { found = true }
             }
-            if found == false {
-                return Err(new_toml_error("Key not found: " + key, 0, 0))
+            si found == false {
+                da Err(new_toml_error("Key not found: " + key, 0, 0))
             }
-            let val: TomlValue = entries[key]
+            pon val: TomlValue = entries[key]
             match val {
-                Float(f) => { return Ok(f) },
-                Int(n) => { return Ok(float(n)) },
-                _ => { return Err(new_toml_error("Expected float for key: " + key, 0, 0)) }
+                Float(f) => { da Ok(f) },
+                Int(n) => { da Ok(float(n)) },
+                _ => { da Err(new_toml_error("Expected float cada key: " + key, 0, 0)) }
             }
         },
-        _ => { return Err(new_toml_error("Not a table", 0, 0)) }
+        _ => { da Err(new_toml_error("Not a table", 0, 0)) }
     }
 }
 
 pub fn get_bool(table: TomlValue, key: String) -> Result<Bool, TomlError> {
     match table {
         Table(entries) => {
-            let mut found: Bool = false
-            for k in entries {
-                if k == key { found = true }
+            pon mut found: Bool = false
+            cada k en entries {
+                si k == key { found = true }
             }
-            if found == false {
-                return Err(new_toml_error("Key not found: " + key, 0, 0))
+            si found == false {
+                da Err(new_toml_error("Key not found: " + key, 0, 0))
             }
-            let val: TomlValue = entries[key]
+            pon val: TomlValue = entries[key]
             match val {
-                Bool(b) => { return Ok(b) },
-                _ => { return Err(new_toml_error("Expected boolean for key: " + key, 0, 0)) }
+                Bool(b) => { da Ok(b) },
+                _ => { da Err(new_toml_error("Expected boolean cada key: " + key, 0, 0)) }
             }
         },
-        _ => { return Err(new_toml_error("Not a table", 0, 0)) }
+        _ => { da Err(new_toml_error("Not a table", 0, 0)) }
     }
 }
 
 pub fn get_array(table: TomlValue, key: String) -> Result<List<TomlValue>, TomlError> {
     match table {
         Table(entries) => {
-            let mut found: Bool = false
-            for k in entries {
-                if k == key { found = true }
+            pon mut found: Bool = false
+            cada k en entries {
+                si k == key { found = true }
             }
-            if found == false {
-                return Err(new_toml_error("Key not found: " + key, 0, 0))
+            si found == false {
+                da Err(new_toml_error("Key not found: " + key, 0, 0))
             }
-            let val: TomlValue = entries[key]
+            pon val: TomlValue = entries[key]
             match val {
-                Array(items) => { return Ok(items) },
-                _ => { return Err(new_toml_error("Expected array for key: " + key, 0, 0)) }
+                Array(items) => { da Ok(items) },
+                _ => { da Err(new_toml_error("Expected array cada key: " + key, 0, 0)) }
             }
         },
-        _ => { return Err(new_toml_error("Not a table", 0, 0)) }
+        _ => { da Err(new_toml_error("Not a table", 0, 0)) }
     }
 }
 
 pub fn get_table(table: TomlValue, key: String) -> Result<TomlValue, TomlError> {
     match table {
         Table(entries) => {
-            let mut found: Bool = false
-            for k in entries {
-                if k == key { found = true }
+            pon mut found: Bool = false
+            cada k en entries {
+                si k == key { found = true }
             }
-            if found == false {
-                return Err(new_toml_error("Key not found: " + key, 0, 0))
+            si found == false {
+                da Err(new_toml_error("Key not found: " + key, 0, 0))
             }
-            let val: TomlValue = entries[key]
+            pon val: TomlValue = entries[key]
             match val {
-                Table(sub) => { return Ok(Table(sub)) },
-                _ => { return Err(new_toml_error("Expected table for key: " + key, 0, 0)) }
+                Table(sub) => { da Ok(Table(sub)) },
+                _ => { da Err(new_toml_error("Expected table cada key: " + key, 0, 0)) }
             }
         },
-        _ => { return Err(new_toml_error("Not a table", 0, 0)) }
+        _ => { da Err(new_toml_error("Not a table", 0, 0)) }
     }
 }
 
 pub fn get_or_default_str(table: TomlValue, key: String, default_val: String) -> String {
-    let result: Result<String, TomlError> = get_string(table, key)
+    pon result: Result<String, TomlError> = get_string(table, key)
     match result {
-        Ok(s) => { return s },
-        Err(e) => { return default_val }
+        Ok(s) => { da s },
+        Err(e) => { da default_val }
     }
 }

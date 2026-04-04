@@ -8,15 +8,15 @@
 // Core Types
 // ---------------------------------------------------------------------------
 
-pub enum Dtype {
-    I64,
-    F64,
-    Str,
-    Bool,
-    Null
+pub tipo Dtype {
+    | I64
+    | F64
+    | Str
+    | Bool
+    | Null
 }
 
-pub struct Col {
+pub tipo Col {
     name: String,
     dtype: Dtype,
     ints: List<Int>,
@@ -32,16 +32,16 @@ pub struct Col {
 
 pub fn dtype_name(d: Dtype) -> String {
     match d {
-        I64 => { return "I64" },
-        F64 => { return "F64" },
-        Str => { return "Str" },
-        Bool => { return "Bool" },
-        Null => { return "Null" }
+        I64 => { da "I64" },
+        F64 => { da "F64" },
+        Str => { da "Str" },
+        Bool => { da "Bool" },
+        Null => { da "Null" }
     }
 }
 
 pub fn dtype_eq(a: Dtype, b: Dtype) -> Bool {
-    return dtype_name(a) == dtype_name(b)
+    da dtype_name(a) == dtype_name(b)
 }
 
 // ---------------------------------------------------------------------------
@@ -49,13 +49,13 @@ pub fn dtype_eq(a: Dtype, b: Dtype) -> Bool {
 // ---------------------------------------------------------------------------
 
 fn all_true_mask(n: Int) -> List<Bool> {
-    let mut result: List<Bool> = []
-    let mut i: Int = 0
-    while i < n {
+    pon mut result: List<Bool> = []
+    pon mut i: Int = 0
+    mien i < n {
         result = result + [true]
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -63,23 +63,23 @@ fn all_true_mask(n: Int) -> List<Bool> {
 // ---------------------------------------------------------------------------
 
 pub fn col_i64(name: String, data: List<Int>) -> Col {
-    let m: List<Bool> = all_true_mask(len(data))
-    return new Col { name: name, dtype: I64(), ints: data, floats: [], strs: [], bools: [], mask: m }
+    pon m: List<Bool> = all_true_mask(len(data))
+    da new Col { name: name, dtype: I64(), ints: data, floats: [], strs: [], bools: [], mask: m }
 }
 
 pub fn col_f64(name: String, data: List<Float>) -> Col {
-    let m: List<Bool> = all_true_mask(len(data))
-    return new Col { name: name, dtype: F64(), ints: [], floats: data, strs: [], bools: [], mask: m }
+    pon m: List<Bool> = all_true_mask(len(data))
+    da new Col { name: name, dtype: F64(), ints: [], floats: data, strs: [], bools: [], mask: m }
 }
 
 pub fn col_str(name: String, data: List<String>) -> Col {
-    let m: List<Bool> = all_true_mask(len(data))
-    return new Col { name: name, dtype: Str(), ints: [], floats: [], strs: data, bools: [], mask: m }
+    pon m: List<Bool> = all_true_mask(len(data))
+    da new Col { name: name, dtype: Str(), ints: [], floats: [], strs: data, bools: [], mask: m }
 }
 
 pub fn col_bool(name: String, data: List<Bool>) -> Col {
-    let m: List<Bool> = all_true_mask(len(data))
-    return new Col { name: name, dtype: Bool(), ints: [], floats: [], strs: [], bools: data, mask: m }
+    pon m: List<Bool> = all_true_mask(len(data))
+    da new Col { name: name, dtype: Bool(), ints: [], floats: [], strs: [], bools: data, mask: m }
 }
 
 // ---------------------------------------------------------------------------
@@ -87,19 +87,19 @@ pub fn col_bool(name: String, data: List<Bool>) -> Col {
 // ---------------------------------------------------------------------------
 
 pub fn col_i64_masked(name: String, data: List<Int>, mask: List<Bool>) -> Col {
-    return new Col { name: name, dtype: I64(), ints: data, floats: [], strs: [], bools: [], mask: mask }
+    da new Col { name: name, dtype: I64(), ints: data, floats: [], strs: [], bools: [], mask: mask }
 }
 
 pub fn col_f64_masked(name: String, data: List<Float>, mask: List<Bool>) -> Col {
-    return new Col { name: name, dtype: F64(), ints: [], floats: data, strs: [], bools: [], mask: mask }
+    da new Col { name: name, dtype: F64(), ints: [], floats: data, strs: [], bools: [], mask: mask }
 }
 
 pub fn col_str_masked(name: String, data: List<String>, mask: List<Bool>) -> Col {
-    return new Col { name: name, dtype: Str(), ints: [], floats: [], strs: data, bools: [], mask: mask }
+    da new Col { name: name, dtype: Str(), ints: [], floats: [], strs: data, bools: [], mask: mask }
 }
 
 pub fn col_bool_masked(name: String, data: List<Bool>, mask: List<Bool>) -> Col {
-    return new Col { name: name, dtype: Bool(), ints: [], floats: [], strs: [], bools: data, mask: mask }
+    da new Col { name: name, dtype: Bool(), ints: [], floats: [], strs: [], bools: data, mask: mask }
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ pub fn col_bool_masked(name: String, data: List<Bool>, mask: List<Bool>) -> Col 
 // ---------------------------------------------------------------------------
 
 pub fn col_len(c: Col) -> Int {
-    return len(c.mask)
+    da len(c.mask)
 }
 
 // ---------------------------------------------------------------------------
@@ -115,31 +115,31 @@ pub fn col_len(c: Col) -> Int {
 // ---------------------------------------------------------------------------
 
 pub fn get_int(c: Col, i: Int) -> Int {
-    if i < 0 { return 0 }
-    if i >= len(c.mask) { return 0 }
-    if c.mask[i] == false { return 0 }
-    return c.ints[i]
+    si i < 0 { da 0 }
+    si i >= len(c.mask) { da 0 }
+    si c.mask[i] == false { da 0 }
+    da c.ints[i]
 }
 
 pub fn get_float(c: Col, i: Int) -> Float {
-    if i < 0 { return 0.0 }
-    if i >= len(c.mask) { return 0.0 }
-    if c.mask[i] == false { return 0.0 }
-    return c.floats[i]
+    si i < 0 { da 0.0 }
+    si i >= len(c.mask) { da 0.0 }
+    si c.mask[i] == false { da 0.0 }
+    da c.floats[i]
 }
 
 pub fn get_str(c: Col, i: Int) -> String {
-    if i < 0 { return "" }
-    if i >= len(c.mask) { return "" }
-    if c.mask[i] == false { return "" }
-    return c.strs[i]
+    si i < 0 { da "" }
+    si i >= len(c.mask) { da "" }
+    si c.mask[i] == false { da "" }
+    da c.strs[i]
 }
 
 pub fn get_bool(c: Col, i: Int) -> Bool {
-    if i < 0 { return false }
-    if i >= len(c.mask) { return false }
-    if c.mask[i] == false { return false }
-    return c.bools[i]
+    si i < 0 { da false }
+    si i >= len(c.mask) { da false }
+    si c.mask[i] == false { da false }
+    da c.bools[i]
 }
 
 // ---------------------------------------------------------------------------
@@ -147,16 +147,16 @@ pub fn get_bool(c: Col, i: Int) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn value_to_string(c: Col, i: Int) -> String {
-    if i < 0 { return "null" }
-    if i >= len(c.mask) { return "null" }
-    if c.mask[i] == false { return "null" }
+    si i < 0 { da "null" }
+    si i >= len(c.mask) { da "null" }
+    si c.mask[i] == false { da "null" }
     match c.dtype {
-        I64 => { return str(c.ints[i]) },
-        F64 => { return str(c.floats[i]) },
-        Str => { return c.strs[i] },
+        I64 => { da str(c.ints[i]) },
+        F64 => { da str(c.floats[i]) },
+        Str => { da c.strs[i] },
         Bool => {
-            if c.bools[i] { return "true" } else { return "false" }
+            si c.bools[i] { da "true" } sino { da "false" }
         },
-        Null => { return "null" }
+        Null => { da "null" }
     }
 }

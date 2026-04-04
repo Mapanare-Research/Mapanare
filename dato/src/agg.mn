@@ -3,14 +3,14 @@
 // Provides group-by, scalar aggregates (sum, mean, min, max, count),
 // grouped aggregates, and describe().
 
-import dato::src::col
-import dato::src::table
+usa dato::src::col
+usa dato::src::table
 
 // ---------------------------------------------------------------------------
 // Grouped type
 // ---------------------------------------------------------------------------
 
-pub struct Grouped {
+pub tipo Grouped {
     key_col: String,
     key_values: List<String>,
     groups: List<table.Table>
@@ -22,51 +22,51 @@ pub struct Grouped {
 
 fn collect_group_indices(c: col.Col, nrows: Int) -> List<List<Int>> {
     // We maintain parallel lists: keys seen and their index lists
-    let mut keys: List<String> = []
-    let mut index_lists: List<List<Int>> = []
+    pon mut keys: List<String> = []
+    pon mut index_lists: List<List<Int>> = []
 
-    let mut i: Int = 0
-    while i < nrows {
-        let val: String = c.strs[i]
-        let mut found_idx: Int = -1
-        let mut j: Int = 0
-        let nkeys: Int = len(keys)
-        while j < nkeys {
-            if keys[j] == val {
+    pon mut i: Int = 0
+    mien i < nrows {
+        pon val: String = c.strs[i]
+        pon mut found_idx: Int = -1
+        pon mut j: Int = 0
+        pon nkeys: Int = len(keys)
+        mien j < nkeys {
+            si keys[j] == val {
                 found_idx = j
             }
             j = j + 1
         }
-        if found_idx >= 0 {
+        si found_idx >= 0 {
             index_lists[found_idx] = index_lists[found_idx] + [i]
-        } else {
+        } sino {
             keys = keys + [val]
             index_lists = index_lists + [[i]]
         }
         i = i + 1
     }
 
-    return index_lists
+    da index_lists
 }
 
 fn collect_group_keys(c: col.Col, nrows: Int) -> List<String> {
-    let mut keys: List<String> = []
-    let mut i: Int = 0
-    while i < nrows {
-        let val: String = c.strs[i]
-        let mut found: Bool = false
-        let nkeys: Int = len(keys)
-        let mut j: Int = 0
-        while j < nkeys {
-            if keys[j] == val { found = true }
+    pon mut keys: List<String> = []
+    pon mut i: Int = 0
+    mien i < nrows {
+        pon val: String = c.strs[i]
+        pon mut found: Bool = false
+        pon nkeys: Int = len(keys)
+        pon mut j: Int = 0
+        mien j < nkeys {
+            si keys[j] == val { found = true }
             j = j + 1
         }
-        if found == false {
+        si found == false {
             keys = keys + [val]
         }
         i = i + 1
     }
-    return keys
+    da keys
 }
 
 // ---------------------------------------------------------------------------
@@ -74,16 +74,16 @@ fn collect_group_keys(c: col.Col, nrows: Int) -> List<String> {
 // ---------------------------------------------------------------------------
 
 fn gather_col_by_indices(c: col.Col, indices: List<Int>) -> col.Col {
-    let n: Int = len(indices)
-    let mut new_mask: List<Bool> = []
-    let mut new_ints: List<Int> = []
-    let mut new_floats: List<Float> = []
-    let mut new_strs: List<String> = []
-    let mut new_bools: List<Bool> = []
+    pon n: Int = len(indices)
+    pon mut new_mask: List<Bool> = []
+    pon mut new_ints: List<Int> = []
+    pon mut new_floats: List<Float> = []
+    pon mut new_strs: List<String> = []
+    pon mut new_bools: List<Bool> = []
 
-    let mut i: Int = 0
-    while i < n {
-        let idx: Int = indices[i]
+    pon mut i: Int = 0
+    mien i < n {
+        pon idx: Int = indices[i]
         new_mask = new_mask + [c.mask[idx]]
         match c.dtype {
             I64 => { new_ints = new_ints + [c.ints[idx]] },
@@ -95,18 +95,18 @@ fn gather_col_by_indices(c: col.Col, indices: List<Int>) -> col.Col {
         i = i + 1
     }
 
-    return new col.Col { name: c.name, dtype: c.dtype, ints: new_ints, floats: new_floats, strs: new_strs, bools: new_bools, mask: new_mask }
+    da new col.Col { name: c.name, dtype: c.dtype, ints: new_ints, floats: new_floats, strs: new_strs, bools: new_bools, mask: new_mask }
 }
 
 fn gather_table_by_indices(t: table.Table, indices: List<Int>) -> table.Table {
-    let nc: Int = len(t.cols)
-    let mut new_cols: List<col.Col> = []
-    let mut i: Int = 0
-    while i < nc {
+    pon nc: Int = len(t.cols)
+    pon mut new_cols: List<col.Col> = []
+    pon mut i: Int = 0
+    mien i < nc {
         new_cols = new_cols + [gather_col_by_indices(t.cols[i], indices)]
         i = i + 1
     }
-    return table.table_unchecked(new_cols, len(indices))
+    da table.table_unchecked(new_cols, len(indices))
 }
 
 // ---------------------------------------------------------------------------
@@ -114,24 +114,24 @@ fn gather_table_by_indices(t: table.Table, indices: List<Int>) -> table.Table {
 // ---------------------------------------------------------------------------
 
 pub fn group(t: table.Table, col_name: String) -> Result<Grouped, table.DatoError> {
-    let idx: Int = table.col_index(t, col_name)
-    if idx < 0 {
-        return Err(ColumnNotFound("Column '" + col_name + "' not found"))
+    pon idx: Int = table.col_index(t, col_name)
+    si idx < 0 {
+        da Err(ColumnNotFound("Column '" + col_name + "' not found"))
     }
 
-    let c: col.Col = t.cols[idx]
-    let keys: List<String> = collect_group_keys(c, t.nrows)
-    let index_lists: List<List<Int>> = collect_group_indices(c, t.nrows)
+    pon c: col.Col = t.cols[idx]
+    pon keys: List<String> = collect_group_keys(c, t.nrows)
+    pon index_lists: List<List<Int>> = collect_group_indices(c, t.nrows)
 
-    let ngroups: Int = len(keys)
-    let mut groups: List<table.Table> = []
-    let mut i: Int = 0
-    while i < ngroups {
+    pon ngroups: Int = len(keys)
+    pon mut groups: List<table.Table> = []
+    pon mut i: Int = 0
+    mien i < ngroups {
         groups = groups + [gather_table_by_indices(t, index_lists[i])]
         i = i + 1
     }
 
-    return Ok(new Grouped { key_col: col_name, key_values: keys, groups: groups })
+    da Ok(new Grouped { key_col: col_name, key_values: keys, groups: groups })
 }
 
 // ---------------------------------------------------------------------------
@@ -139,47 +139,47 @@ pub fn group(t: table.Table, col_name: String) -> Result<Grouped, table.DatoErro
 // ---------------------------------------------------------------------------
 
 pub fn sum_col(t: table.Table, col_name: String) -> Int {
-    let idx: Int = table.col_index(t, col_name)
-    if idx < 0 { return 0 }
-    let c: col.Col = t.cols[idx]
-    let n: Int = col.col_len(c)
-    let mut total: Int = 0
-    let mut i: Int = 0
-    while i < n {
-        if c.mask[i] {
+    pon idx: Int = table.col_index(t, col_name)
+    si idx < 0 { da 0 }
+    pon c: col.Col = t.cols[idx]
+    pon n: Int = col.col_len(c)
+    pon mut total: Int = 0
+    pon mut i: Int = 0
+    mien i < n {
+        si c.mask[i] {
             total = total + c.ints[i]
         }
         i = i + 1
     }
-    return total
+    da total
 }
 
 pub fn sum_col_f(t: table.Table, col_name: String) -> Float {
-    let idx: Int = table.col_index(t, col_name)
-    if idx < 0 { return 0.0 }
-    let c: col.Col = t.cols[idx]
-    let n: Int = col.col_len(c)
-    let mut total: Float = 0.0
-    let mut i: Int = 0
-    while i < n {
-        if c.mask[i] {
+    pon idx: Int = table.col_index(t, col_name)
+    si idx < 0 { da 0.0 }
+    pon c: col.Col = t.cols[idx]
+    pon n: Int = col.col_len(c)
+    pon mut total: Float = 0.0
+    pon mut i: Int = 0
+    mien i < n {
+        si c.mask[i] {
             total = total + c.floats[i]
         }
         i = i + 1
     }
-    return total
+    da total
 }
 
 pub fn mean_col(t: table.Table, col_name: String) -> Float {
-    let idx: Int = table.col_index(t, col_name)
-    if idx < 0 { return 0.0 }
-    let c: col.Col = t.cols[idx]
-    let n: Int = col.col_len(c)
-    let mut total: Float = 0.0
-    let mut present: Int = 0
-    let mut i: Int = 0
-    while i < n {
-        if c.mask[i] {
+    pon idx: Int = table.col_index(t, col_name)
+    si idx < 0 { da 0.0 }
+    pon c: col.Col = t.cols[idx]
+    pon n: Int = col.col_len(c)
+    pon mut total: Float = 0.0
+    pon mut present: Int = 0
+    pon mut i: Int = 0
+    mien i < n {
+        si c.mask[i] {
             match c.dtype {
                 I64 => { total = total + float(c.ints[i]) },
                 F64 => { total = total + c.floats[i] },
@@ -189,60 +189,60 @@ pub fn mean_col(t: table.Table, col_name: String) -> Float {
         }
         i = i + 1
     }
-    if present == 0 { return 0.0 }
-    return total / float(present)
+    si present == 0 { da 0.0 }
+    da total / float(present)
 }
 
 pub fn min_col(t: table.Table, col_name: String) -> Int {
-    let idx: Int = table.col_index(t, col_name)
-    if idx < 0 { return 0 }
-    let c: col.Col = t.cols[idx]
-    let n: Int = col.col_len(c)
-    let mut result: Int = 0
-    let mut found_first: Bool = false
-    let mut i: Int = 0
-    while i < n {
-        if c.mask[i] {
-            if found_first == false {
+    pon idx: Int = table.col_index(t, col_name)
+    si idx < 0 { da 0 }
+    pon c: col.Col = t.cols[idx]
+    pon n: Int = col.col_len(c)
+    pon mut result: Int = 0
+    pon mut found_first: Bool = false
+    pon mut i: Int = 0
+    mien i < n {
+        si c.mask[i] {
+            si found_first == false {
                 result = c.ints[i]
                 found_first = true
-            } else {
-                if c.ints[i] < result {
+            } sino {
+                si c.ints[i] < result {
                     result = c.ints[i]
                 }
             }
         }
         i = i + 1
     }
-    return result
+    da result
 }
 
 pub fn max_col(t: table.Table, col_name: String) -> Int {
-    let idx: Int = table.col_index(t, col_name)
-    if idx < 0 { return 0 }
-    let c: col.Col = t.cols[idx]
-    let n: Int = col.col_len(c)
-    let mut result: Int = 0
-    let mut found_first: Bool = false
-    let mut i: Int = 0
-    while i < n {
-        if c.mask[i] {
-            if found_first == false {
+    pon idx: Int = table.col_index(t, col_name)
+    si idx < 0 { da 0 }
+    pon c: col.Col = t.cols[idx]
+    pon n: Int = col.col_len(c)
+    pon mut result: Int = 0
+    pon mut found_first: Bool = false
+    pon mut i: Int = 0
+    mien i < n {
+        si c.mask[i] {
+            si found_first == false {
                 result = c.ints[i]
                 found_first = true
-            } else {
-                if c.ints[i] > result {
+            } sino {
+                si c.ints[i] > result {
                     result = c.ints[i]
                 }
             }
         }
         i = i + 1
     }
-    return result
+    da result
 }
 
 pub fn count(t: table.Table) -> Int {
-    return t.nrows
+    da t.nrows
 }
 
 // ---------------------------------------------------------------------------
@@ -250,88 +250,88 @@ pub fn count(t: table.Table) -> Int {
 // ---------------------------------------------------------------------------
 
 pub fn group_sum(g: Grouped, col_name: String) -> table.Table {
-    let ngroups: Int = len(g.key_values)
-    let mut key_data: List<String> = []
-    let mut sum_data: List<Int> = []
+    pon ngroups: Int = len(g.key_values)
+    pon mut key_data: List<String> = []
+    pon mut sum_data: List<Int> = []
 
-    let mut i: Int = 0
-    while i < ngroups {
+    pon mut i: Int = 0
+    mien i < ngroups {
         key_data = key_data + [g.key_values[i]]
         sum_data = sum_data + [sum_col(g.groups[i], col_name)]
         i = i + 1
     }
 
-    let key_c: col.Col = col.col_str(g.key_col, key_data)
-    let sum_c: col.Col = col.col_i64(col_name + "_sum", sum_data)
-    return table.table_unchecked([key_c, sum_c], ngroups)
+    pon key_c: col.Col = col.col_str(g.key_col, key_data)
+    pon sum_c: col.Col = col.col_i64(col_name + "_sum", sum_data)
+    da table.table_unchecked([key_c, sum_c], ngroups)
 }
 
 pub fn group_mean(g: Grouped, col_name: String) -> table.Table {
-    let ngroups: Int = len(g.key_values)
-    let mut key_data: List<String> = []
-    let mut mean_data: List<Float> = []
+    pon ngroups: Int = len(g.key_values)
+    pon mut key_data: List<String> = []
+    pon mut mean_data: List<Float> = []
 
-    let mut i: Int = 0
-    while i < ngroups {
+    pon mut i: Int = 0
+    mien i < ngroups {
         key_data = key_data + [g.key_values[i]]
         mean_data = mean_data + [mean_col(g.groups[i], col_name)]
         i = i + 1
     }
 
-    let key_c: col.Col = col.col_str(g.key_col, key_data)
-    let mean_c: col.Col = col.col_f64(col_name + "_mean", mean_data)
-    return table.table_unchecked([key_c, mean_c], ngroups)
+    pon key_c: col.Col = col.col_str(g.key_col, key_data)
+    pon mean_c: col.Col = col.col_f64(col_name + "_mean", mean_data)
+    da table.table_unchecked([key_c, mean_c], ngroups)
 }
 
 pub fn group_count(g: Grouped) -> table.Table {
-    let ngroups: Int = len(g.key_values)
-    let mut key_data: List<String> = []
-    let mut count_data: List<Int> = []
+    pon ngroups: Int = len(g.key_values)
+    pon mut key_data: List<String> = []
+    pon mut count_data: List<Int> = []
 
-    let mut i: Int = 0
-    while i < ngroups {
+    pon mut i: Int = 0
+    mien i < ngroups {
         key_data = key_data + [g.key_values[i]]
         count_data = count_data + [count(g.groups[i])]
         i = i + 1
     }
 
-    let key_c: col.Col = col.col_str(g.key_col, key_data)
-    let count_c: col.Col = col.col_i64("count", count_data)
-    return table.table_unchecked([key_c, count_c], ngroups)
+    pon key_c: col.Col = col.col_str(g.key_col, key_data)
+    pon count_c: col.Col = col.col_i64("count", count_data)
+    da table.table_unchecked([key_c, count_c], ngroups)
 }
 
 pub fn group_min(g: Grouped, col_name: String) -> table.Table {
-    let ngroups: Int = len(g.key_values)
-    let mut key_data: List<String> = []
-    let mut min_data: List<Int> = []
+    pon ngroups: Int = len(g.key_values)
+    pon mut key_data: List<String> = []
+    pon mut min_data: List<Int> = []
 
-    let mut i: Int = 0
-    while i < ngroups {
+    pon mut i: Int = 0
+    mien i < ngroups {
         key_data = key_data + [g.key_values[i]]
         min_data = min_data + [min_col(g.groups[i], col_name)]
         i = i + 1
     }
 
-    let key_c: col.Col = col.col_str(g.key_col, key_data)
-    let min_c: col.Col = col.col_i64(col_name + "_min", min_data)
-    return table.table_unchecked([key_c, min_c], ngroups)
+    pon key_c: col.Col = col.col_str(g.key_col, key_data)
+    pon min_c: col.Col = col.col_i64(col_name + "_min", min_data)
+    da table.table_unchecked([key_c, min_c], ngroups)
 }
 
 pub fn group_max(g: Grouped, col_name: String) -> table.Table {
-    let ngroups: Int = len(g.key_values)
-    let mut key_data: List<String> = []
-    let mut max_data: List<Int> = []
+    pon ngroups: Int = len(g.key_values)
+    pon mut key_data: List<String> = []
+    pon mut max_data: List<Int> = []
 
-    let mut i: Int = 0
-    while i < ngroups {
+    pon mut i: Int = 0
+    mien i < ngroups {
         key_data = key_data + [g.key_values[i]]
         max_data = max_data + [max_col(g.groups[i], col_name)]
         i = i + 1
     }
 
-    let key_c: col.Col = col.col_str(g.key_col, key_data)
-    let max_c: col.Col = col.col_i64(col_name + "_max", max_data)
-    return table.table_unchecked([key_c, max_c], ngroups)
+    pon key_c: col.Col = col.col_str(g.key_col, key_data)
+    pon max_c: col.Col = col.col_i64(col_name + "_max", max_data)
+    da table.table_unchecked([key_c, max_c], ngroups)
 }
 
 // ---------------------------------------------------------------------------
@@ -339,17 +339,17 @@ pub fn group_max(g: Grouped, col_name: String) -> table.Table {
 // ---------------------------------------------------------------------------
 
 pub fn describe(t: table.Table) -> table.Table {
-    let nc: Int = len(t.cols)
-    let mut stat_names: List<String> = []
-    let mut count_data: List<Int> = []
-    let mut sum_data: List<Int> = []
-    let mut mean_data: List<Float> = []
-    let mut min_data: List<Int> = []
-    let mut max_data: List<Int> = []
+    pon nc: Int = len(t.cols)
+    pon mut stat_names: List<String> = []
+    pon mut count_data: List<Int> = []
+    pon mut sum_data: List<Int> = []
+    pon mut mean_data: List<Float> = []
+    pon mut min_data: List<Int> = []
+    pon mut max_data: List<Int> = []
 
-    let mut i: Int = 0
-    while i < nc {
-        let c: col.Col = t.cols[i]
+    pon mut i: Int = 0
+    mien i < nc {
+        pon c: col.Col = t.cols[i]
         match c.dtype {
             I64 => {
                 stat_names = stat_names + [c.name]
@@ -364,13 +364,13 @@ pub fn describe(t: table.Table) -> table.Table {
         i = i + 1
     }
 
-    let nstats: Int = len(stat_names)
-    let name_c: col.Col = col.col_str("column", stat_names)
-    let count_c: col.Col = col.col_i64("count", count_data)
-    let sum_c: col.Col = col.col_i64("sum", sum_data)
-    let mean_c: col.Col = col.col_f64("mean", mean_data)
-    let min_c: col.Col = col.col_i64("min", min_data)
-    let max_c: col.Col = col.col_i64("max", max_data)
+    pon nstats: Int = len(stat_names)
+    pon name_c: col.Col = col.col_str("column", stat_names)
+    pon count_c: col.Col = col.col_i64("count", count_data)
+    pon sum_c: col.Col = col.col_i64("sum", sum_data)
+    pon mean_c: col.Col = col.col_f64("mean", mean_data)
+    pon min_c: col.Col = col.col_i64("min", min_data)
+    pon max_c: col.Col = col.col_i64("max", max_data)
 
-    return table.table_unchecked([name_c, count_c, sum_c, mean_c, min_c, max_c], nstats)
+    da table.table_unchecked([name_c, count_c, sum_c, mean_c, min_c, max_c], nstats)
 }

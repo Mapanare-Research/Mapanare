@@ -4,29 +4,29 @@
 // headers, body content, regex patterns, response time, and word counts.
 // Supports AND/OR logic across multiple matchers and negation.
 
-import text::regex
+usa text::regex
 
 // ---------------------------------------------------------------------------
 // Core types
 // ---------------------------------------------------------------------------
 
-pub enum MatcherType {
-    Status,
-    Header,
-    Body,
-    Regex,
-    ResponseTime,
-    WordCount
+pub tipo MatcherType {
+    | Status
+    | Header
+    | Body
+    | Regex
+    | ResponseTime
+    | WordCount
 }
 
-pub struct Matcher {
+pub tipo Matcher {
     matcher_type: MatcherType,
     condition: String,
     values: List<String>,
     negative: Bool
 }
 
-pub struct ScanResponse {
+pub tipo ScanResponse {
     url: String,
     status: Int,
     headers: Map<String, String>,
@@ -39,7 +39,7 @@ pub struct ScanResponse {
 // ---------------------------------------------------------------------------
 
 fn new_matcher(mtype: MatcherType, condition: String, values: List<String>, negative: Bool) -> Matcher {
-    return new Matcher {
+    da new Matcher {
         matcher_type: mtype,
         condition: condition,
         values: values,
@@ -48,7 +48,7 @@ fn new_matcher(mtype: MatcherType, condition: String, values: List<String>, nega
 }
 
 fn new_scan_response(url: String, status: Int, headers: Map<String, String>, body: String, elapsed_ms: Int) -> ScanResponse {
-    return new ScanResponse {
+    da new ScanResponse {
         url: url,
         status: status,
         headers: headers,
@@ -62,36 +62,36 @@ fn new_scan_response(url: String, status: Int, headers: Map<String, String>, bod
 // ---------------------------------------------------------------------------
 
 fn parse_int_value(s: String) -> Int {
-    let slen: Int = len(s)
-    if slen == 0 {
-        return 0
+    pon slen: Int = len(s)
+    si slen == 0 {
+        da 0
     }
-    let mut result: Int = 0
-    let mut i: Int = 0
-    let mut negative: Bool = false
-    if s.char_at(0) == "-" {
+    pon mut result: Int = 0
+    pon mut i: Int = 0
+    pon mut negative: Bool = false
+    si s.char_at(0) == "-" {
         negative = true
         i = 1
     }
-    while i < slen {
-        let ch: String = s.char_at(i)
-        if ch == "0" { result = result * 10 }
-        else if ch == "1" { result = result * 10 + 1 }
-        else if ch == "2" { result = result * 10 + 2 }
-        else if ch == "3" { result = result * 10 + 3 }
-        else if ch == "4" { result = result * 10 + 4 }
-        else if ch == "5" { result = result * 10 + 5 }
-        else if ch == "6" { result = result * 10 + 6 }
-        else if ch == "7" { result = result * 10 + 7 }
-        else if ch == "8" { result = result * 10 + 8 }
-        else if ch == "9" { result = result * 10 + 9 }
-        else { break }
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        si ch == "0" { result = result * 10 }
+        sino si ch == "1" { result = result * 10 + 1 }
+        sino si ch == "2" { result = result * 10 + 2 }
+        sino si ch == "3" { result = result * 10 + 3 }
+        sino si ch == "4" { result = result * 10 + 4 }
+        sino si ch == "5" { result = result * 10 + 5 }
+        sino si ch == "6" { result = result * 10 + 6 }
+        sino si ch == "7" { result = result * 10 + 7 }
+        sino si ch == "8" { result = result * 10 + 8 }
+        sino si ch == "9" { result = result * 10 + 9 }
+        sino { sal }
         i = i + 1
     }
-    if negative {
-        return 0 - result
+    si negative {
+        da 0 - result
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -99,44 +99,44 @@ fn parse_int_value(s: String) -> Int {
 // ---------------------------------------------------------------------------
 
 fn count_words(s: String) -> Int {
-    let slen: Int = len(s)
-    if slen == 0 {
-        return 0
+    pon slen: Int = len(s)
+    si slen == 0 {
+        da 0
     }
-    let mut count: Int = 0
-    let mut in_word: Bool = false
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        if ch == " " {
-            if in_word {
+    pon mut count: Int = 0
+    pon mut in_word: Bool = false
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        si ch == " " {
+            si in_word {
                 count = count + 1
                 in_word = false
             }
-        } else if ch == "\t" {
-            if in_word {
+        } sino si ch == "\t" {
+            si in_word {
                 count = count + 1
                 in_word = false
             }
-        } else if ch == "\n" {
-            if in_word {
+        } sino si ch == "\n" {
+            si in_word {
                 count = count + 1
                 in_word = false
             }
-        } else if ch == "\r" {
-            if in_word {
+        } sino si ch == "\r" {
+            si in_word {
                 count = count + 1
                 in_word = false
             }
-        } else {
+        } sino {
             in_word = true
         }
         i = i + 1
     }
-    if in_word {
+    si in_word {
         count = count + 1
     }
-    return count
+    da count
 }
 
 // ---------------------------------------------------------------------------
@@ -144,8 +144,8 @@ fn count_words(s: String) -> Int {
 // ---------------------------------------------------------------------------
 
 fn string_contains(haystack: String, needle: String) -> Bool {
-    let idx: Int = haystack.find(needle)
-    return idx >= 0
+    pon idx: Int = haystack.find(needle)
+    da idx >= 0
 }
 
 // ---------------------------------------------------------------------------
@@ -153,16 +153,16 @@ fn string_contains(haystack: String, needle: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn match_status(m: Matcher, status: Int) -> Bool {
-    let status_str: String = str(status)
-    let count: Int = len(m.values)
-    let mut i: Int = 0
-    while i < count {
-        if m.values[i] == status_str {
-            if m.negative { return false } else { return true }
+    pon status_str: String = str(status)
+    pon count: Int = len(m.values)
+    pon mut i: Int = 0
+    mien i < count {
+        si m.values[i] == status_str {
+            si m.negative { da false } sino { da true }
         }
         i = i + 1
     }
-    if m.negative { return true } else { return false }
+    si m.negative { da true } sino { da false }
 }
 
 // ---------------------------------------------------------------------------
@@ -170,32 +170,32 @@ pub fn match_status(m: Matcher, status: Int) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn match_header(m: Matcher, headers: Map<String, String>) -> Bool {
-    let val_count: Int = len(m.values)
-    let mut matched: Int = 0
-    let mut vi: Int = 0
-    while vi < val_count {
-        let target: String = m.values[vi]
-        let mut found: Bool = false
-        for hkey in headers {
-            let header_line: String = hkey + ": " + headers[hkey]
-            if string_contains(header_line, target) {
+    pon val_count: Int = len(m.values)
+    pon mut matched: Int = 0
+    pon mut vi: Int = 0
+    mien vi < val_count {
+        pon target: String = m.values[vi]
+        pon mut found: Bool = false
+        cada hkey en headers {
+            pon header_line: String = hkey + ": " + headers[hkey]
+            si string_contains(header_line, target) {
                 found = true
             }
         }
-        if found {
+        si found {
             matched = matched + 1
         }
         vi = vi + 1
     }
 
-    let mut result: Bool = false
-    if m.condition == "or" {
+    pon mut result: Bool = false
+    si m.condition == "or" {
         result = matched > 0
-    } else {
+    } sino {
         // AND: all must match
         result = matched == val_count
     }
-    if m.negative { return result == false } else { return result }
+    si m.negative { da result == false } sino { da result }
 }
 
 // ---------------------------------------------------------------------------
@@ -203,23 +203,23 @@ pub fn match_header(m: Matcher, headers: Map<String, String>) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn match_body(m: Matcher, body: String) -> Bool {
-    let val_count: Int = len(m.values)
-    let mut matched: Int = 0
-    let mut vi: Int = 0
-    while vi < val_count {
-        if string_contains(body, m.values[vi]) {
+    pon val_count: Int = len(m.values)
+    pon mut matched: Int = 0
+    pon mut vi: Int = 0
+    mien vi < val_count {
+        si string_contains(body, m.values[vi]) {
             matched = matched + 1
         }
         vi = vi + 1
     }
 
-    let mut result: Bool = false
-    if m.condition == "or" {
+    pon mut result: Bool = false
+    si m.condition == "or" {
         result = matched > 0
-    } else {
+    } sino {
         result = matched == val_count
     }
-    if m.negative { return result == false } else { return result }
+    si m.negative { da result == false } sino { da result }
 }
 
 // ---------------------------------------------------------------------------
@@ -227,24 +227,24 @@ pub fn match_body(m: Matcher, body: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn match_regex(m: Matcher, body: String) -> Bool {
-    let val_count: Int = len(m.values)
-    let mut matched: Int = 0
-    let mut vi: Int = 0
-    while vi < val_count {
-        let is_hit: Bool = regex.is_match(m.values[vi], body)
-        if is_hit {
+    pon val_count: Int = len(m.values)
+    pon mut matched: Int = 0
+    pon mut vi: Int = 0
+    mien vi < val_count {
+        pon is_hit: Bool = regex.is_match(m.values[vi], body)
+        si is_hit {
             matched = matched + 1
         }
         vi = vi + 1
     }
 
-    let mut result: Bool = false
-    if m.condition == "or" {
+    pon mut result: Bool = false
+    si m.condition == "or" {
         result = matched > 0
-    } else {
+    } sino {
         result = matched == val_count
     }
-    if m.negative { return result == false } else { return result }
+    si m.negative { da result == false } sino { da result }
 }
 
 // ---------------------------------------------------------------------------
@@ -252,13 +252,13 @@ pub fn match_regex(m: Matcher, body: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn match_response_time(m: Matcher, elapsed_ms: Int) -> Bool {
-    let val_count: Int = len(m.values)
-    if val_count == 0 {
-        if m.negative { return true } else { return false }
+    pon val_count: Int = len(m.values)
+    si val_count == 0 {
+        si m.negative { da true } sino { da false }
     }
-    let threshold: Int = parse_int_value(m.values[0])
-    let result: Bool = elapsed_ms > threshold
-    if m.negative { return result == false } else { return result }
+    pon threshold: Int = parse_int_value(m.values[0])
+    pon result: Bool = elapsed_ms > threshold
+    si m.negative { da result == false } sino { da result }
 }
 
 // ---------------------------------------------------------------------------
@@ -269,23 +269,23 @@ pub fn match_response_time(m: Matcher, elapsed_ms: Int) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn match_word_count(m: Matcher, body: String) -> Bool {
-    let val_count: Int = len(m.values)
-    if val_count < 2 {
-        if m.negative { return true } else { return false }
+    pon val_count: Int = len(m.values)
+    si val_count < 2 {
+        si m.negative { da true } sino { da false }
     }
-    let op: String = m.values[0]
-    let threshold: Int = parse_int_value(m.values[1])
-    let wc: Int = count_words(body)
+    pon op: String = m.values[0]
+    pon threshold: Int = parse_int_value(m.values[1])
+    pon wc: Int = count_words(body)
 
-    let mut result: Bool = false
-    if op == "gt" { result = wc > threshold }
-    else if op == "lt" { result = wc < threshold }
-    else if op == "eq" { result = wc == threshold }
-    else if op == "gte" { result = wc >= threshold }
-    else if op == "lte" { result = wc <= threshold }
-    else { result = false }
+    pon mut result: Bool = false
+    si op == "gt" { result = wc > threshold }
+    sino si op == "lt" { result = wc < threshold }
+    sino si op == "eq" { result = wc == threshold }
+    sino si op == "gte" { result = wc >= threshold }
+    sino si op == "lte" { result = wc <= threshold }
+    sino { result = false }
 
-    if m.negative { return result == false } else { return result }
+    si m.negative { da result == false } sino { da result }
 }
 
 // ---------------------------------------------------------------------------
@@ -294,12 +294,12 @@ pub fn match_word_count(m: Matcher, body: String) -> Bool {
 
 pub fn evaluate_single(m: Matcher, resp: ScanResponse) -> Bool {
     match m.matcher_type {
-        Status => { return match_status(m, resp.status) },
-        Header => { return match_header(m, resp.headers) },
-        Body => { return match_body(m, resp.body) },
-        Regex => { return match_regex(m, resp.body) },
-        ResponseTime => { return match_response_time(m, resp.elapsed_ms) },
-        WordCount => { return match_word_count(m, resp.body) }
+        Status => { da match_status(m, resp.status) },
+        Header => { da match_header(m, resp.headers) },
+        Body => { da match_body(m, resp.body) },
+        Regex => { da match_regex(m, resp.body) },
+        ResponseTime => { da match_response_time(m, resp.elapsed_ms) },
+        WordCount => { da match_word_count(m, resp.body) }
     }
 }
 
@@ -308,19 +308,19 @@ pub fn evaluate_single(m: Matcher, resp: ScanResponse) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn evaluate_matchers(matchers: List<Matcher>, resp: ScanResponse) -> Bool {
-    let count: Int = len(matchers)
-    if count == 0 {
-        return false
+    pon count: Int = len(matchers)
+    si count == 0 {
+        da false
     }
-    let mut i: Int = 0
-    while i < count {
-        let passed: Bool = evaluate_single(matchers[i], resp)
-        if passed == false {
-            return false
+    pon mut i: Int = 0
+    mien i < count {
+        pon passed: Bool = evaluate_single(matchers[i], resp)
+        si passed == false {
+            da false
         }
         i = i + 1
     }
-    return true
+    da true
 }
 
 // ---------------------------------------------------------------------------
@@ -328,12 +328,12 @@ pub fn evaluate_matchers(matchers: List<Matcher>, resp: ScanResponse) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn parse_matcher_type(type_str: String) -> MatcherType {
-    if type_str == "status" { return Status() }
-    if type_str == "header" { return Header() }
-    if type_str == "body" { return Body() }
-    if type_str == "regex" { return Regex() }
-    if type_str == "response_time" { return ResponseTime() }
-    if type_str == "word_count" { return WordCount() }
+    si type_str == "status" { da Status() }
+    si type_str == "header" { da Header() }
+    si type_str == "body" { da Body() }
+    si type_str == "regex" { da Regex() }
+    si type_str == "response_time" { da ResponseTime() }
+    si type_str == "word_count" { da WordCount() }
     // Default to body matcher for unknown types
-    return Body()
+    da Body()
 }

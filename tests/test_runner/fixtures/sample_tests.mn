@@ -1,7 +1,7 @@
 // Sample test file for the built-in test runner
 
 fn add(a: Int, b: Int) -> Int {
-    return a + b
+    da a + b
 }
 
 @test

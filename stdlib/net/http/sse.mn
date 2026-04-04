@@ -12,7 +12,7 @@ extern "C" fn __mn_tcp_send_str(fd: Int, data: String) -> Int
 // Core struct
 // ---------------------------------------------------------------------------
 
-pub struct SseEvent {
+pub tipo SseEvent {
     event_type: String,
     data: String,
     id: String,
@@ -24,7 +24,7 @@ pub struct SseEvent {
 // ---------------------------------------------------------------------------
 
 pub fn new_sse_event(event_type: String, data: String) -> SseEvent {
-    return new SseEvent {
+    da new SseEvent {
         event_type: event_type,
         data: data,
         id: "",
@@ -33,7 +33,7 @@ pub fn new_sse_event(event_type: String, data: String) -> SseEvent {
 }
 
 pub fn sse_data_event(data: String) -> SseEvent {
-    return new SseEvent {
+    da new SseEvent {
         event_type: "message",
         data: data,
         id: "",
@@ -46,7 +46,7 @@ pub fn sse_data_event(data: String) -> SseEvent {
 // ---------------------------------------------------------------------------
 
 pub fn sse_event_with_id(evt: SseEvent, id: String) -> SseEvent {
-    return new SseEvent {
+    da new SseEvent {
         event_type: evt.event_type,
         data: evt.data,
         id: id,
@@ -55,7 +55,7 @@ pub fn sse_event_with_id(evt: SseEvent, id: String) -> SseEvent {
 }
 
 pub fn sse_event_with_retry(evt: SseEvent, retry: Int) -> SseEvent {
-    return new SseEvent {
+    da new SseEvent {
         event_type: evt.event_type,
         data: evt.data,
         id: evt.id,
@@ -76,26 +76,26 @@ pub fn sse_event_with_retry(evt: SseEvent, retry: Int) -> SseEvent {
 // ---------------------------------------------------------------------------
 
 pub fn format_event(evt: SseEvent) -> String {
-    let mut result: String = ""
+    pon mut result: String = ""
 
     // Event type (skip if empty or "message" which is the default)
-    if len(evt.event_type) > 0 {
-        if evt.event_type != "message" {
+    si len(evt.event_type) > 0 {
+        si evt.event_type != "message" {
             result = result + "event: " + evt.event_type + "\n"
         }
     }
 
     // Data — split by newlines, each line gets its own "data: " prefix
-    let data_len: Int = len(evt.data)
-    if data_len > 0 {
-        let mut line: String = ""
-        let mut i: Int = 0
-        while i < data_len {
-            let ch: String = evt.data.char_at(i)
-            if ch == "\n" {
+    pon data_len: Int = len(evt.data)
+    si data_len > 0 {
+        pon mut line: String = ""
+        pon mut i: Int = 0
+        mien i < data_len {
+            pon ch: String = evt.data.char_at(i)
+            si ch == "\n" {
                 result = result + "data: " + line + "\n"
                 line = ""
-            } else {
+            } sino {
                 line = line + ch
             }
             i = i + 1
@@ -105,18 +105,18 @@ pub fn format_event(evt: SseEvent) -> String {
     }
 
     // ID
-    if len(evt.id) > 0 {
+    si len(evt.id) > 0 {
         result = result + "id: " + evt.id + "\n"
     }
 
     // Retry
-    if evt.retry > 0 {
+    si evt.retry > 0 {
         result = result + "retry: " + str(evt.retry) + "\n"
     }
 
     // Trailing blank line terminates the event
     result = result + "\n"
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -124,11 +124,11 @@ pub fn format_event(evt: SseEvent) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn sse_headers() -> Map<String, String> {
-    let mut headers: Map<String, String> = #{}
+    pon mut headers: Map<String, String> = #{}
     headers["Content-Type"] = "text/event-stream"
     headers["Cache-Control"] = "no-cache"
     headers["Connection"] = "keep-alive"
-    return headers
+    da headers
 }
 
 // ---------------------------------------------------------------------------
@@ -136,8 +136,8 @@ pub fn sse_headers() -> Map<String, String> {
 // ---------------------------------------------------------------------------
 
 pub fn sse_send(fd: Int, evt: SseEvent) -> Int {
-    let formatted: String = format_event(evt)
-    return __mn_tcp_send_str(fd, formatted)
+    pon formatted: String = format_event(evt)
+    da __mn_tcp_send_str(fd, formatted)
 }
 
 // ---------------------------------------------------------------------------
@@ -145,5 +145,5 @@ pub fn sse_send(fd: Int, evt: SseEvent) -> Int {
 // ---------------------------------------------------------------------------
 
 pub fn sse_keepalive(fd: Int) -> Int {
-    return __mn_tcp_send_str(fd, ":keepalive\n\n")
+    da __mn_tcp_send_str(fd, ":keepalive\n\n")
 }

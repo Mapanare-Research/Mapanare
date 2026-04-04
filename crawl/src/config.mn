@@ -8,7 +8,7 @@
 // CrawlConfig struct
 // ---------------------------------------------------------------------------
 
-pub struct CrawlConfig {
+pub tipo CrawlConfig {
     seed_urls: List<String>,
     max_depth: Int,
     concurrency: Int,
@@ -28,7 +28,7 @@ pub struct CrawlConfig {
 /// max_depth=3, concurrency=10, delay_ms=1000, respect_robots=true,
 /// max_pages=1000, timeout_ms=30000.
 pub fn default_config(seed: String) -> CrawlConfig {
-    return new CrawlConfig {
+    da new CrawlConfig {
         seed_urls: [seed],
         max_depth: 3,
         concurrency: 10,
@@ -43,7 +43,7 @@ pub fn default_config(seed: String) -> CrawlConfig {
 
 /// Create a CrawlConfig with a custom depth limit.
 pub fn config_with_depth(seed: String, depth: Int) -> CrawlConfig {
-    return new CrawlConfig {
+    da new CrawlConfig {
         seed_urls: [seed],
         max_depth: depth,
         concurrency: 10,
@@ -58,7 +58,7 @@ pub fn config_with_depth(seed: String, depth: Int) -> CrawlConfig {
 
 /// Create a CrawlConfig with multiple seed URLs.
 pub fn config_with_seeds(seeds: List<String>, depth: Int, max_pages: Int) -> CrawlConfig {
-    return new CrawlConfig {
+    da new CrawlConfig {
         seed_urls: seeds,
         max_depth: depth,
         concurrency: 10,
@@ -73,7 +73,7 @@ pub fn config_with_seeds(seeds: List<String>, depth: Int, max_pages: Int) -> Cra
 
 /// Create a CrawlConfig restricted to specific domains.
 pub fn config_with_domains(seed: String, domains: List<String>) -> CrawlConfig {
-    return new CrawlConfig {
+    da new CrawlConfig {
         seed_urls: [seed],
         max_depth: 3,
         concurrency: 10,

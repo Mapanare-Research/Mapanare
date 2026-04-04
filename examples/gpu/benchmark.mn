@@ -5,77 +5,77 @@
 //   mapanare run examples/gpu/benchmark.mn
 //   mapanare build examples/gpu/benchmark.mn -o bench
 
-import gpu::tensor
-import gpu::device
+usa gpu::tensor
+usa gpu::device
 
 fn benchmark_matmul(size: Int, device: DeviceKind) -> Float {
-    let a = ones([size, size])
-    let b = ones([size, size])
+    pon a = ones([size, size])
+    pon b = ones([size, size])
 
     // Move to target device
-    let a_dev = to_device(a, device)
-    let b_dev = to_device(b, device)
+    pon a_dev = to_device(a, device)
+    pon b_dev = to_device(b, device)
 
     // Warm-up run
-    let _warmup = matmul(a_dev, b_dev)
+    pon _warmup = matmul(a_dev, b_dev)
 
     // Timed run (3 iterations, take average)
-    let mut total_ms: Float = 0.0
-    let iterations: Int = 3
+    pon mut total_ms: Float = 0.0
+    pon iterations: Int = 3
 
-    for i in 0..iterations {
-        let result = matmul(a_dev, b_dev)
+    cada i en 0..iterations {
+        pon result = matmul(a_dev, b_dev)
         // result triggers synchronization on GPU
-        let _val: Float = sum(result)
+        pon _val: Float = sum(result)
     }
 
-    return total_ms / float(iterations)
+    da total_ms / float(iterations)
 }
 
 fn benchmark_elementwise(size: Int, device: DeviceKind) -> Float {
-    let n: Int = size * size
-    let a = ones([size, size])
-    let b = ones([size, size])
+    pon n: Int = size * size
+    pon a = ones([size, size])
+    pon b = ones([size, size])
 
-    let a_dev = to_device(a, device)
-    let b_dev = to_device(b, device)
+    pon a_dev = to_device(a, device)
+    pon b_dev = to_device(b, device)
 
     // Chain of operations: (a + b) * (a - b)
-    let mut total_ms: Float = 0.0
-    let iterations: Int = 5
+    pon mut total_ms: Float = 0.0
+    pon iterations: Int = 5
 
-    for i in 0..iterations {
-        let sum_ab = add(a_dev, b_dev)
-        let diff_ab = sub(a_dev, b_dev)
-        let result = mul(sum_ab, diff_ab)
-        let _val: Float = sum(result)
+    cada i en 0..iterations {
+        pon sum_ab = add(a_dev, b_dev)
+        pon diff_ab = sub(a_dev, b_dev)
+        pon result = mul(sum_ab, diff_ab)
+        pon _val: Float = sum(result)
     }
 
-    return total_ms / float(iterations)
+    da total_ms / float(iterations)
 }
 
 fn main() {
     print("=== Mapanare GPU Tensor Benchmark ===")
     print("")
 
-    let detection: DetectionResult = detect_gpus()
-    let gpu_device: DeviceKind = preferred_device(detection)
+    pon detection: DetectionResult = detect_gpus()
+    pon gpu_device: DeviceKind = preferred_device(detection)
 
     print("CPU: available")
     print("GPU: " + device_name(gpu_device))
     print("")
 
-    let sizes: List<Int> = [64, 128, 256, 512, 1024]
+    pon sizes: List<Int> = [64, 128, 256, 512, 1024]
 
     // Matrix multiplication benchmark
     print("--- Matrix Multiplication (C = A @ B) ---")
     print("Size     | CPU (ms)  | GPU (ms)  | Speedup")
     print("---------|-----------|-----------|--------")
 
-    for size in sizes {
-        let cpu_time: Float = benchmark_matmul(size, CPU)
-        let gpu_time: Float = benchmark_matmul(size, gpu_device)
-        let speedup: Float = cpu_time / gpu_time
+    cada size en sizes {
+        pon cpu_time: Float = benchmark_matmul(size, CPU)
+        pon gpu_time: Float = benchmark_matmul(size, gpu_device)
+        pon speedup: Float = cpu_time / gpu_time
 
         print(str(size) + "x" + str(size) + " | " + str(cpu_time) + " | " + str(gpu_time) + " | " + str(speedup) + "x")
     }
@@ -87,10 +87,10 @@ fn main() {
     print("Size     | CPU (ms)  | GPU (ms)  | Speedup")
     print("---------|-----------|-----------|--------")
 
-    for size in sizes {
-        let cpu_time: Float = benchmark_elementwise(size, CPU)
-        let gpu_time: Float = benchmark_elementwise(size, gpu_device)
-        let speedup: Float = cpu_time / gpu_time
+    cada size en sizes {
+        pon cpu_time: Float = benchmark_elementwise(size, CPU)
+        pon gpu_time: Float = benchmark_elementwise(size, gpu_device)
+        pon speedup: Float = cpu_time / gpu_time
 
         print(str(size) + "x" + str(size) + " | " + str(cpu_time) + " | " + str(gpu_time) + " | " + str(speedup) + "x")
     }

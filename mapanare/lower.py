@@ -23,6 +23,7 @@ from mapanare.ast_nodes import (
     CharLiteral,
     ConstructExpr,
     ConstructorPattern,
+    ContinueStmt,
     Definition,
     DocComment,
     EnumDef,
@@ -58,6 +59,7 @@ from mapanare.ast_nodes import (
     OkExpr,
     PipeDef,
     PipeExpr,
+    PrintStmt,
     Program,
     RangeExpr,
     ReturnStmt,
@@ -375,6 +377,7 @@ class MIRLowerer:
         self._current_span: SourceSpan | None = None
         # Loop exit label stack for break statements
         self._loop_exit_stack: list[str] = []
+        self._loop_header_stack: list[str] = []
         # Function return types: fn_name → MIRType (populated in first pass).
         # Pre-seed with imported function return types so cross-module calls
         # get correct dest types during lowering.
@@ -597,6 +600,8 @@ class MIRLowerer:
                 fields = [(f.name, _resolve_type_expr(f.type_annotation)) for f in actual.fields]
                 self._module.structs[actual.name] = fields
                 self._struct_fields[actual.name] = [f.name for f in actual.fields]
+                # Register struct constructor param types for arg patching
+                self._fn_param_types[actual.name] = [ft for _, ft in fields]
 
             elif isinstance(actual, EnumDef):
                 variants = []
@@ -638,15 +643,33 @@ class MIRLowerer:
                         stages.append(s.name)
                 self._module.pipes[actual.name] = MIRPipeInfo(name=actual.name, stages=stages)
 
-            # Collect function return types for call-site type propagation
+            # Collect function return/param types for call-site type propagation
             if isinstance(actual, FnDef):
                 if actual.return_type is not None:
                     self._fn_return_types[actual.name] = _resolve_type_expr(actual.return_type)
+                if actual.params:
+                    self._fn_param_types[actual.name] = [
+                        (
+                            _resolve_type_expr(p.type_annotation)
+                            if p.type_annotation
+                            else mir_unknown()
+                        )
+                        for p in actual.params
+                    ]
             elif isinstance(actual, ImplDef):
                 for method in actual.methods:
+                    mir_name = f"{actual.target}_{method.name}"
                     if method.return_type is not None:
-                        mir_name = f"{actual.target}_{method.name}"
                         self._fn_return_types[mir_name] = _resolve_type_expr(method.return_type)
+                    if method.params:
+                        self._fn_param_types[mir_name] = [
+                            (
+                                _resolve_type_expr(p.type_annotation)
+                                if p.type_annotation
+                                else mir_unknown()
+                            )
+                            for p in method.params
+                        ]
 
     def _lower_definition(self, defn: Definition) -> None:
         """Lower a single top-level definition."""
@@ -748,7 +771,9 @@ class MIRLowerer:
         # Lower body
         last_val = self._lower_block(fn_def.body)
 
-        # Add implicit return if block isn't terminated
+        # Add implicit return if block isn't terminated.
+        # For functions with a return type, the last expression becomes
+        # the return value (implicit return). For void functions, emit bare return.
         is_lambda = fn_name.startswith("%lambda") or fn_name.startswith("lambda")
         if not self._block_terminated():
             if is_lambda and last_val is not None and ret_type.kind == TypeKind.VOID:
@@ -756,10 +781,11 @@ class MIRLowerer:
                 if last_val.ty.kind != TypeKind.VOID and last_val.ty.kind != TypeKind.UNKNOWN:
                     mir_fn.return_type = last_val.ty
                 self._emit(Return(val=last_val))
+            elif ret_type.kind != TypeKind.VOID and last_val is not None:
+                # Implicit return: last expression in a typed function
+                self._emit(Return(val=last_val))
             elif ret_type.kind == TypeKind.VOID:
                 self._emit(Return())
-            elif last_val is not None:
-                self._emit(Return(val=last_val))
             else:
                 self._emit(Return())
 
@@ -928,8 +954,17 @@ class MIRLowerer:
             if self._loop_exit_stack:
                 self._emit(Jump(target=self._loop_exit_stack[-1]))
             return None
+        if isinstance(stmt, ContinueStmt):
+            if self._loop_header_stack:
+                self._emit(Jump(target=self._loop_header_stack[-1]))
+            return None
         if isinstance(stmt, AssertStmt):
             self._lower_assert(stmt)
+            return None
+        if isinstance(stmt, PrintStmt):
+            val = self._lower_expr(stmt.expr)
+            dest = self._make_value(ty=mir_void())
+            self._emit(Call(dest=dest, fn_name="print", args=[val]))
             return None
         if isinstance(stmt, StreamDecl):
             self._lower_stream_decl(stmt)
@@ -967,12 +1002,17 @@ class MIRLowerer:
                         if isinstance(inst, ListInit) and inst.dest == val:
                             inst.elem_type = MIRType(declared.type_info.args[0])
                             break
-        # When the expression type is unknown but a type annotation is provided,
-        # use the annotation to preserve type info (critical for cross-module types).
-        if let.type_annotation and val.ty.kind == TypeKind.UNKNOWN:
+        # When the expression type is unknown or lacks inner type args but a type
+        # annotation is provided, use the annotation to preserve full type info.
+        if let.type_annotation:
             declared = _resolve_type_expr(let.type_annotation)
-            if declared.kind != TypeKind.UNKNOWN:
+            if val.ty.kind == TypeKind.UNKNOWN and declared.kind != TypeKind.UNKNOWN:
                 val = Value(name=val.name, ty=declared)
+            elif val.ty.kind in (TypeKind.OPTION, TypeKind.RESULT) and not val.ty.type_info.args:
+                if declared.kind == val.ty.kind and declared.type_info.args:
+                    val = Value(name=val.name, ty=declared)
+                    # Also patch the WrapNone/WrapSome instruction
+                    self._patch_wrap_inst(val, declared)
         # Create a named copy for readability
         named = Value(name=f"%{let.name}", ty=val.ty)
         self._emit(Copy(dest=named, src=val))
@@ -1034,6 +1074,7 @@ class MIRLowerer:
         self._define_var(loop.var_name, next_val)
         self._push_scope()
         self._loop_exit_stack.append(exit_bb.label)
+        self._loop_header_stack.append(header.label)
         # Track which variables were updated via ListPush during this loop
         _list_push_vars: set[str] = set()
         _orig_update = self._update_var
@@ -1045,6 +1086,7 @@ class MIRLowerer:
         self._update_var = _tracking_update  # type: ignore[method-assign]
         self._lower_block(loop.body)
         self._update_var = _orig_update  # type: ignore[method-assign]
+        self._loop_header_stack.pop()
         self._loop_exit_stack.pop()
         # Capture list-pushed variable values BEFORE pop
         _pushed_vals = {vn: self._vars[vn].current for vn in _list_push_vars if vn in self._vars}
@@ -1083,7 +1125,9 @@ class MIRLowerer:
         # Body
         self._set_block(body)
         self._loop_exit_stack.append(exit_bb.label)
+        self._loop_header_stack.append(header.label)
         self._lower_block(loop.body)
+        self._loop_header_stack.pop()
         self._loop_exit_stack.pop()
         if not self._block_terminated():
             self._emit(Jump(target=header.label))
@@ -1200,19 +1244,41 @@ class MIRLowerer:
 
         if isinstance(expr, SomeExpr):
             val = self._lower_expr(expr.value)
-            dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.OPTION)))
+            inner_ti = (
+                val.ty.type_info
+                if val.ty.type_info.kind != TypeKind.UNKNOWN
+                else TypeInfo(kind=TypeKind.INT)
+            )
+            opt_ty = MIRType(TypeInfo(kind=TypeKind.OPTION, args=[inner_ti]))
+            dest = self._make_value(ty=opt_ty)
             self._emit(WrapSome(dest=dest, val=val))
             return dest
 
         if isinstance(expr, OkExpr):
             val = self._lower_expr(expr.value)
-            dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.RESULT)))
+            ok_ti = (
+                val.ty.type_info
+                if val.ty.type_info.kind != TypeKind.UNKNOWN
+                else TypeInfo(kind=TypeKind.INT)
+            )
+            res_ty = MIRType(
+                TypeInfo(kind=TypeKind.RESULT, args=[ok_ti, TypeInfo(kind=TypeKind.STRING)])
+            )
+            dest = self._make_value(ty=res_ty)
             self._emit(WrapOk(dest=dest, val=val))
             return dest
 
         if isinstance(expr, ErrExpr):
             val = self._lower_expr(expr.value)
-            dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.RESULT)))
+            err_ti = (
+                val.ty.type_info
+                if val.ty.type_info.kind != TypeKind.UNKNOWN
+                else TypeInfo(kind=TypeKind.STRING)
+            )
+            res_ty = MIRType(
+                TypeInfo(kind=TypeKind.RESULT, args=[TypeInfo(kind=TypeKind.INT), err_ti])
+            )
+            dest = self._make_value(ty=res_ty)
             self._emit(WrapErr(dest=dest, val=val))
             return dest
 
@@ -1427,6 +1493,16 @@ class MIRLowerer:
                 expr.callee.name,
                 _BUILTIN_RET.get(expr.callee.name, mir_unknown()),
             )
+        elif isinstance(expr.callee, NamespaceAccessExpr):
+            _ns = expr.callee.namespace
+            _mem = expr.callee.member
+            _call_ret_ty = self._fn_return_types.get(
+                f"{_ns}_{_mem}",
+                self._fn_return_types.get(_mem, mir_unknown()),
+            )
+        elif isinstance(expr.callee, FieldAccessExpr):
+            _method = expr.callee.field_name
+            _call_ret_ty = self._fn_return_types.get(_method, mir_unknown())
         dest = self._make_value(ty=_call_ret_ty)
 
         if isinstance(expr.callee, Identifier):
@@ -1434,15 +1510,37 @@ class MIRLowerer:
 
             # Handle Option/Result builtins
             if fn_name == "Some" and len(args) == 1:
-                dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.OPTION)))
+                inner_ti = (
+                    args[0].ty.type_info
+                    if args[0].ty.type_info.kind != TypeKind.UNKNOWN
+                    else TypeInfo(kind=TypeKind.INT)
+                )
+                opt_ty = MIRType(TypeInfo(kind=TypeKind.OPTION, args=[inner_ti]))
+                dest = self._make_value(ty=opt_ty)
                 self._emit(WrapSome(dest=dest, val=args[0]))
                 return dest
             if fn_name == "Ok" and len(args) == 1:
-                dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.RESULT)))
+                ok_ti = (
+                    args[0].ty.type_info
+                    if args[0].ty.type_info.kind != TypeKind.UNKNOWN
+                    else TypeInfo(kind=TypeKind.INT)
+                )
+                res_ty = MIRType(
+                    TypeInfo(kind=TypeKind.RESULT, args=[ok_ti, TypeInfo(kind=TypeKind.STRING)])
+                )
+                dest = self._make_value(ty=res_ty)
                 self._emit(WrapOk(dest=dest, val=args[0]))
                 return dest
             if fn_name == "Err" and len(args) == 1:
-                dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.RESULT)))
+                err_ti = (
+                    args[0].ty.type_info
+                    if args[0].ty.type_info.kind != TypeKind.UNKNOWN
+                    else TypeInfo(kind=TypeKind.STRING)
+                )
+                res_ty = MIRType(
+                    TypeInfo(kind=TypeKind.RESULT, args=[TypeInfo(kind=TypeKind.INT), err_ti])
+                )
+                dest = self._make_value(ty=res_ty)
                 self._emit(WrapErr(dest=dest, val=args[0]))
                 return dest
 
@@ -1485,7 +1583,7 @@ class MIRLowerer:
                         self._emit(
                             EnumInit(dest=dest, enum_type=enum_ty, variant=fn_name, payload=args)
                         )
-                        # self._patch_list_elem_types_for_enum(enum_name, fn_name, args)
+                        self._patch_list_elem_types_for_enum(enum_name, fn_name, args)
                         return dest
 
             # Check if this is a struct constructor (Name(args) for a known struct)
@@ -1495,8 +1593,8 @@ class MIRLowerer:
                 fields = list(zip(field_names, args))
                 dest = self._make_value(ty=struct_ty)
                 self._emit(StructInit(dest=dest, struct_type=struct_ty, fields=fields))
-                # Patch empty list args with field types from struct definition
-                # self._patch_list_elem_types_for_struct(fn_name, field_names, args)
+                self._patch_list_elem_types_for_struct(fn_name, field_names, args)
+                self._patch_arg_types_from_params(fn_name, args)
                 return dest
 
             # Check if this is a closure call (lambda with captures)
@@ -1509,8 +1607,8 @@ class MIRLowerer:
             # Resolve lambda variable names to actual function names
             resolved_name = self._lambda_vars.get(fn_name, fn_name)
             self._emit(Call(dest=dest, fn_name=resolved_name, args=args))
-            # Patch empty list args with parameter types from function declaration
-            # self._patch_list_elem_types_for_fn_call(fn_name, args)
+            self._patch_list_elem_types_for_fn_call(fn_name, args)
+            self._patch_arg_types_from_params(fn_name, args)
         elif isinstance(expr.callee, FieldAccessExpr):
             # obj.method(args) that parsed as CallExpr(FieldAccessExpr, args)
             obj = self._lower_expr(expr.callee.object)
@@ -1519,10 +1617,20 @@ class MIRLowerer:
         elif isinstance(expr.callee, NamespaceAccessExpr):
             ns = expr.callee.namespace
             member = expr.callee.member
-            # Emit as Namespace_Member call (enum constructors are resolved by emitter)
             fn_name = f"{ns}_{member}"
+            # Check if this is a namespace-qualified enum constructor
+            if ns in self._enum_variants and member in self._enum_variants[ns]:
+                enum_ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name=ns))
+                dest = self._make_value(ty=enum_ty)
+                self._emit(EnumInit(dest=dest, enum_type=enum_ty, variant=member, payload=args))
+                return dest
+            # Look up return type: try NS_Member first, then bare Member
+            ns_ret = self._fn_return_types.get(
+                fn_name, self._fn_return_types.get(member, mir_unknown())
+            )
+            if ns_ret.kind != TypeKind.UNKNOWN:
+                dest = self._make_value(ty=ns_ret)
             self._emit(Call(dest=dest, fn_name=fn_name, args=args))
-            # TODO: Patch empty list args in namespace-qualified enum constructors
         else:
             callee_val = self._lower_expr(expr.callee)
             self._emit(Call(dest=dest, fn_name=callee_val.name, args=args))
@@ -1851,7 +1959,10 @@ class MIRLowerer:
 
         # List .push() — emit ListPush instruction and update the variable binding
         if expr.method == "push" and args and obj.ty.kind in (TypeKind.LIST, TypeKind.UNKNOWN):
-            dest = self._make_value(ty=obj.ty)
+            # Use the same value as the source list for in-place mutation
+            # This avoids SSA aliasing issues in C where the dest might be
+            # referenced before the push branch executes
+            dest = Value(name=obj.name, ty=obj.ty)
             self._emit(ListPush(dest=dest, list_val=obj, element=args[0]))
             # Update the variable so subsequent reads see the modified list
             if isinstance(expr.object, Identifier):
@@ -1953,6 +2064,8 @@ class MIRLowerer:
             return MIRType(args[0])  # key type for map iteration
         if iter_ty.kind == TypeKind.STRING:
             return mir_string()  # iterating over chars → strings
+        if iter_ty.kind == TypeKind.RANGE:
+            return mir_int()  # range produces integers
         return mir_unknown()
 
     def _infer_field_type(self, obj_ty: MIRType, field_name: str) -> MIRType:
@@ -1996,9 +2109,21 @@ class MIRLowerer:
         return dest
 
     def _lower_namespace_access(self, expr: NamespaceAccessExpr) -> Value:
-        """Lower namespace access: `Math::PI`."""
-        dest = self._make_value()
-        fn_name = f"{expr.namespace}_{expr.member}"
+        """Lower namespace access: `Enum::Variant` or `Module::name`."""
+        ns = expr.namespace
+        member = expr.member
+        # Check if this is a namespace-qualified enum variant (no payload)
+        if ns in self._enum_variants and member in self._enum_variants[ns]:
+            enum_ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name=ns))
+            dest = self._make_value(ty=enum_ty)
+            self._emit(EnumInit(dest=dest, enum_type=enum_ty, variant=member, payload=[]))
+            return dest
+        # General namespace access — try to look up return type
+        fn_name = f"{ns}_{member}"
+        ret_ty = self._fn_return_types.get(
+            fn_name, self._fn_return_types.get(member, mir_unknown())
+        )
+        dest = self._make_value(ty=ret_ty)
         self._emit(Call(dest=dest, fn_name=fn_name, args=[]))
         return dest
 
@@ -2182,9 +2307,15 @@ class MIRLowerer:
         self._set_block(err_block)
         self._emit(Return(val=val))
 
-        # Ok path: unwrap
+        # Ok path: unwrap — infer inner type from Option/Result
         self._set_block(ok_block)
-        dest = self._make_value()
+        unwrap_ty = mir_unknown()
+        val_args = val.ty.type_info.args
+        if val.ty.kind == TypeKind.OPTION and val_args:
+            unwrap_ty = MIRType(val_args[0])
+        elif val.ty.kind == TypeKind.RESULT and val_args:
+            unwrap_ty = MIRType(val_args[0])  # Ok type
+        dest = self._make_value(ty=unwrap_ty)
         self._emit(Unwrap(dest=dest, val=val))
         return dest
 
@@ -2197,7 +2328,8 @@ class MIRLowerer:
             elem_type = expected_elem_type
         else:
             elem_type = mir_unknown()
-        dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.LIST)))
+        list_ty = MIRType(TypeInfo(kind=TypeKind.LIST, args=[elem_type.type_info]))
+        dest = self._make_value(ty=list_ty)
         self._emit(ListInit(dest=dest, elem_type=elem_type, elements=elements))
         return dest
 
@@ -2244,6 +2376,57 @@ class MIRLowerer:
             if ptype.kind == TypeKind.LIST and ptype.type_info.args:
                 self._patch_listinit_for_value(arg_val, ptype.type_info.args[0])
 
+    def _patch_arg_types_from_params(self, fn_name: str, args: list[Value]) -> None:
+        """Patch argument types using function parameter type info.
+
+        Fixes bare Option/Result args (no inner type) by copying the expected
+        inner type from the function's parameter type declaration.
+        Also patches struct constructor field types.
+        """
+        param_types = self._fn_param_types.get(fn_name)
+        if not param_types:
+            return
+        for ptype, arg_val in zip(param_types, args):
+            arg_kind = arg_val.ty.type_info.kind
+            param_kind = ptype.kind
+            # Patch bare Option args: Option() → Option<T> from param
+            if (
+                arg_kind == TypeKind.OPTION
+                and not arg_val.ty.type_info.args
+                and param_kind == TypeKind.OPTION
+                and ptype.type_info.args
+            ):
+                arg_val.ty = MIRType(
+                    TypeInfo(kind=TypeKind.OPTION, args=list(ptype.type_info.args))
+                )
+                # Also patch the WrapNone/WrapSome instruction
+                self._patch_wrap_inst(arg_val, arg_val.ty)
+            # Patch bare Result args
+            elif (
+                arg_kind == TypeKind.RESULT
+                and not arg_val.ty.type_info.args
+                and param_kind == TypeKind.RESULT
+                and ptype.type_info.args
+            ):
+                arg_val.ty = MIRType(
+                    TypeInfo(kind=TypeKind.RESULT, args=list(ptype.type_info.args))
+                )
+                self._patch_wrap_inst(arg_val, arg_val.ty)
+            # Patch list element types
+            if ptype.kind == TypeKind.LIST and ptype.type_info.args:
+                self._patch_listinit_for_value(arg_val, ptype.type_info.args[0])
+
+    def _patch_wrap_inst(self, val: Value, new_ty: MIRType) -> None:
+        """Update the WrapNone/WrapSome instruction that produced val."""
+        target_name = val.name
+        for bb in self._fn.blocks if self._fn else []:
+            for inst in bb.instructions:
+                if isinstance(inst, (WrapNone, WrapSome)) and inst.dest.name == target_name:
+                    inst.dest = Value(name=target_name, ty=new_ty)
+                    if isinstance(inst, WrapNone) and hasattr(inst, "ty"):
+                        inst.ty = new_ty
+                    return
+
     def _patch_listinit_for_value(self, val: Value, elem_type_info: TypeInfo) -> None:
         """Find the ListInit instruction that produced `val` and patch its elem_type.
 
@@ -2272,6 +2455,9 @@ class MIRLowerer:
         struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name=expr.name))
         dest = self._make_value(ty=struct_ty)
         self._emit(StructInit(dest=dest, struct_type=struct_ty, fields=fields))
+        # Patch Option/Result/List argument types from struct field definitions
+        field_vals = [v for _, v in fields]
+        self._patch_arg_types_from_params(expr.name, field_vals)
         return dest
 
     def _lower_signal_expr(self, expr: SignalExpr) -> Value:

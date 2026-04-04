@@ -11,38 +11,38 @@
 // Error type
 // ---------------------------------------------------------------------------
 
-pub struct KVError {
+pub tipo KVError {
     message: String
 }
 
 fn new_kv_error(msg: String) -> KVError {
-    return new KVError { message: msg }
+    da new KVError { message: msg }
 }
 
 // ---------------------------------------------------------------------------
 // Entry type — a key-value pair
 // ---------------------------------------------------------------------------
 
-pub struct KVEntry {
+pub tipo KVEntry {
     key: String,
     value: String
 }
 
 fn new_kv_entry(k: String, v: String) -> KVEntry {
-    return new KVEntry { key: k, value: v }
+    da new KVEntry { key: k, value: v }
 }
 
 // ---------------------------------------------------------------------------
 // Backend-specific store structs
 // ---------------------------------------------------------------------------
 
-pub struct RedisStore {
+pub tipo RedisStore {
     handle: Int,
     host: String,
     port: Int
 }
 
-pub struct EmbeddedStore {
+pub tipo EmbeddedStore {
     data: Map<String, String>
 }
 
@@ -50,9 +50,9 @@ pub struct EmbeddedStore {
 // Tagged KVStore enum — dispatches to the correct backend
 // ---------------------------------------------------------------------------
 
-pub enum KVStore {
-    Redis(RedisStore),
-    Embedded(EmbeddedStore)
+pub tipo KVStore {
+    | Redis(RedisStore)
+    | Embedded(EmbeddedStore)
 }
 
 // ---------------------------------------------------------------------------
@@ -62,13 +62,13 @@ pub enum KVStore {
 pub fn kv_get(store: KVStore, key: String) -> Option<String> {
     match store {
         Redis(rs) => {
-            return redis_get(rs, key)
+            da redis_get(rs, key)
         },
         Embedded(es) => {
-            return embedded_get(es, key)
+            da embedded_get(es, key)
         }
     }
-    return none
+    da nada
 }
 
 // ---------------------------------------------------------------------------
@@ -78,15 +78,15 @@ pub fn kv_get(store: KVStore, key: String) -> Option<String> {
 pub fn kv_set(store: KVStore, key: String, value: String) -> Result<Bool, KVError> {
     match store {
         Redis(rs) => {
-            return redis_set(rs, key, value)
+            da redis_set(rs, key, value)
         },
         Embedded(es) => {
             // Embedded store uses functional update — we set in the map directly
             es.data[key] = value
-            return Ok(true)
+            da Ok(true)
         }
     }
-    return Err(new_kv_error("Unknown store backend"))
+    da Err(new_kv_error("Unknown store backend"))
 }
 
 // ---------------------------------------------------------------------------
@@ -96,29 +96,29 @@ pub fn kv_set(store: KVStore, key: String, value: String) -> Result<Bool, KVErro
 pub fn kv_del(store: KVStore, key: String) -> Result<Bool, KVError> {
     match store {
         Redis(rs) => {
-            return redis_del(rs, key)
+            da redis_del(rs, key)
         },
         Embedded(es) => {
             // For embedded, check existence first
-            let mut found: Bool = false
-            for k in es.data {
-                if k == key { found = true }
+            pon mut found: Bool = false
+            cada k en es.data {
+                si k == key { found = true }
             }
-            if found == false {
-                return Ok(false)
+            si found == false {
+                da Ok(false)
             }
             // Rebuild map without the key
-            let mut new_data: Map<String, String> = #{}
-            for k in es.data {
-                if k != key {
+            pon mut new_data: Map<String, String> = #{}
+            cada k en es.data {
+                si k != key {
                     new_data[k] = es.data[k]
                 }
             }
             es.data = new_data
-            return Ok(true)
+            da Ok(true)
         }
     }
-    return Err(new_kv_error("Unknown store backend"))
+    da Err(new_kv_error("Unknown store backend"))
 }
 
 // ---------------------------------------------------------------------------
@@ -128,16 +128,16 @@ pub fn kv_del(store: KVStore, key: String) -> Result<Bool, KVError> {
 pub fn kv_exists(store: KVStore, key: String) -> Bool {
     match store {
         Redis(rs) => {
-            return redis_exists(rs, key)
+            da redis_exists(rs, key)
         },
         Embedded(es) => {
-            for k in es.data {
-                if k == key { return true }
+            cada k en es.data {
+                si k == key { da true }
             }
-            return false
+            da false
         }
     }
-    return false
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -147,17 +147,17 @@ pub fn kv_exists(store: KVStore, key: String) -> Bool {
 pub fn kv_keys(store: KVStore) -> List<String> {
     match store {
         Redis(rs) => {
-            return redis_keys(rs, "*")
+            da redis_keys(rs, "*")
         },
         Embedded(es) => {
-            let mut result: List<String> = []
-            for k in es.data {
+            pon mut result: List<String> = []
+            cada k en es.data {
                 result = result + [k]
             }
-            return result
+            da result
         }
     }
-    return []
+    da []
 }
 
 // ---------------------------------------------------------------------------
@@ -167,14 +167,14 @@ pub fn kv_keys(store: KVStore) -> List<String> {
 pub fn kv_close(store: KVStore) -> Result<Bool, KVError> {
     match store {
         Redis(rs) => {
-            return redis_close(rs)
+            da redis_close(rs)
         },
         Embedded(es) => {
             // Nothing to close for in-process store
-            return Ok(true)
+            da Ok(true)
         }
     }
-    return Err(new_kv_error("Unknown store backend"))
+    da Err(new_kv_error("Unknown store backend"))
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ pub fn kv_close(store: KVStore) -> Result<Bool, KVError> {
 // ---------------------------------------------------------------------------
 
 pub fn error_message(err: KVError) -> String {
-    return err.message
+    da err.message
 }
 
 // ---------------------------------------------------------------------------
@@ -193,25 +193,25 @@ pub fn error_message(err: KVError) -> String {
 // ---------------------------------------------------------------------------
 
 fn redis_get(rs: RedisStore, key: String) -> Option<String> {
-    return none
+    da nada
 }
 
 fn redis_set(rs: RedisStore, key: String, value: String) -> Result<Bool, KVError> {
-    return Err(new_kv_error("Redis backend not linked"))
+    da Err(new_kv_error("Redis backend not linked"))
 }
 
 fn redis_del(rs: RedisStore, key: String) -> Result<Bool, KVError> {
-    return Err(new_kv_error("Redis backend not linked"))
+    da Err(new_kv_error("Redis backend not linked"))
 }
 
 fn redis_exists(rs: RedisStore, key: String) -> Bool {
-    return false
+    da false
 }
 
 fn redis_keys(rs: RedisStore, pattern: String) -> List<String> {
-    return []
+    da []
 }
 
 fn redis_close(rs: RedisStore) -> Result<Bool, KVError> {
-    return Err(new_kv_error("Redis backend not linked"))
+    da Err(new_kv_error("Redis backend not linked"))
 }

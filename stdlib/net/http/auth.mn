@@ -5,16 +5,16 @@
 //
 // Depends on crypto (Base64 decoding, JWT) and session (session store lookup).
 
-import crypto
-import net::http::session
+usa crypto
+usa net::http::session
 
 // ---------------------------------------------------------------------------
 // Auth result enum
 // ---------------------------------------------------------------------------
 
-pub enum AuthResult {
-    Authenticated(String),
-    Denied(String)
+pub tipo AuthResult {
+    | Authenticated(String)
+    | Denied(String)
 }
 
 // ---------------------------------------------------------------------------
@@ -23,8 +23,8 @@ pub enum AuthResult {
 
 pub fn auth_result_message(r: AuthResult) -> String {
     match r {
-        Authenticated(msg) => { return msg },
-        Denied(msg) => { return msg }
+        Authenticated(msg) => { da msg },
+        Denied(msg) => { da msg }
     }
 }
 
@@ -34,8 +34,8 @@ pub fn auth_result_message(r: AuthResult) -> String {
 
 pub fn is_authenticated(r: AuthResult) -> Bool {
     match r {
-        Authenticated(msg) => { return true },
-        Denied(msg) => { return false }
+        Authenticated(msg) => { da true },
+        Denied(msg) => { da false }
     }
 }
 
@@ -45,32 +45,32 @@ pub fn is_authenticated(r: AuthResult) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn parse_basic_auth(header: String) -> Option<List<String>> {
-    let slen: Int = len(header)
-    if slen < 7 { return none }
+    pon slen: Int = len(header)
+    si slen < 7 { da nada }
 
     // Check "Basic " prefix
-    let prefix: String = header.substr(0, 6)
-    if prefix != "Basic " { return none }
+    pon prefix: String = header.substr(0, 6)
+    si prefix != "Basic " { da nada }
 
-    let encoded: String = header.substr(6, slen)
-    let decoded_result: Result<String, crypto.CryptoError> = crypto.base64_decode(encoded)
+    pon encoded: String = header.substr(6, slen)
+    pon decoded_result: Result<String, crypto.CryptoError> = crypto.base64_decode(encoded)
     match decoded_result {
         Ok(decoded) => {
             // Find the colon separator
-            let colon_pos: Int = decoded.find(":")
-            if colon_pos < 0 { return none }
-            let user: String = decoded.substr(0, colon_pos)
-            let pass: String = decoded.substr(colon_pos + 1, len(decoded))
-            let mut parts: List<String> = []
+            pon colon_pos: Int = decoded.find(":")
+            si colon_pos < 0 { da nada }
+            pon user: String = decoded.substr(0, colon_pos)
+            pon pass: String = decoded.substr(colon_pos + 1, len(decoded))
+            pon mut parts: List<String> = []
             parts = parts + [user]
             parts = parts + [pass]
-            return Some(parts)
+            da Some(parts)
         },
         Err(e) => {
-            return none
+            da nada
         }
     }
-    return none
+    da nada
 }
 
 // ---------------------------------------------------------------------------
@@ -78,16 +78,16 @@ pub fn parse_basic_auth(header: String) -> Option<List<String>> {
 // ---------------------------------------------------------------------------
 
 pub fn bearer_token(header: String) -> Option<String> {
-    let slen: Int = len(header)
-    if slen < 8 { return none }
+    pon slen: Int = len(header)
+    si slen < 8 { da nada }
 
     // Check "Bearer " prefix
-    let prefix: String = header.substr(0, 7)
-    if prefix != "Bearer " { return none }
+    pon prefix: String = header.substr(0, 7)
+    si prefix != "Bearer " { da nada }
 
-    let token: String = header.substr(7, slen)
-    if len(token) == 0 { return none }
-    return Some(token)
+    pon token: String = header.substr(7, slen)
+    si len(token) == 0 { da nada }
+    da Some(token)
 }
 
 // ---------------------------------------------------------------------------
@@ -96,26 +96,26 @@ pub fn bearer_token(header: String) -> Option<String> {
 
 pub fn jwt_auth(auth_header: String, secret: String) -> AuthResult {
     // Extract Bearer token
-    let token_opt: Option<String> = bearer_token(auth_header)
+    pon token_opt: Option<String> = bearer_token(auth_header)
     match token_opt {
         Some(token) => {
             // Verify and decode JWT
-            let result: Result<String, crypto.CryptoError> = crypto.jwt_decode(token, secret)
+            pon result: Result<String, crypto.CryptoError> = crypto.jwt_decode(token, secret)
             match result {
                 Ok(claims) => {
-                    return Authenticated(claims)
+                    da Authenticated(claims)
                 },
                 Err(e) => {
-                    return Denied("JWT verification failed")
+                    da Denied("JWT verification failed")
                 }
             }
-            return Denied("unreachable")
+            da Denied("unreachable")
         },
         _ => {
-            return Denied("Missing or invalid Bearer token")
+            da Denied("Missing or invalid Bearer token")
         }
     }
-    return Denied("unreachable")
+    da Denied("unreachable")
 }
 
 // ---------------------------------------------------------------------------
@@ -123,16 +123,16 @@ pub fn jwt_auth(auth_header: String, secret: String) -> AuthResult {
 // ---------------------------------------------------------------------------
 
 pub fn jwt_verify_token(token: String, secret: String) -> AuthResult {
-    let result: Result<String, crypto.CryptoError> = crypto.jwt_decode(token, secret)
+    pon result: Result<String, crypto.CryptoError> = crypto.jwt_decode(token, secret)
     match result {
         Ok(claims) => {
-            return Authenticated(claims)
+            da Authenticated(claims)
         },
         Err(e) => {
-            return Denied("JWT verification failed")
+            da Denied("JWT verification failed")
         }
     }
-    return Denied("unreachable")
+    da Denied("unreachable")
 }
 
 // ---------------------------------------------------------------------------
@@ -140,25 +140,25 @@ pub fn jwt_verify_token(token: String, secret: String) -> AuthResult {
 // ---------------------------------------------------------------------------
 
 pub fn check_session_auth(store: session.SessionStore, session_id: String, required_key: String) -> AuthResult {
-    let session_opt: Option<session.Session> = session.get_session(store, session_id)
+    pon session_opt: Option<session.Session> = session.get_session(store, session_id)
     match session_opt {
         Some(sess) => {
-            let val_opt: Option<String> = session.get_value(sess, required_key)
+            pon val_opt: Option<String> = session.get_value(sess, required_key)
             match val_opt {
                 Some(val) => {
-                    return Authenticated(val)
+                    da Authenticated(val)
                 },
                 _ => {
-                    return Denied("Session missing required key: " + required_key)
+                    da Denied("Session missing required key: " + required_key)
                 }
             }
-            return Denied("unreachable")
+            da Denied("unreachable")
         },
         _ => {
-            return Denied("Session not found: " + session_id)
+            da Denied("Session not found: " + session_id)
         }
     }
-    return Denied("unreachable")
+    da Denied("unreachable")
 }
 
 // ---------------------------------------------------------------------------
@@ -166,24 +166,24 @@ pub fn check_session_auth(store: session.SessionStore, session_id: String, requi
 // ---------------------------------------------------------------------------
 
 pub fn verify_basic_auth(header: String, expected_user: String, expected_pass: String) -> AuthResult {
-    let parts_opt: Option<List<String>> = parse_basic_auth(header)
+    pon parts_opt: Option<List<String>> = parse_basic_auth(header)
     match parts_opt {
         Some(parts) => {
-            if len(parts) < 2 {
-                return Denied("Malformed Basic auth credentials")
+            si len(parts) < 2 {
+                da Denied("Malformed Basic auth credentials")
             }
-            let user: String = parts[0]
-            let pass: String = parts[1]
-            if user == expected_user {
-                if pass == expected_pass {
-                    return Authenticated(user)
+            pon user: String = parts[0]
+            pon pass: String = parts[1]
+            si user == expected_user {
+                si pass == expected_pass {
+                    da Authenticated(user)
                 }
             }
-            return Denied("Invalid credentials")
+            da Denied("Invalid credentials")
         },
         _ => {
-            return Denied("Missing or invalid Basic auth header")
+            da Denied("Missing or invalid Basic auth header")
         }
     }
-    return Denied("unreachable")
+    da Denied("unreachable")
 }

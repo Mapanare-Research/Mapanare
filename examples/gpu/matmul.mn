@@ -5,37 +5,37 @@
 //   mapanare run examples/gpu/matmul.mn         // CPU fallback
 //   mapanare build examples/gpu/matmul.mn --target x86_64-linux-gnu  // Native with GPU
 
-import gpu::tensor
-import gpu::device
+usa gpu::tensor
+usa gpu::device
 
 // Detect available GPU devices
 fn main() {
-    let detection: DetectionResult = detect_gpus()
-    let device: DeviceKind = preferred_device(detection)
+    pon detection: DetectionResult = detect_gpus()
+    pon device: DeviceKind = preferred_device(detection)
     print("Detected device: " + device_name(device))
 
     // Create two 4x4 matrices
-    let a = from_list([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0], [4, 4])
+    pon a = from_list([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0], [4, 4])
 
-    let b = identity(4)
+    pon b = identity(4)
 
     // Matrix multiply -- dispatched to GPU if available
-    let c = matmul(a, b)
+    pon c = matmul(a, b)
 
     // Verify: A * I = A
     print("A * I = A: " + str(c == a))
 
     // Element-wise operations on GPU
-    let d = add(a, a)
-    let e = mul(a, from_list([2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0], [4, 4]))
+    pon d = add(a, a)
+    pon e = mul(a, from_list([2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0], [4, 4]))
     print("A + A == A * 2: " + str(d == e))
 
     // Large matrix benchmark
-    let size: Int = 256
-    let big_a = ones([size, size])
-    let big_b = ones([size, size])
+    pon size: Int = 256
+    pon big_a = ones([size, size])
+    pon big_b = ones([size, size])
 
     print("Computing " + str(size) + "x" + str(size) + " matmul...")
-    let result = matmul(big_a, big_b)
+    pon result = matmul(big_a, big_b)
     print("Done. Result[0,0] = " + str(result))
 }

@@ -387,7 +387,13 @@ def cmd_check(args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
-    """Compile and run an .mn source file via LLVM JIT."""
+    """Compile and run an .mn source file.
+
+    Default backend: C (emit C → gcc → run).
+    Use ``--release`` for LLVM JIT (requires llvmlite).
+    """
+    release = getattr(args, "release", False)
+
     # Enable tracing if --trace is passed
     trace_mode = getattr(args, "trace", None)
     if trace_mode:
@@ -412,8 +418,27 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    use_mir = not getattr(args, "no_mir", False)
     debug = getattr(args, "debug", False)
+
+    if not release:
+        # --- C backend (default) ---
+        try:
+            c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
+        except ParseError as e:
+            _emit_parse_error(e, source, args.source)
+            sys.exit(1)
+        except SemanticErrors as e:
+            _emit_semantic_errors(e, source)
+            sys.exit(1)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        _run_c_source(c_source, args.source)
+        return
+
+    # --- LLVM backend (--release) ---
+    use_mir = not getattr(args, "no_mir", False)
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -429,6 +454,12 @@ def cmd_run(args: argparse.Namespace) -> None:
         sys.exit(1)
     except SemanticErrors as e:
         _emit_semantic_errors(e, source)
+        sys.exit(1)
+    except ImportError:
+        print(
+            "error: LLVM backend requires llvmlite. " "Install with: pip install mapanare[llvm]",
+            file=sys.stderr,
+        )
         sys.exit(1)
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -940,6 +971,100 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     print(f"emitted {args.source} -> {out_path} (target: {target.triple})")
 
 
+def _compile_to_c(
+    source: str,
+    filename: str,
+    opt_level: OptLevel = OptLevel.O2,
+    debug: bool = False,
+) -> str:
+    """Parse, check, optimize, and emit C source from Mapanare source."""
+    from mapanare.emit_c import emit_c
+    from mapanare.lower import lower as build_mir
+    from mapanare.mir_opt import MIROptLevel
+    from mapanare.mir_opt import optimize_module as mir_optimize
+
+    ast = parse(source, filename=filename)
+    check_or_raise(ast, filename=filename)
+
+    module_name = os.path.splitext(os.path.basename(filename))[0]
+    source_file = os.path.basename(filename)
+    source_dir = os.path.dirname(os.path.abspath(filename))
+    mir_module = build_mir(
+        ast,
+        module_name=module_name,
+        source_file=source_file,
+        source_directory=source_dir,
+    )
+    mir_opt_level = MIROptLevel(opt_level.value)
+    mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+
+    return emit_c(mir_module, debug=debug)
+
+
+def _run_c_source(c_source: str, source_file: str) -> None:
+    """Compile C source with gcc and run the resulting binary."""
+    import tempfile
+
+    # Find runtime headers
+    runtime_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "runtime", "native")
+    if not os.path.isdir(runtime_dir):
+        # Fallback: try relative to CWD
+        runtime_dir = os.path.join("runtime", "native")
+
+    runtime_c = os.path.join(runtime_dir, "mapanare_core.c")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        c_path = os.path.join(tmpdir, "program.c")
+        bin_path = os.path.join(tmpdir, "program")
+
+        with open(c_path, "w", encoding="utf-8") as f:
+            f.write(c_source)
+
+        # Compile
+        gcc_cmd = [
+            "gcc",
+            "-O0",
+            f"-I{runtime_dir}",
+            c_path,
+            runtime_c,
+            "-o",
+            bin_path,
+            "-lm",
+            "-lpthread",
+        ]
+        result = subprocess.run(gcc_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"error: gcc compilation failed:\n{result.stderr}", file=sys.stderr)
+            sys.exit(1)
+
+        # Run
+        run_result = subprocess.run([bin_path])
+        sys.exit(run_result.returncode)
+
+
+def cmd_emit_c(args: argparse.Namespace) -> None:
+    """Emit C source for an .mn source file."""
+    source = _read_source(args.source)
+    opt_level = _parse_opt_level(args)
+    debug = getattr(args, "debug", False)
+    try:
+        c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
+    except ParseError as e:
+        _emit_parse_error(e, source, args.source)
+        sys.exit(1)
+    except SemanticErrors as e:
+        _emit_semantic_errors(e, source)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    out_path = args.o or args.source.replace(".mn", ".c")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(c_source)
+    print(f"emitted {args.source} -> {out_path} (backend: C)")
+
+
 def cmd_emit_mir(args: argparse.Namespace) -> None:
     """Emit MIR (Mid-level IR) for an .mn source file."""
     from mapanare.lower import lower as build_mir
@@ -1122,6 +1247,32 @@ def cmd_lint(args: argparse.Namespace) -> None:
         sys.exit(0)  # Lint warnings are not fatal
     else:
         print(f"lint: {args.source} OK — no warnings")
+
+
+def cmd_migrate(args: argparse.Namespace) -> None:
+    """Migrate .mn source from v2 to v3 syntax."""
+    from mapanare.migrate import migrate_directory, migrate_file
+
+    target = args.path
+    style = getattr(args, "style", "spanglish")
+    dry_run = getattr(args, "dry", False)
+    check = getattr(args, "check", False)
+
+    if os.path.isfile(target):
+        changed = 1 if migrate_file(target, style=style, dry_run=dry_run, check=check) else 0
+    elif os.path.isdir(target):
+        changed = migrate_directory(target, style=style, dry_run=dry_run, check=check)
+    else:
+        print(f"error: {target} not found", file=sys.stderr)
+        sys.exit(1)
+
+    if check and changed > 0:
+        print(f"\n{changed} file(s) need migration", file=sys.stderr)
+        sys.exit(1)
+
+    if not check:
+        mode = "would migrate" if dry_run else "migrated"
+        print(f"\n{changed} file(s) {mode}")
 
 
 def cmd_lsp(args: argparse.Namespace) -> None:
@@ -1395,8 +1546,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Start Prometheus metrics endpoint (default :9090)",
     )
+    p_run.add_argument(
+        "--release",
+        action="store_true",
+        default=False,
+        help="Use LLVM backend (requires llvmlite). Default: C backend via gcc.",
+    )
     _add_opt_level_args(p_run)
     _add_mir_flag(p_run)
+    _add_debug_flag(p_run)
     _add_edition_flag(p_run)
     p_run.set_defaults(func=cmd_run)
 
@@ -1553,6 +1711,15 @@ def build_parser() -> argparse.ArgumentParser:
     _add_edition_flag(p_emit_llvm)
     p_emit_llvm.set_defaults(func=cmd_emit_llvm)
 
+    # emit-c
+    p_emit_c = subparsers.add_parser("emit-c", help="Emit C source for .mn source (v3.0.0)")
+    p_emit_c.add_argument("source", help="Path to .mn source file")
+    p_emit_c.add_argument("-o", metavar="OUTPUT", help="Output .c file path", default=None)
+    _add_opt_level_args(p_emit_c)
+    _add_debug_flag(p_emit_c)
+    _add_edition_flag(p_emit_c)
+    p_emit_c.set_defaults(func=cmd_emit_c)
+
     # emit-mir
     p_emit_mir = subparsers.add_parser("emit-mir", help="Emit MIR (mid-level IR) for .mn source")
     p_emit_mir.add_argument("source", help="Path to .mn source file")
@@ -1622,6 +1789,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Auto-fix lint warnings (unused imports, unnecessary mut)",
     )
     p_lint.set_defaults(func=cmd_lint)
+
+    # migrate
+    p_migrate = subparsers.add_parser("migrate", help="Migrate .mn source from v2 to v3 syntax")
+    p_migrate.add_argument("path", help="File or directory to migrate")
+    p_migrate.add_argument(
+        "--to", default="v3", choices=["v3"], help="Target version (default: v3)"
+    )
+    p_migrate.add_argument("--dry", action="store_true", help="Preview changes without writing")
+    p_migrate.add_argument(
+        "--check",
+        action="store_true",
+        help="Check mode: fail if old syntax found (for CI)",
+    )
+    p_migrate.add_argument(
+        "--style",
+        default="spanglish",
+        choices=["spanglish", "english"],
+        help="Keyword style: spanglish (default) or english",
+    )
+    p_migrate.set_defaults(func=cmd_migrate)
 
     # build-multi
     p_build_multi = subparsers.add_parser(

@@ -4,14 +4,14 @@
 //   or: load hello.wasm in browser via playground
 
 fn greet(name: String) -> String {
-    return "Hello, " + name + "! Welcome to Mapanare on WASM."
+    da "Hello, " + name + "! Welcome to Mapanare on WASM."
 }
 
 fn fibonacci(n: Int) -> Int {
-    if n <= 1 {
-        return n
+    si n <= 1 {
+        da n
     }
-    return fibonacci(n - 1) + fibonacci(n - 2)
+    da fibonacci(n - 1) + fibonacci(n - 2)
 }
 
 fn main() {
@@ -20,20 +20,20 @@ fn main() {
 
     // Fibonacci sequence
     print("Fibonacci sequence:")
-    for i in 0..15 {
+    cada i en 0..15 {
         print("  fib(" + str(i) + ") = " + str(fibonacci(i)))
     }
 
     // String operations
-    let msg: String = "Mapanare runs everywhere"
+    pon msg: String = "Mapanare runs everywhere"
     print("")
     print("Message: " + msg)
     print("Length: " + str(len(msg)))
     print("Upper: " + msg.upper())
 
     // Arithmetic
-    let x: Float = 3.14159
-    let y: Float = 2.71828
+    pon x: Float = 3.14159
+    pon y: Float = 2.71828
     print("")
     print("pi = " + str(x))
     print("e  = " + str(y))

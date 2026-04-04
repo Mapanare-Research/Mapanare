@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-04-03
+
+### Added
+
+- `di` print keyword: `di "hello"` as statement (print() function still works)
+- `+` pub prefix: `+fn`, `+tipo`, `+struct`, `+enum`, `+trait`, `+agent`, `+pipe`
+- `...` empty block: `fn todo() { ... }` (like Python's `pass`)
+- Implicit return: last expression in typed function is returned automatically
+- Stage2 IR fixup script (`scripts/fix_stage2_ir.py`)
+
+### Changed
+
+- Self-hosted compiler loop limits raised from 50 to 200 iterations
+- Self-hosted match/if PHI handling: skip terminated branches, add switch default entries
+
+### Fixed
+
+- MIR type inference: Option/Result inner types, namespace call returns, enum variant constructors
+- C emitter string truncation: aligned string constants for pointer tagging
+- C emitter void* boxing: heap-allocate on store, dereference on load
+- C emitter memcpy overflows: sizeof(source) instead of sizeof(dest) everywhere
+- List push in-place mutation: prevents SSA aliasing bugs in for loops
+- mnc-stage1 segfault: binary now self-compiles (77K lines LLVM IR)
+
 ## [2.0.0] - 2026-03-25
 
 ### Added
@@ -388,7 +412,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.0...v3.0.1
 [2.0.0]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.11...v2.0.0
 [1.0.11]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.0...v1.0.11
 [1.0.0]: https://github.com/Mapanare-Research/Mapanare/compare/v0.9.0...v1.0.0

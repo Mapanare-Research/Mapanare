@@ -20,6 +20,7 @@ from mapanare.ast_nodes import (
     CallExpr,
     CharLiteral,
     ConstructExpr,
+    ContinueStmt,
     Definition,
     DocComment,
     EnumDef,
@@ -54,6 +55,7 @@ from mapanare.ast_nodes import (
     OkExpr,
     PipeDef,
     PipeExpr,
+    PrintStmt,
     Program,
     RangeExpr,
     ReturnStmt,
@@ -1155,10 +1157,14 @@ class SemanticChecker:
             self._check_signal_decl(stmt)
         elif isinstance(stmt, BreakStmt):
             pass  # break is valid in for/while loops
+        elif isinstance(stmt, ContinueStmt):
+            pass  # continue is valid in for/while loops
         elif isinstance(stmt, AssertStmt):
             self._infer_expr(stmt.condition)
             if stmt.message is not None:
                 self._infer_expr(stmt.message)
+        elif isinstance(stmt, PrintStmt):
+            self._infer_expr(stmt.expr)
         elif isinstance(stmt, StreamDecl):
             self._check_stream_decl(stmt)
 

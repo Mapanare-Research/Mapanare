@@ -23,6 +23,7 @@ from mapanare.ast_nodes import (
     CharLiteral,
     ConstructExpr,
     ConstructorPattern,
+    ContinueStmt,
     Decorator,
     Definition,
     DocComment,
@@ -63,6 +64,7 @@ from mapanare.ast_nodes import (
     Param,
     PipeDef,
     PipeExpr,
+    PrintStmt,
     Program,
     RangeExpr,
     ReturnStmt,
@@ -368,6 +370,17 @@ def _filter(args: tuple[Any, ...] | list[Any]) -> list[Any]:
     return [a for a in args if not isinstance(a, Token) or a.type in _KEEP]
 
 
+def _has_pub_prefix(children: list[Any]) -> bool:
+    """Check if children start with KW_PUB or PLUS (+ pub prefix)."""
+    for c in children:
+        if isinstance(c, Token):
+            if c.type in ("KW_PUB", "PLUS"):
+                return True
+            if c.type not in ("_NL", "SEMICOLON", "NEWLINE"):
+                return False
+    return False
+
+
 class MapanareTransformer(Transformer):  # type: ignore[type-arg]
     """Transforms Lark parse tree into Mapanare AST nodes."""
 
@@ -567,11 +580,18 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
     def break_stmt(self, children: list[Any]) -> BreakStmt:
         return BreakStmt(span=_span_from_children(children))
 
+    def continue_stmt(self, children: list[Any]) -> ContinueStmt:
+        return ContinueStmt(span=_span_from_children(children))
+
     def assert_stmt(self, children: list[Any]) -> AssertStmt:
         items = _filter(children)
         condition = items[0]
         message = items[1] if len(items) > 1 else None
         return AssertStmt(condition=condition, message=message, span=_span_from_children(children))
+
+    def di_stmt(self, children: list[Any]) -> Any:
+        items = _filter(children)
+        return PrintStmt(expr=items[0], span=_span_from_children(children))
 
     def for_stmt(self, children: list[Any]) -> ForLoop:
         items = _filter(children)
@@ -1023,11 +1043,10 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
     # ------------------------------------------------------------------
 
     def fn_def(self, children: list[Any]) -> FnDef:
+        public = _has_pub_prefix(children)
         items = _filter(children)
-        public = False
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         idx += 1
@@ -1121,10 +1140,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def agent_def(self, children: list[Any]) -> AgentDef:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         idx += 1
@@ -1168,6 +1186,50 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             name=str(items[0]), type_annotation=items[1], span=_span_from_children(children)
         )
 
+    # v3.0.0: @Name { ... } agent syntax
+    def at_agent_def(self, children: list[Any]) -> AgentDef:
+        """Parse `@Name { ... }` — same as agent_def but without keyword."""
+        items = _filter(children)
+        name = str(items[0])
+        members = items[1] if len(items) > 1 and isinstance(items[1], list) else []
+        inputs: list[AgentInput] = []
+        outputs: list[AgentOutput] = []
+        state: list[LetBinding] = []
+        methods: list[FnDef] = []
+        for m in members:
+            if isinstance(m, AgentInput):
+                inputs.append(m)
+            elif isinstance(m, AgentOutput):
+                outputs.append(m)
+            elif isinstance(m, LetBinding):
+                state.append(m)
+            elif isinstance(m, FnDef):
+                methods.append(m)
+        return AgentDef(
+            name=name,
+            public=False,
+            inputs=inputs,
+            outputs=outputs,
+            state=state,
+            methods=methods,
+            span=_span_from_children(children),
+        )
+
+    # v3.0.0: -> / <- channel syntax in agents
+    def agent_channel_in(self, children: list[Any]) -> AgentInput:
+        """Parse `name -> Type` as input channel."""
+        items = _filter(children)
+        return AgentInput(
+            name=str(items[0]), type_annotation=items[1], span=_span_from_children(children)
+        )
+
+    def agent_channel_out(self, children: list[Any]) -> AgentOutput:
+        """Parse `name <- Type` as output channel."""
+        items = _filter(children)
+        return AgentOutput(
+            name=str(items[0]), type_annotation=items[1], span=_span_from_children(children)
+        )
+
     def agent_state(self, children: list[Any]) -> LetBinding:
         items = _filter(children)
         mutable = False
@@ -1196,10 +1258,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def pipe_def(self, children: list[Any]) -> PipeDef:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         idx += 1
@@ -1216,10 +1277,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def struct_def(self, children: list[Any]) -> StructDef:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         idx += 1
@@ -1260,10 +1320,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def enum_def(self, children: list[Any]) -> EnumDef:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         idx += 1
@@ -1307,10 +1366,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def type_alias(self, children: list[Any]) -> TypeAlias:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         return TypeAlias(
             name=str(items[idx]),
@@ -1325,16 +1383,102 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def trait_def(self, children: list[Any]) -> TraitDef:
         items = _filter(children)
-        public = False
+        public = _has_pub_prefix(children)
         idx = 0
         if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
-            public = True
             idx += 1
         name = str(items[idx])
         methods = [m for m in items[idx + 1 :] if isinstance(m, TraitMethod)]
         return TraitDef(
             name=name, public=public, methods=methods, span=_span_from_children(children)
         )
+
+    # ------------------------------------------------------------------
+    # Tipo definition (v3.0.0 — unifies struct + enum)
+    # ------------------------------------------------------------------
+
+    def tipo_def(self, children: list[Any]) -> StructDef | EnumDef:
+        """Parse a `tipo Name { ... }` definition.
+
+        If the body contains `|`-prefixed variants → EnumDef.
+        If it contains plain fields → StructDef.
+        """
+        items = _filter(children)
+        public = _has_pub_prefix(children)
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
+            idx += 1
+        name = str(items[idx])
+        idx += 1
+        type_params: list[str] = []
+        if (
+            idx < len(items)
+            and isinstance(items[idx], list)
+            and items[idx]
+            and isinstance(items[idx][0], (str, TypeParam))
+        ):
+            raw_tps = items[idx]
+            if raw_tps and isinstance(raw_tps[0], TypeParam):
+                type_params = [tp.name for tp in raw_tps]
+            else:
+                type_params = raw_tps
+            idx += 1
+        # Collect remaining members
+        members = items[idx:]
+        fields: list[StructField] = []
+        variants: list[EnumVariant] = []
+        for m in members:
+            if isinstance(m, StructField):
+                fields.append(m)
+            elif isinstance(m, EnumVariant):
+                variants.append(m)
+            elif isinstance(m, list):
+                for item in m:
+                    if isinstance(item, StructField):
+                        fields.append(item)
+                    elif isinstance(item, EnumVariant):
+                        variants.append(item)
+        span = _span_from_children(children)
+        if variants:
+            return EnumDef(
+                name=name,
+                public=public,
+                type_params=type_params,
+                variants=variants,
+                span=span,
+            )
+        return StructDef(
+            name=name,
+            public=public,
+            type_params=type_params,
+            fields=fields,
+            span=span,
+        )
+
+    def tipo_members(self, children: list[Any]) -> list[StructField | EnumVariant]:
+        return [c for c in children if isinstance(c, (StructField, EnumVariant))]
+
+    def tipo_field(self, children: list[Any]) -> StructField:
+        items = _filter(children)
+        return StructField(
+            name=str(items[0]),
+            type_annotation=items[1],
+            span=_span_from_children(children),
+        )
+
+    def tipo_variant(self, children: list[Any]) -> EnumVariant:
+        items = _filter(children)
+        name = str(items[0])
+        fields = items[1] if len(items) > 1 and isinstance(items[1], list) else []
+        return EnumVariant(name=name, fields=fields, span=_span_from_children(children))
+
+    # ------------------------------------------------------------------
+    # Modo definition (v3.0.0 — alias for trait)
+    # ------------------------------------------------------------------
+
+    def modo_def(self, children: list[Any]) -> TraitDef:
+        """Parse `modo Name { ... }` — identical to trait_def."""
+        return self.trait_def(children)
 
     def trait_method(self, children: list[Any]) -> TraitMethod:
         items = _filter(children)
@@ -1439,6 +1583,123 @@ _parser = Lark(
 )
 
 
+def _indent_to_braces(source: str) -> str:
+    """Convert indentation-based syntax to brace-based syntax.
+
+    This preprocessor handles the v3.0.0 colon+indent syntax:
+    - Lines ending with ``:`` open a block (replaced with ``{``)
+    - Dedent closes blocks (``}`` inserted)
+    - If source contains ``{`` at definition level, it's already brace-based
+
+    Falls back to the original source if no colon blocks are detected.
+    """
+    # Quick check: if no colon-ending lines, return as-is
+    lines = source.split("\n")
+    has_colon_blocks = any(
+        line.rstrip().endswith(":") and not line.lstrip().startswith(("#", "//"))
+        for line in lines
+        if line.strip()
+    )
+    if not has_colon_blocks:
+        return source
+
+    out: list[str] = []
+    indent_stack: list[int] = [0]  # Stack of indent levels
+
+    # Keywords that continue a previous block (else, sino, sino si)
+    _CONTINUATION_KW = ("else", "sino", "sino si", "else if")
+
+    i = 0
+    while i < len(lines):
+        raw = lines[i]
+        stripped = raw.rstrip()
+        if not stripped:
+            out.append(raw)
+            i += 1
+            continue
+
+        # Compute indent level (spaces / 4)
+        spaces = len(raw) - len(raw.lstrip())
+        level = spaces // 4
+
+        # For comment lines, still close blocks on dedent, then pass through
+        if stripped.lstrip().startswith(("#", "//")):
+            while level < indent_stack[-1]:
+                indent_stack.pop()
+                close_indent = "    " * indent_stack[-1]
+                out.append(f"{close_indent}}}")
+            out.append(raw)
+            i += 1
+            continue
+
+        content = stripped.lstrip()
+
+        # Check if this line is a continuation (else/sino) before closing blocks
+        is_continuation = False
+        for kw in _CONTINUATION_KW:
+            if content.startswith(kw) and (
+                len(content) == len(kw) or content[len(kw)] in (" ", ":", "{")
+            ):
+                is_continuation = True
+                break
+
+        if is_continuation:
+            # Close ONE block level and merge with this continuation
+            if indent_stack[-1] > level:
+                indent_stack.pop()
+                prefix = "    " * level
+                if stripped.endswith(":"):
+                    body = content[:-1].rstrip()
+                    out.append(f"{prefix}}} {body} {{")
+                    indent_stack.append(level + 1)
+                else:
+                    out.append(f"{prefix}}} {content}")
+            else:
+                prefix = "    " * level
+                out.append(f"{prefix}{content}")
+            i += 1
+            continue
+
+        # Close blocks for dedent
+        while level < indent_stack[-1]:
+            indent_stack.pop()
+            close_indent = "    " * indent_stack[-1]
+            out.append(f"{close_indent}}}")
+
+        if stripped.endswith(":"):
+            # This line opens a block
+            body = content[:-1].rstrip()  # Remove trailing colon
+            prefix = "    " * level
+
+            # Handle `fn name:` (zero-arg function, needs parens)
+            if body.startswith("fn ") and "(" not in body:
+                parts = body.split(None, 1)
+                fn_name = parts[1] if len(parts) > 1 else ""
+                if "->" in fn_name:
+                    name_part, ret_part = fn_name.split("->", 1)
+                    out.append(f"{prefix}fn {name_part.strip()}() -> {ret_part.strip()} {{")
+                else:
+                    out.append(f"{prefix}fn {fn_name}() {{")
+            else:
+                out.append(f"{prefix}{body} {{")
+
+            indent_stack.append(level + 1)
+        else:
+            prefix = "    " * level
+            out.append(f"{prefix}{content}")
+
+        i += 1
+
+    # Close remaining open blocks
+    while len(indent_stack) > 1:
+        indent_stack.pop()
+        close_indent = "    " * indent_stack[-1]
+        out.append(f"{close_indent}}}")
+
+    result = "\n".join(out)
+    return result
+
+
 def parse(source: str, *, filename: str = "<input>") -> Program:
     """Parse Mapanare source code into an AST Program node.
 
@@ -1452,6 +1713,7 @@ def parse(source: str, *, filename: str = "<input>") -> Program:
     Raises:
         ParseError: If the source has syntax errors.
     """
+    source = _indent_to_braces(source)
     try:
         result = _parser.parse(source)
         if isinstance(result, Program):

@@ -40,22 +40,22 @@ extern "C" fn __mn_wasi_clock_time_get(clock_id: Int) -> Int
 // RuntimeError enum
 // ---------------------------------------------------------------------------
 
-pub enum RuntimeError {
-    OutOfMemory(String),
-    InvalidAddress(String),
-    WasiError(String)
+pub tipo RuntimeError {
+    | OutOfMemory(String)
+    | InvalidAddress(String)
+    | WasiError(String)
 }
 
 fn new_oom(msg: String) -> RuntimeError {
-    return OutOfMemory(msg)
+    da OutOfMemory(msg)
 }
 
 fn new_invalid_addr(msg: String) -> RuntimeError {
-    return InvalidAddress(msg)
+    da InvalidAddress(msg)
 }
 
 fn new_wasi_error(msg: String) -> RuntimeError {
-    return WasiError(msg)
+    da WasiError(msg)
 }
 
 // ---------------------------------------------------------------------------
@@ -64,23 +64,23 @@ fn new_wasi_error(msg: String) -> RuntimeError {
 
 /// WASM page size in bytes (64 KiB).
 fn page_size() -> Int {
-    return 65536
+    da 65536
 }
 
 /// Return the current WASM linear memory size in pages.
 pub fn memory_size() -> Int {
-    return __mn_wasm_memory_size()
+    da __mn_wasm_memory_size()
 }
 
 /// Return the current WASM linear memory size in bytes.
 pub fn memory_size_bytes() -> Int {
-    return __mn_wasm_memory_size() * page_size()
+    da __mn_wasm_memory_size() * page_size()
 }
 
 /// Grow WASM linear memory by the specified number of pages.
 /// Returns the previous memory size in pages, or -1 on failure.
 pub fn memory_grow(pages: Int) -> Int {
-    return __mn_wasm_memory_grow(pages)
+    da __mn_wasm_memory_grow(pages)
 }
 
 // ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ pub fn memory_grow(pages: Int) -> Int {
 // ---------------------------------------------------------------------------
 
 fn bump_base() -> Int {
-    return __mn_wasm_memory_read_i32(0)
+    da __mn_wasm_memory_read_i32(0)
 }
 
 fn set_bump_base(val: Int) {
@@ -109,7 +109,7 @@ fn set_bump_base(val: Int) {
 }
 
 fn bump_offset() -> Int {
-    return __mn_wasm_memory_read_i32(4)
+    da __mn_wasm_memory_read_i32(4)
 }
 
 fn set_bump_offset(val: Int) {
@@ -117,7 +117,7 @@ fn set_bump_offset(val: Int) {
 }
 
 fn bump_initialized() -> Bool {
-    return __mn_wasm_memory_read_i32(8) != 0
+    da __mn_wasm_memory_read_i32(8) != 0
 }
 
 fn set_bump_initialized() {
@@ -125,15 +125,15 @@ fn set_bump_initialized() {
 }
 
 fn ensure_bump_init() {
-    if bump_initialized() == false {
-        let base: Int = 1048576
+    si bump_initialized() == false {
+        pon base: Int = 1048576
         set_bump_base(base)
         set_bump_offset(0)
-        let mem_bytes: Int = memory_size_bytes()
-        if base >= mem_bytes {
-            let needed_pages: Int = (base / page_size()) + 1
-            let current_pages: Int = memory_size()
-            if needed_pages > current_pages {
+        pon mem_bytes: Int = memory_size_bytes()
+        si base >= mem_bytes {
+            pon needed_pages: Int = (base / page_size()) + 1
+            pon current_pages: Int = memory_size()
+            si needed_pages > current_pages {
                 memory_grow(needed_pages - current_pages)
             }
         }
@@ -145,27 +145,27 @@ fn ensure_bump_init() {
 /// Returns the pointer (byte offset into linear memory).
 pub fn alloc(size: Int) -> Result<Int, RuntimeError> {
     ensure_bump_init()
-    if size <= 0 {
-        return Err(new_oom("alloc: size must be positive"))
+    si size <= 0 {
+        da Err(new_oom("alloc: size must be positive"))
     }
     // Align to 8 bytes
-    let aligned: Int = (size + 7) / 8 * 8
-    let base: Int = bump_base()
-    let offset: Int = bump_offset()
-    let ptr: Int = base + offset
-    let new_offset: Int = offset + aligned
-    let mem_bytes: Int = memory_size_bytes()
-    if base + new_offset > mem_bytes {
+    pon aligned: Int = (size + 7) / 8 * 8
+    pon base: Int = bump_base()
+    pon offset: Int = bump_offset()
+    pon ptr: Int = base + offset
+    pon new_offset: Int = offset + aligned
+    pon mem_bytes: Int = memory_size_bytes()
+    si base + new_offset > mem_bytes {
         // Need more memory
-        let needed: Int = base + new_offset - mem_bytes
-        let pages_needed: Int = (needed / page_size()) + 1
-        let result: Int = memory_grow(pages_needed)
-        if result < 0 {
-            return Err(new_oom("alloc: memory_grow failed for " + str(size) + " bytes"))
+        pon needed: Int = base + new_offset - mem_bytes
+        pon pages_needed: Int = (needed / page_size()) + 1
+        pon result: Int = memory_grow(pages_needed)
+        si result < 0 {
+            da Err(new_oom("alloc: memory_grow failed cada " + str(size) + " bytes"))
         }
     }
     set_bump_offset(new_offset)
-    return Ok(ptr)
+    da Ok(ptr)
 }
 
 /// Free a pointer. This is a no-op for the bump allocator.
@@ -181,7 +181,7 @@ pub fn reset() {
 
 /// Return the number of bytes currently allocated by the bump allocator.
 pub fn allocated_bytes() -> Int {
-    return bump_offset()
+    da bump_offset()
 }
 
 // ---------------------------------------------------------------------------
@@ -190,37 +190,37 @@ pub fn allocated_bytes() -> Int {
 
 /// Copy `length` bytes from src to dst in linear memory.
 pub fn copy_memory(dst: Int, src: Int, length: Int) -> Result<Int, RuntimeError> {
-    if length < 0 {
-        return Err(new_invalid_addr("copy_memory: negative length"))
+    si length < 0 {
+        da Err(new_invalid_addr("copy_memory: negative length"))
     }
-    if length == 0 {
-        return Ok(0)
+    si length == 0 {
+        da Ok(0)
     }
-    let rc: Int = __mn_wasm_memory_copy(dst, src, length)
-    if rc < 0 {
-        return Err(new_invalid_addr("copy_memory failed"))
+    pon rc: Int = __mn_wasm_memory_copy(dst, src, length)
+    si rc < 0 {
+        da Err(new_invalid_addr("copy_memory failed"))
     }
-    return Ok(0)
+    da Ok(0)
 }
 
 /// Fill `length` bytes at dst with the given byte value.
 pub fn fill_memory(dst: Int, value: Int, length: Int) -> Result<Int, RuntimeError> {
-    if length < 0 {
-        return Err(new_invalid_addr("fill_memory: negative length"))
+    si length < 0 {
+        da Err(new_invalid_addr("fill_memory: negative length"))
     }
-    if length == 0 {
-        return Ok(0)
+    si length == 0 {
+        da Ok(0)
     }
-    let rc: Int = __mn_wasm_memory_fill(dst, value, length)
-    if rc < 0 {
-        return Err(new_invalid_addr("fill_memory failed"))
+    pon rc: Int = __mn_wasm_memory_fill(dst, value, length)
+    si rc < 0 {
+        da Err(new_invalid_addr("fill_memory failed"))
     }
-    return Ok(0)
+    da Ok(0)
 }
 
 /// Read a single byte from linear memory.
 pub fn read_byte(addr: Int) -> Int {
-    return __mn_wasm_memory_read_byte(addr)
+    da __mn_wasm_memory_read_byte(addr)
 }
 
 /// Write a single byte to linear memory.
@@ -230,7 +230,7 @@ pub fn write_byte(addr: Int, value: Int) {
 
 /// Read a 32-bit integer from linear memory (little-endian).
 pub fn read_i32(addr: Int) -> Int {
-    return __mn_wasm_memory_read_i32(addr)
+    da __mn_wasm_memory_read_i32(addr)
 }
 
 /// Write a 32-bit integer to linear memory (little-endian).
@@ -244,15 +244,15 @@ pub fn write_i32(addr: Int, value: Int) {
 
 /// Get command-line arguments via WASI args_get.
 pub fn wasi_args() -> List<String> {
-    let count: Int = __mn_wasi_args_sizes_get()
-    let mut args: List<String> = []
-    let mut i: Int = 0
-    while i < count {
-        let arg: String = __mn_wasi_args_get(i)
+    pon count: Int = __mn_wasi_args_sizes_get()
+    pon mut args: List<String> = []
+    pon mut i: Int = 0
+    mien i < count {
+        pon arg: String = __mn_wasi_args_get(i)
         args = args + [arg]
         i = i + 1
     }
-    return args
+    da args
 }
 
 // ---------------------------------------------------------------------------
@@ -261,16 +261,16 @@ pub fn wasi_args() -> List<String> {
 
 /// Get environment variables via WASI environ_get.
 pub fn wasi_environ() -> Map<String, String> {
-    let count: Int = __mn_wasi_environ_sizes_get()
-    let mut env: Map<String, String> = #{}
-    let mut i: Int = 0
-    while i < count {
-        let key: String = __mn_wasi_environ_get_key(i)
-        let val: String = __mn_wasi_environ_get_value(i)
+    pon count: Int = __mn_wasi_environ_sizes_get()
+    pon mut env: Map<String, String> = #{}
+    pon mut i: Int = 0
+    mien i < count {
+        pon key: String = __mn_wasi_environ_get_key(i)
+        pon val: String = __mn_wasi_environ_get_value(i)
         env[key] = val
         i = i + 1
     }
-    return env
+    da env
 }
 
 // ---------------------------------------------------------------------------
@@ -289,49 +289,49 @@ pub fn wasi_exit(code: Int) {
 /// Write a string to a WASI file descriptor.
 /// Standard file descriptors: 0 = stdin, 1 = stdout, 2 = stderr.
 pub fn wasi_write(fd: Int, data: String) -> Result<Int, RuntimeError> {
-    let bytes_written: Int = __mn_wasi_fd_write(fd, data)
-    if bytes_written < 0 {
-        return Err(new_wasi_error("fd_write failed on fd " + str(fd)))
+    pon bytes_written: Int = __mn_wasi_fd_write(fd, data)
+    si bytes_written < 0 {
+        da Err(new_wasi_error("fd_write failed on fd " + str(fd)))
     }
-    return Ok(bytes_written)
+    da Ok(bytes_written)
 }
 
 /// Read up to max_len bytes from a WASI file descriptor.
 pub fn wasi_read(fd: Int, max_len: Int) -> Result<String, RuntimeError> {
-    let data: String = __mn_wasi_fd_read(fd, max_len)
-    return Ok(data)
+    pon data: String = __mn_wasi_fd_read(fd, max_len)
+    da Ok(data)
 }
 
 /// Close a WASI file descriptor.
 pub fn wasi_close(fd: Int) -> Result<Int, RuntimeError> {
-    let rc: Int = __mn_wasi_fd_close(fd)
-    if rc < 0 {
-        return Err(new_wasi_error("fd_close failed on fd " + str(fd)))
+    pon rc: Int = __mn_wasi_fd_close(fd)
+    si rc < 0 {
+        da Err(new_wasi_error("fd_close failed on fd " + str(fd)))
     }
-    return Ok(0)
+    da Ok(0)
 }
 
 /// Open a file via WASI path_open.
 /// Returns a file descriptor on success.
 pub fn wasi_open(path: String, flags: Int) -> Result<Int, RuntimeError> {
-    let fd: Int = __mn_wasi_path_open(3, path, flags)
-    if fd < 0 {
-        return Err(new_wasi_error("path_open failed for: " + path))
+    pon fd: Int = __mn_wasi_path_open(3, path, flags)
+    si fd < 0 {
+        da Err(new_wasi_error("path_open failed cada: " + path))
     }
-    return Ok(fd)
+    da Ok(fd)
 }
 
 /// Get the current monotonic clock time in nanoseconds via WASI clock_time_get.
 pub fn wasi_clock_ns() -> Int {
-    return __mn_wasi_clock_time_get(1)
+    da __mn_wasi_clock_time_get(1)
 }
 
 /// Write a string to stdout.
 pub fn wasi_print(msg: String) -> Result<Int, RuntimeError> {
-    return wasi_write(1, msg)
+    da wasi_write(1, msg)
 }
 
 /// Write a string to stderr.
 pub fn wasi_eprint(msg: String) -> Result<Int, RuntimeError> {
-    return wasi_write(2, msg)
+    da wasi_write(2, msg)
 }

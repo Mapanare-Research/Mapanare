@@ -11,15 +11,15 @@
 // Mutation strategy enum
 // ---------------------------------------------------------------------------
 
-pub enum MutationStrategy {
-    FlipCase,
-    Repeat,
-    Truncate,
-    NullByte,
-    Overflow,
-    BoundaryInt,
-    BoundaryStr,
-    Unicode
+pub tipo MutationStrategy {
+    | FlipCase
+    | Repeat
+    | Truncate
+    | NullByte
+    | Overflow
+    | BoundaryInt
+    | BoundaryStr
+    | Unicode
 }
 
 // ---------------------------------------------------------------------------
@@ -27,35 +27,35 @@ pub enum MutationStrategy {
 // ---------------------------------------------------------------------------
 
 fn new_flip_case() -> MutationStrategy {
-    return FlipCase()
+    da FlipCase()
 }
 
 fn new_repeat() -> MutationStrategy {
-    return Repeat()
+    da Repeat()
 }
 
 fn new_truncate() -> MutationStrategy {
-    return Truncate()
+    da Truncate()
 }
 
 fn new_null_byte() -> MutationStrategy {
-    return NullByte()
+    da NullByte()
 }
 
 fn new_overflow() -> MutationStrategy {
-    return Overflow()
+    da Overflow()
 }
 
 fn new_boundary_int() -> MutationStrategy {
-    return BoundaryInt()
+    da BoundaryInt()
 }
 
 fn new_boundary_str() -> MutationStrategy {
-    return BoundaryStr()
+    da BoundaryStr()
 }
 
 fn new_unicode() -> MutationStrategy {
-    return Unicode()
+    da Unicode()
 }
 
 // ---------------------------------------------------------------------------
@@ -63,63 +63,63 @@ fn new_unicode() -> MutationStrategy {
 // ---------------------------------------------------------------------------
 
 fn is_upper(ch: String) -> Bool {
-    if ch == "A" { return true }
-    if ch == "B" { return true }
-    if ch == "C" { return true }
-    if ch == "D" { return true }
-    if ch == "E" { return true }
-    if ch == "F" { return true }
-    if ch == "G" { return true }
-    if ch == "H" { return true }
-    if ch == "I" { return true }
-    if ch == "J" { return true }
-    if ch == "K" { return true }
-    if ch == "L" { return true }
-    if ch == "M" { return true }
-    if ch == "N" { return true }
-    if ch == "O" { return true }
-    if ch == "P" { return true }
-    if ch == "Q" { return true }
-    if ch == "R" { return true }
-    if ch == "S" { return true }
-    if ch == "T" { return true }
-    if ch == "U" { return true }
-    if ch == "V" { return true }
-    if ch == "W" { return true }
-    if ch == "X" { return true }
-    if ch == "Y" { return true }
-    if ch == "Z" { return true }
-    return false
+    si ch == "A" { da true }
+    si ch == "B" { da true }
+    si ch == "C" { da true }
+    si ch == "D" { da true }
+    si ch == "E" { da true }
+    si ch == "F" { da true }
+    si ch == "G" { da true }
+    si ch == "H" { da true }
+    si ch == "I" { da true }
+    si ch == "J" { da true }
+    si ch == "K" { da true }
+    si ch == "L" { da true }
+    si ch == "M" { da true }
+    si ch == "N" { da true }
+    si ch == "O" { da true }
+    si ch == "P" { da true }
+    si ch == "Q" { da true }
+    si ch == "R" { da true }
+    si ch == "S" { da true }
+    si ch == "T" { da true }
+    si ch == "U" { da true }
+    si ch == "V" { da true }
+    si ch == "W" { da true }
+    si ch == "X" { da true }
+    si ch == "Y" { da true }
+    si ch == "Z" { da true }
+    da false
 }
 
 fn is_lower(ch: String) -> Bool {
-    if ch == "a" { return true }
-    if ch == "b" { return true }
-    if ch == "c" { return true }
-    if ch == "d" { return true }
-    if ch == "e" { return true }
-    if ch == "f" { return true }
-    if ch == "g" { return true }
-    if ch == "h" { return true }
-    if ch == "i" { return true }
-    if ch == "j" { return true }
-    if ch == "k" { return true }
-    if ch == "l" { return true }
-    if ch == "m" { return true }
-    if ch == "n" { return true }
-    if ch == "o" { return true }
-    if ch == "p" { return true }
-    if ch == "q" { return true }
-    if ch == "r" { return true }
-    if ch == "s" { return true }
-    if ch == "t" { return true }
-    if ch == "u" { return true }
-    if ch == "v" { return true }
-    if ch == "w" { return true }
-    if ch == "x" { return true }
-    if ch == "y" { return true }
-    if ch == "z" { return true }
-    return false
+    si ch == "a" { da true }
+    si ch == "b" { da true }
+    si ch == "c" { da true }
+    si ch == "d" { da true }
+    si ch == "e" { da true }
+    si ch == "f" { da true }
+    si ch == "g" { da true }
+    si ch == "h" { da true }
+    si ch == "i" { da true }
+    si ch == "j" { da true }
+    si ch == "k" { da true }
+    si ch == "l" { da true }
+    si ch == "m" { da true }
+    si ch == "n" { da true }
+    si ch == "o" { da true }
+    si ch == "p" { da true }
+    si ch == "q" { da true }
+    si ch == "r" { da true }
+    si ch == "s" { da true }
+    si ch == "t" { da true }
+    si ch == "u" { da true }
+    si ch == "v" { da true }
+    si ch == "w" { da true }
+    si ch == "x" { da true }
+    si ch == "y" { da true }
+    si ch == "z" { da true }
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -127,21 +127,21 @@ fn is_lower(ch: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn flip_case(input: String) -> String {
-    let slen: Int = len(input)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = input.char_at(i)
-        if is_upper(ch) {
+    pon slen: Int = len(input)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = input.char_at(i)
+        si is_upper(ch) {
             result = result + ch.to_lower()
-        } else if is_lower(ch) {
+        } sino si is_lower(ch) {
             result = result + ch.to_upper()
-        } else {
+        } sino {
             result = result + ch
         }
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -149,13 +149,13 @@ pub fn flip_case(input: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn repeat_string(input: String, n: Int) -> String {
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < n {
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < n {
         result = result + input
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -163,14 +163,14 @@ pub fn repeat_string(input: String, n: Int) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn truncate(input: String, n: Int) -> String {
-    let slen: Int = len(input)
-    if n >= slen {
-        return input
+    pon slen: Int = len(input)
+    si n >= slen {
+        da input
     }
-    if n <= 0 {
-        return ""
+    si n <= 0 {
+        da ""
     }
-    return input.substr(0, n)
+    da input.substr(0, n)
 }
 
 // ---------------------------------------------------------------------------
@@ -178,20 +178,20 @@ pub fn truncate(input: String, n: Int) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn null_byte_inject(input: String) -> List<String> {
-    let slen: Int = len(input)
-    let null_ch: String = "\0"
-    let mut results: List<String> = []
+    pon slen: Int = len(input)
+    pon null_ch: String = "\0"
+    pon mut results: List<String> = []
 
     // Null byte at start
     results = results + [null_ch + input]
 
     // Null byte in the middle
-    if slen > 0 {
-        let mid: Int = slen / 2
-        let left: String = input.substr(0, mid)
-        let right: String = input.substr(mid, slen)
+    si slen > 0 {
+        pon mid: Int = slen / 2
+        pon left: String = input.substr(0, mid)
+        pon right: String = input.substr(mid, slen)
         results = results + [left + null_ch + right]
-    } else {
+    } sino {
         results = results + [null_ch]
     }
 
@@ -202,7 +202,7 @@ pub fn null_byte_inject(input: String) -> List<String> {
     results = results + [null_ch + null_ch + input]
     results = results + [input + null_ch + null_ch]
 
-    return results
+    da results
 }
 
 // ---------------------------------------------------------------------------
@@ -210,13 +210,13 @@ pub fn null_byte_inject(input: String) -> List<String> {
 // ---------------------------------------------------------------------------
 
 pub fn overflow_string(n: Int) -> String {
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < n {
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < n {
         result = result + "A"
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ pub fn overflow_string(n: Int) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn boundary_ints() -> List<String> {
-    let mut results: List<String> = []
+    pon mut results: List<String> = []
     results = results + ["0"]
     results = results + ["-1"]
     results = results + ["1"]
@@ -247,7 +247,7 @@ pub fn boundary_ints() -> List<String> {
     results = results + ["-0"]
     results = results + ["00"]
     results = results + ["01"]
-    return results
+    da results
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ pub fn boundary_ints() -> List<String> {
 // ---------------------------------------------------------------------------
 
 pub fn boundary_strings() -> List<String> {
-    let mut results: List<String> = []
+    pon mut results: List<String> = []
 
     // Empty and whitespace
     results = results + [""]
@@ -267,7 +267,7 @@ pub fn boundary_strings() -> List<String> {
     results = results + [" \t\n\r "]
 
     // Very long string (1000 chars)
-    let long_str: String = overflow_string(1000)
+    pon long_str: String = overflow_string(1000)
     results = results + [long_str]
 
     // Null bytes
@@ -276,10 +276,10 @@ pub fn boundary_strings() -> List<String> {
     results = results + ["abc\0def"]
 
     // Unicode edge cases
-    let unicode_variants: List<String> = generate_unicode_variants()
-    let ucount: Int = len(unicode_variants)
-    let mut i: Int = 0
-    while i < ucount {
+    pon unicode_variants: List<String> = generate_unicode_variants()
+    pon ucount: Int = len(unicode_variants)
+    pon mut i: Int = 0
+    mien i < ucount {
         results = results + [unicode_variants[i]]
         i = i + 1
     }
@@ -294,7 +294,7 @@ pub fn boundary_strings() -> List<String> {
     results = results + ["%00"]
     results = results + ["%n%n%n%n"]
 
-    return results
+    da results
 }
 
 // ---------------------------------------------------------------------------
@@ -302,7 +302,7 @@ pub fn boundary_strings() -> List<String> {
 // ---------------------------------------------------------------------------
 
 fn generate_unicode_variants() -> List<String> {
-    let mut results: List<String> = []
+    pon mut results: List<String> = []
 
     // Common unicode test strings
     results = results + ["\u00e9"]
@@ -333,7 +333,7 @@ fn generate_unicode_variants() -> List<String> {
     results = results + ["\u2764"]
     results = results + ["\u2602"]
 
-    return results
+    da results
 }
 
 // ---------------------------------------------------------------------------
@@ -341,7 +341,7 @@ fn generate_unicode_variants() -> List<String> {
 // ---------------------------------------------------------------------------
 
 pub fn mutate(input: String, strategy: MutationStrategy) -> List<String> {
-    let mut results: List<String> = []
+    pon mut results: List<String> = []
 
     match strategy {
         FlipCase => {
@@ -354,8 +354,8 @@ pub fn mutate(input: String, strategy: MutationStrategy) -> List<String> {
             results = results + [repeat_string(input, 1000)]
         },
         Truncate => {
-            let slen: Int = len(input)
-            if slen > 0 {
+            pon slen: Int = len(input)
+            si slen > 0 {
                 results = results + [truncate(input, 1)]
                 results = results + [truncate(input, slen / 2)]
             }
@@ -381,7 +381,7 @@ pub fn mutate(input: String, strategy: MutationStrategy) -> List<String> {
         }
     }
 
-    return results
+    da results
 }
 
 // ---------------------------------------------------------------------------
@@ -389,63 +389,63 @@ pub fn mutate(input: String, strategy: MutationStrategy) -> List<String> {
 // ---------------------------------------------------------------------------
 
 pub fn mutate_all(input: String) -> List<String> {
-    let mut results: List<String> = []
+    pon mut results: List<String> = []
 
-    let flip_results: List<String> = mutate(input, FlipCase())
-    let mut i: Int = 0
-    while i < len(flip_results) {
+    pon flip_results: List<String> = mutate(input, FlipCase())
+    pon mut i: Int = 0
+    mien i < len(flip_results) {
         results = results + [flip_results[i]]
         i = i + 1
     }
 
-    let repeat_results: List<String> = mutate(input, Repeat())
+    pon repeat_results: List<String> = mutate(input, Repeat())
     i = 0
-    while i < len(repeat_results) {
+    mien i < len(repeat_results) {
         results = results + [repeat_results[i]]
         i = i + 1
     }
 
-    let trunc_results: List<String> = mutate(input, Truncate())
+    pon trunc_results: List<String> = mutate(input, Truncate())
     i = 0
-    while i < len(trunc_results) {
+    mien i < len(trunc_results) {
         results = results + [trunc_results[i]]
         i = i + 1
     }
 
-    let null_results: List<String> = mutate(input, NullByte())
+    pon null_results: List<String> = mutate(input, NullByte())
     i = 0
-    while i < len(null_results) {
+    mien i < len(null_results) {
         results = results + [null_results[i]]
         i = i + 1
     }
 
-    let overflow_results: List<String> = mutate(input, Overflow())
+    pon overflow_results: List<String> = mutate(input, Overflow())
     i = 0
-    while i < len(overflow_results) {
+    mien i < len(overflow_results) {
         results = results + [overflow_results[i]]
         i = i + 1
     }
 
-    let bint_results: List<String> = mutate(input, BoundaryInt())
+    pon bint_results: List<String> = mutate(input, BoundaryInt())
     i = 0
-    while i < len(bint_results) {
+    mien i < len(bint_results) {
         results = results + [bint_results[i]]
         i = i + 1
     }
 
-    let bstr_results: List<String> = mutate(input, BoundaryStr())
+    pon bstr_results: List<String> = mutate(input, BoundaryStr())
     i = 0
-    while i < len(bstr_results) {
+    mien i < len(bstr_results) {
         results = results + [bstr_results[i]]
         i = i + 1
     }
 
-    let unicode_results: List<String> = mutate(input, Unicode())
+    pon unicode_results: List<String> = mutate(input, Unicode())
     i = 0
-    while i < len(unicode_results) {
+    mien i < len(unicode_results) {
         results = results + [unicode_results[i]]
         i = i + 1
     }
 
-    return results
+    da results
 }

@@ -18,7 +18,7 @@ extern "C" fn clock() -> Int
 
 /// Returns the current monotonic clock value in nanoseconds.
 pub fn now_ns() -> Int {
-    return __mn_clock_monotonic_ns()
+    da __mn_clock_monotonic_ns()
 }
 
 /// Sleeps for the given number of milliseconds.
@@ -30,7 +30,7 @@ pub fn delay_ms(ms: Int) {
 // Stopwatch
 // ---------------------------------------------------------------------------
 
-pub struct Stopwatch {
+pub tipo Stopwatch {
     start_ns: Int,
     elapsed_ns: Int,
     running: Bool
@@ -38,54 +38,54 @@ pub struct Stopwatch {
 
 /// Creates a new Stopwatch that is not running with zero elapsed time.
 pub fn stopwatch_new() -> Stopwatch {
-    return new Stopwatch { start_ns: 0, elapsed_ns: 0, running: false }
+    da new Stopwatch { start_ns: 0, elapsed_ns: 0, running: false }
 }
 
 /// Starts the stopwatch. If already running, returns as-is.
 pub fn stopwatch_start(sw: Stopwatch) -> Stopwatch {
-    if sw.running {
-        return sw
+    si sw.running {
+        da sw
     }
-    let t: Int = __mn_clock_monotonic_ns()
-    return new Stopwatch { start_ns: t, elapsed_ns: sw.elapsed_ns, running: true }
+    pon t: Int = __mn_clock_monotonic_ns()
+    da new Stopwatch { start_ns: t, elapsed_ns: sw.elapsed_ns, running: true }
 }
 
 /// Stops the stopwatch and accumulates elapsed time. If not running, returns as-is.
 pub fn stopwatch_stop(sw: Stopwatch) -> Stopwatch {
-    if sw.running == false {
-        return sw
+    si sw.running == false {
+        da sw
     }
-    let t: Int = __mn_clock_monotonic_ns()
-    let delta: Int = t - sw.start_ns
-    let total: Int = sw.elapsed_ns + delta
-    return new Stopwatch { start_ns: 0, elapsed_ns: total, running: false }
+    pon t: Int = __mn_clock_monotonic_ns()
+    pon delta: Int = t - sw.start_ns
+    pon total: Int = sw.elapsed_ns + delta
+    da new Stopwatch { start_ns: 0, elapsed_ns: total, running: false }
 }
 
 /// Resets the stopwatch to zero elapsed, not running.
 pub fn stopwatch_reset(sw: Stopwatch) -> Stopwatch {
-    return new Stopwatch { start_ns: 0, elapsed_ns: 0, running: false }
+    da new Stopwatch { start_ns: 0, elapsed_ns: 0, running: false }
 }
 
 /// Returns the total elapsed time in nanoseconds. If the stopwatch is
 /// currently running, includes the time since the last start.
 pub fn stopwatch_elapsed_ns(sw: Stopwatch) -> Int {
-    if sw.running {
-        let t: Int = __mn_clock_monotonic_ns()
-        let delta: Int = t - sw.start_ns
-        return sw.elapsed_ns + delta
+    si sw.running {
+        pon t: Int = __mn_clock_monotonic_ns()
+        pon delta: Int = t - sw.start_ns
+        da sw.elapsed_ns + delta
     }
-    return sw.elapsed_ns
+    da sw.elapsed_ns
 }
 
 /// Returns the total elapsed time in milliseconds.
 pub fn stopwatch_elapsed_ms(sw: Stopwatch) -> Int {
-    let ns: Int = stopwatch_elapsed_ns(sw)
-    return ns / 1000000
+    pon ns: Int = stopwatch_elapsed_ns(sw)
+    da ns / 1000000
 }
 
 /// Returns true if the stopwatch is currently running.
 pub fn stopwatch_is_running(sw: Stopwatch) -> Bool {
-    return sw.running
+    da sw.running
 }
 
 // ---------------------------------------------------------------------------
@@ -94,22 +94,22 @@ pub fn stopwatch_is_running(sw: Stopwatch) -> Bool {
 
 /// Converts nanoseconds to milliseconds.
 pub fn ns_to_ms(ns: Int) -> Int {
-    return ns / 1000000
+    da ns / 1000000
 }
 
 /// Converts milliseconds to nanoseconds.
 pub fn ms_to_ns(ms: Int) -> Int {
-    return ms * 1000000
+    da ms * 1000000
 }
 
 /// Converts nanoseconds to seconds.
 pub fn ns_to_s(ns: Int) -> Int {
-    return ns / 1000000000
+    da ns / 1000000000
 }
 
 /// Converts seconds to nanoseconds.
 pub fn s_to_ns(s: Int) -> Int {
-    return s * 1000000000
+    da s * 1000000000
 }
 
 /// Formats a duration in milliseconds as a human-readable string.
@@ -117,24 +117,24 @@ pub fn s_to_ns(s: Int) -> Int {
 /// - Under 60000ms: "1.2s"  (one decimal place)
 /// - 60000ms and above: "2m 30s"
 pub fn format_duration_ms(ms: Int) -> String {
-    if ms < 1000 {
-        return int_to_str(ms) + "ms"
+    si ms < 1000 {
+        da int_to_str(ms) + "ms"
     }
-    if ms < 60000 {
-        let whole_s: Int = ms / 1000
-        let frac: Int = (ms % 1000) / 100
-        if frac == 0 {
-            return int_to_str(whole_s) + "s"
+    si ms < 60000 {
+        pon whole_s: Int = ms / 1000
+        pon frac: Int = (ms % 1000) / 100
+        si frac == 0 {
+            da int_to_str(whole_s) + "s"
         }
-        return int_to_str(whole_s) + "." + int_to_str(frac) + "s"
+        da int_to_str(whole_s) + "." + int_to_str(frac) + "s"
     }
-    let total_s: Int = ms / 1000
-    let minutes: Int = total_s / 60
-    let seconds: Int = total_s % 60
-    if seconds == 0 {
-        return int_to_str(minutes) + "m"
+    pon total_s: Int = ms / 1000
+    pon minutes: Int = total_s / 60
+    pon seconds: Int = total_s % 60
+    si seconds == 0 {
+        da int_to_str(minutes) + "m"
     }
-    return int_to_str(minutes) + "m " + int_to_str(seconds) + "s"
+    da int_to_str(minutes) + "m " + int_to_str(seconds) + "s"
 }
 
 // ---------------------------------------------------------------------------
@@ -143,31 +143,31 @@ pub fn format_duration_ms(ms: Int) -> String {
 
 /// Converts a non-negative integer to its decimal string representation.
 fn int_to_str(n: Int) -> String {
-    if n == 0 {
-        return "0"
+    si n == 0 {
+        da "0"
     }
-    let mut result: String = ""
-    let mut remaining: Int = n
-    if remaining < 0 {
+    pon mut result: String = ""
+    pon mut remaining: Int = n
+    si remaining < 0 {
         remaining = 0 - remaining
     }
-    while remaining > 0 {
-        let digit: Int = remaining % 10
-        let mut ch: String = "0"
-        if digit == 1 { ch = "1" }
-        if digit == 2 { ch = "2" }
-        if digit == 3 { ch = "3" }
-        if digit == 4 { ch = "4" }
-        if digit == 5 { ch = "5" }
-        if digit == 6 { ch = "6" }
-        if digit == 7 { ch = "7" }
-        if digit == 8 { ch = "8" }
-        if digit == 9 { ch = "9" }
+    mien remaining > 0 {
+        pon digit: Int = remaining % 10
+        pon mut ch: String = "0"
+        si digit == 1 { ch = "1" }
+        si digit == 2 { ch = "2" }
+        si digit == 3 { ch = "3" }
+        si digit == 4 { ch = "4" }
+        si digit == 5 { ch = "5" }
+        si digit == 6 { ch = "6" }
+        si digit == 7 { ch = "7" }
+        si digit == 8 { ch = "8" }
+        si digit == 9 { ch = "9" }
         result = ch + result
         remaining = remaining / 10
     }
-    if n < 0 {
+    si n < 0 {
         result = "-" + result
     }
-    return result
+    da result
 }

@@ -10,32 +10,32 @@
 // Core Types
 // ---------------------------------------------------------------------------
 
-pub enum SqlValue {
-    Null,
-    Int(Int),
-    Float(Float),
-    Str(String),
-    Bool(Bool)
+pub tipo SqlValue {
+    | Null
+    | Int(Int)
+    | Float(Float)
+    | Str(String)
+    | Bool(Bool)
 }
 
-pub struct Row {
+pub tipo Row {
     columns: List<String>,
     values: List<SqlValue>
 }
 
-pub struct QueryResult {
+pub tipo QueryResult {
     rows: List<Row>,
     affected: Int
 }
 
-pub enum SqlError {
-    ConnectionFailed(String),
-    QueryFailed(String),
-    TypeMismatch(String),
-    DriverNotFound(String)
+pub tipo SqlError {
+    | ConnectionFailed(String)
+    | QueryFailed(String)
+    | TypeMismatch(String)
+    | DriverNotFound(String)
 }
 
-pub struct Connection {
+pub tipo Connection {
     handle: Int,
     driver: String,
     url: String
@@ -46,19 +46,19 @@ pub struct Connection {
 // ---------------------------------------------------------------------------
 
 fn new_connection_failed(msg: String) -> SqlError {
-    return ConnectionFailed(msg)
+    da ConnectionFailed(msg)
 }
 
 fn new_query_failed(msg: String) -> SqlError {
-    return QueryFailed(msg)
+    da QueryFailed(msg)
 }
 
 fn new_type_mismatch(msg: String) -> SqlError {
-    return TypeMismatch(msg)
+    da TypeMismatch(msg)
 }
 
 fn new_driver_not_found(msg: String) -> SqlError {
-    return DriverNotFound(msg)
+    da DriverNotFound(msg)
 }
 
 // ---------------------------------------------------------------------------
@@ -66,98 +66,98 @@ fn new_driver_not_found(msg: String) -> SqlError {
 // ---------------------------------------------------------------------------
 
 pub fn new_row(columns: List<String>, values: List<SqlValue>) -> Row {
-    return new Row { columns: columns, values: values }
+    da new Row { columns: columns, values: values }
 }
 
 // Find the index of a column by name. Returns -1 if not found.
 fn find_column_index(r: Row, name: String) -> Int {
-    let count: Int = len(r.columns)
-    let mut i: Int = 0
-    while i < count {
-        if r.columns[i] == name {
-            return i
+    pon count: Int = len(r.columns)
+    pon mut i: Int = 0
+    mien i < count {
+        si r.columns[i] == name {
+            da i
         }
         i = i + 1
     }
-    return -1
+    da -1
 }
 
 pub fn row_get(r: Row, name: String) -> Option<SqlValue> {
-    let idx: Int = find_column_index(r, name)
-    if idx < 0 {
-        return none
+    pon idx: Int = find_column_index(r, name)
+    si idx < 0 {
+        da nada
     }
-    return Some(r.values[idx])
+    da Some(r.values[idx])
 }
 
 pub fn row_get_string(r: Row, name: String) -> Option<String> {
-    let idx: Int = find_column_index(r, name)
-    if idx < 0 {
-        return none
+    pon idx: Int = find_column_index(r, name)
+    si idx < 0 {
+        da nada
     }
-    let val: SqlValue = r.values[idx]
+    pon val: SqlValue = r.values[idx]
     match val {
-        Str(s) => { return Some(s) },
-        Int(n) => { return Some(str(n)) },
-        Float(f) => { return Some(str(f)) },
+        Str(s) => { da Some(s) },
+        Int(n) => { da Some(str(n)) },
+        Float(f) => { da Some(str(f)) },
         Bool(b) => {
-            if b { return Some("true") }
-            return Some("false")
+            si b { da Some("true") }
+            da Some("false")
         },
-        Null => { return none }
+        Null => { da nada }
     }
-    return none
+    da nada
 }
 
 pub fn row_get_int(r: Row, name: String) -> Option<Int> {
-    let idx: Int = find_column_index(r, name)
-    if idx < 0 {
-        return none
+    pon idx: Int = find_column_index(r, name)
+    si idx < 0 {
+        da nada
     }
-    let val: SqlValue = r.values[idx]
+    pon val: SqlValue = r.values[idx]
     match val {
-        Int(n) => { return Some(n) },
-        Null => { return none },
-        Str(s) => { return none },
-        Float(f) => { return none },
-        Bool(b) => { return none }
+        Int(n) => { da Some(n) },
+        Null => { da nada },
+        Str(s) => { da nada },
+        Float(f) => { da nada },
+        Bool(b) => { da nada }
     }
-    return none
+    da nada
 }
 
 pub fn row_get_float(r: Row, name: String) -> Option<Float> {
-    let idx: Int = find_column_index(r, name)
-    if idx < 0 {
-        return none
+    pon idx: Int = find_column_index(r, name)
+    si idx < 0 {
+        da nada
     }
-    let val: SqlValue = r.values[idx]
+    pon val: SqlValue = r.values[idx]
     match val {
-        Float(f) => { return Some(f) },
-        Int(n) => { return Some(float(n)) },
-        Null => { return none },
-        Str(s) => { return none },
-        Bool(b) => { return none }
+        Float(f) => { da Some(f) },
+        Int(n) => { da Some(float(n)) },
+        Null => { da nada },
+        Str(s) => { da nada },
+        Bool(b) => { da nada }
     }
-    return none
+    da nada
 }
 
 pub fn row_get_bool(r: Row, name: String) -> Option<Bool> {
-    let idx: Int = find_column_index(r, name)
-    if idx < 0 {
-        return none
+    pon idx: Int = find_column_index(r, name)
+    si idx < 0 {
+        da nada
     }
-    let val: SqlValue = r.values[idx]
+    pon val: SqlValue = r.values[idx]
     match val {
-        Bool(b) => { return Some(b) },
+        Bool(b) => { da Some(b) },
         Int(n) => {
-            if n != 0 { return Some(true) }
-            return Some(false)
+            si n != 0 { da Some(true) }
+            da Some(false)
         },
-        Null => { return none },
-        Str(s) => { return none },
-        Float(f) => { return none }
+        Null => { da nada },
+        Str(s) => { da nada },
+        Float(f) => { da nada }
     }
-    return none
+    da nada
 }
 
 // ---------------------------------------------------------------------------
@@ -166,16 +166,16 @@ pub fn row_get_bool(r: Row, name: String) -> Option<Bool> {
 
 pub fn sql_value_to_string(v: SqlValue) -> String {
     match v {
-        Null => { return "NULL" },
-        Int(n) => { return str(n) },
-        Float(f) => { return str(f) },
-        Str(s) => { return s },
+        Null => { da "NULL" },
+        Int(n) => { da str(n) },
+        Float(f) => { da str(f) },
+        Str(s) => { da s },
         Bool(b) => {
-            if b { return "true" }
-            return "false"
+            si b { da "true" }
+            da "false"
         }
     }
-    return "NULL"
+    da "NULL"
 }
 
 // ---------------------------------------------------------------------------
@@ -184,26 +184,26 @@ pub fn sql_value_to_string(v: SqlValue) -> String {
 
 // Extract the scheme from a URL (everything before "://")
 fn extract_scheme(url: String) -> String {
-    let slen: Int = len(url)
-    let mut scheme: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = url.char_at(i)
-        if ch == ":" {
-            if i + 2 < slen {
-                if url.char_at(i + 1) == "/" {
-                    if url.char_at(i + 2) == "/" {
-                        return scheme
+    pon slen: Int = len(url)
+    pon mut scheme: String = ""
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = url.char_at(i)
+        si ch == ":" {
+            si i + 2 < slen {
+                si url.char_at(i + 1) == "/" {
+                    si url.char_at(i + 2) == "/" {
+                        da scheme
                     }
                 }
             }
             // Special case: sqlite::memory: has no //
-            return scheme
+            da scheme
         }
         scheme = scheme + ch
         i = i + 1
     }
-    return scheme
+    da scheme
 }
 
 // Extract the rest of the URL after the scheme prefix.
@@ -211,40 +211,40 @@ fn extract_scheme(url: String) -> String {
 // For "sqlite::memory:" returns ":memory:"
 // For "postgres://user:pass@host/db" returns "user:pass@host/db"
 fn extract_rest(url: String) -> String {
-    let slen: Int = len(url)
-    let mut i: Int = 0
+    pon slen: Int = len(url)
+    pon mut i: Int = 0
 
     // Find the ":"
-    while i < slen {
-        if url.char_at(i) == ":" {
-            break
+    mien i < slen {
+        si url.char_at(i) == ":" {
+            sal
         }
         i = i + 1
     }
 
-    if i >= slen {
-        return ""
+    si i >= slen {
+        da ""
     }
 
     // Move past ":"
     i = i + 1
 
     // Skip "//" if present
-    if i + 1 < slen {
-        if url.char_at(i) == "/" {
-            if url.char_at(i + 1) == "/" {
+    si i + 1 < slen {
+        si url.char_at(i) == "/" {
+            si url.char_at(i + 1) == "/" {
                 i = i + 2
             }
         }
     }
 
     // Return the rest
-    let mut rest: String = ""
-    while i < slen {
+    pon mut rest: String = ""
+    mien i < slen {
         rest = rest + url.char_at(i)
         i = i + 1
     }
-    return rest
+    da rest
 }
 
 // ---------------------------------------------------------------------------
@@ -260,41 +260,41 @@ extern "C" fn __mn_pg_connect(conninfo: String) -> Int
 extern "C" fn __mn_pg_close(conn: Int)
 
 pub fn connect(url: String) -> Result<Connection, SqlError> {
-    let scheme: String = extract_scheme(url)
+    pon scheme: String = extract_scheme(url)
 
-    if scheme == "sqlite" {
-        let rest: String = extract_rest(url)
-        let mut path: String = rest
+    si scheme == "sqlite" {
+        pon rest: String = extract_rest(url)
+        pon mut path: String = rest
 
         // Handle sqlite::memory: special case
-        if rest == ":memory:" {
+        si rest == ":memory:" {
             path = ":memory:"
-        } else if len(rest) > 0 {
+        } sino si len(rest) > 0 {
             // rest is the file path (e.g., "/path/to/db" from "sqlite:///path/to/db")
             path = rest
-        } else {
-            return Err(new_connection_failed("SQLite URL missing path: " + url))
+        } sino {
+            da Err(new_connection_failed("SQLite URL missing path: " + url))
         }
 
-        let handle: Int = __mn_sqlite3_open(path)
-        if handle == 0 {
-            return Err(new_connection_failed("Failed to open SQLite database: " + path))
+        pon handle: Int = __mn_sqlite3_open(path)
+        si handle == 0 {
+            da Err(new_connection_failed("Failed to open SQLite database: " + path))
         }
-        return Ok(new Connection { handle: handle, driver: "sqlite", url: url })
+        da Ok(new Connection { handle: handle, driver: "sqlite", url: url })
     }
 
-    if scheme == "postgres" {
-        let rest: String = extract_rest(url)
+    si scheme == "postgres" {
+        pon rest: String = extract_rest(url)
         // Build libpq connection string from URL components
-        let conninfo: String = url
-        let handle: Int = __mn_pg_connect(conninfo)
-        if handle == 0 {
-            return Err(new_connection_failed("Failed to connect to PostgreSQL: " + url))
+        pon conninfo: String = url
+        pon handle: Int = __mn_pg_connect(conninfo)
+        si handle == 0 {
+            da Err(new_connection_failed("Failed to connect to PostgreSQL: " + url))
         }
-        return Ok(new Connection { handle: handle, driver: "postgres", url: url })
+        da Ok(new Connection { handle: handle, driver: "postgres", url: url })
     }
 
-    return Err(new_driver_not_found("No driver for scheme: " + scheme))
+    da Err(new_driver_not_found("No driver cada scheme: " + scheme))
 }
 
 // ---------------------------------------------------------------------------
@@ -302,15 +302,15 @@ pub fn connect(url: String) -> Result<Connection, SqlError> {
 // ---------------------------------------------------------------------------
 
 pub fn close(conn: Connection) -> Result<Bool, SqlError> {
-    if conn.driver == "sqlite" {
+    si conn.driver == "sqlite" {
         __mn_sqlite3_close(conn.handle)
-        return Ok(true)
+        da Ok(true)
     }
-    if conn.driver == "postgres" {
+    si conn.driver == "postgres" {
         __mn_pg_close(conn.handle)
-        return Ok(true)
+        da Ok(true)
     }
-    return Err(new_driver_not_found("Cannot close: unknown driver " + conn.driver))
+    da Err(new_driver_not_found("Cannot close: unknown driver " + conn.driver))
 }
 
 // ---------------------------------------------------------------------------
@@ -319,10 +319,10 @@ pub fn close(conn: Connection) -> Result<Bool, SqlError> {
 
 pub fn error_message(err: SqlError) -> String {
     match err {
-        ConnectionFailed(msg) => { return "ConnectionFailed: " + msg },
-        QueryFailed(msg) => { return "QueryFailed: " + msg },
-        TypeMismatch(msg) => { return "TypeMismatch: " + msg },
-        DriverNotFound(msg) => { return "DriverNotFound: " + msg }
+        ConnectionFailed(msg) => { da "ConnectionFailed: " + msg },
+        QueryFailed(msg) => { da "QueryFailed: " + msg },
+        TypeMismatch(msg) => { da "TypeMismatch: " + msg },
+        DriverNotFound(msg) => { da "DriverNotFound: " + msg }
     }
-    return "Unknown error"
+    da "Unknown error"
 }

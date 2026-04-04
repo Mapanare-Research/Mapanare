@@ -11,29 +11,29 @@
 // ---------------------------------------------------------------------------
 
 pub fn hex_digit_value(ch: String) -> Int {
-    if ch == "0" { return 0 }
-    if ch == "1" { return 1 }
-    if ch == "2" { return 2 }
-    if ch == "3" { return 3 }
-    if ch == "4" { return 4 }
-    if ch == "5" { return 5 }
-    if ch == "6" { return 6 }
-    if ch == "7" { return 7 }
-    if ch == "8" { return 8 }
-    if ch == "9" { return 9 }
-    if ch == "a" { return 10 }
-    if ch == "b" { return 11 }
-    if ch == "c" { return 12 }
-    if ch == "d" { return 13 }
-    if ch == "e" { return 14 }
-    if ch == "f" { return 15 }
-    if ch == "A" { return 10 }
-    if ch == "B" { return 11 }
-    if ch == "C" { return 12 }
-    if ch == "D" { return 13 }
-    if ch == "E" { return 14 }
-    if ch == "F" { return 15 }
-    return -1
+    si ch == "0" { da 0 }
+    si ch == "1" { da 1 }
+    si ch == "2" { da 2 }
+    si ch == "3" { da 3 }
+    si ch == "4" { da 4 }
+    si ch == "5" { da 5 }
+    si ch == "6" { da 6 }
+    si ch == "7" { da 7 }
+    si ch == "8" { da 8 }
+    si ch == "9" { da 9 }
+    si ch == "a" { da 10 }
+    si ch == "b" { da 11 }
+    si ch == "c" { da 12 }
+    si ch == "d" { da 13 }
+    si ch == "e" { da 14 }
+    si ch == "f" { da 15 }
+    si ch == "A" { da 10 }
+    si ch == "B" { da 11 }
+    si ch == "C" { da 12 }
+    si ch == "D" { da 13 }
+    si ch == "E" { da 14 }
+    si ch == "F" { da 15 }
+    da -1
 }
 
 // ---------------------------------------------------------------------------
@@ -42,9 +42,9 @@ pub fn hex_digit_value(ch: String) -> Int {
 // ---------------------------------------------------------------------------
 
 pub fn hex_digit_value_or_zero(ch: String) -> Int {
-    let v: Int = hex_digit_value(ch)
-    if v < 0 { return 0 }
-    return v
+    pon v: Int = hex_digit_value(ch)
+    si v < 0 { da 0 }
+    da v
 }
 
 // ---------------------------------------------------------------------------
@@ -53,35 +53,35 @@ pub fn hex_digit_value_or_zero(ch: String) -> Int {
 // ---------------------------------------------------------------------------
 
 pub fn to_lower_char(ch: String, b: Int) -> String {
-    if b < 65 { return ch }
-    if b > 90 { return ch }
-    if ch == "A" { return "a" }
-    if ch == "B" { return "b" }
-    if ch == "C" { return "c" }
-    if ch == "D" { return "d" }
-    if ch == "E" { return "e" }
-    if ch == "F" { return "f" }
-    if ch == "G" { return "g" }
-    if ch == "H" { return "h" }
-    if ch == "I" { return "i" }
-    if ch == "J" { return "j" }
-    if ch == "K" { return "k" }
-    if ch == "L" { return "l" }
-    if ch == "M" { return "m" }
-    if ch == "N" { return "n" }
-    if ch == "O" { return "o" }
-    if ch == "P" { return "p" }
-    if ch == "Q" { return "q" }
-    if ch == "R" { return "r" }
-    if ch == "S" { return "s" }
-    if ch == "T" { return "t" }
-    if ch == "U" { return "u" }
-    if ch == "V" { return "v" }
-    if ch == "W" { return "w" }
-    if ch == "X" { return "x" }
-    if ch == "Y" { return "y" }
-    if ch == "Z" { return "z" }
-    return ch
+    si b < 65 { da ch }
+    si b > 90 { da ch }
+    si ch == "A" { da "a" }
+    si ch == "B" { da "b" }
+    si ch == "C" { da "c" }
+    si ch == "D" { da "d" }
+    si ch == "E" { da "e" }
+    si ch == "F" { da "f" }
+    si ch == "G" { da "g" }
+    si ch == "H" { da "h" }
+    si ch == "I" { da "i" }
+    si ch == "J" { da "j" }
+    si ch == "K" { da "k" }
+    si ch == "L" { da "l" }
+    si ch == "M" { da "m" }
+    si ch == "N" { da "n" }
+    si ch == "O" { da "o" }
+    si ch == "P" { da "p" }
+    si ch == "Q" { da "q" }
+    si ch == "R" { da "r" }
+    si ch == "S" { da "s" }
+    si ch == "T" { da "t" }
+    si ch == "U" { da "u" }
+    si ch == "V" { da "v" }
+    si ch == "W" { da "w" }
+    si ch == "X" { da "x" }
+    si ch == "Y" { da "y" }
+    si ch == "Z" { da "z" }
+    da ch
 }
 
 // ---------------------------------------------------------------------------
@@ -89,16 +89,16 @@ pub fn to_lower_char(ch: String, b: Int) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn to_lower(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = s.byte_at(i)
+    pon slen: Int = len(s)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        pon b: Int = s.byte_at(i)
         result = result + to_lower_char(ch, b)
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -107,35 +107,35 @@ pub fn to_lower(s: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn to_upper_char(ch: String, b: Int) -> String {
-    if b < 97 { return ch }
-    if b > 122 { return ch }
-    if ch == "a" { return "A" }
-    if ch == "b" { return "B" }
-    if ch == "c" { return "C" }
-    if ch == "d" { return "D" }
-    if ch == "e" { return "E" }
-    if ch == "f" { return "F" }
-    if ch == "g" { return "G" }
-    if ch == "h" { return "H" }
-    if ch == "i" { return "I" }
-    if ch == "j" { return "J" }
-    if ch == "k" { return "K" }
-    if ch == "l" { return "L" }
-    if ch == "m" { return "M" }
-    if ch == "n" { return "N" }
-    if ch == "o" { return "O" }
-    if ch == "p" { return "P" }
-    if ch == "q" { return "Q" }
-    if ch == "r" { return "R" }
-    if ch == "s" { return "S" }
-    if ch == "t" { return "T" }
-    if ch == "u" { return "U" }
-    if ch == "v" { return "V" }
-    if ch == "w" { return "W" }
-    if ch == "x" { return "X" }
-    if ch == "y" { return "Y" }
-    if ch == "z" { return "Z" }
-    return ch
+    si b < 97 { da ch }
+    si b > 122 { da ch }
+    si ch == "a" { da "A" }
+    si ch == "b" { da "B" }
+    si ch == "c" { da "C" }
+    si ch == "d" { da "D" }
+    si ch == "e" { da "E" }
+    si ch == "f" { da "F" }
+    si ch == "g" { da "G" }
+    si ch == "h" { da "H" }
+    si ch == "i" { da "I" }
+    si ch == "j" { da "J" }
+    si ch == "k" { da "K" }
+    si ch == "l" { da "L" }
+    si ch == "m" { da "M" }
+    si ch == "n" { da "N" }
+    si ch == "o" { da "O" }
+    si ch == "p" { da "P" }
+    si ch == "q" { da "Q" }
+    si ch == "r" { da "R" }
+    si ch == "s" { da "S" }
+    si ch == "t" { da "T" }
+    si ch == "u" { da "U" }
+    si ch == "v" { da "V" }
+    si ch == "w" { da "W" }
+    si ch == "x" { da "X" }
+    si ch == "y" { da "Y" }
+    si ch == "z" { da "Z" }
+    da ch
 }
 
 // ---------------------------------------------------------------------------
@@ -143,16 +143,16 @@ pub fn to_upper_char(ch: String, b: Int) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn to_upper(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = s.byte_at(i)
+    pon slen: Int = len(s)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        pon b: Int = s.byte_at(i)
         result = result + to_upper_char(ch, b)
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -161,29 +161,29 @@ pub fn to_upper(s: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn parse_int_manual(s: String) -> Int {
-    let slen: Int = len(s)
-    let mut result: Int = 0
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let mut digit: Int = 0
-        if ch == "0" { digit = 0
-        } else { if ch == "1" { digit = 1
-        } else { if ch == "2" { digit = 2
-        } else { if ch == "3" { digit = 3
-        } else { if ch == "4" { digit = 4
-        } else { if ch == "5" { digit = 5
-        } else { if ch == "6" { digit = 6
-        } else { if ch == "7" { digit = 7
-        } else { if ch == "8" { digit = 8
-        } else { if ch == "9" { digit = 9
-        } else {
-            return result
+    pon slen: Int = len(s)
+    pon mut result: Int = 0
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        pon mut digit: Int = 0
+        si ch == "0" { digit = 0
+        } sino { si ch == "1" { digit = 1
+        } sino { si ch == "2" { digit = 2
+        } sino { si ch == "3" { digit = 3
+        } sino { si ch == "4" { digit = 4
+        } sino { si ch == "5" { digit = 5
+        } sino { si ch == "6" { digit = 6
+        } sino { si ch == "7" { digit = 7
+        } sino { si ch == "8" { digit = 8
+        } sino { si ch == "9" { digit = 9
+        } sino {
+            da result
         } } } } } } } } } }
         result = result * 10 + digit
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -192,17 +192,17 @@ pub fn parse_int_manual(s: String) -> Int {
 // ---------------------------------------------------------------------------
 
 pub fn digit_value(ch: String) -> Int {
-    if ch == "0" { return 0 }
-    if ch == "1" { return 1 }
-    if ch == "2" { return 2 }
-    if ch == "3" { return 3 }
-    if ch == "4" { return 4 }
-    if ch == "5" { return 5 }
-    if ch == "6" { return 6 }
-    if ch == "7" { return 7 }
-    if ch == "8" { return 8 }
-    if ch == "9" { return 9 }
-    return 0
+    si ch == "0" { da 0 }
+    si ch == "1" { da 1 }
+    si ch == "2" { da 2 }
+    si ch == "3" { da 3 }
+    si ch == "4" { da 4 }
+    si ch == "5" { da 5 }
+    si ch == "6" { da 6 }
+    si ch == "7" { da 7 }
+    si ch == "8" { da 8 }
+    si ch == "9" { da 9 }
+    da 0
 }
 
 // ---------------------------------------------------------------------------
@@ -210,8 +210,8 @@ pub fn digit_value(ch: String) -> Int {
 // ---------------------------------------------------------------------------
 
 pub fn is_digit(ch: String) -> Bool {
-    if ch >= "0" { if ch <= "9" { return true } }
-    return false
+    si ch >= "0" { si ch <= "9" { da true } }
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -219,10 +219,10 @@ pub fn is_digit(ch: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn is_hex(ch: String) -> Bool {
-    if is_digit(ch) { return true }
-    if ch >= "a" { if ch <= "f" { return true } }
-    if ch >= "A" { if ch <= "F" { return true } }
-    return false
+    si is_digit(ch) { da true }
+    si ch >= "a" { si ch <= "f" { da true } }
+    si ch >= "A" { si ch <= "F" { da true } }
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -230,21 +230,21 @@ pub fn is_hex(ch: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn hex_char(n: Int) -> String {
-    if n == 0 { return "0" }
-    if n == 1 { return "1" }
-    if n == 2 { return "2" }
-    if n == 3 { return "3" }
-    if n == 4 { return "4" }
-    if n == 5 { return "5" }
-    if n == 6 { return "6" }
-    if n == 7 { return "7" }
-    if n == 8 { return "8" }
-    if n == 9 { return "9" }
-    if n == 10 { return "A" }
-    if n == 11 { return "B" }
-    if n == 12 { return "C" }
-    if n == 13 { return "D" }
-    if n == 14 { return "E" }
-    if n == 15 { return "F" }
-    return "0"
+    si n == 0 { da "0" }
+    si n == 1 { da "1" }
+    si n == 2 { da "2" }
+    si n == 3 { da "3" }
+    si n == 4 { da "4" }
+    si n == 5 { da "5" }
+    si n == 6 { da "6" }
+    si n == 7 { da "7" }
+    si n == 8 { da "8" }
+    si n == 9 { da "9" }
+    si n == 10 { da "A" }
+    si n == 11 { da "B" }
+    si n == 12 { da "C" }
+    si n == 13 { da "D" }
+    si n == 14 { da "E" }
+    si n == 15 { da "F" }
+    da "0"
 }

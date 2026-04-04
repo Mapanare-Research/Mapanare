@@ -1,5 +1,5 @@
 fn main() {
-    let x: Int = 10
-    let add_x = (n) => n + x
+    pon x: Int = 10
+    pon add_x = (n) => n + x
     print(str(add_x(5)))
 }

@@ -115,7 +115,7 @@ fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
     let mut i: Int = 0
     let mut s: LowerState = st
 
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i >= len(data.fields) {
             let info: StructInfo = new_struct_info(data.name, fields)
             s.module = module_push_struct(s.module, info)
@@ -140,7 +140,7 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
     let mut i: Int = 0
     let mut s: LowerState = st
 
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i >= len(data.variants) {
             let info: EnumInfo = new_enum_info(data.name, variants)
             s.module = module_push_enum(s.module, info)
@@ -169,7 +169,7 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
 fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i >= len(methods) { return s }
         let method: FnDefData = methods[i]
         let key: String = target + "." + method.name
@@ -234,7 +234,7 @@ fn lower_definition(st: LowerState, defn: Definition) -> LowerState {
 fn build_mir_params(st: LowerState, fn_params: List<Param>) -> List<MIRParam> {
     let mut params: List<MIRParam> = []
     let mut pi: Int = 0
-    for _ in 0..50 {
+    for _ in 0..200 {
         if pi >= len(fn_params) { return params }
         let p: Param = fn_params[pi]
         let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
@@ -262,7 +262,7 @@ fn collect_decorator_names(decorators: List<Decorator>) -> List<String> {
 fn bind_fn_params(st: LowerState, fn_params: List<Param>) -> LowerState {
     let mut s: LowerState = st
     let mut bi: Int = 0
-    for _ in 0..50 {
+    for _ in 0..200 {
         if bi >= len(fn_params) { return s }
         let p: Param = fn_params[bi]
         let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
@@ -346,7 +346,7 @@ fn lower_agent(st: LowerState, data: AgentDefData) -> LowerState {
 
     // Lower each method
     let mut i: Int = 0
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i >= len(data.methods) {
             let inputs: List<String> = extract_agent_input_names(data)
             let outputs: List<String> = extract_agent_output_names(data)
@@ -390,7 +390,7 @@ fn extract_agent_output_names(data: AgentDefData) -> List<String> {
 fn lower_impl(st: LowerState, target: String, methods: List<FnDefData>) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i >= len(methods) { return s }
         let method: FnDefData = methods[i]
         s = lower_fn(s, method, target + "_")
@@ -902,7 +902,7 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
     let mut args: List<Value> = []
     let mut i: Int = 0
     let nae: Int = len(arg_exprs)
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i < nae {
             let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
             s = arg_r.state
@@ -924,7 +924,7 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
             all_args.push(obj_r.value)
             let mut j: Int = 0
             let nargs_fa: Int = len(args)
-            for _ in 0..50 {
+            for _ in 0..200 {
                 if j < nargs_fa {
                     all_args.push(args[j])
                     j = j + 1
@@ -1050,7 +1050,7 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let mut fi: Int = 0
         let nfn: Int = len(field_names)
         let na: Int = len(args)
-        for _ in 0..50 {
+        for _ in 0..200 {
             if fi < nfn {
                 if fi < na {
                     let fp: FieldPair = new_field_pair(field_names[fi], args[fi])
@@ -1171,7 +1171,7 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     all_args.push(obj_r.value)
     let nae: Int = len(arg_exprs)
     let mut i: Int = 0
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i < nae {
             let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
             s = arg_r.state
@@ -1258,7 +1258,7 @@ fn lookup_struct_field_type(st: LowerState, struct_name: String, field_name: Str
         let info: StructFieldInfo = st.struct_fields[i]
         if info.name == struct_name {
             let mut j: Int = 0
-            for _ in 0..50 {
+            for _ in 0..200 {
                 if j >= len(info.field_names) { return mir_unknown() }
                 if info.field_names[j] == field_name {
                     if j < len(info.field_types) {
@@ -1357,7 +1357,7 @@ fn lower_pipe_call(arg_r: LowerResult, fn_name: String, extra_exprs: List<Expr>)
     args.push(arg_r.value)
     let mut i: Int = 0
     let nee: Int = len(extra_exprs)
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i < nee {
             let extra_r: LowerResult = lower_expr(s, extra_exprs[i])
             s = extra_r.state
@@ -1519,7 +1519,7 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
     }
     let mut ci: Int = 0
     let npv: Int = len(parent_vars)
-    for _ in 0..50 {
+    for _ in 0..200 {
         if ci < npv {
             let pv: VarInfo = parent_vars[ci]
             let cap_param: Param = new Param { span: new_span(0, 0, 0, 0), name: pv.name, type_annotation: none }
@@ -1563,7 +1563,7 @@ fn lower_spawn(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResu
     let mut args: List<Value> = []
     let mut i: Int = 0
     let nae_sp: Int = len(arg_exprs)
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i < nae_sp {
             let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
             s = arg_r.state
@@ -1699,7 +1699,7 @@ fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -
     // Lower each field value
     let mut vals: List<Value> = []
     let mut i: Int = 0
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i < nfields {
             let fi: FieldInit = field_inits[i]
             let val_r: LowerResult = lower_expr(s, fi.value)
@@ -1870,13 +1870,13 @@ fn infer_variant_payload_type(st: LowerState, subject: Value, variant_name: Stri
         let enum_name: String = subject.ty.name
         let mut ei: Int = 0
         let nei: Int = len(st.module.enums)
-        for _ in 0..50 {
+        for _ in 0..200 {
             if ei < nei {
                 let einfo: EnumInfo = st.module.enums[ei]
                 if einfo.name == enum_name {
                     let mut vi: Int = 0
                     let nvi: Int = len(einfo.variants)
-                    for _ in 0..50 {
+                    for _ in 0..200 {
                         if vi < nvi {
                             let vinfo: EnumVariantInfo = einfo.variants[vi]
                             if vinfo.name == variant_name {
@@ -2033,19 +2033,27 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
 
     let mut final_val: Value = void_value()
     if both {
-        let mut entries: List<PhiEntry> = []
-        entries.push(new_phi_entry(then_exit_label, then_val))
-        entries.push(new_phi_entry(else_exit_label, else_val))
-        let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
-        s = result_r.state
-        s = emit_instr(s, Instruction::Phi(result_r.value, entries))
-        final_val = result_r.value
+        // When both arms produce values, check if types match.
+        // Mismatched types (e.g., i64 vs Expr from side-effect if-else) → void fallback.
+        let types_match: Bool = then_val.ty.kind == else_val.ty.kind
+        if types_match {
+            let mut entries: List<PhiEntry> = []
+            entries.push(new_phi_entry(then_exit_label, then_val))
+            entries.push(new_phi_entry(else_exit_label, else_val))
+            let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
+            s = result_r.state
+            s = emit_instr(s, Instruction::Phi(result_r.value, entries))
+            final_val = result_r.value
+        }
     }
     if only_then {
         let mut entries: List<PhiEntry> = []
         entries.push(new_phi_entry(then_exit_label, then_val))
-        let zero_v: Value = new_value("zeroinitializer", then_val.ty)
-        entries.push(new_phi_entry(else_exit_label, zero_v))
+        // Only include else branch if it's not terminated (reaches merge)
+        if !else_terminated {
+            let zero_v: Value = new_value("zeroinitializer", then_val.ty)
+            entries.push(new_phi_entry(else_exit_label, zero_v))
+        }
         let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
         s = result_r.state
         s = emit_instr(s, Instruction::Phi(result_r.value, entries))
@@ -2053,8 +2061,11 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     }
     if only_else {
         let mut entries: List<PhiEntry> = []
-        let zero_v: Value = new_value("zeroinitializer", else_val.ty)
-        entries.push(new_phi_entry(then_exit_label, zero_v))
+        // Only include then branch if it's not terminated (reaches merge)
+        if !then_terminated {
+            let zero_v: Value = new_value("zeroinitializer", else_val.ty)
+            entries.push(new_phi_entry(then_exit_label, zero_v))
+        }
         entries.push(new_phi_entry(else_exit_label, else_val))
         let result_r: LowerResult = make_value(s, else_val.ty, "if_result")
         s = result_r.state
@@ -2066,8 +2077,24 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
         let result_r: LowerResult = make_value(s, mir_void(), "t")
         s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
         final_val = result_r.value
+        // Both branches terminated — merge block is unreachable.
+        // Emit return terminator AFTER const so current_block_terminated returns true
+        // and callers don't emit additional jumps to this block's successors.
+        let both_terminated: Bool = then_terminated && else_terminated
+        if both_terminated {
+            let fn_ret: MIRType = get_current_fn_ret_type(s)
+            let dummy_val: Value = new_value("zeroinitializer", fn_ret)
+            s = emit_instr(s, Instruction::Return(Some(dummy_val)))
+        }
     }
     return new_lower_result(final_val, s)
+}
+
+fn get_current_fn_ret_type(st: LowerState) -> MIRType {
+    match st.current_fn {
+        Some(f) => { return f.return_type },
+        _ => { return mir_void() }
+    }
 }
 
 fn get_block_label(st: LowerState, idx: Int) -> String {
@@ -2105,7 +2132,7 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
     let mut s: LowerState = st
     let mut i: Int = 0
     let n: Int = len(arms)
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i < n {
             let label_r: LowerResult = fresh_block_label(s, "match_arm")
             s = label_r.state
@@ -2174,7 +2201,7 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     let mut arm_results: List<PhiEntry> = []
     let mut ai: Int = 0
     let na_match: Int = len(arms)
-    for _ in 0..50 {
+    for _ in 0..200 {
         if ai < na_match {
             let arm: MatchArm = arms[ai]
             let arm_idx: Int = arm_indices[ai]
@@ -2208,19 +2235,33 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             let exit_label: String = get_block_label(s, s.current_block_idx)
             let arm_terminated: Bool = current_block_terminated(s)
 
-            // Track arm results for phi
-            let arm_kind: String = arm_val_r.value.ty.kind
-            if !arm_terminated && arm_kind != "void" && arm_kind != "unknown" && arm_val_r.value.name != "%void" {
-                let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
-                arm_results.push(pe)
-            }
-
+            // Jump to merge if not terminated
             if !arm_terminated {
                 s = emit_instr(s, Instruction::Jump(merge_label))
+                // Track arm result for phi (include all arms that reach merge)
+                // Use zeroinitializer for void/unknown results to avoid referencing %void
+                let arm_kind: String = arm_val_r.value.ty.kind
+                if arm_kind == "void" || arm_kind == "unknown" || arm_val_r.value.name == "%void" {
+                    let zero_v: Value = new_value("zeroinitializer", arm_val_r.value.ty)
+                    let pe: PhiEntry = new_phi_entry(exit_label, zero_v)
+                    arm_results.push(pe)
+                } else {
+                    let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
+                    arm_results.push(pe)
+                }
             }
             s = lower_pop_scope(s)
             ai = ai + 1
         }
+    }
+
+    // Add zeroinitializer entry for switch default→merge path
+    if default_label == merge_label && len(arm_results) > 0 {
+        let entry_label: String = get_block_label(s, match_entry_idx)
+        let zero_ty: MIRType = arm_results[0].val.ty
+        let zero_v: Value = new_value("zeroinitializer", zero_ty)
+        let def_pe: PhiEntry = new_phi_entry(entry_label, zero_v)
+        arm_results.push(def_pe)
     }
 
     // Merge block
@@ -2232,13 +2273,16 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         return new_lower_result(result_r.value, s)
     }
 
-    // All arms terminated. Merge block is unreachable.
-    // Emit a dummy return to terminate the block. Any code the caller
-    // emits after this will be in a dead block (after a terminator).
-    let dummy_val: Value = new_value("zeroinitializer", mir_unknown())
-    s = emit_instr(s, Instruction::Return(Some(dummy_val)))
-    let void_r: LowerResult = make_value(s, mir_void(), "t")
-    return new_lower_result(void_r.value, void_r.state)
+    // All arms terminated (all have return/break). Merge block is unreachable
+    // but callers may reference the result. Use the function's return type
+    // to create a properly-typed dummy value (alloca+load of zeroed memory).
+    let fn_ret: MIRType = get_current_fn_ret_type(s)
+    let result_r: LowerResult = make_value(s, fn_ret, "match_result")
+    s = result_r.state
+    let dummy_addr: Value = new_value(result_r.value.name + ".dummy", fn_ret)
+    s = emit_instr(s, Instruction::Alloca(dummy_addr, fn_ret))
+    s = emit_instr(s, Instruction::Load(result_r.value, dummy_addr))
+    return new_lower_result(result_r.value, s)
 }
 
 fn get_literal_value(expr: Expr) -> String {
@@ -2427,7 +2471,7 @@ fn pretty_print_function(f: MIRFunction) -> String {
     let mut params_str: String = ""
     let mut i: Int = 0
     let nfp: Int = len(f.params)
-    for _ in 0..50 {
+    for _ in 0..200 {
         if i < nfp {
             let p: MIRParam = f.params[i]
             if i > 0 { params_str = params_str + ", " }
@@ -2460,20 +2504,20 @@ fn pretty_print_module(module: MIRModule) -> String {
     }
 
     // Print structs
-    let mut si: Int = 0
+    let mut si_idx: Int = 0
     let nms: Int = len(module.structs)
-    for _ in 0..50 {
-        if si < nms {
-            let s: StructInfo = module.structs[si]
+    for _ in 0..200 {
+        if si_idx < nms {
+            let s: StructInfo = module.structs[si_idx]
             result = result + "struct " + s.name + " {...}\n"
-            si = si + 1
+            si_idx = si_idx + 1
         }
     }
 
     // Print enums
     let mut ei: Int = 0
     let nme: Int = len(module.enums)
-    for _ in 0..50 {
+    for _ in 0..200 {
         if ei < nme {
             let e: EnumInfo = module.enums[ei]
             result = result + "enum " + e.name + " {...}\n"
@@ -2646,7 +2690,7 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     let mut params: List<MIRParam> = []
     let mut pi: Int = 0
     let nfdp: Int = len(fn_def.params)
-    for _ in 0..50 {
+    for _ in 0..200 {
         if pi < nfdp {
             let p: Param = fn_def.params[pi]
             let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
@@ -2689,7 +2733,7 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
 
     // Bind params
     let mut bi: Int = 0
-    for _ in 0..50 {
+    for _ in 0..200 {
         if bi < nfdp {
             let p: Param = fn_def.params[bi]
             let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)

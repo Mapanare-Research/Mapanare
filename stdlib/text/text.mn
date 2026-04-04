@@ -12,29 +12,29 @@
 // ---------------------------------------------------------------------------
 
 fn is_upper_byte(b: Int) -> Bool {
-    if b >= 65 {
-        if b <= 90 {
-            return true
+    si b >= 65 {
+        si b <= 90 {
+            da true
         }
     }
-    return false
+    da false
 }
 
 fn is_lower_byte(b: Int) -> Bool {
-    if b >= 97 {
-        if b <= 122 {
-            return true
+    si b >= 97 {
+        si b <= 122 {
+            da true
         }
     }
-    return false
+    da false
 }
 
 fn is_space(c: String) -> Bool {
-    if c == " " { return true }
-    if c == "\t" { return true }
-    if c == "\n" { return true }
-    if c == "\r" { return true }
-    return false
+    si c == " " { da true }
+    si c == "\t" { da true }
+    si c == "\n" { da true }
+    si c == "\r" { da true }
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -42,9 +42,9 @@ fn is_space(c: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 fn upper_char(ch: String, b: Int) -> String {
-    if b < 97 { return ch }
-    if b > 122 { return ch }
-    return chr(b - 32)
+    si b < 97 { da ch }
+    si b > 122 { da ch }
+    da chr(b - 32)
 }
 
 // ---------------------------------------------------------------------------
@@ -52,9 +52,9 @@ fn upper_char(ch: String, b: Int) -> String {
 // ---------------------------------------------------------------------------
 
 fn lower_char(ch: String, b: Int) -> String {
-    if b < 65 { return ch }
-    if b > 90 { return ch }
-    return chr(b + 32)
+    si b < 65 { da ch }
+    si b > 90 { da ch }
+    da chr(b + 32)
 }
 
 // ---------------------------------------------------------------------------
@@ -63,13 +63,13 @@ fn lower_char(ch: String, b: Int) -> String {
 
 // capitalize — uppercase first character, rest unchanged.
 pub fn capitalize(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
-    let ch: String = s.char_at(0)
-    let b: Int = s.byte_at(0)
-    let first: String = upper_char(ch, b)
-    if slen == 1 { return first }
-    return first + s.substr(1, slen)
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
+    pon ch: String = s.char_at(0)
+    pon b: Int = s.byte_at(0)
+    pon first: String = upper_char(ch, b)
+    si slen == 1 { da first }
+    da first + s.substr(1, slen)
 }
 
 // ---------------------------------------------------------------------------
@@ -77,28 +77,28 @@ pub fn capitalize(s: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn title_case(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
-    let mut result: String = ""
-    let mut at_word_start: Bool = true
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = s.byte_at(i)
-        if is_space(ch) {
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
+    pon mut result: String = ""
+    pon mut at_word_start: Bool = true
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        pon b: Int = s.byte_at(i)
+        si is_space(ch) {
             result = result + ch
             at_word_start = true
-        } else {
-            if at_word_start {
+        } sino {
+            si at_word_start {
                 result = result + upper_char(ch, b)
                 at_word_start = false
-            } else {
+            } sino {
                 result = result + ch
             }
         }
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -106,40 +106,40 @@ pub fn title_case(s: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn camel_case(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
-    let mut result: String = ""
-    let mut upper_next: Bool = false
-    let mut first_word: Bool = true
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = s.byte_at(i)
-        if ch == "_" {
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
+    pon mut result: String = ""
+    pon mut upper_next: Bool = false
+    pon mut first_word: Bool = true
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        pon b: Int = s.byte_at(i)
+        si ch == "_" {
             upper_next = true
-        } else { if ch == "-" {
+        } sino { si ch == "-" {
             upper_next = true
-        } else {
-            if upper_next {
-                if first_word {
+        } sino {
+            si upper_next {
+                si first_word {
                     result = result + lower_char(ch, b)
                     first_word = false
-                } else {
+                } sino {
                     result = result + upper_char(ch, b)
                 }
                 upper_next = false
-            } else {
-                if first_word {
+            } sino {
+                si first_word {
                     result = result + lower_char(ch, b)
                     first_word = false
-                } else {
+                } sino {
                     result = result + ch
                 }
             }
         } }
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -147,26 +147,26 @@ pub fn camel_case(s: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn snake_case(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = s.byte_at(i)
-        if ch == "-" {
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        pon b: Int = s.byte_at(i)
+        si ch == "-" {
             result = result + "_"
-        } else { if is_upper_byte(b) {
-            if i > 0 {
+        } sino { si is_upper_byte(b) {
+            si i > 0 {
                 result = result + "_"
             }
             result = result + lower_char(ch, b)
-        } else {
+        } sino {
             result = result + ch
         } }
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -174,26 +174,26 @@ pub fn snake_case(s: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn kebab_case(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = s.byte_at(i)
-        if ch == "_" {
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        pon b: Int = s.byte_at(i)
+        si ch == "_" {
             result = result + "-"
-        } else { if is_upper_byte(b) {
-            if i > 0 {
+        } sino { si is_upper_byte(b) {
+            si i > 0 {
                 result = result + "-"
             }
             result = result + lower_char(ch, b)
-        } else {
+        } sino {
             result = result + ch
         } }
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -202,41 +202,41 @@ pub fn kebab_case(s: String) -> String {
 
 // trim — strip leading and trailing whitespace.
 pub fn trim(s: String) -> String {
-    return trim_impl(s, len(s))
+    da trim_impl(s, len(s))
 }
 
 fn trim_impl(s: String, slen: Int) -> String {
-    if slen == 0 { return s }
-    let mut start: Int = 0
-    let mut keep_going: Bool = true
-    while keep_going {
-        if start >= slen {
+    si slen == 0 { da s }
+    pon mut start: Int = 0
+    pon mut keep_going: Bool = true
+    mien keep_going {
+        si start >= slen {
             keep_going = false
-        } else {
-            let ch: String = s.char_at(start)
-            if is_space(ch) {
+        } sino {
+            pon ch: String = s.char_at(start)
+            si is_space(ch) {
                 start = start + 1
-            } else {
+            } sino {
                 keep_going = false
             }
         }
     }
-    if start >= slen { return "" }
-    let mut end: Int = slen - 1
-    let mut keep_going2: Bool = true
-    while keep_going2 {
-        if end < start {
+    si start >= slen { da "" }
+    pon mut end: Int = slen - 1
+    pon mut keep_going2: Bool = true
+    mien keep_going2 {
+        si end < start {
             keep_going2 = false
-        } else {
-            let ch: String = s.char_at(end)
-            if is_space(ch) {
+        } sino {
+            pon ch: String = s.char_at(end)
+            si is_space(ch) {
                 end = end - 1
-            } else {
+            } sino {
                 keep_going2 = false
             }
         }
     }
-    return s.substr(start, end + 1)
+    da s.substr(start, end + 1)
 }
 
 // ---------------------------------------------------------------------------
@@ -244,24 +244,24 @@ fn trim_impl(s: String, slen: Int) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn trim_start(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
-    let mut start: Int = 0
-    let mut keep_going: Bool = true
-    while keep_going {
-        if start >= slen {
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
+    pon mut start: Int = 0
+    pon mut keep_going: Bool = true
+    mien keep_going {
+        si start >= slen {
             keep_going = false
-        } else {
-            let ch: String = s.char_at(start)
-            if is_space(ch) {
+        } sino {
+            pon ch: String = s.char_at(start)
+            si is_space(ch) {
                 start = start + 1
-            } else {
+            } sino {
                 keep_going = false
             }
         }
     }
-    if start >= slen { return "" }
-    return s.substr(start, slen)
+    si start >= slen { da "" }
+    da s.substr(start, slen)
 }
 
 // ---------------------------------------------------------------------------
@@ -269,24 +269,24 @@ pub fn trim_start(s: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn trim_end(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
-    let mut end: Int = slen - 1
-    let mut keep_going: Bool = true
-    while keep_going {
-        if end < 0 {
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
+    pon mut end: Int = slen - 1
+    pon mut keep_going: Bool = true
+    mien keep_going {
+        si end < 0 {
             keep_going = false
-        } else {
-            let ch: String = s.char_at(end)
-            if is_space(ch) {
+        } sino {
+            pon ch: String = s.char_at(end)
+            si is_space(ch) {
                 end = end - 1
-            } else {
+            } sino {
                 keep_going = false
             }
         }
     }
-    if end < 0 { return "" }
-    return s.substr(0, end + 1)
+    si end < 0 { da "" }
+    da s.substr(0, end + 1)
 }
 
 // ---------------------------------------------------------------------------
@@ -295,15 +295,15 @@ pub fn trim_end(s: String) -> String {
 
 // pad_start — left-pad s to width using fill character.
 pub fn pad_start(s: String, width: Int, fill: String) -> String {
-    let slen: Int = len(s)
-    if slen >= width { return s }
-    let mut result: String = ""
-    let mut needed: Int = width - slen
-    while needed > 0 {
+    pon slen: Int = len(s)
+    si slen >= width { da s }
+    pon mut result: String = ""
+    pon mut needed: Int = width - slen
+    mien needed > 0 {
         result = result + fill
         needed = needed - 1
     }
-    return result + s
+    da result + s
 }
 
 // ---------------------------------------------------------------------------
@@ -311,15 +311,15 @@ pub fn pad_start(s: String, width: Int, fill: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn pad_end(s: String, width: Int, fill: String) -> String {
-    let slen: Int = len(s)
-    if slen >= width { return s }
-    let mut result: String = s
-    let mut needed: Int = width - slen
-    while needed > 0 {
+    pon slen: Int = len(s)
+    si slen >= width { da s }
+    pon mut result: String = s
+    pon mut needed: Int = width - slen
+    mien needed > 0 {
         result = result + fill
         needed = needed - 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -327,24 +327,24 @@ pub fn pad_end(s: String, width: Int, fill: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn center(s: String, width: Int, fill: String) -> String {
-    let slen: Int = len(s)
-    if slen >= width { return s }
-    let total_pad: Int = width - slen
-    let left_pad: Int = total_pad / 2
-    let right_pad: Int = total_pad - left_pad
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < left_pad {
+    pon slen: Int = len(s)
+    si slen >= width { da s }
+    pon total_pad: Int = width - slen
+    pon left_pad: Int = total_pad / 2
+    pon right_pad: Int = total_pad - left_pad
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < left_pad {
         result = result + fill
         i = i + 1
     }
     result = result + s
     i = 0
-    while i < right_pad {
+    mien i < right_pad {
         result = result + fill
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -353,9 +353,9 @@ pub fn center(s: String, width: Int, fill: String) -> String {
 
 // contains — check if s contains sub.
 pub fn contains(s: String, sub: String) -> Bool {
-    let pos: Int = s.find(sub)
-    if pos >= 0 { return true }
-    return false
+    pon pos: Int = s.find(sub)
+    si pos >= 0 { da true }
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -363,13 +363,13 @@ pub fn contains(s: String, sub: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn starts_with(s: String, prefix: String) -> Bool {
-    let slen: Int = len(s)
-    let plen: Int = len(prefix)
-    if plen > slen { return false }
-    if plen == 0 { return true }
-    let head: String = s.substr(0, plen)
-    if head == prefix { return true }
-    return false
+    pon slen: Int = len(s)
+    pon plen: Int = len(prefix)
+    si plen > slen { da false }
+    si plen == 0 { da true }
+    pon head: String = s.substr(0, plen)
+    si head == prefix { da true }
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -377,13 +377,13 @@ pub fn starts_with(s: String, prefix: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn ends_with(s: String, suffix: String) -> Bool {
-    let slen: Int = len(s)
-    let xlen: Int = len(suffix)
-    if xlen > slen { return false }
-    if xlen == 0 { return true }
-    let tail: String = s.substr(slen - xlen, slen)
-    if tail == suffix { return true }
-    return false
+    pon slen: Int = len(s)
+    pon xlen: Int = len(suffix)
+    si xlen > slen { da false }
+    si xlen == 0 { da true }
+    pon tail: String = s.substr(slen - xlen, slen)
+    si tail == suffix { da true }
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -391,7 +391,7 @@ pub fn ends_with(s: String, suffix: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn index_of(s: String, sub: String) -> Int {
-    return s.find(sub)
+    da s.find(sub)
 }
 
 // ---------------------------------------------------------------------------
@@ -399,30 +399,30 @@ pub fn index_of(s: String, sub: String) -> Int {
 // ---------------------------------------------------------------------------
 
 pub fn replace(s: String, old: String, new_str: String) -> String {
-    return replace_impl(s, old, new_str)
+    da replace_impl(s, old, new_str)
 }
 
 fn replace_impl(s: String, old: String, new_str: String) -> String {
-    let old_len: Int = len(old)
-    if old_len == 0 { return s }
-    let mut result: String = ""
-    let mut remaining: String = s
-    let mut keep_going: Bool = true
-    while keep_going {
-        let pos: Int = remaining.find(old)
-        if pos < 0 {
+    pon old_len: Int = len(old)
+    si old_len == 0 { da s }
+    pon mut result: String = ""
+    pon mut remaining: String = s
+    pon mut keep_going: Bool = true
+    mien keep_going {
+        pon pos: Int = remaining.find(old)
+        si pos < 0 {
             result = result + remaining
             keep_going = false
-        } else {
-            let rlen: Int = len(remaining)
-            if pos > 0 {
+        } sino {
+            pon rlen: Int = len(remaining)
+            si pos > 0 {
                 result = result + remaining.substr(0, pos)
             }
             result = result + new_str
             remaining = remaining.substr(pos + old_len, rlen)
         }
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -430,22 +430,22 @@ fn replace_impl(s: String, old: String, new_str: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn count(s: String, sub: String) -> Int {
-    let sub_len: Int = len(sub)
-    if sub_len == 0 { return 0 }
-    let mut n: Int = 0
-    let mut remaining: String = s
-    let mut keep_going: Bool = true
-    while keep_going {
-        let pos: Int = remaining.find(sub)
-        if pos < 0 {
+    pon sub_len: Int = len(sub)
+    si sub_len == 0 { da 0 }
+    pon mut n: Int = 0
+    pon mut remaining: String = s
+    pon mut keep_going: Bool = true
+    mien keep_going {
+        pon pos: Int = remaining.find(sub)
+        si pos < 0 {
             keep_going = false
-        } else {
+        } sino {
             n = n + 1
-            let rlen: Int = len(remaining)
+            pon rlen: Int = len(remaining)
             remaining = remaining.substr(pos + sub_len, rlen)
         }
     }
-    return n
+    da n
 }
 
 // ---------------------------------------------------------------------------
@@ -454,37 +454,37 @@ pub fn count(s: String, sub: String) -> Int {
 
 // split — split s by separator sep.
 pub fn split(s: String, sep: String) -> List<String> {
-    let mut parts: List<String> = []
-    let sep_len: Int = len(sep)
-    if sep_len == 0 {
+    pon mut parts: List<String> = []
+    pon sep_len: Int = len(sep)
+    si sep_len == 0 {
         // Split into individual characters.
-        let slen: Int = len(s)
-        let mut i: Int = 0
-        while i < slen {
-            let ch: String = s.char_at(i)
+        pon slen: Int = len(s)
+        pon mut i: Int = 0
+        mien i < slen {
+            pon ch: String = s.char_at(i)
             parts = parts + [ch]
             i = i + 1
         }
-        return parts
+        da parts
     }
-    let mut remaining: String = s
-    let mut keep_going: Bool = true
-    while keep_going {
-        let pos: Int = remaining.find(sep)
-        if pos < 0 {
+    pon mut remaining: String = s
+    pon mut keep_going: Bool = true
+    mien keep_going {
+        pon pos: Int = remaining.find(sep)
+        si pos < 0 {
             parts = parts + [remaining]
             keep_going = false
-        } else {
-            let rlen: Int = len(remaining)
-            if pos > 0 {
+        } sino {
+            pon rlen: Int = len(remaining)
+            si pos > 0 {
                 parts = parts + [remaining.substr(0, pos)]
-            } else {
+            } sino {
                 parts = parts + [""]
             }
             remaining = remaining.substr(pos + sep_len, rlen)
         }
     }
-    return parts
+    da parts
 }
 
 // ---------------------------------------------------------------------------
@@ -493,15 +493,15 @@ pub fn split(s: String, sep: String) -> List<String> {
 // ---------------------------------------------------------------------------
 
 pub fn mn_join(parts: List<String>, sep: String) -> String {
-    let plen: Int = len(parts)
-    if plen == 0 { return "" }
-    let mut result: String = parts[0]
-    let mut i: Int = 1
-    while i < plen {
+    pon plen: Int = len(parts)
+    si plen == 0 { da "" }
+    pon mut result: String = parts[0]
+    pon mut i: Int = 1
+    mien i < plen {
         result = result + sep + parts[i]
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -509,8 +509,8 @@ pub fn mn_join(parts: List<String>, sep: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn lines(s: String) -> List<String> {
-    let cleaned: String = replace_impl(s, "\r\n", "\n")
-    return split(cleaned, "\n")
+    pon cleaned: String = replace_impl(s, "\r\n", "\n")
+    da split(cleaned, "\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -518,28 +518,28 @@ pub fn lines(s: String) -> List<String> {
 // ---------------------------------------------------------------------------
 
 pub fn words(s: String) -> List<String> {
-    let trimmed: String = trim_impl(s, len(s))
-    let tlen: Int = len(trimmed)
-    if tlen == 0 { return [] }
-    let mut parts: List<String> = []
-    let mut current: String = ""
-    let mut i: Int = 0
-    while i < tlen {
-        let ch: String = trimmed.char_at(i)
-        if is_space(ch) {
-            if len(current) > 0 {
+    pon trimmed: String = trim_impl(s, len(s))
+    pon tlen: Int = len(trimmed)
+    si tlen == 0 { da [] }
+    pon mut parts: List<String> = []
+    pon mut current: String = ""
+    pon mut i: Int = 0
+    mien i < tlen {
+        pon ch: String = trimmed.char_at(i)
+        si is_space(ch) {
+            si len(current) > 0 {
                 parts = parts + [current]
                 current = ""
             }
-        } else {
+        } sino {
             current = current + ch
         }
         i = i + 1
     }
-    if len(current) > 0 {
+    si len(current) > 0 {
         parts = parts + [current]
     }
-    return parts
+    da parts
 }
 
 // ---------------------------------------------------------------------------
@@ -548,7 +548,7 @@ pub fn words(s: String) -> List<String> {
 
 // char_code — return the byte value of the first character.
 pub fn char_code(c: String) -> Int {
-    return c.byte_at(0)
+    da c.byte_at(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -556,7 +556,7 @@ pub fn char_code(c: String) -> Int {
 // ---------------------------------------------------------------------------
 
 pub fn from_char_code(code: Int) -> String {
-    return chr(code)
+    da chr(code)
 }
 
 // ---------------------------------------------------------------------------
@@ -564,10 +564,10 @@ pub fn from_char_code(code: Int) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn is_alpha(c: String) -> Bool {
-    let b: Int = c.byte_at(0)
-    if is_upper_byte(b) { return true }
-    if is_lower_byte(b) { return true }
-    return false
+    pon b: Int = c.byte_at(0)
+    si is_upper_byte(b) { da true }
+    si is_lower_byte(b) { da true }
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -575,14 +575,14 @@ pub fn is_alpha(c: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn is_alphanumeric(c: String) -> Bool {
-    if is_alpha(c) { return true }
-    let b: Int = c.byte_at(0)
-    if b >= 48 {
-        if b <= 57 {
-            return true
+    si is_alpha(c) { da true }
+    pon b: Int = c.byte_at(0)
+    si b >= 48 {
+        si b <= 57 {
+            da true
         }
     }
-    return false
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -590,7 +590,7 @@ pub fn is_alphanumeric(c: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn is_whitespace(c: String) -> Bool {
-    return is_space(c)
+    da is_space(c)
 }
 
 // ---------------------------------------------------------------------------
@@ -598,8 +598,8 @@ pub fn is_whitespace(c: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn is_empty(s: String) -> Bool {
-    if len(s) == 0 { return true }
-    return false
+    si len(s) == 0 { da true }
+    da false
 }
 
 // ---------------------------------------------------------------------------
@@ -608,21 +608,21 @@ pub fn is_empty(s: String) -> Bool {
 
 // reverse — reverse a string.
 pub fn reverse(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
-    let mut result: String = ""
-    let mut i: Int = slen - 1
-    let mut keep_going: Bool = true
-    while keep_going {
-        let ch: String = s.char_at(i)
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
+    pon mut result: String = ""
+    pon mut i: Int = slen - 1
+    pon mut keep_going: Bool = true
+    mien keep_going {
+        pon ch: String = s.char_at(i)
         result = result + ch
-        if i == 0 {
+        si i == 0 {
             keep_going = false
-        } else {
+        } sino {
             i = i - 1
         }
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -630,13 +630,13 @@ pub fn reverse(s: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn repeat(s: String, n: Int) -> String {
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < n {
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < n {
         result = result + s
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -644,12 +644,12 @@ pub fn repeat(s: String, n: Int) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn truncate(s: String, max_len: Int, suffix: String) -> String {
-    let slen: Int = len(s)
-    if slen <= max_len { return s }
-    let suffix_len: Int = len(suffix)
-    let cut: Int = max_len - suffix_len
-    if cut <= 0 { return s.substr(0, max_len) }
-    return s.substr(0, cut) + suffix
+    pon slen: Int = len(s)
+    si slen <= max_len { da s }
+    pon suffix_len: Int = len(suffix)
+    pon cut: Int = max_len - suffix_len
+    si cut <= 0 { da s.substr(0, max_len) }
+    da s.substr(0, cut) + suffix
 }
 
 // ---------------------------------------------------------------------------
@@ -657,19 +657,19 @@ pub fn truncate(s: String, max_len: Int, suffix: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn slug(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
-    let mut result: String = ""
-    let mut prev_hyphen: Bool = false
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        let b: Int = s.byte_at(i)
-        if is_alphanumeric(ch) {
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
+    pon mut result: String = ""
+    pon mut prev_hyphen: Bool = false
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        pon b: Int = s.byte_at(i)
+        si is_alphanumeric(ch) {
             result = result + lower_char(ch, b)
             prev_hyphen = false
-        } else {
-            if prev_hyphen == false {
+        } sino {
+            si prev_hyphen == false {
                 result = result + "-"
                 prev_hyphen = true
             }
@@ -677,20 +677,20 @@ pub fn slug(s: String) -> String {
         i = i + 1
     }
     // Strip leading hyphen.
-    let rlen: Int = len(result)
-    if rlen > 0 {
-        let first: String = result.char_at(0)
-        if first == "-" {
+    pon rlen: Int = len(result)
+    si rlen > 0 {
+        pon first: String = result.char_at(0)
+        si first == "-" {
             result = result.substr(1, rlen)
         }
     }
     // Strip trailing hyphen.
-    let rlen2: Int = len(result)
-    if rlen2 > 0 {
-        let last: String = result.char_at(rlen2 - 1)
-        if last == "-" {
+    pon rlen2: Int = len(result)
+    si rlen2 > 0 {
+        pon last: String = result.char_at(rlen2 - 1)
+        si last == "-" {
             result = result.substr(0, rlen2 - 1)
         }
     }
-    return result
+    da result
 }

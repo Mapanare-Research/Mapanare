@@ -1754,9 +1754,9 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
             p = p + 1
             return new_expr_result(Expr::ListLit(elems), p)
         }
-        let en: ExprResult = parse_expr(tokens, p, filename, 0)
-        elems.push(en.expr)
-        p = en.pos
+        let en_val: ExprResult = parse_expr(tokens, p, filename, 0)
+        elems.push(en_val.expr)
+        p = en_val.pos
     }
 
     p = expect(tokens, p, "RBRACKET")
@@ -1786,9 +1786,9 @@ fn parse_paren_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
             return new_expr_result(Expr::ListLit(elems), p)
         }
         p = p + 1
-        let en: ExprResult = parse_expr(tokens, p, filename, 0)
-        elems.push(en.expr)
-        p = en.pos
+        let en_val: ExprResult = parse_expr(tokens, p, filename, 0)
+        elems.push(en_val.expr)
+        p = en_val.pos
     }
     p = expect(tokens, p, "RPAREN")
     return new_expr_result(Expr::ListLit(elems), p)

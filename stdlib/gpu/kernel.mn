@@ -9,8 +9,8 @@
 //   let k = kernel.compile_kernel("add", src, CUDA)?
 //   let out = kernel.launch(k, [256], [256], [a, b])?
 
-import gpu::device
-import gpu::tensor
+usa gpu::device
+usa gpu::tensor
 
 // ---------------------------------------------------------------------------
 // Extern C runtime functions
@@ -30,34 +30,34 @@ extern "C" fn __mn_kernel_free_args(args_ptr: Int) -> Int
 // KernelError enum
 // ---------------------------------------------------------------------------
 
-pub enum KernelError {
-    CompileFailed(String),
-    LaunchFailed(String),
-    InvalidArgs(String),
-    BackendUnsupported(String)
+pub tipo KernelError {
+    | CompileFailed(String)
+    | LaunchFailed(String)
+    | InvalidArgs(String)
+    | BackendUnsupported(String)
 }
 
 fn new_compile_failed(msg: String) -> KernelError {
-    return CompileFailed(msg)
+    da CompileFailed(msg)
 }
 
 fn new_launch_failed(msg: String) -> KernelError {
-    return LaunchFailed(msg)
+    da LaunchFailed(msg)
 }
 
 fn new_invalid_args(msg: String) -> KernelError {
-    return InvalidArgs(msg)
+    da InvalidArgs(msg)
 }
 
 fn new_backend_unsupported(msg: String) -> KernelError {
-    return BackendUnsupported(msg)
+    da BackendUnsupported(msg)
 }
 
 // ---------------------------------------------------------------------------
 // Kernel struct
 // ---------------------------------------------------------------------------
 
-pub struct Kernel {
+pub tipo Kernel {
     name: String,
     source: String,
     backend: device.DeviceKind,
@@ -66,48 +66,48 @@ pub struct Kernel {
 }
 
 fn new_kernel(name: String, source: String, backend: device.DeviceKind, handle: Int) -> Kernel {
-    return new Kernel { name: name, source: source, backend: backend, compiled: true, handle: handle }
+    da new Kernel { name: name, source: source, backend: backend, compiled: true, handle: handle }
 }
 
 // ---------------------------------------------------------------------------
 // LaunchConfig struct
 // ---------------------------------------------------------------------------
 
-pub struct LaunchConfig {
+pub tipo LaunchConfig {
     grid: List<Int>,
     block: List<Int>
 }
 
 fn new_launch_config(grid: List<Int>, block: List<Int>) -> LaunchConfig {
-    return new LaunchConfig { grid: grid, block: block }
+    da new LaunchConfig { grid: grid, block: block }
 }
 
 /// Create a 1D launch configuration.
 pub fn config_1d(grid_x: Int, block_x: Int) -> LaunchConfig {
-    return new_launch_config([grid_x, 1, 1], [block_x, 1, 1])
+    da new_launch_config([grid_x, 1, 1], [block_x, 1, 1])
 }
 
 /// Create a 2D launch configuration.
 pub fn config_2d(grid_x: Int, grid_y: Int, block_x: Int, block_y: Int) -> LaunchConfig {
-    return new_launch_config([grid_x, grid_y, 1], [block_x, block_y, 1])
+    da new_launch_config([grid_x, grid_y, 1], [block_x, block_y, 1])
 }
 
 /// Create a 3D launch configuration.
 pub fn config_3d(grid: List<Int>, block: List<Int>) -> LaunchConfig {
     // Pad to 3 elements if shorter
-    let mut gx: Int = 1
-    let mut gy: Int = 1
-    let mut gz: Int = 1
-    let mut bx: Int = 1
-    let mut by: Int = 1
-    let mut bz: Int = 1
-    if len(grid) >= 1 { gx = grid[0] }
-    if len(grid) >= 2 { gy = grid[1] }
-    if len(grid) >= 3 { gz = grid[2] }
-    if len(block) >= 1 { bx = block[0] }
-    if len(block) >= 2 { by = block[1] }
-    if len(block) >= 3 { bz = block[2] }
-    return new_launch_config([gx, gy, gz], [bx, by, bz])
+    pon mut gx: Int = 1
+    pon mut gy: Int = 1
+    pon mut gz: Int = 1
+    pon mut bx: Int = 1
+    pon mut by: Int = 1
+    pon mut bz: Int = 1
+    si len(grid) >= 1 { gx = grid[0] }
+    si len(grid) >= 2 { gy = grid[1] }
+    si len(grid) >= 3 { gz = grid[2] }
+    si len(block) >= 1 { bx = block[0] }
+    si len(block) >= 2 { by = block[1] }
+    si len(block) >= 3 { bz = block[2] }
+    da new_launch_config([gx, gy, gz], [bx, by, bz])
 }
 
 // ---------------------------------------------------------------------------
@@ -116,47 +116,47 @@ pub fn config_3d(grid: List<Int>, block: List<Int>) -> LaunchConfig {
 
 /// Compile a GPU kernel from source code for the specified backend.
 pub fn compile_kernel(name: String, source: String, backend: device.DeviceKind) -> Result<Kernel, KernelError> {
-    let backend_int: Int = device.device_kind_to_int(backend)
+    pon backend_int: Int = device.device_kind_to_int(backend)
     match backend {
         device.CPU => {
-            return Err(new_backend_unsupported("cannot compile GPU kernel for CPU backend"))
+            da Err(new_backend_unsupported("cannot compile GPU kernel cada CPU backend"))
         },
         _ => {}
     }
-    let handle: Int = __mn_kernel_compile_source(name, source, backend_int)
-    if handle < 0 {
-        let err_msg: String = __mn_kernel_get_error()
-        return Err(new_compile_failed("kernel '" + name + "' compilation failed: " + err_msg))
+    pon handle: Int = __mn_kernel_compile_source(name, source, backend_int)
+    si handle < 0 {
+        pon err_msg: String = __mn_kernel_get_error()
+        da Err(new_compile_failed("kernel '" + name + "' compilation failed: " + err_msg))
     }
-    return Ok(new_kernel(name, source, backend, handle))
+    da Ok(new_kernel(name, source, backend, handle))
 }
 
 /// Load a pre-compiled CUDA PTX kernel.
 pub fn from_ptx(name: String, ptx: String) -> Result<Kernel, KernelError> {
-    if len(ptx) == 0 {
-        return Err(new_compile_failed("empty PTX source"))
+    si len(ptx) == 0 {
+        da Err(new_compile_failed("empty PTX source"))
     }
-    let handle: Int = __mn_kernel_compile_ptx(name, ptx)
-    if handle < 0 {
-        let err_msg: String = __mn_kernel_get_error()
-        return Err(new_compile_failed("PTX kernel '" + name + "' load failed: " + err_msg))
+    pon handle: Int = __mn_kernel_compile_ptx(name, ptx)
+    si handle < 0 {
+        pon err_msg: String = __mn_kernel_get_error()
+        da Err(new_compile_failed("PTX kernel '" + name + "' load failed: " + err_msg))
     }
-    return Ok(new_kernel(name, ptx, device.CUDA, handle))
+    da Ok(new_kernel(name, ptx, device.CUDA, handle))
 }
 
 /// Load a pre-compiled Vulkan SPIR-V kernel.
 pub fn from_spirv(name: String, spirv: List<Int>) -> Result<Kernel, KernelError> {
-    if len(spirv) == 0 {
-        return Err(new_compile_failed("empty SPIR-V bytecode"))
+    si len(spirv) == 0 {
+        da Err(new_compile_failed("empty SPIR-V bytecode"))
     }
     // Copy SPIR-V bytes to a contiguous buffer for the C runtime
-    let spirv_len: Int = len(spirv)
-    let handle: Int = __mn_kernel_compile_spirv(name, spirv[0], spirv_len)
-    if handle < 0 {
-        let err_msg: String = __mn_kernel_get_error()
-        return Err(new_compile_failed("SPIR-V kernel '" + name + "' load failed: " + err_msg))
+    pon spirv_len: Int = len(spirv)
+    pon handle: Int = __mn_kernel_compile_spirv(name, spirv[0], spirv_len)
+    si handle < 0 {
+        pon err_msg: String = __mn_kernel_get_error()
+        da Err(new_compile_failed("SPIR-V kernel '" + name + "' load failed: " + err_msg))
     }
-    return Ok(new_kernel(name, "", device.Vulkan, handle))
+    da Ok(new_kernel(name, "", device.Vulkan, handle))
 }
 
 // ---------------------------------------------------------------------------
@@ -165,59 +165,59 @@ pub fn from_spirv(name: String, spirv: List<Int>) -> Result<Kernel, KernelError>
 
 /// Launch a compiled kernel with the given grid/block configuration and tensor arguments.
 pub fn launch(kernel: Kernel, grid: List<Int>, block: List<Int>, args: List<tensor.Tensor>) -> Result<Int, KernelError> {
-    if kernel.compiled == false {
-        return Err(new_launch_failed("kernel '" + kernel.name + "' is not compiled"))
+    si kernel.compiled == false {
+        da Err(new_launch_failed("kernel '" + kernel.name + "' is not compiled"))
     }
-    if len(args) == 0 {
-        return Err(new_invalid_args("launch requires at least one tensor argument"))
+    si len(args) == 0 {
+        da Err(new_invalid_args("launch requires at least one tensor argument"))
     }
 
-    let config: LaunchConfig = config_3d(grid, block)
+    pon config: LaunchConfig = config_3d(grid, block)
 
     // Allocate argument buffer
-    let args_count: Int = len(args)
-    let args_ptr: Int = __mn_kernel_alloc_args(args_count)
-    if args_ptr == 0 {
-        return Err(new_launch_failed("failed to allocate kernel argument buffer"))
+    pon args_count: Int = len(args)
+    pon args_ptr: Int = __mn_kernel_alloc_args(args_count)
+    si args_ptr == 0 {
+        da Err(new_launch_failed("failed to allocate kernel argument buffer"))
     }
 
     // Set each tensor argument
-    let mut i: Int = 0
-    while i < args_count {
-        let t: tensor.Tensor = args[i]
-        let rc: Int = __mn_kernel_set_arg_tensor(args_ptr, i, t.data, t.size)
-        if rc < 0 {
+    pon mut i: Int = 0
+    mien i < args_count {
+        pon t: tensor.Tensor = args[i]
+        pon rc: Int = __mn_kernel_set_arg_tensor(args_ptr, i, t.data, t.size)
+        si rc < 0 {
             __mn_kernel_free_args(args_ptr)
-            return Err(new_invalid_args("failed to set argument " + str(i)))
+            da Err(new_invalid_args("failed to set argument " + str(i)))
         }
         i = i + 1
     }
 
     // Launch
-    let rc: Int = __mn_kernel_launch(kernel.handle, config.grid[0], config.grid[1], config.grid[2], config.block[0], config.block[1], config.block[2], args_ptr, args_count)
+    pon rc: Int = __mn_kernel_launch(kernel.handle, config.grid[0], config.grid[1], config.grid[2], config.block[0], config.block[1], config.block[2], args_ptr, args_count)
     __mn_kernel_free_args(args_ptr)
-    if rc < 0 {
-        let err_msg: String = __mn_kernel_get_error()
-        return Err(new_launch_failed("kernel '" + kernel.name + "' launch failed: " + err_msg))
+    si rc < 0 {
+        pon err_msg: String = __mn_kernel_get_error()
+        da Err(new_launch_failed("kernel '" + kernel.name + "' launch failed: " + err_msg))
     }
-    return Ok(0)
+    da Ok(0)
 }
 
 /// Launch a kernel using a LaunchConfig struct.
 pub fn launch_with_config(kernel: Kernel, config: LaunchConfig, args: List<tensor.Tensor>) -> Result<Int, KernelError> {
-    return launch(kernel, config.grid, config.block, args)
+    da launch(kernel, config.grid, config.block, args)
 }
 
 /// Release a compiled kernel and free its resources.
 pub fn free_kernel(kernel: Kernel) -> Result<Int, KernelError> {
-    if kernel.compiled == false {
-        return Ok(0)
+    si kernel.compiled == false {
+        da Ok(0)
     }
-    let rc: Int = __mn_kernel_free(kernel.handle)
-    if rc < 0 {
-        return Err(new_launch_failed("failed to free kernel '" + kernel.name + "'"))
+    pon rc: Int = __mn_kernel_free(kernel.handle)
+    si rc < 0 {
+        da Err(new_launch_failed("failed to free kernel '" + kernel.name + "'"))
     }
-    return Ok(0)
+    da Ok(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -226,10 +226,10 @@ pub fn free_kernel(kernel: Kernel) -> Result<Int, KernelError> {
 
 /// CUDA PTX template for element-wise vector addition.
 pub fn builtin_add_ptx() -> String {
-    return ".version 7.0\n.target sm_70\n.address_size 64\n\n.visible .entry vector_add(\n    .param .u64 a,\n    .param .u64 b,\n    .param .u64 c,\n    .param .u32 n\n) {\n    .reg .u32 %tid, %ntid, %ctaid, %idx, %n;\n    .reg .u64 %a, %b, %c, %addr_a, %addr_b, %addr_c;\n    .reg .f64 %va, %vb, %vc;\n    .reg .pred %p;\n    mov.u32 %tid, %tid.x;\n    mov.u32 %ntid, %ntid.x;\n    mov.u32 %ctaid, %ctaid.x;\n    mad.lo.u32 %idx, %ctaid, %ntid, %tid;\n    ld.param.u32 %n, [n];\n    setp.ge.u32 %p, %idx, %n;\n    @%p bra done;\n    ld.param.u64 %a, [a];\n    ld.param.u64 %b, [b];\n    ld.param.u64 %c, [c];\n    mul.wide.u32 %addr_a, %idx, 8;\n    add.u64 %addr_a, %a, %addr_a;\n    mul.wide.u32 %addr_b, %idx, 8;\n    add.u64 %addr_b, %b, %addr_b;\n    mul.wide.u32 %addr_c, %idx, 8;\n    add.u64 %addr_c, %c, %addr_c;\n    ld.global.f64 %va, [%addr_a];\n    ld.global.f64 %vb, [%addr_b];\n    add.f64 %vc, %va, %vb;\n    st.global.f64 [%addr_c], %vc;\ndone:\n    ret;\n}\n"
+    da ".version 7.0\n.target sm_70\n.address_size 64\n\n.visible .entry vector_add(\n    .param .u64 a,\n    .param .u64 b,\n    .param .u64 c,\n    .param .u32 n\n) {\n    .reg .u32 %tid, %ntid, %ctaid, %idx, %n;\n    .reg .u64 %a, %b, %c, %addr_a, %addr_b, %addr_c;\n    .reg .f64 %va, %vb, %vc;\n    .reg .pred %p;\n    mov.u32 %tid, %tid.x;\n    mov.u32 %ntid, %ntid.x;\n    mov.u32 %ctaid, %ctaid.x;\n    mad.lo.u32 %idx, %ctaid, %ntid, %tid;\n    ld.param.u32 %n, [n];\n    setp.ge.u32 %p, %idx, %n;\n    @%p bra done;\n    ld.param.u64 %a, [a];\n    ld.param.u64 %b, [b];\n    ld.param.u64 %c, [c];\n    mul.wide.u32 %addr_a, %idx, 8;\n    add.u64 %addr_a, %a, %addr_a;\n    mul.wide.u32 %addr_b, %idx, 8;\n    add.u64 %addr_b, %b, %addr_b;\n    mul.wide.u32 %addr_c, %idx, 8;\n    add.u64 %addr_c, %c, %addr_c;\n    ld.global.f64 %va, [%addr_a];\n    ld.global.f64 %vb, [%addr_b];\n    add.f64 %vc, %va, %vb;\n    st.global.f64 [%addr_c], %vc;\ndone:\n    ret;\n}\n"
 }
 
 /// CUDA PTX template for element-wise scalar multiplication.
 pub fn builtin_scale_ptx() -> String {
-    return ".version 7.0\n.target sm_70\n.address_size 64\n\n.visible .entry vector_scale(\n    .param .u64 a,\n    .param .u64 c,\n    .param .f64 s,\n    .param .u32 n\n) {\n    .reg .u32 %tid, %ntid, %ctaid, %idx, %n;\n    .reg .u64 %a, %c, %addr_a, %addr_c;\n    .reg .f64 %va, %s, %vc;\n    .reg .pred %p;\n    mov.u32 %tid, %tid.x;\n    mov.u32 %ntid, %ntid.x;\n    mov.u32 %ctaid, %ctaid.x;\n    mad.lo.u32 %idx, %ctaid, %ntid, %tid;\n    ld.param.u32 %n, [n];\n    setp.ge.u32 %p, %idx, %n;\n    @%p bra done;\n    ld.param.u64 %a, [a];\n    ld.param.u64 %c, [c];\n    ld.param.f64 %s, [s];\n    mul.wide.u32 %addr_a, %idx, 8;\n    add.u64 %addr_a, %a, %addr_a;\n    mul.wide.u32 %addr_c, %idx, 8;\n    add.u64 %addr_c, %c, %addr_c;\n    ld.global.f64 %va, [%addr_a];\n    mul.f64 %vc, %va, %s;\n    st.global.f64 [%addr_c], %vc;\ndone:\n    ret;\n}\n"
+    da ".version 7.0\n.target sm_70\n.address_size 64\n\n.visible .entry vector_scale(\n    .param .u64 a,\n    .param .u64 c,\n    .param .f64 s,\n    .param .u32 n\n) {\n    .reg .u32 %tid, %ntid, %ctaid, %idx, %n;\n    .reg .u64 %a, %c, %addr_a, %addr_c;\n    .reg .f64 %va, %s, %vc;\n    .reg .pred %p;\n    mov.u32 %tid, %tid.x;\n    mov.u32 %ntid, %ntid.x;\n    mov.u32 %ctaid, %ctaid.x;\n    mad.lo.u32 %idx, %ctaid, %ntid, %tid;\n    ld.param.u32 %n, [n];\n    setp.ge.u32 %p, %idx, %n;\n    @%p bra done;\n    ld.param.u64 %a, [a];\n    ld.param.u64 %c, [c];\n    ld.param.f64 %s, [s];\n    mul.wide.u32 %addr_a, %idx, 8;\n    add.u64 %addr_a, %a, %addr_a;\n    mul.wide.u32 %addr_c, %idx, 8;\n    add.u64 %addr_c, %c, %addr_c;\n    ld.global.f64 %va, [%addr_a];\n    mul.f64 %vc, %va, %s;\n    st.global.f64 [%addr_c], %vc;\ndone:\n    ret;\n}\n"
 }

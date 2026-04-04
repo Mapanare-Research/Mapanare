@@ -713,11 +713,17 @@ def dead_function_elimination(module: MIRModule, stats: MIRPassStats) -> bool:
     """
     # Build set of all referenced function names
     called: set[str] = set()
+    all_fn_names = {fn.name for fn in module.functions}
     for fn in module.functions:
         for bb in fn.blocks:
             for inst in bb.instructions:
                 if isinstance(inst, Call):
                     called.add(inst.fn_name)
+                    # Also resolve namespaced calls (e.g., Program_start → start)
+                    if inst.fn_name not in all_fn_names and "_" in inst.fn_name:
+                        parts = inst.fn_name.split("_", 1)
+                        if len(parts) == 2 and parts[1] in all_fn_names:
+                            called.add(parts[1])
                 elif isinstance(inst, ClosureCreate):
                     called.add(inst.fn_name)
                 elif isinstance(inst, StreamOp) and inst.fn_name:
@@ -725,10 +731,12 @@ def dead_function_elimination(module: MIRModule, stats: MIRPassStats) -> bool:
                 elif isinstance(inst, SignalComputed) and inst.compute_fn:
                     called.add(inst.compute_fn)
 
+    # Also keep known entry points for the C bootstrap
+    _ENTRY_POINTS = {"main", "compile_and_print", "compile", "version"}
     new_fns: list[MIRFunction] = []
     changed = False
     for fn in module.functions:
-        if fn.name == "main" or fn.is_public or fn.name in called:
+        if fn.name in _ENTRY_POINTS or fn.is_public or fn.name in called:
             new_fns.append(fn)
         else:
             stats.dead_fns_removed += 1

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language (v2.1.0) with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (native backend via llvmlite) and WebAssembly (WAT/WASM). A legacy Python transpiler backend exists for reference and bootstrapping only. The self-hosted compiler is 9,400+ lines of `.mn` across 10 modules in `mapanare/self/`. The language is frozen at v1.0 — syntax and semantics changes require RFC + deprecation cycle.
+Mapanare is an AI-native compiled programming language (v3.0.0 "La Culebra Se Muerde La Cola") with first-class agents, signals, streams, and tensors. It compiles to C (default backend via gcc) and LLVM IR (release builds via optional llvmlite). A WebAssembly backend exists for browser/server targets. The self-hosted compiler is 9,400+ lines of `.mn` across 10 modules in `mapanare/self/`. v3.0.0 features bilingual keywords (Spanglish/English), indentation-based syntax, `tipo`/`modo` type unification, `@Agent` syntax, and a C emit backend.
 
 ## Current Version & Roadmap
 
@@ -13,9 +13,10 @@ Mapanare is an AI-native compiled programming language (v2.1.0) with first-class
 - **v1.2.0** — Data & storage: SQL drivers, Dato v1.0, YAML/TOML
 - **v1.3.0** — Web platform & security: crawler, vulnerability scanner, web framework
 - **v2.0.0** — GPU compute (CUDA/Vulkan via dlopen), WebAssembly backend, mobile targets, Python backend deprecated
-- **v2.1.0** (current) — Self-hosted compiler approaching fixed-point, stage2 validation, valgrind-based crash diagnostics
+- **v2.1.0** — Self-hosted compiler approaching fixed-point, stage2 validation, valgrind-based crash diagnostics
+- **v3.0.0** (current) — C emit backend, bilingual keywords, indentation syntax, tipo/modo, @Agent, migration tool
 
-See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v2.0.0/PLAN.md` for the current execution plan.
+See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v3.0.0/PLAN.md` for the current execution plan.
 
 ## Pre-Push Validation (MANDATORY)
 

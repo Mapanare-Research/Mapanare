@@ -5,43 +5,43 @@
 // Run:     wasmtime wasi_app.wasm
 //          wasmer run wasi_app.wasm
 
-import wasm::runtime
+usa wasm::runtime
 
 fn factorial(n: Int) -> Int {
-    if n <= 1 {
-        return 1
+    si n <= 1 {
+        da 1
     }
-    return n * factorial(n - 1)
+    da n * factorial(n - 1)
 }
 
 fn is_prime(n: Int) -> Bool {
-    if n < 2 {
-        return false
+    si n < 2 {
+        da false
     }
-    if n < 4 {
-        return true
+    si n < 4 {
+        da true
     }
-    if n % 2 == 0 {
-        return false
+    si n % 2 == 0 {
+        da false
     }
-    let mut i: Int = 3
-    while i * i <= n {
-        if n % i == 0 {
-            return false
+    pon mut i: Int = 3
+    mien i * i <= n {
+        si n % i == 0 {
+            da false
         }
         i = i + 2
     }
-    return true
+    da true
 }
 
 fn sieve_primes(limit: Int) -> List<Int> {
-    let mut primes: List<Int> = []
-    for n in 2..limit + 1 {
-        if is_prime(n) {
+    pon mut primes: List<Int> = []
+    cada n en 2..limit + 1 {
+        si is_prime(n) {
             primes = primes + [n]
         }
     }
-    return primes
+    da primes
 }
 
 fn main() {
@@ -50,9 +50,9 @@ fn main() {
     print("")
 
     // WASI environment
-    let args: List<String> = runtime.wasi_args()
+    pon args: List<String> = runtime.wasi_args()
     print("Arguments: " + str(len(args)))
-    for arg in args {
+    cada arg en args {
         print("  " + arg)
     }
 
@@ -60,22 +60,22 @@ fn main() {
 
     // Factorial computation
     print("Factorials:")
-    for i in 1..13 {
+    cada i en 1..13 {
         print("  " + str(i) + "! = " + str(factorial(i)))
     }
 
     print("")
 
     // Prime sieve
-    let limit: Int = 100
-    let primes: List<Int> = sieve_primes(limit)
+    pon limit: Int = 100
+    pon primes: List<Int> = sieve_primes(limit)
     print("Primes up to " + str(limit) + ": " + str(len(primes)) + " found")
     print("First 10: " + str(primes))
 
     print("")
 
     // Memory info
-    let pages: Int = runtime.memory_size()
+    pon pages: Int = runtime.memory_size()
     print("WASM memory: " + str(pages) + " pages (" + str(pages * 64) + " KB)")
 
     print("")

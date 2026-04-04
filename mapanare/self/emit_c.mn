@@ -1,0 +1,770 @@
+// emit_c.mn — C emitter for the Mapanare self-hosted compiler.
+// Consumes MIR (from lower.mn) and produces C source text.
+//
+// Architecture:
+//   - emit_c_module walks MIR structs, enums, extern fns, then functions
+//   - emit_c_function emits function signature + locals + basic blocks
+//   - emit_c_block emits block label + instructions
+//   - emit_c_instruction maps each MIR opcode to C statements
+//
+// No SSA, no PHI nodes, no block terminators — just C statements.
+// Basic blocks use labels + goto (gcc optimizes to structured code).
+
+import self::mir
+
+// ---------------------------------------------------------------------------
+// C type mapping helpers
+// ---------------------------------------------------------------------------
+
+fn c_type_for_kind(kind: Int) -> String {
+    // MIR type kinds: 0=INT, 1=FLOAT, 2=BOOL, 3=STRING, 4=VOID, 5=LIST,
+    // 6=MAP, 7=STRUCT, 8=ENUM, 9=OPTION, 10=RESULT, 11=FN, 12=SIGNAL,
+    // 13=STREAM, 14=AGENT, 15=RANGE, 16=UNKNOWN, 17=CHAR, 18=TENSOR
+    if kind == 0 { return "int64_t" }
+    if kind == 1 { return "double" }
+    if kind == 2 { return "int64_t" }
+    if kind == 3 { return "MnString" }
+    if kind == 4 { return "void" }
+    if kind == 5 { return "MnList" }
+    if kind == 6 { return "MnMap*" }
+    if kind == 11 { return "MnClosure" }
+    if kind == 12 { return "MnSignal*" }
+    if kind == 13 { return "MnStream*" }
+    if kind == 14 { return "mapanare_agent_t*" }
+    if kind == 15 { return "void*" }
+    if kind == 17 { return "int64_t" }
+    if kind == 18 { return "mapanare_tensor_t*" }
+    return "int64_t"
+}
+
+fn c_type(t: MIRTypeInfo) -> String {
+    let kind: Int = t.kind
+    // Struct/Enum: use the name directly
+    if kind == 7 { return t.name }
+    if kind == 8 { return t.name }
+    return c_type_for_kind(kind)
+}
+
+fn c_zero_init(ty: String) -> String {
+    if ty == "int64_t" { return "0" }
+    if ty == "double" { return "0" }
+    if ty == "MnString" { return "(MnString){NULL, 0}" }
+    if ty == "MnList" { return "(MnList){NULL, 0, 0, 0}" }
+    if ty == "MnClosure" { return "(MnClosure){NULL, NULL}" }
+    if ty == "void*" { return "NULL" }
+    // Pointer types
+    let tlen: Int = len(ty)
+    if tlen > 0 {
+        let last: String = ty[tlen - 1]
+        if last == "*" { return "NULL" }
+    }
+    return "(" + ty + "){0}"
+}
+
+// ---------------------------------------------------------------------------
+// String escaping
+// ---------------------------------------------------------------------------
+
+fn escape_c_string(s: String) -> String {
+    let mut result: String = ""
+    let slen: Int = len(s)
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= slen { return result }
+        let ch: String = s[i]
+        if ch == "\\" {
+            result = result + "\\\\"
+        } else {
+            if ch == "\"" {
+                result = result + "\\\""
+            } else {
+                if ch == "\n" {
+                    result = result + "\\n"
+                } else {
+                    if ch == "\t" {
+                        result = result + "\\t"
+                    } else {
+                        result = result + ch
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Emitter state
+// ---------------------------------------------------------------------------
+
+struct EmitCState {
+    text: String,
+    indent: Int,
+    str_counter: Int,
+    string_pool: List<String>,
+    string_names: List<String>
+}
+
+fn new_emit_c_state() -> EmitCState {
+    let pool: List<String> = []
+    let names: List<String> = []
+    let r: EmitCState = new EmitCState { text: "", indent: 0, str_counter: 0, string_pool: pool, string_names: names }
+    return r
+}
+
+fn emit_line(st: EmitCState, line: String) -> EmitCState {
+    let mut prefix: String = ""
+    let mut i: Int = 0
+    for _ in 0..20 {
+        if i >= st.indent { break }
+        prefix = prefix + "    "
+        i = i + 1
+    }
+    let mut s: EmitCState = st
+    s.text = s.text + prefix + line + "\n"
+    return s
+}
+
+fn emit_raw(st: EmitCState, text: String) -> EmitCState {
+    let mut s: EmitCState = st
+    s.text = s.text + text
+    return s
+}
+
+fn indent_inc(st: EmitCState) -> EmitCState {
+    let mut s: EmitCState = st
+    s.indent = s.indent + 1
+    return s
+}
+
+fn indent_dec(st: EmitCState) -> EmitCState {
+    let mut s: EmitCState = st
+    if s.indent > 0 { s.indent = s.indent - 1 }
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// String constant interning
+// ---------------------------------------------------------------------------
+
+fn intern_string(st: EmitCState, text: String) -> EmitCState {
+    // Check if already interned
+    let npool: Int = len(st.string_pool)
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= npool { break }
+        if st.string_pool[i] == text {
+            return st
+        }
+        i = i + 1
+    }
+    let name: String = "__mn_str_" + str(st.str_counter)
+    let mut s: EmitCState = st
+    s.string_pool = s.string_pool + [text]
+    s.string_names = s.string_names + [name]
+    s.str_counter = s.str_counter + 1
+    return s
+}
+
+fn get_string_name(st: EmitCState, text: String) -> String {
+    let npool: Int = len(st.string_pool)
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= npool { return "__mn_str_unknown" }
+        if st.string_pool[i] == text {
+            return st.string_names[i]
+        }
+        i = i + 1
+    }
+    return "__mn_str_unknown"
+}
+
+// ---------------------------------------------------------------------------
+// Preamble
+// ---------------------------------------------------------------------------
+
+fn emit_preamble(st: EmitCState) -> EmitCState {
+    let mut s: EmitCState = st
+    s = emit_line(s, "/* Generated by Mapanare v3.0.0 self-hosted C emitter */")
+    s = emit_line(s, "#include <stdio.h>")
+    s = emit_line(s, "#include <stdlib.h>")
+    s = emit_line(s, "#include <string.h>")
+    s = emit_line(s, "#include <stdint.h>")
+    s = emit_line(s, "#include <math.h>")
+    s = emit_line(s, "#include \"mapanare_core.h\"")
+    s = emit_line(s, "#include \"mapanare_runtime.h\"")
+    s = emit_line(s, "")
+    s = emit_line(s, "typedef struct { void *fn; void *env; } MnClosure;")
+    s = emit_line(s, "")
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// String constant emission
+// ---------------------------------------------------------------------------
+
+fn emit_string_constants(st: EmitCState) -> EmitCState {
+    let npool: Int = len(st.string_pool)
+    if npool == 0 { return st }
+    let mut s: EmitCState = st
+    s = emit_line(s, "/* String constants */")
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= npool { return s }
+        let text: String = s.string_pool[i]
+        let name: String = s.string_names[i]
+        let escaped: String = escape_c_string(text)
+        let slen: Int = len(text)
+        s = emit_line(s, "static MnString " + name + " = {(const char*)\"" + escaped + "\", " + str(slen) + "};")
+        i = i + 1
+    }
+    s = emit_line(s, "")
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// Main entry point
+// ---------------------------------------------------------------------------
+
+fn emit_c_module(module: MIRModule, filename: String) -> String {
+    let mut st: EmitCState = new_emit_c_state()
+
+    // Pre-scan for string constants
+    st = prescan_strings(st, module)
+
+    // Emit preamble
+    st = emit_preamble(st)
+
+    // Emit struct forward declarations
+    let nstructs: Int = len(module.structs)
+    let mut si_idx: Int = 0
+    for _ in 0..1000 {
+        if si_idx >= nstructs { break }
+        let s_info: StructInfo = module.structs[si_idx]
+        st = emit_line(st, "typedef struct " + s_info.name + " " + s_info.name + ";")
+        si_idx = si_idx + 1
+    }
+    st = emit_line(st, "")
+
+    // Emit struct definitions
+    si_idx = 0
+    for _ in 0..1000 {
+        if si_idx >= nstructs { break }
+        let s_info: StructInfo = module.structs[si_idx]
+        st = emit_struct_def(st, s_info)
+        si_idx = si_idx + 1
+    }
+
+    // Emit enum definitions
+    let nenums: Int = len(module.enums)
+    let mut ei: Int = 0
+    for _ in 0..1000 {
+        if ei >= nenums { break }
+        let e_info: EnumInfo = module.enums[ei]
+        st = emit_enum_def(st, e_info)
+        ei = ei + 1
+    }
+
+    // Emit string constants
+    st = emit_string_constants(st)
+
+    // Emit function forward declarations
+    let nfns: Int = len(module.functions)
+    let mut fi: Int = 0
+    for _ in 0..1000 {
+        if fi >= nfns { break }
+        let func: MIRFunction = module.functions[fi]
+        st = emit_line(st, fn_signature(func) + ";")
+        fi = fi + 1
+    }
+    st = emit_line(st, "")
+
+    // Emit function bodies
+    fi = 0
+    for _ in 0..1000 {
+        if fi >= nfns { break }
+        let func: MIRFunction = module.functions[fi]
+        st = emit_c_function(st, func)
+        st = emit_line(st, "")
+        fi = fi + 1
+    }
+
+    // Emit main() wrapper
+    st = emit_main_wrapper(st, module)
+
+    return st.text
+}
+
+// ---------------------------------------------------------------------------
+// Struct/Enum definitions
+// ---------------------------------------------------------------------------
+
+fn emit_struct_def(st: EmitCState, s_info: StructInfo) -> EmitCState {
+    let mut s: EmitCState = st
+    s = emit_line(s, "struct " + s_info.name + " {")
+    s = indent_inc(s)
+    let nfields: Int = len(s_info.field_names)
+    let mut i: Int = 0
+    for _ in 0..100 {
+        if i >= nfields { break }
+        let fname: String = s_info.field_names[i]
+        let ftype: String = s_info.field_types[i]
+        s = emit_line(s, ftype + " " + fname + ";")
+        i = i + 1
+    }
+    s = indent_dec(s)
+    s = emit_line(s, "};")
+    s = emit_line(s, "")
+    return s
+}
+
+fn emit_enum_def(st: EmitCState, e_info: EnumInfo) -> EmitCState {
+    let mut s: EmitCState = st
+    s = emit_line(s, "typedef struct {")
+    s = indent_inc(s)
+    s = emit_line(s, "int64_t tag;")
+    // Union of variant payloads
+    let nvariants: Int = len(e_info.variant_names)
+    let has_payload: Bool = false
+    // Simplified: always emit union
+    s = emit_line(s, "union {")
+    s = indent_inc(s)
+    let mut vi: Int = 0
+    for _ in 0..100 {
+        if vi >= nvariants { break }
+        let vname: String = e_info.variant_names[vi]
+        s = emit_line(s, "char " + vname + "_data;")
+        vi = vi + 1
+    }
+    s = indent_dec(s)
+    s = emit_line(s, "} as;")
+    s = indent_dec(s)
+    s = emit_line(s, "} " + e_info.name + ";")
+    s = emit_line(s, "")
+    // Tag constants
+    vi = 0
+    for _ in 0..100 {
+        if vi >= nvariants { break }
+        let vname: String = e_info.variant_names[vi]
+        s = emit_line(s, "#define " + e_info.name + "_" + vname + "_TAG " + str(vi))
+        vi = vi + 1
+    }
+    s = emit_line(s, "")
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// Function signature
+// ---------------------------------------------------------------------------
+
+fn fn_c_name(name: String) -> String {
+    if name == "main" { return "mn_main" }
+    return name
+}
+
+fn fn_signature(func: MIRFunction) -> String {
+    let ret: String = c_type(func.return_type)
+    let name: String = fn_c_name(func.name)
+    let nparams: Int = len(func.params)
+    if nparams == 0 {
+        return ret + " " + name + "(void)"
+    }
+    let mut params: String = ""
+    let mut i: Int = 0
+    for _ in 0..100 {
+        if i >= nparams { break }
+        let p: MIRParam = func.params[i]
+        if i > 0 { params = params + ", " }
+        params = params + c_type(p.param_type) + " " + p.name
+        i = i + 1
+    }
+    return ret + " " + name + "(" + params + ")"
+}
+
+// ---------------------------------------------------------------------------
+// Function body
+// ---------------------------------------------------------------------------
+
+fn emit_c_function(st: EmitCState, func: MIRFunction) -> EmitCState {
+    let mut s: EmitCState = st
+    s = emit_line(s, fn_signature(func) + " {")
+    s = indent_inc(s)
+
+    // Declare all local variables at function scope
+    let nblocks: Int = len(func.blocks)
+    let mut bi: Int = 0
+    for _ in 0..1000 {
+        if bi >= nblocks { break }
+        let block: MIRBlock = func.blocks[bi]
+        let ninsts: Int = len(block.instructions)
+        let mut ii: Int = 0
+        for _ in 0..10000 {
+            if ii >= ninsts { break }
+            let inst: MIRInstruction = block.instructions[ii]
+            if inst.has_dest {
+                let ct: String = c_type(inst.dest_type)
+                if ct != "void" {
+                    s = emit_line(s, ct + " " + inst.dest_name + " = " + c_zero_init(ct) + ";")
+                }
+            }
+            ii = ii + 1
+        }
+        bi = bi + 1
+    }
+    s = emit_line(s, "")
+
+    // Emit blocks
+    bi = 0
+    for _ in 0..1000 {
+        if bi >= nblocks { break }
+        let block: MIRBlock = func.blocks[bi]
+        s = emit_c_block(s, block)
+        bi = bi + 1
+    }
+
+    s = indent_dec(s)
+    s = emit_line(s, "}")
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// Basic block
+// ---------------------------------------------------------------------------
+
+fn emit_c_block(st: EmitCState, block: MIRBlock) -> EmitCState {
+    let mut s: EmitCState = st
+    // Label
+    s = indent_dec(s)
+    s = emit_line(s, "bb_" + block.label + ":;")
+    s = indent_inc(s)
+    // Instructions
+    let ninsts: Int = len(block.instructions)
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= ninsts { break }
+        let inst: MIRInstruction = block.instructions[i]
+        s = emit_c_instruction(s, inst)
+        i = i + 1
+    }
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// Instruction dispatch
+// ---------------------------------------------------------------------------
+
+fn emit_c_instruction(st: EmitCState, inst: MIRInstruction) -> EmitCState {
+    let op: Int = inst.opcode
+    // Const
+    if op == 0 {
+        return emit_const(st, inst)
+    }
+    // Copy
+    if op == 1 {
+        return emit_line(st, inst.dest_name + " = " + inst.src_name + ";")
+    }
+    // BinOp
+    if op == 2 {
+        return emit_binop(st, inst)
+    }
+    // UnaryOp
+    if op == 3 {
+        return emit_unaryop(st, inst)
+    }
+    // Call
+    if op == 4 {
+        return emit_call(st, inst)
+    }
+    // Return
+    if op == 5 {
+        if inst.has_src {
+            return emit_line(st, "return " + inst.src_name + ";")
+        }
+        return emit_line(st, "return;")
+    }
+    // Jump
+    if op == 6 {
+        return emit_line(st, "goto bb_" + inst.target_label + ";")
+    }
+    // Branch
+    if op == 7 {
+        let mut s: EmitCState = st
+        s = emit_line(s, "if (" + inst.cond_name + ") goto bb_" + inst.true_label + ";")
+        s = emit_line(s, "goto bb_" + inst.false_label + ";")
+        return s
+    }
+    // StructInit
+    if op == 8 {
+        return emit_struct_init(st, inst)
+    }
+    // FieldGet
+    if op == 9 {
+        return emit_line(st, inst.dest_name + " = " + inst.obj_name + "." + inst.field_name + ";")
+    }
+    // FieldSet
+    if op == 10 {
+        return emit_line(st, inst.obj_name + "." + inst.field_name + " = " + inst.val_name + ";")
+    }
+    // ListInit
+    if op == 11 {
+        return emit_list_init(st, inst)
+    }
+    // EnumInit
+    if op == 12 {
+        return emit_enum_init(st, inst)
+    }
+    // EnumTag
+    if op == 13 {
+        return emit_line(st, inst.dest_name + " = " + inst.src_name + ".tag;")
+    }
+    // Switch
+    if op == 14 {
+        return emit_switch(st, inst)
+    }
+    // Phi (eliminated — no-op)
+    if op == 15 {
+        return st
+    }
+    // InterpConcat
+    if op == 16 {
+        return emit_interp_concat(st, inst)
+    }
+    // Default: emit comment
+    return emit_line(st, "/* unhandled opcode " + str(op) + " */")
+}
+
+// ---------------------------------------------------------------------------
+// Individual instruction handlers
+// ---------------------------------------------------------------------------
+
+fn emit_const(st: EmitCState, inst: MIRInstruction) -> EmitCState {
+    let kind: Int = inst.const_type_kind
+    let dest: String = inst.dest_name
+    // INT
+    if kind == 0 {
+        return emit_line(st, dest + " = (int64_t)" + inst.const_value + "LL;")
+    }
+    // FLOAT
+    if kind == 1 {
+        return emit_line(st, dest + " = (double)" + inst.const_value + ";")
+    }
+    // BOOL
+    if kind == 2 {
+        if inst.const_value == "true" {
+            return emit_line(st, dest + " = 1;")
+        }
+        return emit_line(st, dest + " = 0;")
+    }
+    // STRING
+    if kind == 3 {
+        let name: String = get_string_name(st, inst.const_value)
+        return emit_line(st, dest + " = " + name + ";")
+    }
+    return emit_line(st, dest + " = 0; /* unknown const type */")
+}
+
+fn emit_binop(st: EmitCState, inst: MIRInstruction) -> EmitCState {
+    let dest: String = inst.dest_name
+    let lhs: String = inst.lhs_name
+    let rhs: String = inst.rhs_name
+    let op: String = inst.binop_symbol
+    // String concatenation
+    if inst.lhs_type_kind == 3 {
+        if op == "+" {
+            return emit_line(st, dest + " = __mn_str_concat(" + lhs + ", " + rhs + ");")
+        }
+        if op == "==" {
+            return emit_line(st, dest + " = __mn_str_eq(" + lhs + ", " + rhs + ");")
+        }
+        if op == "!=" {
+            return emit_line(st, dest + " = !__mn_str_eq(" + lhs + ", " + rhs + ");")
+        }
+    }
+    return emit_line(st, dest + " = " + lhs + " " + op + " " + rhs + ";")
+}
+
+fn emit_unaryop(st: EmitCState, inst: MIRInstruction) -> EmitCState {
+    let dest: String = inst.dest_name
+    let operand: String = inst.src_name
+    if inst.unaryop_symbol == "-" {
+        return emit_line(st, dest + " = -" + operand + ";")
+    }
+    return emit_line(st, dest + " = !" + operand + ";")
+}
+
+fn emit_call(st: EmitCState, inst: MIRInstruction) -> EmitCState {
+    let dest: String = inst.dest_name
+    let fn_name: String = inst.fn_name
+    let args: String = inst.args_string
+
+    // print / println
+    if fn_name == "print" {
+        if inst.first_arg_type_kind == 3 {
+            return emit_line(st, "__mn_str_println(" + args + ");")
+        }
+        if inst.first_arg_type_kind == 0 {
+            return emit_line(st, "printf(\"%lld\\n\", (long long)" + args + ");")
+        }
+        return emit_line(st, "printf(\"%lld\\n\", (long long)" + args + ");")
+    }
+
+    // str
+    if fn_name == "str" {
+        if inst.first_arg_type_kind == 0 {
+            return emit_line(st, dest + " = __mn_str_from_int(" + args + ");")
+        }
+        if inst.first_arg_type_kind == 1 {
+            return emit_line(st, dest + " = __mn_str_from_float(" + args + ");")
+        }
+        if inst.first_arg_type_kind == 2 {
+            return emit_line(st, dest + " = __mn_str_from_bool(" + args + ");")
+        }
+        return emit_line(st, dest + " = " + args + ";")
+    }
+
+    // len
+    if fn_name == "len" {
+        if inst.first_arg_type_kind == 3 {
+            return emit_line(st, dest + " = __mn_str_len(" + args + ");")
+        }
+        if inst.first_arg_type_kind == 5 {
+            return emit_line(st, dest + " = __mn_list_len(&" + args + ");")
+        }
+        return emit_line(st, dest + " = 0;")
+    }
+
+    // Range
+    if fn_name == "__mn_range" {
+        return emit_line(st, dest + " = __mn_range(" + args + ");")
+    }
+
+    // Iterator protocol
+    if fn_name == "__iter_has_next" {
+        return emit_line(st, dest + " = (int64_t)__iter_has_next(" + args + ");")
+    }
+    if fn_name == "__iter_next" {
+        return emit_line(st, dest + " = (int64_t)(intptr_t)__iter_next(" + args + ");")
+    }
+
+    // String methods
+    if fn_name == "contains" {
+        return emit_line(st, dest + " = __mn_str_contains(" + args + ");")
+    }
+    if fn_name == "to_upper" {
+        return emit_line(st, dest + " = __mn_str_to_upper(" + args + ");")
+    }
+    if fn_name == "to_lower" {
+        return emit_line(st, dest + " = __mn_str_to_lower(" + args + ");")
+    }
+
+    // Regular function call
+    let c_name: String = fn_c_name(fn_name)
+    let ret_type: String = c_type(inst.dest_type)
+    if ret_type == "void" {
+        return emit_line(st, c_name + "(" + args + ");")
+    }
+    return emit_line(st, dest + " = " + c_name + "(" + args + ");")
+}
+
+fn emit_struct_init(st: EmitCState, inst: MIRInstruction) -> EmitCState {
+    return emit_line(st, inst.dest_name + " = " + inst.struct_init_expr + ";")
+}
+
+fn emit_list_init(st: EmitCState, inst: MIRInstruction) -> EmitCState {
+    let mut s: EmitCState = st
+    s = emit_line(s, inst.dest_name + " = __mn_list_new(sizeof(int64_t));")
+    // Push initial elements (handled by caller via ListPush instructions)
+    return s
+}
+
+fn emit_enum_init(st: EmitCState, inst: MIRInstruction) -> EmitCState {
+    let dest: String = inst.dest_name
+    return emit_line(st, dest + ".tag = " + str(inst.enum_tag) + ";")
+}
+
+fn emit_switch(st: EmitCState, inst: MIRInstruction) -> EmitCState {
+    let mut s: EmitCState = st
+    s = emit_line(s, "switch ((int64_t)" + inst.tag_name + ") {")
+    s = indent_inc(s)
+    let ncases: Int = len(inst.case_tags)
+    let mut i: Int = 0
+    for _ in 0..100 {
+        if i >= ncases { break }
+        let tag: Int = inst.case_tags[i]
+        let label: String = inst.case_labels[i]
+        s = emit_line(s, "case " + str(tag) + ": goto bb_" + label + ";")
+        i = i + 1
+    }
+    s = emit_line(s, "default: goto bb_" + inst.default_label + ";")
+    s = indent_dec(s)
+    s = emit_line(s, "}")
+    return s
+}
+
+fn emit_interp_concat(st: EmitCState, inst: MIRInstruction) -> EmitCState {
+    // Chain __mn_str_concat for each pair
+    return emit_line(st, inst.dest_name + " = " + inst.concat_expr + ";")
+}
+
+// ---------------------------------------------------------------------------
+// Pre-scan for string constants
+// ---------------------------------------------------------------------------
+
+fn prescan_strings(st: EmitCState, module: MIRModule) -> EmitCState {
+    let mut s: EmitCState = st
+    let nfns: Int = len(module.functions)
+    let mut fi: Int = 0
+    for _ in 0..1000 {
+        if fi >= nfns { break }
+        let func: MIRFunction = module.functions[fi]
+        let nblocks: Int = len(func.blocks)
+        let mut bi: Int = 0
+        for _ in 0..1000 {
+            if bi >= nblocks { break }
+            let block: MIRBlock = func.blocks[bi]
+            let ninsts: Int = len(block.instructions)
+            let mut ii: Int = 0
+            for _ in 0..10000 {
+                if ii >= ninsts { break }
+                let inst: MIRInstruction = block.instructions[ii]
+                if inst.opcode == 0 {
+                    if inst.const_type_kind == 3 {
+                        s = intern_string(s, inst.const_value)
+                    }
+                }
+                ii = ii + 1
+            }
+            bi = bi + 1
+        }
+        fi = fi + 1
+    }
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// main() wrapper
+// ---------------------------------------------------------------------------
+
+fn emit_main_wrapper(st: EmitCState, module: MIRModule) -> EmitCState {
+    let nfns: Int = len(module.functions)
+    let mut has_main: Bool = false
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= nfns { break }
+        let func: MIRFunction = module.functions[i]
+        if func.name == "main" { has_main = true }
+        i = i + 1
+    }
+    if has_main {
+        let mut s: EmitCState = st
+        s = emit_line(s, "int main(int argc, char **argv) {")
+        s = indent_inc(s)
+        s = emit_line(s, "mn_main();")
+        s = emit_line(s, "return 0;")
+        s = indent_dec(s)
+        s = emit_line(s, "}")
+        return s
+    }
+    return st
+}

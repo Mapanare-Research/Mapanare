@@ -24,87 +24,87 @@ extern "C" fn __mn_tls_write_str(tls_ctx: Int, data: String) -> Int
 extern "C" fn __mn_tls_read_str(tls_ctx: Int, max_len: Int) -> String
 extern "C" fn __mn_tls_close_fd(tls_ctx: Int, fd: Int) -> Int
 
-import text::string_utils
+usa text::string_utils
 
 // ---------------------------------------------------------------------------
 // Task 1: HttpMethod enum
 // ---------------------------------------------------------------------------
 
-pub enum HttpMethod {
-    GET,
-    POST,
-    PUT,
-    DELETE,
-    PATCH,
-    HEAD,
-    OPTIONS
+pub tipo HttpMethod {
+    | GET
+    | POST
+    | PUT
+    | DELETE
+    | PATCH
+    | HEAD
+    | OPTIONS
 }
 
 fn method_to_string(m: HttpMethod) -> String {
     match m {
-        GET => { return "GET" },
-        POST => { return "POST" },
-        PUT => { return "PUT" },
-        DELETE => { return "DELETE" },
-        PATCH => { return "PATCH" },
-        HEAD => { return "HEAD" },
-        OPTIONS => { return "OPTIONS" }
+        GET => { da "GET" },
+        POST => { da "POST" },
+        PUT => { da "PUT" },
+        DELETE => { da "DELETE" },
+        PATCH => { da "PATCH" },
+        HEAD => { da "HEAD" },
+        OPTIONS => { da "OPTIONS" }
     }
-    return "GET"
+    da "GET"
 }
 
 // ---------------------------------------------------------------------------
 // Task 4: HttpError enum
 // ---------------------------------------------------------------------------
 
-pub enum HttpError {
-    ConnectionFailed(String),
-    Timeout(String),
-    TlsError(String),
-    InvalidUrl(String),
-    TooManyRedirects(String),
-    ParseError(String),
-    SendError(String),
-    RecvError(String)
+pub tipo HttpError {
+    | ConnectionFailed(String)
+    | Timeout(String)
+    | TlsError(String)
+    | InvalidUrl(String)
+    | TooManyRedirects(String)
+    | ParseError(String)
+    | SendError(String)
+    | RecvError(String)
 }
 
 fn new_connection_error(msg: String) -> HttpError {
-    return ConnectionFailed(msg)
+    da ConnectionFailed(msg)
 }
 
 fn new_timeout_error(msg: String) -> HttpError {
-    return Timeout(msg)
+    da Timeout(msg)
 }
 
 fn new_tls_error(msg: String) -> HttpError {
-    return TlsError(msg)
+    da TlsError(msg)
 }
 
 fn new_url_error(msg: String) -> HttpError {
-    return InvalidUrl(msg)
+    da InvalidUrl(msg)
 }
 
 fn new_redirect_error(msg: String) -> HttpError {
-    return TooManyRedirects(msg)
+    da TooManyRedirects(msg)
 }
 
 fn new_parse_error(msg: String) -> HttpError {
-    return ParseError(msg)
+    da ParseError(msg)
 }
 
 fn new_send_error(msg: String) -> HttpError {
-    return SendError(msg)
+    da SendError(msg)
 }
 
 fn new_recv_error(msg: String) -> HttpError {
-    return RecvError(msg)
+    da RecvError(msg)
 }
 
 // ---------------------------------------------------------------------------
 // Task 2: HttpRequest struct
 // ---------------------------------------------------------------------------
 
-pub struct HttpRequest {
+pub tipo HttpRequest {
     method: HttpMethod,
     url: String,
     headers: Map<String, String>,
@@ -114,18 +114,18 @@ pub struct HttpRequest {
 }
 
 fn new_http_request(meth: HttpMethod, u: String) -> HttpRequest {
-    return new HttpRequest {method: meth, url: u, headers: #{}, body: "", has_body: false, timeout_ms: 30000}
+    da new HttpRequest {method: meth, url: u, headers: #{}, body: "", has_body: false, timeout_ms: 30000}
 }
 
 fn make_request_with_body(meth: HttpMethod, u: String, b: String, hdrs: Map<String, String>) -> HttpRequest {
-    return new HttpRequest {method: meth, url: u, headers: hdrs, body: b, has_body: true, timeout_ms: 30000}
+    da new HttpRequest {method: meth, url: u, headers: hdrs, body: b, has_body: true, timeout_ms: 30000}
 }
 
 // ---------------------------------------------------------------------------
 // Task 3: HttpResponse struct
 // ---------------------------------------------------------------------------
 
-pub struct HttpResponse {
+pub tipo HttpResponse {
     status_code: Int,
     headers: Map<String, String>,
     body: String,
@@ -133,14 +133,14 @@ pub struct HttpResponse {
 }
 
 fn new_http_response(sc: Int, hdrs: Map<String, String>, b: String) -> HttpResponse {
-    return new HttpResponse {status_code: sc, headers: hdrs, body: b, elapsed_ms: 0}
+    da new HttpResponse {status_code: sc, headers: hdrs, body: b, elapsed_ms: 0}
 }
 
 // ---------------------------------------------------------------------------
 // Task 5: HttpConfig struct
 // ---------------------------------------------------------------------------
 
-pub struct HttpConfig {
+pub tipo HttpConfig {
     timeout_ms: Int,
     max_redirects: Int,
     verify_ssl: Bool,
@@ -148,14 +148,14 @@ pub struct HttpConfig {
 }
 
 fn default_http_config() -> HttpConfig {
-    return new HttpConfig {timeout_ms: 30000, max_redirects: 10, verify_ssl: true, user_agent: "Mapanare/0.9.0"}
+    da new HttpConfig {timeout_ms: 30000, max_redirects: 10, verify_ssl: true, user_agent: "Mapanare/0.9.0"}
 }
 
 // ---------------------------------------------------------------------------
 // URL parsing types and functions (Tasks 6-8)
 // ---------------------------------------------------------------------------
 
-struct ParsedUrl {
+tipo ParsedUrl {
     scheme: String,
     host: String,
     port: Int,
@@ -167,34 +167,34 @@ struct ParsedUrl {
 }
 
 fn new_parsed_url_error(msg: String) -> ParsedUrl {
-    return new ParsedUrl {scheme: "", host: "", port: 0, path: "/", query: "", is_https: false, ok: false, error_msg: msg}
+    da new ParsedUrl {scheme: "", host: "", port: 0, path: "/", query: "", is_https: false, ok: false, error_msg: msg}
 }
 
 fn new_parsed_url_ok(sc: String, h: String, p: Int, pa: String, q: String, https: Bool) -> ParsedUrl {
-    return new ParsedUrl {scheme: sc, host: h, port: p, path: pa, query: q, is_https: https, ok: true, error_msg: ""}
+    da new ParsedUrl {scheme: sc, host: h, port: p, path: pa, query: q, is_https: https, ok: true, error_msg: ""}
 }
 
 // Task 6: Parse URL into components
 pub fn parse_url(url: String) -> ParsedUrl {
-    let slen: Int = len(url)
-    if slen == 0 {
-        return new_parsed_url_error("Empty URL")
+    pon slen: Int = len(url)
+    si slen == 0 {
+        da new_parsed_url_error("Empty URL")
     }
 
     // Parse scheme — find "://"
-    let mut pos: Int = 0
-    let mut scheme: String = ""
-    let mut found_scheme: Bool = false
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = url.char_at(i)
-        if ch == ":" {
-            if i + 2 < slen {
-                if url.char_at(i + 1) == "/" {
-                    if url.char_at(i + 2) == "/" {
+    pon mut pos: Int = 0
+    pon mut scheme: String = ""
+    pon mut found_scheme: Bool = false
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = url.char_at(i)
+        si ch == ":" {
+            si i + 2 < slen {
+                si url.char_at(i + 1) == "/" {
+                    si url.char_at(i + 2) == "/" {
                         found_scheme = true
                         pos = i + 3
-                        break
+                        sal
                     }
                 }
             }
@@ -203,174 +203,174 @@ pub fn parse_url(url: String) -> ParsedUrl {
         i = i + 1
     }
 
-    if found_scheme == false {
-        return new_parsed_url_error("Missing scheme (http:// or https://)")
+    si found_scheme == false {
+        da new_parsed_url_error("Missing scheme (http:// or https://)")
     }
 
     // Determine if HTTPS
-    let mut is_https: Bool = false
-    if scheme == "https" {
+    pon mut is_https: Bool = false
+    si scheme == "https" {
         is_https = true
-    } else { if scheme != "http" {
-        return new_parsed_url_error("Unsupported scheme: " + scheme)
+    } sino { si scheme != "http" {
+        da new_parsed_url_error("Unsupported scheme: " + scheme)
     } }
 
     // Parse host and optional port
-    let mut host: String = ""
-    let mut port: Int = 80
-    if is_https { port = 443 }
+    pon mut host: String = ""
+    pon mut port: Int = 80
+    si is_https { port = 443 }
 
-    while pos < slen {
-        let ch: String = url.char_at(pos)
-        if ch == "/" { break }
-        if ch == "?" { break }
-        if ch == ":" {
+    mien pos < slen {
+        pon ch: String = url.char_at(pos)
+        si ch == "/" { sal }
+        si ch == "?" { sal }
+        si ch == ":" {
             // Port follows
             pos = pos + 1
-            let mut port_str: String = ""
-            while pos < slen {
-                let pc: String = url.char_at(pos)
-                if pc == "/" { break }
-                if pc == "?" { break }
+            pon mut port_str: String = ""
+            mien pos < slen {
+                pon pc: String = url.char_at(pos)
+                si pc == "/" { sal }
+                si pc == "?" { sal }
                 port_str = port_str + pc
                 pos = pos + 1
             }
             port = parse_int_manual(port_str)
-            break
+            sal
         }
         host = host + ch
         pos = pos + 1
     }
 
-    if len(host) == 0 {
-        return new_parsed_url_error("Empty host")
+    si len(host) == 0 {
+        da new_parsed_url_error("Empty host")
     }
 
     // Parse path
-    let mut path: String = ""
-    if pos < slen {
-        if url.char_at(pos) == "/" {
-            while pos < slen {
-                let ch: String = url.char_at(pos)
-                if ch == "?" { break }
+    pon mut path: String = ""
+    si pos < slen {
+        si url.char_at(pos) == "/" {
+            mien pos < slen {
+                pon ch: String = url.char_at(pos)
+                si ch == "?" { sal }
                 path = path + ch
                 pos = pos + 1
             }
         }
     }
-    if len(path) == 0 {
+    si len(path) == 0 {
         path = "/"
     }
 
     // Parse query string
-    let mut query: String = ""
-    if pos < slen {
-        if url.char_at(pos) == "?" {
+    pon mut query: String = ""
+    si pos < slen {
+        si url.char_at(pos) == "?" {
             pos = pos + 1
-            while pos < slen {
+            mien pos < slen {
                 query = query + url.char_at(pos)
                 pos = pos + 1
             }
         }
     }
 
-    return new_parsed_url_ok(scheme, host, port, path, query, is_https)
+    da new_parsed_url_ok(scheme, host, port, path, query, is_https)
 }
 
 // Manual integer parsing — delegated to text::string_utils
 fn parse_int_manual(s: String) -> Int {
-    return string_utils.parse_int_manual(s)
+    da string_utils.parse_int_manual(s)
 }
 
 // Task 7: URL percent-encoding
 fn is_unreserved(ch: String) -> Bool {
-    if ch >= "a" { if ch <= "z" { return true } }
-    if ch >= "A" { if ch <= "Z" { return true } }
-    if ch >= "0" { if ch <= "9" { return true } }
-    if ch == "-" { return true }
-    if ch == "_" { return true }
-    if ch == "." { return true }
-    if ch == "~" { return true }
-    return false
+    si ch >= "a" { si ch <= "z" { da true } }
+    si ch >= "A" { si ch <= "Z" { da true } }
+    si ch >= "0" { si ch <= "9" { da true } }
+    si ch == "-" { da true }
+    si ch == "_" { da true }
+    si ch == "." { da true }
+    si ch == "~" { da true }
+    da false
 }
 
 fn hex_char(n: Int) -> String {
-    return string_utils.hex_char(n)
+    da string_utils.hex_char(n)
 }
 
 fn hex_digit_value(ch: String) -> Int {
-    return string_utils.hex_digit_value(ch)
+    da string_utils.hex_digit_value(ch)
 }
 
 pub fn url_encode(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        if is_unreserved(ch) {
+    pon slen: Int = len(s)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        si is_unreserved(ch) {
             result = result + ch
-        } else {
-            let byte_val: Int = s.byte_at(i)
-            let hi: Int = byte_val / 16
-            let lo: Int = byte_val - hi * 16
+        } sino {
+            pon byte_val: Int = s.byte_at(i)
+            pon hi: Int = byte_val / 16
+            pon lo: Int = byte_val - hi * 16
             result = result + "%" + hex_char(hi) + hex_char(lo)
         }
         i = i + 1
     }
-    return result
+    da result
 }
 
 pub fn url_decode(s: String) -> String {
-    let slen: Int = len(s)
-    let mut result: String = ""
-    let mut i: Int = 0
-    while i < slen {
-        let ch: String = s.char_at(i)
-        if ch == "%" {
-            if i + 2 < slen {
-                let hi: Int = hex_digit_value(s.char_at(i + 1))
-                let lo: Int = hex_digit_value(s.char_at(i + 2))
-                if hi >= 0 {
-                    if lo >= 0 {
-                        let byte_val: Int = hi * 16 + lo
+    pon slen: Int = len(s)
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        si ch == "%" {
+            si i + 2 < slen {
+                pon hi: Int = hex_digit_value(s.char_at(i + 1))
+                pon lo: Int = hex_digit_value(s.char_at(i + 2))
+                si hi >= 0 {
+                    si lo >= 0 {
+                        pon byte_val: Int = hi * 16 + lo
                         result = result + str(byte_val)
                         i = i + 3
-                    } else {
+                    } sino {
                         result = result + ch
                         i = i + 1
                     }
-                } else {
+                } sino {
                     result = result + ch
                     i = i + 1
                 }
-            } else {
+            } sino {
                 result = result + ch
                 i = i + 1
             }
-        } else { if ch == "+" {
+        } sino { si ch == "+" {
             result = result + " "
             i = i + 1
-        } else {
+        } sino {
             result = result + ch
             i = i + 1
         } }
     }
-    return result
+    da result
 }
 
 // Task 8: Query parameter builder
 pub fn build_query(params: Map<String, String>) -> String {
-    let mut result: String = ""
-    let mut first: Bool = true
-    for key in params {
-        if first == false {
+    pon mut result: String = ""
+    pon mut first: Bool = true
+    cada key en params {
+        si first == false {
             result = result + "&"
         }
         result = result + url_encode(key) + "=" + url_encode(params[key])
         first = false
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -378,36 +378,36 @@ pub fn build_query(params: Map<String, String>) -> String {
 // ---------------------------------------------------------------------------
 
 fn build_http_request(meth: HttpMethod, parsed: ParsedUrl, headers: Map<String, String>, body: String, has_body: Bool) -> String {
-    let method_str: String = method_to_string(meth)
-    let mut request_line: String = method_str + " "
+    pon method_str: String = method_to_string(meth)
+    pon mut request_line: String = method_str + " "
 
-    if len(parsed.query) > 0 {
+    si len(parsed.query) > 0 {
         request_line = request_line + parsed.path + "?" + parsed.query
-    } else {
+    } sino {
         request_line = request_line + parsed.path
     }
     request_line = request_line + " HTTP/1.1\r\n"
 
     // Host header (required by HTTP/1.1)
-    let mut host_val: String = parsed.host
-    let mut need_port: Bool = false
-    if parsed.is_https {
-        if parsed.port != 443 { need_port = true }
-    } else {
-        if parsed.port != 80 { need_port = true }
+    pon mut host_val: String = parsed.host
+    pon mut need_port: Bool = false
+    si parsed.is_https {
+        si parsed.port != 443 { need_port = true }
+    } sino {
+        si parsed.port != 80 { need_port = true }
     }
-    if need_port {
+    si need_port {
         host_val = host_val + ":" + str(parsed.port)
     }
-    let mut raw: String = request_line + "Host: " + host_val + "\r\n"
+    pon mut raw: String = request_line + "Host: " + host_val + "\r\n"
 
     // User-provided headers
-    for key in headers {
+    cada key en headers {
         raw = raw + key + ": " + headers[key] + "\r\n"
     }
 
     // Content-Length for bodies
-    if has_body {
+    si has_body {
         raw = raw + "Content-Length: " + str(len(body)) + "\r\n"
     }
 
@@ -416,18 +416,18 @@ fn build_http_request(meth: HttpMethod, parsed: ParsedUrl, headers: Map<String, 
 
     // End headers + body
     raw = raw + "\r\n"
-    if has_body {
+    si has_body {
         raw = raw + body
     }
 
-    return raw
+    da raw
 }
 
 // ---------------------------------------------------------------------------
 // HTTP/1.1 response parsing (Tasks 14-16)
 // ---------------------------------------------------------------------------
 
-struct HeaderParseResult {
+tipo HeaderParseResult {
     status_code: Int,
     headers: Map<String, String>,
     body_start: Int,
@@ -436,204 +436,204 @@ struct HeaderParseResult {
 }
 
 fn new_hdr_error(msg: String) -> HeaderParseResult {
-    return new HeaderParseResult {status_code: 0, headers: #{}, body_start: 0, ok: false, error_msg: msg}
+    da new HeaderParseResult {status_code: 0, headers: #{}, body_start: 0, ok: false, error_msg: msg}
 }
 
 fn new_hdr_ok(sc: Int, hdrs: Map<String, String>, bs: Int) -> HeaderParseResult {
-    return new HeaderParseResult {status_code: sc, headers: hdrs, body_start: bs, ok: true, error_msg: ""}
+    da new HeaderParseResult {status_code: sc, headers: hdrs, body_start: bs, ok: true, error_msg: ""}
 }
 
 fn parse_response_headers(raw: String) -> HeaderParseResult {
-    let slen: Int = len(raw)
-    let mut pos: Int = 0
+    pon slen: Int = len(raw)
+    pon mut pos: Int = 0
 
-    if slen < 12 {
-        return new_hdr_error("Response too short")
+    si slen < 12 {
+        da new_hdr_error("Response too short")
     }
 
     // Skip to first space (past HTTP version)
-    while pos < slen {
-        if raw.char_at(pos) == " " { break }
+    mien pos < slen {
+        si raw.char_at(pos) == " " { sal }
         pos = pos + 1
     }
     pos = pos + 1
 
     // Parse status code
-    let mut status_str: String = ""
-    while pos < slen {
-        let ch: String = raw.char_at(pos)
-        if ch == " " { break }
-        if ch == "\r" { break }
+    pon mut status_str: String = ""
+    mien pos < slen {
+        pon ch: String = raw.char_at(pos)
+        si ch == " " { sal }
+        si ch == "\r" { sal }
         status_str = status_str + ch
         pos = pos + 1
     }
-    let status_code: Int = parse_int_manual(status_str)
+    pon status_code: Int = parse_int_manual(status_str)
 
     // Skip rest of status line
-    while pos < slen {
-        if raw.char_at(pos) == "\n" {
+    mien pos < slen {
+        si raw.char_at(pos) == "\n" {
             pos = pos + 1
-            break
+            sal
         }
         pos = pos + 1
     }
 
     // Parse headers
-    let mut headers: Map<String, String> = #{}
-    let mut count: Int = 0
-    while pos < slen {
+    pon mut headers: Map<String, String> = #{}
+    pon mut count: Int = 0
+    mien pos < slen {
         count = count + 1
-        if count > 200 { break }
+        si count > 200 { sal }
 
         // Check for empty line (end of headers)
-        if raw.char_at(pos) == "\r" {
-            if pos + 1 < slen {
-                if raw.char_at(pos + 1) == "\n" {
+        si raw.char_at(pos) == "\r" {
+            si pos + 1 < slen {
+                si raw.char_at(pos + 1) == "\n" {
                     pos = pos + 2
-                    break
+                    sal
                 }
             }
         }
-        if raw.char_at(pos) == "\n" {
+        si raw.char_at(pos) == "\n" {
             pos = pos + 1
-            break
+            sal
         }
 
         // Parse header name
-        let mut hdr_name: String = ""
-        while pos < slen {
-            let ch: String = raw.char_at(pos)
-            if ch == ":" { pos = pos + 1; break }
-            if ch == "\r" { break }
-            if ch == "\n" { break }
+        pon mut hdr_name: String = ""
+        mien pos < slen {
+            pon ch: String = raw.char_at(pos)
+            si ch == ":" { pos = pos + 1; sal }
+            si ch == "\r" { sal }
+            si ch == "\n" { sal }
             hdr_name = hdr_name + ch
             pos = pos + 1
         }
 
         // Skip whitespace after colon
-        while pos < slen {
-            let ch: String = raw.char_at(pos)
-            if ch != " " {
-                if ch != "\t" { break }
+        mien pos < slen {
+            pon ch: String = raw.char_at(pos)
+            si ch != " " {
+                si ch != "\t" { sal }
             }
             pos = pos + 1
         }
 
         // Parse header value
-        let mut hdr_value: String = ""
-        while pos < slen {
-            let ch: String = raw.char_at(pos)
-            if ch == "\r" {
+        pon mut hdr_value: String = ""
+        mien pos < slen {
+            pon ch: String = raw.char_at(pos)
+            si ch == "\r" {
                 pos = pos + 1
-                if pos < slen {
-                    if raw.char_at(pos) == "\n" { pos = pos + 1 }
+                si pos < slen {
+                    si raw.char_at(pos) == "\n" { pos = pos + 1 }
                 }
-                break
+                sal
             }
-            if ch == "\n" {
+            si ch == "\n" {
                 pos = pos + 1
-                break
+                sal
             }
             hdr_value = hdr_value + ch
             pos = pos + 1
         }
 
-        let lower_name: String = to_lower(hdr_name)
+        pon lower_name: String = to_lower(hdr_name)
         headers[lower_name] = hdr_value
     }
 
-    return new_hdr_ok(status_code, headers, pos)
+    da new_hdr_ok(status_code, headers, pos)
 }
 
 // ASCII lowercase — delegated to text::string_utils
 fn to_lower_char(ch: String, b: Int) -> String {
-    return string_utils.to_lower_char(ch, b)
+    da string_utils.to_lower_char(ch, b)
 }
 
 fn to_lower(s: String) -> String {
-    return string_utils.to_lower(s)
+    da string_utils.to_lower(s)
 }
 
 // Task 15: Content-Length body reading
 fn extract_body_content_length(raw: String, body_start: Int, content_length: Int) -> String {
-    let slen: Int = len(raw)
-    let mut body: String = ""
-    let mut i: Int = body_start
-    let mut count: Int = 0
-    while i < slen {
-        if count >= content_length { break }
+    pon slen: Int = len(raw)
+    pon mut body: String = ""
+    pon mut i: Int = body_start
+    pon mut count: Int = 0
+    mien i < slen {
+        si count >= content_length { sal }
         body = body + raw.char_at(i)
         i = i + 1
         count = count + 1
     }
-    return body
+    da body
 }
 
 // Task 16: Chunked transfer-encoding decoding
 fn decode_chunked_body(raw: String, body_start: Int) -> String {
-    let slen: Int = len(raw)
-    let mut result: String = ""
-    let mut pos: Int = body_start
+    pon slen: Int = len(raw)
+    pon mut result: String = ""
+    pon mut pos: Int = body_start
 
-    let mut iter: Int = 0
-    while pos < slen {
+    pon mut iter: Int = 0
+    mien pos < slen {
         iter = iter + 1
-        if iter > 10000 { break }
+        si iter > 10000 { sal }
 
         // Read chunk size (hex)
-        let mut hex_str: String = ""
-        while pos < slen {
-            let ch: String = raw.char_at(pos)
-            if ch == "\r" {
+        pon mut hex_str: String = ""
+        mien pos < slen {
+            pon ch: String = raw.char_at(pos)
+            si ch == "\r" {
                 pos = pos + 1
-                if pos < slen {
-                    if raw.char_at(pos) == "\n" { pos = pos + 1 }
+                si pos < slen {
+                    si raw.char_at(pos) == "\n" { pos = pos + 1 }
                 }
-                break
+                sal
             }
-            if ch == "\n" {
+            si ch == "\n" {
                 pos = pos + 1
-                break
+                sal
             }
             hex_str = hex_str + ch
             pos = pos + 1
         }
 
-        let chunk_size: Int = parse_hex_int(hex_str)
-        if chunk_size == 0 { break }
+        pon chunk_size: Int = parse_hex_int(hex_str)
+        si chunk_size == 0 { sal }
 
         // Read chunk data
-        let mut count: Int = 0
-        while count < chunk_size {
-            if pos >= slen { break }
+        pon mut count: Int = 0
+        mien count < chunk_size {
+            si pos >= slen { sal }
             result = result + raw.char_at(pos)
             pos = pos + 1
             count = count + 1
         }
 
         // Skip trailing CRLF
-        if pos < slen {
-            if raw.char_at(pos) == "\r" { pos = pos + 1 }
+        si pos < slen {
+            si raw.char_at(pos) == "\r" { pos = pos + 1 }
         }
-        if pos < slen {
-            if raw.char_at(pos) == "\n" { pos = pos + 1 }
+        si pos < slen {
+            si raw.char_at(pos) == "\n" { pos = pos + 1 }
         }
     }
 
-    return result
+    da result
 }
 
 fn parse_hex_int(s: String) -> Int {
-    let slen: Int = len(s)
-    let mut result: Int = 0
-    let mut i: Int = 0
-    while i < slen {
-        let d: Int = hex_digit_value(s.char_at(i))
-        if d < 0 { break }
+    pon slen: Int = len(s)
+    pon mut result: Int = 0
+    pon mut i: Int = 0
+    mien i < slen {
+        pon d: Int = hex_digit_value(s.char_at(i))
+        si d < 0 { sal }
         result = result * 16 + d
         i = i + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -641,27 +641,27 @@ fn parse_hex_int(s: String) -> Int {
 // ---------------------------------------------------------------------------
 
 fn recv_full_response(fd: Int) -> String {
-    let mut response: String = ""
-    let mut iterations: Int = 0
-    while iterations < 10000 {
+    pon mut response: String = ""
+    pon mut iterations: Int = 0
+    mien iterations < 10000 {
         iterations = iterations + 1
-        let chunk: String = __mn_tcp_recv_str(fd, 8192)
-        if len(chunk) == 0 { break }
+        pon chunk: String = __mn_tcp_recv_str(fd, 8192)
+        si len(chunk) == 0 { sal }
         response = response + chunk
     }
-    return response
+    da response
 }
 
 fn recv_full_response_tls(tls_ctx: Int) -> String {
-    let mut response: String = ""
-    let mut iterations: Int = 0
-    while iterations < 10000 {
+    pon mut response: String = ""
+    pon mut iterations: Int = 0
+    mien iterations < 10000 {
         iterations = iterations + 1
-        let chunk: String = __mn_tls_read_str(tls_ctx, 8192)
-        if len(chunk) == 0 { break }
+        pon chunk: String = __mn_tls_read_str(tls_ctx, 8192)
+        si len(chunk) == 0 { sal }
         response = response + chunk
     }
-    return response
+    da response
 }
 
 // ---------------------------------------------------------------------------
@@ -669,95 +669,95 @@ fn recv_full_response_tls(tls_ctx: Int) -> String {
 // ---------------------------------------------------------------------------
 
 fn execute_raw_request(parsed: ParsedUrl, raw_request: String, timeout_ms: Int) -> Result<String, HttpError> {
-    let init_result: Int = __mn_net_init()
+    pon init_result: Int = __mn_net_init()
 
-    let fd: Int = __mn_tcp_connect_str(parsed.host, parsed.port)
-    if fd < 0 {
-        return Err(new_connection_error("Failed to connect to " + parsed.host + ":" + str(parsed.port)))
+    pon fd: Int = __mn_tcp_connect_str(parsed.host, parsed.port)
+    si fd < 0 {
+        da Err(new_connection_error("Failed to connect to " + parsed.host + ":" + str(parsed.port)))
     }
 
-    if timeout_ms > 0 {
-        let to_result: Int = __mn_tcp_set_timeout(fd, timeout_ms)
+    si timeout_ms > 0 {
+        pon to_result: Int = __mn_tcp_set_timeout(fd, timeout_ms)
     }
 
-    if parsed.is_https {
-        let tls_init: Int = __mn_tls_init()
-        let tls_ctx: Int = __mn_tls_connect_str(fd, parsed.host)
-        if tls_ctx == 0 {
-            let close_r: Int = __mn_tcp_close_fd(fd)
-            return Err(new_tls_error("TLS handshake failed for " + parsed.host))
+    si parsed.is_https {
+        pon tls_init: Int = __mn_tls_init()
+        pon tls_ctx: Int = __mn_tls_connect_str(fd, parsed.host)
+        si tls_ctx == 0 {
+            pon close_r: Int = __mn_tcp_close_fd(fd)
+            da Err(new_tls_error("TLS handshake failed cada " + parsed.host))
         }
 
-        let sent: Int = __mn_tls_write_str(tls_ctx, raw_request)
-        if sent < 0 {
-            let close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
-            return Err(new_send_error("Failed to send request"))
+        pon sent: Int = __mn_tls_write_str(tls_ctx, raw_request)
+        si sent < 0 {
+            pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
+            da Err(new_send_error("Failed to send request"))
         }
 
-        let response: String = recv_full_response_tls(tls_ctx)
-        let close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
-        return Ok(response)
-    } else {
-        let sent: Int = __mn_tcp_send_str(fd, raw_request)
-        if sent < 0 {
-            let close_r: Int = __mn_tcp_close_fd(fd)
-            return Err(new_send_error("Failed to send request"))
+        pon response: String = recv_full_response_tls(tls_ctx)
+        pon close_r: Int = __mn_tls_close_fd(tls_ctx, fd)
+        da Ok(response)
+    } sino {
+        pon sent: Int = __mn_tcp_send_str(fd, raw_request)
+        si sent < 0 {
+            pon close_r: Int = __mn_tcp_close_fd(fd)
+            da Err(new_send_error("Failed to send request"))
         }
 
-        let response: String = recv_full_response(fd)
-        let close_r: Int = __mn_tcp_close_fd(fd)
-        return Ok(response)
+        pon response: String = recv_full_response(fd)
+        pon close_r: Int = __mn_tcp_close_fd(fd)
+        da Ok(response)
     }
 
-    return Err(new_connection_error("Unreachable"))
+    da Err(new_connection_error("Unreachable"))
 }
 
 fn parse_raw_response(raw: String) -> Result<HttpResponse, HttpError> {
-    if len(raw) == 0 {
-        return Err(new_recv_error("Empty response"))
+    si len(raw) == 0 {
+        da Err(new_recv_error("Empty response"))
     }
 
-    let hdr: HeaderParseResult = parse_response_headers(raw)
-    if hdr.ok == false {
-        return Err(new_parse_error(hdr.error_msg))
+    pon hdr: HeaderParseResult = parse_response_headers(raw)
+    si hdr.ok == false {
+        da Err(new_parse_error(hdr.error_msg))
     }
 
-    let mut body: String = ""
+    pon mut body: String = ""
 
     // Check for Transfer-Encoding: chunked
-    let mut is_chunked: Bool = false
-    for key in hdr.headers {
-        if key == "transfer-encoding" {
-            let te_val: String = hdr.headers[key]
-            if te_val == "chunked" {
+    pon mut is_chunked: Bool = false
+    cada key en hdr.headers {
+        si key == "transfer-encoding" {
+            pon te_val: String = hdr.headers[key]
+            si te_val == "chunked" {
                 is_chunked = true
             }
         }
     }
 
-    if is_chunked {
+    si is_chunked {
         body = decode_chunked_body(raw, hdr.body_start)
-    } else {
-        let mut content_length: Int = -1
-        for key in hdr.headers {
-            if key == "content-length" {
+    } sino {
+        pon mut content_length: Int = -1
+        cada key en hdr.headers {
+            si key == "content-length" {
                 content_length = parse_int_manual(hdr.headers[key])
             }
         }
 
-        if content_length >= 0 {
+        si content_length >= 0 {
             body = extract_body_content_length(raw, hdr.body_start, content_length)
-        } else {
-            let slen: Int = len(raw)
-            let mut i: Int = hdr.body_start
-            while i < slen {
+        } sino {
+            pon slen: Int = len(raw)
+            pon mut i: Int = hdr.body_start
+            mien i < slen {
                 body = body + raw.char_at(i)
                 i = i + 1
             }
         }
     }
 
-    return Ok(new_http_response(hdr.status_code, hdr.headers, body))
+    da Ok(new_http_response(hdr.status_code, hdr.headers, body))
 }
 
 // ---------------------------------------------------------------------------
@@ -765,73 +765,73 @@ fn parse_raw_response(raw: String) -> Result<HttpResponse, HttpError> {
 // ---------------------------------------------------------------------------
 
 fn is_redirect(status_code: Int) -> Bool {
-    if status_code == 301 { return true }
-    if status_code == 302 { return true }
-    if status_code == 307 { return true }
-    if status_code == 308 { return true }
-    return false
+    si status_code == 301 { da true }
+    si status_code == 302 { da true }
+    si status_code == 307 { da true }
+    si status_code == 308 { da true }
+    da false
 }
 
 fn get_redirect_location(headers: Map<String, String>) -> String {
-    for key in headers {
-        if key == "location" {
-            return headers[key]
+    cada key en headers {
+        si key == "location" {
+            da headers[key]
         }
     }
-    return ""
+    da ""
 }
 
 fn resolve_redirect_url(base_url: String, location: String) -> String {
     // Check if location is absolute (starts with http:// or https://)
-    if len(location) > 7 {
-        let mut prefix: String = ""
-        let mut i: Int = 0
-        while i < 8 {
-            if i < len(location) {
+    si len(location) > 7 {
+        pon mut prefix: String = ""
+        pon mut i: Int = 0
+        mien i < 8 {
+            si i < len(location) {
                 prefix = prefix + location.char_at(i)
             }
             i = i + 1
         }
-        if prefix == "https://" { return location }
+        si prefix == "https://" { da location }
     }
-    if len(location) > 6 {
-        let mut prefix2: String = ""
-        let mut j: Int = 0
-        while j < 7 {
-            if j < len(location) {
+    si len(location) > 6 {
+        pon mut prefix2: String = ""
+        pon mut j: Int = 0
+        mien j < 7 {
+            si j < len(location) {
                 prefix2 = prefix2 + location.char_at(j)
             }
             j = j + 1
         }
-        if prefix2 == "http://" { return location }
+        si prefix2 == "http://" { da location }
     }
 
     // Relative URL — resolve against base
-    let base: ParsedUrl = parse_url(base_url)
-    if base.ok == false { return location }
+    pon base: ParsedUrl = parse_url(base_url)
+    si base.ok == false { da location }
 
-    let mut resolved: String = base.scheme + "://" + base.host
-    if base.is_https {
-        if base.port != 443 {
+    pon mut resolved: String = base.scheme + "://" + base.host
+    si base.is_https {
+        si base.port != 443 {
             resolved = resolved + ":" + str(base.port)
         }
-    } else {
-        if base.port != 80 {
+    } sino {
+        si base.port != 80 {
             resolved = resolved + ":" + str(base.port)
         }
     }
 
-    if len(location) > 0 {
-        if location.char_at(0) == "/" {
+    si len(location) > 0 {
+        si location.char_at(0) == "/" {
             resolved = resolved + location
-        } else {
+        } sino {
             resolved = resolved + "/" + location
         }
-    } else {
+    } sino {
         resolved = resolved + base.path
     }
 
-    return resolved
+    da resolved
 }
 
 // ---------------------------------------------------------------------------
@@ -839,61 +839,61 @@ fn resolve_redirect_url(base_url: String, location: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn request(req: HttpRequest) -> Result<HttpResponse, HttpError> {
-    return request_with_config(req, default_http_config())
+    da request_with_config(req, default_http_config())
 }
 
 pub fn request_with_config(req: HttpRequest, config: HttpConfig) -> Result<HttpResponse, HttpError> {
-    let mut current_url: String = req.url
-    let mut redirects: Int = 0
-    let mut current_method: HttpMethod = req.method
+    pon mut current_url: String = req.url
+    pon mut redirects: Int = 0
+    pon mut current_method: HttpMethod = req.method
 
-    while redirects <= config.max_redirects {
-        let parsed: ParsedUrl = parse_url(current_url)
-        if parsed.ok == false {
-            return Err(new_url_error(parsed.error_msg))
+    mien redirects <= config.max_redirects {
+        pon parsed: ParsedUrl = parse_url(current_url)
+        si parsed.ok == false {
+            da Err(new_url_error(parsed.error_msg))
         }
 
         // Task 19: Custom headers + User-Agent
-        let mut merged_headers: Map<String, String> = #{}
-        for key in req.headers {
+        pon mut merged_headers: Map<String, String> = #{}
+        cada key en req.headers {
             merged_headers[key] = req.headers[key]
         }
 
-        let mut has_ua: Bool = false
-        for key in merged_headers {
-            let lower_key: String = to_lower(key)
-            if lower_key == "user-agent" { has_ua = true }
+        pon mut has_ua: Bool = false
+        cada key en merged_headers {
+            pon lower_key: String = to_lower(key)
+            si lower_key == "user-agent" { has_ua = true }
         }
-        if has_ua == false {
+        si has_ua == false {
             merged_headers["User-Agent"] = config.user_agent
         }
 
-        let raw_request: String = build_http_request(current_method, parsed, merged_headers, req.body, req.has_body)
-        let raw_result: Result<String, HttpError> = execute_raw_request(parsed, raw_request, config.timeout_ms)
+        pon raw_request: String = build_http_request(current_method, parsed, merged_headers, req.body, req.has_body)
+        pon raw_result: Result<String, HttpError> = execute_raw_request(parsed, raw_request, config.timeout_ms)
 
         match raw_result {
-            Err(e) => { return Err(e) },
+            Err(e) => { da Err(e) },
             Ok(raw_response) => {
-                let resp_result: Result<HttpResponse, HttpError> = parse_raw_response(raw_response)
+                pon resp_result: Result<HttpResponse, HttpError> = parse_raw_response(raw_response)
 
                 match resp_result {
-                    Err(e2) => { return Err(e2) },
+                    Err(e2) => { da Err(e2) },
                     Ok(resp) => {
-                        if is_redirect(resp.status_code) {
-                            let location: String = get_redirect_location(resp.headers)
-                            if len(location) == 0 {
-                                return Ok(resp)
+                        si is_redirect(resp.status_code) {
+                            pon location: String = get_redirect_location(resp.headers)
+                            si len(location) == 0 {
+                                da Ok(resp)
                             }
                             current_url = resolve_redirect_url(current_url, location)
                             redirects = redirects + 1
 
-                            if resp.status_code == 301 {
+                            si resp.status_code == 301 {
                                 current_method = GET()
-                            } else { if resp.status_code == 302 {
+                            } sino { si resp.status_code == 302 {
                                 current_method = GET()
                             } }
-                        } else {
-                            return Ok(resp)
+                        } sino {
+                            da Ok(resp)
                         }
                     }
                 }
@@ -901,7 +901,7 @@ pub fn request_with_config(req: HttpRequest, config: HttpConfig) -> Result<HttpR
         }
     }
 
-    return Err(new_redirect_error("Too many redirects (max " + str(config.max_redirects) + ")"))
+    da Err(new_redirect_error("Too many redirects (max " + str(config.max_redirects) + ")"))
 }
 
 // ---------------------------------------------------------------------------
@@ -909,38 +909,38 @@ pub fn request_with_config(req: HttpRequest, config: HttpConfig) -> Result<HttpR
 // ---------------------------------------------------------------------------
 
 pub fn get(url: String) -> Result<HttpResponse, HttpError> {
-    let req: HttpRequest = new_http_request(GET(), url)
-    return request(req)
+    pon req: HttpRequest = new_http_request(GET(), url)
+    da request(req)
 }
 
 pub fn post(url: String, body: String) -> Result<HttpResponse, HttpError> {
-    let req: HttpRequest = make_request_with_body(POST(), url, body, #{"Content-Type": "application/json"})
-    return request(req)
+    pon req: HttpRequest = make_request_with_body(POST(), url, body, #{"Content-Type": "application/json"})
+    da request(req)
 }
 
 pub fn put(url: String, body: String) -> Result<HttpResponse, HttpError> {
-    let req: HttpRequest = make_request_with_body(PUT(), url, body, #{"Content-Type": "application/json"})
-    return request(req)
+    pon req: HttpRequest = make_request_with_body(PUT(), url, body, #{"Content-Type": "application/json"})
+    da request(req)
 }
 
 pub fn delete(url: String) -> Result<HttpResponse, HttpError> {
-    let req: HttpRequest = new_http_request(DELETE(), url)
-    return request(req)
+    pon req: HttpRequest = new_http_request(DELETE(), url)
+    da request(req)
 }
 
 pub fn patch(url: String, body: String) -> Result<HttpResponse, HttpError> {
-    let req: HttpRequest = make_request_with_body(PATCH(), url, body, #{"Content-Type": "application/json"})
-    return request(req)
+    pon req: HttpRequest = make_request_with_body(PATCH(), url, body, #{"Content-Type": "application/json"})
+    da request(req)
 }
 
 pub fn head(url: String) -> Result<HttpResponse, HttpError> {
-    let req: HttpRequest = new_http_request(HEAD(), url)
-    return request(req)
+    pon req: HttpRequest = new_http_request(HEAD(), url)
+    da request(req)
 }
 
 pub fn options(url: String) -> Result<HttpResponse, HttpError> {
-    let req: HttpRequest = new_http_request(OPTIONS(), url)
-    return request(req)
+    pon req: HttpRequest = new_http_request(OPTIONS(), url)
+    da request(req)
 }
 
 // ---------------------------------------------------------------------------
@@ -948,33 +948,33 @@ pub fn options(url: String) -> Result<HttpResponse, HttpError> {
 // ---------------------------------------------------------------------------
 
 pub fn request_fingerprint(meth: HttpMethod, url: String) -> String {
-    let method_str: String = method_to_string(meth)
-    let mut hash: Int = 5381
-    let combined: String = method_str + "|" + url
-    let clen: Int = len(combined)
-    let mut i: Int = 0
-    while i < clen {
-        let b: Int = combined.byte_at(i)
+    pon method_str: String = method_to_string(meth)
+    pon mut hash: Int = 5381
+    pon combined: String = method_str + "|" + url
+    pon clen: Int = len(combined)
+    pon mut i: Int = 0
+    mien i < clen {
+        pon b: Int = combined.byte_at(i)
         hash = hash * 33 + b
-        if hash > 1000000000 {
+        si hash > 1000000000 {
             hash = hash - 1000000000
         }
-        if hash < 0 {
+        si hash < 0 {
             hash = 0 - hash
         }
         i = i + 1
     }
 
-    let mut result: String = ""
-    let mut remaining: Int = hash
-    let mut digits: Int = 0
-    while digits < 8 {
-        let d: Int = remaining - (remaining / 16) * 16
+    pon mut result: String = ""
+    pon mut remaining: Int = hash
+    pon mut digits: Int = 0
+    mien digits < 8 {
+        pon d: Int = remaining - (remaining / 16) * 16
         result = hex_char(d) + result
         remaining = remaining / 16
         digits = digits + 1
     }
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------

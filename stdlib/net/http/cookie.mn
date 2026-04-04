@@ -6,13 +6,13 @@
 //
 // No external dependencies. Pure Mapanare string manipulation.
 
-import text::string_utils
+usa text::string_utils
 
 // ---------------------------------------------------------------------------
 // Core struct
 // ---------------------------------------------------------------------------
 
-pub struct Cookie {
+pub tipo Cookie {
     name: String,
     value: String,
     path: String,
@@ -28,7 +28,7 @@ pub struct Cookie {
 // ---------------------------------------------------------------------------
 
 pub fn new_cookie(name: String, value: String) -> Cookie {
-    return new Cookie {
+    da new Cookie {
         name: name,
         value: value,
         path: "/",
@@ -45,7 +45,7 @@ pub fn new_cookie(name: String, value: String) -> Cookie {
 // ---------------------------------------------------------------------------
 
 pub fn cookie_with_path(cookie: Cookie, path: String) -> Cookie {
-    return new Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: path,
         domain: cookie.domain, max_age: cookie.max_age,
         secure: cookie.secure, http_only: cookie.http_only,
@@ -54,7 +54,7 @@ pub fn cookie_with_path(cookie: Cookie, path: String) -> Cookie {
 }
 
 pub fn cookie_with_domain(cookie: Cookie, domain: String) -> Cookie {
-    return new Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: cookie.path,
         domain: domain, max_age: cookie.max_age,
         secure: cookie.secure, http_only: cookie.http_only,
@@ -63,7 +63,7 @@ pub fn cookie_with_domain(cookie: Cookie, domain: String) -> Cookie {
 }
 
 pub fn cookie_with_max_age(cookie: Cookie, max_age: Int) -> Cookie {
-    return new Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: cookie.path,
         domain: cookie.domain, max_age: max_age,
         secure: cookie.secure, http_only: cookie.http_only,
@@ -72,7 +72,7 @@ pub fn cookie_with_max_age(cookie: Cookie, max_age: Int) -> Cookie {
 }
 
 pub fn cookie_with_secure(cookie: Cookie, secure: Bool) -> Cookie {
-    return new Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: cookie.path,
         domain: cookie.domain, max_age: cookie.max_age,
         secure: secure, http_only: cookie.http_only,
@@ -81,7 +81,7 @@ pub fn cookie_with_secure(cookie: Cookie, secure: Bool) -> Cookie {
 }
 
 pub fn cookie_with_http_only(cookie: Cookie, http_only: Bool) -> Cookie {
-    return new Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: cookie.path,
         domain: cookie.domain, max_age: cookie.max_age,
         secure: cookie.secure, http_only: http_only,
@@ -90,7 +90,7 @@ pub fn cookie_with_http_only(cookie: Cookie, http_only: Bool) -> Cookie {
 }
 
 pub fn cookie_with_same_site(cookie: Cookie, same_site: String) -> Cookie {
-    return new Cookie {
+    da new Cookie {
         name: cookie.name, value: cookie.value, path: cookie.path,
         domain: cookie.domain, max_age: cookie.max_age,
         secure: cookie.secure, http_only: cookie.http_only,
@@ -103,31 +103,31 @@ pub fn cookie_with_same_site(cookie: Cookie, same_site: String) -> Cookie {
 // ---------------------------------------------------------------------------
 
 fn trim_whitespace(s: String) -> String {
-    let slen: Int = len(s)
-    if slen == 0 { return s }
+    pon slen: Int = len(s)
+    si slen == 0 { da s }
 
     // Find start (skip leading spaces/tabs)
-    let mut start: Int = 0
-    while start < slen {
-        let ch: String = s.char_at(start)
-        if ch != " " {
-            if ch != "\t" { break }
+    pon mut start: Int = 0
+    mien start < slen {
+        pon ch: String = s.char_at(start)
+        si ch != " " {
+            si ch != "\t" { sal }
         }
         start = start + 1
     }
 
     // Find end (skip trailing spaces/tabs)
-    let mut end: Int = slen - 1
-    while end >= start {
-        let ch: String = s.char_at(end)
-        if ch != " " {
-            if ch != "\t" { break }
+    pon mut end: Int = slen - 1
+    mien end >= start {
+        pon ch: String = s.char_at(end)
+        si ch != " " {
+            si ch != "\t" { sal }
         }
         end = end - 1
     }
 
-    if start > end { return "" }
-    return s.substr(start, end + 1)
+    si start > end { da "" }
+    da s.substr(start, end + 1)
 }
 
 // ---------------------------------------------------------------------------
@@ -135,51 +135,51 @@ fn trim_whitespace(s: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn parse_cookies(header: String) -> List<Cookie> {
-    let mut cookies: List<Cookie> = []
-    let slen: Int = len(header)
-    if slen == 0 { return cookies }
+    pon mut cookies: List<Cookie> = []
+    pon slen: Int = len(header)
+    si slen == 0 { da cookies }
 
     // Split by ";"
-    let mut pos: Int = 0
-    let mut current: String = ""
-    while pos <= slen {
-        let mut ch: String = ""
-        let mut at_end: Bool = false
-        if pos < slen {
+    pon mut pos: Int = 0
+    pon mut current: String = ""
+    mien pos <= slen {
+        pon mut ch: String = ""
+        pon mut at_end: Bool = false
+        si pos < slen {
             ch = header.char_at(pos)
-        } else {
+        } sino {
             at_end = true
         }
 
-        if ch == ";" {
+        si ch == ";" {
             at_end = true
         }
 
-        if at_end {
-            let trimmed: String = trim_whitespace(current)
-            if len(trimmed) > 0 {
+        si at_end {
+            pon trimmed: String = trim_whitespace(current)
+            si len(trimmed) > 0 {
                 // Split by first "="
-                let eq_pos: Int = trimmed.find("=")
-                if eq_pos > 0 {
-                    let name: String = trim_whitespace(trimmed.substr(0, eq_pos))
-                    let value: String = trim_whitespace(trimmed.substr(eq_pos + 1, len(trimmed)))
-                    let c: Cookie = new_cookie(name, value)
+                pon eq_pos: Int = trimmed.find("=")
+                si eq_pos > 0 {
+                    pon name: String = trim_whitespace(trimmed.substr(0, eq_pos))
+                    pon value: String = trim_whitespace(trimmed.substr(eq_pos + 1, len(trimmed)))
+                    pon c: Cookie = new_cookie(name, value)
                     cookies = cookies + [c]
                 }
             }
             current = ""
-            if ch == ";" {
+            si ch == ";" {
                 pos = pos + 1
-            } else {
+            } sino {
                 pos = pos + 1
             }
-        } else {
+        } sino {
             current = current + ch
             pos = pos + 1
         }
     }
 
-    return cookies
+    da cookies
 }
 
 // ---------------------------------------------------------------------------
@@ -187,33 +187,33 @@ pub fn parse_cookies(header: String) -> List<Cookie> {
 // ---------------------------------------------------------------------------
 
 pub fn set_cookie_header(cookie: Cookie) -> String {
-    let mut result: String = cookie.name + "=" + cookie.value
+    pon mut result: String = cookie.name + "=" + cookie.value
 
-    if len(cookie.path) > 0 {
+    si len(cookie.path) > 0 {
         result = result + "; Path=" + cookie.path
     }
 
-    if len(cookie.domain) > 0 {
+    si len(cookie.domain) > 0 {
         result = result + "; Domain=" + cookie.domain
     }
 
-    if cookie.max_age > 0 {
+    si cookie.max_age > 0 {
         result = result + "; Max-Age=" + str(cookie.max_age)
     }
 
-    if cookie.secure {
+    si cookie.secure {
         result = result + "; Secure"
     }
 
-    if cookie.http_only {
+    si cookie.http_only {
         result = result + "; HttpOnly"
     }
 
-    if len(cookie.same_site) > 0 {
+    si len(cookie.same_site) > 0 {
         result = result + "; SameSite=" + cookie.same_site
     }
 
-    return result
+    da result
 }
 
 // ---------------------------------------------------------------------------
@@ -221,14 +221,14 @@ pub fn set_cookie_header(cookie: Cookie) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn find_cookie(cookies: List<Cookie>, name: String) -> Option<String> {
-    let count: Int = len(cookies)
-    let mut i: Int = 0
-    while i < count {
-        let c: Cookie = cookies[i]
-        if c.name == name {
-            return Some(c.value)
+    pon count: Int = len(cookies)
+    pon mut i: Int = 0
+    mien i < count {
+        pon c: Cookie = cookies[i]
+        si c.name == name {
+            da Some(c.value)
         }
         i = i + 1
     }
-    return none
+    da nada
 }
