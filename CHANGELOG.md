@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-04-04
+
+### Added
+
+- Bilingual keywords in self-hosted lexer: `pon`/`si`/`da`/`cada`/`mien`/`sino`/`en`/`tipo`/`nada`/`sal`/`sigue`/`yo`/`modo`/`way`/`usa`/`di`
+- `tipo` unified type definitions: `tipo Name { fields }` for structs, `tipo Name { | Variant }` for enums
+- BAR token (`|`) for tipo enum variant syntax
+- `mnc_driver.c`: C entry point for LLVM-compiled stage2 binary
+- `verify_fixed_point.sh`: automated three-stage bootstrap verification
+
+### Fixed
+
+- Result variant index extraction: strip `:N` suffix before Ok/Err comparison
+- MIRType hardcoded field index swap (`name`/`kind` were reversed)
+- WrapNone in `lower_let`: condition fired on Option-typed function call results, not just None literals — root cause of "vars not found" in stage2 binary
+- SSA name collisions: 80 variable renames across 5 self-hosted modules
+
+### Changed
+
+- Three-stage fixed point achieved: `stage2.ll == stage3.ll` (78,676 lines, 0 diff)
+- Golden tests: 15/15 pass through mnc-stage1 + llvm-as
+- Stage2 IR validates with zero post-processing
+
 ## [3.0.1] - 2026-04-03
 
 ### Added
@@ -412,7 +435,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.1...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.2...HEAD
+[3.0.2]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.0...v3.0.1
 [2.0.0]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.11...v2.0.0
 [1.0.11]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.0...v1.0.11
