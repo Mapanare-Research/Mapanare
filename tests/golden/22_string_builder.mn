@@ -1,0 +1,14 @@
+fn repeat_str(s: String, n: Int) -> String {
+    let mut result: String = ""
+    for _ in 0..n {
+        result = result + s
+    }
+    return result
+}
+
+fn main() {
+    let stars: String = repeat_str("*", 5)
+    print(stars)
+    let dashes: String = repeat_str("-", 3)
+    print(dashes)
+}

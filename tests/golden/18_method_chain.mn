@@ -1,0 +1,9 @@
+fn main() {
+    let s: String = "Hello, World!"
+    let upper: String = s.to_upper()
+    print(upper)
+    let has: Bool = s.contains("World")
+    print(str(has))
+    let idx: Int = s.find("World")
+    print(str(idx))
+}

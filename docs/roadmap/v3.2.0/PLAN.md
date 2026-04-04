@@ -2,7 +2,7 @@
 
 > From toy tests to real software. The compiler grows up.
 
-**Status:** PLANNED
+**Status:** IN PROGRESS
 **Author:** Juan Denis
 **Date:** April 2026
 **Breaking:** No
@@ -194,10 +194,10 @@ becomes native code (no Python runtime).
 
 ## Success Criteria
 
-- [ ] Self-hosted compiler reads files natively (no C driver)
-- [ ] String escape sequences work (`\n`, `\t`, `\\`)
-- [ ] Errors print to stderr with non-zero exit code
-- [ ] 25+ golden tests pass through runtime harness
+- [x] Self-hosted compiler reads files natively (mn_main in main.mn)
+- [x] String escape sequences work (`\n`, `\t`, `\\`)
+- [x] Errors print to stderr with non-zero exit code (mn_main + __mn_str_eprint)
+- [x] 25+ golden tests pass through runtime harness (25/25)
 - [ ] At least 2 stdlib modules ported to .mn
 - [ ] Three-stage fixed point preserved
 

@@ -1,0 +1,15 @@
+struct Pair {
+    first: Int,
+    second: Int
+}
+
+fn swap(p: Pair) -> Pair {
+    return new Pair { first: p.second, second: p.first }
+}
+
+fn main() {
+    let p: Pair = new Pair { first: 1, second: 2 }
+    let s: Pair = swap(p)
+    print(str(s.first))
+    print(str(s.second))
+}

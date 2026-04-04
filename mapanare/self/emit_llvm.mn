@@ -681,7 +681,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     // String constant: emit global at module level, build struct inline
     if ty.kind == "string" {
         // Escape special chars for LLVM IR string constants
-        let escaped: String = val.replace("\\", "\\5C").replace("\"", "\\22").replace("\n", "\\0A").replace("\t", "\\09").replace("\r", "\\0D").replace("\0", "\\00")
+        let escaped: String = val.replace("\\", "\\5C").replace("\"", "\\22").replace("\n", "\\0A").replace("\t", "\\09").replace("\r", "\\0D")
         let slen: Int = len(val)
         let gname: String = next_str_name(s)
         s.str_counter = s.str_counter + 1

@@ -1,0 +1,19 @@
+fn find_positive(x: Int) -> Option<Int> {
+    if x > 0 {
+        return Some(x)
+    }
+    return Some(0)
+}
+
+fn main() {
+    let a: Option<Int> = find_positive(42)
+    match a {
+        Some(v) => { print(str(v)) },
+        _ => { print("none") }
+    }
+    let b: Option<Int> = Some(7)
+    match b {
+        Some(v) => { print(str(v)) },
+        _ => { print("none") }
+    }
+}
