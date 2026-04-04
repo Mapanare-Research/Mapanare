@@ -2710,7 +2710,12 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     s.functions.push(entry)
 
     // Track current function's return type and sret flag
-    s.current_ret_type = ret_ty
+    // main() uses i32 return (C ABI) for clean exit codes
+    if f.name == "main" {
+        s.current_ret_type = "i32"
+    } else {
+        s.current_ret_type = ret_ty
+    }
 
     // Emit function header
     let fn_name: String = strip_percent(f.name)
@@ -2720,6 +2725,8 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     if is_lambda { visibility = "define internal" }
     let mut abi_ret: String = ret_ty
     if use_sret { abi_ret = "void" }
+    // main() returns i32 (C ABI) instead of void for clean exit codes
+    if fn_name == "main" { abi_ret = "i32" }
     s = emit_line(s, visibility + " " + abi_ret + " @" + fn_name + "(" + params_str + ") {")
 
     // Emit basic blocks — entry block gets byref param fixup.

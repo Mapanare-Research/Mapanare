@@ -2,7 +2,7 @@
 
 > The compiler compiles itself. Now the programs must run.
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Author:** Juan Denis
 **Date:** April 2026
 **Breaking:** No
@@ -134,10 +134,10 @@ These are nice-to-haves that improve robustness but aren't blocking:
 ## Success Criteria
 
 - [x] 15/15 golden tests produce correct output when executed ← **DONE 2026-04-04**
-- [ ] All exit codes are 0 (clean shutdown)
+- [x] All exit codes are 0 (clean shutdown) ← **DONE 2026-04-04** (main returns i32 0)
 - [x] `scripts/test_runtime.sh` passes (automated runtime gate) ← **DONE 2026-04-04**
-- [ ] Stage2-compiled binaries produce same results as stage1-compiled
-- [x] Three-stage fixed point still holds after all changes ← **VERIFIED 2026-04-04**
+- [x] Stage2-compiled binaries produce same results as stage1-compiled ← **DONE 2026-04-04** (15/15)
+- [x] Three-stage fixed point still holds after all changes ← **VERIFIED 2026-04-04** (78,881 lines, 0 diff)
 
 ---
 
