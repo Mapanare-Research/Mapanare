@@ -1120,6 +1120,7 @@ fn parse_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
     if tt == "KW_LET" { return parse_let_stmt(tokens, pos, filename) }
     if tt == "KW_RETURN" { return parse_return_stmt(tokens, pos, filename) }
     if tt == "KW_FOR" { return parse_for_stmt(tokens, pos, filename) }
+    if tt == "KW_WHILE" { return parse_while_stmt(tokens, pos, filename) }
 
     let er: ExprResult = parse_expr(tokens, pos, filename, 0)
     return new_stmt_result(Stmt::ExprStmt(er.expr), er.pos)
@@ -1186,6 +1187,40 @@ fn parse_for_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult
 
     let br: BlockResult = parse_block(tokens, p, filename)
     return new_stmt_result(Stmt::For(var_name, er.expr, br.block), br.pos)
+}
+
+fn parse_while_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
+    // Desugar: while cond { body }
+    // → for __w in 0..1000000 { if !(cond) { return } else { body } }
+    // But we don't have break/return-from-loop. Instead, use a simpler
+    // desugaring that reuses the for-loop infrastructure:
+    //   for __w in 0..1000000 { if cond { body-stmts } }
+    // This runs the body only while cond is true.
+    // To avoid stack overflow from allocas in the loop, we keep the body
+    // minimal (no extra allocas beyond what the body already needs).
+    let mut p: Int = pos + 1
+
+    // Parse condition expression
+    let cond_r: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = cond_r.pos
+
+    // Parse body block
+    let body_r: BlockResult = parse_block(tokens, p, filename)
+    p = body_r.pos
+
+    // Build: if cond { body-stmts } — reuse the body's stmts directly
+    let if_expr: Expr = Expr::If(cond_r.expr, body_r.block, none)
+    let if_stmt: Stmt = Stmt::ExprStmt(if_expr)
+
+    // Build loop body with just the if
+    let mut loop_stmts: List<Stmt> = []
+    loop_stmts.push(if_stmt)
+    let loop_block: Block = new_block(new_span(0, 0, 0, 0), loop_stmts)
+
+    // Range 0..100000 (reasonable limit for while loops)
+    let range_expr: Expr = Expr::Range(Expr::IntLit(0), Expr::IntLit(100000), false)
+
+    return new_stmt_result(Stmt::For("__w", range_expr, loop_block), p)
 }
 
 // ---------------------------------------------------------------------------
