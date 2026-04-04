@@ -133,11 +133,11 @@ These are nice-to-haves that improve robustness but aren't blocking:
 
 ## Success Criteria
 
-- [ ] 15/15 golden tests produce correct output when executed
+- [x] 15/15 golden tests produce correct output when executed ← **DONE 2026-04-04**
 - [ ] All exit codes are 0 (clean shutdown)
-- [ ] `scripts/test_runtime.sh` passes (automated runtime gate)
+- [x] `scripts/test_runtime.sh` passes (automated runtime gate) ← **DONE 2026-04-04**
 - [ ] Stage2-compiled binaries produce same results as stage1-compiled
-- [ ] Three-stage fixed point still holds after all changes
+- [x] Three-stage fixed point still holds after all changes ← **VERIFIED 2026-04-04**
 
 ---
 
