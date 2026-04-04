@@ -71,9 +71,9 @@ pub fn new_record(level: Int, message: String) -> LogRecord {
     da new LogRecord { level: level, message: message, agent_name: "", logger_name: "" }
 }
 
-// Creates a LogRecord tagged with an agent name.
-pub fn record_with_agent(level: Int, message: String, agent: String) -> LogRecord {
-    da new LogRecord { level: level, message: message, agent_name: agent, logger_name: "" }
+// Creates a LogRecord tagged with an agent_name name.
+pub fn record_with_agent(level: Int, message: String, agent_name: String) -> LogRecord {
+    da new LogRecord { level: level, message: message, agent_name: agent_name, logger_name: "" }
 }
 
 // Creates a LogRecord tagged with a logger name.

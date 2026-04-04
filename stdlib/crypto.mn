@@ -50,32 +50,32 @@ fn new_hash_error(msg: String) -> CryptoError {
 // Hashing — SHA-1, SHA-256, SHA-512 (hex digest output)
 // ---------------------------------------------------------------------------
 
-fn sha1(input: String) -> String {
-    pon raw: String = __mn_sha1_str(input)
+fn sha1(data: String) -> String {
+    pon raw: String = __mn_sha1_str(data)
     da __mn_hex_encode_str(raw)
 }
 
-fn sha256(input: String) -> String {
-    pon raw: String = __mn_sha256_str(input)
+fn sha256(data: String) -> String {
+    pon raw: String = __mn_sha256_str(data)
     da __mn_hex_encode_str(raw)
 }
 
-fn sha512(input: String) -> String {
-    pon raw: String = __mn_sha512_str(input)
+fn sha512(data: String) -> String {
+    pon raw: String = __mn_sha512_str(data)
     da __mn_hex_encode_str(raw)
 }
 
 // Raw hash variants (return binary, not hex)
-fn sha1_raw(input: String) -> String {
-    da __mn_sha1_str(input)
+fn sha1_raw(data: String) -> String {
+    da __mn_sha1_str(data)
 }
 
-fn sha256_raw(input: String) -> String {
-    da __mn_sha256_str(input)
+fn sha256_raw(data: String) -> String {
+    da __mn_sha256_str(data)
 }
 
-fn sha512_raw(input: String) -> String {
-    da __mn_sha512_str(input)
+fn sha512_raw(data: String) -> String {
+    da __mn_sha512_str(data)
 }
 
 // ---------------------------------------------------------------------------
@@ -95,14 +95,14 @@ fn hmac_sha256_raw(key: String, data: String) -> String {
 // Base64 encoding/decoding
 // ---------------------------------------------------------------------------
 
-fn base64_encode(input: String) -> String {
-    da __mn_base64_encode_str(input)
+fn base64_encode(data: String) -> String {
+    da __mn_base64_encode_str(data)
 }
 
-fn base64_decode(input: String) -> Result<String, CryptoError> {
-    pon decoded: String = __mn_base64_decode_str(input)
+fn base64_decode(data: String) -> Result<String, CryptoError> {
+    pon decoded: String = __mn_base64_decode_str(data)
     si len(decoded) == 0 {
-        si len(input) > 0 {
+        si len(data) > 0 {
             da Err(new_decode_failed("invalid base64 input"))
         }
     }
@@ -110,8 +110,8 @@ fn base64_decode(input: String) -> Result<String, CryptoError> {
 }
 
 // URL-safe Base64 (RFC 4648 section 5) — no padding
-fn base64url_encode(input: String) -> String {
-    pon b64: String = __mn_base64_encode_str(input)
+fn base64url_encode(data: String) -> String {
+    pon b64: String = __mn_base64_encode_str(data)
     // Replace + with -, / with _, strip =
     pon mut result: String = ""
     pon mut i: Int = 0
@@ -129,12 +129,12 @@ fn base64url_encode(input: String) -> String {
     da result
 }
 
-fn base64url_decode(input: String) -> Result<String, CryptoError> {
+fn base64url_decode(data: String) -> Result<String, CryptoError> {
     // Restore standard Base64: replace - with +, _ with /
     pon mut std_b64: String = ""
     pon mut i: Int = 0
-    mien i < len(input) {
-        pon c: String = input.char_at(i)
+    mien i < len(data) {
+        pon c: String = data.char_at(i)
         si c == "-" {
             std_b64 = std_b64 + "+"
         } sino si c == "_" {
@@ -153,7 +153,7 @@ fn base64url_decode(input: String) -> Result<String, CryptoError> {
     }
     pon decoded: String = __mn_base64_decode_str(std_b64)
     si len(decoded) == 0 {
-        si len(input) > 0 {
+        si len(data) > 0 {
             da Err(new_decode_failed("invalid base64url input"))
         }
     }
@@ -164,17 +164,17 @@ fn base64url_decode(input: String) -> Result<String, CryptoError> {
 // Hex encoding/decoding
 // ---------------------------------------------------------------------------
 
-fn hex_encode(input: String) -> String {
-    da __mn_hex_encode_str(input)
+fn hex_encode(data: String) -> String {
+    da __mn_hex_encode_str(data)
 }
 
-fn hex_decode(input: String) -> Result<String, CryptoError> {
-    si len(input) % 2 != 0 {
+fn hex_decode(data: String) -> Result<String, CryptoError> {
+    si len(data) % 2 != 0 {
         da Err(new_invalid_input("hex string must have even length"))
     }
-    pon decoded: String = __mn_hex_decode_str(input)
+    pon decoded: String = __mn_hex_decode_str(data)
     si len(decoded) == 0 {
-        si len(input) > 0 {
+        si len(data) > 0 {
             da Err(new_decode_failed("invalid hex input"))
         }
     }
@@ -195,10 +195,10 @@ fn jwt_header() -> String {
 fn jwt_encode(payload_json: String, secret: String) -> String {
     pon header_b64: String = base64url_encode(jwt_header())
     pon payload_b64: String = base64url_encode(payload_json)
-    pon signing_input: String = header_b64 + "." + payload_b64
-    pon sig_raw: String = __mn_hmac_sha256_str(secret, signing_input)
+    pon signing_data: String = header_b64 + "." + payload_b64
+    pon sig_raw: String = __mn_hmac_sha256_str(secret, signing_data)
     pon sig_b64: String = base64url_encode(sig_raw)
-    da signing_input + "." + sig_b64
+    da signing_data + "." + sig_b64
 }
 
 fn jwt_decode(token: String, secret: String) -> Result<String, CryptoError> {
@@ -215,11 +215,11 @@ fn jwt_decode(token: String, secret: String) -> Result<String, CryptoError> {
     }
     pon dot2: Int = dot1 + 1 + dot2_rel
 
-    pon signing_input: String = token.substr(0, dot2)
+    pon signing_data: String = token.substr(0, dot2)
     pon sig_b64: String = token.substr(dot2 + 1, len(token))
 
     // Verify signature
-    pon expected_raw: String = __mn_hmac_sha256_str(secret, signing_input)
+    pon expected_raw: String = __mn_hmac_sha256_str(secret, signing_data)
     pon expected_b64: String = base64url_encode(expected_raw)
 
     si sig_b64 != expected_b64 {
@@ -252,10 +252,10 @@ fn jwt_verify(token: String, secret: String) -> Bool {
     }
     pon dot2: Int = dot1 + 1 + dot2_rel
 
-    pon signing_input: String = token.substr(0, dot2)
+    pon signing_data: String = token.substr(0, dot2)
     pon sig_b64: String = token.substr(dot2 + 1, len(token))
 
-    pon expected_raw: String = __mn_hmac_sha256_str(secret, signing_input)
+    pon expected_raw: String = __mn_hmac_sha256_str(secret, signing_data)
     pon expected_b64: String = base64url_encode(expected_raw)
 
     da sig_b64 == expected_b64
@@ -271,7 +271,7 @@ fn random_bytes(n: Int) -> List<Int> {
     pon mut i: Int = 0
     mien i < len(raw) {
         pon b: Int = raw.byte_at(i)
-        result = result + [b]
+        result.push(b)
         i = i + 1
     }
     da result

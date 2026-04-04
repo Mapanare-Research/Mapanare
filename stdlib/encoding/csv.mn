@@ -208,7 +208,7 @@ fn parse_csv_row(src: String, pos: Int, ln: Int, delim: String, qch: String) -> 
             da new RowResult { fields: fields, pos: fr.pos, ln: fr.ln, ok: false, err_msg: fr.err_msg }
         }
 
-        fields = fields + [fr.value]
+        fields.push(fr.value)
         p = fr.pos
         cur_ln = fr.ln
 
@@ -250,7 +250,7 @@ fn parse_csv_all(src: String, delim: String, qch: String, has_headers: Bool) -> 
         ln = rr.ln
 
         si len(rr.fields) > 0 {
-            rows = rows + [rr.fields]
+            rows.push(rr.fields)
         }
     }
 
@@ -432,7 +432,7 @@ pub fn collect_rows(src: String) -> Result<List<List<String>>, CsvError> {
         ln = rr.ln
 
         si len(rr.fields) > 0 {
-            rows = rows + [rr.fields]
+            rows.push(rr.fields)
         }
     }
 
