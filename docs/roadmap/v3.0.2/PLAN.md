@@ -208,9 +208,9 @@ diff /tmp/stage2.c /tmp/stage3.c  # Must be empty
 - [x] mnc-stage1 compiles its own source without parser errors
 - [x] Stage2 IR validates with llvm-as (no post-processing needed) ← **DONE 2026-04-04**
 - [x] 15/15 golden tests pass through stage1 ← **DONE 2026-04-04**
-- [ ] Stage2 binary produces correct IR — **BLOCKER**: `vars` list mutations lost through sret returns (same COW issue as fn_blocks). Stage3 IR has correct struct names but missing Load instructions (2,184 vs 13,921 in stage2). Fix: flatten vars into LowerState like fn_blocks was flattened.
-- [ ] Three-stage fixed point reached (stage2 == stage3)
-- [ ] `scripts/verify_fixed_point_c.sh` or equivalent passes
+- [x] Stage2 binary produces correct IR ← **DONE 2026-04-04** (WrapNone bug in lower_let)
+- [x] Three-stage fixed point reached (stage2 == stage3) ← **DONE 2026-04-04** (78,676 lines, 0 diff)
+- [ ] `scripts/verify_fixed_point.sh` passes (automates the three-stage check)
 
 ---
 
