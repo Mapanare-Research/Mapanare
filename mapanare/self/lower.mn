@@ -104,7 +104,64 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         new_st_fn.lambda_vars = lv_fn
         return new_st_fn
     }
+    if dk == "extern_fn_def" {
+        return register_extern_fn(st, defn)
+    }
     return st
+}
+
+fn register_extern_fn(st: LowerState, defn: Definition) -> LowerState {
+    let abi: String = def_extern_abi(defn)
+    let fn_name: String = def_extern_name(defn)
+    let params: List<Param> = def_extern_params(defn)
+    let ret_opt: Option<TypeExpr> = def_extern_return_type(defn)
+
+    // Resolve return type
+    let ret_ty: MIRType = resolve_return_type_checked(st, ret_opt)
+
+    // Register function return type in lambda_vars (for call resolution)
+    let ret_key: String = "__ret__" + fn_name
+    let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+    let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
+    let mut s: LowerState = st
+    let mut lv: List<LambdaEntry> = s.lambda_vars
+    lv.push(entry)
+    s.lambda_vars = lv
+
+    // Resolve parameter types
+    let mut param_types: List<MIRType> = []
+    let mut i: Int = 0
+    for _ in 0..50 {
+        if i >= len(params) {
+            // Push ExternFnInfo to module.extern_fns
+            let info: ExternFnInfo = new_extern_fn_info(abi, "", fn_name, param_types, ret_ty)
+            let mut mod_tmp: MIRModule = s.module
+            let mut ext_list: List<ExternFnInfo> = mod_tmp.extern_fns
+            ext_list.push(info)
+            mod_tmp.extern_fns = ext_list
+            s.module = mod_tmp
+            return s
+        }
+        let p: Param = params[i]
+        match p.type_annotation {
+            Some(te) => {
+                param_types.push(lower_resolve_type_checked(s, te))
+            },
+            _ => {
+                param_types.push(mir_unknown())
+            }
+        }
+        i = i + 1
+    }
+
+    // Fallback: push whatever we have
+    let info_fb: ExternFnInfo = new_extern_fn_info(abi, "", fn_name, param_types, ret_ty)
+    let mut mod_fb: MIRModule = s.module
+    let mut ext_fb: List<ExternFnInfo> = mod_fb.extern_fns
+    ext_fb.push(info_fb)
+    mod_fb.extern_fns = ext_fb
+    s.module = mod_fb
+    return s
 }
 
 fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
@@ -1082,6 +1139,31 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             let dr_err: LowerResult = make_value(st, res_ty_err, "t")
             let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, args[0]))
             return new_lower_result(dr_err.value, s_err)
+        }
+    }
+
+    // Handle __new_StructName calls (from `new StructName { ... }` syntax)
+    if fn_name.starts_with("__new_") {
+        let struct_name: String = fn_name.substr(6, len(fn_name) - 6)
+        if is_struct_name(st, struct_name) {
+            let field_names: List<String> = get_struct_field_names(st, struct_name)
+            let struct_ty: MIRType = mir_struct(struct_name)
+            let mut field_pairs: List<FieldPair> = []
+            let mut fi: Int = 0
+            let nfn: Int = len(field_names)
+            let na: Int = len(args)
+            for _ in 0..200 {
+                if fi < nfn {
+                    if fi < na {
+                        let fp: FieldPair = new_field_pair(field_names[fi], args[fi])
+                        field_pairs.push(fp)
+                        fi = fi + 1
+                    }
+                }
+            }
+            let dr_new: LowerResult = make_value(st, struct_ty, "t")
+            let s_new: LowerState = emit_instr(dr_new.state, Instruction::StructInit(dr_new.value, struct_ty, field_pairs))
+            return new_lower_result(dr_new.value, s_new)
         }
     }
 

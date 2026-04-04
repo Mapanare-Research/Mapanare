@@ -1,5 +1,5 @@
 // main.mn — Compiler driver for the Mapanare self-hosted compiler.
-// Wires the pipeline: source -> parse -> check -> lower -> emit_llvm -> LLVM IR.
+// Wires the pipeline: source -> parse -> resolve imports -> lower -> emit_llvm -> LLVM IR.
 
 import self::ast
 import self::mir
@@ -28,7 +28,144 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 3.3.0"
+    return "mapanare 3.4.0"
+}
+
+// ---------------------------------------------------------------------------
+// Path helpers for module resolution
+// ---------------------------------------------------------------------------
+
+// Extract directory part of a path: "/foo/bar/baz.mn" -> "/foo/bar/"
+// Returns "" if no directory separator found.
+// Scans from end to find last separator (avoids nested-assign MIR bug).
+fn dir_of_path(path: String) -> String {
+    let slen: Int = len(path)
+    if slen == 0 { return "" }
+    let mut i: Int = slen - 1
+    for _ in 0..4096 {
+        if i < 0 { return "" }
+        let ch: String = path.substr(i, 1)
+        if ch == "/" {
+            return path.substr(0, i + 1)
+        }
+        i = i - 1
+    }
+    return ""
+}
+
+// Join import path segments with "/": ["stdlib", "math"] -> "stdlib/math"
+fn join_import_path(segments: List<String>) -> String {
+    let mut result: String = ""
+    let mut i: Int = 0
+    let n: Int = len(segments)
+    for _ in 0..20 {
+        if i >= n { return result }
+        if i > 0 {
+            result = result + "/" + segments[i]
+        } else {
+            result = segments[i]
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// Resolve an import path to a file path, reading to check existence.
+// Search order: source_dir/path.mn, source_dir/path/mod.mn,
+//               CWD/path.mn, CWD/path/mod.mn
+// Returns "" if not found.
+fn resolve_import_file(segments: List<String>, source_dir: String) -> String {
+    let rel: String = join_import_path(segments)
+    // Try relative to source directory
+    let candidate1: String = source_dir + rel + ".mn"
+    let content1: String = __mn_file_read_or_empty(candidate1)
+    if len(content1) > 0 { return candidate1 }
+    let candidate2: String = source_dir + rel + "/mod.mn"
+    let content2: String = __mn_file_read_or_empty(candidate2)
+    if len(content2) > 0 { return candidate2 }
+    // Try relative to CWD (for stdlib and project-level imports)
+    let candidate3: String = rel + ".mn"
+    let content3: String = __mn_file_read_or_empty(candidate3)
+    if len(content3) > 0 { return candidate3 }
+    let candidate4: String = rel + "/mod.mn"
+    let content4: String = __mn_file_read_or_empty(candidate4)
+    if len(content4) > 0 { return candidate4 }
+    return ""
+}
+
+// ---------------------------------------------------------------------------
+// Import resolution — read imported files, parse, merge definitions
+// ---------------------------------------------------------------------------
+
+// Resolve all imports in a program. Reads imported files, parses them,
+// and prepends their definitions to the program.
+// visited tracks already-resolved files to prevent circular imports.
+fn resolve_imports(program: Program, filename: String, visited: List<String>) -> Program {
+    let source_dir: String = dir_of_path(filename)
+    let mut all_defs: List<Definition> = []
+    let mut vis: List<String> = visited
+    vis.push(filename)
+
+    // First pass: find and resolve import definitions
+    let mut i: Int = 0
+    let ndefs: Int = len(program.definitions)
+    for _ in 0..2000 {
+        if i >= ndefs {
+            // Append the original non-import definitions
+            let mut j: Int = 0
+            for _ in 0..10000 {
+                if j >= ndefs { return start(all_defs) }
+                let defn_j: Definition = program.definitions[j]
+                if def_kind(defn_j) != "import_def" {
+                    all_defs.push(defn_j)
+                }
+                j = j + 1
+            }
+            return start(all_defs)
+        }
+        let defn: Definition = program.definitions[i]
+        if def_kind(defn) == "import_def" {
+            let imp_path: List<String> = def_import_path(defn)
+            if len(imp_path) > 0 {
+                let resolved_file: String = resolve_import_file(imp_path, source_dir)
+                if len(resolved_file) > 0 {
+                    // Check if already visited (circular import guard)
+                    if is_visited(vis, resolved_file) == false {
+                        vis.push(resolved_file)
+                        let imp_source: String = __mn_file_read_or_empty(resolved_file)
+                        if len(imp_source) > 0 {
+                            let imp_program: Program = parse(imp_source, resolved_file)
+                            // Recursively resolve imports in the imported module
+                            let resolved_imp: Program = resolve_imports(imp_program, resolved_file, vis)
+                            // Prepend imported definitions (skip import defs themselves)
+                            let mut k: Int = 0
+                            let nimp: Int = len(resolved_imp.definitions)
+                            for _ in 0..10000 {
+                                if k >= nimp { k = nimp + 1 }
+                                if k < nimp {
+                                    all_defs.push(resolved_imp.definitions[k])
+                                    k = k + 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return start(all_defs)
+}
+
+fn is_visited(visited: List<String>, path: String) -> Bool {
+    let mut i: Int = 0
+    let n: Int = len(visited)
+    for _ in 0..100 {
+        if i >= n { return false }
+        if visited[i] == path { return true }
+        i = i + 1
+    }
+    return false
 }
 
 // ---------------------------------------------------------------------------
@@ -39,16 +176,12 @@ fn compile(source: String, filename: String) -> CompileResult {
     // Stage 1: parse
     let program: Program = parse(source, filename)
 
-    // Stage 2: semantic analysis (skipped — the self-hosted semantic checker
-    // produces false positives for cross-module patterns; lowering handles
-    // type resolution independently via the MIR type system)
-    // let errors: List<SemanticError> = check(program, filename)
-    // if len(errors) > 0 {
-    //     return new_compile_result(false, "", errors)
-    // }
+    // Stage 2: resolve imports — read imported files, parse, merge definitions
+    let visited: List<String> = []
+    let resolved: Program = resolve_imports(program, filename, visited)
 
     // Stage 3: lower AST to MIR
-    let mir_module: MIRModule = lower(program, filename)
+    let mir_module: MIRModule = lower(resolved, filename)
 
     // Stage 4: emit LLVM IR from MIR
     let ir_text: String = emit_mir_module(mir_module, filename)

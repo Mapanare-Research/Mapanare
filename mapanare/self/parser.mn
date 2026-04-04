@@ -370,6 +370,7 @@ fn is_definition_start(tt: String) -> Bool {
     if tt == "KW_PIPE" { return true }
     if tt == "KW_TYPE" { return true }
     if tt == "KW_IMPL" { return true }
+    if tt == "KW_EXTERN" { return true }
     if tt == "AT" { return true }
     return false
 }
@@ -477,6 +478,7 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
         return parse_type_alias_def(tokens, pos, filename)
     }
     if tt == "KW_IMPL" { return parse_impl_def(tokens, pos, filename) }
+    if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
     // Fallback: skip unknown token
@@ -511,6 +513,58 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 
     let trail_items: List<String> = []
     return new_def_result(Definition::ImportDef(path, trail_items), p)
+}
+
+// ---------------------------------------------------------------------------
+// Extern "C" function declaration
+// ---------------------------------------------------------------------------
+
+fn parse_extern_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+    // extern "C" fn name(params) -> RetType
+    let mut p: Int = pos + 1
+    // Skip the "C" string literal (ABI specifier)
+    let abi: String = peek_value(tokens, p)
+    p = p + 1
+    p = expect(tokens, p, "KW_FN")
+
+    let name: String = peek_value(tokens, p)
+    p = p + 1
+
+    // Parse parameters
+    p = expect(tokens, p, "LPAREN")
+    let mut params: List<Param> = []
+    if peek_type(tokens, p) != "RPAREN" {
+        let pr: ParamResult = parse_param(tokens, p, filename)
+        params.push(pr.param)
+        p = pr.pos
+        for _ in 0..50 {
+            if peek_type(tokens, p) != "COMMA" {
+                p = expect(tokens, p, "RPAREN")
+                let mut ret_type: Option<TypeExpr> = none
+                if peek_type(tokens, p) == "ARROW" {
+                    p = p + 1
+                    let tr: TypeResult = parse_type_expr(tokens, p, filename)
+                    ret_type = Some(tr.type_expr)
+                    p = tr.pos
+                }
+                return new_def_result(Definition::ExternFnDef(abi, name, params, ret_type), p)
+            }
+            p = p + 1
+            let pr2: ParamResult = parse_param(tokens, p, filename)
+            params.push(pr2.param)
+            p = pr2.pos
+        }
+    }
+    p = expect(tokens, p, "RPAREN")
+
+    let mut ret_type: Option<TypeExpr> = none
+    if peek_type(tokens, p) == "ARROW" {
+        p = p + 1
+        let tr: TypeResult = parse_type_expr(tokens, p, filename)
+        ret_type = Some(tr.type_expr)
+        p = tr.pos
+    }
+    return new_def_result(Definition::ExternFnDef(abi, name, params, ret_type), p)
 }
 
 // ---------------------------------------------------------------------------

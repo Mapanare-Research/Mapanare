@@ -2,7 +2,7 @@
 
 > The compiler works. Now make the language useful.
 
-**Status:** PLANNED
+**Status:** IN PROGRESS — Phase 1+2 complete
 **Author:** Juan Denis
 **Date:** April 2026
 **Breaking:** No
@@ -96,11 +96,11 @@ compiler. These are multi-module packages with cross-file imports.
 
 ## Success Criteria
 
-- [ ] Self-hosted compiler resolves `import` statements
-- [ ] `stdlib/math.mn` compiles through `./mnc`
-- [ ] `stdlib/fs.mn` compiles and links with C runtime
-- [ ] `stdlib/encoding/json.mn` compiles
-- [ ] An end-to-end program using stdlib compiles and runs
+- [x] Self-hosted compiler resolves `import` statements
+- [x] `stdlib/math.mn` compiles through `./mnc` (42 functions, 16 extern C, llvm-as VALID)
+- [x] `stdlib/fs.mn` compiles through `./mnc` (33 functions, llvm-as VALID after list concat fixes)
+- [ ] `stdlib/encoding/json.mn` compiles (depends on text::string_utils import chain)
+- [x] An end-to-end program using stdlib compiles and runs
 - [ ] Build script compiles stdlib into a linkable library
 
 ---

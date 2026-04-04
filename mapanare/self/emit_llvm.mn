@@ -402,6 +402,16 @@ fn is_enum_type(st: EmitState, name: String) -> Bool {
     return false
 }
 
+fn is_struct_type(st: EmitState, name: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= len(st.structs) { return false }
+        if st.structs[i].name == name { return true }
+        i = i + 1
+    }
+    return false
+}
+
 // Compute size of an LLVM type in i64 units (8-byte slots)
 fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
     let resolved: String = resolve_mir_type(ty)
@@ -1379,6 +1389,19 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
         let elem_name: String = args[1].name
         let mut elem_ty: String = resolve_type(st, args[1].ty)
         if elem_ty == "i64" { elem_ty = resolve_mir_type(args[1].ty) }
+        // If type is still i64 but the MIR type has a struct/enum name,
+        // use the named type. This handles struct-in-list push where the
+        // lowerer's type info doesn't propagate through method dispatch.
+        if elem_ty == "i64" {
+            if len(args[1].ty.name) > 0 {
+                if is_struct_type(st, args[1].ty.name) {
+                    elem_ty = "%struct." + args[1].ty.name
+                }
+                if is_enum_type(st, args[1].ty.name) {
+                    elem_ty = "%enum." + args[1].ty.name
+                }
+            }
+        }
         let cnt: String = toString(s.counter)
         s.counter = s.counter + 1
 

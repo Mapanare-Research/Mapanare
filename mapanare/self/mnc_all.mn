@@ -235,7 +235,8 @@ enum Definition {
     TypeAlias(String, TypeExpr),
     ImplDef(String, List<FnDefData>),
     ImportDef(List<String>, List<String>),
-    ExportDef(Option<Definition>, List<String>)
+    ExportDef(Option<Definition>, List<String>),
+    ExternFnDef(String, String, List<Param>, Option<TypeExpr>)
 }
 
 // ---------------------------------------------------------------------------
@@ -599,7 +600,8 @@ pub fn def_kind(d: Definition) -> String {
         TypeAlias(_, _) => { return "type_alias" },
         ImplDef(_, _) => { return "impl_def" },
         ImportDef(_, _) => { return "import_def" },
-        ExportDef(_, _) => { return "export_def" }
+        ExportDef(_, _) => { return "export_def" },
+        ExternFnDef(_, _, _, _) => { return "extern_fn_def" }
     }
 }
 
@@ -641,6 +643,18 @@ pub fn def_type_alias_name(d: Definition) -> String {
 }
 pub fn def_type_alias_type(d: Definition) -> TypeExpr {
     match d { TypeAlias(_, t) => { return t }, _ => { return TypeExpr::Named("Void") } }
+}
+pub fn def_extern_abi(d: Definition) -> String {
+    match d { ExternFnDef(abi, _, _, _) => { return abi }, _ => { return "" } }
+}
+pub fn def_extern_name(d: Definition) -> String {
+    match d { ExternFnDef(_, n, _, _) => { return n }, _ => { return "" } }
+}
+pub fn def_extern_params(d: Definition) -> List<Param> {
+    match d { ExternFnDef(_, _, p, _) => { return p }, _ => { let empty: List<Param> = []; return empty } }
+}
+pub fn def_extern_return_type(d: Definition) -> Option<TypeExpr> {
+    match d { ExternFnDef(_, _, _, r) => { return r }, _ => { return none } }
 }
 
 // ---- TypeExpr kind + accessors --------------------------------------------
@@ -1692,6 +1706,7 @@ fn is_definition_start(tt: String) -> Bool {
     if tt == "KW_PIPE" { return true }
     if tt == "KW_TYPE" { return true }
     if tt == "KW_IMPL" { return true }
+    if tt == "KW_EXTERN" { return true }
     if tt == "AT" { return true }
     return false
 }
@@ -1799,6 +1814,7 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
         return parse_type_alias_def(tokens, pos, filename)
     }
     if tt == "KW_IMPL" { return parse_impl_def(tokens, pos, filename) }
+    if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
     // Fallback: skip unknown token
@@ -1833,6 +1849,58 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 
     let trail_items: List<String> = []
     return new_def_result(Definition::ImportDef(path, trail_items), p)
+}
+
+// ---------------------------------------------------------------------------
+// Extern "C" function declaration
+// ---------------------------------------------------------------------------
+
+fn parse_extern_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+    // extern "C" fn name(params) -> RetType
+    let mut p: Int = pos + 1
+    // Skip the "C" string literal (ABI specifier)
+    let abi: String = peek_value(tokens, p)
+    p = p + 1
+    p = expect(tokens, p, "KW_FN")
+
+    let name: String = peek_value(tokens, p)
+    p = p + 1
+
+    // Parse parameters
+    p = expect(tokens, p, "LPAREN")
+    let mut params: List<Param> = []
+    if peek_type(tokens, p) != "RPAREN" {
+        let pr: ParamResult = parse_param(tokens, p, filename)
+        params.push(pr.param)
+        p = pr.pos
+        for _ in 0..50 {
+            if peek_type(tokens, p) != "COMMA" {
+                p = expect(tokens, p, "RPAREN")
+                let mut ret_type: Option<TypeExpr> = none
+                if peek_type(tokens, p) == "ARROW" {
+                    p = p + 1
+                    let tr: TypeResult = parse_type_expr(tokens, p, filename)
+                    ret_type = Some(tr.type_expr)
+                    p = tr.pos
+                }
+                return new_def_result(Definition::ExternFnDef(abi, name, params, ret_type), p)
+            }
+            p = p + 1
+            let pr2: ParamResult = parse_param(tokens, p, filename)
+            params.push(pr2.param)
+            p = pr2.pos
+        }
+    }
+    p = expect(tokens, p, "RPAREN")
+
+    let mut ret_type: Option<TypeExpr> = none
+    if peek_type(tokens, p) == "ARROW" {
+        p = p + 1
+        let tr: TypeResult = parse_type_expr(tokens, p, filename)
+        ret_type = Some(tr.type_expr)
+        p = tr.pos
+    }
+    return new_def_result(Definition::ExternFnDef(abi, name, params, ret_type), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -6397,7 +6465,64 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         new_st_fn.lambda_vars = lv_fn
         return new_st_fn
     }
+    if dk == "extern_fn_def" {
+        return register_extern_fn(st, defn)
+    }
     return st
+}
+
+fn register_extern_fn(st: LowerState, defn: Definition) -> LowerState {
+    let abi: String = def_extern_abi(defn)
+    let fn_name: String = def_extern_name(defn)
+    let params: List<Param> = def_extern_params(defn)
+    let ret_opt: Option<TypeExpr> = def_extern_return_type(defn)
+
+    // Resolve return type
+    let ret_ty: MIRType = resolve_return_type_checked(st, ret_opt)
+
+    // Register function return type in lambda_vars (for call resolution)
+    let ret_key: String = "__ret__" + fn_name
+    let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+    let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
+    let mut s: LowerState = st
+    let mut lv: List<LambdaEntry> = s.lambda_vars
+    lv.push(entry)
+    s.lambda_vars = lv
+
+    // Resolve parameter types
+    let mut param_types: List<MIRType> = []
+    let mut i: Int = 0
+    for _ in 0..50 {
+        if i >= len(params) {
+            // Push ExternFnInfo to module.extern_fns
+            let info: ExternFnInfo = new_extern_fn_info(abi, "", fn_name, param_types, ret_ty)
+            let mut mod_tmp: MIRModule = s.module
+            let mut ext_list: List<ExternFnInfo> = mod_tmp.extern_fns
+            ext_list.push(info)
+            mod_tmp.extern_fns = ext_list
+            s.module = mod_tmp
+            return s
+        }
+        let p: Param = params[i]
+        match p.type_annotation {
+            Some(te) => {
+                param_types.push(lower_resolve_type_checked(s, te))
+            },
+            _ => {
+                param_types.push(mir_unknown())
+            }
+        }
+        i = i + 1
+    }
+
+    // Fallback: push whatever we have
+    let info_fb: ExternFnInfo = new_extern_fn_info(abi, "", fn_name, param_types, ret_ty)
+    let mut mod_fb: MIRModule = s.module
+    let mut ext_fb: List<ExternFnInfo> = mod_fb.extern_fns
+    ext_fb.push(info_fb)
+    mod_fb.extern_fns = ext_fb
+    s.module = mod_fb
+    return s
 }
 
 fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
@@ -7375,6 +7500,31 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             let dr_err: LowerResult = make_value(st, res_ty_err, "t")
             let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, args[0]))
             return new_lower_result(dr_err.value, s_err)
+        }
+    }
+
+    // Handle __new_StructName calls (from `new StructName { ... }` syntax)
+    if fn_name.starts_with("__new_") {
+        let struct_name: String = fn_name.substr(6, len(fn_name) - 6)
+        if is_struct_name(st, struct_name) {
+            let field_names: List<String> = get_struct_field_names(st, struct_name)
+            let struct_ty: MIRType = mir_struct(struct_name)
+            let mut field_pairs: List<FieldPair> = []
+            let mut fi: Int = 0
+            let nfn: Int = len(field_names)
+            let na: Int = len(args)
+            for _ in 0..200 {
+                if fi < nfn {
+                    if fi < na {
+                        let fp: FieldPair = new_field_pair(field_names[fi], args[fi])
+                        field_pairs.push(fp)
+                        fi = fi + 1
+                    }
+                }
+            }
+            let dr_new: LowerResult = make_value(st, struct_ty, "t")
+            let s_new: LowerState = emit_instr(dr_new.state, Instruction::StructInit(dr_new.value, struct_ty, field_pairs))
+            return new_lower_result(dr_new.value, s_new)
         }
     }
 
@@ -9726,6 +9876,16 @@ fn is_enum_type(st: EmitState, name: String) -> Bool {
     return false
 }
 
+fn is_struct_type(st: EmitState, name: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= len(st.structs) { return false }
+        if st.structs[i].name == name { return true }
+        i = i + 1
+    }
+    return false
+}
+
 // Compute size of an LLVM type in i64 units (8-byte slots)
 fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
     let resolved: String = resolve_mir_type(ty)
@@ -10703,6 +10863,19 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
         let elem_name: String = args[1].name
         let mut elem_ty: String = resolve_type(st, args[1].ty)
         if elem_ty == "i64" { elem_ty = resolve_mir_type(args[1].ty) }
+        // If type is still i64 but the MIR type has a struct/enum name,
+        // use the named type. This handles struct-in-list push where the
+        // lowerer's type info doesn't propagate through method dispatch.
+        if elem_ty == "i64" {
+            if len(args[1].ty.name) > 0 {
+                if is_struct_type(st, args[1].ty.name) {
+                    elem_ty = "%struct." + args[1].ty.name
+                }
+                if is_enum_type(st, args[1].ty.name) {
+                    elem_ty = "%enum." + args[1].ty.name
+                }
+            }
+        }
         let cnt: String = toString(s.counter)
         s.counter = s.counter + 1
 
@@ -12358,7 +12531,7 @@ pub fn emit_finalize(st: EmitState) -> String {
 
 // ===== main.mn =====
 // main.mn — Compiler driver for the Mapanare self-hosted compiler.
-// Wires the pipeline: source -> parse -> check -> lower -> emit_llvm -> LLVM IR.
+// Wires the pipeline: source -> parse -> resolve imports -> lower -> emit_llvm -> LLVM IR.
 
 
 // ---------------------------------------------------------------------------
@@ -12380,7 +12553,144 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 3.3.0"
+    return "mapanare 3.4.0"
+}
+
+// ---------------------------------------------------------------------------
+// Path helpers for module resolution
+// ---------------------------------------------------------------------------
+
+// Extract directory part of a path: "/foo/bar/baz.mn" -> "/foo/bar/"
+// Returns "" if no directory separator found.
+// Scans from end to find last separator (avoids nested-assign MIR bug).
+fn dir_of_path(path: String) -> String {
+    let slen: Int = len(path)
+    if slen == 0 { return "" }
+    let mut i: Int = slen - 1
+    for _ in 0..4096 {
+        if i < 0 { return "" }
+        let ch: String = path.substr(i, 1)
+        if ch == "/" {
+            return path.substr(0, i + 1)
+        }
+        i = i - 1
+    }
+    return ""
+}
+
+// Join import path segments with "/": ["stdlib", "math"] -> "stdlib/math"
+fn join_import_path(segments: List<String>) -> String {
+    let mut result: String = ""
+    let mut i: Int = 0
+    let n: Int = len(segments)
+    for _ in 0..20 {
+        if i >= n { return result }
+        if i > 0 {
+            result = result + "/" + segments[i]
+        } else {
+            result = segments[i]
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// Resolve an import path to a file path, reading to check existence.
+// Search order: source_dir/path.mn, source_dir/path/mod.mn,
+//               CWD/path.mn, CWD/path/mod.mn
+// Returns "" if not found.
+fn resolve_import_file(segments: List<String>, source_dir: String) -> String {
+    let rel: String = join_import_path(segments)
+    // Try relative to source directory
+    let candidate1: String = source_dir + rel + ".mn"
+    let content1: String = __mn_file_read_or_empty(candidate1)
+    if len(content1) > 0 { return candidate1 }
+    let candidate2: String = source_dir + rel + "/mod.mn"
+    let content2: String = __mn_file_read_or_empty(candidate2)
+    if len(content2) > 0 { return candidate2 }
+    // Try relative to CWD (for stdlib and project-level imports)
+    let candidate3: String = rel + ".mn"
+    let content3: String = __mn_file_read_or_empty(candidate3)
+    if len(content3) > 0 { return candidate3 }
+    let candidate4: String = rel + "/mod.mn"
+    let content4: String = __mn_file_read_or_empty(candidate4)
+    if len(content4) > 0 { return candidate4 }
+    return ""
+}
+
+// ---------------------------------------------------------------------------
+// Import resolution — read imported files, parse, merge definitions
+// ---------------------------------------------------------------------------
+
+// Resolve all imports in a program. Reads imported files, parses them,
+// and prepends their definitions to the program.
+// visited tracks already-resolved files to prevent circular imports.
+fn resolve_imports(program: Program, filename: String, visited: List<String>) -> Program {
+    let source_dir: String = dir_of_path(filename)
+    let mut all_defs: List<Definition> = []
+    let mut vis: List<String> = visited
+    vis.push(filename)
+
+    // First pass: find and resolve import definitions
+    let mut i: Int = 0
+    let ndefs: Int = len(program.definitions)
+    for _ in 0..2000 {
+        if i >= ndefs {
+            // Append the original non-import definitions
+            let mut j: Int = 0
+            for _ in 0..10000 {
+                if j >= ndefs { return start(all_defs) }
+                let defn_j: Definition = program.definitions[j]
+                if def_kind(defn_j) != "import_def" {
+                    all_defs.push(defn_j)
+                }
+                j = j + 1
+            }
+            return start(all_defs)
+        }
+        let defn: Definition = program.definitions[i]
+        if def_kind(defn) == "import_def" {
+            let imp_path: List<String> = def_import_path(defn)
+            if len(imp_path) > 0 {
+                let resolved_file: String = resolve_import_file(imp_path, source_dir)
+                if len(resolved_file) > 0 {
+                    // Check if already visited (circular import guard)
+                    if is_visited(vis, resolved_file) == false {
+                        vis.push(resolved_file)
+                        let imp_source: String = __mn_file_read_or_empty(resolved_file)
+                        if len(imp_source) > 0 {
+                            let imp_program: Program = parse(imp_source, resolved_file)
+                            // Recursively resolve imports in the imported module
+                            let resolved_imp: Program = resolve_imports(imp_program, resolved_file, vis)
+                            // Prepend imported definitions (skip import defs themselves)
+                            let mut k: Int = 0
+                            let nimp: Int = len(resolved_imp.definitions)
+                            for _ in 0..10000 {
+                                if k >= nimp { k = nimp + 1 }
+                                if k < nimp {
+                                    all_defs.push(resolved_imp.definitions[k])
+                                    k = k + 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return start(all_defs)
+}
+
+fn is_visited(visited: List<String>, path: String) -> Bool {
+    let mut i: Int = 0
+    let n: Int = len(visited)
+    for _ in 0..100 {
+        if i >= n { return false }
+        if visited[i] == path { return true }
+        i = i + 1
+    }
+    return false
 }
 
 // ---------------------------------------------------------------------------
@@ -12391,16 +12701,12 @@ fn compile(source: String, filename: String) -> CompileResult {
     // Stage 1: parse
     let program: Program = parse(source, filename)
 
-    // Stage 2: semantic analysis (skipped — the self-hosted semantic checker
-    // produces false positives for cross-module patterns; lowering handles
-    // type resolution independently via the MIR type system)
-    // let errors: List<SemanticError> = check(program, filename)
-    // if len(errors) > 0 {
-    //     return new_compile_result(false, "", errors)
-    // }
+    // Stage 2: resolve imports — read imported files, parse, merge definitions
+    let visited: List<String> = []
+    let resolved: Program = resolve_imports(program, filename, visited)
 
     // Stage 3: lower AST to MIR
-    let mir_module: MIRModule = lower(program, filename)
+    let mir_module: MIRModule = lower(resolved, filename)
 
     // Stage 4: emit LLVM IR from MIR
     let ir_text: String = emit_mir_module(mir_module, filename)

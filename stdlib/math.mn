@@ -390,7 +390,7 @@ fn sort_floats(values: List<Float>) -> List<Float> {
     pon mut arr: List<Float> = []
     pon mut k: Int = 0
     mien k < n {
-        arr = arr + [values[k]]
+        arr.push(values[k])
         k = k + 1
     }
     // Insertion sort

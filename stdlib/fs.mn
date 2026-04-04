@@ -515,10 +515,10 @@ pub fn list_dir(path: String) -> Result<List<DirEntry>, FsError> {
                     pon entry_name: String = line.substr(0, tab_pos)
                     pon entry_type: String = line.substr(tab_pos + 1, len(line))
                     pon entry_is_dir: Bool = entry_type == "D"
-                    entries = entries + [new DirEntry { name: entry_name, is_dir: entry_is_dir }]
+                    entries.push(new DirEntry { name: entry_name, is_dir: entry_is_dir })
                 } sino {
                     // No type indicator — treat as file
-                    entries = entries + [new DirEntry { name: line, is_dir: false }]
+                    entries.push(new DirEntry { name: line, is_dir: false })
                 }
             }
         }
@@ -556,9 +556,9 @@ pub fn walk(path: String) -> List<String> {
                 mien i < entry_count {
                     pon entry: DirEntry = entries[i]
                     pon full_path: String = current + "/" + entry.name
-                    result = result + [full_path]
+                    result.push(full_path)
                     si entry.is_dir {
-                        stack = stack + [full_path]
+                        stack.push(full_path)
                     }
                     i = i + 1
                 }
@@ -578,7 +578,7 @@ fn list_take(lst: List<String>, n: Int) -> List<String> {
     pon mut result: List<String> = []
     pon mut i: Int = 0
     mien i < n {
-        result = result + [lst[i]]
+        result.push(lst[i])
         i = i + 1
     }
     da result
@@ -626,21 +626,21 @@ fn split_lines(src: String) -> List<String> {
             // Check for \r\n
             si i + 1 < slen {
                 si src.char_at(i + 1) == "\n" {
-                    lines = lines + [current]
+                    lines.push(current)
                     current = ""
                     i = i + 2
                 } sino {
-                    lines = lines + [current]
+                    lines.push(current)
                     current = ""
                     i = i + 1
                 }
             } sino {
-                lines = lines + [current]
+                lines.push(current)
                 current = ""
                 i = i + 1
             }
         } sino si c == "\n" {
-            lines = lines + [current]
+            lines.push(current)
             current = ""
             i = i + 1
         } sino {
@@ -651,7 +651,7 @@ fn split_lines(src: String) -> List<String> {
 
     // Add final line if there is remaining content
     si len(current) > 0 {
-        lines = lines + [current]
+        lines.push(current)
     }
 
     da lines

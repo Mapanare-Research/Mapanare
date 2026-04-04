@@ -231,7 +231,8 @@ enum Definition {
     TypeAlias(String, TypeExpr),
     ImplDef(String, List<FnDefData>),
     ImportDef(List<String>, List<String>),
-    ExportDef(Option<Definition>, List<String>)
+    ExportDef(Option<Definition>, List<String>),
+    ExternFnDef(String, String, List<Param>, Option<TypeExpr>)
 }
 
 // ---------------------------------------------------------------------------
@@ -595,7 +596,8 @@ pub fn def_kind(d: Definition) -> String {
         TypeAlias(_, _) => { return "type_alias" },
         ImplDef(_, _) => { return "impl_def" },
         ImportDef(_, _) => { return "import_def" },
-        ExportDef(_, _) => { return "export_def" }
+        ExportDef(_, _) => { return "export_def" },
+        ExternFnDef(_, _, _, _) => { return "extern_fn_def" }
     }
 }
 
@@ -637,6 +639,18 @@ pub fn def_type_alias_name(d: Definition) -> String {
 }
 pub fn def_type_alias_type(d: Definition) -> TypeExpr {
     match d { TypeAlias(_, t) => { return t }, _ => { return TypeExpr::Named("Void") } }
+}
+pub fn def_extern_abi(d: Definition) -> String {
+    match d { ExternFnDef(abi, _, _, _) => { return abi }, _ => { return "" } }
+}
+pub fn def_extern_name(d: Definition) -> String {
+    match d { ExternFnDef(_, n, _, _) => { return n }, _ => { return "" } }
+}
+pub fn def_extern_params(d: Definition) -> List<Param> {
+    match d { ExternFnDef(_, _, p, _) => { return p }, _ => { let empty: List<Param> = []; return empty } }
+}
+pub fn def_extern_return_type(d: Definition) -> Option<TypeExpr> {
+    match d { ExternFnDef(_, _, _, r) => { return r }, _ => { return none } }
 }
 
 // ---- TypeExpr kind + accessors --------------------------------------------
