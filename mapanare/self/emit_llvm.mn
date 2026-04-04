@@ -2296,6 +2296,19 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
             if ret_ty == "void" {
                 return emit_line(s, emit_call_void(fn_name, args_str))
             }
+            // sret for unregistered functions with large struct returns
+            if is_byref_type(ret_ty) {
+                let sret_b: String = "%sret" + toString(s.counter)
+                s.counter = s.counter + 1
+                s = emit_line(s, "  " + sret_b + " = alloca " + ret_ty)
+                s = emit_line(s, "  store " + ret_ty + " zeroinitializer, ptr " + sret_b)
+                let sret_arg_b: String = "ptr sret(" + ret_ty + ") " + sret_b
+                let mut full_args_b: String = sret_arg_b
+                if len(args_str) > 0 { full_args_b = sret_arg_b + ", " + args_str }
+                s = emit_line(s, "  call void @" + fn_name + "(" + full_args_b + ")")
+                s = emit_line(s, "  " + dn + " = load " + ret_ty + ", ptr " + sret_b)
+                return s
+            }
             s = emit_line(s, emit_call_ir(dn, ret_ty, fn_name, args_str))
             return s
         }
