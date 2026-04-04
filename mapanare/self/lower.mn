@@ -2317,6 +2317,17 @@ fn get_literal_value(expr: Expr) -> String {
 // Bind pattern fields for a constructor pattern like Rect(w, h).
 // Extracted from inline loop to avoid break-inside-if-inside-for bug.
 // Uses return-based iteration (return works, break doesn't).
+fn has_non_zero_phi(entries: List<PhiEntry>) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..200 {
+        if i >= len(entries) { return false }
+        let pe: PhiEntry = entries[i]
+        if pe.val.name != "zeroinitializer" { return true }
+        i = i + 1
+    }
+    return false
+}
+
 fn bind_arm_pattern(st: LowerState, subject_val: Value, pat: Pattern) -> LowerState {
     let pk: String = pattern_kind(pat)
     if pk == "constructor" {
