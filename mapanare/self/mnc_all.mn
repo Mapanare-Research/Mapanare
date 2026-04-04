@@ -5904,6 +5904,13 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
 // ---------------------------------------------------------------------------
 
 fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState {
+    // Check if the value expression is a None literal BEFORE lowering.
+    // This flag is used later to decide whether to re-wrap with typed WrapNone.
+    let mut is_none_literal: Bool = false
+    match value {
+        NoneLit => { is_none_literal = true },
+        _ => {}
+    }
     let r: LowerResult = lower_expr(st, value)
     let mut s: LowerState = r.state
 
@@ -5946,7 +5953,12 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeE
 
     // For None stored to a typed Option alloca: re-emit WrapNone with the
     // declared type so the value and alloca types match.
-    if val_ty.kind == "option" && r.value.ty.kind == "option" && len(val_ty.args) > 0 && len(r.value.ty.args) == 0 {
+    // ONLY do this for actual None literals (value name contains "tnone" or
+    // is the WrapNone result), NOT for function call results that happen to
+    // have untyped Option return. Check: if the expression was NoneLit, the
+    // value name starts with "%t" and has no "_val" (it's a direct constant,
+    // not a loaded variable or call result).
+    if is_none_literal && val_ty.kind == "option" && len(val_ty.args) > 0 {
         let typed_none_r: LowerResult = make_value(s, val_ty, "tnone")
         s = emit_instr(typed_none_r.state, Instruction::WrapNone(typed_none_r.value, val_ty))
         val = typed_none_r.value
