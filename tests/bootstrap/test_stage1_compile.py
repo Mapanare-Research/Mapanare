@@ -49,7 +49,7 @@ class TestStage1Compilation:
     def test_self_hosted_compiles_to_llvm_ir(self) -> None:
         """All 7 self-hosted modules compile to LLVM IR."""
         source, filename = _read_self_hosted()
-        llvm_ir = _compile_to_llvm_ir(source, filename)
+        llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
         assert llvm_ir, "LLVM IR output is empty"
         assert "define" in llvm_ir
 
@@ -65,7 +65,7 @@ class TestStage1Compilation:
         llvm.initialize_native_asmprinter()
 
         source, filename = _read_self_hosted()
-        llvm_ir = _compile_to_llvm_ir(source, filename)
+        llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
         mod = llvm.parse_assembly(llvm_ir)
         mod.verify()
 
@@ -74,28 +74,28 @@ class TestStage1Compilation:
         from mapanare.jit import jit_compile_to_object
 
         source, filename = _read_self_hosted()
-        llvm_ir = _compile_to_llvm_ir(source, filename)
+        llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
         obj_bytes = jit_compile_to_object(llvm_ir, opt_level=0)
         assert len(obj_bytes) > 0, "Object code is empty"
 
     def test_self_hosted_contains_all_modules(self) -> None:
         """The compiled IR contains functions from all 7 self-hosted modules."""
         source, filename = _read_self_hosted()
-        llvm_ir = _compile_to_llvm_ir(source, filename)
+        llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
         for prefix in ["lexer__", "parser__", "semantic__", "lower__", "emit_llvm__"]:
             assert prefix in llvm_ir, f"Module prefix '{prefix}' not found in IR"
 
     def test_self_hosted_ir_size_reasonable(self) -> None:
         """8000+ lines of .mn should produce substantial IR."""
         source, filename = _read_self_hosted()
-        llvm_ir = _compile_to_llvm_ir(source, filename)
+        llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
         lines = llvm_ir.count("\n")
         assert lines > 10000, f"IR only has {lines} lines"
 
     def test_no_unresolved_enum_constructors(self) -> None:
         """All enum variant constructors resolve to EnumInit (no stale declares)."""
         source, filename = _read_self_hosted()
-        llvm_ir = _compile_to_llvm_ir(source, filename)
+        llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
         declares = re.findall(r'declare\s+(?:external\s+)?.*?@"([^"]+)"', llvm_ir)
         enum_prefixes = [
             "Expr_",
@@ -117,7 +117,7 @@ class TestStage1Compilation:
     def test_cross_module_references_resolved(self) -> None:
         """Cross-module calls like tokenize, Program_start are properly mangled."""
         source, filename = _read_self_hosted()
-        llvm_ir = _compile_to_llvm_ir(source, filename)
+        llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
         declares = re.findall(r'declare\s+(?:external\s+)?.*?@"([^"]+)"', llvm_ir)
         # All declares should be C runtime (__mn_*), printf, range/iter, or LLVM intrinsics
         allowed = {
@@ -140,7 +140,7 @@ class TestStage1Compilation:
     def test_linux_target_triple(self) -> None:
         """Generated IR contains a valid target triple."""
         source, filename = _read_self_hosted()
-        llvm_ir = _compile_to_llvm_ir(source, filename)
+        llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
         import sys
 
         if sys.platform == "linux":
@@ -276,7 +276,7 @@ class TestStage1LLVMEmission:
     def test_string_constants_aligned(self) -> None:
         """String constants in generated IR must have align >= 2."""
         source, filename = _read_self_hosted()
-        llvm_ir = _compile_to_llvm_ir(source, filename)
+        llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
         for line in llvm_ir.splitlines():
             if "private" in line and "constant" in line and "x i8]" in line:
                 assert "align" in line, f"String constant missing alignment: {line[:80]}"

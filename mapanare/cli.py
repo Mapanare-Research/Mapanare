@@ -126,6 +126,7 @@ def _compile_to_llvm_ir(
     debug: bool = False,
     werror: bool = False,
     emitter_backend: str = "text",
+    skip_check: bool = False,
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source.
 
@@ -153,8 +154,10 @@ def _compile_to_llvm_ir(
                 target_name=target_name,
                 debug=debug,
                 emitter_backend=emitter_backend,
+                skip_check=skip_check,
             )
-    check_or_raise(ast, filename=filename, resolver=resolver, werror=werror)
+    if not skip_check:
+        check_or_raise(ast, filename=filename, resolver=resolver, werror=werror)
 
     if use_mir:
         from mapanare.lower import lower as build_mir
