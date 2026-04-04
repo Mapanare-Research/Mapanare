@@ -84,20 +84,10 @@ fn new_decode_result(value: JsonValue, pos: Int, line: Int, col: Int) -> DecodeR
 // ---------------------------------------------------------------------------
 
 fn is_json_digit(ch: String) -> Bool {
-    da string_utils.is_digit(ch)
+    da is_digit(ch)
 }
 
-fn is_hex(ch: String) -> Bool {
-    da string_utils.is_hex(ch)
-}
-
-fn digit_value(ch: String) -> Int {
-    da string_utils.digit_value(ch)
-}
-
-fn hex_digit_value(ch: String) -> Int {
-    da string_utils.hex_digit_value_or_zero(ch)
-}
+// is_hex, digit_value, hex_digit_value imported from text::string_utils
 
 // ---------------------------------------------------------------------------
 // Whitespace skipper (Task 9)
@@ -109,16 +99,32 @@ tipo SkipResult {
     col: Int
 }
 
-fn skip_whitespace(input: String, pos: Int, line: Int, col: Int) -> SkipResult {
-    pon slen: Int = len(input)
-    pon mut p: Int = pos
-    pon mut ln: Int = line
-    pon mut c: Int = col
-    mien p < slen {
-        pon ch: String = input.char_at(p)
-        si ch == " " { p = p + 1; c = c + 1 } sino { si ch == "\t" { p = p + 1; c = c + 1 } sino { si ch == "\r" { p = p + 1; c = c + 1 } sino { si ch == "\n" { p = p + 1; ln = ln + 1; c = 1 } sino { da new SkipResult { pos: p, line: ln, col: c } } } } }
+fn skip_whitespace(src: String, pos: Int, line: Int, col: Int) -> SkipResult {
+    let slen: Int = len(src)
+    let mut p: Int = pos
+    let mut ln: Int = line
+    let mut c: Int = col
+    for _ in 0..1000000 {
+        if p >= slen { return new SkipResult { pos: p, line: ln, col: c } }
+        let ch: String = src.char_at(p)
+        if ch == " " {
+            p = p + 1
+            c = c + 1
+        } else { if ch == "\t" {
+            p = p + 1
+            c = c + 1
+        } else { if ch == "\r" {
+            p = p + 1
+            c = c + 1
+        } else { if ch == "\n" {
+            p = p + 1
+            ln = ln + 1
+            c = 1
+        } else {
+            return new SkipResult { pos: p, line: ln, col: c }
+        } } } }
     }
-    da new SkipResult { pos: p, line: ln, col: c }
+    return new SkipResult { pos: p, line: ln, col: c }
 }
 
 // ---------------------------------------------------------------------------
@@ -132,12 +138,12 @@ tipo EscapeResult {
     error_msg: String
 }
 
-fn handle_escape(input: String, pos: Int, slen: Int) -> EscapeResult {
+fn handle_escape(src: String, pos: Int, slen: Int) -> EscapeResult {
     // pos points to the character AFTER the backslash
     si pos >= slen {
         da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Unexpected end of input en escape" }
     }
-    pon esc: String = input.char_at(pos)
+    pon esc: String = src.char_at(pos)
     si esc == "\"" { da new EscapeResult { value: "\"", advance: 1, ok: true, error_msg: "" } }
     si esc == "\\" { da new EscapeResult { value: "\\", advance: 1, ok: true, error_msg: "" } }
     si esc == "/" { da new EscapeResult { value: "/", advance: 1, ok: true, error_msg: "" } }
@@ -151,10 +157,10 @@ fn handle_escape(input: String, pos: Int, slen: Int) -> EscapeResult {
         si pos + 4 >= slen {
             da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Incomplete unicode escape" }
         }
-        pon h0: String = input.char_at(pos + 1)
-        pon h1: String = input.char_at(pos + 2)
-        pon h2: String = input.char_at(pos + 3)
-        pon h3: String = input.char_at(pos + 4)
+        pon h0: String = src.char_at(pos + 1)
+        pon h1: String = src.char_at(pos + 2)
+        pon h2: String = src.char_at(pos + 3)
+        pon h3: String = src.char_at(pos + 4)
         si is_hex(h0) == false { da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit en unicode escape" } }
         si is_hex(h1) == false { da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit en unicode escape" } }
         si is_hex(h2) == false { da new EscapeResult { value: "", advance: 0, ok: false, error_msg: "Invalid hex digit en unicode escape" } }
@@ -182,12 +188,12 @@ tipo StringResult {
     error: JsonError
 }
 
-fn parse_json_string(input: String, pos: Int, line: Int, col: Int) -> StringResult {
-    pon slen: Int = len(input)
+fn parse_json_string(src: String, pos: Int, line: Int, col: Int) -> StringResult {
+    pon slen: Int = len(src)
     si pos >= slen {
         da new StringResult { value: "", pos: pos, line: line, col: col, ok: false, error: new_json_error("Unexpected end of input en string", line, col) }
     }
-    si input.char_at(pos) != "\"" {
+    si src.char_at(pos) != "\"" {
         da new StringResult { value: "", pos: pos, line: line, col: col, ok: false, error: new_json_error("Expected quote to start string", line, col) }
     }
     pon mut p: Int = pos + 1
@@ -196,12 +202,12 @@ fn parse_json_string(input: String, pos: Int, line: Int, col: Int) -> StringResu
     pon mut result: String = ""
 
     mien p < slen {
-        pon ch: String = input.char_at(p)
+        pon ch: String = src.char_at(p)
         si ch == "\"" {
             da new StringResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
         }
         si ch == "\\" {
-            pon er: EscapeResult = handle_escape(input, p + 1, slen)
+            pon er: EscapeResult = handle_escape(src, p + 1, slen)
             si er.ok == false {
                 da new StringResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_json_error(er.error_msg, ln, c) }
             }
@@ -236,14 +242,14 @@ tipo NumberResult {
     error: JsonError
 }
 
-fn parse_json_number(input: String, pos: Int, line: Int, col: Int) -> NumberResult {
-    pon slen: Int = len(input)
+fn parse_json_number(src: String, pos: Int, line: Int, col: Int) -> NumberResult {
+    pon slen: Int = len(src)
     pon mut p: Int = pos
     pon mut c: Int = col
     pon mut negative: Bool = false
 
     si p < slen {
-        si input.char_at(p) == "-" {
+        si src.char_at(p) == "-" {
             negative = true
             p = p + 1
             c = c + 1
@@ -254,7 +260,7 @@ fn parse_json_number(input: String, pos: Int, line: Int, col: Int) -> NumberResu
         da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Unexpected end of input en number", line, c) }
     }
 
-    pon first_digit: String = input.char_at(p)
+    pon first_digit: String = src.char_at(p)
     si is_json_digit(first_digit) == false {
         da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit en number", line, c) }
     }
@@ -262,7 +268,7 @@ fn parse_json_number(input: String, pos: Int, line: Int, col: Int) -> NumberResu
     // Integer part
     pon mut int_part: Int = 0
     mien p < slen {
-        pon ch: String = input.char_at(p)
+        pon ch: String = src.char_at(p)
         si is_json_digit(ch) {
             int_part = int_part * 10 + digit_value(ch)
             p = p + 1
@@ -278,18 +284,18 @@ fn parse_json_number(input: String, pos: Int, line: Int, col: Int) -> NumberResu
     pon mut frac_divisor: Float = 1.0
 
     si p < slen {
-        si input.char_at(p) == "." {
+        si src.char_at(p) == "." {
             is_float = true
             p = p + 1
             c = c + 1
             si p >= slen {
                 da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit after decimal point", line, c) }
             }
-            si is_json_digit(input.char_at(p)) == false {
+            si is_json_digit(src.char_at(p)) == false {
                 da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit after decimal point", line, c) }
             }
             mien p < slen {
-                pon fch: String = input.char_at(p)
+                pon fch: String = src.char_at(p)
                 si is_json_digit(fch) {
                     frac_divisor = frac_divisor * 10.0
                     frac_part = frac_part + float(digit_value(fch)) / frac_divisor
@@ -308,23 +314,23 @@ fn parse_json_number(input: String, pos: Int, line: Int, col: Int) -> NumberResu
     pon mut has_exp: Bool = false
 
     si p < slen {
-        pon ech: String = input.char_at(p)
+        pon ech: String = src.char_at(p)
         si ech == "e" { has_exp = true; is_float = true; p = p + 1; c = c + 1 } sino { si ech == "E" { has_exp = true; is_float = true; p = p + 1; c = c + 1 } }
     }
 
     si has_exp {
         si p < slen {
-            pon sign_ch: String = input.char_at(p)
+            pon sign_ch: String = src.char_at(p)
             si sign_ch == "+" { p = p + 1; c = c + 1 } sino { si sign_ch == "-" { exp_negative = true; p = p + 1; c = c + 1 } }
         }
         si p >= slen {
             da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit en exponent", line, c) }
         }
-        si is_json_digit(input.char_at(p)) == false {
+        si is_json_digit(src.char_at(p)) == false {
             da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Expected digit en exponent", line, c) }
         }
         mien p < slen {
-            pon ech2: String = input.char_at(p)
+            pon ech2: String = src.char_at(p)
             si is_json_digit(ech2) {
                 exp_val = exp_val * 10 + digit_value(ech2)
                 p = p + 1
@@ -359,10 +365,10 @@ fn parse_json_number(input: String, pos: Int, line: Int, col: Int) -> NumberResu
 // Recursive descent parser (Tasks 4, 7, 8, 10)
 // ---------------------------------------------------------------------------
 
-pub fn decode_value(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
-    pon slen: Int = len(input)
+pub fn decode_value(src: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
+    pon slen: Int = len(src)
 
-    pon ws: SkipResult = skip_whitespace(input, pos, line, col)
+    pon ws: SkipResult = skip_whitespace(src, pos, line, col)
     pon mut p: Int = ws.pos
     pon mut ln: Int = ws.line
     pon mut c: Int = ws.col
@@ -371,14 +377,14 @@ pub fn decode_value(input: String, pos: Int, line: Int, col: Int) -> Result<Deco
         da Err(new_json_error("Unexpected end of input", ln, c))
     }
 
-    pon ch: String = input.char_at(p)
+    pon ch: String = src.char_at(p)
 
     // Null
     si ch == "n" {
         si p + 3 < slen {
-            si input.char_at(p + 1) == "u" {
-                si input.char_at(p + 2) == "l" {
-                    si input.char_at(p + 3) == "l" {
+            si src.char_at(p + 1) == "u" {
+                si src.char_at(p + 2) == "l" {
+                    si src.char_at(p + 3) == "l" {
                         da Ok(new_decode_result(Null(), p + 4, ln, c + 4))
                     }
                 }
@@ -390,9 +396,9 @@ pub fn decode_value(input: String, pos: Int, line: Int, col: Int) -> Result<Deco
     // True
     si ch == "t" {
         si p + 3 < slen {
-            si input.char_at(p + 1) == "r" {
-                si input.char_at(p + 2) == "u" {
-                    si input.char_at(p + 3) == "e" {
+            si src.char_at(p + 1) == "r" {
+                si src.char_at(p + 2) == "u" {
+                    si src.char_at(p + 3) == "e" {
                         da Ok(new_decode_result(Bool(true), p + 4, ln, c + 4))
                     }
                 }
@@ -404,10 +410,10 @@ pub fn decode_value(input: String, pos: Int, line: Int, col: Int) -> Result<Deco
     // False
     si ch == "f" {
         si p + 4 < slen {
-            si input.char_at(p + 1) == "a" {
-                si input.char_at(p + 2) == "l" {
-                    si input.char_at(p + 3) == "s" {
-                        si input.char_at(p + 4) == "e" {
+            si src.char_at(p + 1) == "a" {
+                si src.char_at(p + 2) == "l" {
+                    si src.char_at(p + 3) == "s" {
+                        si src.char_at(p + 4) == "e" {
                             da Ok(new_decode_result(Bool(false), p + 5, ln, c + 5))
                         }
                     }
@@ -419,29 +425,29 @@ pub fn decode_value(input: String, pos: Int, line: Int, col: Int) -> Result<Deco
 
     // String
     si ch == "\"" {
-        pon sr: StringResult = parse_json_string(input, p, ln, c)
+        pon sr: StringResult = parse_json_string(src, p, ln, c)
         si sr.ok { da Ok(new_decode_result(Str(sr.value), sr.pos, sr.line, sr.col)) } sino { da Err(sr.error) }
     }
 
     // Number
     si is_json_digit(ch) {
-        pon nr: NumberResult = parse_json_number(input, p, ln, c)
+        pon nr: NumberResult = parse_json_number(src, p, ln, c)
         si nr.ok {
             si nr.is_float { da Ok(new_decode_result(Float(nr.float_val), nr.pos, ln, nr.col)) } sino { da Ok(new_decode_result(Int(nr.int_val), nr.pos, ln, nr.col)) }
         } sino { da Err(nr.error) }
     }
     si ch == "-" {
-        pon nr: NumberResult = parse_json_number(input, p, ln, c)
+        pon nr: NumberResult = parse_json_number(src, p, ln, c)
         si nr.ok {
             si nr.is_float { da Ok(new_decode_result(Float(nr.float_val), nr.pos, ln, nr.col)) } sino { da Ok(new_decode_result(Int(nr.int_val), nr.pos, ln, nr.col)) }
         } sino { da Err(nr.error) }
     }
 
     // Array
-    si ch == "[" { da decode_array(input, p, ln, c) }
+    si ch == "[" { da decode_array(src, p, ln, c) }
 
     // Object
-    si ch == "{" { da decode_object(input, p, ln, c) }
+    si ch == "{" { da decode_object(src, p, ln, c) }
 
     da Err(new_json_error("Unexpected character: " + ch, ln, c))
 }
@@ -450,20 +456,20 @@ pub fn decode_value(input: String, pos: Int, line: Int, col: Int) -> Result<Deco
 // Array parser (Task 7)
 // ---------------------------------------------------------------------------
 
-fn decode_array(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
-    pon slen: Int = len(input)
+fn decode_array(src: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
+    pon slen: Int = len(src)
     pon mut p: Int = pos + 1
     pon mut ln: Int = line
     pon mut c: Int = col + 1
     pon mut items: List<JsonValue> = []
 
-    pon ws1: SkipResult = skip_whitespace(input, p, ln, c)
+    pon ws1: SkipResult = skip_whitespace(src, p, ln, c)
     p = ws1.pos
     ln = ws1.line
     c = ws1.col
 
     si p < slen {
-        si input.char_at(p) == "]" {
+        si src.char_at(p) == "]" {
             da Ok(new_decode_result(Array(items), p + 1, ln, c + 1))
         }
     }
@@ -472,10 +478,10 @@ fn decode_array(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeRe
     mien count < 1000000 {
         count = count + 1
 
-        pon val_result: Result<DecodeResult, JsonError> = decode_value(input, p, ln, c)
+        pon val_result: Result<DecodeResult, JsonError> = decode_value(src, p, ln, c)
         match val_result {
             Ok(dr) => {
-                items = items + [dr.value]
+                items.push(dr.value)
                 p = dr.pos
                 ln = dr.line
                 c = dr.col
@@ -483,19 +489,19 @@ fn decode_array(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeRe
             Err(e) => { da Err(e) }
         }
 
-        pon ws2: SkipResult = skip_whitespace(input, p, ln, c)
+        pon ws2: SkipResult = skip_whitespace(src, p, ln, c)
         p = ws2.pos
         ln = ws2.line
         c = ws2.col
 
         si p >= slen { da Err(new_json_error("Unterminated array", ln, c)) }
 
-        pon next_ch: String = input.char_at(p)
+        pon next_ch: String = src.char_at(p)
         si next_ch == "]" { da Ok(new_decode_result(Array(items), p + 1, ln, c + 1)) }
         si next_ch == "," {
             p = p + 1
             c = c + 1
-            pon ws3: SkipResult = skip_whitespace(input, p, ln, c)
+            pon ws3: SkipResult = skip_whitespace(src, p, ln, c)
             p = ws3.pos
             ln = ws3.line
             c = ws3.col
@@ -508,20 +514,20 @@ fn decode_array(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeRe
 // Object parser (Task 8)
 // ---------------------------------------------------------------------------
 
-fn decode_object(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
-    pon slen: Int = len(input)
+fn decode_object(src: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
+    pon slen: Int = len(src)
     pon mut p: Int = pos + 1
     pon mut ln: Int = line
     pon mut c: Int = col + 1
     pon mut entries: Map<String, JsonValue> = #{}
 
-    pon ws1: SkipResult = skip_whitespace(input, p, ln, c)
+    pon ws1: SkipResult = skip_whitespace(src, p, ln, c)
     p = ws1.pos
     ln = ws1.line
     c = ws1.col
 
     si p < slen {
-        si input.char_at(p) == "}" {
+        si src.char_at(p) == "}" {
             da Ok(new_decode_result(Object(entries), p + 1, ln, c + 1))
         }
     }
@@ -530,31 +536,31 @@ fn decode_object(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeR
     mien count < 1000000 {
         count = count + 1
 
-        pon ws_k: SkipResult = skip_whitespace(input, p, ln, c)
+        pon ws_k: SkipResult = skip_whitespace(src, p, ln, c)
         p = ws_k.pos
         ln = ws_k.line
         c = ws_k.col
 
         si p >= slen { da Err(new_json_error("Unterminated object", ln, c)) }
-        si input.char_at(p) != "\"" { da Err(new_json_error("Expected string key en object", ln, c)) }
+        si src.char_at(p) != "\"" { da Err(new_json_error("Expected string key en object", ln, c)) }
 
-        pon key_result: StringResult = parse_json_string(input, p, ln, c)
+        pon key_result: StringResult = parse_json_string(src, p, ln, c)
         si key_result.ok == false { da Err(key_result.error) }
         p = key_result.pos
         ln = key_result.line
         c = key_result.col
 
-        pon ws2: SkipResult = skip_whitespace(input, p, ln, c)
+        pon ws2: SkipResult = skip_whitespace(src, p, ln, c)
         p = ws2.pos
         ln = ws2.line
         c = ws2.col
 
         si p >= slen { da Err(new_json_error("Expected colon after object key", ln, c)) }
-        si input.char_at(p) != ":" { da Err(new_json_error("Expected colon after object key", ln, c)) }
+        si src.char_at(p) != ":" { da Err(new_json_error("Expected colon after object key", ln, c)) }
         p = p + 1
         c = c + 1
 
-        pon val_result: Result<DecodeResult, JsonError> = decode_value(input, p, ln, c)
+        pon val_result: Result<DecodeResult, JsonError> = decode_value(src, p, ln, c)
         match val_result {
             Ok(dr) => {
                 entries[key_result.value] = dr.value
@@ -565,14 +571,14 @@ fn decode_object(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeR
             Err(e) => { da Err(e) }
         }
 
-        pon ws3: SkipResult = skip_whitespace(input, p, ln, c)
+        pon ws3: SkipResult = skip_whitespace(src, p, ln, c)
         p = ws3.pos
         ln = ws3.line
         c = ws3.col
 
         si p >= slen { da Err(new_json_error("Unterminated object", ln, c)) }
 
-        pon next_ch: String = input.char_at(p)
+        pon next_ch: String = src.char_at(p)
         si next_ch == "}" { da Ok(new_decode_result(Object(entries), p + 1, ln, c + 1)) }
         si next_ch == "," {
             p = p + 1
@@ -586,12 +592,12 @@ fn decode_object(input: String, pos: Int, line: Int, col: Int) -> Result<DecodeR
 // Top-level decode (Task 10)
 // ---------------------------------------------------------------------------
 
-pub fn decode(input: String) -> Result<JsonValue, JsonError> {
-    pon result: Result<DecodeResult, JsonError> = decode_value(input, 0, 1, 1)
+pub fn decode(src: String) -> Result<JsonValue, JsonError> {
+    pon result: Result<DecodeResult, JsonError> = decode_value(src, 0, 1, 1)
     match result {
         Ok(dr) => {
-            pon ws: SkipResult = skip_whitespace(input, dr.pos, dr.line, dr.col)
-            si ws.pos < len(input) { da Err(new_json_error("Unexpected trailing content", ws.line, ws.col)) }
+            pon ws: SkipResult = skip_whitespace(src, dr.pos, dr.line, dr.col)
+            si ws.pos < len(src) { da Err(new_json_error("Unexpected trailing content", ws.line, ws.col)) }
             da Ok(dr.value)
         },
         Err(e) => { da Err(e) }
@@ -721,9 +727,9 @@ tipo EventResult {
     error: JsonError
 }
 
-fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResult {
-    pon slen: Int = len(input)
-    pon ws: SkipResult = skip_whitespace(input, pos, line, col)
+fn stream_parse_value(src: String, pos: Int, line: Int, col: Int) -> EventResult {
+    pon slen: Int = len(src)
+    pon ws: SkipResult = skip_whitespace(src, pos, line, col)
     pon mut p: Int = ws.pos
     pon mut ln: Int = ws.line
     pon mut c: Int = ws.col
@@ -733,22 +739,22 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
         da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Unexpected end of input", ln, c) }
     }
 
-    pon ch: String = input.char_at(p)
+    pon ch: String = src.char_at(p)
 
     // Object
     si ch == "{" {
-        events = events + [StartObject()]
+        events.push(StartObject())
         p = p + 1
         c = c + 1
 
-        pon ws1: SkipResult = skip_whitespace(input, p, ln, c)
+        pon ws1: SkipResult = skip_whitespace(src, p, ln, c)
         p = ws1.pos
         ln = ws1.line
         c = ws1.col
 
         si p < slen {
-            si input.char_at(p) == "}" {
-                events = events + [EndObject()]
+            si src.char_at(p) == "}" {
+                events.push(EndObject())
                 da new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
             }
         }
@@ -757,41 +763,41 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
         mien count < 1000000 {
             count = count + 1
 
-            pon ws_k: SkipResult = skip_whitespace(input, p, ln, c)
+            pon ws_k: SkipResult = skip_whitespace(src, p, ln, c)
             p = ws_k.pos
             ln = ws_k.line
             c = ws_k.col
 
-            pon key_r: StringResult = parse_json_string(input, p, ln, c)
+            pon key_r: StringResult = parse_json_string(src, p, ln, c)
             si key_r.ok == false {
                 da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: key_r.error }
             }
-            events = events + [Key(key_r.value)]
+            events.push(Key(key_r.value))
             p = key_r.pos
             ln = key_r.line
             c = key_r.col
 
-            pon ws_c: SkipResult = skip_whitespace(input, p, ln, c)
+            pon ws_c: SkipResult = skip_whitespace(src, p, ln, c)
             p = ws_c.pos
             ln = ws_c.line
             c = ws_c.col
             si p >= slen {
                 da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected colon", ln, c) }
             }
-            si input.char_at(p) != ":" {
+            si src.char_at(p) != ":" {
                 da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected colon", ln, c) }
             }
             p = p + 1
             c = c + 1
 
-            pon val_r: EventResult = stream_parse_value(input, p, ln, c)
+            pon val_r: EventResult = stream_parse_value(src, p, ln, c)
             si val_r.ok == false { da val_r }
             events = events + val_r.events
             p = val_r.pos
             ln = val_r.line
             c = val_r.col
 
-            pon ws_n: SkipResult = skip_whitespace(input, p, ln, c)
+            pon ws_n: SkipResult = skip_whitespace(src, p, ln, c)
             p = ws_n.pos
             ln = ws_n.line
             c = ws_n.col
@@ -799,11 +805,11 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
             si p >= slen {
                 da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Unterminated object", ln, c) }
             }
-            si input.char_at(p) == "}" {
-                events = events + [EndObject()]
+            si src.char_at(p) == "}" {
+                events.push(EndObject())
                 da new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
             }
-            si input.char_at(p) == "," {
+            si src.char_at(p) == "," {
                 p = p + 1
                 c = c + 1
             } sino { da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected comma or closing brace", ln, c) } }
@@ -812,18 +818,18 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
 
     // Array
     si ch == "[" {
-        events = events + [StartArray()]
+        events.push(StartArray())
         p = p + 1
         c = c + 1
 
-        pon ws1: SkipResult = skip_whitespace(input, p, ln, c)
+        pon ws1: SkipResult = skip_whitespace(src, p, ln, c)
         p = ws1.pos
         ln = ws1.line
         c = ws1.col
 
         si p < slen {
-            si input.char_at(p) == "]" {
-                events = events + [EndArray()]
+            si src.char_at(p) == "]" {
+                events.push(EndArray())
                 da new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
             }
         }
@@ -832,14 +838,14 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
         mien count < 1000000 {
             count = count + 1
 
-            pon val_r: EventResult = stream_parse_value(input, p, ln, c)
+            pon val_r: EventResult = stream_parse_value(src, p, ln, c)
             si val_r.ok == false { da val_r }
             events = events + val_r.events
             p = val_r.pos
             ln = val_r.line
             c = val_r.col
 
-            pon ws_n: SkipResult = skip_whitespace(input, p, ln, c)
+            pon ws_n: SkipResult = skip_whitespace(src, p, ln, c)
             p = ws_n.pos
             ln = ws_n.line
             c = ws_n.col
@@ -847,11 +853,11 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
             si p >= slen {
                 da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Unterminated array", ln, c) }
             }
-            si input.char_at(p) == "]" {
-                events = events + [EndArray()]
+            si src.char_at(p) == "]" {
+                events.push(EndArray())
                 da new EventResult { events: events, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_json_error("", 0, 0) }
             }
-            si input.char_at(p) == "," {
+            si src.char_at(p) == "," {
                 p = p + 1
                 c = c + 1
             } sino { da new EventResult { events: events, pos: p, line: ln, col: c, ok: false, error: new_json_error("Expected comma or closing bracket", ln, c) } }
@@ -859,10 +865,10 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
     }
 
     // Primitive values — emit as Value event
-    pon val_result: Result<DecodeResult, JsonError> = decode_value(input, p, ln, c)
+    pon val_result: Result<DecodeResult, JsonError> = decode_value(src, p, ln, c)
     match val_result {
         Ok(dr) => {
-            events = events + [Value(dr.value)]
+            events.push(Value(dr.value))
             da new EventResult { events: events, pos: dr.pos, line: dr.line, col: dr.col, ok: true, error: new_json_error("", 0, 0) }
         },
         Err(e) => {
@@ -871,8 +877,8 @@ fn stream_parse_value(input: String, pos: Int, line: Int, col: Int) -> EventResu
     }
 }
 
-pub fn stream_parse(input: String) -> Result<List<JsonEvent>, JsonError> {
-    pon result: EventResult = stream_parse_value(input, 0, 1, 1)
+pub fn stream_parse(src: String) -> Result<List<JsonEvent>, JsonError> {
+    pon result: EventResult = stream_parse_value(src, 0, 1, 1)
     si result.ok { da Ok(result.events) } sino { da Err(result.error) }
 }
 
@@ -909,19 +915,19 @@ pub fn validate(value: JsonValue, schema: JsonSchema) -> Result<Bool, List<JsonE
     pon mut errors: List<JsonError> = []
 
     si schema_type_matches(value, schema.schema_type) == false {
-        errors = errors + [new_json_error("Type mismatch: expected " + json_type_name(value), 0, 0)]
+        errors.push(new_json_error("Type mismatch: expected " + json_type_name(value), 0, 0))
     }
 
     match value {
         Int(n) => {
             si schema.has_min {
                 si n < schema.min_value {
-                    errors = errors + [new_json_error("Value below minimum", 0, 0)]
+                    errors.push(new_json_error("Value below minimum", 0, 0))
                 }
             }
             si schema.has_max {
                 si n > schema.max_value {
-                    errors = errors + [new_json_error("Value above maximum", 0, 0)]
+                    errors.push(new_json_error("Value above maximum", 0, 0))
                 }
             }
         },
@@ -935,7 +941,7 @@ pub fn validate(value: JsonValue, schema: JsonSchema) -> Result<Bool, List<JsonE
                     si key == field_name { found = true }
                 }
                 si found == false {
-                    errors = errors + [new_json_error("Missing required field: " + field_name, 0, 0)]
+                    errors.push(new_json_error("Missing required field: " + field_name, 0, 0))
                 }
                 i = i + 1
             }

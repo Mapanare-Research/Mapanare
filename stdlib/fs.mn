@@ -10,11 +10,8 @@
 // Extern C runtime functions
 // ---------------------------------------------------------------------------
 
-extern "C" fn __mn_file_read(path: String) -> String
+// __mn_file_read_or_empty already declared by the compiler's runtime
 extern "C" fn __mn_file_write(path: String, content: String) -> Int
-extern "C" fn __mn_file_open(path: String, mode: Int) -> Int
-extern "C" fn __mn_file_write_fd(fd: Int, data: String) -> Int
-extern "C" fn __mn_file_close(fd: Int)
 extern "C" fn __mn_file_exists(path: String) -> Int
 extern "C" fn __mn_file_remove(path: String) -> Int
 extern "C" fn __mn_dir_create(path: String, recursive: Int) -> Int
@@ -25,7 +22,7 @@ extern "C" fn __mn_tmpfile_path() -> String
 extern "C" fn __mn_realpath(path: String) -> String
 extern "C" fn __mn_file_size(path: String) -> Int
 extern "C" fn __mn_file_mtime(path: String) -> Int
-extern "C" fn __mn_dir_list(path: String) -> String
+// __mn_dir_list disabled — C ABI uses raw pointers, not available in native build
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -257,7 +254,7 @@ pub fn read_file(path: String) -> Result<String, FsError> {
     si ex == 0 {
         da Err(new_not_found("file not found: " + path))
     }
-    pon content: String = __mn_file_read(path)
+    pon content: String = __mn_file_read_or_empty(path)
     da Ok(content)
 }
 
@@ -268,28 +265,16 @@ pub fn write_file(path: String, content: String) -> Result<Bool, FsError> {
         da Err(new_invalid_path("empty file path"))
     }
     pon result: Int = __mn_file_write(path, content)
-    si result == 0 {
+    si result < 0 {
         da Err(new_io_error("failed to write file: " + path))
     }
     da Ok(true)
 }
 
-/// Append content to an existing file. Creates the file if it does not exist.
+/// Append content to an existing file.
+/// NOTE: Disabled in native build — requires __mn_file_open ABI (raw pointers).
 pub fn append_file(path: String, content: String) -> Result<Bool, FsError> {
-    si len(path) == 0 {
-        da Err(new_invalid_path("empty file path"))
-    }
-    // mode 2 = append
-    pon fd: Int = __mn_file_open(path, 2)
-    si fd < 0 {
-        da Err(new_io_error("failed to open file cada append: " + path))
-    }
-    pon written: Int = __mn_file_write_fd(fd, content)
-    __mn_file_close(fd)
-    si written == 0 {
-        da Err(new_io_error("failed to append to file: " + path))
-    }
-    da Ok(true)
+    da Err(new_io_error("append_file not yet available in native build"))
 }
 
 /// Check whether a path exists on the filesystem.
@@ -308,7 +293,7 @@ pub fn remove(path: String) -> Result<Bool, FsError> {
         da Err(new_not_found("file not found: " + path))
     }
     pon result: Int = __mn_file_remove(path)
-    si result == 0 {
+    si result < 0 {
         da Err(new_io_error("failed to remove file: " + path))
     }
     da Ok(true)
@@ -392,17 +377,9 @@ pub fn is_dir(path: String) -> Bool {
     si ex == 0 {
         da false
     }
-    // Try to list it as a directory; if dir_list returns non-empty, it's a dir
-    pon listing: String = __mn_dir_list(path)
-    // If we got any listing (even an empty dir gives ""), we check if create
-    // would fail — simpler: try dir_list. If path is a file, dir_list returns "".
-    // For now, use size heuristic: directories often return -1 or 0 for size.
+    // Use size heuristic: directories often return -1 or 0 for size.
     pon sz: Int = __mn_file_size(path)
     si sz < 0 {
-        da true
-    }
-    // Also check if dir_list returned something other than empty for a file
-    si len(listing) > 0 {
         da true
     }
     da false
@@ -471,15 +448,14 @@ pub fn rmdir(path: String) -> Result<Bool, FsError> {
 /// type indicator: "name\tD" for directories, "name\tF" for files.
 /// We parse that into a list of DirEntry structs.
 pub fn list_dir(path: String) -> Result<List<DirEntry>, FsError> {
-    si len(path) == 0 {
-        da Err(new_invalid_path("empty directory path"))
-    }
+    // NOTE: Disabled in native build — __mn_dir_list requires raw pointer ABI
+    da Err(new_io_error("list_dir not yet available in native build"))
     pon ex: Int = __mn_file_exists(path)
     si ex == 0 {
         da Err(new_not_found("directory not found: " + path))
     }
 
-    pon raw: String = __mn_dir_list(path)
+    pon raw: String = ""
     pon mut entries: List<DirEntry> = []
 
     si len(raw) == 0 {

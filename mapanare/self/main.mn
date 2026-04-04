@@ -70,26 +70,37 @@ fn join_import_path(segments: List<String>) -> String {
     return result
 }
 
+// Try a single directory + relative path combination.
+fn try_resolve(dir: String, rel: String) -> String {
+    let c1: String = dir + rel + ".mn"
+    let r1: String = __mn_file_read_or_empty(c1)
+    if len(r1) > 0 { return c1 }
+    let c2: String = dir + rel + "/mod.mn"
+    let r2: String = __mn_file_read_or_empty(c2)
+    if len(r2) > 0 { return c2 }
+    return ""
+}
+
 // Resolve an import path to a file path, reading to check existence.
-// Search order: source_dir/path.mn, source_dir/path/mod.mn,
-//               CWD/path.mn, CWD/path/mod.mn
+// Search order: source_dir, parent dirs of source_dir, then CWD.
 // Returns "" if not found.
 fn resolve_import_file(segments: List<String>, source_dir: String) -> String {
     let rel: String = join_import_path(segments)
-    // Try relative to source directory
-    let candidate1: String = source_dir + rel + ".mn"
-    let content1: String = __mn_file_read_or_empty(candidate1)
-    if len(content1) > 0 { return candidate1 }
-    let candidate2: String = source_dir + rel + "/mod.mn"
-    let content2: String = __mn_file_read_or_empty(candidate2)
-    if len(content2) > 0 { return candidate2 }
-    // Try relative to CWD (for stdlib and project-level imports)
-    let candidate3: String = rel + ".mn"
-    let content3: String = __mn_file_read_or_empty(candidate3)
-    if len(content3) > 0 { return candidate3 }
-    let candidate4: String = rel + "/mod.mn"
-    let content4: String = __mn_file_read_or_empty(candidate4)
-    if len(content4) > 0 { return candidate4 }
+    // Try relative to source directory and each parent up to root
+    let mut dir: String = source_dir
+    for _ in 0..20 {
+        if len(dir) == 0 {
+            // Try CWD-relative (empty prefix)
+            let cwd_result: String = try_resolve("", rel)
+            if len(cwd_result) > 0 { return cwd_result }
+            return ""
+        }
+        let result: String = try_resolve(dir, rel)
+        if len(result) > 0 { return result }
+        // Climb to parent: strip trailing slash, then find last slash
+        let trimmed: String = dir.substr(0, len(dir) - 1)
+        dir = dir_of_path(trimmed)
+    }
     return ""
 }
 
