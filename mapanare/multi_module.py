@@ -651,6 +651,7 @@ def compile_multi_module_mir(
     if skip_check:
         # Run check for import resolution but ignore semantic errors
         from mapanare.semantic import check
+
         check(ast, filename=root_file, resolver=resolver)
     else:
         check_or_raise(ast, filename=root_file, resolver=resolver)

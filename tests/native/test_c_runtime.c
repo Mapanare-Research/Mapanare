@@ -248,8 +248,9 @@ TEST(test_list_set) {
 
 TEST(test_list_oob) {
     MnList list = __mn_list_new(sizeof(int64_t));
-    ASSERT_EQ(__mn_list_get(&list, 0), NULL);
-    ASSERT_EQ(__mn_list_get(&list, -1), NULL);
+    /* OOB returns a static zero buffer (not NULL) to avoid segfaults */
+    ASSERT_NE(__mn_list_get(&list, 0), NULL);
+    ASSERT_NE(__mn_list_get(&list, -1), NULL);
     int64_t dummy;
     ASSERT_EQ(__mn_list_pop(&list, &dummy), -1);
     __mn_list_free(&list);

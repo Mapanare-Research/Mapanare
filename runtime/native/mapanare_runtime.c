@@ -967,7 +967,6 @@ MAPANARE_EXPORT mapanare_gpu_detection_t *mapanare_detect_gpus(void) {
     det->cuda_available = 0;
 #else
     {
-        void *cuda = NULL;
         /* Try dlopen if available (linked dynamically) */
         /* For portability, we just check the file system */
         FILE *f = fopen("/usr/lib/x86_64-linux-gnu/libcuda.so.1", "r");

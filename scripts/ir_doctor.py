@@ -2568,7 +2568,7 @@ def cmd_strings(args: argparse.Namespace) -> int:
     """
     text = pathlib.Path(args.file).read_text(encoding="utf-8")
     pat = re.compile(
-        r'^(@[\w.]+)\s*=\s*(?:private|internal)?\s*(?:unnamed_addr\s+)?'
+        r"^(@[\w.]+)\s*=\s*(?:private|internal)?\s*(?:unnamed_addr\s+)?"
         r'constant\s+\[(\d+)\s+x\s+i8\]\s+c"(.*)"',
         re.MULTILINE,
     )
@@ -2638,8 +2638,7 @@ def cmd_strings(args: argparse.Namespace) -> int:
             "duplicates": sum(len(v) - 1 for v in dups.values()),
             "large": len(large),
             "details": [
-                {"name": n, "declared": d, "actual": a, "line": l}
-                for n, d, a, l, _ in mismatches
+                {"name": n, "declared": d, "actual": a, "line": l} for n, d, a, l, _ in mismatches
             ],
         }
         print(json.dumps(result, indent=2))
@@ -2724,7 +2723,9 @@ def cmd_xray(args: argparse.Namespace) -> int:
     if fix_log:
         print(fix_log)
     if fn_after == 0 and fn_before > 0:
-        print(f"   CRITICAL: PHI fix deleted ALL {fn_before} functions! ({n_lines} -> {fixed_lines} lines)")
+        print(
+            f"   CRITICAL: PHI fix deleted ALL {fn_before} functions! ({n_lines} -> {fixed_lines} lines)"
+        )
         print("   The fix_stage2_phis.py script is destructive. Fix it before proceeding.")
         return 1
     elif fn_after < fn_before * 0.9:
@@ -2743,9 +2744,7 @@ def cmd_xray(args: argparse.Namespace) -> int:
 
     # Step 5: Compile to binary
     print("5. Compiling stage2 binary with clang...", end=" ", flush=True)
-    with tempfile.NamedTemporaryFile(
-        suffix=".ll", mode="w", delete=False, encoding="utf-8"
-    ) as f:
+    with tempfile.NamedTemporaryFile(suffix=".ll", mode="w", delete=False, encoding="utf-8") as f:
         f.write(fixed_ir)
         ll_path = f.name
     s2_bin = "/tmp/mnc-stage2-xray"
@@ -2779,9 +2778,9 @@ def cmd_xray(args: argparse.Namespace) -> int:
 
     # Step 6: Run stage2 binary on test input
     test_programs = [
-        ("empty", 'fn main() { }'),
+        ("empty", "fn main() { }"),
         ("hello", 'fn main() { print("HELLO_XRAY") }'),
-        ("math", 'fn main() { let x: Int = 2 + 3\nprint(x) }'),
+        ("math", "fn main() { let x: Int = 2 + 3\nprint(x) }"),
     ]
 
     print("6. Runtime tests:")
@@ -2819,8 +2818,7 @@ def cmd_xray(args: argparse.Namespace) -> int:
                     raw = stdout.encode("utf-8", errors="replace")
                     if len(raw) == len(expected):
                         offsets = [
-                            i for i, (a, b) in enumerate(zip(raw, expected.encode()))
-                            if a != b
+                            i for i, (a, b) in enumerate(zip(raw, expected.encode())) if a != b
                         ]
                         status = f"STRING_SHIFT (got {repr(stdout[:20])}, wrong bytes at {offsets})"
                     else:
@@ -2853,7 +2851,9 @@ def cmd_xray(args: argparse.Namespace) -> int:
     pathlib.Path(s2_bin).unlink(missing_ok=True)
 
     # Summary
-    print(f"\n{'PASS' if all_ok else 'FAIL'}: stage2 x-ray {'all tests passed' if all_ok else 'issues detected'}")
+    print(
+        f"\n{'PASS' if all_ok else 'FAIL'}: stage2 x-ray {'all tests passed' if all_ok else 'issues detected'}"
+    )
     return 0 if all_ok else 1
 
 
@@ -2919,7 +2919,7 @@ def cmd_phi_check(args: argparse.Namespace) -> int:
             status = f"WARNING — lost {before - after} functions"
             issues += 1
         elif label == "Globals" and after < before * 0.9:
-            status = f"WARNING — lost globals"
+            status = "WARNING — lost globals"
             issues += 1
         elif delta == 0:
             status = "OK"
@@ -3048,22 +3048,16 @@ def main() -> int:
     s_s2.add_argument("--timeout", type=int, default=30, help="Per-module timeout in seconds")
 
     # strings
-    s_str = sub.add_parser(
-        "strings", help="Validate [N x i8] c\"...\" byte counts in IR file"
-    )
+    s_str = sub.add_parser("strings", help='Validate [N x i8] c"..." byte counts in IR file')
     s_str.add_argument("file", help="Path to .ll file")
     s_str.add_argument("-v", "--verbose", action="store_true", help="Show duplicate details")
 
     # xray
-    s_xray = sub.add_parser(
-        "xray", help="Build mnc-stage2 end-to-end and test runtime output"
-    )
+    s_xray = sub.add_parser("xray", help="Build mnc-stage2 end-to-end and test runtime output")
     s_xray.add_argument("--timeout", type=int, default=30, help="Per-step timeout (default: 30)")
 
     # phi-check
-    s_phic = sub.add_parser(
-        "phi-check", help="Validate fix_stage2_phis.py preserves IR structure"
-    )
+    s_phic = sub.add_parser("phi-check", help="Validate fix_stage2_phis.py preserves IR structure")
     s_phic.add_argument("file", help="Path to .ll file (before PHI fix)")
 
     # snapshot
