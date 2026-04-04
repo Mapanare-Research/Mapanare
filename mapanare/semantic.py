@@ -11,7 +11,6 @@ if TYPE_CHECKING:
 from mapanare.ast_nodes import (
     AgentDef,
     AssertStmt,
-    PrintStmt,
     AssignExpr,
     ASTNode,
     BinaryExpr,
@@ -56,6 +55,7 @@ from mapanare.ast_nodes import (
     OkExpr,
     PipeDef,
     PipeExpr,
+    PrintStmt,
     Program,
     RangeExpr,
     ReturnStmt,

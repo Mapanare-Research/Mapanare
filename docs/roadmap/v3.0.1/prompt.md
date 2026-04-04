@@ -3,7 +3,11 @@
 > Continue the v3.0.1 execution in WSL. Read CLAUDE.md for project context.
 > Track progress in `docs/roadmap/v3.0.1/PLAN.md`.
 > Commit at each milestone. Make decisions autonomously.
-> Use Culebra after every fix: `culebra baseline diff`, `culebra journal add`.
+>
+> **MANDATORY: Use `culebra wrap --` for EVERY gcc/valgrind/binary command.**
+> **MANDATORY: Use `culebra learn` after builds, `culebra stacktrace` after crashes.**
+> **MANDATORY: Log every fix with `culebra journal add`, track with `culebra baseline diff`.**
+> **NEVER run raw `gcc ... 2>&1 | grep`. ALWAYS use `culebra wrap -- gcc ...`.**
 
 ---
 
@@ -76,11 +80,15 @@ Validation after each fix:
 # Re-emit
 python3 -m mapanare emit-c mapanare/self/mnc_all.mn -o /tmp/stage1.c
 
-# Check: should need FEWER memcpy hacks
-grep -c "memcpy" /tmp/stage1.c  # Should decrease
+# Build with culebra wrap (MANDATORY — logs output for pattern analysis)
+culebra wrap -- gcc -O0 -I runtime/native /tmp/stage1.c runtime/native/mapanare_core.c -o /tmp/mnc-stage1 -lm -lpthread
+culebra learn                          # Categorize errors, show patterns
 
 # Culebra baseline
-culebra baseline diff /tmp/stage1.c
+culebra baseline diff /tmp/stage1.c    # Fixed/New/Remaining
+
+# Log the fix
+culebra journal add "description" --action fix --tags "bootstrap"
 
 # Golden regression check
 for f in tests/golden/*.mn; do
@@ -102,9 +110,9 @@ The C emitter should be clean: direct assignments, proper types, no casts.
 
 Validation:
 ```bash
-# Must still compile clean
-gcc -O0 -I runtime/native /tmp/stage1.c runtime/native/mapanare_core.c \
-    -o /tmp/mnc-stage1 -lm -lpthread
+# Must still compile clean (ALWAYS use culebra wrap)
+culebra wrap -- gcc -O0 -I runtime/native /tmp/stage1.c runtime/native/mapanare_core.c -o /tmp/mnc-stage1 -lm -lpthread
+culebra learn                          # Should show 0 errors
 
 # Culebra scan — should have FEWER findings
 culebra scan /tmp/stage1.c --tags c
@@ -119,11 +127,12 @@ echo 'fn main() { print("hello") }' > /tmp/test.mn
 # Should output C source (or LLVM IR) for hello world, not segfault
 ```
 
-Use Valgrind if it still crashes:
+Use Culebra for crash investigation (MANDATORY):
 ```bash
-culebra wrap -- valgrind /tmp/mnc-stage1 /tmp/test.mn
-# Or:
-python scripts/ir_doctor.py valgrind-map /tmp/mnc-stage1 /tmp/test.mn
+culebra wrap -- valgrind --tool=memcheck /tmp/mnc-stage1 /tmp/test.mn
+culebra learn                          # Categorize crash: SIGSEGV, heap overflow, etc.
+culebra stacktrace crash.log --ir /tmp/stage1.c   # Map to C functions
+culebra crashmap /tmp/stage1.c --offset 0x20 --struct Definition  # Offset → field
 ```
 
 **1.4 — Three-Stage Bootstrap**
@@ -255,38 +264,79 @@ Compile time, binary size, runtime perf for each golden test.
 
 ## Tools Available
 
-### Culebra v2.0.0 (`~/.cargo/bin/culebra`)
+### MANDATORY: Culebra v2.0.0 for ALL debugging
 
-**USE AFTER EVERY FIX. The feedback loop is: fix → emit → gcc → culebra diff → golden → commit.**
+**Do NOT manually grep/sed/awk gcc or valgrind output. Use Culebra commands.**
+**Every gcc call must use `culebra wrap --`. Every crash must use `culebra stacktrace`.**
 
 ```bash
-# --- START EVERY SESSION ---
+# ╔══════════════════════════════════════════════════════════╗
+# ║  EVERY session starts with:                              ║
+# ╚══════════════════════════════════════════════════════════╝
 culebra journal show                                # Where we left off
-culebra summary /tmp/stage1.c                       # Current scan state
+culebra summary /tmp/stage1.c                       # Current state (scan + types + fields + health + score)
 
-# --- After each fix ---
+# ╔══════════════════════════════════════════════════════════╗
+# ║  EVERY build must use culebra wrap:                      ║
+# ╚══════════════════════════════════════════════════════════╝
 python3 -m mapanare emit-c mapanare/self/mnc_all.mn -o /tmp/stage1.c
-gcc -O0 -I runtime/native /tmp/stage1.c runtime/native/mapanare_core.c \
-    -o /tmp/mnc-stage1 -lm -lpthread 2>&1 | grep "error:" | wc -l
-culebra baseline diff /tmp/stage1.c                 # Fixed/New/Remaining
-culebra journal add "description" --action fix --tags "bootstrap"
+culebra wrap -- gcc -O0 -I runtime/native /tmp/stage1.c runtime/native/mapanare_core.c -o /tmp/mnc-stage1 -lm -lpthread
+culebra learn                                       # Categorize errors, suggest templates
+culebra baseline diff /tmp/stage1.c                 # Fixed/New/Remaining vs last save
 
-# --- Scanning ---
-culebra scan /tmp/stage1.c --tags c                 # C-specific templates
-culebra triage /tmp/stage1.c --brief               # One-line summary
+# ╔══════════════════════════════════════════════════════════╗
+# ║  EVERY crash investigation must use culebra:             ║
+# ╚══════════════════════════════════════════════════════════╝
+culebra wrap -- valgrind --tool=memcheck /tmp/mnc-stage1 /tmp/test.mn
+culebra wrap -- timeout 10 /tmp/mnc-stage1 /tmp/test.mn
+culebra stacktrace crash.log --ir /tmp/stage1.c     # Parse crash → map to functions
+culebra crashmap /tmp/stage1.c --offset 0x20 --struct TypeInfo  # Offset → field
 
-# --- Debugging crashes ---
-culebra wrap -- valgrind /tmp/mnc-stage1 /tmp/test.mn
-culebra wrap -- gcc -O1 -c /tmp/stage1.c -o /dev/null
-culebra learn                                       # Pattern analysis
+# NEVER DO THIS:
+#   gcc ... 2>&1 | grep "error:" | sed ... | awk ...     ← NO
+#   valgrind ... 2>&1 | grep -a "Invalid" | head -15     ← NO
+# ALWAYS DO THIS:
+#   culebra wrap -- gcc ...                               ← YES
+#   culebra wrap -- valgrind ...                          ← YES
+#   culebra learn                                         ← YES
 
-# --- Fixed-point verification ---
-culebra diff /tmp/stage2.c /tmp/stage3.c           # Must be empty
+# ╔══════════════════════════════════════════════════════════╗
+# ║  EVERY fix must be logged:                               ║
+# ╚══════════════════════════════════════════════════════════╝
+culebra journal add "Fixed Option<T> inner type propagation" --action fix --tags "bootstrap,type-inference"
+culebra baseline save /tmp/stage1.c                 # Save known-good state
+
+# ╔══════════════════════════════════════════════════════════╗
+# ║  Scanning and analysis:                                  ║
+# ╚══════════════════════════════════════════════════════════╝
+culebra scan /tmp/stage1.c --tags c                 # C-specific templates (8)
+culebra scan /tmp/stage1.c --id switch-no-break     # Check switch fallthrough
+culebra triage /tmp/stage1.c --brief                # One-line root cause summary
+culebra missing-types /tmp/stage1.c -v              # Find undefined types
+culebra field-index-audit /tmp/stage1.c             # Find index-0 anomalies
+
+# ╔══════════════════════════════════════════════════════════╗
+# ║  Understanding generated C:                              ║
+# ╚══════════════════════════════════════════════════════════╝
+culebra pretty /tmp/stage1.c --function lower_fn    # Syntax-highlighted C
+culebra extract /tmp/stage1.c function_name         # Extract one function
+culebra dump /tmp/stage1.c --function lower_fn      # Variable state dump
+culebra inspect /tmp/stage1.c --function lower_fn   # Block-by-block walk
+culebra trace /tmp/stage1.c --function lower_fn --var 'state'
+
+# ╔══════════════════════════════════════════════════════════╗
+# ║  Semi-dynamic (when static analysis isn't enough):       ║
+# ╚══════════════════════════════════════════════════════════╝
+culebra eval /tmp/stage1.c --function fn_name --arg 0 --arg '"test"'
+culebra test-fn /tmp/stage1.c --function fn_name --expect-ret 1
+culebra probe /tmp/stage1.c --function lower_fn --watch 'state'
+
+# ╔══════════════════════════════════════════════════════════╗
+# ║  Fixed-point verification:                               ║
+# ╚══════════════════════════════════════════════════════════╝
+culebra diff /tmp/stage2.c /tmp/stage3.c            # Must be empty
 culebra compare /tmp/stage1.c /tmp/stage2.c --metric calls
-
-# --- Baselines ---
-culebra baseline save /tmp/stage1.c                # After a good state
-culebra baseline diff /tmp/stage1.c                # After changes
+culebra progress /tmp/stage1.c                      # Health score
 ```
 
 ### Skills (Claude Code slash commands)
