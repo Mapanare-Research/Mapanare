@@ -11365,11 +11365,14 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
     if key_ty.kind == "float" { key_tag = "2" }
 
     // Key/val sizes: strings are 16 bytes ({ptr,i64}), ints are 8 bytes
+    // Default val_size = 16 to safely handle enums/strings in untyped empty maps
     let mut key_size: String = "16"
-    let mut val_size: String = "8"
+    let mut val_size: String = "16"
     if key_ty.kind == "int" { key_size = "8" }
     if key_ty.kind == "float" { key_size = "8" }
-    if val_ty.kind == "string" { val_size = "16" }
+    if val_ty.kind == "int" { val_size = "8" }
+    if val_ty.kind == "float" { val_size = "8" }
+    if val_ty.kind == "bool" { val_size = "8" }
     if val_ty.kind == "struct" { val_size = "64" }
     if val_ty.kind == "enum" { val_size = "64" }
 
