@@ -9662,10 +9662,10 @@ fn hardcoded_field_index(struct_name: String, field_name: String) -> Int {
         if field_name == "label" { return 0 }
         if field_name == "instructions" { return 1 }
     }
-    // MIRType: kind(0) name(1) args(2)
+    // MIRType: name(0) kind(1) args(2)
     if struct_name == "MIRType" {
-        if field_name == "kind" { return 0 }
-        if field_name == "name" { return 1 }
+        if field_name == "name" { return 0 }
+        if field_name == "kind" { return 1 }
         if field_name == "args" { return 2 }
     }
     // Value: name(0) ty(1)
