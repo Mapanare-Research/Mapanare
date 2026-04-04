@@ -79,7 +79,9 @@ fn add_block(st: LowerState, label: String) -> LowerState {
     let bb: BasicBlock = new_basic_block(label)
     let mut new_st: LowerState = st
     let idx: Int = len(st.fn_blocks)
-    new_st.fn_blocks.push(bb)
+    let mut blocks: List<BasicBlock> = new_st.fn_blocks
+    blocks.push(bb)
+    new_st.fn_blocks = blocks
     new_st.current_block_idx = idx
     return new_st
 }
@@ -99,7 +101,7 @@ fn set_block(st: LowerState, idx: Int) -> LowerState {
 
 fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
     // Append instruction to current block using flattened fn_blocks list.
-    // This avoids the COW-through-Option nesting that loses mutations.
+    // Extract → modify → reassign to handle COW write-back correctly.
     let mut new_st: LowerState = st
     let idx: Int = st.current_block_idx
     if idx >= 0 {
@@ -108,7 +110,9 @@ fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
             let mut instrs: List<Instruction> = bb.instructions
             instrs.push(instr)
             let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
-            new_st.fn_blocks[idx] = new_bb
+            let mut blocks: List<BasicBlock> = new_st.fn_blocks
+            blocks[idx] = new_bb
+            new_st.fn_blocks = blocks
         }
     }
     return new_st
@@ -131,10 +135,11 @@ fn current_block_terminated(st: LowerState) -> Bool {
 
 fn lower_push_scope(st: LowerState) -> LowerState {
     // Save the current variable count. On pop, truncate vars back to this length.
-    // This avoids nested list aliasing (no List<List<VarInfo>> needed).
     let mut new_st: LowerState = st
     let var_count: Int = len(st.vars)
-    new_st.scope_stack.push(var_count)
+    let mut stack: List<Int> = new_st.scope_stack
+    stack.push(var_count)
+    new_st.scope_stack = stack
     return new_st
 }
 
@@ -163,7 +168,9 @@ fn lower_pop_scope(st: LowerState) -> LowerState {
 fn define_var(st: LowerState, name: String, val: Value, mutable: Bool) -> LowerState {
     let mut new_st: LowerState = st
     let vi: VarInfo = new_var_info(name, val, mutable)
-    new_st.vars.push(vi)
+    let mut vs: List<VarInfo> = new_st.vars
+    vs.push(vi)
+    new_st.vars = vs
     return new_st
 }
 

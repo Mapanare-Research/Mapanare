@@ -87,7 +87,7 @@ fn build_internal_struct_list() -> List<StructEntry> {
     // insertvalue indices for subsequent make_entry calls.
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
     list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"]))
-    list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars"]))
+    list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks"]))
     list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
@@ -129,8 +129,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState {
     let mut s: EmitState = st
     // MIRModule: name, functions, structs, enums, extern_fns, agents, pipes, imports, trait_names
     s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"])
-    // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars
-    s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars"])
+    // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks
+    s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks"])
     // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos
     s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos"])
     // LowerResult: value, state
@@ -963,7 +963,7 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
 // bug, so find_struct_entry returns None. This function provides the correct
 // indices as a workaround.
 fn hardcoded_field_index(struct_name: String, field_name: String) -> Int {
-    // LowerState: module(0) current_fn(1) current_block_idx(2) tmp_counter(3) block_counter(4) vars(5) scope_stack(6) impl_methods(7) struct_fields(8) enum_variants(9) lambda_vars(10)
+    // LowerState: module(0) current_fn(1) current_block_idx(2) tmp_counter(3) block_counter(4) vars(5) scope_stack(6) impl_methods(7) struct_fields(8) enum_variants(9) lambda_vars(10) fn_blocks(11)
     if struct_name == "LowerState" {
         if field_name == "module" { return 0 }
         if field_name == "current_fn" { return 1 }
@@ -976,6 +976,7 @@ fn hardcoded_field_index(struct_name: String, field_name: String) -> Int {
         if field_name == "struct_fields" { return 8 }
         if field_name == "enum_variants" { return 9 }
         if field_name == "lambda_vars" { return 10 }
+        if field_name == "fn_blocks" { return 11 }
     }
     // EmitState: lines(0) counter(1) functions(2) structs(3) module_name(4) str_counter(5) str_globals(6) current_ret_type(7) enum_names(8) enum_infos(9)
     if struct_name == "EmitState" {

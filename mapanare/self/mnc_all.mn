@@ -5804,7 +5804,9 @@ fn add_block(st: LowerState, label: String) -> LowerState {
     let bb: BasicBlock = new_basic_block(label)
     let mut new_st: LowerState = st
     let idx: Int = len(st.fn_blocks)
-    new_st.fn_blocks.push(bb)
+    let mut blocks: List<BasicBlock> = new_st.fn_blocks
+    blocks.push(bb)
+    new_st.fn_blocks = blocks
     new_st.current_block_idx = idx
     return new_st
 }
@@ -5824,7 +5826,7 @@ fn set_block(st: LowerState, idx: Int) -> LowerState {
 
 fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
     // Append instruction to current block using flattened fn_blocks list.
-    // This avoids the COW-through-Option nesting that loses mutations.
+    // Extract → modify → reassign to handle COW write-back correctly.
     let mut new_st: LowerState = st
     let idx: Int = st.current_block_idx
     if idx >= 0 {
@@ -5833,7 +5835,9 @@ fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
             let mut instrs: List<Instruction> = bb.instructions
             instrs.push(instr)
             let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
-            new_st.fn_blocks[idx] = new_bb
+            let mut blocks: List<BasicBlock> = new_st.fn_blocks
+            blocks[idx] = new_bb
+            new_st.fn_blocks = blocks
         }
     }
     return new_st
@@ -5856,10 +5860,11 @@ fn current_block_terminated(st: LowerState) -> Bool {
 
 fn lower_push_scope(st: LowerState) -> LowerState {
     // Save the current variable count. On pop, truncate vars back to this length.
-    // This avoids nested list aliasing (no List<List<VarInfo>> needed).
     let mut new_st: LowerState = st
     let var_count: Int = len(st.vars)
-    new_st.scope_stack.push(var_count)
+    let mut stack: List<Int> = new_st.scope_stack
+    stack.push(var_count)
+    new_st.scope_stack = stack
     return new_st
 }
 
@@ -5888,7 +5893,9 @@ fn lower_pop_scope(st: LowerState) -> LowerState {
 fn define_var(st: LowerState, name: String, val: Value, mutable: Bool) -> LowerState {
     let mut new_st: LowerState = st
     let vi: VarInfo = new_var_info(name, val, mutable)
-    new_st.vars.push(vi)
+    let mut vs: List<VarInfo> = new_st.vars
+    vs.push(vi)
+    new_st.vars = vs
     return new_st
 }
 
@@ -6385,7 +6392,9 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         let ret_val: String = ret_ty.kind + ":" + ret_ty.name
         let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
         let mut new_st_fn: LowerState = st
-        new_st_fn.lambda_vars.push(entry)
+        let mut lv_fn: List<LambdaEntry> = new_st_fn.lambda_vars
+        lv_fn.push(entry)
+        new_st_fn.lambda_vars = lv_fn
         return new_st_fn
     }
     return st
@@ -6403,7 +6412,9 @@ fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
             let info: StructInfo = new_struct_info(data.name, fields)
             s.module = module_push_struct(s.module, info)
             let sfi: StructFieldInfo = new_struct_field_info(data.name, field_names, field_types)
-            s.struct_fields.push(sfi)
+            let mut sf_lst: List<StructFieldInfo> = s.struct_fields
+            sf_lst.push(sfi)
+            s.struct_fields = sf_lst
             return s
         }
         let field: StructField = data.fields[i]
@@ -6428,7 +6439,9 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
             let info: EnumInfo = new_enum_info(data.name, variants)
             s.module = module_push_enum(s.module, info)
             let evn: EnumVariantNames = new_enum_variant_names(data.name, variant_names)
-            s.enum_variants.push(evn)
+            let mut ev_lst: List<EnumVariantNames> = s.enum_variants
+            ev_lst.push(evn)
+            s.enum_variants = ev_lst
             return s
         }
         let variant: EnumVariant = data.variants[i]
@@ -6458,7 +6471,9 @@ fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lo
         let key: String = target + "." + method.name
         let mir_name: String = target + "_" + method.name
         let entry: ImplEntry = new_impl_entry(key, mir_name)
-        s.impl_methods.push(entry)
+        let mut im_lst: List<ImplEntry> = s.impl_methods
+        im_lst.push(entry)
+        s.impl_methods = im_lst
         i = i + 1
     }
     return s
@@ -6606,15 +6621,14 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
         }
     }
 
-    // Copy fn_blocks into MIRFunction and add to module
-    match s.current_fn {
-        Some(f) => {
-            let mut final_fn: MIRFunction = f
-            final_fn.blocks = s.fn_blocks
-            s.module = module_push_function(s.module, final_fn)
-        },
-        _ => {}
-    }
+    // Copy fn_blocks into MIRFunction and add to module.
+    let mut final_fn: MIRFunction = mir_fn
+    final_fn.blocks = s.fn_blocks
+    s.module = module_push_function(s.module, final_fn)
+    __mn_str_eprint(fn_name)
+    __mn_str_eprint(toString(len(final_fn.blocks)))
+    __mn_str_eprint(toString(len(s.module.functions)))
+    __mn_str_eprint("\n")
 
     // Restore state
     s.current_fn = prev_fn
@@ -7859,7 +7873,9 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
     // Register lambda with capture info
     let encoded_name: String = lambda_name + capture_suffix
     let entry: LambdaEntry = new_lambda_entry("", encoded_name)
-    s.lambda_vars.push(entry)
+    let mut lv_lam: List<LambdaEntry> = s.lambda_vars
+    lv_lam.push(entry)
+    s.lambda_vars = lv_lam
 
     // Return a reference to the lambda function
     let dest_r: LowerResult = make_value(s, mir_fn_type(), "t")
@@ -8093,8 +8109,9 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
     if tk == "field_access" {
         // Pass the ALLOCA address (not loaded value) so the emitter
         // can GEP+store directly to the struct field.
-        let obj_r_fa: LowerResult = lower_expr(s, expr_field_obj(target))
-        let obj_alloca: Value = find_expr_alloca(obj_r_fa.state, target, obj_r_fa)
+        let fa_obj: Expr = expr_field_obj(target)
+        let obj_r_fa: LowerResult = lower_expr(s, fa_obj)
+        let obj_alloca: Value = find_expr_alloca(obj_r_fa.state, fa_obj, obj_r_fa)
         s = emit_instr(obj_r_fa.state, Instruction::FieldSet(obj_alloca, expr_field_name(target), val_r.value))
         return new_lower_result(val_r.value, s)
     }
@@ -8425,10 +8442,10 @@ struct MatchBuildResult {
 }
 
 fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -> MatchBuildResult {
-    let labels: List<String> = []
-    let indices: List<Int> = []
-    let cases: List<SwitchCase> = []
-    let init: MatchBuildResult = new MatchBuildResult { state: st, arm_labels: labels, arm_indices: indices, cases: cases, default_label: merge_label }
+    let mut labels: List<String> = []
+    let mut indices: List<Int> = []
+    let mut cases: List<SwitchCase> = []
+    let mut default_lbl: String = merge_label
     let mut s: LowerState = st
     let mut i: Int = 0
     let n: Int = len(arms)
@@ -8438,26 +8455,27 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
             s = label_r.state
             let label: String = label_r.value.name
             s = add_block(s, label)
-            init.arm_labels.push(label)
-            init.arm_indices.push(s.current_block_idx)
+            labels.push(label)
+            indices.push(s.current_block_idx)
             let arm: MatchArm = arms[i]
             let pk_arm: String = pattern_kind(arm.pattern)
-            if pk_arm == "constructor" { init.cases.push(new_switch_case(pattern_ctor_name(arm.pattern), label)) }
-            if pk_arm == "literal" { init.cases.push(new_switch_case(get_literal_value(pattern_literal_expr(arm.pattern)), label)) }
+            if pk_arm == "constructor" { cases.push(new_switch_case(pattern_ctor_name(arm.pattern), label)) }
+            if pk_arm == "literal" { cases.push(new_switch_case(get_literal_value(pattern_literal_expr(arm.pattern)), label)) }
             if pk_arm == "ident" {
                 let pn: String = pattern_ident_name(arm.pattern)
                 if is_enum_variant(s, pn) {
-                    init.cases.push(new_switch_case(pn, label))
+                    cases.push(new_switch_case(pn, label))
                 } else {
-                    init.default_label = label
+                    default_lbl = label
                 }
             }
-            if pk_arm == "wildcard" { init.default_label = label }
+            if pk_arm == "wildcard" { default_lbl = label }
             i = i + 1
         }
     }
-    init.state = s
-    return init
+    // Build result ONLY after all mutations are done — avoids aliasing
+    // the LowerState (which shares fn_blocks buffers with s)
+    return new MatchBuildResult { state: s, arm_labels: labels, arm_indices: indices, cases: cases, default_label: default_lbl }
 }
 
 fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResult {
@@ -9382,7 +9400,7 @@ fn build_internal_struct_list() -> List<StructEntry> {
     // insertvalue indices for subsequent make_entry calls.
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
     list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"]))
-    list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars"]))
+    list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks"]))
     list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
@@ -9424,8 +9442,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState {
     let mut s: EmitState = st
     // MIRModule: name, functions, structs, enums, extern_fns, agents, pipes, imports, trait_names
     s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"])
-    // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars
-    s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars"])
+    // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks
+    s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks"])
     // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos
     s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos"])
     // LowerResult: value, state
@@ -10258,7 +10276,7 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
 // bug, so find_struct_entry returns None. This function provides the correct
 // indices as a workaround.
 fn hardcoded_field_index(struct_name: String, field_name: String) -> Int {
-    // LowerState: module(0) current_fn(1) current_block_idx(2) tmp_counter(3) block_counter(4) vars(5) scope_stack(6) impl_methods(7) struct_fields(8) enum_variants(9) lambda_vars(10)
+    // LowerState: module(0) current_fn(1) current_block_idx(2) tmp_counter(3) block_counter(4) vars(5) scope_stack(6) impl_methods(7) struct_fields(8) enum_variants(9) lambda_vars(10) fn_blocks(11)
     if struct_name == "LowerState" {
         if field_name == "module" { return 0 }
         if field_name == "current_fn" { return 1 }
@@ -10271,6 +10289,7 @@ fn hardcoded_field_index(struct_name: String, field_name: String) -> Int {
         if field_name == "struct_fields" { return 8 }
         if field_name == "enum_variants" { return 9 }
         if field_name == "lambda_vars" { return 10 }
+        if field_name == "fn_blocks" { return 11 }
     }
     // EmitState: lines(0) counter(1) functions(2) structs(3) module_name(4) str_counter(5) str_globals(6) current_ret_type(7) enum_names(8) enum_infos(9)
     if struct_name == "EmitState" {

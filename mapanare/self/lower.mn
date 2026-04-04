@@ -99,7 +99,9 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         let ret_val: String = ret_ty.kind + ":" + ret_ty.name
         let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
         let mut new_st_fn: LowerState = st
-        new_st_fn.lambda_vars.push(entry)
+        let mut lv_fn: List<LambdaEntry> = new_st_fn.lambda_vars
+        lv_fn.push(entry)
+        new_st_fn.lambda_vars = lv_fn
         return new_st_fn
     }
     return st
@@ -117,7 +119,9 @@ fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
             let info: StructInfo = new_struct_info(data.name, fields)
             s.module = module_push_struct(s.module, info)
             let sfi: StructFieldInfo = new_struct_field_info(data.name, field_names, field_types)
-            s.struct_fields.push(sfi)
+            let mut sf_lst: List<StructFieldInfo> = s.struct_fields
+            sf_lst.push(sfi)
+            s.struct_fields = sf_lst
             return s
         }
         let field: StructField = data.fields[i]
@@ -142,7 +146,9 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
             let info: EnumInfo = new_enum_info(data.name, variants)
             s.module = module_push_enum(s.module, info)
             let evn: EnumVariantNames = new_enum_variant_names(data.name, variant_names)
-            s.enum_variants.push(evn)
+            let mut ev_lst: List<EnumVariantNames> = s.enum_variants
+            ev_lst.push(evn)
+            s.enum_variants = ev_lst
             return s
         }
         let variant: EnumVariant = data.variants[i]
@@ -172,7 +178,9 @@ fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lo
         let key: String = target + "." + method.name
         let mir_name: String = target + "_" + method.name
         let entry: ImplEntry = new_impl_entry(key, mir_name)
-        s.impl_methods.push(entry)
+        let mut im_lst: List<ImplEntry> = s.impl_methods
+        im_lst.push(entry)
+        s.impl_methods = im_lst
         i = i + 1
     }
     return s
@@ -320,15 +328,14 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
         }
     }
 
-    // Copy fn_blocks into MIRFunction and add to module
-    match s.current_fn {
-        Some(f) => {
-            let mut final_fn: MIRFunction = f
-            final_fn.blocks = s.fn_blocks
-            s.module = module_push_function(s.module, final_fn)
-        },
-        _ => {}
-    }
+    // Copy fn_blocks into MIRFunction and add to module.
+    let mut final_fn: MIRFunction = mir_fn
+    final_fn.blocks = s.fn_blocks
+    s.module = module_push_function(s.module, final_fn)
+    __mn_str_eprint(fn_name)
+    __mn_str_eprint(toString(len(final_fn.blocks)))
+    __mn_str_eprint(toString(len(s.module.functions)))
+    __mn_str_eprint("\n")
 
     // Restore state
     s.current_fn = prev_fn
@@ -1573,7 +1580,9 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
     // Register lambda with capture info
     let encoded_name: String = lambda_name + capture_suffix
     let entry: LambdaEntry = new_lambda_entry("", encoded_name)
-    s.lambda_vars.push(entry)
+    let mut lv_lam: List<LambdaEntry> = s.lambda_vars
+    lv_lam.push(entry)
+    s.lambda_vars = lv_lam
 
     // Return a reference to the lambda function
     let dest_r: LowerResult = make_value(s, mir_fn_type(), "t")
@@ -1807,8 +1816,9 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
     if tk == "field_access" {
         // Pass the ALLOCA address (not loaded value) so the emitter
         // can GEP+store directly to the struct field.
-        let obj_r_fa: LowerResult = lower_expr(s, expr_field_obj(target))
-        let obj_alloca: Value = find_expr_alloca(obj_r_fa.state, target, obj_r_fa)
+        let fa_obj: Expr = expr_field_obj(target)
+        let obj_r_fa: LowerResult = lower_expr(s, fa_obj)
+        let obj_alloca: Value = find_expr_alloca(obj_r_fa.state, fa_obj, obj_r_fa)
         s = emit_instr(obj_r_fa.state, Instruction::FieldSet(obj_alloca, expr_field_name(target), val_r.value))
         return new_lower_result(val_r.value, s)
     }
@@ -2139,10 +2149,10 @@ struct MatchBuildResult {
 }
 
 fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -> MatchBuildResult {
-    let labels: List<String> = []
-    let indices: List<Int> = []
-    let cases: List<SwitchCase> = []
-    let init: MatchBuildResult = new MatchBuildResult { state: st, arm_labels: labels, arm_indices: indices, cases: cases, default_label: merge_label }
+    let mut labels: List<String> = []
+    let mut indices: List<Int> = []
+    let mut cases: List<SwitchCase> = []
+    let mut default_lbl: String = merge_label
     let mut s: LowerState = st
     let mut i: Int = 0
     let n: Int = len(arms)
@@ -2152,26 +2162,27 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
             s = label_r.state
             let label: String = label_r.value.name
             s = add_block(s, label)
-            init.arm_labels.push(label)
-            init.arm_indices.push(s.current_block_idx)
+            labels.push(label)
+            indices.push(s.current_block_idx)
             let arm: MatchArm = arms[i]
             let pk_arm: String = pattern_kind(arm.pattern)
-            if pk_arm == "constructor" { init.cases.push(new_switch_case(pattern_ctor_name(arm.pattern), label)) }
-            if pk_arm == "literal" { init.cases.push(new_switch_case(get_literal_value(pattern_literal_expr(arm.pattern)), label)) }
+            if pk_arm == "constructor" { cases.push(new_switch_case(pattern_ctor_name(arm.pattern), label)) }
+            if pk_arm == "literal" { cases.push(new_switch_case(get_literal_value(pattern_literal_expr(arm.pattern)), label)) }
             if pk_arm == "ident" {
                 let pn: String = pattern_ident_name(arm.pattern)
                 if is_enum_variant(s, pn) {
-                    init.cases.push(new_switch_case(pn, label))
+                    cases.push(new_switch_case(pn, label))
                 } else {
-                    init.default_label = label
+                    default_lbl = label
                 }
             }
-            if pk_arm == "wildcard" { init.default_label = label }
+            if pk_arm == "wildcard" { default_lbl = label }
             i = i + 1
         }
     }
-    init.state = s
-    return init
+    // Build result ONLY after all mutations are done — avoids aliasing
+    // the LowerState (which shares fn_blocks buffers with s)
+    return new MatchBuildResult { state: s, arm_labels: labels, arm_indices: indices, cases: cases, default_label: default_lbl }
 }
 
 fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResult {
