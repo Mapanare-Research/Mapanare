@@ -463,7 +463,19 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     if tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
     if tt == "KW_AGENT" { return parse_agent_def(tokens, pos, filename) }
     if tt == "KW_PIPE" { return parse_pipe_def(tokens, pos, filename) }
-    if tt == "KW_TYPE" { return parse_type_alias_def(tokens, pos, filename) }
+    if tt == "KW_TYPE" {
+        // tipo/type can be either a type alias (type Foo = Bar) or
+        // a tipo definition (tipo Foo { fields/variants }). Peek ahead
+        // to decide: KW_TYPE NAME LBRACE → struct-like, else → alias.
+        let tipo_name_pos: Int = pos + 1
+        if tipo_name_pos + 1 < len(tokens) {
+            let after_name_tt: String = peek_type(tokens, tipo_name_pos + 1)
+            if after_name_tt == "LBRACE" {
+                return parse_tipo_def(tokens, pos, filename)
+            }
+        }
+        return parse_type_alias_def(tokens, pos, filename)
+    }
     if tt == "KW_IMPL" { return parse_impl_def(tokens, pos, filename) }
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
@@ -844,6 +856,93 @@ fn parse_type_alias_def(tokens: List<Token>, pos: Int, filename: String) -> DefR
     p = expect(tokens, p, "ASSIGN")
     let tr: TypeResult = parse_type_expr(tokens, p, filename)
     return new_def_result(Definition::TypeAlias(name, tr.type_expr), tr.pos)
+}
+
+fn parse_tipo_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+    // tipo Name { fields | variants } — unified type definition.
+    // If first member starts with BAR → enum, else → struct.
+    let mut p: Int = pos
+    let mut is_pub: Bool = false
+    if peek_type(tokens, p) == "KW_PUB" {
+        is_pub = true
+        p = p + 1
+    }
+    p = p + 1
+    let name: String = peek_value(tokens, p)
+    p = p + 1
+
+    let mut type_params: List<String> = []
+    if peek_type(tokens, p) == "LT" {
+        p = p + 1
+        type_params.push(peek_value(tokens, p))
+        p = p + 1
+        for _ in 0..20 {
+            if peek_type(tokens, p) != "COMMA" {
+                p = expect(tokens, p, "GT")
+                // Peek after LBRACE to decide struct vs enum
+                let peek_pos: Int = p + 1
+                let first_tt: String = peek_type(tokens, skip_semis(tokens, peek_pos))
+                if first_tt == "BAR" {
+                    return parse_tipo_enum(tokens, p, filename, name, is_pub, type_params)
+                }
+                return parse_struct_fields(tokens, p, filename, name, is_pub, type_params)
+            }
+            p = p + 1
+            type_params.push(peek_value(tokens, p))
+            p = p + 1
+        }
+        p = expect(tokens, p, "GT")
+    }
+
+    // Peek inside { to decide: BAR → enum variants, else → struct fields
+    let peek_inside: Int = skip_semis(tokens, p + 1)
+    if peek_type(tokens, peek_inside) == "BAR" {
+        return parse_tipo_enum(tokens, p, filename, name, is_pub, type_params)
+    }
+    return parse_struct_fields(tokens, p, filename, name, is_pub, type_params)
+}
+
+fn parse_tipo_enum(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> DefResult {
+    // Parse { | Variant1 | Variant2(Type) | ... }
+    let mut p: Int = pos
+    p = expect(tokens, p, "LBRACE")
+
+    let mut variants: List<EnumVariant> = []
+    for _ in 0..200 {
+        p = skip_semis(tokens, p)
+        if peek_type(tokens, p) == "RBRACE" {
+            p = p + 1
+            let ed: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
+            return new_def_result(Definition::EnumDef(ed), p)
+        }
+        p = expect(tokens, p, "BAR")
+        let vname: String = peek_value(tokens, p)
+        p = p + 1
+
+        let mut vtypes: List<TypeExpr> = []
+        if peek_type(tokens, p) == "LPAREN" {
+            p = p + 1
+            let mut done_args: Bool = false
+            for _ in 0..20 {
+                if !done_args {
+                    if peek_type(tokens, p) == "RPAREN" {
+                        p = p + 1
+                        done_args = true
+                    }
+                }
+                if !done_args {
+                    let tr: TypeResult = parse_type_expr(tokens, p, filename)
+                    vtypes.push(tr.type_expr)
+                    p = tr.pos
+                    if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+                }
+            }
+        }
+        let v_parsed: EnumVariant = new_enum_variant(vname, vtypes)
+        variants.push(v_parsed)
+    }
+    let ed_final: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
+    return new_def_result(Definition::EnumDef(ed_final), p)
 }
 
 // ---------------------------------------------------------------------------

@@ -58,11 +58,14 @@ fn new_lexer(source: String, pos: Int, line: Int, column: Int, filename: String)
 
 fn is_keyword(name: String) -> Bool {
     if name == "let" { return true }
+    if name == "pon" { return true }
     if name == "mut" { return true }
     if name == "fn" { return true }
     if name == "return" { return true }
+    if name == "da" { return true }
     if name == "pub" { return true }
     if name == "self" { return true }
+    if name == "yo" { return true }
     if name == "agent" { return true }
     if name == "spawn" { return true }
     if name == "sync" { return true }
@@ -70,32 +73,54 @@ fn is_keyword(name: String) -> Bool {
     if name == "stream" { return true }
     if name == "pipe" { return true }
     if name == "if" { return true }
+    if name == "si" { return true }
     if name == "else" { return true }
+    if name == "sino" { return true }
     if name == "match" { return true }
     if name == "for" { return true }
+    if name == "cada" { return true }
+    if name == "while" { return true }
+    if name == "mien" { return true }
     if name == "in" { return true }
+    if name == "en" { return true }
     if name == "type" { return true }
+    if name == "tipo" { return true }
     if name == "struct" { return true }
     if name == "enum" { return true }
     if name == "impl" { return true }
+    if name == "trait" { return true }
+    if name == "modo" { return true }
+    if name == "way" { return true }
     if name == "import" { return true }
+    if name == "usa" { return true }
     if name == "export" { return true }
+    if name == "extern" { return true }
     if name == "true" { return true }
     if name == "false" { return true }
     if name == "none" { return true }
+    if name == "nada" { return true }
     if name == "new" { return true }
     if name == "input" { return true }
     if name == "output" { return true }
+    if name == "assert" { return true }
+    if name == "break" { return true }
+    if name == "sal" { return true }
+    if name == "continue" { return true }
+    if name == "sigue" { return true }
+    if name == "di" { return true }
     return false
 }
 
 fn keyword_token_type(name: String) -> String {
     if name == "let" { return "KW_LET" }
+    if name == "pon" { return "KW_LET" }
     if name == "mut" { return "KW_MUT" }
     if name == "fn" { return "KW_FN" }
     if name == "return" { return "KW_RETURN" }
+    if name == "da" { return "KW_RETURN" }
     if name == "pub" { return "KW_PUB" }
     if name == "self" { return "KW_SELF" }
+    if name == "yo" { return "KW_SELF" }
     if name == "agent" { return "KW_AGENT" }
     if name == "spawn" { return "KW_SPAWN" }
     if name == "sync" { return "KW_SYNC" }
@@ -103,22 +128,41 @@ fn keyword_token_type(name: String) -> String {
     if name == "stream" { return "KW_STREAM" }
     if name == "pipe" { return "KW_PIPE" }
     if name == "if" { return "KW_IF" }
+    if name == "si" { return "KW_IF" }
     if name == "else" { return "KW_ELSE" }
+    if name == "sino" { return "KW_ELSE" }
     if name == "match" { return "KW_MATCH" }
     if name == "for" { return "KW_FOR" }
+    if name == "cada" { return "KW_FOR" }
+    if name == "while" { return "KW_WHILE" }
+    if name == "mien" { return "KW_WHILE" }
     if name == "in" { return "KW_IN" }
+    if name == "en" { return "KW_IN" }
     if name == "type" { return "KW_TYPE" }
+    if name == "tipo" { return "KW_TYPE" }
     if name == "struct" { return "KW_STRUCT" }
     if name == "enum" { return "KW_ENUM" }
     if name == "impl" { return "KW_IMPL" }
+    if name == "trait" { return "KW_TRAIT" }
+    if name == "modo" { return "KW_TRAIT" }
+    if name == "way" { return "KW_TRAIT" }
     if name == "import" { return "KW_IMPORT" }
+    if name == "usa" { return "KW_IMPORT" }
     if name == "export" { return "KW_EXPORT" }
+    if name == "extern" { return "KW_EXTERN" }
     if name == "true" { return "KW_TRUE" }
     if name == "false" { return "KW_FALSE" }
     if name == "none" { return "KW_NONE" }
+    if name == "nada" { return "KW_NONE" }
     if name == "new" { return "KW_NEW" }
     if name == "input" { return "KW_INPUT" }
     if name == "output" { return "KW_OUTPUT" }
+    if name == "assert" { return "KW_ASSERT" }
+    if name == "break" { return "KW_BREAK" }
+    if name == "sal" { return "KW_BREAK" }
+    if name == "continue" { return "KW_CONTINUE" }
+    if name == "sigue" { return "KW_CONTINUE" }
+    if name == "di" { return "KW_DI" }
     return "NAME"
 }
 
@@ -350,6 +394,7 @@ fn scan_op(source: String, pos: Int, line: Int, col: Int) -> Token {
     if ch == "|" {
         if ch1 == ">" { return new_token("PIPE_OP", "|>", line, col, line, col + 2) }
         if ch1 == "|" { return new_token("OR", "||", line, col, line, col + 2) }
+        return new_token("BAR", "|", line, col, line, col + 1)
     }
     if ch == "&" { if ch1 == "&" { return new_token("AND", "&&", line, col, line, col + 2) } }
     if ch == "=" {

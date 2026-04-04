@@ -1909,7 +1909,9 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
             err_ty = resolve_mir_type(val.ty.args[1])
         }
         let inner_ty_res: String = "{ " + ok_ty + ", " + err_ty + " }"
-        if variant == "Ok" {
+        // Strip ":N" suffix from variant name (lowerer passes "Ok:0", "Err:0")
+        let base_variant: String = strip_colon_suffix(variant)
+        if base_variant == "Ok" {
             s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty_res + " " + inner_r + ", 0")
         } else {
             s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty_res + " " + inner_r + ", 1")
