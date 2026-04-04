@@ -1,3 +1,6 @@
+# Built compiler binary (output of build_from_seed.sh)
+/mnc
+
 # IR Doctor baselines (local, per-machine)
 .ir_doctor/
 

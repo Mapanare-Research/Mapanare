@@ -104,6 +104,20 @@ Extract and add `mapanare` to your PATH, then verify:
 mapanare --version
 ```
 
+### Build from Source (No Python Required)
+
+The self-hosted compiler bootstraps from a checked-in seed binary.
+You only need `gcc` and `llvm`:
+
+```bash
+git clone https://github.com/Mapanare-Research/Mapanare.git
+cd Mapanare
+make build-native    # or: bash scripts/build_from_seed.sh
+./mnc hello.mn       # compile a .mn file → LLVM IR on stdout
+```
+
+Python is only needed for the development toolchain (tests, linters, IR doctor).
+
 ---
 
 ## Feature Status

@@ -430,6 +430,44 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # ---------------------------------------------------------------------------
+  # Bootstrap from seed — build without Python (gcc + llvm only)
+  # ---------------------------------------------------------------------------
+  bootstrap-from-seed:
+    name: Bootstrap from Seed (No Python)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install LLVM + gcc
+        run: sudo apt-get update -qq && sudo apt-get install -y llvm gcc
+
+      - name: Build from seed
+        run: bash scripts/build_from_seed.sh
+
+      - name: Validate output (compile hello → llvm-as)
+        run: |
+          ./mnc tests/golden/01_hello.mn > /tmp/hello.ll
+          llvm-as /tmp/hello.ll -o /dev/null
+          echo "Bootstrap compiler produces valid IR"
+
+      - name: Run golden subset (smoke test)
+        run: |
+          PASS=0; FAIL=0
+          for mn in tests/golden/01_hello.mn tests/golden/02_arithmetic.mn tests/golden/03_functions.mn; do
+            if [ -f "$mn" ]; then
+              if ./mnc "$mn" | llvm-as -o /dev/null 2>/dev/null; then
+                PASS=$((PASS + 1))
+              else
+                FAIL=$((FAIL + 1))
+                echo "FAIL: $mn"
+              fi
+            fi
+          done
+          echo "Golden smoke: ${PASS} pass, ${FAIL} fail"
+          [ "${FAIL}" -eq 0 ]
+
   # Fixed-point verification (manual milestone check, not per-PR).
   # Run locally: bash scripts/verify_fixed_point.sh
   # Blocked until emit_llvm.mn handles all IR constructs.

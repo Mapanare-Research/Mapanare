@@ -1,0 +1,3 @@
+# Binary seed compilers — do not diff or merge textually
+bootstrap/seed/*/mnc binary
+bootstrap/seed/*/mnc.exe binary

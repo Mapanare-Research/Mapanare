@@ -1,0 +1,27 @@
+# Dockerfile.bootstrap — Clean-room build of Mapanare without Python.
+#
+# Proves the compiler can be built with only gcc + llvm.
+#
+# Usage:
+#   docker build -f Dockerfile.bootstrap -t mapanare-bootstrap .
+#   docker run --rm mapanare-bootstrap
+#
+FROM ubuntu:24.04
+
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends gcc llvm libc6-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY . /mapanare
+WORKDIR /mapanare
+
+# Build from seed — no Python anywhere in this image
+RUN bash scripts/build_from_seed.sh
+
+# Validate: compile a golden test and verify the IR
+RUN ./mnc tests/golden/01_hello.mn > /tmp/hello.ll && \
+    llvm-as /tmp/hello.ll -o /dev/null && \
+    echo "Bootstrap validation: PASS"
+
+# Default: show compiler version info
+CMD ["./mnc", "--help"]

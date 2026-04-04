@@ -1,10 +1,16 @@
-.PHONY: install build test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report
+.PHONY: install build build-native bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report
 
 install:
 	pip install -e ".[dev]"
 
 build:
 	pip install -e .
+
+build-native:  ## Build from seed (no Python required — needs gcc + llvm)
+	bash scripts/build_from_seed.sh
+
+bootstrap:  ## Three-stage fixed-point verification
+	bash scripts/verify_fixed_point.sh
 
 test:
 	pytest tests/ -v -n auto --durations=20

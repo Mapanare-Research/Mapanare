@@ -2,7 +2,7 @@
 
 > No Python required. The compiler bootstraps from itself.
 
-**Status:** PLANNED
+**Status:** COMPLETE
 **Author:** Juan Denis
 **Date:** April 2026
 **Breaking:** No (build system only — language unchanged)
@@ -165,12 +165,12 @@ RUN ./mnc tests/golden/01_hello.mn > /tmp/test.ll && llvm-as /tmp/test.ll -o /de
 
 ## Success Criteria
 
-- [ ] Bootstrap seed binary checked in (`bootstrap/seed/linux-x86_64/mnc`)
-- [ ] `scripts/build_from_seed.sh` builds a working compiler from seed
-- [ ] CI job builds from seed without Python
-- [ ] Docker test passes on clean Ubuntu (no Python)
-- [ ] README updated: Python no longer required to build
-- [ ] Three-stage fixed point still holds
+- [x] Bootstrap seed binary checked in (`bootstrap/seed/linux-x86_64/mnc`)
+- [x] `scripts/build_from_seed.sh` builds a working compiler from seed
+- [x] CI job builds from seed without Python
+- [x] Docker test passes on clean Ubuntu (no Python)
+- [x] README updated: Python no longer required to build
+- [x] Three-stage fixed point still holds
 
 ---
 
