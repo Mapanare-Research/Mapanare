@@ -2,7 +2,7 @@
 
 > The compiler works. Now make the language useful.
 
-**Status:** IN PROGRESS — Phase 1+2 complete
+**Status:** IN PROGRESS — Phase 1+2+3 complete (131 stdlib functions compile)
 **Author:** Juan Denis
 **Date:** April 2026
 **Breaking:** No
@@ -99,7 +99,9 @@ compiler. These are multi-module packages with cross-file imports.
 - [x] Self-hosted compiler resolves `import` statements
 - [x] `stdlib/math.mn` compiles through `./mnc` (42 functions, 16 extern C, llvm-as VALID)
 - [x] `stdlib/fs.mn` compiles + links + runs (write, read, exists, remove, extension, stem)
-- [x] `stdlib/encoding/json.mn` — 32 functions compile (Map support added), 1 error from map iteration
+- [x] `stdlib/encoding/json.mn` — 33 functions compile cleanly (Map + iteration + index-get/set)
+- [x] `stdlib/time.mn` — 15 functions compile cleanly
+- [x] `stdlib/text/string_utils.mn` — 11 functions compile cleanly
 - [x] An end-to-end program using stdlib compiles and runs
 - [ ] Build script compiles stdlib into a linkable library
 
