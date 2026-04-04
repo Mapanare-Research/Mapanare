@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.3] - 2026-04-04
+
+### Added
+
+- While/mien loop support in self-hosted parser (desugared to for+if)
+- `scripts/test_runtime.sh`: automated runtime correctness tests (compile → execute → compare output)
+
+### Fixed
+
+- Exit codes: `main()` now returns `i32 0` (C ABI) instead of `void`
+- 12_while golden test: was producing empty output (missing while-loop parsing)
+
+### Changed
+
+- All 15 golden tests produce correct output when executed as native binaries
+- Stage1 AND stage2 compiled binaries produce identical correct results
+- Three-stage fixed point preserved (78,881 lines, 0 diff)
+
 ## [3.0.2] - 2026-04-04
 
 ### Added
@@ -435,7 +453,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.2...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.3...HEAD
+[3.0.3]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.0...v3.0.1
 [2.0.0]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.11...v2.0.0
