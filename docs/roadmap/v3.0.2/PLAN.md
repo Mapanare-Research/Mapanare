@@ -2,7 +2,7 @@
 
 > The snake bites its own tail. For real this time.
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Author:** Juan Denis
 **Date:** April 2026
 **Breaking:** No
@@ -210,7 +210,7 @@ diff /tmp/stage2.c /tmp/stage3.c  # Must be empty
 - [x] 15/15 golden tests pass through stage1 ← **DONE 2026-04-04**
 - [x] Stage2 binary produces correct IR ← **DONE 2026-04-04** (WrapNone bug in lower_let)
 - [x] Three-stage fixed point reached (stage2 == stage3) ← **DONE 2026-04-04** (78,676 lines, 0 diff)
-- [ ] `scripts/verify_fixed_point.sh` passes (automates the three-stage check)
+- [x] `scripts/verify_fixed_point.sh` passes ← **DONE 2026-04-04** (automated end-to-end)
 
 ---
 
