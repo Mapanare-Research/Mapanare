@@ -827,49 +827,49 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
         if is_float { s = emit_line(s, emit_frem(dn, ln, rn)) } else { s = emit_line(s, emit_srem(dn, llvm_int(), ln, rn)) }
     } else if op_str == "eq" {
         if is_string {
-            let eq_raw: String = dn + ".sr"
-            s = emit_line(s, emit_call_ir(eq_raw, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "ne", llvm_int(), eq_raw, "0"))
+            let eq_raw_eq: String = dn + ".sr"
+            s = emit_line(s, emit_call_ir(eq_raw_eq, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "ne", llvm_int(), eq_raw_eq, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "eq", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "eq", cmp_ty, ln, rn)) }
         }
     } else if op_str == "ne" {
         if is_string {
-            let eq_raw: String = dn + ".sr"
-            s = emit_line(s, emit_call_ir(eq_raw, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "eq", llvm_int(), eq_raw, "0"))
+            let eq_raw_ne: String = dn + ".sr"
+            s = emit_line(s, emit_call_ir(eq_raw_ne, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "eq", llvm_int(), eq_raw_ne, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "ne", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "ne", cmp_ty, ln, rn)) }
         }
     } else if op_str == "lt" {
         if is_string {
-            let cmp_r: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "slt", llvm_int(), cmp_r, "0"))
+            let cmp_r_lt: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r_lt, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "slt", llvm_int(), cmp_r_lt, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "lt", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "slt", llvm_int(), ln, rn)) }
         }
     } else if op_str == "gt" {
         if is_string {
-            let cmp_r: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "sgt", llvm_int(), cmp_r, "0"))
+            let cmp_r_gt: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r_gt, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "sgt", llvm_int(), cmp_r_gt, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "gt", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sgt", llvm_int(), ln, rn)) }
         }
     } else if op_str == "le" {
         if is_string {
-            let cmp_r: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "sle", llvm_int(), cmp_r, "0"))
+            let cmp_r_le: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r_le, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "sle", llvm_int(), cmp_r_le, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "le", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sle", llvm_int(), ln, rn)) }
         }
     } else if op_str == "ge" {
         if is_string {
-            let cmp_r: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "sge", llvm_int(), cmp_r, "0"))
+            let cmp_r_ge: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r_ge, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "sge", llvm_int(), cmp_r_ge, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "ge", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sge", llvm_int(), ln, rn)) }
         }
@@ -1357,13 +1357,13 @@ fn is_byref_type(ty: String) -> Bool {
     // This prevents ABI issues with large struct copies.
     if ty.starts_with("%struct.") {
         // All structs > 64 bytes use byref. Use llvm_type_size heuristic.
-        let sz: Int = llvm_type_size(ty)
-        if sz > 64 { return true }
+        let sz_st: Int = llvm_type_size(ty)
+        if sz_st > 64 { return true }
         return false
     }
     if ty.starts_with("{") {
-        let sz: Int = llvm_type_size(ty)
-        if sz > 64 { return true }
+        let sz_lit: Int = llvm_type_size(ty)
+        if sz_lit > 64 { return true }
     }
     return false
 }
@@ -1450,28 +1450,28 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
             let gep: String = "%push_gep" + cnt
             s = emit_line(s, "  " + gep + " = getelementptr inbounds " + struct_ty + ", ptr " + list_ref + ", i32 0, i32 " + field_idx)
             // Load list to temp alloca
-            let tmp: String = "%push_tmp" + cnt
-            s = emit_line(s, "  " + tmp + " = alloca " + llvm_list_rt())
-            let ld: String = "%push_ld" + cnt
-            s = emit_line(s, "  " + ld + " = load " + llvm_list_rt() + ", ptr " + gep)
-            s = emit_line(s, "  store " + llvm_list_rt() + " " + ld + ", ptr " + tmp)
+            let tmp_sf: String = "%push_tmp" + cnt
+            s = emit_line(s, "  " + tmp_sf + " = alloca " + llvm_list_rt())
+            let ld_sf: String = "%push_ld" + cnt
+            s = emit_line(s, "  " + ld_sf + " = load " + llvm_list_rt() + ", ptr " + gep)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + ld_sf + ", ptr " + tmp_sf)
             // Push to temp
-            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp + ", ptr " + ea))
+            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp_sf + ", ptr " + ea))
             // Write back to struct field
-            let wb: String = "%push_wb" + cnt
-            s = emit_line(s, "  " + wb + " = load " + llvm_list_rt() + ", ptr " + tmp)
-            s = emit_line(s, "  store " + llvm_list_rt() + " " + wb + ", ptr " + gep)
+            let wb_sf: String = "%push_wb" + cnt
+            s = emit_line(s, "  " + wb_sf + " = load " + llvm_list_rt() + ", ptr " + tmp_sf)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + wb_sf + ", ptr " + gep)
         } else if list_ref.contains(".addr") {
             // Simple alloca push: same temp+writeback pattern
-            let tmp: String = "%push_tmp" + cnt
-            s = emit_line(s, "  " + tmp + " = alloca " + llvm_list_rt())
-            let ld: String = "%push_ld" + cnt
-            s = emit_line(s, "  " + ld + " = load " + llvm_list_rt() + ", ptr " + list_ref)
-            s = emit_line(s, "  store " + llvm_list_rt() + " " + ld + ", ptr " + tmp)
-            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp + ", ptr " + ea))
-            let wb: String = "%push_wb" + cnt
-            s = emit_line(s, "  " + wb + " = load " + llvm_list_rt() + ", ptr " + tmp)
-            s = emit_line(s, "  store " + llvm_list_rt() + " " + wb + ", ptr " + list_ref)
+            let tmp_sa: String = "%push_tmp" + cnt
+            s = emit_line(s, "  " + tmp_sa + " = alloca " + llvm_list_rt())
+            let ld_sa: String = "%push_ld" + cnt
+            s = emit_line(s, "  " + ld_sa + " = load " + llvm_list_rt() + ", ptr " + list_ref)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + ld_sa + ", ptr " + tmp_sa)
+            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp_sa + ", ptr " + ea))
+            let wb_sa: String = "%push_wb" + cnt
+            s = emit_line(s, "  " + wb_sa + " = load " + llvm_list_rt() + ", ptr " + tmp_sa)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + wb_sa + ", ptr " + list_ref)
         } else {
             // Loaded list value — create temp alloca
             let la: String = "%push_la" + cnt
@@ -1583,21 +1583,21 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
 
     if list_ref.contains(".addr") {
         // obj is an alloca pointer — load, call, write back
-        let tmp: String = "%set_tmp" + cnt
-        s = emit_line(s, "  " + tmp + " = alloca " + llvm_list_rt())
+        let tmp_addr: String = "%set_tmp" + cnt
+        s = emit_line(s, "  " + tmp_addr + " = alloca " + llvm_list_rt())
         let ld: String = "%set_ld" + cnt
         s = emit_line(s, "  " + ld + " = load " + llvm_list_rt() + ", ptr " + list_ref)
-        s = emit_line(s, "  store " + llvm_list_rt() + " " + ld + ", ptr " + tmp)
-        s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp + ", i64 " + idx_name + ", ptr " + ea))
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + ld + ", ptr " + tmp_addr)
+        s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp_addr + ", i64 " + idx_name + ", ptr " + ea))
         let wb: String = "%set_wb" + cnt
-        s = emit_line(s, "  " + wb + " = load " + llvm_list_rt() + ", ptr " + tmp)
+        s = emit_line(s, "  " + wb + " = load " + llvm_list_rt() + ", ptr " + tmp_addr)
         s = emit_line(s, "  store " + llvm_list_rt() + " " + wb + ", ptr " + list_ref)
     } else {
         // obj is a loaded value — store to temp alloca first
-        let tmp: String = "%set_tmp" + cnt
-        s = emit_line(s, "  " + tmp + " = alloca " + llvm_list_rt())
-        s = emit_line(s, "  store " + llvm_list_rt() + " " + list_ref + ", ptr " + tmp)
-        s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp + ", i64 " + idx_name + ", ptr " + ea))
+        let tmp_val: String = "%set_tmp" + cnt
+        s = emit_line(s, "  " + tmp_val + " = alloca " + llvm_list_rt())
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + list_ref + ", ptr " + tmp_val)
+        s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp_val + ", i64 " + idx_name + ", ptr " + ea))
     }
     return s
 }
@@ -1674,14 +1674,14 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
             }
         }
         // Build enum value using named type
-        let ei1: String = dn + ".ei1"
-        s = emit_line(s, "  " + ei1 + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
-        s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1 + ", ptr " + ep + ", 1")
+        let ei1_pay: String = dn + ".ei1"
+        s = emit_line(s, "  " + ei1_pay + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
+        s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1_pay + ", ptr " + ep + ", 1")
     } else {
         // No payload: null pointer
-        let ei1: String = dn + ".ei1"
-        s = emit_line(s, "  " + ei1 + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
-        s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1 + ", ptr null, 1")
+        let ei1_bare: String = dn + ".ei1"
+        s = emit_line(s, "  " + ei1_bare + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
+        s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1_bare + ", ptr null, 1")
     }
     return s
 }
@@ -1908,11 +1908,11 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
             ok_ty = resolve_mir_type(val.ty.args[0])
             err_ty = resolve_mir_type(val.ty.args[1])
         }
-        let inner_ty: String = "{ " + ok_ty + ", " + err_ty + " }"
+        let inner_ty_res: String = "{ " + ok_ty + ", " + err_ty + " }"
         if variant == "Ok" {
-            s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty + " " + inner_r + ", 0")
+            s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty_res + " " + inner_r + ", 0")
         } else {
-            s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty + " " + inner_r + ", 1")
+            s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty_res + " " + inner_r + ", 1")
         }
         return s
     }
@@ -1921,8 +1921,8 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         let ptr_name: String = dn + ".ptr"
         s = emit_line(s, "  " + ptr_name + " = extractvalue " + enum_ty + " " + val.name + ", 1")
         // Use destination type for load — avoids struct/enum name mismatches
-        let inner_ty: String = resolve_type(st, dest.ty)
-        s = emit_line(s, "  " + dn + " = load " + inner_ty + ", ptr " + ptr_name)
+        let inner_ty_opt: String = resolve_type(st, dest.ty)
+        s = emit_line(s, "  " + dn + " = load " + inner_ty_opt + ", ptr " + ptr_name)
         return s
     }
 
@@ -2089,69 +2089,69 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     // C runtime __mn_range returns void* (ptr), but self-hosted expects {i64, i64}.
     // Fix: construct the {i64, i64} directly instead of calling the C function.
     if fn_name == "__mn_range" {
-        let mut s: EmitState = st
-        let tmp: String = dn + ".tmp"
-        s = emit_line(s, "  " + tmp + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
-        s = emit_line(s, "  " + dn + " = insertvalue { i64, i64 } " + tmp + ", i64 " + args[1].name + ", 1")
-        return s
+        let mut s_rng: EmitState = st
+        let tmp_rng: String = dn + ".tmp"
+        s_rng = emit_line(s_rng, "  " + tmp_rng + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
+        s_rng = emit_line(s_rng, "  " + dn + " = insertvalue { i64, i64 } " + tmp_rng + ", i64 " + args[1].name + ", 1")
+        return s_rng
     }
     if fn_name == "__mn_range_inclusive" {
-        let mut s: EmitState = st
+        let mut s_rngi: EmitState = st
         let inc: String = dn + ".inc"
-        let tmp: String = dn + ".tmp"
-        s = emit_line(s, "  " + inc + " = add i64 " + args[1].name + ", 1")
-        s = emit_line(s, "  " + tmp + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
-        s = emit_line(s, "  " + dn + " = insertvalue { i64, i64 } " + tmp + ", i64 " + inc + ", 1")
-        return s
+        let tmp_rngi: String = dn + ".tmp"
+        s_rngi = emit_line(s_rngi, "  " + inc + " = add i64 " + args[1].name + ", 1")
+        s_rngi = emit_line(s_rngi, "  " + tmp_rngi + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
+        s_rngi = emit_line(s_rngi, "  " + dn + " = insertvalue { i64, i64 } " + tmp_rngi + ", i64 " + inc + ", 1")
+        return s_rngi
     }
 
     // Range field extraction (counter-based for-loops)
     if fn_name == "__mn_range_start" {
-        let mut s: EmitState = st
-        s = emit_line(s, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 0")
-        return s
+        let mut s_rs: EmitState = st
+        s_rs = emit_line(s_rs, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 0")
+        return s_rs
     }
     if fn_name == "__mn_range_end" {
-        let mut s: EmitState = st
-        s = emit_line(s, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 1")
-        return s
+        let mut s_re: EmitState = st
+        s_re = emit_line(s_re, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 1")
+        return s_re
     }
 
     // String builtins
     if fn_name == "split" {
-        let mut s: EmitState = st
-        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        s = emit_line(s, emit_call_ir(dn, llvm_list_rt(), "__mn_str_split", arg_str))
-        return s
+        let mut s_split: EmitState = st
+        let as_split: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        s_split = emit_line(s_split, emit_call_ir(dn, llvm_list_rt(), "__mn_str_split", as_split))
+        return s_split
     }
     if fn_name == "contains" {
-        let mut s: EmitState = st
-        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        s = emit_line(s, emit_call_ir(dn, llvm_bool(), "__mn_str_contains", arg_str))
-        return s
+        let mut s_cont: EmitState = st
+        let as_cont: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        s_cont = emit_line(s_cont, emit_call_ir(dn, llvm_bool(), "__mn_str_contains", as_cont))
+        return s_cont
     }
     if fn_name == "replace" {
-        let mut s: EmitState = st
-        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name
-        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_replace", arg_str))
-        return s
+        let mut s_repl: EmitState = st
+        let as_repl: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name
+        s_repl = emit_line(s_repl, emit_call_ir(dn, llvm_string(), "__mn_str_replace", as_repl))
+        return s_repl
     }
     if fn_name == "byte_at" {
-        let mut s: EmitState = st
-        let arg_str: String = llvm_string() + " " + args[0].name + ", i64 " + args[1].name
-        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_byte_at", arg_str))
-        return s
+        let mut s_ba: EmitState = st
+        let as_ba: String = llvm_string() + " " + args[0].name + ", i64 " + args[1].name
+        s_ba = emit_line(s_ba, emit_call_ir(dn, llvm_int(), "__mn_str_byte_at", as_ba))
+        return s_ba
     }
     // join(sep, list) → String via C runtime. List passed by pointer.
     if fn_name == "join" {
-        let mut s: EmitState = st
+        let mut s_join: EmitState = st
         // Alloca the list and pass pointer (C runtime expects MnList*)
         let la: String = "%" + strip_percent(dn) + ".la"
-        s = emit_line(s, "  " + la + " = alloca " + llvm_list_rt())
-        s = emit_line(s, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + la)
-        let arg_str: String = llvm_string() + " " + args[0].name + ", ptr " + la
-        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_join", arg_str))
-        return s
+        s_join = emit_line(s_join, "  " + la + " = alloca " + llvm_list_rt())
+        s_join = emit_line(s_join, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + la)
+        let as_join: String = llvm_string() + " " + args[0].name + ", ptr " + la
+        s_join = emit_line(s_join, emit_call_ir(dn, llvm_string(), "__mn_str_join", as_join))
+        return s_join
     }
 
     // List push: extract to helper to avoid return-inside-if bug
@@ -2686,17 +2686,17 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     let nfparams: Int = len(f.params)
     for _ in 0..200 {
         if pi < nfparams {
-            let p: MIRParam = f.params[pi]
-            let pty: String = resolve_mir_type(p.ty)
-            param_types.push(pty)
+            let p_sig: MIRParam = f.params[pi]
+            let pty_sig: String = resolve_mir_type(p_sig.ty)
+            param_types.push(pty_sig)
             let need_sep: Bool = pi > 0 || use_sret
             let mut sep: String = ""
             if need_sep { sep = ", " }
-            if is_byref_type(pty) {
+            if is_byref_type(pty_sig) {
                 // Large param: pass by pointer
-                params_str = params_str + sep + "ptr %" + p.name + ".byref"
+                params_str = params_str + sep + "ptr %" + p_sig.name + ".byref"
             } else {
-                params_str = params_str + sep + pty + " %" + p.name
+                params_str = params_str + sep + pty_sig + " %" + p_sig.name
             }
             pi = pi + 1
         }
@@ -2733,12 +2733,12 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         let nfparams3: Int = len(f.params)
         for _ in 0..100 {
             if pi3 < nfparams3 {
-                let p: MIRParam = f.params[pi3]
-                let pty: String = resolve_mir_type(p.ty)
-                if is_byref_type(pty) {
-                    s = emit_line(s, "  %" + p.name + ".addr = alloca " + pty)
-                    s = emit_line(s, "  %" + p.name + ".bp = load " + pty + ", ptr %" + p.name + ".byref")
-                    s = emit_line(s, "  store " + pty + " %" + p.name + ".bp, ptr %" + p.name + ".addr")
+                let p_byref: MIRParam = f.params[pi3]
+                let pty_byref: String = resolve_mir_type(p_byref.ty)
+                if is_byref_type(pty_byref) {
+                    s = emit_line(s, "  %" + p_byref.name + ".addr = alloca " + pty_byref)
+                    s = emit_line(s, "  %" + p_byref.name + ".bp = load " + pty_byref + ", ptr %" + p_byref.name + ".byref")
+                    s = emit_line(s, "  store " + pty_byref + " %" + p_byref.name + ".bp, ptr %" + p_byref.name + ".addr")
                 }
                 pi3 = pi3 + 1
             }
@@ -2870,14 +2870,14 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     let nmodfns: Int = len(module.functions)
     for _ in 0..600 {
         if dix < nmodfns {
-            let f: MIRFunction = module.functions[dix]
-            let ret_ty: String = resolve_mir_type(f.return_type)
+            let f_decl: MIRFunction = module.functions[dix]
+            let ret_ty: String = resolve_mir_type(f_decl.return_type)
             let mut fparams: String = ""
             let mut fpi: Int = 0
-            let nfwdparams: Int = len(f.params)
+            let nfwdparams: Int = len(f_decl.params)
             for _ in 0..200 {
                 if fpi < nfwdparams {
-                    let fp: MIRParam = f.params[fpi]
+                    let fp: MIRParam = f_decl.params[fpi]
                     let fpty: String = resolve_mir_type(fp.ty)
                     if fpi > 0 {
                         fparams = fparams + ", " + fpty
@@ -2891,11 +2891,11 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
             let mut fti: Int = 0
             for _ in 0..200 {
                 if fti < nfwdparams {
-                    fn_types.push(resolve_mir_type(f.params[fti].ty))
+                    fn_types.push(resolve_mir_type(f_decl.params[fti].ty))
                     fti = fti + 1
                 }
             }
-            let fe: FnEntry = new_fn_entry(f.name, ret_ty, fn_types)
+            let fe: FnEntry = new_fn_entry(f_decl.name, ret_ty, fn_types)
             st.functions.push(fe)
             dix = dix + 1
         }
@@ -2906,9 +2906,9 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     let mut fi: Int = 0
     for _ in 0..600 {
         if fi < total_fns {
-            let f: MIRFunction = module.functions[fi]
-            if len(f.blocks) > 0 {
-                st = emit_mir_function(st, f)
+            let f_emit: MIRFunction = module.functions[fi]
+            if len(f_emit.blocks) > 0 {
+                st = emit_mir_function(st, f_emit)
             }
             fi = fi + 1
         }

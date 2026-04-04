@@ -400,12 +400,12 @@ pub fn parse(source: String, filename: String) -> Program {
         if pos >= len(tokens) {
             if len(top_stmts) > 0 {
                 if !has_explicit_main(defs) {
-                    let body: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
+                    let body_early: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
                     let empty_tp: List<String> = []
                     let empty_params: List<Param> = []
                     let empty_decs: List<Decorator> = []
-                    let main_fn: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp, empty_params, none, body, empty_decs)
-                    defs.push(Definition::FnDef(main_fn))
+                    let main_fn_early: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp, empty_params, none, body_early, empty_decs)
+                    defs.push(Definition::FnDef(main_fn_early))
                 }
             }
             return Program::start(defs)
@@ -425,12 +425,12 @@ pub fn parse(source: String, filename: String) -> Program {
 
     if len(top_stmts) > 0 {
         if !has_explicit_main(defs) {
-            let body: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
+            let body_final: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
             let empty_tp2: List<String> = []
             let empty_params2: List<Param> = []
             let empty_decs2: List<Decorator> = []
-            let main_fn: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp2, empty_params2, none, body, empty_decs2)
-            defs.push(Definition::FnDef(main_fn))
+            let main_fn_final: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp2, empty_params2, none, body_final, empty_decs2)
+            defs.push(Definition::FnDef(main_fn_final))
         }
     }
 
@@ -510,14 +510,14 @@ fn parse_export_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     let tt: String = peek_type(tokens, p)
 
     if tt == "KW_FN" {
-        let r: DefResult = parse_fn_def(tokens, p, filename)
-        let exp_items: List<String> = []
-        return new_def_result(Definition::ExportDef(none, exp_items), r.pos)
+        let r_fn: DefResult = parse_fn_def(tokens, p, filename)
+        let exp_items_fn: List<String> = []
+        return new_def_result(Definition::ExportDef(none, exp_items_fn), r_fn.pos)
     }
     if tt == "KW_STRUCT" {
-        let r: DefResult = parse_struct_def(tokens, p, filename)
-        let exp_items: List<String> = []
-        return new_def_result(Definition::ExportDef(none, exp_items), r.pos)
+        let r_st: DefResult = parse_struct_def(tokens, p, filename)
+        let exp_items_st: List<String> = []
+        return new_def_result(Definition::ExportDef(none, exp_items_st), r_st.pos)
     }
 
     let mut names: List<String> = []
@@ -676,8 +676,8 @@ fn parse_struct_fields(tokens: List<Token>, pos: Int, filename: String, name: St
         p = skip_semis(tokens, p)
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            let sd: StructDefData = new_struct_def_data(name, is_pub, type_params, fields)
-            return new_def_result(Definition::StructDef(sd), p)
+            let sd_early: StructDefData = new_struct_def_data(name, is_pub, type_params, fields)
+            return new_def_result(Definition::StructDef(sd_early), p)
         }
 
         let fname: String = peek_value(tokens, p)
@@ -692,8 +692,8 @@ fn parse_struct_fields(tokens: List<Token>, pos: Int, filename: String, name: St
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
     }
 
-    let sd: StructDefData = new_struct_def_data(name, is_pub, type_params, fields)
-    return new_def_result(Definition::StructDef(sd), p)
+    let sd_final: StructDefData = new_struct_def_data(name, is_pub, type_params, fields)
+    return new_def_result(Definition::StructDef(sd_final), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -742,8 +742,8 @@ fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String
         p = skip_semis(tokens, p)
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            let ed: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
-            return new_def_result(Definition::EnumDef(ed), p)
+            let ed_early: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
+            return new_def_result(Definition::EnumDef(ed_early), p)
         }
 
         let vname: String = peek_value(tokens, p)
@@ -759,8 +759,8 @@ fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String
                 for _ in 0..20 {
                     if peek_type(tokens, p) != "COMMA" {
                         p = expect(tokens, p, "RPAREN")
-                        let v: EnumVariant = new_enum_variant(vname, vtypes)
-                        variants.push(v)
+                        let v_inner: EnumVariant = new_enum_variant(vname, vtypes)
+                        variants.push(v_inner)
                         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
                         // Continue loop
                         return parse_enum_body_continue(tokens, p, filename, name, is_pub, type_params, variants)
@@ -774,14 +774,14 @@ fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String
             p = expect(tokens, p, "RPAREN")
         }
 
-        let v: EnumVariant = new_enum_variant(vname, vtypes)
-        variants.push(v)
+        let v_outer: EnumVariant = new_enum_variant(vname, vtypes)
+        variants.push(v_outer)
 
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
     }
 
-    let ed: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
-    return new_def_result(Definition::EnumDef(ed), p)
+    let ed_final: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
+    return new_def_result(Definition::EnumDef(ed_final), p)
 }
 
 fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, variants: List<EnumVariant>) -> DefResult {
@@ -792,8 +792,8 @@ fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, nam
         p = skip_semis(tokens, p)
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            let ed: EnumDefData = new_enum_def_data(name, is_pub, type_params, vars)
-            return new_def_result(Definition::EnumDef(ed), p)
+            let ed_c_early: EnumDefData = new_enum_def_data(name, is_pub, type_params, vars)
+            return new_def_result(Definition::EnumDef(ed_c_early), p)
         }
 
         let vn: String = peek_value(tokens, p)
@@ -829,8 +829,8 @@ fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, nam
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
     }
 
-    let ed: EnumDefData = new_enum_def_data(name, is_pub, type_params, vars)
-    return new_def_result(Definition::EnumDef(ed), p)
+    let ed_c_final: EnumDefData = new_enum_def_data(name, is_pub, type_params, vars)
+    return new_def_result(Definition::EnumDef(ed_c_final), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -894,8 +894,8 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
     let mut depth: Int = 1
     for _ in 0..100000 {
         if p >= len(tokens) {
-            let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
-            return new_def_result(Definition::AgentDef(ad), p)
+            let ad_eof: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
+            return new_def_result(Definition::AgentDef(ad_eof), p)
         }
         let tt: String = peek_type(tokens, p)
         if tt == "LBRACE" { depth = depth + 1 }
@@ -903,14 +903,14 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
             depth = depth - 1
             if depth == 0 {
                 p = p + 1
-                let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
-                return new_def_result(Definition::AgentDef(ad), p)
+                let ad_close: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
+                return new_def_result(Definition::AgentDef(ad_close), p)
             }
         }
         p = p + 1
     }
-    let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
-    return new_def_result(Definition::AgentDef(ad), p)
+    let ad_end: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
+    return new_def_result(Definition::AgentDef(ad_end), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -932,8 +932,8 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
     let mut depth: Int = 1
     for _ in 0..100000 {
         if p >= len(tokens) {
-            let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
-            return new_def_result(Definition::PipeDef(pd), p)
+            let pd_eof: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
+            return new_def_result(Definition::PipeDef(pd_eof), p)
         }
         let tt: String = peek_type(tokens, p)
         if tt == "LBRACE" { depth = depth + 1 }
@@ -941,14 +941,14 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
             depth = depth - 1
             if depth == 0 {
                 p = p + 1
-                let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
-                return new_def_result(Definition::PipeDef(pd), p)
+                let pd_close: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
+                return new_def_result(Definition::PipeDef(pd_close), p)
             }
         }
         p = p + 1
     }
-    let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
-    return new_def_result(Definition::PipeDef(pd), p)
+    let pd_end: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
+    return new_def_result(Definition::PipeDef(pd_end), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -993,13 +993,13 @@ fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult {
     for _ in 0..100000 {
         p = skip_semis(tokens, p)
         if at_end(tokens, p) {
-            let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
-            return new_block_result(blk, p)
+            let blk_eof: Block = new_block(new_span(0, 0, 0, 0), stmts)
+            return new_block_result(blk_eof, p)
         }
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
-            return new_block_result(blk, p)
+            let blk_close: Block = new_block(new_span(0, 0, 0, 0), stmts)
+            return new_block_result(blk_close, p)
         }
 
         let sr: StmtResult = parse_stmt(tokens, p, filename)
@@ -1007,8 +1007,8 @@ fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult {
         p = sr.pos
     }
 
-    let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
-    return new_block_result(blk, p)
+    let blk_end: Block = new_block(new_span(0, 0, 0, 0), stmts)
+    return new_block_result(blk_end, p)
 }
 
 // ---------------------------------------------------------------------------
@@ -1103,33 +1103,33 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
         let att: String = peek_type(tokens, p)
         if att == "ASSIGN" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Assign(left, "=", rhs.expr), rhs.pos)
+            let rhs_eq: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Assign(left, "=", rhs_eq.expr), rhs_eq.pos)
         }
         if att == "PLUS_EQ" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Assign(left, "+=", rhs.expr), rhs.pos)
+            let rhs_add: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Assign(left, "+=", rhs_add.expr), rhs_add.pos)
         }
         if att == "MINUS_EQ" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Assign(left, "-=", rhs.expr), rhs.pos)
+            let rhs_sub: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Assign(left, "-=", rhs_sub.expr), rhs_sub.pos)
         }
         if att == "STAR_EQ" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Assign(left, "*=", rhs.expr), rhs.pos)
+            let rhs_mul: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Assign(left, "*=", rhs_mul.expr), rhs_mul.pos)
         }
         if att == "SLASH_EQ" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Assign(left, "/=", rhs.expr), rhs.pos)
+            let rhs_div: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Assign(left, "/=", rhs_div.expr), rhs_div.pos)
         }
         if att == "SEND" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Send(left, rhs.expr), rhs.pos)
+            let rhs_send: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Send(left, rhs_send.expr), rhs_send.pos)
         }
         if att == "FAT_ARROW" {
             p = p + 1
@@ -1192,12 +1192,12 @@ fn parse_unary(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     let tt: String = peek_type(tokens, pos)
 
     if tt == "MINUS" {
-        let r: ExprResult = parse_unary(tokens, pos + 1, filename)
-        return new_expr_result(Expr::Unary("-", r.expr), r.pos)
+        let r_neg: ExprResult = parse_unary(tokens, pos + 1, filename)
+        return new_expr_result(Expr::Unary("-", r_neg.expr), r_neg.pos)
     }
     if tt == "BANG" {
-        let r: ExprResult = parse_unary(tokens, pos + 1, filename)
-        return new_expr_result(Expr::Unary("!", r.expr), r.pos)
+        let r_not: ExprResult = parse_unary(tokens, pos + 1, filename)
+        return new_expr_result(Expr::Unary("!", r_not.expr), r_not.pos)
     }
 
     return parse_postfix(tokens, pos, filename)
@@ -1568,13 +1568,13 @@ fn parse_if_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
         let elif_r: ExprResult = parse_if_expr(tokens, p, filename)
         let else_stmts: List<Stmt> = [Stmt::ExprStmt(elif_r.expr)]
         let else_block: Block = new_block(new_span(0, 0, 0, 0), else_stmts)
-        let else_clause: ElseClause = ElseClause::ElseBlock(else_block)
-        return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(else_clause)), elif_r.pos)
+        let ec_elif: ElseClause = ElseClause::ElseBlock(else_block)
+        return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(ec_elif)), elif_r.pos)
     }
 
     let else_r: BlockResult = parse_block(tokens, p, filename)
-    let else_clause: ElseClause = ElseClause::ElseBlock(else_r.block)
-    return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(else_clause)), else_r.pos)
+    let ec_else: ElseClause = ElseClause::ElseBlock(else_r.block)
+    return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(ec_else)), else_r.pos)
 }
 
 // ---------------------------------------------------------------------------
@@ -1614,13 +1614,13 @@ fn parse_match_arm_item(tokens: List<Token>, pos: Int, filename: String) -> Matc
 
     if peek_type(tokens, p) == "LBRACE" {
         let br: BlockResult = parse_block(tokens, p, filename)
-        let arm: MatchArm = new_match_arm(pr.pattern, MatchArmBody::BlockBody(br.block))
-        return new_match_arm_result(arm, br.pos)
+        let arm_blk: MatchArm = new_match_arm(pr.pattern, MatchArmBody::BlockBody(br.block))
+        return new_match_arm_result(arm_blk, br.pos)
     }
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
-    let arm: MatchArm = new_match_arm(pr.pattern, MatchArmBody::ExprBody(er.expr))
-    return new_match_arm_result(arm, er.pos)
+    let arm_expr: MatchArm = new_match_arm(pr.pattern, MatchArmBody::ExprBody(er.expr))
+    return new_match_arm_result(arm_expr, er.pos)
 }
 
 // ---------------------------------------------------------------------------
@@ -1690,8 +1690,8 @@ fn parse_spawn_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
         for _ in 0..50 {
             if peek_type(tokens, p) != "COMMA" {
                 p = expect(tokens, p, "RPAREN")
-                let callee: Expr = Expr::Ident(name)
-                return new_expr_result(Expr::Spawn(callee, args), p)
+                let callee_early: Expr = Expr::Ident(name)
+                return new_expr_result(Expr::Spawn(callee_early, args), p)
             }
             p = p + 1
             let an: ExprResult = parse_expr(tokens, p, filename, 0)
@@ -1700,8 +1700,8 @@ fn parse_spawn_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
         }
     }
     p = expect(tokens, p, "RPAREN")
-    let callee: Expr = Expr::Ident(name)
-    return new_expr_result(Expr::Spawn(callee, args), p)
+    let callee_final: Expr = Expr::Ident(name)
+    return new_expr_result(Expr::Spawn(callee_final, args), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -1852,8 +1852,8 @@ fn parse_fn_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult 
             if peek_type(tokens, p) != "COMMA" {
                 p = expect(tokens, p, "RPAREN")
                 p = expect(tokens, p, "ARROW")
-                let ret: TypeResult = parse_type_expr(tokens, p, filename)
-                return new_type_result(TypeExpr::FnTy(param_types, ret.type_expr), ret.pos)
+                let ret_early: TypeResult = parse_type_expr(tokens, p, filename)
+                return new_type_result(TypeExpr::FnTy(param_types, ret_early.type_expr), ret_early.pos)
             }
             p = p + 1
             let tn: TypeResult = parse_type_expr(tokens, p, filename)
@@ -1863,6 +1863,6 @@ fn parse_fn_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult 
     }
     p = expect(tokens, p, "RPAREN")
     p = expect(tokens, p, "ARROW")
-    let ret: TypeResult = parse_type_expr(tokens, p, filename)
-    return new_type_result(TypeExpr::FnTy(param_types, ret.type_expr), ret.pos)
+    let ret_final: TypeResult = parse_type_expr(tokens, p, filename)
+    return new_type_result(TypeExpr::FnTy(param_types, ret_final.type_expr), ret_final.pos)
 }

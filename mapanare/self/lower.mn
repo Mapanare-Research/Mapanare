@@ -78,13 +78,13 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         },
         ImportDef(path, items) => {
             let info: ImportInfo = new_import_info(path, items)
-            let mut new_st: LowerState = st
-            let mut mod_tmp: MIRModule = new_st.module
+            let mut new_st_imp: LowerState = st
+            let mut mod_tmp: MIRModule = new_st_imp.module
             let mut imp_list: List<ImportInfo> = mod_tmp.imports
             imp_list.push(info)
             mod_tmp.imports = imp_list
-            new_st.module = mod_tmp
-            return new_st
+            new_st_imp.module = mod_tmp
+            return new_st_imp
         },
         ExportDef(inner_opt, _) => {
             match inner_opt {
@@ -100,9 +100,9 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
             let ret_key: String = "__ret__" + fd.name
             let ret_val: String = ret_ty.kind + ":" + ret_ty.name
             let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
-            let mut new_st: LowerState = st
-            new_st.lambda_vars.push(entry)
-            return new_st
+            let mut new_st_fn: LowerState = st
+            new_st_fn.lambda_vars.push(entry)
+            return new_st_fn
         },
         _ => { return st }
     }
@@ -437,27 +437,27 @@ fn lower_block_stmts(st: LowerState, stmts: List<Stmt>) -> LowerResult {
 fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
     match stmt {
         Let(name, mutable, type_ann, value) => {
-            let s: LowerState = lower_let(st, name, mutable, type_ann, value)
-            return new_lower_result(void_value(), s)
+            let s_let: LowerState = lower_let(st, name, mutable, type_ann, value)
+            return new_lower_result(void_value(), s_let)
         },
         ExprStmt(expr) => {
             return lower_expr(st, expr)
         },
         Return(value_opt) => {
-            let s: LowerState = lower_return(st, value_opt)
-            return new_lower_result(void_value(), s)
+            let s_ret: LowerState = lower_return(st, value_opt)
+            return new_lower_result(void_value(), s_ret)
         },
         For(var_name, iterable, body) => {
-            let s: LowerState = lower_for(st, var_name, iterable, body)
-            return new_lower_result(void_value(), s)
+            let s_for: LowerState = lower_for(st, var_name, iterable, body)
+            return new_lower_result(void_value(), s_for)
         },
         SignalDecl(name, mutable, type_ann, value, _) => {
-            let s: LowerState = lower_signal_decl(st, name, mutable, type_ann, value)
-            return new_lower_result(void_value(), s)
+            let s_sig: LowerState = lower_signal_decl(st, name, mutable, type_ann, value)
+            return new_lower_result(void_value(), s_sig)
         },
         StreamDecl(name, type_ann, value) => {
-            let s: LowerState = lower_stream_decl(st, name, value)
-            return new_lower_result(void_value(), s)
+            let s_strm: LowerState = lower_stream_decl(st, name, value)
+            return new_lower_result(void_value(), s_strm)
         }
     }
 }
@@ -671,36 +671,36 @@ fn lower_stream_decl(st: LowerState, name: String, value: Expr) -> LowerState {
 fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     match expr {
         IntLit(n) => {
-            let r: LowerResult = make_value(st, mir_int(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_int(), toString(n)))
-            return new_lower_result(r.value, s)
+            let r_int: LowerResult = make_value(st, mir_int(), "t")
+            let s_int: LowerState = emit_instr(r_int.state, Instruction::Const(r_int.value, mir_int(), toString(n)))
+            return new_lower_result(r_int.value, s_int)
         },
         FloatLit(f) => {
-            let r: LowerResult = make_value(st, mir_float(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_float(), toString(f)))
-            return new_lower_result(r.value, s)
+            let r_flt: LowerResult = make_value(st, mir_float(), "t")
+            let s_flt: LowerState = emit_instr(r_flt.state, Instruction::Const(r_flt.value, mir_float(), toString(f)))
+            return new_lower_result(r_flt.value, s_flt)
         },
         BoolLit(b) => {
-            let r: LowerResult = make_value(st, mir_bool(), "t")
+            let r_bool: LowerResult = make_value(st, mir_bool(), "t")
             let mut val_str: String = "false"
             if b { val_str = "true" }
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_bool(), val_str))
-            return new_lower_result(r.value, s)
+            let s_bool: LowerState = emit_instr(r_bool.state, Instruction::Const(r_bool.value, mir_bool(), val_str))
+            return new_lower_result(r_bool.value, s_bool)
         },
         StringLit(text) => {
-            let r: LowerResult = make_value(st, mir_string(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_string(), text))
-            return new_lower_result(r.value, s)
+            let r_str: LowerResult = make_value(st, mir_string(), "t")
+            let s_str: LowerState = emit_instr(r_str.state, Instruction::Const(r_str.value, mir_string(), text))
+            return new_lower_result(r_str.value, s_str)
         },
         CharLit(ch) => {
-            let r: LowerResult = make_value(st, mir_string(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_string(), ch))
-            return new_lower_result(r.value, s)
+            let r_chr: LowerResult = make_value(st, mir_string(), "t")
+            let s_chr: LowerState = emit_instr(r_chr.state, Instruction::Const(r_chr.value, mir_string(), ch))
+            return new_lower_result(r_chr.value, s_chr)
         },
         NoneLit => {
-            let r: LowerResult = make_value(st, mir_option(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::WrapNone(r.value, mir_option()))
-            return new_lower_result(r.value, s)
+            let r_none: LowerResult = make_value(st, mir_option(), "t")
+            let s_none: LowerState = emit_instr(r_none.state, Instruction::WrapNone(r_none.value, mir_option()))
+            return new_lower_result(r_none.value, s_none)
         },
         Ident(name) => {
             return lower_identifier(st, name)
@@ -754,22 +754,22 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
             return lower_construct(st, name, fields)
         },
         SomeWrap(inner) => {
-            let r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(r.state, mir_option(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapSome(dest_r.value, r.value))
-            return new_lower_result(dest_r.value, s)
+            let r_some: LowerResult = lower_expr(st, inner)
+            let dr_some: LowerResult = make_value(r_some.state, mir_option(), "t")
+            let s_some: LowerState = emit_instr(dr_some.state, Instruction::WrapSome(dr_some.value, r_some.value))
+            return new_lower_result(dr_some.value, s_some)
         },
         OkWrap(inner) => {
-            let r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(r.state, mir_result(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapOk(dest_r.value, r.value))
-            return new_lower_result(dest_r.value, s)
+            let r_ok: LowerResult = lower_expr(st, inner)
+            let dr_ok: LowerResult = make_value(r_ok.state, mir_result(), "t")
+            let s_ok: LowerState = emit_instr(dr_ok.state, Instruction::WrapOk(dr_ok.value, r_ok.value))
+            return new_lower_result(dr_ok.value, s_ok)
         },
         ErrWrap(inner) => {
-            let r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(r.state, mir_result(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapErr(dest_r.value, r.value))
-            return new_lower_result(dest_r.value, s)
+            let r_err: LowerResult = lower_expr(st, inner)
+            let dr_err: LowerResult = make_value(r_err.state, mir_result(), "t")
+            let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, r_err.value))
+            return new_lower_result(dr_err.value, s_err)
         },
         SignalVal(inner, _) => {
             return lower_signal_expr(st, inner)
@@ -796,9 +796,9 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult {
     match var_opt {
         Some(addr) => {
             // var_opt now returns the alloca address. Emit a Load to get the value.
-            let r: LowerResult = make_value(st, addr.ty, name + "_val")
-            let s: LowerState = emit_instr(r.state, Instruction::Load(r.value, addr))
-            return new_lower_result(r.value, s)
+            let r_var: LowerResult = make_value(st, addr.ty, name + "_val")
+            let s_var: LowerState = emit_instr(r_var.state, Instruction::Load(r_var.value, addr))
+            return new_lower_result(r_var.value, s_var)
         },
         _ => {}
     }
@@ -807,16 +807,16 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult {
     if is_enum_variant(st, name) {
         let enum_name: String = enum_name_for_variant(st, name)
         let enum_ty: MIRType = mir_enum(enum_name)
-        let r: LowerResult = make_value(st, enum_ty, "t")
+        let r_enum: LowerResult = make_value(st, enum_ty, "t")
         let empty_payload: List<Value> = []
-        let s: LowerState = emit_instr(r.state, Instruction::EnumInit(r.value, enum_ty, name, empty_payload))
-        return new_lower_result(r.value, s)
+        let s_enum: LowerState = emit_instr(r_enum.state, Instruction::EnumInit(r_enum.value, enum_ty, name, empty_payload))
+        return new_lower_result(r_enum.value, s_enum)
     }
 
     // Unknown — emit placeholder
-    let r: LowerResult = make_value(st, mir_unknown(), name)
-    let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_unknown(), ""))
-    return new_lower_result(r.value, s)
+    let r_unk: LowerResult = make_value(st, mir_unknown(), name)
+    let s_unk: LowerState = emit_instr(r_unk.state, Instruction::Const(r_unk.value, mir_unknown(), ""))
+    return new_lower_result(r_unk.value, s_unk)
 }
 
 // ---------------------------------------------------------------------------
@@ -851,18 +851,18 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
             let is_cmp: Bool = op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=" || op == "and" || op == "or"
             let mut result_ty: MIRType = lhs_val.ty
             if is_cmp { result_ty = mir_bool() }
-            let dest_r: LowerResult = make_value(rhs_r.state, result_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::BinOp(dest_r.value, binop, lhs_val, rhs_val))
-            return new_lower_result(dest_r.value, s)
+            let dr_binop: LowerResult = make_value(rhs_r.state, result_ty, "t")
+            let s_binop: LowerState = emit_instr(dr_binop.state, Instruction::BinOp(dr_binop.value, binop, lhs_val, rhs_val))
+            return new_lower_result(dr_binop.value, s_binop)
         },
         _ => {
             // Unknown operator — emit as call
-            let dest_r: LowerResult = make_value(rhs_r.state, mir_unknown(), "t")
+            let dr_opcall: LowerResult = make_value(rhs_r.state, mir_unknown(), "t")
             let mut args: List<Value> = []
             args.push(lhs_r.value)
             args.push(rhs_r.value)
-            let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__op_" + op, args))
-            return new_lower_result(dest_r.value, s)
+            let s_opcall: LowerState = emit_instr(dr_opcall.state, Instruction::Call(dr_opcall.value, "__op_" + op, args))
+            return new_lower_result(dr_opcall.value, s_opcall)
         }
     }
 }
@@ -884,16 +884,16 @@ fn lower_unary(st: LowerState, op: String, operand: Expr) -> LowerResult {
     match uop_opt {
         Some(uop) => {
             let result_ty: MIRType = resolve_unary_result_type(uop, op_r.value.ty)
-            let dest_r: LowerResult = make_value(op_r.state, result_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::UnaryOp(dest_r.value, uop, op_r.value))
-            return new_lower_result(dest_r.value, s)
+            let dr_uop: LowerResult = make_value(op_r.state, result_ty, "t")
+            let s_uop: LowerState = emit_instr(dr_uop.state, Instruction::UnaryOp(dr_uop.value, uop, op_r.value))
+            return new_lower_result(dr_uop.value, s_uop)
         },
         _ => {
-            let dest_r: LowerResult = make_value(op_r.state, mir_unknown(), "t")
+            let dr_ucall: LowerResult = make_value(op_r.state, mir_unknown(), "t")
             let mut args: List<Value> = []
             args.push(op_r.value)
-            let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__unary_" + op, args))
-            return new_lower_result(dest_r.value, s)
+            let s_ucall: LowerState = emit_instr(dr_ucall.state, Instruction::Call(dr_ucall.value, "__unary_" + op, args))
+            return new_lower_result(dr_ucall.value, s_ucall)
         }
     }
 }
@@ -925,7 +925,7 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
         FieldAccess(obj, method) => {
             // obj.method(args) that parsed as Call(FieldAccess, args)
             let obj_r: LowerResult = lower_expr(s, obj)
-            let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+            let dr_meth: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
             let mut all_args: List<Value> = []
             all_args.push(obj_r.value)
             let mut j: Int = 0
@@ -936,8 +936,8 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
                     j = j + 1
                 }
             }
-            let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
-            return new_lower_result(dest_r.value, new_s)
+            let ns_meth: LowerState = emit_instr(dr_meth.state, Instruction::Call(dr_meth.value, method, all_args))
+            return new_lower_result(dr_meth.value, ns_meth)
         },
         NamespaceAccess(ns, member) => {
             // Check if this is an enum variant constructor: Enum::Variant(...)
@@ -945,9 +945,9 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
             // returning the wrong enum when variants share names like Return).
             if is_variant_of_enum(s, ns, member) {
                 let enum_ty: MIRType = mir_enum(ns)
-                let dest_r: LowerResult = make_value(s, enum_ty, "t")
-                let new_s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, member, args))
-                return new_lower_result(dest_r.value, new_s)
+                let dr_evar: LowerResult = make_value(s, enum_ty, "t")
+                let ns_evar: LowerState = emit_instr(dr_evar.state, Instruction::EnumInit(dr_evar.value, enum_ty, member, args))
+                return new_lower_result(dr_evar.value, ns_evar)
             }
             // For struct statics like Program::start(defs), try bare function
             // name first (the function is `start`, not `Program_start`).
@@ -955,9 +955,9 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
         },
         _ => {
             let callee_r: LowerResult = lower_expr(s, callee)
-            let dest_r: LowerResult = make_value(callee_r.state, mir_unknown(), "t")
-            let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, callee_r.value.name, args))
-            return new_lower_result(dest_r.value, new_s)
+            let dr_dyn: LowerResult = make_value(callee_r.state, mir_unknown(), "t")
+            let ns_dyn: LowerState = emit_instr(dr_dyn.state, Instruction::Call(dr_dyn.value, callee_r.value.name, args))
+            return new_lower_result(dr_dyn.value, ns_dyn)
         }
     }
 }
@@ -965,76 +965,76 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
     // Builtin void functions
     if fn_name == "print" {
-        let dest_r: LowerResult = make_value(st, mir_void(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_print: LowerResult = make_value(st, mir_void(), "t")
+        let s_print: LowerState = emit_instr(dr_print.state, Instruction::Call(dr_print.value, fn_name, args))
+        return new_lower_result(dr_print.value, s_print)
     }
     if fn_name == "println" {
-        let dest_r: LowerResult = make_value(st, mir_void(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_pln: LowerResult = make_value(st, mir_void(), "t")
+        let s_pln: LowerState = emit_instr(dr_pln.state, Instruction::Call(dr_pln.value, fn_name, args))
+        return new_lower_result(dr_pln.value, s_pln)
     }
     // Builtin conversion functions — set correct MIR return types
     if fn_name == "int" {
-        let dest_r: LowerResult = make_value(st, mir_int(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_int: LowerResult = make_value(st, mir_int(), "t")
+        let s_int: LowerState = emit_instr(dr_int.state, Instruction::Call(dr_int.value, fn_name, args))
+        return new_lower_result(dr_int.value, s_int)
     }
     if fn_name == "float" {
-        let dest_r: LowerResult = make_value(st, mir_float(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_flt: LowerResult = make_value(st, mir_float(), "t")
+        let s_flt: LowerState = emit_instr(dr_flt.state, Instruction::Call(dr_flt.value, fn_name, args))
+        return new_lower_result(dr_flt.value, s_flt)
     }
     if fn_name == "str" || fn_name == "toString" {
-        let dest_r: LowerResult = make_value(st, mir_string(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_str: LowerResult = make_value(st, mir_string(), "t")
+        let s_str: LowerState = emit_instr(dr_str.state, Instruction::Call(dr_str.value, fn_name, args))
+        return new_lower_result(dr_str.value, s_str)
     }
     if fn_name == "len" {
-        let dest_r: LowerResult = make_value(st, mir_int(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_len: LowerResult = make_value(st, mir_int(), "t")
+        let s_len: LowerState = emit_instr(dr_len.state, Instruction::Call(dr_len.value, fn_name, args))
+        return new_lower_result(dr_len.value, s_len)
     }
 
     // Handle Option/Result builtins
     if fn_name == "Some" {
         if len(args) == 1 {
-            let dest_r: LowerResult = make_value(st, mir_option(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapSome(dest_r.value, args[0]))
-            return new_lower_result(dest_r.value, s)
+            let dr_some: LowerResult = make_value(st, mir_option(), "t")
+            let s_some: LowerState = emit_instr(dr_some.state, Instruction::WrapSome(dr_some.value, args[0]))
+            return new_lower_result(dr_some.value, s_some)
         }
     }
     if fn_name == "Ok" {
         if len(args) == 1 {
             // Use the function's return type (with generic args) if available
-            let mut res_ty: MIRType = mir_result()
+            let mut res_ty_ok: MIRType = mir_result()
             match st.current_fn {
                 Some(cf) => {
                     if cf.return_type.kind == "result" {
-                        res_ty = cf.return_type
+                        res_ty_ok = cf.return_type
                     }
                 },
                 _ => {}
             }
-            let dest_r: LowerResult = make_value(st, res_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapOk(dest_r.value, args[0]))
-            return new_lower_result(dest_r.value, s)
+            let dr_ok: LowerResult = make_value(st, res_ty_ok, "t")
+            let s_ok: LowerState = emit_instr(dr_ok.state, Instruction::WrapOk(dr_ok.value, args[0]))
+            return new_lower_result(dr_ok.value, s_ok)
         }
     }
     if fn_name == "Err" {
         if len(args) == 1 {
-            let mut res_ty: MIRType = mir_result()
+            let mut res_ty_err: MIRType = mir_result()
             match st.current_fn {
                 Some(cf) => {
                     if cf.return_type.kind == "result" {
-                        res_ty = cf.return_type
+                        res_ty_err = cf.return_type
                     }
                 },
                 _ => {}
             }
-            let dest_r: LowerResult = make_value(st, res_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapErr(dest_r.value, args[0]))
-            return new_lower_result(dest_r.value, s)
+            let dr_err: LowerResult = make_value(st, res_ty_err, "t")
+            let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, args[0]))
+            return new_lower_result(dr_err.value, s_err)
         }
     }
 
@@ -1042,9 +1042,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
     if is_enum_variant(st, fn_name) {
         let enum_name: String = enum_name_for_variant(st, fn_name)
         let enum_ty: MIRType = mir_enum(enum_name)
-        let dest_r: LowerResult = make_value(st, enum_ty, "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_enum: LowerResult = make_value(st, enum_ty, "t")
+        let s_enum: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, fn_name, args))
+        return new_lower_result(dr_enum.value, s_enum)
     }
 
     // Check if it's a struct constructor (use if instead of match to avoid
@@ -1065,9 +1065,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
                 }
             }
         }
-        let dest_r: LowerResult = make_value(st, struct_ty, "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::StructInit(dest_r.value, struct_ty, field_pairs))
-        return new_lower_result(dest_r.value, s)
+        let dr_ctor: LowerResult = make_value(st, struct_ty, "t")
+        let s_ctor: LowerState = emit_instr(dr_ctor.state, Instruction::StructInit(dr_ctor.value, struct_ty, field_pairs))
+        return new_lower_result(dr_ctor.value, s_ctor)
     }
 
     // Resolve lambda variable names to actual function names
@@ -1101,9 +1101,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             },
             _ => {}
         }
-        let dest_r: LowerResult = make_value(st, call_ret, "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, resolved, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_call: LowerResult = make_value(st, call_ret, "t")
+        let s_call: LowerState = emit_instr(dr_call.state, Instruction::Call(dr_call.value, resolved, args))
+        return new_lower_result(dr_call.value, s_call)
     }
 
     // Lambda call with captures — decode "lambda1:x,y" and load captured vars.
@@ -1285,17 +1285,17 @@ fn lower_field_access(st: LowerState, obj: Expr, field_name: String) -> LowerRes
 
     // Only emit SignalGet for actual signal types, not for struct .value fields
     if field_name == "value" && obj_r.value.ty.kind == "signal" {
-        let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::SignalGet(dest_r.value, obj_r.value))
-        return new_lower_result(dest_r.value, s)
+        let dr_sig: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+        let s_sig: LowerState = emit_instr(dr_sig.state, Instruction::SignalGet(dr_sig.value, obj_r.value))
+        return new_lower_result(dr_sig.value, s_sig)
     }
 
     // Resolve field type from struct registry
     let field_ty: MIRType = lookup_struct_field_type(obj_r.state, obj_r.value.ty.name, field_name)
 
-    let dest_r: LowerResult = make_value(obj_r.state, field_ty, "t")
-    let s: LowerState = emit_instr(dest_r.state, Instruction::FieldGet(dest_r.value, obj_r.value, field_name))
-    return new_lower_result(dest_r.value, s)
+    let dr_fld: LowerResult = make_value(obj_r.state, field_ty, "t")
+    let s_fld: LowerState = emit_instr(dr_fld.state, Instruction::FieldGet(dr_fld.value, obj_r.value, field_name))
+    return new_lower_result(dr_fld.value, s_fld)
 }
 
 // ---------------------------------------------------------------------------
@@ -1316,17 +1316,17 @@ fn lower_namespace_access(st: LowerState, ns: String, member: String) -> LowerRe
     // Check if namespace is a registered enum → emit EnumInit
     if is_enum_name(st, ns) {
         let enum_ty: MIRType = mir_enum(ns)
-        let dest_r: LowerResult = make_value(st, enum_ty, "t")
-        let empty_args: List<Value> = []
-        let s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, member, empty_args))
-        return new_lower_result(dest_r.value, s)
+        let dr_ns_enum: LowerResult = make_value(st, enum_ty, "t")
+        let eargs_enum: List<Value> = []
+        let s_ns_enum: LowerState = emit_instr(dr_ns_enum.state, Instruction::EnumInit(dr_ns_enum.value, enum_ty, member, eargs_enum))
+        return new_lower_result(dr_ns_enum.value, s_ns_enum)
     }
     // Otherwise: module function call
-    let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
+    let dr_ns_mod: LowerResult = make_value(st, mir_unknown(), "t")
     let fn_name: String = ns + "_" + member
-    let empty_args: List<Value> = []
-    let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, empty_args))
-    return new_lower_result(dest_r.value, s)
+    let eargs_mod: List<Value> = []
+    let s_ns_mod: LowerState = emit_instr(dr_ns_mod.state, Instruction::Call(dr_ns_mod.value, fn_name, eargs_mod))
+    return new_lower_result(dr_ns_mod.value, s_ns_mod)
 }
 
 // ---------------------------------------------------------------------------
@@ -1590,15 +1590,15 @@ fn lower_sync(st: LowerState, inner: Expr) -> LowerResult {
     match inner {
         FieldAccess(obj, field_name) => {
             let obj_r: LowerResult = lower_expr(st, obj)
-            let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::AgentSync(dest_r.value, obj_r.value, field_name))
-            return new_lower_result(dest_r.value, s)
+            let dr_sync_fa: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+            let s_sync_fa: LowerState = emit_instr(dr_sync_fa.state, Instruction::AgentSync(dr_sync_fa.value, obj_r.value, field_name))
+            return new_lower_result(dr_sync_fa.value, s_sync_fa)
         },
         _ => {
             let val_r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(val_r.state, mir_unknown(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::AgentSync(dest_r.value, val_r.value, ""))
-            return new_lower_result(dest_r.value, s)
+            let dr_sync_bare: LowerResult = make_value(val_r.state, mir_unknown(), "t")
+            let s_sync_bare: LowerState = emit_instr(dr_sync_bare.state, Instruction::AgentSync(dr_sync_bare.value, val_r.value, ""))
+            return new_lower_result(dr_sync_bare.value, s_sync_bare)
         }
     }
 }
@@ -1610,16 +1610,16 @@ fn lower_send(st: LowerState, target: Expr, value: Expr) -> LowerResult {
         FieldAccess(obj, field_name) => {
             let obj_r: LowerResult = lower_expr(val_r.state, obj)
             let s_field: LowerState = emit_instr(obj_r.state, Instruction::AgentSend(obj_r.value, field_name, val_r.value))
-            let dest_r: LowerResult = make_value(s_field, mir_void(), "t")
-            let s2: LowerState = emit_instr(dest_r.state, Instruction::Const(dest_r.value, mir_void(), ""))
-            return new_lower_result(dest_r.value, s2)
+            let dr_field: LowerResult = make_value(s_field, mir_void(), "t")
+            let s2_field: LowerState = emit_instr(dr_field.state, Instruction::Const(dr_field.value, mir_void(), ""))
+            return new_lower_result(dr_field.value, s2_field)
         },
         _ => {
             let target_r: LowerResult = lower_expr(val_r.state, target)
             let s_plain: LowerState = emit_instr(target_r.state, Instruction::AgentSend(target_r.value, "", val_r.value))
-            let dest_r: LowerResult = make_value(s_plain, mir_void(), "t")
-            let s2: LowerState = emit_instr(dest_r.state, Instruction::Const(dest_r.value, mir_void(), ""))
-            return new_lower_result(dest_r.value, s2)
+            let dr_plain: LowerResult = make_value(s_plain, mir_void(), "t")
+            let s2_plain: LowerState = emit_instr(dr_plain.state, Instruction::Const(dr_plain.value, mir_void(), ""))
+            return new_lower_result(dr_plain.value, s2_plain)
         }
     }
 }
@@ -1760,8 +1760,8 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
                         let result_r: LowerResult = make_value(s, old_r.value.ty, "t")
                         s = emit_instr(result_r.state, Instruction::BinOp(result_r.value, binop, old_r.value, val_r.value))
                         
-                        let var_opt: Option<Value> = lookup_var(s, name)
-                        match var_opt {
+                        let var_opt_cmp: Option<Value> = lookup_var(s, name)
+                        match var_opt_cmp {
                             Some(addr) => {
                                 s = emit_instr(s, Instruction::Store(addr, result_r.value))
                                 return new_lower_result(result_r.value, s)
@@ -1773,8 +1773,8 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
                 }
             }
 
-            let var_opt: Option<Value> = lookup_var(s, name)
-            match var_opt {
+            let var_opt_asgn: Option<Value> = lookup_var(s, name)
+            match var_opt_asgn {
                 Some(addr) => {
                     // Update var type if the new value is more specific
                     // (e.g. from unknown/i64 to a concrete struct type)
@@ -1793,15 +1793,15 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
         FieldAccess(obj, field_name) => {
             // Pass the ALLOCA address (not loaded value) so the emitter
             // can GEP+store directly to the struct field.
-            let obj_r: LowerResult = lower_expr(s, obj)
-            let obj_alloca: Value = find_expr_alloca(obj_r.state, obj, obj_r)
-            s = emit_instr(obj_r.state, Instruction::FieldSet(obj_alloca, field_name, val_r.value))
+            let obj_r_fa: LowerResult = lower_expr(s, obj)
+            let obj_alloca: Value = find_expr_alloca(obj_r_fa.state, obj, obj_r_fa)
+            s = emit_instr(obj_r_fa.state, Instruction::FieldSet(obj_alloca, field_name, val_r.value))
             return new_lower_result(val_r.value, s)
         },
         Index(obj, idx) => {
-            let obj_r: LowerResult = lower_expr(s, obj)
-            let idx_r: LowerResult = lower_expr(obj_r.state, idx)
-            s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r.value, idx_r.value, val_r.value))
+            let obj_r_idx: LowerResult = lower_expr(s, obj)
+            let idx_r: LowerResult = lower_expr(obj_r_idx.state, idx)
+            s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r_idx.value, idx_r.value, val_r.value))
             return new_lower_result(val_r.value, s)
         },
         _ => {
@@ -2049,46 +2049,46 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
         // Mismatched types (e.g., i64 vs Expr from side-effect if-else) → void fallback.
         let types_match: Bool = then_val.ty.kind == else_val.ty.kind
         if types_match {
-            let mut entries: List<PhiEntry> = []
-            entries.push(new_phi_entry(then_exit_label, then_val))
-            entries.push(new_phi_entry(else_exit_label, else_val))
-            let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
-            s = result_r.state
-            s = emit_instr(s, Instruction::Phi(result_r.value, entries))
-            final_val = result_r.value
+            let mut ents_both: List<PhiEntry> = []
+            ents_both.push(new_phi_entry(then_exit_label, then_val))
+            ents_both.push(new_phi_entry(else_exit_label, else_val))
+            let rr_both: LowerResult = make_value(s, then_val.ty, "if_result")
+            s = rr_both.state
+            s = emit_instr(s, Instruction::Phi(rr_both.value, ents_both))
+            final_val = rr_both.value
         }
     }
     if only_then {
-        let mut entries: List<PhiEntry> = []
-        entries.push(new_phi_entry(then_exit_label, then_val))
+        let mut ents_then: List<PhiEntry> = []
+        ents_then.push(new_phi_entry(then_exit_label, then_val))
         // Only include else branch if it's not terminated (reaches merge)
         if !else_terminated {
             let zero_v_t: Value = new_value("zeroinitializer", then_val.ty)
-            entries.push(new_phi_entry(else_exit_label, zero_v_t))
+            ents_then.push(new_phi_entry(else_exit_label, zero_v_t))
         }
-        let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
-        s = result_r.state
-        s = emit_instr(s, Instruction::Phi(result_r.value, entries))
-        final_val = result_r.value
+        let rr_then: LowerResult = make_value(s, then_val.ty, "if_result")
+        s = rr_then.state
+        s = emit_instr(s, Instruction::Phi(rr_then.value, ents_then))
+        final_val = rr_then.value
     }
     if only_else {
-        let mut entries: List<PhiEntry> = []
+        let mut ents_else: List<PhiEntry> = []
         // Only include then branch if it's not terminated (reaches merge)
         if !then_terminated {
             let zero_v_e: Value = new_value("zeroinitializer", else_val.ty)
-            entries.push(new_phi_entry(then_exit_label, zero_v_e))
+            ents_else.push(new_phi_entry(then_exit_label, zero_v_e))
         }
-        entries.push(new_phi_entry(else_exit_label, else_val))
-        let result_r: LowerResult = make_value(s, else_val.ty, "if_result")
-        s = result_r.state
-        s = emit_instr(s, Instruction::Phi(result_r.value, entries))
-        final_val = result_r.value
+        ents_else.push(new_phi_entry(else_exit_label, else_val))
+        let rr_else: LowerResult = make_value(s, else_val.ty, "if_result")
+        s = rr_else.state
+        s = emit_instr(s, Instruction::Phi(rr_else.value, ents_else))
+        final_val = rr_else.value
     }
     let is_void: Bool = !both && !only_then && !only_else
     if is_void {
-        let result_r: LowerResult = make_value(s, mir_void(), "t")
-        s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
-        final_val = result_r.value
+        let rr_void: LowerResult = make_value(s, mir_void(), "t")
+        s = emit_instr(rr_void.state, Instruction::Const(rr_void.value, mir_void(), ""))
+        final_val = rr_void.value
         // Both branches terminated — merge block is unreachable.
         // Emit return terminator AFTER const so current_block_terminated returns true
         // and callers don't emit additional jumps to this block's successors.
@@ -2249,12 +2249,12 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                 // Use zeroinitializer for void/unknown results to avoid referencing %void
                 let arm_kind: String = arm_val_r.value.ty.kind
                 if arm_kind == "void" || arm_kind == "unknown" || arm_val_r.value.name == "%void" {
-                    let zero_v: Value = new_value("zeroinitializer", arm_val_r.value.ty)
-                    let pe: PhiEntry = new_phi_entry(exit_label, zero_v)
-                    arm_results.push(pe)
+                    let zero_arm: Value = new_value("zeroinitializer", arm_val_r.value.ty)
+                    let pe_zero: PhiEntry = new_phi_entry(exit_label, zero_arm)
+                    arm_results.push(pe_zero)
                 } else {
-                    let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
-                    arm_results.push(pe)
+                    let pe_val: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
+                    arm_results.push(pe_val)
                 }
             }
             s = lower_pop_scope(s)
@@ -2268,8 +2268,8 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         let first_pe: PhiEntry = arm_results[0]
         let first_val: Value = first_pe.val
         let zero_ty: MIRType = first_val.ty
-        let zero_v: Value = new_value("zeroinitializer", zero_ty)
-        let def_pe: PhiEntry = new_phi_entry(entry_label, zero_v)
+        let zero_def: Value = new_value("zeroinitializer", zero_ty)
+        let def_pe: PhiEntry = new_phi_entry(entry_label, zero_def)
         arm_results.push(def_pe)
     }
 
@@ -2279,22 +2279,22 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         let first_pe2: PhiEntry = arm_results[0]
         let first_val2: Value = first_pe2.val
         let phi_ty: MIRType = first_val2.ty
-        let result_r: LowerResult = make_value(s, phi_ty, "match_result")
-        s = result_r.state
-        s = emit_instr(s, Instruction::Phi(result_r.value, arm_results))
-        return new_lower_result(result_r.value, s)
+        let rr_phi: LowerResult = make_value(s, phi_ty, "match_result")
+        s = rr_phi.state
+        s = emit_instr(s, Instruction::Phi(rr_phi.value, arm_results))
+        return new_lower_result(rr_phi.value, s)
     }
 
     // All arms terminated (all have return/break). Merge block is unreachable
     // but callers may reference the result. Use the function's return type
     // to create a properly-typed dummy value (alloca+load of zeroed memory).
     let fn_ret: MIRType = get_current_fn_ret_type(s)
-    let result_r: LowerResult = make_value(s, fn_ret, "match_result")
-    s = result_r.state
-    let dummy_addr: Value = new_value(result_r.value.name + ".dummy", fn_ret)
+    let rr_unreach: LowerResult = make_value(s, fn_ret, "match_result")
+    s = rr_unreach.state
+    let dummy_addr: Value = new_value(rr_unreach.value.name + ".dummy", fn_ret)
     s = emit_instr(s, Instruction::Alloca(dummy_addr, fn_ret))
-    s = emit_instr(s, Instruction::Load(result_r.value, dummy_addr))
-    return new_lower_result(result_r.value, s)
+    s = emit_instr(s, Instruction::Load(rr_unreach.value, dummy_addr))
+    return new_lower_result(rr_unreach.value, s)
 }
 
 fn get_literal_value(expr: Expr) -> String {
@@ -2619,16 +2619,16 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
     let mut errors: List<VerifyError> = []
 
     if len(bb.instructions) == 0 {
-        let e: VerifyError = new_verify_error(fn_name, bb.label, "block has no instructions")
-        errors.push(e)
+        let e_empty: VerifyError = new_verify_error(fn_name, bb.label, "block has no instructions")
+        errors.push(e_empty)
         return errors
     }
 
     // Check terminator
     let last: Instruction = bb.instructions[len(bb.instructions) - 1]
     if !is_terminator(last) {
-        let e: VerifyError = new_verify_error(fn_name, bb.label, "block does not end with a terminator")
-        errors.push(e)
+        let e_noterm: VerifyError = new_verify_error(fn_name, bb.label, "block does not end with a terminator")
+        errors.push(e_noterm)
     }
 
     // Check no terminators in the middle
@@ -2636,10 +2636,10 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
     let nbi_m1: Int = len(bb.instructions) - 1
     for _ in 0..600 {
         if i < nbi_m1 {
-            let inst: Instruction = bb.instructions[i]
-            if is_terminator(inst) {
-                let e: VerifyError = new_verify_error(fn_name, bb.label, "terminator at position " + toString(i) + " (not last)")
-                errors.push(e)
+            let inst_mid: Instruction = bb.instructions[i]
+            if is_terminator(inst_mid) {
+                let e_midterm: VerifyError = new_verify_error(fn_name, bb.label, "terminator at position " + toString(i) + " (not last)")
+                errors.push(e_midterm)
             }
             i = i + 1
         }
@@ -2647,23 +2647,23 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
 
     // Check phi nodes are at the start
     let mut seen_non_phi: Bool = false
-    let mut pi: Int = 0
+    let mut phi_i: Int = 0
     let nbi_phi: Int = len(bb.instructions)
     for _ in 0..600 {
-        if pi < nbi_phi {
-            let inst: Instruction = bb.instructions[pi]
-            match inst {
+        if phi_i < nbi_phi {
+            let inst_phi: Instruction = bb.instructions[phi_i]
+            match inst_phi {
                 Phi(_, _) => {
                     if seen_non_phi {
-                        let e: VerifyError = new_verify_error(fn_name, bb.label, "phi node after non-phi instruction")
-                        errors.push(e)
+                        let e_phi: VerifyError = new_verify_error(fn_name, bb.label, "phi node after non-phi instruction")
+                        errors.push(e_phi)
                     }
                 },
                 _ => {
                     seen_non_phi = true
                 }
             }
-            pi = pi + 1
+            phi_i = phi_i + 1
         }
     }
 
@@ -2700,15 +2700,15 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
 
     // Build params
     let mut params: List<MIRParam> = []
-    let mut pi: Int = 0
+    let mut pi_reg: Int = 0
     let nfdp: Int = len(fn_def.params)
     for _ in 0..200 {
-        if pi < nfdp {
-            let p: Param = fn_def.params[pi]
-            let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
-            let mp: MIRParam = new_mir_param(p.name, pty)
+        if pi_reg < nfdp {
+            let p_reg: Param = fn_def.params[pi_reg]
+            let pty_reg: MIRType = lower_resolve_type_opt_checked(st, p_reg.type_annotation)
+            let mp: MIRParam = new_mir_param(p_reg.name, pty_reg)
             params.push(mp)
-            pi = pi + 1
+            pi_reg = pi_reg + 1
         }
     }
 
@@ -2750,14 +2750,14 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     let mut bi: Int = 0
     for _ in 0..200 {
         if bi < nfdp {
-            let p: Param = fn_def.params[bi]
-            let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
-            let addr_name: String = "%" + p.name + ".addr"
-            let addr: Value = new_value(addr_name, pty)
-            let param_val: Value = new_value("%" + p.name, pty)
-            s = emit_instr(s, Instruction::Alloca(addr, pty))
+            let p_bind: Param = fn_def.params[bi]
+            let pty_bind: MIRType = lower_resolve_type_opt_checked(s, p_bind.type_annotation)
+            let addr_name: String = "%" + p_bind.name + ".addr"
+            let addr: Value = new_value(addr_name, pty_bind)
+            let param_val: Value = new_value("%" + p_bind.name, pty_bind)
+            s = emit_instr(s, Instruction::Alloca(addr, pty_bind))
             s = emit_instr(s, Instruction::Store(addr, param_val))
-            s = define_var(s, p.name, addr, false)
+            s = define_var(s, p_bind.name, addr, false)
             bi = bi + 1
         }
     }

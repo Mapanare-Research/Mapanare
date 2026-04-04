@@ -750,52 +750,52 @@ fn tokenize(source: String, filename: String) -> List<Token> {
 
             if is_alpha(c) {
                 handled = true
-                let tok: Token = scan_ident(source, pos, line, col)
-                pos = pos + len(tok.value)
-                col = col + len(tok.value)
-                tokens.push(tok)
+                let tok_id: Token = scan_ident(source, pos, line, col)
+                pos = pos + len(tok_id.value)
+                col = col + len(tok_id.value)
+                tokens.push(tok_id)
             }
 
             if !handled {
                 if is_digit(c) {
                     handled = true
-                    let tok: Token = scan_number(source, pos, line, col)
-                    let width: Int = tok.end_column - tok.column
-                    pos = pos + width
-                    col = col + width
-                    tokens.push(tok)
+                    let tok_num: Token = scan_number(source, pos, line, col)
+                    let width_num: Int = tok_num.end_column - tok_num.column
+                    pos = pos + width_num
+                    col = col + width_num
+                    tokens.push(tok_num)
                 }
             }
 
             if !handled {
                 if c == "\"" {
                     handled = true
-                    let tok: Token = scan_string(source, pos, line, col)
-                    let width: Int = tok.end_column - tok.column
-                    pos = pos + width
-                    col = col + width
-                    line = tok.end_line
-                    tokens.push(tok)
+                    let tok_str: Token = scan_string(source, pos, line, col)
+                    let width_str: Int = tok_str.end_column - tok_str.column
+                    pos = pos + width_str
+                    col = col + width_str
+                    line = tok_str.end_line
+                    tokens.push(tok_str)
                 }
             }
 
             if !handled {
                 if c == "'" {
                     handled = true
-                    let tok: Token = scan_char(source, pos, line, col)
-                    let width: Int = tok.end_column - tok.column
-                    pos = pos + width
-                    col = col + width
-                    tokens.push(tok)
+                    let tok_chr: Token = scan_char(source, pos, line, col)
+                    let width_chr: Int = tok_chr.end_column - tok_chr.column
+                    pos = pos + width_chr
+                    col = col + width_chr
+                    tokens.push(tok_chr)
                 }
             }
 
             if !handled {
-                let tok: Token = scan_op(source, pos, line, col)
-                let width: Int = len(tok.value)
-                pos = pos + width
-                col = col + width
-                tokens.push(tok)
+                let tok_op: Token = scan_op(source, pos, line, col)
+                let width_op: Int = len(tok_op.value)
+                pos = pos + width_op
+                col = col + width_op
+                tokens.push(tok_op)
             }
         }
     }
@@ -1208,12 +1208,12 @@ pub fn parse(source: String, filename: String) -> Program {
         if pos >= len(tokens) {
             if len(top_stmts) > 0 {
                 if !has_explicit_main(defs) {
-                    let body: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
+                    let body_early: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
                     let empty_tp: List<String> = []
                     let empty_params: List<Param> = []
                     let empty_decs: List<Decorator> = []
-                    let main_fn: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp, empty_params, none, body, empty_decs)
-                    defs.push(Definition::FnDef(main_fn))
+                    let main_fn_early: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp, empty_params, none, body_early, empty_decs)
+                    defs.push(Definition::FnDef(main_fn_early))
                 }
             }
             return Program::start(defs)
@@ -1233,12 +1233,12 @@ pub fn parse(source: String, filename: String) -> Program {
 
     if len(top_stmts) > 0 {
         if !has_explicit_main(defs) {
-            let body: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
+            let body_final: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
             let empty_tp2: List<String> = []
             let empty_params2: List<Param> = []
             let empty_decs2: List<Decorator> = []
-            let main_fn: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp2, empty_params2, none, body, empty_decs2)
-            defs.push(Definition::FnDef(main_fn))
+            let main_fn_final: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp2, empty_params2, none, body_final, empty_decs2)
+            defs.push(Definition::FnDef(main_fn_final))
         }
     }
 
@@ -1318,14 +1318,14 @@ fn parse_export_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     let tt: String = peek_type(tokens, p)
 
     if tt == "KW_FN" {
-        let r: DefResult = parse_fn_def(tokens, p, filename)
-        let exp_items: List<String> = []
-        return new_def_result(Definition::ExportDef(none, exp_items), r.pos)
+        let r_fn: DefResult = parse_fn_def(tokens, p, filename)
+        let exp_items_fn: List<String> = []
+        return new_def_result(Definition::ExportDef(none, exp_items_fn), r_fn.pos)
     }
     if tt == "KW_STRUCT" {
-        let r: DefResult = parse_struct_def(tokens, p, filename)
-        let exp_items: List<String> = []
-        return new_def_result(Definition::ExportDef(none, exp_items), r.pos)
+        let r_st: DefResult = parse_struct_def(tokens, p, filename)
+        let exp_items_st: List<String> = []
+        return new_def_result(Definition::ExportDef(none, exp_items_st), r_st.pos)
     }
 
     let mut names: List<String> = []
@@ -1484,8 +1484,8 @@ fn parse_struct_fields(tokens: List<Token>, pos: Int, filename: String, name: St
         p = skip_semis(tokens, p)
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            let sd: StructDefData = new_struct_def_data(name, is_pub, type_params, fields)
-            return new_def_result(Definition::StructDef(sd), p)
+            let sd_early: StructDefData = new_struct_def_data(name, is_pub, type_params, fields)
+            return new_def_result(Definition::StructDef(sd_early), p)
         }
 
         let fname: String = peek_value(tokens, p)
@@ -1500,8 +1500,8 @@ fn parse_struct_fields(tokens: List<Token>, pos: Int, filename: String, name: St
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
     }
 
-    let sd: StructDefData = new_struct_def_data(name, is_pub, type_params, fields)
-    return new_def_result(Definition::StructDef(sd), p)
+    let sd_final: StructDefData = new_struct_def_data(name, is_pub, type_params, fields)
+    return new_def_result(Definition::StructDef(sd_final), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -1550,8 +1550,8 @@ fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String
         p = skip_semis(tokens, p)
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            let ed: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
-            return new_def_result(Definition::EnumDef(ed), p)
+            let ed_early: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
+            return new_def_result(Definition::EnumDef(ed_early), p)
         }
 
         let vname: String = peek_value(tokens, p)
@@ -1567,8 +1567,8 @@ fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String
                 for _ in 0..20 {
                     if peek_type(tokens, p) != "COMMA" {
                         p = expect(tokens, p, "RPAREN")
-                        let v: EnumVariant = new_enum_variant(vname, vtypes)
-                        variants.push(v)
+                        let v_inner: EnumVariant = new_enum_variant(vname, vtypes)
+                        variants.push(v_inner)
                         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
                         // Continue loop
                         return parse_enum_body_continue(tokens, p, filename, name, is_pub, type_params, variants)
@@ -1582,14 +1582,14 @@ fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String
             p = expect(tokens, p, "RPAREN")
         }
 
-        let v: EnumVariant = new_enum_variant(vname, vtypes)
-        variants.push(v)
+        let v_outer: EnumVariant = new_enum_variant(vname, vtypes)
+        variants.push(v_outer)
 
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
     }
 
-    let ed: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
-    return new_def_result(Definition::EnumDef(ed), p)
+    let ed_final: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
+    return new_def_result(Definition::EnumDef(ed_final), p)
 }
 
 fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, variants: List<EnumVariant>) -> DefResult {
@@ -1600,8 +1600,8 @@ fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, nam
         p = skip_semis(tokens, p)
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            let ed: EnumDefData = new_enum_def_data(name, is_pub, type_params, vars)
-            return new_def_result(Definition::EnumDef(ed), p)
+            let ed_c_early: EnumDefData = new_enum_def_data(name, is_pub, type_params, vars)
+            return new_def_result(Definition::EnumDef(ed_c_early), p)
         }
 
         let vn: String = peek_value(tokens, p)
@@ -1637,8 +1637,8 @@ fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, nam
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
     }
 
-    let ed: EnumDefData = new_enum_def_data(name, is_pub, type_params, vars)
-    return new_def_result(Definition::EnumDef(ed), p)
+    let ed_c_final: EnumDefData = new_enum_def_data(name, is_pub, type_params, vars)
+    return new_def_result(Definition::EnumDef(ed_c_final), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -1702,8 +1702,8 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
     let mut depth: Int = 1
     for _ in 0..100000 {
         if p >= len(tokens) {
-            let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
-            return new_def_result(Definition::AgentDef(ad), p)
+            let ad_eof: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
+            return new_def_result(Definition::AgentDef(ad_eof), p)
         }
         let tt: String = peek_type(tokens, p)
         if tt == "LBRACE" { depth = depth + 1 }
@@ -1711,14 +1711,14 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
             depth = depth - 1
             if depth == 0 {
                 p = p + 1
-                let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
-                return new_def_result(Definition::AgentDef(ad), p)
+                let ad_close: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
+                return new_def_result(Definition::AgentDef(ad_close), p)
             }
         }
         p = p + 1
     }
-    let ad: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
-    return new_def_result(Definition::AgentDef(ad), p)
+    let ad_end: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
+    return new_def_result(Definition::AgentDef(ad_end), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -1740,8 +1740,8 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
     let mut depth: Int = 1
     for _ in 0..100000 {
         if p >= len(tokens) {
-            let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
-            return new_def_result(Definition::PipeDef(pd), p)
+            let pd_eof: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
+            return new_def_result(Definition::PipeDef(pd_eof), p)
         }
         let tt: String = peek_type(tokens, p)
         if tt == "LBRACE" { depth = depth + 1 }
@@ -1749,14 +1749,14 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
             depth = depth - 1
             if depth == 0 {
                 p = p + 1
-                let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
-                return new_def_result(Definition::PipeDef(pd), p)
+                let pd_close: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
+                return new_def_result(Definition::PipeDef(pd_close), p)
             }
         }
         p = p + 1
     }
-    let pd: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
-    return new_def_result(Definition::PipeDef(pd), p)
+    let pd_end: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
+    return new_def_result(Definition::PipeDef(pd_end), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -1801,13 +1801,13 @@ fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult {
     for _ in 0..100000 {
         p = skip_semis(tokens, p)
         if at_end(tokens, p) {
-            let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
-            return new_block_result(blk, p)
+            let blk_eof: Block = new_block(new_span(0, 0, 0, 0), stmts)
+            return new_block_result(blk_eof, p)
         }
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
-            return new_block_result(blk, p)
+            let blk_close: Block = new_block(new_span(0, 0, 0, 0), stmts)
+            return new_block_result(blk_close, p)
         }
 
         let sr: StmtResult = parse_stmt(tokens, p, filename)
@@ -1815,8 +1815,8 @@ fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult {
         p = sr.pos
     }
 
-    let blk: Block = new_block(new_span(0, 0, 0, 0), stmts)
-    return new_block_result(blk, p)
+    let blk_end: Block = new_block(new_span(0, 0, 0, 0), stmts)
+    return new_block_result(blk_end, p)
 }
 
 // ---------------------------------------------------------------------------
@@ -1911,33 +1911,33 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
         let att: String = peek_type(tokens, p)
         if att == "ASSIGN" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Assign(left, "=", rhs.expr), rhs.pos)
+            let rhs_eq: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Assign(left, "=", rhs_eq.expr), rhs_eq.pos)
         }
         if att == "PLUS_EQ" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Assign(left, "+=", rhs.expr), rhs.pos)
+            let rhs_add: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Assign(left, "+=", rhs_add.expr), rhs_add.pos)
         }
         if att == "MINUS_EQ" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Assign(left, "-=", rhs.expr), rhs.pos)
+            let rhs_sub: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Assign(left, "-=", rhs_sub.expr), rhs_sub.pos)
         }
         if att == "STAR_EQ" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Assign(left, "*=", rhs.expr), rhs.pos)
+            let rhs_mul: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Assign(left, "*=", rhs_mul.expr), rhs_mul.pos)
         }
         if att == "SLASH_EQ" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Assign(left, "/=", rhs.expr), rhs.pos)
+            let rhs_div: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Assign(left, "/=", rhs_div.expr), rhs_div.pos)
         }
         if att == "SEND" {
             p = p + 1
-            let rhs: ExprResult = parse_expr(tokens, p, filename, 0)
-            return new_expr_result(Expr::Send(left, rhs.expr), rhs.pos)
+            let rhs_send: ExprResult = parse_expr(tokens, p, filename, 0)
+            return new_expr_result(Expr::Send(left, rhs_send.expr), rhs_send.pos)
         }
         if att == "FAT_ARROW" {
             p = p + 1
@@ -2000,12 +2000,12 @@ fn parse_unary(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     let tt: String = peek_type(tokens, pos)
 
     if tt == "MINUS" {
-        let r: ExprResult = parse_unary(tokens, pos + 1, filename)
-        return new_expr_result(Expr::Unary("-", r.expr), r.pos)
+        let r_neg: ExprResult = parse_unary(tokens, pos + 1, filename)
+        return new_expr_result(Expr::Unary("-", r_neg.expr), r_neg.pos)
     }
     if tt == "BANG" {
-        let r: ExprResult = parse_unary(tokens, pos + 1, filename)
-        return new_expr_result(Expr::Unary("!", r.expr), r.pos)
+        let r_not: ExprResult = parse_unary(tokens, pos + 1, filename)
+        return new_expr_result(Expr::Unary("!", r_not.expr), r_not.pos)
     }
 
     return parse_postfix(tokens, pos, filename)
@@ -2376,13 +2376,13 @@ fn parse_if_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
         let elif_r: ExprResult = parse_if_expr(tokens, p, filename)
         let else_stmts: List<Stmt> = [Stmt::ExprStmt(elif_r.expr)]
         let else_block: Block = new_block(new_span(0, 0, 0, 0), else_stmts)
-        let else_clause: ElseClause = ElseClause::ElseBlock(else_block)
-        return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(else_clause)), elif_r.pos)
+        let ec_elif: ElseClause = ElseClause::ElseBlock(else_block)
+        return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(ec_elif)), elif_r.pos)
     }
 
     let else_r: BlockResult = parse_block(tokens, p, filename)
-    let else_clause: ElseClause = ElseClause::ElseBlock(else_r.block)
-    return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(else_clause)), else_r.pos)
+    let ec_else: ElseClause = ElseClause::ElseBlock(else_r.block)
+    return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(ec_else)), else_r.pos)
 }
 
 // ---------------------------------------------------------------------------
@@ -2422,13 +2422,13 @@ fn parse_match_arm_item(tokens: List<Token>, pos: Int, filename: String) -> Matc
 
     if peek_type(tokens, p) == "LBRACE" {
         let br: BlockResult = parse_block(tokens, p, filename)
-        let arm: MatchArm = new_match_arm(pr.pattern, MatchArmBody::BlockBody(br.block))
-        return new_match_arm_result(arm, br.pos)
+        let arm_blk: MatchArm = new_match_arm(pr.pattern, MatchArmBody::BlockBody(br.block))
+        return new_match_arm_result(arm_blk, br.pos)
     }
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
-    let arm: MatchArm = new_match_arm(pr.pattern, MatchArmBody::ExprBody(er.expr))
-    return new_match_arm_result(arm, er.pos)
+    let arm_expr: MatchArm = new_match_arm(pr.pattern, MatchArmBody::ExprBody(er.expr))
+    return new_match_arm_result(arm_expr, er.pos)
 }
 
 // ---------------------------------------------------------------------------
@@ -2498,8 +2498,8 @@ fn parse_spawn_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
         for _ in 0..50 {
             if peek_type(tokens, p) != "COMMA" {
                 p = expect(tokens, p, "RPAREN")
-                let callee: Expr = Expr::Ident(name)
-                return new_expr_result(Expr::Spawn(callee, args), p)
+                let callee_early: Expr = Expr::Ident(name)
+                return new_expr_result(Expr::Spawn(callee_early, args), p)
             }
             p = p + 1
             let an: ExprResult = parse_expr(tokens, p, filename, 0)
@@ -2508,8 +2508,8 @@ fn parse_spawn_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
         }
     }
     p = expect(tokens, p, "RPAREN")
-    let callee: Expr = Expr::Ident(name)
-    return new_expr_result(Expr::Spawn(callee, args), p)
+    let callee_final: Expr = Expr::Ident(name)
+    return new_expr_result(Expr::Spawn(callee_final, args), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -2660,8 +2660,8 @@ fn parse_fn_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult 
             if peek_type(tokens, p) != "COMMA" {
                 p = expect(tokens, p, "RPAREN")
                 p = expect(tokens, p, "ARROW")
-                let ret: TypeResult = parse_type_expr(tokens, p, filename)
-                return new_type_result(TypeExpr::FnTy(param_types, ret.type_expr), ret.pos)
+                let ret_early: TypeResult = parse_type_expr(tokens, p, filename)
+                return new_type_result(TypeExpr::FnTy(param_types, ret_early.type_expr), ret_early.pos)
             }
             p = p + 1
             let tn: TypeResult = parse_type_expr(tokens, p, filename)
@@ -2671,8 +2671,8 @@ fn parse_fn_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult 
     }
     p = expect(tokens, p, "RPAREN")
     p = expect(tokens, p, "ARROW")
-    let ret: TypeResult = parse_type_expr(tokens, p, filename)
-    return new_type_result(TypeExpr::FnTy(param_types, ret.type_expr), ret.pos)
+    let ret_final: TypeResult = parse_type_expr(tokens, p, filename)
+    return new_type_result(TypeExpr::FnTy(param_types, ret_final.type_expr), ret_final.pos)
 }
 
 // ===== semantic.mn =====
@@ -3082,16 +3082,16 @@ fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
         },
         FnTy(param_types, return_type) => {
             let mut params: List<TypeInfo> = []
-            let mut i: Int = 0
+            let mut i_fn: Int = 0
             for _ in 0..200 {
-                if i >= len(param_types) {
+                if i_fn >= len(param_types) {
                     let ret: TypeInfo = resolve_type_expr(return_type)
                     return make_fn_type(params, ret)
                 }
-                let pt: TypeExpr = param_types[i]
+                let pt: TypeExpr = param_types[i_fn]
                 let rp: TypeInfo = resolve_type_expr(pt)
                 params.push(rp)
-                i = i + 1
+                i_fn = i_fn + 1
             }
             let ret2: TypeInfo = resolve_type_expr(return_type)
             return make_fn_type(params, ret2)
@@ -3125,8 +3125,8 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
             match result {
                 Some(sym) => { return new_infer_result(sym.type_info, st) },
                 _ => {
-                    let st2: SemState = add_error(st, "Undefined variable '" + name + "'", 0, 0)
-                    return new_infer_result(unknown_type(), st2)
+                    let st_ident_err: SemState = add_error(st, "Undefined variable '" + name + "'", 0, 0)
+                    return new_infer_result(unknown_type(), st_ident_err)
                 }
             }
         },
@@ -3137,21 +3137,21 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
         MethodCall(obj, method_name, args) => {
             let obj_r: InferResult = infer_expr(st, obj)
-            let mut st2: SemState = obj_r.st
-            let mut i: Int = 0
+            let mut st_method: SemState = obj_r.st
+            let mut i_method: Int = 0
             for _ in 0..200 {
-                if i >= len(args) { return new_infer_result(unknown_type(), st2) }
-                let arg: Expr = args[i]
-                let ar: InferResult = infer_expr(st2, arg)
-                st2 = ar.st
-                i = i + 1
+                if i_method >= len(args) { return new_infer_result(unknown_type(), st_method) }
+                let arg: Expr = args[i_method]
+                let ar: InferResult = infer_expr(st_method, arg)
+                st_method = ar.st
+                i_method = i_method + 1
             }
-            return new_infer_result(unknown_type(), st2)
+            return new_infer_result(unknown_type(), st_method)
         },
 
         FieldAccess(obj, field_name) => {
-            let obj_r: InferResult = infer_expr(st, obj)
-            return new_infer_result(unknown_type(), obj_r.st)
+            let obj_r_field: InferResult = infer_expr(st, obj)
+            return new_infer_result(unknown_type(), obj_r_field.st)
         },
 
         NamespaceAccess(ns, name) => {
@@ -3159,13 +3159,13 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
         },
 
         Index(obj, idx) => {
-            let obj_r: InferResult = infer_expr(st, obj)
-            let idx_r: InferResult = infer_expr(obj_r.st, idx)
+            let obj_r_idx: InferResult = infer_expr(st, obj)
+            let idx_r: InferResult = infer_expr(obj_r_idx.st, idx)
             // List<T>[i] -> T
-            if obj_r.type_info.name == "List" {
-                if len(obj_r.type_info.args) > 0 {
-                    let elem: TypeInfo = obj_r.type_info.args[0]
-                    return new_infer_result(elem, idx_r.st)
+            if obj_r_idx.type_info.name == "List" {
+                if len(obj_r_idx.type_info.args) > 0 {
+                    let elem_ti: TypeInfo = obj_r_idx.type_info.args[0]
+                    return new_infer_result(elem_ti, idx_r.st)
                 }
             }
             return new_infer_result(unknown_type(), idx_r.st)
@@ -3175,90 +3175,90 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
         Range(start, end, inclusive) => {
             let sr: InferResult = infer_expr(st, start)
-            let er: InferResult = infer_expr(sr.st, end)
-            return new_infer_result(make_type("Range"), er.st)
+            let er_range: InferResult = infer_expr(sr.st, end)
+            return new_infer_result(make_type("Range"), er_range.st)
         },
 
         Lambda(params, body) => { return check_lambda_expr(st, params, body) },
         Spawn(callee, args) => { return check_spawn_expr(st, callee, args) },
 
         Sync(inner) => {
-            let ir: InferResult = infer_expr(st, inner)
-            return new_infer_result(unknown_type(), ir.st)
+            let ir_sync: InferResult = infer_expr(st, inner)
+            return new_infer_result(unknown_type(), ir_sync.st)
         },
 
         Send(value, target) => {
-            let st2: SemState = check_send_expr(st, value, target)
-            return new_infer_result(void_type(), st2)
+            let st_send: SemState = check_send_expr(st, value, target)
+            return new_infer_result(void_type(), st_send)
         },
 
         ErrorProp(inner) => {
-            let ir: InferResult = infer_expr(st, inner)
-            return new_infer_result(unknown_type(), ir.st)
+            let ir_errprop: InferResult = infer_expr(st, inner)
+            return new_infer_result(unknown_type(), ir_errprop.st)
         },
 
         ListLit(elements) => {
             if len(elements) > 0 {
                 let first: Expr = elements[0]
-                let fr: InferResult = infer_expr(st, first)
-                let mut st2: SemState = fr.st
-                let mut i: Int = 1
+                let fr_list: InferResult = infer_expr(st, first)
+                let mut st_list: SemState = fr_list.st
+                let mut i_list: Int = 1
                 for _ in 0..600 {
-                    if i >= len(elements) {
-                        let args: List<TypeInfo> = []
-                        // args.push(fr.type_info)
-                        return new_infer_result(make_generic_type("List", args), st2)
+                    if i_list >= len(elements) {
+                        let args_list: List<TypeInfo> = []
+                        // args_list.push(fr_list.type_info)
+                        return new_infer_result(make_generic_type("List", args_list), st_list)
                     }
-                    let elem: Expr = elements[i]
-                    let er: InferResult = infer_expr(st2, elem)
-                    st2 = er.st
-                    i = i + 1
+                    let elem: Expr = elements[i_list]
+                    let er_list: InferResult = infer_expr(st_list, elem)
+                    st_list = er_list.st
+                    i_list = i_list + 1
                 }
                 let args2: List<TypeInfo> = []
-                return new_infer_result(make_generic_type("List", args2), st2)
+                return new_infer_result(make_generic_type("List", args2), st_list)
             }
             let empty_args: List<TypeInfo> = []
             return new_infer_result(make_generic_type("List", empty_args), st)
         },
 
         Construct(name, fields) => {
-            let mut st2: SemState = st
-            let mut i: Int = 0
+            let mut st_ctor: SemState = st
+            let mut i_ctor: Int = 0
             for _ in 0..200 {
-                if i >= len(fields) { return new_infer_result(make_type(name), st2) }
-                let fi: FieldInit = fields[i]
-                let fr: InferResult = infer_expr(st2, fi.value)
-                st2 = fr.st
-                i = i + 1
+                if i_ctor >= len(fields) { return new_infer_result(make_type(name), st_ctor) }
+                let fi: FieldInit = fields[i_ctor]
+                let fr_ctor: InferResult = infer_expr(st_ctor, fi.value)
+                st_ctor = fr_ctor.st
+                i_ctor = i_ctor + 1
             }
-            return new_infer_result(make_type(name), st2)
+            return new_infer_result(make_type(name), st_ctor)
         },
 
         SomeWrap(value) => {
-            let vr: InferResult = infer_expr(st, value)
-            let args: List<TypeInfo> = []
-            // args.push(vr.type_info)
-            return new_infer_result(make_generic_type("Option", args), vr.st)
+            let vr_some: InferResult = infer_expr(st, value)
+            let args_some: List<TypeInfo> = []
+            // args_some.push(vr_some.type_info)
+            return new_infer_result(make_generic_type("Option", args_some), vr_some.st)
         },
 
         OkWrap(value) => {
-            let vr: InferResult = infer_expr(st, value)
-            let args: List<TypeInfo> = []
-            // args.push(vr.type_info)
-            return new_infer_result(make_generic_type("Result", args), vr.st)
+            let vr_ok: InferResult = infer_expr(st, value)
+            let args_ok: List<TypeInfo> = []
+            // args_ok.push(vr_ok.type_info)
+            return new_infer_result(make_generic_type("Result", args_ok), vr_ok.st)
         },
 
         ErrWrap(value) => {
-            let vr: InferResult = infer_expr(st, value)
-            let args: List<TypeInfo> = []
-            return new_infer_result(make_generic_type("Result", args), vr.st)
+            let vr_err: InferResult = infer_expr(st, value)
+            let args_err: List<TypeInfo> = []
+            return new_infer_result(make_generic_type("Result", args_err), vr_err.st)
         },
 
         SignalVal(value, _) => {
-            let vr: InferResult = infer_expr(st, value)
-            let args: List<TypeInfo> = []
-            // args.push(vr.type_info)
-            return new_infer_result(make_generic_type("Signal", args), vr.st)
+            let vr_signal: InferResult = infer_expr(st, value)
+            let args_signal: List<TypeInfo> = []
+            // args_signal.push(vr_signal.type_info)
+            return new_infer_result(make_generic_type("Signal", args_signal), vr_signal.st)
         },
 
         Assign(target, op, value) => { return check_assign_expr(st, target, op, value) },
@@ -3312,8 +3312,8 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
             if rt != "Tensor" {
                 if rt != "Int" {
                     if rt != "Float" {
-                        let st2: SemState = add_error(st, "Operator '" + op + "' not supported for Tensor and " + rt, 0, 0)
-                        return new_infer_result(make_type("Tensor"), st2)
+                        let st_tensor_lt: SemState = add_error(st, "Operator '" + op + "' not supported for Tensor and " + rt, 0, 0)
+                        return new_infer_result(make_type("Tensor"), st_tensor_lt)
                     }
                 }
             }
@@ -3324,8 +3324,8 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if lt != "<unknown>" {
             if lt != "Int" {
                 if lt != "Float" {
-                    let st2: SemState = add_error(st, "Operator '" + op + "' not supported for " + lt + " and Tensor", 0, 0)
-                    return new_infer_result(make_type("Tensor"), st2)
+                    let st_tensor_rt: SemState = add_error(st, "Operator '" + op + "' not supported for " + lt + " and Tensor", 0, 0)
+                    return new_infer_result(make_type("Tensor"), st_tensor_rt)
                 }
             }
         }
@@ -3337,8 +3337,8 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if lt != "Int" {
             if lt != "Float" {
                 if lt != "String" {
-                    let st2: SemState = add_error(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt, 0, 0)
-                    return new_infer_result(unknown_type(), st2)
+                    let st_arith_lt: SemState = add_error(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt, 0, 0)
+                    return new_infer_result(unknown_type(), st_arith_lt)
                 }
             }
         }
@@ -3347,8 +3347,8 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if rt != "Int" {
             if rt != "Float" {
                 if rt != "String" {
-                    let st2: SemState = add_error(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt, 0, 0)
-                    return new_infer_result(unknown_type(), st2)
+                    let st_arith_rt: SemState = add_error(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt, 0, 0)
+                    return new_infer_result(unknown_type(), st_arith_rt)
                 }
             }
         }
@@ -3408,8 +3408,8 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
         if ot != "<unknown>" {
             if ot != "Int" {
                 if ot != "Float" {
-                    let st2: SemState = add_error(or.st, "Unary '-' not supported for type " + ot, 0, 0)
-                    return new_infer_result(or.type_info, st2)
+                    let st_neg: SemState = add_error(or.st, "Unary '-' not supported for type " + ot, 0, 0)
+                    return new_infer_result(or.type_info, st_neg)
                 }
             }
         }
@@ -3419,8 +3419,8 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
     if op == "!" {
         if ot != "<unknown>" {
             if ot != "Bool" {
-                let st2: SemState = add_error(or.st, "Unary '!' requires Bool, got " + ot, 0, 0)
-                return new_infer_result(bool_type(), st2)
+                let st_not: SemState = add_error(or.st, "Unary '!' requires Bool, got " + ot, 0, 0)
+                return new_infer_result(bool_type(), st_not)
             }
         }
         return new_infer_result(bool_type(), or.st)
@@ -3464,8 +3464,8 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
                                     // Check argument count
                                     if len(sym.type_info.param_types) > 0 {
                                         if len(arg_types) != len(sym.type_info.param_types) {
-                                            let st2: SemState = add_error(st, "Function '" + name + "' argument count mismatch", 0, 0)
-                                            return new_infer_result(ret, st2)
+                                            let st_argc: SemState = add_error(st, "Function '" + name + "' argument count mismatch", 0, 0)
+                                            return new_infer_result(ret, st_argc)
                                         }
                                     }
                                     return new_infer_result(ret, st)
@@ -3484,8 +3484,8 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
                     return new_infer_result(unknown_type(), st)
                 },
                 _ => {
-                    let st2: SemState = add_error(st, "Undefined function '" + name + "'", 0, 0)
-                    return new_infer_result(unknown_type(), st2)
+                    let st_undef: SemState = add_error(st, "Undefined function '" + name + "'", 0, 0)
+                    return new_infer_result(unknown_type(), st_undef)
                 }
             }
         },
@@ -3508,22 +3508,22 @@ fn check_assign_expr(st: SemState, target: Expr, op: String, value: Expr) -> Inf
             let sym_opt: Option<Symbol> = scope_lookup(vr.st.scope, name)
             match sym_opt {
                 Some(sym) => {
-                    let mut st2: SemState = vr.st
+                    let mut st_assign: SemState = vr.st
                     if sym.mutable == false {
-                        st2 = add_error(st2, "Cannot assign to immutable variable '" + name + "'", 0, 0)
+                        st_assign = add_error(st_assign, "Cannot assign to immutable variable '" + name + "'", 0, 0)
                     }
                     if sym.type_info.name != "<unknown>" {
                         if vr.type_info.name != "<unknown>" {
                             if types_compatible(sym.type_info, vr.type_info) == false {
-                                st2 = add_error(st2, "Type mismatch in assignment to '" + name + "'", 0, 0)
+                                st_assign = add_error(st_assign, "Type mismatch in assignment to '" + name + "'", 0, 0)
                             }
                         }
                     }
-                    return new_infer_result(void_type(), st2)
+                    return new_infer_result(void_type(), st_assign)
                 },
                 _ => {
-                    let st2: SemState = add_error(vr.st, "Undefined variable '" + name + "'", 0, 0)
-                    return new_infer_result(void_type(), st2)
+                    let st_assign_undef: SemState = add_error(vr.st, "Undefined variable '" + name + "'", 0, 0)
+                    return new_infer_result(void_type(), st_assign_undef)
                 }
             }
         },
@@ -3743,10 +3743,10 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
                                 if expected.name != "<unknown>" {
                                     if lr.type_info.name != "<unknown>" {
                                         if types_compatible(expected, lr.type_info) == false {
-                                            let st3: SemState = add_error(st2, "Pipe type mismatch: piped to '" + name + "'", 0, 0)
+                                            let st3_mismatch: SemState = add_error(st2, "Pipe type mismatch: piped to '" + name + "'", 0, 0)
                                             match sym.type_info.return_type {
-                                                Some(ret) => { return new_infer_result(ret, st3) },
-                                                _ => { return new_infer_result(unknown_type(), st3) }
+                                                Some(ret) => { return new_infer_result(ret, st3_mismatch) },
+                                                _ => { return new_infer_result(unknown_type(), st3_mismatch) }
                                             }
                                         }
                                     }
@@ -3764,8 +3764,8 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
                     return new_infer_result(unknown_type(), st2)
                 },
                 _ => {
-                    let st3: SemState = add_error(st2, "Undefined function '" + name + "'", 0, 0)
-                    return new_infer_result(unknown_type(), st3)
+                    let st3_undef: SemState = add_error(st2, "Undefined function '" + name + "'", 0, 0)
+                    return new_infer_result(unknown_type(), st3_undef)
                 }
             }
         },
@@ -3801,14 +3801,14 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState {
             return check_let_stmt(st, name, mutable, type_ann, value)
         },
         ExprStmt(expr) => {
-            let r: InferResult = infer_expr(st, expr)
-            return r.st
+            let r_expr: InferResult = infer_expr(st, expr)
+            return r_expr.st
         },
         Return(value_opt) => {
             match value_opt {
                 Some(value) => {
-                    let r: InferResult = infer_expr(st, value)
-                    return r.st
+                    let r_ret: InferResult = infer_expr(st, value)
+                    return r_ret.st
                 },
                 _ => { return st }
             }
@@ -3932,8 +3932,8 @@ fn register_def(st: SemState, def: Definition) -> SemState {
                 if pi >= len(data.params) {
                     let ret: TypeInfo = resolve_type_opt(data.return_type)
                     let fn_type: TypeInfo = make_fn_type(params, ret)
-                    let sym: Symbol = new_symbol(data.name, "function", fn_type, false)
-                    return define_in_scope(st, data.name, sym)
+                    let sym_fn: Symbol = new_symbol(data.name, "function", fn_type, false)
+                    return define_in_scope(st, data.name, sym_fn)
                 }
                 let p: Param = data.params[pi]
                 let pt: TypeInfo = resolve_type_opt(p.type_annotation)
@@ -3944,23 +3944,23 @@ fn register_def(st: SemState, def: Definition) -> SemState {
         },
 
         AgentDef(data) => {
-            let sym: Symbol = new_symbol(data.name, "agent", make_type(data.name), false)
-            return define_in_scope(st, data.name, sym)
+            let sym_agent: Symbol = new_symbol(data.name, "agent", make_type(data.name), false)
+            return define_in_scope(st, data.name, sym_agent)
         },
 
         PipeDef(data) => {
-            let sym: Symbol = new_symbol(data.name, "pipe", unknown_type(), false)
-            return define_in_scope(st, data.name, sym)
+            let sym_pipe: Symbol = new_symbol(data.name, "pipe", unknown_type(), false)
+            return define_in_scope(st, data.name, sym_pipe)
         },
 
         StructDef(data) => {
-            let sym: Symbol = new_symbol(data.name, "struct", make_type(data.name), false)
-            return define_in_scope(st, data.name, sym)
+            let sym_struct: Symbol = new_symbol(data.name, "struct", make_type(data.name), false)
+            return define_in_scope(st, data.name, sym_struct)
         },
 
         EnumDef(data) => {
-            let sym: Symbol = new_symbol(data.name, "enum", make_type(data.name), false)
-            let mut st2: SemState = define_in_scope(st, data.name, sym)
+            let sym_enum: Symbol = new_symbol(data.name, "enum", make_type(data.name), false)
+            let mut st2: SemState = define_in_scope(st, data.name, sym_enum)
             // Register variants as constructors
             let mut vi: Int = 0
             for _ in 0..200 {
@@ -3976,8 +3976,8 @@ fn register_def(st: SemState, def: Definition) -> SemState {
 
         TypeAlias(name, type_expr) => {
             let resolved: TypeInfo = resolve_type_expr(type_expr)
-            let sym: Symbol = new_symbol(name, "type_alias", resolved, false)
-            return define_in_scope(st, name, sym)
+            let sym_alias: Symbol = new_symbol(name, "type_alias", resolved, false)
+            return define_in_scope(st, name, sym_alias)
         },
 
         ImportDef(path, items) => {
@@ -3987,15 +3987,15 @@ fn register_def(st: SemState, def: Definition) -> SemState {
                 for _ in 0..200 {
                     if ii >= len(items) { return st2 }
                     let item: String = items[ii]
-                    let sym: Symbol = new_symbol(item, "variable", unknown_type(), false)
-                    st2 = define_in_scope(st2, item, sym)
+                    let sym_item: Symbol = new_symbol(item, "variable", unknown_type(), false)
+                    st2 = define_in_scope(st2, item, sym_item)
                     ii = ii + 1
                 }
             } else {
                 if len(path) > 0 {
                     let mod_name: String = path[len(path) - 1]
-                    let sym: Symbol = new_symbol(mod_name, "variable", unknown_type(), false)
-                    st2 = define_in_scope(st2, mod_name, sym)
+                    let sym_mod: Symbol = new_symbol(mod_name, "variable", unknown_type(), false)
+                    st2 = define_in_scope(st2, mod_name, sym_mod)
                 }
             }
             return st2
@@ -4752,6 +4752,7 @@ struct LowerState {
     struct_fields: List<StructFieldInfo>,
     enum_variants: List<EnumVariantNames>,
     lambda_vars: List<LambdaEntry>,
+    fn_blocks: List<BasicBlock>,
 }
 
 fn new_lower_state(module_name: String) -> LowerState {
@@ -4762,7 +4763,8 @@ fn new_lower_state(module_name: String) -> LowerState {
     let struct_fields: List<StructFieldInfo> = []
     let enum_variants: List<EnumVariantNames> = []
     let lambda_vars: List<LambdaEntry> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars }
+    let fn_blocks: List<BasicBlock> = []
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks }
 }
 
 // Lower result: value + updated state
@@ -4808,20 +4810,9 @@ fn make_value(st: LowerState, ty: MIRType, prefix: String) -> LowerResult {
 fn add_block(st: LowerState, label: String) -> LowerState {
     let bb: BasicBlock = new_basic_block(label)
     let mut new_st: LowerState = st
-    let has_fn: Bool = is_some_fn(st.current_fn)
-    if has_fn {
-        match st.current_fn {
-            Some(f) => {
-                let mut new_fn: MIRFunction = f
-                let mut blk_list: List<BasicBlock> = new_fn.blocks
-                blk_list.push(bb)
-                new_fn.blocks = blk_list
-                new_st.current_fn = Some(new_fn)
-                new_st.current_block_idx = len(f.blocks)
-            },
-            _ => {}
-        }
-    }
+    let idx: Int = len(st.fn_blocks)
+    new_st.fn_blocks.push(bb)
+    new_st.current_block_idx = idx
     return new_st
 }
 
@@ -4839,43 +4830,31 @@ fn set_block(st: LowerState, idx: Int) -> LowerState {
 }
 
 fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
-    // Append instruction to current block in current function.
+    // Append instruction to current block using flattened fn_blocks list.
+    // This avoids the COW-through-Option nesting that loses mutations.
     let mut new_st: LowerState = st
-    match st.current_fn {
-        Some(f) => {
-            if st.current_block_idx >= 0 {
-                if st.current_block_idx < len(f.blocks) {
-                    let bb: BasicBlock = f.blocks[st.current_block_idx]
-                    let mut instrs: List<Instruction> = bb.instructions
-                    instrs.push(instr)
-                    let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
-                    let mut blks: List<BasicBlock> = f.blocks
-                    blks[st.current_block_idx] = new_bb
-                    // Update the function in new_st with the modified blocks
-                    let mut new_fn: MIRFunction = f
-                    new_fn.blocks = blks
-                    new_st.current_fn = Some(new_fn)
-                }
-            }
-        },
-        _ => {}
+    let idx: Int = st.current_block_idx
+    if idx >= 0 {
+        if idx < len(st.fn_blocks) {
+            let bb: BasicBlock = st.fn_blocks[idx]
+            let mut instrs: List<Instruction> = bb.instructions
+            instrs.push(instr)
+            let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
+            new_st.fn_blocks[idx] = new_bb
+        }
     }
     return new_st
 }
 
 fn current_block_terminated(st: LowerState) -> Bool {
-    match st.current_fn {
-        Some(f) => {
-            if st.current_block_idx >= 0 {
-                if st.current_block_idx < len(f.blocks) {
-                    let bb: BasicBlock = f.blocks[st.current_block_idx]
-                    return block_terminated(bb)
-                }
-            }
-            return true
-        },
-        _ => { return true }
+    let idx: Int = st.current_block_idx
+    if idx >= 0 {
+        if idx < len(st.fn_blocks) {
+            let bb: BasicBlock = st.fn_blocks[idx]
+            return block_terminated(bb)
+        }
     }
+    return true
 }
 
 // ---------------------------------------------------------------------------
@@ -4996,6 +4975,29 @@ fn find_enum_variants(st: LowerState, name: String) -> Option<List<String>> {
         i = i + 1
     }
     return none
+}
+
+fn is_variant_of_enum(st: LowerState, enum_name: String, variant: String) -> Bool {
+    let mut i: Int = 0
+    let nev0: Int = len(st.enum_variants)
+    for _ in 0..600 {
+        if i < nev0 {
+            let ev: EnumVariantNames = st.enum_variants[i]
+            if ev.enum_name == enum_name {
+                let mut j: Int = 0
+                let nvn0: Int = len(ev.variant_names)
+                for _ in 0..600 {
+                    if j < nvn0 {
+                        if ev.variant_names[j] == variant { return true }
+                        j = j + 1
+                    }
+                }
+                return false
+            }
+            i = i + 1
+        }
+    }
+    return false
 }
 
 fn is_enum_variant(st: LowerState, name: String) -> Bool {
@@ -5369,13 +5371,13 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         },
         ImportDef(path, items) => {
             let info: ImportInfo = new_import_info(path, items)
-            let mut new_st: LowerState = st
-            let mut mod_tmp: MIRModule = new_st.module
+            let mut new_st_imp: LowerState = st
+            let mut mod_tmp: MIRModule = new_st_imp.module
             let mut imp_list: List<ImportInfo> = mod_tmp.imports
             imp_list.push(info)
             mod_tmp.imports = imp_list
-            new_st.module = mod_tmp
-            return new_st
+            new_st_imp.module = mod_tmp
+            return new_st_imp
         },
         ExportDef(inner_opt, _) => {
             match inner_opt {
@@ -5391,9 +5393,9 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
             let ret_key: String = "__ret__" + fd.name
             let ret_val: String = ret_ty.kind + ":" + ret_ty.name
             let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
-            let mut new_st: LowerState = st
-            new_st.lambda_vars.push(entry)
-            return new_st
+            let mut new_st_fn: LowerState = st
+            new_st_fn.lambda_vars.push(entry)
+            return new_st_fn
         },
         _ => { return st }
     }
@@ -5479,7 +5481,7 @@ fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lo
 fn lower_definitions(st: LowerState, program: Program) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if i >= len(program.definitions) {
             return s
         }
@@ -5539,12 +5541,12 @@ fn build_mir_params(st: LowerState, fn_params: List<Param>) -> List<MIRParam> {
 // Helper: collect decorator names (avoids break-in-for bug)
 fn collect_decorator_names(decorators: List<Decorator>) -> List<String> {
     let mut names: List<String> = []
-    let mut di: Int = 0
+    let mut dix: Int = 0
     for _ in 0..100 {
-        if di >= len(decorators) { return names }
-        let dec: Decorator = decorators[di]
+        if dix >= len(decorators) { return names }
+        let dec: Decorator = decorators[dix]
         names.push(dec.name)
-        di = di + 1
+        dix = dix + 1
     }
     return names
 }
@@ -5584,6 +5586,7 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     let prev_tmp: Int = st.tmp_counter
     let prev_blk_cnt: Int = st.block_counter
     let prev_vars: List<VarInfo> = st.vars
+    let prev_blocks: List<BasicBlock> = st.fn_blocks
 
     let mut s: LowerState = st
     s.current_fn = Some(mir_fn)
@@ -5591,6 +5594,8 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     s.block_counter = 0
     let fresh_vars: List<VarInfo> = []
     s.vars = fresh_vars
+    let fresh_blocks: List<BasicBlock> = []
+    s.fn_blocks = fresh_blocks
 
     // Create entry block
     s = add_block(s, "entry")
@@ -5613,10 +5618,12 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
         }
     }
 
-    // Add function to module
+    // Copy fn_blocks into MIRFunction and add to module
     match s.current_fn {
         Some(f) => {
-            s.module = module_push_function(s.module, f)
+            let mut final_fn: MIRFunction = f
+            final_fn.blocks = s.fn_blocks
+            s.module = module_push_function(s.module, final_fn)
         },
         _ => {}
     }
@@ -5627,6 +5634,7 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     s.tmp_counter = prev_tmp
     s.block_counter = prev_blk_cnt
     s.vars = prev_vars
+    s.fn_blocks = prev_blocks
 
     return s
 }
@@ -5722,27 +5730,27 @@ fn lower_block_stmts(st: LowerState, stmts: List<Stmt>) -> LowerResult {
 fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
     match stmt {
         Let(name, mutable, type_ann, value) => {
-            let s: LowerState = lower_let(st, name, mutable, type_ann, value)
-            return new_lower_result(void_value(), s)
+            let s_let: LowerState = lower_let(st, name, mutable, type_ann, value)
+            return new_lower_result(void_value(), s_let)
         },
         ExprStmt(expr) => {
             return lower_expr(st, expr)
         },
         Return(value_opt) => {
-            let s: LowerState = lower_return(st, value_opt)
-            return new_lower_result(void_value(), s)
+            let s_ret: LowerState = lower_return(st, value_opt)
+            return new_lower_result(void_value(), s_ret)
         },
         For(var_name, iterable, body) => {
-            let s: LowerState = lower_for(st, var_name, iterable, body)
-            return new_lower_result(void_value(), s)
+            let s_for: LowerState = lower_for(st, var_name, iterable, body)
+            return new_lower_result(void_value(), s_for)
         },
         SignalDecl(name, mutable, type_ann, value, _) => {
-            let s: LowerState = lower_signal_decl(st, name, mutable, type_ann, value)
-            return new_lower_result(void_value(), s)
+            let s_sig: LowerState = lower_signal_decl(st, name, mutable, type_ann, value)
+            return new_lower_result(void_value(), s_sig)
         },
         StreamDecl(name, type_ann, value) => {
-            let s: LowerState = lower_stream_decl(st, name, value)
-            return new_lower_result(void_value(), s)
+            let s_strm: LowerState = lower_stream_decl(st, name, value)
+            return new_lower_result(void_value(), s_strm)
         }
     }
 }
@@ -5956,36 +5964,36 @@ fn lower_stream_decl(st: LowerState, name: String, value: Expr) -> LowerState {
 fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     match expr {
         IntLit(n) => {
-            let r: LowerResult = make_value(st, mir_int(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_int(), toString(n)))
-            return new_lower_result(r.value, s)
+            let r_int: LowerResult = make_value(st, mir_int(), "t")
+            let s_int: LowerState = emit_instr(r_int.state, Instruction::Const(r_int.value, mir_int(), toString(n)))
+            return new_lower_result(r_int.value, s_int)
         },
         FloatLit(f) => {
-            let r: LowerResult = make_value(st, mir_float(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_float(), toString(f)))
-            return new_lower_result(r.value, s)
+            let r_flt: LowerResult = make_value(st, mir_float(), "t")
+            let s_flt: LowerState = emit_instr(r_flt.state, Instruction::Const(r_flt.value, mir_float(), toString(f)))
+            return new_lower_result(r_flt.value, s_flt)
         },
         BoolLit(b) => {
-            let r: LowerResult = make_value(st, mir_bool(), "t")
+            let r_bool: LowerResult = make_value(st, mir_bool(), "t")
             let mut val_str: String = "false"
             if b { val_str = "true" }
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_bool(), val_str))
-            return new_lower_result(r.value, s)
+            let s_bool: LowerState = emit_instr(r_bool.state, Instruction::Const(r_bool.value, mir_bool(), val_str))
+            return new_lower_result(r_bool.value, s_bool)
         },
         StringLit(text) => {
-            let r: LowerResult = make_value(st, mir_string(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_string(), text))
-            return new_lower_result(r.value, s)
+            let r_str: LowerResult = make_value(st, mir_string(), "t")
+            let s_str: LowerState = emit_instr(r_str.state, Instruction::Const(r_str.value, mir_string(), text))
+            return new_lower_result(r_str.value, s_str)
         },
         CharLit(ch) => {
-            let r: LowerResult = make_value(st, mir_string(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_string(), ch))
-            return new_lower_result(r.value, s)
+            let r_chr: LowerResult = make_value(st, mir_string(), "t")
+            let s_chr: LowerState = emit_instr(r_chr.state, Instruction::Const(r_chr.value, mir_string(), ch))
+            return new_lower_result(r_chr.value, s_chr)
         },
         NoneLit => {
-            let r: LowerResult = make_value(st, mir_option(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::WrapNone(r.value, mir_option()))
-            return new_lower_result(r.value, s)
+            let r_none: LowerResult = make_value(st, mir_option(), "t")
+            let s_none: LowerState = emit_instr(r_none.state, Instruction::WrapNone(r_none.value, mir_option()))
+            return new_lower_result(r_none.value, s_none)
         },
         Ident(name) => {
             return lower_identifier(st, name)
@@ -6039,22 +6047,22 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
             return lower_construct(st, name, fields)
         },
         SomeWrap(inner) => {
-            let r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(r.state, mir_option(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapSome(dest_r.value, r.value))
-            return new_lower_result(dest_r.value, s)
+            let r_some: LowerResult = lower_expr(st, inner)
+            let dr_some: LowerResult = make_value(r_some.state, mir_option(), "t")
+            let s_some: LowerState = emit_instr(dr_some.state, Instruction::WrapSome(dr_some.value, r_some.value))
+            return new_lower_result(dr_some.value, s_some)
         },
         OkWrap(inner) => {
-            let r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(r.state, mir_result(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapOk(dest_r.value, r.value))
-            return new_lower_result(dest_r.value, s)
+            let r_ok: LowerResult = lower_expr(st, inner)
+            let dr_ok: LowerResult = make_value(r_ok.state, mir_result(), "t")
+            let s_ok: LowerState = emit_instr(dr_ok.state, Instruction::WrapOk(dr_ok.value, r_ok.value))
+            return new_lower_result(dr_ok.value, s_ok)
         },
         ErrWrap(inner) => {
-            let r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(r.state, mir_result(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapErr(dest_r.value, r.value))
-            return new_lower_result(dest_r.value, s)
+            let r_err: LowerResult = lower_expr(st, inner)
+            let dr_err: LowerResult = make_value(r_err.state, mir_result(), "t")
+            let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, r_err.value))
+            return new_lower_result(dr_err.value, s_err)
         },
         SignalVal(inner, _) => {
             return lower_signal_expr(st, inner)
@@ -6081,9 +6089,9 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult {
     match var_opt {
         Some(addr) => {
             // var_opt now returns the alloca address. Emit a Load to get the value.
-            let r: LowerResult = make_value(st, addr.ty, name + "_val")
-            let s: LowerState = emit_instr(r.state, Instruction::Load(r.value, addr))
-            return new_lower_result(r.value, s)
+            let r_var: LowerResult = make_value(st, addr.ty, name + "_val")
+            let s_var: LowerState = emit_instr(r_var.state, Instruction::Load(r_var.value, addr))
+            return new_lower_result(r_var.value, s_var)
         },
         _ => {}
     }
@@ -6092,16 +6100,16 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult {
     if is_enum_variant(st, name) {
         let enum_name: String = enum_name_for_variant(st, name)
         let enum_ty: MIRType = mir_enum(enum_name)
-        let r: LowerResult = make_value(st, enum_ty, "t")
+        let r_enum: LowerResult = make_value(st, enum_ty, "t")
         let empty_payload: List<Value> = []
-        let s: LowerState = emit_instr(r.state, Instruction::EnumInit(r.value, enum_ty, name, empty_payload))
-        return new_lower_result(r.value, s)
+        let s_enum: LowerState = emit_instr(r_enum.state, Instruction::EnumInit(r_enum.value, enum_ty, name, empty_payload))
+        return new_lower_result(r_enum.value, s_enum)
     }
 
     // Unknown — emit placeholder
-    let r: LowerResult = make_value(st, mir_unknown(), name)
-    let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_unknown(), ""))
-    return new_lower_result(r.value, s)
+    let r_unk: LowerResult = make_value(st, mir_unknown(), name)
+    let s_unk: LowerState = emit_instr(r_unk.state, Instruction::Const(r_unk.value, mir_unknown(), ""))
+    return new_lower_result(r_unk.value, s_unk)
 }
 
 // ---------------------------------------------------------------------------
@@ -6136,18 +6144,18 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
             let is_cmp: Bool = op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=" || op == "and" || op == "or"
             let mut result_ty: MIRType = lhs_val.ty
             if is_cmp { result_ty = mir_bool() }
-            let dest_r: LowerResult = make_value(rhs_r.state, result_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::BinOp(dest_r.value, binop, lhs_val, rhs_val))
-            return new_lower_result(dest_r.value, s)
+            let dr_binop: LowerResult = make_value(rhs_r.state, result_ty, "t")
+            let s_binop: LowerState = emit_instr(dr_binop.state, Instruction::BinOp(dr_binop.value, binop, lhs_val, rhs_val))
+            return new_lower_result(dr_binop.value, s_binop)
         },
         _ => {
             // Unknown operator — emit as call
-            let dest_r: LowerResult = make_value(rhs_r.state, mir_unknown(), "t")
+            let dr_opcall: LowerResult = make_value(rhs_r.state, mir_unknown(), "t")
             let mut args: List<Value> = []
             args.push(lhs_r.value)
             args.push(rhs_r.value)
-            let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__op_" + op, args))
-            return new_lower_result(dest_r.value, s)
+            let s_opcall: LowerState = emit_instr(dr_opcall.state, Instruction::Call(dr_opcall.value, "__op_" + op, args))
+            return new_lower_result(dr_opcall.value, s_opcall)
         }
     }
 }
@@ -6169,16 +6177,16 @@ fn lower_unary(st: LowerState, op: String, operand: Expr) -> LowerResult {
     match uop_opt {
         Some(uop) => {
             let result_ty: MIRType = resolve_unary_result_type(uop, op_r.value.ty)
-            let dest_r: LowerResult = make_value(op_r.state, result_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::UnaryOp(dest_r.value, uop, op_r.value))
-            return new_lower_result(dest_r.value, s)
+            let dr_uop: LowerResult = make_value(op_r.state, result_ty, "t")
+            let s_uop: LowerState = emit_instr(dr_uop.state, Instruction::UnaryOp(dr_uop.value, uop, op_r.value))
+            return new_lower_result(dr_uop.value, s_uop)
         },
         _ => {
-            let dest_r: LowerResult = make_value(op_r.state, mir_unknown(), "t")
+            let dr_ucall: LowerResult = make_value(op_r.state, mir_unknown(), "t")
             let mut args: List<Value> = []
             args.push(op_r.value)
-            let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__unary_" + op, args))
-            return new_lower_result(dest_r.value, s)
+            let s_ucall: LowerState = emit_instr(dr_ucall.state, Instruction::Call(dr_ucall.value, "__unary_" + op, args))
+            return new_lower_result(dr_ucall.value, s_ucall)
         }
     }
 }
@@ -6210,7 +6218,7 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
         FieldAccess(obj, method) => {
             // obj.method(args) that parsed as Call(FieldAccess, args)
             let obj_r: LowerResult = lower_expr(s, obj)
-            let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+            let dr_meth: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
             let mut all_args: List<Value> = []
             all_args.push(obj_r.value)
             let mut j: Int = 0
@@ -6221,18 +6229,18 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
                     j = j + 1
                 }
             }
-            let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
-            return new_lower_result(dest_r.value, new_s)
+            let ns_meth: LowerState = emit_instr(dr_meth.state, Instruction::Call(dr_meth.value, method, all_args))
+            return new_lower_result(dr_meth.value, ns_meth)
         },
         NamespaceAccess(ns, member) => {
             // Check if this is an enum variant constructor: Enum::Variant(...)
-            // Verify the variant belongs specifically to the namespace enum
-            let found_enum: String = enum_name_for_variant(s, member)
-            if found_enum == ns {
+            // Directly check if the namespace enum has this variant (avoids
+            // returning the wrong enum when variants share names like Return).
+            if is_variant_of_enum(s, ns, member) {
                 let enum_ty: MIRType = mir_enum(ns)
-                let dest_r: LowerResult = make_value(s, enum_ty, "t")
-                let new_s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, member, args))
-                return new_lower_result(dest_r.value, new_s)
+                let dr_evar: LowerResult = make_value(s, enum_ty, "t")
+                let ns_evar: LowerState = emit_instr(dr_evar.state, Instruction::EnumInit(dr_evar.value, enum_ty, member, args))
+                return new_lower_result(dr_evar.value, ns_evar)
             }
             // For struct statics like Program::start(defs), try bare function
             // name first (the function is `start`, not `Program_start`).
@@ -6240,9 +6248,9 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
         },
         _ => {
             let callee_r: LowerResult = lower_expr(s, callee)
-            let dest_r: LowerResult = make_value(callee_r.state, mir_unknown(), "t")
-            let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, callee_r.value.name, args))
-            return new_lower_result(dest_r.value, new_s)
+            let dr_dyn: LowerResult = make_value(callee_r.state, mir_unknown(), "t")
+            let ns_dyn: LowerState = emit_instr(dr_dyn.state, Instruction::Call(dr_dyn.value, callee_r.value.name, args))
+            return new_lower_result(dr_dyn.value, ns_dyn)
         }
     }
 }
@@ -6250,76 +6258,76 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
     // Builtin void functions
     if fn_name == "print" {
-        let dest_r: LowerResult = make_value(st, mir_void(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_print: LowerResult = make_value(st, mir_void(), "t")
+        let s_print: LowerState = emit_instr(dr_print.state, Instruction::Call(dr_print.value, fn_name, args))
+        return new_lower_result(dr_print.value, s_print)
     }
     if fn_name == "println" {
-        let dest_r: LowerResult = make_value(st, mir_void(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_pln: LowerResult = make_value(st, mir_void(), "t")
+        let s_pln: LowerState = emit_instr(dr_pln.state, Instruction::Call(dr_pln.value, fn_name, args))
+        return new_lower_result(dr_pln.value, s_pln)
     }
     // Builtin conversion functions — set correct MIR return types
     if fn_name == "int" {
-        let dest_r: LowerResult = make_value(st, mir_int(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_int: LowerResult = make_value(st, mir_int(), "t")
+        let s_int: LowerState = emit_instr(dr_int.state, Instruction::Call(dr_int.value, fn_name, args))
+        return new_lower_result(dr_int.value, s_int)
     }
     if fn_name == "float" {
-        let dest_r: LowerResult = make_value(st, mir_float(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_flt: LowerResult = make_value(st, mir_float(), "t")
+        let s_flt: LowerState = emit_instr(dr_flt.state, Instruction::Call(dr_flt.value, fn_name, args))
+        return new_lower_result(dr_flt.value, s_flt)
     }
     if fn_name == "str" || fn_name == "toString" {
-        let dest_r: LowerResult = make_value(st, mir_string(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_str: LowerResult = make_value(st, mir_string(), "t")
+        let s_str: LowerState = emit_instr(dr_str.state, Instruction::Call(dr_str.value, fn_name, args))
+        return new_lower_result(dr_str.value, s_str)
     }
     if fn_name == "len" {
-        let dest_r: LowerResult = make_value(st, mir_int(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_len: LowerResult = make_value(st, mir_int(), "t")
+        let s_len: LowerState = emit_instr(dr_len.state, Instruction::Call(dr_len.value, fn_name, args))
+        return new_lower_result(dr_len.value, s_len)
     }
 
     // Handle Option/Result builtins
     if fn_name == "Some" {
         if len(args) == 1 {
-            let dest_r: LowerResult = make_value(st, mir_option(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapSome(dest_r.value, args[0]))
-            return new_lower_result(dest_r.value, s)
+            let dr_some: LowerResult = make_value(st, mir_option(), "t")
+            let s_some: LowerState = emit_instr(dr_some.state, Instruction::WrapSome(dr_some.value, args[0]))
+            return new_lower_result(dr_some.value, s_some)
         }
     }
     if fn_name == "Ok" {
         if len(args) == 1 {
             // Use the function's return type (with generic args) if available
-            let mut res_ty: MIRType = mir_result()
+            let mut res_ty_ok: MIRType = mir_result()
             match st.current_fn {
                 Some(cf) => {
                     if cf.return_type.kind == "result" {
-                        res_ty = cf.return_type
+                        res_ty_ok = cf.return_type
                     }
                 },
                 _ => {}
             }
-            let dest_r: LowerResult = make_value(st, res_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapOk(dest_r.value, args[0]))
-            return new_lower_result(dest_r.value, s)
+            let dr_ok: LowerResult = make_value(st, res_ty_ok, "t")
+            let s_ok: LowerState = emit_instr(dr_ok.state, Instruction::WrapOk(dr_ok.value, args[0]))
+            return new_lower_result(dr_ok.value, s_ok)
         }
     }
     if fn_name == "Err" {
         if len(args) == 1 {
-            let mut res_ty: MIRType = mir_result()
+            let mut res_ty_err: MIRType = mir_result()
             match st.current_fn {
                 Some(cf) => {
                     if cf.return_type.kind == "result" {
-                        res_ty = cf.return_type
+                        res_ty_err = cf.return_type
                     }
                 },
                 _ => {}
             }
-            let dest_r: LowerResult = make_value(st, res_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapErr(dest_r.value, args[0]))
-            return new_lower_result(dest_r.value, s)
+            let dr_err: LowerResult = make_value(st, res_ty_err, "t")
+            let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, args[0]))
+            return new_lower_result(dr_err.value, s_err)
         }
     }
 
@@ -6327,9 +6335,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
     if is_enum_variant(st, fn_name) {
         let enum_name: String = enum_name_for_variant(st, fn_name)
         let enum_ty: MIRType = mir_enum(enum_name)
-        let dest_r: LowerResult = make_value(st, enum_ty, "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_enum: LowerResult = make_value(st, enum_ty, "t")
+        let s_enum: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, fn_name, args))
+        return new_lower_result(dr_enum.value, s_enum)
     }
 
     // Check if it's a struct constructor (use if instead of match to avoid
@@ -6350,9 +6358,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
                 }
             }
         }
-        let dest_r: LowerResult = make_value(st, struct_ty, "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::StructInit(dest_r.value, struct_ty, field_pairs))
-        return new_lower_result(dest_r.value, s)
+        let dr_ctor: LowerResult = make_value(st, struct_ty, "t")
+        let s_ctor: LowerState = emit_instr(dr_ctor.state, Instruction::StructInit(dr_ctor.value, struct_ty, field_pairs))
+        return new_lower_result(dr_ctor.value, s_ctor)
     }
 
     // Resolve lambda variable names to actual function names
@@ -6386,9 +6394,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             },
             _ => {}
         }
-        let dest_r: LowerResult = make_value(st, call_ret, "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, resolved, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_call: LowerResult = make_value(st, call_ret, "t")
+        let s_call: LowerState = emit_instr(dr_call.state, Instruction::Call(dr_call.value, resolved, args))
+        return new_lower_result(dr_call.value, s_call)
     }
 
     // Lambda call with captures — decode "lambda1:x,y" and load captured vars.
@@ -6570,17 +6578,17 @@ fn lower_field_access(st: LowerState, obj: Expr, field_name: String) -> LowerRes
 
     // Only emit SignalGet for actual signal types, not for struct .value fields
     if field_name == "value" && obj_r.value.ty.kind == "signal" {
-        let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::SignalGet(dest_r.value, obj_r.value))
-        return new_lower_result(dest_r.value, s)
+        let dr_sig: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+        let s_sig: LowerState = emit_instr(dr_sig.state, Instruction::SignalGet(dr_sig.value, obj_r.value))
+        return new_lower_result(dr_sig.value, s_sig)
     }
 
     // Resolve field type from struct registry
     let field_ty: MIRType = lookup_struct_field_type(obj_r.state, obj_r.value.ty.name, field_name)
 
-    let dest_r: LowerResult = make_value(obj_r.state, field_ty, "t")
-    let s: LowerState = emit_instr(dest_r.state, Instruction::FieldGet(dest_r.value, obj_r.value, field_name))
-    return new_lower_result(dest_r.value, s)
+    let dr_fld: LowerResult = make_value(obj_r.state, field_ty, "t")
+    let s_fld: LowerState = emit_instr(dr_fld.state, Instruction::FieldGet(dr_fld.value, obj_r.value, field_name))
+    return new_lower_result(dr_fld.value, s_fld)
 }
 
 // ---------------------------------------------------------------------------
@@ -6601,17 +6609,17 @@ fn lower_namespace_access(st: LowerState, ns: String, member: String) -> LowerRe
     // Check if namespace is a registered enum → emit EnumInit
     if is_enum_name(st, ns) {
         let enum_ty: MIRType = mir_enum(ns)
-        let dest_r: LowerResult = make_value(st, enum_ty, "t")
-        let empty_args: List<Value> = []
-        let s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, member, empty_args))
-        return new_lower_result(dest_r.value, s)
+        let dr_ns_enum: LowerResult = make_value(st, enum_ty, "t")
+        let eargs_enum: List<Value> = []
+        let s_ns_enum: LowerState = emit_instr(dr_ns_enum.state, Instruction::EnumInit(dr_ns_enum.value, enum_ty, member, eargs_enum))
+        return new_lower_result(dr_ns_enum.value, s_ns_enum)
     }
     // Otherwise: module function call
-    let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
+    let dr_ns_mod: LowerResult = make_value(st, mir_unknown(), "t")
     let fn_name: String = ns + "_" + member
-    let empty_args: List<Value> = []
-    let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, empty_args))
-    return new_lower_result(dest_r.value, s)
+    let eargs_mod: List<Value> = []
+    let s_ns_mod: LowerState = emit_instr(dr_ns_mod.state, Instruction::Call(dr_ns_mod.value, fn_name, eargs_mod))
+    return new_lower_result(dr_ns_mod.value, s_ns_mod)
 }
 
 // ---------------------------------------------------------------------------
@@ -6875,15 +6883,15 @@ fn lower_sync(st: LowerState, inner: Expr) -> LowerResult {
     match inner {
         FieldAccess(obj, field_name) => {
             let obj_r: LowerResult = lower_expr(st, obj)
-            let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::AgentSync(dest_r.value, obj_r.value, field_name))
-            return new_lower_result(dest_r.value, s)
+            let dr_sync_fa: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+            let s_sync_fa: LowerState = emit_instr(dr_sync_fa.state, Instruction::AgentSync(dr_sync_fa.value, obj_r.value, field_name))
+            return new_lower_result(dr_sync_fa.value, s_sync_fa)
         },
         _ => {
             let val_r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(val_r.state, mir_unknown(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::AgentSync(dest_r.value, val_r.value, ""))
-            return new_lower_result(dest_r.value, s)
+            let dr_sync_bare: LowerResult = make_value(val_r.state, mir_unknown(), "t")
+            let s_sync_bare: LowerState = emit_instr(dr_sync_bare.state, Instruction::AgentSync(dr_sync_bare.value, val_r.value, ""))
+            return new_lower_result(dr_sync_bare.value, s_sync_bare)
         }
     }
 }
@@ -6894,17 +6902,17 @@ fn lower_send(st: LowerState, target: Expr, value: Expr) -> LowerResult {
     match target {
         FieldAccess(obj, field_name) => {
             let obj_r: LowerResult = lower_expr(val_r.state, obj)
-            let s: LowerState = emit_instr(obj_r.state, Instruction::AgentSend(obj_r.value, field_name, val_r.value))
-            let dest_r: LowerResult = make_value(s, mir_void(), "t")
-            let s2: LowerState = emit_instr(dest_r.state, Instruction::Const(dest_r.value, mir_void(), ""))
-            return new_lower_result(dest_r.value, s2)
+            let s_field: LowerState = emit_instr(obj_r.state, Instruction::AgentSend(obj_r.value, field_name, val_r.value))
+            let dr_field: LowerResult = make_value(s_field, mir_void(), "t")
+            let s2_field: LowerState = emit_instr(dr_field.state, Instruction::Const(dr_field.value, mir_void(), ""))
+            return new_lower_result(dr_field.value, s2_field)
         },
         _ => {
             let target_r: LowerResult = lower_expr(val_r.state, target)
-            let s: LowerState = emit_instr(target_r.state, Instruction::AgentSend(target_r.value, "", val_r.value))
-            let dest_r: LowerResult = make_value(s, mir_void(), "t")
-            let s2: LowerState = emit_instr(dest_r.state, Instruction::Const(dest_r.value, mir_void(), ""))
-            return new_lower_result(dest_r.value, s2)
+            let s_plain: LowerState = emit_instr(target_r.state, Instruction::AgentSend(target_r.value, "", val_r.value))
+            let dr_plain: LowerResult = make_value(s_plain, mir_void(), "t")
+            let s2_plain: LowerState = emit_instr(dr_plain.state, Instruction::Const(dr_plain.value, mir_void(), ""))
+            return new_lower_result(dr_plain.value, s2_plain)
         }
     }
 }
@@ -6971,7 +6979,10 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
     }
 
     let mut elem_type: MIRType = mir_unknown()
-    if len(vals) > 0 { elem_type = vals[0].ty }
+    if len(vals) > 0 {
+        let first_v: Value = vals[0]
+        elem_type = first_v.ty
+    }
     let dest_r: LowerResult = make_value(s, mir_list(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::ListInit(dest_r.value, elem_type, vals))
     return new_lower_result(dest_r.value, new_s)
@@ -7042,8 +7053,8 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
                         let result_r: LowerResult = make_value(s, old_r.value.ty, "t")
                         s = emit_instr(result_r.state, Instruction::BinOp(result_r.value, binop, old_r.value, val_r.value))
                         
-                        let var_opt: Option<Value> = lookup_var(s, name)
-                        match var_opt {
+                        let var_opt_cmp: Option<Value> = lookup_var(s, name)
+                        match var_opt_cmp {
                             Some(addr) => {
                                 s = emit_instr(s, Instruction::Store(addr, result_r.value))
                                 return new_lower_result(result_r.value, s)
@@ -7055,8 +7066,8 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
                 }
             }
 
-            let var_opt: Option<Value> = lookup_var(s, name)
-            match var_opt {
+            let var_opt_asgn: Option<Value> = lookup_var(s, name)
+            match var_opt_asgn {
                 Some(addr) => {
                     // Update var type if the new value is more specific
                     // (e.g. from unknown/i64 to a concrete struct type)
@@ -7075,15 +7086,15 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
         FieldAccess(obj, field_name) => {
             // Pass the ALLOCA address (not loaded value) so the emitter
             // can GEP+store directly to the struct field.
-            let obj_r: LowerResult = lower_expr(s, obj)
-            let obj_alloca: Value = find_expr_alloca(obj_r.state, obj, obj_r)
-            s = emit_instr(obj_r.state, Instruction::FieldSet(obj_alloca, field_name, val_r.value))
+            let obj_r_fa: LowerResult = lower_expr(s, obj)
+            let obj_alloca: Value = find_expr_alloca(obj_r_fa.state, obj, obj_r_fa)
+            s = emit_instr(obj_r_fa.state, Instruction::FieldSet(obj_alloca, field_name, val_r.value))
             return new_lower_result(val_r.value, s)
         },
         Index(obj, idx) => {
-            let obj_r: LowerResult = lower_expr(s, obj)
-            let idx_r: LowerResult = lower_expr(obj_r.state, idx)
-            s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r.value, idx_r.value, val_r.value))
+            let obj_r_idx: LowerResult = lower_expr(s, obj)
+            let idx_r: LowerResult = lower_expr(obj_r_idx.state, idx)
+            s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r_idx.value, idx_r.value, val_r.value))
             return new_lower_result(val_r.value, s)
         },
         _ => {
@@ -7126,16 +7137,19 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
     }
     // If one arm has value but other is void, add zeroinitializer for the void arm
     if len(result) == 1 {
+        let r0_pe: PhiEntry = result[0]
+        let r0_val: Value = r0_pe.val
+        let r0_ty: MIRType = r0_val.ty
         if then_ok {
             if !then_non_void {
-                let zero_v: Value = new_value("zeroinitializer", result[0].val.ty)
-                result.push(new_phi_entry(then_lbl, zero_v))
+                let zero_v_then: Value = new_value("zeroinitializer", r0_ty)
+                result.push(new_phi_entry(then_lbl, zero_v_then))
             }
         }
         if else_ok {
             if !else_non_void {
-                let zero_v: Value = new_value("zeroinitializer", result[0].val.ty)
-                result.push(new_phi_entry(else_lbl, zero_v))
+                let zero_v_else: Value = new_value("zeroinitializer", r0_ty)
+                result.push(new_phi_entry(else_lbl, zero_v_else))
             }
         }
     }
@@ -7328,46 +7342,46 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
         // Mismatched types (e.g., i64 vs Expr from side-effect if-else) → void fallback.
         let types_match: Bool = then_val.ty.kind == else_val.ty.kind
         if types_match {
-            let mut entries: List<PhiEntry> = []
-            entries.push(new_phi_entry(then_exit_label, then_val))
-            entries.push(new_phi_entry(else_exit_label, else_val))
-            let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
-            s = result_r.state
-            s = emit_instr(s, Instruction::Phi(result_r.value, entries))
-            final_val = result_r.value
+            let mut ents_both: List<PhiEntry> = []
+            ents_both.push(new_phi_entry(then_exit_label, then_val))
+            ents_both.push(new_phi_entry(else_exit_label, else_val))
+            let rr_both: LowerResult = make_value(s, then_val.ty, "if_result")
+            s = rr_both.state
+            s = emit_instr(s, Instruction::Phi(rr_both.value, ents_both))
+            final_val = rr_both.value
         }
     }
     if only_then {
-        let mut entries: List<PhiEntry> = []
-        entries.push(new_phi_entry(then_exit_label, then_val))
+        let mut ents_then: List<PhiEntry> = []
+        ents_then.push(new_phi_entry(then_exit_label, then_val))
         // Only include else branch if it's not terminated (reaches merge)
         if !else_terminated {
-            let zero_v: Value = new_value("zeroinitializer", then_val.ty)
-            entries.push(new_phi_entry(else_exit_label, zero_v))
+            let zero_v_t: Value = new_value("zeroinitializer", then_val.ty)
+            ents_then.push(new_phi_entry(else_exit_label, zero_v_t))
         }
-        let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
-        s = result_r.state
-        s = emit_instr(s, Instruction::Phi(result_r.value, entries))
-        final_val = result_r.value
+        let rr_then: LowerResult = make_value(s, then_val.ty, "if_result")
+        s = rr_then.state
+        s = emit_instr(s, Instruction::Phi(rr_then.value, ents_then))
+        final_val = rr_then.value
     }
     if only_else {
-        let mut entries: List<PhiEntry> = []
+        let mut ents_else: List<PhiEntry> = []
         // Only include then branch if it's not terminated (reaches merge)
         if !then_terminated {
-            let zero_v: Value = new_value("zeroinitializer", else_val.ty)
-            entries.push(new_phi_entry(then_exit_label, zero_v))
+            let zero_v_e: Value = new_value("zeroinitializer", else_val.ty)
+            ents_else.push(new_phi_entry(then_exit_label, zero_v_e))
         }
-        entries.push(new_phi_entry(else_exit_label, else_val))
-        let result_r: LowerResult = make_value(s, else_val.ty, "if_result")
-        s = result_r.state
-        s = emit_instr(s, Instruction::Phi(result_r.value, entries))
-        final_val = result_r.value
+        ents_else.push(new_phi_entry(else_exit_label, else_val))
+        let rr_else: LowerResult = make_value(s, else_val.ty, "if_result")
+        s = rr_else.state
+        s = emit_instr(s, Instruction::Phi(rr_else.value, ents_else))
+        final_val = rr_else.value
     }
     let is_void: Bool = !both && !only_then && !only_else
     if is_void {
-        let result_r: LowerResult = make_value(s, mir_void(), "t")
-        s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
-        final_val = result_r.value
+        let rr_void: LowerResult = make_value(s, mir_void(), "t")
+        s = emit_instr(rr_void.state, Instruction::Const(rr_void.value, mir_void(), ""))
+        final_val = rr_void.value
         // Both branches terminated — merge block is unreachable.
         // Emit return terminator AFTER const so current_block_terminated returns true
         // and callers don't emit additional jumps to this block's successors.
@@ -7389,18 +7403,13 @@ fn get_current_fn_ret_type(st: LowerState) -> MIRType {
 }
 
 fn get_block_label(st: LowerState, idx: Int) -> String {
-    match st.current_fn {
-        Some(f) => {
-            if idx >= 0 {
-                if idx < len(f.blocks) {
-                    let bb: BasicBlock = f.blocks[idx]
-                    return bb.label
-                }
-            }
-            return "unknown"
-        },
-        _ => { return "unknown" }
+    if idx >= 0 {
+        if idx < len(st.fn_blocks) {
+            let bb: BasicBlock = st.fn_blocks[idx]
+            return bb.label
+        }
     }
+    return "unknown"
 }
 
 // ---------------------------------------------------------------------------
@@ -7533,12 +7542,12 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                 // Use zeroinitializer for void/unknown results to avoid referencing %void
                 let arm_kind: String = arm_val_r.value.ty.kind
                 if arm_kind == "void" || arm_kind == "unknown" || arm_val_r.value.name == "%void" {
-                    let zero_v: Value = new_value("zeroinitializer", arm_val_r.value.ty)
-                    let pe: PhiEntry = new_phi_entry(exit_label, zero_v)
-                    arm_results.push(pe)
+                    let zero_arm: Value = new_value("zeroinitializer", arm_val_r.value.ty)
+                    let pe_zero: PhiEntry = new_phi_entry(exit_label, zero_arm)
+                    arm_results.push(pe_zero)
                 } else {
-                    let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
-                    arm_results.push(pe)
+                    let pe_val: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
+                    arm_results.push(pe_val)
                 }
             }
             s = lower_pop_scope(s)
@@ -7549,31 +7558,36 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     // Add zeroinitializer entry for switch default→merge path
     if default_label == merge_label && len(arm_results) > 0 {
         let entry_label: String = get_block_label(s, match_entry_idx)
-        let zero_ty: MIRType = arm_results[0].val.ty
-        let zero_v: Value = new_value("zeroinitializer", zero_ty)
-        let def_pe: PhiEntry = new_phi_entry(entry_label, zero_v)
+        let first_pe: PhiEntry = arm_results[0]
+        let first_val: Value = first_pe.val
+        let zero_ty: MIRType = first_val.ty
+        let zero_def: Value = new_value("zeroinitializer", zero_ty)
+        let def_pe: PhiEntry = new_phi_entry(entry_label, zero_def)
         arm_results.push(def_pe)
     }
 
     // Merge block
     s = set_block(s, merge_idx)
     if len(arm_results) > 0 {
-        let result_r: LowerResult = make_value(s, arm_results[0].val.ty, "match_result")
-        s = result_r.state
-        s = emit_instr(s, Instruction::Phi(result_r.value, arm_results))
-        return new_lower_result(result_r.value, s)
+        let first_pe2: PhiEntry = arm_results[0]
+        let first_val2: Value = first_pe2.val
+        let phi_ty: MIRType = first_val2.ty
+        let rr_phi: LowerResult = make_value(s, phi_ty, "match_result")
+        s = rr_phi.state
+        s = emit_instr(s, Instruction::Phi(rr_phi.value, arm_results))
+        return new_lower_result(rr_phi.value, s)
     }
 
     // All arms terminated (all have return/break). Merge block is unreachable
     // but callers may reference the result. Use the function's return type
     // to create a properly-typed dummy value (alloca+load of zeroed memory).
     let fn_ret: MIRType = get_current_fn_ret_type(s)
-    let result_r: LowerResult = make_value(s, fn_ret, "match_result")
-    s = result_r.state
-    let dummy_addr: Value = new_value(result_r.value.name + ".dummy", fn_ret)
+    let rr_unreach: LowerResult = make_value(s, fn_ret, "match_result")
+    s = rr_unreach.state
+    let dummy_addr: Value = new_value(rr_unreach.value.name + ".dummy", fn_ret)
     s = emit_instr(s, Instruction::Alloca(dummy_addr, fn_ret))
-    s = emit_instr(s, Instruction::Load(result_r.value, dummy_addr))
-    return new_lower_result(result_r.value, s)
+    s = emit_instr(s, Instruction::Load(rr_unreach.value, dummy_addr))
+    return new_lower_result(rr_unreach.value, s)
 }
 
 fn get_literal_value(expr: Expr) -> String {
@@ -7898,16 +7912,16 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
     let mut errors: List<VerifyError> = []
 
     if len(bb.instructions) == 0 {
-        let e: VerifyError = new_verify_error(fn_name, bb.label, "block has no instructions")
-        errors.push(e)
+        let e_empty: VerifyError = new_verify_error(fn_name, bb.label, "block has no instructions")
+        errors.push(e_empty)
         return errors
     }
 
     // Check terminator
     let last: Instruction = bb.instructions[len(bb.instructions) - 1]
     if !is_terminator(last) {
-        let e: VerifyError = new_verify_error(fn_name, bb.label, "block does not end with a terminator")
-        errors.push(e)
+        let e_noterm: VerifyError = new_verify_error(fn_name, bb.label, "block does not end with a terminator")
+        errors.push(e_noterm)
     }
 
     // Check no terminators in the middle
@@ -7915,10 +7929,10 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
     let nbi_m1: Int = len(bb.instructions) - 1
     for _ in 0..600 {
         if i < nbi_m1 {
-            let inst: Instruction = bb.instructions[i]
-            if is_terminator(inst) {
-                let e: VerifyError = new_verify_error(fn_name, bb.label, "terminator at position " + toString(i) + " (not last)")
-                errors.push(e)
+            let inst_mid: Instruction = bb.instructions[i]
+            if is_terminator(inst_mid) {
+                let e_midterm: VerifyError = new_verify_error(fn_name, bb.label, "terminator at position " + toString(i) + " (not last)")
+                errors.push(e_midterm)
             }
             i = i + 1
         }
@@ -7926,23 +7940,23 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
 
     // Check phi nodes are at the start
     let mut seen_non_phi: Bool = false
-    let mut pi: Int = 0
+    let mut phi_i: Int = 0
     let nbi_phi: Int = len(bb.instructions)
     for _ in 0..600 {
-        if pi < nbi_phi {
-            let inst: Instruction = bb.instructions[pi]
-            match inst {
+        if phi_i < nbi_phi {
+            let inst_phi: Instruction = bb.instructions[phi_i]
+            match inst_phi {
                 Phi(_, _) => {
                     if seen_non_phi {
-                        let e: VerifyError = new_verify_error(fn_name, bb.label, "phi node after non-phi instruction")
-                        errors.push(e)
+                        let e_phi: VerifyError = new_verify_error(fn_name, bb.label, "phi node after non-phi instruction")
+                        errors.push(e_phi)
                     }
                 },
                 _ => {
                     seen_non_phi = true
                 }
             }
-            pi = pi + 1
+            phi_i = phi_i + 1
         }
     }
 
@@ -7979,27 +7993,27 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
 
     // Build params
     let mut params: List<MIRParam> = []
-    let mut pi: Int = 0
+    let mut pi_reg: Int = 0
     let nfdp: Int = len(fn_def.params)
     for _ in 0..200 {
-        if pi < nfdp {
-            let p: Param = fn_def.params[pi]
-            let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
-            let mp: MIRParam = new_mir_param(p.name, pty)
+        if pi_reg < nfdp {
+            let p_reg: Param = fn_def.params[pi_reg]
+            let pty_reg: MIRType = lower_resolve_type_opt_checked(st, p_reg.type_annotation)
+            let mp: MIRParam = new_mir_param(p_reg.name, pty_reg)
             params.push(mp)
-            pi = pi + 1
+            pi_reg = pi_reg + 1
         }
     }
 
     let ret_type: MIRType = resolve_return_type_checked(st, fn_def.return_type)
 
     let mut decorators: List<String> = []
-    let mut di: Int = 0
+    let mut dix: Int = 0
     let ndec: Int = len(fn_def.decorators)
     for _ in 0..100 {
-        if di < ndec {
-            decorators.push(fn_def.decorators[di].name)
-            di = di + 1
+        if dix < ndec {
+            decorators.push(fn_def.decorators[dix].name)
+            dix = dix + 1
         }
     }
 
@@ -8011,6 +8025,7 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     let prev_tmp: Int = st.tmp_counter
     let prev_blk_cnt: Int = st.block_counter
     let prev_vars: List<VarInfo> = st.vars
+    let prev_blocks: List<BasicBlock> = st.fn_blocks
 
     let mut s: LowerState = st
     s.current_fn = Some(mir_fn)
@@ -8018,6 +8033,8 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     s.block_counter = 0
     let fresh_vars: List<VarInfo> = []
     s.vars = fresh_vars
+    let fresh_blocks: List<BasicBlock> = []
+    s.fn_blocks = fresh_blocks
 
     s = add_block(s, "entry")
     s = set_block(s, 0)
@@ -8026,14 +8043,14 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     let mut bi: Int = 0
     for _ in 0..200 {
         if bi < nfdp {
-            let p: Param = fn_def.params[bi]
-            let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
-            let addr_name: String = "%" + p.name + ".addr"
-            let addr: Value = new_value(addr_name, pty)
-            let param_val: Value = new_value("%" + p.name, pty)
-            s = emit_instr(s, Instruction::Alloca(addr, pty))
+            let p_bind: Param = fn_def.params[bi]
+            let pty_bind: MIRType = lower_resolve_type_opt_checked(s, p_bind.type_annotation)
+            let addr_name: String = "%" + p_bind.name + ".addr"
+            let addr: Value = new_value(addr_name, pty_bind)
+            let param_val: Value = new_value("%" + p_bind.name, pty_bind)
+            s = emit_instr(s, Instruction::Alloca(addr, pty_bind))
             s = emit_instr(s, Instruction::Store(addr, param_val))
-            s = define_var(s, p.name, addr, false)
+            s = define_var(s, p_bind.name, addr, false)
             bi = bi + 1
         }
     }
@@ -8050,12 +8067,13 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
         }
     }
 
-    // Extract the completed function (DO NOT add to module — caller emits it)
+    // Copy fn_blocks into MIRFunction (DO NOT add to module — caller emits it)
     let mut result_fn: MIRFunction = mir_fn
     match s.current_fn {
         Some(f) => { result_fn = f },
         _ => {}
     }
+    result_fn.blocks = s.fn_blocks
 
     // Restore counters/vars but KEEP current_fn so caller can extract it
     s.current_fn = Some(result_fn)
@@ -8063,6 +8081,7 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     s.tmp_counter = prev_tmp
     s.block_counter = prev_blk_cnt
     s.vars = prev_vars
+    s.fn_blocks = prev_blocks
 
     let fn_val: Value = new_value(fn_name, mir_void())
     return new_lower_result(fn_val, s)
@@ -9168,49 +9187,49 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
         if is_float { s = emit_line(s, emit_frem(dn, ln, rn)) } else { s = emit_line(s, emit_srem(dn, llvm_int(), ln, rn)) }
     } else if op_str == "eq" {
         if is_string {
-            let eq_raw: String = dn + ".sr"
-            s = emit_line(s, emit_call_ir(eq_raw, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "ne", llvm_int(), eq_raw, "0"))
+            let eq_raw_eq: String = dn + ".sr"
+            s = emit_line(s, emit_call_ir(eq_raw_eq, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "ne", llvm_int(), eq_raw_eq, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "eq", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "eq", cmp_ty, ln, rn)) }
         }
     } else if op_str == "ne" {
         if is_string {
-            let eq_raw: String = dn + ".sr"
-            s = emit_line(s, emit_call_ir(eq_raw, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "eq", llvm_int(), eq_raw, "0"))
+            let eq_raw_ne: String = dn + ".sr"
+            s = emit_line(s, emit_call_ir(eq_raw_ne, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "eq", llvm_int(), eq_raw_ne, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "ne", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "ne", cmp_ty, ln, rn)) }
         }
     } else if op_str == "lt" {
         if is_string {
-            let cmp_r: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "slt", llvm_int(), cmp_r, "0"))
+            let cmp_r_lt: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r_lt, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "slt", llvm_int(), cmp_r_lt, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "lt", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "slt", llvm_int(), ln, rn)) }
         }
     } else if op_str == "gt" {
         if is_string {
-            let cmp_r: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "sgt", llvm_int(), cmp_r, "0"))
+            let cmp_r_gt: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r_gt, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "sgt", llvm_int(), cmp_r_gt, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "gt", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sgt", llvm_int(), ln, rn)) }
         }
     } else if op_str == "le" {
         if is_string {
-            let cmp_r: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "sle", llvm_int(), cmp_r, "0"))
+            let cmp_r_le: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r_le, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "sle", llvm_int(), cmp_r_le, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "le", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sle", llvm_int(), ln, rn)) }
         }
     } else if op_str == "ge" {
         if is_string {
-            let cmp_r: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-            s = emit_line(s, emit_icmp(dn, "sge", llvm_int(), cmp_r, "0"))
+            let cmp_r_ge: String = dn + ".sc"
+            s = emit_line(s, emit_call_ir(cmp_r_ge, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_line(s, emit_icmp(dn, "sge", llvm_int(), cmp_r_ge, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "ge", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sge", llvm_int(), ln, rn)) }
         }
@@ -9698,13 +9717,13 @@ fn is_byref_type(ty: String) -> Bool {
     // This prevents ABI issues with large struct copies.
     if ty.starts_with("%struct.") {
         // All structs > 64 bytes use byref. Use llvm_type_size heuristic.
-        let sz: Int = llvm_type_size(ty)
-        if sz > 64 { return true }
+        let sz_st: Int = llvm_type_size(ty)
+        if sz_st > 64 { return true }
         return false
     }
     if ty.starts_with("{") {
-        let sz: Int = llvm_type_size(ty)
-        if sz > 64 { return true }
+        let sz_lit: Int = llvm_type_size(ty)
+        if sz_lit > 64 { return true }
     }
     return false
 }
@@ -9791,28 +9810,28 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
             let gep: String = "%push_gep" + cnt
             s = emit_line(s, "  " + gep + " = getelementptr inbounds " + struct_ty + ", ptr " + list_ref + ", i32 0, i32 " + field_idx)
             // Load list to temp alloca
-            let tmp: String = "%push_tmp" + cnt
-            s = emit_line(s, "  " + tmp + " = alloca " + llvm_list_rt())
-            let ld: String = "%push_ld" + cnt
-            s = emit_line(s, "  " + ld + " = load " + llvm_list_rt() + ", ptr " + gep)
-            s = emit_line(s, "  store " + llvm_list_rt() + " " + ld + ", ptr " + tmp)
+            let tmp_sf: String = "%push_tmp" + cnt
+            s = emit_line(s, "  " + tmp_sf + " = alloca " + llvm_list_rt())
+            let ld_sf: String = "%push_ld" + cnt
+            s = emit_line(s, "  " + ld_sf + " = load " + llvm_list_rt() + ", ptr " + gep)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + ld_sf + ", ptr " + tmp_sf)
             // Push to temp
-            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp + ", ptr " + ea))
+            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp_sf + ", ptr " + ea))
             // Write back to struct field
-            let wb: String = "%push_wb" + cnt
-            s = emit_line(s, "  " + wb + " = load " + llvm_list_rt() + ", ptr " + tmp)
-            s = emit_line(s, "  store " + llvm_list_rt() + " " + wb + ", ptr " + gep)
+            let wb_sf: String = "%push_wb" + cnt
+            s = emit_line(s, "  " + wb_sf + " = load " + llvm_list_rt() + ", ptr " + tmp_sf)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + wb_sf + ", ptr " + gep)
         } else if list_ref.contains(".addr") {
             // Simple alloca push: same temp+writeback pattern
-            let tmp: String = "%push_tmp" + cnt
-            s = emit_line(s, "  " + tmp + " = alloca " + llvm_list_rt())
-            let ld: String = "%push_ld" + cnt
-            s = emit_line(s, "  " + ld + " = load " + llvm_list_rt() + ", ptr " + list_ref)
-            s = emit_line(s, "  store " + llvm_list_rt() + " " + ld + ", ptr " + tmp)
-            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp + ", ptr " + ea))
-            let wb: String = "%push_wb" + cnt
-            s = emit_line(s, "  " + wb + " = load " + llvm_list_rt() + ", ptr " + tmp)
-            s = emit_line(s, "  store " + llvm_list_rt() + " " + wb + ", ptr " + list_ref)
+            let tmp_sa: String = "%push_tmp" + cnt
+            s = emit_line(s, "  " + tmp_sa + " = alloca " + llvm_list_rt())
+            let ld_sa: String = "%push_ld" + cnt
+            s = emit_line(s, "  " + ld_sa + " = load " + llvm_list_rt() + ", ptr " + list_ref)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + ld_sa + ", ptr " + tmp_sa)
+            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp_sa + ", ptr " + ea))
+            let wb_sa: String = "%push_wb" + cnt
+            s = emit_line(s, "  " + wb_sa + " = load " + llvm_list_rt() + ", ptr " + tmp_sa)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + wb_sa + ", ptr " + list_ref)
         } else {
             // Loaded list value — create temp alloca
             let la: String = "%push_la" + cnt
@@ -9909,9 +9928,38 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
 // ---------------------------------------------------------------------------
 
 fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitState {
-    // Stub: indexed list store not yet working in stage2
-    // (any non-trivial implementation triggers layout-sensitive binary corruption)
-    return st
+    let mut s: EmitState = st
+    let list_ref: String = obj.name
+    let idx_name: String = idx.name
+    let elem_name: String = val.name
+    let elem_ty: String = resolve_type(st, val.ty)
+    let cnt: String = toString(s.counter)
+    s.counter = s.counter + 1
+
+    // Alloca element, store value
+    let ea: String = "%set_ea" + cnt
+    s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
+    s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ea)
+
+    if list_ref.contains(".addr") {
+        // obj is an alloca pointer — load, call, write back
+        let tmp_addr: String = "%set_tmp" + cnt
+        s = emit_line(s, "  " + tmp_addr + " = alloca " + llvm_list_rt())
+        let ld: String = "%set_ld" + cnt
+        s = emit_line(s, "  " + ld + " = load " + llvm_list_rt() + ", ptr " + list_ref)
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + ld + ", ptr " + tmp_addr)
+        s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp_addr + ", i64 " + idx_name + ", ptr " + ea))
+        let wb: String = "%set_wb" + cnt
+        s = emit_line(s, "  " + wb + " = load " + llvm_list_rt() + ", ptr " + tmp_addr)
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + wb + ", ptr " + list_ref)
+    } else {
+        // obj is a loaded value — store to temp alloca first
+        let tmp_val: String = "%set_tmp" + cnt
+        s = emit_line(s, "  " + tmp_val + " = alloca " + llvm_list_rt())
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + list_ref + ", ptr " + tmp_val)
+        s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp_val + ", i64 " + idx_name + ", ptr " + ea))
+    }
+    return s
 }
 
 // ---------------------------------------------------------------------------
@@ -9986,14 +10034,14 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
             }
         }
         // Build enum value using named type
-        let ei1: String = dn + ".ei1"
-        s = emit_line(s, "  " + ei1 + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
-        s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1 + ", ptr " + ep + ", 1")
+        let ei1_pay: String = dn + ".ei1"
+        s = emit_line(s, "  " + ei1_pay + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
+        s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1_pay + ", ptr " + ep + ", 1")
     } else {
         // No payload: null pointer
-        let ei1: String = dn + ".ei1"
-        s = emit_line(s, "  " + ei1 + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
-        s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1 + ", ptr null, 1")
+        let ei1_bare: String = dn + ".ei1"
+        s = emit_line(s, "  " + ei1_bare + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
+        s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1_bare + ", ptr null, 1")
     }
     return s
 }
@@ -10220,11 +10268,11 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
             ok_ty = resolve_mir_type(val.ty.args[0])
             err_ty = resolve_mir_type(val.ty.args[1])
         }
-        let inner_ty: String = "{ " + ok_ty + ", " + err_ty + " }"
+        let inner_ty_res: String = "{ " + ok_ty + ", " + err_ty + " }"
         if variant == "Ok" {
-            s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty + " " + inner_r + ", 0")
+            s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty_res + " " + inner_r + ", 0")
         } else {
-            s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty + " " + inner_r + ", 1")
+            s = emit_line(s, "  " + dn + " = extractvalue " + inner_ty_res + " " + inner_r + ", 1")
         }
         return s
     }
@@ -10233,8 +10281,8 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         let ptr_name: String = dn + ".ptr"
         s = emit_line(s, "  " + ptr_name + " = extractvalue " + enum_ty + " " + val.name + ", 1")
         // Use destination type for load — avoids struct/enum name mismatches
-        let inner_ty: String = resolve_type(st, dest.ty)
-        s = emit_line(s, "  " + dn + " = load " + inner_ty + ", ptr " + ptr_name)
+        let inner_ty_opt: String = resolve_type(st, dest.ty)
+        s = emit_line(s, "  " + dn + " = load " + inner_ty_opt + ", ptr " + ptr_name)
         return s
     }
 
@@ -10401,69 +10449,69 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     // C runtime __mn_range returns void* (ptr), but self-hosted expects {i64, i64}.
     // Fix: construct the {i64, i64} directly instead of calling the C function.
     if fn_name == "__mn_range" {
-        let mut s: EmitState = st
-        let tmp: String = dn + ".tmp"
-        s = emit_line(s, "  " + tmp + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
-        s = emit_line(s, "  " + dn + " = insertvalue { i64, i64 } " + tmp + ", i64 " + args[1].name + ", 1")
-        return s
+        let mut s_rng: EmitState = st
+        let tmp_rng: String = dn + ".tmp"
+        s_rng = emit_line(s_rng, "  " + tmp_rng + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
+        s_rng = emit_line(s_rng, "  " + dn + " = insertvalue { i64, i64 } " + tmp_rng + ", i64 " + args[1].name + ", 1")
+        return s_rng
     }
     if fn_name == "__mn_range_inclusive" {
-        let mut s: EmitState = st
+        let mut s_rngi: EmitState = st
         let inc: String = dn + ".inc"
-        let tmp: String = dn + ".tmp"
-        s = emit_line(s, "  " + inc + " = add i64 " + args[1].name + ", 1")
-        s = emit_line(s, "  " + tmp + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
-        s = emit_line(s, "  " + dn + " = insertvalue { i64, i64 } " + tmp + ", i64 " + inc + ", 1")
-        return s
+        let tmp_rngi: String = dn + ".tmp"
+        s_rngi = emit_line(s_rngi, "  " + inc + " = add i64 " + args[1].name + ", 1")
+        s_rngi = emit_line(s_rngi, "  " + tmp_rngi + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
+        s_rngi = emit_line(s_rngi, "  " + dn + " = insertvalue { i64, i64 } " + tmp_rngi + ", i64 " + inc + ", 1")
+        return s_rngi
     }
 
     // Range field extraction (counter-based for-loops)
     if fn_name == "__mn_range_start" {
-        let mut s: EmitState = st
-        s = emit_line(s, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 0")
-        return s
+        let mut s_rs: EmitState = st
+        s_rs = emit_line(s_rs, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 0")
+        return s_rs
     }
     if fn_name == "__mn_range_end" {
-        let mut s: EmitState = st
-        s = emit_line(s, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 1")
-        return s
+        let mut s_re: EmitState = st
+        s_re = emit_line(s_re, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 1")
+        return s_re
     }
 
     // String builtins
     if fn_name == "split" {
-        let mut s: EmitState = st
-        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        s = emit_line(s, emit_call_ir(dn, llvm_list_rt(), "__mn_str_split", arg_str))
-        return s
+        let mut s_split: EmitState = st
+        let as_split: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        s_split = emit_line(s_split, emit_call_ir(dn, llvm_list_rt(), "__mn_str_split", as_split))
+        return s_split
     }
     if fn_name == "contains" {
-        let mut s: EmitState = st
-        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        s = emit_line(s, emit_call_ir(dn, llvm_bool(), "__mn_str_contains", arg_str))
-        return s
+        let mut s_cont: EmitState = st
+        let as_cont: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        s_cont = emit_line(s_cont, emit_call_ir(dn, llvm_bool(), "__mn_str_contains", as_cont))
+        return s_cont
     }
     if fn_name == "replace" {
-        let mut s: EmitState = st
-        let arg_str: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name
-        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_replace", arg_str))
-        return s
+        let mut s_repl: EmitState = st
+        let as_repl: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name
+        s_repl = emit_line(s_repl, emit_call_ir(dn, llvm_string(), "__mn_str_replace", as_repl))
+        return s_repl
     }
     if fn_name == "byte_at" {
-        let mut s: EmitState = st
-        let arg_str: String = llvm_string() + " " + args[0].name + ", i64 " + args[1].name
-        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_byte_at", arg_str))
-        return s
+        let mut s_ba: EmitState = st
+        let as_ba: String = llvm_string() + " " + args[0].name + ", i64 " + args[1].name
+        s_ba = emit_line(s_ba, emit_call_ir(dn, llvm_int(), "__mn_str_byte_at", as_ba))
+        return s_ba
     }
     // join(sep, list) → String via C runtime. List passed by pointer.
     if fn_name == "join" {
-        let mut s: EmitState = st
+        let mut s_join: EmitState = st
         // Alloca the list and pass pointer (C runtime expects MnList*)
         let la: String = "%" + strip_percent(dn) + ".la"
-        s = emit_line(s, "  " + la + " = alloca " + llvm_list_rt())
-        s = emit_line(s, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + la)
-        let arg_str: String = llvm_string() + " " + args[0].name + ", ptr " + la
-        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_join", arg_str))
-        return s
+        s_join = emit_line(s_join, "  " + la + " = alloca " + llvm_list_rt())
+        s_join = emit_line(s_join, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + la)
+        let as_join: String = llvm_string() + " " + args[0].name + ", ptr " + la
+        s_join = emit_line(s_join, emit_call_ir(dn, llvm_string(), "__mn_str_join", as_join))
+        return s_join
     }
 
     // List push: extract to helper to avoid return-inside-if bug
@@ -10998,17 +11046,17 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     let nfparams: Int = len(f.params)
     for _ in 0..200 {
         if pi < nfparams {
-            let p: MIRParam = f.params[pi]
-            let pty: String = resolve_mir_type(p.ty)
-            param_types.push(pty)
+            let p_sig: MIRParam = f.params[pi]
+            let pty_sig: String = resolve_mir_type(p_sig.ty)
+            param_types.push(pty_sig)
             let need_sep: Bool = pi > 0 || use_sret
             let mut sep: String = ""
             if need_sep { sep = ", " }
-            if is_byref_type(pty) {
+            if is_byref_type(pty_sig) {
                 // Large param: pass by pointer
-                params_str = params_str + sep + "ptr %" + p.name + ".byref"
+                params_str = params_str + sep + "ptr %" + p_sig.name + ".byref"
             } else {
-                params_str = params_str + sep + pty + " %" + p.name
+                params_str = params_str + sep + pty_sig + " %" + p_sig.name
             }
             pi = pi + 1
         }
@@ -11045,12 +11093,12 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         let nfparams3: Int = len(f.params)
         for _ in 0..100 {
             if pi3 < nfparams3 {
-                let p: MIRParam = f.params[pi3]
-                let pty: String = resolve_mir_type(p.ty)
-                if is_byref_type(pty) {
-                    s = emit_line(s, "  %" + p.name + ".addr = alloca " + pty)
-                    s = emit_line(s, "  %" + p.name + ".bp = load " + pty + ", ptr %" + p.name + ".byref")
-                    s = emit_line(s, "  store " + pty + " %" + p.name + ".bp, ptr %" + p.name + ".addr")
+                let p_byref: MIRParam = f.params[pi3]
+                let pty_byref: String = resolve_mir_type(p_byref.ty)
+                if is_byref_type(pty_byref) {
+                    s = emit_line(s, "  %" + p_byref.name + ".addr = alloca " + pty_byref)
+                    s = emit_line(s, "  %" + p_byref.name + ".bp = load " + pty_byref + ", ptr %" + p_byref.name + ".byref")
+                    s = emit_line(s, "  store " + pty_byref + " %" + p_byref.name + ".bp, ptr %" + p_byref.name + ".addr")
                 }
                 pi3 = pi3 + 1
             }
@@ -11178,18 +11226,18 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     if len(module.extern_fns) > 0 { st = emit_blank(st) }
 
     // Forward-declare all functions (for mutual recursion)
-    let mut di: Int = 0
+    let mut dix: Int = 0
     let nmodfns: Int = len(module.functions)
     for _ in 0..600 {
-        if di < nmodfns {
-            let f: MIRFunction = module.functions[di]
-            let ret_ty: String = resolve_mir_type(f.return_type)
+        if dix < nmodfns {
+            let f_decl: MIRFunction = module.functions[dix]
+            let ret_ty: String = resolve_mir_type(f_decl.return_type)
             let mut fparams: String = ""
             let mut fpi: Int = 0
-            let nfwdparams: Int = len(f.params)
+            let nfwdparams: Int = len(f_decl.params)
             for _ in 0..200 {
                 if fpi < nfwdparams {
-                    let fp: MIRParam = f.params[fpi]
+                    let fp: MIRParam = f_decl.params[fpi]
                     let fpty: String = resolve_mir_type(fp.ty)
                     if fpi > 0 {
                         fparams = fparams + ", " + fpty
@@ -11203,13 +11251,13 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
             let mut fti: Int = 0
             for _ in 0..200 {
                 if fti < nfwdparams {
-                    fn_types.push(resolve_mir_type(f.params[fti].ty))
+                    fn_types.push(resolve_mir_type(f_decl.params[fti].ty))
                     fti = fti + 1
                 }
             }
-            let fe: FnEntry = new_fn_entry(f.name, ret_ty, fn_types)
+            let fe: FnEntry = new_fn_entry(f_decl.name, ret_ty, fn_types)
             st.functions.push(fe)
-            di = di + 1
+            dix = dix + 1
         }
     }
 
@@ -11218,9 +11266,9 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     let mut fi: Int = 0
     for _ in 0..600 {
         if fi < total_fns {
-            let f: MIRFunction = module.functions[fi]
-            if len(f.blocks) > 0 {
-                st = emit_mir_function(st, f)
+            let f_emit: MIRFunction = module.functions[fi]
+            if len(f_emit.blocks) > 0 {
+                st = emit_mir_function(st, f_emit)
             }
             fi = fi + 1
         }

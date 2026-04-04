@@ -468,52 +468,52 @@ fn tokenize(source: String, filename: String) -> List<Token> {
 
             if is_alpha(c) {
                 handled = true
-                let tok: Token = scan_ident(source, pos, line, col)
-                pos = pos + len(tok.value)
-                col = col + len(tok.value)
-                tokens.push(tok)
+                let tok_id: Token = scan_ident(source, pos, line, col)
+                pos = pos + len(tok_id.value)
+                col = col + len(tok_id.value)
+                tokens.push(tok_id)
             }
 
             if !handled {
                 if is_digit(c) {
                     handled = true
-                    let tok: Token = scan_number(source, pos, line, col)
-                    let width: Int = tok.end_column - tok.column
-                    pos = pos + width
-                    col = col + width
-                    tokens.push(tok)
+                    let tok_num: Token = scan_number(source, pos, line, col)
+                    let width_num: Int = tok_num.end_column - tok_num.column
+                    pos = pos + width_num
+                    col = col + width_num
+                    tokens.push(tok_num)
                 }
             }
 
             if !handled {
                 if c == "\"" {
                     handled = true
-                    let tok: Token = scan_string(source, pos, line, col)
-                    let width: Int = tok.end_column - tok.column
-                    pos = pos + width
-                    col = col + width
-                    line = tok.end_line
-                    tokens.push(tok)
+                    let tok_str: Token = scan_string(source, pos, line, col)
+                    let width_str: Int = tok_str.end_column - tok_str.column
+                    pos = pos + width_str
+                    col = col + width_str
+                    line = tok_str.end_line
+                    tokens.push(tok_str)
                 }
             }
 
             if !handled {
                 if c == "'" {
                     handled = true
-                    let tok: Token = scan_char(source, pos, line, col)
-                    let width: Int = tok.end_column - tok.column
-                    pos = pos + width
-                    col = col + width
-                    tokens.push(tok)
+                    let tok_chr: Token = scan_char(source, pos, line, col)
+                    let width_chr: Int = tok_chr.end_column - tok_chr.column
+                    pos = pos + width_chr
+                    col = col + width_chr
+                    tokens.push(tok_chr)
                 }
             }
 
             if !handled {
-                let tok: Token = scan_op(source, pos, line, col)
-                let width: Int = len(tok.value)
-                pos = pos + width
-                col = col + width
-                tokens.push(tok)
+                let tok_op: Token = scan_op(source, pos, line, col)
+                let width_op: Int = len(tok_op.value)
+                pos = pos + width_op
+                col = col + width_op
+                tokens.push(tok_op)
             }
         }
     }
