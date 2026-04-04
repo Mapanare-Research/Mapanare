@@ -2504,6 +2504,11 @@ class MIRLowerer:
             obj = self._lower_expr(expr.target.object)
             index = self._lower_expr(expr.target.index)
             self._emit(IndexSet(obj=obj, index=index, val=val))
+            # Write back: if the list came from a struct field, the IndexSet
+            # only modifies a local copy.  Emit FieldSet to persist the change.
+            if isinstance(expr.target.object, FieldAccessExpr):
+                base = self._lower_expr(expr.target.object.object)
+                self._emit(FieldSet(obj=base, field_name=expr.target.object.field_name, val=obj))
             return val
 
         return val
@@ -2556,7 +2561,10 @@ class MIRLowerer:
             ev = else_val if else_val is not None else Value(name="%void", ty=mir_void())
             assert then_exit_bb is not None
             assert else_exit_bb is not None
-            result = self._make_value(ty=tv.ty, prefix="if_result")
+            phi_ty = tv.ty
+            if self._fn and self._fn.return_type.kind != TypeKind.VOID:
+                phi_ty = self._fn.return_type
+            result = self._make_value(ty=phi_ty, prefix="if_result")
             self._emit(
                 Phi(
                     dest=result,
@@ -2568,9 +2576,12 @@ class MIRLowerer:
             )
             return result
 
-        # Void if — no value
-        result = self._make_value(ty=mir_void())
-        self._emit(Const(dest=result, ty=mir_void(), value=None))
+        # Both branches terminated — merge block is unreachable but callers
+        # may reference the result.  Use the function's return type so the C
+        # emitter generates a correctly-sized variable.
+        ret_ty = self._fn.return_type if self._fn else mir_void()
+        result = self._make_value(ty=ret_ty, prefix="if_result")
+        self._emit(Const(dest=result, ty=ret_ty, value=None))
         return result
 
     def _lower_match(self, expr: MatchExpr) -> Value:
@@ -2669,12 +2680,21 @@ class MIRLowerer:
         # Merge block
         self._set_block(merge_bb)
         if arm_results:
-            result = self._make_value(ty=arm_results[0][1].ty, prefix="match_result")
+            # Use the function's return type when the arm type doesn't match —
+            # this prevents the C emitter from generating undersized variables.
+            phi_ty = arm_results[0][1].ty
+            if self._fn and self._fn.return_type.kind != TypeKind.VOID:
+                phi_ty = self._fn.return_type
+            result = self._make_value(ty=phi_ty, prefix="match_result")
             self._emit(Phi(dest=result, incoming=arm_results))
             return result
 
-        result = self._make_value(ty=mir_void())
-        self._emit(Const(dest=result, ty=mir_void(), value=None))
+        # All arms terminated — merge block is unreachable but callers may
+        # reference the result.  Use the function's return type so the C
+        # emitter generates a correctly-sized variable (not int64_t).
+        ret_ty = self._fn.return_type if self._fn else mir_void()
+        result = self._make_value(ty=ret_ty, prefix="match_result")
+        self._emit(Const(dest=result, ty=ret_ty, value=None))
         return result
 
     def _lower_interp_string(self, expr: InterpString) -> Value:

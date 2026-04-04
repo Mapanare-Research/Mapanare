@@ -487,8 +487,8 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
             // List<T>[i] -> T
             if obj_r.type_info.name == "List" {
                 if len(obj_r.type_info.args) > 0 {
-                    let elem: TypeInfo = obj_r.type_info.args[0]
-                    return new_infer_result(elem, idx_r.st)
+                    let elem_ti: TypeInfo = obj_r.type_info.args[0]
+                    return new_infer_result(elem_ti, idx_r.st)
                 }
             }
             return new_infer_result(unknown_type(), idx_r.st)

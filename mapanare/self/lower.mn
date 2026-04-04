@@ -248,12 +248,12 @@ fn build_mir_params(st: LowerState, fn_params: List<Param>) -> List<MIRParam> {
 // Helper: collect decorator names (avoids break-in-for bug)
 fn collect_decorator_names(decorators: List<Decorator>) -> List<String> {
     let mut names: List<String> = []
-    let mut di: Int = 0
+    let mut dix: Int = 0
     for _ in 0..100 {
-        if di >= len(decorators) { return names }
-        let dec: Decorator = decorators[di]
+        if dix >= len(decorators) { return names }
+        let dec: Decorator = decorators[dix]
         names.push(dec.name)
-        di = di + 1
+        dix = dix + 1
     }
     return names
 }
@@ -293,6 +293,7 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     let prev_tmp: Int = st.tmp_counter
     let prev_blk_cnt: Int = st.block_counter
     let prev_vars: List<VarInfo> = st.vars
+    let prev_blocks: List<BasicBlock> = st.fn_blocks
 
     let mut s: LowerState = st
     s.current_fn = Some(mir_fn)
@@ -300,6 +301,8 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     s.block_counter = 0
     let fresh_vars: List<VarInfo> = []
     s.vars = fresh_vars
+    let fresh_blocks: List<BasicBlock> = []
+    s.fn_blocks = fresh_blocks
 
     // Create entry block
     s = add_block(s, "entry")
@@ -322,10 +325,12 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
         }
     }
 
-    // Add function to module
+    // Copy fn_blocks into MIRFunction and add to module
     match s.current_fn {
         Some(f) => {
-            s.module = module_push_function(s.module, f)
+            let mut final_fn: MIRFunction = f
+            final_fn.blocks = s.fn_blocks
+            s.module = module_push_function(s.module, final_fn)
         },
         _ => {}
     }
@@ -336,6 +341,7 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     s.tmp_counter = prev_tmp
     s.block_counter = prev_blk_cnt
     s.vars = prev_vars
+    s.fn_blocks = prev_blocks
 
     return s
 }
@@ -1680,7 +1686,10 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
     }
 
     let mut elem_type: MIRType = mir_unknown()
-    if len(vals) > 0 { elem_type = vals[0].ty }
+    if len(vals) > 0 {
+        let first_v: Value = vals[0]
+        elem_type = first_v.ty
+    }
     let dest_r: LowerResult = make_value(s, mir_list(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::ListInit(dest_r.value, elem_type, vals))
     return new_lower_result(dest_r.value, new_s)
@@ -1835,15 +1844,18 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
     }
     // If one arm has value but other is void, add zeroinitializer for the void arm
     if len(result) == 1 {
+        let r0_pe: PhiEntry = result[0]
+        let r0_val: Value = r0_pe.val
+        let r0_ty: MIRType = r0_val.ty
         if then_ok {
             if !then_non_void {
-                let zero_v: Value = new_value("zeroinitializer", result[0].val.ty)
+                let zero_v: Value = new_value("zeroinitializer", r0_ty)
                 result.push(new_phi_entry(then_lbl, zero_v))
             }
         }
         if else_ok {
             if !else_non_void {
-                let zero_v: Value = new_value("zeroinitializer", result[0].val.ty)
+                let zero_v: Value = new_value("zeroinitializer", r0_ty)
                 result.push(new_phi_entry(else_lbl, zero_v))
             }
         }
@@ -2098,18 +2110,13 @@ fn get_current_fn_ret_type(st: LowerState) -> MIRType {
 }
 
 fn get_block_label(st: LowerState, idx: Int) -> String {
-    match st.current_fn {
-        Some(f) => {
-            if idx >= 0 {
-                if idx < len(f.blocks) {
-                    let bb: BasicBlock = f.blocks[idx]
-                    return bb.label
-                }
-            }
-            return "unknown"
-        },
-        _ => { return "unknown" }
+    if idx >= 0 {
+        if idx < len(st.fn_blocks) {
+            let bb: BasicBlock = st.fn_blocks[idx]
+            return bb.label
+        }
     }
+    return "unknown"
 }
 
 // ---------------------------------------------------------------------------
@@ -2258,7 +2265,9 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     // Add zeroinitializer entry for switch default→merge path
     if default_label == merge_label && len(arm_results) > 0 {
         let entry_label: String = get_block_label(s, match_entry_idx)
-        let zero_ty: MIRType = arm_results[0].val.ty
+        let first_pe: PhiEntry = arm_results[0]
+        let first_val: Value = first_pe.val
+        let zero_ty: MIRType = first_val.ty
         let zero_v: Value = new_value("zeroinitializer", zero_ty)
         let def_pe: PhiEntry = new_phi_entry(entry_label, zero_v)
         arm_results.push(def_pe)
@@ -2267,7 +2276,10 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     // Merge block
     s = set_block(s, merge_idx)
     if len(arm_results) > 0 {
-        let result_r: LowerResult = make_value(s, arm_results[0].val.ty, "match_result")
+        let first_pe2: PhiEntry = arm_results[0]
+        let first_val2: Value = first_pe2.val
+        let phi_ty: MIRType = first_val2.ty
+        let result_r: LowerResult = make_value(s, phi_ty, "match_result")
         s = result_r.state
         s = emit_instr(s, Instruction::Phi(result_r.value, arm_results))
         return new_lower_result(result_r.value, s)
@@ -2703,12 +2715,12 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     let ret_type: MIRType = resolve_return_type_checked(st, fn_def.return_type)
 
     let mut decorators: List<String> = []
-    let mut di: Int = 0
+    let mut dix: Int = 0
     let ndec: Int = len(fn_def.decorators)
     for _ in 0..100 {
-        if di < ndec {
-            decorators.push(fn_def.decorators[di].name)
-            di = di + 1
+        if dix < ndec {
+            decorators.push(fn_def.decorators[dix].name)
+            dix = dix + 1
         }
     }
 
@@ -2720,6 +2732,7 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     let prev_tmp: Int = st.tmp_counter
     let prev_blk_cnt: Int = st.block_counter
     let prev_vars: List<VarInfo> = st.vars
+    let prev_blocks: List<BasicBlock> = st.fn_blocks
 
     let mut s: LowerState = st
     s.current_fn = Some(mir_fn)
@@ -2727,6 +2740,8 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     s.block_counter = 0
     let fresh_vars: List<VarInfo> = []
     s.vars = fresh_vars
+    let fresh_blocks: List<BasicBlock> = []
+    s.fn_blocks = fresh_blocks
 
     s = add_block(s, "entry")
     s = set_block(s, 0)
@@ -2759,12 +2774,13 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
         }
     }
 
-    // Extract the completed function (DO NOT add to module — caller emits it)
+    // Copy fn_blocks into MIRFunction (DO NOT add to module — caller emits it)
     let mut result_fn: MIRFunction = mir_fn
     match s.current_fn {
         Some(f) => { result_fn = f },
         _ => {}
     }
+    result_fn.blocks = s.fn_blocks
 
     // Restore counters/vars but KEEP current_fn so caller can extract it
     s.current_fn = Some(result_fn)
@@ -2772,6 +2788,7 @@ pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerR
     s.tmp_counter = prev_tmp
     s.block_counter = prev_blk_cnt
     s.vars = prev_vars
+    s.fn_blocks = prev_blocks
 
     let fn_val: Value = new_value(fn_name, mir_void())
     return new_lower_result(fn_val, s)

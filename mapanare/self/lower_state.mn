@@ -20,6 +20,7 @@ struct LowerState {
     struct_fields: List<StructFieldInfo>,
     enum_variants: List<EnumVariantNames>,
     lambda_vars: List<LambdaEntry>,
+    fn_blocks: List<BasicBlock>,
 }
 
 fn new_lower_state(module_name: String) -> LowerState {
@@ -30,7 +31,8 @@ fn new_lower_state(module_name: String) -> LowerState {
     let struct_fields: List<StructFieldInfo> = []
     let enum_variants: List<EnumVariantNames> = []
     let lambda_vars: List<LambdaEntry> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars }
+    let fn_blocks: List<BasicBlock> = []
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks }
 }
 
 // Lower result: value + updated state
@@ -76,20 +78,9 @@ fn make_value(st: LowerState, ty: MIRType, prefix: String) -> LowerResult {
 fn add_block(st: LowerState, label: String) -> LowerState {
     let bb: BasicBlock = new_basic_block(label)
     let mut new_st: LowerState = st
-    let has_fn: Bool = is_some_fn(st.current_fn)
-    if has_fn {
-        match st.current_fn {
-            Some(f) => {
-                let mut new_fn: MIRFunction = f
-                let mut blk_list: List<BasicBlock> = new_fn.blocks
-                blk_list.push(bb)
-                new_fn.blocks = blk_list
-                new_st.current_fn = Some(new_fn)
-                new_st.current_block_idx = len(f.blocks)
-            },
-            _ => {}
-        }
-    }
+    let idx: Int = len(st.fn_blocks)
+    new_st.fn_blocks.push(bb)
+    new_st.current_block_idx = idx
     return new_st
 }
 
@@ -107,43 +98,31 @@ fn set_block(st: LowerState, idx: Int) -> LowerState {
 }
 
 fn emit_instr(st: LowerState, instr: Instruction) -> LowerState {
-    // Append instruction to current block in current function.
+    // Append instruction to current block using flattened fn_blocks list.
+    // This avoids the COW-through-Option nesting that loses mutations.
     let mut new_st: LowerState = st
-    match st.current_fn {
-        Some(f) => {
-            if st.current_block_idx >= 0 {
-                if st.current_block_idx < len(f.blocks) {
-                    let bb: BasicBlock = f.blocks[st.current_block_idx]
-                    let mut instrs: List<Instruction> = bb.instructions
-                    instrs.push(instr)
-                    let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
-                    let mut blks: List<BasicBlock> = f.blocks
-                    blks[st.current_block_idx] = new_bb
-                    // Update the function in new_st with the modified blocks
-                    let mut new_fn: MIRFunction = f
-                    new_fn.blocks = blks
-                    new_st.current_fn = Some(new_fn)
-                }
-            }
-        },
-        _ => {}
+    let idx: Int = st.current_block_idx
+    if idx >= 0 {
+        if idx < len(st.fn_blocks) {
+            let bb: BasicBlock = st.fn_blocks[idx]
+            let mut instrs: List<Instruction> = bb.instructions
+            instrs.push(instr)
+            let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
+            new_st.fn_blocks[idx] = new_bb
+        }
     }
     return new_st
 }
 
 fn current_block_terminated(st: LowerState) -> Bool {
-    match st.current_fn {
-        Some(f) => {
-            if st.current_block_idx >= 0 {
-                if st.current_block_idx < len(f.blocks) {
-                    let bb: BasicBlock = f.blocks[st.current_block_idx]
-                    return block_terminated(bb)
-                }
-            }
-            return true
-        },
-        _ => { return true }
+    let idx: Int = st.current_block_idx
+    if idx >= 0 {
+        if idx < len(st.fn_blocks) {
+            let bb: BasicBlock = st.fn_blocks[idx]
+            return block_terminated(bb)
+        }
     }
+    return true
 }
 
 // ---------------------------------------------------------------------------

@@ -1276,7 +1276,8 @@ class CEmitter:
             return
 
         if kind == TypeKind.INT:
-            self._w(f"{dest} = (int64_t){inst.value}LL;")
+            v = inst.value if inst.value is not None else 0
+            self._w(f"{dest} = (int64_t){v}LL;")
         elif kind == TypeKind.FLOAT:
             val = inst.value
             if isinstance(val, float):

@@ -1568,9 +1568,38 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
 // ---------------------------------------------------------------------------
 
 fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitState {
-    // Stub: indexed list store not yet working in stage2
-    // (any non-trivial implementation triggers layout-sensitive binary corruption)
-    return st
+    let mut s: EmitState = st
+    let list_ref: String = obj.name
+    let idx_name: String = idx.name
+    let elem_name: String = val.name
+    let elem_ty: String = resolve_type(st, val.ty)
+    let cnt: String = toString(s.counter)
+    s.counter = s.counter + 1
+
+    // Alloca element, store value
+    let ea: String = "%set_ea" + cnt
+    s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
+    s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ea)
+
+    if list_ref.contains(".addr") {
+        // obj is an alloca pointer — load, call, write back
+        let tmp: String = "%set_tmp" + cnt
+        s = emit_line(s, "  " + tmp + " = alloca " + llvm_list_rt())
+        let ld: String = "%set_ld" + cnt
+        s = emit_line(s, "  " + ld + " = load " + llvm_list_rt() + ", ptr " + list_ref)
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + ld + ", ptr " + tmp)
+        s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp + ", i64 " + idx_name + ", ptr " + ea))
+        let wb: String = "%set_wb" + cnt
+        s = emit_line(s, "  " + wb + " = load " + llvm_list_rt() + ", ptr " + tmp)
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + wb + ", ptr " + list_ref)
+    } else {
+        // obj is a loaded value — store to temp alloca first
+        let tmp: String = "%set_tmp" + cnt
+        s = emit_line(s, "  " + tmp + " = alloca " + llvm_list_rt())
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + list_ref + ", ptr " + tmp)
+        s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp + ", i64 " + idx_name + ", ptr " + ea))
+    }
+    return s
 }
 
 // ---------------------------------------------------------------------------
@@ -2837,11 +2866,11 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     if len(module.extern_fns) > 0 { st = emit_blank(st) }
 
     // Forward-declare all functions (for mutual recursion)
-    let mut di: Int = 0
+    let mut dix: Int = 0
     let nmodfns: Int = len(module.functions)
     for _ in 0..600 {
-        if di < nmodfns {
-            let f: MIRFunction = module.functions[di]
+        if dix < nmodfns {
+            let f: MIRFunction = module.functions[dix]
             let ret_ty: String = resolve_mir_type(f.return_type)
             let mut fparams: String = ""
             let mut fpi: Int = 0
@@ -2868,7 +2897,7 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
             }
             let fe: FnEntry = new_fn_entry(f.name, ret_ty, fn_types)
             st.functions.push(fe)
-            di = di + 1
+            dix = dix + 1
         }
     }
 
