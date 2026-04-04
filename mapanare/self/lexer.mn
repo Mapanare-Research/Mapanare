@@ -454,6 +454,10 @@ fn scan_op(source: String, pos: Int, line: Int, col: Int) -> Token {
     if ch == "?" { return new_token("QUESTION", "?", line, col, line, col + 1) }
     if ch == "@" { return new_token("AT", "@", line, col, line, col + 1) }
     if ch == "%" { return new_token("PERCENT", "%", line, col, line, col + 1) }
+    if ch == "#" {
+        if ch1 == "{" { return new_token("MAP_OPEN", "#{", line, col, line, col + 2) }
+        return new_token("HASH", "#", line, col, line, col + 1)
+    }
 
     return new_token("UNKNOWN", ch, line, col, line, col + 1)
 }

@@ -58,6 +58,11 @@ enum ElseClause {
     ElseIf(Expr, Block, Option<ElseClause>)
 }
 
+struct MapEntry {
+    key: Expr,
+    value: Expr
+}
+
 enum Expr {
     IntLit(Int),
     FloatLit(Float),
@@ -81,6 +86,7 @@ enum Expr {
     Send(Expr, Expr),
     ErrorProp(Expr),
     ListLit(List<Expr>),
+    MapLit(List<MapEntry>),
     Construct(String, List<FieldInit>),
     SomeWrap(Expr),
     OkWrap(Expr),
@@ -310,6 +316,7 @@ pub fn expr_kind(e: Expr) -> String {
         Send(_, _) => { return "send" },
         ErrorProp(_) => { return "error_prop" },
         ListLit(_) => { return "list_lit" },
+        MapLit(_) => { return "map_lit" },
         Construct(_, _) => { return "construct" },
         SomeWrap(_) => { return "some_wrap" },
         OkWrap(_) => { return "ok_wrap" },
@@ -461,6 +468,9 @@ pub fn expr_errorprop_inner(e: Expr) -> Expr {
 // ListLit
 pub fn expr_list_elements(e: Expr) -> List<Expr> {
     match e { ListLit(l) => { return l }, _ => { let empty: List<Expr> = []; return empty } }
+}
+pub fn expr_map_entries(e: Expr) -> List<MapEntry> {
+    match e { MapLit(m) => { return m }, _ => { let empty: List<MapEntry> = []; return empty } }
 }
 
 // Construct

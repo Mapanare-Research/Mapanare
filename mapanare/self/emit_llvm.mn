@@ -312,6 +312,13 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
 
+    // Map runtime
+    s = declare_runtime_fn(s, "__mn_map_new", "ptr", "i64, i64, i64")
+    s = declare_runtime_fn(s, "__mn_map_set", "void", "ptr, ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_map_get", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_map_len", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_map_contains", "i64", "ptr, ptr")
+
     // Malloc (for enum payload allocation)
     s = declare_runtime_fn(s, "malloc", "ptr", "i64")
 
@@ -1548,6 +1555,33 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
     let cnt: String = toString(s.counter)
     s.counter = s.counter + 1
 
+    // Map index set: entries[key] = value → __mn_map_set
+    if obj.ty.kind == "map" {
+        let idx_ty: String = resolve_type(st, idx.ty)
+        // Alloca key
+        let ka: String = "%set_ka" + cnt
+        s = emit_line(s, "  " + ka + " = alloca " + idx_ty)
+        s = emit_line(s, "  store " + idx_ty + " " + idx_name + ", ptr " + ka)
+        // Alloca value
+        let va: String = "%set_va" + cnt
+        s = emit_line(s, "  " + va + " = alloca " + elem_ty)
+        s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + va)
+        // Load map pointer from alloca or value
+        if list_ref.contains(".addr") {
+            let map_ld: String = "%set_mld" + cnt
+            s = emit_line(s, "  " + map_ld + " = load " + llvm_map_type() + ", ptr " + list_ref)
+            let map_ptr: String = "%set_mptr" + cnt
+            s = emit_line(s, "  " + map_ptr + " = extractvalue " + llvm_map_type() + " " + map_ld + ", 0")
+            s = emit_line(s, emit_call_void("__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va))
+        } else {
+            let map_ptr: String = "%set_mptr" + cnt
+            s = emit_line(s, "  " + map_ptr + " = extractvalue " + llvm_map_type() + " " + list_ref + ", 0")
+            s = emit_line(s, emit_call_void("__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va))
+        }
+        return s
+    }
+
+    // List index set (original path)
     // Alloca element, store value
     let ea: String = "%set_ea" + cnt
     s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
@@ -1605,8 +1639,57 @@ fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState {
 fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, pairs: List<KVPair>) -> EmitState {
     let mut s: EmitState = st
     let dn: String = dest.name
-    // Maps are pointer-based; minimal implementation
-    s = emit_line(s, "  " + dn + " =insertvalue " + llvm_map_type() + " undef, ptr null, 0")
+    let cnt: String = toString(s.counter)
+    s.counter = s.counter + 1
+
+    // Determine key type tag: 0=int, 1=str, 2=float
+    let mut key_tag: String = "1"
+    if key_ty.kind == "int" { key_tag = "0" }
+    if key_ty.kind == "float" { key_tag = "2" }
+
+    // Key/val sizes: strings are 16 bytes ({ptr,i64}), ints are 8 bytes
+    let mut key_size: String = "16"
+    let mut val_size: String = "8"
+    if key_ty.kind == "int" { key_size = "8" }
+    if key_ty.kind == "float" { key_size = "8" }
+    if val_ty.kind == "string" { val_size = "16" }
+    if val_ty.kind == "struct" { val_size = "64" }
+    if val_ty.kind == "enum" { val_size = "64" }
+
+    // Call __mn_map_new(key_size, val_size, key_type)
+    let map_ptr: String = dn + ".mp"
+    s = emit_line(s, "  " + map_ptr + " =call ptr @__mn_map_new(i64 " + key_size + ", i64 " + val_size + ", i64 " + key_tag + ")")
+
+    // Insert each pair
+    let npairs: Int = len(pairs)
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= npairs {
+            // Store map pointer into result: { ptr, i64 } with ptr=map, i64=0
+            s = emit_line(s, "  " + dn + ".s0 =insertvalue { ptr, i64 } undef, ptr " + map_ptr + ", 0")
+            s = emit_line(s, "  " + dn + " =insertvalue { ptr, i64 } " + dn + ".s0, i64 0, 1")
+            return s
+        }
+        let pair: KVPair = pairs[i]
+        let pi: String = toString(i)
+        let k_ty: String = resolve_mir_type(pair.key.ty)
+        let v_ty: String = resolve_mir_type(pair.val.ty)
+        // Alloca key, store, bitcast to ptr
+        let ka: String = dn + ".k" + pi
+        s = emit_line(s, "  " + ka + " =alloca " + k_ty)
+        s = emit_line(s, "  store " + k_ty + " " + pair.key.name + ", ptr " + ka)
+        // Alloca val, store, bitcast to ptr
+        let va: String = dn + ".v" + pi
+        s = emit_line(s, "  " + va + " =alloca " + v_ty)
+        s = emit_line(s, "  store " + v_ty + " " + pair.val.name + ", ptr " + va)
+        // Call __mn_map_set(map, key_ptr, val_ptr)
+        s = emit_line(s, emit_call_void("__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va))
+        i = i + 1
+    }
+
+    // Fallback: return empty map
+    s = emit_line(s, "  " + dn + ".s0 =insertvalue { ptr, i64 } undef, ptr " + map_ptr + ", 0")
+    s = emit_line(s, "  " + dn + " =insertvalue { ptr, i64 } " + dn + ".s0, i64 0, 1")
     return s
 }
 

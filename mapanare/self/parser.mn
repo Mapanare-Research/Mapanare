@@ -1706,6 +1706,9 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     // Signal expression
     if tt == "KW_SIGNAL" { return parse_signal_expr(tokens, pos, filename) }
 
+    // Map literal: #{ key: val, ... }
+    if tt == "MAP_OPEN" { return parse_map_lit(tokens, pos, filename) }
+
     // List literal
     if tt == "LBRACKET" { return parse_list_lit(tokens, pos, filename) }
 
@@ -1918,6 +1921,47 @@ fn parse_signal_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprRes
 // ---------------------------------------------------------------------------
 // List literal
 // ---------------------------------------------------------------------------
+
+fn parse_map_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+    // MAP_OPEN = "#{", already consumed one token (pos is at MAP_OPEN)
+    let mut p: Int = pos + 1
+    let mut entries: List<MapEntry> = []
+
+    // Empty map: #{}
+    if peek_type(tokens, p) == "RBRACE" {
+        p = p + 1
+        return new_expr_result(Expr::MapLit(entries), p)
+    }
+
+    // First entry: key: value
+    let k0: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = k0.pos
+    p = expect(tokens, p, "COLON")
+    let v0: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = v0.pos
+    entries.push(new MapEntry { key: k0.expr, value: v0.expr })
+
+    for _ in 0..10000 {
+        if peek_type(tokens, p) != "COMMA" {
+            p = expect(tokens, p, "RBRACE")
+            return new_expr_result(Expr::MapLit(entries), p)
+        }
+        p = p + 1
+        if peek_type(tokens, p) == "RBRACE" {
+            p = p + 1
+            return new_expr_result(Expr::MapLit(entries), p)
+        }
+        let kn: ExprResult = parse_expr(tokens, p, filename, 0)
+        p = kn.pos
+        p = expect(tokens, p, "COLON")
+        let vn: ExprResult = parse_expr(tokens, p, filename, 0)
+        p = vn.pos
+        entries.push(new MapEntry { key: kn.expr, value: vn.expr })
+    }
+
+    p = expect(tokens, p, "RBRACE")
+    return new_expr_result(Expr::MapLit(entries), p)
+}
 
 fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     let mut p: Int = pos + 1

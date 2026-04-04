@@ -823,6 +823,9 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     if ek == "list_lit" {
         return lower_list(st, expr_list_elements(expr))
     }
+    if ek == "map_lit" {
+        return lower_map(st, expr_map_entries(expr))
+    }
     if ek == "construct" {
         return lower_construct(st, expr_construct_name(expr), expr_construct_fields(expr))
     }
@@ -1796,6 +1799,38 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
     }
     let dest_r: LowerResult = make_value(s, mir_list(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::ListInit(dest_r.value, elem_type, vals))
+    return new_lower_result(dest_r.value, new_s)
+}
+
+// ---------------------------------------------------------------------------
+// Map lowering
+// ---------------------------------------------------------------------------
+
+fn lower_map(st: LowerState, entries: List<MapEntry>) -> LowerResult {
+    let mut s: LowerState = st
+    let mut pairs: List<KVPair> = []
+    let mut i: Int = 0
+    let nent: Int = len(entries)
+    for _ in 0..600 {
+        if i < nent {
+            let entry: MapEntry = entries[i]
+            let kr: LowerResult = lower_expr(s, entry.key)
+            s = kr.state
+            let vr: LowerResult = lower_expr(s, entry.value)
+            s = vr.state
+            pairs.push(new_kv_pair(kr.value, vr.value))
+            i = i + 1
+        }
+    }
+
+    let mut key_ty: MIRType = mir_string()
+    let mut val_ty: MIRType = mir_unknown()
+    if len(pairs) > 0 {
+        key_ty = pairs[0].key.ty
+        val_ty = pairs[0].val.ty
+    }
+    let dest_r: LowerResult = make_value(s, mir_map(), "t")
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::MapInit(dest_r.value, key_ty, val_ty, pairs))
     return new_lower_result(dest_r.value, new_s)
 }
 

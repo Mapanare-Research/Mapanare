@@ -62,6 +62,11 @@ enum ElseClause {
     ElseIf(Expr, Block, Option<ElseClause>)
 }
 
+struct MapEntry {
+    key: Expr,
+    value: Expr
+}
+
 enum Expr {
     IntLit(Int),
     FloatLit(Float),
@@ -85,6 +90,7 @@ enum Expr {
     Send(Expr, Expr),
     ErrorProp(Expr),
     ListLit(List<Expr>),
+    MapLit(List<MapEntry>),
     Construct(String, List<FieldInit>),
     SomeWrap(Expr),
     OkWrap(Expr),
@@ -314,6 +320,7 @@ pub fn expr_kind(e: Expr) -> String {
         Send(_, _) => { return "send" },
         ErrorProp(_) => { return "error_prop" },
         ListLit(_) => { return "list_lit" },
+        MapLit(_) => { return "map_lit" },
         Construct(_, _) => { return "construct" },
         SomeWrap(_) => { return "some_wrap" },
         OkWrap(_) => { return "ok_wrap" },
@@ -465,6 +472,9 @@ pub fn expr_errorprop_inner(e: Expr) -> Expr {
 // ListLit
 pub fn expr_list_elements(e: Expr) -> List<Expr> {
     match e { ListLit(l) => { return l }, _ => { let empty: List<Expr> = []; return empty } }
+}
+pub fn expr_map_entries(e: Expr) -> List<MapEntry> {
+    match e { MapLit(m) => { return m }, _ => { let empty: List<MapEntry> = []; return empty } }
 }
 
 // Construct
@@ -1219,6 +1229,10 @@ fn scan_op(source: String, pos: Int, line: Int, col: Int) -> Token {
     if ch == "?" { return new_token("QUESTION", "?", line, col, line, col + 1) }
     if ch == "@" { return new_token("AT", "@", line, col, line, col + 1) }
     if ch == "%" { return new_token("PERCENT", "%", line, col, line, col + 1) }
+    if ch == "#" {
+        if ch1 == "{" { return new_token("MAP_OPEN", "#{", line, col, line, col + 2) }
+        return new_token("HASH", "#", line, col, line, col + 1)
+    }
 
     return new_token("UNKNOWN", ch, line, col, line, col + 1)
 }
@@ -3042,6 +3056,9 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     // Signal expression
     if tt == "KW_SIGNAL" { return parse_signal_expr(tokens, pos, filename) }
 
+    // Map literal: #{ key: val, ... }
+    if tt == "MAP_OPEN" { return parse_map_lit(tokens, pos, filename) }
+
     // List literal
     if tt == "LBRACKET" { return parse_list_lit(tokens, pos, filename) }
 
@@ -3254,6 +3271,47 @@ fn parse_signal_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprRes
 // ---------------------------------------------------------------------------
 // List literal
 // ---------------------------------------------------------------------------
+
+fn parse_map_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+    // MAP_OPEN = "#{", already consumed one token (pos is at MAP_OPEN)
+    let mut p: Int = pos + 1
+    let mut entries: List<MapEntry> = []
+
+    // Empty map: #{}
+    if peek_type(tokens, p) == "RBRACE" {
+        p = p + 1
+        return new_expr_result(Expr::MapLit(entries), p)
+    }
+
+    // First entry: key: value
+    let k0: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = k0.pos
+    p = expect(tokens, p, "COLON")
+    let v0: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = v0.pos
+    entries.push(new MapEntry { key: k0.expr, value: v0.expr })
+
+    for _ in 0..10000 {
+        if peek_type(tokens, p) != "COMMA" {
+            p = expect(tokens, p, "RBRACE")
+            return new_expr_result(Expr::MapLit(entries), p)
+        }
+        p = p + 1
+        if peek_type(tokens, p) == "RBRACE" {
+            p = p + 1
+            return new_expr_result(Expr::MapLit(entries), p)
+        }
+        let kn: ExprResult = parse_expr(tokens, p, filename, 0)
+        p = kn.pos
+        p = expect(tokens, p, "COLON")
+        let vn: ExprResult = parse_expr(tokens, p, filename, 0)
+        p = vn.pos
+        entries.push(new MapEntry { key: kn.expr, value: vn.expr })
+    }
+
+    p = expect(tokens, p, "RBRACE")
+    return new_expr_result(Expr::MapLit(entries), p)
+}
 
 fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     let mut p: Int = pos + 1
@@ -7184,6 +7242,9 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     if ek == "list_lit" {
         return lower_list(st, expr_list_elements(expr))
     }
+    if ek == "map_lit" {
+        return lower_map(st, expr_map_entries(expr))
+    }
     if ek == "construct" {
         return lower_construct(st, expr_construct_name(expr), expr_construct_fields(expr))
     }
@@ -8157,6 +8218,38 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
     }
     let dest_r: LowerResult = make_value(s, mir_list(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::ListInit(dest_r.value, elem_type, vals))
+    return new_lower_result(dest_r.value, new_s)
+}
+
+// ---------------------------------------------------------------------------
+// Map lowering
+// ---------------------------------------------------------------------------
+
+fn lower_map(st: LowerState, entries: List<MapEntry>) -> LowerResult {
+    let mut s: LowerState = st
+    let mut pairs: List<KVPair> = []
+    let mut i: Int = 0
+    let nent: Int = len(entries)
+    for _ in 0..600 {
+        if i < nent {
+            let entry: MapEntry = entries[i]
+            let kr: LowerResult = lower_expr(s, entry.key)
+            s = kr.state
+            let vr: LowerResult = lower_expr(s, entry.value)
+            s = vr.state
+            pairs.push(new_kv_pair(kr.value, vr.value))
+            i = i + 1
+        }
+    }
+
+    let mut key_ty: MIRType = mir_string()
+    let mut val_ty: MIRType = mir_unknown()
+    if len(pairs) > 0 {
+        key_ty = pairs[0].key.ty
+        val_ty = pairs[0].val.ty
+    }
+    let dest_r: LowerResult = make_value(s, mir_map(), "t")
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::MapInit(dest_r.value, key_ty, val_ty, pairs))
     return new_lower_result(dest_r.value, new_s)
 }
 
@@ -9786,6 +9879,13 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
 
+    // Map runtime
+    s = declare_runtime_fn(s, "__mn_map_new", "ptr", "i64, i64, i64")
+    s = declare_runtime_fn(s, "__mn_map_set", "void", "ptr, ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_map_get", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_map_len", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_map_contains", "i64", "ptr, ptr")
+
     // Malloc (for enum payload allocation)
     s = declare_runtime_fn(s, "malloc", "ptr", "i64")
 
@@ -11022,6 +11122,33 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
     let cnt: String = toString(s.counter)
     s.counter = s.counter + 1
 
+    // Map index set: entries[key] = value → __mn_map_set
+    if obj.ty.kind == "map" {
+        let idx_ty: String = resolve_type(st, idx.ty)
+        // Alloca key
+        let ka: String = "%set_ka" + cnt
+        s = emit_line(s, "  " + ka + " = alloca " + idx_ty)
+        s = emit_line(s, "  store " + idx_ty + " " + idx_name + ", ptr " + ka)
+        // Alloca value
+        let va: String = "%set_va" + cnt
+        s = emit_line(s, "  " + va + " = alloca " + elem_ty)
+        s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + va)
+        // Load map pointer from alloca or value
+        if list_ref.contains(".addr") {
+            let map_ld: String = "%set_mld" + cnt
+            s = emit_line(s, "  " + map_ld + " = load " + llvm_map_type() + ", ptr " + list_ref)
+            let map_ptr: String = "%set_mptr" + cnt
+            s = emit_line(s, "  " + map_ptr + " = extractvalue " + llvm_map_type() + " " + map_ld + ", 0")
+            s = emit_line(s, emit_call_void("__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va))
+        } else {
+            let map_ptr: String = "%set_mptr" + cnt
+            s = emit_line(s, "  " + map_ptr + " = extractvalue " + llvm_map_type() + " " + list_ref + ", 0")
+            s = emit_line(s, emit_call_void("__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va))
+        }
+        return s
+    }
+
+    // List index set (original path)
     // Alloca element, store value
     let ea: String = "%set_ea" + cnt
     s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
@@ -11079,8 +11206,57 @@ fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState {
 fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, pairs: List<KVPair>) -> EmitState {
     let mut s: EmitState = st
     let dn: String = dest.name
-    // Maps are pointer-based; minimal implementation
-    s = emit_line(s, "  " + dn + " =insertvalue " + llvm_map_type() + " undef, ptr null, 0")
+    let cnt: String = toString(s.counter)
+    s.counter = s.counter + 1
+
+    // Determine key type tag: 0=int, 1=str, 2=float
+    let mut key_tag: String = "1"
+    if key_ty.kind == "int" { key_tag = "0" }
+    if key_ty.kind == "float" { key_tag = "2" }
+
+    // Key/val sizes: strings are 16 bytes ({ptr,i64}), ints are 8 bytes
+    let mut key_size: String = "16"
+    let mut val_size: String = "8"
+    if key_ty.kind == "int" { key_size = "8" }
+    if key_ty.kind == "float" { key_size = "8" }
+    if val_ty.kind == "string" { val_size = "16" }
+    if val_ty.kind == "struct" { val_size = "64" }
+    if val_ty.kind == "enum" { val_size = "64" }
+
+    // Call __mn_map_new(key_size, val_size, key_type)
+    let map_ptr: String = dn + ".mp"
+    s = emit_line(s, "  " + map_ptr + " =call ptr @__mn_map_new(i64 " + key_size + ", i64 " + val_size + ", i64 " + key_tag + ")")
+
+    // Insert each pair
+    let npairs: Int = len(pairs)
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= npairs {
+            // Store map pointer into result: { ptr, i64 } with ptr=map, i64=0
+            s = emit_line(s, "  " + dn + ".s0 =insertvalue { ptr, i64 } undef, ptr " + map_ptr + ", 0")
+            s = emit_line(s, "  " + dn + " =insertvalue { ptr, i64 } " + dn + ".s0, i64 0, 1")
+            return s
+        }
+        let pair: KVPair = pairs[i]
+        let pi: String = toString(i)
+        let k_ty: String = resolve_mir_type(pair.key.ty)
+        let v_ty: String = resolve_mir_type(pair.val.ty)
+        // Alloca key, store, bitcast to ptr
+        let ka: String = dn + ".k" + pi
+        s = emit_line(s, "  " + ka + " =alloca " + k_ty)
+        s = emit_line(s, "  store " + k_ty + " " + pair.key.name + ", ptr " + ka)
+        // Alloca val, store, bitcast to ptr
+        let va: String = dn + ".v" + pi
+        s = emit_line(s, "  " + va + " =alloca " + v_ty)
+        s = emit_line(s, "  store " + v_ty + " " + pair.val.name + ", ptr " + va)
+        // Call __mn_map_set(map, key_ptr, val_ptr)
+        s = emit_line(s, emit_call_void("__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va))
+        i = i + 1
+    }
+
+    // Fallback: return empty map
+    s = emit_line(s, "  " + dn + ".s0 =insertvalue { ptr, i64 } undef, ptr " + map_ptr + ", 0")
+    s = emit_line(s, "  " + dn + " =insertvalue { ptr, i64 } " + dn + ".s0, i64 0, 1")
     return s
 }
 
