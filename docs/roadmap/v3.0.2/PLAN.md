@@ -205,9 +205,10 @@ diff /tmp/stage2.c /tmp/stage3.c  # Must be empty
 
 ## Success Criteria
 
-- [ ] mnc-stage1 compiles its own source without parser errors
-- [ ] Stage2 IR validates with llvm-as (no post-processing needed)
-- [ ] 15/15 golden tests pass through stage1
+- [x] mnc-stage1 compiles its own source without parser errors
+- [x] Stage2 IR validates with llvm-as (no post-processing needed) ← **DONE 2026-04-04**
+- [ ] 15/15 golden tests pass through stage1 (14/15 — closure lambda missing)
+- [ ] Stage2 binary produces correct IR (runtime layout bug in emit_mir_instruction)
 - [ ] Three-stage fixed point reached (stage2 == stage3)
 - [ ] `scripts/verify_fixed_point_c.sh` or equivalent passes
 
