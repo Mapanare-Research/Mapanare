@@ -245,6 +245,29 @@ fn find_enum_variants(st: LowerState, name: String) -> Option<List<String>> {
     return none
 }
 
+fn is_variant_of_enum(st: LowerState, enum_name: String, variant: String) -> Bool {
+    let mut i: Int = 0
+    let nev0: Int = len(st.enum_variants)
+    for _ in 0..600 {
+        if i < nev0 {
+            let ev: EnumVariantNames = st.enum_variants[i]
+            if ev.enum_name == enum_name {
+                let mut j: Int = 0
+                let nvn0: Int = len(ev.variant_names)
+                for _ in 0..600 {
+                    if j < nvn0 {
+                        if ev.variant_names[j] == variant { return true }
+                        j = j + 1
+                    }
+                }
+                return false
+            }
+            i = i + 1
+        }
+    }
+    return false
+}
+
 fn is_enum_variant(st: LowerState, name: String) -> Bool {
     let mut i: Int = 0
     let nev: Int = len(st.enum_variants)

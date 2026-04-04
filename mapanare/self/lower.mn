@@ -188,7 +188,7 @@ fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lo
 fn lower_definitions(st: LowerState, program: Program) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if i >= len(program.definitions) {
             return s
         }
@@ -941,9 +941,9 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
         },
         NamespaceAccess(ns, member) => {
             // Check if this is an enum variant constructor: Enum::Variant(...)
-            // Verify the variant belongs specifically to the namespace enum
-            let found_enum: String = enum_name_for_variant(s, member)
-            if found_enum == ns {
+            // Directly check if the namespace enum has this variant (avoids
+            // returning the wrong enum when variants share names like Return).
+            if is_variant_of_enum(s, ns, member) {
                 let enum_ty: MIRType = mir_enum(ns)
                 let dest_r: LowerResult = make_value(s, enum_ty, "t")
                 let new_s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, member, args))
@@ -1609,15 +1609,15 @@ fn lower_send(st: LowerState, target: Expr, value: Expr) -> LowerResult {
     match target {
         FieldAccess(obj, field_name) => {
             let obj_r: LowerResult = lower_expr(val_r.state, obj)
-            let s: LowerState = emit_instr(obj_r.state, Instruction::AgentSend(obj_r.value, field_name, val_r.value))
-            let dest_r: LowerResult = make_value(s, mir_void(), "t")
+            let s_field: LowerState = emit_instr(obj_r.state, Instruction::AgentSend(obj_r.value, field_name, val_r.value))
+            let dest_r: LowerResult = make_value(s_field, mir_void(), "t")
             let s2: LowerState = emit_instr(dest_r.state, Instruction::Const(dest_r.value, mir_void(), ""))
             return new_lower_result(dest_r.value, s2)
         },
         _ => {
             let target_r: LowerResult = lower_expr(val_r.state, target)
-            let s: LowerState = emit_instr(target_r.state, Instruction::AgentSend(target_r.value, "", val_r.value))
-            let dest_r: LowerResult = make_value(s, mir_void(), "t")
+            let s_plain: LowerState = emit_instr(target_r.state, Instruction::AgentSend(target_r.value, "", val_r.value))
+            let dest_r: LowerResult = make_value(s_plain, mir_void(), "t")
             let s2: LowerState = emit_instr(dest_r.state, Instruction::Const(dest_r.value, mir_void(), ""))
             return new_lower_result(dest_r.value, s2)
         }
@@ -1849,14 +1849,14 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
         let r0_ty: MIRType = r0_val.ty
         if then_ok {
             if !then_non_void {
-                let zero_v: Value = new_value("zeroinitializer", r0_ty)
-                result.push(new_phi_entry(then_lbl, zero_v))
+                let zero_v_then: Value = new_value("zeroinitializer", r0_ty)
+                result.push(new_phi_entry(then_lbl, zero_v_then))
             }
         }
         if else_ok {
             if !else_non_void {
-                let zero_v: Value = new_value("zeroinitializer", r0_ty)
-                result.push(new_phi_entry(else_lbl, zero_v))
+                let zero_v_else: Value = new_value("zeroinitializer", r0_ty)
+                result.push(new_phi_entry(else_lbl, zero_v_else))
             }
         }
     }
@@ -2063,8 +2063,8 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
         entries.push(new_phi_entry(then_exit_label, then_val))
         // Only include else branch if it's not terminated (reaches merge)
         if !else_terminated {
-            let zero_v: Value = new_value("zeroinitializer", then_val.ty)
-            entries.push(new_phi_entry(else_exit_label, zero_v))
+            let zero_v_t: Value = new_value("zeroinitializer", then_val.ty)
+            entries.push(new_phi_entry(else_exit_label, zero_v_t))
         }
         let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
         s = result_r.state
@@ -2075,8 +2075,8 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
         let mut entries: List<PhiEntry> = []
         // Only include then branch if it's not terminated (reaches merge)
         if !then_terminated {
-            let zero_v: Value = new_value("zeroinitializer", else_val.ty)
-            entries.push(new_phi_entry(then_exit_label, zero_v))
+            let zero_v_e: Value = new_value("zeroinitializer", else_val.ty)
+            entries.push(new_phi_entry(then_exit_label, zero_v_e))
         }
         entries.push(new_phi_entry(else_exit_label, else_val))
         let result_r: LowerResult = make_value(s, else_val.ty, "if_result")
