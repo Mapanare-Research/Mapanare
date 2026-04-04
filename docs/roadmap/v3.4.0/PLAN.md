@@ -98,8 +98,8 @@ compiler. These are multi-module packages with cross-file imports.
 
 - [x] Self-hosted compiler resolves `import` statements
 - [x] `stdlib/math.mn` compiles through `./mnc` (42 functions, 16 extern C, llvm-as VALID)
-- [x] `stdlib/fs.mn` compiles through `./mnc` (33 functions, llvm-as VALID after list concat fixes)
-- [ ] `stdlib/encoding/json.mn` compiles (depends on text::string_utils import chain)
+- [x] `stdlib/fs.mn` compiles + links + runs (write, read, exists, remove, extension, stem)
+- [ ] `stdlib/encoding/json.mn` — 33/28 functions compile, blocked by Map type (no map literals)
 - [x] An end-to-end program using stdlib compiles and runs
 - [ ] Build script compiles stdlib into a linkable library
 
