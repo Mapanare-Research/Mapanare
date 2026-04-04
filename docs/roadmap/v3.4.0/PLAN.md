@@ -99,7 +99,7 @@ compiler. These are multi-module packages with cross-file imports.
 - [x] Self-hosted compiler resolves `import` statements
 - [x] `stdlib/math.mn` compiles through `./mnc` (42 functions, 16 extern C, llvm-as VALID)
 - [x] `stdlib/fs.mn` compiles + links + runs (write, read, exists, remove, extension, stem)
-- [ ] `stdlib/encoding/json.mn` — 33/28 functions compile, blocked by Map type (no map literals)
+- [x] `stdlib/encoding/json.mn` — 32 functions compile (Map support added), 1 error from map iteration
 - [x] An end-to-end program using stdlib compiles and runs
 - [ ] Build script compiles stdlib into a linkable library
 
