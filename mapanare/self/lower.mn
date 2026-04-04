@@ -613,10 +613,123 @@ fn lower_return(st: LowerState, value_opt: Option<Expr>) -> LowerState {
 // For loop
 // ---------------------------------------------------------------------------
 
+fn lower_for_map(st: LowerState, var_name: String, map_val: Value, body: Block) -> LowerState {
+    let mut s: LowerState = st
+
+    // Get keys list: __mn_map_keys(map_ptr)
+    // First extract the map pointer from the {ptr, i64} map value
+    let keys_r: LowerResult = make_value(s, mir_list(), "map_keys")
+    s = keys_r.state
+    let mut keys_args: List<Value> = []
+    keys_args.push(map_val)
+    s = emit_instr(s, Instruction::Call(keys_r.value, "__mn_map_keys", keys_args))
+
+    // Get key count: len(keys)
+    let len_r: LowerResult = make_value(s, mir_int(), "map_len")
+    s = len_r.state
+    let mut len_args: List<Value> = []
+    len_args.push(keys_r.value)
+    s = emit_instr(s, Instruction::Call(len_r.value, "len", len_args))
+
+    // Counter alloca
+    let counter_addr: Value = new_value("%for_counter" + toString(s.tmp_counter) + ".addr", mir_int())
+    s.tmp_counter = s.tmp_counter + 1
+    s = emit_instr(s, Instruction::Alloca(counter_addr, mir_int()))
+    let zero_r: LowerResult = make_value(s, mir_int(), "zero")
+    s = zero_r.state
+    s = emit_instr(s, Instruction::Const(zero_r.value, mir_int(), "0"))
+    s = emit_instr(s, Instruction::Store(counter_addr, zero_r.value))
+
+    let entry_idx: Int = s.current_block_idx
+
+    // Create blocks
+    let header_r: LowerResult = fresh_block_label(s, "mapfor_hdr")
+    s = header_r.state
+    let header_label: String = header_r.value.name
+    s = add_block(s, header_label)
+    let header_idx: Int = s.current_block_idx
+
+    let body_r: LowerResult = fresh_block_label(s, "mapfor_body")
+    s = body_r.state
+    let body_label: String = body_r.value.name
+    s = add_block(s, body_label)
+    let body_idx: Int = s.current_block_idx
+
+    let exit_r: LowerResult = fresh_block_label(s, "mapfor_exit")
+    s = exit_r.state
+    let exit_label: String = exit_r.value.name
+    s = add_block(s, exit_label)
+    let exit_idx: Int = s.current_block_idx
+
+    // Entry → header
+    s = set_block(s, entry_idx)
+    if !current_block_terminated(s) {
+        s = emit_instr(s, Instruction::Jump(header_label))
+    }
+
+    // Header: load counter, compare < len, branch
+    s = set_block(s, header_idx)
+    let ci: LowerResult = make_value(s, mir_int(), "mapfor_i")
+    s = ci.state
+    s = emit_instr(s, Instruction::Load(ci.value, counter_addr))
+    let cmp: LowerResult = make_value(s, mir_bool(), "mapfor_cmp")
+    s = cmp.state
+    s = emit_instr(s, Instruction::BinOp(cmp.value, BinOpKind::Lt, ci.value, len_r.value))
+    s = emit_instr(s, Instruction::Branch(cmp.value, body_label, exit_label))
+
+    // Body: get key from list, define loop variable, execute body, increment
+    s = set_block(s, body_idx)
+    // Load current index
+    let idx_val: LowerResult = make_value(s, mir_int(), "mapfor_idx")
+    s = idx_val.state
+    s = emit_instr(s, Instruction::Load(idx_val.value, counter_addr))
+    // Get key from keys list: keys[idx]
+    let key_r: LowerResult = make_value(s, mir_string(), "mapfor_key")
+    s = key_r.state
+    let mut get_args: List<Value> = []
+    get_args.push(keys_r.value)
+    get_args.push(idx_val.value)
+    s = emit_instr(s, Instruction::Call(key_r.value, "__list_get_string", get_args))
+    // Define loop variable
+    let var_addr: LowerResult = make_value(s, mir_string(), var_name + "_addr")
+    s = var_addr.state
+    s = emit_instr(s, Instruction::Alloca(var_addr.value, mir_string()))
+    s = emit_instr(s, Instruction::Store(var_addr.value, key_r.value))
+    s = define_var(s, var_name, var_addr.value, false)
+
+    s = lower_push_scope(s)
+    let body_result: LowerResult = lower_block(s, body)
+    s = body_result.state
+    s = lower_pop_scope(s)
+
+    // Increment counter, jump to header
+    if !current_block_terminated(s) {
+        let inc_i: LowerResult = make_value(s, mir_int(), "mapfor_ci")
+        s = inc_i.state
+        s = emit_instr(s, Instruction::Load(inc_i.value, counter_addr))
+        let one_r: LowerResult = make_value(s, mir_int(), "mapfor_one")
+        s = one_r.state
+        s = emit_instr(s, Instruction::Const(one_r.value, mir_int(), "1"))
+        let inc_r: LowerResult = make_value(s, mir_int(), "mapfor_inc")
+        s = inc_r.state
+        s = emit_instr(s, Instruction::BinOp(inc_r.value, BinOpKind::Add, inc_i.value, one_r.value))
+        s = emit_instr(s, Instruction::Store(counter_addr, inc_r.value))
+        s = emit_instr(s, Instruction::Jump(header_label))
+    }
+
+    s = set_block(s, exit_idx)
+    return s
+}
+
 fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> LowerState {
-    // Lower the iterable (Range expression: start..end)
+    // Lower the iterable (Range expression: start..end, or collection)
     let iter_r: LowerResult = lower_expr(st, iterable)
     let mut s: LowerState = iter_r.state
+
+    // Map iteration: cada key en map → iterate over __mn_map_keys(map)
+    if iter_r.value.ty.kind == "map" {
+        return lower_for_map(s, var_name, iter_r.value, body)
+    }
 
     // Counter-based loop: use __mn_range_start/end to extract bounds.
     // SSA-based iterator can't mutate, so we use alloca counter.
@@ -1468,12 +1581,17 @@ fn lower_index(st: LowerState, obj: Expr, idx: Expr) -> LowerResult {
 
     // For string indexing, result is a string (char_at)
     // For list indexing, result is the element type from List<T>.args[0]
+    // For map indexing, result is the value type from Map<K,V>.args[1]
     let mut elem_ty: MIRType = mir_unknown()
     if obj_r.value.ty.kind == "string" {
         elem_ty = mir_string()
     } else if obj_r.value.ty.kind == "list" {
         if len(obj_r.value.ty.args) > 0 {
             elem_ty = obj_r.value.ty.args[0]
+        }
+    } else if obj_r.value.ty.kind == "map" {
+        if len(obj_r.value.ty.args) > 1 {
+            elem_ty = obj_r.value.ty.args[1]
         }
     }
 

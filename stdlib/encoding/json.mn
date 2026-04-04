@@ -715,6 +715,17 @@ pub fn encode_pretty(value: JsonValue, indent: Int) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: append all elements from src list to dest list
+fn append_events(dest: List<JsonEvent>, src_events: List<JsonEvent>) {
+    let mut i: Int = 0
+    let n: Int = len(src_events)
+    for _ in 0..100000 {
+        if i >= n { return }
+        dest.push(src_events[i])
+        i = i + 1
+    }
+}
+
 // Streaming parser (Task 17, 18) — SAX-style events
 // ---------------------------------------------------------------------------
 
@@ -792,7 +803,7 @@ fn stream_parse_value(src: String, pos: Int, line: Int, col: Int) -> EventResult
 
             pon val_r: EventResult = stream_parse_value(src, p, ln, c)
             si val_r.ok == false { da val_r }
-            events = events + val_r.events
+            append_events(events, val_r.events)
             p = val_r.pos
             ln = val_r.line
             c = val_r.col
@@ -840,7 +851,7 @@ fn stream_parse_value(src: String, pos: Int, line: Int, col: Int) -> EventResult
 
             pon val_r: EventResult = stream_parse_value(src, p, ln, c)
             si val_r.ok == false { da val_r }
-            events = events + val_r.events
+            append_events(events, val_r.events)
             p = val_r.pos
             ln = val_r.line
             c = val_r.col

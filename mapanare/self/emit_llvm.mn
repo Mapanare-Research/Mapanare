@@ -318,6 +318,7 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_map_get", "ptr", "ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_len", "i64", "ptr")
     s = declare_runtime_fn(s, "__mn_map_contains", "i64", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_map_keys", llvm_list_rt(), "ptr")
 
     // Malloc (for enum payload allocation)
     s = declare_runtime_fn(s, "malloc", "ptr", "i64")
@@ -1520,6 +1521,37 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
         return s
     }
 
+    // Map indexing → __mn_map_get(map_ptr, key_ptr)
+    if obj.ty.kind == "map" {
+        let cnt_mg: String = toString(s.counter)
+        s.counter = s.counter + 1
+        let idx_ty: String = resolve_type(st, idx.ty)
+        // Extract map pointer
+        let mptr: String = "%mg_mptr" + cnt_mg
+        if obj.name.contains(".addr") {
+            let mld: String = "%mg_mld" + cnt_mg
+            s = emit_line(s, "  " + mld + " = load " + llvm_map_type() + ", ptr " + obj.name)
+            s = emit_line(s, "  " + mptr + " = extractvalue " + llvm_map_type() + " " + mld + ", 0")
+        } else {
+            s = emit_line(s, "  " + mptr + " = extractvalue " + llvm_map_type() + " " + obj.name + ", 0")
+        }
+        // Alloca key
+        let ka: String = "%mg_ka" + cnt_mg
+        s = emit_line(s, "  " + ka + " = alloca " + idx_ty)
+        s = emit_line(s, "  store " + idx_ty + " " + idx.name + ", ptr " + ka)
+        // Call __mn_map_get → ptr to value
+        let vptr: String = "%mg_vp" + cnt_mg
+        s = emit_line(s, "  " + vptr + " = call ptr @__mn_map_get(ptr " + mptr + ", ptr " + ka + ")")
+        // Load value from pointer
+        let dest_ty: String = resolve_type(st, dest.ty)
+        if dest_ty != "i64" && dest_ty != "ptr" {
+            s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + vptr)
+        } else {
+            s = emit_line(s, "  " + dn + " = load i64, ptr " + vptr)
+        }
+        return s
+    }
+
     // List indexing → list_get (needs pointer; alloca+store the list value)
     let lt: String = llvm_list_rt()
     let tmp: String = dn + ".lp"
@@ -2160,6 +2192,32 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "__mn_str_eprint" {
         let as_epr: String = llvm_string() + " " + args[0].name
         return emit_line(st, emit_call_void("__mn_str_eprint", as_epr))
+    }
+
+    // Map iteration helpers
+    if fn_name == "__mn_map_keys" {
+        // Extract map pointer from {ptr, i64} and call __mn_map_keys(ptr)
+        let cnt_mk: String = toString(st.counter)
+        let mut s_mk: EmitState = st
+        s_mk.counter = s_mk.counter + 1
+        let mptr: String = "%mk_ptr" + cnt_mk
+        s_mk = emit_line(s_mk, "  " + mptr + " = extractvalue " + llvm_map_type() + " " + args[0].name + ", 0")
+        s_mk = emit_line(s_mk, emit_call_ir(dn, llvm_list_rt(), "__mn_map_keys", "ptr " + mptr))
+        return s_mk
+    }
+    if fn_name == "__list_get_string" {
+        // Get element ptr from list, then load MnString from it
+        let cnt_lg: String = toString(st.counter)
+        let mut s_lg: EmitState = st
+        s_lg.counter = s_lg.counter + 1
+        // Alloca list to get ptr
+        let la: String = "%lg_la" + cnt_lg
+        s_lg = emit_line(s_lg, "  " + la + " = alloca " + llvm_list_rt())
+        s_lg = emit_line(s_lg, "  store " + llvm_list_rt() + " " + args[0].name + ", ptr " + la)
+        let ep: String = "%lg_ep" + cnt_lg
+        s_lg = emit_line(s_lg, "  " + ep + " = call ptr @__mn_list_get(ptr " + la + ", i64 " + args[1].name + ")")
+        s_lg = emit_line(s_lg, "  " + dn + " = load " + llvm_string() + ", ptr " + ep)
+        return s_lg
     }
 
     // BinOp fallback: when enum tag mismatch causes BinOp to reach Call dispatch,

@@ -1425,6 +1425,19 @@ MN_EXPORT void __mn_map_iter_free(MnMapIter *iter) {
     __mn_free(iter);
 }
 
+MN_EXPORT MnList __mn_map_keys(MnMap *map) {
+    MnList lst = __mn_list_new(sizeof(MnString));
+    if (!map) return lst;
+    MnMapIter *iter = __mn_map_iter_new(map);
+    void *key_out, *val_out;
+    while (__mn_map_iter_next(iter, &key_out, &val_out)) {
+        /* key_out points to the stored key; for string maps, that's an MnString */
+        __mn_list_push(&lst, key_out);
+    }
+    __mn_map_iter_free(iter);
+    return lst;
+}
+
 MN_EXPORT void __mn_map_free(MnMap *map) {
     if (map) {
         if (map->buckets) __mn_free(map->buckets);

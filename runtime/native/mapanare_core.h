@@ -342,6 +342,9 @@ MN_EXPORT int64_t __mn_map_iter_next(MnMapIter *iter, void **key_out, void **val
 /** Free the iterator (does NOT free the map). */
 MN_EXPORT void __mn_map_iter_free(MnMapIter *iter);
 
+/** Return a list of all keys (as MnString). Caller owns the list. */
+MN_EXPORT MnList __mn_map_keys(MnMap *map);
+
 /** Free the map and its storage. Does NOT free contained strings. */
 MN_EXPORT void __mn_map_free(MnMap *map);
 
