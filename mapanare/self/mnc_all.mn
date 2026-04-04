@@ -7634,6 +7634,16 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let s_epr: LowerState = emit_instr(dr_epr.state, Instruction::Call(dr_epr.value, fn_name, args))
         return new_lower_result(dr_epr.value, s_epr)
     }
+    if fn_name == "chr" {
+        let dr_chr: LowerResult = make_value(st, mir_string(), "t")
+        let s_chr: LowerState = emit_instr(dr_chr.state, Instruction::Call(dr_chr.value, "chr", args))
+        return new_lower_result(dr_chr.value, s_chr)
+    }
+    if fn_name == "ord" {
+        let dr_ord: LowerResult = make_value(st, mir_int(), "t")
+        let s_ord: LowerState = emit_instr(dr_ord.state, Instruction::Call(dr_ord.value, "ord", args))
+        return new_lower_result(dr_ord.value, s_ord)
+    }
 
     // Handle Option/Result builtins
     if fn_name == "Some" {
@@ -9997,6 +10007,10 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
 
+    // chr/ord
+    s = declare_runtime_fn(s, "__mn_str_chr", llvm_string(), "i64")
+    s = declare_runtime_fn(s, "__mn_str_ord", "i64", llvm_string())
+
     // Map runtime
     s = declare_runtime_fn(s, "__mn_map_new", "ptr", "i64, i64, i64")
     s = declare_runtime_fn(s, "__mn_map_set", "void", "ptr, ptr, ptr")
@@ -11880,6 +11894,14 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "__mn_str_eprint" {
         let as_epr: String = llvm_string() + " " + args[0].name
         return emit_line(st, emit_call_void("__mn_str_eprint", as_epr))
+    }
+
+    // chr/ord builtins
+    if fn_name == "chr" {
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_chr", "i64 " + args[0].name))
+    }
+    if fn_name == "ord" {
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_str_ord", llvm_string() + " " + args[0].name))
     }
 
     // Map iteration helpers

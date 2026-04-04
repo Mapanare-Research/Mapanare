@@ -141,7 +141,7 @@ fn collect_rows(stmt: Int) -> List<Row> {
     pon mut c: Int = 0
     mien c < col_count {
         pon name: String = __mn_sqlite3_column_name(stmt, c)
-        columns = columns + [name]
+        columns.push(name)
         c = c + 1
     }
 
@@ -160,12 +160,12 @@ fn collect_rows(stmt: Int) -> List<Row> {
         pon mut col: Int = 0
         mien col < col_count {
             pon val: SqlValue = read_column_value(stmt, col)
-            values = values + [val]
+            values.push(val)
             col = col + 1
         }
 
         pon row: Row = new_row(columns, values)
-        rows = rows + [row]
+        rows.push(row)
     }
 
     da rows

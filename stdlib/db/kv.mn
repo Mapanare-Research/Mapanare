@@ -152,7 +152,7 @@ pub fn kv_keys(store: KVStore) -> List<String> {
         Embedded(es) => {
             pon mut result: List<String> = []
             cada k en es.data {
-                result = result + [k]
+                result.push(k)
             }
             da result
         }

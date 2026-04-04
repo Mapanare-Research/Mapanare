@@ -1215,6 +1215,16 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let s_epr: LowerState = emit_instr(dr_epr.state, Instruction::Call(dr_epr.value, fn_name, args))
         return new_lower_result(dr_epr.value, s_epr)
     }
+    if fn_name == "chr" {
+        let dr_chr: LowerResult = make_value(st, mir_string(), "t")
+        let s_chr: LowerState = emit_instr(dr_chr.state, Instruction::Call(dr_chr.value, "chr", args))
+        return new_lower_result(dr_chr.value, s_chr)
+    }
+    if fn_name == "ord" {
+        let dr_ord: LowerResult = make_value(st, mir_int(), "t")
+        let s_ord: LowerState = emit_instr(dr_ord.state, Instruction::Call(dr_ord.value, "ord", args))
+        return new_lower_result(dr_ord.value, s_ord)
+    }
 
     // Handle Option/Result builtins
     if fn_name == "Some" {

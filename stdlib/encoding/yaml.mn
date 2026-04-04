@@ -880,7 +880,7 @@ fn parse_block_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int) -> 
 
         // Check for blank line
         si p + line_indent >= slen {
-            lines = lines + [""]
+            lines.push("")
             trailing_newlines = trailing_newlines + 1
             p = p + line_indent
             si p < slen {
@@ -892,13 +892,13 @@ fn parse_block_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int) -> 
         } sino {
             pon peek_ch: String = src.char_at(p + line_indent)
             si peek_ch == "\n" {
-                lines = lines + [""]
+                lines.push("")
                 trailing_newlines = trailing_newlines + 1
                 p = p + line_indent + 1
                 ln = ln + 1
                 c = 1
             } sino { si peek_ch == "\r" {
-                lines = lines + [""]
+                lines.push("")
                 trailing_newlines = trailing_newlines + 1
                 pon nlc: PosInfo = skip_newline(src, slen, p + line_indent, ln)
                 p = nlc.pos
@@ -922,7 +922,7 @@ fn parse_block_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int) -> 
                     line_str = line_str + lc
                     li = li + 1
                 }
-                lines = lines + [line_str]
+                lines.push(line_str)
 
                 p = li
                 si p < slen {
@@ -1231,7 +1231,7 @@ fn parse_flow_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors
 
         pon val_r: ParseResult = parse_value(src, slen, p, ln, c, 0, true, anchors, depth + 1)
         si val_r.ok == false { da val_r }
-        items = items + [val_r.value]
+        items.push(val_r.value)
         p = val_r.pos
         ln = val_r.line
         c = val_r.col
@@ -1337,7 +1337,7 @@ fn parse_flow_map(src: String, slen: Int, pos: Int, line: Int, col: Int, anchors
         // Parse value
         pon val_r: ParseResult = parse_value(src, slen, p, ln, c, 0, true, anchors, depth + 1)
         si val_r.ok == false { da val_r }
-        entries = entries + [new_yaml_entry(key_str, val_r.value)]
+        entries.push(new_yaml_entry(key_str, val_r.value))
         p = val_r.pos
         ln = val_r.line
         c = val_r.col
@@ -1429,7 +1429,7 @@ fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_in
 
         // Parse item value — if at end of line, it's on the next line(s)
         si p >= slen {
-            items = items + [Null()]
+            items.push(Null())
         } sino {
             pon item_ch: String = src.char_at(p)
             si item_ch == "\n" {
@@ -1443,15 +1443,15 @@ fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_in
                 ln = ws2.line
                 c = ws2.col
                 si p >= slen {
-                    items = items + [Null()]
+                    items.push(Null())
                 } sino {
                     pon child_indent: Int = c - 1
                     si child_indent <= seq_indent {
-                        items = items + [Null()]
+                        items.push(Null())
                     } sino {
                         pon val_r: ParseResult = parse_value(src, slen, p, ln, c, child_indent, false, anchors, depth + 1)
                         si val_r.ok == false { da val_r }
-                        items = items + [val_r.value]
+                        items.push(val_r.value)
                         p = val_r.pos
                         ln = val_r.line
                         c = val_r.col
@@ -1467,15 +1467,15 @@ fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_in
                 ln = ws3.line
                 c = ws3.col
                 si p >= slen {
-                    items = items + [Null()]
+                    items.push(Null())
                 } sino {
                     pon child_indent2: Int = c - 1
                     si child_indent2 <= seq_indent {
-                        items = items + [Null()]
+                        items.push(Null())
                     } sino {
                         pon val_r2: ParseResult = parse_value(src, slen, p, ln, c, child_indent2, false, anchors, depth + 1)
                         si val_r2.ok == false { da val_r2 }
-                        items = items + [val_r2.value]
+                        items.push(val_r2.value)
                         p = val_r2.pos
                         ln = val_r2.line
                         c = val_r2.col
@@ -1485,7 +1485,7 @@ fn parse_block_seq(src: String, slen: Int, pos: Int, line: Int, col: Int, seq_in
                 // Inline value after "- "
                 pon val_r3: ParseResult = parse_value(src, slen, p, ln, c, seq_indent + 2, false, anchors, depth + 1)
                 si val_r3.ok == false { da val_r3 }
-                items = items + [val_r3.value]
+                items.push(val_r3.value)
                 p = val_r3.pos
                 ln = val_r3.line
                 c = val_r3.col
@@ -1599,7 +1599,7 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
 
         // Parse value
         si p >= slen {
-            entries = entries + [new_yaml_entry(key_str, Null())]
+            entries.push(new_yaml_entry(key_str, Null()))
         } sino {
             pon vch: String = src.char_at(p)
             si vch == "\n" {
@@ -1614,15 +1614,15 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
                 ln = ws3.line
                 c = ws3.col
                 si p >= slen {
-                    entries = entries + [new_yaml_entry(key_str, Null())]
+                    entries.push(new_yaml_entry(key_str, Null()))
                 } sino {
                     pon child_indent: Int = c - 1
                     si child_indent <= map_indent {
-                        entries = entries + [new_yaml_entry(key_str, Null())]
+                        entries.push(new_yaml_entry(key_str, Null()))
                     } sino {
                         pon val_r: ParseResult = parse_value(src, slen, p, ln, c, child_indent, false, anchors, depth + 1)
                         si val_r.ok == false { da val_r }
-                        entries = entries + [new_yaml_entry(key_str, val_r.value)]
+                        entries.push(new_yaml_entry(key_str, val_r.value))
                         p = val_r.pos
                         ln = val_r.line
                         c = val_r.col
@@ -1638,15 +1638,15 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
                 ln = ws4.line
                 c = ws4.col
                 si p >= slen {
-                    entries = entries + [new_yaml_entry(key_str, Null())]
+                    entries.push(new_yaml_entry(key_str, Null()))
                 } sino {
                     pon child_indent2: Int = c - 1
                     si child_indent2 <= map_indent {
-                        entries = entries + [new_yaml_entry(key_str, Null())]
+                        entries.push(new_yaml_entry(key_str, Null()))
                     } sino {
                         pon val_r2: ParseResult = parse_value(src, slen, p, ln, c, child_indent2, false, anchors, depth + 1)
                         si val_r2.ok == false { da val_r2 }
-                        entries = entries + [new_yaml_entry(key_str, val_r2.value)]
+                        entries.push(new_yaml_entry(key_str, val_r2.value))
                         p = val_r2.pos
                         ln = val_r2.line
                         c = val_r2.col
@@ -1663,12 +1663,12 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
                     ln = nl3.line
                     c = nl3.col
                 }
-                entries = entries + [new_yaml_entry(key_str, Null())]
+                entries.push(new_yaml_entry(key_str, Null()))
             } sino {
                 // Inline value
                 pon val_r3: ParseResult = parse_value(src, slen, p, ln, c, map_indent + 1, false, anchors, depth + 1)
                 si val_r3.ok == false { da val_r3 }
-                entries = entries + [new_yaml_entry(key_str, val_r3.value)]
+                entries.push(new_yaml_entry(key_str, val_r3.value))
                 p = val_r3.pos
                 ln = val_r3.line
                 c = val_r3.col
@@ -1821,7 +1821,7 @@ pub fn decode_all(src: String) -> Result<List<YamlValue>, YamlError> {
 
         pon result: ParseResult = parse_document(src, slen, p, ln, c)
         si result.ok == false { da Err(result.error) }
-        docs = docs + [result.value]
+        docs.push(result.value)
         p = result.pos
         ln = result.line
         c = result.col

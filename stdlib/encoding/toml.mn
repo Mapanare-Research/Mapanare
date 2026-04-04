@@ -610,7 +610,7 @@ fn parse_dotted_key(input: String, pos: Int, line: Int, col: Int) -> DottedKeyRe
     si first.ok == false {
         da new DottedKeyResult { keys: keys, pos: first.pos, line: first.line, col: first.col, ok: false, error: first.error }
     }
-    keys = keys + [first.key]
+    keys.push(first.key)
     p = first.pos
     ln = first.line
     c = first.col
@@ -640,7 +640,7 @@ fn parse_dotted_key(input: String, pos: Int, line: Int, col: Int) -> DottedKeyRe
         si next_key.ok == false {
             da new DottedKeyResult { keys: keys, pos: next_key.pos, line: next_key.line, col: next_key.col, ok: false, error: next_key.error }
         }
-        keys = keys + [next_key.key]
+        keys.push(next_key.key)
         p = next_key.pos
         ln = next_key.line
         c = next_key.col
@@ -1069,7 +1069,7 @@ fn parse_toml_array(input: String, pos: Int, line: Int, col: Int) -> ValueResult
         si val_r.ok == false {
             da val_r
         }
-        items = items + [val_r.value]
+        items.push(val_r.value)
         p = val_r.pos
         ln = val_r.line
         c = val_r.col
@@ -1359,7 +1359,7 @@ fn parse_toml_document(input: String) -> Result<Map<String, TomlValue>, TomlErro
                     si arr_found == false {
                         // Create new array with one empty table
                         pon mut arr: List<TomlValue> = []
-                        arr = arr + [Table(new_table)]
+                        arr.push(Table(new_table))
                         parent[last_key] = Array(arr)
                     } sino {
                         // Append new table to existing array
