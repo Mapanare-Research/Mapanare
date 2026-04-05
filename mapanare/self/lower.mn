@@ -1763,9 +1763,23 @@ fn lambda_body_to_block(body: LambdaBody) -> Block {
     return new_block(span, stmts)
 }
 
+fn count_actual_lambdas(st: LowerState) -> Int {
+    let mut count: Int = 0
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(st.lambda_vars) { return count }
+        let e: LambdaEntry = st.lambda_vars[i]
+        if !e.var_name.starts_with("__ret__") {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
 fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerResult {
     let name_r: LowerResult = fresh_tmp(st, "lambda")
-    let lambda_name: String = "lambda" + toString(st.tmp_counter)
+    let lambda_name: String = "lambda" + toString(count_actual_lambdas(st) + 1)
 
     let body_block: Block = lambda_body_to_block(body)
 
@@ -2157,7 +2171,11 @@ fn infer_variant_payload_type(st: LowerState, subject: Value, variant_name: Stri
         }
     }
     // Regular enums — look up from module registry
-    if subject.ty.kind == "enum" {
+    // Also handle kind=="struct" when the name is a registered enum
+    // (happens when enum types appear as generic args, e.g. List<TomlValue>)
+    let is_enum_kind: Bool = subject.ty.kind == "enum"
+    let is_struct_actually_enum: Bool = subject.ty.kind == "struct" && is_enum_name(st, subject.ty.name)
+    if is_enum_kind || is_struct_actually_enum {
         let enum_name: String = subject.ty.name
         let mut ei: Int = 0
         let nei: Int = len(st.module.enums)

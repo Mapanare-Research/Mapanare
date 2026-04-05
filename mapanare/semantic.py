@@ -1297,15 +1297,24 @@ class SemanticChecker:
             )
             # Register enum variants as constructors (both short and qualified names)
             for variant in defn.variants:
-                variant_sym = Symbol(
-                    name=variant.name,
-                    kind="function",
-                    type_info=TypeInfo(
-                        kind=TypeKind.FN,
-                        is_function=True,
-                        return_type=TypeInfo(kind=TypeKind.ENUM, name=defn.name),
-                    ),
-                )
+                if variant.fields:
+                    # Variants with payloads are constructors (functions)
+                    variant_sym = Symbol(
+                        name=variant.name,
+                        kind="function",
+                        type_info=TypeInfo(
+                            kind=TypeKind.FN,
+                            is_function=True,
+                            return_type=TypeInfo(kind=TypeKind.ENUM, name=defn.name),
+                        ),
+                    )
+                else:
+                    # Bare variants are values of the enum type
+                    variant_sym = Symbol(
+                        name=variant.name,
+                        kind="variable",
+                        type_info=TypeInfo(kind=TypeKind.ENUM, name=defn.name),
+                    )
                 self.global_scope.define(variant.name, variant_sym)
                 # Also register the qualified name (EnumName_VariantName)
                 qualified = f"{defn.name}_{variant.name}"
