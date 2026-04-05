@@ -14,6 +14,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 /* -----------------------------------------------------------------------
  * Memory helpers
@@ -1095,6 +1097,98 @@ MN_EXPORT int64_t __mn_file_write(MnString path, MnString content) {
     }
     fclose(f);
     return 0;
+}
+
+/* Helper: MnString → null-terminated C string (caller must __mn_free) */
+static char *mn_to_cstr(MnString s) {
+    char *c = (char *)__mn_alloc(s.len + 1);
+    memcpy(c, mn_untag(s.data), (size_t)s.len);
+    c[s.len] = '\0';
+    return c;
+}
+
+MN_EXPORT int64_t __mn_file_exists(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int exists = access(cpath, F_OK) == 0;
+    __mn_free(cpath);
+    return exists ? 1 : 0;
+}
+
+MN_EXPORT int64_t __mn_file_remove(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int rc = remove(cpath);
+    __mn_free(cpath);
+    return rc == 0 ? 0 : -1;
+}
+
+MN_EXPORT int64_t __mn_file_size(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    struct stat st;
+    int rc = stat(cpath, &st);
+    __mn_free(cpath);
+    return rc == 0 ? (int64_t)st.st_size : -1;
+}
+
+MN_EXPORT int64_t __mn_file_mtime(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    struct stat st;
+    int rc = stat(cpath, &st);
+    __mn_free(cpath);
+    return rc == 0 ? (int64_t)st.st_mtime : -1;
+}
+
+MN_EXPORT MnString __mn_realpath(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    char resolved[4096];
+    char *rp = realpath(cpath, resolved);
+    __mn_free(cpath);
+    if (!rp) return __mn_str_empty();
+    return __mn_str_from_cstr(rp);
+}
+
+MN_EXPORT int64_t __mn_dir_create(MnString path, int64_t recursive) {
+    char *cpath = mn_to_cstr(path);
+    int rc = mkdir(cpath, 0755);
+    __mn_free(cpath);
+    (void)recursive; /* TODO: recursive mkdir */
+    return rc == 0 ? 0 : -1;
+}
+
+MN_EXPORT int64_t __mn_dir_remove(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int rc = rmdir(cpath);
+    __mn_free(cpath);
+    return rc == 0 ? 0 : -1;
+}
+
+MN_EXPORT int64_t __mn_file_rename(MnString old_path, MnString new_path) {
+    char *cold = mn_to_cstr(old_path);
+    char *cnew = mn_to_cstr(new_path);
+    int rc = rename(cold, cnew);
+    __mn_free(cold);
+    __mn_free(cnew);
+    return rc == 0 ? 0 : -1;
+}
+
+MN_EXPORT int64_t __mn_file_copy(MnString src, MnString dst) {
+    char *csrc = mn_to_cstr(src);
+    char *cdst = mn_to_cstr(dst);
+    FILE *fin = fopen(csrc, "rb");
+    __mn_free(csrc);
+    if (!fin) { __mn_free(cdst); return -1; }
+    FILE *fout = fopen(cdst, "wb");
+    __mn_free(cdst);
+    if (!fout) { fclose(fin); return -1; }
+    char buf[8192];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), fin)) > 0) fwrite(buf, 1, n, fout);
+    fclose(fin);
+    fclose(fout);
+    return 0;
+}
+
+MN_EXPORT MnString __mn_tmpfile_path(void) {
+    return __mn_str_from_cstr("/tmp/mn_tmp_XXXXXX");
 }
 
 /* -----------------------------------------------------------------------

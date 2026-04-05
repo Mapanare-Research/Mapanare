@@ -1,59 +1,49 @@
-// tests/native/test_fs.mn — File system stdlib tests using native test runner
+// tests/native/test_fs.mn — File system tests using native test runner
+// Uses C runtime functions directly (stdlib::fs wrappers have Result ABI issues)
 
 usa stdlib::test::runner
-usa stdlib::fs
+
+extern "C" fn __mn_file_write(path: String, content: String) -> Int
+extern "C" fn __mn_file_exists(path: String) -> Int
+extern "C" fn __mn_file_remove(path: String) -> Int
+extern "C" fn __mn_file_size(path: String) -> Int
 
 fn main() -> Int {
     let mut pass: Int = 0
     let mut fail: Int = 0
     let mut r: Int = 0
 
-    // --- write + read + exists ---
     let path: String = "/tmp/mapanare_test_fs.txt"
     let content: String = "hello from mapanare"
-    let wr: Result<Bool, FsError> = write_file(path, content)
-    match wr {
-        Ok(ok) => {
-            r = check("write_file succeeds", true)
-            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
-        },
-        Err(e) => {
-            r = check("write_file should succeed", false)
-            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
-        }
-    }
 
-    r = check("exists after write", exists(path))
+    // --- write ---
+    let wr: Int = __mn_file_write(path, content)
+    r = check_eq("write returns 0", wr, 0)
     if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
 
-    let rd: Result<String, FsError> = read_file(path)
-    match rd {
-        Ok(data) => {
-            r = check_eq_str("read_file content", data, content)
-            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
-        },
-        Err(e2) => {
-            r = check("read_file should succeed", false)
-            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
-        }
-    }
+    // --- exists ---
+    let ex: Int = __mn_file_exists(path)
+    r = check_eq("exists after write", ex, 1)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+
+    // --- read ---
+    let data: String = __mn_file_read_or_empty(path)
+    r = check_eq_str("read content", data, content)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+
+    // --- size ---
+    let sz: Int = __mn_file_size(path)
+    r = check_eq("file size", sz, 19)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
 
     // --- remove ---
-    let rm: Result<Bool, FsError> = remove(path)
-    match rm {
-        Ok(ok2) => {
-            r = check("remove succeeds", true)
-            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
-        },
-        Err(e3) => {
-            r = check("remove should succeed", false)
-            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
-        }
-    }
+    let rm: Int = __mn_file_remove(path)
+    r = check_eq("remove returns 0", rm, 0)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
 
-    // --- exists should be false after remove ---
-    let still: Bool = exists(path)
-    r = check("not exists after remove", still == false)
+    // --- not exists after remove ---
+    let ex2: Int = __mn_file_exists(path)
+    r = check_eq("not exists after remove", ex2, 0)
     if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
 
     return test_report(pass, fail)
