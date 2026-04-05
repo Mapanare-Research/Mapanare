@@ -8389,7 +8389,6 @@ fn lower_map(st: LowerState, entries: List<MapEntry>) -> LowerResult {
 fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -> LowerResult {
     let mut s: LowerState = st
 
-    // Debug: emit the number of field_inits as a constant to verify the list works
     let nfields: Int = len(field_inits)
 
     // Lower each field value
@@ -8408,10 +8407,7 @@ fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -
     // Emit as Call to "__new_<StructName>" (emitter handles this specially)
     let struct_ty: MIRType = mir_struct(name)
     let dest_r: LowerResult = make_value(s, struct_ty, "t")
-    // Debug: emit nfields as a const to see if the field_inits list is intact
-    let dbg_r: LowerResult = make_value(dest_r.state, mir_int(), "dbg_nfields")
-    s = emit_instr(dbg_r.state, Instruction::Const(dbg_r.value, mir_int(), toString(nfields)))
-    s = emit_instr(s, Instruction::Call(dest_r.value, "__new_" + name, vals))
+    s = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__new_" + name, vals))
     return new_lower_result(dest_r.value, s)
 }
 
