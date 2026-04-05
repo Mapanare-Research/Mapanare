@@ -1350,7 +1350,23 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
                     if kind == "bool" { call_ret = mir_bool() }
                     if kind == "void" { call_ret = mir_void() }
                     if kind == "option" { call_ret = mir_option() }
-                    if kind == "result" { call_ret = mir_result() }
+                    if kind == "result" {
+                        // Look up the FULL parameterized return type from the
+                        // module's function list (preserves generic args).
+                        let mut found_full: Bool = false
+                        let mut fk: Int = 0
+                        for _ in 0..2000 {
+                            if fk < len(st.module.functions) {
+                                if st.module.functions[fk].name == resolved {
+                                    call_ret = st.module.functions[fk].return_type
+                                    found_full = true
+                                    fk = len(st.module.functions)
+                                }
+                                fk = fk + 1
+                            }
+                        }
+                        if found_full == false { call_ret = mir_result() }
+                    }
                     if kind == "list" { call_ret = mir_list() }
                     if kind == "map" { call_ret = mir_map() }
                 }

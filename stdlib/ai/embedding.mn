@@ -663,6 +663,10 @@ fn check_http_status(status: Int, body: String) -> Result<String, EmbeddingError
     da Err(new_api_error("Unexpected status: " + str(status)))
 }
 
+fn parse_err_vectors(msg: String) -> Result<List<List<Float>>, EmbeddingError> {
+    da Err(new_parse_error(msg))
+}
+
 fn parse_openai_embed_response(body: String) -> Result<List<List<Float>>, EmbeddingError> {
     // {"data":[{"embedding":[0.1,...],"index":0}],"usage":{"prompt_tokens":N}}
     pon data_raw: String = jget(body, "data")
@@ -755,7 +759,7 @@ pub fn embed(config: EmbedConfig, text: String) -> Result<EmbeddingResult, Embed
     match status_check {
         Err(e) => { da Err(e) },
         Ok(resp_body) => {
-            pon mut parse_result: Result<List<List<Float>>, EmbeddingError> = Err(new_parse_error("Unknown provider"))
+            pon mut parse_result: Result<List<List<Float>>, EmbeddingError> = parse_err_vectors("Unknown provider")
             match config.provider {
                 OpenAI => { parse_result = parse_openai_embed_response(resp_body) },
                 Ollama => { parse_result = parse_ollama_embed_response(resp_body) },
@@ -793,7 +797,7 @@ pub fn embed_batch(config: EmbedConfig, texts: List<String>) -> Result<BatchEmbe
     match status_check {
         Err(e) => { da Err(e) },
         Ok(resp_body) => {
-            pon mut parse_result: Result<List<List<Float>>, EmbeddingError> = Err(new_parse_error("Unknown provider"))
+            pon mut parse_result: Result<List<List<Float>>, EmbeddingError> = parse_err_vectors("Unknown provider")
             match config.provider {
                 OpenAI => { parse_result = parse_openai_embed_response(resp_body) },
                 Ollama => { parse_result = parse_ollama_embed_response(resp_body) },
