@@ -829,9 +829,11 @@ fn build_anthropic_body(config: LLMConfig, messages: List<ChatMessage>) -> Strin
             System => {
                 system_text = messages[i].content
                 has_sys = true
+                i = i  // ensure both arms have same type (void assignment)
             },
             _ => {
                 non_system = non_system + [messages[i]]
+                i = i
             }
         }
         i = i + 1
