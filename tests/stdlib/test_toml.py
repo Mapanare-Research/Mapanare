@@ -68,7 +68,7 @@ class TestCoreTypes:
     def test_toml_value_enum_compiles(self) -> None:
         """TomlValue enum (with Table and Array variants) compiles."""
         src = _toml_source_with_main("""\
-            let v: TomlValue = Str("hello")
+            let v: TomlValue = TStr("hello")
             print("ok")
         """)
         ir_out = _compile_mir(src)
@@ -86,7 +86,7 @@ class TestCoreTypes:
     def test_toml_value_int_variant(self) -> None:
         """TomlValue::Int variant compiles."""
         src = _toml_source_with_main("""\
-            let v: TomlValue = Int(42)
+            let v: TomlValue = TInt(42)
             print("ok")
         """)
         ir_out = _compile_mir(src)
@@ -95,7 +95,7 @@ class TestCoreTypes:
     def test_toml_value_float_variant(self) -> None:
         """TomlValue::Float variant compiles."""
         src = _toml_source_with_main("""\
-            let v: TomlValue = Float(3.14)
+            let v: TomlValue = TFloat(3.14)
             print("ok")
         """)
         ir_out = _compile_mir(src)
@@ -104,7 +104,7 @@ class TestCoreTypes:
     def test_toml_value_bool_variant(self) -> None:
         """TomlValue::Bool variant compiles."""
         src = _toml_source_with_main("""\
-            let v: TomlValue = Bool(true)
+            let v: TomlValue = TBool(true)
             print("ok")
         """)
         ir_out = _compile_mir(src)
@@ -113,7 +113,7 @@ class TestCoreTypes:
     def test_toml_value_datetime_variant(self) -> None:
         """TomlValue::DateTime variant compiles."""
         src = _toml_source_with_main("""\
-            let v: TomlValue = DateTime("2024-01-15T10:30:00Z")
+            let v: TomlValue = TDateTime("2024-01-15T10:30:00Z")
             print("ok")
         """)
         ir_out = _compile_mir(src)
@@ -122,8 +122,8 @@ class TestCoreTypes:
     def test_toml_value_array_variant(self) -> None:
         """TomlValue::Array variant compiles."""
         src = _toml_source_with_main("""\
-            let items: List<TomlValue> = [Int(1), Int(2)]
-            let v: TomlValue = Array(items)
+            let items: List<TomlValue> = [TInt(1), TInt(2)]
+            let v: TomlValue = TArray(items)
             print("ok")
         """)
         ir_out = _compile_mir(src)
@@ -133,7 +133,7 @@ class TestCoreTypes:
         """TomlValue::Table variant compiles."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            let v: TomlValue = Table(entries)
+            let v: TomlValue = TTable(entries)
             print("ok")
         """)
         ir_out = _compile_mir(src)
@@ -924,8 +924,8 @@ class TestEncode:
         """Encode string value."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["name"] = Str("Mapanare")
-            let s: String = encode(Table(entries))
+            entries["name"] = TStr("Mapanare")
+            let s: String = encode(TTable(entries))
             print(s)
         """)
         ir_out = _compile_mir(src)
@@ -935,8 +935,8 @@ class TestEncode:
         """Encode integer value."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["port"] = Int(8080)
-            let s: String = encode(Table(entries))
+            entries["port"] = TInt(8080)
+            let s: String = encode(TTable(entries))
             print(s)
         """)
         ir_out = _compile_mir(src)
@@ -946,8 +946,8 @@ class TestEncode:
         """Encode float value."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["pi"] = Float(3.14)
-            let s: String = encode(Table(entries))
+            entries["pi"] = TFloat(3.14)
+            let s: String = encode(TTable(entries))
             print(s)
         """)
         ir_out = _compile_mir(src)
@@ -957,8 +957,8 @@ class TestEncode:
         """Encode boolean value."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["enabled"] = Bool(true)
-            let s: String = encode(Table(entries))
+            entries["enabled"] = TBool(true)
+            let s: String = encode(TTable(entries))
             print(s)
         """)
         ir_out = _compile_mir(src)
@@ -968,8 +968,8 @@ class TestEncode:
         """Encode datetime value."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["created"] = DateTime("2024-01-15T10:30:00Z")
-            let s: String = encode(Table(entries))
+            entries["created"] = TDateTime("2024-01-15T10:30:00Z")
+            let s: String = encode(TTable(entries))
             print(s)
         """)
         ir_out = _compile_mir(src)
@@ -980,8 +980,8 @@ class TestEncode:
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
             let items: List<TomlValue> = []
-            entries["tags"] = Array(items)
-            let s: String = encode(Table(entries))
+            entries["tags"] = TArray(items)
+            let s: String = encode(TTable(entries))
             print(s)
         """)
         ir_out = _compile_mir(src)
@@ -991,9 +991,9 @@ class TestEncode:
         """Encode array of values."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            let items: List<TomlValue> = [Int(1), Int(2), Int(3)]
-            entries["ports"] = Array(items)
-            let s: String = encode(Table(entries))
+            let items: List<TomlValue> = [TInt(1), TInt(2), TInt(3)]
+            entries["ports"] = TArray(items)
+            let s: String = encode(TTable(entries))
             print(s)
         """)
         ir_out = _compile_mir(src)
@@ -1004,9 +1004,9 @@ class TestEncode:
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
             let sub: Map<String, TomlValue> = #{}
-            sub["host"] = Str("localhost")
-            entries["server"] = Table(sub)
-            let s: String = encode(Table(entries))
+            sub["host"] = TStr("localhost")
+            entries["server"] = TTable(sub)
+            let s: String = encode(TTable(entries))
             print(s)
         """)
         ir_out = _compile_mir(src)
@@ -1015,7 +1015,7 @@ class TestEncode:
     def test_encode_inline_value(self) -> None:
         """Encode value inline (for simple values)."""
         src = _toml_source_with_main("""\
-            let s: String = encode_value_inline(Str("hello"))
+            let s: String = encode_value_inline(TStr("hello"))
             print(s)
         """)
         ir_out = _compile_mir(src)
@@ -1033,9 +1033,9 @@ class TestEncodePretty:
         """Pretty-print serializer compiles."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["name"] = Str("test")
-            entries["version"] = Int(1)
-            let s: String = encode_pretty(Table(entries))
+            entries["name"] = TStr("test")
+            entries["version"] = TInt(1)
+            let s: String = encode_pretty(TTable(entries))
             print(s)
         """)
         ir_out = _compile_mir(src)
@@ -1045,12 +1045,12 @@ class TestEncodePretty:
         """Pretty-print with nested tables compiles."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["name"] = Str("project")
+            entries["name"] = TStr("project")
             let db: Map<String, TomlValue> = #{}
-            db["host"] = Str("localhost")
-            db["port"] = Int(5432)
-            entries["database"] = Table(db)
-            let s: String = encode_pretty(Table(entries))
+            db["host"] = TStr("localhost")
+            db["port"] = TInt(5432)
+            entries["database"] = TTable(db)
+            let s: String = encode_pretty(TTable(entries))
             print(s)
         """)
         ir_out = _compile_mir(src)
@@ -1068,8 +1068,8 @@ class TestRoundTrip:
         """Round-trip: encode then decode a string value."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["name"] = Str("Mapanare")
-            let encoded: String = encode(Table(entries))
+            entries["name"] = TStr("Mapanare")
+            let encoded: String = encode(TTable(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
             print("ok")
         """)
@@ -1080,8 +1080,8 @@ class TestRoundTrip:
         """Round-trip: encode then decode an integer value."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["count"] = Int(42)
-            let encoded: String = encode(Table(entries))
+            entries["count"] = TInt(42)
+            let encoded: String = encode(TTable(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
             print("ok")
         """)
@@ -1092,8 +1092,8 @@ class TestRoundTrip:
         """Round-trip: encode then decode a boolean value."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["flag"] = Bool(true)
-            let encoded: String = encode(Table(entries))
+            entries["flag"] = TBool(true)
+            let encoded: String = encode(TTable(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
             print("ok")
         """)
@@ -1104,9 +1104,9 @@ class TestRoundTrip:
         """Round-trip: encode then decode an array."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            let items: List<TomlValue> = [Int(1), Int(2), Int(3)]
-            entries["ports"] = Array(items)
-            let encoded: String = encode(Table(entries))
+            let items: List<TomlValue> = [TInt(1), TInt(2), TInt(3)]
+            entries["ports"] = TArray(items)
+            let encoded: String = encode(TTable(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
             print("ok")
         """)
@@ -1118,10 +1118,10 @@ class TestRoundTrip:
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
             let sub: Map<String, TomlValue> = #{}
-            sub["host"] = Str("localhost")
-            sub["port"] = Int(5432)
-            entries["db"] = Table(sub)
-            let encoded: String = encode(Table(entries))
+            sub["host"] = TStr("localhost")
+            sub["port"] = TInt(5432)
+            entries["db"] = TTable(sub)
+            let encoded: String = encode(TTable(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
             print("ok")
         """)
@@ -1132,8 +1132,8 @@ class TestRoundTrip:
         """Round-trip: encode then decode a float value."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["pi"] = Float(3.14)
-            let encoded: String = encode(Table(entries))
+            entries["pi"] = TFloat(3.14)
+            let encoded: String = encode(TTable(entries))
             let decoded: Result<TomlValue, TomlError> = decode(encoded)
             print("ok")
         """)
@@ -1393,8 +1393,8 @@ class TestSerializerHelpers:
     def test_is_simple_value_compiles(self) -> None:
         """is_simple_value helper compiles."""
         src = _toml_source_with_main("""\
-            let r1: Bool = is_simple_value(Str("hello"))
-            let r2: Bool = is_simple_value(Int(42))
+            let r1: Bool = is_simple_value(TStr("hello"))
+            let r2: Bool = is_simple_value(TInt(42))
             print(str(r1))
             print(str(r2))
         """)
@@ -1405,9 +1405,9 @@ class TestSerializerHelpers:
         """is_table_array helper compiles."""
         src = _toml_source_with_main("""\
             let entries: Map<String, TomlValue> = #{}
-            entries["a"] = Int(1)
-            let items: List<TomlValue> = [Table(entries)]
-            let r: Bool = is_table_array(Array(items))
+            entries["a"] = TInt(1)
+            let items: List<TomlValue> = [TTable(entries)]
+            let r: Bool = is_table_array(TArray(items))
             print(str(r))
         """)
         ir_out = _compile_mir(src)
