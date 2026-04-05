@@ -390,6 +390,9 @@ class MIRLowerer:
         self._imported_enum_defs: dict[str, list[tuple[str, list[MIRType]]]] = dict(
             imported_enum_defs or {}
         )
+        # Generics monomorphization state
+        self._generic_fn_defs: dict[str, FnDef] = {}  # name → AST of generic fn
+        self._specialized_fns: set[str] = set()  # mangled names already lowered
 
     # -- Name generation ---------------------------------------------------
 
@@ -405,6 +408,104 @@ class MIRLowerer:
 
     def _make_value(self, ty: MIRType = mir_unknown(), prefix: str = "t") -> Value:
         return Value(name=self._fresh_tmp(prefix), ty=ty)
+
+    # -- Generics monomorphization -----------------------------------------
+
+    def _mangle_generic(self, name: str, type_args: list[MIRType]) -> str:
+        """Produce a mangled name: identity + [Int] → identity__Int."""
+        parts = []
+        for ta in type_args:
+            ti = ta.type_info if hasattr(ta, "type_info") else ta
+            if hasattr(ti, "name") and ti.name:
+                parts.append(ti.name)
+            elif hasattr(ti, "kind"):
+                parts.append(str(ti.kind).split(".")[-1].capitalize())
+            else:
+                parts.append("Unknown")
+        return f"{name}__{'_'.join(parts)}"
+
+    def _infer_type_args(
+        self, fn_def: FnDef, arg_types: list[MIRType]
+    ) -> dict[str, MIRType] | None:
+        """Infer type parameter → concrete type mapping from call-site arguments."""
+        subst: dict[str, MIRType] = {}
+        tp_set = set(fn_def.type_params)
+        for param, arg_ty in zip(fn_def.params, arg_types):
+            if param.type_annotation is None:
+                continue
+            ann = param.type_annotation
+            if isinstance(ann, NamedType) and ann.name in tp_set:
+                subst[ann.name] = arg_ty
+        return subst if len(subst) == len(tp_set) else None
+
+    def _substitute_type_expr(
+        self, te: "TypeExpr | None", subst: dict[str, MIRType]
+    ) -> "TypeExpr | None":
+        """Replace type parameter names with concrete NamedType nodes."""
+        if te is None:
+            return None
+        if isinstance(te, NamedType) and te.name in subst:
+            concrete = subst[te.name]
+            ti = concrete.type_info if hasattr(concrete, "type_info") else concrete
+            name = ti.name if hasattr(ti, "name") and ti.name else "Int"
+            return NamedType(name=name, span=te.span)
+        if isinstance(te, GenericType):
+            new_args = [self._substitute_type_expr(a, subst) or a for a in te.args]
+            return GenericType(name=te.name, args=new_args, span=te.span)
+        return te
+
+    def _specialize_fn(self, fn_def: FnDef, subst: dict[str, MIRType]) -> FnDef:
+        """Create a specialized copy of a generic function with concrete types."""
+        from copy import deepcopy
+
+        specialized = deepcopy(fn_def)
+        specialized.type_params = []  # No longer generic
+        specialized.trait_bounds = {}
+
+        # Substitute parameter types
+        for p in specialized.params:
+            p.type_annotation = self._substitute_type_expr(p.type_annotation, subst)
+
+        # Substitute return type
+        specialized.return_type = self._substitute_type_expr(
+            specialized.return_type, subst
+        )
+
+        return specialized
+
+    def _monomorphize_call(
+        self, fn_name: str, arg_types: list[MIRType], type_args: list[MIRType] | None
+    ) -> str | None:
+        """If fn_name is generic, specialize it and return the mangled name."""
+        fn_def = self._generic_fn_defs.get(fn_name)
+        if fn_def is None:
+            return None
+
+        # Determine type arguments: explicit (turbofish) or inferred
+        if type_args and len(type_args) == len(fn_def.type_params):
+            concrete_types = type_args
+        else:
+            subst = self._infer_type_args(fn_def, arg_types)
+            if subst is None:
+                return None
+            concrete_types = [subst[tp] for tp in fn_def.type_params]
+
+        mangled = self._mangle_generic(fn_name, concrete_types)
+
+        # Specialize and lower if not already done
+        if mangled not in self._specialized_fns:
+            self._specialized_fns.add(mangled)
+            subst_map = dict(zip(fn_def.type_params, concrete_types))
+            specialized = self._specialize_fn(fn_def, subst_map)
+            specialized.name = mangled
+            # Register return type before lowering (for recursive calls)
+            if specialized.return_type:
+                self._fn_return_types[mangled] = _resolve_type_expr(
+                    specialized.return_type
+                )
+            self._lower_fn(specialized)
+
+        return mangled
 
     # -- Block management --------------------------------------------------
 
@@ -643,6 +744,10 @@ class MIRLowerer:
                         stages.append(s.name)
                 self._module.pipes[actual.name] = MIRPipeInfo(name=actual.name, stages=stages)
 
+            # Store generic function AST definitions for monomorphization
+            if isinstance(actual, FnDef) and actual.type_params:
+                self._generic_fn_defs[actual.name] = actual
+
             # Collect function return/param types for call-site type propagation
             if isinstance(actual, FnDef):
                 if actual.return_type is not None:
@@ -681,6 +786,8 @@ class MIRLowerer:
                 return
 
         if isinstance(actual, FnDef):
+            if actual.type_params:
+                return  # Generic functions lowered on demand via monomorphization
             self._lower_fn(actual)
         elif isinstance(actual, AgentDef):
             self._lower_agent(actual)
@@ -1476,6 +1583,21 @@ class MIRLowerer:
                 return self._lower_encode_struct(expr, args[0])
             if fn_name == "decode_to" and len(args) == 1:
                 return self._lower_decode_to(expr, args[0])
+
+        # Monomorphize generic function calls
+        if isinstance(expr.callee, Identifier):
+            fn_name = expr.callee.name
+            type_args_mir = (
+                [_resolve_type_expr(ta) for ta in expr.type_args]
+                if expr.type_args
+                else None
+            )
+            mangled = self._monomorphize_call(fn_name, [a.ty for a in args], type_args_mir)
+            if mangled is not None:
+                ret_ty = self._fn_return_types.get(mangled, mir_unknown())
+                dest = self._make_value(ty=ret_ty)
+                self._emit(Call(dest=dest, fn_name=mangled, args=args))
+                return dest
 
         # Infer return type from function declaration or builtins
         _BUILTIN_RET: dict[str, MIRType] = {

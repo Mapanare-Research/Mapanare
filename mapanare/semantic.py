@@ -231,6 +231,8 @@ class SemanticChecker:
         self._resolved_modules: dict[str, dict[str, ModuleExport]] = {}
         # Track trait implementations: (trait_name, type_name) pairs
         self._trait_impls: set[tuple[str, str]] = set()
+        # Type parameters of the current function (for generic type resolution)
+        self._current_type_params: set[str] = set()
 
         # Register built-in traits
         for trait_name, methods in BUILTIN_TRAITS.items():
@@ -332,6 +334,9 @@ class SemanticChecker:
                     return TypeInfo(kind=TypeKind.AGENT, name=te.name)
                 elif sym.kind == "type_alias":
                     return sym.type_info
+            # Check if this is a type parameter (from a generic function)
+            if te.name in self._current_type_params:
+                return TypeInfo(kind=TypeKind.UNKNOWN, name=te.name)
             # Unknown user type — default to struct-like
             return TypeInfo(kind=TypeKind.STRUCT, name=te.name)
         if isinstance(te, GenericType):
@@ -728,10 +733,14 @@ class SemanticChecker:
                             f"Function '{fname}' expects " f"{n_exp} argument(s), got {n_got}",
                             expr,
                         )
-                    # Check argument types
+                    # Check argument types (skip for type parameters —
+                    # unknown param types indicate generic parameters that
+                    # will be resolved during monomorphization)
                     for i, (expected, actual) in enumerate(
                         zip(sym.type_info.param_types, arg_types)
                     ):
+                        if expected.kind == TypeKind.UNKNOWN:
+                            continue  # Type parameter — accept any type
                         if not expected.is_compatible_with(actual):
                             fname = expr.callee.name
                             exp_s = _type_display(expected)
@@ -1253,8 +1262,11 @@ class SemanticChecker:
 
     def _register_def(self, defn: Definition) -> None:
         if isinstance(defn, FnDef):
+            saved_tp = self._current_type_params
+            self._current_type_params = set(defn.type_params) if defn.type_params else set()
             param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
             ret = self._resolve_type_expr(defn.return_type)
+            self._current_type_params = saved_tp
             fn_type = TypeInfo(
                 kind=TypeKind.FN,
                 is_function=True,
@@ -1575,6 +1587,8 @@ class SemanticChecker:
     def _check_fn(self, fn: FnDef) -> None:
         # Validate decorators (Phase 5.2)
         self._check_decorators(fn)
+        saved_type_params = self._current_type_params
+        self._current_type_params = set(fn.type_params) if fn.type_params else set()
         self._push_scope()
         for p in fn.params:
             pt = self._resolve_type_expr(p.type_annotation)
@@ -1584,6 +1598,7 @@ class SemanticChecker:
             )
         self._check_block(fn.body)
         self._pop_scope()
+        self._current_type_params = saved_type_params
 
     def _check_decorators(self, defn: ASTNode) -> None:
         """Validate decorator annotations on a definition (Phase 5.2)."""
