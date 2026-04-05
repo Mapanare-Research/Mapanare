@@ -1,0 +1,59 @@
+// stdlib/test/runner.mn — Native Test Framework for Mapanare
+//
+// Lightweight assertion functions that use print for reporting.
+// State is tracked via simple integer counts in the test file.
+//
+// Usage: define test functions that call these assertions, then
+// call test_report(pass_count, fail_count) at the end.
+
+// ---------------------------------------------------------------------------
+// Assertion functions — return 1 on pass, 0 on fail
+// ---------------------------------------------------------------------------
+
+pub fn check(name: String, cond: Bool) -> Int {
+    if cond {
+        print("[PASS] " + name)
+        return 1
+    }
+    print("[FAIL] " + name)
+    return 0
+}
+
+pub fn check_eq(name: String, a: Int, b: Int) -> Int {
+    if a == b {
+        print("[PASS] " + name)
+        return 1
+    }
+    print("[FAIL] " + name + ": expected " + str(b) + " got " + str(a))
+    return 0
+}
+
+pub fn check_eq_str(name: String, a: String, b: String) -> Int {
+    if a == b {
+        print("[PASS] " + name)
+        return 1
+    }
+    print("[FAIL] " + name + ": expected '" + b + "' got '" + a + "'")
+    return 0
+}
+
+pub fn check_ne(name: String, a: Int, b: Int) -> Int {
+    if a != b {
+        print("[PASS] " + name)
+        return 1
+    }
+    print("[FAIL] " + name + ": expected different, both " + str(a))
+    return 0
+}
+
+// ---------------------------------------------------------------------------
+// Report — print summary, return exit code
+// ---------------------------------------------------------------------------
+
+pub fn test_report(pass: Int, fail: Int) -> Int {
+    let total: Int = pass + fail
+    print("")
+    print(str(pass) + " passed, " + str(fail) + " failed, " + str(total) + " total")
+    if fail > 0 { return 1 }
+    return 0
+}

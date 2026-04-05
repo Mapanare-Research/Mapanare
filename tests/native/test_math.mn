@@ -1,0 +1,44 @@
+// tests/native/test_math.mn — Math stdlib tests using native test runner
+
+usa stdlib::test::runner
+usa stdlib::math
+
+fn main() -> Int {
+    let mut pass: Int = 0
+    let mut fail: Int = 0
+    let mut r: Int = 0
+
+    // --- abs_int ---
+    r = check_eq("abs_int(5)", abs_int(5), 5)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq("abs_int(-5)", abs_int(0 - 5), 5)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq("abs_int(0)", abs_int(0), 0)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+
+    // --- min_int / max_int ---
+    r = check_eq("min_int(3,7)", min_int(3, 7), 3)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq("max_int(3,7)", max_int(3, 7), 7)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq("min_int(5,5)", min_int(5, 5), 5)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+
+    // --- clamp_int ---
+    r = check_eq("clamp_int(15,0,10)", clamp_int(15, 0, 10), 10)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq("clamp_int(-5,0,10)", clamp_int(0 - 5, 0, 10), 0)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq("clamp_int(5,0,10)", clamp_int(5, 0, 10), 5)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+
+    // --- sign_int ---
+    r = check_eq("sign_int(42)", sign_int(42), 1)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq("sign_int(-7)", sign_int(0 - 7), 0 - 1)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq("sign_int(0)", sign_int(0), 0)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+
+    return test_report(pass, fail)
+}
