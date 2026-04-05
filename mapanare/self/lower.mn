@@ -1352,6 +1352,7 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
                     if kind == "option" { call_ret = mir_option() }
                     if kind == "result" { call_ret = mir_result() }
                     if kind == "list" { call_ret = mir_list() }
+                    if kind == "map" { call_ret = mir_map() }
                 }
             },
             _ => {}
