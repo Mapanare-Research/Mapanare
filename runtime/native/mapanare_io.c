@@ -1018,6 +1018,7 @@ static int evp_load(void) {
 }
 
 static MnString evp_hash(MnString data, void *(*md_fn)(void), int digest_len) {
+    (void)digest_len;  /* used by non-EVP fallback path */
     if (evp_load() < 0) return __mn_str_empty();
 
     void *ctx = s_evp.EVP_MD_CTX_new();

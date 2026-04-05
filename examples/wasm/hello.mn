@@ -18,22 +18,21 @@ fn main() {
     print(greet("World"))
     print("")
 
-    // Fibonacci sequence
+    // Fibonacci sequence (unrolled — no range iteration in WASM yet)
     print("Fibonacci sequence:")
-    cada i en 0..15 {
-        print("  fib(" + str(i) + ") = " + str(fibonacci(i)))
-    }
+    print("  fib(0) = " + str(fibonacci(0)))
+    print("  fib(5) = " + str(fibonacci(5)))
+    print("  fib(10) = " + str(fibonacci(10)))
 
     // String operations
-    pon msg: String = "Mapanare runs everywhere"
+    let msg: String = "Mapanare runs everywhere"
     print("")
     print("Message: " + msg)
     print("Length: " + str(len(msg)))
-    print("Upper: " + msg.upper())
 
     // Arithmetic
-    pon x: Float = 3.14159
-    pon y: Float = 2.71828
+    let x: Float = 3.14159
+    let y: Float = 2.71828
     print("")
     print("pi = " + str(x))
     print("e  = " + str(y))
