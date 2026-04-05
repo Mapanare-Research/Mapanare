@@ -393,6 +393,7 @@ class MIRLowerer:
         # Generics monomorphization state
         self._generic_fn_defs: dict[str, FnDef] = {}  # name → AST of generic fn
         self._specialized_fns: set[str] = set()  # mangled names already lowered
+        self._generic_struct_defs: dict[str, StructDef] = {}  # name → AST of generic struct
 
     # -- Name generation ---------------------------------------------------
 
@@ -504,6 +505,48 @@ class MIRLowerer:
                     specialized.return_type
                 )
             self._lower_fn(specialized)
+
+        return mangled
+
+    def _monomorphize_struct(
+        self, struct_name: str, field_values: list[Value]
+    ) -> str | None:
+        """If struct_name is generic, specialize it and return the mangled name."""
+        struct_def = self._generic_struct_defs.get(struct_name)
+        if struct_def is None:
+            return None
+
+        # Infer type arguments from field value types
+        tp_set = set(struct_def.type_params)
+        subst: dict[str, MIRType] = {}
+        for sf, fv in zip(struct_def.fields, field_values):
+            if sf.type_annotation and isinstance(sf.type_annotation, NamedType):
+                if sf.type_annotation.name in tp_set:
+                    subst[sf.type_annotation.name] = fv.ty
+
+        if len(subst) != len(struct_def.type_params):
+            return None
+
+        concrete_types = [subst[tp] for tp in struct_def.type_params]
+        mangled = self._mangle_generic(struct_name, concrete_types)
+
+        # Register the specialized struct if not already done
+        if mangled not in self._module.structs:
+            specialized_fields: list[tuple[str, MIRType]] = []
+            for sf in struct_def.fields:
+                if (
+                    sf.type_annotation
+                    and isinstance(sf.type_annotation, NamedType)
+                    and sf.type_annotation.name in subst
+                ):
+                    specialized_fields.append((sf.name, subst[sf.type_annotation.name]))
+                else:
+                    specialized_fields.append(
+                        (sf.name, _resolve_type_expr(sf.type_annotation))
+                    )
+            self._module.structs[mangled] = specialized_fields
+            self._struct_fields[mangled] = [sf.name for sf in struct_def.fields]
+            self._fn_param_types[mangled] = [ft for _, ft in specialized_fields]
 
         return mangled
 
@@ -698,11 +741,16 @@ class MIRLowerer:
                 actual = actual.definition
 
             if isinstance(actual, StructDef):
-                fields = [(f.name, _resolve_type_expr(f.type_annotation)) for f in actual.fields]
-                self._module.structs[actual.name] = fields
-                self._struct_fields[actual.name] = [f.name for f in actual.fields]
-                # Register struct constructor param types for arg patching
-                self._fn_param_types[actual.name] = [ft for _, ft in fields]
+                if actual.type_params:
+                    self._generic_struct_defs[actual.name] = actual
+                else:
+                    fields = [
+                        (f.name, _resolve_type_expr(f.type_annotation)) for f in actual.fields
+                    ]
+                    self._module.structs[actual.name] = fields
+                    self._struct_fields[actual.name] = [f.name for f in actual.fields]
+                    # Register struct constructor param types for arg patching
+                    self._fn_param_types[actual.name] = [ft for _, ft in fields]
 
             elif isinstance(actual, EnumDef):
                 variants = []
@@ -2581,12 +2629,18 @@ class MIRLowerer:
     def _lower_construct(self, expr: ConstructExpr) -> Value:
         """Lower struct construction: `Point { x: 1.0, y: 2.0 }`."""
         fields = [(f.name, self._lower_expr(f.value)) for f in expr.fields]
-        struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name=expr.name))
+        field_vals = [v for _, v in fields]
+
+        # Monomorphize generic struct if needed
+        struct_name = expr.name
+        mangled = self._monomorphize_struct(struct_name, field_vals)
+        if mangled is not None:
+            struct_name = mangled
+
+        struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name=struct_name))
         dest = self._make_value(ty=struct_ty)
         self._emit(StructInit(dest=dest, struct_type=struct_ty, fields=fields))
-        # Patch Option/Result/List argument types from struct field definitions
-        field_vals = [v for _, v in fields]
-        self._patch_arg_types_from_params(expr.name, field_vals)
+        self._patch_arg_types_from_params(struct_name, field_vals)
         return dest
 
     def _lower_signal_expr(self, expr: SignalExpr) -> Value:
