@@ -2178,7 +2178,20 @@ class MIRLowerer:
             dest = self._make_value(ty=MIRType(TypeInfo(kind=ret_kind)))
         else:
             dest = self._make_value()
-        self._emit(Call(dest=dest, fn_name=expr.method, args=[obj] + args))
+
+        # Resolve impl method: if obj has a struct/enum type, check _impl_methods
+        call_name = expr.method
+        obj_type_name = obj.ty.type_info.name if obj.ty.type_info.name else ""
+        if obj_type_name:
+            mangled = self._impl_methods.get((obj_type_name, expr.method))
+            if mangled:
+                call_name = mangled
+                # Use registered return type for the mangled method
+                impl_ret = self._fn_return_types.get(mangled)
+                if impl_ret is not None:
+                    dest = self._make_value(ty=impl_ret)
+
+        self._emit(Call(dest=dest, fn_name=call_name, args=[obj] + args))
         return dest
 
     def _infer_payload_type(

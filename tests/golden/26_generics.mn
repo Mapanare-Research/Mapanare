@@ -18,8 +18,10 @@ fn main() {
     print(a)
     let b: Bool = identity(true)
     print(b)
-    let c: Int = first(10, 20)
+    let c: String = identity("world")
     print(c)
+    let d: Int = first(10, 20)
+    print(d)
 
     // Generic struct
     let p = new Pair { first: 100, second: true }

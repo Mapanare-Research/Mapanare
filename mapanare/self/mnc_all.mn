@@ -2043,6 +2043,13 @@ fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, 
 fn parse_param(tokens: List<Token>, pos: Int, filename: String) -> ParamResult {
     let name: String = peek_value(tokens, pos)
     let mut p: Int = pos + 1
+    // Handle bare "self" parameter (no type annotation)
+    if name == "self" {
+        if peek_type(tokens, p) != "COLON" {
+            let param: Param = new_param("self", none)
+            return new_param_result(param, p)
+        }
+    }
     p = expect(tokens, p, "COLON")
     let tr: TypeResult = parse_type_expr(tokens, p, filename)
     let param: Param = new_param(name, Some(tr.type_expr))
@@ -2356,6 +2363,83 @@ fn parse_tipo_enum(tokens: List<Token>, pos: Int, filename: String, name: String
 // Impl definition
 // ---------------------------------------------------------------------------
 
+// Parse a function definition and return just the FnDefData + new pos.
+// Used by parse_impl_def to avoid DefResult.defn enum field access
+// (Python emitter limitation: struct fields of enum type cause IR type mismatch).
+struct FnDataResult {
+    data: FnDefData,
+    pos: Int
+}
+
+fn parse_fn_def_as_data(tokens: List<Token>, pos: Int, filename: String) -> FnDataResult {
+    let mut p: Int = pos
+    let mut is_pub: Bool = false
+    if peek_type(tokens, p) == "KW_PUB" { is_pub = true; p = p + 1 }
+    p = expect(tokens, p, "KW_FN")
+    let name: String = peek_value(tokens, p)
+    p = p + 1
+    let mut type_params: List<String> = []
+    if peek_type(tokens, p) == "LT" {
+        p = p + 1
+        type_params.push(peek_value(tokens, p))
+        p = p + 1
+        for _ in 0..20 {
+            if peek_type(tokens, p) != "COMMA" {
+                p = expect(tokens, p, "GT")
+                return parse_fn_params_as_data(tokens, p, filename, name, is_pub, type_params)
+            }
+            p = p + 1
+            type_params.push(peek_value(tokens, p))
+            p = p + 1
+        }
+        p = expect(tokens, p, "GT")
+    }
+    return parse_fn_params_as_data(tokens, p, filename, name, is_pub, type_params)
+}
+
+fn parse_fn_params_as_data(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> FnDataResult {
+    let mut p: Int = pos
+    p = expect(tokens, p, "LPAREN")
+    let mut params: List<Param> = []
+    if peek_type(tokens, p) != "RPAREN" {
+        let pr: ParamResult = parse_param(tokens, p, filename)
+        params.push(pr.param)
+        p = pr.pos
+        for _ in 0..50 {
+            if peek_type(tokens, p) != "COMMA" {
+                p = expect(tokens, p, "RPAREN")
+                return parse_fn_body_as_data(tokens, p, filename, name, is_pub, type_params, params)
+            }
+            p = p + 1
+            if peek_type(tokens, p) == "RPAREN" {
+                p = p + 1
+                return parse_fn_body_as_data(tokens, p, filename, name, is_pub, type_params, params)
+            }
+            let pr2: ParamResult = parse_param(tokens, p, filename)
+            params.push(pr2.param)
+            p = pr2.pos
+        }
+    }
+    p = expect(tokens, p, "RPAREN")
+    return parse_fn_body_as_data(tokens, p, filename, name, is_pub, type_params, params)
+}
+
+fn parse_fn_body_as_data(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, params: List<Param>) -> FnDataResult {
+    let mut p: Int = pos
+    let mut ret_type: Option<TypeExpr> = none
+    if peek_type(tokens, p) == "ARROW" {
+        p = p + 1
+        let tr: TypeResult = parse_type_expr(tokens, p, filename)
+        ret_type = Some(tr.type_expr)
+        p = tr.pos
+    }
+    let br: BlockResult = parse_block(tokens, p, filename)
+    p = br.pos
+    let decorators: List<Decorator> = []
+    let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, br.block, decorators)
+    return new FnDataResult { data: fd, pos: p }
+}
+
 fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
     let mut p: Int = pos + 1
     let name: String = peek_value(tokens, p)
@@ -2369,7 +2453,8 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
             p = p + 1
             return new_def_result(Definition::ImplDef(name, methods), p)
         }
-        let r: DefResult = parse_fn_def(tokens, p, filename)
+        let r: FnDataResult = parse_fn_def_as_data(tokens, p, filename)
+        methods.push(r.data)
         p = r.pos
     }
 
@@ -6899,10 +6984,36 @@ fn lower_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lower
     for _ in 0..500 {
         if i >= len(methods) { return s }
         let method: FnDefData = methods[i]
-        s = lower_fn(s, method, target + "_")
+        // Fix self parameter type: inject target struct type for untyped "self"
+        let fixed: FnDefData = fix_self_param_type(method, target)
+        s = lower_fn(s, fixed, target + "_")
         i = i + 1
     }
     return s
+}
+
+fn fix_self_param_type(method: FnDefData, target: String) -> FnDefData {
+    if len(method.params) == 0 { return method }
+    let first: Param = method.params[0]
+    if first.name != "self" { return method }
+    // Check if self already has a type annotation
+    match first.type_annotation {
+        Some(_) => { return method },
+        _ => {}
+    }
+    // Inject target struct type for self
+    let self_type: TypeExpr = TypeExpr::Named(target)
+    let fixed_self: Param = new Param { span: first.span, name: "self", type_annotation: Some(self_type) }
+    let mut new_params: List<Param> = []
+    new_params.push(fixed_self)
+    let mut pi: Int = 1
+    for _ in 0..50 {
+        if pi < len(method.params) {
+            new_params.push(method.params[pi])
+            pi = pi + 1
+        }
+    }
+    return new_fn_def_data(method.span, method.name, method.public, method.type_params, new_params, method.return_type, method.body, method.decorators)
 }
 
 // ---------------------------------------------------------------------------
@@ -8281,9 +8392,32 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
         ret_ty = map_method_return_type(method)
     }
 
+    // Resolve impl method: if obj has struct/enum type, check impl_methods
+    let mut call_name: String = method
+    let obj_type_name: String = obj_r.value.ty.name
+    if obj_type_name != "" {
+        let impl_key: String = obj_type_name + "." + method
+        let impl_opt: Option<String> = lookup_impl_method(s, impl_key)
+        match impl_opt {
+            Some(mangled) => { call_name = mangled },
+            _ => {}
+        }
+    }
+
     let dest_r: LowerResult = make_value(s, ret_ty, "t")
-    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, call_name, all_args))
     return new_lower_result(dest_r.value, new_s)
+}
+
+fn lookup_impl_method(st: LowerState, key: String) -> Option<String> {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.impl_methods) {
+            if st.impl_methods[i].key == key { return Some(st.impl_methods[i].mir_name) }
+            i = i + 1
+        }
+    }
+    return none
 }
 
 fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: List<Expr>) -> LowerResult {
