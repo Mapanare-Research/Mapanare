@@ -5876,6 +5876,7 @@ struct LowerState {
     enum_variants: List<EnumVariantNames>,
     lambda_vars: List<LambdaEntry>,
     fn_blocks: List<BasicBlock>,
+    generic_fns: List<FnDefData>,
 }
 
 fn new_lower_state(module_name: String) -> LowerState {
@@ -5887,7 +5888,8 @@ fn new_lower_state(module_name: String) -> LowerState {
     let enum_variants: List<EnumVariantNames> = []
     let lambda_vars: List<LambdaEntry> = []
     let fn_blocks: List<BasicBlock> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks }
+    let generic_fns: List<FnDefData> = []
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns }
 }
 
 // Lower result: value + updated state
@@ -6513,10 +6515,18 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         }
     }
     if dk == "fn_def" {
+        let fd: FnDefData = def_fn_data(defn)
+        // Store generic functions for on-demand monomorphization
+        if len(fd.type_params) > 0 {
+            let mut new_st_gen: LowerState = st
+            let mut gfns: List<FnDefData> = new_st_gen.generic_fns
+            gfns.push(fd)
+            new_st_gen.generic_fns = gfns
+            return new_st_gen
+        }
         // Register function return type via lambda_vars (top-level list,
         // properly COW-cloned). Using "__ret__fn_name" as the key.
         // This avoids the nested MIRModule.functions COW corruption issue.
-        let fd: FnDefData = def_fn_data(defn)
         let ret_ty: MIRType = resolve_return_type_checked(st, fd.return_type)
         let ret_key: String = "__ret__" + fd.name
         let ret_val: String = ret_ty.kind + ":" + ret_ty.name
@@ -6688,7 +6698,9 @@ fn lower_definitions(st: LowerState, program: Program) -> LowerState {
 fn lower_definition(st: LowerState, defn: Definition) -> LowerState {
     let dk: String = def_kind(defn)
     if dk == "fn_def" {
-        return lower_fn(st, def_fn_data(defn), "")
+        let fd: FnDefData = def_fn_data(defn)
+        if len(fd.type_params) > 0 { return st }
+        return lower_fn(st, fd, "")
     }
     if dk == "agent_def" {
         return lower_agent(st, def_agent_data(defn))
@@ -7574,7 +7586,192 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
     return new_lower_result(dr_dyn.value, ns_dyn)
 }
 
+// ---------------------------------------------------------------------------
+// Generics monomorphization
+// ---------------------------------------------------------------------------
+
+fn find_generic_fn(st: LowerState, name: String) -> Option<FnDefData> {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_fns) {
+            if st.generic_fns[i].name == name { return Some(st.generic_fns[i]) }
+            i = i + 1
+        }
+    }
+    return none
+}
+
+fn mangle_generic_name(base: String, arg_types: List<MIRType>) -> String {
+    let mut result: String = base + "__"
+    let mut i: Int = 0
+    for _ in 0..20 {
+        if i < len(arg_types) {
+            if i > 0 { result = result + "_" }
+            let tk: String = arg_types[i].kind
+            if tk == "int" { result = result + "Int" }
+            if tk == "float" { result = result + "Float" }
+            if tk == "bool" { result = result + "Bool" }
+            if tk == "string" { result = result + "String" }
+            if tk == "struct" { result = result + arg_types[i].name }
+            if tk == "enum" { result = result + arg_types[i].name }
+            if tk == "list" { result = result + "List" }
+            if tk == "map" { result = result + "Map" }
+            if tk == "option" { result = result + "Option" }
+            if tk == "result" { result = result + "Result" }
+            if tk == "void" { result = result + "Void" }
+            if tk == "unknown" { result = result + "Unknown" }
+            i = i + 1
+        }
+    }
+    return result
+}
+
+fn infer_type_args_from_call(gfn: FnDefData, arg_types: List<MIRType>) -> List<MIRType> {
+    // Build substitution: match type_params[i] against param annotations
+    let mut result: List<MIRType> = []
+    let ntp: Int = len(gfn.type_params)
+    let mut ti: Int = 0
+    for _ in 0..20 {
+        if ti < ntp {
+            let tp_name: String = gfn.type_params[ti]
+            // Find the first parameter whose type annotation matches this type param
+            let mut found: Bool = false
+            let mut pi: Int = 0
+            for _ in 0..50 {
+                if pi < len(gfn.params) && !found {
+                    let p: Param = gfn.params[pi]
+                    match p.type_annotation {
+                        Some(ann) => {
+                            if type_expr_name(ann) == tp_name {
+                                if pi < len(arg_types) {
+                                    result.push(arg_types[pi])
+                                    found = true
+                                }
+                            }
+                        },
+                        _ => {}
+                    }
+                    pi = pi + 1
+                }
+            }
+            if !found { result.push(mir_unknown()) }
+            ti = ti + 1
+        }
+    }
+    return result
+}
+
+fn substitute_type_annotation(ann: Option<TypeExpr>, type_params: List<String>, concrete: List<MIRType>) -> Option<TypeExpr> {
+    match ann {
+        Some(te) => {
+            let te_name: String = type_expr_name(te)
+            let mut i: Int = 0
+            for _ in 0..20 {
+                if i < len(type_params) {
+                    if type_params[i] == te_name {
+                        if i < len(concrete) {
+                            // Replace with concrete type name
+                            let mut cname: String = concrete[i].name
+                            if cname == "" { cname = "Int" }
+                            return Some(TypeExpr::Named(cname))
+                        }
+                    }
+                    i = i + 1
+                }
+            }
+            return ann
+        },
+        _ => { return none }
+    }
+}
+
+fn specialize_fn(gfn: FnDefData, mangled: String, type_params: List<String>, concrete: List<MIRType>) -> FnDefData {
+    // Build new params with substituted type annotations
+    let mut new_params: List<Param> = []
+    let mut pi: Int = 0
+    for _ in 0..50 {
+        if pi < len(gfn.params) {
+            let p: Param = gfn.params[pi]
+            let new_ann: Option<TypeExpr> = substitute_type_annotation(p.type_annotation, type_params, concrete)
+            let np: Param = new Param { span: p.span, name: p.name, type_annotation: new_ann }
+            new_params.push(np)
+            pi = pi + 1
+        }
+    }
+    // Substitute return type
+    let new_ret: Option<TypeExpr> = substitute_type_annotation(gfn.return_type, type_params, concrete)
+    let empty_tp: List<String> = []
+    return new_fn_def_data(gfn.span, mangled, gfn.public, empty_tp, new_params, new_ret, gfn.body, gfn.decorators)
+}
+
+fn is_already_specialized(st: LowerState, mangled: String) -> Bool {
+    // Check if __ret__mangled exists in lambda_vars
+    let key: String = "__ret__" + mangled
+    match find_lambda(st, key) {
+        Some(_) => { return true },
+        _ => { return false }
+    }
+}
+
+fn try_monomorphize_call(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
+    let gfn_opt: Option<FnDefData> = find_generic_fn(st, fn_name)
+    match gfn_opt {
+        Some(gfn) => {
+            // Infer concrete types from argument types
+            let mut arg_types: List<MIRType> = []
+            let mut ai: Int = 0
+            for _ in 0..50 {
+                if ai < len(args) {
+                    arg_types.push(args[ai].ty)
+                    ai = ai + 1
+                }
+            }
+            let concrete: List<MIRType> = infer_type_args_from_call(gfn, arg_types)
+            let mangled: String = mangle_generic_name(fn_name, concrete)
+
+            let mut s: LowerState = st
+            if !is_already_specialized(s, mangled) {
+                // Specialize and lower the function
+                let specialized: FnDefData = specialize_fn(gfn, mangled, gfn.type_params, concrete)
+                s = lower_fn(s, specialized, "")
+            }
+
+            // Look up return type and emit call
+            let mut ret_ty: MIRType = mir_unknown()
+            let ret_key: String = "__ret__" + mangled
+            match find_lambda(s, ret_key) {
+                Some(ret_encoded) => {
+                    let colon: Int = ret_encoded.find(":")
+                    if colon >= 0 {
+                        let kind: String = ret_encoded.substr(0, colon)
+                        let name: String = ret_encoded.substr(colon + 1, len(ret_encoded))
+                        if kind == "int" { ret_ty = mir_int() }
+                        if kind == "float" { ret_ty = mir_float() }
+                        if kind == "string" { ret_ty = mir_string() }
+                        if kind == "bool" { ret_ty = mir_bool() }
+                        if kind == "struct" { ret_ty = mir_struct(name) }
+                        if kind == "enum" { ret_ty = mir_enum(name) }
+                    }
+                },
+                _ => {}
+            }
+
+            let dr: LowerResult = make_value(s, ret_ty, "t")
+            let s2: LowerState = emit_instr(dr.state, Instruction::Call(dr.value, mangled, args))
+            return new_lower_result(dr.value, s2)
+        },
+        _ => {
+            // Not a generic function — return sentinel
+            return new_lower_result(void_value(), st)
+        }
+    }
+}
+
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
+    // Monomorphize generic function calls
+    let mono_r: LowerResult = try_monomorphize_call(st, fn_name, args)
+    if mono_r.value.name != "%void" { return mono_r }
+
     // Builtin void functions
     if fn_name == "print" {
         let dr_print: LowerResult = make_value(st, mir_void(), "t")

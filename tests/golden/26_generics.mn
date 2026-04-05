@@ -1,0 +1,18 @@
+// tests/golden/26_generics.mn — Generic function monomorphization
+
+fn identity<T>(x: T) -> T {
+    return x
+}
+
+fn first<A, B>(a: A, b: B) -> A {
+    return a
+}
+
+fn main() {
+    let a: Int = identity(42)
+    print(a)
+    let b: Bool = identity(true)
+    print(b)
+    let c: Int = first(10, 20)
+    print(c)
+}

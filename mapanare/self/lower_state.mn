@@ -21,6 +21,7 @@ struct LowerState {
     enum_variants: List<EnumVariantNames>,
     lambda_vars: List<LambdaEntry>,
     fn_blocks: List<BasicBlock>,
+    generic_fns: List<FnDefData>,
 }
 
 fn new_lower_state(module_name: String) -> LowerState {
@@ -32,7 +33,8 @@ fn new_lower_state(module_name: String) -> LowerState {
     let enum_variants: List<EnumVariantNames> = []
     let lambda_vars: List<LambdaEntry> = []
     let fn_blocks: List<BasicBlock> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks }
+    let generic_fns: List<FnDefData> = []
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns }
 }
 
 // Lower result: value + updated state
