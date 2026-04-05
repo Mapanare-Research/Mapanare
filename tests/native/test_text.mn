@@ -70,6 +70,18 @@ fn main() -> Int {
     r = check_eq_str("capitalize('hello')", capitalize("hello"), "Hello")
     if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
 
+    // --- substr (start, count) semantics ---
+    r = check_eq_str("substr(0,3)", "hello".substr(0, 3), "hel")
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq_str("substr(2,3)", "hello".substr(2, 3), "llo")
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq_str("substr(0,0)", "hello".substr(0, 0), "")
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq_str("substr(4,1)", "hello".substr(4, 1), "o")
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    r = check_eq_str("substr(0,100)", "hello".substr(0, 100), "hello")
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+
     // --- is_alpha / is_whitespace ---
     r = check("is_alpha('a')", is_alpha("a"))
     if r == 1 { pass = pass + 1 } else { fail = fail + 1 }

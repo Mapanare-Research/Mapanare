@@ -1336,7 +1336,7 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
                 let colon: Int = ret_encoded.find(":")
                 if colon >= 0 {
                     let kind: String = ret_encoded.substr(0, colon)
-                    // substr(start, END) not substr(start, LENGTH)
+                    // substr(start, count) — count is clamped to s.len
                     let name: String = ret_encoded.substr(colon + 1, len(ret_encoded))
                     if kind == "struct" { call_ret = mir_struct(name) }
                     if kind == "enum" { call_ret = mir_enum(name) }
