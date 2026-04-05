@@ -105,6 +105,59 @@ fn resolve_import_file(segments: List<String>, source_dir: String) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Definition dedup — remove earlier duplicates from circular imports.
+// When module A imports B and B imports A, stubs from A appear before
+// real definitions from B. Keep the LAST occurrence of each function name.
+// ---------------------------------------------------------------------------
+
+fn definition_name(defn: Definition) -> String {
+    let dk: String = def_kind(defn)
+    if dk == "fn_def" { return "__fn__" + def_fn_data(defn).name }
+    if dk == "struct_def" { return "__st__" + def_struct_data(defn).name }
+    if dk == "enum_def" { return "__en__" + def_enum_data(defn).name }
+    if dk == "extern_fn_def" { return "__ex__" + def_extern_name(defn) }
+    return ""
+}
+
+fn has_later_def(defs: List<Definition>, idx: Int, name: String, total: Int) -> Bool {
+    // Check if any definition after idx has the same name
+    let mut found: Bool = false
+    let mut j: Int = idx + 1
+    for _ in 0..10000 {
+        if j < total {
+            if definition_name(defs[j]) == name {
+                found = true
+            }
+            j = j + 1
+        }
+    }
+    return found
+}
+
+fn dedup_definitions(defs: List<Definition>) -> List<Definition> {
+    let mut result: List<Definition> = []
+    let n: Int = len(defs)
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i < n {
+            let defn: Definition = defs[i]
+            let name: String = definition_name(defn)
+            // Keep definitions with no extractable name
+            if len(name) == 0 {
+                result.push(defn)
+            } else {
+                // Only keep if no later definition has the same name
+                if has_later_def(defs, i, name, n) == false {
+                    result.push(defn)
+                }
+            }
+            i = i + 1
+        }
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
 // Import resolution — read imported files, parse, merge definitions
 // ---------------------------------------------------------------------------
 
@@ -125,14 +178,19 @@ fn resolve_imports(program: Program, filename: String, visited: List<String>) ->
             // Append the original non-import definitions
             let mut j: Int = 0
             for _ in 0..10000 {
-                if j >= ndefs { return start(all_defs) }
+                if j >= ndefs {
+                    // Dedup: remove earlier stubs when real implementations exist
+                    let deduped: List<Definition> = dedup_definitions(all_defs)
+                    return start(deduped)
+                }
                 let defn_j: Definition = program.definitions[j]
                 if def_kind(defn_j) != "import_def" {
                     all_defs.push(defn_j)
                 }
                 j = j + 1
             }
-            return start(all_defs)
+            let deduped2: List<Definition> = dedup_definitions(all_defs)
+            return start(deduped2)
         }
         let defn: Definition = program.definitions[i]
         if def_kind(defn) == "import_def" {
