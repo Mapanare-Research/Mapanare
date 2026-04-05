@@ -241,7 +241,7 @@ pub fn normalize(v: List<Float>) -> List<Float> {
     pon mut result: List<Float> = []
     pon mut i: Int = 0
     mien i < n {
-        result = result + [v[i] / mag]
+        result.push(v[i] / mag)
         i = i + 1
     }
     da result
@@ -255,7 +255,7 @@ pub fn vector_add(a: List<Float>, b: List<Float>) -> List<Float> {
     pon mut result: List<Float> = []
     pon mut i: Int = 0
     mien i < size {
-        result = result + [a[i] + b[i]]
+        result.push(a[i] + b[i])
         i = i + 1
     }
     da result
@@ -266,7 +266,7 @@ pub fn vector_scale(v: List<Float>, scalar: Float) -> List<Float> {
     pon mut result: List<Float> = []
     pon mut i: Int = 0
     mien i < n {
-        result = result + [v[i] * scalar]
+        result.push(v[i] * scalar)
         i = i + 1
     }
     da result
@@ -279,7 +279,7 @@ pub fn vector_mean(vectors: List<List<Float>>) -> List<Float> {
     pon mut sums: List<Float> = []
     pon mut d: Int = 0
     mien d < dims {
-        sums = sums + [0.0]
+        sums.push(0.0)
         d = d + 1
     }
     pon mut i: Int = 0
@@ -296,7 +296,7 @@ pub fn vector_mean(vectors: List<List<Float>>) -> List<Float> {
     pon mut result: List<Float> = []
     pon mut k: Int = 0
     mien k < dims {
-        result = result + [sums[k] / float(count)]
+        result.push(sums[k] / float(count))
         k = k + 1
     }
     da result
@@ -483,7 +483,7 @@ fn parse_float_array(text: String) -> List<Float> {
 
         si len(num_str) > 0 {
             pon val: Float = float(num_str)
-            result = result + [val]
+            result.push(val)
         }
     }
     da result
@@ -690,7 +690,7 @@ fn parse_openai_embed_response(body: String) -> Result<List<List<Float>>, Embedd
 
         pon emb_raw: String = jget(obj_str, "embedding")
         pon vec: List<Float> = parse_float_array(emb_raw)
-        vectors = vectors + [vec]
+        vectors.push(vec)
 
         pos = value_end
     }
@@ -723,7 +723,7 @@ fn parse_ollama_embed_response(body: String) -> Result<List<List<Float>>, Embedd
                 pon mut vi: Int = value_start
                 mien vi < value_end { arr_str = arr_str + emb_raw.char_at(vi); vi = vi + 1 }
                 pon vec: List<Float> = parse_float_array(arr_str)
-                vectors = vectors + [vec]
+                vectors.push(vec)
                 pos = value_end
             } sino {
                 pos = pos + 1
@@ -840,12 +840,16 @@ pub fn new_store() -> VectorStore {
 
 pub fn store_add(store: VectorStore, id: String, text: String, vector: List<Float>) -> VectorStore {
     pon entry: VectorEntry = new VectorEntry {id: id, text: text, vector: vector, metadata: #{}}
-    da new VectorStore {entries: store.entries + [entry], count: store.count + 1}
+    pon mut new_entries: List<VectorEntry> = store.entries
+    new_entries.push(entry)
+    da new VectorStore {entries: new_entries, count: store.count + 1}
 }
 
 pub fn store_add_with_meta(store: VectorStore, id: String, text: String, vector: List<Float>, metadata: Map<String, String>) -> VectorStore {
     pon entry: VectorEntry = new VectorEntry {id: id, text: text, vector: vector, metadata: metadata}
-    da new VectorStore {entries: store.entries + [entry], count: store.count + 1}
+    pon mut new_entries: List<VectorEntry> = store.entries
+    new_entries.push(entry)
+    da new VectorStore {entries: new_entries, count: store.count + 1}
 }
 
 pub fn store_search(store: VectorStore, query: List<Float>, top_k: Int) -> List<SearchResult> {
@@ -856,7 +860,7 @@ pub fn store_search(store: VectorStore, query: List<Float>, top_k: Int) -> List<
     mien i < count {
         pon score: Float = cosine_similarity(query, store.entries[i].vector)
         pon sr: SearchResult = new SearchResult {id: store.entries[i].id, text: store.entries[i].text, score: score, metadata: store.entries[i].metadata}
-        scored = scored + [sr]
+        scored.push(sr)
         i = i + 1
     }
 
@@ -865,7 +869,7 @@ pub fn store_search(store: VectorStore, query: List<Float>, top_k: Int) -> List<
     pon mut results: List<SearchResult> = []
     pon mut selected: List<Bool> = []
     pon mut si_idx: Int = 0
-    mien si_idx < scored_count { selected = selected + [false]; si = si_idx + 1 }
+    mien si_idx < scored_count { selected.push(false); si_idx = si_idx + 1 }
 
     pon mut k: Int = 0
     mien k < top_k {
@@ -884,7 +888,7 @@ pub fn store_search(store: VectorStore, query: List<Float>, top_k: Int) -> List<
         }
         si best_idx >= 0 {
             selected[best_idx] = true
-            results = results + [scored[best_idx]]
+            results.push(scored[best_idx])
         }
         k = k + 1
     }
@@ -900,7 +904,7 @@ pub fn store_search_threshold(store: VectorStore, query: List<Float>, min_score:
         pon score: Float = cosine_similarity(query, store.entries[i].vector)
         si score >= min_score {
             pon sr: SearchResult = new SearchResult {id: store.entries[i].id, text: store.entries[i].text, score: score, metadata: store.entries[i].metadata}
-            results = results + [sr]
+            results.push(sr)
         }
         i = i + 1
     }
@@ -913,7 +917,7 @@ pub fn store_remove(store: VectorStore, id: String) -> VectorStore {
     pon mut i: Int = 0
     mien i < count {
         si store.entries[i].id != id {
-            new_entries = new_entries + [store.entries[i]]
+            new_entries.push(store.entries[i])
         }
         i = i + 1
     }

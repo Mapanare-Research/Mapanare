@@ -1454,8 +1454,24 @@ class LLVMEmitter:
                 args = [self._emit_expr(a) for a in node.args]
                 return self._call_closure(closure, args)
             if name not in self._functions:
-                raise NameError(f"Undefined function: {name}")
-            func = self._functions[name]
+                # Auto-declare __mn_* runtime functions with best-guess signatures
+                if name.startswith("__mn_"):
+                    if "str" in name and name != "__mn_str_eprint":
+                        func = self._declare_runtime_fn(name, LLVM_STRING, [LLVM_STRING])
+                    elif name in ("__mn_argc",):
+                        func = self._declare_runtime_fn(name, LLVM_INT, [])
+                    elif name in ("__mn_argv",):
+                        func = self._declare_runtime_fn(name, LLVM_STRING, [LLVM_INT])
+                    elif name in ("__mn_exit",):
+                        func = self._declare_runtime_fn(name, LLVM_VOID, [LLVM_INT])
+                    elif name in ("__mn_str_eprint", "__mn_str_eprintln"):
+                        func = self._declare_runtime_fn(name, LLVM_VOID, [LLVM_STRING])
+                    else:
+                        func = self._declare_runtime_fn(name, LLVM_INT, [LLVM_STRING])
+                else:
+                    raise NameError(f"Undefined function: {name}")
+            else:
+                func = self._functions[name]
         else:
             func = self._emit_expr(node.callee)
             # If the result is a closure struct, call it as a closure
