@@ -3,7 +3,7 @@
 > Fix the compiler bugs, compile all stdlib, build a native test runner.
 > No more workarounds.
 
-**Status:** PLANNED
+**Status:** COMPLETE
 **Author:** Juan Denis
 **Date:** April 2026
 **Breaking:** No
