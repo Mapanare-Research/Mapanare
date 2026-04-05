@@ -1421,12 +1421,50 @@ fn str_method_return_type(method: String) -> MIRType {
     if method == "trim_start" { return mir_string() }
     if method == "trim_end" { return mir_string() }
     if method == "concat" { return mir_string() }
+    if method == "join" { return mir_string() }
+    if method == "strip" { return mir_string() }
+    if method == "upper" { return mir_string() }
+    if method == "lower" { return mir_string() }
+    if method == "slice" { return mir_string() }
+    if method == "reverse" { return mir_string() }
+    if method == "repeat" { return mir_string() }
+    if method == "center" { return mir_string() }
+    if method == "pad_start" { return mir_string() }
+    if method == "pad_end" { return mir_string() }
     if method == "byte_at" { return mir_int() }
     if method == "find" { return mir_int() }
+    if method == "index" { return mir_int() }
+    if method == "len" { return mir_int() }
+    if method == "count" { return mir_int() }
     if method == "starts_with" { return mir_bool() }
     if method == "ends_with" { return mir_bool() }
     if method == "contains" { return mir_bool() }
+    if method == "is_empty" { return mir_bool() }
     if method == "split" { return mir_list() }
+    return mir_unknown()
+}
+
+fn list_method_return_type(method: String) -> MIRType {
+    if method == "len" { return mir_int() }
+    if method == "push" { return mir_void() }
+    if method == "is_empty" { return mir_bool() }
+    if method == "contains" { return mir_bool() }
+    if method == "pop" { return mir_unknown() }
+    if method == "reverse" { return mir_list() }
+    if method == "sort" { return mir_list() }
+    if method == "concat" { return mir_list() }
+    return mir_unknown()
+}
+
+fn map_method_return_type(method: String) -> MIRType {
+    if method == "len" { return mir_int() }
+    if method == "contains_key" { return mir_bool() }
+    if method == "is_empty" { return mir_bool() }
+    if method == "keys" { return mir_list() }
+    if method == "values" { return mir_list() }
+    if method == "get" { return mir_unknown() }
+    if method == "set" { return mir_void() }
+    if method == "remove" { return mir_void() }
     return mir_unknown()
 }
 
@@ -1457,6 +1495,12 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     let mut ret_ty: MIRType = mir_unknown()
     if obj_r.value.ty.kind == "string" {
         ret_ty = str_method_return_type(method)
+    }
+    if obj_r.value.ty.kind == "list" {
+        ret_ty = list_method_return_type(method)
+    }
+    if obj_r.value.ty.kind == "map" {
+        ret_ty = map_method_return_type(method)
     }
 
     let dest_r: LowerResult = make_value(s, ret_ty, "t")
