@@ -205,11 +205,11 @@ pub fn cleanup_expired(store: SessionStore, now: Int) -> SessionStore {
 // ---------------------------------------------------------------------------
 
 pub fn session_cookie(store: SessionStore, session_id: String) -> String {
-    pon c: Cookie = cookie.new_cookie(store.cookie_name, session_id)
-    pon c2: Cookie = cookie.cookie_with_max_age(c, store.max_age)
-    pon c3: Cookie = cookie.cookie_with_http_only(c2, true)
-    pon c4: Cookie = cookie.cookie_with_same_site(c3, "Lax")
-    da cookie.set_cookie_header(c4)
+    pon c: Cookie = new_cookie(store.cookie_name, session_id)
+    pon c2: Cookie = cookie_with_max_age(c, store.max_age)
+    pon c3: Cookie = cookie_with_http_only(c2, true)
+    pon c4: Cookie = cookie_with_same_site(c3, "Lax")
+    da set_cookie_header(c4)
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +217,6 @@ pub fn session_cookie(store: SessionStore, session_id: String) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn session_id_from_cookies(store: SessionStore, cookie_header: String) -> Option<String> {
-    pon cookies: List<Cookie> = cookie.parse_cookies(cookie_header)
-    da cookie.find_cookie(cookies, store.cookie_name)
+    pon cookies: List<Cookie> = parse_cookies(cookie_header)
+    da find_cookie(cookies, store.cookie_name)
 }

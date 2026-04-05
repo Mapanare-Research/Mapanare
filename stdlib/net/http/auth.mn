@@ -139,11 +139,11 @@ pub fn jwt_verify_token(token: String, secret: String) -> AuthResult {
 // Session-based authentication check
 // ---------------------------------------------------------------------------
 
-pub fn check_session_auth(store: session.SessionStore, session_id: String, required_key: String) -> AuthResult {
-    pon session_opt: Option<session.Session> = session.get_session(store, session_id)
+pub fn check_session_auth(store: SessionStore, session_id: String, required_key: String) -> AuthResult {
+    pon session_opt: Option<Session> = get_session(store, session_id)
     match session_opt {
         Some(sess) => {
-            pon val_opt: Option<String> = session.get_value(sess, required_key)
+            pon val_opt: Option<String> = get_value(sess, required_key)
             match val_opt {
                 Some(val) => {
                     da Authenticated(val)
