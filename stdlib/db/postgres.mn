@@ -7,6 +7,7 @@
 // Uses the C runtime wrappers in mapanare_db.h which dlopen() libpq.
 
 usa db::sql
+usa text::string_utils
 
 // ---------------------------------------------------------------------------
 // Extern C runtime functions (libpq wrappers from mapanare_db)
@@ -222,7 +223,7 @@ fn inline_params(sql_str: String, params: List<SqlValue>) -> String {
 // Internal: Parse a value string into a SqlValue (heuristic)
 // ---------------------------------------------------------------------------
 
-fn is_digit(ch: String) -> Bool {
+fn is_pg_digit(ch: String) -> Bool {
     si ch == "0" { da true }
     si ch == "1" { da true }
     si ch == "2" { da true }
@@ -246,7 +247,7 @@ fn looks_like_integer(s: String) -> Bool {
     }
     pon mut i: Int = start
     mien i < slen {
-        si is_digit(s.char_at(i)) == false {
+        si is_pg_digit(s.char_at(i)) == false {
             da false
         }
         i = i + 1
@@ -270,43 +271,13 @@ fn looks_like_float(s: String) -> Bool {
             si has_dot { da false }
             has_dot = true
         } sino {
-            si is_digit(ch) == false {
+            si is_pg_digit(ch) == false {
                 da false
             }
         }
         i = i + 1
     }
     da has_dot
-}
-
-fn parse_int_manual(s: String) -> Int {
-    pon slen: Int = len(s)
-    pon mut result: Int = 0
-    pon mut neg: Bool = false
-    pon mut i: Int = 0
-    si slen > 0 {
-        si s.char_at(0) == "-" {
-            neg = true
-            i = 1
-        }
-    }
-    mien i < slen {
-        pon ch: String = s.char_at(i)
-        pon mut d: Int = 0
-        si ch == "1" { d = 1 }
-        si ch == "2" { d = 2 }
-        si ch == "3" { d = 3 }
-        si ch == "4" { d = 4 }
-        si ch == "5" { d = 5 }
-        si ch == "6" { d = 6 }
-        si ch == "7" { d = 7 }
-        si ch == "8" { d = 8 }
-        si ch == "9" { d = 9 }
-        result = result * 10 + d
-        i = i + 1
-    }
-    si neg { da 0 - result }
-    da result
 }
 
 fn parse_pg_value(s: String) -> SqlValue {

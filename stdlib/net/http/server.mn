@@ -217,11 +217,6 @@ fn apply_middleware_after(router: Router, ctx: Context) -> Context {
 // Tasks 5-7: Route matching and path parameter extraction
 // ---------------------------------------------------------------------------
 
-// Manual integer parsing — delegated to text::string_utils
-fn parse_int_manual(s: String) -> Int {
-    da string_utils.parse_int_manual(s)
-}
-
 // Task 5: Path pattern parsing — extract path segments
 // Pattern: /api/users/${id} → segments ["api", "users", "${id}"]
 // Request: /api/users/42 → params {"id": "42"}
@@ -356,22 +351,7 @@ fn path_after_prefix(s: String, prefix: String) -> String {
 // HTTP request parsing (Task 10 — reuse Phase 3 patterns)
 // ---------------------------------------------------------------------------
 
-// ASCII case conversion — delegated to text::string_utils
-fn to_lower_char(ch: String, b: Int) -> String {
-    da string_utils.to_lower_char(ch, b)
-}
-
-fn to_lower(s: String) -> String {
-    da string_utils.to_lower(s)
-}
-
-fn to_upper_char(ch: String, b: Int) -> String {
-    da string_utils.to_upper_char(ch, b)
-}
-
-fn to_upper(s: String) -> String {
-    da string_utils.to_upper(s)
-}
+// to_lower, to_upper, to_lower_char, to_upper_char provided by text::string_utils import
 
 // Parse an incoming HTTP request from raw bytes
 tipo ParsedRequest {

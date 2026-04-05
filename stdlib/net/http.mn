@@ -289,13 +289,7 @@ fn is_unreserved(ch: String) -> Bool {
     da false
 }
 
-fn hex_char(n: Int) -> String {
-    da string_utils.hex_char(n)
-}
-
-fn hex_digit_value(ch: String) -> Int {
-    da string_utils.hex_digit_value(ch)
-}
+// hex_char and hex_digit_value provided by text::string_utils import
 
 pub fn url_encode(s: String) -> String {
     pon slen: Int = len(s)
@@ -540,14 +534,7 @@ fn parse_response_headers(raw: String) -> HeaderParseResult {
     da new_hdr_ok(status_code, headers, pos)
 }
 
-// ASCII lowercase — delegated to text::string_utils
-fn to_lower_char(ch: String, b: Int) -> String {
-    da string_utils.to_lower_char(ch, b)
-}
-
-fn to_lower(s: String) -> String {
-    da string_utils.to_lower(s)
-}
+// to_lower_char, to_lower provided by text::string_utils import
 
 // Task 15: Content-Length body reading
 fn extract_body_content_length(raw: String, body_start: Int, content_length: Int) -> String {

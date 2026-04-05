@@ -53,7 +53,7 @@ pub fn parse_basic_auth(header: String) -> Option<List<String>> {
     si prefix != "Basic " { da nada }
 
     pon encoded: String = header.substr(6, slen)
-    pon decoded_result: Result<String, crypto.CryptoError> = crypto.base64_decode(encoded)
+    pon decoded_result: Result<String, CryptoError> = base64_decode(encoded)
     match decoded_result {
         Ok(decoded) => {
             // Find the colon separator
@@ -100,7 +100,7 @@ pub fn jwt_auth(auth_header: String, secret: String) -> AuthResult {
     match token_opt {
         Some(token) => {
             // Verify and decode JWT
-            pon result: Result<String, crypto.CryptoError> = crypto.jwt_decode(token, secret)
+            pon result: Result<String, CryptoError> = jwt_decode(token, secret)
             match result {
                 Ok(claims) => {
                     da Authenticated(claims)
@@ -123,7 +123,7 @@ pub fn jwt_auth(auth_header: String, secret: String) -> AuthResult {
 // ---------------------------------------------------------------------------
 
 pub fn jwt_verify_token(token: String, secret: String) -> AuthResult {
-    pon result: Result<String, crypto.CryptoError> = crypto.jwt_decode(token, secret)
+    pon result: Result<String, CryptoError> = jwt_decode(token, secret)
     match result {
         Ok(claims) => {
             da Authenticated(claims)
