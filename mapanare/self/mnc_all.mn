@@ -12299,6 +12299,12 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
                 let mut s: EmitState = emit_line(st, "  store " + ty + " " + val.name + ", ptr %__sret__")
                 return emit_line(s, emit_ret_void())
             }
+            // main() returns i32 but Mapanare Int is i64 — truncate
+            if ty == "i32" {
+                let trunc_name: String = val.name + ".trunc"
+                let mut s: EmitState = emit_line(st, "  " + trunc_name + " = trunc i64 " + val.name + " to i32")
+                return emit_line(s, emit_ret("i32", trunc_name))
+            }
             return emit_line(st, emit_ret(ty, val.name))
         },
         _ => {
