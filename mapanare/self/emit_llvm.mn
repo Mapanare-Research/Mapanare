@@ -671,10 +671,22 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     }
 
     // Float constant: emit `%dest = fadd double 0.0, <val>`
-    // Ensure the value has a decimal point (toString(0.0) may produce "0")
+    // Ensure the value has a decimal point for valid LLVM IR.
+    // Handle scientific notation: "1e+09" → "1.0e+09" (not "1e+09.0")
     if ty.kind == "float" {
         let mut fval: String = val
-        if !fval.contains(".") { fval = fval + ".0" }
+        if fval.contains("e") {
+            // Scientific notation — ensure mantissa has a decimal point
+            if !fval.contains(".") {
+                let mut ei: Int = 0
+                for ci in 0..len(fval) {
+                    if fval.char_at(ci) == "e" { ei = ci }
+                }
+                fval = fval.substr(0, ei) + ".0" + fval.substr(ei, len(fval) - ei)
+            }
+        } else {
+            if !fval.contains(".") { fval = fval + ".0" }
+        }
         s = emit_line(s, "  " + dn + " = fadd double 0.0, " + fval)
         return s
     }

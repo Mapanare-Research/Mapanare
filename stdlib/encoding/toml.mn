@@ -93,19 +93,11 @@ fn new_parse_state(pos: Int, line: Int, col: Int) -> ParseState {
 // ---------------------------------------------------------------------------
 
 fn is_toml_digit(ch: String) -> Bool {
-    da string_utils.is_digit(ch)
-}
-
-fn is_hex(ch: String) -> Bool {
-    da string_utils.is_hex(ch)
-}
-
-fn digit_value(ch: String) -> Int {
-    da string_utils.digit_value(ch)
+    da is_digit(ch)
 }
 
 fn hex_value(ch: String) -> Int {
-    da string_utils.hex_digit_value_or_zero(ch)
+    da hex_digit_value_or_zero(ch)
 }
 
 fn is_octal_digit(ch: String) -> Bool {

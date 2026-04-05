@@ -90,19 +90,19 @@ fn err_result(msg: String, line: Int, col: Int) -> ParseResult {
 // ---------------------------------------------------------------------------
 
 fn is_yaml_digit(ch: String) -> Bool {
-    da string_utils.is_digit(ch)
+    da is_digit(ch)
 }
 
 fn digit_val(ch: String) -> Int {
-    da string_utils.digit_value(ch)
+    da digit_value(ch)
 }
 
 fn hex_val(ch: String) -> Int {
-    da string_utils.hex_digit_value_or_zero(ch)
+    da hex_digit_value_or_zero(ch)
 }
 
 fn is_yaml_hex(ch: String) -> Bool {
-    da string_utils.is_hex(ch)
+    da is_hex(ch)
 }
 
 fn is_space(ch: String) -> Bool {
@@ -526,8 +526,19 @@ fn parse_plain_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int, in_
         c = c + 1
     }
 
-    // Trim trailing whitespace
-    pon mut trimmed: String = result.trim()
+    // Trim trailing whitespace (inline — no .trim() in native runtime yet)
+    pon mut trimmed: String = result
+    pon mut tlen: Int = len(trimmed)
+    for _ in 0..10000 {
+        si tlen == 0 { tlen = 0 }
+        si tlen > 0 {
+            pon last_ch: String = trimmed.char_at(tlen - 1)
+            si last_ch == " " || last_ch == "\t" || last_ch == "\n" || last_ch == "\r" {
+                trimmed = trimmed.substr(0, tlen - 1)
+                tlen = tlen - 1
+            } sino { tlen = 0 }
+        }
+    }
     da new StrResult { value: trimmed, pos: p, line: ln, col: c, ok: true, err_msg: "" }
 }
 
@@ -1579,7 +1590,18 @@ fn parse_block_map(src: String, slen: Int, pos: Int, line: Int, col: Int, map_in
                     c = c + 1
                 } } }
             }
-            key_str = key_buf.trim()
+            // Inline trim (no .trim() in native runtime yet)
+            pon mut kt: String = key_buf
+            pon mut kl: Int = len(kt)
+            for _ in 0..10000 {
+                si kl == 0 { kl = 0 }
+                si kl > 0 {
+                    pon lc: String = kt.char_at(kl - 1)
+                    si lc == " " || lc == "\t" { kt = kt.substr(0, kl - 1); kl = kl - 1
+                    } sino { kl = 0 }
+                }
+            }
+            key_str = kt
         } }
 
         // Expect ':'
