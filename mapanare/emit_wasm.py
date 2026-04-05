@@ -993,11 +993,19 @@ class WasmEmitter:
         self._fn_loop_headers = loop_headers
 
         # ---- Collect forward-branch targets ----
+        # Exclude blocks that are inside a loop body — they are reached
+        # by fall-through inside the loop, not by forward br.
+        loop_body_blocks: set[str] = set()
+        for body_set in loop_bodies.values():
+            loop_body_blocks.update(body_set)
+        # Also track which headers each block belongs to
+        self._fn_loop_body_blocks = loop_body_blocks
+
         fwd_targets: set[str] = set()
         for i, bb in enumerate(mir_fn.blocks):
             for t in self._get_terminator_targets(bb):
                 t_idx = block_order.get(t, -1)
-                if t_idx > i:
+                if t_idx > i and t not in loop_body_blocks:
                     fwd_targets.add(t)
 
         # ---- Build open/close event lists ----
@@ -1462,6 +1470,42 @@ class WasmEmitter:
                 ]
             return None
 
+        # Range iterator: __mn_range(start, end) → allocate {current, end} in linear memory
+        # All values stay i64; use i32.wrap_i64 for memory addresses.
+        if fn == "__mn_range" and len(args) >= 2:
+            p = f"${dest}.ptr"  # temp i32 for address
+            return [
+                f"      ;; __mn_range({args[0]}, {args[1]})",
+                f"      (local.set ${dest}"
+                f" (i64.extend_i32_u (call $__alloc (i32.const 16) (i32.const 8))))",
+                f"      (i64.store (i32.wrap_i64 (local.get ${dest}))"
+                f" (local.get ${args[0]}))",
+                f"      (i64.store offset=8 (i32.wrap_i64 (local.get ${dest}))"
+                f" (local.get ${args[1]}))",
+            ]
+
+        # __iter_has_next(iter) → current < end (returns i32 bool)
+        if fn == "__iter_has_next" and args:
+            return [
+                f"      ;; __iter_has_next",
+                f"      (local.set ${dest}"
+                f" (i64.lt_s"
+                f" (i64.load (i32.wrap_i64 (local.get ${args[0]})))"
+                f" (i64.load offset=8 (i32.wrap_i64 (local.get ${args[0]})))))",
+            ]
+
+        # __iter_next(iter) → read current, then current++
+        if fn == "__iter_next" and args:
+            return [
+                f"      ;; __iter_next",
+                f"      (local.set ${dest}"
+                f" (i64.load (i32.wrap_i64 (local.get ${args[0]}))))",
+                f"      (i64.store (i32.wrap_i64 (local.get ${args[0]}))"
+                f" (i64.add"
+                f" (i64.load (i32.wrap_i64 (local.get ${args[0]})))"
+                f" (i64.const 1)))",
+            ]
+
         return None
 
     def _emit_print_call(self, inst: Call, with_newline: bool) -> list[str]:
@@ -1509,22 +1553,69 @@ class WasmEmitter:
 
     def _emit_jump(self, inst: Jump, _bl: str, _fn: MIRFunction) -> list[str]:
         """Emit an unconditional jump as a br to the target block."""
-        br_label = self._resolve_br_target(inst.target, _bl)
         # Emit phi assignments for the target block before branching
         lines = self._emit_phi_assignments(inst.target, _bl, _fn)
+
+        # If the target is a loop body block that's the next block,
+        # we fall through — no br needed.
+        if self._is_loop_body_block(inst.target):
+            from_idx = self._fn_block_order.get(_bl, -1)
+            target_idx = self._fn_block_order.get(inst.target, -1)
+            if target_idx == from_idx + 1:
+                # Fall-through to next block in loop
+                return lines
+
+        br_label = self._resolve_br_target(inst.target, _bl)
         lines.append(f"      (br {br_label})")
         return lines
+
+    def _is_loop_body_block(self, label: str) -> bool:
+        """Check if a block is inside a loop body (reached by fall-through)."""
+        return label in getattr(self, "_fn_loop_body_blocks", set())
 
     def _emit_branch(self, inst: Branch, _bl: str, _fn: MIRFunction) -> list[str]:
         """Emit a conditional branch as br_if / br."""
         cond = _sanitize_name(inst.cond.name)
         cond_ty = self._locals.get(inst.cond.name, _WASM_I32)
-        true_br = self._resolve_br_target(inst.true_block, _bl)
-        false_br = self._resolve_br_target(inst.false_block, _bl)
 
         lines: list[str] = []
 
-        # Get the condition as i32 for br_if
+        # For loop conditions: true=body (fall-through), false=exit (br)
+        # When the true target is a loop body block, use fall-through.
+        true_is_fallthrough = self._is_loop_body_block(inst.true_block)
+        false_is_fallthrough = self._is_loop_body_block(inst.false_block)
+
+        if true_is_fallthrough and not false_is_fallthrough:
+            # Loop pattern: if !cond, exit; else fall through to body
+            false_br = self._resolve_br_target(inst.false_block, _bl)
+            false_phis = self._emit_phi_assignments(inst.false_block, _bl, _fn)
+            true_phis = self._emit_phi_assignments(inst.true_block, _bl, _fn)
+
+            # Emit: if (cond) { phis } else { phis; br exit }
+            if cond_ty == _WASM_I64:
+                lines.append(f"      (if (i32.wrap_i64 (local.get ${cond}))")
+            elif cond_ty == _WASM_I32:
+                lines.append(f"      (if (local.get ${cond})")
+            else:
+                lines.append(f"      (if (i32.trunc_f64_s (local.get ${cond}))")
+            lines.append("        (then")
+            for phi_line in true_phis:
+                lines.append(f"    {phi_line}")
+            if not true_phis:
+                lines.append("          (nop)")
+            lines.append("        )")
+            lines.append("        (else")
+            for phi_line in false_phis:
+                lines.append(f"    {phi_line}")
+            lines.append(f"          (br {false_br})")
+            lines.append("        )")
+            lines.append("      )")
+            return lines
+
+        # Default: standard if/then/else with explicit branches
+        true_br = self._resolve_br_target(inst.true_block, _bl)
+        false_br = self._resolve_br_target(inst.false_block, _bl)
+
         if cond_ty == _WASM_I64:
             lines.append(f"      (if (i32.wrap_i64 (local.get ${cond}))")
         elif cond_ty == _WASM_I32:
@@ -1532,7 +1623,6 @@ class WasmEmitter:
         else:
             lines.append(f"      (if (i32.trunc_f64_s (local.get ${cond}))")
 
-        # True branch: emit phi assignments then branch
         true_phis = self._emit_phi_assignments(inst.true_block, _bl, _fn)
         lines.append("        (then")
         for phi_line in true_phis:
@@ -1540,7 +1630,6 @@ class WasmEmitter:
         lines.append(f"          (br {true_br})")
         lines.append("        )")
 
-        # False branch
         false_phis = self._emit_phi_assignments(inst.false_block, _bl, _fn)
         lines.append("        (else")
         for phi_line in false_phis:
