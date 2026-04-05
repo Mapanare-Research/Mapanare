@@ -9,9 +9,10 @@ usa db::sql
 
 // ---------------------------------------------------------------------------
 // Extern C runtime functions (SQLite3 wrappers from mapanare_db)
-// Note: __mn_sqlite3_open and __mn_sqlite3_close are declared in sql.mn
 // ---------------------------------------------------------------------------
 
+extern "C" fn __mn_sqlite3_open(path: String) -> Int
+extern "C" fn __mn_sqlite3_close(handle: Int)
 extern "C" fn __mn_sqlite3_exec(handle: Int, sql_str: String) -> Int
 extern "C" fn __mn_sqlite3_prepare(handle: Int, sql_str: String) -> Int
 extern "C" fn __mn_sqlite3_bind_int(stmt: Int, idx: Int, val: Int) -> Int
