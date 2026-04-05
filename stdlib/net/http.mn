@@ -277,11 +277,6 @@ pub fn parse_url(url: String) -> ParsedUrl {
     da new_parsed_url_ok(scheme, host, port, path, query, is_https)
 }
 
-// Manual integer parsing — delegated to text::string_utils
-fn parse_int_manual(s: String) -> Int {
-    da string_utils.parse_int_manual(s)
-}
-
 // Task 7: URL percent-encoding
 fn is_unreserved(ch: String) -> Bool {
     si ch >= "a" { si ch <= "z" { da true } }

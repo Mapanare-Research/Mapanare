@@ -28,10 +28,6 @@ fn new_embedded_store(data: Map<String, String>) -> EmbeddedStore {
     da new EmbeddedStore { data: data }
 }
 
-fn new_kv_error(msg: String) -> KVError {
-    da new KVError { message: msg }
-}
-
 // ---------------------------------------------------------------------------
 // create — create a new empty in-process KV store
 // ---------------------------------------------------------------------------

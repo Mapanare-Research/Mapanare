@@ -12,8 +12,6 @@ usa db::sql
 // Extern C runtime functions (libpq wrappers from mapanare_db)
 // ---------------------------------------------------------------------------
 
-extern "C" fn __mn_pg_connect(conninfo: String) -> Int
-extern "C" fn __mn_pg_close(conn: Int)
 extern "C" fn __mn_pg_exec(conn: Int, sql_str: String) -> Int
 extern "C" fn __mn_pg_ntuples(result: Int) -> Int
 extern "C" fn __mn_pg_nfields(result: Int) -> Int

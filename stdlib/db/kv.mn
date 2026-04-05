@@ -186,21 +186,14 @@ pub fn error_message(err: KVError) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Internal: Embedded backend stub (implemented in db::embedded_kv)
-// Forward declaration so the compiler knows the return type.
-// At link time, the real embedded_kv module provides the implementation.
+// Forward declarations: real implementations in db::redis and db::embedded_kv.
+// Stub bodies satisfy the type checker; at link time the real modules provide
+// the actual logic.
 // ---------------------------------------------------------------------------
 
 fn embedded_get(store: EmbeddedStore, key: String) -> Option<String> {
     da nada
 }
-
-// ---------------------------------------------------------------------------
-// Internal: Redis backend stubs (implemented in db::redis)
-// These are forward declarations — the real logic lives in redis.mn
-// and uses extern "C" FFI. At link time they resolve to redis module.
-// For now, these return error/empty to satisfy the type checker.
-// ---------------------------------------------------------------------------
 
 fn redis_get(rs: RedisStore, key: String) -> Option<String> {
     da nada

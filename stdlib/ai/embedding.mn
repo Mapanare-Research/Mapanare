@@ -433,7 +433,7 @@ fn jget_str(text: String, key: String) -> String {
 fn jget_int(text: String, key: String) -> Int {
     pon raw: String = jget(text, key)
     si len(raw) == 0 { da 0 }
-    da string_utils.parse_int_manual(raw)
+    da parse_int_manual(raw)
 }
 
 fn jget_first(text: String, key: String) -> String {
@@ -540,7 +540,7 @@ fn parse_http_status(raw: String) -> Int {
     pos = pos + 1
     pon mut status_str: String = ""
     mien pos < slen { pon ch: String = raw.char_at(pos); si ch == " " { sal }; si ch == "\r" { sal }; status_str = status_str + ch; pos = pos + 1 }
-    da string_utils.parse_int_manual(status_str)
+    da parse_int_manual(status_str)
 }
 
 fn extract_http_body(raw: String) -> String {
