@@ -310,6 +310,8 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_argc", "i64", "")
     s = declare_runtime_fn(s, "__mn_argv", llvm_string(), "i64")
     s = declare_runtime_fn(s, "__mn_file_read_or_empty", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_file_write", "i64", llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_system", "i64", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
 
@@ -531,7 +533,25 @@ fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
 // Extern function declaration from MIR
 // ---------------------------------------------------------------------------
 
+fn is_already_declared(st: EmitState, name: String) -> Bool {
+    // Check if a function was already declared in the runtime block
+    let needle: String = "@" + name + "("
+    let mut i: Int = 0
+    let n: Int = len(st.lines)
+    for _ in 0..10000 {
+        if i >= n { return false }
+        let line: String = st.lines[i]
+        if line.starts_with("declare ") && line.contains(needle) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
 fn declare_mir_extern(st: EmitState, info: ExternFnInfo) -> EmitState {
+    // Skip if already declared (avoids duplicate declarations)
+    if is_already_declared(st, info.fn_name) { return st }
     let ret_ty: String = resolve_mir_type(info.return_type)
     let mut params_str: String = ""
     let mut i: Int = 0
