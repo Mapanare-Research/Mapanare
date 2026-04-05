@@ -66,10 +66,35 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
     if dk == "struct_def" {
         let sd: StructDefData = def_struct_data(defn)
         if len(sd.type_params) > 0 {
+            // Encode generic struct info as lambda_vars strings
+            // (avoids StructDefData in LowerState which breaks struct layout)
             let mut new_st_gs: LowerState = st
-            let mut gs_list: List<StructDefData> = new_st_gs.generic_structs
-            gs_list.push(sd)
-            new_st_gs.generic_structs = gs_list
+            // Key: __genstruct__Name → "A,B" (type params)
+            let tp_key: String = "__genstruct__" + sd.name
+            let mut tp_val: String = ""
+            let mut tpi: Int = 0
+            for _ in 0..20 {
+                if tpi < len(sd.type_params) {
+                    if tpi > 0 { tp_val = tp_val + "," }
+                    tp_val = tp_val + sd.type_params[tpi]
+                    tpi = tpi + 1
+                }
+            }
+            // Key: __gsfields__Name → "first:A,second:B" (field→type_param mapping)
+            let fld_key: String = "__gsfields__" + sd.name
+            let mut fld_val: String = ""
+            let mut fi: Int = 0
+            for _ in 0..50 {
+                if fi < len(sd.fields) {
+                    if fi > 0 { fld_val = fld_val + "," }
+                    fld_val = fld_val + sd.fields[fi].name + ":" + type_expr_name(sd.fields[fi].type_annotation)
+                    fi = fi + 1
+                }
+            }
+            let mut lv: List<LambdaEntry> = new_st_gs.lambda_vars
+            lv.push(new_lambda_entry(tp_key, tp_val))
+            lv.push(new_lambda_entry(fld_key, fld_val))
+            new_st_gs.lambda_vars = lv
             return new_st_gs
         }
         return register_struct(st, sd)
@@ -1199,6 +1224,26 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
 // Generics monomorphization
 // ---------------------------------------------------------------------------
 
+fn decode_ret_type(encoded: String) -> MIRType {
+    if encoded == "" { return mir_unknown() }
+    let colon: Int = encoded.find(":")
+    if colon < 0 { return mir_unknown() }
+    let kind: String = encoded.substr(0, colon)
+    let name: String = encoded.substr(colon + 1, len(encoded))
+    if kind == "int" { return mir_int() }
+    if kind == "float" { return mir_float() }
+    if kind == "string" { return mir_string() }
+    if kind == "bool" { return mir_bool() }
+    if kind == "void" { return mir_void() }
+    if kind == "struct" { return mir_struct(name) }
+    if kind == "enum" { return mir_enum(name) }
+    if kind == "option" { return mir_option() }
+    if kind == "result" { return mir_result() }
+    if kind == "list" { return mir_list() }
+    if kind == "map" { return mir_map() }
+    return mir_unknown()
+}
+
 fn find_generic_fn(st: LowerState, name: String) -> Option<FnDefData> {
     let mut i: Int = 0
     for _ in 0..500 {
@@ -1346,24 +1391,8 @@ fn try_monomorphize_call(st: LowerState, fn_name: String, args: List<Value>) -> 
             }
 
             // Look up return type and emit call
-            let mut ret_ty: MIRType = mir_unknown()
             let ret_key: String = "__ret__" + mangled
-            match find_lambda(s, ret_key) {
-                Some(ret_encoded) => {
-                    let colon: Int = ret_encoded.find(":")
-                    if colon >= 0 {
-                        let kind: String = ret_encoded.substr(0, colon)
-                        let name: String = ret_encoded.substr(colon + 1, len(ret_encoded))
-                        if kind == "int" { ret_ty = mir_int() }
-                        if kind == "float" { ret_ty = mir_float() }
-                        if kind == "string" { ret_ty = mir_string() }
-                        if kind == "bool" { ret_ty = mir_bool() }
-                        if kind == "struct" { ret_ty = mir_struct(name) }
-                        if kind == "enum" { ret_ty = mir_enum(name) }
-                    }
-                },
-                _ => {}
-            }
+            let ret_ty: MIRType = decode_ret_type(unwrap_or_default(find_lambda(s, ret_key), ""))
 
             let dr: LowerResult = make_value(s, ret_ty, "t")
             let s2: LowerState = emit_instr(dr.state, Instruction::Call(dr.value, mangled, args))
@@ -1401,124 +1430,115 @@ fn substitute_field_type(st: LowerState, ann: Option<TypeExpr>, type_params: Lis
     }
 }
 
-fn infer_struct_type_args(gs: StructDefData, args: List<Value>) -> List<MIRType> {
+fn is_generic_struct(st: LowerState, name: String) -> Bool {
+    let key: String = "__genstruct__" + name
+    match find_lambda(st, key) {
+        Some(_) => { return true },
+        _ => { return false }
+    }
+}
+
+fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value>) -> LowerResult {
+    if !is_generic_struct(st, struct_name) { return new_lower_result(void_value(), st) }
+
+    // Decode field→type_param mapping from lambda_vars
+    let fld_key: String = "__gsfields__" + struct_name
+    let fld_encoded: String = unwrap_or_default(find_lambda(st, fld_key), "")
+    if fld_encoded == "" { return new_lower_result(void_value(), st) }
+
+    // Parse field spec: "first:A,second:B" → field names and their type param names
+    let fld_parts: List<String> = fld_encoded.split(",")
+    let mut field_names: List<String> = []
+    let mut field_tp_names: List<String> = []
+    let mut fi: Int = 0
+    for _ in 0..50 {
+        if fi < len(fld_parts) {
+            let part: String = fld_parts[fi]
+            let cpos: Int = part.find(":")
+            if cpos >= 0 {
+                field_names.push(part.substr(0, cpos))
+                field_tp_names.push(part.substr(cpos + 1, len(part)))
+            }
+            fi = fi + 1
+        }
+    }
+
+    // Decode type params: "A,B"
+    let tp_key: String = "__genstruct__" + struct_name
+    let tp_encoded: String = unwrap_or_default(find_lambda(st, tp_key), "")
+    let type_params: List<String> = tp_encoded.split(",")
+
+    // Infer concrete types: match field type_param names to arg types
     let mut concrete: List<MIRType> = []
     let mut ti: Int = 0
     for _ in 0..20 {
-        if ti < len(gs.type_params) {
-            let tp_name: String = gs.type_params[ti]
-            let idx: Int = find_struct_field_for_type_param(gs, tp_name)
+        if ti < len(type_params) {
+            let tp_name: String = type_params[ti]
+            let idx: Int = find_tp_in_fields(field_tp_names, tp_name)
             if idx >= 0 {
-                if idx < len(args) {
-                    concrete.push(args[idx].ty)
-                } else {
-                    concrete.push(mir_unknown())
-                }
-            } else {
-                concrete.push(mir_unknown())
+                if idx < len(args) { concrete.push(args[idx].ty) }
             }
+            if idx < 0 { concrete.push(mir_unknown()) }
             ti = ti + 1
         }
     }
-    return concrete
+
+    let mangled: String = mangle_generic_name(struct_name, concrete)
+    return emit_specialized_struct(st, mangled, field_names, field_tp_names, type_params, concrete, args)
 }
 
-fn find_struct_field_for_type_param(gs: StructDefData, tp_name: String) -> Int {
+fn find_tp_in_fields(field_tp_names: List<String>, tp_name: String) -> Int {
     let mut i: Int = 0
     for _ in 0..50 {
-        if i < len(gs.fields) {
-            if type_expr_name(gs.fields[i].type_annotation) == tp_name { return i }
+        if i < len(field_tp_names) {
+            if field_tp_names[i] == tp_name { return i }
             i = i + 1
         }
     }
     return 0 - 1
 }
 
-fn find_generic_struct(st: LowerState, name: String) -> Option<StructDefData> {
-    let mut i: Int = 0
+fn emit_specialized_struct(st: LowerState, mangled: String, field_names: List<String>, field_tp_names: List<String>, type_params: List<String>, concrete: List<MIRType>, args: List<Value>) -> LowerResult {
+    let mut s: LowerState = st
+    if !is_struct_name(s, mangled) {
+        // Register specialized struct with concrete field types
+        let mut fields: List<FieldPair> = []
+        let mut field_types: List<MIRType> = []
+        let mut fi: Int = 0
+        for _ in 0..50 {
+            if fi < len(field_names) {
+                let tp_idx: Int = find_type_param_index(type_params, field_tp_names[fi])
+                let mut fty: MIRType = mir_unknown()
+                if tp_idx >= 0 {
+                    if tp_idx < len(concrete) { fty = concrete[tp_idx] }
+                }
+                fields.push(new_field_pair(field_names[fi], new_value("", fty)))
+                field_types.push(fty)
+                fi = fi + 1
+            }
+        }
+        let info: StructInfo = new_struct_info(mangled, fields)
+        s.module = module_push_struct(s.module, info)
+        let sfi: StructFieldInfo = new_struct_field_info(mangled, field_names, field_types)
+        let mut sf_lst: List<StructFieldInfo> = s.struct_fields
+        sf_lst.push(sfi)
+        s.struct_fields = sf_lst
+    }
+
+    // Emit StructInit
+    let fnames: List<String> = get_struct_field_names(s, mangled)
+    let mut init_pairs: List<FieldPair> = []
+    let mut pi: Int = 0
     for _ in 0..500 {
-        if i < len(st.generic_structs) {
-            if st.generic_structs[i].name == name { return Some(st.generic_structs[i]) }
-            i = i + 1
+        if pi < len(fnames) {
+            if pi < len(args) { init_pairs.push(new_field_pair(fnames[pi], args[pi])) }
+            pi = pi + 1
         }
     }
-    return none
-}
-
-fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value>) -> LowerResult {
-    let gs_opt: Option<StructDefData> = find_generic_struct(st, struct_name)
-    match gs_opt {
-        Some(gs) => {
-            // Infer concrete types from field values
-            let concrete: List<MIRType> = infer_struct_type_args(gs, args)
-
-            let mangled: String = mangle_generic_name(struct_name, concrete)
-
-            // Register specialized struct if not already done
-            if !is_struct_name(st, mangled) {
-                let mut s: LowerState = st
-                // Build concrete field types
-                let mut fields: List<FieldPair> = []
-                let mut field_names: List<String> = []
-                let mut field_types: List<MIRType> = []
-                let mut fi2: Int = 0
-                for _ in 0..500 {
-                    if fi2 < len(gs.fields) {
-                        let sf2: StructField = gs.fields[fi2]
-                        let fty: MIRType = substitute_field_type(s, Some(sf2.type_annotation), gs.type_params, concrete)
-                        let fp: FieldPair = new_field_pair(sf2.name, new_value("", fty))
-                        fields.push(fp)
-                        field_names.push(sf2.name)
-                        field_types.push(fty)
-                        fi2 = fi2 + 1
-                    }
-                }
-                // Register struct in module
-                let info: StructInfo = new_struct_info(mangled, fields)
-                s.module = module_push_struct(s.module, info)
-                let sfi: StructFieldInfo = new_struct_field_info(mangled, field_names, field_types)
-                let mut sf_lst: List<StructFieldInfo> = s.struct_fields
-                sf_lst.push(sfi)
-                s.struct_fields = sf_lst
-
-                // Build and emit StructInit
-                let mut init_pairs: List<FieldPair> = []
-                let mut pi: Int = 0
-                for _ in 0..500 {
-                    if pi < len(field_names) {
-                        if pi < len(args) {
-                            init_pairs.push(new_field_pair(field_names[pi], args[pi]))
-                        }
-                        pi = pi + 1
-                    }
-                }
-                let struct_ty: MIRType = mir_struct(mangled)
-                let dr: LowerResult = make_value(s, struct_ty, "t")
-                let s2: LowerState = emit_instr(dr.state, Instruction::StructInit(dr.value, struct_ty, init_pairs))
-                return new_lower_result(dr.value, s2)
-            }
-
-            // Already specialized — just emit
-            let field_names2: List<String> = get_struct_field_names(st, mangled)
-            let mut init_pairs2: List<FieldPair> = []
-            let mut pi2: Int = 0
-            for _ in 0..500 {
-                if pi2 < len(field_names2) {
-                    if pi2 < len(args) {
-                        init_pairs2.push(new_field_pair(field_names2[pi2], args[pi2]))
-                    }
-                    pi2 = pi2 + 1
-                }
-            }
-            let struct_ty2: MIRType = mir_struct(mangled)
-            let dr2: LowerResult = make_value(st, struct_ty2, "t")
-            let s3: LowerState = emit_instr(dr2.state, Instruction::StructInit(dr2.value, struct_ty2, init_pairs2))
-            return new_lower_result(dr2.value, s3)
-        },
-        _ => {
-            return new_lower_result(void_value(), st)
-        }
-    }
+    let struct_ty: MIRType = mir_struct(mangled)
+    let dr: LowerResult = make_value(s, struct_ty, "t")
+    let s2: LowerState = emit_instr(dr.state, Instruction::StructInit(dr.value, struct_ty, init_pairs))
+    return new_lower_result(dr.value, s2)
 }
 
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
