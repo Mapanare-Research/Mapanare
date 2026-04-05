@@ -1,11 +1,8 @@
 // WASI Application Example
 // Runs on any WASI-compatible runtime (wasmtime, wasmer, wasm3)
 //
-// Compile: mapanare emit-wasm --binary examples/wasm/wasi_app.mn
+// Compile: mapanare emit-wasm --wasi --binary examples/wasm/wasi_app.mn
 // Run:     wasmtime wasi_app.wasm
-//          wasmer run wasi_app.wasm
-
-usa wasm::runtime
 
 fn factorial(n: Int) -> Int {
     si n <= 1 {
@@ -14,70 +11,15 @@ fn factorial(n: Int) -> Int {
     da n * factorial(n - 1)
 }
 
-fn is_prime(n: Int) -> Bool {
-    si n < 2 {
-        da false
-    }
-    si n < 4 {
-        da true
-    }
-    si n % 2 == 0 {
-        da false
-    }
-    pon mut i: Int = 3
-    mien i * i <= n {
-        si n % i == 0 {
-            da false
-        }
-        i = i + 2
-    }
-    da true
-}
-
-fn sieve_primes(limit: Int) -> List<Int> {
-    pon mut primes: List<Int> = []
-    cada n en 2..limit + 1 {
-        si is_prime(n) {
-            primes = primes + [n]
-        }
-    }
-    da primes
-}
-
 fn main() {
     print("=== Mapanare on WASI ===")
     print("Running as native WebAssembly via WASI")
-    print("")
 
-    // WASI environment
-    pon args: List<String> = runtime.wasi_args()
-    print("Arguments: " + str(len(args)))
-    cada arg en args {
-        print("  " + arg)
-    }
+    // Factorial computation (unrolled — range iteration not yet in WASM emitter)
+    print("5! = ")
+    print(str(factorial(5)))
+    print("10! = ")
+    print(str(factorial(10)))
 
-    print("")
-
-    // Factorial computation
-    print("Factorials:")
-    cada i en 1..13 {
-        print("  " + str(i) + "! = " + str(factorial(i)))
-    }
-
-    print("")
-
-    // Prime sieve
-    pon limit: Int = 100
-    pon primes: List<Int> = sieve_primes(limit)
-    print("Primes up to " + str(limit) + ": " + str(len(primes)) + " found")
-    print("First 10: " + str(primes))
-
-    print("")
-
-    // Memory info
-    pon pages: Int = runtime.memory_size()
-    print("WASM memory: " + str(pages) + " pages (" + str(pages * 64) + " KB)")
-
-    print("")
     print("Done!")
 }
