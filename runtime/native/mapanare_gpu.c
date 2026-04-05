@@ -339,6 +339,7 @@ static const char PTX_TENSOR_MATMUL[] =
 /** Minimal SPIR-V header for element-wise add (float64).
  *  This is a pre-compiled binary from the GLSL source above.
  *  512 bytes — fits comfortably as a static array. */
+__attribute__((unused))
 static const uint32_t SPIRV_TENSOR_ADD[] = {
     /* Magic, Version 1.5, Generator, Bound, Schema */
     0x07230203, 0x00010500, 0x00000000, 0x00000030, 0x00000000,

@@ -1,41 +1,10 @@
 // Hello World — WebAssembly
-// Compile: mapanare emit-wasm --binary examples/wasm/hello.mn
-// Run: node --experimental-wasi-unstable-preview1 hello.wasm
-//   or: load hello.wasm in browser via playground
-
-fn greet(name: String) -> String {
-    da "Hello, " + name + "! Welcome to Mapanare on WASM."
-}
-
-fn fibonacci(n: Int) -> Int {
-    si n <= 1 {
-        da n
-    }
-    da fibonacci(n - 1) + fibonacci(n - 2)
-}
+// Compile: mapanare emit-wasm examples/wasm/hello.mn
+// Run: load in browser via playground
 
 fn main() {
-    print(greet("World"))
-    print("")
-
-    // Fibonacci sequence (unrolled — no range iteration in WASM yet)
-    print("Fibonacci sequence:")
-    print("  fib(0) = " + str(fibonacci(0)))
-    print("  fib(5) = " + str(fibonacci(5)))
-    print("  fib(10) = " + str(fibonacci(10)))
-
-    // String operations
-    let msg: String = "Mapanare runs everywhere"
-    print("")
-    print("Message: " + msg)
-    print("Length: " + str(len(msg)))
-
-    // Arithmetic
-    let x: Float = 3.14159
-    let y: Float = 2.71828
-    print("")
-    print("pi = " + str(x))
-    print("e  = " + str(y))
-    print("pi + e = " + str(x + y))
-    print("pi * e = " + str(x * y))
+    print("Hello from Mapanare on WASM!")
+    print("The AI-native language, running in the browser.")
+    let x: Int = 6 * 7
+    print(str(x))
 }

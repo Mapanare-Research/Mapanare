@@ -1,6 +1,6 @@
 # Mapanare v1.0.x — Post-Release Patch Series
 
-> A [7-reviewer code review](.reviews/v1.0.0/README.md) scored v1.0.0 at **7.8/10 median**
+> A [7-reviewer code review](../../../.reviews/v1.0.0/README.md) scored v1.0.0 at **7.8/10 median**
 > and identified 34 issues across type soundness, memory leaks, codegen gaps, and missing
 > primitives. These 10 patches address every finding before any new features ship.
 >
