@@ -4,11 +4,31 @@
 // Compile: mapanare emit-wasm --wasi --binary examples/wasm/wasi_app.mn
 // Run:     wasmtime wasi_app.wasm
 
+fn abs(n: Int) -> Int {
+    if n < 0 {
+        return 0 - n
+    }
+    return n
+}
+
+fn max(a: Int, b: Int) -> Int {
+    if a > b {
+        return a
+    }
+    return b
+}
+
 fn main() {
     print("=== Mapanare on WASI ===")
     print("Running as native WebAssembly")
     let x: Int = 6 * 7
     print("6 * 7 = ")
     print(str(x))
+    let a: Int = abs(0 - 42)
+    print("abs(-42) = ")
+    print(str(a))
+    let m: Int = max(10, 20)
+    print("max(10, 20) = ")
+    print(str(m))
     print("Done!")
 }

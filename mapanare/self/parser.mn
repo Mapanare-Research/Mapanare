@@ -1723,7 +1723,8 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     }
 
     // Identifier or namespace access
-    if tt == "NAME" {
+    // Soft keywords: allowed as identifiers in expression position
+    if tt == "NAME" || tt == "KW_INPUT" || tt == "KW_OUTPUT" || tt == "KW_AGENT" || tt == "KW_DI" || tt == "KW_STREAM" {
         let name: String = val
         if peek_type(tokens, pos + 1) == "DOUBLE_COLON" {
             let ns_member: String = peek_value(tokens, pos + 2)

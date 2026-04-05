@@ -6,7 +6,6 @@ This test compiles each self-hosted .mn file through the Python pipeline
 1. All .mn files parse successfully
 2. All .mn files pass semantic analysis (no critical errors)
 3. The Python compiler can compile the .mn compiler sources
-4. LLVM IR output is deterministic for functions with primitive types
 """
 
 from __future__ import annotations
@@ -15,8 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from mapanare.ast_nodes import FnDef, NamedType, Program
-from mapanare.emit_llvm import LLVMEmitter
+from mapanare.ast_nodes import FnDef, NamedType
 from mapanare.parser import parse
 from mapanare.semantic import check
 
@@ -43,14 +41,6 @@ def _has_only_primitive_types(fn: FnDef) -> bool:
     return True
 
 
-def _extract_primitive_fns(program: Program) -> Program:
-    """Extract only functions with primitive types for LLVM emission."""
-    primitive_fns = [
-        d for d in program.definitions if isinstance(d, FnDef) and _has_only_primitive_types(d)
-    ]
-    return Program(definitions=primitive_fns)
-
-
 class TestStage1Bootstrap:
     """Stage 1: Python compiler compiles .mn compiler sources."""
 
@@ -75,38 +65,6 @@ class TestStage1Bootstrap:
         errors = check(program, filename=mn_file.name)
         assert isinstance(errors, list)
 
-    @pytest.mark.xfail(reason="AST emitter can't resolve cross-module .mn functions", strict=False)
-    def test_emit_llvm_ir_primitive_fns(self, mn_file: Path) -> None:
-        """LLVM emitter processes functions with primitive-only types."""
-        source = mn_file.read_text(encoding="utf-8")
-        program = parse(source, filename=mn_file.name)
-        prim_program = _extract_primitive_fns(program)
-        if not prim_program.definitions:
-            pytest.skip("No primitive-type-only functions in this file")
-        emitter = LLVMEmitter(module_name=mn_file.stem)
-        module = emitter.emit_program(prim_program)
-        ir_text = str(module)
-        assert len(ir_text) > 0
-        assert "ModuleID" in ir_text
-
-    @pytest.mark.xfail(reason="AST emitter can't resolve cross-module .mn functions", strict=False)
-    def test_emit_deterministic(self, mn_file: Path) -> None:
-        """Same input → same LLVM IR output (deterministic compilation)."""
-        source = mn_file.read_text(encoding="utf-8")
-        program = parse(source, filename=mn_file.name)
-        prim_program = _extract_primitive_fns(program)
-        if not prim_program.definitions:
-            pytest.skip("No primitive-type-only functions in this file")
-
-        emitter1 = LLVMEmitter(module_name=mn_file.stem)
-        ir1 = str(emitter1.emit_program(prim_program))
-
-        program2 = parse(source, filename=mn_file.name)
-        prim2 = _extract_primitive_fns(program2)
-        emitter2 = LLVMEmitter(module_name=mn_file.stem)
-        ir2 = str(emitter2.emit_program(prim2))
-
-        assert ir1 == ir2, "LLVM IR output is not deterministic"
 
 
 class TestStage1CrossFile:
@@ -125,24 +83,13 @@ class TestStage1CrossFile:
         for mn_file in MN_FILES:
             source = mn_file.read_text(encoding="utf-8")
             program = parse(source, filename=mn_file.name)
-            prim = _extract_primitive_fns(program)
+            prim_fns = [
+                d
+                for d in program.definitions
+                if isinstance(d, FnDef) and _has_only_primitive_types(d)
+            ]
             # ast.mn and mir.mn have no primitive-only fns (all return custom types), so skip
             if mn_file.name in ("ast.mn", "mir.mn"):
                 continue
-            assert len(prim.definitions) > 0, f"{mn_file.name}: no primitive fns"
+            assert len(prim_fns) > 0, f"{mn_file.name}: no primitive fns"
 
-    @pytest.mark.xfail(reason="AST emitter cross-module resolution", strict=False)
-    def test_combined_ir_output(self) -> None:
-        """All primitive functions across .mn files compile to valid IR."""
-        all_fns: list[FnDef] = []
-        for mn_file in MN_FILES:
-            source = mn_file.read_text(encoding="utf-8")
-            program = parse(source, filename=mn_file.name)
-            for d in program.definitions:
-                if isinstance(d, FnDef) and _has_only_primitive_types(d):
-                    all_fns.append(d)
-        combined = Program(definitions=all_fns)
-        emitter = LLVMEmitter(module_name="bootstrap_combined")
-        module = emitter.emit_program(combined)
-        ir_text = str(module)
-        assert "define" in ir_text

@@ -917,6 +917,12 @@ class WasmEmitter:
         body = self._emit_function_body(mir_fn)
         lines.extend(body)
 
+        # Functions with a return type need (unreachable) after the block
+        # structure, since WASM requires the function body to produce a value
+        # on the stack.  All real paths end with (return), so this is dead code.
+        if ret_type:
+            lines.append("    (unreachable)")
+
         lines.append("  )")
         return lines
 
@@ -959,45 +965,132 @@ class WasmEmitter:
     # ------------------------------------------------------------------
 
     def _emit_function_body(self, mir_fn: MIRFunction) -> list[str]:
-        """Emit the function body as a sequence of blocks.
+        """Emit the function body using a Stackifier approach.
 
-        Uses a simple linearization strategy: emit blocks in order,
-        using WASM block/loop constructs for branches. Forward jumps
-        use (block ... (br N)), backward jumps use (loop ... (br N)).
+        For each forward branch target, a ``(block $B_target ...)`` wrapper is
+        opened before the earliest branch source and closed right before the
+        target's code — so ``br $B_target`` exits the wrapper and lands at the
+        target.
+
+        For each loop header, a ``(loop $L_header ...)`` wrapper is opened at
+        the header and closed after the last loop-body block — so
+        ``br $L_header`` re-enters the loop.
         """
         lines: list[str] = []
         if not mir_fn.blocks:
             return lines
 
-        # Detect loop headers (blocks targeted by backward edges)
-        loop_headers = self._find_loop_headers(mir_fn)
-
-        # Emit blocks in linear order using a label-indexed block stack
-        # Strategy: wrap the entire body in nested blocks, one per BB.
-        # Each block label maps to a br depth. Forward branches break out
-        # of blocks; backward branches use loop constructs.
+        block_order = {bb.label: i for i, bb in enumerate(mir_fn.blocks)}
         num_blocks = len(mir_fn.blocks)
 
-        # Open block wrappers for forward branching
-        for i in range(num_blocks - 1, -1, -1):
-            bb = mir_fn.blocks[i]
-            if bb.label in loop_headers:
-                lines.append(f"    (loop $L_{_sanitize_name(bb.label)}")
-            else:
-                lines.append(f"    (block $L_{_sanitize_name(bb.label)}")
+        # Detect loop headers and their body blocks
+        loop_headers = self._find_loop_headers(mir_fn)
+        loop_bodies = self._compute_loop_bodies(mir_fn)
 
-        # Emit each block's instructions
+        # Store metadata for br target resolution
+        self._fn_block_order = block_order
+        self._fn_block_labels = [bb.label for bb in mir_fn.blocks]
+        self._fn_loop_headers = loop_headers
+
+        # ---- Collect forward-branch targets ----
+        fwd_targets: set[str] = set()
         for i, bb in enumerate(mir_fn.blocks):
+            for t in self._get_terminator_targets(bb):
+                t_idx = block_order.get(t, -1)
+                if t_idx > i:
+                    fwd_targets.add(t)
+
+        # ---- Build open/close event lists ----
+        # All forward-target (block) wrappers open at position 0 to avoid
+        # overlapping nesting. Sorted by close position so the longest span
+        # is outermost.
+        opens_before: dict[int, list[tuple[int, str, str]]] = {}
+        closes_before: dict[int, int] = {}
+
+        for target_label in fwd_targets:
+            target_idx = block_order[target_label]
+            lbl = _sanitize_name(target_label)
+            opens_before.setdefault(0, []).append((target_idx, "block", f"$B_{lbl}"))
+            closes_before[target_idx] = closes_before.get(target_idx, 0) + 1
+
+        for header_label in loop_headers:
+            header_idx = block_order[header_label]
+            body = loop_bodies.get(header_label, {header_label})
+            last_body_idx = max(block_order[b] for b in body)
+            lbl = _sanitize_name(header_label)
+            opens_before.setdefault(header_idx, []).append((last_body_idx + 1, "loop", f"$L_{lbl}"))
+            closes_before[last_body_idx + 1] = closes_before.get(last_body_idx + 1, 0) + 1
+
+        # Sort opens: longer span (later close) outermost
+        for idx in opens_before:
+            opens_before[idx].sort(key=lambda x: -x[0])
+
+        # ---- Emit ----
+        for i, bb in enumerate(mir_fn.blocks):
+            # Close wrappers that end before this block
+            for _ in range(closes_before.get(i, 0)):
+                lines.append("    )")
+
+            # Open new wrappers
+            for _close_idx, wtype, wlabel in opens_before.get(i, []):
+                lines.append(f"    ({wtype} {wlabel}")
+
+            # Emit block instructions
             lines.append(f"      ;; -- {bb.label} --")
             for inst in bb.instructions:
                 inst_lines = self._emit_instruction(inst, bb.label, mir_fn)
                 lines.extend(inst_lines)
 
-        # Close all block wrappers
-        for _i in range(num_blocks):
+        # Close any remaining wrappers (those that close after the last block)
+        for _ in range(closes_before.get(num_blocks, 0)):
             lines.append("    )")
 
         return lines
+
+    def _get_terminator_targets(self, bb: BasicBlock) -> list[str]:
+        """Extract branch target labels from a block's terminator instruction."""
+        if not bb.instructions:
+            return []
+        term = bb.instructions[-1]
+        if isinstance(term, Jump):
+            return [term.target]
+        if isinstance(term, Branch):
+            return [term.true_block, term.false_block]
+        if isinstance(term, Switch):
+            targets = [lbl for _, lbl in term.cases]
+            if term.default_block:
+                targets.append(term.default_block)
+            return targets
+        return []
+
+    def _compute_loop_bodies(self, mir_fn: MIRFunction) -> dict[str, set[str]]:
+        """For each loop header, find the set of blocks in its body."""
+        block_order = {bb.label: i for i, bb in enumerate(mir_fn.blocks)}
+        loop_bodies: dict[str, set[str]] = {}
+        for i, bb in enumerate(mir_fn.blocks):
+            for target in self._get_terminator_targets(bb):
+                if target in block_order and block_order[target] <= i:
+                    header = target
+                    header_idx = block_order[header]
+                    if header not in loop_bodies:
+                        loop_bodies[header] = set()
+                    for j in range(header_idx, i + 1):
+                        loop_bodies[header].add(mir_fn.blocks[j].label)
+        return loop_bodies
+
+    def _resolve_br_target(self, target_label: str, from_label: str) -> str:
+        """Get the correct WAT label for ``br`` to reach *target_label*.
+
+        Forward jumps use ``$B_<target>`` (exits the block wrapper).
+        Backward jumps use ``$L_<loop_header>`` (re-enters the loop).
+        """
+        target_idx = self._fn_block_order.get(target_label, -1)
+        from_idx = self._fn_block_order.get(from_label, -1)
+
+        if target_idx <= from_idx and target_label in self._fn_loop_headers:
+            return f"$L_{_sanitize_name(target_label)}"
+        else:
+            return f"$B_{_sanitize_name(target_label)}"
 
     def _find_loop_headers(self, mir_fn: MIRFunction) -> set[str]:
         """Identify basic blocks that are targets of backward edges (loop headers)."""
@@ -1416,18 +1509,18 @@ class WasmEmitter:
 
     def _emit_jump(self, inst: Jump, _bl: str, _fn: MIRFunction) -> list[str]:
         """Emit an unconditional jump as a br to the target block."""
-        target = _sanitize_name(inst.target)
+        br_label = self._resolve_br_target(inst.target, _bl)
         # Emit phi assignments for the target block before branching
         lines = self._emit_phi_assignments(inst.target, _bl, _fn)
-        lines.append(f"      (br $L_{target})")
+        lines.append(f"      (br {br_label})")
         return lines
 
     def _emit_branch(self, inst: Branch, _bl: str, _fn: MIRFunction) -> list[str]:
         """Emit a conditional branch as br_if / br."""
         cond = _sanitize_name(inst.cond.name)
         cond_ty = self._locals.get(inst.cond.name, _WASM_I32)
-        true_target = _sanitize_name(inst.true_block)
-        false_target = _sanitize_name(inst.false_block)
+        true_br = self._resolve_br_target(inst.true_block, _bl)
+        false_br = self._resolve_br_target(inst.false_block, _bl)
 
         lines: list[str] = []
 
@@ -1444,7 +1537,7 @@ class WasmEmitter:
         lines.append("        (then")
         for phi_line in true_phis:
             lines.append(f"    {phi_line}")
-        lines.append(f"          (br $L_{true_target})")
+        lines.append(f"          (br {true_br})")
         lines.append("        )")
 
         # False branch
@@ -1452,7 +1545,7 @@ class WasmEmitter:
         lines.append("        (else")
         for phi_line in false_phis:
             lines.append(f"    {phi_line}")
-        lines.append(f"          (br $L_{false_target})")
+        lines.append(f"          (br {false_br})")
         lines.append("        )")
         lines.append("      )")
 
@@ -1466,7 +1559,7 @@ class WasmEmitter:
 
         # Use nested if-else for small case counts
         for case_val, case_label in inst.cases:
-            safe_label = _sanitize_name(case_label)
+            br_label = self._resolve_br_target(case_label, _bl)
             if tag_ty == _WASM_I64:
                 cmp = f"(i64.eq (local.get ${tag}) (i64.const {case_val}))"
                 lines.append(f"      (if (i32.wrap_i64 {cmp})")
@@ -1478,17 +1571,17 @@ class WasmEmitter:
             lines.append("        (then")
             for pl in phi_lines:
                 lines.append(f"    {pl}")
-            lines.append(f"          (br $L_{safe_label})")
+            lines.append(f"          (br {br_label})")
             lines.append("        )")
             lines.append("      )")
 
         # Default case
         if inst.default_block:
-            default_label = _sanitize_name(inst.default_block)
+            default_br = self._resolve_br_target(inst.default_block, _bl)
             default_phis = self._emit_phi_assignments(inst.default_block, _bl, _fn)
             for pl in default_phis:
                 lines.append(f"      {pl}")
-            lines.append(f"      (br $L_{default_label})")
+            lines.append(f"      (br {default_br})")
 
         return lines
 
