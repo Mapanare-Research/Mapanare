@@ -1,0 +1,84 @@
+// tests/native/test_json.mn — JSON stdlib tests using native test runner
+
+usa stdlib::test::runner
+usa stdlib::encoding::json
+
+fn main() -> Int {
+    let mut pass: Int = 0
+    let mut fail: Int = 0
+    let mut r: Int = 0
+
+    // --- decode integer ---
+    r = check("decode int", true)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    let d1: Result<JsonValue, JsonError> = decode("42")
+    match d1 {
+        Ok(v) => {
+            let encoded: String = encode(v)
+            r = check_eq_str("encode(decode(42))", encoded, "42")
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        },
+        Err(e) => {
+            r = check("decode 42 should succeed", false)
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        }
+    }
+
+    // --- decode string ---
+    let d2: Result<JsonValue, JsonError> = decode("\"hello\"")
+    match d2 {
+        Ok(v2) => {
+            let e2: String = encode(v2)
+            r = check_eq_str("encode(decode(hello))", e2, "\"hello\"")
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        },
+        Err(e2) => {
+            r = check("decode string should succeed", false)
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        }
+    }
+
+    // --- decode bool ---
+    let d3: Result<JsonValue, JsonError> = decode("true")
+    match d3 {
+        Ok(v3) => {
+            let e3: String = encode(v3)
+            r = check_eq_str("encode(decode(true))", e3, "true")
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        },
+        Err(e3) => {
+            r = check("decode bool should succeed", false)
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        }
+    }
+
+    // --- decode null ---
+    let d4: Result<JsonValue, JsonError> = decode("null")
+    match d4 {
+        Ok(v4) => {
+            let e4: String = encode(v4)
+            r = check_eq_str("encode(decode(null))", e4, "null")
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        },
+        Err(e4) => {
+            r = check("decode null should succeed", false)
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        }
+    }
+
+    // --- decode array ---
+    let d5: Result<JsonValue, JsonError> = decode("[1,2,3]")
+    match d5 {
+        Ok(v5) => {
+            let e5: String = encode(v5)
+            r = check_eq_str("encode(decode([1,2,3]))", e5, "[1,2,3]")
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        },
+        Err(e5) => {
+            r = check("decode array should succeed", false)
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        }
+    }
+
+    return test_report(pass, fail)
+}

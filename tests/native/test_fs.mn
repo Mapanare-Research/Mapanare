@@ -1,0 +1,60 @@
+// tests/native/test_fs.mn — File system stdlib tests using native test runner
+
+usa stdlib::test::runner
+usa stdlib::fs
+
+fn main() -> Int {
+    let mut pass: Int = 0
+    let mut fail: Int = 0
+    let mut r: Int = 0
+
+    // --- write + read + exists ---
+    let path: String = "/tmp/mapanare_test_fs.txt"
+    let content: String = "hello from mapanare"
+    let wr: Result<Bool, FsError> = write_file(path, content)
+    match wr {
+        Ok(ok) => {
+            r = check("write_file succeeds", true)
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        },
+        Err(e) => {
+            r = check("write_file should succeed", false)
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        }
+    }
+
+    r = check("exists after write", exists(path))
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+
+    let rd: Result<String, FsError> = read_file(path)
+    match rd {
+        Ok(data) => {
+            r = check_eq_str("read_file content", data, content)
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        },
+        Err(e2) => {
+            r = check("read_file should succeed", false)
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        }
+    }
+
+    // --- remove ---
+    let rm: Result<Bool, FsError> = remove(path)
+    match rm {
+        Ok(ok2) => {
+            r = check("remove succeeds", true)
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        },
+        Err(e3) => {
+            r = check("remove should succeed", false)
+            if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+        }
+    }
+
+    // --- exists should be false after remove ---
+    let still: Bool = exists(path)
+    r = check("not exists after remove", still == false)
+    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+
+    return test_report(pass, fail)
+}
