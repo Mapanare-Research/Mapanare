@@ -284,8 +284,11 @@ fn at_end(tokens: List<Token>, pos: Int) -> Bool {
 fn expect(tokens: List<Token>, pos: Int, expected: String) -> Int {
     let tt: String = peek_type(tokens, pos)
     if tt != expected {
-        let msg: String = "Expected " + expected + " but got " + tt
-        print(msg)
+        __mn_str_eprint("parse error: expected ")
+        __mn_str_eprint(expected)
+        __mn_str_eprint(" but got ")
+        __mn_str_eprint(tt)
+        __mn_str_eprint("\n")
     }
     return pos + 1
 }

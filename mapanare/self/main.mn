@@ -295,19 +295,27 @@ fn compile_and_print(source: String, filename: String) -> CompileResult {
 // test — compile, link, run, report pass/fail
 // ---------------------------------------------------------------------------
 
+fn rename_main(ir: String) -> String {
+    return ir.replace("@main(", "@mn_main(")
+}
+
 fn run_test(filename: String) {
-    // Use self as subprocess — emit_mir_module prints directly to stdout,
-    // so we capture IR by redirecting to file.
-    // Rename @main → @mn_main so the C wrapper provides the real main().
-    let self_path: String = __mn_argv(0)
-    let compile_cmd: String = self_path + " " + filename + " | sed 's/@main(/@mn_main(/g' > /tmp/mnc_test.ll 2>/dev/null"
-    let r0: Int = __mn_system(compile_cmd)
-    if r0 != 0 {
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) == 0 {
         __mn_str_eprint("FAIL ")
         __mn_str_eprint(filename)
-        __mn_str_eprint(" (compile failed)\n")
+        __mn_str_eprint(" (cannot read file)\n")
         __mn_exit(1)
     }
+    let cr: CompileResult = compile(source, filename)
+    if !cr.success {
+        __mn_str_eprint("FAIL ")
+        __mn_str_eprint(filename)
+        __mn_str_eprint(" (compile errors)\n")
+        __mn_exit(1)
+    }
+    // Rename @main → @mn_main so the C wrapper provides the real main()
+    __mn_file_write("/tmp/mnc_test.ll", rename_main(cr.ir_text))
 
     // Compile IR -> object
     let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_test.ll -o /tmp/mnc_test.o 2>/dev/null")
@@ -355,15 +363,20 @@ fn run_build(filename: String) {
         }
     }
 
-    // Use self as subprocess to capture IR
-    // Rename @main → @mn_main so the C wrapper provides the real main().
-    let self_path: String = __mn_argv(0)
-    let compile_cmd: String = self_path + " " + filename + " | sed 's/@main(/@mn_main(/g' > /tmp/mnc_build.ll 2>/dev/null"
-    let r0: Int = __mn_system(compile_cmd)
-    if r0 != 0 {
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) == 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+    let cr: CompileResult = compile(source, filename)
+    if !cr.success {
         __mn_str_eprint("error: compile failed\n")
         __mn_exit(1)
     }
+    // Rename @main → @mn_main so the C wrapper provides the real main()
+    __mn_file_write("/tmp/mnc_build.ll", rename_main(cr.ir_text))
 
     // Compile
     let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_build.ll -o /tmp/mnc_build.o 2>/dev/null")

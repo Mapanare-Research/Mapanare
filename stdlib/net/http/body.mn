@@ -23,11 +23,11 @@ pub tipo FormPart {
 // ---------------------------------------------------------------------------
 
 fn is_hex_digit(ch: String) -> Bool {
-    da string_utils.is_hex(ch)
+    da is_hex(ch)
 }
 
 fn hex_digit_val(ch: String) -> Int {
-    pon v: Int = string_utils.hex_digit_value(ch)
+    pon v: Int = hex_digit_value(ch)
     si v < 0 { da 0 }
     da v
 }
@@ -55,110 +55,12 @@ pub fn url_decode(s: String) -> String {
                 si is_hex_digit(h1) {
                     si is_hex_digit(h2) {
                         pon byte_val: Int = hex_digit_val(h1) * 16 + hex_digit_val(h2)
-                        // Convert byte to character via str() of the byte
-                        // For ASCII range (0-127), use char_from_byte approach
-                        si byte_val == 32 { result = result + " " }
-                        sino si byte_val == 33 { result = result + "!" }
-                        sino si byte_val == 34 { result = result + "\"" }
-                        sino si byte_val == 35 { result = result + "#" }
-                        sino si byte_val == 36 { result = result + "$" }
-                        sino si byte_val == 37 { result = result + "%" }
-                        sino si byte_val == 38 { result = result + "&" }
-                        sino si byte_val == 39 { result = result + "'" }
-                        sino si byte_val == 40 { result = result + "(" }
-                        sino si byte_val == 41 { result = result + ")" }
-                        sino si byte_val == 42 { result = result + "*" }
-                        sino si byte_val == 43 { result = result + "+" }
-                        sino si byte_val == 44 { result = result + "," }
-                        sino si byte_val == 45 { result = result + "-" }
-                        sino si byte_val == 46 { result = result + "." }
-                        sino si byte_val == 47 { result = result + "/" }
-                        sino si byte_val >= 48 {
-                            si byte_val <= 57 {
-                                // 0-9
-                                pon digit: String = str(byte_val - 48)
-                                result = result + digit
-                            } sino si byte_val == 58 { result = result + ":" }
-                            sino si byte_val == 59 { result = result + ";" }
-                            sino si byte_val == 60 { result = result + "<" }
-                            sino si byte_val == 61 { result = result + "=" }
-                            sino si byte_val == 62 { result = result + ">" }
-                            sino si byte_val == 63 { result = result + "?" }
-                            sino si byte_val == 64 { result = result + "@" }
-                            sino si byte_val >= 65 {
-                                si byte_val <= 90 {
-                                    // A-Z via lookup
-                                    pon offset: Int = byte_val - 65
-                                    si offset == 0 { result = result + "A" }
-                                    sino si offset == 1 { result = result + "B" }
-                                    sino si offset == 2 { result = result + "C" }
-                                    sino si offset == 3 { result = result + "D" }
-                                    sino si offset == 4 { result = result + "E" }
-                                    sino si offset == 5 { result = result + "F" }
-                                    sino si offset == 6 { result = result + "G" }
-                                    sino si offset == 7 { result = result + "H" }
-                                    sino si offset == 8 { result = result + "I" }
-                                    sino si offset == 9 { result = result + "J" }
-                                    sino si offset == 10 { result = result + "K" }
-                                    sino si offset == 11 { result = result + "L" }
-                                    sino si offset == 12 { result = result + "M" }
-                                    sino si offset == 13 { result = result + "N" }
-                                    sino si offset == 14 { result = result + "O" }
-                                    sino si offset == 15 { result = result + "P" }
-                                    sino si offset == 16 { result = result + "Q" }
-                                    sino si offset == 17 { result = result + "R" }
-                                    sino si offset == 18 { result = result + "S" }
-                                    sino si offset == 19 { result = result + "T" }
-                                    sino si offset == 20 { result = result + "U" }
-                                    sino si offset == 21 { result = result + "V" }
-                                    sino si offset == 22 { result = result + "W" }
-                                    sino si offset == 23 { result = result + "X" }
-                                    sino si offset == 24 { result = result + "Y" }
-                                    sino { result = result + "Z" }
-                                } sino si byte_val == 91 { result = result + "[" }
-                                sino si byte_val == 92 { result = result + "\\" }
-                                sino si byte_val == 93 { result = result + "]" }
-                                sino si byte_val == 94 { result = result + "^" }
-                                sino si byte_val == 95 { result = result + "_" }
-                                sino si byte_val == 96 { result = result + "`" }
-                                sino si byte_val >= 97 {
-                                    si byte_val <= 122 {
-                                        // a-z via lookup
-                                        pon offset2: Int = byte_val - 97
-                                        si offset2 == 0 { result = result + "a" }
-                                        sino si offset2 == 1 { result = result + "b" }
-                                        sino si offset2 == 2 { result = result + "c" }
-                                        sino si offset2 == 3 { result = result + "d" }
-                                        sino si offset2 == 4 { result = result + "e" }
-                                        sino si offset2 == 5 { result = result + "f" }
-                                        sino si offset2 == 6 { result = result + "g" }
-                                        sino si offset2 == 7 { result = result + "h" }
-                                        sino si offset2 == 8 { result = result + "i" }
-                                        sino si offset2 == 9 { result = result + "j" }
-                                        sino si offset2 == 10 { result = result + "k" }
-                                        sino si offset2 == 11 { result = result + "l" }
-                                        sino si offset2 == 12 { result = result + "m" }
-                                        sino si offset2 == 13 { result = result + "n" }
-                                        sino si offset2 == 14 { result = result + "o" }
-                                        sino si offset2 == 15 { result = result + "p" }
-                                        sino si offset2 == 16 { result = result + "q" }
-                                        sino si offset2 == 17 { result = result + "r" }
-                                        sino si offset2 == 18 { result = result + "s" }
-                                        sino si offset2 == 19 { result = result + "t" }
-                                        sino si offset2 == 20 { result = result + "u" }
-                                        sino si offset2 == 21 { result = result + "v" }
-                                        sino si offset2 == 22 { result = result + "w" }
-                                        sino si offset2 == 23 { result = result + "x" }
-                                        sino si offset2 == 24 { result = result + "y" }
-                                        sino { result = result + "z" }
-                                    } sino si byte_val == 123 { result = result + "{" }
-                                    sino si byte_val == 124 { result = result + "|" }
-                                    sino si byte_val == 125 { result = result + "}" }
-                                    sino si byte_val == 126 { result = result + "~" }
-                                    sino { result = result + "?" }
-                                } sino { result = result + "?" }
-                            } sino { result = result + "?" }
-                        } sino { result = result + "?" }
+                        // Convert byte value to character via chr()
+                        si byte_val >= 32 && byte_val <= 126 {
+                            result = result + chr(byte_val)
+                        } sino {
+                            result = result + "?"
+                        }
                         i = i + 3
                     } sino {
                         result = result + ch
@@ -188,7 +90,7 @@ pub fn url_decode(s: String) -> String {
 fn byte_to_hex(b: Int) -> String {
     pon hi: Int = b / 16
     pon lo: Int = b - hi * 16
-    da "%" + string_utils.hex_char(hi) + string_utils.hex_char(lo)
+    da "%" + hex_char(hi) + hex_char(lo)
 }
 
 fn is_url_safe(ch: String, b: Int) -> Bool {

@@ -1634,8 +1634,11 @@ fn at_end(tokens: List<Token>, pos: Int) -> Bool {
 fn expect(tokens: List<Token>, pos: Int, expected: String) -> Int {
     let tt: String = peek_type(tokens, pos)
     if tt != expected {
-        let msg: String = "Expected " + expected + " but got " + tt
-        print(msg)
+        __mn_str_eprint("parse error: expected ")
+        __mn_str_eprint(expected)
+        __mn_str_eprint(" but got ")
+        __mn_str_eprint(tt)
+        __mn_str_eprint("\n")
     }
     return pos + 1
 }
@@ -6809,10 +6812,6 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     let mut final_fn: MIRFunction = mir_fn
     final_fn.blocks = s.fn_blocks
     s.module = module_push_function(s.module, final_fn)
-    __mn_str_eprint(fn_name)
-    __mn_str_eprint(toString(len(final_fn.blocks)))
-    __mn_str_eprint(toString(len(s.module.functions)))
-    __mn_str_eprint("\n")
 
     // Restore state
     s.current_fn = prev_fn
@@ -9352,126 +9351,6 @@ pub fn lower(program: Program, module_name: String) -> MIRModule {
     return st.module
 }
 
-// Streaming API: lower header only (types, externs), return state for per-function lowering
-pub fn lower_header(program: Program, module_name: String) -> LowerState {
-    let mut st: LowerState = new_lower_state(module_name)
-    st = register_declarations(st, program)
-    return st
-}
-
-// Lower a single function and return the MIR function + updated state
-// The function is NOT added to module.functions (caller handles emission)
-pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerResult {
-    let fn_name: String = prefix + fn_def.name
-
-    // Build params
-    let mut params: List<MIRParam> = []
-    let mut pi_reg: Int = 0
-    let nfdp: Int = len(fn_def.params)
-    for _ in 0..200 {
-        if pi_reg < nfdp {
-            let p_reg: Param = fn_def.params[pi_reg]
-            let pty_reg: MIRType = lower_resolve_type_opt_checked(st, p_reg.type_annotation)
-            let mp: MIRParam = new_mir_param(p_reg.name, pty_reg)
-            params.push(mp)
-            pi_reg = pi_reg + 1
-        }
-    }
-
-    let ret_type: MIRType = resolve_return_type_checked(st, fn_def.return_type)
-
-    let mut decorators: List<String> = []
-    let mut dix: Int = 0
-    let ndec: Int = len(fn_def.decorators)
-    for _ in 0..100 {
-        if dix < ndec {
-            decorators.push(fn_def.decorators[dix].name)
-            dix = dix + 1
-        }
-    }
-
-    let mir_fn: MIRFunction = new_mir_function(fn_name, params, ret_type, decorators, fn_def.public)
-
-    // Save state
-    let prev_fn: Option<MIRFunction> = st.current_fn
-    let prev_block_idx: Int = st.current_block_idx
-    let prev_tmp: Int = st.tmp_counter
-    let prev_blk_cnt: Int = st.block_counter
-    let prev_vars: List<VarInfo> = st.vars
-    let prev_blocks: List<BasicBlock> = st.fn_blocks
-
-    let mut s: LowerState = st
-    s.current_fn = Some(mir_fn)
-    s.tmp_counter = 0
-    s.block_counter = 0
-    let fresh_vars: List<VarInfo> = []
-    s.vars = fresh_vars
-    let fresh_blocks: List<BasicBlock> = []
-    s.fn_blocks = fresh_blocks
-
-    s = add_block(s, "entry")
-    s = set_block(s, 0)
-
-    // Bind params
-    let mut bi: Int = 0
-    for _ in 0..200 {
-        if bi < nfdp {
-            let p_bind: Param = fn_def.params[bi]
-            let pty_bind: MIRType = lower_resolve_type_opt_checked(s, p_bind.type_annotation)
-            let addr_name: String = "%" + p_bind.name + ".addr"
-            let addr: Value = new_value(addr_name, pty_bind)
-            let param_val: Value = new_value("%" + p_bind.name, pty_bind)
-            s = emit_instr(s, Instruction::Alloca(addr, pty_bind))
-            s = emit_instr(s, Instruction::Store(addr, param_val))
-            s = define_var(s, p_bind.name, addr, false)
-            bi = bi + 1
-        }
-    }
-
-    // Lower body
-    let body_r: LowerResult = lower_block(s, fn_def.body)
-    s = body_r.state
-
-    if !current_block_terminated(s) {
-        if ret_type.kind == "void" {
-            s = emit_instr(s, Instruction::Return(none))
-        } else {
-            s = emit_instr(s, Instruction::Return(Some(body_r.value)))
-        }
-    }
-
-    // Copy fn_blocks into MIRFunction (DO NOT add to module — caller emits it)
-    let mut result_fn: MIRFunction = mir_fn
-    match s.current_fn {
-        Some(f) => { result_fn = f },
-        _ => {}
-    }
-    result_fn.blocks = s.fn_blocks
-
-    // Restore counters/vars but KEEP current_fn so caller can extract it
-    s.current_fn = Some(result_fn)
-    s.current_block_idx = prev_block_idx
-    s.tmp_counter = prev_tmp
-    s.block_counter = prev_blk_cnt
-    s.vars = prev_vars
-    s.fn_blocks = prev_blocks
-
-    let fn_val: Value = new_value(fn_name, mir_void())
-    return new_lower_result(fn_val, s)
-}
-
-// Get the last-added function from a LowerState's current_fn
-pub fn extract_current_fn(st: LowerState) -> MIRFunction {
-    match st.current_fn {
-        Some(f) => { return f },
-        _ => {
-            let empty_params: List<MIRParam> = []
-            let empty_blocks: List<BasicBlock> = []
-            let empty_decorators: List<String> = []
-            return new MIRFunction { name: "unknown", params: empty_params, return_type: mir_void(), blocks: empty_blocks, decorators: empty_decorators, is_public: false }
-        }
-    }
-}
 
 // ===== emit_llvm_ir.mn =====
 // emit_llvm_ir.mn — LLVM IR type constants and instruction string builders.
@@ -12906,100 +12785,10 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
             gi = gi + 1
         }
     }
-    // Print all lines directly to stdout
-    let nlines: Int = len(st.lines)
-    let mut li: Int = 0
-    for _ in 0..1000000 {
-        if li < nlines {
-            print(st.lines[li])
-            li = li + 1
-        }
-    }
-    return ""
+    // Join all lines into a single string
+    return join("\n", st.lines)
 }
 
-// ---------------------------------------------------------------------------
-// Streaming API: emit module header, then individual functions
-// ---------------------------------------------------------------------------
-
-pub fn emit_header(module: MIRModule, module_name: String) -> EmitState {
-    let mut st: EmitState = new_emit_state(module_name)
-    st = emit_line(st, "; ModuleID = '" + module_name + "'")
-    st = emit_line(st, "source_filename = \"" + module_name + "\"")
-    st = emit_blank(st)
-    st = emit_format_constants(st)
-    st = declare_all_runtime(st)
-
-    let mut si_idx: Int = 0
-    let nhstructs: Int = len(module.structs)
-    for _ in 0..200 {
-        if si_idx < nhstructs {
-            st = register_mir_struct(st, module.structs[si_idx])
-            si_idx = si_idx + 1
-        }
-    }
-    let mut ei: Int = 0
-    let nhenums: Int = len(module.enums)
-    for _ in 0..200 {
-        if ei < nhenums {
-            st = register_mir_enum(st, module.enums[ei])
-            ei = ei + 1
-        }
-    }
-    if len(module.structs) > 0 { st = emit_blank(st) }
-    if len(module.enums) > 0 { st = emit_blank(st) }
-
-    let mut xi: Int = 0
-    let nhexterns: Int = len(module.extern_fns)
-    for _ in 0..200 {
-        if xi < nhexterns {
-            st = declare_mir_extern(st, module.extern_fns[xi])
-            xi = xi + 1
-        }
-    }
-    if len(module.extern_fns) > 0 { st = emit_blank(st) }
-
-    return st
-}
-
-pub fn register_fn_sig(st: EmitState, f: MIRFunction) -> EmitState {
-    let mut ret_ty: String = resolve_mir_type(f.return_type)
-    if ret_ty.starts_with("%struct.") {
-        if is_enum_type(st, f.return_type.name) {
-            ret_ty = "%enum." + f.return_type.name
-        }
-    }
-    let fn_types: List<String> = []
-    let fe: FnEntry = new_fn_entry(f.name, ret_ty, fn_types)
-    let mut s: EmitState = st
-    s.functions.push(fe)
-    return s
-}
-
-pub fn emit_one_fn(st: EmitState, f: MIRFunction) -> EmitState {
-    return emit_mir_function(st, f)
-}
-
-pub fn emit_finalize(st: EmitState) -> String {
-    let nlines: Int = len(st.lines)
-    let mut result: String = ""
-    let mut li: Int = 0
-    for _ in 0..1000000 {
-        if li < nlines {
-            result = result + st.lines[li] + "\n"
-            li = li + 1
-        }
-    }
-    let mut gi: Int = 0
-    let nfinalglobals: Int = len(st.str_globals)
-    for _ in 0..1000000 {
-        if gi < nfinalglobals {
-            result = result + st.str_globals[gi] + "\n"
-            gi = gi + 1
-        }
-    }
-    return result
-}
 
 // ===== main.mn =====
 // main.mn — Compiler driver for the Mapanare self-hosted compiler.
@@ -13292,19 +13081,27 @@ fn compile_and_print(source: String, filename: String) -> CompileResult {
 // test — compile, link, run, report pass/fail
 // ---------------------------------------------------------------------------
 
+fn rename_main(ir: String) -> String {
+    return ir.replace("@main(", "@mn_main(")
+}
+
 fn run_test(filename: String) {
-    // Use self as subprocess — emit_mir_module prints directly to stdout,
-    // so we capture IR by redirecting to file.
-    // Rename @main → @mn_main so the C wrapper provides the real main().
-    let self_path: String = __mn_argv(0)
-    let compile_cmd: String = self_path + " " + filename + " | sed 's/@main(/@mn_main(/g' > /tmp/mnc_test.ll 2>/dev/null"
-    let r0: Int = __mn_system(compile_cmd)
-    if r0 != 0 {
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) == 0 {
         __mn_str_eprint("FAIL ")
         __mn_str_eprint(filename)
-        __mn_str_eprint(" (compile failed)\n")
+        __mn_str_eprint(" (cannot read file)\n")
         __mn_exit(1)
     }
+    let cr: CompileResult = compile(source, filename)
+    if !cr.success {
+        __mn_str_eprint("FAIL ")
+        __mn_str_eprint(filename)
+        __mn_str_eprint(" (compile errors)\n")
+        __mn_exit(1)
+    }
+    // Rename @main → @mn_main so the C wrapper provides the real main()
+    __mn_file_write("/tmp/mnc_test.ll", rename_main(cr.ir_text))
 
     // Compile IR -> object
     let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_test.ll -o /tmp/mnc_test.o 2>/dev/null")
@@ -13352,15 +13149,20 @@ fn run_build(filename: String) {
         }
     }
 
-    // Use self as subprocess to capture IR
-    // Rename @main → @mn_main so the C wrapper provides the real main().
-    let self_path: String = __mn_argv(0)
-    let compile_cmd: String = self_path + " " + filename + " | sed 's/@main(/@mn_main(/g' > /tmp/mnc_build.ll 2>/dev/null"
-    let r0: Int = __mn_system(compile_cmd)
-    if r0 != 0 {
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) == 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+    let cr: CompileResult = compile(source, filename)
+    if !cr.success {
         __mn_str_eprint("error: compile failed\n")
         __mn_exit(1)
     }
+    // Rename @main → @mn_main so the C wrapper provides the real main()
+    __mn_file_write("/tmp/mnc_build.ll", rename_main(cr.ir_text))
 
     // Compile
     let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_build.ll -o /tmp/mnc_build.o 2>/dev/null")
