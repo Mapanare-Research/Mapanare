@@ -4,7 +4,7 @@
 > The compiler must handle parameterized generics, nested match types,
 > and produce runnable binaries — not just validated IR.
 
-**Status:** PLANNED
+**Status:** COMPLETE
 **Author:** Juan Denis
 **Date:** April 2026
 **Breaking:** No
@@ -173,13 +173,13 @@ Write 3 real-world programs that compile and run natively:
 
 ## Success Criteria
 
-- [ ] 35/35 stdlib modules compile (toml fixed)
-- [ ] 25/25 golden tests pass through stage1 (closures + enum methods)
-- [ ] `./mnc test` CLI command works
-- [ ] `./mnc build` produces runnable binaries
-- [ ] WASM for-loops work (with range iterator builtins)
-- [ ] 3 demo programs compile + link + run natively
-- [ ] Native test suite: 30+ assertions across 6+ modules
+- [x] 35/35 stdlib modules compile (toml fixed)
+- [x] 25/25 golden tests pass through stage1 (closures + enum methods)
+- [x] `./mnc test` CLI command works
+- [x] `./mnc build` produces runnable binaries
+- [ ] WASM for-loops work (with range iterator builtins) — deferred to v3.7.0
+- [x] 3 demo programs compile + link + run natively
+- [ ] Native test suite: 30+ assertions across 6+ modules — deferred to v3.7.0
 
 ---
 
