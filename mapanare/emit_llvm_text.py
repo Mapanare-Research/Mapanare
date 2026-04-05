@@ -1542,6 +1542,17 @@ class LLVMTextEmitter:
             self._rt("__mn_str_eprintln", VOID, [STR], [(a, STR)])
             self._put(i.dest, "0", I1)
             return
+        if fn == "__mn_file_write" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            r = self._rt("__mn_file_write", I64, [STR, STR], [(a0, STR), (a1, STR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_system" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_system", I64, [STR], [(a, STR)])
+            self._put(i.dest, r, I64)
+            return
 
         # join
         if fn == "join" and len(i.args) >= 2:

@@ -538,6 +538,9 @@ MN_EXPORT MnString __mn_argv(int64_t index);
 /** Exit with status code. */
 MN_EXPORT void __mn_exit(int64_t code);
 
+/** Run a shell command, return exit code (0 = success). */
+MN_EXPORT int64_t __mn_system(MnString command);
+
 /** Print an error and exit with code 1. */
 MN_EXPORT void __mn_panic(MnString message);
 

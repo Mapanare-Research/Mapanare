@@ -92,57 +92,16 @@ static void print_usage(const char *prog) {
 }
 
 extern void __mn_argv_init(int argc, char **argv);
+extern void mn_main(void);
 
 int main(int argc, char *argv[]) {
     signal(SIGSEGV, crash_handler);
     signal(SIGABRT, crash_handler);
     __mn_argv_init(argc, argv);
-    if (argc < 2) {
-        print_usage(argv[0]);
-        return 1;
-    }
 
-    const char *filepath = argv[1];
-
-    /* Read the source file */
-    MnString path_str = __mn_str_from_cstr(filepath);
-    int64_t ok = 0;
-    MnString source = __mn_file_read(path_str, &ok);
-
-    if (!ok) {
-        fprintf(stderr, "error: cannot read file '%s'\n", filepath);
-        return 1;
-    }
-
-    /* Compile */
-    MnString filename_str = __mn_str_from_cstr(filepath);
-
-    CompileResult result = compile(source, filename_str);
-
-    if (result.success) {
-        /* Print LLVM IR to stdout — untag heap-allocated string pointer (bit 0) */
-        if (result.ir_text.len > 0) {
-            const char *ir_data = (const char *)((uintptr_t)result.ir_text.data & ~(uintptr_t)1);
-            fwrite(ir_data, 1, (size_t)result.ir_text.len, stdout);
-            /* Ensure trailing newline */
-            if (ir_data[result.ir_text.len - 1] != '\n') {
-                putchar('\n');
-            }
-        }
-        return 0;
-    } else {
-        /* Print errors to stderr */
-        int64_t n_errors = result.errors.len;
-        for (int64_t i = 0; i < n_errors; i++) {
-            SemanticError *err = (SemanticError *)(result.errors.data +
-                                                    i * result.errors.elem_size);
-            MnString msg = format_error(*err);
-            if (msg.len > 0) {
-                const char *msg_data = (const char *)((uintptr_t)msg.data & ~(uintptr_t)1);
-                fwrite(msg_data, 1, (size_t)msg.len, stderr);
-            }
-            fputc('\n', stderr);
-        }
-        return 1;
-    }
+    /* Delegate to the self-hosted compiler driver.
+     * mn_main() handles subcommands (test, build, version) and
+     * the default compile-to-IR mode. It calls __mn_exit() on error. */
+    mn_main();
+    return 0;
 }

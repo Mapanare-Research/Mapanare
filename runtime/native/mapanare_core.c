@@ -16,6 +16,9 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifndef _WIN32
+#include <sys/wait.h>
+#endif
 
 /* -----------------------------------------------------------------------
  * Memory helpers
@@ -2201,6 +2204,22 @@ MN_EXPORT MnString __mn_file_read_or_empty(MnString path) {
 
 MN_EXPORT void __mn_exit(int64_t code) {
     exit((int)code);
+}
+
+MN_EXPORT int64_t __mn_system(MnString command) {
+    char *cmd = mn_to_cstr(command);
+    int ret = system(cmd);
+    __mn_free(cmd);
+    /* system() returns -1 on error, or the full status on POSIX.
+       On POSIX, extract the exit code; on Windows, system() returns
+       the command's exit code directly. */
+#ifdef _WIN32
+    return (int64_t)ret;
+#else
+    if (ret == -1) return -1;
+    if (WIFEXITED(ret)) return (int64_t)WEXITSTATUS(ret);
+    return -1;
+#endif
 }
 
 MN_EXPORT void __mn_panic(MnString message) {

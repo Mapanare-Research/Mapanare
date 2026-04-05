@@ -310,6 +310,8 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_argc", "i64", "")
     s = declare_runtime_fn(s, "__mn_argv", llvm_string(), "i64")
     s = declare_runtime_fn(s, "__mn_file_read_or_empty", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_file_write", "i64", llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_system", "i64", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
 
@@ -2217,6 +2219,14 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     }
     if fn_name == "__mn_exit" {
         return emit_line(st, emit_call_void("__mn_exit", "i64 " + args[0].name))
+    }
+    if fn_name == "__mn_file_write" {
+        let as_fw: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_file_write", as_fw))
+    }
+    if fn_name == "__mn_system" {
+        let as_sys: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_system", as_sys))
     }
     if fn_name == "__mn_str_eprint" {
         let as_epr: String = llvm_string() + " " + args[0].name
