@@ -10043,8 +10043,6 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_argc", "i64", "")
     s = declare_runtime_fn(s, "__mn_argv", llvm_string(), "i64")
     s = declare_runtime_fn(s, "__mn_file_read_or_empty", llvm_string(), llvm_string())
-    s = declare_runtime_fn(s, "__mn_file_write", "i64", llvm_string() + ", " + llvm_string())
-    s = declare_runtime_fn(s, "__mn_system", "i64", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
 
@@ -13297,8 +13295,9 @@ fn compile_and_print(source: String, filename: String) -> CompileResult {
 fn run_test(filename: String) {
     // Use self as subprocess — emit_mir_module prints directly to stdout,
     // so we capture IR by redirecting to file.
+    // Rename @main → @mn_main so the C wrapper provides the real main().
     let self_path: String = __mn_argv(0)
-    let compile_cmd: String = self_path + " " + filename + " > /tmp/mnc_test.ll 2>/dev/null"
+    let compile_cmd: String = self_path + " " + filename + " | sed 's/@main(/@mn_main(/g' > /tmp/mnc_test.ll 2>/dev/null"
     let r0: Int = __mn_system(compile_cmd)
     if r0 != 0 {
         __mn_str_eprint("FAIL ")
@@ -13317,7 +13316,7 @@ fn run_test(filename: String) {
     }
 
     // Link with runtime
-    let r2: Int = __mn_system("gcc /tmp/mnc_test.o runtime/native/mapanare_core.c -I runtime/native -o /tmp/mnc_test -no-pie -rdynamic -lm -lpthread 2>/dev/null")
+    let r2: Int = __mn_system("gcc /tmp/mnc_test.o runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o /tmp/mnc_test -no-pie -rdynamic -lm -lpthread 2>/dev/null")
     if r2 != 0 {
         __mn_str_eprint("FAIL ")
         __mn_str_eprint(filename)
@@ -13354,8 +13353,9 @@ fn run_build(filename: String) {
     }
 
     // Use self as subprocess to capture IR
+    // Rename @main → @mn_main so the C wrapper provides the real main().
     let self_path: String = __mn_argv(0)
-    let compile_cmd: String = self_path + " " + filename + " > /tmp/mnc_build.ll 2>/dev/null"
+    let compile_cmd: String = self_path + " " + filename + " | sed 's/@main(/@mn_main(/g' > /tmp/mnc_build.ll 2>/dev/null"
     let r0: Int = __mn_system(compile_cmd)
     if r0 != 0 {
         __mn_str_eprint("error: compile failed\n")
@@ -13370,7 +13370,7 @@ fn run_build(filename: String) {
     }
 
     // Link
-    let link_cmd: String = "gcc /tmp/mnc_build.o runtime/native/mapanare_core.c -I runtime/native -o " + out_name + " -no-pie -rdynamic -lm -lpthread"
+    let link_cmd: String = "gcc /tmp/mnc_build.o runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_name + " -no-pie -rdynamic -lm -lpthread"
     let r2: Int = __mn_system(link_cmd)
     if r2 != 0 {
         __mn_str_eprint("error: link failed\n")

@@ -310,8 +310,6 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_argc", "i64", "")
     s = declare_runtime_fn(s, "__mn_argv", llvm_string(), "i64")
     s = declare_runtime_fn(s, "__mn_file_read_or_empty", llvm_string(), llvm_string())
-    s = declare_runtime_fn(s, "__mn_file_write", "i64", llvm_string() + ", " + llvm_string())
-    s = declare_runtime_fn(s, "__mn_system", "i64", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
 
