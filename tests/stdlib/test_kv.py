@@ -59,9 +59,7 @@ def _compile_mir(source: str) -> str:
 def _strip_imports(source: str) -> str:
     """Remove import/usa lines since we inline all module sources."""
     return "\n".join(
-        line
-        for line in source.splitlines()
-        if not line.strip().startswith(("import ", "usa "))
+        line for line in source.splitlines() if not line.strip().startswith(("import ", "usa "))
     )
 
 
