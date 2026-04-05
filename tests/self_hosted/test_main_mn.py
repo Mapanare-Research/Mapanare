@@ -70,8 +70,8 @@ class TestMainMnPipeline:
         assert parse_pos < lower_pos < emit_pos
 
     def test_version_string(self, main_mn_source: str) -> None:
-        """Version should be 3.6.0."""
-        assert "3.6.0" in main_mn_source
+        """Version should be 3.8.0."""
+        assert "3.8.0" in main_mn_source
 
 
 class TestMainMnCompileResult:
