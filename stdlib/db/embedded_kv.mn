@@ -102,7 +102,7 @@ pub fn embedded_exists(store: EmbeddedStore, key: String) -> Bool {
 pub fn embedded_keys(store: EmbeddedStore) -> List<String> {
     pon mut result: List<String> = []
     cada k en store.data {
-        result = result + [k]
+        result.push(k)
     }
     da result
 }

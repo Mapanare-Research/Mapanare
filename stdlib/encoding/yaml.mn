@@ -636,35 +636,35 @@ fn resolve_plain_scalar(raw: String) -> YamlValue {
             pon mut all_digits: Bool = true
             pon mut has_dot: Bool = false
             pon mut has_exp: Bool = false
-            pon mut di: Int = start
-            mien di < rlen {
-                pon dc: String = raw.char_at(di)
+            pon mut didx: Int = start
+            mien didx < rlen {
+                pon dc: String = raw.char_at(didx)
                 si is_yaml_digit(dc) {
-                    di = di + 1
-                } sino { si dc == "." {
+                    didx = didx + 1
+                } sino si dc == "." {
                     has_dot = true
-                    di = di + 1
-                } sino { si dc == "e" {
+                    didx = didx + 1
+                } sino si dc == "e" {
                     has_exp = true
-                    di = di + 1
+                    didx = didx + 1
                     // optional sign after e
-                    si di < rlen {
-                        pon es: String = raw.char_at(di)
-                        si es == "+" { di = di + 1 }
-                        si es == "-" { di = di + 1 }
+                    si didx < rlen {
+                        pon es: String = raw.char_at(didx)
+                        si es == "+" { didx = didx + 1 }
+                        si es == "-" { didx = didx + 1 }
                     }
-                } sino { si dc == "E" {
+                } sino si dc == "E" {
                     has_exp = true
-                    di = di + 1
-                    si di < rlen {
-                        pon es2: String = raw.char_at(di)
-                        si es2 == "+" { di = di + 1 }
-                        si es2 == "-" { di = di + 1 }
+                    didx = didx + 1
+                    si didx < rlen {
+                        pon es2: String = raw.char_at(didx)
+                        si es2 == "+" { didx = didx + 1 }
+                        si es2 == "-" { didx = didx + 1 }
                     }
                 } sino {
                     all_digits = false
                     sal
-                } } } }
+                }
             }
 
             si all_digits {
@@ -799,10 +799,10 @@ fn parse_block_scalar(src: String, slen: Int, pos: Int, line: Int, col: Int) -> 
         } sino { si ci == "+" { chomp = 2; p = p + 1; c = c + 1 } }
     }
     si p < slen {
-        pon di: String = src.char_at(p)
-        si is_yaml_digit(di) {
-            si di != "0" {
-                explicit_indent = digit_val(di)
+        pon didx: String = src.char_at(p)
+        si is_yaml_digit(didx) {
+            si didx != "0" {
+                explicit_indent = digit_val(didx)
                 has_explicit_indent = true
                 p = p + 1
                 c = c + 1

@@ -45,6 +45,11 @@ _JSON_MN = (
     Path(__file__).resolve().parent.parent.parent / "stdlib" / "encoding" / "json.mn"
 ).read_text(encoding="utf-8")
 
+# string_utils is a dependency of json.mn
+_STRING_UTILS_MN = (
+    Path(__file__).resolve().parent.parent.parent / "stdlib" / "text" / "string_utils.mn"
+).read_text(encoding="utf-8")
+
 
 def _compile_mir(source: str) -> str:
     """Compile via MIR-based LLVM emitter."""
@@ -52,13 +57,25 @@ def _compile_mir(source: str) -> str:
 
 
 def _strip_imports(source: str) -> str:
-    """Remove import lines since we inline all module sources."""
-    return "\n".join(line for line in source.splitlines() if not line.strip().startswith("import "))
+    """Remove import/usa lines since we inline all module sources."""
+    return "\n".join(
+        line
+        for line in source.splitlines()
+        if not line.strip().startswith(("import ", "usa "))
+    )
 
 
 def _kv_source() -> str:
-    """Return inlined KV + EmbeddedKV + JSON module sources."""
-    return _JSON_MN + "\n\n" + _strip_imports(_KV_MN) + "\n\n" + _strip_imports(_EMBEDDED_KV_MN)
+    """Return inlined KV + EmbeddedKV + JSON + string_utils module sources."""
+    return (
+        _strip_imports(_STRING_UTILS_MN)
+        + "\n\n"
+        + _strip_imports(_JSON_MN)
+        + "\n\n"
+        + _strip_imports(_KV_MN)
+        + "\n\n"
+        + _strip_imports(_EMBEDDED_KV_MN)
+    )
 
 
 def _kv_source_with_main(main_body: str) -> str:
