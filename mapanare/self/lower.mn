@@ -2212,11 +2212,10 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     s = add_block(s, else_label)
     let else_idx: Int = s.current_block_idx
 
+    // Reserve if_merge label (block added AFTER then/else — see below)
     let merge_label_r: LowerResult = fresh_block_label(s, "if_merge")
     s = merge_label_r.state
     let merge_label: String = merge_label_r.value.name
-    s = add_block(s, merge_label)
-    let merge_idx: Int = s.current_block_idx
 
     // Branch (emitted in the entry block, not the merge block)
     s = set_block(s, entry_idx)
@@ -2247,6 +2246,10 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     if !else_terminated {
         s = emit_instr(s, Instruction::Jump(merge_label))
     }
+
+    // NOW add the if_merge block — after all inner blocks from then/else
+    s = add_block(s, merge_label)
+    let merge_idx: Int = s.current_block_idx
 
     // Merge block with phi — only include arms that reach the merge block
     s = set_block(s, merge_idx)
@@ -2433,12 +2436,10 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     // Save entry block for switch/branch emission
     let match_entry_idx: Int = s.current_block_idx
 
-    // Create merge block
+    // Reserve merge label (block added AFTER arms — see below)
     let merge_label_r: LowerResult = fresh_block_label(s, "match_merge")
     s = merge_label_r.state
     let merge_label: String = merge_label_r.value.name
-    s = add_block(s, merge_label)
-    let merge_idx: Int = s.current_block_idx
 
     // Create arm blocks AND build switch cases.
     // Note: we use build_match_arms which returns accumulated results,
@@ -2506,6 +2507,11 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             ai = ai + 1
         }
     }
+
+    // NOW add the merge block — after all arms, so arm-internal blocks
+    // (from nested if/match) are emitted first, avoiding forward references.
+    s = add_block(s, merge_label)
+    let merge_idx: Int = s.current_block_idx
 
     // Add zeroinitializer entry for switch default→merge path
     if default_label == merge_label && len(arm_results) > 0 {

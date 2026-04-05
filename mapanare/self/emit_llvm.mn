@@ -2812,24 +2812,51 @@ fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitSta
     let mut skip: Bool = false
     if len(incoming) == 0 { skip = true }
     if ty == "void" { skip = true }
-    // For Phis with i64 type (unresolved or unknown): recover the actual type
-    // from the incoming values. Any struct/enum type in incoming is better than
-    // the default i64 that resolve_mir_type assigns to unknown types.
-    if len(incoming) > 0 {
-        let mut found: Bool = false
+    // For Phis with i64 type (unresolved or unknown): recover the actual type.
+    // Step 1: check MIR types of incoming values.
+    if ty == "i64" && len(incoming) > 0 {
         let mut ci: Int = 0
         for _ in 0..100 {
-            if ci >= len(incoming) { ci = 999 }
-            if !found && ci < len(incoming) {
+            if ci < len(incoming) {
                 let inc_ty: String = resolve_type(st, incoming[ci].val.ty)
                 if inc_ty != "i64" && inc_ty != "void" {
-                    if ty == "i64" {
-                        ty = inc_ty
-                        found = true
+                    ty = inc_ty
+                }
+                ci = ci + 1
+            }
+        }
+    }
+    // Step 2: if still i64, scan backwards through CURRENT FUNCTION's emitted
+    // lines (stop at "define" or "entry:") for the incoming value's phi definition.
+    if ty == "i64" && len(incoming) > 0 {
+        let mut ci2: Int = 0
+        for _ in 0..20 {
+            if ci2 < len(incoming) && ty == "i64" {
+                let vname: String = incoming[ci2].val.name
+                if vname != "zeroinitializer" && len(vname) > 1 {
+                    let search: String = vname + " = phi "
+                    let mut li: Int = len(s.lines) - 1
+                    for _ in 0..2000 {
+                        if li >= 0 && ty == "i64" {
+                            let line: String = s.lines[li]
+                            // Stop at function boundary
+                            if line.starts_with("define ") { li = -1 }
+                            if line.starts_with("}") { li = -1 }
+                            if li >= 0 && line.contains(search) {
+                                let ppos: Int = line.find(search) + len(search)
+                                let rest: String = line.substr(ppos, len(line) - ppos)
+                                let bpos: Int = rest.find(" [")
+                                if bpos > 0 {
+                                    let fty: String = rest.substr(0, bpos)
+                                    if fty != "i64" && fty != "void" { ty = fty }
+                                }
+                            }
+                            li = li - 1
+                        }
                     }
                 }
+                ci2 = ci2 + 1
             }
-            ci = ci + 1
         }
     }
 

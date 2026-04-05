@@ -8632,11 +8632,10 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     s = add_block(s, else_label)
     let else_idx: Int = s.current_block_idx
 
+    // Reserve if_merge label (block added AFTER then/else — see below)
     let merge_label_r: LowerResult = fresh_block_label(s, "if_merge")
     s = merge_label_r.state
     let merge_label: String = merge_label_r.value.name
-    s = add_block(s, merge_label)
-    let merge_idx: Int = s.current_block_idx
 
     // Branch (emitted in the entry block, not the merge block)
     s = set_block(s, entry_idx)
@@ -8667,6 +8666,10 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     if !else_terminated {
         s = emit_instr(s, Instruction::Jump(merge_label))
     }
+
+    // NOW add the if_merge block — after all inner blocks from then/else
+    s = add_block(s, merge_label)
+    let merge_idx: Int = s.current_block_idx
 
     // Merge block with phi — only include arms that reach the merge block
     s = set_block(s, merge_idx)
@@ -8853,12 +8856,10 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     // Save entry block for switch/branch emission
     let match_entry_idx: Int = s.current_block_idx
 
-    // Create merge block
+    // Reserve merge label (block added AFTER arms — see below)
     let merge_label_r: LowerResult = fresh_block_label(s, "match_merge")
     s = merge_label_r.state
     let merge_label: String = merge_label_r.value.name
-    s = add_block(s, merge_label)
-    let merge_idx: Int = s.current_block_idx
 
     // Create arm blocks AND build switch cases.
     // Note: we use build_match_arms which returns accumulated results,
@@ -8926,6 +8927,11 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             ai = ai + 1
         }
     }
+
+    // NOW add the merge block — after all arms, so arm-internal blocks
+    // (from nested if/match) are emitted first, avoiding forward references.
+    s = add_block(s, merge_label)
+    let merge_idx: Int = s.current_block_idx
 
     // Add zeroinitializer entry for switch default→merge path
     if default_label == merge_label && len(arm_results) > 0 {
@@ -12504,24 +12510,51 @@ fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitSta
     let mut skip: Bool = false
     if len(incoming) == 0 { skip = true }
     if ty == "void" { skip = true }
-    // For Phis with i64 type (unresolved or unknown): recover the actual type
-    // from the incoming values. Any struct/enum type in incoming is better than
-    // the default i64 that resolve_mir_type assigns to unknown types.
-    if len(incoming) > 0 {
-        let mut found: Bool = false
+    // For Phis with i64 type (unresolved or unknown): recover the actual type.
+    // Step 1: check MIR types of incoming values.
+    if ty == "i64" && len(incoming) > 0 {
         let mut ci: Int = 0
         for _ in 0..100 {
-            if ci >= len(incoming) { ci = 999 }
-            if !found && ci < len(incoming) {
+            if ci < len(incoming) {
                 let inc_ty: String = resolve_type(st, incoming[ci].val.ty)
                 if inc_ty != "i64" && inc_ty != "void" {
-                    if ty == "i64" {
-                        ty = inc_ty
-                        found = true
+                    ty = inc_ty
+                }
+                ci = ci + 1
+            }
+        }
+    }
+    // Step 2: if still i64, scan backwards through CURRENT FUNCTION's emitted
+    // lines (stop at "define" or "entry:") for the incoming value's phi definition.
+    if ty == "i64" && len(incoming) > 0 {
+        let mut ci2: Int = 0
+        for _ in 0..20 {
+            if ci2 < len(incoming) && ty == "i64" {
+                let vname: String = incoming[ci2].val.name
+                if vname != "zeroinitializer" && len(vname) > 1 {
+                    let search: String = vname + " = phi "
+                    let mut li: Int = len(s.lines) - 1
+                    for _ in 0..2000 {
+                        if li >= 0 && ty == "i64" {
+                            let line: String = s.lines[li]
+                            // Stop at function boundary
+                            if line.starts_with("define ") { li = -1 }
+                            if line.starts_with("}") { li = -1 }
+                            if li >= 0 && line.contains(search) {
+                                let ppos: Int = line.find(search) + len(search)
+                                let rest: String = line.substr(ppos, len(line) - ppos)
+                                let bpos: Int = rest.find(" [")
+                                if bpos > 0 {
+                                    let fty: String = rest.substr(0, bpos)
+                                    if fty != "i64" && fty != "void" { ty = fty }
+                                }
+                            }
+                            li = li - 1
+                        }
                     }
                 }
+                ci2 = ci2 + 1
             }
-            ci = ci + 1
         }
     }
 
