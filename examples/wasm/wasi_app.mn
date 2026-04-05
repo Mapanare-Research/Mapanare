@@ -4,22 +4,11 @@
 // Compile: mapanare emit-wasm --wasi --binary examples/wasm/wasi_app.mn
 // Run:     wasmtime wasi_app.wasm
 
-fn factorial(n: Int) -> Int {
-    si n <= 1 {
-        da 1
-    }
-    da n * factorial(n - 1)
-}
-
 fn main() {
     print("=== Mapanare on WASI ===")
-    print("Running as native WebAssembly via WASI")
-
-    // Factorial computation (unrolled — range iteration not yet in WASM emitter)
-    print("5! = ")
-    print(str(factorial(5)))
-    print("10! = ")
-    print(str(factorial(10)))
-
+    print("Running as native WebAssembly")
+    let x: Int = 6 * 7
+    print("6 * 7 = ")
+    print(str(x))
     print("Done!")
 }
