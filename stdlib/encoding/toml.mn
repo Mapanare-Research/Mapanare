@@ -21,13 +21,13 @@ pub tipo TomlError {
 }
 
 pub tipo TomlValue {
-    | Str(String)
-    | Int(Int)
-    | Float(Float)
-    | Bool(Bool)
-    | DateTime(String)
-    | Array(List<TomlValue>)
-    | Table(Map<String, TomlValue>)
+    | TStr(String)
+    | TInt(Int)
+    | TFloat(Float)
+    | TBool(Bool)
+    | TDateTime(String)
+    | TArray(List<TomlValue>)
+    | TTable(Map<String, TomlValue>)
 }
 
 // ---------------------------------------------------------------------------
@@ -282,25 +282,29 @@ fn parse_basic_string(input: String, pos: Int, line: Int, col: Int) -> StringPar
     mien p < slen {
         pon ch: String = input.char_at(p)
         si ch == "\"" {
-            da new StringParseResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+            let __te: TomlError = new_toml_error("", 0, 0)
+            da new StringParseResult { value: result, pos: p + 1, line: ln, col: c + 1, ok: true, error: __te }
         }
         si ch == "\\" {
             pon er: EscapeResult = handle_toml_escape(input, p + 1, slen)
             si er.ok == false {
-                da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error(er.error_msg, ln, c) }
+                let __te: TomlError = new_toml_error(er.error_msg, ln, c)
+                da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: __te }
             }
             result = result + er.value
             p = p + 1 + er.advance
             c = c + 1 + er.advance
         } sino { si ch == "\n" {
-            da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Newline en basic string (use multi-line \"\"\")", ln, c) }
+            let __te: TomlError = new_toml_error("Newline en basic string (use multi-line \"\"\")", ln, c)
+            da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: __te }
         } sino {
             result = result + ch
             p = p + 1
             c = c + 1
         } }
     }
-    da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated basic string", line, col) }
+    let __te: TomlError = new_toml_error("Unterminated basic string", line, col)
+    da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: __te }
 }
 
 // Literal string: '...' no escape sequences
@@ -314,16 +318,19 @@ fn parse_literal_string(input: String, pos: Int, line: Int, col: Int) -> StringP
     mien p < slen {
         pon ch: String = input.char_at(p)
         si ch == "'" {
-            da new StringParseResult { value: result, pos: p + 1, line: line, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+            let __te: TomlError = new_toml_error("", 0, 0)
+            da new StringParseResult { value: result, pos: p + 1, line: line, col: c + 1, ok: true, error: __te }
         }
         si ch == "\n" {
-            da new StringParseResult { value: "", pos: p, line: line, col: c, ok: false, error: new_toml_error("Newline en literal string (use multi-line ''')", line, c) }
+            let __te: TomlError = new_toml_error("Newline en literal string (use multi-line ''')", line, c)
+            da new StringParseResult { value: "", pos: p, line: line, col: c, ok: false, error: __te }
         }
         result = result + ch
         p = p + 1
         c = c + 1
     }
-    da new StringParseResult { value: "", pos: p, line: line, col: c, ok: false, error: new_toml_error("Unterminated literal string", line, col) }
+    let __te: TomlError = new_toml_error("Unterminated literal string", line, col)
+    da new StringParseResult { value: "", pos: p, line: line, col: c, ok: false, error: __te }
 }
 
 // Multi-line basic string: """..."""
@@ -359,7 +366,8 @@ fn parse_ml_basic_string(input: String, pos: Int, line: Int, col: Int) -> String
             si p + 2 < slen {
                 si input.char_at(p + 1) == "\"" {
                     si input.char_at(p + 2) == "\"" {
-                        da new StringParseResult { value: result, pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+                        let __te: TomlError = new_toml_error("", 0, 0)
+                        da new StringParseResult { value: result, pos: p + 3, line: ln, col: c + 3, ok: true, error: __te }
                     }
                 }
             }
@@ -412,14 +420,16 @@ fn parse_ml_basic_string(input: String, pos: Int, line: Int, col: Int) -> String
                     // Regular escape
                     pon er: EscapeResult = handle_toml_escape(input, p + 1, slen)
                     si er.ok == false {
-                        da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error(er.error_msg, ln, c) }
+                        let __te: TomlError = new_toml_error(er.error_msg, ln, c)
+                        da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: __te }
                     }
                     result = result + er.value
                     p = p + 1 + er.advance
                     c = c + 1 + er.advance
                 } }
             } sino {
-                da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unexpected end of input after backslash", ln, c) }
+                let __te: TomlError = new_toml_error("Unexpected end of input after backslash", ln, c)
+                da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: __te }
             }
         } sino { si ch == "\n" {
             result = result + "\n"
@@ -440,7 +450,8 @@ fn parse_ml_basic_string(input: String, pos: Int, line: Int, col: Int) -> String
             c = c + 1
         } } } }
     }
-    da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated multi-line basic string", line, col) }
+    let __te: TomlError = new_toml_error("Unterminated multi-line basic string", line, col)
+    da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: __te }
 }
 
 // Multi-line literal string: '''...'''
@@ -476,7 +487,8 @@ fn parse_ml_literal_string(input: String, pos: Int, line: Int, col: Int) -> Stri
             si p + 2 < slen {
                 si input.char_at(p + 1) == "'" {
                     si input.char_at(p + 2) == "'" {
-                        da new StringParseResult { value: result, pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+                        let __te: TomlError = new_toml_error("", 0, 0)
+                        da new StringParseResult { value: result, pos: p + 3, line: ln, col: c + 3, ok: true, error: __te }
                     }
                 }
             }
@@ -503,7 +515,8 @@ fn parse_ml_literal_string(input: String, pos: Int, line: Int, col: Int) -> Stri
             c = c + 1
         } } }
     }
-    da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated multi-line literal string", line, col) }
+    let __te: TomlError = new_toml_error("Unterminated multi-line literal string", line, col)
+    da new StringParseResult { value: "", pos: p, line: ln, col: c, ok: false, error: __te }
 }
 
 // Dispatch to appropriate string parser based on opening characters
@@ -533,7 +546,8 @@ fn parse_toml_string(input: String, pos: Int, line: Int, col: Int) -> StringPars
         }
         da parse_literal_string(input, pos, line, col)
     }
-    da new StringParseResult { value: "", pos: pos, line: line, col: col, ok: false, error: new_toml_error("Expected string", line, col) }
+    let __te: TomlError = new_toml_error("Expected string", line, col)
+    da new StringParseResult { value: "", pos: pos, line: line, col: col, ok: false, error: __te }
 }
 
 // ---------------------------------------------------------------------------
@@ -559,22 +573,26 @@ fn parse_bare_key(input: String, pos: Int, line: Int, col: Int) -> KeyResult {
     }
 
     si len(key) == 0 {
-        da new KeyResult { key: "", pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected key", line, col) }
+        let __te: TomlError = new_toml_error("Expected key", line, col)
+        da new KeyResult { key: "", pos: p, line: line, col: c, ok: false, error: __te }
     }
-    da new KeyResult { key: key, pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+    let __te: TomlError = new_toml_error("", 0, 0)
+    da new KeyResult { key: key, pos: p, line: line, col: c, ok: true, error: __te }
 }
 
 // Parse a single key segment (bare or quoted)
 fn parse_simple_key(input: String, pos: Int, line: Int, col: Int) -> KeyResult {
     pon slen: Int = len(input)
     si pos >= slen {
-        da new KeyResult { key: "", pos: pos, line: line, col: col, ok: false, error: new_toml_error("Expected key", line, col) }
+        let __te: TomlError = new_toml_error("Expected key", line, col)
+        da new KeyResult { key: "", pos: pos, line: line, col: col, ok: false, error: __te }
     }
     pon ch: String = input.char_at(pos)
     si ch == "\"" {
         pon sr: StringParseResult = parse_basic_string(input, pos, line, col)
         si sr.ok {
-            da new KeyResult { key: sr.value, pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: new_toml_error("", 0, 0) }
+            let __te: TomlError = new_toml_error("", 0, 0)
+            da new KeyResult { key: sr.value, pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: __te }
         } sino {
             da new KeyResult { key: "", pos: sr.pos, line: sr.line, col: sr.col, ok: false, error: sr.error }
         }
@@ -582,7 +600,8 @@ fn parse_simple_key(input: String, pos: Int, line: Int, col: Int) -> KeyResult {
     si ch == "'" {
         pon sr: StringParseResult = parse_literal_string(input, pos, line, col)
         si sr.ok {
-            da new KeyResult { key: sr.value, pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: new_toml_error("", 0, 0) }
+            let __te: TomlError = new_toml_error("", 0, 0)
+            da new KeyResult { key: sr.value, pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: __te }
         } sino {
             da new KeyResult { key: "", pos: sr.pos, line: sr.line, col: sr.col, ok: false, error: sr.error }
         }
@@ -638,7 +657,8 @@ fn parse_dotted_key(input: String, pos: Int, line: Int, col: Int) -> DottedKeyRe
         c = next_key.col
     }
 
-    da new DottedKeyResult { keys: keys, pos: p, line: ln, col: c, ok: true, error: new_toml_error("", 0, 0) }
+    let __te: TomlError = new_toml_error("", 0, 0)
+    da new DottedKeyResult { keys: keys, pos: p, line: ln, col: c, ok: true, error: __te }
 }
 
 // ---------------------------------------------------------------------------
@@ -660,7 +680,8 @@ fn parse_toml_number(input: String, pos: Int, line: Int, col: Int) -> ValueResul
     }
 
     si p >= slen {
-        da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected number", line, c) }
+        let __te: TomlError = new_toml_error("Expected number", line, c)
+        da new ValueResult { value: TInt(0), pos: p, line: line, col: c, ok: false, error: __te }
     }
 
     // Check for special float values: inf and nan
@@ -674,9 +695,11 @@ fn parse_toml_number(input: String, pos: Int, line: Int, col: Int) -> ValueResul
                     // inf, +inf, -inf
                     si negative {
                         // Use a very large negative number as approximation
-                        da new ValueResult { value: Float(0.0 - 1.0e308), pos: p + 3, line: line, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+                        let __te: TomlError = new_toml_error("", 0, 0)
+                        da new ValueResult { value: TFloat(0.0 - 1.0e308), pos: p + 3, line: line, col: c + 3, ok: true, error: __te }
                     } sino {
-                        da new ValueResult { value: Float(1.0e308), pos: p + 3, line: line, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+                        let __te: TomlError = new_toml_error("", 0, 0)
+                        da new ValueResult { value: TFloat(1.0e308), pos: p + 3, line: line, col: c + 3, ok: true, error: __te }
                     }
                 }
             }
@@ -685,7 +708,8 @@ fn parse_toml_number(input: String, pos: Int, line: Int, col: Int) -> ValueResul
             si c1 == "a" {
                 si c2 == "n" {
                     // nan, +nan, -nan
-                    da new ValueResult { value: Float(0.0), pos: p + 3, line: line, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+                    let __te: TomlError = new_toml_error("", 0, 0)
+                    da new ValueResult { value: TFloat(0.0), pos: p + 3, line: line, col: c + 3, ok: true, error: __te }
                 }
             }
         }
@@ -716,10 +740,12 @@ fn parse_toml_number(input: String, pos: Int, line: Int, col: Int) -> ValueResul
                     } sino { sal } }
                 }
                 si hex_count == 0 {
-                    da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected hex digit after 0x", line, c) }
+                    let __te: TomlError = new_toml_error("Expected hex digit after 0x", line, c)
+                    da new ValueResult { value: TInt(0), pos: p, line: line, col: c, ok: false, error: __te }
                 }
                 si negative { hex_val = 0 - hex_val }
-                da new ValueResult { value: Int(hex_val), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+                let __te: TomlError = new_toml_error("", 0, 0)
+                da new ValueResult { value: TInt(hex_val), pos: p, line: line, col: c, ok: true, error: __te }
             }
             si prefix == "o" {
                 // Octal
@@ -740,10 +766,12 @@ fn parse_toml_number(input: String, pos: Int, line: Int, col: Int) -> ValueResul
                     } sino { sal } }
                 }
                 si oct_count == 0 {
-                    da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected octal digit after 0o", line, c) }
+                    let __te: TomlError = new_toml_error("Expected octal digit after 0o", line, c)
+                    da new ValueResult { value: TInt(0), pos: p, line: line, col: c, ok: false, error: __te }
                 }
                 si negative { oct_val = 0 - oct_val }
-                da new ValueResult { value: Int(oct_val), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+                let __te: TomlError = new_toml_error("", 0, 0)
+                da new ValueResult { value: TInt(oct_val), pos: p, line: line, col: c, ok: true, error: __te }
             }
             si prefix == "b" {
                 // Binary
@@ -764,17 +792,20 @@ fn parse_toml_number(input: String, pos: Int, line: Int, col: Int) -> ValueResul
                     } sino { sal } }
                 }
                 si bin_count == 0 {
-                    da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected binary digit after 0b", line, c) }
+                    let __te: TomlError = new_toml_error("Expected binary digit after 0b", line, c)
+                    da new ValueResult { value: TInt(0), pos: p, line: line, col: c, ok: false, error: __te }
                 }
                 si negative { bin_val = 0 - bin_val }
-                da new ValueResult { value: Int(bin_val), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+                let __te: TomlError = new_toml_error("", 0, 0)
+                da new ValueResult { value: TInt(bin_val), pos: p, line: line, col: c, ok: true, error: __te }
             }
         }
     }
 
     // Decimal integer or float
     si is_toml_digit(first) == false {
-        da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected digit", line, c) }
+        let __te: TomlError = new_toml_error("Expected digit", line, c)
+        da new ValueResult { value: TInt(0), pos: p, line: line, col: c, ok: false, error: __te }
     }
 
     pon mut int_part: Int = 0
@@ -838,10 +869,12 @@ fn parse_toml_number(input: String, pos: Int, line: Int, col: Int) -> ValueResul
             si sign_ch == "-" { exp_negative = true; p = p + 1; c = c + 1 }
         }
         si p >= slen {
-            da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected digit en exponent", line, c) }
+            let __te: TomlError = new_toml_error("Expected digit en exponent", line, c)
+            da new ValueResult { value: TInt(0), pos: p, line: line, col: c, ok: false, error: __te }
         }
         si is_toml_digit(input.char_at(p)) == false {
-            da new ValueResult { value: Int(0), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected digit en exponent", line, c) }
+            let __te: TomlError = new_toml_error("Expected digit en exponent", line, c)
+            da new ValueResult { value: TInt(0), pos: p, line: line, col: c, ok: false, error: __te }
         }
         mien p < slen {
             pon ech2: String = input.char_at(p)
@@ -868,11 +901,13 @@ fn parse_toml_number(input: String, pos: Int, line: Int, col: Int) -> ValueResul
             si exp_negative { result_f = result_f / multiplier } sino { result_f = result_f * multiplier }
         }
         si negative { result_f = 0.0 - result_f }
-        da new ValueResult { value: Float(result_f), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+        let __te: TomlError = new_toml_error("", 0, 0)
+        da new ValueResult { value: TFloat(result_f), pos: p, line: line, col: c, ok: true, error: __te }
     } sino {
         pon mut result_i: Int = int_part
         si negative { result_i = 0 - result_i }
-        da new ValueResult { value: Int(result_i), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+        let __te: TomlError = new_toml_error("", 0, 0)
+        da new ValueResult { value: TInt(result_i), pos: p, line: line, col: c, ok: true, error: __te }
     }
 }
 
@@ -927,9 +962,11 @@ fn parse_datetime(input: String, pos: Int, line: Int, col: Int) -> ValueResult {
     }
 
     si len(result) == 0 {
-        da new ValueResult { value: Str(""), pos: p, line: line, col: c, ok: false, error: new_toml_error("Expected datetime", line, col) }
+        let __te: TomlError = new_toml_error("Expected datetime", line, col)
+        da new ValueResult { value: TStr(""), pos: p, line: line, col: c, ok: false, error: __te }
     }
-    da new ValueResult { value: DateTime(result), pos: p, line: line, col: c, ok: true, error: new_toml_error("", 0, 0) }
+    let __te: TomlError = new_toml_error("", 0, 0)
+    da new ValueResult { value: TDateTime(result), pos: p, line: line, col: c, ok: true, error: __te }
 }
 
 // ---------------------------------------------------------------------------
@@ -945,7 +982,8 @@ fn parse_toml_value(input: String, pos: Int, line: Int, col: Int) -> ValueResult
     pon mut c: Int = ws.col
 
     si p >= slen {
-        da new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unexpected end of input", ln, c) }
+        let __te: TomlError = new_toml_error("Unexpected end of input", ln, c)
+        da new ValueResult { value: TStr(""), pos: p, line: ln, col: c, ok: false, error: __te }
     }
 
     pon ch: String = input.char_at(p)
@@ -960,12 +998,14 @@ fn parse_toml_value(input: String, pos: Int, line: Int, col: Int) -> ValueResult
             si input.char_at(p + 1) == "r" {
                 si input.char_at(p + 2) == "u" {
                     si input.char_at(p + 3) == "e" {
-                        da new ValueResult { value: Bool(true), pos: p + 4, line: ln, col: c + 4, ok: true, error: new_toml_error("", 0, 0) }
+                        let __te: TomlError = new_toml_error("", 0, 0)
+                        da new ValueResult { value: TBool(true), pos: p + 4, line: ln, col: c + 4, ok: true, error: __te }
                     }
                 }
             }
         }
-        da new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Invalid value", ln, c) }
+        let __te: TomlError = new_toml_error("Invalid value", ln, c)
+        da new ValueResult { value: TStr(""), pos: p, line: ln, col: c, ok: false, error: __te }
     }
     si ch == "f" {
         si p + 4 < slen {
@@ -973,13 +1013,15 @@ fn parse_toml_value(input: String, pos: Int, line: Int, col: Int) -> ValueResult
                 si input.char_at(p + 2) == "l" {
                     si input.char_at(p + 3) == "s" {
                         si input.char_at(p + 4) == "e" {
-                            da new ValueResult { value: Bool(false), pos: p + 5, line: ln, col: c + 5, ok: true, error: new_toml_error("", 0, 0) }
+                            let __te: TomlError = new_toml_error("", 0, 0)
+                            da new ValueResult { value: TBool(false), pos: p + 5, line: ln, col: c + 5, ok: true, error: __te }
                         }
                     }
                 }
             }
         }
-        da new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Invalid value", ln, c) }
+        let __te: TomlError = new_toml_error("Invalid value", ln, c)
+        da new ValueResult { value: TStr(""), pos: p, line: ln, col: c, ok: false, error: __te }
     }
 
     // Arrays
@@ -993,7 +1035,8 @@ fn parse_toml_value(input: String, pos: Int, line: Int, col: Int) -> ValueResult
         si p + 2 < slen {
             si input.char_at(p + 1) == "n" {
                 si input.char_at(p + 2) == "f" {
-                    da new ValueResult { value: Float(1.0e308), pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+                    let __te: TomlError = new_toml_error("", 0, 0)
+                    da new ValueResult { value: TFloat(1.0e308), pos: p + 3, line: ln, col: c + 3, ok: true, error: __te }
                 }
             }
         }
@@ -1002,7 +1045,8 @@ fn parse_toml_value(input: String, pos: Int, line: Int, col: Int) -> ValueResult
         si p + 2 < slen {
             si input.char_at(p + 1) == "a" {
                 si input.char_at(p + 2) == "n" {
-                    da new ValueResult { value: Float(0.0), pos: p + 3, line: ln, col: c + 3, ok: true, error: new_toml_error("", 0, 0) }
+                    let __te: TomlError = new_toml_error("", 0, 0)
+                    da new ValueResult { value: TFloat(0.0), pos: p + 3, line: ln, col: c + 3, ok: true, error: __te }
                 }
             }
         }
@@ -1019,15 +1063,17 @@ fn parse_toml_value(input: String, pos: Int, line: Int, col: Int) -> ValueResult
     si ch == "+" { da parse_toml_number(input, p, ln, c) }
     si ch == "-" { da parse_toml_number(input, p, ln, c) }
 
-    da new ValueResult { value: Str(""), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unexpected character: " + ch, ln, c) }
+    let __te: TomlError = new_toml_error("Unexpected character: " + ch, ln, c)
+    da new ValueResult { value: TStr(""), pos: p, line: ln, col: c, ok: false, error: __te }
 }
 
 fn parse_toml_string_value(input: String, pos: Int, line: Int, col: Int) -> ValueResult {
     pon sr: StringParseResult = parse_toml_string(input, pos, line, col)
     si sr.ok {
-        da new ValueResult { value: Str(sr.value), pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: new_toml_error("", 0, 0) }
+        let __te: TomlError = new_toml_error("", 0, 0)
+        da new ValueResult { value: TStr(sr.value), pos: sr.pos, line: sr.line, col: sr.col, ok: true, error: __te }
     } sino {
-        da new ValueResult { value: Str(""), pos: sr.pos, line: sr.line, col: sr.col, ok: false, error: sr.error }
+        da new ValueResult { value: TStr(""), pos: sr.pos, line: sr.line, col: sr.col, ok: false, error: sr.error }
     }
 }
 
@@ -1049,7 +1095,8 @@ fn parse_toml_array(input: String, pos: Int, line: Int, col: Int) -> ValueResult
 
     si p < slen {
         si input.char_at(p) == "]" {
-            da new ValueResult { value: Array(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+            let __te: TomlError = new_toml_error("", 0, 0)
+            da new ValueResult { value: TTArray(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: __te }
         }
     }
 
@@ -1072,12 +1119,14 @@ fn parse_toml_array(input: String, pos: Int, line: Int, col: Int) -> ValueResult
         c = ws2.col
 
         si p >= slen {
-            da new ValueResult { value: Array(items), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated array", ln, c) }
+            let __te: TomlError = new_toml_error("Unterminated array", ln, c)
+            da new ValueResult { value: TTArray(items), pos: p, line: ln, col: c, ok: false, error: __te }
         }
 
         pon next_ch: String = input.char_at(p)
         si next_ch == "]" {
-            da new ValueResult { value: Array(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+            let __te: TomlError = new_toml_error("", 0, 0)
+            da new ValueResult { value: TTArray(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: __te }
         }
         si next_ch == "," {
             p = p + 1
@@ -1090,14 +1139,17 @@ fn parse_toml_array(input: String, pos: Int, line: Int, col: Int) -> ValueResult
             // Allow trailing comma before ]
             si p < slen {
                 si input.char_at(p) == "]" {
-                    da new ValueResult { value: Array(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+                    let __te: TomlError = new_toml_error("", 0, 0)
+                    da new ValueResult { value: TTArray(items), pos: p + 1, line: ln, col: c + 1, ok: true, error: __te }
                 }
             }
         } sino {
-            da new ValueResult { value: Array(items), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected comma or ] en array", ln, c) }
+            let __te: TomlError = new_toml_error("Expected comma or ] en array", ln, c)
+            da new ValueResult { value: TTArray(items), pos: p, line: ln, col: c, ok: false, error: __te }
         }
     }
-    da new ValueResult { value: Array(items), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Array too many elements", ln, c) }
+    let __te: TomlError = new_toml_error("Array too many elements", ln, c)
+    da new ValueResult { value: TTArray(items), pos: p, line: ln, col: c, ok: false, error: __te }
 }
 
 // ---------------------------------------------------------------------------
@@ -1118,7 +1170,8 @@ fn parse_inline_table(input: String, pos: Int, line: Int, col: Int) -> ValueResu
 
     si p < slen {
         si input.char_at(p) == "}" {
-            da new ValueResult { value: Table(entries), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+            let __te: TomlError = new_toml_error("", 0, 0)
+            da new ValueResult { value: TTTable(entries), pos: p + 1, line: ln, col: c + 1, ok: true, error: __te }
         }
     }
 
@@ -1134,7 +1187,7 @@ fn parse_inline_table(input: String, pos: Int, line: Int, col: Int) -> ValueResu
         // Parse dotted key
         pon dk: DottedKeyResult = parse_dotted_key(input, p, ln, c)
         si dk.ok == false {
-            da new ValueResult { value: Table(entries), pos: dk.pos, line: dk.line, col: dk.col, ok: false, error: dk.error }
+            da new ValueResult { value: TTTable(entries), pos: dk.pos, line: dk.line, col: dk.col, ok: false, error: dk.error }
         }
         p = dk.pos
         ln = dk.line
@@ -1147,10 +1200,12 @@ fn parse_inline_table(input: String, pos: Int, line: Int, col: Int) -> ValueResu
         c = ws_eq.col
 
         si p >= slen {
-            da new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected = after key", ln, c) }
+            let __te: TomlError = new_toml_error("Expected = after key", ln, c)
+            da new ValueResult { value: TTTable(entries), pos: p, line: ln, col: c, ok: false, error: __te }
         }
         si input.char_at(p) != "=" {
-            da new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected = after key", ln, c) }
+            let __te: TomlError = new_toml_error("Expected = after key", ln, c)
+            da new ValueResult { value: TTTable(entries), pos: p, line: ln, col: c, ok: false, error: __te }
         }
         p = p + 1
         c = c + 1
@@ -1171,21 +1226,25 @@ fn parse_inline_table(input: String, pos: Int, line: Int, col: Int) -> ValueResu
         c = ws2.col
 
         si p >= slen {
-            da new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Unterminated inline table", ln, c) }
+            let __te: TomlError = new_toml_error("Unterminated inline table", ln, c)
+            da new ValueResult { value: TTTable(entries), pos: p, line: ln, col: c, ok: false, error: __te }
         }
 
         pon next_ch: String = input.char_at(p)
         si next_ch == "}" {
-            da new ValueResult { value: Table(entries), pos: p + 1, line: ln, col: c + 1, ok: true, error: new_toml_error("", 0, 0) }
+            let __te: TomlError = new_toml_error("", 0, 0)
+            da new ValueResult { value: TTTable(entries), pos: p + 1, line: ln, col: c + 1, ok: true, error: __te }
         }
         si next_ch == "," {
             p = p + 1
             c = c + 1
         } sino {
-            da new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Expected comma or } en inline table", ln, c) }
+            let __te: TomlError = new_toml_error("Expected comma or } en inline table", ln, c)
+            da new ValueResult { value: TTTable(entries), pos: p, line: ln, col: c, ok: false, error: __te }
         }
     }
-    da new ValueResult { value: Table(entries), pos: p, line: ln, col: c, ok: false, error: new_toml_error("Inline table too many keys", ln, c) }
+    let __te: TomlError = new_toml_error("Inline table too many keys", ln, c)
+    da new ValueResult { value: TTTable(entries), pos: p, line: ln, col: c, ok: false, error: __te }
 }
 
 // ---------------------------------------------------------------------------
@@ -1213,14 +1272,14 @@ fn set_dotted_value(table: Map<String, TomlValue>, keys: List<String>, value: To
     si found == false {
         // Create intermediate table
         pon mut sub: Map<String, TomlValue> = #{}
-        table[key] = Table(sub)
+        table[key] = TTTable(sub)
         da set_dotted_value(sub, keys, value, idx + 1)
     }
 
     // Key exists — must be a table
     pon existing: TomlValue = table[key]
     match existing {
-        Table(sub_map) => {
+        TTable(sub_map) => {
             da set_dotted_value(sub_map, keys, value, idx + 1)
         },
         _ => {
@@ -1246,22 +1305,22 @@ fn ensure_table_path(root: Map<String, TomlValue>, keys: List<String>, idx: Int,
 
     si found == false {
         pon mut sub: Map<String, TomlValue> = #{}
-        root[key] = Table(sub)
+        root[key] = TTTable(sub)
         da ensure_table_path(sub, keys, idx + 1, key_count)
     }
 
     pon existing: TomlValue = root[key]
     match existing {
-        Table(sub_map) => {
+        TTable(sub_map) => {
             da ensure_table_path(sub_map, keys, idx + 1, key_count)
         },
-        Array(arr) => {
+        TArray(arr) => {
             // Array of tables — get the last element
             pon arr_len: Int = len(arr)
             si arr_len > 0 {
                 pon last: TomlValue = arr[arr_len - 1]
                 match last {
-                    Table(last_map) => {
+                    TTable(last_map) => {
                         da ensure_table_path(last_map, keys, idx + 1, key_count)
                     },
                     _ => { da root }
@@ -1351,15 +1410,15 @@ fn parse_toml_document(input: String) -> Result<Map<String, TomlValue>, TomlErro
                     si arr_found == false {
                         // Create new array with one empty table
                         pon mut arr: List<TomlValue> = []
-                        arr.push(Table(new_table))
-                        parent[last_key] = Array(arr)
+                        arr.push(TTable(new_table))
+                        parent[last_key] = TTArray(arr)
                     } sino {
                         // Append new table to existing array
                         pon existing: TomlValue = parent[last_key]
                         match existing {
-                            Array(arr) => {
-                                pon mut new_arr: List<TomlValue> = arr + [Table(new_table)]
-                                parent[last_key] = Array(new_arr)
+                            TArray(arr) => {
+                                pon mut new_arr: List<TomlValue> = arr + [TTable(new_table)]
+                                parent[last_key] = TTArray(new_arr)
                             },
                             _ => {
                                 da Err(new_toml_error("Key already exists and is not an array of tables: " + last_key, ln, c))
@@ -1463,7 +1522,7 @@ fn parse_toml_document(input: String) -> Result<Map<String, TomlValue>, TomlErro
 pub fn decode(input: String) -> Result<TomlValue, TomlError> {
     pon result: Result<Map<String, TomlValue>, TomlError> = parse_toml_document(input)
     match result {
-        Ok(table) => { da Ok(Table(table)) },
+        Ok(table) => { da Ok(TTTable(table)) },
         Err(e) => { da Err(e) }
     }
 }
@@ -1505,14 +1564,14 @@ fn encode_key(key: String) -> String {
 
 fn is_simple_value(value: TomlValue) -> Bool {
     match value {
-        Table(m) => { da false },
-        Array(items) => {
+        TTable(m) => { da false },
+        TArray(items) => {
             // Check if array contains tables
             pon item_count: Int = len(items)
             pon mut i: Int = 0
             mien i < item_count {
                 match items[i] {
-                    Table(t) => { da false },
+                    TTable(t) => { da false },
                     _ => {}
                 }
                 i = i + 1
@@ -1525,11 +1584,11 @@ fn is_simple_value(value: TomlValue) -> Bool {
 
 fn is_table_array(value: TomlValue) -> Bool {
     match value {
-        Array(items) => {
+        TArray(items) => {
             pon item_count: Int = len(items)
             si item_count == 0 { da false }
             match items[0] {
-                Table(t) => { da true },
+                TTable(t) => { da true },
                 _ => { da false }
             }
         },
@@ -1544,13 +1603,13 @@ fn is_table_array(value: TomlValue) -> Bool {
 fn encode_value_inline(value: TomlValue) -> String {
     match value {
         Str(s) => { da "\"" + escape_toml_basic_string(s) + "\"" },
-        Int(n) => { da str(n) },
-        Float(f) => { da str(f) },
-        Bool(b) => {
+        TInt(n) => { da str(n) },
+        TFloat(f) => { da str(f) },
+        TBool(b) => {
             si b { da "true" } sino { da "false" }
         },
         DateTime(dt) => { da dt },
-        Array(items) => {
+        TArray(items) => {
             pon item_count: Int = len(items)
             si item_count == 0 { da "[]" }
             pon mut result: String = "["
@@ -1563,7 +1622,7 @@ fn encode_value_inline(value: TomlValue) -> String {
             result = result + "]"
             da result
         },
-        Table(entries) => {
+        TTable(entries) => {
             pon mut result: String = "{"
             pon mut first: Bool = true
             cada key en entries {
@@ -1595,7 +1654,7 @@ fn encode_table_section(table: Map<String, TomlValue>, path: String) -> String {
     cada key en table {
         pon val: TomlValue = table[key]
         match val {
-            Table(sub) => {
+            TTable(sub) => {
                 pon mut sub_path: String = ""
                 si len(path) == 0 {
                     sub_path = encode_key(key)
@@ -1614,7 +1673,7 @@ fn encode_table_section(table: Map<String, TomlValue>, path: String) -> String {
         pon val: TomlValue = table[key]
         si is_table_array(val) {
             match val {
-                Array(items) => {
+                TArray(items) => {
                     pon item_count: Int = len(items)
                     pon mut i: Int = 0
                     mien i < item_count {
@@ -1626,7 +1685,7 @@ fn encode_table_section(table: Map<String, TomlValue>, path: String) -> String {
                         }
                         result = result + "\n[[" + aot_path + "]]\n"
                         match items[i] {
-                            Table(sub) => {
+                            TTable(sub) => {
                                 result = result + encode_table_section(sub, aot_path)
                             },
                             _ => {}
@@ -1648,7 +1707,7 @@ fn encode_table_section(table: Map<String, TomlValue>, path: String) -> String {
 
 pub fn encode(value: TomlValue) -> String {
     match value {
-        Table(table) => {
+        TTable(table) => {
             da encode_table_section(table, "")
         },
         _ => {
@@ -1702,7 +1761,7 @@ fn encode_table_pretty(table: Map<String, TomlValue>, path: String) -> String {
     cada key en table {
         pon val: TomlValue = table[key]
         match val {
-            Table(sub) => {
+            TTable(sub) => {
                 pon mut sub_path: String = ""
                 si len(path) == 0 {
                     sub_path = encode_key(key)
@@ -1721,7 +1780,7 @@ fn encode_table_pretty(table: Map<String, TomlValue>, path: String) -> String {
         pon val: TomlValue = table[key]
         si is_table_array(val) {
             match val {
-                Array(items) => {
+                TArray(items) => {
                     pon item_count: Int = len(items)
                     pon mut i: Int = 0
                     mien i < item_count {
@@ -1733,7 +1792,7 @@ fn encode_table_pretty(table: Map<String, TomlValue>, path: String) -> String {
                         }
                         result = result + "\n[[" + aot_path + "]]\n"
                         match items[i] {
-                            Table(sub) => {
+                            TTable(sub) => {
                                 result = result + encode_table_pretty(sub, aot_path)
                             },
                             _ => {}
@@ -1751,7 +1810,7 @@ fn encode_table_pretty(table: Map<String, TomlValue>, path: String) -> String {
 
 pub fn encode_pretty(value: TomlValue) -> String {
     match value {
-        Table(table) => {
+        TTable(table) => {
             da encode_table_pretty(table, "")
         },
         _ => {
@@ -1766,7 +1825,7 @@ pub fn encode_pretty(value: TomlValue) -> String {
 
 pub fn get_string(table: TomlValue, key: String) -> Result<String, TomlError> {
     match table {
-        Table(entries) => {
+        TTable(entries) => {
             pon mut found: Bool = false
             cada k en entries {
                 si k == key { found = true }
@@ -1786,7 +1845,7 @@ pub fn get_string(table: TomlValue, key: String) -> Result<String, TomlError> {
 
 pub fn get_int(table: TomlValue, key: String) -> Result<Int, TomlError> {
     match table {
-        Table(entries) => {
+        TTable(entries) => {
             pon mut found: Bool = false
             cada k en entries {
                 si k == key { found = true }
@@ -1796,7 +1855,7 @@ pub fn get_int(table: TomlValue, key: String) -> Result<Int, TomlError> {
             }
             pon val: TomlValue = entries[key]
             match val {
-                Int(n) => { da Ok(n) },
+                TInt(n) => { da Ok(n) },
                 _ => { da Err(new_toml_error("Expected integer cada key: " + key, 0, 0)) }
             }
         },
@@ -1806,7 +1865,7 @@ pub fn get_int(table: TomlValue, key: String) -> Result<Int, TomlError> {
 
 pub fn get_float(table: TomlValue, key: String) -> Result<Float, TomlError> {
     match table {
-        Table(entries) => {
+        TTable(entries) => {
             pon mut found: Bool = false
             cada k en entries {
                 si k == key { found = true }
@@ -1816,8 +1875,8 @@ pub fn get_float(table: TomlValue, key: String) -> Result<Float, TomlError> {
             }
             pon val: TomlValue = entries[key]
             match val {
-                Float(f) => { da Ok(f) },
-                Int(n) => { da Ok(float(n)) },
+                TFloat(f) => { da Ok(f) },
+                TInt(n) => { da Ok(float(n)) },
                 _ => { da Err(new_toml_error("Expected float cada key: " + key, 0, 0)) }
             }
         },
@@ -1827,7 +1886,7 @@ pub fn get_float(table: TomlValue, key: String) -> Result<Float, TomlError> {
 
 pub fn get_bool(table: TomlValue, key: String) -> Result<Bool, TomlError> {
     match table {
-        Table(entries) => {
+        TTable(entries) => {
             pon mut found: Bool = false
             cada k en entries {
                 si k == key { found = true }
@@ -1837,7 +1896,7 @@ pub fn get_bool(table: TomlValue, key: String) -> Result<Bool, TomlError> {
             }
             pon val: TomlValue = entries[key]
             match val {
-                Bool(b) => { da Ok(b) },
+                TBool(b) => { da Ok(b) },
                 _ => { da Err(new_toml_error("Expected boolean cada key: " + key, 0, 0)) }
             }
         },
@@ -1847,7 +1906,7 @@ pub fn get_bool(table: TomlValue, key: String) -> Result<Bool, TomlError> {
 
 pub fn get_array(table: TomlValue, key: String) -> Result<List<TomlValue>, TomlError> {
     match table {
-        Table(entries) => {
+        TTable(entries) => {
             pon mut found: Bool = false
             cada k en entries {
                 si k == key { found = true }
@@ -1857,7 +1916,7 @@ pub fn get_array(table: TomlValue, key: String) -> Result<List<TomlValue>, TomlE
             }
             pon val: TomlValue = entries[key]
             match val {
-                Array(items) => { da Ok(items) },
+                TArray(items) => { da Ok(items) },
                 _ => { da Err(new_toml_error("Expected array cada key: " + key, 0, 0)) }
             }
         },
@@ -1867,7 +1926,7 @@ pub fn get_array(table: TomlValue, key: String) -> Result<List<TomlValue>, TomlE
 
 pub fn get_table(table: TomlValue, key: String) -> Result<TomlValue, TomlError> {
     match table {
-        Table(entries) => {
+        TTable(entries) => {
             pon mut found: Bool = false
             cada k en entries {
                 si k == key { found = true }
@@ -1877,7 +1936,7 @@ pub fn get_table(table: TomlValue, key: String) -> Result<TomlValue, TomlError> 
             }
             pon val: TomlValue = entries[key]
             match val {
-                Table(sub) => { da Ok(Table(sub)) },
+                TTable(sub) => { da Ok(TTable(sub)) },
                 _ => { da Err(new_toml_error("Expected table cada key: " + key, 0, 0)) }
             }
         },
