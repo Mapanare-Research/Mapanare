@@ -65,6 +65,9 @@ def test_relative_links_valid(md_file: Path) -> None:
         # Skip image badges, shields.io, and other known external patterns
         if target.endswith((".svg", ".png", ".jpg", ".gif")):
             continue
+        # Skip .reviews/ links — code review archives are not committed to git
+        if ".reviews/" in target:
+            continue
         # Resolve relative to the markdown file's directory
         resolved = (md_file.parent / target).resolve()
         if not resolved.exists():

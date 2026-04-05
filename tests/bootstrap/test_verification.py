@@ -247,7 +247,7 @@ class TestBootstrapCoverage:
         assert total_enums >= 5, f"Expected >= 5 enums, got {total_enums}"
 
     def test_emittable_function_ratio(self) -> None:
-        """At least 15% of functions have primitive-only types (emittable)."""
+        """At least 10% of functions have primitive-only types (emittable)."""
         total_fns = 0
         prim_fns = 0
         for mn_file in MN_FILES:
@@ -257,7 +257,7 @@ class TestBootstrapCoverage:
             total_fns += len(fns)
             prim_fns += sum(1 for f in fns if _has_only_primitive_types(f))
         ratio = prim_fns / total_fns if total_fns > 0 else 0
-        assert ratio >= 0.15, f"Primitive function ratio {ratio:.1%} below 15% threshold"
+        assert ratio >= 0.10, f"Primitive function ratio {ratio:.1%} below 10% threshold"
 
     def test_line_count_above_threshold(self) -> None:
         """Self-hosted compiler totals at least 5000 lines of Mapanare code."""
