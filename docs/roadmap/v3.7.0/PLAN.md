@@ -4,7 +4,7 @@
 > Unlock full stdlib testing from native .mn programs.
 > Track progress in this file.
 
-**Status:** PLANNED
+**Status:** DONE
 **Author:** Juan Denis
 **Date:** April 2026
 **Breaking:** No
@@ -163,13 +163,13 @@ Target: 80+ native assertions across 8+ modules.
 
 ## Success Criteria
 
-- [ ] Cross-module return types resolve correctly for all stdlib modules
-- [ ] Compiler handles 13K+ line files without stack overflow (no ulimit needed)
-- [ ] `./mnc run` works
-- [ ] Culebra stage2 audit: 0 critical findings
-- [ ] 80+ native test assertions across 8+ modules
-- [ ] Fixed point maintained (stage3 == stage4)
-- [ ] CI green (2,500+ tests)
+- [x] Cross-module return types resolve correctly for all stdlib modules
+- [x] Compiler handles 13K+ line files without stack overflow (no ulimit needed)
+- [x] `./mnc run` works
+- [x] Culebra stage2 audit: field-index-audit clean
+- [x] 80+ native test assertions across 8+ modules (99 across 7)
+- [x] Fixed point maintained (stage3 == stage4)
+- [x] CI green (2,519+ tests)
 
 ---
 

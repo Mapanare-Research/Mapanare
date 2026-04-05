@@ -17,6 +17,7 @@
 #ifndef _WIN32
 #include <execinfo.h>
 #include <unistd.h>
+#include <pthread.h>
 #endif
 
 static void crash_handler(int sig) {
@@ -94,14 +95,39 @@ static void print_usage(const char *prog) {
 extern void __mn_argv_init(int argc, char **argv);
 extern void mn_main(void);
 
+/* Stack size for compiler thread: 32 MB (self-compilation needs ~16 MB) */
+#define MNC_STACK_SIZE (32 * 1024 * 1024)
+
+#ifndef _WIN32
+static void *compiler_thread(void *arg) {
+    (void)arg;
+    mn_main();
+    return NULL;
+}
+#endif
+
 int main(int argc, char *argv[]) {
     signal(SIGSEGV, crash_handler);
     signal(SIGABRT, crash_handler);
     __mn_argv_init(argc, argv);
 
-    /* Delegate to the self-hosted compiler driver.
-     * mn_main() handles subcommands (test, build, version) and
-     * the default compile-to-IR mode. It calls __mn_exit() on error. */
+    /* Run mn_main() on a thread with a larger stack so the compiler
+     * can handle self-compilation (13K+ lines) without ulimit. */
+#ifndef _WIN32
+    pthread_t tid;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, MNC_STACK_SIZE);
+    if (pthread_create(&tid, &attr, compiler_thread, NULL) == 0) {
+        pthread_attr_destroy(&attr);
+        pthread_join(tid, NULL);
+    } else {
+        /* Fallback: run on main thread if thread creation fails */
+        pthread_attr_destroy(&attr);
+        mn_main();
+    }
+#else
     mn_main();
+#endif
     return 0;
 }

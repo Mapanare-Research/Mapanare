@@ -2359,3 +2359,30 @@ MN_EXPORT MnString __mn_type_registry_get_name(MnString fn_name) {
 MN_EXPORT void __mn_type_registry_clear(void) {
     memset(mn_type_reg, 0, sizeof(mn_type_reg));
 }
+
+/* -----------------------------------------------------------------------
+ * Clock / sleep — used by stdlib/time.mn
+ * ----------------------------------------------------------------------- */
+
+#ifndef _WIN32
+#include <time.h>
+#endif
+
+MN_EXPORT int64_t __mn_clock_monotonic_ns(void) {
+#ifndef _WIN32
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
+#else
+    return 0;
+#endif
+}
+
+MN_EXPORT void __mn_sleep_ms(int64_t ms) {
+#ifndef _WIN32
+    struct timespec req;
+    req.tv_sec  = ms / 1000;
+    req.tv_nsec = (ms % 1000) * 1000000L;
+    nanosleep(&req, NULL);
+#endif
+}

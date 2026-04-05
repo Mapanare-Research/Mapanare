@@ -28,7 +28,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 3.6.0"
+    return "mapanare 3.7.0"
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +70,24 @@ fn join_import_path(segments: List<String>) -> String {
     return result
 }
 
+// Extract last path component: "stdlib/text" -> "text", "math" -> "math"
+fn basename_of(path: String) -> String {
+    let slen: Int = len(path)
+    if slen == 0 { return "" }
+    let mut i: Int = slen - 1
+    for _ in 0..256 {
+        if i < 0 { return path }
+        let ch: String = path.substr(i, 1)
+        if ch == "/" {
+            return path.substr(i + 1, slen - i - 1)
+        }
+        i = i - 1
+    }
+    return path
+}
+
 // Try a single directory + relative path combination.
+// Resolution order: <rel>.mn, <rel>/mod.mn, <rel>/<basename>.mn
 fn try_resolve(dir: String, rel: String) -> String {
     let c1: String = dir + rel + ".mn"
     let r1: String = __mn_file_read_or_empty(c1)
@@ -78,6 +95,13 @@ fn try_resolve(dir: String, rel: String) -> String {
     let c2: String = dir + rel + "/mod.mn"
     let r2: String = __mn_file_read_or_empty(c2)
     if len(r2) > 0 { return c2 }
+    // Try <rel>/<basename>.mn (e.g., stdlib/text -> stdlib/text/text.mn)
+    let base: String = basename_of(rel)
+    if len(base) > 0 {
+        let c3: String = dir + rel + "/" + base + ".mn"
+        let r3: String = __mn_file_read_or_empty(c3)
+        if len(r3) > 0 { return c3 }
+    }
     return ""
 }
 
@@ -397,6 +421,53 @@ fn run_build(filename: String) {
 }
 
 // ---------------------------------------------------------------------------
+// run — compile, link, execute in one step
+// ---------------------------------------------------------------------------
+
+fn run_program(filename: String) {
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) == 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+    let cr: CompileResult = compile(source, filename)
+    if !cr.success {
+        __mn_str_eprint("error: compile failed\n")
+        __mn_exit(1)
+    }
+    __mn_file_write("/tmp/mnc_run.ll", rename_main(cr.ir_text))
+
+    let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_run.ll -o /tmp/mnc_run.o 2>/dev/null")
+    if r1 != 0 {
+        __mn_str_eprint("error: clang failed\n")
+        __mn_exit(1)
+    }
+
+    let r2: Int = __mn_system("gcc /tmp/mnc_run.o runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o /tmp/mnc_run -no-pie -rdynamic -lm -lpthread 2>/dev/null")
+    if r2 != 0 {
+        __mn_str_eprint("error: link failed\n")
+        __mn_exit(1)
+    }
+
+    // Build command with forwarded args: /tmp/mnc_run [args...]
+    let mut cmd: String = "/tmp/mnc_run"
+    let mut ai: Int = 3
+    for _ in 0..100 {
+        if ai >= __mn_argc() { ai = __mn_argc() + 1 }
+        if ai < __mn_argc() {
+            cmd = cmd + " " + __mn_argv(ai)
+            ai = ai + 1
+        }
+    }
+    let r3: Int = __mn_system(cmd)
+    if r3 != 0 {
+        __mn_exit(r3)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // mn_main — native compiler entry point (called from C shim)
 //
 // Reads source file from argv[1], compiles to LLVM IR, prints to stdout.
@@ -408,6 +479,7 @@ fn mn_main() {
         __mn_str_eprint("usage: mnc <file.mn>\n")
         __mn_str_eprint("       mnc test <file.mn>\n")
         __mn_str_eprint("       mnc build <file.mn> [-o output]\n")
+        __mn_str_eprint("       mnc run <file.mn> [args...]\n")
         __mn_exit(1)
     }
     let arg1: String = __mn_argv(1)
@@ -427,6 +499,14 @@ fn mn_main() {
             __mn_exit(1)
         }
         run_build(__mn_argv(2))
+        return
+    }
+    if arg1 == "run" {
+        if __mn_argc() < 3 {
+            __mn_str_eprint("usage: mnc run <file.mn> [args...]\n")
+            __mn_exit(1)
+        }
+        run_program(__mn_argv(2))
         return
     }
     if arg1 == "version" || arg1 == "--version" {

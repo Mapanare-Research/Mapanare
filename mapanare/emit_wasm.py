@@ -1473,13 +1473,12 @@ class WasmEmitter:
         # Range iterator: __mn_range(start, end) → allocate {current, end} in linear memory
         # All values stay i64; use i32.wrap_i64 for memory addresses.
         if fn == "__mn_range" and len(args) >= 2:
-            p = f"${dest}.ptr"  # temp i32 for address
+            _ = f"${dest}.ptr"  # temp i32 for address (reserved)
             return [
                 f"      ;; __mn_range({args[0]}, {args[1]})",
                 f"      (local.set ${dest}"
                 f" (i64.extend_i32_u (call $__alloc (i32.const 16) (i32.const 8))))",
-                f"      (i64.store (i32.wrap_i64 (local.get ${dest}))"
-                f" (local.get ${args[0]}))",
+                f"      (i64.store (i32.wrap_i64 (local.get ${dest}))" f" (local.get ${args[0]}))",
                 f"      (i64.store offset=8 (i32.wrap_i64 (local.get ${dest}))"
                 f" (local.get ${args[1]}))",
             ]
@@ -1487,7 +1486,7 @@ class WasmEmitter:
         # __iter_has_next(iter) → current < end (returns i32 bool)
         if fn == "__iter_has_next" and args:
             return [
-                f"      ;; __iter_has_next",
+                "      ;; __iter_has_next",
                 f"      (local.set ${dest}"
                 f" (i64.lt_s"
                 f" (i64.load (i32.wrap_i64 (local.get ${args[0]})))"
@@ -1497,9 +1496,8 @@ class WasmEmitter:
         # __iter_next(iter) → read current, then current++
         if fn == "__iter_next" and args:
             return [
-                f"      ;; __iter_next",
-                f"      (local.set ${dest}"
-                f" (i64.load (i32.wrap_i64 (local.get ${args[0]}))))",
+                "      ;; __iter_next",
+                f"      (local.set ${dest}" f" (i64.load (i32.wrap_i64 (local.get ${args[0]}))))",
                 f"      (i64.store (i32.wrap_i64 (local.get ${args[0]}))"
                 f" (i64.add"
                 f" (i64.load (i32.wrap_i64 (local.get ${args[0]})))"
