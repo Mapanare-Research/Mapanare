@@ -7,9 +7,9 @@
 
 ---
 
-## Where We Are (v3.9.0 — Generics + Impl Dispatch)
+## Where We Are (v3.8.1 — Generics + Impl Dispatch)
 
-**The compiler compiles itself and supports generics.** Mapanare v3.9.0
+**The compiler compiles itself and supports generics.** Mapanare v3.8.1
 achieves compile-time monomorphization of user-defined generic functions
 and structs, impl method dispatch, and trait bounds validation. The
 self-hosted compiler is 10,400+ lines across 10 modules.
@@ -143,7 +143,7 @@ from the seed binary.
 | **v3.6.0** ✅ | Type System | Type system fixed, 35/35 stdlib, 25/25 golden, mnc test/build CLI |
 | **v3.7.0** ✅ | Cross-Module | Cross-module imports, 32MB thread, `mnc run`, 99 native assertions |
 | **v3.8.0** ✅ | Compiler Hardening | Loop bounds (500/2000/5000), method return types (+30), substr fix, 104 native assertions, 35/35 stdlib |
-| **v3.9.0** ✅ | **Generics + Impl** | Generic function/struct monomorphization, impl method dispatch (inherent + trait), trait bounds validation, self-hosted `impl Trait for Type`, 28/28 golden, fixed point maintained |
+| **v3.8.1** ✅ | **Generics + Impl** | Generic function/struct monomorphization, impl method dispatch (inherent + trait), trait bounds validation, self-hosted `impl Trait for Type`, 28/28 golden, fixed point maintained |
 
 ---
 
