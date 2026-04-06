@@ -17,7 +17,8 @@ fn double<T>(x: T) -> T {
 
 fn main() {
     let v = new Vec2 { x: 3, y: 7 }
-    print(v.magnitude())
+    let m: Int = v.magnitude()
+    print(m)
 
     let a: Int = double(21)
     print(a)

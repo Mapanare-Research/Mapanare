@@ -481,6 +481,15 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
         return parse_type_alias_def(tokens, pos, filename)
     }
     if tt == "KW_IMPL" { return parse_impl_def(tokens, pos, filename) }
+    if tt == "KW_TRAIT" {
+        // Skip trait definition — no MIR code needed
+        let mut tp: Int = pos + 1
+        tp = tp + 1  // skip name
+        tp = skip_brace_block(tokens, tp)
+        let empty_path: List<String> = []
+        let empty_items: List<String> = []
+        return new_def_result(Definition::ImportDef(empty_path, empty_items), tp)
+    }
     if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
@@ -1090,10 +1099,34 @@ fn parse_fn_body_as_data(tokens: List<Token>, pos: Int, filename: String, name: 
     return new FnDataResult { data: fd, pos: p }
 }
 
+fn skip_brace_block(tokens: List<Token>, pos: Int) -> Int {
+    let mut p: Int = pos
+    if peek_type(tokens, p) == "LBRACE" {
+        p = p + 1
+        let mut depth: Int = 1
+        for _ in 0..500 {
+            if depth == 0 { return p }
+            if peek_type(tokens, p) == "LBRACE" { depth = depth + 1 }
+            if peek_type(tokens, p) == "RBRACE" { depth = depth - 1 }
+            p = p + 1
+        }
+    }
+    return p
+}
+
 fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
     let mut p: Int = pos + 1
-    let name: String = peek_value(tokens, p)
+    let first_name: String = peek_value(tokens, p)
     p = p + 1
+
+    // Check for "impl Trait for Type { ... }" syntax
+    let mut target: String = first_name
+    if peek_type(tokens, p) == "KW_FOR" {
+        p = p + 1
+        target = peek_value(tokens, p)
+        p = p + 1
+    }
+
     p = expect(tokens, p, "LBRACE")
 
     let mut methods: List<FnDefData> = []
@@ -1101,14 +1134,14 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
         p = skip_semis(tokens, p)
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            return new_def_result(Definition::ImplDef(name, methods), p)
+            return new_def_result(Definition::ImplDef(target, methods), p)
         }
         let r: FnDataResult = parse_fn_def_as_data(tokens, p, filename)
         methods.push(r.data)
         p = r.pos
     }
 
-    return new_def_result(Definition::ImplDef(name, methods), p)
+    return new_def_result(Definition::ImplDef(target, methods), p)
 }
 
 // ---------------------------------------------------------------------------
