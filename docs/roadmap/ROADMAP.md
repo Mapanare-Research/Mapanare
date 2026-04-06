@@ -7,25 +7,26 @@
 
 ---
 
-## Where We Are (v3.3.0 — Fixed Point)
+## Where We Are (v3.9.0 — Generics + Impl Dispatch)
 
-**The compiler compiles itself.** Mapanare v3.3.0 achieves self-hosting
-fixed point: the self-compiled binary produces identical output when it
-compiles itself again (stage3 == stage4). No Python is needed to build
-the compiler — `bash scripts/build_from_seed.sh --verify` does a
-two-stage bootstrap from the seed binary.
+**The compiler compiles itself and supports generics.** Mapanare v3.9.0
+achieves compile-time monomorphization of user-defined generic functions
+and structs, impl method dispatch, and trait bounds validation. The
+self-hosted compiler is 10,400+ lines across 10 modules.
 
-v3.0.0 introduced the C emit backend, bilingual keywords (Spanglish/English),
-indentation-based syntax, tipo/modo type unification, and @Agent syntax.
-v3.1.0-v3.2.0 achieved 25/25 golden tests on the self-hosted compiler.
-v3.3.0 solved the enum tag mismatch via string-tagged dispatch, fixed
-sret ABI, COW write-back, and field index bugs — enabling the fixed point.
+v3.8.0 hardened the compiler: raised loop bounds (500/2000/5000), completed
+method return types (+30 methods for string/list/map), fixed substr semantics.
+v3.9.0 added generics monomorphization (`identity<T>` → `identity__Int`),
+generic structs (`Pair<A,B>` → `Pair__Int_Bool`), impl method dispatch
+(`obj.method()` → `Type_method(obj)`), and trait bounds validation
+(`fn max<T: Ord>` checks T implements Ord at call sites).
 
-**37 stdlib modules** in native `.mn` span AI, databases, encoding, HTTP,
-filesystem, crypto, GPU, and WebAssembly. The self-hosted compiler is
-9,400+ lines across 10 modules.
+**35 stdlib modules** compile natively. **28 golden tests** cover all features
+including generics, impl dispatch, and trait bounds. **104 native assertions**
+across 7 test modules. Fixed point maintained (stage3 == stage4).
 
-**No Python required to build.** **4,465+ tests pass** across the full pipeline.
+**No Python required to build.** `bash scripts/build_from_seed.sh` bootstraps
+from the seed binary.
 
 ### What works today
 
@@ -137,6 +138,12 @@ filesystem, crypto, GPU, and WebAssembly. The self-hosted compiler is
 | **v3.1.0** ✅ | Native File I/O | Native file I/O, string escapes, runtime functions |
 | **v3.2.0** ✅ | Seed Update | Seed binary updated, 25/25 golden verified |
 | **v3.3.0** ✅ | **Fixed Point** | String-tagged dispatch (enum tag mismatch solved), sret ABI fix, COW write-back fix, field index fix, two-stage bootstrap from seed (no Python), fixed point: stage3 == stage4 |
+| **v3.4.0** ✅ | Module Imports | Native module imports, extern C functions, stdlib/math compiles+runs |
+| **v3.5.0** ✅ | WASM + Testing | WASM stackifier, keyword-as-variable, native test runner |
+| **v3.6.0** ✅ | Type System | Type system fixed, 35/35 stdlib, 25/25 golden, mnc test/build CLI |
+| **v3.7.0** ✅ | Cross-Module | Cross-module imports, 32MB thread, `mnc run`, 99 native assertions |
+| **v3.8.0** ✅ | Compiler Hardening | Loop bounds (500/2000/5000), method return types (+30), substr fix, 104 native assertions, 35/35 stdlib |
+| **v3.9.0** ✅ | **Generics + Impl** | Generic function/struct monomorphization, impl method dispatch (inherent + trait), trait bounds validation, self-hosted `impl Trait for Type`, 28/28 golden, fixed point maintained |
 
 ---
 

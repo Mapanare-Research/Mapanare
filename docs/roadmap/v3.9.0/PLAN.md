@@ -1,10 +1,11 @@
-# Mapanare v3.9.0 — Generics Monomorphization
+# Mapanare v3.9.0 — Generics, Impl Dispatch, Trait Bounds
 
 > Compile-time specialization of user-defined generic functions and structs.
+> Impl method dispatch for user-defined types. Trait bounds validation.
 > Each unique `<T>` instantiation generates a concrete, typed copy.
 > No runtime polymorphism. No boxing. No vtables.
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Author:** Juan Denis
 **Date:** April 2026
 **Breaking:** No (additive — existing code unaffected)
@@ -14,156 +15,121 @@
 ## The Goal
 
 Generics have been parsed since v0.x and are fully specified in SPEC.md
-Section 13. But they're inert — `fn identity<T>(x: T) -> T` parses and
-type-checks but the compiler never generates specialized code for
-`identity(42)` vs `identity("hello")`. The type parameter `T` is erased
-to `unknown` during lowering, producing i64 everywhere.
-
-v3.9.0 makes generics real. After this version, `identity<Int>(42)` and
+Section 13. v3.9.0 makes them real — `identity<Int>(42)` and
 `identity<String>("hello")` each get their own native function with the
-correct types — zero-cost abstraction through monomorphization.
+correct types. Impl method dispatch routes `obj.method()` to the correct
+`Type_method()` mangled function. Trait bounds are validated at call sites.
 
 ---
 
-## Inherited State (from v3.8.0)
+## What Was Delivered
 
-| Component | Status |
-|-----------|--------|
-| **Parsing** | Complete: `<T>`, `<T: Trait>`, turbofish `fn::<T>(x)` |
-| **AST** | Complete: TypeParam, GenericType, type_args on CallExpr |
-| **Semantic** | Built-in generics only (List, Map, Option, Result) |
-| **MIR lowering** | Only impl methods monomorphized by name-mangling |
-| **Self-hosted** | Parses type_params, ignores them during lowering |
-| **Spec** | Section 13 fully describes monomorphization semantics |
-| **Tests** | Parser + spec tests pass; no end-to-end generic function tests |
+### Phase 1: Generic Functions — Python Bootstrap ✅
 
----
+- `_generic_fn_defs` stores AST of generic functions
+- `_monomorphize_call` infers type args, mangles name, specializes AST
+- `_specialize_fn` clones FnDef with type substitution
+- Semantic checker recognizes type params as UNKNOWN kind
+- Turbofish `fn::<Int>(x)` supported
 
-## Architecture
+### Phase 2: Generic Functions — Self-Hosted Compiler ✅
 
-### Where Monomorphization Lives
+- `LowerState.generic_fns: List<FnDefData>` stores generic fn ASTs
+- `find_generic_fn`, `infer_type_args_from_call`, `mangle_generic_name`
+- `specialize_fn` clones FnDefData with type substitution
+- `try_monomorphize_call` orchestrates the pipeline
+- `decode_ret_type` helper avoids Option<String> match (Python emitter bug)
 
-```
-Source → Parser → AST → Semantic → MIR Lowering → MIR → Emitter → LLVM IR
-                                    ^^^^^^^^^^^^^^^
-                                    Monomorphize here
-```
+### Phase 3: Generic Structs ✅
 
-During MIR lowering, when the lowerer encounters a CALL to a generic
-function, it:
+- `LowerState.generic_structs: List<StructDefData>` stores generic struct ASTs
+- `try_monomorphize_struct` infers field types, registers specialized struct
+- `substitute_field_type`, `find_type_param_index` helpers
+- Python bootstrap: `_generic_struct_defs`, `_monomorphize_struct`
+- `Pair<Int, Bool>` → `Pair__Int_Bool = type { i64, i1 }`
 
-1. **Resolves type arguments** — infer `T` from argument types, or use
-   explicit turbofish `fn::<Int>(x)`
-2. **Generates a mangled name** — `identity__Int`, `pair__Int_String`
-3. **Checks the specialization cache** — if already monomorphized, reuse
-4. **Clones and specializes the AST** — replace `T` with `Int` in params,
-   return type, and body
-5. **Lowers the specialized copy** — emits it as a regular (non-generic)
-   function
+### Phase 4: Trait Bounds Validation ✅
 
-### Mangling Scheme
+- `_check_trait_bounds_at_call` in semantic.py
+- Validates concrete types implement required traits at call sites
+- Built-in types (Int, Float, String, Bool) have implicit Display/Eq/Ord/Hash
+- Clear error: "Type 'Point' does not implement trait 'Ord' required by T"
 
-```
-fn identity<T>(x: T) -> T
-  identity__Int       when T = Int
-  identity__String    when T = String
-  identity__Bool      when T = Bool
+### Phase 5: Impl Method Dispatch ✅
 
-fn pair<A, B>(a: A, b: B)
-  pair__Int_String    when A = Int, B = String
+- Python lowerer: `_impl_methods` dict lookup in `_lower_method_call`
+- Self-hosted lowerer: `lookup_impl_method` resolves `obj.method()` → `Type_method()`
+- `fix_self_param_type` injects struct type for bare `self` parameters
+- `register_impl` stores impl entries with correct method mappings
 
-struct Pair<A, B> { first: A, second: B }
-  Pair__Int_String    when A = Int, B = String
-```
+### Phase 6: Self-Hosted Parser — Impl Trait for Type ✅
 
-Separator: `__` between base name and type args. `_` between multiple
-type args. Nested generics: `List_Int` for `List<Int>`.
+- `parse_impl_def` handles both `impl Type { }` and `impl Trait for Type { }`
+- `parse_fn_def_as_data` returns FnDefData directly (avoids DefResult.defn enum bug)
+- `skip_brace_block` skips trait definitions (no MIR codegen needed)
+- `parse_param` handles bare `self` (no `: Type` annotation)
 
-### Type Inference
+### Phase 7: v3.8.0 Compiler Hardening ✅
 
-At a call site `identity(42)`:
-1. Look up `identity` in scope — find it has type_params `[T]`
-2. Match parameter types against argument types: `T` ↔ `Int`
-3. Build substitution map: `{T: Int}`
-4. Apply to return type: `T` → `Int`
-
-For turbofish `identity::<String>("hello")`:
-1. Type args are explicit: `{T: String}`
-2. Verify argument types match (String == String)
+- Loop bounds raised: 200→500, 600→2000, 2000→5000
+- Method return types: +14 string, +8 list, +8 map methods
+- Substr semantics: fixed comment, 5 native tests added
+- toml.mn fixed (35/35 stdlib, up from 34/35)
 
 ---
 
-## Phases
+## Golden Tests
 
-### Phase 1: Python Bootstrap — Generic Functions
+| Test | Description |
+|------|-------------|
+| `26_generics.mn` | Generic functions (Int, Bool, String) + generic struct (Pair) |
+| `27_impl.mn` | Impl method dispatch (Counter.get, Counter.add) |
+| `28_traits.mn` | Impl dispatch + generics combined (Vec2.magnitude + double<T>) |
 
-**Files:** `mapanare/lower.py`, `mapanare/semantic.py`
+---
 
-1. In `lower.py._lower_call()`, detect calls to generic functions
-   (functions with non-empty `type_params`)
-2. Infer type arguments from call-site argument types
-3. Generate mangled name
-4. If not already specialized, clone the FnDef AST, substitute types,
-   and lower the specialized copy
-5. Emit call to the mangled name
+## Final Scorecard
 
-**Test:** `fn identity<T>(x: T) -> T { return x }` +
-`let a = identity(42)` → compiles to `identity__Int(42)` returning Int
+| Metric | v3.7.0 (start) | v3.9.0 (end) |
+|--------|----------------|--------------|
+| Golden tests | 25/25 | **28/28** |
+| Native assertions | 99 | **104** |
+| Stdlib | 34/35 | **35/35** |
+| Generics | None | **Functions + structs** |
+| Impl dispatch | Broken | **Working (inherent + trait)** |
+| Trait bounds | Not checked | **Validated at call sites** |
+| Fixed point | stage3==stage4 | **stage3==stage4** |
 
-### Phase 2: Self-Hosted Compiler — Generic Functions
+---
 
-**Files:** `mapanare/self/lower.mn`, `mapanare/self/lower_state.mn`
+## Known Limitations
 
-Mirror the Python implementation in the self-hosted lowerer:
-1. Add a specialization cache to LowerState (map from mangled name to bool)
-2. In lower_call, detect generic functions, infer types, mangle name
-3. Clone function definition, substitute type params, lower the clone
-4. Emit call to mangled name
+1. **Generic type annotations** — `let p: Pair<Int, Bool> = ...` not supported
+   (only inferred types work). Blocked by Python emitter enum-field extraction
+   bug: adding functions to lower_state.mn that match on enum types triggers
+   IR type mismatches in the compiled binary.
 
-### Phase 3: Generic Structs
+2. **Definition enum frozen** — Cannot add new variants (TraitDef) or change
+   existing variant field counts (ImplDef 2→3 fields) without breaking the
+   enum payload layout in the Python-bootstrapped binary.
 
-**Files:** `mapanare/lower.py`, `mapanare/self/lower.mn`
+3. **Python emitter enum-field bug** — Accessing an enum-typed field from a
+   struct (e.g., DefResult.defn where Definition is an enum) produces IR with
+   wrong alloca type (ptr instead of {i64, ptr}). Workaround: use accessor
+   functions or avoid direct field access.
 
-1. When a generic struct is instantiated with concrete types, generate
-   a specialized struct definition (mangled name, concrete field types)
-2. Register the specialized struct for emission
-3. All field accesses, constructors, and method calls use the mangled name
+4. **Dead PHI lines** — 11 dead PHI lines in stage2/stage3 diff. Root cause:
+   MIRType.kind field has garbage data in Python-bootstrapped binary from
+   enum payload extraction. Cosmetic only, doesn't affect correctness.
 
-### Phase 4: Trait Bounds (validation only)
+---
 
-Check that type arguments satisfy declared trait bounds:
-- `fn max<T: Ord>(a: T, b: T) -> T` — verify T has Ord impl
-- Error if no impl exists
+## Non-Goals (deferred to v3.10.0+)
 
-### Phase 5: Golden Tests + Native Tests
-
-Add golden tests for:
-- Generic identity function
-- Generic pair struct
-- Turbofish syntax
-- Multiple type parameters
+- Trait objects / dynamic dispatch
+- Higher-kinded types
+- Const generics
+- Generic enums beyond built-in Option/Result
+- Associated types
 - Nested generics (`List<Pair<Int, String>>`)
-- Recursive generic calls
-
----
-
-## Success Criteria
-
-- [ ] `fn identity<T>(x: T) -> T` works with Int, String, Bool
-- [ ] `fn pair<A, B>(a: A, b: B) -> A` works with multiple type args
-- [ ] Turbofish `identity::<Int>(42)` works
-- [ ] Generic functions compile through both Python and self-hosted paths
-- [ ] Golden tests added and passing
-- [ ] 25/25 existing golden tests still pass
-- [ ] Fixed point maintained (stage3 == stage4)
-- [ ] No performance regression on existing programs
-
----
-
-## Non-Goals
-
-- Trait objects / dynamic dispatch (future)
-- Higher-kinded types (future)
-- Const generics (future)
-- Generic enums beyond built-in Option/Result (Phase 3+)
-- Associated types (future)
+- Generic type annotations (`let p: Pair<Int, Bool>`)
