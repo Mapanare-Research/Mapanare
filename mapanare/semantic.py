@@ -749,6 +749,11 @@ class SemanticChecker:
                                 f"Argument {i + 1} of '{fname}' " f"expects {exp_s}, got {act_s}",
                                 expr,
                             )
+                    # Validate trait bounds on generic function calls
+                    if sym.node and isinstance(sym.node, FnDef) and sym.node.trait_bounds:
+                        self._check_trait_bounds_at_call(
+                            sym.node, sym.type_info.param_types, arg_types, expr
+                        )
                     return sym.type_info.return_type
                 return UNKNOWN_TYPE
             if sym.kind == "agent":
@@ -1726,6 +1731,44 @@ class SemanticChecker:
     def _type_implements_trait(self, type_name: str, trait_name: str) -> bool:
         """Check if a type has an impl for the given trait."""
         return (trait_name, type_name) in self._trait_impls
+
+    def _check_trait_bounds_at_call(
+        self,
+        fn_def: FnDef,
+        param_types: list[TypeInfo],
+        arg_types: list[TypeInfo],
+        expr: CallExpr,
+    ) -> None:
+        """Validate trait bounds when calling a generic function."""
+        # Build type parameter → concrete type mapping from arguments
+        tp_set = set(fn_def.type_params)
+        subst: dict[str, TypeInfo] = {}
+        for pt, at in zip(param_types, arg_types):
+            if pt.kind == TypeKind.UNKNOWN and pt.name in tp_set:
+                subst[pt.name] = at
+
+        # Check each trait bound
+        for tp_name, trait_name in fn_def.trait_bounds.items():
+            if tp_name not in subst:
+                continue
+            concrete = subst[tp_name]
+            concrete_name = concrete.name or _type_display(concrete)
+            # Built-in types have implicit trait implementations
+            _BUILTIN_IMPLS: dict[str, set[str]] = {
+                "Int": {"Eq", "Ord", "Hash", "Display"},
+                "Float": {"Eq", "Ord", "Display"},
+                "String": {"Eq", "Ord", "Hash", "Display"},
+                "Bool": {"Eq", "Hash", "Display"},
+            }
+            builtin_traits = _BUILTIN_IMPLS.get(concrete_name, set())
+            if trait_name in builtin_traits:
+                continue
+            if not self._type_implements_trait(concrete_name, trait_name):
+                self._error(
+                    f"Type '{concrete_name}' does not implement trait "
+                    f"'{trait_name}' required by type parameter '{tp_name}'",
+                    expr,
+                )
 
     def _type_exists(self, t: TypeInfo) -> bool:
         """Check if a type is known (primitive, builtin generic, or user-defined)."""
