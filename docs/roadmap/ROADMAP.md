@@ -7,19 +7,22 @@
 
 ---
 
-## Where We Are (v3.10.0 — Error Messages + Semantic Maturity)
+## Where We Are (v3.12.0 — WASI + Culebra Clean)
 
-**The compiler is usable by external developers.** v3.10.0 adds error messages
+**The compiler is usable by external developers.** v3.10.0 added error messages
 with line numbers, generic enum monomorphization, trait method validation, and
-complete builtin function coverage. The self-hosted semantic checker threads
-source positions through all 24 error sites and validates trait requirements.
+complete builtin function coverage. v3.12.0 added WASI fd_write support (print
+works on wasmtime) and fixed break-inside-nested-control.
 
-v3.9.1 fixed CI across all platforms. v3.9.0 added generic impl blocks.
-The self-hosted compiler is 11,000+ lines across 10 modules.
+**Next:** v3.13.0 "Cascabel" (memory safety) and v3.14.0 "Cuaima" (type system
++ docs) before v4.0.0 production release. A 7-reviewer code review scored
+8.37/10 — memory lifecycle is the remaining systemic weakness.
+
+The self-hosted compiler is 15,000+ lines across 11 modules.
 
 **35 stdlib modules** compile natively. **32 golden tests** cover all features
 including generics, impl dispatch, traits, generic enums, and generic impl
-blocks. **4482 pytest tests** pass. **104 native assertions** across 7 test
+blocks. **4465+ pytest tests** pass. **104 native assertions** across 7 test
 modules. Fixed point maintained (stage3 == stage4).
 
 **No Python required to build.** `bash scripts/build_from_seed.sh` bootstraps
@@ -143,7 +146,9 @@ from the seed binary.
 | **v3.8.1** ✅ | **Generics + Impl** | Generic function/struct monomorphization, impl method dispatch (inherent + trait), trait bounds validation, self-hosted `impl Trait for Type`, 28/28 golden, fixed point maintained |
 | **v3.9.0** ✅ | **Generic Impl Blocks** | `impl<T> Box<T> { fn get(self) -> T }`, TraitDef variant, enum-field bug confirmed resolved, type substitution fix for builtins, 31/31 golden, dead PHI fix, fixed point maintained |
 | **v3.9.1** | CI Green + Tests | Fix CI failures, generate .ref.ll for tests 16–31, update baselines, clean artifacts |
-| **v3.10.0** | Error Messages + Maturity | Self-hosted errors with line numbers, generic enums, trait method validation, builtin coverage |
+| **v3.10.0** ✅ | Error Messages + Maturity | Self-hosted errors with line numbers, generic enums, trait method validation, builtin coverage |
+| **v3.13.0** | **"Cascabel" — Memory Safety** | String drop glue, range iterator fix, COW list managed flag, runtime fn attributes, intern table thread safety, Windows mutex fix |
+| **v3.14.0** | **"Cuaima" — Type System + Docs** | Generic arity validation, arithmetic traits, TypeInfo hash fix, self-hosted scope_define fix, Stmt enum gaps, tutorial syntax, CI integrity |
 | **v4.0.0** | **Production Release** | Docs, demos, quality gate — the compiler is ready for real programs |
 
 ---
