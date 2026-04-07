@@ -1451,6 +1451,15 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
         }
 
         psl++;
+        if (psl == 255) {
+            /* PSL overflow — map is pathologically full. Force a grow to
+             * redistribute entries and keep PSL values bounded. */
+            if (temp != stack_buf) __mn_free(temp);
+            mn_map_grow(map);
+            /* Retry the insert from scratch after rehash */
+            __mn_map_set(map, key, val);
+            return;
+        }
         idx = (idx + 1) & mask;
     }
 }

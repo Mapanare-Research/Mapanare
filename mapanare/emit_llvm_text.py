@@ -204,18 +204,18 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_map_len": {"nounwind", "readonly"},
     "__mn_map_contains": {"nounwind", "readonly"},
     # Allocation
-    "malloc": {"nounwind"},
-    "__mn_alloc": {"nounwind"},
+    "malloc": {"nounwind", "noalias"},
+    "__mn_alloc": {"nounwind", "noalias"},
     # Cleanup
-    "free": {"nounwind"},
-    "__mn_str_free": {"nounwind"},
-    "__mn_list_free": {"nounwind"},
-    "__mn_map_free": {"nounwind"},
-    "__mn_stream_free": {"nounwind"},
-    "__mn_stream_free_chain": {"nounwind"},
-    "__mn_range_free": {"nounwind"},
-    "__mn_signal_free": {"nounwind"},
-    "__mn_map_free_deep": {"nounwind"},
+    "free": {"nounwind", "willreturn"},
+    "__mn_str_free": {"nounwind", "willreturn"},
+    "__mn_list_free": {"nounwind", "willreturn"},
+    "__mn_map_free": {"nounwind", "willreturn"},
+    "__mn_stream_free": {"nounwind", "willreturn"},
+    "__mn_stream_free_chain": {"nounwind", "willreturn"},
+    "__mn_range_free": {"nounwind", "willreturn"},
+    "__mn_signal_free": {"nounwind", "willreturn"},
+    "__mn_map_free_deep": {"nounwind", "willreturn"},
     # Mutation
     "__mn_str_concat": {"nounwind"},
     "__mn_str_from_int": {"nounwind"},
@@ -1166,15 +1166,10 @@ class LLVMTextEmitter:
         self._signal_vars = []
         self._stream_vars = []
 
-        # Per-function arena
+        # Per-function arena — disabled: text emitter never routes allocations
+        # through mn_arena_alloc, so create/destroy was pure overhead.
+        # Arena allocation is properly implemented in emit_llvm_mir.py.
         self._arena_ptr: str | None = None
-        if self._fn_is_arena_eligible(fn):
-            self._arena_ptr = self._f("arena_ptr")
-            self._ent.append(f"  {self._arena_ptr} = alloca ptr, align 8")
-            self._ensure("mn_arena_create", PTR, [I64])
-            arena = self._f("arena")
-            self._ent.append(f"  {arena} = call ptr @mn_arena_create(i64 4096)")
-            self._ent.append(f"  store ptr {arena}, ptr {self._arena_ptr}")
 
         # Determine which params use byref and if return uses sret
         rt_orig = self._rty(fn.return_type)
@@ -1500,11 +1495,6 @@ class LLVMTextEmitter:
         self._ensure("__mn_list_clone", LIST, ["ptr"])
         for idx, (fn, ft) in enumerate(fields):
             if ft == LIST:
-                # Skip append-only list fields that cause O(n²) clone overhead.
-                # EmitState.lines (field "lines") and str_globals grow huge but
-                # are never independently modified from copies — only appended.
-                if fn in ("lines", "str_globals"):
-                    continue
                 fp = self._f("clf")
                 self._L(f"{fp} = getelementptr inbounds {sty}, ptr {addr}, i32 0, i32 {idx}")
                 cloned = self._rt("__mn_list_clone", LIST, ["ptr"], [(fp, "ptr")])

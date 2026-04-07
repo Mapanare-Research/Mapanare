@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.32.0** (current) — **Sapoara.** Review hardening: 7 C runtime fixes, list return ownership, 21 new native tests (MnMap/MnSignal/MnStream/MnValue), 74/74 C tests pass.
+- **v3.33.0** (current) — **Curito.** Final polish: dead GPU stubs removed, arena overhead eliminated, trait_dispatch proper field, PSL overflow guard, LLVM fn attrs, clone_list_fields hardcoding removed.
 - **v4.0.0** (next) — Production release: docs, demos, quality gate
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.

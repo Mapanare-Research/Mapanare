@@ -154,6 +154,9 @@ class BinaryExpr(Expr):
     left: Expr = field(default_factory=Expr)
     op: str = ""
     right: Expr = field(default_factory=Expr)
+    trait_dispatch: str | None = (
+        None  # Set by semantic checker for trait-based ops (e.g., "add", "eq")
+    )
 
 
 @dataclass

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.33.0] - 2026-04-07
+
+### Removed
+
+- Dead GPU kernel stubs (`_generate_ptx_kernel`, `_generate_glsl_kernel`) from lower.py
+  (live GPU dispatch remains in emit_llvm_mir.py + mapanare_gpu.c)
+- Arena create/destroy overhead from text emitter (was creating arenas but never allocating from them)
+- Hardcoded `"lines"`/`"str_globals"` skip in `_clone_list_fields` (all list fields now cloned uniformly)
+
+### Fixed
+
+- `trait_dispatch` added as proper field on BinaryExpr (was monkey-patched with `# type: ignore`)
+- Robin Hood PSL uint8_t overflow guard — forces rehash at PSL=255 instead of wrapping
+- LLVM fn attrs: `noalias` on allocators, `willreturn` on free functions, `readonly` on getters
+
 ## [3.32.0] - 2026-04-07
 
 ### Fixed
@@ -769,7 +784,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.32.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.33.0...HEAD
+[3.33.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.32.0...v3.33.0
 [3.32.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.31.0...v3.32.0
 [3.31.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.30.0...v3.31.0
 [3.30.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.29.0...v3.30.0

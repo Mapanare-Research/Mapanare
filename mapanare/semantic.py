@@ -635,7 +635,7 @@ class SemanticChecker:
                 and left.name
                 and self._type_implements_trait(left.name, _op_to_trait[expr.op])
             ):
-                expr.trait_dispatch = _op_to_trait[expr.op].lower()  # type: ignore[attr-defined]
+                expr.trait_dispatch = _op_to_trait[expr.op].lower()
                 return left  # Self -> Self
 
             if left.kind not in _ARITHMETIC_KINDS or right.kind not in _ARITHMETIC_KINDS:
@@ -659,9 +659,9 @@ class SemanticChecker:
             # emitters can use the trait method instead of direct comparison.
             if left.kind in (TypeKind.STRUCT, TypeKind.ENUM) and left.name:
                 if expr.op in equality_ops and self._type_implements_trait(left.name, "Eq"):
-                    expr.trait_dispatch = "eq"  # type: ignore[attr-defined]
+                    expr.trait_dispatch = "eq"
                 elif expr.op in comparison_ops and self._type_implements_trait(left.name, "Ord"):
-                    expr.trait_dispatch = "cmp"  # type: ignore[attr-defined]
+                    expr.trait_dispatch = "cmp"
             return BOOL_TYPE
 
         if expr.op in logical_ops:
