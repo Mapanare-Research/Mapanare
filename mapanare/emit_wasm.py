@@ -1185,7 +1185,7 @@ class WasmEmitter:
         if handler is not None:
             return list(handler(inst, block_label, fn))
         _logger.warning("Unhandled MIR instruction: %s", type(inst).__name__)
-        return [f"      ;; TODO: {type(inst).__name__}"]
+        return [f"      ;; TODO: {type(inst).__name__}", "      (unreachable)"]
 
     # ------------------------------------------------------------------
     # Instruction emitters
@@ -1383,7 +1383,7 @@ class WasmEmitter:
                     f" (local.get ${lhs}) (local.get ${rhs})))"
                 ]
 
-        return [f"      ;; TODO: binop {inst.op.value} for {lhs_ty}"]
+        return [f"      ;; TODO: binop {inst.op.value} for {lhs_ty}", "      (unreachable)"]
 
     def _emit_unaryop(self, inst: UnaryOp, _bl: str, _fn: MIRFunction) -> list[str]:
         """Emit a unary operation."""
@@ -1410,7 +1410,7 @@ class WasmEmitter:
                 f" (i32.wrap_i64 (local.get ${operand})) (i32.const 1))))"
             ]
 
-        return [f"      ;; TODO: unary {inst.op.value}"]
+        return [f"      ;; TODO: unary {inst.op.value}", "      (unreachable)"]
 
     def _emit_call(self, inst: Call, _bl: str, _fn: MIRFunction) -> list[str]:
         """Emit a function call."""

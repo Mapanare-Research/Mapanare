@@ -1052,20 +1052,10 @@ class MIRLowerer:
         for dec in decorators:
             d = dec.lower()
             if d in ("cuda", "vulkan", "gpu"):
-                ptx = ""
-                spirv = b""
-                if d in ("cuda", "gpu"):
-                    ptx = _generate_ptx_kernel(mir_fn)
-                if d in ("vulkan", "gpu"):
-                    spirv = _generate_glsl_kernel(mir_fn).encode("utf-8")
-                kernel = MIRGpuKernel(
-                    name=fn_name,
-                    device=d,
-                    ptx_source=ptx,
-                    spirv_bytes=spirv,
-                    num_buffers=len(mir_fn.params),
+                raise NotImplementedError(
+                    "GPU code generation is not yet implemented. "
+                    "@cuda/@vulkan/@gpu decorators will be available in a future release."
                 )
-                self._module.gpu_kernels[fn_name] = kernel
                 break
 
         # Restore state

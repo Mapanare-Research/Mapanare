@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.21.0] - 2026-04-07
+
+### Added
+
+- Colorized PASS/FAIL in `mapanare test` output (green/red ANSI when terminal supports it)
+- Trait polymorphism cross-link in `for-python-devs.md`
+
+### Changed
+
+- `@cuda`/`@vulkan`/`@gpu` decorators now raise `NotImplementedError` with clear message
+- WASM TODO stubs emit `(unreachable)` trap instead of silently skipping
+- REPL shows exception type names in error messages
+
+### Fixed
+
+- Tutorial dead `return "unreachable"` after exhaustive match removed
+- JSON tutorial match syntax: `Object(obj)` → `JsonValue_Object(obj)`
+- Cookbook version string updated to 3.20.0
+- Self-hosted `len(source) < 0` → `len(source) == 0` for file detection
+
 ## [3.20.0] - 2026-04-07
 
 ### Added
@@ -602,7 +622,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.20.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.21.0...HEAD
+[3.21.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.20.0...v3.21.0
 [3.20.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.19.0...v3.20.0
 [3.19.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.18.0...v3.19.0
 [3.18.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.17.0...v3.18.0

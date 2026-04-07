@@ -233,7 +233,6 @@ fn describe(n: Int) -> String {
         3 => { return "three" },
         _ => { return "other" }
     }
-    return "unreachable"
 }
 
 fn main() {
@@ -582,7 +581,7 @@ fn main() {
     let value: JsonValue = json::parse(text)
 
     match value {
-        Object(obj) => {
+        JsonValue_Object(obj) => {
             let name: JsonValue = json::get(obj, "name")
             print("Name: " + json::to_string(name))
         },

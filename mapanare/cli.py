@@ -528,7 +528,7 @@ def cmd_repl(args: argparse.Namespace) -> None:
         except SystemExit:
             break
         except Exception as exc:
-            print(f"runtime error: {exc}")
+            print(f"runtime error ({type(exc).__name__}): {exc}")
 
 
 def cmd_fmt(args: argparse.Namespace) -> None:

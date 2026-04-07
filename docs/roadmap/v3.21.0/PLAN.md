@@ -4,7 +4,7 @@
 > developer experience. Named after v3.13.0 "Cascabel" (memory safety) — this
 > is the DX safety companion.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Small-Medium (1-2 sessions)
 **Breaking:** No
 **Prerequisite:** v3.20.0

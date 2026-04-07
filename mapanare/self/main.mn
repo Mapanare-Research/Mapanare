@@ -517,7 +517,7 @@ fn mn_main() {
     // Default: compile to IR
     let filename: String = arg1
     let source: String = __mn_file_read_or_empty(filename)
-    if len(source) < 0 {
+    if len(source) == 0 {
         __mn_str_eprint("error: cannot read file '")
         __mn_str_eprint(filename)
         __mn_str_eprint("'\n")
