@@ -4,7 +4,7 @@
 > replace Any annotations, improve monomorphization, reduce alloca density,
 > and deliver a tensor proof-of-concept that validates the "AI-native" claim.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Medium-Large (2-3 sessions)
 **Breaking:** No
 **Prerequisite:** v3.21.0

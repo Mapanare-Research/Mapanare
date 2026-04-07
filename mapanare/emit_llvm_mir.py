@@ -15,7 +15,15 @@ from __future__ import annotations
 
 import logging
 import pathlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    # Import concrete llvmlite types for annotations under type-checking only.
+    # At runtime llvmlite may be absent, so ``Any`` is the safe fallback
+    # throughout this module (~200 annotations).  A bulk replacement is
+    # deferred until llvmlite ships proper type stubs (currently
+    # ignore_missing_imports makes these resolve to Any anyway).
+    from llvmlite import ir as ir_types  # noqa: F401
 
 
 def _read_version() -> str:

@@ -7,7 +7,8 @@ control flow becomes explicit jumps/branches.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, replace
 from typing import Any
 
 from mapanare.ast_nodes import (
@@ -470,12 +471,19 @@ class MIRLowerer:
         return te
 
     def _specialize_fn(self, fn_def: FnDef, subst: dict[str, MIRType]) -> FnDef:
-        """Create a specialized copy of a generic function with concrete types."""
-        from copy import deepcopy
+        """Create a specialized copy of a generic function with concrete types.
 
-        specialized = deepcopy(fn_def)
-        specialized.type_params = []  # No longer generic
-        specialized.trait_bounds = {}
+        Uses dataclasses.replace() for a shallow copy, only deep-copying the
+        body and params (where type substitution mutates nodes).  This avoids
+        the overhead of copy.deepcopy() on the entire FnDef tree.
+        """
+        specialized = replace(
+            fn_def,
+            type_params=[],
+            trait_bounds={},
+            params=[replace(p) for p in fn_def.params],
+            body=deepcopy(fn_def.body),
+        )
 
         # Substitute parameter types
         for p in specialized.params:

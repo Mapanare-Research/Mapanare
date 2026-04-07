@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.21.0** (current) — **Cascabel II.** DX polish: colorized test runner, GPU gate, WASM traps, docs fixes, REPL exception types.
+- **v3.22.0** (current) — **Puare.** Performance: replace deepcopy with structural sharing, TYPE_CHECKING guard for llvmlite types.
 - **v4.0.0** (next) — Production release: docs, demos, quality gate
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.

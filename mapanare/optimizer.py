@@ -6,8 +6,7 @@ Passes operate between semantic analysis and code emission.
 
 from __future__ import annotations
 
-import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import IntEnum
 
 from mapanare.ast_nodes import (
@@ -273,7 +272,7 @@ class ConstantFolder:
             stmt.value = self._fold_expr(stmt.value)
             # Record constant for propagation (immutable + literal value)
             if not stmt.mutable and _is_literal(stmt.value) and stmt.name not in self._reassigned:
-                self._constants[stmt.name] = copy.deepcopy(stmt.value)
+                self._constants[stmt.name] = replace(stmt.value)
             return stmt
 
         if isinstance(stmt, ExprStmt):
@@ -320,7 +319,7 @@ class ConstantFolder:
             # Constant propagation
             if expr.name in self._constants:
                 self.stats.constants_propagated += 1
-                return copy.deepcopy(self._constants[expr.name])
+                return replace(self._constants[expr.name])
             return expr
 
         if isinstance(expr, CallExpr):

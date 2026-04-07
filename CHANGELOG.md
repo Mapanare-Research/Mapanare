@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.22.0] - 2026-04-07
+
+### Changed
+
+- Monomorphization uses `dataclasses.replace()` + targeted body deepcopy instead of full `deepcopy` (structural sharing)
+- Optimizer constant propagation uses `replace()` for literal nodes (no deepcopy overhead)
+- Added `TYPE_CHECKING` guard for llvmlite type annotations (scaffolding for future type stubs)
+
 ## [3.21.0] - 2026-04-07
 
 ### Added
@@ -622,7 +630,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.21.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.22.0...HEAD
+[3.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.21.0...v3.22.0
 [3.21.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.20.0...v3.21.0
 [3.20.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.19.0...v3.20.0
 [3.19.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.18.0...v3.19.0
