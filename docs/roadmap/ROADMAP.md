@@ -7,18 +7,19 @@
 
 ---
 
-## Where We Are (v3.15.0 — Coral)
+## Where We Are (v3.16.0 — Lora)
 
-**C runtime correctness release.** v3.15.0 fixed all undefined behavior, data
-races, and ABI mismatches in the C runtime: `__mn_list_concat` null-pointer UB,
-Windows console handler deadlock, non-atomic COW refcounts, MnList ABI mismatch
-in 3 emitter files, VkPhysicalDeviceProperties stack smash, `__mn_str_from_bool`
-heap allocation, and `__mn_list_oob_buf` thread safety.
+**Concurrency safety and leak fixes.** v3.16.0 made signal tracking thread-local,
+protected the subscriber list during propagation, added `__mn_map_free_deep` and
+`__mn_stream_free_chain` to fix runtime-level memory leaks, changed string
+constant alignment to `align 8`, removed `continue-on-error` from CI stage2,
+added `-Wall -Wextra` to `mapanare run`, and corrected the spec's `char_at`
+return type.
 
-**Next:** v3.16.0 "Cunaguaro" — concurrency and agent hardening. Then 6 more
-quality releases (v3.17.0-v3.22.0) covering drop glue, arenas, self-hosted
-compiler, type safety, DX polish, and performance. v4.0.0 is the production
-quality gate after all review findings are resolved.
+**Next:** v3.17.0 "Tigra" — text emitter drop glue. Then 5 more quality releases
+(v3.18.0-v3.22.0) covering container memory, self-hosted completeness, type
+safety, DX polish, and performance. v4.0.0 is the production quality gate after
+all review findings are resolved.
 
 The self-hosted compiler is 15,000+ lines across 11 modules.
 
@@ -152,13 +153,15 @@ from the seed binary.
 | **v3.13.0** | **"Cascabel" — Memory Safety** | String drop glue, range iterator fix, COW list managed flag, runtime fn attributes, intern table thread safety, Windows mutex fix |
 | **v3.14.0** ✅ | **"Cuaima" — Type System + Docs** | Generic arity validation, arithmetic traits, TypeInfo hash fix, self-hosted scope_define fix, tutorial syntax, CI integrity |
 | **v3.15.0** ✅ | **"Coral" — C Runtime Correctness** | Fix list_concat UB, Windows handler deadlock, COW atomics, MnList ABI mismatch, Vulkan padding, str_from_bool, thread-local OOB |
-| **v3.16.0** | **"Lora" — Concurrency + Leaks** | Signal thread safety, map/stream free, CI stage2 integrity, `mapanare run` warnings |
+| **v3.16.0** ✅ | **"Lora" — Concurrency + Leaks** | Signal thread-local + lock, map/stream deep free, string align 8, CI stage2 integrity, `mapanare run` warnings, spec char_at fix |
 | **v3.17.0** | **"Tigra" — Text Emitter Drop Glue** | Port string/closure drop glue to default emitter, function attributes, closure env sizing |
 | **v3.18.0** | **"Macagua" — Container Memory + Arenas** | Drop glue for lists/maps/signals/streams, per-function arena allocation |
 | **v3.19.0** | **"Tragavenado" — Self-Hosted Completeness** | While/Break/Continue/Assert, for-loop type inference, generic type tracking, InterpString, trait parsing |
 | **v3.20.0** | **"Sapa" — Type Safety + Optimizer** | Arithmetic trait lowering, O2 convergence, _coerce_arg reduction phase 1, emitter cleanup |
 | **v3.21.0** | **"Cascabel II" — DX Polish** | REPL exceptions, test colors, docs fixes, native C tests, WASM stubs, GPU error gate |
 | **v3.22.0** | **"Puare" — Performance + Tensor PoC** | _coerce_arg phase 2, Any reduction, deepcopy replacement, alloca reduction, tensor elementwise add |
+| **v3.23.0** | **"Tragavenado II" — Dynamic `any` Type** | Tagged `MnValue` union, `any` in type system/grammar/semantic/MIR/LLVM, runtime dispatch, `typeof` builtin, gradual typing foundation |
+| **v3.24.0** | **"Macagua II" — Python Transpiler** | `mapanare compile main.py`, Python AST → Mapanare AST, class→struct, try/except→Result, type inference for untyped locals, `any` fallback, stdlib shims, `.py`→`.mn` transpile output |
 | **v4.0.0** | **"Mapanare" — Production Release** | Docs, demos, quality gate — the compiler is ready for real programs |
 
 ---

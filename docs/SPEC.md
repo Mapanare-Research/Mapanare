@@ -1332,7 +1332,7 @@ Strings support the following methods, all callable via dot syntax:
 | Method | Signature | Description |
 |---|---|---|
 | `len()` | `() -> Int` | Return the byte length of the string. |
-| `char_at(index)` | `(Int) -> Char` | Return the character at the given index. |
+| `char_at(index)` | `(Int) -> String` | Return the character at the given index as a single-character string. |
 | `byte_at(index)` | `(Int) -> Int` | Return the byte value at the given index. |
 | `substr(start, length)` | `(Int, Int) -> String` | Extract a substring starting at `start` with the given `length`. |
 | `find(needle)` | `(String) -> Int` | Return the index of the first occurrence of `needle`, or -1 if not found. |

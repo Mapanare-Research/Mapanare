@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.16.0] - 2026-04-07
+
+### Added
+
+- `__mn_map_free_deep` — frees string keys/values before freeing the map struct
+- `__mn_stream_free_chain` — frees entire upstream stream pipeline (iterative, no stack overflow)
+
+### Changed
+
+- String constant alignment from `align 2` to `align 8` (future-proofs 3-bit pointer tagging)
+- `mapanare run` now compiles C with `-Wall -Wextra`
+- CI stage2 validation no longer uses `continue-on-error` (failures are real)
+
+### Fixed
+
+- Signal tracking context now `_Thread_local` (concurrent computed signals safe)
+- Signal subscriber list protected during propagation (snapshot under lock prevents use-after-free on realloc)
+- Spec `char_at` return type corrected to `String` (matches implementation)
+- Test `test_list_type` updated for 5-field MnList ABI (from v3.15.0)
+
 ## [3.15.0] - 2026-04-07
 
 ### Fixed
@@ -523,7 +543,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.15.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.16.0...HEAD
+[3.16.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.15.0...v3.16.0
 [3.15.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.14.0...v3.15.0
 [3.0.3]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.1...v3.0.2

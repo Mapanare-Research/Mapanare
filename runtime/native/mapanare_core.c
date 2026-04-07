@@ -1563,6 +1563,28 @@ MN_EXPORT void __mn_map_free(MnMap *map) {
     }
 }
 
+MN_EXPORT void __mn_map_free_deep(MnMap *map) {
+    if (!map) return;
+    if (map->buckets) {
+        for (int64_t i = 0; i < map->cap; i++) {
+            char *bucket = mn_bucket_at(map, i);
+            if ((uint8_t)bucket[0] != MN_BUCKET_OCCUPIED) continue;
+            /* Free string keys */
+            if (map->key_type == MN_MAP_KEY_STR) {
+                MnString *key = (MnString *)(bucket + 2);
+                __mn_str_free(*key);
+            }
+            /* Free string values (check if val_size matches MnString) */
+            if (map->val_size == (int64_t)sizeof(MnString)) {
+                MnString *val = (MnString *)(bucket + 2 + map->key_size);
+                __mn_str_free(*val);
+            }
+        }
+        __mn_free(map->buckets);
+    }
+    __mn_free(map);
+}
+
 /* -----------------------------------------------------------------------
  * MnSignal — reactive signal with dependency graph
  * ----------------------------------------------------------------------- */
@@ -1630,7 +1652,7 @@ static inline void mn_signal_unlock(void) { pthread_mutex_unlock(&mn_signal_mute
 
 /* --- Dependency tracking context (for auto-tracking) --- */
 
-static MnSignal *mn_signal_tracking_context = NULL;
+static _Thread_local MnSignal *mn_signal_tracking_context = NULL;
 
 /* --- Forward declarations --- */
 
@@ -1771,9 +1793,10 @@ static void mn_signal_recompute(MnSignal *signal) {
 /* --- Subscribe / Unsubscribe --- */
 
 MN_EXPORT void __mn_signal_subscribe(MnSignal *signal, MnSignal *subscriber) {
+    mn_signal_lock();
     /* Check for duplicates */
     for (int64_t i = 0; i < signal->sub_len; i++) {
-        if (signal->subscribers[i] == subscriber) return;
+        if (signal->subscribers[i] == subscriber) { mn_signal_unlock(); return; }
     }
     /* Grow if needed */
     if (signal->sub_len >= signal->sub_cap) {
@@ -1783,6 +1806,7 @@ MN_EXPORT void __mn_signal_subscribe(MnSignal *signal, MnSignal *subscriber) {
         signal->sub_cap = new_cap;
     }
     signal->subscribers[signal->sub_len++] = subscriber;
+    mn_signal_unlock();
 }
 
 MN_EXPORT void __mn_signal_unsubscribe(MnSignal *signal, MnSignal *subscriber) {
@@ -1812,21 +1836,34 @@ MN_EXPORT void __mn_signal_on_change(MnSignal *signal, MnSignalCallback cb, void
 /* --- Propagation (topological, depth-first) --- */
 
 static void mn_signal_propagate(MnSignal *signal) {
+    /* Snapshot subscriber list under the lock so realloc in subscribe
+     * cannot invalidate our iteration pointer. */
+    mn_signal_lock();
+    int64_t n = signal->sub_len;
+    MnSignal **snap = NULL;
+    if (n > 0) {
+        snap = (MnSignal **)__mn_alloc(n * (int64_t)sizeof(MnSignal *));
+        memcpy(snap, signal->subscribers, (size_t)(n * (int64_t)sizeof(MnSignal *)));
+    }
+    mn_signal_unlock();
+
     /* 1. Mark all subscribers dirty */
-    for (int64_t i = 0; i < signal->sub_len; i++) {
-        signal->subscribers[i]->dirty = 1;
+    for (int64_t i = 0; i < n; i++) {
+        snap[i]->dirty = 1;
     }
 
     /* 2. Re-evaluate computed subscribers and propagate recursively.
      *    This is a depth-first topological traversal: each computed signal
      *    is recomputed before its own subscribers are notified. */
-    for (int64_t i = 0; i < signal->sub_len; i++) {
-        MnSignal *sub = signal->subscribers[i];
+    for (int64_t i = 0; i < n; i++) {
+        MnSignal *sub = snap[i];
         if (sub->compute_fn != NULL && sub->dirty) {
             mn_signal_recompute(sub);
             mn_signal_propagate(sub);
         }
     }
+
+    if (snap) __mn_free(snap);
 
     /* 3. Fire callbacks on this signal */
     for (int64_t i = 0; i < signal->cb_len; i++) {
@@ -2182,6 +2219,14 @@ MN_EXPORT void __mn_stream_free(MnStream *stream) {
         __mn_free(stream->state);
     }
     __mn_free(stream);
+}
+
+MN_EXPORT void __mn_stream_free_chain(MnStream *stream) {
+    while (stream) {
+        MnStream *source = stream->source;
+        __mn_stream_free(stream);
+        stream = source;
+    }
 }
 
 /* -----------------------------------------------------------------------

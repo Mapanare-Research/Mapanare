@@ -1027,6 +1027,8 @@ def _run_c_source(c_source: str, source_file: str) -> None:
         gcc_cmd = [
             "gcc",
             "-O0",
+            "-Wall",
+            "-Wextra",
             f"-I{runtime_dir}",
             c_path,
             runtime_c,

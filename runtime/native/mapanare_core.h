@@ -349,6 +349,9 @@ MN_EXPORT MnList __mn_map_keys(MnMap *map);
 /** Free the map and its storage. Does NOT free contained strings. */
 MN_EXPORT void __mn_map_free(MnMap *map);
 
+/** Free the map, its storage, AND free string keys/values. */
+MN_EXPORT void __mn_map_free_deep(MnMap *map);
+
 /* -----------------------------------------------------------------------
  * Hash functions (exposed for testing; used internally by MnMap)
  * ----------------------------------------------------------------------- */
@@ -493,6 +496,9 @@ MN_EXPORT MnStream *__mn_stream_bounded(MnStream *source, int64_t capacity,
 
 /** Free a stream node (does NOT free upstream sources). */
 MN_EXPORT void __mn_stream_free(MnStream *stream);
+
+/** Free a stream node AND all upstream sources (iterative, no stack overflow). */
+MN_EXPORT void __mn_stream_free_chain(MnStream *stream);
 
 /* -----------------------------------------------------------------------
  * String Interning — deduplication pool with configurable cap

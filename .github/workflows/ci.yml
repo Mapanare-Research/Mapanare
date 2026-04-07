@@ -72,7 +72,6 @@ jobs:
       - name: Run stage2 validation
         if: success()
         run: python scripts/ir_doctor.py stage2 --timeout 30
-        continue-on-error: true
 
   # ---------------------------------------------------------------------------
   # Native bootstrap: build from seed binary, no Python

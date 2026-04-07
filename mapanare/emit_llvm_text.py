@@ -676,7 +676,7 @@ class LLVMTextEmitter:
         gn = f"@.str.{self._strc}"
         self._strc += 1
         at = f"[{n} x i8]"
-        self._globals.append(f'{gn} = private constant {at} c"{esc}", align 2')
+        self._globals.append(f'{gn} = private constant {at} c"{esc}", align 8')
         p = self._f("sp")
         self._L(f"{p} = getelementptr inbounds {at}, ptr {gn}, i64 0, i64 0")
         s0 = self._f("s")
@@ -692,7 +692,7 @@ class LLVMTextEmitter:
             gn = f"@.fmt.{len(self._fmts)}"
             self._fmts[fmt] = gn
             at = f"[{n} x i8]"
-            self._globals.append(f'{gn} = private constant {at} c"{_esc(raw)}", align 2')
+            self._globals.append(f'{gn} = private constant {at} c"{_esc(raw)}", align 8')
         gn = self._fmts[fmt]
         raw = fmt.encode("utf-8") + b"\x00"
         at = f"[{len(raw)} x i8]"
