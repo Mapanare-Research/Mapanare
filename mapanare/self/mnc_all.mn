@@ -239,7 +239,7 @@ enum Definition {
     StructDef(StructDefData),
     EnumDef(EnumDefData),
     TypeAlias(String, TypeExpr),
-    ImplDef(String, List<FnDefData>),
+    ImplDef(String, Option<String>, List<FnDefData>),
     ImportDef(List<String>, List<String>),
     ExportDef(Option<Definition>, List<String>),
     ExternFnDef(String, String, List<Param>, Option<TypeExpr>),
@@ -609,7 +609,7 @@ pub fn def_kind(d: Definition) -> String {
         StructDef(_) => { return "struct_def" },
         EnumDef(_) => { return "enum_def" },
         TypeAlias(_, _) => { return "type_alias" },
-        ImplDef(_, _) => { return "impl_def" },
+        ImplDef(_, _, _) => { return "impl_def" },
         ImportDef(_, _) => { return "import_def" },
         ExportDef(_, _) => { return "export_def" },
         ExternFnDef(_, _, _, _) => { return "extern_fn_def" },
@@ -633,10 +633,13 @@ pub fn def_enum_data(d: Definition) -> EnumDefData {
     match d { EnumDef(data) => { return data }, _ => { let tp: List<String> = []; let v: List<EnumVariant> = []; return new EnumDefData { span: make_span(0,0,0,0), name: "", public: false, type_params: tp, variants: v } } }
 }
 pub fn def_impl_target(d: Definition) -> String {
-    match d { ImplDef(t, _) => { return t }, _ => { return "" } }
+    match d { ImplDef(t, _, _) => { return t }, _ => { return "" } }
+}
+pub fn def_impl_trait_name(d: Definition) -> Option<String> {
+    match d { ImplDef(_, tn, _) => { return tn }, _ => { return none } }
 }
 pub fn def_impl_methods(d: Definition) -> List<FnDefData> {
-    match d { ImplDef(_, m) => { return m }, _ => { let empty: List<FnDefData> = []; return empty } }
+    match d { ImplDef(_, _, m) => { return m }, _ => { let empty: List<FnDefData> = []; return empty } }
 }
 pub fn def_import_path(d: Definition) -> List<String> {
     match d { ImportDef(p, _) => { return p }, _ => { let empty: List<String> = []; return empty } }
@@ -2478,9 +2481,12 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
     // Skip optional type params: impl<T, U> ...
     if peek_type(tokens, p) == "LT" {
         p = p + 1
+        let mut done_tp: Bool = false
         for _ in 0..20 {
-            if peek_type(tokens, p) == "GT" { p = p + 1; break }
-            p = p + 1
+            if !done_tp {
+                if peek_type(tokens, p) == "GT" { p = p + 1; done_tp = true }
+                if !done_tp { p = p + 1 }
+            }
         }
     }
 
@@ -2490,16 +2496,21 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
     // Skip optional type args: impl<T> Name<T> { ... }
     if peek_type(tokens, p) == "LT" {
         p = p + 1
+        let mut done_ta: Bool = false
         for _ in 0..20 {
-            if peek_type(tokens, p) == "GT" { p = p + 1; break }
-            p = p + 1
+            if !done_ta {
+                if peek_type(tokens, p) == "GT" { p = p + 1; done_ta = true }
+                if !done_ta { p = p + 1 }
+            }
         }
     }
 
     // Check for "impl Trait for Type { ... }" syntax
     let mut target: String = first_name
+    let mut trait_name: Option<String> = none
     if peek_type(tokens, p) == "KW_FOR" {
         p = p + 1
+        trait_name = Some(first_name)
         target = peek_value(tokens, p)
         p = p + 1
     }
@@ -2511,14 +2522,14 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
         p = skip_semis(tokens, p)
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            return new_def_result(Definition::ImplDef(target, methods), p)
+            return new_def_result(Definition::ImplDef(target, trait_name, methods), p)
         }
         let r: FnDataResult = parse_fn_def_as_data(tokens, p, filename)
         methods.push(r.data)
         p = r.pos
     }
 
-    return new_def_result(Definition::ImplDef(target, methods), p)
+    return new_def_result(Definition::ImplDef(target, trait_name, methods), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -3731,6 +3742,15 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "ord" { return true }
     if name == "chr" { return true }
     if name == "join" { return true }
+    // C runtime functions used by the self-hosted compiler driver
+    if name == "__mn_argc" { return true }
+    if name == "__mn_argv" { return true }
+    if name == "__mn_file_read_or_empty" { return true }
+    if name == "__mn_exit" { return true }
+    if name == "__mn_str_eprint" { return true }
+    if name == "__mn_str_eprintln" { return true }
+    if name == "__mn_system" { return true }
+    if name == "__mn_file_write" { return true }
     return false
 }
 
@@ -3840,7 +3860,8 @@ fn new_checker(filename: String) -> SemanticChecker {
 struct SemState {
     errors: List<SemanticError>,
     scope: Scope,
-    filename: String
+    filename: String,
+    current_span: Span
 }
 
 struct InferResult {
@@ -3855,7 +3876,8 @@ struct CheckResult {
 fn new_sem_state(filename: String) -> SemState {
     let scope: Scope = new_scope(none)
     let sem_errs: List<SemanticError> = []
-    return new SemState { errors: sem_errs, scope: scope, filename: filename }
+    let zero_span: Span = make_span(0, 0, 0, 0)
+    return new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span }
 }
 
 fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult {
@@ -3872,12 +3894,17 @@ fn new_check_result(st: SemState) -> CheckResult {
 
 fn add_error(st: SemState, msg: String, line: Int, col: Int) -> SemState {
     let err: SemanticError = new_semantic_error(msg, line, col, st.filename)
-    // st.errors.push(err)
-    return st
+    let mut errs: List<SemanticError> = st.errors
+    errs.push(err)
+    return new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span }
+}
+
+fn add_error_here(st: SemState, msg: String) -> SemState {
+    return add_error(st, msg, st.current_span.line, st.current_span.column)
 }
 
 fn add_error_msg(st: SemState, msg: String) -> SemState {
-    return add_error(st, msg, 0, 0)
+    return add_error_here(st, msg)
 }
 
 // ---------------------------------------------------------------------------
@@ -3886,23 +3913,27 @@ fn add_error_msg(st: SemState, msg: String) -> SemState {
 
 fn push_scope(st: SemState) -> SemState {
     let child: Scope = new_scope(Some(st.scope))
-    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename }
+    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span }
     return new_st
 }
 
 fn pop_scope(st: SemState) -> SemState {
     match st.scope.parent {
         Some(parent) => {
-            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename }
+            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span }
             return new_st
         },
         _ => { return st }
     }
 }
 
+fn set_span(st: SemState, span: Span) -> SemState {
+    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span }
+}
+
 fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState {
     let new_scope_val: Scope = scope_define(st.scope, name, sym)
-    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename }
+    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span }
     return new_st
 }
 
@@ -4052,7 +4083,7 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
         match result {
             Some(sym) => { return new_infer_result(sym.type_info, st) },
             _ => {
-                let st_ident_err: SemState = add_error(st, "Undefined variable '" + name + "'", 0, 0)
+                let st_ident_err: SemState = add_error_here(st, "Undefined variable '" + name + "'")
                 return new_infer_result(unknown_type(), st_ident_err)
             }
         }
@@ -4238,7 +4269,7 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
             if rt != "Tensor" {
                 if rt != "Int" {
                     if rt != "Float" {
-                        let st_tensor_lt: SemState = add_error(st, "Operator '" + op + "' not supported for Tensor and " + rt, 0, 0)
+                        let st_tensor_lt: SemState = add_error_here(st, "Operator '" + op + "' not supported for Tensor and " + rt)
                         return new_infer_result(make_type("Tensor"), st_tensor_lt)
                     }
                 }
@@ -4250,7 +4281,7 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if lt != "<unknown>" {
             if lt != "Int" {
                 if lt != "Float" {
-                    let st_tensor_rt: SemState = add_error(st, "Operator '" + op + "' not supported for " + lt + " and Tensor", 0, 0)
+                    let st_tensor_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for " + lt + " and Tensor")
                     return new_infer_result(make_type("Tensor"), st_tensor_rt)
                 }
             }
@@ -4263,7 +4294,7 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if lt != "Int" {
             if lt != "Float" {
                 if lt != "String" {
-                    let st_arith_lt: SemState = add_error(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt, 0, 0)
+                    let st_arith_lt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
                     return new_infer_result(unknown_type(), st_arith_lt)
                 }
             }
@@ -4273,7 +4304,7 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if rt != "Int" {
             if rt != "Float" {
                 if rt != "String" {
-                    let st_arith_rt: SemState = add_error(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt, 0, 0)
+                    let st_arith_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
                     return new_infer_result(unknown_type(), st_arith_rt)
                 }
             }
@@ -4288,12 +4319,12 @@ fn check_logical_binary(st: SemState, lt: String, rt: String, op: String) -> Inf
     let mut st2: SemState = st
     if lt != "<unknown>" {
         if lt != "Bool" {
-            st2 = add_error(st2, "Operator '" + op + "' requires Bool, got " + lt, 0, 0)
+            st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + lt)
         }
     }
     if rt != "<unknown>" {
         if rt != "Bool" {
-            st2 = add_error(st2, "Operator '" + op + "' requires Bool, got " + rt, 0, 0)
+            st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + rt)
         }
     }
     return new_infer_result(bool_type(), st2)
@@ -4303,12 +4334,12 @@ fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, 
     let mut st2: SemState = st
     if lt != "<unknown>" {
         if lt != "Tensor" {
-            st2 = add_error(st2, "Operator '@' requires Tensor, got " + lt, 0, 0)
+            st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + lt)
         }
     }
     if rt != "<unknown>" {
         if rt != "Tensor" {
-            st2 = add_error(st2, "Operator '@' requires Tensor, got " + rt, 0, 0)
+            st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + rt)
         }
     }
     let elem: TypeInfo = unknown_type()
@@ -4334,7 +4365,7 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
         if ot != "<unknown>" {
             if ot != "Int" {
                 if ot != "Float" {
-                    let st_neg: SemState = add_error(or.st, "Unary '-' not supported for type " + ot, 0, 0)
+                    let st_neg: SemState = add_error_here(or.st, "Unary '-' not supported for type " + ot)
                     return new_infer_result(or.type_info, st_neg)
                 }
             }
@@ -4345,7 +4376,7 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
     if op == "!" {
         if ot != "<unknown>" {
             if ot != "Bool" {
-                let st_not: SemState = add_error(or.st, "Unary '!' requires Bool, got " + ot, 0, 0)
+                let st_not: SemState = add_error_here(or.st, "Unary '!' requires Bool, got " + ot)
                 return new_infer_result(bool_type(), st_not)
             }
         }
@@ -4389,7 +4420,7 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
                             Some(ret) => {
                                 if len(sym.type_info.param_types) > 0 {
                                     if len(arg_types) != len(sym.type_info.param_types) {
-                                        let st_argc: SemState = add_error(st, "Function '" + name + "' argument count mismatch", 0, 0)
+                                        let st_argc: SemState = add_error_here(st, "Function '" + name + "' argument count mismatch")
                                         return new_infer_result(ret, st_argc)
                                     }
                                 }
@@ -4409,7 +4440,7 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
                 return new_infer_result(unknown_type(), st)
             },
             _ => {
-                let st_undef: SemState = add_error(st, "Undefined function '" + name + "'", 0, 0)
+                let st_undef: SemState = add_error_here(st, "Undefined function '" + name + "'")
                 return new_infer_result(unknown_type(), st_undef)
             }
         }
@@ -4432,19 +4463,19 @@ fn check_assign_expr(st: SemState, target: Expr, op: String, value: Expr) -> Inf
             Some(sym) => {
                 let mut st_assign: SemState = vr.st
                 if sym.mutable == false {
-                    st_assign = add_error(st_assign, "Cannot assign to immutable variable '" + name + "'", 0, 0)
+                    st_assign = add_error_here(st_assign, "Cannot assign to immutable variable '" + name + "'")
                 }
                 if sym.type_info.name != "<unknown>" {
                     if vr.type_info.name != "<unknown>" {
                         if types_compatible(sym.type_info, vr.type_info) == false {
-                            st_assign = add_error(st_assign, "Type mismatch in assignment to '" + name + "'", 0, 0)
+                            st_assign = add_error_here(st_assign, "Type mismatch in assignment to '" + name + "'")
                         }
                     }
                 }
                 return new_infer_result(void_type(), st_assign)
             },
             _ => {
-                let st_assign_undef: SemState = add_error(vr.st, "Undefined variable '" + name + "'", 0, 0)
+                let st_assign_undef: SemState = add_error_here(vr.st, "Undefined variable '" + name + "'")
                 return new_infer_result(void_type(), st_assign_undef)
             }
         }
@@ -4464,7 +4495,7 @@ fn check_if_expr(st: SemState, cond: Expr, then_block: Block, else_clause: Optio
 
     if cr.type_info.name != "<unknown>" {
         if cr.type_info.name != "Bool" {
-            st2 = add_error(st2, "If condition must be Bool, got " + cr.type_info.name, 0, 0)
+            st2 = add_error_here(st2, "If condition must be Bool, got " + cr.type_info.name)
         }
     }
 
@@ -4596,13 +4627,13 @@ fn check_spawn_callee(st: SemState, callee: Expr) -> InferResult {
                 let mut st2: SemState = st
                 if sym.kind != "agent" {
                     if sym.kind != "variable" {
-                        st2 = add_error(st2, "'spawn' requires an agent, but '" + name + "' is a " + sym.kind, 0, 0)
+                        st2 = add_error_here(st2, "'spawn' requires an agent, but '" + name + "' is a " + sym.kind)
                     }
                 }
                 return new_infer_result(make_type(sym.name), st2)
             },
             _ => {
-                let st_err: SemState = add_error(st, "Undefined agent '" + name + "'", 0, 0)
+                let st_err: SemState = add_error_here(st, "Undefined agent '" + name + "'")
                 return new_infer_result(unknown_type(), st_err)
             }
         }
@@ -4653,7 +4684,7 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
                             if expected.name != "<unknown>" {
                                 if lr.type_info.name != "<unknown>" {
                                     if types_compatible(expected, lr.type_info) == false {
-                                        let st3_mismatch: SemState = add_error(st2, "Pipe type mismatch: piped to '" + name + "'", 0, 0)
+                                        let st3_mismatch: SemState = add_error_here(st2, "Pipe type mismatch: piped to '" + name + "'")
                                         match sym.type_info.return_type {
                                             Some(ret) => { return new_infer_result(ret, st3_mismatch) },
                                             _ => { return new_infer_result(unknown_type(), st3_mismatch) }
@@ -4674,7 +4705,7 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
                 return new_infer_result(unknown_type(), st2)
             },
             _ => {
-                let st3_undef: SemState = add_error(st2, "Undefined function '" + name + "'", 0, 0)
+                let st3_undef: SemState = add_error_here(st2, "Undefined function '" + name + "'")
                 return new_infer_result(unknown_type(), st3_undef)
             }
         }
@@ -4691,7 +4722,7 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
 // ---------------------------------------------------------------------------
 
 fn check_block(st: SemState, block: Block) -> SemState {
-    let mut st2: SemState = st
+    let mut st2: SemState = set_span(st, block.span)
     let mut i: Int = 0
     for _ in 0..600 {
         if i >= len(block.stmts) { return st2 }
@@ -4746,7 +4777,7 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
     if ann_type.name != "<unknown>" {
         if vr.type_info.name != "<unknown>" {
             if types_compatible(ann_type, vr.type_info) == false {
-                st2 = add_error(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + vr.type_info.name, 0, 0)
+                st2 = add_error_here(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + vr.type_info.name)
             }
         }
     }
@@ -4916,8 +4947,22 @@ fn register_def(st: SemState, def: Definition) -> SemState {
     }
     if dk == "trait_def" {
         let trait_name: String = def_trait_name(def)
-        let sym_trait: Symbol = new_symbol(trait_name, "trait", make_type(trait_name), false)
-        return define_in_scope(st, trait_name, sym_trait)
+        let trait_methods: List<FnDefData> = def_trait_methods(def)
+        // Store method count in args list length for validation
+        let mut trait_type: TypeInfo = make_type(trait_name)
+        let sym_trait: Symbol = new_symbol(trait_name, "trait", trait_type, false)
+        let mut st2_trait: SemState = define_in_scope(st, trait_name, sym_trait)
+        // Register each trait method as "TraitName.method_name" for impl validation
+        let mut tmi: Int = 0
+        for _ in 0..200 {
+            if tmi >= len(trait_methods) { return st2_trait }
+            let tm: FnDefData = trait_methods[tmi]
+            let tm_key: String = trait_name + "." + tm.name
+            let tm_sym: Symbol = new_symbol(tm_key, "trait_method", unknown_type(), false)
+            st2_trait = define_in_scope(st2_trait, tm_key, tm_sym)
+            tmi = tmi + 1
+        }
+        return st2_trait
     }
     // impl_def — methods handled in second pass
     return st
@@ -4944,7 +4989,7 @@ fn check_def(st: SemState, def: Definition) -> SemState {
     if dk == "fn_def" { return check_fn_body(st, def_fn_data(def)) }
     if dk == "agent_def" { return check_agent_body(st, def_agent_data(def)) }
     if dk == "pipe_def" { return check_pipe_stages(st, def_pipe_data(def)) }
-    if dk == "impl_def" { return check_impl_body(st, def_impl_target(def), def_impl_methods(def)) }
+    if dk == "impl_def" { return check_impl_body(st, def_impl_target(def), def_impl_trait_name(def), def_impl_methods(def)) }
     if dk == "export_def" {
         let inner_def: Option<Definition> = def_export_inner(def)
         match inner_def {
@@ -4960,7 +5005,7 @@ fn check_def(st: SemState, def: Definition) -> SemState {
 // ---------------------------------------------------------------------------
 
 fn check_fn_body(st: SemState, data: FnDefData) -> SemState {
-    let inner: SemState = push_scope(st)
+    let inner: SemState = push_scope(set_span(st, data.span))
     let mut st2: SemState = inner
 
     // Register parameters
@@ -4986,7 +5031,7 @@ fn check_fn_body(st: SemState, data: FnDefData) -> SemState {
 // ---------------------------------------------------------------------------
 
 fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
-    let inner: SemState = push_scope(st)
+    let inner: SemState = push_scope(set_span(st, data.span))
     let mut st2: SemState = inner
 
     // Register self
@@ -5045,14 +5090,34 @@ fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
 // Impl block checking
 // ---------------------------------------------------------------------------
 
-fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> SemState {
+fn check_impl_body(st: SemState, target: String, trait_name_opt: Option<String>, methods: List<FnDefData>) -> SemState {
     let sym_opt: Option<Symbol> = scope_lookup(st.scope, target)
     let mut st2: SemState = st
     match sym_opt {
         Some(_) => {},
         _ => {
-            st2 = add_error(st2, "Undefined type '" + target + "' in impl block", 0, 0)
+            st2 = add_error_here(st2, "Undefined type '" + target + "' in impl block")
         }
+    }
+
+    // Validate trait requirements if this is "impl Trait for Type"
+    match trait_name_opt {
+        Some(trait_name) => {
+            let trait_sym: Option<Symbol> = scope_lookup(st2.scope, trait_name)
+            match trait_sym {
+                Some(ts) => {
+                    if ts.kind != "trait" {
+                        st2 = add_error_here(st2, "'" + trait_name + "' is not a trait")
+                    }
+                    // Check each trait method is implemented
+                    st2 = validate_trait_methods(st2, trait_name, target, methods)
+                },
+                _ => {
+                    st2 = add_error_here(st2, "Undefined trait '" + trait_name + "'")
+                }
+            }
+        },
+        _ => {}
     }
 
     let mut mi: Int = 0
@@ -5063,6 +5128,51 @@ fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> Se
         mi = mi + 1
     }
     return st2
+}
+
+fn validate_trait_methods(st: SemState, trait_name: String, target: String, impl_methods: List<FnDefData>) -> SemState {
+    // Build list of implemented method names
+    let mut impl_names: List<String> = []
+    let mut ii: Int = 0
+    for _ in 0..200 {
+        if ii >= len(impl_methods) { ii = len(impl_methods) + 1 }
+        if ii < len(impl_methods) {
+            impl_names.push(impl_methods[ii].name)
+            ii = ii + 1
+        }
+    }
+
+    // Check each registered trait method "TraitName.method" exists in impl
+    let mut st2: SemState = st
+    let mut ti: Int = 0
+    let scope_syms: List<Symbol> = st.scope.symbols
+    for _ in 0..10000 {
+        if ti >= len(scope_syms) { return st2 }
+        let sym: Symbol = scope_syms[ti]
+        if sym.kind == "trait_method" {
+            let prefix: String = trait_name + "."
+            if sym.name.starts_with(prefix) {
+                // Extract method name after "TraitName."
+                let method_name: String = sym.name.substr(len(prefix), len(sym.name) - len(prefix))
+                // Check if impl provides this method
+                if !list_contains(impl_names, method_name) {
+                    st2 = add_error_here(st2, "Missing method '" + method_name + "' required by trait '" + trait_name + "' for type '" + target + "'")
+                }
+            }
+        }
+        ti = ti + 1
+    }
+    return st2
+}
+
+fn list_contains(lst: List<String>, item: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..200 {
+        if i >= len(lst) { return false }
+        if lst[i] == item { return true }
+        i = i + 1
+    }
+    return false
 }
 
 // ---------------------------------------------------------------------------
@@ -5099,7 +5209,7 @@ fn check_pipe_stage_err(st: SemState, stage: Expr, pipe_name: String) -> SemStat
         let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
         match sym_opt {
             Some(sym) => { return st },
-            _ => { return add_error(st, "Undefined stage '" + name + "' in pipe '" + pipe_name + "'", 0, 0) }
+            _ => { return add_error_here(st, "Undefined stage '" + name + "' in pipe '" + pipe_name + "'") }
         }
     }
     let sr: InferResult = infer_expr(st, stage)
@@ -5184,6 +5294,24 @@ fn register_builtins(st: SemState) -> SemState {
     // join -> String
     let join_sym: Symbol = new_symbol("join", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "join", join_sym)
+
+    // C runtime functions used by the self-hosted compiler driver
+    let argc_sym: Symbol = new_symbol("__mn_argc", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_argc", argc_sym)
+    let argv_sym: Symbol = new_symbol("__mn_argv", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_argv", argv_sym)
+    let fread_sym: Symbol = new_symbol("__mn_file_read_or_empty", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_file_read_or_empty", fread_sym)
+    let exit_sym: Symbol = new_symbol("__mn_exit", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_exit", exit_sym)
+    let eprint_sym: Symbol = new_symbol("__mn_str_eprint", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_str_eprint", eprint_sym)
+    let eprintln_sym: Symbol = new_symbol("__mn_str_eprintln", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_str_eprintln", eprintln_sym)
+    let system_sym: Symbol = new_symbol("__mn_system", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_system", system_sym)
+    let fwrite_sym: Symbol = new_symbol("__mn_file_write", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_file_write", fwrite_sym)
 
     return st2
 }
@@ -6028,6 +6156,7 @@ struct LowerState {
     fn_blocks: List<BasicBlock>,
     generic_fns: List<FnDefData>,
     generic_structs: List<StructDefData>,
+    generic_enums: List<EnumDefData>,
 }
 
 fn new_lower_state(module_name: String) -> LowerState {
@@ -6041,7 +6170,8 @@ fn new_lower_state(module_name: String) -> LowerState {
     let fn_blocks: List<BasicBlock> = []
     let generic_fns: List<FnDefData> = []
     let generic_structs: List<StructDefData> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs }
+    let generic_enums: List<EnumDefData> = []
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums }
 }
 
 // Lower result: value + updated state
@@ -6625,9 +6755,19 @@ fn register_declarations_pass1(st: LowerState, program: Program) -> LowerState {
     return s
 }
 
-// If defn is EnumDef, register it. Otherwise return state unchanged.
+// If defn is EnumDef, register it. Generic enums are deferred.
 fn register_enum_if_enum(st: LowerState, defn: Definition) -> LowerState {
-    if def_kind(defn) == "enum_def" { return register_enum(st, def_enum_data(defn)) }
+    if def_kind(defn) == "enum_def" {
+        let ed: EnumDefData = def_enum_data(defn)
+        if len(ed.type_params) > 0 {
+            let mut new_st_ge: LowerState = st
+            let mut ge_list: List<EnumDefData> = new_st_ge.generic_enums
+            ge_list.push(ed)
+            new_st_ge.generic_enums = ge_list
+            return new_st_ge
+        }
+        return register_enum(st, ed)
+    }
     return st
 }
 
@@ -6664,7 +6804,15 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         return register_struct(st, sd)
     }
     if dk == "enum_def" {
-        return register_enum(st, def_enum_data(defn))
+        let ed: EnumDefData = def_enum_data(defn)
+        if len(ed.type_params) > 0 {
+            let mut new_st_ge: LowerState = st
+            let mut ge_list: List<EnumDefData> = new_st_ge.generic_enums
+            ge_list.push(ed)
+            new_st_ge.generic_enums = ge_list
+            return new_st_ge
+        }
+        return register_enum(st, ed)
     }
     if dk == "impl_def" {
         let impl_target: String = def_impl_target(defn)
@@ -7655,6 +7803,9 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult {
         _ => {}
     }
 
+    // Check if it's a bare generic enum variant (no payload — can't infer type, skip)
+    // Generic bare variants need explicit type context, handled by match pattern lowering
+
     // Check if it's a bare enum variant (no payload)
     if is_enum_variant(st, name) {
         let enum_name: String = enum_name_for_variant(st, name)
@@ -8152,6 +8303,154 @@ fn monomorphize_impl_methods(st: LowerState, base_name: String, mangled: String,
     return s
 }
 
+// ---------------------------------------------------------------------------
+// Generic enum monomorphization
+// ---------------------------------------------------------------------------
+
+fn find_generic_enum(st: LowerState, name: String) -> Option<EnumDefData> {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_enums) {
+            if st.generic_enums[i].name == name { return Some(st.generic_enums[i]) }
+            i = i + 1
+        }
+    }
+    return none
+}
+
+fn is_generic_enum_variant(st: LowerState, variant_name: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_enums) {
+            let ge: EnumDefData = st.generic_enums[i]
+            let mut j: Int = 0
+            for _ in 0..100 {
+                if j < len(ge.variants) {
+                    if ge.variants[j].name == variant_name { return true }
+                    j = j + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+    return false
+}
+
+fn generic_enum_name_for_variant(st: LowerState, variant_name: String) -> String {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_enums) {
+            let ge: EnumDefData = st.generic_enums[i]
+            let mut j: Int = 0
+            for _ in 0..100 {
+                if j < len(ge.variants) {
+                    if ge.variants[j].name == variant_name { return ge.name }
+                    j = j + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+    return ""
+}
+
+fn find_variant_in_enum(ge: EnumDefData, variant_name: String) -> Option<EnumVariant> {
+    let mut i: Int = 0
+    for _ in 0..100 {
+        if i < len(ge.variants) {
+            if ge.variants[i].name == variant_name { return Some(ge.variants[i]) }
+            i = i + 1
+        }
+    }
+    return none
+}
+
+fn infer_enum_type_args(ge: EnumDefData, variant: EnumVariant, args: List<Value>) -> List<MIRType> {
+    // Match variant field type annotations against concrete arg types
+    let mut concrete: List<MIRType> = []
+    let mut ti: Int = 0
+    for _ in 0..20 {
+        if ti < len(ge.type_params) {
+            let tp_name: String = ge.type_params[ti]
+            // Find which variant field uses this type param
+            let mut found: Bool = false
+            let mut fi: Int = 0
+            for _ in 0..100 {
+                if fi < len(variant.fields) {
+                    if type_expr_name(variant.fields[fi]) == tp_name {
+                        if fi < len(args) {
+                            concrete.push(args[fi].ty)
+                            found = true
+                        }
+                    }
+                    fi = fi + 1
+                }
+            }
+            if !found { concrete.push(mir_unknown()) }
+            ti = ti + 1
+        }
+    }
+    return concrete
+}
+
+fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>) -> LowerResult {
+    let enum_name: String = generic_enum_name_for_variant(st, variant_name)
+    if len(enum_name) == 0 { return new_lower_result(void_value(), st) }
+
+    let ge_opt: Option<EnumDefData> = find_generic_enum(st, enum_name)
+    match ge_opt {
+        Some(ge) => {
+            let v_opt: Option<EnumVariant> = find_variant_in_enum(ge, variant_name)
+            match v_opt {
+                Some(variant) => {
+                    let concrete: List<MIRType> = infer_enum_type_args(ge, variant, args)
+                    let mangled: String = mangle_generic_name(enum_name, concrete)
+
+                    let mut s: LowerState = st
+                    if !is_enum_name(s, mangled) {
+                        // Monomorphize: create EnumInfo with substituted variant types
+                        let mut new_variants: List<EnumVariantInfo> = []
+                        let mut new_variant_names: List<String> = []
+                        let mut vi: Int = 0
+                        for _ in 0..500 {
+                            if vi < len(ge.variants) {
+                                let orig_v: EnumVariant = ge.variants[vi]
+                                let mut payload_types: List<MIRType> = []
+                                let mut fi: Int = 0
+                                for _ in 0..100 {
+                                    if fi < len(orig_v.fields) {
+                                        let fty: MIRType = substitute_field_type(s, Some(orig_v.fields[fi]), ge.type_params, concrete)
+                                        payload_types.push(fty)
+                                        fi = fi + 1
+                                    }
+                                }
+                                let vi_info: EnumVariantInfo = new_enum_variant_info(orig_v.name, payload_types)
+                                new_variants.push(vi_info)
+                                new_variant_names.push(orig_v.name)
+                                vi = vi + 1
+                            }
+                        }
+                        let info: EnumInfo = new_enum_info(mangled, new_variants)
+                        s.module = module_push_enum(s.module, info)
+                        let evn: EnumVariantNames = new_enum_variant_names(mangled, new_variant_names)
+                        let mut ev_lst: List<EnumVariantNames> = s.enum_variants
+                        ev_lst.push(evn)
+                        s.enum_variants = ev_lst
+                    }
+
+                    // Emit EnumInit with mangled type name
+                    let enum_ty: MIRType = mir_enum(mangled)
+                    let dr_enum: LowerResult = make_value(s, enum_ty, "t")
+                    let s2: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, variant_name, args))
+                    return new_lower_result(dr_enum.value, s2)
+                },
+                _ => { return new_lower_result(void_value(), st) }
+            }
+        },
+        _ => { return new_lower_result(void_value(), st) }
+    }
+}
+
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
     // Monomorphize generic function calls
     let mono_r: LowerResult = try_monomorphize_call(st, fn_name, args)
@@ -8295,6 +8594,12 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             let s_new: LowerState = emit_instr(dr_new.state, Instruction::StructInit(dr_new.value, struct_ty, field_pairs))
             return new_lower_result(dr_new.value, s_new)
         }
+    }
+
+    // Check if it's a generic enum variant constructor (monomorphize on demand)
+    if is_generic_enum_variant(st, fn_name) {
+        let ge_r: LowerResult = try_monomorphize_enum(st, fn_name, args)
+        if ge_r.value.name != "%void" { return ge_r }
     }
 
     // Check if it's an enum variant constructor
@@ -13503,7 +13808,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 3.9.0"
+    return "mapanare 3.10.0"
 }
 
 // ---------------------------------------------------------------------------
