@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.28.0** (current) — **Danta.** Self-hosted Python transpiler (`from_python.mn`): tokenizer, parser, AST walker, stdlib shims, uses transpiler.mn framework.
+- **v3.29.0** (current) — **Morrocoy.** Self-hosted PHP transpiler (`from_php.mn`): tokenizer, parser, class→struct+impl, $this→self, stdlib shims.
 - **v4.0.0** (next) — Production release: docs, demos, quality gate
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.

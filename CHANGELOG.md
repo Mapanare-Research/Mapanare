@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.29.0] - 2026-04-07
+
+### Added
+
+- Self-hosted PHP transpiler (`mapanare/self/from_php.mn`)
+- PHP tokenizer: `$variable`, `<?php` tag, `//`/`#`/`/* */` comments, `=>`/`::`/`===`
+- PHP keyword table (~40 keywords), class/function/method translation
+- PHP stdlib shims: strlen→len, strtolower→.to_lower, explode→.split, etc.
+- 9 self-hosted PHP transpiler tests
+
 ## [3.28.0] - 2026-04-07
 
 ### Added
@@ -713,7 +723,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.28.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.29.0...HEAD
+[3.29.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.28.0...v3.29.0
 [3.28.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.27.0...v3.28.0
 [3.27.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.26.0...v3.27.0
 [3.26.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.25.0...v3.26.0

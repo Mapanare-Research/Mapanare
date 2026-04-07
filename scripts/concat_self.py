@@ -25,6 +25,9 @@ MODULE_ORDER = [
     "emit_llvm.mn",
     "transpiler.mn",
     "from_python.mn",
+    "from_php.mn",
+    "from_typescript.mn",
+    "from_go.mn",
     "main.mn",
 ]
 

@@ -1,0 +1,1214 @@
+// from_php.mn — Self-hosted PHP-to-Mapanare transpiler.
+// Tokenizes, parses, and translates PHP source into Mapanare (.mn) text.
+// Uses transpiler.mn for shared type mapping, class translation, and state.
+
+// ---------------------------------------------------------------------------
+// PHP Token types
+// ---------------------------------------------------------------------------
+
+struct PhpToken {
+    kind: String,
+    value: String,
+    line: Int,
+    col: Int
+}
+
+fn new_php_token(kind: String, value: String, line: Int, col: Int) -> PhpToken {
+    return new PhpToken { kind: kind, value: value, line: line, col: col }
+}
+
+// ---------------------------------------------------------------------------
+// PHP keyword table
+// ---------------------------------------------------------------------------
+
+fn is_php_keyword(s: String) -> Bool {
+    if s == "function" { return true }
+    if s == "class" { return true }
+    if s == "if" { return true }
+    if s == "else" { return true }
+    if s == "elseif" { return true }
+    if s == "foreach" { return true }
+    if s == "while" { return true }
+    if s == "for" { return true }
+    if s == "return" { return true }
+    if s == "echo" { return true }
+    if s == "public" { return true }
+    if s == "private" { return true }
+    if s == "protected" { return true }
+    if s == "static" { return true }
+    if s == "new" { return true }
+    if s == "null" { return true }
+    if s == "true" { return true }
+    if s == "false" { return true }
+    if s == "array" { return true }
+    if s == "isset" { return true }
+    if s == "empty" { return true }
+    if s == "switch" { return true }
+    if s == "case" { return true }
+    if s == "default" { return true }
+    if s == "break" { return true }
+    if s == "continue" { return true }
+    if s == "try" { return true }
+    if s == "catch" { return true }
+    if s == "throw" { return true }
+    if s == "finally" { return true }
+    if s == "interface" { return true }
+    if s == "extends" { return true }
+    if s == "implements" { return true }
+    if s == "abstract" { return true }
+    if s == "const" { return true }
+    if s == "var" { return true }
+    if s == "use" { return true }
+    if s == "namespace" { return true }
+    if s == "require" { return true }
+    if s == "include" { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Tokenizer helpers
+// ---------------------------------------------------------------------------
+
+fn is_php_alpha(c: String) -> Bool {
+    if c == "_" { return true }
+    if c == "a" { return true }
+    if c == "b" { return true }
+    if c == "c" { return true }
+    if c == "d" { return true }
+    if c == "e" { return true }
+    if c == "f" { return true }
+    if c == "g" { return true }
+    if c == "h" { return true }
+    if c == "i" { return true }
+    if c == "j" { return true }
+    if c == "k" { return true }
+    if c == "l" { return true }
+    if c == "m" { return true }
+    if c == "n" { return true }
+    if c == "o" { return true }
+    if c == "p" { return true }
+    if c == "q" { return true }
+    if c == "r" { return true }
+    if c == "s" { return true }
+    if c == "t" { return true }
+    if c == "u" { return true }
+    if c == "v" { return true }
+    if c == "w" { return true }
+    if c == "x" { return true }
+    if c == "y" { return true }
+    if c == "z" { return true }
+    if c == "A" { return true }
+    if c == "B" { return true }
+    if c == "C" { return true }
+    if c == "D" { return true }
+    if c == "E" { return true }
+    if c == "F" { return true }
+    if c == "G" { return true }
+    if c == "H" { return true }
+    if c == "I" { return true }
+    if c == "J" { return true }
+    if c == "K" { return true }
+    if c == "L" { return true }
+    if c == "M" { return true }
+    if c == "N" { return true }
+    if c == "O" { return true }
+    if c == "P" { return true }
+    if c == "Q" { return true }
+    if c == "R" { return true }
+    if c == "S" { return true }
+    if c == "T" { return true }
+    if c == "U" { return true }
+    if c == "V" { return true }
+    if c == "W" { return true }
+    if c == "X" { return true }
+    if c == "Y" { return true }
+    if c == "Z" { return true }
+    return false
+}
+
+fn is_php_alnum(c: String) -> Bool {
+    if is_php_alpha(c) { return true }
+    if is_digit(c) { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Tokenizer
+// ---------------------------------------------------------------------------
+
+fn tokenize_php(source: String) -> List<PhpToken> {
+    let mut tokens: List<PhpToken> = []
+    let mut pos: Int = 0
+    let mut line: Int = 1
+    let mut col: Int = 1
+    let slen: Int = len(source)
+
+    // Skip opening <?php tag
+    if slen > 4 {
+        if source[0] == "<" {
+            if source[1] == "?" {
+                // Skip to end of <?php line
+                while pos < slen {
+                    if source[pos] == "\n" { break }
+                    pos = pos + 1
+                }
+            }
+        }
+    }
+
+    while pos < slen {
+        let c: String = source[pos]
+
+        // Newline
+        if c == "\n" {
+            tokens.push(new_php_token("NEWLINE", "\n", line, col))
+            pos = pos + 1
+            line = line + 1
+            col = 1
+            continue
+        }
+
+        // Skip whitespace (not newline)
+        if c == " " || c == "\t" || c == "\r" {
+            pos = pos + 1
+            col = col + 1
+            continue
+        }
+
+        // Single-line comment: // to end of line
+        if c == "/" {
+            if pos + 1 < slen {
+                if source[pos + 1] == "/" {
+                    while pos < slen {
+                        if source[pos] == "\n" { break }
+                        pos = pos + 1
+                    }
+                    continue
+                }
+            }
+        }
+
+        // Hash comment: # to end of line
+        if c == "#" {
+            while pos < slen {
+                if source[pos] == "\n" { break }
+                pos = pos + 1
+            }
+            continue
+        }
+
+        // Multi-line comment: /* ... */
+        if c == "/" {
+            if pos + 1 < slen {
+                if source[pos + 1] == "*" {
+                    pos = pos + 2
+                    col = col + 2
+                    while pos + 1 < slen {
+                        if source[pos] == "*" {
+                            if source[pos + 1] == "/" {
+                                pos = pos + 2
+                                col = col + 2
+                                break
+                            }
+                        }
+                        if source[pos] == "\n" {
+                            line = line + 1
+                            col = 1
+                        } else {
+                            col = col + 1
+                        }
+                        pos = pos + 1
+                    }
+                    continue
+                }
+            }
+        }
+
+        // Variable: $name
+        if c == "$" {
+            pos = pos + 1
+            col = col + 1
+            let mut varname: String = ""
+            while pos < slen {
+                let vc: String = source[pos]
+                if is_php_alnum(vc) {
+                    varname = varname + vc
+                    pos = pos + 1
+                    col = col + 1
+                } else {
+                    break
+                }
+            }
+            tokens.push(new_php_token("VARIABLE", varname, line, col))
+            continue
+        }
+
+        // String literals
+        if c == "\"" || c == "'" {
+            let quote: String = c
+            pos = pos + 1
+            col = col + 1
+            let mut value: String = ""
+            while pos < slen {
+                let sc: String = source[pos]
+                if sc == quote {
+                    pos = pos + 1
+                    col = col + 1
+                    break
+                }
+                if sc == "\\" {
+                    pos = pos + 1
+                    col = col + 1
+                    if pos < slen {
+                        value = value + source[pos]
+                        pos = pos + 1
+                        col = col + 1
+                    }
+                    continue
+                }
+                value = value + sc
+                pos = pos + 1
+                col = col + 1
+            }
+            tokens.push(new_php_token("STRING", value, line, col))
+            continue
+        }
+
+        // Numbers
+        if is_digit(c) {
+            let mut num: String = ""
+            let mut has_dot: Bool = false
+            while pos < slen {
+                let nc: String = source[pos]
+                if nc == "." { has_dot = true }
+                if is_digit(nc) || nc == "." || nc == "_" {
+                    if nc != "_" { num = num + nc }
+                    pos = pos + 1
+                    col = col + 1
+                } else {
+                    break
+                }
+            }
+            if has_dot {
+                tokens.push(new_php_token("FLOAT", num, line, col))
+            } else {
+                tokens.push(new_php_token("INT", num, line, col))
+            }
+            continue
+        }
+
+        // Identifiers and keywords
+        if is_php_alpha(c) {
+            let mut ident: String = ""
+            while pos < slen {
+                let ic: String = source[pos]
+                if is_php_alnum(ic) {
+                    ident = ident + ic
+                    pos = pos + 1
+                    col = col + 1
+                } else {
+                    break
+                }
+            }
+            if is_php_keyword(ident) {
+                tokens.push(new_php_token("KEYWORD", ident, line, col))
+            } else {
+                tokens.push(new_php_token("IDENT", ident, line, col))
+            }
+            continue
+        }
+
+        // Two-character operators
+        if pos + 1 < slen {
+            let two: String = c + source[pos + 1]
+            if two == "==" || two == "!=" || two == "<=" || two == ">=" || two == "+=" || two == "-=" || two == "*=" || two == "/=" || two == "->" || two == "=>" || two == "::" || two == "**" || two == "&&" || two == "||" || two == ".=" || two == "??" {
+                tokens.push(new_php_token("OP", two, line, col))
+                pos = pos + 2
+                col = col + 2
+                continue
+            }
+        }
+
+        // Three-character operators
+        if pos + 2 < slen {
+            let three: String = c + source[pos + 1] + source[pos + 2]
+            if three == "===" || three == "!==" || three == "<=>" {
+                tokens.push(new_php_token("OP", three, line, col))
+                pos = pos + 3
+                col = col + 3
+                continue
+            }
+        }
+
+        // Single-character operators and punctuation
+        if c == "+" || c == "-" || c == "*" || c == "/" || c == "%" || c == "=" || c == "<" || c == ">" || c == "!" || c == "&" || c == "|" || c == "^" || c == "~" || c == "(" || c == ")" || c == "[" || c == "]" || c == "{" || c == "}" || c == "," || c == ":" || c == "." || c == ";" || c == "@" || c == "?" {
+            tokens.push(new_php_token("OP", c, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        }
+
+        // Unknown character: skip
+        pos = pos + 1
+        col = col + 1
+    }
+
+    tokens.push(new_php_token("EOF", "", line, col))
+    return tokens
+}
+
+// ---------------------------------------------------------------------------
+// Parser state
+// ---------------------------------------------------------------------------
+
+struct PhpParser {
+    tokens: List<PhpToken>,
+    pos: Int,
+    state: TranspilerState
+}
+
+fn new_php_parser(tokens: List<PhpToken>, filename: String) -> PhpParser {
+    let st: TranspilerState = new_state(filename, "php")
+    return new PhpParser { tokens: tokens, pos: 0, state: st }
+}
+
+fn php_current(p: PhpParser) -> PhpToken {
+    if p.pos < len(p.tokens) {
+        return p.tokens[p.pos]
+    }
+    return new_php_token("EOF", "", 0, 0)
+}
+
+fn php_advance(p: PhpParser) -> PhpParser {
+    p.pos = p.pos + 1
+    return p
+}
+
+fn php_expect_kw(p: PhpParser, kw: String) -> PhpParser {
+    let t: PhpToken = php_current(p)
+    if t.kind == "KEYWORD" {
+        if t.value == kw {
+            return php_advance(p)
+        }
+    }
+    return php_advance(p)
+}
+
+fn php_expect_op(p: PhpParser, op: String) -> PhpParser {
+    let t: PhpToken = php_current(p)
+    if t.kind == "OP" {
+        if t.value == op {
+            return php_advance(p)
+        }
+    }
+    return php_advance(p)
+}
+
+fn php_skip_newlines(p: PhpParser) -> PhpParser {
+    while php_current(p).kind == "NEWLINE" {
+        p = php_advance(p)
+    }
+    return p
+}
+
+fn php_skip_semicolons(p: PhpParser) -> PhpParser {
+    while php_current(p).kind == "OP" {
+        if php_current(p).value != ";" { break }
+        p = php_advance(p)
+    }
+    return p
+}
+
+fn php_skip_whitespace(p: PhpParser) -> PhpParser {
+    p = php_skip_newlines(p)
+    p = php_skip_semicolons(p)
+    return p
+}
+
+// ---------------------------------------------------------------------------
+// Type translation using transpiler framework
+// ---------------------------------------------------------------------------
+
+fn translate_php_type(type_str: String) -> String {
+    let mappings: List<TypeMapping> = php_type_mappings()
+    return translate_type(type_str, mappings)
+}
+
+// ---------------------------------------------------------------------------
+// PHP stdlib shims
+// ---------------------------------------------------------------------------
+
+fn php_stdlib_shims() -> List<StdlibShim> {
+    let mut shims: List<StdlibShim> = []
+    shims.push(new_shim("echo", "print", false))
+    shims.push(new_shim("print", "print", false))
+    shims.push(new_shim("strlen", "len", false))
+    shims.push(new_shim("count", "len", false))
+    shims.push(new_shim("intval", "int", false))
+    shims.push(new_shim("floatval", "float", false))
+    shims.push(new_shim("strval", "str", false))
+    shims.push(new_shim("abs", "abs", false))
+    shims.push(new_shim("min", "min", false))
+    shims.push(new_shim("max", "max", false))
+    shims.push(new_shim("strtolower", "to_lower", true))
+    shims.push(new_shim("strtoupper", "to_upper", true))
+    shims.push(new_shim("trim", "trim", true))
+    shims.push(new_shim("ltrim", "trim_start", true))
+    shims.push(new_shim("rtrim", "trim_end", true))
+    shims.push(new_shim("str_contains", "contains", true))
+    shims.push(new_shim("str_starts_with", "starts_with", true))
+    shims.push(new_shim("str_ends_with", "ends_with", true))
+    shims.push(new_shim("str_replace", "replace", true))
+    shims.push(new_shim("substr", "substr", true))
+    shims.push(new_shim("strpos", "index_of", true))
+    // explode(delim, str) → str.split(delim) — needs arg reorder
+    let explode_reorder: List<Int> = [1, 0]
+    shims.push(new_shim_reorder("explode", "split", true, explode_reorder))
+    // implode(glue, arr) → arr.join(glue) — needs arg reorder
+    let implode_reorder: List<Int> = [1, 0]
+    shims.push(new_shim_reorder("implode", "join", true, implode_reorder))
+    shims.push(new_shim("array_push", "push", true))
+    shims.push(new_shim("array_pop", "pop", true))
+    shims.push(new_shim("array_shift", "shift", true))
+    shims.push(new_shim("array_merge", "concat", true))
+    shims.push(new_shim("array_map", "map", true))
+    shims.push(new_shim("array_filter", "filter", true))
+    shims.push(new_shim("in_array", "contains", true))
+    shims.push(new_shim("array_keys", "keys", true))
+    shims.push(new_shim("array_values", "values", true))
+    shims.push(new_shim("sort", "sort", true))
+    shims.push(new_shim("var_dump", "print", false))
+    shims.push(new_shim("print_r", "print", false))
+    return shims
+}
+
+// ---------------------------------------------------------------------------
+// Expression translation
+// ---------------------------------------------------------------------------
+
+fn translate_php_expr(p: PhpParser) -> String {
+    let t: PhpToken = php_current(p)
+
+    // String literal
+    if t.kind == "STRING" {
+        p = php_advance(p)
+        return "\"" + t.value + "\""
+    }
+
+    // Int literal
+    if t.kind == "INT" {
+        p = php_advance(p)
+        return t.value
+    }
+
+    // Float literal
+    if t.kind == "FLOAT" {
+        p = php_advance(p)
+        return t.value
+    }
+
+    // Variable (already stripped of $)
+    if t.kind == "VARIABLE" {
+        p = php_advance(p)
+        let name: String = t.value
+        // Check for method call: $obj->method(...)
+        if php_current(p).kind == "OP" {
+            if php_current(p).value == "->" {
+                p = php_advance(p)
+                let method: String = php_current(p).value
+                p = php_advance(p)
+                if php_current(p).value == "(" {
+                    p = php_advance(p)
+                    let mut args: List<String> = []
+                    while php_current(p).value != ")" {
+                        if php_current(p).kind == "EOF" { break }
+                        if php_current(p).value == "," {
+                            p = php_advance(p)
+                            continue
+                        }
+                        let arg: String = translate_php_expr(p)
+                        args.push(arg)
+                        while php_current(p).value != "," {
+                            if php_current(p).value == ")" { break }
+                            if php_current(p).kind == "EOF" { break }
+                            p = php_advance(p)
+                        }
+                    }
+                    if php_current(p).value == ")" { p = php_advance(p) }
+                    return name + "." + method + "(" + join_args(args) + ")"
+                }
+                return name + "." + method
+            }
+        }
+        // Check for array access: $arr[idx]
+        if php_current(p).kind == "OP" {
+            if php_current(p).value == "[" {
+                p = php_advance(p)
+                let idx: String = translate_php_expr(p)
+                while php_current(p).value != "]" {
+                    if php_current(p).kind == "EOF" { break }
+                    p = php_advance(p)
+                }
+                if php_current(p).value == "]" { p = php_advance(p) }
+                return name + "[" + idx + "]"
+            }
+        }
+        return name
+    }
+
+    // Boolean/null literals
+    if t.kind == "KEYWORD" {
+        if t.value == "true" {
+            p = php_advance(p)
+            return "true"
+        }
+        if t.value == "false" {
+            p = php_advance(p)
+            return "false"
+        }
+        if t.value == "null" {
+            p = php_advance(p)
+            return "None"
+        }
+        if t.value == "new" {
+            p = php_advance(p)
+            let cname: String = php_current(p).value
+            p = php_advance(p)
+            // Skip constructor args
+            if php_current(p).value == "(" {
+                p = php_advance(p)
+                let mut args: List<String> = []
+                while php_current(p).value != ")" {
+                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).value == "," {
+                        p = php_advance(p)
+                        continue
+                    }
+                    let arg: String = translate_php_expr(p)
+                    args.push(arg)
+                    while php_current(p).value != "," {
+                        if php_current(p).value == ")" { break }
+                        if php_current(p).kind == "EOF" { break }
+                        p = php_advance(p)
+                    }
+                }
+                if php_current(p).value == ")" { p = php_advance(p) }
+                return cname + "(" + join_args(args) + ")"
+            }
+            return cname + "()"
+        }
+        // isset($x) → $x != None
+        if t.value == "isset" {
+            p = php_advance(p)
+            if php_current(p).value == "(" {
+                p = php_advance(p)
+                let inner: String = translate_php_expr(p)
+                while php_current(p).value != ")" {
+                    if php_current(p).kind == "EOF" { break }
+                    p = php_advance(p)
+                }
+                if php_current(p).value == ")" { p = php_advance(p) }
+                return inner + " != None"
+            }
+            return "true"
+        }
+        // empty($x) → len($x) == 0
+        if t.value == "empty" {
+            p = php_advance(p)
+            if php_current(p).value == "(" {
+                p = php_advance(p)
+                let inner: String = translate_php_expr(p)
+                while php_current(p).value != ")" {
+                    if php_current(p).kind == "EOF" { break }
+                    p = php_advance(p)
+                }
+                if php_current(p).value == ")" { p = php_advance(p) }
+                return "len(" + inner + ") == 0"
+            }
+            return "true"
+        }
+        // array(...) → [...]
+        if t.value == "array" {
+            p = php_advance(p)
+            if php_current(p).value == "(" {
+                p = php_advance(p)
+                let mut items: String = ""
+                let mut first: Bool = true
+                while php_current(p).value != ")" {
+                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).value == "," {
+                        p = php_advance(p)
+                        continue
+                    }
+                    if !first { items = items + ", " }
+                    items = items + translate_php_expr(p)
+                    first = false
+                    p = php_advance(p)
+                }
+                if php_current(p).value == ")" { p = php_advance(p) }
+                return "[" + items + "]"
+            }
+            return "[]"
+        }
+    }
+
+    // Function call: ident(...)
+    if t.kind == "IDENT" {
+        p = php_advance(p)
+        let name: String = t.value
+        if php_current(p).kind == "OP" {
+            if php_current(p).value == "(" {
+                p = php_advance(p)
+                let mut args: List<String> = []
+                while php_current(p).value != ")" {
+                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).value == "," {
+                        p = php_advance(p)
+                        continue
+                    }
+                    let arg: String = translate_php_expr(p)
+                    args.push(arg)
+                    while php_current(p).value != "," {
+                        if php_current(p).value == ")" { break }
+                        if php_current(p).kind == "EOF" { break }
+                        p = php_advance(p)
+                    }
+                }
+                if php_current(p).value == ")" { p = php_advance(p) }
+                let shims: List<StdlibShim> = php_stdlib_shims()
+                return translate_stdlib_call(name, args, shims)
+            }
+        }
+        return name
+    }
+
+    // Array literal: [...]
+    if t.kind == "OP" {
+        if t.value == "[" {
+            p = php_advance(p)
+            let mut items: String = ""
+            let mut first: Bool = true
+            let mut is_map: Bool = false
+            while php_current(p).value != "]" {
+                if php_current(p).kind == "EOF" { break }
+                if php_current(p).value == "," {
+                    p = php_advance(p)
+                    continue
+                }
+                if !first { items = items + ", " }
+                let item: String = translate_php_expr(p)
+                // Check for => (associative array)
+                if php_current(p).value == "=>" {
+                    is_map = true
+                    p = php_advance(p)
+                    let val: String = translate_php_expr(p)
+                    items = items + item + ": " + val
+                } else {
+                    items = items + item
+                }
+                first = false
+                p = php_advance(p)
+            }
+            if php_current(p).value == "]" { p = php_advance(p) }
+            if is_map {
+                return "{" + items + "}"
+            }
+            return "[" + items + "]"
+        }
+    }
+
+    // Fallback
+    p = php_advance(p)
+    return t.value
+}
+
+// ---------------------------------------------------------------------------
+// Statement translation
+// ---------------------------------------------------------------------------
+
+fn translate_php_function(p: PhpParser, ind: String) -> String {
+    // Skip visibility modifiers
+    while php_current(p).kind == "KEYWORD" {
+        let kv: String = php_current(p).value
+        if kv == "public" || kv == "private" || kv == "protected" || kv == "static" || kv == "abstract" {
+            p = php_advance(p)
+        } else {
+            break
+        }
+    }
+
+    p = php_expect_kw(p, "function")
+    let name_tok: PhpToken = php_current(p)
+    let name: String = name_tok.value
+    p = php_advance(p)
+    p = php_expect_op(p, "(")
+
+    // Parse parameters
+    let mut params: String = ""
+    let mut first: Bool = true
+    while php_current(p).value != ")" {
+        if php_current(p).kind == "EOF" { break }
+        if php_current(p).value == "," {
+            p = php_advance(p)
+            continue
+        }
+        if !first { params = params + ", " }
+        // Optional type hint before $param
+        let mut ptype: String = ""
+        if php_current(p).kind == "IDENT" || php_current(p).kind == "KEYWORD" {
+            if php_current(p).kind == "IDENT" {
+                ptype = translate_php_type(php_current(p).value)
+                p = php_advance(p)
+            } else {
+                if php_current(p).value == "array" || php_current(p).value == "bool" || php_current(p).value == "null" {
+                    ptype = translate_php_type(php_current(p).value)
+                    p = php_advance(p)
+                }
+            }
+        }
+        // Handle nullable: ?Type
+        if php_current(p).value == "?" {
+            p = php_advance(p)
+            if php_current(p).kind == "IDENT" {
+                ptype = "Option<" + translate_php_type(php_current(p).value) + ">"
+                p = php_advance(p)
+            }
+        }
+        // $param name
+        if php_current(p).kind == "VARIABLE" {
+            let pname: String = php_current(p).value
+            p = php_advance(p)
+            if len(ptype) > 0 {
+                params = params + pname + ": " + ptype
+            } else {
+                params = params + pname
+            }
+        }
+        // Skip default value
+        if php_current(p).value == "=" {
+            p = php_advance(p)
+            p = php_advance(p)
+        }
+        first = false
+    }
+    p = php_expect_op(p, ")")
+
+    // Return type: function foo(): Type
+    let mut ret: String = ""
+    if php_current(p).value == ":" {
+        p = php_advance(p)
+        // Handle nullable return: ?Type
+        if php_current(p).value == "?" {
+            p = php_advance(p)
+            let rtype: String = translate_php_type(php_current(p).value)
+            p = php_advance(p)
+            ret = " -> Option<" + rtype + ">"
+        } else {
+            let rtype: String = translate_php_type(php_current(p).value)
+            p = php_advance(p)
+            if rtype != "Void" {
+                ret = " -> " + rtype
+            }
+        }
+    }
+
+    // Build function header
+    let mut out: String = ind + "fn " + name + "(" + params + ")" + ret + " {\n"
+
+    // Skip opening brace
+    p = php_skip_whitespace(p)
+    if php_current(p).value == "{" { p = php_advance(p) }
+    p = php_skip_whitespace(p)
+
+    // Translate body until matching closing brace
+    let mut depth: Int = 1
+    let mut body_count: Int = 0
+    while php_current(p).kind != "EOF" {
+        if depth <= 0 { break }
+        let t: PhpToken = php_current(p)
+
+        if t.kind == "OP" {
+            if t.value == "{" {
+                depth = depth + 1
+                p = php_advance(p)
+                continue
+            }
+            if t.value == "}" {
+                depth = depth - 1
+                p = php_advance(p)
+                continue
+            }
+        }
+
+        if t.kind == "KEYWORD" {
+            if t.value == "return" {
+                p = php_advance(p)
+                let expr: String = translate_php_expr(p)
+                out = out + ind + "    return " + expr + "\n"
+                while php_current(p).value != ";" {
+                    if php_current(p).kind == "NEWLINE" { break }
+                    if php_current(p).kind == "EOF" { break }
+                    p = php_advance(p)
+                }
+                p = php_skip_whitespace(p)
+                body_count = body_count + 1
+                continue
+            }
+            if t.value == "echo" {
+                p = php_advance(p)
+                let expr: String = translate_php_expr(p)
+                out = out + ind + "    print(" + expr + ")\n"
+                while php_current(p).value != ";" {
+                    if php_current(p).kind == "NEWLINE" { break }
+                    if php_current(p).kind == "EOF" { break }
+                    p = php_advance(p)
+                }
+                p = php_skip_whitespace(p)
+                body_count = body_count + 1
+                continue
+            }
+            if t.value == "if" {
+                p = php_advance(p)
+                p = php_expect_op(p, "(")
+                let cond: String = translate_php_expr(p)
+                while php_current(p).value != ")" {
+                    if php_current(p).kind == "EOF" { break }
+                    p = php_advance(p)
+                }
+                if php_current(p).value == ")" { p = php_advance(p) }
+                out = out + ind + "    if " + cond + " {\n"
+                out = out + ind + "        // ...\n"
+                out = out + ind + "    }\n"
+                // Skip the if body
+                if php_current(p).value == "{" {
+                    p = php_advance(p)
+                    let mut inner_depth: Int = 1
+                    while inner_depth > 0 {
+                        if php_current(p).kind == "EOF" { break }
+                        if php_current(p).value == "{" { inner_depth = inner_depth + 1 }
+                        if php_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        p = php_advance(p)
+                    }
+                }
+                p = php_skip_whitespace(p)
+                body_count = body_count + 1
+                continue
+            }
+            if t.value == "foreach" {
+                p = php_advance(p)
+                p = php_expect_op(p, "(")
+                let arr: String = translate_php_expr(p)
+                // Skip "as"
+                while php_current(p).value != ")" {
+                    if php_current(p).kind == "EOF" { break }
+                    p = php_advance(p)
+                }
+                if php_current(p).value == ")" { p = php_advance(p) }
+                out = out + ind + "    for item in " + arr + " {\n"
+                out = out + ind + "        // ...\n"
+                out = out + ind + "    }\n"
+                // Skip body
+                if php_current(p).value == "{" {
+                    p = php_advance(p)
+                    let mut inner_depth: Int = 1
+                    while inner_depth > 0 {
+                        if php_current(p).kind == "EOF" { break }
+                        if php_current(p).value == "{" { inner_depth = inner_depth + 1 }
+                        if php_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        p = php_advance(p)
+                    }
+                }
+                p = php_skip_whitespace(p)
+                body_count = body_count + 1
+                continue
+            }
+            if t.value == "while" {
+                p = php_advance(p)
+                p = php_expect_op(p, "(")
+                let cond: String = translate_php_expr(p)
+                while php_current(p).value != ")" {
+                    if php_current(p).kind == "EOF" { break }
+                    p = php_advance(p)
+                }
+                if php_current(p).value == ")" { p = php_advance(p) }
+                out = out + ind + "    while " + cond + " {\n"
+                out = out + ind + "        // ...\n"
+                out = out + ind + "    }\n"
+                // Skip body
+                if php_current(p).value == "{" {
+                    p = php_advance(p)
+                    let mut inner_depth: Int = 1
+                    while inner_depth > 0 {
+                        if php_current(p).kind == "EOF" { break }
+                        if php_current(p).value == "{" { inner_depth = inner_depth + 1 }
+                        if php_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        p = php_advance(p)
+                    }
+                }
+                p = php_skip_whitespace(p)
+                body_count = body_count + 1
+                continue
+            }
+        }
+
+        // Variable assignment: $name = expr;
+        if t.kind == "VARIABLE" {
+            let vname: String = t.value
+            p = php_advance(p)
+            if php_current(p).value == "=" {
+                p = php_advance(p)
+                let expr: String = translate_php_expr(p)
+                let inferred: String = infer_local_type(expr)
+                out = out + ind + "    let mut " + vname + ": " + inferred + " = " + expr + "\n"
+                while php_current(p).value != ";" {
+                    if php_current(p).kind == "NEWLINE" { break }
+                    if php_current(p).kind == "EOF" { break }
+                    p = php_advance(p)
+                }
+                p = php_skip_whitespace(p)
+                body_count = body_count + 1
+                continue
+            }
+        }
+
+        // Skip to next semicolon or newline
+        while php_current(p).kind != "NEWLINE" {
+            if php_current(p).value == ";" { break }
+            if php_current(p).kind == "EOF" { break }
+            p = php_advance(p)
+        }
+        p = php_skip_whitespace(p)
+        body_count = body_count + 1
+        if body_count > 100 { break }
+    }
+
+    out = out + ind + "}\n"
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// Class translation
+// ---------------------------------------------------------------------------
+
+fn translate_php_class(p: PhpParser, ind: String) -> String {
+    // Skip modifiers
+    while php_current(p).kind == "KEYWORD" {
+        let kv: String = php_current(p).value
+        if kv == "abstract" || kv == "final" {
+            p = php_advance(p)
+        } else {
+            break
+        }
+    }
+    p = php_expect_kw(p, "class")
+    let cname: String = php_current(p).value
+    p = php_advance(p)
+
+    // Skip extends/implements
+    while php_current(p).kind != "EOF" {
+        if php_current(p).value == "{" { break }
+        p = php_advance(p)
+    }
+    if php_current(p).value == "{" { p = php_advance(p) }
+    p = php_skip_whitespace(p)
+
+    let mut fields: List<FieldDef> = []
+    let mut methods: List<MethodDef> = []
+
+    // Parse class body
+    let mut depth: Int = 1
+    let mut iter_count: Int = 0
+    while depth > 0 {
+        if php_current(p).kind == "EOF" { break }
+        iter_count = iter_count + 1
+        if iter_count > 500 { break }
+
+        let t: PhpToken = php_current(p)
+        if t.value == "}" {
+            depth = depth - 1
+            p = php_advance(p)
+            continue
+        }
+        if t.value == "{" {
+            depth = depth + 1
+            p = php_advance(p)
+            continue
+        }
+
+        // Property declaration: public $name; or public Type $name;
+        if t.kind == "KEYWORD" {
+            let kv: String = t.value
+            if kv == "public" || kv == "private" || kv == "protected" {
+                p = php_advance(p)
+                // Skip static
+                if php_current(p).value == "static" { p = php_advance(p) }
+                // Check if next is a variable (property) or function (method)
+                if php_current(p).kind == "VARIABLE" {
+                    let fname: String = php_current(p).value
+                    p = php_advance(p)
+                    fields.push(new_field(fname, "any"))
+                    while php_current(p).value != ";" {
+                        if php_current(p).kind == "EOF" { break }
+                        p = php_advance(p)
+                    }
+                    p = php_skip_whitespace(p)
+                    continue
+                }
+                if php_current(p).kind == "IDENT" {
+                    // Type hint before $property
+                    let prop_type: String = translate_php_type(php_current(p).value)
+                    p = php_advance(p)
+                    if php_current(p).kind == "VARIABLE" {
+                        let fname: String = php_current(p).value
+                        p = php_advance(p)
+                        fields.push(new_field(fname, prop_type))
+                        while php_current(p).value != ";" {
+                            if php_current(p).kind == "EOF" { break }
+                            p = php_advance(p)
+                        }
+                        p = php_skip_whitespace(p)
+                        continue
+                    }
+                }
+                if php_current(p).value == "function" {
+                    // Method — translated as part of class
+                    let mut is_static: Bool = false
+                    let mtext: String = translate_php_function(p, ind + "    ")
+                    let m: MethodDef = new_method("method", "any")
+                    m.body_lines.push(mtext)
+                    methods.push(m)
+                    p = php_skip_whitespace(p)
+                    continue
+                }
+                p = php_advance(p)
+                continue
+            }
+            if kv == "function" {
+                let mtext: String = translate_php_function(p, ind + "    ")
+                let m: MethodDef = new_method("method", "any")
+                m.body_lines.push(mtext)
+                methods.push(m)
+                p = php_skip_whitespace(p)
+                continue
+            }
+            if kv == "const" {
+                // Class constant: const NAME = value;
+                p = php_advance(p)
+                while php_current(p).value != ";" {
+                    if php_current(p).kind == "EOF" { break }
+                    p = php_advance(p)
+                }
+                p = php_skip_whitespace(p)
+                continue
+            }
+        }
+
+        p = php_advance(p)
+        p = php_skip_whitespace(p)
+    }
+
+    return translate_class_to_struct(cname, fields, methods, ind)
+}
+
+// ---------------------------------------------------------------------------
+// Main translation entry point
+// ---------------------------------------------------------------------------
+
+fn translate_php(source: String, filename: String) -> String {
+    let tokens: List<PhpToken> = tokenize_php(source)
+    let mut p: PhpParser = new_php_parser(tokens, filename)
+    let mut out_text: String = "// Translated from " + filename + " by mapanare transpile\n\n"
+
+    p = php_skip_whitespace(p)
+
+    while php_current(p).kind != "EOF" {
+        let t: PhpToken = php_current(p)
+
+        // Namespace declaration — emit as comment
+        if t.kind == "KEYWORD" {
+            if t.value == "namespace" {
+                p = php_advance(p)
+                let mut ns: String = ""
+                while php_current(p).value != ";" {
+                    if php_current(p).kind == "EOF" { break }
+                    ns = ns + php_current(p).value
+                    p = php_advance(p)
+                }
+                out_text = out_text + "// namespace " + ns + "\n"
+                p = php_skip_whitespace(p)
+                continue
+            }
+            if t.value == "use" || t.value == "require" || t.value == "include" {
+                while php_current(p).value != ";" {
+                    if php_current(p).kind == "EOF" { break }
+                    p = php_advance(p)
+                }
+                p = php_skip_whitespace(p)
+                out_text = out_text + "// import skipped\n"
+                continue
+            }
+            if t.value == "function" {
+                out_text = out_text + translate_php_function(p, "") + "\n"
+                while php_current(p).kind != "EOF" {
+                    if php_current(p).kind == "KEYWORD" {
+                        if php_current(p).value == "function" || php_current(p).value == "class" {
+                            break
+                        }
+                    }
+                    p = php_advance(p)
+                }
+                continue
+            }
+            if t.value == "class" || t.value == "abstract" {
+                out_text = out_text + translate_php_class(p, "") + "\n"
+                while php_current(p).kind != "EOF" {
+                    if php_current(p).kind == "KEYWORD" {
+                        if php_current(p).value == "function" || php_current(p).value == "class" {
+                            break
+                        }
+                    }
+                    p = php_advance(p)
+                }
+                continue
+            }
+            if t.value == "interface" {
+                // Interface → trait stub
+                p = php_advance(p)
+                let iname: String = php_current(p).value
+                p = php_advance(p)
+                out_text = out_text + "trait " + iname + " {\n"
+                // Skip to closing brace
+                if php_current(p).value == "{" {
+                    p = php_advance(p)
+                    let mut inner_depth: Int = 1
+                    while inner_depth > 0 {
+                        if php_current(p).kind == "EOF" { break }
+                        if php_current(p).value == "{" { inner_depth = inner_depth + 1 }
+                        if php_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        p = php_advance(p)
+                    }
+                } else {
+                    while php_current(p).value != "{" {
+                        if php_current(p).kind == "EOF" { break }
+                        p = php_advance(p)
+                    }
+                    if php_current(p).value == "{" { p = php_advance(p) }
+                    let mut inner_depth: Int = 1
+                    while inner_depth > 0 {
+                        if php_current(p).kind == "EOF" { break }
+                        if php_current(p).value == "{" { inner_depth = inner_depth + 1 }
+                        if php_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        p = php_advance(p)
+                    }
+                }
+                out_text = out_text + "    // methods from interface\n}\n\n"
+                continue
+            }
+        }
+
+        // Skip other top-level tokens
+        p = php_advance(p)
+    }
+
+    return out_text
+}
