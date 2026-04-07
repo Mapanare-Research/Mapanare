@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language (v3.3.0 "Fixed Point") wi
 
 ## Current Version & Roadmap
 
-- **v3.10.0** (current) — **Error messages + semantic maturity.** Line numbers in errors, generic enum monomorphization, trait method validation, complete builtin coverage, 32/32 golden.
+- **v3.12.0** (current) — **WASI + culebra clean.** Real WASI fd_write support (print works on wasmtime), break-inside-nested-control fixed, culebra v2.1.2 false positives resolved, 32/32 golden.
 - **v4.0.0** (next) — Production release: docs, demos, quality gate
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.
