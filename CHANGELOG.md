@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.31.0] - 2026-04-07
+
+### Added
+
+- Go transpiler (`mapanare/self/from_go.mn`) — new language front-end
+- Go tokenizer: raw strings, rune literals, hex, `:=`, `<-`, `&^` operators
+- ~28 Go keywords, struct/interface/func/const/var translation
+- goroutine `go func()` → `spawn`, `defer` → comment, `range` → `for in`
+- Multiple return `(T, error)` → `Result<T, String>` pattern
+- Method receivers → self parameter in impl block
+- Go stdlib shims: fmt.Println→print, append→push, strings.Contains→contains, etc.
+- 9 self-hosted Go transpiler tests
+- Self-hosted compiler now 16 modules, ~20,000+ lines across all .mn files
+
 ## [3.30.0] - 2026-04-07
 
 ### Added
@@ -733,7 +747,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.30.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.31.0...HEAD
+[3.31.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.30.0...v3.31.0
 [3.30.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.29.0...v3.30.0
 [3.29.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.28.0...v3.29.0
 [3.28.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.27.0...v3.28.0

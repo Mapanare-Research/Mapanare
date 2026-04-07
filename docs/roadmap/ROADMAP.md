@@ -7,18 +7,18 @@
 
 ---
 
-## Where We Are (v3.26.0 — Cunaguaro)
+## Where We Are (v3.31.0 — Tonina)
 
-**Review gate — all v3.25.0 blockers fixed.** v3.26.0 resolved all 6 hard
-blockers from the code review: TypeKind.ANY emitter mapping (24-byte MnValue),
-main.ll version string, PHP transpiler $this→self + return types + isset/empty,
-C backend stream call signatures, signal unsubscribe race, map free heuristic.
-llvmlite emitter deprecated. 4610+ tests pass. C runtime: 53/53.
+**4 language front-ends, all self-hosted.** v3.26.0 fixed all review blockers.
+v3.27.0 built the shared transpiler framework (`transpiler.mn`). v3.28.0-v3.29.0
+ported Python and PHP transpilers to self-hosted `.mn`. v3.30.0-v3.31.0 added
+TypeScript and Go transpilers. The self-hosted compiler is now 16 modules,
+~20,000+ lines of Mapanare.
 
-**Next:** v3.27.0 "Güio" builds the shared transpiler framework
-(`transpiler.mn`). v3.28.0-v3.29.0 port Python and PHP transpilers to
-self-hosted `.mn`. v3.30.0-v3.31.0 add TypeScript and Go transpilers.
-v4.0.0 is the production quality gate.
+`mapanare compile {.py,.php,.ts,.go}` all produce native binaries through
+self-hosted transpiler modules using the shared framework.
+
+**Next:** v4.0.0 is the production quality gate — pure quality, no new features.
 
 The self-hosted compiler is 15,000+ lines across 11 modules.
 
