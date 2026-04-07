@@ -272,6 +272,8 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "__mn_exit": VOID_TYPE,
     "__mn_str_eprint": VOID_TYPE,
     "__mn_str_eprintln": VOID_TYPE,
+    "__mn_system": INT_TYPE,
+    "__mn_file_write": VOID_TYPE,
 }
 
 # Builtin call name mapping (Mapanare name -> Python name) for emit_python.py

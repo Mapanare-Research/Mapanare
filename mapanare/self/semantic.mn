@@ -131,6 +131,15 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "ord" { return true }
     if name == "chr" { return true }
     if name == "join" { return true }
+    // C runtime functions used by the self-hosted compiler driver
+    if name == "__mn_argc" { return true }
+    if name == "__mn_argv" { return true }
+    if name == "__mn_file_read_or_empty" { return true }
+    if name == "__mn_exit" { return true }
+    if name == "__mn_str_eprint" { return true }
+    if name == "__mn_str_eprintln" { return true }
+    if name == "__mn_system" { return true }
+    if name == "__mn_file_write" { return true }
     return false
 }
 
@@ -240,7 +249,8 @@ fn new_checker(filename: String) -> SemanticChecker {
 struct SemState {
     errors: List<SemanticError>,
     scope: Scope,
-    filename: String
+    filename: String,
+    current_span: Span
 }
 
 struct InferResult {
@@ -255,7 +265,8 @@ struct CheckResult {
 fn new_sem_state(filename: String) -> SemState {
     let scope: Scope = new_scope(none)
     let sem_errs: List<SemanticError> = []
-    return new SemState { errors: sem_errs, scope: scope, filename: filename }
+    let zero_span: Span = make_span(0, 0)
+    return new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span }
 }
 
 fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult {
@@ -272,12 +283,17 @@ fn new_check_result(st: SemState) -> CheckResult {
 
 fn add_error(st: SemState, msg: String, line: Int, col: Int) -> SemState {
     let err: SemanticError = new_semantic_error(msg, line, col, st.filename)
-    // st.errors.push(err)
-    return st
+    let mut errs: List<SemanticError> = st.errors
+    errs.push(err)
+    return new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span }
+}
+
+fn add_error_here(st: SemState, msg: String) -> SemState {
+    return add_error(st, msg, st.current_span.line, st.current_span.column)
 }
 
 fn add_error_msg(st: SemState, msg: String) -> SemState {
-    return add_error(st, msg, 0, 0)
+    return add_error_here(st, msg)
 }
 
 // ---------------------------------------------------------------------------
@@ -286,23 +302,27 @@ fn add_error_msg(st: SemState, msg: String) -> SemState {
 
 fn push_scope(st: SemState) -> SemState {
     let child: Scope = new_scope(Some(st.scope))
-    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename }
+    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span }
     return new_st
 }
 
 fn pop_scope(st: SemState) -> SemState {
     match st.scope.parent {
         Some(parent) => {
-            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename }
+            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span }
             return new_st
         },
         _ => { return st }
     }
 }
 
+fn set_span(st: SemState, span: Span) -> SemState {
+    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span }
+}
+
 fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState {
     let new_scope_val: Scope = scope_define(st.scope, name, sym)
-    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename }
+    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span }
     return new_st
 }
 
@@ -452,7 +472,7 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
         match result {
             Some(sym) => { return new_infer_result(sym.type_info, st) },
             _ => {
-                let st_ident_err: SemState = add_error(st, "Undefined variable '" + name + "'", 0, 0)
+                let st_ident_err: SemState = add_error_here(st, "Undefined variable '" + name + "'")
                 return new_infer_result(unknown_type(), st_ident_err)
             }
         }
@@ -638,7 +658,7 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
             if rt != "Tensor" {
                 if rt != "Int" {
                     if rt != "Float" {
-                        let st_tensor_lt: SemState = add_error(st, "Operator '" + op + "' not supported for Tensor and " + rt, 0, 0)
+                        let st_tensor_lt: SemState = add_error_here(st, "Operator '" + op + "' not supported for Tensor and " + rt)
                         return new_infer_result(make_type("Tensor"), st_tensor_lt)
                     }
                 }
@@ -650,7 +670,7 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if lt != "<unknown>" {
             if lt != "Int" {
                 if lt != "Float" {
-                    let st_tensor_rt: SemState = add_error(st, "Operator '" + op + "' not supported for " + lt + " and Tensor", 0, 0)
+                    let st_tensor_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for " + lt + " and Tensor")
                     return new_infer_result(make_type("Tensor"), st_tensor_rt)
                 }
             }
@@ -663,7 +683,7 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if lt != "Int" {
             if lt != "Float" {
                 if lt != "String" {
-                    let st_arith_lt: SemState = add_error(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt, 0, 0)
+                    let st_arith_lt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
                     return new_infer_result(unknown_type(), st_arith_lt)
                 }
             }
@@ -673,7 +693,7 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if rt != "Int" {
             if rt != "Float" {
                 if rt != "String" {
-                    let st_arith_rt: SemState = add_error(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt, 0, 0)
+                    let st_arith_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
                     return new_infer_result(unknown_type(), st_arith_rt)
                 }
             }
@@ -688,12 +708,12 @@ fn check_logical_binary(st: SemState, lt: String, rt: String, op: String) -> Inf
     let mut st2: SemState = st
     if lt != "<unknown>" {
         if lt != "Bool" {
-            st2 = add_error(st2, "Operator '" + op + "' requires Bool, got " + lt, 0, 0)
+            st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + lt)
         }
     }
     if rt != "<unknown>" {
         if rt != "Bool" {
-            st2 = add_error(st2, "Operator '" + op + "' requires Bool, got " + rt, 0, 0)
+            st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + rt)
         }
     }
     return new_infer_result(bool_type(), st2)
@@ -703,12 +723,12 @@ fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, 
     let mut st2: SemState = st
     if lt != "<unknown>" {
         if lt != "Tensor" {
-            st2 = add_error(st2, "Operator '@' requires Tensor, got " + lt, 0, 0)
+            st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + lt)
         }
     }
     if rt != "<unknown>" {
         if rt != "Tensor" {
-            st2 = add_error(st2, "Operator '@' requires Tensor, got " + rt, 0, 0)
+            st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + rt)
         }
     }
     let elem: TypeInfo = unknown_type()
@@ -734,7 +754,7 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
         if ot != "<unknown>" {
             if ot != "Int" {
                 if ot != "Float" {
-                    let st_neg: SemState = add_error(or.st, "Unary '-' not supported for type " + ot, 0, 0)
+                    let st_neg: SemState = add_error_here(or.st, "Unary '-' not supported for type " + ot)
                     return new_infer_result(or.type_info, st_neg)
                 }
             }
@@ -745,7 +765,7 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
     if op == "!" {
         if ot != "<unknown>" {
             if ot != "Bool" {
-                let st_not: SemState = add_error(or.st, "Unary '!' requires Bool, got " + ot, 0, 0)
+                let st_not: SemState = add_error_here(or.st, "Unary '!' requires Bool, got " + ot)
                 return new_infer_result(bool_type(), st_not)
             }
         }
@@ -789,7 +809,7 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
                             Some(ret) => {
                                 if len(sym.type_info.param_types) > 0 {
                                     if len(arg_types) != len(sym.type_info.param_types) {
-                                        let st_argc: SemState = add_error(st, "Function '" + name + "' argument count mismatch", 0, 0)
+                                        let st_argc: SemState = add_error_here(st, "Function '" + name + "' argument count mismatch")
                                         return new_infer_result(ret, st_argc)
                                     }
                                 }
@@ -809,7 +829,7 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
                 return new_infer_result(unknown_type(), st)
             },
             _ => {
-                let st_undef: SemState = add_error(st, "Undefined function '" + name + "'", 0, 0)
+                let st_undef: SemState = add_error_here(st, "Undefined function '" + name + "'")
                 return new_infer_result(unknown_type(), st_undef)
             }
         }
@@ -832,19 +852,19 @@ fn check_assign_expr(st: SemState, target: Expr, op: String, value: Expr) -> Inf
             Some(sym) => {
                 let mut st_assign: SemState = vr.st
                 if sym.mutable == false {
-                    st_assign = add_error(st_assign, "Cannot assign to immutable variable '" + name + "'", 0, 0)
+                    st_assign = add_error_here(st_assign, "Cannot assign to immutable variable '" + name + "'")
                 }
                 if sym.type_info.name != "<unknown>" {
                     if vr.type_info.name != "<unknown>" {
                         if types_compatible(sym.type_info, vr.type_info) == false {
-                            st_assign = add_error(st_assign, "Type mismatch in assignment to '" + name + "'", 0, 0)
+                            st_assign = add_error_here(st_assign, "Type mismatch in assignment to '" + name + "'")
                         }
                     }
                 }
                 return new_infer_result(void_type(), st_assign)
             },
             _ => {
-                let st_assign_undef: SemState = add_error(vr.st, "Undefined variable '" + name + "'", 0, 0)
+                let st_assign_undef: SemState = add_error_here(vr.st, "Undefined variable '" + name + "'")
                 return new_infer_result(void_type(), st_assign_undef)
             }
         }
@@ -864,7 +884,7 @@ fn check_if_expr(st: SemState, cond: Expr, then_block: Block, else_clause: Optio
 
     if cr.type_info.name != "<unknown>" {
         if cr.type_info.name != "Bool" {
-            st2 = add_error(st2, "If condition must be Bool, got " + cr.type_info.name, 0, 0)
+            st2 = add_error_here(st2, "If condition must be Bool, got " + cr.type_info.name)
         }
     }
 
@@ -996,13 +1016,13 @@ fn check_spawn_callee(st: SemState, callee: Expr) -> InferResult {
                 let mut st2: SemState = st
                 if sym.kind != "agent" {
                     if sym.kind != "variable" {
-                        st2 = add_error(st2, "'spawn' requires an agent, but '" + name + "' is a " + sym.kind, 0, 0)
+                        st2 = add_error_here(st2, "'spawn' requires an agent, but '" + name + "' is a " + sym.kind)
                     }
                 }
                 return new_infer_result(make_type(sym.name), st2)
             },
             _ => {
-                let st_err: SemState = add_error(st, "Undefined agent '" + name + "'", 0, 0)
+                let st_err: SemState = add_error_here(st, "Undefined agent '" + name + "'")
                 return new_infer_result(unknown_type(), st_err)
             }
         }
@@ -1053,7 +1073,7 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
                             if expected.name != "<unknown>" {
                                 if lr.type_info.name != "<unknown>" {
                                     if types_compatible(expected, lr.type_info) == false {
-                                        let st3_mismatch: SemState = add_error(st2, "Pipe type mismatch: piped to '" + name + "'", 0, 0)
+                                        let st3_mismatch: SemState = add_error_here(st2, "Pipe type mismatch: piped to '" + name + "'")
                                         match sym.type_info.return_type {
                                             Some(ret) => { return new_infer_result(ret, st3_mismatch) },
                                             _ => { return new_infer_result(unknown_type(), st3_mismatch) }
@@ -1074,7 +1094,7 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
                 return new_infer_result(unknown_type(), st2)
             },
             _ => {
-                let st3_undef: SemState = add_error(st2, "Undefined function '" + name + "'", 0, 0)
+                let st3_undef: SemState = add_error_here(st2, "Undefined function '" + name + "'")
                 return new_infer_result(unknown_type(), st3_undef)
             }
         }
@@ -1091,7 +1111,7 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
 // ---------------------------------------------------------------------------
 
 fn check_block(st: SemState, block: Block) -> SemState {
-    let mut st2: SemState = st
+    let mut st2: SemState = set_span(st, block.span)
     let mut i: Int = 0
     for _ in 0..600 {
         if i >= len(block.stmts) { return st2 }
@@ -1146,7 +1166,7 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
     if ann_type.name != "<unknown>" {
         if vr.type_info.name != "<unknown>" {
             if types_compatible(ann_type, vr.type_info) == false {
-                st2 = add_error(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + vr.type_info.name, 0, 0)
+                st2 = add_error_here(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + vr.type_info.name)
             }
         }
     }
@@ -1360,7 +1380,7 @@ fn check_def(st: SemState, def: Definition) -> SemState {
 // ---------------------------------------------------------------------------
 
 fn check_fn_body(st: SemState, data: FnDefData) -> SemState {
-    let inner: SemState = push_scope(st)
+    let inner: SemState = push_scope(set_span(st, data.span))
     let mut st2: SemState = inner
 
     // Register parameters
@@ -1386,7 +1406,7 @@ fn check_fn_body(st: SemState, data: FnDefData) -> SemState {
 // ---------------------------------------------------------------------------
 
 fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
-    let inner: SemState = push_scope(st)
+    let inner: SemState = push_scope(set_span(st, data.span))
     let mut st2: SemState = inner
 
     // Register self
@@ -1451,7 +1471,7 @@ fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> Se
     match sym_opt {
         Some(_) => {},
         _ => {
-            st2 = add_error(st2, "Undefined type '" + target + "' in impl block", 0, 0)
+            st2 = add_error_here(st2, "Undefined type '" + target + "' in impl block")
         }
     }
 
@@ -1499,7 +1519,7 @@ fn check_pipe_stage_err(st: SemState, stage: Expr, pipe_name: String) -> SemStat
         let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
         match sym_opt {
             Some(sym) => { return st },
-            _ => { return add_error(st, "Undefined stage '" + name + "' in pipe '" + pipe_name + "'", 0, 0) }
+            _ => { return add_error_here(st, "Undefined stage '" + name + "' in pipe '" + pipe_name + "'") }
         }
     }
     let sr: InferResult = infer_expr(st, stage)
@@ -1584,6 +1604,24 @@ fn register_builtins(st: SemState) -> SemState {
     // join -> String
     let join_sym: Symbol = new_symbol("join", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "join", join_sym)
+
+    // C runtime functions used by the self-hosted compiler driver
+    let argc_sym: Symbol = new_symbol("__mn_argc", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_argc", argc_sym)
+    let argv_sym: Symbol = new_symbol("__mn_argv", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_argv", argv_sym)
+    let fread_sym: Symbol = new_symbol("__mn_file_read_or_empty", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_file_read_or_empty", fread_sym)
+    let exit_sym: Symbol = new_symbol("__mn_exit", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_exit", exit_sym)
+    let eprint_sym: Symbol = new_symbol("__mn_str_eprint", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_str_eprint", eprint_sym)
+    let eprintln_sym: Symbol = new_symbol("__mn_str_eprintln", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_str_eprintln", eprintln_sym)
+    let system_sym: Symbol = new_symbol("__mn_system", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_system", system_sym)
+    let fwrite_sym: Symbol = new_symbol("__mn_file_write", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_file_write", fwrite_sym)
 
     return st2
 }
