@@ -1413,6 +1413,48 @@ class LLVMMIREmitter:
     def _rt_free(self) -> Any:
         return self._declare_runtime_fn("__mn_free", LLVM_VOID, [LLVM_PTR])
 
+    # -- Arena eligibility -------------------------------------------------------
+
+    @staticmethod
+    def _fn_is_arena_eligible(fn: MIRFunction) -> bool:
+        """Conservative escape analysis: enable arena only for functions that
+        return non-heap types and have no user function calls.
+
+        This covers: constructors, simple accessors, arithmetic helpers.
+        """
+        # Don't arena-ify main (it runs for the lifetime of the program)
+        if fn.name == "main":
+            return False
+        # Return type must be non-heap (Int, Float, Bool, Void, Char)
+        rk = fn.return_type.kind
+        non_heap = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL, TypeKind.VOID, TypeKind.CHAR}
+        if rk not in non_heap:
+            return False
+        # No user function calls — only runtime calls allowed
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                if isinstance(inst, Call):
+                    # User function calls are not prefixed with __mn_ or __new_
+                    fn_name = inst.fn_name.lstrip("%")
+                    if not fn_name.startswith("__mn_") and not fn_name.startswith("__new_"):
+                        if fn_name not in (
+                            "print",
+                            "println",
+                            "len",
+                            "str",
+                            "toString",
+                            "int",
+                            "float",
+                            "ord",
+                            "chr",
+                            "Some",
+                            "Ok",
+                            "Err",
+                            "join",
+                        ):
+                            return False
+        return True
+
     # -- Arena runtime functions ------------------------------------------------
 
     def _rt_arena_create(self) -> Any:
@@ -1911,14 +1953,16 @@ class LLVMMIREmitter:
         values: dict[str, Any] = {}
 
         # 2b. Per-function arena for scoped allocations.
-        #     Arena lifecycle is available but disabled by default — it causes
-        #     use-after-free when returned values (especially strings built via
-        #     concatenation) are allocated on the callee's arena and then freed
-        #     before the caller can use them. The arena helpers remain declared
-        #     so the infrastructure is ready when the return-value escape
-        #     analysis is implemented.
-        ir.IRBuilder(pre_entry)  # pre_entry builder (unused — arena disabled)
+        #     Conservative escape analysis: enable arena only for functions that
+        #     return non-heap types and have no user function calls. This covers
+        #     constructors, simple accessors, and arithmetic helpers.
         self._arena_ptr = None
+        if self._fn_is_arena_eligible(mir_fn):
+            pe_builder = ir.IRBuilder(pre_entry)
+            block_size = ir.Constant(LLVM_INT, 4096)
+            arena = pe_builder.call(self._rt_arena_create(), [block_size], name="arena")
+            self._arena_ptr = _aligned_alloca(pe_builder, LLVM_PTR, "arena.ptr")
+            pe_builder.store(arena, self._arena_ptr)
 
         # 2c. Reset per-function drop glue tracking lists.
         self._local_strings = []

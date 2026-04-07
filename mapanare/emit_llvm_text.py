@@ -211,7 +211,10 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_list_free": {"nounwind"},
     "__mn_map_free": {"nounwind"},
     "__mn_stream_free": {"nounwind"},
+    "__mn_stream_free_chain": {"nounwind"},
     "__mn_range_free": {"nounwind"},
+    "__mn_signal_free": {"nounwind"},
+    "__mn_map_free_deep": {"nounwind"},
     # Mutation
     "__mn_str_concat": {"nounwind"},
     "__mn_str_from_int": {"nounwind"},
@@ -278,6 +281,10 @@ class LLVMTextEmitter:
         self._local_strings: list[str] = []
         self._local_closures: list[str] = []
         self._local_boxed: list[str] = []  # boxed enum payload ptrs
+        self._list_vars: list[str] = []  # dest names for list cleanup
+        self._map_vars: list[str] = []  # dest names for map cleanup
+        self._signal_vars: list[str] = []  # dest names for signal cleanup
+        self._stream_vars: list[str] = []  # dest names for stream cleanup
         # dispatch
         self._disp: dict[type, Any] = {}
         self._init_disp()
@@ -834,13 +841,42 @@ class LLVMTextEmitter:
         self._L(f"store ptr {ptr_val}, ptr {slot}")
         self._local_boxed.append(slot)
 
+    def _track_container(self, dest_name: str, container_type: str) -> None:
+        """Track a container variable for drop glue cleanup.
+
+        Unlike strings (immutable, tracked by value snapshot), containers are
+        mutable — push/set operations change them in place. We track by variable
+        name and load the final value at return time from the dest alloca.
+        """
+        if container_type == "list":
+            if dest_name not in self._list_vars:
+                self._list_vars.append(dest_name)
+        elif container_type == "map":
+            if dest_name not in self._map_vars:
+                self._map_vars.append(dest_name)
+        elif container_type == "signal":
+            if dest_name not in self._signal_vars:
+                self._signal_vars.append(dest_name)
+        elif container_type == "stream":
+            if dest_name not in self._stream_vars:
+                self._stream_vars.append(dest_name)
+
     def _emit_drop_glue(self, ret_val: str | None, ret_ty: str) -> None:
         """Emit cleanup code before a return instruction.
 
         For each tracked string, loads the {ptr, i64} value, extracts the data
         pointer, and frees it unless it's the same pointer being returned.
         """
-        if not self._local_strings and not self._local_closures and not self._local_boxed:
+        has_any = (
+            self._local_strings
+            or self._local_closures
+            or self._local_boxed
+            or self._list_vars
+            or self._map_vars
+            or self._signal_vars
+            or self._stream_vars
+        )
+        if not has_any:
             return
 
         self._ensure("__mn_str_free", VOID, [STR])
@@ -935,6 +971,166 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
+        # List cleanup — load from the variable's alloca (gets final post-push value)
+        if self._list_vars:
+            self._ensure("__mn_list_free", VOID, ["ptr"])
+        for var_name in self._list_vars:
+            alloc_info = None
+            for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
+                if k in self._alloc:
+                    alloc_info = self._alloc[k]
+                    break
+            if alloc_info is None:
+                continue
+            addr, aty = alloc_info
+            lv = self._f("drop.lv")
+            self._L(f"{lv} = load {LIST}, ptr {addr}")
+            lp = self._f("drop.lp")
+            self._L(f"{lp} = extractvalue {LIST} {lv}, 0")
+            ln = self._f("drop.lnull")
+            self._L(f"{ln} = icmp eq ptr {lp}, null")
+            skip_lbl = f"drop.lskip.{self._c}"
+            check_lbl = f"drop.lcheck.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {ln}, label %{skip_lbl}, label %{check_lbl}")
+
+            self._blk[check_lbl] = []
+            self._cb = check_lbl
+            # Pass the variable's alloca directly to __mn_list_free
+            self._L(f"call void @__mn_list_free(ptr {addr})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+        # Map cleanup
+        if self._map_vars:
+            self._ensure("__mn_map_free_deep", VOID, [PTR])
+        for var_name in self._map_vars:
+            alloc_info = None
+            for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
+                if k in self._alloc:
+                    alloc_info = self._alloc[k]
+                    break
+            if alloc_info is None:
+                continue
+            addr, _ = alloc_info
+            mp = self._f("drop.mp")
+            self._L(f"{mp} = load ptr, ptr {addr}")
+            mn = self._f("drop.mnull")
+            self._L(f"{mn} = icmp eq ptr {mp}, null")
+            skip_lbl = f"drop.mskip.{self._c}"
+            free_lbl = f"drop.mfree.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {mn}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            self._L(f"call void @__mn_map_free_deep(ptr {mp})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+        # Signal cleanup
+        if self._signal_vars:
+            self._ensure("__mn_signal_free", VOID, [PTR])
+        for var_name in self._signal_vars:
+            alloc_info = None
+            for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
+                if k in self._alloc:
+                    alloc_info = self._alloc[k]
+                    break
+            if alloc_info is None:
+                continue
+            addr, _ = alloc_info
+            sp = self._f("drop.sig")
+            self._L(f"{sp} = load ptr, ptr {addr}")
+            sn = self._f("drop.signull")
+            self._L(f"{sn} = icmp eq ptr {sp}, null")
+            skip_lbl = f"drop.sigskip.{self._c}"
+            free_lbl = f"drop.sigfree.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {sn}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            self._L(f"call void @__mn_signal_free(ptr {sp})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+        # Stream cleanup
+        if self._stream_vars:
+            self._ensure("__mn_stream_free_chain", VOID, [PTR])
+        for var_name in self._stream_vars:
+            alloc_info = None
+            for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
+                if k in self._alloc:
+                    alloc_info = self._alloc[k]
+                    break
+            if alloc_info is None:
+                continue
+            addr, _ = alloc_info
+            sp = self._f("drop.strm")
+            self._L(f"{sp} = load ptr, ptr {addr}")
+            sn = self._f("drop.strmnull")
+            self._L(f"{sn} = icmp eq ptr {sp}, null")
+            skip_lbl = f"drop.strmskip.{self._c}"
+            free_lbl = f"drop.strmfree.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {sn}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            self._L(f"call void @__mn_stream_free_chain(ptr {sp})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+    def _emit_arena_destroy(self) -> None:
+        """Destroy the per-function arena before return."""
+        if self._arena_ptr is not None:
+            self._ensure("mn_arena_destroy", VOID, [PTR])
+            a = self._f("arena.d")
+            self._L(f"{a} = load ptr, ptr {self._arena_ptr}")
+            self._L(f"call void @mn_arena_destroy(ptr {a})")
+
+    @staticmethod
+    def _fn_is_arena_eligible(fn: MIRFunction) -> bool:
+        """Conservative escape analysis: enable arena for functions that return
+        non-heap types and have no user function calls."""
+        if fn.name == "main":
+            return False
+        rk = fn.return_type.kind
+        non_heap = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL, TypeKind.VOID, TypeKind.CHAR}
+        if rk not in non_heap:
+            return False
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                if isinstance(inst, Call):
+                    fn_name = inst.fn_name.lstrip("%")
+                    if not fn_name.startswith("__mn_") and not fn_name.startswith("__new_"):
+                        if fn_name not in (
+                            "print",
+                            "println",
+                            "len",
+                            "str",
+                            "toString",
+                            "int",
+                            "float",
+                            "ord",
+                            "chr",
+                            "Some",
+                            "Ok",
+                            "Err",
+                            "join",
+                        ):
+                            return False
+        return True
+
     # ── function emission ───────────────────────────────────────────
     def _emit_fn(self, fn: MIRFunction) -> str:
         self._c = 0
@@ -948,6 +1144,20 @@ class LLVMTextEmitter:
         self._local_strings = []
         self._local_closures = []
         self._local_boxed = []
+        self._list_vars = []
+        self._map_vars = []
+        self._signal_vars = []
+        self._stream_vars = []
+
+        # Per-function arena
+        self._arena_ptr: str | None = None
+        if self._fn_is_arena_eligible(fn):
+            self._arena_ptr = self._f("arena_ptr")
+            self._ent.append(f"  {self._arena_ptr} = alloca ptr, align 8")
+            self._ensure("mn_arena_create", PTR, [I64])
+            arena = self._f("arena")
+            self._ent.append(f"  {arena} = call ptr @mn_arena_create(i64 4096)")
+            self._ent.append(f"  store ptr {arena}, ptr {self._arena_ptr}")
 
         # Determine which params use byref and if return uses sret
         rt_orig = self._rty(fn.return_type)
@@ -1223,6 +1433,19 @@ class LLVMTextEmitter:
         if t == LIST:
             root = self._lroots.get(i.src.name, i.src.name)
             self._lroots[i.dest.name] = root
+            # Replace source tracking with dest (they share the same data pointer;
+            # freeing both would double-free)
+            if i.src.name in self._list_vars:
+                self._list_vars.remove(i.src.name)
+            self._track_container(i.dest.name, "list")
+        # Propagate container tracking for maps/signals/streams
+        sk = i.src.ty.kind if i.src.ty else TypeKind.UNKNOWN
+        if sk == TypeKind.MAP or (t == PTR and sk == TypeKind.MAP):
+            self._track_container(i.dest.name, "map")
+        elif sk == TypeKind.SIGNAL:
+            self._track_container(i.dest.name, "signal")
+        elif sk == TypeKind.STREAM:
+            self._track_container(i.dest.name, "stream")
         # Clone list fields on struct copy for correctness: COW requires refcount
         # increment via __mn_list_clone. Bitwise copies don't increment refcount.
         # Without cloning, shared lists (e.g. module.functions) corrupt on push.
@@ -1444,6 +1667,7 @@ class LLVMTextEmitter:
                 ["ptr", "ptr"],
                 [(la, "ptr"), (ra, "ptr")],
             )
+            self._track_container(i.dest.name, "list")
             self._put(i.dest, r, LIST)
             return
 
@@ -1794,6 +2018,8 @@ class LLVMTextEmitter:
                 r = self._rt(rtn, ret, pts, args)
                 if ret == STR:
                     self._track_string(r)
+                elif ret == LIST:
+                    self._track_container(i.dest.name, "list")
                 self._put(i.dest, r, ret)
                 return
 
@@ -2053,19 +2279,23 @@ class LLVMTextEmitter:
             rt = self._rty(self._fn.return_type)
             if rt == VOID:
                 self._emit_drop_glue(None, VOID)
+                self._emit_arena_destroy()
                 self._L("ret void")
             elif self._fn_use_sret:
                 # Store return value into sret pointer and return void
                 v = self._coerce(v, t, self._fn_sret_ty) if t != self._fn_sret_ty else v
                 self._emit_drop_glue(v, self._fn_sret_ty)
+                self._emit_arena_destroy()
                 self._L(f"store {self._fn_sret_ty} {v}, ptr {self._sret_ptr}")
                 self._L("ret void")
             else:
                 v = self._coerce(v, t, rt) if t != rt else v
                 self._emit_drop_glue(v, rt)
+                self._emit_arena_destroy()
                 self._L(f"ret {rt} {v}")
         else:
             self._emit_drop_glue(None, VOID)
+            self._emit_arena_destroy()
             if self._fn_use_sret:
                 self._L("ret void")
             else:
@@ -2261,6 +2491,7 @@ class LLVMTextEmitter:
                 ety = et
         esz = _tsz(ety)
         lv = self._rt("__mn_list_new", LIST, [I64], [(str(esz), I64)], "ln")
+        self._track_container(i.dest.name, "list")
         if i.elements:
             la = self._alloca(LIST, "lp")
             self._L(f"store {LIST} {lv}, ptr {la}")
@@ -2406,6 +2637,7 @@ class LLVMTextEmitter:
             [I64, I64, I64],
             [(str(ksz), I64), (str(vsz), I64), (str(ktag), I64)],
         )
+        self._track_container(i.dest.name, "map")
         for kv, vv in i.pairs:
             k, kt = self._get(kv)
             v, vt = self._get(vv)
@@ -2793,6 +3025,7 @@ class LLVMTextEmitter:
         self._L(f"store {t} {v}, ptr {va}")
         vp = va  # opaque ptr, no bitcast
         r = self._rt("__mn_signal_new", PTR, [PTR, I64], [(vp, PTR), (str(vsz), I64)])
+        self._track_container(i.dest.name, "signal")
         self._put(i.dest, r, PTR)
 
     def _do_sig_get(self, i: SignalGet) -> None:
@@ -2852,6 +3085,7 @@ class LLVMTextEmitter:
         la = self._alloca(LIST, "slp")
         self._L(f"store {LIST} {sv}, ptr {la}")
         r = self._rt("__mn_stream_from_list", PTR, ["ptr", I64], [(la, "ptr"), ("8", I64)])
+        self._track_container(i.dest.name, "stream")
         self._put(i.dest, r, PTR)
 
     def _do_stream_op(self, i: StreamOp) -> None:
@@ -2864,23 +3098,28 @@ class LLVMTextEmitter:
                 [PTR, PTR, PTR, I64],
                 [(sv, st), (fp, PTR), ("null", PTR), ("8", I64)],
             )
+            self._track_container(i.dest.name, "stream")
             self._put(i.dest, r, PTR)
         elif i.op_kind == StreamOpKind.FILTER:
             fp = self._stream_fn(i)
             r = self._rt(
                 "__mn_stream_filter", PTR, [PTR, PTR, PTR], [(sv, st), (fp, PTR), ("null", PTR)]
             )
+            self._track_container(i.dest.name, "stream")
             self._put(i.dest, r, PTR)
         elif i.op_kind == StreamOpKind.TAKE:
             nv, nt = self._get(i.args[0]) if i.args else ("0", I64)
             r = self._rt("__mn_stream_take", PTR, [PTR, I64], [(sv, st), (nv, nt)])
+            self._track_container(i.dest.name, "stream")
             self._put(i.dest, r, PTR)
         elif i.op_kind == StreamOpKind.SKIP:
             nv, nt = self._get(i.args[0]) if i.args else ("0", I64)
             r = self._rt("__mn_stream_skip", PTR, [PTR, I64], [(sv, st), (nv, nt)])
+            self._track_container(i.dest.name, "stream")
             self._put(i.dest, r, PTR)
         elif i.op_kind == StreamOpKind.COLLECT:
             r = self._rt("__mn_stream_collect", LIST, [PTR, I64], [(sv, st), ("8", I64)])
+            self._track_container(i.dest.name, "list")
             self._put(i.dest, r, LIST)
         elif i.op_kind == StreamOpKind.FOLD:
             if len(i.args) >= 2:

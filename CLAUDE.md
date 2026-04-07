@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.17.0** (current) — **Tigra.** Text emitter drop glue + function attributes: string/closure/boxed cleanup in default pipeline, `nounwind`/`readonly` on runtime declarations, `_llvm_type_size` alignment fix.
+- **v3.18.0** (current) — **Macagua.** Container drop glue + arenas: lists/maps/signals/streams freed on exit, per-function arena allocation, `__mn_list_push` managed fix.
 - **v4.0.0** (next) — Production release: docs, demos, quality gate
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.

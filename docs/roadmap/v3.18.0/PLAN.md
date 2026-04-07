@@ -3,7 +3,7 @@
 > Extend drop glue to lists, maps, signals, streams in both emitters.
 > Enable per-function arenas for the first time (requested since v3.10.0).
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Medium (2 sessions)
 **Breaking:** No
 **Prerequisite:** v3.17.0 (string drop glue pattern established in text emitter)

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.18.0] - 2026-04-07
+
+### Added
+
+- Container drop glue — lists, maps, signals, streams now freed on function exit (text emitter)
+- Per-function arena allocation for non-escaping temporaries (conservative escape analysis)
+
+### Changed
+
+- `__mn_list_push` asserts on corrupted lists in debug builds (release builds keep defensive reinit)
+
+### Fixed
+
+- `__mn_list_push` reinit path now sets `managed = 1` (fixes list data buffer leak in drop glue)
+
 ## [3.17.0] - 2026-04-07
 
 ### Added
@@ -555,7 +570,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.17.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.18.0...HEAD
+[3.18.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.17.0...v3.18.0
 [3.17.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.16.0...v3.17.0
 [3.16.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.15.0...v3.16.0
 [3.15.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.14.0...v3.15.0

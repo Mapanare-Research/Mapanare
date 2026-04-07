@@ -827,11 +827,22 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
     if (!list->data || list->cap <= 0 || list->elem_size <= 0
         || list->elem_size > 65536 || list->cap > 100000000
         || list->len < 0 || list->len > list->cap) {
-        /* Reinitialize: treat as empty list */
+#ifndef NDEBUG
+        if (list->data) {
+            /* Non-NULL data with corrupted fields — compiler bug, not first push */
+            fprintf(stderr, "FATAL: __mn_list_push received corrupted list "
+                    "(data=%p len=%lld cap=%lld esz=%lld)\n",
+                    (void *)list->data, (long long)list->len,
+                    (long long)list->cap, (long long)list->elem_size);
+            abort();
+        }
+#endif
+        /* First push to empty list — initialize buffer */
         if (list->elem_size <= 0 || list->elem_size > 65536) list->elem_size = 8;
         list->data = mn_list_alloc_buf(MN_LIST_INITIAL_CAP, list->elem_size);
         list->cap = MN_LIST_INITIAL_CAP;
         list->len = 0;
+        list->managed = 1;
     } else {
         mn_list_detach(list);  /* COW: ensure sole ownership */
     }
