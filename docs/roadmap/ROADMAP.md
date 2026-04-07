@@ -7,21 +7,20 @@
 
 ---
 
-## Where We Are (v3.9.1 — CI Green + Test Infrastructure)
+## Where We Are (v3.10.0 — Error Messages + Semantic Maturity)
 
-**All CI jobs green. Full test infrastructure in place.** v3.9.1 fixes the
-ctypes segfault in `io_bridge.py`/`native_bridge.py` (subprocess probe for
-corrupt `.so` files), generates `.ref.ll` reference files for all 31 golden
-tests, removes stray build artifacts from tracking, and updates CI comments.
+**The compiler is usable by external developers.** v3.10.0 adds error messages
+with line numbers, generic enum monomorphization, trait method validation, and
+complete builtin function coverage. The self-hosted semantic checker threads
+source positions through all 24 error sites and validates trait requirements.
 
-v3.9.0 added generic impl blocks (`impl<T> Box<T> { fn get(self) -> T }`),
-TraitDef in the Definition enum, and confirmed the Python emitter enum-field
-bug is resolved. The self-hosted compiler is 10,800+ lines across 10 modules.
+v3.9.1 fixed CI across all platforms. v3.9.0 added generic impl blocks.
+The self-hosted compiler is 11,000+ lines across 10 modules.
 
-**35 stdlib modules** compile natively. **31 golden tests** cover all features
-including generics, impl dispatch, traits, and generic impl blocks.
-**4479 pytest tests** pass. **104 native assertions** across 7 test modules.
-Fixed point maintained (stage3 == stage4).
+**35 stdlib modules** compile natively. **32 golden tests** cover all features
+including generics, impl dispatch, traits, generic enums, and generic impl
+blocks. **4482 pytest tests** pass. **104 native assertions** across 7 test
+modules. Fixed point maintained (stage3 == stage4).
 
 **No Python required to build.** `bash scripts/build_from_seed.sh` bootstraps
 from the seed binary.

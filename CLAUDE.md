@@ -8,9 +8,8 @@ Mapanare is an AI-native compiled programming language (v3.3.0 "Fixed Point") wi
 
 ## Current Version & Roadmap
 
-- **v3.9.1** (current) — **CI green + test infrastructure.** Subprocess probe for corrupt .so, 31/31 .ref.ll files, stray .ll artifacts cleaned, 4479 pytest tests pass.
-- **v3.10.0** (next) — Error messages with line numbers, generic enums, trait method validation
-- **v4.0.0** — Production release: docs, demos, quality gate
+- **v3.10.0** (current) — **Error messages + semantic maturity.** Line numbers in errors, generic enum monomorphization, trait method validation, complete builtin coverage, 32/32 golden.
+- **v4.0.0** (next) — Production release: docs, demos, quality gate
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.
 
