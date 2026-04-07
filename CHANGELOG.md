@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.30.0] - 2026-04-07
+
+### Added
+
+- TypeScript transpiler (`mapanare/self/from_typescript.mn`) — new language front-end
+- TS tokenizer: template literals, `===`/`!==`/`...`/`>>>`/`?.`/`??`/`=>` operators
+- ~45 TS keywords, interface→trait, class→struct+impl, enum translation
+- TS stdlib shims: console.log→print, parseInt→int, Math.abs→abs, etc.
+- 8 self-hosted TypeScript transpiler tests
+
 ## [3.29.0] - 2026-04-07
 
 ### Added
@@ -723,7 +733,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.29.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.30.0...HEAD
+[3.30.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.29.0...v3.30.0
 [3.29.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.28.0...v3.29.0
 [3.28.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.27.0...v3.28.0
 [3.27.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.26.0...v3.27.0

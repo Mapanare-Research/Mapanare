@@ -1,0 +1,1614 @@
+// from_typescript.mn — Self-hosted TypeScript-to-Mapanare transpiler.
+// Tokenizes, parses, and translates TypeScript source into Mapanare (.mn) text.
+// Uses transpiler.mn for shared type mapping, class translation, and state.
+
+// ---------------------------------------------------------------------------
+// TypeScript Token types
+// ---------------------------------------------------------------------------
+
+struct TsToken {
+    kind: String,
+    value: String,
+    line: Int,
+    col: Int
+}
+
+fn new_ts_token(kind: String, value: String, line: Int, col: Int) -> TsToken {
+    return new TsToken { kind: kind, value: value, line: line, col: col }
+}
+
+// ---------------------------------------------------------------------------
+// TypeScript keyword table
+// ---------------------------------------------------------------------------
+
+fn is_ts_keyword(s: String) -> Bool {
+    if s == "function" { return true }
+    if s == "class" { return true }
+    if s == "if" { return true }
+    if s == "else" { return true }
+    if s == "for" { return true }
+    if s == "while" { return true }
+    if s == "return" { return true }
+    if s == "const" { return true }
+    if s == "let" { return true }
+    if s == "var" { return true }
+    if s == "interface" { return true }
+    if s == "type" { return true }
+    if s == "export" { return true }
+    if s == "import" { return true }
+    if s == "async" { return true }
+    if s == "await" { return true }
+    if s == "new" { return true }
+    if s == "null" { return true }
+    if s == "undefined" { return true }
+    if s == "true" { return true }
+    if s == "false" { return true }
+    if s == "extends" { return true }
+    if s == "implements" { return true }
+    if s == "enum" { return true }
+    if s == "as" { return true }
+    if s == "from" { return true }
+    if s == "of" { return true }
+    if s == "in" { return true }
+    if s == "switch" { return true }
+    if s == "case" { return true }
+    if s == "default" { return true }
+    if s == "break" { return true }
+    if s == "continue" { return true }
+    if s == "try" { return true }
+    if s == "catch" { return true }
+    if s == "throw" { return true }
+    if s == "finally" { return true }
+    if s == "typeof" { return true }
+    if s == "instanceof" { return true }
+    if s == "this" { return true }
+    if s == "super" { return true }
+    if s == "void" { return true }
+    if s == "delete" { return true }
+    if s == "do" { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Tokenizer helpers
+// ---------------------------------------------------------------------------
+
+fn is_ts_alpha(c: String) -> Bool {
+    if c == "_" { return true }
+    if c == "$" { return true }
+    if c == "a" { return true }
+    if c == "b" { return true }
+    if c == "c" { return true }
+    if c == "d" { return true }
+    if c == "e" { return true }
+    if c == "f" { return true }
+    if c == "g" { return true }
+    if c == "h" { return true }
+    if c == "i" { return true }
+    if c == "j" { return true }
+    if c == "k" { return true }
+    if c == "l" { return true }
+    if c == "m" { return true }
+    if c == "n" { return true }
+    if c == "o" { return true }
+    if c == "p" { return true }
+    if c == "q" { return true }
+    if c == "r" { return true }
+    if c == "s" { return true }
+    if c == "t" { return true }
+    if c == "u" { return true }
+    if c == "v" { return true }
+    if c == "w" { return true }
+    if c == "x" { return true }
+    if c == "y" { return true }
+    if c == "z" { return true }
+    if c == "A" { return true }
+    if c == "B" { return true }
+    if c == "C" { return true }
+    if c == "D" { return true }
+    if c == "E" { return true }
+    if c == "F" { return true }
+    if c == "G" { return true }
+    if c == "H" { return true }
+    if c == "I" { return true }
+    if c == "J" { return true }
+    if c == "K" { return true }
+    if c == "L" { return true }
+    if c == "M" { return true }
+    if c == "N" { return true }
+    if c == "O" { return true }
+    if c == "P" { return true }
+    if c == "Q" { return true }
+    if c == "R" { return true }
+    if c == "S" { return true }
+    if c == "T" { return true }
+    if c == "U" { return true }
+    if c == "V" { return true }
+    if c == "W" { return true }
+    if c == "X" { return true }
+    if c == "Y" { return true }
+    if c == "Z" { return true }
+    return false
+}
+
+fn is_ts_alnum(c: String) -> Bool {
+    if is_ts_alpha(c) { return true }
+    if is_digit(c) { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Tokenizer
+// ---------------------------------------------------------------------------
+
+fn tokenize_typescript(source: String) -> List<TsToken> {
+    let mut tokens: List<TsToken> = []
+    let mut pos: Int = 0
+    let mut line: Int = 1
+    let mut col: Int = 1
+    let slen: Int = len(source)
+
+    while pos < slen {
+        let c: String = source[pos]
+
+        // Newline
+        if c == "\n" {
+            tokens.push(new_ts_token("NEWLINE", "\n", line, col))
+            pos = pos + 1
+            line = line + 1
+            col = 1
+            continue
+        }
+
+        // Skip whitespace (not newline)
+        if c == " " || c == "\t" || c == "\r" {
+            pos = pos + 1
+            col = col + 1
+            continue
+        }
+
+        // Single-line comment: // to end of line
+        if c == "/" {
+            if pos + 1 < slen {
+                if source[pos + 1] == "/" {
+                    while pos < slen {
+                        if source[pos] == "\n" { break }
+                        pos = pos + 1
+                    }
+                    continue
+                }
+            }
+        }
+
+        // Multi-line comment: /* ... */
+        if c == "/" {
+            if pos + 1 < slen {
+                if source[pos + 1] == "*" {
+                    pos = pos + 2
+                    col = col + 2
+                    while pos + 1 < slen {
+                        if source[pos] == "*" {
+                            if source[pos + 1] == "/" {
+                                pos = pos + 2
+                                col = col + 2
+                                break
+                            }
+                        }
+                        if source[pos] == "\n" {
+                            line = line + 1
+                            col = 1
+                        } else {
+                            col = col + 1
+                        }
+                        pos = pos + 1
+                    }
+                    continue
+                }
+            }
+        }
+
+        // Template literal: `...${expr}...`
+        if c == "`" {
+            pos = pos + 1
+            col = col + 1
+            let mut value: String = ""
+            while pos < slen {
+                let tc: String = source[pos]
+                if tc == "`" {
+                    pos = pos + 1
+                    col = col + 1
+                    break
+                }
+                if tc == "\\" {
+                    pos = pos + 1
+                    col = col + 1
+                    if pos < slen {
+                        value = value + source[pos]
+                        pos = pos + 1
+                        col = col + 1
+                    }
+                    continue
+                }
+                // ${expr} interpolation — collect as {expr}
+                if tc == "$" {
+                    if pos + 1 < slen {
+                        if source[pos + 1] == "{" {
+                            pos = pos + 2
+                            col = col + 2
+                            let mut expr: String = ""
+                            let mut tdepth: Int = 1
+                            while pos < slen {
+                                if source[pos] == "{" { tdepth = tdepth + 1 }
+                                if source[pos] == "}" {
+                                    tdepth = tdepth - 1
+                                    if tdepth == 0 {
+                                        pos = pos + 1
+                                        col = col + 1
+                                        break
+                                    }
+                                }
+                                expr = expr + source[pos]
+                                pos = pos + 1
+                                col = col + 1
+                            }
+                            value = value + "{" + expr + "}"
+                            continue
+                        }
+                    }
+                }
+                value = value + tc
+                pos = pos + 1
+                col = col + 1
+            }
+            tokens.push(new_ts_token("TEMPLATE", value, line, col))
+            continue
+        }
+
+        // String literals
+        if c == "\"" || c == "'" {
+            let quote: String = c
+            pos = pos + 1
+            col = col + 1
+            let mut value: String = ""
+            while pos < slen {
+                let sc: String = source[pos]
+                if sc == quote {
+                    pos = pos + 1
+                    col = col + 1
+                    break
+                }
+                if sc == "\\" {
+                    pos = pos + 1
+                    col = col + 1
+                    if pos < slen {
+                        value = value + source[pos]
+                        pos = pos + 1
+                        col = col + 1
+                    }
+                    continue
+                }
+                value = value + sc
+                pos = pos + 1
+                col = col + 1
+            }
+            tokens.push(new_ts_token("STRING", value, line, col))
+            continue
+        }
+
+        // Numbers
+        if is_digit(c) {
+            let mut num: String = ""
+            let mut has_dot: Bool = false
+            while pos < slen {
+                let nc: String = source[pos]
+                if nc == "." { has_dot = true }
+                if is_digit(nc) || nc == "." || nc == "_" {
+                    if nc != "_" { num = num + nc }
+                    pos = pos + 1
+                    col = col + 1
+                } else {
+                    break
+                }
+            }
+            if has_dot {
+                tokens.push(new_ts_token("FLOAT", num, line, col))
+            } else {
+                tokens.push(new_ts_token("INT", num, line, col))
+            }
+            continue
+        }
+
+        // Identifiers and keywords
+        if is_ts_alpha(c) {
+            let mut ident: String = ""
+            while pos < slen {
+                let ic: String = source[pos]
+                if is_ts_alnum(ic) {
+                    ident = ident + ic
+                    pos = pos + 1
+                    col = col + 1
+                } else {
+                    break
+                }
+            }
+            if is_ts_keyword(ident) {
+                tokens.push(new_ts_token("KEYWORD", ident, line, col))
+            } else {
+                tokens.push(new_ts_token("IDENT", ident, line, col))
+            }
+            continue
+        }
+
+        // Three-character operators
+        if pos + 2 < slen {
+            let three: String = c + source[pos + 1] + source[pos + 2]
+            if three == "===" || three == "!==" || three == "..." || three == ">>>" || three == "?." + "(" {
+                tokens.push(new_ts_token("OP", three, line, col))
+                pos = pos + 3
+                col = col + 3
+                continue
+            }
+        }
+
+        // Two-character operators
+        if pos + 1 < slen {
+            let two: String = c + source[pos + 1]
+            if two == "==" || two == "!=" || two == "<=" || two == ">=" || two == "+=" || two == "-=" || two == "*=" || two == "/=" || two == "=>" || two == "&&" || two == "||" || two == "++" || two == "--" || two == "**" || two == "?." || two == "??" || two == "<<" || two == ">>" {
+                tokens.push(new_ts_token("OP", two, line, col))
+                pos = pos + 2
+                col = col + 2
+                continue
+            }
+        }
+
+        // Single-character operators and punctuation
+        if c == "+" || c == "-" || c == "*" || c == "/" || c == "%" || c == "=" || c == "<" || c == ">" || c == "!" || c == "&" || c == "|" || c == "^" || c == "~" || c == "(" || c == ")" || c == "[" || c == "]" || c == "{" || c == "}" || c == "," || c == ":" || c == "." || c == ";" || c == "@" || c == "?" {
+            tokens.push(new_ts_token("OP", c, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        }
+
+        // Unknown character: skip
+        pos = pos + 1
+        col = col + 1
+    }
+
+    tokens.push(new_ts_token("EOF", "", line, col))
+    return tokens
+}
+
+// ---------------------------------------------------------------------------
+// Parser state
+// ---------------------------------------------------------------------------
+
+struct TsParser {
+    tokens: List<TsToken>,
+    pos: Int,
+    state: TranspilerState
+}
+
+fn new_ts_parser(tokens: List<TsToken>, filename: String) -> TsParser {
+    let st: TranspilerState = new_state(filename, "typescript")
+    return new TsParser { tokens: tokens, pos: 0, state: st }
+}
+
+fn ts_current(p: TsParser) -> TsToken {
+    if p.pos < len(p.tokens) {
+        return p.tokens[p.pos]
+    }
+    return new_ts_token("EOF", "", 0, 0)
+}
+
+fn ts_advance(p: TsParser) -> TsParser {
+    p.pos = p.pos + 1
+    return p
+}
+
+fn ts_expect_kw(p: TsParser, kw: String) -> TsParser {
+    let t: TsToken = ts_current(p)
+    if t.kind == "KEYWORD" {
+        if t.value == kw {
+            return ts_advance(p)
+        }
+    }
+    return ts_advance(p)
+}
+
+fn ts_expect_op(p: TsParser, op: String) -> TsParser {
+    let t: TsToken = ts_current(p)
+    if t.kind == "OP" {
+        if t.value == op {
+            return ts_advance(p)
+        }
+    }
+    return ts_advance(p)
+}
+
+fn ts_skip_newlines(p: TsParser) -> TsParser {
+    while ts_current(p).kind == "NEWLINE" {
+        p = ts_advance(p)
+    }
+    return p
+}
+
+fn ts_skip_semicolons(p: TsParser) -> TsParser {
+    while ts_current(p).kind == "OP" {
+        if ts_current(p).value != ";" { break }
+        p = ts_advance(p)
+    }
+    return p
+}
+
+fn ts_skip_whitespace(p: TsParser) -> TsParser {
+    p = ts_skip_newlines(p)
+    p = ts_skip_semicolons(p)
+    return p
+}
+
+// ---------------------------------------------------------------------------
+// Type translation
+// ---------------------------------------------------------------------------
+
+fn translate_ts_type(type_str: String) -> String {
+    let mappings: List<TypeMapping> = typescript_type_mappings()
+    return translate_type(type_str, mappings)
+}
+
+// Skip a TS type annotation after ":" (handles generics with angle brackets)
+fn ts_skip_type_annotation(p: TsParser) -> TsParser {
+    if ts_current(p).value != ":" { return p }
+    p = ts_advance(p)
+    // Skip the type expression (handle generic brackets)
+    let mut angle_depth: Int = 0
+    while ts_current(p).kind != "EOF" {
+        let v: String = ts_current(p).value
+        if v == "<" {
+            angle_depth = angle_depth + 1
+            p = ts_advance(p)
+            continue
+        }
+        if v == ">" {
+            if angle_depth > 0 {
+                angle_depth = angle_depth - 1
+                p = ts_advance(p)
+                continue
+            }
+            break
+        }
+        if angle_depth == 0 {
+            if v == "," || v == ")" || v == "{" || v == "=" || v == ";" {
+                break
+            }
+            if ts_current(p).kind == "NEWLINE" { break }
+        }
+        p = ts_advance(p)
+    }
+    return p
+}
+
+// Read a TS type annotation after ":" and return the mapped type
+fn ts_read_type(p: TsParser) -> String {
+    if ts_current(p).value != ":" { return "any" }
+    p = ts_advance(p)
+    let tname: String = ts_current(p).value
+    p = ts_advance(p)
+    // Handle generic: Type<T>
+    if ts_current(p).value == "<" {
+        p = ts_advance(p)
+        let inner: String = ts_current(p).value
+        // Skip to closing >
+        let mut angle_depth: Int = 1
+        while angle_depth > 0 {
+            if ts_current(p).kind == "EOF" { break }
+            if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
+            if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+            p = ts_advance(p)
+        }
+        let mapped_base: String = translate_ts_type(tname)
+        let mapped_inner: String = translate_ts_type(inner)
+        return mapped_base + "<" + mapped_inner + ">"
+    }
+    return translate_ts_type(tname)
+}
+
+// ---------------------------------------------------------------------------
+// TypeScript stdlib shims
+// ---------------------------------------------------------------------------
+
+fn ts_stdlib_shims() -> List<StdlibShim> {
+    let mut shims: List<StdlibShim> = []
+    shims.push(new_shim("console.log", "print", false))
+    shims.push(new_shim("parseInt", "int", false))
+    shims.push(new_shim("parseFloat", "float", false))
+    shims.push(new_shim("String", "str", false))
+    shims.push(new_shim("Number", "float", false))
+    shims.push(new_shim("Math.abs", "abs", false))
+    shims.push(new_shim("Math.min", "min", false))
+    shims.push(new_shim("Math.max", "max", false))
+    shims.push(new_shim("Math.floor", "floor", false))
+    shims.push(new_shim("Math.ceil", "ceil", false))
+    shims.push(new_shim("Math.round", "round", false))
+    shims.push(new_shim("push", "push", true))
+    shims.push(new_shim("pop", "pop", true))
+    shims.push(new_shim("shift", "shift", true))
+    shims.push(new_shim("unshift", "unshift", true))
+    shims.push(new_shim("map", "map", true))
+    shims.push(new_shim("filter", "filter", true))
+    shims.push(new_shim("reduce", "fold", true))
+    shims.push(new_shim("forEach", "for_each", true))
+    shims.push(new_shim("includes", "contains", true))
+    shims.push(new_shim("indexOf", "index_of", true))
+    shims.push(new_shim("join", "join", true))
+    shims.push(new_shim("split", "split", true))
+    shims.push(new_shim("trim", "trim", true))
+    shims.push(new_shim("toLowerCase", "to_lower", true))
+    shims.push(new_shim("toUpperCase", "to_upper", true))
+    shims.push(new_shim("startsWith", "starts_with", true))
+    shims.push(new_shim("endsWith", "ends_with", true))
+    shims.push(new_shim("replace", "replace", true))
+    shims.push(new_shim("slice", "slice", true))
+    shims.push(new_shim("substring", "substr", true))
+    shims.push(new_shim("length", "len", false))
+    shims.push(new_shim("concat", "concat", true))
+    shims.push(new_shim("keys", "keys", true))
+    shims.push(new_shim("values", "values", true))
+    shims.push(new_shim("entries", "entries", true))
+    return shims
+}
+
+// ---------------------------------------------------------------------------
+// Expression translation
+// ---------------------------------------------------------------------------
+
+fn translate_ts_expr(p: TsParser) -> String {
+    let t: TsToken = ts_current(p)
+
+    // String literal
+    if t.kind == "STRING" {
+        p = ts_advance(p)
+        return "\"" + t.value + "\""
+    }
+
+    // Template literal → string interpolation
+    if t.kind == "TEMPLATE" {
+        p = ts_advance(p)
+        return "\"" + t.value + "\""
+    }
+
+    // Int literal
+    if t.kind == "INT" {
+        p = ts_advance(p)
+        return t.value
+    }
+
+    // Float literal
+    if t.kind == "FLOAT" {
+        p = ts_advance(p)
+        return t.value
+    }
+
+    // Boolean/null/undefined literals
+    if t.kind == "KEYWORD" {
+        if t.value == "true" {
+            p = ts_advance(p)
+            return "true"
+        }
+        if t.value == "false" {
+            p = ts_advance(p)
+            return "false"
+        }
+        if t.value == "null" || t.value == "undefined" {
+            p = ts_advance(p)
+            return "None"
+        }
+        if t.value == "new" {
+            p = ts_advance(p)
+            let cname: String = ts_current(p).value
+            p = ts_advance(p)
+            // Skip generic type args: new Map<K,V>(...)
+            if ts_current(p).value == "<" {
+                let mut angle_depth: Int = 1
+                p = ts_advance(p)
+                while angle_depth > 0 {
+                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
+                    if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+                    p = ts_advance(p)
+                }
+            }
+            if ts_current(p).value == "(" {
+                p = ts_advance(p)
+                let mut args: List<String> = []
+                while ts_current(p).value != ")" {
+                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).value == "," {
+                        p = ts_advance(p)
+                        continue
+                    }
+                    let arg: String = translate_ts_expr(p)
+                    args.push(arg)
+                    while ts_current(p).value != "," {
+                        if ts_current(p).value == ")" { break }
+                        if ts_current(p).kind == "EOF" { break }
+                        p = ts_advance(p)
+                    }
+                }
+                if ts_current(p).value == ")" { p = ts_advance(p) }
+                return cname + "(" + join_args(args) + ")"
+            }
+            return cname + "()"
+        }
+        if t.value == "typeof" {
+            p = ts_advance(p)
+            let inner: String = translate_ts_expr(p)
+            return "typeof(" + inner + ")"
+        }
+        if t.value == "await" {
+            p = ts_advance(p)
+            let inner: String = translate_ts_expr(p)
+            return inner
+        }
+        if t.value == "this" {
+            p = ts_advance(p)
+            return "self"
+        }
+    }
+
+    // Identifier or function call
+    if t.kind == "IDENT" {
+        p = ts_advance(p)
+        let mut name: String = t.value
+        // Handle dotted names: console.log, Math.abs
+        while ts_current(p).value == "." {
+            p = ts_advance(p)
+            let member: String = ts_current(p).value
+            p = ts_advance(p)
+            // Check for method call
+            if ts_current(p).value == "(" {
+                p = ts_advance(p)
+                let mut args: List<String> = []
+                while ts_current(p).value != ")" {
+                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).value == "," {
+                        p = ts_advance(p)
+                        continue
+                    }
+                    let arg: String = translate_ts_expr(p)
+                    args.push(arg)
+                    while ts_current(p).value != "," {
+                        if ts_current(p).value == ")" { break }
+                        if ts_current(p).kind == "EOF" { break }
+                        p = ts_advance(p)
+                    }
+                }
+                if ts_current(p).value == ")" { p = ts_advance(p) }
+                let shims: List<StdlibShim> = ts_stdlib_shims()
+                let dotted: String = name + "." + member
+                let shimmed: String = translate_stdlib_call(dotted, args, shims)
+                if shimmed != dotted + "(" + join_args(args) + ")" {
+                    return shimmed
+                }
+                // Try method-only lookup
+                let mut margs: List<String> = []
+                margs.push(name)
+                for ai in 0..len(args) {
+                    margs.push(args[ai])
+                }
+                return translate_stdlib_call(member, margs, shims)
+            }
+            // Optional chaining: obj?.prop → access with None check comment
+            name = name + "." + member
+        }
+        // Check for function call
+        if ts_current(p).value == "(" {
+            p = ts_advance(p)
+            let mut args: List<String> = []
+            while ts_current(p).value != ")" {
+                if ts_current(p).kind == "EOF" { break }
+                if ts_current(p).value == "," {
+                    p = ts_advance(p)
+                    continue
+                }
+                let arg: String = translate_ts_expr(p)
+                args.push(arg)
+                while ts_current(p).value != "," {
+                    if ts_current(p).value == ")" { break }
+                    if ts_current(p).kind == "EOF" { break }
+                    p = ts_advance(p)
+                }
+            }
+            if ts_current(p).value == ")" { p = ts_advance(p) }
+            let shims: List<StdlibShim> = ts_stdlib_shims()
+            return translate_stdlib_call(name, args, shims)
+        }
+        return name
+    }
+
+    // Array literal
+    if t.kind == "OP" {
+        if t.value == "[" {
+            p = ts_advance(p)
+            let mut items: String = ""
+            let mut first: Bool = true
+            while ts_current(p).value != "]" {
+                if ts_current(p).kind == "EOF" { break }
+                if ts_current(p).value == "," {
+                    p = ts_advance(p)
+                    continue
+                }
+                if !first { items = items + ", " }
+                items = items + translate_ts_expr(p)
+                first = false
+                p = ts_advance(p)
+            }
+            if ts_current(p).value == "]" { p = ts_advance(p) }
+            return "[" + items + "]"
+        }
+        // Object literal
+        if t.value == "{" {
+            p = ts_advance(p)
+            let mut items: String = ""
+            let mut first: Bool = true
+            while ts_current(p).value != "}" {
+                if ts_current(p).kind == "EOF" { break }
+                if ts_current(p).value == "," {
+                    p = ts_advance(p)
+                    continue
+                }
+                if !first { items = items + ", " }
+                let key: String = ts_current(p).value
+                p = ts_advance(p)
+                if ts_current(p).value == ":" {
+                    p = ts_advance(p)
+                    let val: String = translate_ts_expr(p)
+                    items = items + key + ": " + val
+                } else {
+                    items = items + key
+                }
+                first = false
+                p = ts_advance(p)
+            }
+            if ts_current(p).value == "}" { p = ts_advance(p) }
+            return "{" + items + "}"
+        }
+        // Arrow function: (params) => expr
+        if t.value == "(" {
+            // Could be arrow function or grouped expression
+            // We'll try to detect arrow functions
+            p = ts_advance(p)
+            let mut items: String = ""
+            let mut first: Bool = true
+            while ts_current(p).value != ")" {
+                if ts_current(p).kind == "EOF" { break }
+                if ts_current(p).value == "," {
+                    p = ts_advance(p)
+                    continue
+                }
+                if !first { items = items + ", " }
+                items = items + ts_current(p).value
+                first = false
+                p = ts_advance(p)
+            }
+            if ts_current(p).value == ")" { p = ts_advance(p) }
+            // Check if arrow follows
+            if ts_current(p).value == "=>" {
+                p = ts_advance(p)
+                return "fn(" + items + ")"
+            }
+            // Not arrow — grouped expression
+            return "(" + items + ")"
+        }
+        // Not operator
+        if t.value == "!" {
+            p = ts_advance(p)
+            let inner: String = translate_ts_expr(p)
+            return "!" + inner
+        }
+    }
+
+    // Fallback
+    p = ts_advance(p)
+    return t.value
+}
+
+// ---------------------------------------------------------------------------
+// Function translation
+// ---------------------------------------------------------------------------
+
+fn translate_ts_function(p: TsParser, ind: String) -> String {
+    // Skip export/async
+    while ts_current(p).kind == "KEYWORD" {
+        let kv: String = ts_current(p).value
+        if kv == "export" || kv == "async" {
+            p = ts_advance(p)
+        } else {
+            break
+        }
+    }
+
+    p = ts_expect_kw(p, "function")
+
+    // Handle generator: function*
+    if ts_current(p).value == "*" { p = ts_advance(p) }
+
+    let name_tok: TsToken = ts_current(p)
+    let name: String = name_tok.value
+    p = ts_advance(p)
+
+    // Skip generic type parameters: <T, U>
+    if ts_current(p).value == "<" {
+        let mut angle_depth: Int = 1
+        p = ts_advance(p)
+        while angle_depth > 0 {
+            if ts_current(p).kind == "EOF" { break }
+            if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
+            if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+            p = ts_advance(p)
+        }
+    }
+
+    p = ts_expect_op(p, "(")
+
+    // Parse parameters
+    let mut params: String = ""
+    let mut first: Bool = true
+    while ts_current(p).value != ")" {
+        if ts_current(p).kind == "EOF" { break }
+        if ts_current(p).value == "," {
+            p = ts_advance(p)
+            continue
+        }
+        if !first { params = params + ", " }
+        // Handle destructuring — skip for now
+        if ts_current(p).value == "{" || ts_current(p).value == "[" {
+            p = ts_advance(p)
+            while ts_current(p).value != "}" {
+                if ts_current(p).value == "]" { break }
+                if ts_current(p).kind == "EOF" { break }
+                p = ts_advance(p)
+            }
+            p = ts_advance(p)
+            params = params + "args"
+            // Skip type annotation
+            p = ts_skip_type_annotation(p)
+        } else {
+            // Handle rest params: ...args
+            if ts_current(p).value == "." {
+                p = ts_advance(p)
+                p = ts_advance(p)
+                p = ts_advance(p)
+            }
+            let pname: String = ts_current(p).value
+            p = ts_advance(p)
+            // Optional param: name?
+            if ts_current(p).value == "?" { p = ts_advance(p) }
+            // Type annotation: name: type
+            if ts_current(p).value == ":" {
+                let ptype: String = ts_read_type(p)
+                p = ts_skip_type_annotation(p)
+                params = params + pname + ": " + ptype
+            } else {
+                params = params + pname
+            }
+        }
+        // Skip default value
+        if ts_current(p).value == "=" {
+            p = ts_advance(p)
+            p = ts_advance(p)
+        }
+        first = false
+    }
+    p = ts_expect_op(p, ")")
+
+    // Return type annotation
+    let mut ret: String = ""
+    if ts_current(p).value == ":" {
+        let rtype: String = ts_read_type(p)
+        p = ts_skip_type_annotation(p)
+        if rtype != "Void" {
+            ret = " -> " + rtype
+        }
+    }
+
+    // Build function output
+    let mut out: String = ind + "fn " + name + "(" + params + ")" + ret + " {\n"
+
+    // Skip opening brace
+    p = ts_skip_whitespace(p)
+    if ts_current(p).value == "{" { p = ts_advance(p) }
+    p = ts_skip_whitespace(p)
+
+    // Translate body until matching closing brace
+    let mut depth: Int = 1
+    let mut body_count: Int = 0
+    while ts_current(p).kind != "EOF" {
+        if depth <= 0 { break }
+        let t: TsToken = ts_current(p)
+
+        if t.kind == "OP" {
+            if t.value == "{" {
+                depth = depth + 1
+                p = ts_advance(p)
+                continue
+            }
+            if t.value == "}" {
+                depth = depth - 1
+                p = ts_advance(p)
+                continue
+            }
+        }
+
+        if t.kind == "KEYWORD" {
+            if t.value == "return" {
+                p = ts_advance(p)
+                let expr: String = translate_ts_expr(p)
+                out = out + ind + "    return " + expr + "\n"
+                while ts_current(p).value != ";" {
+                    if ts_current(p).kind == "NEWLINE" { break }
+                    if ts_current(p).kind == "EOF" { break }
+                    p = ts_advance(p)
+                }
+                p = ts_skip_whitespace(p)
+                body_count = body_count + 1
+                continue
+            }
+            if t.value == "const" || t.value == "let" {
+                let is_mut: Bool = t.value == "let"
+                p = ts_advance(p)
+                let vname: String = ts_current(p).value
+                p = ts_advance(p)
+                // Type annotation
+                let mut vtype: String = ""
+                if ts_current(p).value == ":" {
+                    vtype = ts_read_type(p)
+                    p = ts_skip_type_annotation(p)
+                }
+                // Assignment
+                if ts_current(p).value == "=" {
+                    p = ts_advance(p)
+                    let expr: String = translate_ts_expr(p)
+                    if len(vtype) == 0 { vtype = infer_local_type(expr) }
+                    if is_mut {
+                        out = out + ind + "    let mut " + vname + ": " + vtype + " = " + expr + "\n"
+                    } else {
+                        out = out + ind + "    let " + vname + ": " + vtype + " = " + expr + "\n"
+                    }
+                } else {
+                    if len(vtype) == 0 { vtype = "any" }
+                    if is_mut {
+                        out = out + ind + "    let mut " + vname + ": " + vtype + "\n"
+                    } else {
+                        out = out + ind + "    let " + vname + ": " + vtype + "\n"
+                    }
+                }
+                while ts_current(p).value != ";" {
+                    if ts_current(p).kind == "NEWLINE" { break }
+                    if ts_current(p).kind == "EOF" { break }
+                    p = ts_advance(p)
+                }
+                p = ts_skip_whitespace(p)
+                body_count = body_count + 1
+                continue
+            }
+            if t.value == "if" {
+                p = ts_advance(p)
+                p = ts_expect_op(p, "(")
+                let cond: String = translate_ts_expr(p)
+                while ts_current(p).value != ")" {
+                    if ts_current(p).kind == "EOF" { break }
+                    p = ts_advance(p)
+                }
+                if ts_current(p).value == ")" { p = ts_advance(p) }
+                out = out + ind + "    if " + cond + " {\n"
+                out = out + ind + "        // ...\n"
+                out = out + ind + "    }\n"
+                // Skip if body
+                if ts_current(p).value == "{" {
+                    p = ts_advance(p)
+                    let mut inner_depth: Int = 1
+                    while inner_depth > 0 {
+                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).value == "{" { inner_depth = inner_depth + 1 }
+                        if ts_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        p = ts_advance(p)
+                    }
+                }
+                p = ts_skip_whitespace(p)
+                body_count = body_count + 1
+                continue
+            }
+            if t.value == "for" {
+                p = ts_advance(p)
+                out = out + ind + "    for /* ... */ {\n"
+                out = out + ind + "        // ...\n"
+                out = out + ind + "    }\n"
+                // Skip for header + body
+                while ts_current(p).value != "{" {
+                    if ts_current(p).kind == "EOF" { break }
+                    p = ts_advance(p)
+                }
+                if ts_current(p).value == "{" {
+                    p = ts_advance(p)
+                    let mut inner_depth: Int = 1
+                    while inner_depth > 0 {
+                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).value == "{" { inner_depth = inner_depth + 1 }
+                        if ts_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        p = ts_advance(p)
+                    }
+                }
+                p = ts_skip_whitespace(p)
+                body_count = body_count + 1
+                continue
+            }
+            if t.value == "while" {
+                p = ts_advance(p)
+                p = ts_expect_op(p, "(")
+                let cond: String = translate_ts_expr(p)
+                while ts_current(p).value != ")" {
+                    if ts_current(p).kind == "EOF" { break }
+                    p = ts_advance(p)
+                }
+                if ts_current(p).value == ")" { p = ts_advance(p) }
+                out = out + ind + "    while " + cond + " {\n"
+                out = out + ind + "        // ...\n"
+                out = out + ind + "    }\n"
+                if ts_current(p).value == "{" {
+                    p = ts_advance(p)
+                    let mut inner_depth: Int = 1
+                    while inner_depth > 0 {
+                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).value == "{" { inner_depth = inner_depth + 1 }
+                        if ts_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        p = ts_advance(p)
+                    }
+                }
+                p = ts_skip_whitespace(p)
+                body_count = body_count + 1
+                continue
+            }
+        }
+
+        // Skip to next semicolon or newline
+        while ts_current(p).kind != "NEWLINE" {
+            if ts_current(p).value == ";" { break }
+            if ts_current(p).kind == "EOF" { break }
+            p = ts_advance(p)
+        }
+        p = ts_skip_whitespace(p)
+        body_count = body_count + 1
+        if body_count > 100 { break }
+    }
+
+    out = out + ind + "}\n"
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// Interface → trait translation
+// ---------------------------------------------------------------------------
+
+fn translate_ts_interface(p: TsParser, ind: String) -> String {
+    // Skip export
+    if ts_current(p).value == "export" { p = ts_advance(p) }
+    p = ts_expect_kw(p, "interface")
+    let iname: String = ts_current(p).value
+    p = ts_advance(p)
+
+    // Skip generic type params
+    if ts_current(p).value == "<" {
+        let mut angle_depth: Int = 1
+        p = ts_advance(p)
+        while angle_depth > 0 {
+            if ts_current(p).kind == "EOF" { break }
+            if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
+            if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+            p = ts_advance(p)
+        }
+    }
+
+    // Skip extends
+    if ts_current(p).value == "extends" {
+        p = ts_advance(p)
+        while ts_current(p).value != "{" {
+            if ts_current(p).kind == "EOF" { break }
+            p = ts_advance(p)
+        }
+    }
+
+    let mut out: String = ind + "trait " + iname + " {\n"
+
+    // Parse interface body
+    if ts_current(p).value == "{" { p = ts_advance(p) }
+    p = ts_skip_whitespace(p)
+
+    let mut depth: Int = 1
+    let mut method_count: Int = 0
+    while depth > 0 {
+        if ts_current(p).kind == "EOF" { break }
+        if ts_current(p).value == "}" {
+            depth = depth - 1
+            p = ts_advance(p)
+            continue
+        }
+        if ts_current(p).value == "{" {
+            depth = depth + 1
+            p = ts_advance(p)
+            continue
+        }
+
+        // Method signature: name(params): ReturnType
+        if ts_current(p).kind == "IDENT" {
+            let mname: String = ts_current(p).value
+            p = ts_advance(p)
+            // Optional: name?
+            if ts_current(p).value == "?" { p = ts_advance(p) }
+            if ts_current(p).value == "(" {
+                // Method signature
+                p = ts_advance(p)
+                let mut params: String = "self"
+                while ts_current(p).value != ")" {
+                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).value == "," {
+                        p = ts_advance(p)
+                        continue
+                    }
+                    let pname: String = ts_current(p).value
+                    p = ts_advance(p)
+                    if ts_current(p).value == "?" { p = ts_advance(p) }
+                    if ts_current(p).value == ":" {
+                        let ptype: String = ts_read_type(p)
+                        p = ts_skip_type_annotation(p)
+                        params = params + ", " + pname + ": " + ptype
+                    } else {
+                        params = params + ", " + pname
+                    }
+                }
+                if ts_current(p).value == ")" { p = ts_advance(p) }
+                let mut ret: String = ""
+                if ts_current(p).value == ":" {
+                    let rtype: String = ts_read_type(p)
+                    p = ts_skip_type_annotation(p)
+                    if rtype != "Void" { ret = " -> " + rtype }
+                }
+                out = out + ind + "    fn " + mname + "(" + params + ")" + ret + "\n"
+                method_count = method_count + 1
+            } else {
+                // Property signature: name: Type
+                let ptype: String = ts_read_type(p)
+                p = ts_skip_type_annotation(p)
+                out = out + ind + "    // property " + mname + ": " + ptype + "\n"
+            }
+        }
+
+        // Skip semicolons, commas, newlines
+        while ts_current(p).value == ";" || ts_current(p).value == "," || ts_current(p).kind == "NEWLINE" {
+            p = ts_advance(p)
+        }
+        method_count = method_count + 1
+        if method_count > 100 { break }
+    }
+
+    out = out + ind + "}\n"
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// Class → struct + impl translation
+// ---------------------------------------------------------------------------
+
+fn translate_ts_class(p: TsParser, ind: String) -> String {
+    // Skip export/abstract
+    while ts_current(p).kind == "KEYWORD" {
+        let kv: String = ts_current(p).value
+        if kv == "export" || kv == "abstract" {
+            p = ts_advance(p)
+        } else {
+            break
+        }
+    }
+    p = ts_expect_kw(p, "class")
+    let cname: String = ts_current(p).value
+    p = ts_advance(p)
+
+    // Skip generic type params, extends, implements
+    while ts_current(p).kind != "EOF" {
+        if ts_current(p).value == "{" { break }
+        p = ts_advance(p)
+    }
+    if ts_current(p).value == "{" { p = ts_advance(p) }
+    p = ts_skip_whitespace(p)
+
+    let mut fields: List<FieldDef> = []
+    let mut methods: List<MethodDef> = []
+
+    let mut depth: Int = 1
+    let mut iter_count: Int = 0
+    while depth > 0 {
+        if ts_current(p).kind == "EOF" { break }
+        iter_count = iter_count + 1
+        if iter_count > 500 { break }
+
+        let t: TsToken = ts_current(p)
+        if t.value == "}" {
+            depth = depth - 1
+            p = ts_advance(p)
+            continue
+        }
+        if t.value == "{" {
+            depth = depth + 1
+            p = ts_advance(p)
+            continue
+        }
+
+        // Skip modifiers: public, private, protected, static, readonly, abstract
+        let mut is_static: Bool = false
+        while ts_current(p).kind == "KEYWORD" || ts_current(p).kind == "IDENT" {
+            let kv: String = ts_current(p).value
+            if kv == "public" || kv == "private" || kv == "protected" || kv == "readonly" || kv == "abstract" {
+                p = ts_advance(p)
+                continue
+            }
+            if kv == "static" {
+                is_static = true
+                p = ts_advance(p)
+                continue
+            }
+            break
+        }
+
+        // Constructor
+        if ts_current(p).kind == "IDENT" {
+            if ts_current(p).value == "constructor" {
+                p = ts_advance(p)
+                // Skip params, extract fields from constructor params
+                if ts_current(p).value == "(" {
+                    p = ts_advance(p)
+                    while ts_current(p).value != ")" {
+                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).value == "," {
+                            p = ts_advance(p)
+                            continue
+                        }
+                        // Skip access modifiers in params
+                        if ts_current(p).value == "public" || ts_current(p).value == "private" || ts_current(p).value == "protected" || ts_current(p).value == "readonly" {
+                            p = ts_advance(p)
+                            continue
+                        }
+                        let fname: String = ts_current(p).value
+                        p = ts_advance(p)
+                        if ts_current(p).value == "?" { p = ts_advance(p) }
+                        let mut ftype: String = "any"
+                        if ts_current(p).value == ":" {
+                            ftype = ts_read_type(p)
+                            p = ts_skip_type_annotation(p)
+                        }
+                        if ts_current(p).value == "=" {
+                            p = ts_advance(p)
+                            p = ts_advance(p)
+                        }
+                        fields.push(new_field(fname, ftype))
+                    }
+                    if ts_current(p).value == ")" { p = ts_advance(p) }
+                }
+                // Skip constructor body
+                if ts_current(p).value == "{" {
+                    p = ts_advance(p)
+                    let mut inner_depth: Int = 1
+                    while inner_depth > 0 {
+                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).value == "{" { inner_depth = inner_depth + 1 }
+                        if ts_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        p = ts_advance(p)
+                    }
+                }
+                p = ts_skip_whitespace(p)
+                continue
+            }
+        }
+
+        // Method or property
+        if ts_current(p).kind == "IDENT" {
+            let mname: String = ts_current(p).value
+            p = ts_advance(p)
+            if ts_current(p).value == "?" { p = ts_advance(p) }
+            // Method: name(...) { ... }
+            if ts_current(p).value == "(" || ts_current(p).value == "<" {
+                let m: MethodDef = new_method(mname, "any")
+                m.is_static = is_static
+                m.body_lines.push("// " + mname + " body")
+                methods.push(m)
+                // Skip generic params
+                if ts_current(p).value == "<" {
+                    let mut angle_depth: Int = 1
+                    p = ts_advance(p)
+                    while angle_depth > 0 {
+                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
+                        if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+                        p = ts_advance(p)
+                    }
+                }
+                // Skip params
+                if ts_current(p).value == "(" {
+                    p = ts_advance(p)
+                    while ts_current(p).value != ")" {
+                        if ts_current(p).kind == "EOF" { break }
+                        p = ts_advance(p)
+                    }
+                    if ts_current(p).value == ")" { p = ts_advance(p) }
+                }
+                // Skip return type
+                p = ts_skip_type_annotation(p)
+                // Skip method body
+                if ts_current(p).value == "{" {
+                    p = ts_advance(p)
+                    let mut inner_depth: Int = 1
+                    while inner_depth > 0 {
+                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).value == "{" { inner_depth = inner_depth + 1 }
+                        if ts_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        p = ts_advance(p)
+                    }
+                }
+                p = ts_skip_whitespace(p)
+                continue
+            }
+            // Property: name: Type [= value];
+            if ts_current(p).value == ":" || ts_current(p).value == "=" || ts_current(p).value == ";" {
+                let mut ftype: String = "any"
+                if ts_current(p).value == ":" {
+                    ftype = ts_read_type(p)
+                    p = ts_skip_type_annotation(p)
+                }
+                fields.push(new_field(mname, ftype))
+                // Skip initializer
+                if ts_current(p).value == "=" {
+                    p = ts_advance(p)
+                    while ts_current(p).value != ";" {
+                        if ts_current(p).kind == "NEWLINE" { break }
+                        if ts_current(p).kind == "EOF" { break }
+                        p = ts_advance(p)
+                    }
+                }
+                p = ts_skip_whitespace(p)
+                continue
+            }
+        }
+
+        p = ts_advance(p)
+        p = ts_skip_whitespace(p)
+    }
+
+    return translate_class_to_struct(cname, fields, methods, ind)
+}
+
+// ---------------------------------------------------------------------------
+// Enum translation
+// ---------------------------------------------------------------------------
+
+fn translate_ts_enum(p: TsParser, ind: String) -> String {
+    if ts_current(p).value == "export" { p = ts_advance(p) }
+    if ts_current(p).value == "const" { p = ts_advance(p) }
+    p = ts_expect_kw(p, "enum")
+    let ename: String = ts_current(p).value
+    p = ts_advance(p)
+
+    let mut out: String = ind + "enum " + ename + " {\n"
+
+    if ts_current(p).value == "{" { p = ts_advance(p) }
+    p = ts_skip_whitespace(p)
+
+    let mut member_count: Int = 0
+    while ts_current(p).value != "}" {
+        if ts_current(p).kind == "EOF" { break }
+        if ts_current(p).value == "," {
+            p = ts_advance(p)
+            p = ts_skip_whitespace(p)
+            continue
+        }
+        let mname: String = ts_current(p).value
+        p = ts_advance(p)
+        // Skip = value
+        if ts_current(p).value == "=" {
+            p = ts_advance(p)
+            p = ts_advance(p)
+        }
+        out = out + ind + "    " + mname + "\n"
+        member_count = member_count + 1
+        p = ts_skip_whitespace(p)
+        if member_count > 100 { break }
+    }
+    if ts_current(p).value == "}" { p = ts_advance(p) }
+
+    out = out + ind + "}\n"
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// Type alias translation
+// ---------------------------------------------------------------------------
+
+fn translate_ts_type_alias(p: TsParser, ind: String) -> String {
+    if ts_current(p).value == "export" { p = ts_advance(p) }
+    p = ts_expect_kw(p, "type")
+    let tname: String = ts_current(p).value
+    p = ts_advance(p)
+    // Skip generic params
+    if ts_current(p).value == "<" {
+        let mut angle_depth: Int = 1
+        p = ts_advance(p)
+        while angle_depth > 0 {
+            if ts_current(p).kind == "EOF" { break }
+            if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
+            if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+            p = ts_advance(p)
+        }
+    }
+    // Skip = and type expression
+    let mut out: String = ind + "// type alias " + tname + " = "
+    if ts_current(p).value == "=" { p = ts_advance(p) }
+    let mut type_text: String = ""
+    while ts_current(p).value != ";" {
+        if ts_current(p).kind == "NEWLINE" { break }
+        if ts_current(p).kind == "EOF" { break }
+        type_text = type_text + ts_current(p).value + " "
+        p = ts_advance(p)
+    }
+    out = out + type_text + "\n"
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// Main translation entry point
+// ---------------------------------------------------------------------------
+
+fn translate_typescript(source: String, filename: String) -> String {
+    let tokens: List<TsToken> = tokenize_typescript(source)
+    let mut p: TsParser = new_ts_parser(tokens, filename)
+    let mut out_text: String = "// Translated from " + filename + " by mapanare transpile\n\n"
+
+    p = ts_skip_whitespace(p)
+
+    while ts_current(p).kind != "EOF" {
+        let t: TsToken = ts_current(p)
+
+        // Skip export keyword before declarations
+        if t.kind == "KEYWORD" {
+            if t.value == "export" {
+                // Peek at what follows export
+                let next_pos: Int = p.pos + 1
+                if next_pos < len(p.tokens) {
+                    let next: TsToken = p.tokens[next_pos]
+                    if next.value == "default" {
+                        p = ts_advance(p)
+                        p = ts_advance(p)
+                        continue
+                    }
+                }
+                // Don't consume — let individual translators handle it
+            }
+            if t.value == "import" {
+                while ts_current(p).value != ";" {
+                    if ts_current(p).kind == "NEWLINE" { break }
+                    if ts_current(p).kind == "EOF" { break }
+                    p = ts_advance(p)
+                }
+                p = ts_skip_whitespace(p)
+                out_text = out_text + "// import skipped\n"
+                continue
+            }
+            if t.value == "function" || (t.value == "export" && p.pos + 1 < len(p.tokens)) || t.value == "async" {
+                // Check if this is a function
+                let mut look: Int = p.pos
+                let mut is_fn: Bool = false
+                while look < len(p.tokens) {
+                    if p.tokens[look].value == "function" {
+                        is_fn = true
+                        break
+                    }
+                    if p.tokens[look].value == "{" { break }
+                    if p.tokens[look].kind == "NEWLINE" { break }
+                    look = look + 1
+                }
+                if is_fn {
+                    out_text = out_text + translate_ts_function(p, "") + "\n"
+                    while ts_current(p).kind != "EOF" {
+                        if ts_current(p).kind == "KEYWORD" {
+                            let kv: String = ts_current(p).value
+                            if kv == "function" || kv == "class" || kv == "interface" || kv == "enum" || kv == "type" || kv == "export" || kv == "const" || kv == "let" {
+                                break
+                            }
+                        }
+                        p = ts_advance(p)
+                    }
+                    continue
+                }
+            }
+            if t.value == "interface" || (t.value == "export" && p.pos + 1 < len(p.tokens) && p.tokens[p.pos + 1].value == "interface") {
+                out_text = out_text + translate_ts_interface(p, "") + "\n"
+                while ts_current(p).kind != "EOF" {
+                    if ts_current(p).kind == "KEYWORD" {
+                        let kv: String = ts_current(p).value
+                        if kv == "function" || kv == "class" || kv == "interface" || kv == "enum" || kv == "type" || kv == "export" || kv == "const" || kv == "let" {
+                            break
+                        }
+                    }
+                    p = ts_advance(p)
+                }
+                continue
+            }
+            if t.value == "class" || t.value == "abstract" || (t.value == "export" && p.pos + 1 < len(p.tokens) && p.tokens[p.pos + 1].value == "class") {
+                out_text = out_text + translate_ts_class(p, "") + "\n"
+                while ts_current(p).kind != "EOF" {
+                    if ts_current(p).kind == "KEYWORD" {
+                        let kv: String = ts_current(p).value
+                        if kv == "function" || kv == "class" || kv == "interface" || kv == "enum" || kv == "type" || kv == "export" || kv == "const" || kv == "let" {
+                            break
+                        }
+                    }
+                    p = ts_advance(p)
+                }
+                continue
+            }
+            if t.value == "enum" || (t.value == "export" && p.pos + 1 < len(p.tokens) && p.tokens[p.pos + 1].value == "enum") || (t.value == "const" && p.pos + 1 < len(p.tokens) && p.tokens[p.pos + 1].value == "enum") {
+                out_text = out_text + translate_ts_enum(p, "") + "\n"
+                while ts_current(p).kind != "EOF" {
+                    if ts_current(p).kind == "KEYWORD" {
+                        let kv: String = ts_current(p).value
+                        if kv == "function" || kv == "class" || kv == "interface" || kv == "enum" || kv == "type" || kv == "export" || kv == "const" || kv == "let" {
+                            break
+                        }
+                    }
+                    p = ts_advance(p)
+                }
+                continue
+            }
+            if t.value == "type" || (t.value == "export" && p.pos + 1 < len(p.tokens) && p.tokens[p.pos + 1].value == "type") {
+                out_text = out_text + translate_ts_type_alias(p, "") + "\n"
+                while ts_current(p).value != ";" {
+                    if ts_current(p).kind == "NEWLINE" { break }
+                    if ts_current(p).kind == "EOF" { break }
+                    p = ts_advance(p)
+                }
+                p = ts_skip_whitespace(p)
+                continue
+            }
+            // const/let at top level
+            if t.value == "const" || t.value == "let" || t.value == "var" {
+                let is_mut: Bool = t.value != "const"
+                p = ts_advance(p)
+                let vname: String = ts_current(p).value
+                p = ts_advance(p)
+                let mut vtype: String = ""
+                if ts_current(p).value == ":" {
+                    vtype = ts_read_type(p)
+                    p = ts_skip_type_annotation(p)
+                }
+                if ts_current(p).value == "=" {
+                    p = ts_advance(p)
+                    let expr: String = translate_ts_expr(p)
+                    if len(vtype) == 0 { vtype = infer_local_type(expr) }
+                    if is_mut {
+                        out_text = out_text + "let mut " + vname + ": " + vtype + " = " + expr + "\n"
+                    } else {
+                        out_text = out_text + "let " + vname + ": " + vtype + " = " + expr + "\n"
+                    }
+                }
+                while ts_current(p).value != ";" {
+                    if ts_current(p).kind == "NEWLINE" { break }
+                    if ts_current(p).kind == "EOF" { break }
+                    p = ts_advance(p)
+                }
+                p = ts_skip_whitespace(p)
+                continue
+            }
+        }
+
+        // Skip other top-level tokens
+        p = ts_advance(p)
+    }
+
+    return out_text
+}
