@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.24.0] - 2026-04-07
+
+### Added
+
+- Python transpiler — `mapanare compile main.py` compiles typed Python to native
+- `mapanare transpile main.py` outputs idiomatic `.mn` source
+- `from_python.py`: PythonTranslator class (~500 lines) — functions, classes (→struct+impl), control flow, type inference, f-strings, lambdas
+- Python method mapping (append→push, strip→trim, upper→to_upper, etc.)
+- Type mapping: int→Int, float→Float, str→String, bool→Bool, list→List, dict→Map
+- Auto-detection: `.py` files transparently translated in all CLI commands
+- 44 Python compatibility tests across 11 test classes
+
 ## [3.23.0] - 2026-04-07
 
 ### Added
@@ -641,7 +653,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.23.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.24.0...HEAD
+[3.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.23.0...v3.24.0
 [3.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.22.0...v3.23.0
 [3.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.21.0...v3.22.0
 [3.21.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.20.0...v3.21.0

@@ -30,12 +30,28 @@ except Exception:
 
 
 def _read_source(path: str) -> str:
-    """Read an .mn source file, exiting on error."""
+    """Read a source file, exiting on error.
+
+    If *path* ends with ``.py``, the file is first translated from Python
+    to Mapanare source text via :mod:`mapanare.from_python`.
+    """
     if not os.path.isfile(path):
         print(f"error: file not found: {path}", file=sys.stderr)
         sys.exit(1)
     with open(path, encoding="utf-8") as f:
-        return f.read()
+        source = f.read()
+
+    if path.endswith(".py"):
+        from mapanare.from_python import TranslateError, translate_to_mn
+
+        try:
+            source = translate_to_mn(source, filename=path)
+        except TranslateError as e:
+            print(f"error: Python translation failed: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"info: translated {path} from Python to Mapanare", file=sys.stderr)
+
+    return source
 
 
 def _emit_parse_error(e: ParseError, source: str, filename: str) -> None:
@@ -1369,6 +1385,34 @@ def cmd_deploy(args: argparse.Namespace) -> None:
         print(f"\ndeploy: {len(created)} file(s) generated in {os.path.abspath(project_dir)}")
 
 
+def cmd_transpile(args: argparse.Namespace) -> None:
+    """Transpile a Python (.py) source file to Mapanare (.mn) source."""
+    from mapanare.from_python import TranslateError, translate_to_mn
+
+    path = args.source
+    if not os.path.isfile(path):
+        print(f"error: file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(path, encoding="utf-8") as f:
+        py_source = f.read()
+
+    try:
+        mn_source = translate_to_mn(py_source, filename=path)
+    except TranslateError as e:
+        print(f"error: translation failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    out_path = args.o
+    if out_path is None:
+        out_path = path.replace(".py", ".mn") if path.endswith(".py") else path + ".mn"
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(mn_source)
+
+    print(f"transpiled {path} -> {out_path}")
+
+
 def cmd_targets(args: argparse.Namespace) -> None:
     """List all supported compilation targets."""
     print("Supported targets:\n")
@@ -1872,6 +1916,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Entry point .mn file (default: main.mn)",
     )
     p_deploy.set_defaults(func=cmd_deploy)
+
+    # transpile (Python → Mapanare)
+    p_transpile = subparsers.add_parser(
+        "transpile", help="Transpile Python (.py) source to Mapanare (.mn)"
+    )
+    p_transpile.add_argument("source", help="Path to .py source file")
+    p_transpile.add_argument("-o", metavar="OUTPUT", help="Output .mn file path", default=None)
+    p_transpile.set_defaults(func=cmd_transpile)
 
     return parser
 

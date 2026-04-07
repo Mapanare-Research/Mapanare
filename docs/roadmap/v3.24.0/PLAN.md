@@ -4,7 +4,7 @@
 > parses Python, translates to Mapanare AST, and runs the full compilation
 > pipeline: semantic check, MIR lowering, LLVM IR, native binary.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Large (3-4 sessions)
 **Breaking:** No
 **Prerequisite:** v3.23.0 (`any` type required for untyped expressions)
