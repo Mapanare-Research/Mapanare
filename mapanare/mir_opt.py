@@ -1121,23 +1121,26 @@ def optimize_function(fn: MIRFunction, level: MIROptLevel, stats: MIRPassStats) 
                 break
 
     # O2+: Copy propagation, DCE, unreachable blocks, branch simplification
+    # Wrapped in a convergence loop like O1 to reach a fixed point.
     if level >= MIROptLevel.O2:
-        o2_changed = copy_propagation(fn, stats)
-        o2_changed |= branch_simplification(fn, stats)
-        o2_changed |= unreachable_block_elimination(fn, stats)
-        # Run DCE after other passes have created dead code
-        dead_code_elimination(fn, stats)
-        # Agent inlining
-        o2_changed |= agent_inlining(fn, stats)
+        for _ in range(max_iterations):
+            o2_changed = copy_propagation(fn, stats)
+            o2_changed |= branch_simplification(fn, stats)
+            o2_changed |= unreachable_block_elimination(fn, stats)
+            # Run DCE after other passes have created dead code
+            o2_changed |= dead_code_elimination(fn, stats)
+            # Agent inlining
+            o2_changed |= agent_inlining(fn, stats)
+            if not o2_changed:
+                break
 
     # O3: Stream fusion
     if level >= MIROptLevel.O3:
-        o2_changed |= stream_fusion(fn, stats)
-
-    # Final cleanup: only re-run DCE if earlier passes created new dead code
-    if level >= MIROptLevel.O2 and o2_changed:
-        dead_code_elimination(fn, stats)
-        unreachable_block_elimination(fn, stats)
+        o3_changed = stream_fusion(fn, stats)
+        # Re-run DCE if stream fusion created dead code
+        if o3_changed:
+            dead_code_elimination(fn, stats)
+            unreachable_block_elimination(fn, stats)
 
 
 def optimize_module(

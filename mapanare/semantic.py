@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -101,6 +102,7 @@ __all__ = [
     "SemanticError",
     "SemanticErrors",
     "SemanticChecker",
+    "SymbolKind",
     "check",
     "check_or_raise",
     "TypeInfo",
@@ -151,13 +153,32 @@ class SemanticErrors(Exception):
 # ---------------------------------------------------------------------------
 
 
+class SymbolKind(StrEnum):
+    """Kind of a declared symbol.
+
+    Inherits from ``StrEnum`` so that ``SymbolKind.VARIABLE == "variable"``
+    evaluates to ``True``, keeping backward compatibility with existing string
+    comparisons.
+    """
+
+    VARIABLE = "variable"
+    FUNCTION = "function"
+    AGENT = "agent"
+    STRUCT = "struct"
+    ENUM = "enum"
+    TYPE_ALIAS = "type_alias"
+    PIPE = "pipe"
+    PARAM = "param"
+    TRAIT = "trait"
+    MODULE = "module"
+
+
 @dataclass
 class Symbol:
     """A declared symbol (variable, function, type, agent, etc.)."""
 
     name: str
-    kind: str  # "variable", "function", "agent", "struct", "enum",
-    # "type_alias", "pipe", "param", "trait"
+    kind: SymbolKind
     type_info: TypeInfo = field(default_factory=lambda: UNKNOWN_TYPE)
     mutable: bool = False
     node: ASTNode | None = None
@@ -249,7 +270,7 @@ class SemanticChecker:
                 trait_name,
                 Symbol(
                     name=trait_name,
-                    kind="trait",
+                    kind=SymbolKind.TRAIT,
                     type_info=TypeInfo(kind=TypeKind.TRAIT, name=trait_name),
                     node=builtin_trait_node,
                 ),
@@ -261,7 +282,7 @@ class SemanticChecker:
                 name,
                 Symbol(
                     name=name,
-                    kind="function",
+                    kind=SymbolKind.FUNCTION,
                     type_info=TypeInfo(
                         kind=TypeKind.BUILTIN_FN,
                         is_function=True,
@@ -326,13 +347,13 @@ class SemanticChecker:
             # User-defined type — look up in scope to determine kind
             sym = self.global_scope.lookup(te.name)
             if sym is not None:
-                if sym.kind == "struct":
+                if sym.kind == SymbolKind.STRUCT:
                     return TypeInfo(kind=TypeKind.STRUCT, name=te.name)
-                elif sym.kind == "enum":
+                elif sym.kind == SymbolKind.ENUM:
                     return TypeInfo(kind=TypeKind.ENUM, name=te.name)
-                elif sym.kind == "agent":
+                elif sym.kind == SymbolKind.AGENT:
                     return TypeInfo(kind=TypeKind.AGENT, name=te.name)
-                elif sym.kind == "type_alias":
+                elif sym.kind == SymbolKind.TYPE_ALIAS:
                     return sym.type_info
             # Check if this is a type parameter (from a generic function)
             if te.name in self._current_type_params:
@@ -435,7 +456,7 @@ class SemanticChecker:
             sym = None
             if isinstance(expr.object, Identifier):
                 sym = self.current_scope.lookup(expr.object.name)
-            if sym and sym.kind == "agent" and sym.node and isinstance(sym.node, AgentDef):
+            if sym and sym.kind == SymbolKind.AGENT and sym.node and isinstance(sym.node, AgentDef):
                 agent = sym.node
                 for inp in agent.inputs:
                     if inp.name == expr.field_name:
@@ -500,9 +521,9 @@ class SemanticChecker:
             # Look up the struct/enum in scope
             sym = self.global_scope.lookup(expr.name)
             if sym is not None:
-                if sym.kind == "struct":
+                if sym.kind == SymbolKind.STRUCT:
                     return TypeInfo(kind=TypeKind.STRUCT, name=expr.name)
-                elif sym.kind == "enum":
+                elif sym.kind == SymbolKind.ENUM:
                     return TypeInfo(kind=TypeKind.ENUM, name=expr.name)
             return TypeInfo(kind=TypeKind.STRUCT, name=expr.name)
         if isinstance(expr, SomeExpr):
@@ -721,7 +742,7 @@ class SemanticChecker:
             if sym is None:
                 self._error(f"Undefined function '{expr.callee.name}'", expr.callee)
                 return UNKNOWN_TYPE
-            if sym.kind == "function":
+            if sym.kind == SymbolKind.FUNCTION:
                 # println is deprecated — use print instead
                 if expr.callee.name == "println":
                     self._warning(
@@ -775,9 +796,9 @@ class SemanticChecker:
                         )
                     return sym.type_info.return_type
                 return UNKNOWN_TYPE
-            if sym.kind == "agent":
+            if sym.kind == SymbolKind.AGENT:
                 return TypeInfo(kind=TypeKind.AGENT, name=sym.name)
-            if sym.kind == "struct":
+            if sym.kind == SymbolKind.STRUCT:
                 return TypeInfo(kind=TypeKind.STRUCT, name=sym.name)
             # Calling a variable that might be a function type
             return UNKNOWN_TYPE
@@ -908,7 +929,7 @@ class SemanticChecker:
             ty = subject_type if subject_type is not None else UNKNOWN_TYPE
             self.current_scope.define(
                 pattern.name,
-                Symbol(name=pattern.name, kind="variable", type_info=ty),
+                Symbol(name=pattern.name, kind=SymbolKind.VARIABLE, type_info=ty),
             )
         elif isinstance(pattern, ConstructorPattern):
             field_types = self._resolve_variant_fields(subject_type, pattern.name)
@@ -980,7 +1001,7 @@ class SemanticChecker:
 
         # Check if it's an enum variant access (EnumName::VariantName)
         sym = self.current_scope.lookup(ns)
-        if sym is not None and sym.kind == "enum":
+        if sym is not None and sym.kind == SymbolKind.ENUM:
             return TypeInfo(kind=TypeKind.ENUM, name=ns)
 
         return UNKNOWN_TYPE
@@ -995,7 +1016,7 @@ class SemanticChecker:
             param_types.append(pt)
             self.current_scope.define(
                 p.name,
-                Symbol(name=p.name, kind="param", type_info=pt),
+                Symbol(name=p.name, kind=SymbolKind.PARAM, type_info=pt),
             )
         if isinstance(expr.body, Block):
             self._check_block(expr.body)
@@ -1018,7 +1039,7 @@ class SemanticChecker:
             if sym is None:
                 self._error(f"Undefined agent '{expr.callee.name}'", expr.callee)
                 return UNKNOWN_TYPE
-            if sym.kind not in ("agent", "variable"):
+            if sym.kind not in (SymbolKind.AGENT, SymbolKind.VARIABLE):
                 # "variable" with unknown type may be an imported agent
                 self._error(
                     f"'spawn' requires an agent, but '{expr.callee.name}' is a {sym.kind}",
@@ -1034,7 +1055,7 @@ class SemanticChecker:
     def _find_agent_def(self, type_name: str) -> AgentDef | None:
         """Look up an AgentDef by type name from the global scope."""
         sym = self.global_scope.lookup(type_name)
-        if sym and sym.kind == "agent" and sym.node and isinstance(sym.node, AgentDef):
+        if sym and sym.kind == SymbolKind.AGENT and sym.node and isinstance(sym.node, AgentDef):
             return sym.node
         return None
 
@@ -1048,7 +1069,7 @@ class SemanticChecker:
             if sym:
                 # Resolve the agent definition from the variable's type
                 agent_def: AgentDef | None = None
-                if sym.kind == "agent" and sym.node and isinstance(sym.node, AgentDef):
+                if sym.kind == SymbolKind.AGENT and sym.node and isinstance(sym.node, AgentDef):
                     agent_def = sym.node
                 elif sym.type_info.kind not in (
                     TypeKind.UNKNOWN,
@@ -1088,7 +1109,7 @@ class SemanticChecker:
             if sym is None:
                 self._error(f"Undefined function '{expr.right.name}'", expr.right)
                 return UNKNOWN_TYPE
-            if sym.kind == "function" and sym.type_info.is_function:
+            if sym.kind == SymbolKind.FUNCTION and sym.type_info.is_function:
                 # Check that piped value type matches first param
                 if sym.type_info.param_types:
                     expected = sym.type_info.param_types[0]
@@ -1107,7 +1128,7 @@ class SemanticChecker:
                         )
                 if sym.type_info.return_type:
                     return sym.type_info.return_type
-            if sym.kind == "agent":
+            if sym.kind == SymbolKind.AGENT:
                 return TypeInfo(kind=TypeKind.AGENT, name=sym.name)
             return UNKNOWN_TYPE
         if isinstance(expr.right, CallExpr):
@@ -1131,7 +1152,7 @@ class SemanticChecker:
                     prev_output = UNKNOWN_TYPE
                     continue
 
-                if sym.kind == "agent" and sym.node and isinstance(sym.node, AgentDef):
+                if sym.kind == SymbolKind.AGENT and sym.node and isinstance(sym.node, AgentDef):
                     agent = sym.node
                     # Check input type matches previous output
                     if agent.inputs and prev_output.kind != TypeKind.UNKNOWN:
@@ -1151,7 +1172,7 @@ class SemanticChecker:
                         prev_output = self._resolve_type_expr(agent.outputs[0].type_annotation)
                     else:
                         prev_output = UNKNOWN_TYPE
-                elif sym.kind == "function" and sym.type_info.is_function:
+                elif sym.kind == SymbolKind.FUNCTION and sym.type_info.is_function:
                     if sym.type_info.param_types and prev_output.kind != TypeKind.UNKNOWN:
                         expected = sym.type_info.param_types[0]
                         if expected.kind != TypeKind.UNKNOWN and expected != prev_output:
@@ -1229,7 +1250,7 @@ class SemanticChecker:
             let.name,
             Symbol(
                 name=let.name,
-                kind="variable",
+                kind=SymbolKind.VARIABLE,
                 type_info=resolved,
                 mutable=let.mutable,
             ),
@@ -1251,7 +1272,7 @@ class SemanticChecker:
         self._push_scope()
         self.current_scope.define(
             loop.var_name,
-            Symbol(name=loop.var_name, kind="variable", type_info=elem_type),
+            Symbol(name=loop.var_name, kind=SymbolKind.VARIABLE, type_info=elem_type),
         )
         self._check_block(loop.body)
         self._pop_scope()
@@ -1269,7 +1290,12 @@ class SemanticChecker:
         sig_type = TypeInfo(kind=TypeKind.SIGNAL, args=[resolved])
         self.current_scope.define(
             decl.name,
-            Symbol(name=decl.name, kind="variable", type_info=sig_type, mutable=decl.mutable),
+            Symbol(
+                name=decl.name,
+                kind=SymbolKind.VARIABLE,
+                type_info=sig_type,
+                mutable=decl.mutable,
+            ),
         )
 
     def _check_stream_decl(self, decl: StreamDecl) -> None:
@@ -1279,7 +1305,7 @@ class SemanticChecker:
         stream_type = TypeInfo(kind=TypeKind.STREAM, args=[resolved])
         self.current_scope.define(
             decl.name,
-            Symbol(name=decl.name, kind="variable", type_info=stream_type),
+            Symbol(name=decl.name, kind=SymbolKind.VARIABLE, type_info=stream_type),
         )
 
     # -- Definition registration (first pass) ---------------------------
@@ -1304,14 +1330,14 @@ class SemanticChecker:
             )
             self.global_scope.define(
                 defn.name,
-                Symbol(name=defn.name, kind="function", type_info=fn_type, node=defn),
+                Symbol(name=defn.name, kind=SymbolKind.FUNCTION, type_info=fn_type, node=defn),
             )
         elif isinstance(defn, AgentDef):
             self.global_scope.define(
                 defn.name,
                 Symbol(
                     name=defn.name,
-                    kind="agent",
+                    kind=SymbolKind.AGENT,
                     type_info=TypeInfo(kind=TypeKind.AGENT, name=defn.name),
                     node=defn,
                 ),
@@ -1321,7 +1347,7 @@ class SemanticChecker:
                 defn.name,
                 Symbol(
                     name=defn.name,
-                    kind="struct",
+                    kind=SymbolKind.STRUCT,
                     type_info=TypeInfo(kind=TypeKind.STRUCT, name=defn.name),
                     node=defn,
                 ),
@@ -1331,7 +1357,7 @@ class SemanticChecker:
                 defn.name,
                 Symbol(
                     name=defn.name,
-                    kind="enum",
+                    kind=SymbolKind.ENUM,
                     type_info=TypeInfo(kind=TypeKind.ENUM, name=defn.name),
                     node=defn,
                 ),
@@ -1342,7 +1368,7 @@ class SemanticChecker:
                     # Variants with payloads are constructors (functions)
                     variant_sym = Symbol(
                         name=variant.name,
-                        kind="function",
+                        kind=SymbolKind.FUNCTION,
                         type_info=TypeInfo(
                             kind=TypeKind.FN,
                             is_function=True,
@@ -1353,7 +1379,7 @@ class SemanticChecker:
                     # Bare variants are values of the enum type
                     variant_sym = Symbol(
                         name=variant.name,
-                        kind="variable",
+                        kind=SymbolKind.VARIABLE,
                         type_info=TypeInfo(kind=TypeKind.ENUM, name=defn.name),
                     )
                 self.global_scope.define(variant.name, variant_sym)
@@ -1363,7 +1389,7 @@ class SemanticChecker:
                     qualified,
                     Symbol(
                         name=qualified,
-                        kind="function",
+                        kind=SymbolKind.FUNCTION,
                         type_info=variant_sym.type_info,
                     ),
                 )
@@ -1388,14 +1414,14 @@ class SemanticChecker:
             )
             self.global_scope.define(
                 defn.name,
-                Symbol(name=defn.name, kind="function", type_info=fn_type, node=defn),
+                Symbol(name=defn.name, kind=SymbolKind.FUNCTION, type_info=fn_type, node=defn),
             )
         elif isinstance(defn, PipeDef):
             self.global_scope.define(
                 defn.name,
                 Symbol(
                     name=defn.name,
-                    kind="pipe",
+                    kind=SymbolKind.PIPE,
                     type_info=UNKNOWN_TYPE,
                     node=defn,
                 ),
@@ -1404,14 +1430,14 @@ class SemanticChecker:
             resolved = self._resolve_type_expr(defn.type_expr)
             self.global_scope.define(
                 defn.name,
-                Symbol(name=defn.name, kind="type_alias", type_info=resolved, node=defn),
+                Symbol(name=defn.name, kind=SymbolKind.TYPE_ALIAS, type_info=resolved, node=defn),
             )
         elif isinstance(defn, TraitDef):
             self.global_scope.define(
                 defn.name,
                 Symbol(
                     name=defn.name,
-                    kind="trait",
+                    kind=SymbolKind.TRAIT,
                     type_info=TypeInfo(kind=TypeKind.TRAIT, name=defn.name),
                     node=defn,
                 ),
@@ -1438,7 +1464,7 @@ class SemanticChecker:
                 for item in defn.items:
                     self.global_scope.define(
                         item,
-                        Symbol(name=item, kind="variable", type_info=UNKNOWN_TYPE),
+                        Symbol(name=item, kind=SymbolKind.VARIABLE, type_info=UNKNOWN_TYPE),
                     )
             else:
                 mod_name = defn.path[-1] if defn.path else ""
@@ -1447,7 +1473,7 @@ class SemanticChecker:
                         mod_name,
                         Symbol(
                             name=mod_name,
-                            kind="module",
+                            kind=SymbolKind.MODULE,
                             type_info=UNKNOWN_TYPE,
                         ),
                     )
@@ -1497,7 +1523,7 @@ class SemanticChecker:
                 mod_name,
                 Symbol(
                     name=mod_name,
-                    kind="module",
+                    kind=SymbolKind.MODULE,
                     type_info=TypeInfo(kind=TypeKind.STRUCT, name=mod_name),
                 ),
             )
@@ -1522,14 +1548,14 @@ class SemanticChecker:
             )
             self.global_scope.define(
                 name,
-                Symbol(name=name, kind="function", type_info=fn_type, node=defn),
+                Symbol(name=name, kind=SymbolKind.FUNCTION, type_info=fn_type, node=defn),
             )
         elif isinstance(defn, AgentDef):
             self.global_scope.define(
                 name,
                 Symbol(
                     name=name,
-                    kind="agent",
+                    kind=SymbolKind.AGENT,
                     type_info=TypeInfo(kind=TypeKind.AGENT, name=name),
                     node=defn,
                 ),
@@ -1539,7 +1565,7 @@ class SemanticChecker:
                 name,
                 Symbol(
                     name=name,
-                    kind="struct",
+                    kind=SymbolKind.STRUCT,
                     type_info=TypeInfo(kind=TypeKind.STRUCT, name=name),
                     node=defn,
                 ),
@@ -1549,7 +1575,7 @@ class SemanticChecker:
                 name,
                 Symbol(
                     name=name,
-                    kind="enum",
+                    kind=SymbolKind.ENUM,
                     type_info=TypeInfo(kind=TypeKind.ENUM, name=name),
                     node=defn,
                 ),
@@ -1560,7 +1586,7 @@ class SemanticChecker:
                     variant.name,
                     Symbol(
                         name=variant.name,
-                        kind="function",
+                        kind=SymbolKind.FUNCTION,
                         type_info=TypeInfo(
                             kind=TypeKind.FN,
                             is_function=True,
@@ -1571,19 +1597,19 @@ class SemanticChecker:
         elif isinstance(defn, PipeDef):
             self.global_scope.define(
                 name,
-                Symbol(name=name, kind="pipe", type_info=UNKNOWN_TYPE, node=defn),
+                Symbol(name=name, kind=SymbolKind.PIPE, type_info=UNKNOWN_TYPE, node=defn),
             )
         elif isinstance(defn, TypeAlias):
             resolved_type = self._resolve_type_expr(defn.type_expr)
             self.global_scope.define(
                 name,
-                Symbol(name=name, kind="type_alias", type_info=resolved_type, node=defn),
+                Symbol(name=name, kind=SymbolKind.TYPE_ALIAS, type_info=resolved_type, node=defn),
             )
         else:
             # Fallback — register as unknown
             self.global_scope.define(
                 name,
-                Symbol(name=name, kind="variable", type_info=UNKNOWN_TYPE),
+                Symbol(name=name, kind=SymbolKind.VARIABLE, type_info=UNKNOWN_TYPE),
             )
 
     # -- Definition checking (second pass) ------------------------------
@@ -1623,7 +1649,7 @@ class SemanticChecker:
             pt = self._resolve_type_expr(p.type_annotation)
             self.current_scope.define(
                 p.name,
-                Symbol(name=p.name, kind="param", type_info=pt),
+                Symbol(name=p.name, kind=SymbolKind.PARAM, type_info=pt),
             )
         self._check_block(fn.body)
         self._pop_scope()
@@ -1658,7 +1684,7 @@ class SemanticChecker:
             "self",
             Symbol(
                 name="self",
-                kind="variable",
+                kind=SymbolKind.VARIABLE,
                 type_info=TypeInfo(kind=TypeKind.AGENT, name=agent.name),
             ),
         )
@@ -1673,7 +1699,7 @@ class SemanticChecker:
                 )
             self.current_scope.define(
                 inp.name,
-                Symbol(name=inp.name, kind="variable", type_info=inp_type),
+                Symbol(name=inp.name, kind=SymbolKind.VARIABLE, type_info=inp_type),
             )
 
         for out in agent.outputs:
@@ -1685,7 +1711,7 @@ class SemanticChecker:
                 )
             self.current_scope.define(
                 out.name,
-                Symbol(name=out.name, kind="variable", type_info=out_type),
+                Symbol(name=out.name, kind=SymbolKind.VARIABLE, type_info=out_type),
             )
 
         # State bindings
@@ -1715,7 +1741,7 @@ class SemanticChecker:
         # If this is a trait impl, verify all trait methods are implemented
         if impl.trait_name is not None:
             trait_sym = self.current_scope.lookup(impl.trait_name)
-            if trait_sym is None or trait_sym.kind != "trait":
+            if trait_sym is None or trait_sym.kind != SymbolKind.TRAIT:
                 self._error_at(f"Undefined trait '{impl.trait_name}' in impl block", 0, 0)
             elif trait_sym.node is not None and isinstance(trait_sym.node, TraitDef):
                 trait_def = trait_sym.node
@@ -1807,11 +1833,11 @@ class SemanticChecker:
         ):
             sym = self.global_scope.lookup(t.name)
             return sym is not None and sym.kind in (
-                "struct",
-                "enum",
-                "agent",
-                "type_alias",
-                "trait",
+                SymbolKind.STRUCT,
+                SymbolKind.ENUM,
+                SymbolKind.AGENT,
+                SymbolKind.TYPE_ALIAS,
+                SymbolKind.TRAIT,
             )
         return False
 

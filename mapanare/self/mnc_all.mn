@@ -110,6 +110,10 @@ enum Stmt {
     ExprStmt(Expr),
     Return(Option<Expr>),
     For(String, Expr, Block),
+    While(Expr, Block),
+    Break,
+    Continue,
+    Assert(Expr, Option<String>),
     SignalDecl(String, Bool, Option<TypeExpr>, Expr, Bool),
     StreamDecl(String, Option<TypeExpr>, Expr)
 }
@@ -542,6 +546,10 @@ pub fn stmt_kind(s: Stmt) -> String {
         ExprStmt(_) => { return "expr_stmt" },
         Return(_) => { return "return" },
         For(_, _, _) => { return "for" },
+        While(_, _) => { return "while" },
+        Break => { return "break" },
+        Continue => { return "continue" },
+        Assert(_, _) => { return "assert" },
         SignalDecl(_, _, _, _, _) => { return "signal_decl" },
         StreamDecl(_, _, _) => { return "stream_decl" }
     }
@@ -573,6 +581,18 @@ pub fn stmt_for_iter(s: Stmt) -> Expr {
 }
 pub fn stmt_for_body(s: Stmt) -> Block {
     match s { For(_, _, b) => { return b }, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
+}
+pub fn stmt_while_cond(s: Stmt) -> Expr {
+    match s { While(c, _) => { return c }, _ => { return Expr::NoneLit } }
+}
+pub fn stmt_while_body(s: Stmt) -> Block {
+    match s { While(_, b) => { return b }, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
+}
+pub fn stmt_assert_expr(s: Stmt) -> Expr {
+    match s { Assert(e, _) => { return e }, _ => { return Expr::NoneLit } }
+}
+pub fn stmt_assert_msg(s: Stmt) -> Option<String> {
+    match s { Assert(_, m) => { return m }, _ => { return none } }
 }
 pub fn stmt_signal_name(s: Stmt) -> String {
     match s { SignalDecl(n, _, _, _, _) => { return n }, _ => { return "" } }
@@ -1843,12 +1863,27 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     }
     if tt == "KW_IMPL" { return parse_impl_def(tokens, pos, filename) }
     if tt == "KW_TRAIT" {
-        // Parse trait name, skip body (trait bodies don't generate MIR)
         let mut tp: Int = pos + 1
         let trait_name: String = peek_value(tokens, tp)
         tp = tp + 1
-        tp = skip_brace_block(tokens, tp)
-        let trait_methods: List<FnDefData> = []
+        let mut trait_methods: List<FnDefData> = []
+        if peek_type(tokens, tp) == "LBRACE" {
+            tp = tp + 1
+            for _ in 0..100 {
+                if peek_type(tokens, tp) == "RBRACE" {
+                    tp = tp + 1
+                    return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
+                }
+                if peek_type(tokens, tp) == "KW_FN" {
+                    let fr: FnDataResult = parse_fn_def_as_data(tokens, tp, filename)
+                    trait_methods.push(fr.fn_data)
+                    tp = fr.pos
+                } else {
+                    tp = tp + 1
+                }
+            }
+            return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
+        }
         return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
     }
     if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
@@ -2684,6 +2719,9 @@ fn parse_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
     if tt == "KW_RETURN" { return parse_return_stmt(tokens, pos, filename) }
     if tt == "KW_FOR" { return parse_for_stmt(tokens, pos, filename) }
     if tt == "KW_WHILE" { return parse_while_stmt(tokens, pos, filename) }
+    if tt == "KW_BREAK" { return new_stmt_result(Stmt::Break, pos + 1) }
+    if tt == "KW_CONTINUE" { return new_stmt_result(Stmt::Continue, pos + 1) }
+    if tt == "KW_ASSERT" { return parse_assert_stmt(tokens, pos, filename) }
 
     let er: ExprResult = parse_expr(tokens, pos, filename, 0)
     return new_stmt_result(Stmt::ExprStmt(er.expr), er.pos)
@@ -2753,37 +2791,25 @@ fn parse_for_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult
 }
 
 fn parse_while_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
-    // Desugar: while cond { body }
-    // → for __w in 0..1000000 { if !(cond) { return } else { body } }
-    // But we don't have break/return-from-loop. Instead, use a simpler
-    // desugaring that reuses the for-loop infrastructure:
-    //   for __w in 0..1000000 { if cond { body-stmts } }
-    // This runs the body only while cond is true.
-    // To avoid stack overflow from allocas in the loop, we keep the body
-    // minimal (no extra allocas beyond what the body already needs).
     let mut p: Int = pos + 1
-
-    // Parse condition expression
     let cond_r: ExprResult = parse_expr(tokens, p, filename, 0)
     p = cond_r.pos
-
-    // Parse body block
     let body_r: BlockResult = parse_block(tokens, p, filename)
     p = body_r.pos
+    return new_stmt_result(Stmt::While(cond_r.expr, body_r.block), p)
+}
 
-    // Build: if cond { body-stmts } — reuse the body's stmts directly
-    let if_expr: Expr = Expr::If(cond_r.expr, body_r.block, none)
-    let if_stmt: Stmt = Stmt::ExprStmt(if_expr)
-
-    // Build loop body with just the if
-    let mut loop_stmts: List<Stmt> = []
-    loop_stmts.push(if_stmt)
-    let loop_block: Block = new_block(new_span(0, 0, 0, 0), loop_stmts)
-
-    // Range 0..100000 (reasonable limit for while loops)
-    let range_expr: Expr = Expr::Range(Expr::IntLit(0), Expr::IntLit(100000), false)
-
-    return new_stmt_result(Stmt::For("__w", range_expr, loop_block), p)
+fn parse_assert_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
+    let mut p: Int = pos + 1
+    let er: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = er.pos
+    let mut msg: Option<String> = none
+    if peek_type(tokens, p) == "COMMA" {
+        p = p + 1
+        msg = Some(peek_value(tokens, p))
+        p = p + 1
+    }
+    return new_stmt_result(Stmt::Assert(er.expr, msg), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -4345,8 +4371,8 @@ fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, 
     let elem: TypeInfo = unknown_type()
     if len(left_ti.args) > 0 {
         let elem2: TypeInfo = left_ti.args[0]
-        let args: List<TypeInfo> = []
-        // args.push(elem2)
+        let mut args: List<TypeInfo> = []
+        args.push(elem2)
         return new_infer_result(make_generic_type("Tensor", args), st2)
     }
     let args3: List<TypeInfo> = []
@@ -4402,7 +4428,7 @@ fn check_call_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult 
         let arg: Expr = args[i]
         let ar: InferResult = infer_expr(st2, arg)
         st2 = ar.st
-        // arg_types.push(ar.type_info)
+        arg_types.push(ar.type_info)
         i = i + 1
     }
     return check_call_resolved(st2, callee, arg_types)
@@ -4598,7 +4624,7 @@ fn check_lambda_expr(st: SemState, params: List<Param>, body: LambdaBody) -> Inf
         }
         let p: Param = params[i]
         let pt: TypeInfo = resolve_type_opt(p.type_annotation)
-        // param_types.push(pt)
+        param_types.push(pt)
         let sym: Symbol = new_symbol(p.name, "param", pt, false)
         st2 = define_in_scope(st2, p.name, sym)
         i = i + 1
@@ -4755,6 +4781,18 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState {
     if sk == "for" {
         return check_for_stmt(st, stmt_for_var(stmt), stmt_for_iter(stmt), stmt_for_body(stmt))
     }
+    if sk == "while" {
+        let wr: InferResult = infer_expr(st, stmt_while_cond(stmt))
+        let inner: SemState = push_scope(wr.st)
+        let after: SemState = check_block(inner, stmt_while_body(stmt))
+        return pop_scope(after)
+    }
+    if sk == "break" { return st }
+    if sk == "continue" { return st }
+    if sk == "assert" {
+        let ar: InferResult = infer_expr(st, stmt_assert_expr(stmt))
+        return ar.st
+    }
     if sk == "signal_decl" {
         return check_signal_decl(st, stmt_signal_name(stmt), stmt_signal_mutable(stmt), stmt_signal_type(stmt), stmt_signal_value(stmt))
     }
@@ -4800,7 +4838,17 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
 fn check_for_stmt(st: SemState, var_name: String, iterable: Expr, body: Block) -> SemState {
     let ir: InferResult = infer_expr(st, iterable)
     let inner: SemState = push_scope(ir.st)
-    let sym: Symbol = new_symbol(var_name, "variable", unknown_type(), false)
+    // Infer loop variable type from iterable
+    let mut var_type: TypeInfo = unknown_type()
+    if ir.type_info.kind == "range" {
+        var_type = int_type()
+    }
+    if ir.type_info.kind == "list" {
+        if len(ir.type_info.args) > 0 {
+            var_type = ir.type_info.args[0]
+        }
+    }
+    let sym: Symbol = new_symbol(var_name, "variable", var_type, false)
     let bound: SemState = define_in_scope(inner, var_name, sym)
     let after: SemState = check_block(bound, body)
     return pop_scope(after)
@@ -4816,14 +4864,14 @@ fn check_signal_decl(st: SemState, name: String, mutable: Bool, type_ann: Option
     let resolved: TypeInfo = ann_type
     if ann_type.name == "<unknown>" {
         let resolved2: TypeInfo = vr.type_info
-        let args: List<TypeInfo> = []
-        // args.push(resolved2)
+        let mut args: List<TypeInfo> = []
+        args.push(resolved2)
         let sig_type: TypeInfo = make_generic_type("Signal", args)
         let sym: Symbol = new_symbol(name, "variable", sig_type, mutable)
         return define_in_scope(vr.st, name, sym)
     }
-    let args2: List<TypeInfo> = []
-    // args2.push(resolved)
+    let mut args2: List<TypeInfo> = []
+    args2.push(resolved)
     let sig_type2: TypeInfo = make_generic_type("Signal", args2)
     let sym2: Symbol = new_symbol(name, "variable", sig_type2, mutable)
     return define_in_scope(vr.st, name, sym2)
@@ -6157,6 +6205,8 @@ struct LowerState {
     generic_fns: List<FnDefData>,
     generic_structs: List<StructDefData>,
     generic_enums: List<EnumDefData>,
+    loop_header_label: String,
+    loop_exit_label: String,
 }
 
 fn new_lower_state(module_name: String) -> LowerState {
@@ -6171,7 +6221,7 @@ fn new_lower_state(module_name: String) -> LowerState {
     let generic_fns: List<FnDefData> = []
     let generic_structs: List<StructDefData> = []
     let generic_enums: List<EnumDefData> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums }
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "" }
 }
 
 // Lower result: value + updated state
@@ -7316,6 +7366,28 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
         let s_for: LowerState = lower_for(st, stmt_for_var(stmt), stmt_for_iter(stmt), stmt_for_body(stmt))
         return new_lower_result(void_value(), s_for)
     }
+    if sk == "while" {
+        let s_while: LowerState = lower_while(st, stmt_while_cond(stmt), stmt_while_body(stmt))
+        return new_lower_result(void_value(), s_while)
+    }
+    if sk == "break" {
+        if st.loop_exit_label != "" {
+            let s_brk: LowerState = emit_instr(st, Instruction::Jump(st.loop_exit_label))
+            return new_lower_result(void_value(), s_brk)
+        }
+        return new_lower_result(void_value(), st)
+    }
+    if sk == "continue" {
+        if st.loop_header_label != "" {
+            let s_cont: LowerState = emit_instr(st, Instruction::Jump(st.loop_header_label))
+            return new_lower_result(void_value(), s_cont)
+        }
+        return new_lower_result(void_value(), st)
+    }
+    if sk == "assert" {
+        let s_assert: LowerState = lower_assert(st, stmt_assert_expr(stmt), stmt_assert_msg(stmt))
+        return new_lower_result(void_value(), s_assert)
+    }
     if sk == "signal_decl" {
         let s_sig: LowerState = lower_signal_decl(st, stmt_signal_name(stmt), stmt_signal_mutable(stmt), stmt_signal_type(stmt), stmt_signal_value(stmt))
         return new_lower_result(void_value(), s_sig)
@@ -7608,10 +7680,16 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s = emit_instr(s, Instruction::Store(loop_addr_r.value, cur_i.value))
     s = define_var(s, var_name, loop_addr_r.value, false)
 
+    let old_header2: String = s.loop_header_label
+    let old_exit2: String = s.loop_exit_label
+    s.loop_header_label = header_label
+    s.loop_exit_label = exit_label
     s = lower_push_scope(s)
     let body_result: LowerResult = lower_block(s, body)
     s = body_result.state
     s = lower_pop_scope(s)
+    s.loop_header_label = old_header2
+    s.loop_exit_label = old_exit2
 
     // Increment counter and jump back to header
     if !current_block_terminated(s) {
@@ -7630,6 +7708,110 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
 
     // Exit block
     s = set_block(s, exit_idx)
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// While loop
+// ---------------------------------------------------------------------------
+
+fn lower_while(st: LowerState, cond: Expr, body: Block) -> LowerState {
+    let mut s: LowerState = st
+    let entry_idx: Int = s.current_block_idx
+
+    // Create blocks
+    let header_r: LowerResult = fresh_block_label(s, "while_header")
+    s = header_r.state
+    let header_label: String = header_r.value.name
+    s = add_block(s, header_label)
+    let header_idx: Int = s.current_block_idx
+
+    let body_r: LowerResult = fresh_block_label(s, "while_body")
+    s = body_r.state
+    let body_label: String = body_r.value.name
+    s = add_block(s, body_label)
+    let body_idx: Int = s.current_block_idx
+
+    let exit_r: LowerResult = fresh_block_label(s, "while_exit")
+    s = exit_r.state
+    let exit_label: String = exit_r.value.name
+    s = add_block(s, exit_label)
+    let exit_idx: Int = s.current_block_idx
+
+    // Jump from entry to header
+    s = set_block(s, entry_idx)
+    if !current_block_terminated(s) {
+        s = emit_instr(s, Instruction::Jump(header_label))
+    }
+
+    // Header: evaluate condition, branch
+    s = set_block(s, header_idx)
+    let cond_r: LowerResult = lower_expr(s, cond)
+    s = cond_r.state
+    s = emit_instr(s, Instruction::Branch(cond_r.value, body_label, exit_label))
+
+    // Body: save loop context, lower body, jump to header
+    s = set_block(s, body_idx)
+    let old_header: String = s.loop_header_label
+    let old_exit: String = s.loop_exit_label
+    s.loop_header_label = header_label
+    s.loop_exit_label = exit_label
+    s = lower_push_scope(s)
+    let body_result: LowerResult = lower_block(s, body)
+    s = body_result.state
+    s = lower_pop_scope(s)
+    s.loop_header_label = old_header
+    s.loop_exit_label = old_exit
+    if !current_block_terminated(s) {
+        s = emit_instr(s, Instruction::Jump(header_label))
+    }
+
+    // Exit
+    s = set_block(s, exit_idx)
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// Assert
+// ---------------------------------------------------------------------------
+
+fn lower_assert(st: LowerState, cond_expr: Expr, msg: Option<String>) -> LowerState {
+    let mut s: LowerState = st
+    let cond_r: LowerResult = lower_expr(s, cond_expr)
+    s = cond_r.state
+
+    let ok_r: LowerResult = fresh_block_label(s, "assert_ok")
+    s = ok_r.state
+    let ok_label: String = ok_r.value.name
+    s = add_block(s, ok_label)
+    let ok_idx: Int = s.current_block_idx
+
+    let fail_r: LowerResult = fresh_block_label(s, "assert_fail")
+    s = fail_r.state
+    let fail_label: String = fail_r.value.name
+    s = add_block(s, fail_label)
+    let fail_idx: Int = s.current_block_idx
+
+    // Branch on condition
+    let prev_idx: Int = s.current_block_idx
+    s = set_block(s, s.current_block_idx - 2)
+    s = emit_instr(s, Instruction::Branch(cond_r.value, ok_label, fail_label))
+
+    // Fail block: call __mn_assert_fail
+    s = set_block(s, fail_idx)
+    let msg_val: LowerResult = make_value(s, mir_string(), "assert_msg")
+    s = msg_val.state
+    let msg_str: String = "assertion failed"
+    s = emit_instr(s, Instruction::Const(msg_val.value, mir_string(), msg_str))
+    let mut fail_args: List<Value> = []
+    fail_args.push(msg_val.value)
+    let fail_ret: LowerResult = make_value(s, mir_void(), "assert_ret")
+    s = fail_ret.state
+    s = emit_instr(s, Instruction::Call(fail_ret.value, "__mn_assert_fail", fail_args))
+    s = emit_instr(s, Instruction::Jump(ok_label))
+
+    // OK block: continue
+    s = set_block(s, ok_idx)
     return s
 }
 
@@ -10836,8 +11018,36 @@ fn resolve_type(st: EmitState, ty: MIRType) -> String {
 // ---------------------------------------------------------------------------
 
 fn declare_runtime_fn(st: EmitState, name: String, ret: String, params: String) -> EmitState {
-    let line: String = "declare " + ret + " @" + name + "(" + params + ")"
+    let attrs: String = get_fn_attrs(name)
+    let line: String = "declare " + ret + " @" + name + "(" + params + ")" + attrs
     return emit_line(st, line)
+}
+
+fn get_fn_attrs(name: String) -> String {
+    if name == "__mn_str_len" { return " nounwind readonly" }
+    if name == "__mn_str_eq" { return " nounwind readonly" }
+    if name == "__mn_str_cmp" { return " nounwind readonly" }
+    if name == "__mn_str_hash" { return " nounwind readonly" }
+    if name == "__mn_list_len" { return " nounwind readonly" }
+    if name == "__mn_list_get" { return " nounwind readonly" }
+    if name == "__mn_map_len" { return " nounwind readonly" }
+    if name == "__mn_map_contains" { return " nounwind readonly" }
+    if name == "__mn_str_free" { return " nounwind" }
+    if name == "__mn_list_free" { return " nounwind" }
+    if name == "__mn_map_free_deep" { return " nounwind" }
+    if name == "__mn_str_concat" { return " nounwind" }
+    if name == "__mn_str_from_int" { return " nounwind" }
+    if name == "__mn_str_from_float" { return " nounwind" }
+    if name == "__mn_str_from_bool" { return " nounwind" }
+    if name == "malloc" { return " nounwind" }
+    if name == "free" { return " nounwind" }
+    if name == "__mn_print" { return " nounwind" }
+    if name == "__mn_println" { return " nounwind" }
+    if name == "__mn_list_push" { return " nounwind" }
+    if name == "__mn_list_new" { return " nounwind" }
+    if name == "__mn_map_new" { return " nounwind" }
+    if name == "__mn_map_set" { return " nounwind" }
+    return ""
 }
 
 fn declare_all_runtime(st: EmitState) -> EmitState {
@@ -13809,7 +14019,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 3.14.0"
+    return "mapanare 3.16.0"
 }
 
 // ---------------------------------------------------------------------------

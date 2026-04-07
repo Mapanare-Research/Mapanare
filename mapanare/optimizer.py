@@ -143,27 +143,13 @@ def _fold_binary(op: str, left: Expr, right: Expr) -> Expr | None:
     try:
         result: int | float | bool | str | None = None
 
-        # Arithmetic (int/float)
-        if op == "+" and isinstance(lv, (int, float)) and isinstance(rv, (int, float)):
-            result = lv + rv
-        elif op == "-" and isinstance(lv, (int, float)) and isinstance(rv, (int, float)):
-            result = lv - rv
-        elif op == "*" and isinstance(lv, (int, float)) and isinstance(rv, (int, float)):
-            result = lv * rv
-        elif op == "/" and isinstance(lv, (int, float)) and isinstance(rv, (int, float)):
-            if rv == 0:
-                return None  # don't fold division by zero
-            if isinstance(lv, int) and isinstance(rv, int):
-                result = lv // rv  # integer division
-            else:
-                result = lv / rv
-        elif op == "%" and isinstance(lv, (int, float)) and isinstance(rv, (int, float)):
-            if rv == 0:
-                return None
-            result = lv % rv
+        # NOTE: Arithmetic constant folding (int/float +, -, *, /, %) is handled
+        # by the MIR optimizer at O1+ (constant_folding pass).  Removed here to
+        # avoid duplicate work and keep the AST optimizer focused on higher-level
+        # transformations.
 
         # String concatenation
-        elif op == "+" and isinstance(lv, str) and isinstance(rv, str):
+        if op == "+" and isinstance(lv, str) and isinstance(rv, str):
             result = lv + rv
 
         # Comparison

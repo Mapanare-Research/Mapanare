@@ -81,62 +81,34 @@ def _make_program(*defs: object) -> Program:
 class TestConstantFolding:
     """Task 4.4.1 — Constant folding and propagation."""
 
-    # -- Arithmetic folding --
+    # -- Arithmetic folding (deferred to MIR optimizer) --
+    # Arithmetic constant folding (+, -, *, /, %) was removed from the AST
+    # optimizer in v3.20.0.  The MIR optimizer's constant_folding pass handles
+    # it at O1+, so the AST level now leaves arithmetic expressions intact.
 
-    def test_fold_int_addition(self) -> None:
-        expr = BinaryExpr(left=IntLiteral(value=3), op="+", right=IntLiteral(value=4))
-        fn = _make_fn(body=[ReturnStmt(value=expr)])
-        prog = _make_program(fn)
-        folder = ConstantFolder()
-        folder.run(prog)
-        ret = prog.definitions[0].body.stmts[0]
-        assert isinstance(ret, ReturnStmt)
-        assert isinstance(ret.value, IntLiteral)
-        assert ret.value.value == 7
-        assert folder.stats.constants_folded == 1
+    def test_arithmetic_not_folded_at_ast(self) -> None:
+        """Arithmetic binary ops are preserved for MIR-level folding."""
+        for op, lhs, rhs in [
+            ("+", IntLiteral(value=3), IntLiteral(value=4)),
+            ("-", IntLiteral(value=10), IntLiteral(value=3)),
+            ("*", IntLiteral(value=5), IntLiteral(value=6)),
+            ("/", IntLiteral(value=15), IntLiteral(value=3)),
+            ("%", IntLiteral(value=17), IntLiteral(value=5)),
+        ]:
+            expr = BinaryExpr(left=lhs, op=op, right=rhs)
+            fn = _make_fn(body=[ReturnStmt(value=expr)])
+            prog = _make_program(fn)
+            folder = ConstantFolder()
+            folder.run(prog)
+            ret = prog.definitions[0].body.stmts[0]
+            assert isinstance(ret, ReturnStmt)
+            assert isinstance(
+                ret.value, BinaryExpr
+            ), f"Expected BinaryExpr for op '{op}', got {type(ret.value).__name__}"
 
-    def test_fold_int_subtraction(self) -> None:
-        expr = BinaryExpr(left=IntLiteral(value=10), op="-", right=IntLiteral(value=3))
-        fn = _make_fn(body=[ReturnStmt(value=expr)])
-        prog = _make_program(fn)
-        folder = ConstantFolder()
-        folder.run(prog)
-        ret = prog.definitions[0].body.stmts[0]
-        assert isinstance(ret.value, IntLiteral)
-        assert ret.value.value == 7
-
-    def test_fold_int_multiplication(self) -> None:
-        expr = BinaryExpr(left=IntLiteral(value=5), op="*", right=IntLiteral(value=6))
-        fn = _make_fn(body=[ReturnStmt(value=expr)])
-        prog = _make_program(fn)
-        folder = ConstantFolder()
-        folder.run(prog)
-        ret = prog.definitions[0].body.stmts[0]
-        assert isinstance(ret.value, IntLiteral)
-        assert ret.value.value == 30
-
-    def test_fold_int_division(self) -> None:
-        expr = BinaryExpr(left=IntLiteral(value=15), op="/", right=IntLiteral(value=3))
-        fn = _make_fn(body=[ReturnStmt(value=expr)])
-        prog = _make_program(fn)
-        folder = ConstantFolder()
-        folder.run(prog)
-        ret = prog.definitions[0].body.stmts[0]
-        assert isinstance(ret.value, IntLiteral)
-        assert ret.value.value == 5
-
-    def test_fold_int_modulo(self) -> None:
-        expr = BinaryExpr(left=IntLiteral(value=17), op="%", right=IntLiteral(value=5))
-        fn = _make_fn(body=[ReturnStmt(value=expr)])
-        prog = _make_program(fn)
-        folder = ConstantFolder()
-        folder.run(prog)
-        ret = prog.definitions[0].body.stmts[0]
-        assert isinstance(ret.value, IntLiteral)
-        assert ret.value.value == 2
-
-    def test_no_fold_division_by_zero(self) -> None:
-        expr = BinaryExpr(left=IntLiteral(value=10), op="/", right=IntLiteral(value=0))
+    def test_arithmetic_float_not_folded_at_ast(self) -> None:
+        """Float arithmetic is also deferred to MIR-level folding."""
+        expr = BinaryExpr(left=FloatLiteral(value=2.5), op="*", right=FloatLiteral(value=4.0))
         fn = _make_fn(body=[ReturnStmt(value=expr)])
         prog = _make_program(fn)
         folder = ConstantFolder()
@@ -144,25 +116,14 @@ class TestConstantFolding:
         ret = prog.definitions[0].body.stmts[0]
         assert isinstance(ret.value, BinaryExpr)
 
-    def test_fold_float_arithmetic(self) -> None:
-        expr = BinaryExpr(left=FloatLiteral(value=2.5), op="*", right=FloatLiteral(value=4.0))
+    def test_division_by_zero_not_folded(self) -> None:
+        expr = BinaryExpr(left=IntLiteral(value=10), op="/", right=IntLiteral(value=0))
         fn = _make_fn(body=[ReturnStmt(value=expr)])
         prog = _make_program(fn)
         folder = ConstantFolder()
         folder.run(prog)
         ret = prog.definitions[0].body.stmts[0]
-        assert isinstance(ret.value, FloatLiteral)
-        assert ret.value.value == 10.0
-
-    def test_fold_mixed_int_float(self) -> None:
-        expr = BinaryExpr(left=IntLiteral(value=3), op="+", right=FloatLiteral(value=1.5))
-        fn = _make_fn(body=[ReturnStmt(value=expr)])
-        prog = _make_program(fn)
-        folder = ConstantFolder()
-        folder.run(prog)
-        ret = prog.definitions[0].body.stmts[0]
-        assert isinstance(ret.value, FloatLiteral)
-        assert ret.value.value == 4.5
+        assert isinstance(ret.value, BinaryExpr)
 
     # -- Comparison folding --
 
@@ -269,7 +230,7 @@ class TestConstantFolding:
     # -- Nested/cascading folds --
 
     def test_fold_nested_expression(self) -> None:
-        """(2 + 3) * 4 → 20"""
+        """(2 + 3) * 4 — arithmetic deferred to MIR, stays as BinaryExpr."""
         inner = BinaryExpr(left=IntLiteral(value=2), op="+", right=IntLiteral(value=3))
         outer = BinaryExpr(left=inner, op="*", right=IntLiteral(value=4))
         fn = _make_fn(body=[ReturnStmt(value=outer)])
@@ -277,8 +238,8 @@ class TestConstantFolding:
         folder = ConstantFolder()
         folder.run(prog)
         ret = prog.definitions[0].body.stmts[0]
-        assert isinstance(ret.value, IntLiteral)
-        assert ret.value.value == 20
+        # Arithmetic folding deferred to MIR-level; AST preserves the expression
+        assert isinstance(ret.value, BinaryExpr)
 
     def test_no_fold_with_variable(self) -> None:
         """x + 3 cannot be folded."""
@@ -296,7 +257,7 @@ class TestConstantFolding:
     # -- Constant propagation --
 
     def test_propagate_constant(self) -> None:
-        """let x = 5; return x + 1 → return 6"""
+        """let x = 5; return x + 1 → x propagated to 5, arithmetic deferred to MIR."""
         let = LetBinding(name="x", mutable=False, value=IntLiteral(value=5))
         ret = ReturnStmt(
             value=BinaryExpr(left=Identifier(name="x"), op="+", right=IntLiteral(value=1))
@@ -304,12 +265,13 @@ class TestConstantFolding:
         fn = _make_fn(body=[let, ret])
         prog = _make_program(fn)
         optimize(prog, OptLevel.O1)
-        # The let binding may still exist but the return should be folded
-        # Find the return statement
+        # Constant propagation replaces x with 5, but arithmetic folding is
+        # deferred to the MIR optimizer, so the result is BinaryExpr(5, +, 1).
         for s in prog.definitions[0].body.stmts:
             if isinstance(s, ReturnStmt):
-                assert isinstance(s.value, IntLiteral)
-                assert s.value.value == 6
+                assert isinstance(s.value, BinaryExpr)
+                assert isinstance(s.value.left, IntLiteral)
+                assert s.value.left.value == 5
                 return
         pytest.fail("No return statement found")
 
@@ -329,7 +291,7 @@ class TestConstantFolding:
         assert isinstance(ret_stmt.value, Identifier)
 
     def test_fold_in_let_binding(self) -> None:
-        """let y = 2 + 3 → let y = 5"""
+        """let y = 2 + 3 — arithmetic not folded at AST level."""
         let = LetBinding(
             name="y",
             mutable=False,
@@ -341,11 +303,11 @@ class TestConstantFolding:
         folder.run(prog)
         let_stmt = prog.definitions[0].body.stmts[0]
         assert isinstance(let_stmt, LetBinding)
-        assert isinstance(let_stmt.value, IntLiteral)
-        assert let_stmt.value.value == 5
+        # Arithmetic deferred to MIR optimizer
+        assert isinstance(let_stmt.value, BinaryExpr)
 
     def test_fold_in_call_args(self) -> None:
-        """foo(1 + 2) → foo(3)"""
+        """foo(1 + 2) — arithmetic in args not folded at AST level."""
         call = CallExpr(
             callee=Identifier(name="foo"),
             args=[BinaryExpr(left=IntLiteral(value=1), op="+", right=IntLiteral(value=2))],
@@ -357,8 +319,8 @@ class TestConstantFolding:
         call_stmt = prog.definitions[0].body.stmts[0]
         assert isinstance(call_stmt, ExprStmt)
         assert isinstance(call_stmt.expr, CallExpr)
-        assert isinstance(call_stmt.expr.args[0], IntLiteral)
-        assert call_stmt.expr.args[0].value == 3
+        # Arithmetic deferred to MIR optimizer
+        assert isinstance(call_stmt.expr.args[0], BinaryExpr)
 
     def test_fold_in_if_condition(self) -> None:
         """if (1 < 2) { ... } → if (true) { ... }"""
@@ -376,7 +338,7 @@ class TestConstantFolding:
         assert stmt.expr.condition.value is True
 
     def test_fold_in_range(self) -> None:
-        """for i in (1+1)..(3+2) → for i in 2..5"""
+        """for i in (1+1)..(3+2) — arithmetic in range not folded at AST level."""
         loop = ForLoop(
             var_name="i",
             iterable=RangeExpr(
@@ -392,10 +354,9 @@ class TestConstantFolding:
         stmt = prog.definitions[0].body.stmts[0]
         assert isinstance(stmt, ForLoop)
         assert isinstance(stmt.iterable, RangeExpr)
-        assert isinstance(stmt.iterable.start, IntLiteral)
-        assert stmt.iterable.start.value == 2
-        assert isinstance(stmt.iterable.end, IntLiteral)
-        assert stmt.iterable.end.value == 5
+        # Arithmetic deferred to MIR optimizer
+        assert isinstance(stmt.iterable.start, BinaryExpr)
+        assert isinstance(stmt.iterable.end, BinaryExpr)
 
 
 # ===========================================================================
@@ -979,15 +940,14 @@ class TestOptimizationLevels:
         )
         prog = _make_program(dead_fn, main_fn)
         prog, stats = optimize(prog, OptLevel.O1)
-        # Constant folding happened
+        # Arithmetic folding deferred to MIR; AST preserves expression
         ret = prog.definitions[1].body.stmts[0]
-        assert isinstance(ret.value, IntLiteral)
-        assert ret.value.value == 3
+        assert isinstance(ret.value, BinaryExpr)
         # Dead function NOT removed at O1
         assert len(prog.definitions) == 2
 
     def test_o2_includes_dce(self) -> None:
-        """O2: Both constant folding and DCE run."""
+        """O2: DCE runs — dead functions removed."""
         dead_fn = _make_fn(name="dead", body=[ReturnStmt(value=IntLiteral(value=0))])
         main_fn = _make_fn(
             name="main",
@@ -1003,9 +963,9 @@ class TestOptimizationLevels:
         )
         prog = _make_program(dead_fn, main_fn)
         prog, stats = optimize(prog, OptLevel.O2)
-        # Constant folding happened
+        # Arithmetic folding deferred to MIR; AST preserves expression
         ret = prog.definitions[0].body.stmts[0]
-        assert isinstance(ret.value, IntLiteral)
+        assert isinstance(ret.value, BinaryExpr)
         # Dead function removed
         assert len(prog.definitions) == 1
 

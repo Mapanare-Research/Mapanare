@@ -3,7 +3,7 @@
 > Complete arithmetic trait lowering. Fix optimizer convergence. Start reducing
 > the LLVM emitter's type-safety gaps (_coerce_arg, global state).
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Medium (2 sessions)
 **Breaking:** No
 **Prerequisite:** v3.19.0

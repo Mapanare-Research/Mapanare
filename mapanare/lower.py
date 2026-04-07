@@ -1554,6 +1554,13 @@ class MIRLowerer:
             cmp_op = {"<": BinOpKind.LT, ">": BinOpKind.GT, "<=": BinOpKind.LE, ">=": BinOpKind.GE}
             self._emit(BinOp(dest=dest, op=cmp_op[expr.op], lhs=cmp_val, rhs=zero))
             return dest
+        # Arithmetic trait dispatch: add/sub/mul/div impl methods
+        _ARITH_TRAIT_MAP = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
+        if trait in ("add", "sub", "mul", "div"):
+            method = _ARITH_TRAIT_MAP.get(expr.op, trait)
+            dest = self._make_value(ty=lhs.ty)
+            self._emit(Call(dest=dest, fn_name=method, args=[lhs, rhs]))
+            return dest
 
         op = _BINOP_MAP.get(expr.op)
         if op is None:
