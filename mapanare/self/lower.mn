@@ -36,9 +36,19 @@ fn register_declarations_pass1(st: LowerState, program: Program) -> LowerState {
     return s
 }
 
-// If defn is EnumDef, register it. Otherwise return state unchanged.
+// If defn is EnumDef, register it. Generic enums are deferred.
 fn register_enum_if_enum(st: LowerState, defn: Definition) -> LowerState {
-    if def_kind(defn) == "enum_def" { return register_enum(st, def_enum_data(defn)) }
+    if def_kind(defn) == "enum_def" {
+        let ed: EnumDefData = def_enum_data(defn)
+        if len(ed.type_params) > 0 {
+            let mut new_st_ge: LowerState = st
+            let mut ge_list: List<EnumDefData> = new_st_ge.generic_enums
+            ge_list.push(ed)
+            new_st_ge.generic_enums = ge_list
+            return new_st_ge
+        }
+        return register_enum(st, ed)
+    }
     return st
 }
 
@@ -75,7 +85,15 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         return register_struct(st, sd)
     }
     if dk == "enum_def" {
-        return register_enum(st, def_enum_data(defn))
+        let ed: EnumDefData = def_enum_data(defn)
+        if len(ed.type_params) > 0 {
+            let mut new_st_ge: LowerState = st
+            let mut ge_list: List<EnumDefData> = new_st_ge.generic_enums
+            ge_list.push(ed)
+            new_st_ge.generic_enums = ge_list
+            return new_st_ge
+        }
+        return register_enum(st, ed)
     }
     if dk == "impl_def" {
         let impl_target: String = def_impl_target(defn)
@@ -1066,6 +1084,9 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult {
         _ => {}
     }
 
+    // Check if it's a bare generic enum variant (no payload — can't infer type, skip)
+    // Generic bare variants need explicit type context, handled by match pattern lowering
+
     // Check if it's a bare enum variant (no payload)
     if is_enum_variant(st, name) {
         let enum_name: String = enum_name_for_variant(st, name)
@@ -1563,6 +1584,154 @@ fn monomorphize_impl_methods(st: LowerState, base_name: String, mangled: String,
     return s
 }
 
+// ---------------------------------------------------------------------------
+// Generic enum monomorphization
+// ---------------------------------------------------------------------------
+
+fn find_generic_enum(st: LowerState, name: String) -> Option<EnumDefData> {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_enums) {
+            if st.generic_enums[i].name == name { return Some(st.generic_enums[i]) }
+            i = i + 1
+        }
+    }
+    return none
+}
+
+fn is_generic_enum_variant(st: LowerState, variant_name: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_enums) {
+            let ge: EnumDefData = st.generic_enums[i]
+            let mut j: Int = 0
+            for _ in 0..100 {
+                if j < len(ge.variants) {
+                    if ge.variants[j].name == variant_name { return true }
+                    j = j + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+    return false
+}
+
+fn generic_enum_name_for_variant(st: LowerState, variant_name: String) -> String {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_enums) {
+            let ge: EnumDefData = st.generic_enums[i]
+            let mut j: Int = 0
+            for _ in 0..100 {
+                if j < len(ge.variants) {
+                    if ge.variants[j].name == variant_name { return ge.name }
+                    j = j + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+    return ""
+}
+
+fn find_variant_in_enum(ge: EnumDefData, variant_name: String) -> Option<EnumVariant> {
+    let mut i: Int = 0
+    for _ in 0..100 {
+        if i < len(ge.variants) {
+            if ge.variants[i].name == variant_name { return Some(ge.variants[i]) }
+            i = i + 1
+        }
+    }
+    return none
+}
+
+fn infer_enum_type_args(ge: EnumDefData, variant: EnumVariant, args: List<Value>) -> List<MIRType> {
+    // Match variant field type annotations against concrete arg types
+    let mut concrete: List<MIRType> = []
+    let mut ti: Int = 0
+    for _ in 0..20 {
+        if ti < len(ge.type_params) {
+            let tp_name: String = ge.type_params[ti]
+            // Find which variant field uses this type param
+            let mut found: Bool = false
+            let mut fi: Int = 0
+            for _ in 0..100 {
+                if fi < len(variant.fields) {
+                    if type_expr_name(variant.fields[fi]) == tp_name {
+                        if fi < len(args) {
+                            concrete.push(args[fi].ty)
+                            found = true
+                        }
+                    }
+                    fi = fi + 1
+                }
+            }
+            if !found { concrete.push(mir_unknown()) }
+            ti = ti + 1
+        }
+    }
+    return concrete
+}
+
+fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>) -> LowerResult {
+    let enum_name: String = generic_enum_name_for_variant(st, variant_name)
+    if len(enum_name) == 0 { return new_lower_result(void_value(), st) }
+
+    let ge_opt: Option<EnumDefData> = find_generic_enum(st, enum_name)
+    match ge_opt {
+        Some(ge) => {
+            let v_opt: Option<EnumVariant> = find_variant_in_enum(ge, variant_name)
+            match v_opt {
+                Some(variant) => {
+                    let concrete: List<MIRType> = infer_enum_type_args(ge, variant, args)
+                    let mangled: String = mangle_generic_name(enum_name, concrete)
+
+                    let mut s: LowerState = st
+                    if !is_enum_name(s, mangled) {
+                        // Monomorphize: create EnumInfo with substituted variant types
+                        let mut new_variants: List<EnumVariantInfo> = []
+                        let mut new_variant_names: List<String> = []
+                        let mut vi: Int = 0
+                        for _ in 0..500 {
+                            if vi < len(ge.variants) {
+                                let orig_v: EnumVariant = ge.variants[vi]
+                                let mut payload_types: List<MIRType> = []
+                                let mut fi: Int = 0
+                                for _ in 0..100 {
+                                    if fi < len(orig_v.fields) {
+                                        let fty: MIRType = substitute_field_type(s, Some(orig_v.fields[fi]), ge.type_params, concrete)
+                                        payload_types.push(fty)
+                                        fi = fi + 1
+                                    }
+                                }
+                                let vi_info: EnumVariantInfo = new_enum_variant_info(orig_v.name, payload_types)
+                                new_variants.push(vi_info)
+                                new_variant_names.push(orig_v.name)
+                                vi = vi + 1
+                            }
+                        }
+                        let info: EnumInfo = new_enum_info(mangled, new_variants)
+                        s.module = module_push_enum(s.module, info)
+                        let evn: EnumVariantNames = new_enum_variant_names(mangled, new_variant_names)
+                        let mut ev_lst: List<EnumVariantNames> = s.enum_variants
+                        ev_lst.push(evn)
+                        s.enum_variants = ev_lst
+                    }
+
+                    // Emit EnumInit with mangled type name
+                    let enum_ty: MIRType = mir_enum(mangled)
+                    let dr_enum: LowerResult = make_value(s, enum_ty, "t")
+                    let s2: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, variant_name, args))
+                    return new_lower_result(dr_enum.value, s2)
+                },
+                _ => { return new_lower_result(void_value(), st) }
+            }
+        },
+        _ => { return new_lower_result(void_value(), st) }
+    }
+}
+
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
     // Monomorphize generic function calls
     let mono_r: LowerResult = try_monomorphize_call(st, fn_name, args)
@@ -1706,6 +1875,12 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             let s_new: LowerState = emit_instr(dr_new.state, Instruction::StructInit(dr_new.value, struct_ty, field_pairs))
             return new_lower_result(dr_new.value, s_new)
         }
+    }
+
+    // Check if it's a generic enum variant constructor (monomorphize on demand)
+    if is_generic_enum_variant(st, fn_name) {
+        let ge_r: LowerResult = try_monomorphize_enum(st, fn_name, args)
+        if ge_r.value.name != "%void" { return ge_r }
     }
 
     // Check if it's an enum variant constructor

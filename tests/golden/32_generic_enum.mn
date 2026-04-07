@@ -1,0 +1,16 @@
+// tests/golden/32_generic_enum.mn — Generic enum monomorphization
+
+enum Box<T> {
+    Full(T),
+    Empty
+}
+
+fn main() {
+    // Generic enum variant with Int payload
+    let b1 = Full(42)
+    print(42)
+
+    // Another instantiation
+    let b2 = Full(99)
+    print(99)
+}
