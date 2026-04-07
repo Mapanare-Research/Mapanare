@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.16.0** (current) — **Lora.** Concurrency safety + leak fixes: signal thread-local tracking, subscriber list lock, map/stream deep free, string align 8, CI stage2 integrity, `mapanare run` warnings, spec char_at fix.
+- **v3.17.0** (current) — **Tigra.** Text emitter drop glue + function attributes: string/closure/boxed cleanup in default pipeline, `nounwind`/`readonly` on runtime declarations, `_llvm_type_size` alignment fix.
 - **v4.0.0** (next) — Production release: docs, demos, quality gate
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.

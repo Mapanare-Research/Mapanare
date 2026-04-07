@@ -25,6 +25,7 @@ def _read_version() -> str:
     except OSError:
         return "unknown"
 
+
 try:
     from llvmlite import ir
 
@@ -136,7 +137,9 @@ def _init_llvm_types() -> None:
     LLVM_PTR = ir.IntType(8).as_pointer()
     LLVM_I32 = ir.IntType(32)
     LLVM_STRING = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
-    LLVM_LIST = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT, LLVM_INT])
+    LLVM_LIST = ir.LiteralStructType(
+        [ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT, LLVM_INT]
+    )
     LLVM_MAP = ir.IntType(8).as_pointer()  # Opaque pointer to C MnMap struct
     LLVM_CLOSURE = ir.LiteralStructType(
         [ir.IntType(8).as_pointer(), ir.IntType(8).as_pointer()]
@@ -964,16 +967,8 @@ class LLVMMIREmitter:
         return self._resolve_mir_type(MIRType(type_info=ti))
 
     def _llvm_type_size(self, ty: Any) -> int:
-        """Approximate byte size of an LLVM type."""
-        if isinstance(ty, ir.IntType):
-            return int(ty.width) // 8
-        if isinstance(ty, ir.DoubleType):
-            return 8
-        if isinstance(ty, ir.PointerType):
-            return 8
-        if isinstance(ty, ir.LiteralStructType):
-            return sum(self._llvm_type_size(e) for e in ty.elements)
-        return 8
+        """Approximate byte size of an LLVM type (with alignment padding)."""
+        return _approx_type_size(ty)
 
     def _resolve_enum_variant_tag(self, variant_name: str, enum_hint: str = "") -> int:
         """Look up the integer tag for an enum variant name.

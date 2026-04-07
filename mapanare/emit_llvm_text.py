@@ -192,6 +192,47 @@ def _zero(ty: str) -> str:
 
 
 # ── Emitter ─────────────────────────────────────────────────────────
+_RUNTIME_FN_ATTRS: dict[str, set[str]] = {
+    # Read-only string functions
+    "__mn_str_len": {"nounwind", "readonly"},
+    "__mn_str_eq": {"nounwind", "readonly"},
+    "__mn_str_cmp": {"nounwind", "readonly"},
+    "__mn_str_hash": {"nounwind", "readonly"},
+    "__mn_list_len": {"nounwind", "readonly"},
+    "__mn_list_get": {"nounwind", "readonly"},
+    "__mn_map_len": {"nounwind", "readonly"},
+    "__mn_map_contains": {"nounwind", "readonly"},
+    # Allocation
+    "malloc": {"nounwind"},
+    "__mn_alloc": {"nounwind"},
+    # Cleanup
+    "free": {"nounwind"},
+    "__mn_str_free": {"nounwind"},
+    "__mn_list_free": {"nounwind"},
+    "__mn_map_free": {"nounwind"},
+    "__mn_stream_free": {"nounwind"},
+    "__mn_range_free": {"nounwind"},
+    # Mutation
+    "__mn_str_concat": {"nounwind"},
+    "__mn_str_from_int": {"nounwind"},
+    "__mn_str_from_float": {"nounwind"},
+    "__mn_str_from_bool": {"nounwind"},
+    "__mn_list_push": {"nounwind"},
+    "__mn_list_set": {"nounwind"},
+    "__mn_list_new": {"nounwind"},
+    "__mn_list_concat": {"nounwind"},
+    "__mn_map_set": {"nounwind"},
+    "__mn_map_new": {"nounwind"},
+    # Print
+    "__mn_print": {"nounwind"},
+    "__mn_println": {"nounwind"},
+    # Arena
+    "mn_arena_create": {"nounwind"},
+    "mn_arena_alloc": {"nounwind"},
+    "mn_arena_destroy": {"nounwind"},
+}
+
+
 class LLVMTextEmitter:
     """Emit LLVM IR as text from a MIR module. No llvmlite dependency."""
 
@@ -233,6 +274,10 @@ class LLVMTextEmitter:
         self._dphi: list[tuple[str, str, list[tuple[str, Value]]]] = []
         self._lroots: dict[str, str] = {}
         self._fn: MIRFunction | None = None
+        # drop glue tracking (reset per function)
+        self._local_strings: list[str] = []
+        self._local_closures: list[str] = []
+        self._local_boxed: list[str] = []  # boxed enum payload ptrs
         # dispatch
         self._disp: dict[type, Any] = {}
         self._init_disp()
@@ -546,7 +591,12 @@ class LLVMTextEmitter:
         ps = ", ".join(abi_pts)
         if va:
             ps += ", ..." if ps else "..."
-        self._decls.append(f"declare {abi_ret} @{nm}({ps})")
+        attrs = _RUNTIME_FN_ATTRS.get(nm, set())
+        attr_str = " ".join(sorted(attrs))
+        decl = f"declare {abi_ret} @{nm}({ps})"
+        if attr_str:
+            decl += f" {attr_str}"
+        self._decls.append(decl)
 
     def _ensure(self, nm: str, ret: str, pts: list[str], va: bool = False) -> None:
         if nm not in self._sigs:
@@ -754,6 +804,137 @@ class LLVMTextEmitter:
         self._L(f"{r} = call {ret} @{fn}({a})")
         return r
 
+    # ── drop glue ──────────────────────────────────────────────────
+    def _track_string(self, val: str) -> None:
+        """Track a heap-allocated string for drop glue cleanup.
+
+        Emits an alloca in the entry block and stores the string value into it.
+        _emit_drop_glue iterates these allocas at every return site and frees
+        non-returned strings.
+        """
+        slot = self._f("str_track")
+        self._ent.append(f"  {slot} = alloca {{ptr, i64}}, align 8")
+        self._ent.append(f"  store {{ptr, i64}} zeroinitializer, ptr {slot}")
+        self._L(f"store {{ptr, i64}} {val}, ptr {slot}")
+        self._local_strings.append(slot)
+
+    def _track_closure(self, val: str) -> None:
+        """Track a heap-allocated closure env for drop glue cleanup."""
+        slot = self._f("clos_track")
+        self._ent.append(f"  {slot} = alloca {{ptr, ptr}}, align 8")
+        self._ent.append(f"  store {{ptr, ptr}} zeroinitializer, ptr {slot}")
+        self._L(f"store {{ptr, ptr}} {val}, ptr {slot}")
+        self._local_closures.append(slot)
+
+    def _track_boxed(self, ptr_val: str) -> None:
+        """Track a boxed enum payload pointer for drop glue cleanup."""
+        slot = self._f("box_track")
+        self._ent.append(f"  {slot} = alloca ptr, align 8")
+        self._ent.append(f"  store ptr null, ptr {slot}")
+        self._L(f"store ptr {ptr_val}, ptr {slot}")
+        self._local_boxed.append(slot)
+
+    def _emit_drop_glue(self, ret_val: str | None, ret_ty: str) -> None:
+        """Emit cleanup code before a return instruction.
+
+        For each tracked string, loads the {ptr, i64} value, extracts the data
+        pointer, and frees it unless it's the same pointer being returned.
+        """
+        if not self._local_strings and not self._local_closures and not self._local_boxed:
+            return
+
+        self._ensure("__mn_str_free", VOID, [STR])
+
+        # Extract returned string's data pointer (to avoid freeing it)
+        ret_ptr: str | None = None
+        if ret_val and ret_ty == STR:
+            ret_ptr = self._f("ret.ptr")
+            self._L(f"{ret_ptr} = extractvalue {{ptr, i64}} {ret_val}, 0")
+
+        # Extract returned closure's env pointer (to avoid freeing it)
+        ret_env: str | None = None
+        if ret_val and ret_ty == CLOS:
+            ret_env = self._f("ret.env")
+            self._L(f"{ret_env} = extractvalue {{ptr, ptr}} {ret_val}, 1")
+
+        for slot in self._local_strings:
+            sv = self._f("drop.s")
+            self._L(f"{sv} = load {{ptr, i64}}, ptr {slot}")
+            sp = self._f("drop.p")
+            self._L(f"{sp} = extractvalue {{ptr, i64}} {sv}, 0")
+            # Check if pointer is null (string was never assigned)
+            sn = self._f("drop.null")
+            self._L(f"{sn} = icmp eq ptr {sp}, null")
+            skip_lbl = f"drop.skip.{self._c}"
+            free_lbl = f"drop.check.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {sn}, label %{skip_lbl}, label %{free_lbl}")
+
+            # check block: compare with return pointer if applicable
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            if ret_ptr:
+                same = self._f("drop.same")
+                self._L(f"{same} = icmp eq ptr {sp}, {ret_ptr}")
+                do_free_lbl = f"drop.free.{self._c}"
+                self._c += 1
+                self._L(f"br i1 {same}, label %{skip_lbl}, label %{do_free_lbl}")
+                self._blk[do_free_lbl] = []
+                self._cb = do_free_lbl
+            self._L(f"call void @__mn_str_free({{ptr, i64}} {sv})")
+            self._L(f"br label %{skip_lbl}")
+
+            # skip block: continue
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+        self._ensure("free", VOID, [PTR])
+        for slot in self._local_closures:
+            cv = self._f("drop.c")
+            self._L(f"{cv} = load {{ptr, ptr}}, ptr {slot}")
+            ep = self._f("drop.ep")
+            self._L(f"{ep} = extractvalue {{ptr, ptr}} {cv}, 1")
+            en = self._f("drop.enull")
+            self._L(f"{en} = icmp eq ptr {ep}, null")
+            skip_lbl = f"drop.cskip.{self._c}"
+            free_lbl = f"drop.ccheck.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {en}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            if ret_env:
+                same = self._f("drop.csame")
+                self._L(f"{same} = icmp eq ptr {ep}, {ret_env}")
+                do_free_lbl = f"drop.cfree.{self._c}"
+                self._c += 1
+                self._L(f"br i1 {same}, label %{skip_lbl}, label %{do_free_lbl}")
+                self._blk[do_free_lbl] = []
+                self._cb = do_free_lbl
+            self._L(f"call void @free(ptr {ep})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+        for slot in self._local_boxed:
+            bp = self._f("drop.bp")
+            self._L(f"{bp} = load ptr, ptr {slot}")
+            bn = self._f("drop.bnull")
+            self._L(f"{bn} = icmp eq ptr {bp}, null")
+            skip_lbl = f"drop.bskip.{self._c}"
+            free_lbl = f"drop.bfree.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {bn}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            self._L(f"call void @free(ptr {bp})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
     # ── function emission ───────────────────────────────────────────
     def _emit_fn(self, fn: MIRFunction) -> str:
         self._c = 0
@@ -764,6 +945,9 @@ class LLVMTextEmitter:
         self._dphi = []
         self._lroots = {}
         self._fn = fn
+        self._local_strings = []
+        self._local_closures = []
+        self._local_boxed = []
 
         # Determine which params use byref and if return uses sret
         rt_orig = self._rty(fn.return_type)
@@ -971,9 +1155,15 @@ class LLVMTextEmitter:
                 out.append(f"  store {ty} %{s}, ptr %{s}.addr")
         if fn.blocks:
             out.append(f"  br label %{fn.blocks[0].label}")
+        mir_labels = {bb.label for bb in fn.blocks}
         for bb in fn.blocks:
             out.append(f"{bb.label}:")
             out.extend(self._blk[bb.label])
+        # Emit drop glue blocks (drop.skip.*, drop.check.*, drop.free.*, etc.)
+        for lbl, lines in self._blk.items():
+            if lbl not in mir_labels:
+                out.append(f"{lbl}:")
+                out.extend(lines)
         out.append("}")
         out.append("")
         return "\n".join(out)
@@ -1171,12 +1361,15 @@ class LLVMTextEmitter:
             self._put(i.dest, r, I64)
         elif sk == TypeKind.INT and tk == TypeKind.STRING:
             r = self._rt("__mn_str_from_int", STR, [I64], [(sv, st)])
+            self._track_string(r)
             self._put(i.dest, r, STR)
         elif sk == TypeKind.FLOAT and tk == TypeKind.STRING:
             r = self._rt("__mn_str_from_float", STR, [DBL], [(sv, st)])
+            self._track_string(r)
             self._put(i.dest, r, STR)
         elif sk == TypeKind.BOOL and tk == TypeKind.STRING:
             r = self._rt("__mn_str_from_bool", STR, [I1], [(sv, st)])
+            self._track_string(r)
             self._put(i.dest, r, STR)
         elif sk == TypeKind.INT and tk == TypeKind.CHAR:
             r = self._f("cc")
@@ -1214,6 +1407,7 @@ class LLVMTextEmitter:
             rv = self._coerce(rv, rt_, STR) if rt_ != STR else rv
             if op == BinOpKind.ADD:
                 r = self._rt("__mn_str_concat", STR, [STR, STR], [(lv, STR), (rv, STR)])
+                self._track_string(r)
                 self._put(i.dest, r, STR)
             elif op in (BinOpKind.EQ, BinOpKind.NE):
                 c = self._rt("__mn_str_eq", I64, [STR, STR], [(lv, STR), (rv, STR)])
@@ -1417,6 +1611,7 @@ class LLVMTextEmitter:
                 self._printf("%f\n" if nl else "%f", [(args[0][0], DBL)])
             elif i.args and i.args[0].ty.kind == TypeKind.BOOL:
                 s = self._rt("__mn_str_from_bool", STR, [I1], [args[0]])
+                self._track_string(s)
                 rt_fn_b = "__mn_str_println" if nl else "__mn_str_print"
                 self._rt(rt_fn_b, VOID, [STR], [(s, STR)])
             elif i.args:
@@ -1463,10 +1658,13 @@ class LLVMTextEmitter:
                     ak = TypeKind.STRING
             if ak == TypeKind.INT:
                 r = self._rt("__mn_str_from_int", STR, [I64], [args[0]])
+                self._track_string(r)
             elif ak == TypeKind.FLOAT:
                 r = self._rt("__mn_str_from_float", STR, [DBL], [args[0]])
+                self._track_string(r)
             elif ak == TypeKind.BOOL:
                 r = self._rt("__mn_str_from_bool", STR, [I1], [args[0]])
+                self._track_string(r)
             elif ak == TypeKind.STRING:
                 self._put(i.dest, args[0][0], args[0][1])
                 return
@@ -1509,6 +1707,7 @@ class LLVMTextEmitter:
             return
         if fn == "chr" and i.args:
             r = self._rt("__mn_str_chr", STR, [I64], [args[0]])
+            self._track_string(r)
             self._put(i.dest, r, STR)
             return
 
@@ -1520,11 +1719,13 @@ class LLVMTextEmitter:
         if fn == "__mn_argv" and args:
             a = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
             r = self._rt("__mn_argv", STR, [I64], [(a, I64)])
+            self._track_string(r)
             self._put(i.dest, r, STR)
             return
         if fn == "__mn_file_read_or_empty" and args:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_file_read_or_empty", STR, [STR], [(a, STR)])
+            self._track_string(r)
             self._put(i.dest, r, STR)
             return
         if fn == "__mn_exit" and args:
@@ -1561,6 +1762,7 @@ class LLVMTextEmitter:
             la = self._alloca(LIST, "jl")
             self._L(f"store {LIST} {lv}, ptr {la}")
             r = self._rt("__mn_str_join", STR, [STR, "ptr"], [(sep, STR), (la, "ptr")])
+            self._track_string(r)
             self._put(i.dest, r, STR)
             return
 
@@ -1590,6 +1792,8 @@ class LLVMTextEmitter:
             rtn, pts, ret = _smeth[fn]
             if len(args) == len(pts):
                 r = self._rt(rtn, ret, pts, args)
+                if ret == STR:
+                    self._track_string(r)
                 self._put(i.dest, r, ret)
                 return
 
@@ -1848,16 +2052,20 @@ class LLVMTextEmitter:
             assert self._fn is not None
             rt = self._rty(self._fn.return_type)
             if rt == VOID:
+                self._emit_drop_glue(None, VOID)
                 self._L("ret void")
             elif self._fn_use_sret:
                 # Store return value into sret pointer and return void
                 v = self._coerce(v, t, self._fn_sret_ty) if t != self._fn_sret_ty else v
+                self._emit_drop_glue(v, self._fn_sret_ty)
                 self._L(f"store {self._fn_sret_ty} {v}, ptr {self._sret_ptr}")
                 self._L("ret void")
             else:
                 v = self._coerce(v, t, rt) if t != rt else v
+                self._emit_drop_glue(v, rt)
                 self._L(f"ret {rt} {v}")
         else:
+            self._emit_drop_glue(None, VOID)
             if self._fn_use_sret:
                 self._L("ret void")
             else:
@@ -2231,6 +2439,7 @@ class LLVMTextEmitter:
                 self._ensure("malloc", PTR, [I64])
                 raw = self._f("ep")
                 self._L(f"{raw} = call ptr @malloc(i64 {psz})")
+                self._track_boxed(raw)
                 tp = raw  # opaque ptr, no bitcast
                 for j, pval in enumerate(i.payload):
                     # For list values, check if there's a root alloca from push
@@ -2414,15 +2623,19 @@ class LLVMTextEmitter:
                 parts.append((self._coerce(v, t, STR) if t != STR else v, STR))
             elif pk == TypeKind.INT:
                 s = self._rt("__mn_str_from_int", STR, [I64], [(v, t)])
+                self._track_string(s)
                 parts.append((s, STR))
             elif pk == TypeKind.FLOAT:
                 s = self._rt("__mn_str_from_float", STR, [DBL], [(v, t)])
+                self._track_string(s)
                 parts.append((s, STR))
             elif pk == TypeKind.BOOL:
                 s = self._rt("__mn_str_from_bool", STR, [I1], [(v, t)])
+                self._track_string(s)
                 parts.append((s, STR))
             else:
                 s = self._rt("__mn_str_from_int", STR, [I64], [(self._coerce(v, t, I64), I64)])
+                self._track_string(s)
                 parts.append((s, STR))
         cur = parts[0][0]
         self._ensure("__mn_str_concat", STR, [STR, STR])
@@ -2431,6 +2644,7 @@ class LLVMTextEmitter:
             self._L(
                 f"{r} = call {{ptr, i64}} @__mn_str_concat({{ptr, i64}} {cur}, {{ptr, i64}} {pstr})"
             )
+            self._track_string(r)
             cur = r
         self._put(i.dest, cur, STR)
 
@@ -2472,6 +2686,7 @@ class LLVMTextEmitter:
         self._L(f"{s0} = insertvalue {{ptr, ptr}} undef, ptr {fnp}, 0")
         s1 = self._f("cc")
         self._L(f"{s1} = insertvalue {{ptr, ptr}} {s0}, ptr {raw}, 1")
+        self._track_closure(s1)
         self._put(i.dest, s1, CLOS)
 
     def _do_clos_call(self, i: ClosureCall) -> None:

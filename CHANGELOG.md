@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.17.0] - 2026-04-07
+
+### Added
+
+- String/closure drop glue in text emitter — default pipeline no longer leaks heap strings
+- Runtime function attributes (`nounwind`/`readonly`) on text emitter `declare` statements
+- Boxed enum payload cleanup in drop glue (both emitters)
+
+### Fixed
+
+- `_llvm_type_size` now delegates to `_approx_type_size` for correct alignment padding (fixes closure env buffer overruns on mixed-type captures)
+
 ## [3.16.0] - 2026-04-07
 
 ### Added
@@ -543,7 +555,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.16.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.17.0...HEAD
+[3.17.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.16.0...v3.17.0
 [3.16.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.15.0...v3.16.0
 [3.15.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.14.0...v3.15.0
 [3.0.3]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.2...v3.0.3

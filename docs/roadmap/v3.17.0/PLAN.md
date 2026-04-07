@@ -4,7 +4,7 @@
 > After this version, the default compilation pipeline no longer leaks strings.
 > This is the single largest piece of work in the v3.15-v4.0 roadmap.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Large (2-3 sessions)
 **Breaking:** No
 **Prerequisite:** v3.16.0 (ABI fix, container cleanup functions in runtime)
