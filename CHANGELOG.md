@@ -7,13 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.26.0] - 2026-04-07
+## [3.27.0] - 2026-04-07
 
 ### Added
 
-### Changed
+- Shared transpiler framework (`mapanare/self/transpiler.mn`) — ~500 lines
+- TypeMapping struct + `translate_type()` with nullable/generic support
+- FieldDef, MethodDef, ParamDef structs + `translate_class_to_struct()`
+- CatchClause struct + `translate_exception_to_result()`
+- StdlibShim struct + `translate_stdlib_call()` with arg reorder
+- TranspilerState with scope push/pop, var tracking, indent management
+- `infer_local_type()` for literal-based type inference
+- `report_unsupported()` diagnostic helper
+- `needs_any_boxing()` + `emit_any_annotation()` helpers
+- Language-specific mapping factories: Python, PHP, TypeScript, Go
+- 23 framework tests across 4 test classes
+- Module wired into self-hosted build (12th module in concat order)
+
+## [3.26.0] - 2026-04-07
 
 ### Fixed
+
+- TypeKind.ANY mapped in text emitter (MN_VALUE) and llvmlite emitter
+- Arithmetic on `any` values rejected at semantic check with clear error
+- PHP transpiler: `$this` → `self`, return type translation, isset/empty/is_array mappings
+- C backend stream operation call signatures match runtime declarations
+- Signal unsubscribe race: added locking to `__mn_signal_unsubscribe`
+- Map free heuristic: explicit `val_type` field replaces size-based guessing
+- llvmlite emitter deprecated with warning
+- CLI: wired PHP in `cmd_transpile`, fixed "an Mapanare" typo
+- Cookbook output version corrected, `di`/`any` keywords added to spec
 
 ## [3.25.0] - 2026-04-07
 
@@ -676,7 +699,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.26.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.27.0...HEAD
+[3.27.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.26.0...v3.27.0
 [3.26.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.25.0...v3.26.0
 [3.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.24.0...v3.25.0
 [3.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.23.0...v3.24.0
