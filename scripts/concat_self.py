@@ -24,6 +24,7 @@ MODULE_ORDER = [
     "emit_llvm_ir.mn",
     "emit_llvm.mn",
     "transpiler.mn",
+    "from_python.mn",
     "main.mn",
 ]
 

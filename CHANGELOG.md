@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.28.0] - 2026-04-07
+
+### Added
+
+- Self-hosted Python transpiler (`mapanare/self/from_python.mn`) — ~630 lines
+- Python tokenizer: strings, numbers, identifiers, keywords, operators, comments
+- Python keyword table (35 keywords)
+- PyParser recursive descent with expression/statement translation
+- Python stdlib shims (18 mappings: append→push, upper→to_upper, etc.)
+- Type translation via transpiler.mn framework (int→Int, str→String, etc.)
+- Function, class, import, return statement translation
+- 14 self-hosted transpiler tests across 3 test classes
+- Module wired into self-hosted build (13th module in concat order)
+
 ## [3.27.0] - 2026-04-07
 
 ### Added
@@ -699,7 +713,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.27.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.28.0...HEAD
+[3.28.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.27.0...v3.28.0
 [3.27.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.26.0...v3.27.0
 [3.26.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.25.0...v3.26.0
 [3.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.24.0...v3.25.0
