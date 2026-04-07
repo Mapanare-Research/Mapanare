@@ -1120,9 +1120,12 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
     // Skip optional type params: impl<T, U> ...
     if peek_type(tokens, p) == "LT" {
         p = p + 1
+        let mut done_tp: Bool = false
         for _ in 0..20 {
-            if peek_type(tokens, p) == "GT" { p = p + 1; break }
-            p = p + 1
+            if !done_tp {
+                if peek_type(tokens, p) == "GT" { p = p + 1; done_tp = true }
+                if !done_tp { p = p + 1 }
+            }
         }
     }
 
@@ -1132,9 +1135,12 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
     // Skip optional type args: impl<T> Name<T> { ... }
     if peek_type(tokens, p) == "LT" {
         p = p + 1
+        let mut done_ta: Bool = false
         for _ in 0..20 {
-            if peek_type(tokens, p) == "GT" { p = p + 1; break }
-            p = p + 1
+            if !done_ta {
+                if peek_type(tokens, p) == "GT" { p = p + 1; done_ta = true }
+                if !done_ta { p = p + 1 }
+            }
         }
     }
 
