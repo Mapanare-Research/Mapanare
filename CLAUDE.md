@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.14.0** (current) — **Cuaima.** Type system fixes (generic arity, hash collisions, exhaustiveness), arithmetic traits (Add/Sub/Mul/Div), WASM CHAR mapping, self-hosted scope_define fixed, docs corrected, CI hardened.
+- **v3.15.0** (current) — **Coral.** C runtime correctness: list concat null-pointer UB, Windows handler deadlock, atomic COW refcounts, MnList ABI mismatch, Vulkan padding, str_from_bool allocation, thread-local OOB buffer.
 - **v4.0.0** (next) — Production release: docs, demos, quality gate
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.

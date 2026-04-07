@@ -48,6 +48,7 @@ typedef struct {
     int64_t len;
     int64_t cap;
     int64_t elem_size;
+    int64_t managed;
 } MnList;
 
 /* SemanticError: { filename: String, line: Int, column: Int, message: String } */

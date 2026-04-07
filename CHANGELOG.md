@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.15.0] - 2026-04-07
+
+### Fixed
+
+- `__mn_list_concat` null-pointer UB: realloc on NULL-16 when concatenating into a fresh list
+- Windows console handler deadlock: removed `mapanare_registry_stop_all()` mutex call from handler thread
+- COW list refcount now atomic: `__atomic_fetch_add`/`__atomic_fetch_sub` at 3 sites (safe on ARM64 agent workloads)
+- MnList ABI mismatch: added 5th `managed` field to `emit_llvm_text.py`, `emit_llvm.py`, and `mnc_main.c`
+- `VkPhysicalDeviceProperties` padding undersized: 804 -> 836 bytes (prevents stack smash on Vulkan)
+- `__mn_str_from_bool` no longer heap-allocates per call (static constants)
+- `__mn_list_oob_buf` now `_Thread_local` (safe for concurrent agent OOB access)
+
 ## [3.14.0] - 2026-04-07
 
 ### Added
@@ -511,7 +523,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.3...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.15.0...HEAD
+[3.15.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.14.0...v3.15.0
 [3.0.3]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.0...v3.0.1

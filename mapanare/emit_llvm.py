@@ -85,8 +85,10 @@ LLVM_I32 = ir.IntType(32)  # i32 for C int
 # String: { i8*, i64 } — pointer to data + length (matches MnString in C runtime)
 LLVM_STRING = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
 
-# List: { i8*, i64, i64, i64 } — data, len, cap, elem_size (matches MnList in C runtime)
-LLVM_LIST = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT])
+# List: { i8*, i64, i64, i64, i64 } — data, len, cap, elem_size, managed (matches MnList)
+LLVM_LIST = ir.LiteralStructType(
+    [ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT, LLVM_INT]
+)
 
 # Closure: { i8*, i8* } — fn_ptr, env_ptr
 LLVM_CLOSURE = ir.LiteralStructType([ir.IntType(8).as_pointer(), ir.IntType(8).as_pointer()])

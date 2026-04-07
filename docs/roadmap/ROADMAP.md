@@ -7,15 +7,18 @@
 
 ---
 
-## Where We Are (v3.14.0 — Cuaima)
+## Where We Are (v3.15.0 — Coral)
 
-**Type system and quality release.** v3.14.0 fixed TypeInfo hash collisions
-for generic types, added generic arity validation, arithmetic operator traits
-(Add/Sub/Mul/Div), IdentPattern wildcard exhaustiveness, WASM CHAR mapping,
-self-hosted scope_define (broken since v2.0.0), tutorial syntax, spec numbering,
-debug info version, and CI integrity (removed continue-on-error on stage1).
+**C runtime correctness release.** v3.15.0 fixed all undefined behavior, data
+races, and ABI mismatches in the C runtime: `__mn_list_concat` null-pointer UB,
+Windows console handler deadlock, non-atomic COW refcounts, MnList ABI mismatch
+in 3 emitter files, VkPhysicalDeviceProperties stack smash, `__mn_str_from_bool`
+heap allocation, and `__mn_list_oob_buf` thread safety.
 
-**Next:** v4.0.0 production release — docs, demos, quality gate.
+**Next:** v3.16.0 "Cunaguaro" — concurrency and agent hardening. Then 6 more
+quality releases (v3.17.0-v3.22.0) covering drop glue, arenas, self-hosted
+compiler, type safety, DX polish, and performance. v4.0.0 is the production
+quality gate after all review findings are resolved.
 
 The self-hosted compiler is 15,000+ lines across 11 modules.
 
@@ -147,8 +150,16 @@ from the seed binary.
 | **v3.9.1** | CI Green + Tests | Fix CI failures, generate .ref.ll for tests 16–31, update baselines, clean artifacts |
 | **v3.10.0** ✅ | Error Messages + Maturity | Self-hosted errors with line numbers, generic enums, trait method validation, builtin coverage |
 | **v3.13.0** | **"Cascabel" — Memory Safety** | String drop glue, range iterator fix, COW list managed flag, runtime fn attributes, intern table thread safety, Windows mutex fix |
-| **v3.14.0** | **"Cuaima" — Type System + Docs** | Generic arity validation, arithmetic traits, TypeInfo hash fix, self-hosted scope_define fix, Stmt enum gaps, tutorial syntax, CI integrity |
-| **v4.0.0** | **Production Release** | Docs, demos, quality gate — the compiler is ready for real programs |
+| **v3.14.0** ✅ | **"Cuaima" — Type System + Docs** | Generic arity validation, arithmetic traits, TypeInfo hash fix, self-hosted scope_define fix, tutorial syntax, CI integrity |
+| **v3.15.0** ✅ | **"Coral" — C Runtime Correctness** | Fix list_concat UB, Windows handler deadlock, COW atomics, MnList ABI mismatch, Vulkan padding, str_from_bool, thread-local OOB |
+| **v3.16.0** | **"Lora" — Concurrency + Leaks** | Signal thread safety, map/stream free, CI stage2 integrity, `mapanare run` warnings |
+| **v3.17.0** | **"Tigra" — Text Emitter Drop Glue** | Port string/closure drop glue to default emitter, function attributes, closure env sizing |
+| **v3.18.0** | **"Macagua" — Container Memory + Arenas** | Drop glue for lists/maps/signals/streams, per-function arena allocation |
+| **v3.19.0** | **"Tragavenado" — Self-Hosted Completeness** | While/Break/Continue/Assert, for-loop type inference, generic type tracking, InterpString, trait parsing |
+| **v3.20.0** | **"Sapa" — Type Safety + Optimizer** | Arithmetic trait lowering, O2 convergence, _coerce_arg reduction phase 1, emitter cleanup |
+| **v3.21.0** | **"Cascabel II" — DX Polish** | REPL exceptions, test colors, docs fixes, native C tests, WASM stubs, GPU error gate |
+| **v3.22.0** | **"Puare" — Performance + Tensor PoC** | _coerce_arg phase 2, Any reduction, deepcopy replacement, alloca reduction, tensor elementwise add |
+| **v4.0.0** | **"Mapanare" — Production Release** | Docs, demos, quality gate — the compiler is ready for real programs |
 
 ---
 

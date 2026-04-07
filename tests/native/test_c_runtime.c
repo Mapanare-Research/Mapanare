@@ -301,6 +301,38 @@ TEST(test_list_str) {
     __mn_list_free_strings(&list);
 }
 
+TEST(test_list_concat) {
+    /* Two non-empty lists */
+    MnList a = __mn_list_new(sizeof(int64_t));
+    MnList b = __mn_list_new(sizeof(int64_t));
+    int64_t v1 = 10, v2 = 20, v3 = 30;
+    __mn_list_push(&a, &v1);
+    __mn_list_push(&a, &v2);
+    __mn_list_push(&b, &v3);
+    MnList c = __mn_list_concat(&a, &b);
+    ASSERT_EQ(c.len, 3);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&c, 0), 10);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&c, 1), 20);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&c, 2), 30);
+    __mn_list_free(&c);
+
+    /* Empty + non-empty */
+    MnList empty = __mn_list_new(sizeof(int64_t));
+    MnList d = __mn_list_concat(&empty, &b);
+    ASSERT_EQ(d.len, 1);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&d, 0), 30);
+    __mn_list_free(&d);
+
+    /* Non-empty + empty */
+    MnList e = __mn_list_concat(&a, &empty);
+    ASSERT_EQ(e.len, 2);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&e, 0), 10);
+    __mn_list_free(&e);
+
+    __mn_list_free(&a);
+    __mn_list_free(&b);
+}
+
 TEST(test_list_stress) {
     MnList list = __mn_list_new(sizeof(int64_t));
     for (int64_t i = 0; i < 100000; i++) {
@@ -865,6 +897,7 @@ int main(void) {
     RUN_TEST(test_list_grow);
     RUN_TEST(test_list_clear);
     RUN_TEST(test_list_str);
+    RUN_TEST(test_list_concat);
     RUN_TEST(test_list_stress);
     printf("\n");
 

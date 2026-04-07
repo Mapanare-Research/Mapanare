@@ -609,7 +609,9 @@ MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) 
 }
 
 MN_EXPORT MnString __mn_str_from_bool(int64_t value) {
-    return value ? __mn_str_from_cstr("true") : __mn_str_from_cstr("false");
+    static const MnString s_true  = { "true",  4 };
+    static const MnString s_false = { "false", 5 };
+    return value ? s_true : s_false;
 }
 
 MN_EXPORT MnString __mn_str_from_int(int64_t value) {
@@ -773,10 +775,10 @@ static void mn_list_detach(MnList *list) {
     }
     if (!mn_list_is_managed(list)) return;  /* unmanaged buffer — nothing to detach */
     int64_t *rc = mn_list_rc(list);
-    if (*rc <= 1) return;  /* sole owner, no detach needed */
+    if (__atomic_load_n(rc, __ATOMIC_ACQUIRE) <= 1) return;  /* sole owner, no detach needed */
     cow_detaches++;
     /* Shared — make a private copy */
-    (*rc)--;  /* decrement original's refcount */
+    __atomic_fetch_sub(rc, 1, __ATOMIC_ACQ_REL);  /* decrement original's refcount */
     int64_t cap = list->cap > 0 ? list->cap : MN_LIST_INITIAL_CAP;
     char *new_data = mn_list_alloc_buf(cap, list->elem_size);
     if (list->len > 0) {
@@ -847,7 +849,7 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
    causing loops to access list elements past the end.  Returning a zeroed
    buffer instead of NULL prevents segfaults — the caller reads zeros and
    the loop eventually exits when the outer for-counter expires. */
-static char __mn_list_oob_buf[4096] = {0};
+static _Thread_local char __mn_list_oob_buf[4096] = {0};
 
 MN_EXPORT void *__mn_list_get(MnList *list, int64_t i) {
     if (i < 0 || i >= list->len) return __mn_list_oob_buf;
@@ -901,8 +903,8 @@ MN_EXPORT void __mn_list_free(MnList *list) {
     if (list->data && list->managed) {
         int64_t *rc = mn_list_rc(list);
         if (rc) {
-            (*rc)--;
-            if (*rc <= 0) {
+            int64_t prev = __atomic_fetch_sub(rc, 1, __ATOMIC_ACQ_REL);
+            if (prev <= 1) {
                 __mn_free(((char *)list->data) - MN_LIST_HEADER_SIZE);
             }
         }
@@ -951,11 +953,12 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
     }
     if (mn_list_has_magic(src)) {
         int64_t *rc = mn_list_rc(src);
-        if (rc && *rc > 0 && *rc < 10000000) {
+        int64_t rc_val = rc ? __atomic_load_n(rc, __ATOMIC_ACQUIRE) : 0;
+        if (rc && rc_val > 0 && rc_val < 10000000) {
             dst.cap = src->cap;
             dst.data = src->data;
             dst.managed = 1;
-            (*rc)++;
+            __atomic_fetch_add(rc, 1, __ATOMIC_RELAXED);
             cow_shares++;
             return dst;
         }
@@ -1008,11 +1011,17 @@ MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
     MnList result = __mn_list_new(es);
     int64_t total = mn_checked_add(a->len, b->len);
     if (total > result.cap) {
-        /* Grow: realloc must include the COW header */
-        int64_t new_bytes = mn_checked_add(MN_LIST_HEADER_SIZE, mn_checked_mul(total, es));
-        char *raw = ((char *)result.data) - MN_LIST_HEADER_SIZE;
-        raw = (char *)__mn_realloc(raw, new_bytes);
-        result.data = raw + MN_LIST_HEADER_SIZE;
+        if (result.data == NULL) {
+            /* Fresh allocation — __mn_list_new returns data=NULL */
+            result.data = mn_list_alloc_buf(total, es);
+            result.managed = 1;
+        } else {
+            /* Grow: realloc must include the COW header */
+            int64_t new_bytes = mn_checked_add(MN_LIST_HEADER_SIZE, mn_checked_mul(total, es));
+            char *raw = ((char *)result.data) - MN_LIST_HEADER_SIZE;
+            raw = (char *)__mn_realloc(raw, new_bytes);
+            result.data = raw + MN_LIST_HEADER_SIZE;
+        }
         result.cap = total;
     }
     if (a->len > 0) {

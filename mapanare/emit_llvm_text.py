@@ -74,7 +74,7 @@ DBL = "double"
 VOID = "void"
 PTR = "ptr"
 STR = "{ptr, i64}"
-LIST = "{ptr, i64, i64, i64}"
+LIST = "{ptr, i64, i64, i64, i64}"
 CLOS = "{ptr, ptr}"
 ENUM = "{i64, ptr}"
 

@@ -1092,9 +1092,7 @@ static volatile sig_atomic_t s_shutdown_signal = 0;
 static BOOL WINAPI mapanare_console_handler(DWORD sig) {
     if (sig == CTRL_C_EVENT || sig == CTRL_BREAK_EVENT || sig == CTRL_CLOSE_EVENT) {
         s_shutdown_requested = 1;
-        if (s_shutdown_registry) {
-            mapanare_registry_stop_all(s_shutdown_registry);
-        }
+        s_shutdown_signal = (sig_atomic_t)sig;
         return TRUE;
     }
     return FALSE;
