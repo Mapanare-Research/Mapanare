@@ -12,6 +12,7 @@ declare ptr @__mn_range(i64, i64)
 declare i1 @__iter_has_next(ptr)
 declare i64 @__iter_next(ptr)
 declare void @__mn_str_println({ptr, i64})
+declare i1 @__mn_range_free(ptr)
 
 define internal {ptr, i64} @fizzbuzz(i64 %n) {
 pre_entry:
@@ -140,6 +141,8 @@ pre_entry:
   store {ptr, i64} zeroinitializer, ptr %t6.a.15
   %t7.a.17 = alloca i1, align 8
   store i1 0, ptr %t7.a.17
+  %range_free8.a.20 = alloca i1, align 8
+  store i1 0, ptr %range_free8.a.20
   br label %entry
 entry:
   store i64 1, ptr %t0.a.0
@@ -167,9 +170,12 @@ for_body1:
   store i1 0, ptr %t7.a.17
   br label %for_header0
 for_exit2:
+  %l.18 = load ptr, ptr %t2.a.5
+  %c.19 = call i1 @__mn_range_free(ptr %l.18)
+  store i1 %c.19, ptr %range_free8.a.20
   ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.9.0"}
+!0 = !{!"3.14.0"}

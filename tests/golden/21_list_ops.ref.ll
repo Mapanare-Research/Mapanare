@@ -8,6 +8,7 @@ declare ptr @__mn_range(i64, i64)
 declare i1 @__iter_has_next(ptr)
 declare i64 @__iter_next(ptr)
 declare ptr @__mn_list_get(ptr, i64)
+declare i1 @__mn_range_free(ptr)
 declare {ptr, i64, i64, i64} @__mn_list_new(i64)
 declare void @__mn_list_push(ptr, ptr)
 declare {ptr, i64} @__mn_str_from_int(i64)
@@ -34,6 +35,8 @@ pre_entry:
   store i64 0, ptr %t7.a.22
   %t8.a.26 = alloca i64, align 8
   store i64 0, ptr %t8.a.26
+  %range_free9.a.30 = alloca i1, align 8
+  store i1 0, ptr %range_free9.a.30
   store {ptr, i64, i64, i64} %items, ptr %items.addr
   br label %entry
 entry:
@@ -72,8 +75,11 @@ for_body1:
   store i64 %l.27, ptr %total.a.0
   br label %for_header0
 for_exit2:
-  %l.28 = load i64, ptr %total.a.0
-  ret i64 %l.28
+  %l.28 = load ptr, ptr %t3.a.9
+  %c.29 = call i1 @__mn_range_free(ptr %l.28)
+  store i1 %c.29, ptr %range_free9.a.30
+  %l.31 = load i64, ptr %total.a.0
+  ret i64 %l.31
 }
 
 define i64 @main() {
@@ -180,4 +186,4 @@ entry:
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.9.0"}
+!0 = !{!"3.14.0"}

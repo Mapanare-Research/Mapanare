@@ -6,6 +6,7 @@ target triple = "x86_64-unknown-linux-gnu"
 declare ptr @__mn_range(i64, i64)
 declare i1 @__iter_has_next(ptr)
 declare i64 @__iter_next(ptr)
+declare i1 @__mn_range_free(ptr)
 declare {ptr, i64} @__mn_str_from_int(i64)
 declare void @__mn_str_println({ptr, i64})
 
@@ -25,10 +26,12 @@ pre_entry:
   store i64 0, ptr %next6.a.13
   %t7.a.17 = alloca i64, align 8
   store i64 0, ptr %t7.a.17
-  %t8.a.21 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t8.a.21
-  %t9.a.23 = alloca i1, align 8
-  store i1 0, ptr %t9.a.23
+  %range_free8.a.21 = alloca i1, align 8
+  store i1 0, ptr %range_free8.a.21
+  %t9.a.24 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t9.a.24
+  %t10.a.26 = alloca i1, align 8
+  store i1 0, ptr %t10.a.26
   br label %entry
 entry:
   store i64 0, ptr %sum.a.0
@@ -57,15 +60,18 @@ for_body1:
   store i64 %l.18, ptr %sum.a.0
   br label %for_header0
 for_exit2:
-  %l.19 = load i64, ptr %sum.a.0
-  %rt.20 = call {ptr, i64} @__mn_str_from_int(i64 %l.19)
-  store {ptr, i64} %rt.20, ptr %t8.a.21
-  %l.22 = load {ptr, i64}, ptr %t8.a.21
-  call void @__mn_str_println({ptr, i64} %l.22)
-  store i1 0, ptr %t9.a.23
+  %l.19 = load ptr, ptr %t3.a.6
+  %c.20 = call i1 @__mn_range_free(ptr %l.19)
+  store i1 %c.20, ptr %range_free8.a.21
+  %l.22 = load i64, ptr %sum.a.0
+  %rt.23 = call {ptr, i64} @__mn_str_from_int(i64 %l.22)
+  store {ptr, i64} %rt.23, ptr %t9.a.24
+  %l.25 = load {ptr, i64}, ptr %t9.a.24
+  call void @__mn_str_println({ptr, i64} %l.25)
+  store i1 0, ptr %t10.a.26
   ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.9.0"}
+!0 = !{!"3.14.0"}

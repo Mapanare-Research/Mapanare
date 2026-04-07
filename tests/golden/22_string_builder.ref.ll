@@ -11,6 +11,7 @@ declare ptr @__mn_range(i64, i64)
 declare i1 @__iter_has_next(ptr)
 declare i64 @__iter_next(ptr)
 declare {ptr, i64} @__mn_str_concat({ptr, i64}, {ptr, i64})
+declare i1 @__mn_range_free(ptr)
 declare void @__mn_str_println({ptr, i64})
 
 define internal {ptr, i64} @repeat_str({ptr, i64} %s, i64 %n) {
@@ -29,6 +30,8 @@ pre_entry:
   store i64 0, ptr %next5.a.15
   %t6.a.19 = alloca {ptr, i64}, align 8
   store {ptr, i64} zeroinitializer, ptr %t6.a.19
+  %range_free7.a.23 = alloca i1, align 8
+  store i1 0, ptr %range_free7.a.23
   store {ptr, i64} %s, ptr %s.addr
   store i64 %n, ptr %n.addr
   br label %entry
@@ -61,8 +64,11 @@ for_body1:
   store {ptr, i64} %l.20, ptr %result.a.3
   br label %for_header0
 for_exit2:
-  %l.21 = load {ptr, i64}, ptr %result.a.3
-  ret {ptr, i64} %l.21
+  %l.21 = load ptr, ptr %t2.a.8
+  %c.22 = call i1 @__mn_range_free(ptr %l.21)
+  store i1 %c.22, ptr %range_free7.a.23
+  %l.24 = load {ptr, i64}, ptr %result.a.3
+  ret {ptr, i64} %l.24
 }
 
 define i64 @main() {
@@ -114,4 +120,4 @@ entry:
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.9.0"}
+!0 = !{!"3.14.0"}
