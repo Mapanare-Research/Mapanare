@@ -161,6 +161,8 @@ class WasmOptions:
     export_all_functions: bool = False
     debug_names: bool = True
     optimize: bool = False
+    # Target WASI (wasm32-wasi) instead of browser (wasm32-unknown-unknown)
+    wasi: bool = False
     # Cross-module imports: functions this module needs from other modules
     module_imports: list[WasmModuleImport] = field(default_factory=list)
 
@@ -513,26 +515,27 @@ class WasmEmitter:
         ]
 
     def _emit_import_section(self) -> list[str]:
-        """Emit JS bridge imports.
-
-        Imported functions provide host-side capabilities:
-        - env.console_log_i32: print an i32 value
-        - env.console_log_i64: print an i64 value
-        - env.console_log_f64: print an f64 value
-        - env.console_log_str: print a string at (ptr, len)
-        - env.console_log_newline: print a newline
-        - env.abort: abort execution with a message
-        """
+        """Emit host imports (JS bridge or WASI depending on target)."""
         lines: list[str] = []
-        imports = [
-            ("env", "console_log_i32", [_WASM_I32], None),
-            ("env", "console_log_i64", [_WASM_I64], None),
-            ("env", "console_log_f64", [_WASM_F64], None),
-            ("env", "console_log_str", [_WASM_I32, _WASM_I32], None),
-            ("env", "console_log_newline", [], None),
-            ("env", "console_log_bool", [_WASM_I32], None),
-            ("env", "abort", [_WASM_I32, _WASM_I32], None),
-        ]
+        if self._options.wasi:
+            imports: list[tuple[str, str, list[str], str | None]] = [
+                (
+                    "wasi_snapshot_preview1",
+                    "fd_write",
+                    [_WASM_I32, _WASM_I32, _WASM_I32, _WASM_I32],
+                    _WASM_I32,
+                ),
+            ]
+        else:
+            imports = [
+                ("env", "console_log_i32", [_WASM_I32], None),
+                ("env", "console_log_i64", [_WASM_I64], None),
+                ("env", "console_log_f64", [_WASM_F64], None),
+                ("env", "console_log_str", [_WASM_I32, _WASM_I32], None),
+                ("env", "console_log_newline", [], None),
+                ("env", "console_log_bool", [_WASM_I32], None),
+                ("env", "abort", [_WASM_I32, _WASM_I32], None),
+            ]
         for mod, name, params, ret in imports:
             param_str = " ".join(f"(param {p})" for p in params)
             result_str = f" (result {ret})" if ret else ""
@@ -837,27 +840,75 @@ class WasmEmitter:
             ]
         )
 
-        # __builtin_print_str: print string via imported console_log_str
-        lines.extend(
-            [
-                "  (func $__builtin_print_str (param $ptr i32)",
-                "    (call $console_log_str",
-                "      (i32.add (local.get $ptr) (i32.const 4))  ;; skip length prefix",
-                "      (i32.load (local.get $ptr))                ;; length",
-                "    )",
-                "  )",
-            ]
-        )
-
-        # __builtin_println_str: print string + newline
-        lines.extend(
-            [
-                "  (func $__builtin_println_str (param $ptr i32)",
-                "    (call $__builtin_print_str (local.get $ptr))",
-                "    (call $console_log_newline)",
-                "  )",
-            ]
-        )
+        if self._options.wasi:
+            # WASI: write bytes to stdout via fd_write
+            lines.extend(
+                [
+                    "  (func $__wasi_write (param $ptr i32) (param $len i32)",
+                    "    ;; Build iovec at scratch area (heap_ptr)",
+                    "    (i32.store (global.get $__heap_ptr) (local.get $ptr))",
+                    "    (i32.store (i32.add (global.get $__heap_ptr) (i32.const 4))"
+                    " (local.get $len))",
+                    "    (drop (call $fd_write",
+                    "      (i32.const 1)",
+                    "      (global.get $__heap_ptr)",
+                    "      (i32.const 1)",
+                    "      (i32.add (global.get $__heap_ptr) (i32.const 8))",
+                    "    ))",
+                    "  )",
+                ]
+            )
+            lines.extend(
+                [
+                    "  (func $__builtin_print_str (param $ptr i32)",
+                    "    (call $__wasi_write",
+                    "      (i32.add (local.get $ptr) (i32.const 4))",
+                    "      (i32.load (local.get $ptr))",
+                    "    )",
+                    "  )",
+                ]
+            )
+            lines.extend(
+                [
+                    "  (func $__wasi_write_newline",
+                    "    ;; Store newline byte at scratch+12 (after iovec+nwritten)",
+                    "    (i32.store8 (i32.add (global.get $__heap_ptr) (i32.const 12))"
+                    " (i32.const 10))",
+                    "    (call $__wasi_write",
+                    "      (i32.add (global.get $__heap_ptr) (i32.const 12))",
+                    "      (i32.const 1)",
+                    "    )",
+                    "  )",
+                ]
+            )
+            lines.extend(
+                [
+                    "  (func $__builtin_println_str (param $ptr i32)",
+                    "    (call $__builtin_print_str (local.get $ptr))",
+                    "    (call $__wasi_write_newline)",
+                    "  )",
+                ]
+            )
+        else:
+            # Browser: print string via imported console_log_str
+            lines.extend(
+                [
+                    "  (func $__builtin_print_str (param $ptr i32)",
+                    "    (call $console_log_str",
+                    "      (i32.add (local.get $ptr) (i32.const 4))",
+                    "      (i32.load (local.get $ptr))",
+                    "    )",
+                    "  )",
+                ]
+            )
+            lines.extend(
+                [
+                    "  (func $__builtin_println_str (param $ptr i32)",
+                    "    (call $__builtin_print_str (local.get $ptr))",
+                    "    (call $console_log_newline)",
+                    "  )",
+                ]
+            )
 
         return lines
 
@@ -1507,28 +1558,54 @@ class WasmEmitter:
         return None
 
     def _emit_print_call(self, inst: Call, with_newline: bool) -> list[str]:
-        """Emit a print/println call, dispatching by argument type."""
+        """Emit a print/println call, dispatching by argument type and target."""
         lines: list[str] = []
         for arg_val in inst.args:
             arg = _sanitize_name(arg_val.name)
             arg_ty = self._locals.get(arg_val.name, _WASM_I64)
 
-            if arg_ty == _WASM_I64:
-                lines.append(f"      (call $console_log_i64 (local.get ${arg}))")
-            elif arg_ty == _WASM_F64:
-                lines.append(f"      (call $console_log_f64 (local.get ${arg}))")
-            elif arg_ty == _WASM_I32:
-                # Could be bool or string pointer; check MIR type
+            if self._options.wasi:
+                # WASI: all output goes through fd_write. Strings use __builtin_print_str.
+                # Non-string types should already be converted via str() in MIR.
                 mir_kind = arg_val.ty.kind if arg_val.ty else TypeKind.UNKNOWN
-                if mir_kind == TypeKind.BOOL:
-                    lines.append(f"      (call $console_log_bool (local.get ${arg}))")
-                elif mir_kind == TypeKind.STRING:
+                if arg_ty == _WASM_I32 and mir_kind == TypeKind.STRING:
+                    lines.append(f"      (call $__builtin_print_str (local.get ${arg}))")
+                elif arg_ty == _WASM_I32:
+                    # i32 as string pointer (generic fallback)
                     lines.append(f"      (call $__builtin_print_str (local.get ${arg}))")
                 else:
-                    lines.append(f"      (call $console_log_i32 (local.get ${arg}))")
+                    # i64/f64 — convert to string first via __mn_str_from_int/float
+                    # These return i32 string pointers in WASM
+                    if arg_ty == _WASM_I64:
+                        lines.append(
+                            f"      (call $__builtin_print_str"
+                            f" (call $__mn_str_from_int (local.get ${arg})))"
+                        )
+                    elif arg_ty == _WASM_F64:
+                        lines.append(
+                            f"      (call $__builtin_print_str"
+                            f" (call $__mn_str_from_float (local.get ${arg})))"
+                        )
+            else:
+                # Browser: use console_log_* host imports
+                if arg_ty == _WASM_I64:
+                    lines.append(f"      (call $console_log_i64 (local.get ${arg}))")
+                elif arg_ty == _WASM_F64:
+                    lines.append(f"      (call $console_log_f64 (local.get ${arg}))")
+                elif arg_ty == _WASM_I32:
+                    mir_kind = arg_val.ty.kind if arg_val.ty else TypeKind.UNKNOWN
+                    if mir_kind == TypeKind.BOOL:
+                        lines.append(f"      (call $console_log_bool (local.get ${arg}))")
+                    elif mir_kind == TypeKind.STRING:
+                        lines.append(f"      (call $__builtin_print_str (local.get ${arg}))")
+                    else:
+                        lines.append(f"      (call $console_log_i32 (local.get ${arg}))")
 
         if with_newline:
-            lines.append("      (call $console_log_newline)")
+            if self._options.wasi:
+                lines.append("      (call $__wasi_write_newline)")
+            else:
+                lines.append("      (call $console_log_newline)")
         return lines
 
     def _emit_extern_call(self, inst: ExternCall, _bl: str, _fn: MIRFunction) -> list[str]:

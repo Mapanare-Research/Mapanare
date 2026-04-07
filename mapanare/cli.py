@@ -1107,7 +1107,7 @@ def cmd_emit_mir(args: argparse.Namespace) -> None:
 
 def cmd_emit_wasm(args: argparse.Namespace) -> None:
     """Emit WebAssembly (WAT) for .mn source file(s), optionally linking."""
-    from mapanare.emit_wasm import WasmEmitter
+    from mapanare.emit_wasm import WasmEmitter, WasmOptions
     from mapanare.lower import lower as build_mir
     from mapanare.mir_opt import MIROptLevel
     from mapanare.mir_opt import optimize_module as mir_optimize
@@ -1130,7 +1130,9 @@ def cmd_emit_wasm(args: argparse.Namespace) -> None:
             mir_opt_level = MIROptLevel(opt_level.value)
             mir_module, _ = mir_optimize(mir_module, mir_opt_level)
 
-            emitter = WasmEmitter()
+            use_wasi = getattr(args, "wasi", False)
+            wasm_opts = WasmOptions(wasi=use_wasi)
+            emitter = WasmEmitter(options=wasm_opts)
             wat_output = emitter.emit(mir_module)
         except ParseError as e:
             _emit_parse_error(e, source, src_file)
