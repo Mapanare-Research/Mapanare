@@ -1298,8 +1298,11 @@ class MIRLowerer:
         if not self._block_terminated():
             self._emit(Jump(target=header.label))
 
-        # Exit
+        # Exit — free range iterator if the iterable was a range
         self._set_block(exit_bb)
+        if iterable.ty.kind == TypeKind.RANGE:
+            free_dest = self._make_value(ty=mir_bool(), prefix="range_free")
+            self._emit(Call(dest=free_dest, fn_name="__mn_range_free", args=[iterable]))
 
     def _lower_while(self, loop: WhileLoop) -> None:
         """Lower a while loop to basic blocks.

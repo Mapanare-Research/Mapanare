@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.13.0] - 2026-04-07
+
+### Added
+
+- Runtime function attributes (`nounwind`, `readonly`) on 30+ LLVM declarations
+- Target-aware pointer size in `_approx_type_size` (correct for wasm32/i686)
+- `managed` field on `MnList` struct for O(1) COW ownership check
+- `__mn_range_free` runtime function for range iterator cleanup
+- Intern table thread safety (pthread mutex / Windows CriticalSection)
+- 2 new Culebra templates: `string-track-noop`, `syscall-in-hot-path`
+
+### Changed
+
+- MnList ABI: 32 bytes -> 40 bytes (added `int64_t managed` field)
+- Self-hosted compiler list type updated: `{ ptr, i64, i64, i64 }` -> `{ ptr, i64, i64, i64, i64 }`
+
+### Fixed
+
+- Re-enabled `_track_string` — every heap string now tracked for drop glue cleanup
+- Range iterators freed after for-loop exit (was leaking 16 bytes per loop)
+- Removed `write(2)` syscall probe from COW list `mn_list_has_magic()` — replaced with `managed` flag
+- Windows signal mutex TOCTOU: `InterlockedCompareExchange` replaces plain `int` check
+
 ## [3.9.0] - 2026-04-06
 
 ### Added

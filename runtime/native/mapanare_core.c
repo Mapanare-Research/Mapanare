@@ -198,6 +198,24 @@ static size_t         s_intern_bytes  = 0;    /* total bytes of interned string 
 static size_t         s_intern_tbl_sz = 0;    /* hash table slot count (>= cap * 2)      */
 static int            s_intern_sealed = 0;    /* 1 after first use — cap is locked        */
 
+/* Thread safety for the intern table */
+#ifdef _WIN32
+static CRITICAL_SECTION s_intern_cs;
+static volatile LONG s_intern_cs_init = 0;
+static void intern_lock(void) {
+    if (InterlockedCompareExchange(&s_intern_cs_init, 1, 0) == 0) {
+        InitializeCriticalSection(&s_intern_cs);
+    }
+    EnterCriticalSection(&s_intern_cs);
+}
+static void intern_unlock(void) { LeaveCriticalSection(&s_intern_cs); }
+#else
+#include <pthread.h>
+static pthread_mutex_t s_intern_mutex = PTHREAD_MUTEX_INITIALIZER;
+static void intern_lock(void)   { pthread_mutex_lock(&s_intern_mutex); }
+static void intern_unlock(void) { pthread_mutex_unlock(&s_intern_mutex); }
+#endif
+
 static uint64_t intern_hash(const char *data, int64_t len) {
     /* FNV-1a 64-bit */
     uint64_t h = 14695981039346656037ULL;
@@ -232,6 +250,8 @@ MN_EXPORT MnString __mn_str_intern(MnString s) {
     intern_ensure_table();
     if (!s_intern_table) return s;  /* alloc failed */
 
+    intern_lock();
+
     const char *raw = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
     uint64_t h = intern_hash(raw, s.len);
     size_t mask = s_intern_tbl_sz - 1;
@@ -245,6 +265,7 @@ MN_EXPORT MnString __mn_str_intern(MnString s) {
         if (e->hash == h && e->str.len == s.len) {
             const char *eraw = (const char *)((uintptr_t)e->str.data & ~(uintptr_t)1);
             if (memcmp(eraw, raw, (size_t)s.len) == 0) {
+                intern_unlock();
                 return e->str;  /* deduplicated */
             }
         }
@@ -252,6 +273,7 @@ MN_EXPORT MnString __mn_str_intern(MnString s) {
 
     /* Not found — insert if under cap */
     if (s_intern_count >= s_intern_cap) {
+        intern_unlock();
         /* Cap reached — return a plain heap copy, no dedup */
         return __mn_str_from_parts(raw, s.len);
     }
@@ -267,10 +289,12 @@ MN_EXPORT MnString __mn_str_intern(MnString s) {
             e->occupied = 1;
             s_intern_count++;
             s_intern_bytes += (size_t)s.len;
+            intern_unlock();
             return copy;
         }
     }
 
+    intern_unlock();
     /* Table completely full (should not happen with 2x sizing) */
     return __mn_str_from_parts(raw, s.len);
 }
@@ -718,29 +742,9 @@ static int64_t *mn_list_rc(MnList *list) {
 }
 
 /* Check if the buffer has a valid COW magic header.
- * MUST only be called after validating len > 0, cap > 0, elem_size > 0. */
+ * Uses the `managed` field instead of probing memory with write(2). */
 static int mn_list_has_magic(MnList *list) {
-    if (!list->data) return 0;
-    uintptr_t p = (uintptr_t)list->data;
-    /* Reject garbage pointers: must be 8-byte aligned, in reasonable heap range */
-    if ((p & 7) != 0) return 0;
-    if (p < 0x10000) return 0;  /* too low (near NULL) */
-    /* Use write(2) trick: try reading from the address. If it segfaults,
-     * the kernel returns EFAULT. This is the only portable safe probe. */
-#ifdef __linux__
-    /* Probe: can we read 16 bytes before data? */
-    {
-        /* Use /dev/null fd trick: write() returns EFAULT for unmapped memory */
-        static int devnull_fd = -1;
-        if (devnull_fd < 0) devnull_fd = open("/dev/null", 1 /*O_WRONLY*/);
-        if (devnull_fd >= 0) {
-            ssize_t r = write(devnull_fd, ((char *)list->data) - 16, 16);
-            if (r < 0) return 0;  /* EFAULT: unmapped memory */
-        }
-    }
-#endif
-    int64_t *magic = ((int64_t *)list->data) - 2;
-    return *magic == MN_COW_MAGIC;
+    return list->managed && list->data != NULL;
 }
 
 /* Allocate a new COW buffer: [magic][refcount=1][cap * elem_size] */
@@ -764,6 +768,7 @@ static void mn_list_detach(MnList *list) {
         int64_t cap = list->cap > 0 ? list->cap : MN_LIST_INITIAL_CAP;
         list->data = mn_list_alloc_buf(cap, list->elem_size > 0 ? list->elem_size : 8);
         list->cap = cap;
+        list->managed = 1;
         return;
     }
     if (!mn_list_is_managed(list)) return;  /* unmanaged buffer — nothing to detach */
@@ -787,6 +792,7 @@ MN_EXPORT MnList __mn_list_new(int64_t elem_size) {
     list.len = 0;
     list.cap = 0;
     list.data = NULL;  /* Lazy allocation: first push allocates */
+    list.managed = 0;  /* No COW header until first allocation */
     return list;
 }
 
@@ -808,6 +814,7 @@ static void mn_list_grow(MnList *list) {
             memcpy(new_data, list->data, (size_t)(list->len * list->elem_size));
         }
         list->data = new_data;
+        list->managed = 1;
     }
     list->cap = new_cap;
 }
@@ -891,7 +898,7 @@ MN_EXPORT void __mn_list_clear(MnList *list) {
 }
 
 MN_EXPORT void __mn_list_free(MnList *list) {
-    if (list->data) {
+    if (list->data && list->managed) {
         int64_t *rc = mn_list_rc(list);
         if (rc) {
             (*rc)--;
@@ -903,6 +910,7 @@ MN_EXPORT void __mn_list_free(MnList *list) {
     }
     list->len = 0;
     list->cap = 0;
+    list->managed = 0;
 }
 
 /* Check if a list looks like it was properly allocated with a COW header */
@@ -937,6 +945,7 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
         /* Garbage or empty — just copy the raw header */
         dst.cap = src->cap;
         dst.data = src->data;
+        dst.managed = src->managed;
         cow_fallbacks++;
         return dst;
     }
@@ -945,6 +954,7 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
         if (rc && *rc > 0 && *rc < 10000000) {
             dst.cap = src->cap;
             dst.data = src->data;
+            dst.managed = 1;
             (*rc)++;
             cow_shares++;
             return dst;
@@ -959,11 +969,13 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
             /* Unreasonable size — just copy header */
             dst.cap = src->cap;
             dst.data = src->data;
+            dst.managed = src->managed;
             cow_fallbacks++;
             return dst;
         }
         dst.cap = src->cap;
         dst.data = mn_list_alloc_buf(dst.cap, src->elem_size);
+        dst.managed = 1;
         if (src->len > 0) {
             memcpy(dst.data, src->data, (size_t)(src->len * src->elem_size));
         }
@@ -1592,11 +1604,10 @@ static int64_t    mn_signal_batch_pending_len = 0;
 #ifdef _WIN32
 #include <windows.h>
 static CRITICAL_SECTION mn_signal_mutex;
-static int mn_signal_mutex_initialized = 0;
+static volatile LONG mn_signal_mutex_initialized = 0;
 static void mn_signal_ensure_mutex(void) {
-    if (!mn_signal_mutex_initialized) {
+    if (InterlockedCompareExchange(&mn_signal_mutex_initialized, 1, 0) == 0) {
         InitializeCriticalSection(&mn_signal_mutex);
-        mn_signal_mutex_initialized = 1;
     }
 }
 static inline void mn_signal_lock(void)   { mn_signal_ensure_mutex(); EnterCriticalSection(&mn_signal_mutex); }
@@ -2265,6 +2276,10 @@ MN_EXPORT void *__iter_next(void *iter_ptr) {
     int64_t val = iter->current;
     iter->current++;
     return (void *)(intptr_t)val;
+}
+
+MN_EXPORT void __mn_range_free(void *iter_ptr) {
+    free(iter_ptr);
 }
 
 /* -----------------------------------------------------------------------

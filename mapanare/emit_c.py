@@ -342,7 +342,7 @@ class CEmitter:
         if c == "MnString":
             return "(MnString){NULL, 0}"
         if c == "MnList":
-            return "(MnList){NULL, 0, 0, 0}"
+            return "(MnList){NULL, 0, 0, 0, 0}"
         if c.endswith("*"):
             return "NULL"
         if c == "MnClosure":
@@ -1054,7 +1054,7 @@ class CEmitter:
         if ctype == "MnString":
             return "(MnString){NULL, 0}"
         if ctype == "MnList":
-            return "(MnList){NULL, 0, 0, 0}"
+            return "(MnList){NULL, 0, 0, 0, 0}"
         if ctype == "MnClosure":
             return "(MnClosure){NULL, NULL}"
         if ctype == "MnRange":

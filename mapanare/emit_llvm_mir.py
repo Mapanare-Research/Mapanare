@@ -127,7 +127,7 @@ def _init_llvm_types() -> None:
     LLVM_PTR = ir.IntType(8).as_pointer()
     LLVM_I32 = ir.IntType(32)
     LLVM_STRING = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
-    LLVM_LIST = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT])
+    LLVM_LIST = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT, LLVM_INT])
     LLVM_MAP = ir.IntType(8).as_pointer()  # Opaque pointer to C MnMap struct
     LLVM_CLOSURE = ir.LiteralStructType(
         [ir.IntType(8).as_pointer(), ir.IntType(8).as_pointer()]
@@ -143,6 +143,10 @@ _COERCE_FALLBACK_COUNT = 0
 # Set by the emitter before processing each function, used by _aligned_alloca
 # to place temporaries in the entry block instead of the current block.
 _current_alloca_block: Any = None
+
+# Target pointer size in bytes. Updated by the emitter when a wasm32 or
+# 32-bit target triple is detected.  Used by _approx_type_size.
+_target_ptr_size: int = 8
 
 
 def _aligned_alloca(builder: Any, ty: Any, name: str = "") -> Any:
@@ -479,6 +483,14 @@ class LLVMMIREmitter:
             self.module.triple = llvm_binding.get_default_triple()
         if data_layout is not None:
             self.module.data_layout = data_layout
+
+        # Set pointer size based on target triple
+        global _target_ptr_size
+        triple = self.module.triple
+        if "wasm32" in triple or "i686" in triple or "i386" in triple or "arm-" in triple:
+            _target_ptr_size = 4
+        else:
+            _target_ptr_size = 8
 
         # Embed compiler version as LLVM named metadata
         self._add_version_metadata()
@@ -1249,6 +1261,46 @@ class LLVMMIREmitter:
     # Runtime function helpers
     # -----------------------------------------------------------------------
 
+    _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
+        # Read-only string functions
+        "__mn_str_len": {"nounwind", "readonly"},
+        "__mn_str_eq": {"nounwind", "readonly"},
+        "__mn_str_cmp": {"nounwind", "readonly"},
+        "__mn_str_hash": {"nounwind", "readonly"},
+        "__mn_list_len": {"nounwind", "readonly"},
+        "__mn_list_get": {"nounwind", "readonly"},
+        "__mn_map_len": {"nounwind", "readonly"},
+        "__mn_map_contains": {"nounwind", "readonly"},
+        # Allocation
+        "malloc": {"nounwind"},
+        "__mn_alloc": {"nounwind"},
+        # Cleanup
+        "free": {"nounwind"},
+        "__mn_str_free": {"nounwind"},
+        "__mn_list_free": {"nounwind"},
+        "__mn_map_free": {"nounwind"},
+        "__mn_stream_free": {"nounwind"},
+        "__mn_range_free": {"nounwind"},
+        # Mutation
+        "__mn_str_concat": {"nounwind"},
+        "__mn_str_from_int": {"nounwind"},
+        "__mn_str_from_float": {"nounwind"},
+        "__mn_str_from_bool": {"nounwind"},
+        "__mn_list_push": {"nounwind"},
+        "__mn_list_set": {"nounwind"},
+        "__mn_list_new": {"nounwind"},
+        "__mn_list_concat": {"nounwind"},
+        "__mn_map_set": {"nounwind"},
+        "__mn_map_new": {"nounwind"},
+        # Print
+        "__mn_print": {"nounwind"},
+        "__mn_println": {"nounwind"},
+        # Arena
+        "mn_arena_create": {"nounwind"},
+        "mn_arena_alloc": {"nounwind"},
+        "mn_arena_destroy": {"nounwind"},
+    }
+
     def _declare_runtime_fn(self, name: str, ret_ty: Any, param_types: list[Any]) -> Any:
         """Declare an external C runtime function if not already declared."""
         if name in self._runtime_fns:
@@ -1256,6 +1308,8 @@ class LLVMMIREmitter:
         fn_ty = ir.FunctionType(ret_ty, param_types)
         func = ir.Function(self.module, fn_ty, name=name)
         func.linkage = "external"
+        for attr in self._RUNTIME_FN_ATTRS.get(name, set()):
+            func.attributes.add(attr)
         self._runtime_fns[name] = func
         return func
 
@@ -2906,7 +2960,7 @@ class LLVMMIREmitter:
         ST = LLVM_STRING  # {i8*, i64}
         IT = LLVM_INT  # i64
         BT = LLVM_BOOL  # i1
-        LT = LLVM_LIST  # {i8*, i64, i64, i64}
+        LT = LLVM_LIST  # {i8*, i64, i64, i64, i64}
         _str_method_sig: dict[str, tuple[str, list[Any], Any]] = {
             # method: (runtime_name, [param_types], return_type)
             "char_at": ("__mn_str_char_at", [ST, IT], ST),
@@ -3336,12 +3390,13 @@ class LLVMMIREmitter:
     def _track_string(self, builder: Any, val: Any) -> None:
         """Track a heap-allocated string for drop glue cleanup.
 
-        Currently disabled: adding allocas to the pre_entry block after
-        the terminator was placed corrupts the IR. Drop glue will be
-        re-implemented with a proper alloca insertion strategy (before the
-        terminator) in a future patch.
+        Each tracked string gets an alloca in pre_entry (via _aligned_alloca)
+        that holds the {i8*, i64} value.  _emit_drop_glue iterates these
+        allocas at every return site and frees non-returned strings.
         """
-        return
+        slot = _aligned_alloca(builder, LLVM_STRING, f"str.track.{len(self._local_strings)}")
+        builder.store(val, slot)
+        self._local_strings.append(slot)
 
     def _emit_drop_glue(self, builder: Any, ret_val: Any) -> None:
         """Free locally-allocated strings and closure environments.
@@ -5101,7 +5156,7 @@ def _type_alignment(llvm_ty: Any) -> int:
     if isinstance(llvm_ty, ir.FloatType):
         return 4
     if isinstance(llvm_ty, ir.PointerType):
-        return 8
+        return _target_ptr_size
     if isinstance(llvm_ty, ir.VoidType):
         return 1
     if isinstance(llvm_ty, ir.LiteralStructType):
@@ -5110,13 +5165,13 @@ def _type_alignment(llvm_ty: Any) -> int:
         return max(_type_alignment(e) for e in llvm_ty.elements)
     if isinstance(llvm_ty, ir.ArrayType):
         return _type_alignment(llvm_ty.element)
-    return 8
+    return _target_ptr_size
 
 
 def _approx_type_size(llvm_ty: Any) -> int:
     """Compute the ABI size in bytes of an LLVM type, including alignment padding."""
     if not _HAS_LLVMLITE:
-        return 8
+        return _target_ptr_size
     if isinstance(llvm_ty, ir.IntType):
         return int(max(llvm_ty.width // 8, 1))
     if isinstance(llvm_ty, ir.DoubleType):
@@ -5124,7 +5179,7 @@ def _approx_type_size(llvm_ty: Any) -> int:
     if isinstance(llvm_ty, ir.FloatType):
         return 4
     if isinstance(llvm_ty, ir.PointerType):
-        return 8
+        return _target_ptr_size
     if isinstance(llvm_ty, ir.VoidType):
         return 0
     if isinstance(llvm_ty, ir.LiteralStructType):
@@ -5146,4 +5201,4 @@ def _approx_type_size(llvm_ty: Any) -> int:
         return offset
     if isinstance(llvm_ty, ir.ArrayType):
         return int(llvm_ty.count) * _approx_type_size(llvm_ty.element)
-    return 8  # Conservative default
+    return _target_ptr_size  # Conservative default

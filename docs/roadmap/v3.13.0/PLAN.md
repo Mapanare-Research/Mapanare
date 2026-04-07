@@ -4,7 +4,7 @@
 > Enable string drop glue. Harden concurrency primitives.
 > The release that converts Viper's NEEDS WORK into PASS.
 
-**Status:** PLANNED
+**Status:** COMPLETE
 **Estimated scope:** Large (2-3 sessions)
 **Breaking:** Yes (MnList ABI change: 32 -> 40 bytes)
 **Review trigger:** v3.10.0 code review — Viper 6.5/10 (NEEDS WORK), memory leaks systemic

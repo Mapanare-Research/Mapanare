@@ -155,6 +155,7 @@ typedef struct MnList {
     int64_t len;
     int64_t cap;
     int64_t elem_size;
+    int64_t managed;      /* 1 if data was allocated via mn_list_alloc_buf (COW header present) */
 } MnList;
 
 /** Split `s` by `delim`. Returns a List<String>. */

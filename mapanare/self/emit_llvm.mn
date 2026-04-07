@@ -295,6 +295,7 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__iter_has_next", llvm_bool(), "{ i64, i64 }")
     s = declare_runtime_fn(s, "__iter_next", llvm_int(), "{ i64, i64 }")
     s = declare_runtime_fn(s, "__mn_range", "{ i64, i64 }", "i64, i64")
+    s = declare_runtime_fn(s, "__mn_range_free", "void", "ptr")
 
     // String methods
     s = declare_runtime_fn(s, "__mn_str_to_upper", llvm_string(), llvm_string())
@@ -438,8 +439,8 @@ fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
     if resolved == "void" { return 0 }
     // String: { ptr, i64 } = 2 slots
     if resolved == "{ ptr, i64 }" { return 2 }
-    // List: { ptr, i64, i64, i64 } = 4 slots
-    if resolved == "{ ptr, i64, i64, i64 }" { return 4 }
+    // List: { ptr, i64, i64, i64, i64 } = 5 slots (data, len, cap, elem_size, managed)
+    if resolved == "{ ptr, i64, i64, i64, i64 }" { return 5 }
     // Range: { i64, i64 } = 2 slots
     if resolved == "{ i64, i64 }" { return 2 }
     // Option: { i1, T } ≈ 2 slots minimum
@@ -1416,8 +1417,8 @@ fn llvm_type_size(ty: String) -> Int {
     if ty == "void" { return 0 }
     // String = {ptr, i64} = 16
     if ty == llvm_string() { return 16 }
-    // List = {ptr, i64, i64, i64} = 32
-    if ty == llvm_list_rt() { return 32 }
+    // List = {ptr, i64, i64, i64, i64} = 40 (data, len, cap, elem_size, managed)
+    if ty == llvm_list_rt() { return 40 }
     // Enums: now always {i64, ptr} = 16 bytes
     if ty.starts_with("%enum.") { return 16 }
     // Structs: use field_count * 32 as safe upper bound.

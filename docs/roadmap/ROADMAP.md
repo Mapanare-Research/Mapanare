@@ -7,16 +7,17 @@
 
 ---
 
-## Where We Are (v3.12.0 — WASI + Culebra Clean)
+## Where We Are (v3.13.0 — Cascabel)
 
-**The compiler is usable by external developers.** v3.10.0 added error messages
-with line numbers, generic enum monomorphization, trait method validation, and
-complete builtin function coverage. v3.12.0 added WASI fd_write support (print
-works on wasmtime) and fixed break-inside-nested-control.
+**Memory safety release.** v3.13.0 re-enabled string drop glue (every heap
+string now tracked and freed), fixed range iterator leaks, replaced the COW
+list's `write(2)` syscall probe with a `managed` flag, added LLVM function
+attributes to 30+ runtime declarations, made the intern table thread-safe,
+and fixed the Windows signal mutex TOCTOU race.
 
-**Next:** v3.13.0 "Cascabel" (memory safety) and v3.14.0 "Cuaima" (type system
-+ docs) before v4.0.0 production release. A 7-reviewer code review scored
-8.37/10 — memory lifecycle is the remaining systemic weakness.
+**Next:** v3.14.0 "Cuaima" (type system + docs) before v4.0.0 production
+release. The v3.10.0 code review scored 8.37/10 — memory lifecycle was the
+remaining systemic weakness, now addressed by v3.13.0.
 
 The self-hosted compiler is 15,000+ lines across 11 modules.
 
