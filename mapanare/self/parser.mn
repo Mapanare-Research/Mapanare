@@ -1140,8 +1140,10 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
 
     // Check for "impl Trait for Type { ... }" syntax
     let mut target: String = first_name
+    let mut trait_name: Option<String> = none
     if peek_type(tokens, p) == "KW_FOR" {
         p = p + 1
+        trait_name = Some(first_name)
         target = peek_value(tokens, p)
         p = p + 1
     }
@@ -1153,14 +1155,14 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult 
         p = skip_semis(tokens, p)
         if peek_type(tokens, p) == "RBRACE" {
             p = p + 1
-            return new_def_result(Definition::ImplDef(target, methods), p)
+            return new_def_result(Definition::ImplDef(target, trait_name, methods), p)
         }
         let r: FnDataResult = parse_fn_def_as_data(tokens, p, filename)
         methods.push(r.data)
         p = r.pos
     }
 
-    return new_def_result(Definition::ImplDef(target, methods), p)
+    return new_def_result(Definition::ImplDef(target, trait_name, methods), p)
 }
 
 // ---------------------------------------------------------------------------

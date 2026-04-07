@@ -235,7 +235,7 @@ enum Definition {
     StructDef(StructDefData),
     EnumDef(EnumDefData),
     TypeAlias(String, TypeExpr),
-    ImplDef(String, List<FnDefData>),
+    ImplDef(String, Option<String>, List<FnDefData>),
     ImportDef(List<String>, List<String>),
     ExportDef(Option<Definition>, List<String>),
     ExternFnDef(String, String, List<Param>, Option<TypeExpr>),
@@ -605,7 +605,7 @@ pub fn def_kind(d: Definition) -> String {
         StructDef(_) => { return "struct_def" },
         EnumDef(_) => { return "enum_def" },
         TypeAlias(_, _) => { return "type_alias" },
-        ImplDef(_, _) => { return "impl_def" },
+        ImplDef(_, _, _) => { return "impl_def" },
         ImportDef(_, _) => { return "import_def" },
         ExportDef(_, _) => { return "export_def" },
         ExternFnDef(_, _, _, _) => { return "extern_fn_def" },
@@ -629,10 +629,13 @@ pub fn def_enum_data(d: Definition) -> EnumDefData {
     match d { EnumDef(data) => { return data }, _ => { let tp: List<String> = []; let v: List<EnumVariant> = []; return new EnumDefData { span: make_span(0,0,0,0), name: "", public: false, type_params: tp, variants: v } } }
 }
 pub fn def_impl_target(d: Definition) -> String {
-    match d { ImplDef(t, _) => { return t }, _ => { return "" } }
+    match d { ImplDef(t, _, _) => { return t }, _ => { return "" } }
+}
+pub fn def_impl_trait_name(d: Definition) -> Option<String> {
+    match d { ImplDef(_, tn, _) => { return tn }, _ => { return none } }
 }
 pub fn def_impl_methods(d: Definition) -> List<FnDefData> {
-    match d { ImplDef(_, m) => { return m }, _ => { let empty: List<FnDefData> = []; return empty } }
+    match d { ImplDef(_, _, m) => { return m }, _ => { let empty: List<FnDefData> = []; return empty } }
 }
 pub fn def_import_path(d: Definition) -> List<String> {
     match d { ImportDef(p, _) => { return p }, _ => { let empty: List<String> = []; return empty } }

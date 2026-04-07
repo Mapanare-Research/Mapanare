@@ -265,7 +265,7 @@ struct CheckResult {
 fn new_sem_state(filename: String) -> SemState {
     let scope: Scope = new_scope(none)
     let sem_errs: List<SemanticError> = []
-    let zero_span: Span = make_span(0, 0)
+    let zero_span: Span = make_span(0, 0, 0, 0)
     return new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span }
 }
 
@@ -1336,8 +1336,22 @@ fn register_def(st: SemState, def: Definition) -> SemState {
     }
     if dk == "trait_def" {
         let trait_name: String = def_trait_name(def)
-        let sym_trait: Symbol = new_symbol(trait_name, "trait", make_type(trait_name), false)
-        return define_in_scope(st, trait_name, sym_trait)
+        let trait_methods: List<FnDefData> = def_trait_methods(def)
+        // Store method count in args list length for validation
+        let mut trait_type: TypeInfo = make_type(trait_name)
+        let sym_trait: Symbol = new_symbol(trait_name, "trait", trait_type, false)
+        let mut st2_trait: SemState = define_in_scope(st, trait_name, sym_trait)
+        // Register each trait method as "TraitName.method_name" for impl validation
+        let mut tmi: Int = 0
+        for _ in 0..200 {
+            if tmi >= len(trait_methods) { return st2_trait }
+            let tm: FnDefData = trait_methods[tmi]
+            let tm_key: String = trait_name + "." + tm.name
+            let tm_sym: Symbol = new_symbol(tm_key, "trait_method", unknown_type(), false)
+            st2_trait = define_in_scope(st2_trait, tm_key, tm_sym)
+            tmi = tmi + 1
+        }
+        return st2_trait
     }
     // impl_def — methods handled in second pass
     return st
@@ -1364,7 +1378,7 @@ fn check_def(st: SemState, def: Definition) -> SemState {
     if dk == "fn_def" { return check_fn_body(st, def_fn_data(def)) }
     if dk == "agent_def" { return check_agent_body(st, def_agent_data(def)) }
     if dk == "pipe_def" { return check_pipe_stages(st, def_pipe_data(def)) }
-    if dk == "impl_def" { return check_impl_body(st, def_impl_target(def), def_impl_methods(def)) }
+    if dk == "impl_def" { return check_impl_body(st, def_impl_target(def), def_impl_trait_name(def), def_impl_methods(def)) }
     if dk == "export_def" {
         let inner_def: Option<Definition> = def_export_inner(def)
         match inner_def {
@@ -1465,7 +1479,7 @@ fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
 // Impl block checking
 // ---------------------------------------------------------------------------
 
-fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> SemState {
+fn check_impl_body(st: SemState, target: String, trait_name_opt: Option<String>, methods: List<FnDefData>) -> SemState {
     let sym_opt: Option<Symbol> = scope_lookup(st.scope, target)
     let mut st2: SemState = st
     match sym_opt {
@@ -1473,6 +1487,26 @@ fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> Se
         _ => {
             st2 = add_error_here(st2, "Undefined type '" + target + "' in impl block")
         }
+    }
+
+    // Validate trait requirements if this is "impl Trait for Type"
+    match trait_name_opt {
+        Some(trait_name) => {
+            let trait_sym: Option<Symbol> = scope_lookup(st2.scope, trait_name)
+            match trait_sym {
+                Some(ts) => {
+                    if ts.kind != "trait" {
+                        st2 = add_error_here(st2, "'" + trait_name + "' is not a trait")
+                    }
+                    // Check each trait method is implemented
+                    st2 = validate_trait_methods(st2, trait_name, target, methods)
+                },
+                _ => {
+                    st2 = add_error_here(st2, "Undefined trait '" + trait_name + "'")
+                }
+            }
+        },
+        _ => {}
     }
 
     let mut mi: Int = 0
@@ -1483,6 +1517,51 @@ fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> Se
         mi = mi + 1
     }
     return st2
+}
+
+fn validate_trait_methods(st: SemState, trait_name: String, target: String, impl_methods: List<FnDefData>) -> SemState {
+    // Build list of implemented method names
+    let mut impl_names: List<String> = []
+    let mut ii: Int = 0
+    for _ in 0..200 {
+        if ii >= len(impl_methods) { ii = len(impl_methods) + 1 }
+        if ii < len(impl_methods) {
+            impl_names.push(impl_methods[ii].name)
+            ii = ii + 1
+        }
+    }
+
+    // Check each registered trait method "TraitName.method" exists in impl
+    let mut st2: SemState = st
+    let mut ti: Int = 0
+    let scope_syms: List<Symbol> = st.scope.symbols
+    for _ in 0..10000 {
+        if ti >= len(scope_syms) { return st2 }
+        let sym: Symbol = scope_syms[ti]
+        if sym.kind == "trait_method" {
+            let prefix: String = trait_name + "."
+            if sym.name.starts_with(prefix) {
+                // Extract method name after "TraitName."
+                let method_name: String = sym.name.substr(len(prefix), len(sym.name) - len(prefix))
+                // Check if impl provides this method
+                if !list_contains(impl_names, method_name) {
+                    st2 = add_error_here(st2, "Missing method '" + method_name + "' required by trait '" + trait_name + "' for type '" + target + "'")
+                }
+            }
+        }
+        ti = ti + 1
+    }
+    return st2
+}
+
+fn list_contains(lst: List<String>, item: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..200 {
+        if i >= len(lst) { return false }
+        if lst[i] == item { return true }
+        i = i + 1
+    }
+    return false
 }
 
 // ---------------------------------------------------------------------------
