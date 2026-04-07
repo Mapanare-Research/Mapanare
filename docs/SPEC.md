@@ -1119,6 +1119,8 @@ temperature.subscribe((t) => {
 
 ### 10.5 Batched Updates
 
+> **Note:** The `batch` block syntax is not yet implemented in the compiler. Signal batching is handled automatically by the runtime (see `mn_signal_batch_begin`/`mn_signal_batch_end` in the C runtime). This section describes the planned language-level syntax.
+
 Multiple signal updates within a `batch` block are coalesced into a single recomputation pass, avoiding intermediate recalculations:
 
 ```mn
@@ -1934,7 +1936,7 @@ print(label)
 
 ## 27. Stability
 
-### 24.1 What Is Frozen
+### 27.1 What Is Frozen
 
 Starting with v1.0.0, the following are frozen and will not change without an RFC and deprecation cycle:
 
@@ -1948,7 +1950,7 @@ Starting with v1.0.0, the following are frozen and will not change without an RF
 - **Stream operators:** All documented operators and their behavior.
 - **Error codes:** Format (`MN-X0000`) and assigned codes.
 
-### 24.2 What Can Still Change
+### 27.2 What Can Still Change
 
 The following areas may evolve without a breaking change:
 
@@ -1958,7 +1960,7 @@ The following areas may evolve without a breaking change:
 - **Tooling:** New CLI commands, LSP features, formatter improvements.
 - **Performance:** Implementation changes that do not affect observable behavior.
 
-### 24.3 Breaking Change Process
+### 27.3 Breaking Change Process
 
 Any change to a frozen area requires:
 

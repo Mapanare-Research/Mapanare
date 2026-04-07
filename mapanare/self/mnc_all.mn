@@ -3802,8 +3802,8 @@ fn scope_define(scope: Scope, name: String, sym: Symbol) -> Scope {
     // Append symbol to scope's symbol list.
     // Later entries shadow earlier ones (last-match-wins in lookup).
     let mut syms: List<Symbol> = scope.symbols
-    // syms.push(sym) — append to list
-    return new_scope(scope.parent)
+    syms.push(sym)
+    return new Scope { parent: scope.parent, symbols: syms }
 }
 
 fn scope_lookup(scope: Scope, name: String) -> Option<Symbol> {
@@ -13809,7 +13809,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 3.13.0"
+    return "mapanare 3.14.0"
 }
 
 // ---------------------------------------------------------------------------

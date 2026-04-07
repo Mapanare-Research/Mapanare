@@ -7,17 +7,15 @@
 
 ---
 
-## Where We Are (v3.13.0 — Cascabel)
+## Where We Are (v3.14.0 — Cuaima)
 
-**Memory safety release.** v3.13.0 re-enabled string drop glue (every heap
-string now tracked and freed), fixed range iterator leaks, replaced the COW
-list's `write(2)` syscall probe with a `managed` flag, added LLVM function
-attributes to 30+ runtime declarations, made the intern table thread-safe,
-and fixed the Windows signal mutex TOCTOU race.
+**Type system and quality release.** v3.14.0 fixed TypeInfo hash collisions
+for generic types, added generic arity validation, arithmetic operator traits
+(Add/Sub/Mul/Div), IdentPattern wildcard exhaustiveness, WASM CHAR mapping,
+self-hosted scope_define (broken since v2.0.0), tutorial syntax, spec numbering,
+debug info version, and CI integrity (removed continue-on-error on stage1).
 
-**Next:** v3.14.0 "Cuaima" (type system + docs) before v4.0.0 production
-release. The v3.10.0 code review scored 8.37/10 — memory lifecycle was the
-remaining systemic weakness, now addressed by v3.13.0.
+**Next:** v4.0.0 production release — docs, demos, quality gate.
 
 The self-hosted compiler is 15,000+ lines across 11 modules.
 

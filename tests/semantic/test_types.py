@@ -166,6 +166,17 @@ class TestTypeInfoEquality:
         )
         assert a != b
 
+    def test_generic_hash_distinguishes_args(self) -> None:
+        """List<Int> and List<String> must have different hashes."""
+        list_int = TypeInfo(kind=TypeKind.LIST, args=[INT_TYPE])
+        list_str = TypeInfo(kind=TypeKind.LIST, args=[STRING_TYPE])
+        # They must coexist as separate dict keys
+        d: dict[TypeInfo, str] = {list_int: "int", list_str: "str"}
+        assert len(d) == 2
+        assert d[list_int] == "int"
+        assert d[list_str] == "str"
+        assert hash(list_int) != hash(list_str)
+
 
 # ======================================================================
 # TypeInfo display

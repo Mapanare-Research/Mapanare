@@ -73,8 +73,8 @@ MAIN_O="/tmp/mapanare_main.o"
 STAGE1_BIN="/tmp/mnc-stage1"
 
 clang -c -O2 "${STAGE1_LL}" -o "${STAGE1_O}" 2>/dev/null
-gcc -c -O2 -I "${NATIVE_DIR}" "${CORE_C}" -o "${CORE_O}"
-gcc -c -O2 "${MNC_MAIN}" -o "${MAIN_O}"
+gcc -c -O2 -Wall -Wextra -Werror -I "${NATIVE_DIR}" "${CORE_C}" -o "${CORE_O}"
+gcc -c -O2 -Wall -Wextra -Werror "${MNC_MAIN}" -o "${MAIN_O}"
 gcc "${MAIN_O}" "${STAGE1_O}" "${CORE_O}" -o "${STAGE1_BIN}" \
     -no-pie -rdynamic -lm -lpthread
 echo "  Binary: ${STAGE1_BIN} ($(wc -c < "${STAGE1_BIN}") bytes)"

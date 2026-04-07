@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import textwrap
+
 import pytest
 
 from mapanare.parser import parse
@@ -911,4 +913,45 @@ class TestCompileTimeShapeValidation:
             }
         """,
             "shape mismatch",
+        )
+
+
+class TestGenericArity:
+    """Tests for generic type argument arity validation."""
+
+    def test_list_too_many_args(self) -> None:
+        _check_err("fn f(x: List<Int, String>) {}", "expects 1 type argument")
+
+    def test_map_too_few_args(self) -> None:
+        _check_err("fn f(x: Map<String>) {}", "expects 2 type argument")
+
+    def test_option_correct_arity(self) -> None:
+        _check_ok("fn f(x: Option<Int>) -> Option<Int> { return x }")
+
+    def test_result_correct_arity(self) -> None:
+        _check_ok("fn f(x: Result<Int, String>) -> Result<Int, String> { return x }")
+
+    def test_result_too_few_args(self) -> None:
+        _check_err("fn f(x: Result<Int>) {}", "expects 2 type argument")
+
+
+class TestMatchExhaustiveness:
+    """Tests for match exhaustiveness checking."""
+
+    def test_ident_catch_all_is_exhaustive(self) -> None:
+        """A named catch-all binding (not a variant) should satisfy exhaustiveness."""
+        _check_ok(
+            textwrap.dedent("""\
+            enum Color {
+                Red,
+                Green,
+                Blue,
+            }
+            fn describe(c: Color) -> String {
+                match c {
+                    Red => "red",
+                    other => "not red"
+                }
+            }
+        """)
         )

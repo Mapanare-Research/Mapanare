@@ -85,7 +85,7 @@ def build() -> pathlib.Path:
     core_o = SELF_DIR / "mapanare_core.o"
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
     subprocess.run(
-        [CC, "-c", "-O2", "-g", "-fPIC", "-I", str(NATIVE_DIR)]
+        [CC, "-c", "-O2", "-g", "-fPIC", "-Wall", "-Wextra", "-Werror", "-I", str(NATIVE_DIR)]
         + asan_flags
         + [str(core_c), "-o", str(core_o)],
         check=True,

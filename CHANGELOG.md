@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.14.0] - 2026-04-07
+
+### Added
+
+- Generic arity validation (`List<Int, String>` now errors with "expects 1 type argument(s), got 2")
+- Arithmetic operator traits: `Add`, `Sub`, `Mul`, `Div` in `BUILTIN_TRAITS`
+- Trait-dispatched binary ops for user-defined types implementing Add/Sub/Mul/Div
+- WASM `CHAR` type mapping to `i32` (was falling through to `i64`)
+- `BUILTIN_GENERIC_ARITY` dict for compile-time arity checking
+- `scope-define-noop` Culebra template for bootstrap regression testing
+- Debug info producer now reads version from VERSION file dynamically
+
+### Changed
+
+- `TypeInfo.__hash__` now includes `tuple(self.args)` — fixes pathological collisions for `List<Int>` vs `List<String>`
+- CLAUDE.md self-hosted module table updated to match actual line counts (15,000+ lines, 11 modules)
+- CI: removed `continue-on-error` on stage1 build step (broken compiler now fails CI)
+- Local build scripts use `-Wall -Wextra -Werror` for C compilation
+
+### Fixed
+
+- IdentPattern (named catch-all) now treated as wildcard in match exhaustiveness checks
+- Self-hosted `scope_define` fixed: push call was commented out since v2.0.0, symbols now tracked
+- Getting-started tutorial: `Point(3.0, 4.0)` -> `new Point { x: 3.0, y: 4.0 }`, removed `Shape_` prefix
+- Spec section 27 subsection numbering (was `24.1`/`24.2`/`24.3`)
+- Spec `batch {}` syntax marked as not yet implemented
+
 ## [3.13.0] - 2026-04-07
 
 ### Added

@@ -462,6 +462,8 @@ class WasmEmitter:
             return _WASM_F64
         if kind == TypeKind.BOOL:
             return _WASM_I32
+        if kind == TypeKind.CHAR:
+            return _WASM_I32
         if kind == TypeKind.VOID:
             return ""  # No WASM type for void
         # All heap-allocated types use i32 pointer

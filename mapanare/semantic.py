@@ -341,6 +341,14 @@ class SemanticChecker:
             return TypeInfo(kind=TypeKind.STRUCT, name=te.name)
         if isinstance(te, GenericType):
             args = [self._resolve_type_expr(a) for a in te.args]
+            from mapanare.types import BUILTIN_GENERIC_ARITY
+
+            expected_arity = BUILTIN_GENERIC_ARITY.get(te.name)
+            if expected_arity is not None and len(args) != expected_arity:
+                self._error(
+                    f"'{te.name}' expects {expected_arity} type argument(s), got {len(args)}",
+                    te,
+                )
             k = kind_from_name(te.name)
             if k != TypeKind.UNKNOWN:
                 return TypeInfo(kind=k, args=args)
@@ -576,6 +584,17 @@ class SemanticChecker:
             # List concatenation: List<T> + List<T> -> List<T>
             if expr.op == "+" and left.kind == TypeKind.LIST and right.kind == TypeKind.LIST:
                 return left
+
+            # Arithmetic trait dispatch for user-defined types
+            _op_to_trait = {"+": "Add", "-": "Sub", "*": "Mul", "/": "Div"}
+            if (
+                expr.op in _op_to_trait
+                and left.kind in (TypeKind.STRUCT, TypeKind.ENUM)
+                and left.name
+                and self._type_implements_trait(left.name, _op_to_trait[expr.op])
+            ):
+                expr.trait_dispatch = _op_to_trait[expr.op].lower()  # type: ignore[attr-defined]
+                return left  # Self -> Self
 
             if left.kind not in _ARITHMETIC_KINDS or right.kind not in _ARITHMETIC_KINDS:
                 left_s = _type_display(left)
@@ -859,8 +878,13 @@ class SemanticChecker:
                 break
             if isinstance(arm.pattern, ConstructorPattern):
                 covered_variants.add(arm.pattern.name)
-            elif isinstance(arm.pattern, IdentPattern) and arm.pattern.name in all_variants:
-                covered_variants.add(arm.pattern.name)
+            elif isinstance(arm.pattern, IdentPattern):
+                if arm.pattern.name in all_variants:
+                    covered_variants.add(arm.pattern.name)
+                else:
+                    # Non-variant ident is a catch-all binding (like _ but named)
+                    has_wildcard = True
+                    break
 
         if has_wildcard:
             return

@@ -64,7 +64,6 @@ jobs:
 
       - name: Build mnc-stage1 (Python bootstrap)
         run: python scripts/build_stage1.py --skip-check
-        continue-on-error: true
 
       - name: Run golden tests (31/31)
         if: success()

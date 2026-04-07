@@ -187,7 +187,7 @@ fn distance(p: Point) -> Float {
 }
 
 fn main() {
-    let p = Point(3.0, 4.0)
+    let p = new Point { x: 3.0, y: 4.0 }
     print("x = " + str(p.x))
     print("y = " + str(p.y))
     print("distance squared = " + str(distance(p)))
@@ -208,16 +208,14 @@ enum Shape {
 
 fn area(s: Shape) -> Float {
     match s {
-        Shape_Circle(r) => { return 3.14159 * r * r },
-        Shape_Rect(w, h) => { return w * h },
-        _ => { return 0.0 }
+        Circle(r) => { return 3.14159 * r * r },
+        Rect(w, h) => { return w * h }
     }
-    return 0.0
 }
 
 fn main() {
-    let c = Shape_Circle(5.0)
-    let r = Shape_Rect(3.0, 4.0)
+    let c = Circle(5.0)
+    let r = Rect(3.0, 4.0)
     print("circle area = " + str(area(c)))
     print("rect area = " + str(area(r)))
 }
@@ -584,7 +582,7 @@ fn main() {
     let value: JsonValue = json::parse(text)
 
     match value {
-        JsonValue::Object(obj) => {
+        Object(obj) => {
             let name: JsonValue = json::get(obj, "name")
             print("Name: " + json::to_string(name))
         },

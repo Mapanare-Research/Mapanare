@@ -30,7 +30,7 @@ echo ""
 echo -e "${YELLOW}[Stage 0] Python compiles self-hosted source → stage1 binary${NC}"
 python3 scripts/concat_self.py
 python3 -m mapanare emit-c "$SOURCE" -o /tmp/stage1.c
-gcc -O0 -I "$RUNTIME_INC" /tmp/stage1.c "$RUNTIME_C" -o /tmp/mnc-stage1 -lm -lpthread
+gcc -O0 -Wall -Wextra -Werror -I "$RUNTIME_INC" /tmp/stage1.c "$RUNTIME_C" -o /tmp/mnc-stage1 -lm -lpthread
 echo "  stage1: $(wc -c < /tmp/mnc-stage1) bytes"
 
 # Stage 1: stage1 → stage2.ll
@@ -53,7 +53,7 @@ fi
 # Build stage2 binary
 echo -n "  llc+gcc: "
 llc /tmp/stage2.bc -o /tmp/stage2.o -filetype=obj -relocation-model=pic
-gcc /tmp/stage2.o "$DRIVER_C" "$RUNTIME_C" -I "$RUNTIME_INC" -o /tmp/mnc-stage2 -lm -lpthread
+gcc -Wall -Wextra -Werror /tmp/stage2.o "$DRIVER_C" "$RUNTIME_C" -I "$RUNTIME_INC" -o /tmp/mnc-stage2 -lm -lpthread
 echo -e "${GREEN}OK${NC} ($(wc -c < /tmp/mnc-stage2) bytes)"
 
 # Stage 2: stage2 → stage3.ll

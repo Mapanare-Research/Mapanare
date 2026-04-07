@@ -139,7 +139,7 @@ class TypeInfo:
         return all(a == b for a, b in zip(self.args, other.args))
 
     def __hash__(self) -> int:
-        return hash((self.kind, self.name))
+        return hash((self.kind, self.name, tuple(self.args)))
 
     def __repr__(self) -> str:
         if self.is_function:
@@ -235,6 +235,17 @@ BUILTIN_GENERIC_TYPES = frozenset(
     {"Option", "Result", "List", "Map", "Signal", "Stream", "Channel", "Tensor"}
 )
 
+BUILTIN_GENERIC_ARITY: dict[str, int] = {
+    "List": 1,
+    "Map": 2,
+    "Option": 1,
+    "Result": 2,
+    "Signal": 1,
+    "Stream": 1,
+    "Tensor": 1,
+    "Channel": 1,
+}
+
 BUILTIN_GENERIC_KINDS = frozenset(
     {
         TypeKind.OPTION,
@@ -305,6 +316,10 @@ BUILTIN_TRAITS: dict[str, list[tuple[str, bool, list[tuple[str, str]], str | Non
     "Eq": [("eq", True, [("other", "Self")], "Bool")],
     "Ord": [("cmp", True, [("other", "Self")], "Int")],
     "Hash": [("hash", True, [], "Int")],
+    "Add": [("add", True, [("other", "Self")], "Self")],
+    "Sub": [("sub", True, [("other", "Self")], "Self")],
+    "Mul": [("mul", True, [("other", "Self")], "Self")],
+    "Div": [("div", True, [("other", "Self")], "Self")],
 }
 
 

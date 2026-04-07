@@ -14,7 +14,16 @@ Usage:
 from __future__ import annotations
 
 import logging
+import pathlib
 from typing import Any
+
+
+def _read_version() -> str:
+    """Read project version from the VERSION file."""
+    try:
+        return (pathlib.Path(__file__).parent.parent / "VERSION").read_text().strip()
+    except OSError:
+        return "unknown"
 
 try:
     from llvmlite import ir
@@ -675,7 +684,7 @@ class LLVMMIREmitter:
             {
                 "language": ir.DIToken("DW_LANG_C"),
                 "file": self._di_file,
-                "producer": "mapanare 2.0.1",
+                "producer": f"mapanare {_read_version()}",
                 "isOptimized": False,
                 "runtimeVersion": 0,
                 "emissionKind": ir.DIToken("FullDebug"),

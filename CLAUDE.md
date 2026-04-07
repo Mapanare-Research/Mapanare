@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language (v3.3.0 "Fixed Point") with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (primary) and C (fallback via gcc). A WebAssembly backend exists for browser/server targets. The self-hosted compiler is 9,400+ lines of `.mn` across 10 modules in `mapanare/self/`. The compiler compiles itself — `bash scripts/build_from_seed.sh` builds from source with no Python.
+Mapanare is an AI-native compiled programming language with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (primary) and C (fallback via gcc). A WebAssembly backend exists for browser/server targets. The self-hosted compiler is 15,000+ lines of `.mn` across 11 modules in `mapanare/self/`. The compiler compiles itself — `bash scripts/build_from_seed.sh` builds from source with no Python.
 
 ## Current Version & Roadmap
 
-- **v3.13.0** (current) — **Cascabel.** Memory safety & runtime hardening. String drop glue re-enabled, range iterator leak fixed, COW list write(2) probe removed, runtime fn attributes, intern table thread safety, Windows signal mutex TOCTOU fix.
+- **v3.14.0** (current) — **Cuaima.** Type system fixes (generic arity, hash collisions, exhaustiveness), arithmetic traits (Add/Sub/Mul/Div), WASM CHAR mapping, self-hosted scope_define fixed, docs corrected, CI hardened.
 - **v4.0.0** (next) — Production release: docs, demos, quality gate
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.
@@ -353,20 +353,21 @@ All type definitions, builtin registries, and type-name mappings live in `types.
 
 ## Self-Hosted Compiler (`mapanare/self/`)
 
-10 modules, 9,400+ lines of Mapanare. Mirrors the Python bootstrap pipeline:
+11 modules, 15,000+ lines of Mapanare. Mirrors the Python bootstrap pipeline:
 
 | Module | Lines | Role |
 |--------|-------|------|
-| `ast.mn` | 277 | AST node definitions (structs + enums) + shared constructors |
-| `lexer.mn` | 508 | Character-by-character tokenizer |
-| `parser.mn` | 1,879 | Recursive descent parser, 13-level precedence |
-| `semantic.mn` | 1,617 | Two-pass type checker and scope resolver |
-| `mir.mn` | 415 | MIR data structures (types, values, instructions, blocks, module) |
-| `lower_state.mn` | 530 | Lowerer state, scope management, lookups, type resolution |
-| `lower.mn` | 2,007 | AST → MIR lowering (registration + expression/statement lowering) |
+| `ast.mn` | 781 | AST node definitions (structs + enums) + shared constructors |
+| `lexer.mn` | 575 | Character-by-character tokenizer |
+| `parser.mn` | 2,249 | Recursive descent parser, 13-level precedence |
+| `semantic.mn` | 1,729 | Two-pass type checker and scope resolver |
+| `mir.mn` | 791 | MIR data structures (types, values, instructions, blocks, module) |
+| `lower_state.mn` | 587 | Lowerer state, scope management, lookups, type resolution |
+| `lower.mn` | 3,602 | AST → MIR lowering (registration + expression/statement lowering) |
 | `emit_llvm_ir.mn` | 258 | LLVM type constants and IR instruction string builders |
-| `emit_llvm.mn` | 1,879 | MIR → LLVM IR emitter (state, handlers, module emission) |
-| `main.mn` | 79 | Compiler driver |
+| `emit_llvm.mn` | 3,206 | MIR → LLVM IR emitter (state, handlers, module emission) |
+| `emit_c.mn` | 770 | MIR → C emitter |
+| `main.mn` | 537 | Compiler driver |
 
 **Patterns:** Constructor functions (`let r: T = first_field; return r`), state-threading (functions thread state structs), no struct literal syntax in grammar yet.
 
