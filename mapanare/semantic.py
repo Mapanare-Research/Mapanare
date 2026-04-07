@@ -77,6 +77,7 @@ from mapanare.ast_nodes import (
     WhileLoop,
 )
 from mapanare.types import (
+    ANY_TYPE,
     BOOL_TYPE,
     BUILTIN_FUNCTIONS,
     BUILTIN_GENERIC_KINDS,
@@ -216,8 +217,12 @@ class Scope:
 # ---------------------------------------------------------------------------
 
 _NUMERIC_KINDS = frozenset({TypeKind.INT, TypeKind.FLOAT})
-_ARITHMETIC_KINDS = frozenset({TypeKind.INT, TypeKind.FLOAT, TypeKind.STRING, TypeKind.UNKNOWN})
-_TENSOR_ARITH_KINDS = frozenset({TypeKind.UNKNOWN, TypeKind.TENSOR, TypeKind.INT, TypeKind.FLOAT})
+_ARITHMETIC_KINDS = frozenset(
+    {TypeKind.INT, TypeKind.FLOAT, TypeKind.STRING, TypeKind.UNKNOWN, TypeKind.ANY}
+)
+_TENSOR_ARITH_KINDS = frozenset(
+    {TypeKind.UNKNOWN, TypeKind.TENSOR, TypeKind.INT, TypeKind.FLOAT, TypeKind.ANY}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -560,6 +565,16 @@ class SemanticChecker:
         equality_ops = {"==", "!="}
         logical_ops = {"&&", "||"}
 
+        # Dynamic `any` type: operations involving `any` produce `any`
+        # (except comparisons/equality which always produce Bool)
+        if left.kind == TypeKind.ANY or right.kind == TypeKind.ANY:
+            if expr.op in arithmetic_ops:
+                return ANY_TYPE
+            if expr.op in comparison_ops or expr.op in equality_ops:
+                return BOOL_TYPE
+            if expr.op in logical_ops:
+                return BOOL_TYPE
+
         if expr.op in arithmetic_ops:
             # Tensor element-wise ops: Tensor +/-/*// Tensor -> Tensor
             if left.kind == TypeKind.TENSOR or right.kind == TypeKind.TENSOR:
@@ -690,6 +705,9 @@ class SemanticChecker:
 
     def _check_unary(self, expr: UnaryExpr) -> TypeInfo:
         operand = self._infer_expr(expr.operand)
+        # Dynamic `any` passes through unary ops unchanged
+        if operand.kind == TypeKind.ANY:
+            return ANY_TYPE
         if expr.op == "-":
             if operand.kind not in (TypeKind.UNKNOWN, TypeKind.INT, TypeKind.FLOAT):
                 self._error(

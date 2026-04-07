@@ -296,6 +296,52 @@ MN_EXPORT MnArena *mn_agent_arena_create(void);
 MN_EXPORT void mn_agent_arena_destroy(MnArena *arena);
 
 /* -----------------------------------------------------------------------
+ * MnValue — Dynamic `any` type (tagged union for gradual typing)
+ *
+ * MnValue holds a type tag and a value of any primitive or pointer type.
+ * Used by the `any` type in the Mapanare language for dynamic dispatch.
+ * ----------------------------------------------------------------------- */
+
+typedef enum {
+    MN_TAG_INT = 0, MN_TAG_FLOAT, MN_TAG_BOOL, MN_TAG_STRING,
+    MN_TAG_LIST, MN_TAG_MAP, MN_TAG_STRUCT, MN_TAG_ENUM,
+    MN_TAG_FN, MN_TAG_OPTION, MN_TAG_RESULT, MN_TAG_NONE,
+} MnTypeTag;
+
+typedef struct {
+    int32_t tag;
+    int32_t _pad;
+    union {
+        int64_t  i;
+        double   f;
+        uint8_t  b;
+        MnString s;
+        void*    ptr;
+    } data;
+} MnValue;
+
+/** Box an integer into an MnValue. */
+MN_EXPORT MnValue __mn_any_box_int(int64_t v);
+
+/** Box a float into an MnValue. */
+MN_EXPORT MnValue __mn_any_box_float(double v);
+
+/** Box a boolean into an MnValue. */
+MN_EXPORT MnValue __mn_any_box_bool(uint8_t v);
+
+/** Unbox an MnValue as an integer. Aborts on type mismatch. */
+MN_EXPORT int64_t __mn_any_unbox_int(MnValue v);
+
+/** Unbox an MnValue as a float. Aborts on type mismatch. */
+MN_EXPORT double __mn_any_unbox_float(MnValue v);
+
+/** Get the type tag of an MnValue. */
+MN_EXPORT int32_t __mn_any_tag(MnValue v);
+
+/** Get the type name of an MnValue as a string. */
+MN_EXPORT MnString __mn_any_typename(MnValue v);
+
+/* -----------------------------------------------------------------------
  * MnMap — open-addressing hash table with Robin Hood hashing
  *
  * Opaque struct; all access via __mn_map_* functions.

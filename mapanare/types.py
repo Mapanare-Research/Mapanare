@@ -53,6 +53,7 @@ class TypeKind(Enum):
     # Special
     TYPE_VAR = auto()
     RANGE = auto()
+    ANY = auto()
     UNKNOWN = auto()
     BUILTIN_FN = auto()
 
@@ -78,6 +79,7 @@ _NAME_TO_KIND: dict[str, TypeKind] = {
     "Channel": TypeKind.CHANNEL,
     "Tensor": TypeKind.TENSOR,
     "Range": TypeKind.RANGE,
+    "any": TypeKind.ANY,
 }
 
 # Map from TypeKind to canonical display name
@@ -92,6 +94,7 @@ _KIND_TO_NAME[TypeKind.PIPE] = "pipe"
 _KIND_TO_NAME[TypeKind.TYPE_ALIAS] = "type"
 _KIND_TO_NAME[TypeKind.TRAIT] = "trait"
 _KIND_TO_NAME[TypeKind.TYPE_VAR] = "TypeVar"
+_KIND_TO_NAME[TypeKind.ANY] = "any"
 
 
 def kind_from_name(name: str) -> TypeKind:
@@ -169,6 +172,9 @@ class TypeInfo:
         """
         if self.kind == TypeKind.UNKNOWN or other.kind == TypeKind.UNKNOWN:
             return True
+        # Dynamic `any` type is compatible with everything (gradual typing)
+        if self.kind == TypeKind.ANY or other.kind == TypeKind.ANY:
+            return True
         if self.is_function and other.is_function:
             if self.return_type and other.return_type:
                 if not self.return_type.is_compatible_with(other.return_type):
@@ -219,6 +225,7 @@ STRING_TYPE = TypeInfo(kind=TypeKind.STRING)
 CHAR_TYPE = TypeInfo(kind=TypeKind.CHAR)
 VOID_TYPE = TypeInfo(kind=TypeKind.VOID)
 RANGE_TYPE = TypeInfo(kind=TypeKind.RANGE)
+ANY_TYPE = TypeInfo(kind=TypeKind.ANY)
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +283,7 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "ord": INT_TYPE,
     "chr": STRING_TYPE,
     "join": STRING_TYPE,
+    "typeof": STRING_TYPE,
     # C runtime functions used by the self-hosted compiler driver (main.mn)
     "__mn_argc": INT_TYPE,
     "__mn_argv": STRING_TYPE,
@@ -306,6 +314,7 @@ PYTHON_TYPE_MAP: dict[str, str] = {
     "Char": "str",
     "Void": "None",
     "Any": "Any",
+    "any": "Any",
 }
 
 

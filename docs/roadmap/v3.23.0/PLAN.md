@@ -4,7 +4,7 @@
 > runtime type alongside its data. This is the foundation for Python interop,
 > dynamic dispatch, and gradual typing.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Medium-Large (2-3 sessions)
 **Breaking:** No
 **Prerequisite:** v3.22.0

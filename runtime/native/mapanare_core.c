@@ -2466,3 +2466,65 @@ MN_EXPORT void __mn_sleep_ms(int64_t ms) {
     nanosleep(&req, NULL);
 #endif
 }
+
+/* -----------------------------------------------------------------------
+ * Dynamic `any` type — boxing / unboxing / tag inspection
+ * ----------------------------------------------------------------------- */
+
+MN_EXPORT MnValue __mn_any_box_int(int64_t v) {
+    MnValue val;
+    val.tag = MN_TAG_INT;
+    val._pad = 0;
+    val.data.i = v;
+    return val;
+}
+
+MN_EXPORT MnValue __mn_any_box_float(double v) {
+    MnValue val;
+    val.tag = MN_TAG_FLOAT;
+    val._pad = 0;
+    val.data.f = v;
+    return val;
+}
+
+MN_EXPORT MnValue __mn_any_box_bool(uint8_t v) {
+    MnValue val;
+    val.tag = MN_TAG_BOOL;
+    val._pad = 0;
+    val.data.b = v;
+    return val;
+}
+
+MN_EXPORT int64_t __mn_any_unbox_int(MnValue v) {
+    if (v.tag != MN_TAG_INT) {
+        fprintf(stderr, "TypeError: expected Int, got tag %d\n", v.tag);
+        abort();
+    }
+    return v.data.i;
+}
+
+MN_EXPORT double __mn_any_unbox_float(MnValue v) {
+    if (v.tag != MN_TAG_FLOAT) {
+        fprintf(stderr, "TypeError: expected Float, got tag %d\n", v.tag);
+        abort();
+    }
+    return v.data.f;
+}
+
+MN_EXPORT int32_t __mn_any_tag(MnValue v) {
+    return v.tag;
+}
+
+static const char *mn_tag_names[] = {
+    "Int", "Float", "Bool", "String",
+    "List", "Map", "Struct", "Enum",
+    "Fn", "Option", "Result", "None",
+};
+
+MN_EXPORT MnString __mn_any_typename(MnValue v) {
+    int idx = v.tag;
+    if (idx >= 0 && idx < (int)(sizeof(mn_tag_names) / sizeof(mn_tag_names[0]))) {
+        return __mn_str_from_cstr(mn_tag_names[idx]);
+    }
+    return __mn_str_from_cstr("Unknown");
+}

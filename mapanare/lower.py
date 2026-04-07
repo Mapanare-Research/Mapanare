@@ -1781,6 +1781,46 @@ class MIRLowerer:
                 )
                 return dest
 
+            # Handle typeof() builtin: compile-time type name for concrete types,
+            # runtime __mn_any_tag for dynamic `any` values
+            if fn_name == "typeof" and len(args) == 1:
+                arg_kind = args[0].ty.type_info.kind
+                _KIND_TO_TYPENAME: dict[TypeKind, str] = {
+                    TypeKind.INT: "Int",
+                    TypeKind.FLOAT: "Float",
+                    TypeKind.BOOL: "Bool",
+                    TypeKind.STRING: "String",
+                    TypeKind.CHAR: "Char",
+                    TypeKind.LIST: "List",
+                    TypeKind.MAP: "Map",
+                    TypeKind.OPTION: "Option",
+                    TypeKind.RESULT: "Result",
+                    TypeKind.SIGNAL: "Signal",
+                    TypeKind.STREAM: "Stream",
+                    TypeKind.AGENT: "Agent",
+                    TypeKind.ENUM: "Enum",
+                    TypeKind.STRUCT: "Struct",
+                    TypeKind.FN: "Fn",
+                    TypeKind.VOID: "Void",
+                    TypeKind.RANGE: "Range",
+                    TypeKind.ANY: "any",
+                }
+                # For concrete types, produce a compile-time string constant
+                if arg_kind != TypeKind.ANY and arg_kind != TypeKind.UNKNOWN:
+                    type_name = _KIND_TO_TYPENAME.get(arg_kind, "Unknown")
+                    # Use user-defined name for struct/enum types
+                    if arg_kind in (TypeKind.STRUCT, TypeKind.ENUM, TypeKind.AGENT):
+                        uname = args[0].ty.type_info.name
+                        if uname:
+                            type_name = uname
+                    dest = self._make_value(ty=mir_string())
+                    self._emit(Const(dest=dest, ty=mir_string(), value=type_name))
+                    return dest
+                # For `any`/unknown, emit runtime call to __mn_any_typename
+                dest = self._make_value(ty=mir_string())
+                self._emit(Call(dest=dest, fn_name="__mn_any_typename", args=args))
+                return dest
+
             # Check if this is an enum variant constructor
             # Check local enums — match by variant name AND field count
             for enum_name, variant_names in self._enum_variants.items():

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.23.0] - 2026-04-07
+
+### Added
+
+- `any` type — tagged `MnValue` union in C runtime (12 type tags, box/unbox/typename)
+- `TypeKind.ANY` in type system — `any` unifies with every type (gradual typing)
+- `typeof` builtin — compile-time constant for concrete types, runtime call for `any`
+- Semantic support: `any` in arithmetic/comparison/assignment/function calls
+- `__mn_any_box_int`, `__mn_any_box_float`, `__mn_any_box_bool` runtime functions
+- `__mn_any_unbox_int`, `__mn_any_unbox_float` with tag-mismatch abort
+
 ## [3.22.0] - 2026-04-07
 
 ### Changed
@@ -630,7 +641,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.22.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.23.0...HEAD
+[3.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.22.0...v3.23.0
 [3.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.21.0...v3.22.0
 [3.21.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.20.0...v3.21.0
 [3.20.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.19.0...v3.20.0
