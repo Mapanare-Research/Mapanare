@@ -41,6 +41,10 @@ docs/roadmap/*/prompt.md
 
 sprint_runner.py
 
+# Golden test build artifacts (stage1 output, not reference files)
+tests/golden/*.ll
+!tests/golden/*.ref.ll
+
 # Native build artifacts (platform-specific, should not be tracked)
 runtime/native/*.so
 runtime/native/*.dll

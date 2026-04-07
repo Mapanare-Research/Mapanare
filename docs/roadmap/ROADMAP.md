@@ -7,21 +7,21 @@
 
 ---
 
-## Where We Are (v3.9.0 — Generic Impl Blocks)
+## Where We Are (v3.9.1 — CI Green + Test Infrastructure)
 
-**The compiler compiles itself with generic impl methods.** Mapanare v3.9.0
-adds generic impl blocks (`impl<T> Box<T> { fn get(self) -> T }`), TraitDef
-in the Definition enum, and confirms the Python emitter enum-field bug is
-resolved. The self-hosted compiler is 10,800+ lines across 10 modules.
+**All CI jobs green. Full test infrastructure in place.** v3.9.1 fixes the
+ctypes segfault in `io_bridge.py`/`native_bridge.py` (subprocess probe for
+corrupt `.so` files), generates `.ref.ll` reference files for all 31 golden
+tests, removes stray build artifacts from tracking, and updates CI comments.
 
-v3.8.1 added generics monomorphization, generic structs, impl dispatch, and
-trait bounds. v3.9.0 extends this with generic methods in impl blocks —
-write one impl, get monomorphized methods for every struct instantiation.
+v3.9.0 added generic impl blocks (`impl<T> Box<T> { fn get(self) -> T }`),
+TraitDef in the Definition enum, and confirmed the Python emitter enum-field
+bug is resolved. The self-hosted compiler is 10,800+ lines across 10 modules.
 
-**35 stdlib modules** compile natively. **29 golden tests** cover all features
+**35 stdlib modules** compile natively. **31 golden tests** cover all features
 including generics, impl dispatch, traits, and generic impl blocks.
-**104 native assertions** across 7 test modules. Fixed point maintained
-(stage3 == stage4).
+**4479 pytest tests** pass. **104 native assertions** across 7 test modules.
+Fixed point maintained (stage3 == stage4).
 
 **No Python required to build.** `bash scripts/build_from_seed.sh` bootstraps
 from the seed binary.
@@ -142,7 +142,10 @@ from the seed binary.
 | **v3.7.0** ✅ | Cross-Module | Cross-module imports, 32MB thread, `mnc run`, 99 native assertions |
 | **v3.8.0** ✅ | Compiler Hardening | Loop bounds (500/2000/5000), method return types (+30), substr fix, 104 native assertions, 35/35 stdlib |
 | **v3.8.1** ✅ | **Generics + Impl** | Generic function/struct monomorphization, impl method dispatch (inherent + trait), trait bounds validation, self-hosted `impl Trait for Type`, 28/28 golden, fixed point maintained |
-| **v3.9.0** ✅ | **Generic Impl Blocks** | `impl<T> Box<T> { fn get(self) -> T }`, TraitDef variant, enum-field bug confirmed resolved, type substitution fix for builtins, 29/29 golden, fixed point maintained |
+| **v3.9.0** ✅ | **Generic Impl Blocks** | `impl<T> Box<T> { fn get(self) -> T }`, TraitDef variant, enum-field bug confirmed resolved, type substitution fix for builtins, 31/31 golden, dead PHI fix, fixed point maintained |
+| **v3.9.1** | CI Green + Tests | Fix CI failures, generate .ref.ll for tests 16–31, update baselines, clean artifacts |
+| **v3.10.0** | Error Messages + Maturity | Self-hosted errors with line numbers, generic enums, trait method validation, builtin coverage |
+| **v4.0.0** | **Production Release** | Docs, demos, quality gate — the compiler is ready for real programs |
 
 ---
 

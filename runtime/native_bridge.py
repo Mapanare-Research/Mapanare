@@ -9,6 +9,8 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import platform
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -27,12 +29,31 @@ def _lib_name() -> str:
     return "libmapanare_runtime.so"
 
 
+def _probe_library(lib_path: str) -> bool:
+    """Check if a shared library can be loaded without crashing the process.
+
+    A corrupt or incompatible .so will segfault inside ctypes.CDLL (uncatchable).
+    We probe in a subprocess to protect the host process.
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", f"import ctypes; ctypes.CDLL({lib_path!r})"],
+            capture_output=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def _load_lib() -> ctypes.CDLL:
     lib_path = _NATIVE_DIR / _lib_name()
     if not lib_path.exists():
         raise FileNotFoundError(
             f"Native runtime not built: {lib_path}\n" "Run: python runtime/native/build_native.py"
         )
+    if not _probe_library(str(lib_path)):
+        raise OSError(f"Native library failed to load (corrupt or incompatible): {lib_path}")
     return ctypes.CDLL(str(lib_path))
 
 
