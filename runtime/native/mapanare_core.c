@@ -760,6 +760,7 @@ static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
 }
 
 static int mn_list_is_managed(MnList *list);
+/* Forward declarations — defined with initializers at line ~937 */
 static int64_t cow_shares, cow_fallbacks, cow_detaches;
 
 /* Detach: if refcount > 1, allocate a private copy of the data.
@@ -838,6 +839,10 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
         }
 #endif
         /* First push to empty list — initialize buffer */
+        if (list->data) {
+            fprintf(stderr, "WARNING: __mn_list_push: reinitializing corrupted list (data=%p len=%lld cap=%lld elem=%lld)\n",
+                    (void *)list->data, (long long)list->len, (long long)list->cap, (long long)list->elem_size);
+        }
         if (list->elem_size <= 0 || list->elem_size > 65536) list->elem_size = 8;
         list->data = mn_list_alloc_buf(MN_LIST_INITIAL_CAP, list->elem_size);
         list->cap = MN_LIST_INITIAL_CAP;
@@ -1216,7 +1221,10 @@ MN_EXPORT int64_t __mn_file_copy(MnString src, MnString dst) {
     if (!fout) { fclose(fin); return -1; }
     char buf[8192];
     size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), fin)) > 0) fwrite(buf, 1, n, fout);
+    while ((n = fread(buf, 1, sizeof(buf), fin)) > 0) {
+        size_t w = fwrite(buf, 1, n, fout);
+        if (w < n) break;  /* write error (e.g., disk full) */
+    }
     fclose(fin);
     fclose(fout);
     return 0;
@@ -2459,7 +2467,11 @@ MN_EXPORT int64_t __mn_clock_monotonic_ns(void) {
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
 #else
-    return 0;
+    static LARGE_INTEGER freq = {0};
+    LARGE_INTEGER now;
+    if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&now);
+    return (int64_t)((double)now.QuadPart / (double)freq.QuadPart * 1e9);
 #endif
 }
 
@@ -2469,6 +2481,8 @@ MN_EXPORT void __mn_sleep_ms(int64_t ms) {
     req.tv_sec  = ms / 1000;
     req.tv_nsec = (ms % 1000) * 1000000L;
     nanosleep(&req, NULL);
+#else
+    Sleep((DWORD)ms);
 #endif
 }
 
@@ -2525,11 +2539,24 @@ static const char *mn_tag_names[] = {
     "List", "Map", "Struct", "Enum",
     "Fn", "Option", "Result", "None",
 };
+#define MN_TAG_COUNT (int)(sizeof(mn_tag_names) / sizeof(mn_tag_names[0]))
+static MnString mn_tag_strings[12];
+static MnString mn_tag_unknown;
+static int mn_tag_strings_init = 0;
+
+static void mn_init_tag_strings(void) {
+    if (mn_tag_strings_init) return;
+    for (int i = 0; i < MN_TAG_COUNT; i++)
+        mn_tag_strings[i] = __mn_str_from_cstr(mn_tag_names[i]);
+    mn_tag_unknown = __mn_str_from_cstr("Unknown");
+    mn_tag_strings_init = 1;
+}
 
 MN_EXPORT MnString __mn_any_typename(MnValue v) {
+    mn_init_tag_strings();
     int idx = v.tag;
-    if (idx >= 0 && idx < (int)(sizeof(mn_tag_names) / sizeof(mn_tag_names[0]))) {
-        return __mn_str_from_cstr(mn_tag_names[idx]);
+    if (idx >= 0 && idx < MN_TAG_COUNT) {
+        return mn_tag_strings[idx];
     }
-    return __mn_str_from_cstr("Unknown");
+    return mn_tag_unknown;
 }

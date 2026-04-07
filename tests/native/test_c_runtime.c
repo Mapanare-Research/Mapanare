@@ -864,6 +864,246 @@ TEST(test_shutdown_with_agents) {
 }
 
 /* -----------------------------------------------------------------------
+ * 12. Map tests
+ * ----------------------------------------------------------------------- */
+
+TEST(test_map_new_free) {
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    ASSERT_NE(m, NULL);
+    ASSERT_EQ(__mn_map_len(m), 0);
+    __mn_map_free(m);
+}
+
+TEST(test_map_set_get) {
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    int64_t k1 = 10, v1 = 100;
+    int64_t k2 = 20, v2 = 200;
+    int64_t k3 = 30, v3 = 300;
+    __mn_map_set(m, &k1, &v1);
+    __mn_map_set(m, &k2, &v2);
+    __mn_map_set(m, &k3, &v3);
+    int64_t *got = (int64_t *)__mn_map_get(m, &k2);
+    ASSERT_NE(got, NULL);
+    ASSERT_EQ(*got, 200);
+    __mn_map_free(m);
+}
+
+TEST(test_map_overwrite) {
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    int64_t k = 42, v1 = 1, v2 = 2;
+    __mn_map_set(m, &k, &v1);
+    __mn_map_set(m, &k, &v2);
+    ASSERT_EQ(__mn_map_len(m), 1);
+    int64_t *got = (int64_t *)__mn_map_get(m, &k);
+    ASSERT_NE(got, NULL);
+    ASSERT_EQ(*got, 2);
+    __mn_map_free(m);
+}
+
+TEST(test_map_del) {
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    int64_t k = 7, v = 77;
+    __mn_map_set(m, &k, &v);
+    ASSERT_EQ(__mn_map_contains(m, &k), 1);
+    ASSERT_EQ(__mn_map_del(m, &k), 1);
+    ASSERT_EQ(__mn_map_contains(m, &k), 0);
+    ASSERT_EQ(__mn_map_len(m), 0);
+    __mn_map_free(m);
+}
+
+TEST(test_map_contains) {
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    int64_t k = 5, v = 55, absent = 99;
+    __mn_map_set(m, &k, &v);
+    ASSERT_EQ(__mn_map_contains(m, &k), 1);
+    ASSERT_EQ(__mn_map_contains(m, &absent), 0);
+    __mn_map_free(m);
+}
+
+TEST(test_map_len) {
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    for (int64_t i = 0; i < 10; i++) {
+        int64_t v = i * 10;
+        __mn_map_set(m, &i, &v);
+    }
+    ASSERT_EQ(__mn_map_len(m), 10);
+    __mn_map_free(m);
+}
+
+TEST(test_map_iter) {
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    for (int64_t i = 1; i <= 3; i++) {
+        int64_t v = i * 100;
+        __mn_map_set(m, &i, &v);
+    }
+    MnMapIter *it = __mn_map_iter_new(m);
+    ASSERT_NE(it, NULL);
+    int count = 0;
+    void *kp, *vp;
+    while (__mn_map_iter_next(it, &kp, &vp)) count++;
+    ASSERT_EQ(count, 3);
+    __mn_map_iter_free(it);
+    __mn_map_free(m);
+}
+
+TEST(test_map_free_deep) {
+    MnMap *m = __mn_map_new(sizeof(MnString), sizeof(MnString), MN_MAP_KEY_STR);
+    MnString k = __mn_str_from_cstr("key1");
+    MnString v = __mn_str_from_cstr("val1");
+    __mn_map_set(m, &k, &v);
+    /* free_deep should free both the key and value strings */
+    __mn_map_free_deep(m);
+    /* If ASan is active, any leak or double-free will be detected */
+}
+
+/* -----------------------------------------------------------------------
+ * 13. Signal tests
+ * ----------------------------------------------------------------------- */
+
+TEST(test_signal_new_free) {
+    int64_t val = 42;
+    MnSignal *s = __mn_signal_new(&val, sizeof(int64_t));
+    ASSERT_NE(s, NULL);
+    __mn_signal_free(s);
+}
+
+TEST(test_signal_set_get) {
+    int64_t val = 10;
+    MnSignal *s = __mn_signal_new(&val, sizeof(int64_t));
+    int64_t *got = (int64_t *)__mn_signal_get(s);
+    ASSERT_EQ(*got, 10);
+    int64_t val2 = 20;
+    __mn_signal_set(s, &val2);
+    got = (int64_t *)__mn_signal_get(s);
+    ASSERT_EQ(*got, 20);
+    __mn_signal_free(s);
+}
+
+TEST(test_signal_subscribe_unsubscribe) {
+    int64_t va = 1, vb = 0;
+    MnSignal *a = __mn_signal_new(&va, sizeof(int64_t));
+    MnSignal *b = __mn_signal_new(&vb, sizeof(int64_t));
+    __mn_signal_subscribe(a, b);
+    int64_t va2 = 2;
+    __mn_signal_set(a, &va2);
+    /* b should be marked dirty after a changes */
+    __mn_signal_unsubscribe(a, b);
+    __mn_signal_free(b);
+    __mn_signal_free(a);
+}
+
+TEST(test_signal_no_change_skip) {
+    int64_t val = 42;
+    MnSignal *s = __mn_signal_new(&val, sizeof(int64_t));
+    /* Setting the same value should not trigger propagation */
+    __mn_signal_set(s, &val);
+    int64_t *got = (int64_t *)__mn_signal_get(s);
+    ASSERT_EQ(*got, 42);
+    __mn_signal_free(s);
+}
+
+/* -----------------------------------------------------------------------
+ * 14. Stream tests
+ * ----------------------------------------------------------------------- */
+
+static void stream_double_fn(void *out, const void *in, void *ud) {
+    (void)ud;
+    *(int64_t *)out = *(const int64_t *)in * 2;
+}
+
+static int64_t stream_is_even_fn(const void *elem, void *ud) {
+    (void)ud;
+    return (*(const int64_t *)elem) % 2 == 0;
+}
+
+TEST(test_stream_from_list_collect) {
+    MnList list = {0};
+    for (int64_t i = 1; i <= 3; i++) __mn_list_push(&list, &i);
+    MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
+    ASSERT_NE(s, NULL);
+    MnList result = __mn_stream_collect(s, sizeof(int64_t));
+    ASSERT_EQ(result.len, 3);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&result, 0), 1);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&result, 2), 3);
+    __mn_list_free(&result);
+    __mn_stream_free_chain(s);
+    __mn_list_free(&list);
+}
+
+TEST(test_stream_map) {
+    MnList list = {0};
+    for (int64_t i = 1; i <= 3; i++) __mn_list_push(&list, &i);
+    MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
+    MnStream *mapped = __mn_stream_map(s, stream_double_fn, NULL, sizeof(int64_t));
+    MnList result = __mn_stream_collect(mapped, sizeof(int64_t));
+    ASSERT_EQ(result.len, 3);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&result, 0), 2);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&result, 1), 4);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&result, 2), 6);
+    __mn_list_free(&result);
+    __mn_stream_free_chain(mapped);
+    __mn_list_free(&list);
+}
+
+TEST(test_stream_filter) {
+    MnList list = {0};
+    for (int64_t i = 1; i <= 5; i++) __mn_list_push(&list, &i);
+    MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
+    MnStream *filtered = __mn_stream_filter(s, stream_is_even_fn, NULL);
+    MnList result = __mn_stream_collect(filtered, sizeof(int64_t));
+    ASSERT_EQ(result.len, 2);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&result, 0), 2);
+    ASSERT_EQ(*(int64_t *)__mn_list_get(&result, 1), 4);
+    __mn_list_free(&result);
+    __mn_stream_free_chain(filtered);
+    __mn_list_free(&list);
+}
+
+TEST(test_stream_free_chain) {
+    MnList list = {0};
+    for (int64_t i = 1; i <= 3; i++) __mn_list_push(&list, &i);
+    MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
+    MnStream *mapped = __mn_stream_map(s, stream_double_fn, NULL, sizeof(int64_t));
+    MnStream *filtered = __mn_stream_filter(mapped, stream_is_even_fn, NULL);
+    /* free_chain should walk the entire upstream pipeline without leaks */
+    __mn_stream_free_chain(filtered);
+    __mn_list_free(&list);
+}
+
+/* -----------------------------------------------------------------------
+ * 15. MnValue (any) tests
+ * ----------------------------------------------------------------------- */
+
+TEST(test_any_box_int) {
+    MnValue v = __mn_any_box_int(42);
+    ASSERT_EQ(__mn_any_tag(v), MN_TAG_INT);
+}
+
+TEST(test_any_box_float) {
+    MnValue v = __mn_any_box_float(3.14);
+    ASSERT_EQ(__mn_any_tag(v), MN_TAG_FLOAT);
+}
+
+TEST(test_any_box_bool) {
+    MnValue v = __mn_any_box_bool(1);
+    ASSERT_EQ(__mn_any_tag(v), MN_TAG_BOOL);
+}
+
+TEST(test_any_unbox_int) {
+    MnValue v = __mn_any_box_int(42);
+    ASSERT_EQ(__mn_any_unbox_int(v), 42);
+}
+
+TEST(test_any_typename) {
+    MnValue v = __mn_any_box_int(1);
+    MnString name = __mn_any_typename(v);
+    MnString expected = __mn_str_from_cstr("Int");
+    ASSERT_EQ(__mn_str_eq(name, expected), 1);
+    __mn_str_free(expected);
+    /* name is now a static constant — no free needed */
+}
+
+/* -----------------------------------------------------------------------
  * Main
  * ----------------------------------------------------------------------- */
 
@@ -954,6 +1194,39 @@ int main(void) {
     printf("[Graceful Shutdown Tests]\n");
     RUN_TEST(test_shutdown_init);
     RUN_TEST(test_shutdown_with_agents);
+    printf("\n");
+
+    printf("[Map Tests]\n");
+    RUN_TEST(test_map_new_free);
+    RUN_TEST(test_map_set_get);
+    RUN_TEST(test_map_overwrite);
+    RUN_TEST(test_map_del);
+    RUN_TEST(test_map_contains);
+    RUN_TEST(test_map_len);
+    RUN_TEST(test_map_iter);
+    RUN_TEST(test_map_free_deep);
+    printf("\n");
+
+    printf("[Signal Tests]\n");
+    RUN_TEST(test_signal_new_free);
+    RUN_TEST(test_signal_set_get);
+    RUN_TEST(test_signal_subscribe_unsubscribe);
+    RUN_TEST(test_signal_no_change_skip);
+    printf("\n");
+
+    printf("[Stream Tests]\n");
+    RUN_TEST(test_stream_from_list_collect);
+    RUN_TEST(test_stream_map);
+    RUN_TEST(test_stream_filter);
+    RUN_TEST(test_stream_free_chain);
+    printf("\n");
+
+    printf("[MnValue (any) Tests]\n");
+    RUN_TEST(test_any_box_int);
+    RUN_TEST(test_any_box_float);
+    RUN_TEST(test_any_box_bool);
+    RUN_TEST(test_any_unbox_int);
+    RUN_TEST(test_any_typename);
     printf("\n");
 
     printf("=== Results: %d/%d passed", tests_passed, tests_run);

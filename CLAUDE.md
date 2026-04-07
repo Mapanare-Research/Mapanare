@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.31.0** (current) — **Tonina.** Go transpiler (`from_go.mn`): tokenizer, parser, goroutine→spawn, interface→trait, struct translation, multiple returns→Result.
+- **v3.32.0** (current) — **Sapoara.** Review hardening: 7 C runtime fixes, list return ownership, 21 new native tests (MnMap/MnSignal/MnStream/MnValue), 74/74 C tests pass.
 - **v4.0.0** (next) — Production release: docs, demos, quality gate
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.

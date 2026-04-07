@@ -890,6 +890,12 @@ class LLVMTextEmitter:
             ret_ptr = self._f("ret.ptr")
             self._L(f"{ret_ptr} = extractvalue {{ptr, i64}} {ret_val}, 0")
 
+        # Extract returned list's data pointer (to avoid freeing it)
+        ret_list_ptr: str | None = None
+        if ret_val and ret_ty == LIST:
+            ret_list_ptr = self._f("ret.lp")
+            self._L(f"{ret_list_ptr} = extractvalue {LIST} {ret_val}, 0")
+
         # Extract returned closure's env pointer (to avoid freeing it)
         ret_env: str | None = None
         if ret_val and ret_ty == CLOS:
@@ -999,6 +1005,14 @@ class LLVMTextEmitter:
 
             self._blk[check_lbl] = []
             self._cb = check_lbl
+            if ret_list_ptr:
+                lsame = self._f("drop.lsame")
+                self._L(f"{lsame} = icmp eq ptr {lp}, {ret_list_ptr}")
+                do_free_lbl = f"drop.lfree.{self._c}"
+                self._c += 1
+                self._L(f"br i1 {lsame}, label %{skip_lbl}, label %{do_free_lbl}")
+                self._blk[do_free_lbl] = []
+                self._cb = do_free_lbl
             # Pass the variable's alloca directly to __mn_list_free
             self._L(f"call void @__mn_list_free(ptr {addr})")
             self._L(f"br label %{skip_lbl}")

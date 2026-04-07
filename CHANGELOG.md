@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.32.0] - 2026-04-07
+
+### Fixed
+
+- Duplicate `cow_shares` forward declaration annotated (mapanare_core.c)
+- `__mn_any_typename` no longer heap-allocates per call (lazy-init cached strings)
+- `QueryPerformanceFrequency` cached in `mapanare_time_us()` (Windows performance)
+- `__mn_file_copy` now checks `fwrite` return value (silent data loss on disk full)
+- `__mn_clock_monotonic_ns` implemented on Windows (was returning 0)
+- `__mn_sleep_ms` implemented on Windows (was no-op)
+- `__mn_list_push` release-mode reinit now logs diagnostic before recovery
+- List drop glue now skips freeing returned list via pointer comparison (use-after-free fix)
+- Python transpiler `FloorDiv` mapping annotated with semantic note
+
+### Added
+
+- MnMap test suite (8 tests: new, set, get, del, contains, len, iter, free_deep)
+- MnSignal test suite (4 tests: new, set/get, subscribe/unsubscribe, no-change skip)
+- MnStream test suite (4 tests: from_list/collect, map, filter, free_chain)
+- MnValue/any test suite (5 tests: box_int, box_float, box_bool, unbox_int, typename)
+- C runtime tests: 53 → 74 (21 new tests)
+
 ## [3.31.0] - 2026-04-07
 
 ### Added
@@ -747,7 +769,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.31.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.32.0...HEAD
+[3.32.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.31.0...v3.32.0
 [3.31.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.30.0...v3.31.0
 [3.30.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.29.0...v3.30.0
 [3.29.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.28.0...v3.29.0

@@ -71,8 +71,9 @@ static inline void mapanare_sem_destroy(mapanare_semaphore_t *s) {
 }
 
 static inline int64_t mapanare_time_us(void) {
-    LARGE_INTEGER freq, now;
-    QueryPerformanceFrequency(&freq);
+    static LARGE_INTEGER freq = {0};
+    LARGE_INTEGER now;
+    if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&now);
     return (int64_t)((double)now.QuadPart / (double)freq.QuadPart * 1000000.0);
 }
