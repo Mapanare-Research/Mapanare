@@ -940,8 +940,7 @@ class TestMatchExhaustiveness:
 
     def test_ident_catch_all_is_exhaustive(self) -> None:
         """A named catch-all binding (not a variant) should satisfy exhaustiveness."""
-        _check_ok(
-            textwrap.dedent("""\
+        _check_ok(textwrap.dedent("""\
             enum Color {
                 Red,
                 Green,
@@ -953,5 +952,4 @@ class TestMatchExhaustiveness:
                     other => "not red"
                 }
             }
-        """)
-        )
+        """))

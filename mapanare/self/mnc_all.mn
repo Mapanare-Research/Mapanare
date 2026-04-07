@@ -14019,7 +14019,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 3.16.0"
+    return "mapanare 3.26.0"
 }
 
 // ---------------------------------------------------------------------------
@@ -14508,7 +14508,7 @@ fn mn_main() {
     // Default: compile to IR
     let filename: String = arg1
     let source: String = __mn_file_read_or_empty(filename)
-    if len(source) < 0 {
+    if len(source) == 0 {
         __mn_str_eprint("error: cannot read file '")
         __mn_str_eprint(filename)
         __mn_str_eprint("'\n")

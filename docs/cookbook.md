@@ -37,7 +37,7 @@ fn main() {
 
 ```bash
 mapanare run hello.mn
-# Output: Hello from Mapanare v0.5.0!
+# Output: Hello from Mapanare v3.20.0!
 ```
 
 ---

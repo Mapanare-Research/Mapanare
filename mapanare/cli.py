@@ -972,6 +972,14 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     use_mir = not getattr(args, "no_mir", False)
     debug = getattr(args, "debug", False)
     emitter_backend = getattr(args, "emitter", "llvmlite")
+    if emitter_backend == "llvmlite":
+        import warnings
+
+        warnings.warn(
+            "The llvmlite emitter is deprecated. Use the default text emitter instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -1397,26 +1405,33 @@ def cmd_deploy(args: argparse.Namespace) -> None:
 
 
 def cmd_transpile(args: argparse.Namespace) -> None:
-    """Transpile a Python (.py) source file to Mapanare (.mn) source."""
-    from mapanare.from_python import TranslateError, translate_to_mn
-
+    """Transpile a source file (.py or .php) to Mapanare (.mn) source."""
     path = args.source
     if not os.path.isfile(path):
         print(f"error: file not found: {path}", file=sys.stderr)
         sys.exit(1)
 
     with open(path, encoding="utf-8") as f:
-        py_source = f.read()
+        source = f.read()
 
+    ext = os.path.splitext(path)[1].lower()
     try:
-        mn_source = translate_to_mn(py_source, filename=path)
-    except TranslateError as e:
+        if ext == ".php":
+            from mapanare.from_php import translate_to_mn
+
+            mn_source = translate_to_mn(source, filename=path)
+        else:
+            from mapanare.from_python import translate_to_mn
+
+            mn_source = translate_to_mn(source, filename=path)
+    except Exception as e:
         print(f"error: translation failed: {e}", file=sys.stderr)
         sys.exit(1)
 
     out_path = args.o
     if out_path is None:
-        out_path = path.replace(".py", ".mn") if path.endswith(".py") else path + ".mn"
+        base = os.path.splitext(path)[0]
+        out_path = base + ".mn"
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(mn_source)
@@ -1637,7 +1652,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.set_defaults(func=cmd_init)
 
     # install
-    p_install = subparsers.add_parser("install", help="Install an Mapanare package (git-based)")
+    p_install = subparsers.add_parser("install", help="Install a Mapanare package (git-based)")
     p_install.add_argument("package", help="Package name to install")
     p_install.add_argument("--git", default=None, help="Git repository URL")
     p_install.add_argument("--branch", default=None, help="Git branch (default: main)")

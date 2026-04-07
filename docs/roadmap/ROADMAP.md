@@ -7,19 +7,18 @@
 
 ---
 
-## Where We Are (v3.16.0 — Lora)
+## Where We Are (v3.26.0 — Cunaguaro)
 
-**Concurrency safety and leak fixes.** v3.16.0 made signal tracking thread-local,
-protected the subscriber list during propagation, added `__mn_map_free_deep` and
-`__mn_stream_free_chain` to fix runtime-level memory leaks, changed string
-constant alignment to `align 8`, removed `continue-on-error` from CI stage2,
-added `-Wall -Wextra` to `mapanare run`, and corrected the spec's `char_at`
-return type.
+**Review gate — all v3.25.0 blockers fixed.** v3.26.0 resolved all 6 hard
+blockers from the code review: TypeKind.ANY emitter mapping (24-byte MnValue),
+main.ll version string, PHP transpiler $this→self + return types + isset/empty,
+C backend stream call signatures, signal unsubscribe race, map free heuristic.
+llvmlite emitter deprecated. 4610+ tests pass. C runtime: 53/53.
 
-**Next:** v3.17.0 "Tigra" — text emitter drop glue. Then 5 more quality releases
-(v3.18.0-v3.22.0) covering container memory, self-hosted completeness, type
-safety, DX polish, and performance. v4.0.0 is the production quality gate after
-all review findings are resolved.
+**Next:** v3.27.0 "Güio" builds the shared transpiler framework
+(`transpiler.mn`). v3.28.0-v3.29.0 port Python and PHP transpilers to
+self-hosted `.mn`. v3.30.0-v3.31.0 add TypeScript and Go transpilers.
+v4.0.0 is the production quality gate.
 
 The self-hosted compiler is 15,000+ lines across 11 modules.
 
@@ -161,7 +160,14 @@ from the seed binary.
 | **v3.21.0** | **"Cascabel II" — DX Polish** | REPL exceptions, test colors, docs fixes, native C tests, WASM stubs, GPU error gate |
 | **v3.22.0** | **"Puare" — Performance + Tensor PoC** | _coerce_arg phase 2, Any reduction, deepcopy replacement, alloca reduction, tensor elementwise add |
 | **v3.23.0** | **"Tragavenado II" — Dynamic `any` Type** | Tagged `MnValue` union, `any` in type system/grammar/semantic/MIR/LLVM, runtime dispatch, `typeof` builtin, gradual typing foundation |
-| **v3.24.0** | **"Macagua II" — Python Transpiler** | `mapanare compile main.py`, Python AST → Mapanare AST, class→struct, try/except→Result, type inference for untyped locals, `any` fallback, stdlib shims, `.py`→`.mn` transpile output |
+| **v3.24.0** ✅ | **"Macagua II" — Python Transpiler** | `mapanare compile main.py`, Python AST → Mapanare AST, class→struct, try/except→Result, type inference for untyped locals, `any` fallback, stdlib shims, `.py`→`.mn` transpile output |
+| **v3.25.0** ✅ | **"Cuaima" — PHP Transpiler** | `mapanare compile app.php`, regex tokenizer, recursive descent parser, class→struct+impl, array heuristics, 47 compat tests |
+| **v3.26.0** | **"Cunaguaro" — Review Gate** | Fix all v3.25.0 review blockers: `any` type emitter mapping, rebuild main.ll, PHP transpiler bugs, C backend stream sigs, signal lock, map free heuristic |
+| **v3.27.0** | **"Güio" — Transpiler Framework** | Shared `transpiler.mn`: TypeMapping, translate_class_to_struct, translate_exception_to_result, stdlib shim registry, TranspilerState |
+| **v3.28.0** | **"Danta" — Self-Hosted Python Transpiler** | `from_python.mn`: Python lexer/parser in .mn, AST walk via transpiler framework, zero Python dependency for .py compilation |
+| **v3.29.0** | **"Morrocoy" — Self-Hosted PHP Transpiler** | `from_php.mn`: PHP tokenizer/parser in .mn, proper char-by-char lexer (replaces regex), zero Python dependency for .php compilation |
+| **v3.30.0** | **"Turpial" — TypeScript Transpiler** | `from_typescript.mn`: TS tokenizer/parser, interfaces→traits, classes→structs, union types→enums, async/await→agents, optional chaining→Option |
+| **v3.31.0** | **"Tonina" — Go Transpiler** | `from_go.mn`: Go tokenizer/parser, goroutines→agents, channels→streams, error returns→Result, interfaces→traits, struct methods |
 | **v4.0.0** | **"Mapanare" — Production Release** | Docs, demos, quality gate — the compiler is ready for real programs |
 
 ---

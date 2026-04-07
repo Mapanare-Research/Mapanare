@@ -117,6 +117,8 @@ These identifiers are keywords only in specific grammar positions:
 | `input` | Inside `agent` blocks — declares an input channel. |
 | `output` | Inside `agent` blocks — declares an output channel. |
 | `Tensor` | Type expressions — the tensor type constructor. |
+| `di` | Bilingual alias for `let` (Spanish: "di" = "say/declare"). |
+| `any` | Type expressions — the dynamic type. |
 | `_` | Pattern matching — wildcard pattern. |
 
 ### 2.2 Operators
@@ -328,7 +330,46 @@ Identifiers start with a letter or underscore, followed by letters, digits, or u
 | (unknown) | `UNKNOWN` | Compiler-internal placeholder for unresolved types. Compatible with all types during inference. |
 | (builtin fn) | `BUILTIN_FN` | Compiler-internal type for builtin function references. |
 
-### 3.5 Type Inference Rules
+### 3.5 Dynamic Type (`any`)
+
+| Type | TypeKind | Description |
+|---|---|---|
+| `any` | `ANY` | Dynamic type — a boxed value that carries its runtime type tag. 24 bytes: `{i32 type_tag, i32 subtype, {ptr, i64} payload}`. |
+
+The `any` type enables gradual typing: statically-typed code can interoperate with
+dynamically-typed values at an explicit opt-in boundary.
+
+#### Boxing and Unboxing
+
+When a concrete value is assigned to an `any` variable, the compiler emits a
+boxing call (`__mn_any_box_int`, `__mn_any_box_float`, `__mn_any_box_bool`,
+`__mn_any_box_str`). The runtime type tag is stored alongside the payload.
+
+```mn
+let x: any = 42        // boxes Int → MnValue{tag=INT, payload=42}
+let y: any = "hello"   // boxes String → MnValue{tag=STRING, payload=ptr}
+```
+
+#### Runtime Type Inspection
+
+The `typeof` builtin returns the runtime type name as a `String`:
+
+```mn
+let x: any = 42
+assert typeof(x) == "Int"
+```
+
+For concrete (non-`any`) types, `typeof` is resolved at compile time.
+
+#### Compatibility Rules
+
+- Any concrete type can be assigned to `any` (implicit boxing).
+- `any` is compatible with all types for equality (`==`, `!=`) and comparison.
+- Arithmetic on `any` values (`+`, `-`, `*`, `/`, `%`) is **rejected** at compile
+  time with a clear error. Cast to a concrete type first.
+- `any` values can be passed to functions expecting `any` parameters.
+
+### 3.6 Type Inference Rules
 
 Mapanare uses local type inference. The compiler infers types from the immediate context of each expression.
 

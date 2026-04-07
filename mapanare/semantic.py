@@ -565,10 +565,16 @@ class SemanticChecker:
         equality_ops = {"==", "!="}
         logical_ops = {"&&", "||"}
 
-        # Dynamic `any` type: operations involving `any` produce `any`
-        # (except comparisons/equality which always produce Bool)
+        # Dynamic `any` type: arithmetic on `any` is rejected until full runtime
+        # dispatch is implemented. Comparisons/equality are allowed (always Bool).
         if left.kind == TypeKind.ANY or right.kind == TypeKind.ANY:
             if expr.op in arithmetic_ops:
+                self._error(
+                    f"Arithmetic on 'any' values is not yet supported: "
+                    f"{_type_display(left)} {expr.op} {_type_display(right)}. "
+                    f"Cast to a concrete type first.",
+                    expr,
+                )
                 return ANY_TYPE
             if expr.op in comparison_ops or expr.op in equality_ops:
                 return BOOL_TYPE

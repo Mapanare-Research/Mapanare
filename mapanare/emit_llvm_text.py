@@ -77,6 +77,7 @@ STR = "{ptr, i64}"
 LIST = "{ptr, i64, i64, i64, i64}"
 CLOS = "{ptr, ptr}"
 ENUM = "{i64, ptr}"
+MN_VALUE = "{i32, i32, {ptr, i64}}"  # 24-byte boxed any: {type_tag, subtype, payload}
 
 
 # ── Module-level helpers ────────────────────────────────────────────
@@ -431,6 +432,8 @@ class LLVMTextEmitter:
             if len(a) >= 2:
                 return "{" + f"i1, {{{self._rti(a[0])}, {self._rti(a[1])}}}" + "}"
             return "{i1, {ptr, ptr}}"
+        if k == TypeKind.ANY:
+            return MN_VALUE
         if k in (TypeKind.AGENT, TypeKind.SIGNAL, TypeKind.STREAM, TypeKind.CHANNEL, TypeKind.FN):
             return PTR
         nm = mt.type_info.name

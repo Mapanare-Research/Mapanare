@@ -1,5 +1,10 @@
 """LLVM IR emitter that consumes MIR (not AST).
 
+# DEPRECATED — use emit_llvm_text.py (the default text emitter) instead.
+# This emitter is kept for backwards compatibility but is no longer the
+# recommended path. The text emitter produces identical IR without the
+# llvmlite dependency and its large-struct codegen bugs.
+
 Translates MIR basic blocks, instructions, and phi nodes into LLVM IR
 via llvmlite. Because LLVM IR natively uses basic blocks and SSA form,
 the mapping is nearly 1:1 with MIR.
@@ -126,13 +131,14 @@ LLVM_STRING: Any = None
 LLVM_LIST: Any = None
 LLVM_MAP: Any = None
 LLVM_CLOSURE: Any = None  # {i8* fn_ptr, i8* env_ptr}
+LLVM_MN_VALUE: Any = None  # {i32 type_tag, i32 subtype, {ptr, i64} payload} — 24-byte boxed any
 
 
 def _init_llvm_types() -> None:
     """Initialize LLVM type constants. Must be called after confirming llvmlite exists."""
     global _llvm_types_initialized
     global LLVM_INT, LLVM_FLOAT, LLVM_BOOL, LLVM_CHAR, LLVM_VOID
-    global LLVM_PTR, LLVM_I32, LLVM_STRING, LLVM_LIST, LLVM_MAP, LLVM_CLOSURE
+    global LLVM_PTR, LLVM_I32, LLVM_STRING, LLVM_LIST, LLVM_MAP, LLVM_CLOSURE, LLVM_MN_VALUE
 
     if _llvm_types_initialized:
         return
@@ -152,6 +158,9 @@ def _init_llvm_types() -> None:
     LLVM_CLOSURE = ir.LiteralStructType(
         [ir.IntType(8).as_pointer(), ir.IntType(8).as_pointer()]
     )  # {fn_ptr, env_ptr}
+    LLVM_MN_VALUE = ir.LiteralStructType(
+        [LLVM_I32, LLVM_I32, ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])]
+    )  # {type_tag, subtype, {ptr, i64}} — 24-byte boxed any
 
     _llvm_types_initialized = True
 
@@ -973,6 +982,8 @@ class LLVMMIREmitter:
                 elem = self._resolve_type_info_arg(args[0])
                 return _tensor_llvm_type(elem)
             return _tensor_llvm_type(LLVM_FLOAT)
+        if kind == TypeKind.ANY:
+            return LLVM_MN_VALUE
         if kind in (TypeKind.AGENT, TypeKind.SIGNAL, TypeKind.STREAM, TypeKind.CHANNEL):
             return LLVM_PTR
         if kind == TypeKind.FN:

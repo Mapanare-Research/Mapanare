@@ -2261,10 +2261,15 @@ class CEmitter:
 
         if inst.op_kind == StreamOpKind.MAP:
             fn = self._fn_c_name(inst.fn_name) if inst.fn_name else "NULL"
-            self._w(f"{dest} = __mn_stream_map({source}, (MnStreamMapFn){fn}, NULL, 0, 0);")
+            elem_size = (
+                self._elem_size(inst.elem_type)
+                if hasattr(inst, "elem_type") and inst.elem_type
+                else "0"
+            )
+            self._w(f"{dest} = __mn_stream_map({source}, (MnStreamMapFn){fn}, NULL, {elem_size});")
         elif inst.op_kind == StreamOpKind.FILTER:
             fn = self._fn_c_name(inst.fn_name) if inst.fn_name else "NULL"
-            self._w(f"{dest} = __mn_stream_filter({source}, (MnStreamFilterFn){fn}, NULL, 0);")
+            self._w(f"{dest} = __mn_stream_filter({source}, (MnStreamFilterFn){fn}, NULL);")
         elif inst.op_kind == StreamOpKind.TAKE:
             count = self._val(inst.args[0]) if inst.args else "0"
             self._w(f"{dest} = __mn_stream_take({source}, {count});")
@@ -2273,13 +2278,21 @@ class CEmitter:
             self._w(f"{dest} = __mn_stream_skip({source}, {count});")
         elif inst.op_kind == StreamOpKind.COLLECT:
             self._w("/* stream collect */")
-            # collect returns MnList
-            self._w(f"{dest} = __mn_stream_collect({source}, 0, 0);")
+            elem_size = (
+                self._elem_size(inst.elem_type)
+                if hasattr(inst, "elem_type") and inst.elem_type
+                else "0"
+            )
+            self._w(f"{dest} = __mn_stream_collect({source}, {elem_size});")
         elif inst.op_kind == StreamOpKind.FOLD:
             fn = self._fn_c_name(inst.fn_name) if inst.fn_name else "NULL"
             init_val = self._val(inst.args[0]) if inst.args else "NULL"
             self._w("/* stream fold */")
-            self._w(f"{dest} = __mn_stream_fold({source}, &{init_val}, (void*){fn}, 0, 0);")
+            fold_call = (
+                f"__mn_stream_fold({source}, &{init_val}, sizeof({init_val}),"
+                f" (MnStreamFoldFn){fn}, NULL, &{dest});"
+            )
+            self._w(fold_call)
         else:
             self._w(f"/* unhandled stream op: {inst.op_kind} */")
 

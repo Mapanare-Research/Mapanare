@@ -362,6 +362,10 @@ typedef struct MnMapIter MnMapIter;
 #define MN_MAP_KEY_STR   1
 #define MN_MAP_KEY_FLOAT 2
 
+/** Value type tags for deep-free behavior. */
+#define MN_MAP_VAL_OPAQUE 0
+#define MN_MAP_VAL_STR    1
+
 /** Create a new empty map. key_type: MN_MAP_KEY_INT/STR/FLOAT. */
 MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type);
 

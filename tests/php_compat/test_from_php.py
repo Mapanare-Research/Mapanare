@@ -430,3 +430,83 @@ class TestPhpHeader:
         mn = translate_to_mn(src, "<test>")
         assert "// Translated from" in mn
         assert "mapanare transpile" in mn
+
+
+# ---------------------------------------------------------------------------
+# v3.26.0 review blocker fixes
+# ---------------------------------------------------------------------------
+
+
+class TestPhpThisToSelf:
+    """$this → self in class method bodies."""
+
+    def test_this_becomes_self(self) -> None:
+        src = """<?php
+class Foo {
+    public int $value;
+    public function bar(): int { return $this->value; }
+}"""
+        mn = translate_to_mn(src, "<test>")
+        assert "self.value" in mn
+        assert "this.value" not in mn
+
+    def test_this_in_assignment(self) -> None:
+        src = """<?php
+class Foo {
+    public int $x;
+    public function set(int $v): void { $this->x = $v; }
+}"""
+        mn = translate_to_mn(src, "<test>")
+        assert "self.x" in mn
+
+
+class TestPhpReturnTypeTranslation:
+    """PHP return type hints pass through _translate_type()."""
+
+    def test_int_return_type(self) -> None:
+        src = "<?php function get(): int { return 42; }"
+        mn = translate_to_mn(src, "<test>")
+        assert "-> Int" in mn
+
+    def test_string_return_type(self) -> None:
+        src = "<?php function name(): string { return 'hello'; }"
+        mn = translate_to_mn(src, "<test>")
+        assert "-> String" in mn
+
+    def test_method_return_type(self) -> None:
+        src = """<?php
+class Foo {
+    public int $x;
+    public function getX(): int { return $this->x; }
+}"""
+        mn = translate_to_mn(src, "<test>")
+        assert "-> Int" in mn
+
+
+class TestPhpBuiltinMappings:
+    """isset, empty, is_array, is_string, is_int mappings."""
+
+    def test_isset(self) -> None:
+        src = "<?php if (isset($x)) { echo 1; }"
+        mn = translate_to_mn(src, "<test>")
+        assert "x != None" in mn
+
+    def test_empty(self) -> None:
+        src = "<?php if (empty($arr)) { echo 1; }"
+        mn = translate_to_mn(src, "<test>")
+        assert "len(arr) == 0" in mn
+
+    def test_is_array(self) -> None:
+        src = "<?php if (is_array($x)) { echo 1; }"
+        mn = translate_to_mn(src, "<test>")
+        assert 'typeof(x) == "List"' in mn
+
+    def test_is_string(self) -> None:
+        src = "<?php if (is_string($x)) { echo 1; }"
+        mn = translate_to_mn(src, "<test>")
+        assert 'typeof(x) == "String"' in mn
+
+    def test_is_int(self) -> None:
+        src = "<?php if (is_int($x)) { echo 1; }"
+        mn = translate_to_mn(src, "<test>")
+        assert 'typeof(x) == "Int"' in mn

@@ -1247,6 +1247,7 @@ struct MnMap {
     int64_t  val_size;
     int64_t  bucket_size; /* 2 + key_size + val_size (status + psl + key + val) */
     int64_t  key_type;    /* MN_MAP_KEY_INT / STR / FLOAT */
+    int64_t  val_type;    /* MN_MAP_VAL_OPAQUE / STR */
 };
 
 struct MnMapIter {
@@ -1358,6 +1359,7 @@ MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_ty
     map->key_size = key_size;
     map->val_size = val_size;
     map->key_type = key_type;
+    map->val_type = (val_size == (int64_t)sizeof(MnString)) ? MN_MAP_VAL_STR : MN_MAP_VAL_OPAQUE;
     map->bucket_size = 2 + key_size + val_size;  /* status + psl + key + val */
     map->len = 0;
     map->cap = MN_MAP_INITIAL_CAP;
@@ -1585,8 +1587,8 @@ MN_EXPORT void __mn_map_free_deep(MnMap *map) {
                 MnString *key = (MnString *)(bucket + 2);
                 __mn_str_free(*key);
             }
-            /* Free string values (check if val_size matches MnString) */
-            if (map->val_size == (int64_t)sizeof(MnString)) {
+            /* Free string values using explicit val_type tag */
+            if (map->val_type == MN_MAP_VAL_STR) {
                 MnString *val = (MnString *)(bucket + 2 + map->key_size);
                 __mn_str_free(*val);
             }
@@ -1821,6 +1823,7 @@ MN_EXPORT void __mn_signal_subscribe(MnSignal *signal, MnSignal *subscriber) {
 }
 
 MN_EXPORT void __mn_signal_unsubscribe(MnSignal *signal, MnSignal *subscriber) {
+    mn_signal_lock();
     for (int64_t i = 0; i < signal->sub_len; i++) {
         if (signal->subscribers[i] == subscriber) {
             /* Shift remaining elements */
@@ -1830,9 +1833,11 @@ MN_EXPORT void __mn_signal_unsubscribe(MnSignal *signal, MnSignal *subscriber) {
             signal->sub_len--;
             /* Null out the vacated slot to prevent dangling references */
             signal->subscribers[signal->sub_len] = NULL;
+            mn_signal_unlock();
             return;
         }
     }
+    mn_signal_unlock();
 }
 
 /* --- Callbacks --- */

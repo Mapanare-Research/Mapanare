@@ -624,6 +624,8 @@ class PhpTranslator:
         if tok.kind == TokKind.VARIABLE:
             self._advance()
             name = tok.value[1:]  # Strip $
+            if name == "this":
+                name = "self"
             return name
 
         # Parenthesized expression
@@ -825,6 +827,18 @@ class PhpTranslator:
 
     def _translate_func_call(self, name: str, args: list[str]) -> str:
         """Translate a PHP function call to Mapanare."""
+        # Pattern-based mappings for PHP builtins without direct equivalents
+        if name == "isset" and args:
+            return f"{args[0]} != None"
+        if name == "empty" and args:
+            return f"len({args[0]}) == 0"
+        if name == "is_array" and args:
+            return f'typeof({args[0]}) == "List"'
+        if name == "is_string" and args:
+            return f'typeof({args[0]}) == "String"'
+        if name == "is_int" and args:
+            return f'typeof({args[0]}) == "Int"'
+
         mapped = _PHP_FUNC_MAP.get(name)
 
         if mapped is None:
@@ -966,6 +980,7 @@ class PhpTranslator:
         ret_type = ""
         if self._match(TokKind.PUNC, ":"):
             ret_type = self._parse_type_hint()
+            ret_type = self._translate_type(ret_type)
 
         ret_annotation = ""
         if ret_type and ret_type not in ("any", "Void"):
@@ -1014,6 +1029,7 @@ class PhpTranslator:
         ret_type = ""
         if self._match(TokKind.PUNC, ":"):
             ret_type = self._parse_type_hint()
+            ret_type = self._translate_type(ret_type)
 
         ret_annotation = ""
         if ret_type and ret_type not in ("any", "Void"):

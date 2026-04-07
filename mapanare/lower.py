@@ -111,7 +111,6 @@ from mapanare.mir import (
     MapInit,
     MIRAgentInfo,
     MIRFunction,
-    MIRGpuKernel,
     MIRModule,
     MIRParam,
     MIRPipeInfo,
@@ -135,6 +134,7 @@ from mapanare.mir import (
     WrapNone,
     WrapOk,
     WrapSome,
+    mir_any,
     mir_bool,
     mir_float,
     mir_int,
@@ -1169,6 +1169,43 @@ class MIRLowerer:
             return None
         return None
 
+    # ── any-type box/unbox helpers ────────────────────────────────────
+    _ANY_BOX_FN: dict[TypeKind, str] = {
+        TypeKind.INT: "__mn_any_box_int",
+        TypeKind.FLOAT: "__mn_any_box_float",
+        TypeKind.BOOL: "__mn_any_box_bool",
+        TypeKind.STRING: "__mn_any_box_str",
+    }
+
+    def _box_for_any(self, val: Value) -> Value:
+        """Box a concrete-typed value into an MnValue (any).
+
+        Returns the original value unchanged if no boxing is needed.
+        """
+        box_fn = self._ANY_BOX_FN.get(val.ty.kind)
+        if box_fn is None:
+            # Non-boxable types: just reinterpret as any
+            return Value(name=val.name, ty=mir_any())
+        dest = self._make_value(ty=mir_any())
+        self._emit(Call(dest=dest, fn_name=box_fn, args=[val]))
+        return dest
+
+    def _unbox_from_any(self, val: Value, target_kind: TypeKind) -> Value:
+        """Unbox an MnValue (any) to a concrete type."""
+        _UNBOX_FN: dict[TypeKind, tuple[str, MIRType]] = {
+            TypeKind.INT: ("__mn_any_unbox_int", mir_int()),
+            TypeKind.FLOAT: ("__mn_any_unbox_float", MIRType(TypeInfo(kind=TypeKind.FLOAT))),
+            TypeKind.BOOL: ("__mn_any_unbox_bool", MIRType(TypeInfo(kind=TypeKind.BOOL))),
+            TypeKind.STRING: ("__mn_any_unbox_str", mir_string()),
+        }
+        info = _UNBOX_FN.get(target_kind)
+        if info is None:
+            return val
+        fn_name, result_ty = info
+        dest = self._make_value(ty=result_ty)
+        self._emit(Call(dest=dest, fn_name=fn_name, args=[val]))
+        return dest
+
     def _lower_let(self, let: LetBinding) -> None:
         """Lower a let binding."""
         # Track lambda bindings so calls can resolve the function name
@@ -1204,7 +1241,10 @@ class MIRLowerer:
         # annotation is provided, use the annotation to preserve full type info.
         if let.type_annotation:
             declared = _resolve_type_expr(let.type_annotation)
-            if val.ty.kind == TypeKind.UNKNOWN and declared.kind != TypeKind.UNKNOWN:
+            if declared.kind == TypeKind.ANY and val.ty.kind != TypeKind.ANY:
+                # Box concrete value into MnValue for `let x: any = 42`
+                val = self._box_for_any(val)
+            elif val.ty.kind == TypeKind.UNKNOWN and declared.kind != TypeKind.UNKNOWN:
                 val = Value(name=val.name, ty=declared)
             elif val.ty.kind in (TypeKind.OPTION, TypeKind.RESULT) and not val.ty.type_info.args:
                 if declared.kind == val.ty.kind and declared.type_info.args:

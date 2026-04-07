@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.26.0] - 2026-04-07
+
+### Added
+
+### Changed
+
+### Fixed
+
 ## [3.25.0] - 2026-04-07
 
 ### Added
@@ -668,7 +676,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.25.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.26.0...HEAD
+[3.26.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.25.0...v3.26.0
 [3.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.24.0...v3.25.0
 [3.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.23.0...v3.24.0
 [3.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.22.0...v3.23.0

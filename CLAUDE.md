@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.25.0** (current) — **Cuaima.** PHP transpiler: `mapanare compile app.php`, regex tokenizer, class→struct+impl, array heuristics, 47 compat tests.
+- **v3.26.0** (current) — **Cunaguaro.** Review gate: fix all v3.25.0 blockers — ANY emitter mapping, PHP transpiler fixes, C stream signatures, signal locking, map free, llvmlite deprecated.
 - **v4.0.0** (next) — Production release: docs, demos, quality gate
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.
