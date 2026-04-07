@@ -3,7 +3,7 @@
 > Bring the self-hosted compiler closer to expressing its own language.
 > Add While/Break/Continue/Assert, fix type inference, restore generic tracking.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Medium (2 sessions)
 **Breaking:** No
 **Prerequisite:** v3.18.0

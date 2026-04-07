@@ -482,12 +482,27 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     }
     if tt == "KW_IMPL" { return parse_impl_def(tokens, pos, filename) }
     if tt == "KW_TRAIT" {
-        // Parse trait name, skip body (trait bodies don't generate MIR)
         let mut tp: Int = pos + 1
         let trait_name: String = peek_value(tokens, tp)
         tp = tp + 1
-        tp = skip_brace_block(tokens, tp)
-        let trait_methods: List<FnDefData> = []
+        let mut trait_methods: List<FnDefData> = []
+        if peek_type(tokens, tp) == "LBRACE" {
+            tp = tp + 1
+            for _ in 0..100 {
+                if peek_type(tokens, tp) == "RBRACE" {
+                    tp = tp + 1
+                    return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
+                }
+                if peek_type(tokens, tp) == "KW_FN" {
+                    let fr: FnDataResult = parse_fn_def_as_data(tokens, tp, filename)
+                    trait_methods.push(fr.fn_data)
+                    tp = fr.pos
+                } else {
+                    tp = tp + 1
+                }
+            }
+            return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
+        }
         return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
     }
     if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
@@ -1323,6 +1338,9 @@ fn parse_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
     if tt == "KW_RETURN" { return parse_return_stmt(tokens, pos, filename) }
     if tt == "KW_FOR" { return parse_for_stmt(tokens, pos, filename) }
     if tt == "KW_WHILE" { return parse_while_stmt(tokens, pos, filename) }
+    if tt == "KW_BREAK" { return new_stmt_result(Stmt::Break, pos + 1) }
+    if tt == "KW_CONTINUE" { return new_stmt_result(Stmt::Continue, pos + 1) }
+    if tt == "KW_ASSERT" { return parse_assert_stmt(tokens, pos, filename) }
 
     let er: ExprResult = parse_expr(tokens, pos, filename, 0)
     return new_stmt_result(Stmt::ExprStmt(er.expr), er.pos)
@@ -1392,37 +1410,25 @@ fn parse_for_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult
 }
 
 fn parse_while_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
-    // Desugar: while cond { body }
-    // → for __w in 0..1000000 { if !(cond) { return } else { body } }
-    // But we don't have break/return-from-loop. Instead, use a simpler
-    // desugaring that reuses the for-loop infrastructure:
-    //   for __w in 0..1000000 { if cond { body-stmts } }
-    // This runs the body only while cond is true.
-    // To avoid stack overflow from allocas in the loop, we keep the body
-    // minimal (no extra allocas beyond what the body already needs).
     let mut p: Int = pos + 1
-
-    // Parse condition expression
     let cond_r: ExprResult = parse_expr(tokens, p, filename, 0)
     p = cond_r.pos
-
-    // Parse body block
     let body_r: BlockResult = parse_block(tokens, p, filename)
     p = body_r.pos
+    return new_stmt_result(Stmt::While(cond_r.expr, body_r.block), p)
+}
 
-    // Build: if cond { body-stmts } — reuse the body's stmts directly
-    let if_expr: Expr = Expr::If(cond_r.expr, body_r.block, none)
-    let if_stmt: Stmt = Stmt::ExprStmt(if_expr)
-
-    // Build loop body with just the if
-    let mut loop_stmts: List<Stmt> = []
-    loop_stmts.push(if_stmt)
-    let loop_block: Block = new_block(new_span(0, 0, 0, 0), loop_stmts)
-
-    // Range 0..100000 (reasonable limit for while loops)
-    let range_expr: Expr = Expr::Range(Expr::IntLit(0), Expr::IntLit(100000), false)
-
-    return new_stmt_result(Stmt::For("__w", range_expr, loop_block), p)
+fn parse_assert_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
+    let mut p: Int = pos + 1
+    let er: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = er.pos
+    let mut msg: Option<String> = none
+    if peek_type(tokens, p) == "COMMA" {
+        p = p + 1
+        msg = Some(peek_value(tokens, p))
+        p = p + 1
+    }
+    return new_stmt_result(Stmt::Assert(er.expr, msg), p)
 }
 
 // ---------------------------------------------------------------------------

@@ -734,8 +734,8 @@ fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, 
     let elem: TypeInfo = unknown_type()
     if len(left_ti.args) > 0 {
         let elem2: TypeInfo = left_ti.args[0]
-        let args: List<TypeInfo> = []
-        // args.push(elem2)
+        let mut args: List<TypeInfo> = []
+        args.push(elem2)
         return new_infer_result(make_generic_type("Tensor", args), st2)
     }
     let args3: List<TypeInfo> = []
@@ -791,7 +791,7 @@ fn check_call_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult 
         let arg: Expr = args[i]
         let ar: InferResult = infer_expr(st2, arg)
         st2 = ar.st
-        // arg_types.push(ar.type_info)
+        arg_types.push(ar.type_info)
         i = i + 1
     }
     return check_call_resolved(st2, callee, arg_types)
@@ -987,7 +987,7 @@ fn check_lambda_expr(st: SemState, params: List<Param>, body: LambdaBody) -> Inf
         }
         let p: Param = params[i]
         let pt: TypeInfo = resolve_type_opt(p.type_annotation)
-        // param_types.push(pt)
+        param_types.push(pt)
         let sym: Symbol = new_symbol(p.name, "param", pt, false)
         st2 = define_in_scope(st2, p.name, sym)
         i = i + 1
@@ -1144,6 +1144,18 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState {
     if sk == "for" {
         return check_for_stmt(st, stmt_for_var(stmt), stmt_for_iter(stmt), stmt_for_body(stmt))
     }
+    if sk == "while" {
+        let wr: InferResult = infer_expr(st, stmt_while_cond(stmt))
+        let inner: SemState = push_scope(wr.st)
+        let after: SemState = check_block(inner, stmt_while_body(stmt))
+        return pop_scope(after)
+    }
+    if sk == "break" { return st }
+    if sk == "continue" { return st }
+    if sk == "assert" {
+        let ar: InferResult = infer_expr(st, stmt_assert_expr(stmt))
+        return ar.st
+    }
     if sk == "signal_decl" {
         return check_signal_decl(st, stmt_signal_name(stmt), stmt_signal_mutable(stmt), stmt_signal_type(stmt), stmt_signal_value(stmt))
     }
@@ -1189,7 +1201,17 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
 fn check_for_stmt(st: SemState, var_name: String, iterable: Expr, body: Block) -> SemState {
     let ir: InferResult = infer_expr(st, iterable)
     let inner: SemState = push_scope(ir.st)
-    let sym: Symbol = new_symbol(var_name, "variable", unknown_type(), false)
+    // Infer loop variable type from iterable
+    let mut var_type: TypeInfo = unknown_type()
+    if ir.type_info.kind == "range" {
+        var_type = int_type()
+    }
+    if ir.type_info.kind == "list" {
+        if len(ir.type_info.args) > 0 {
+            var_type = ir.type_info.args[0]
+        }
+    }
+    let sym: Symbol = new_symbol(var_name, "variable", var_type, false)
     let bound: SemState = define_in_scope(inner, var_name, sym)
     let after: SemState = check_block(bound, body)
     return pop_scope(after)
@@ -1205,14 +1227,14 @@ fn check_signal_decl(st: SemState, name: String, mutable: Bool, type_ann: Option
     let resolved: TypeInfo = ann_type
     if ann_type.name == "<unknown>" {
         let resolved2: TypeInfo = vr.type_info
-        let args: List<TypeInfo> = []
-        // args.push(resolved2)
+        let mut args: List<TypeInfo> = []
+        args.push(resolved2)
         let sig_type: TypeInfo = make_generic_type("Signal", args)
         let sym: Symbol = new_symbol(name, "variable", sig_type, mutable)
         return define_in_scope(vr.st, name, sym)
     }
-    let args2: List<TypeInfo> = []
-    // args2.push(resolved)
+    let mut args2: List<TypeInfo> = []
+    args2.push(resolved)
     let sig_type2: TypeInfo = make_generic_type("Signal", args2)
     let sym2: Symbol = new_symbol(name, "variable", sig_type2, mutable)
     return define_in_scope(vr.st, name, sym2)

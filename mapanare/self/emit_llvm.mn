@@ -256,8 +256,36 @@ fn resolve_type(st: EmitState, ty: MIRType) -> String {
 // ---------------------------------------------------------------------------
 
 fn declare_runtime_fn(st: EmitState, name: String, ret: String, params: String) -> EmitState {
-    let line: String = "declare " + ret + " @" + name + "(" + params + ")"
+    let attrs: String = get_fn_attrs(name)
+    let line: String = "declare " + ret + " @" + name + "(" + params + ")" + attrs
     return emit_line(st, line)
+}
+
+fn get_fn_attrs(name: String) -> String {
+    if name == "__mn_str_len" { return " nounwind readonly" }
+    if name == "__mn_str_eq" { return " nounwind readonly" }
+    if name == "__mn_str_cmp" { return " nounwind readonly" }
+    if name == "__mn_str_hash" { return " nounwind readonly" }
+    if name == "__mn_list_len" { return " nounwind readonly" }
+    if name == "__mn_list_get" { return " nounwind readonly" }
+    if name == "__mn_map_len" { return " nounwind readonly" }
+    if name == "__mn_map_contains" { return " nounwind readonly" }
+    if name == "__mn_str_free" { return " nounwind" }
+    if name == "__mn_list_free" { return " nounwind" }
+    if name == "__mn_map_free_deep" { return " nounwind" }
+    if name == "__mn_str_concat" { return " nounwind" }
+    if name == "__mn_str_from_int" { return " nounwind" }
+    if name == "__mn_str_from_float" { return " nounwind" }
+    if name == "__mn_str_from_bool" { return " nounwind" }
+    if name == "malloc" { return " nounwind" }
+    if name == "free" { return " nounwind" }
+    if name == "__mn_print" { return " nounwind" }
+    if name == "__mn_println" { return " nounwind" }
+    if name == "__mn_list_push" { return " nounwind" }
+    if name == "__mn_list_new" { return " nounwind" }
+    if name == "__mn_map_new" { return " nounwind" }
+    if name == "__mn_map_set" { return " nounwind" }
+    return ""
 }
 
 fn declare_all_runtime(st: EmitState) -> EmitState {

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.19.0] - 2026-04-07
+
+### Added
+
+- Self-hosted While/Break/Continue/Assert: Stmt enum variants, parser, semantic checker, lowerer
+- Loop context (header/exit labels) in LowerState for Break/Continue support in both For and While
+- Assert statement lowers to conditional branch + `__mn_assert_fail` call
+- Function attributes (`nounwind`/`readonly`) in self-hosted LLVM emitter (30+ runtime declarations)
+- Trait method signature parsing (was brace-skip only)
+
+### Fixed
+
+- For-loop variables now typed from iterable (Range → Int, List<T> → T; was always UNKNOWN)
+- Restored 5 commented-out `.push()` calls for generic type tracking (Tensor, call args, lambda params, Signal)
+
 ## [3.18.0] - 2026-04-07
 
 ### Added
@@ -570,7 +585,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.18.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.19.0...HEAD
+[3.19.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.18.0...v3.19.0
 [3.18.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.17.0...v3.18.0
 [3.17.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.16.0...v3.17.0
 [3.16.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.15.0...v3.16.0

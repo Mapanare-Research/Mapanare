@@ -106,6 +106,10 @@ enum Stmt {
     ExprStmt(Expr),
     Return(Option<Expr>),
     For(String, Expr, Block),
+    While(Expr, Block),
+    Break,
+    Continue,
+    Assert(Expr, Option<String>),
     SignalDecl(String, Bool, Option<TypeExpr>, Expr, Bool),
     StreamDecl(String, Option<TypeExpr>, Expr)
 }
@@ -538,6 +542,10 @@ pub fn stmt_kind(s: Stmt) -> String {
         ExprStmt(_) => { return "expr_stmt" },
         Return(_) => { return "return" },
         For(_, _, _) => { return "for" },
+        While(_, _) => { return "while" },
+        Break => { return "break" },
+        Continue => { return "continue" },
+        Assert(_, _) => { return "assert" },
         SignalDecl(_, _, _, _, _) => { return "signal_decl" },
         StreamDecl(_, _, _) => { return "stream_decl" }
     }
@@ -569,6 +577,18 @@ pub fn stmt_for_iter(s: Stmt) -> Expr {
 }
 pub fn stmt_for_body(s: Stmt) -> Block {
     match s { For(_, _, b) => { return b }, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
+}
+pub fn stmt_while_cond(s: Stmt) -> Expr {
+    match s { While(c, _) => { return c }, _ => { return Expr::NoneLit } }
+}
+pub fn stmt_while_body(s: Stmt) -> Block {
+    match s { While(_, b) => { return b }, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
+}
+pub fn stmt_assert_expr(s: Stmt) -> Expr {
+    match s { Assert(e, _) => { return e }, _ => { return Expr::NoneLit } }
+}
+pub fn stmt_assert_msg(s: Stmt) -> Option<String> {
+    match s { Assert(_, m) => { return m }, _ => { return none } }
 }
 pub fn stmt_signal_name(s: Stmt) -> String {
     match s { SignalDecl(n, _, _, _, _) => { return n }, _ => { return "" } }
