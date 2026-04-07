@@ -665,6 +665,7 @@ class ImplDef(Definition):
     target: str = ""
     trait_name: str | None = None
     methods: list[FnDef] = field(default_factory=list)
+    type_params: list[str] = field(default_factory=list)
 
 
 @dataclass

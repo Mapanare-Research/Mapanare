@@ -8,10 +8,10 @@ Mapanare is an AI-native compiled programming language (v3.3.0 "Fixed Point") wi
 
 ## Current Version & Roadmap
 
-- **v3.3.0** (current) — **Fixed point reached.** Self-hosted compiler compiles itself (stage3 == stage4). String-tagged dispatch, sret ABI fix, COW write-back. Two-stage bootstrap from seed, no Python.
-- **v3.4.0** (next) — Native module imports in self-hosted compiler, stdlib compilation, real programs from .mn source
+- **v3.9.0** (current) — **Generic impl blocks.** `impl<T> Box<T> { fn get(self) -> T }`, TraitDef variant, enum-field bug resolved, 29/29 golden, fixed point.
+- **v3.10.0** (next) — Trait codegen, associated types, generic enums
 
-See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v3.3.0/PLAN.md` for the current execution plan.
+See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v3.9.0/PLAN.md` for the current execution plan.
 
 ## Pre-Push Validation (MANDATORY)
 

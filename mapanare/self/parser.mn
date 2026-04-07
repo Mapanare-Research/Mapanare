@@ -482,13 +482,13 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     }
     if tt == "KW_IMPL" { return parse_impl_def(tokens, pos, filename) }
     if tt == "KW_TRAIT" {
-        // Skip trait definition — no MIR code needed
+        // Parse trait name, skip body (trait bodies don't generate MIR)
         let mut tp: Int = pos + 1
-        tp = tp + 1  // skip name
+        let trait_name: String = peek_value(tokens, tp)
+        tp = tp + 1
         tp = skip_brace_block(tokens, tp)
-        let empty_path: List<String> = []
-        let empty_items: List<String> = []
-        return new_def_result(Definition::ImportDef(empty_path, empty_items), tp)
+        let trait_methods: List<FnDefData> = []
+        return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
     }
     if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
@@ -1116,8 +1116,27 @@ fn skip_brace_block(tokens: List<Token>, pos: Int) -> Int {
 
 fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
     let mut p: Int = pos + 1
+
+    // Skip optional type params: impl<T, U> ...
+    if peek_type(tokens, p) == "LT" {
+        p = p + 1
+        for _ in 0..20 {
+            if peek_type(tokens, p) == "GT" { p = p + 1; break }
+            p = p + 1
+        }
+    }
+
     let first_name: String = peek_value(tokens, p)
     p = p + 1
+
+    // Skip optional type args: impl<T> Name<T> { ... }
+    if peek_type(tokens, p) == "LT" {
+        p = p + 1
+        for _ in 0..20 {
+            if peek_type(tokens, p) == "GT" { p = p + 1; break }
+            p = p + 1
+        }
+    }
 
     // Check for "impl Trait for Type { ... }" syntax
     let mut target: String = first_name

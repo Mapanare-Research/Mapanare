@@ -238,7 +238,8 @@ enum Definition {
     ImplDef(String, List<FnDefData>),
     ImportDef(List<String>, List<String>),
     ExportDef(Option<Definition>, List<String>),
-    ExternFnDef(String, String, List<Param>, Option<TypeExpr>)
+    ExternFnDef(String, String, List<Param>, Option<TypeExpr>),
+    TraitDef(String, List<FnDefData>)
 }
 
 // ---------------------------------------------------------------------------
@@ -607,7 +608,8 @@ pub fn def_kind(d: Definition) -> String {
         ImplDef(_, _) => { return "impl_def" },
         ImportDef(_, _) => { return "import_def" },
         ExportDef(_, _) => { return "export_def" },
-        ExternFnDef(_, _, _, _) => { return "extern_fn_def" }
+        ExternFnDef(_, _, _, _) => { return "extern_fn_def" },
+        TraitDef(_, _) => { return "trait_def" }
     }
 }
 
@@ -661,6 +663,12 @@ pub fn def_extern_params(d: Definition) -> List<Param> {
 }
 pub fn def_extern_return_type(d: Definition) -> Option<TypeExpr> {
     match d { ExternFnDef(_, _, _, r) => { return r }, _ => { return none } }
+}
+pub fn def_trait_name(d: Definition) -> String {
+    match d { TraitDef(n, _) => { return n }, _ => { return "" } }
+}
+pub fn def_trait_methods(d: Definition) -> List<FnDefData> {
+    match d { TraitDef(_, m) => { return m }, _ => { let empty: List<FnDefData> = []; return empty } }
 }
 
 // ---- TypeExpr kind + accessors --------------------------------------------

@@ -394,6 +394,7 @@ class MIRLowerer:
         self._generic_fn_defs: dict[str, FnDef] = {}  # name → AST of generic fn
         self._specialized_fns: set[str] = set()  # mangled names already lowered
         self._generic_struct_defs: dict[str, StructDef] = {}  # name → AST of generic struct
+        self._generic_impl_defs: dict[str, ImplDef] = {}  # target → AST of generic impl
 
     # -- Name generation ---------------------------------------------------
 
@@ -448,7 +449,20 @@ class MIRLowerer:
         if isinstance(te, NamedType) and te.name in subst:
             concrete = subst[te.name]
             ti = concrete.type_info if hasattr(concrete, "type_info") else concrete
-            name = ti.name if hasattr(ti, "name") and ti.name else "Int"
+            kind = ti.kind if hasattr(ti, "kind") else None
+            name = ti.name if hasattr(ti, "name") and ti.name else ""
+            if not name and kind is not None:
+                _kind_names = {
+                    TypeKind.INT: "Int",
+                    TypeKind.FLOAT: "Float",
+                    TypeKind.BOOL: "Bool",
+                    TypeKind.STRING: "String",
+                    TypeKind.CHAR: "Char",
+                    TypeKind.VOID: "Void",
+                    TypeKind.LIST: "List",
+                    TypeKind.MAP: "Map",
+                }
+                name = _kind_names.get(kind, "Int")
             return NamedType(name=name, span=te.span)
         if isinstance(te, GenericType):
             new_args = [self._substitute_type_expr(a, subst) or a for a in te.args]
@@ -468,9 +482,7 @@ class MIRLowerer:
             p.type_annotation = self._substitute_type_expr(p.type_annotation, subst)
 
         # Substitute return type
-        specialized.return_type = self._substitute_type_expr(
-            specialized.return_type, subst
-        )
+        specialized.return_type = self._substitute_type_expr(specialized.return_type, subst)
 
         return specialized
 
@@ -501,16 +513,12 @@ class MIRLowerer:
             specialized.name = mangled
             # Register return type before lowering (for recursive calls)
             if specialized.return_type:
-                self._fn_return_types[mangled] = _resolve_type_expr(
-                    specialized.return_type
-                )
+                self._fn_return_types[mangled] = _resolve_type_expr(specialized.return_type)
             self._lower_fn(specialized)
 
         return mangled
 
-    def _monomorphize_struct(
-        self, struct_name: str, field_values: list[Value]
-    ) -> str | None:
+    def _monomorphize_struct(self, struct_name: str, field_values: list[Value]) -> str | None:
         """If struct_name is generic, specialize it and return the mangled name."""
         struct_def = self._generic_struct_defs.get(struct_name)
         if struct_def is None:
@@ -541,14 +549,45 @@ class MIRLowerer:
                 ):
                     specialized_fields.append((sf.name, subst[sf.type_annotation.name]))
                 else:
-                    specialized_fields.append(
-                        (sf.name, _resolve_type_expr(sf.type_annotation))
-                    )
+                    specialized_fields.append((sf.name, _resolve_type_expr(sf.type_annotation)))
             self._module.structs[mangled] = specialized_fields
             self._struct_fields[mangled] = [sf.name for sf in struct_def.fields]
             self._fn_param_types[mangled] = [ft for _, ft in specialized_fields]
 
+            # Monomorphize generic impl methods for this struct instantiation
+            self._monomorphize_impl(struct_name, mangled, subst)
+
         return mangled
+
+    def _monomorphize_impl(
+        self, base_name: str, mangled_name: str, subst: dict[str, MIRType]
+    ) -> None:
+        """Specialize generic impl methods for a monomorphized struct."""
+        impl_def = self._generic_impl_defs.get(base_name)
+        if impl_def is None:
+            return
+        struct_ty = NamedType(name=mangled_name)
+        for method in impl_def.methods:
+            specialized = self._specialize_fn(method, subst)
+            # Inject struct type for bare `self` parameter
+            for p in specialized.params:
+                if p.name == "self" and p.type_annotation is None:
+                    p.type_annotation = struct_ty
+            mir_name = f"{mangled_name}_{method.name}"
+            # Register the impl method for dispatch
+            self._impl_methods[(mangled_name, method.name)] = mir_name
+            # Register return/param types
+            if specialized.return_type is not None:
+                self._fn_return_types[mir_name] = _resolve_type_expr(specialized.return_type)
+            if specialized.params:
+                self._fn_param_types[mir_name] = [
+                    _resolve_type_expr(p.type_annotation) if p.type_annotation else mir_unknown()
+                    for p in specialized.params
+                ]
+            # Lower the specialized method
+            if mir_name not in self._specialized_fns:
+                self._specialized_fns.add(mir_name)
+                self._lower_fn(specialized, name_prefix=f"{mangled_name}_")
 
     # -- Block management --------------------------------------------------
 
@@ -775,9 +814,13 @@ class MIRLowerer:
                     self._fn_return_types[actual.name] = ret_type
 
             elif isinstance(actual, ImplDef):
-                for method in actual.methods:
-                    mir_name = f"{actual.target}_{method.name}"
-                    self._impl_methods[(actual.target, method.name)] = mir_name
+                if actual.type_params:
+                    # Store generic impl for on-demand monomorphization
+                    self._generic_impl_defs[actual.target] = actual
+                else:
+                    for method in actual.methods:
+                        mir_name = f"{actual.target}_{method.name}"
+                        self._impl_methods[(actual.target, method.name)] = mir_name
 
             elif isinstance(actual, ImportDef):
                 self._module.imports.append((actual.path, actual.items))
@@ -809,7 +852,7 @@ class MIRLowerer:
                         )
                         for p in actual.params
                     ]
-            elif isinstance(actual, ImplDef):
+            elif isinstance(actual, ImplDef) and not actual.type_params:
                 for method in actual.methods:
                     mir_name = f"{actual.target}_{method.name}"
                     if method.return_type is not None:
@@ -840,6 +883,8 @@ class MIRLowerer:
         elif isinstance(actual, AgentDef):
             self._lower_agent(actual)
         elif isinstance(actual, ImplDef):
+            if actual.type_params:
+                return  # Generic impls lowered on demand via monomorphization
             self._lower_impl(actual)
         elif isinstance(actual, ExportDef):
             if actual.definition is not None:
@@ -1636,9 +1681,7 @@ class MIRLowerer:
         if isinstance(expr.callee, Identifier):
             fn_name = expr.callee.name
             type_args_mir = (
-                [_resolve_type_expr(ta) for ta in expr.type_args]
-                if expr.type_args
-                else None
+                [_resolve_type_expr(ta) for ta in expr.type_args] if expr.type_args else None
             )
             mangled = self._monomorphize_call(fn_name, [a.ty for a in args], type_args_mir)
             if mangled is not None:

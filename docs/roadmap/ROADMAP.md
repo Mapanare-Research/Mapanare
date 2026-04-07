@@ -7,23 +7,21 @@
 
 ---
 
-## Where We Are (v3.8.1 — Generics + Impl Dispatch)
+## Where We Are (v3.9.0 — Generic Impl Blocks)
 
-**The compiler compiles itself and supports generics.** Mapanare v3.8.1
-achieves compile-time monomorphization of user-defined generic functions
-and structs, impl method dispatch, and trait bounds validation. The
-self-hosted compiler is 10,400+ lines across 10 modules.
+**The compiler compiles itself with generic impl methods.** Mapanare v3.9.0
+adds generic impl blocks (`impl<T> Box<T> { fn get(self) -> T }`), TraitDef
+in the Definition enum, and confirms the Python emitter enum-field bug is
+resolved. The self-hosted compiler is 10,800+ lines across 10 modules.
 
-v3.8.0 hardened the compiler: raised loop bounds (500/2000/5000), completed
-method return types (+30 methods for string/list/map), fixed substr semantics.
-v3.9.0 added generics monomorphization (`identity<T>` → `identity__Int`),
-generic structs (`Pair<A,B>` → `Pair__Int_Bool`), impl method dispatch
-(`obj.method()` → `Type_method(obj)`), and trait bounds validation
-(`fn max<T: Ord>` checks T implements Ord at call sites).
+v3.8.1 added generics monomorphization, generic structs, impl dispatch, and
+trait bounds. v3.9.0 extends this with generic methods in impl blocks —
+write one impl, get monomorphized methods for every struct instantiation.
 
-**35 stdlib modules** compile natively. **28 golden tests** cover all features
-including generics, impl dispatch, and trait bounds. **104 native assertions**
-across 7 test modules. Fixed point maintained (stage3 == stage4).
+**35 stdlib modules** compile natively. **29 golden tests** cover all features
+including generics, impl dispatch, traits, and generic impl blocks.
+**104 native assertions** across 7 test modules. Fixed point maintained
+(stage3 == stage4).
 
 **No Python required to build.** `bash scripts/build_from_seed.sh` bootstraps
 from the seed binary.
@@ -144,6 +142,7 @@ from the seed binary.
 | **v3.7.0** ✅ | Cross-Module | Cross-module imports, 32MB thread, `mnc run`, 99 native assertions |
 | **v3.8.0** ✅ | Compiler Hardening | Loop bounds (500/2000/5000), method return types (+30), substr fix, 104 native assertions, 35/35 stdlib |
 | **v3.8.1** ✅ | **Generics + Impl** | Generic function/struct monomorphization, impl method dispatch (inherent + trait), trait bounds validation, self-hosted `impl Trait for Type`, 28/28 golden, fixed point maintained |
+| **v3.9.0** ✅ | **Generic Impl Blocks** | `impl<T> Box<T> { fn get(self) -> T }`, TraitDef variant, enum-field bug confirmed resolved, type substitution fix for builtins, 29/29 golden, fixed point maintained |
 
 ---
 

@@ -1314,6 +1314,11 @@ fn register_def(st: SemState, def: Definition) -> SemState {
             _ => { return st }
         }
     }
+    if dk == "trait_def" {
+        let trait_name: String = def_trait_name(def)
+        let sym_trait: Symbol = new_symbol(trait_name, "trait", make_type(trait_name), false)
+        return define_in_scope(st, trait_name, sym_trait)
+    }
     // impl_def — methods handled in second pass
     return st
 }

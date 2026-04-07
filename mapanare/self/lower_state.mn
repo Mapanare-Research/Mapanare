@@ -570,4 +570,16 @@ fn is_comparison_binop(op: BinOpKind) -> Bool {
     }
 }
 
+fn kind_to_type_name(kind: String) -> String {
+    if kind == "int" { return "Int" }
+    if kind == "float" { return "Float" }
+    if kind == "bool" { return "Bool" }
+    if kind == "string" { return "String" }
+    if kind == "char" { return "Char" }
+    if kind == "void" { return "Void" }
+    if kind == "list" { return "List" }
+    if kind == "map" { return "Map" }
+    return "Int"
+}
+
 // binop_kind_to_str and unaryop_kind_to_str live in mir.mn (near the enums they convert)

@@ -78,7 +78,30 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         return register_enum(st, def_enum_data(defn))
     }
     if dk == "impl_def" {
-        return register_impl(st, def_impl_target(defn), def_impl_methods(defn))
+        let impl_target: String = def_impl_target(defn)
+        // Check if target is a generic struct — if so, store methods for later monomorphization
+        let gs_check: Option<StructDefData> = find_generic_struct(st, impl_target)
+        match gs_check {
+            Some(gs_data) => {
+                // Store each method in generic_fns with target prefix and struct's type_params
+                let mut s_gi: LowerState = st
+                let gi_methods: List<FnDefData> = def_impl_methods(defn)
+                let mut gi: Int = 0
+                for _ in 0..500 {
+                    if gi >= len(gi_methods) { return s_gi }
+                    let gm: FnDefData = gi_methods[gi]
+                    // Create a copy with prefixed name and struct type params
+                    let prefixed_name: String = impl_target + "_" + gm.name
+                    let impl_fn: FnDefData = new_fn_def_data(gm.span, prefixed_name, false, gs_data.type_params, gm.params, gm.return_type, gm.body, gm.decorators)
+                    let mut gfn_list: List<FnDefData> = s_gi.generic_fns
+                    gfn_list.push(impl_fn)
+                    s_gi.generic_fns = gfn_list
+                    gi = gi + 1
+                }
+                return s_gi
+            },
+            _ => { return register_impl(st, impl_target, def_impl_methods(defn)) }
+        }
     }
     if dk == "import_def" {
         let info: ImportInfo = new_import_info(def_import_path(defn), def_import_items(defn))
@@ -289,7 +312,13 @@ fn lower_definition(st: LowerState, defn: Definition) -> LowerState {
         return lower_agent(st, def_agent_data(defn))
     }
     if dk == "impl_def" {
-        return lower_impl(st, def_impl_target(defn), def_impl_methods(defn))
+        let impl_tgt: String = def_impl_target(defn)
+        // Skip generic impls — methods lowered on demand via struct monomorphization
+        let gs_lower: Option<StructDefData> = find_generic_struct(st, impl_tgt)
+        match gs_lower {
+            Some(_) => { return st },
+            _ => { return lower_impl(st, impl_tgt, def_impl_methods(defn)) }
+        }
     }
     if dk == "export_def" {
         let inner_opt: Option<Definition> = def_export_inner(defn)
@@ -1301,7 +1330,7 @@ fn substitute_type_annotation(ann: Option<TypeExpr>, type_params: List<String>, 
                         if i < len(concrete) {
                             // Replace with concrete type name
                             let mut cname: String = concrete[i].name
-                            if cname == "" { cname = "Int" }
+                            if cname == "" { cname = kind_to_type_name(concrete[i].kind) }
                             return Some(TypeExpr::Named(cname))
                         }
                     }
@@ -1473,6 +1502,9 @@ fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value
                 let mut sf_lst: List<StructFieldInfo> = s.struct_fields
                 sf_lst.push(sfi)
                 s.struct_fields = sf_lst
+
+                // Monomorphize generic impl methods for this struct
+                s = monomorphize_impl_methods(s, struct_name, mangled, gs.type_params, concrete)
             }
             let fnames: List<String> = get_struct_field_names(s, mangled)
             let mut init_pairs: List<FieldPair> = []
@@ -1490,6 +1522,45 @@ fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value
         },
         _ => { return new_lower_result(void_value(), st) }
     }
+}
+
+fn monomorphize_impl_methods(st: LowerState, base_name: String, mangled: String, type_params: List<String>, concrete: List<MIRType>) -> LowerState {
+    // Find generic impl methods stored as "Base_method" in generic_fns
+    let prefix: String = base_name + "_"
+    let prefix_len: Int = len(prefix)
+    let mut s: LowerState = st
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i >= len(s.generic_fns) { return s }
+        let gfn: FnDefData = s.generic_fns[i]
+        if starts_with(gfn.name, prefix) {
+            // This is a generic impl method — specialize it
+            let method_name: String = substr(gfn.name, prefix_len, len(gfn.name) - prefix_len)
+            let mir_name: String = mangled + "_" + method_name
+            // Register impl method for dispatch
+            let impl_key: String = mangled + "." + method_name
+            let entry: ImplEntry = new_impl_entry(impl_key, mir_name)
+            let mut im_list: List<ImplEntry> = s.impl_methods
+            im_list.push(entry)
+            s.impl_methods = im_list
+            // Specialize the method
+            let specialized: FnDefData = specialize_fn(gfn, mir_name, type_params, concrete)
+            // Fix self param type to the monomorphized struct
+            let fixed: FnDefData = fix_self_param_type(specialized, mangled)
+            // Register return type
+            let ret_ty: MIRType = resolve_return_type_checked(s, fixed.return_type)
+            let ret_key: String = "__ret__" + mir_name
+            let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+            let ret_entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
+            let mut lv_list: List<LambdaEntry> = s.lambda_vars
+            lv_list.push(ret_entry)
+            s.lambda_vars = lv_list
+            // Lower the specialized method (name is already set by specialize_fn)
+            s = lower_fn(s, fixed, "")
+        }
+        i = i + 1
+    }
+    return s
 }
 
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
@@ -2972,7 +3043,18 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
 
     // Merge block
     s = set_block(s, merge_idx)
+    // Skip PHI when all arm results are zeroinitializer (dead match result)
+    let mut all_zero: Bool = true
     if len(arm_results) > 0 {
+        let mut zi: Int = 0
+        for _ in 0..500 {
+            if zi < len(arm_results) {
+                if arm_results[zi].val.name != "zeroinitializer" { all_zero = false }
+                zi = zi + 1
+            }
+        }
+    }
+    if len(arm_results) > 0 && !all_zero {
         let first_pe2: PhiEntry = arm_results[0]
         let first_val2: Value = first_pe2.val
         let phi_ty: MIRType = first_val2.ty
