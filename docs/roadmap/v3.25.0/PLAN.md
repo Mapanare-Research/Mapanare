@@ -4,7 +4,7 @@
 > parses PHP, translates to Mapanare `.mn` source text, and runs the full
 > compilation pipeline: semantic check, MIR lowering, LLVM IR, native binary.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Large (3-4 sessions)
 **Breaking:** No
 **Prerequisite:** v3.24.0 (Python transpiler establishes the pattern; `any` type from v3.23.0)

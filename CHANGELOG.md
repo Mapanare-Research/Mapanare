@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.25.0] - 2026-04-07
+
+### Added
+
+- PHP transpiler — `mapanare compile app.php` compiles typed PHP 7.4+ to native
+- `mapanare transpile app.php` outputs idiomatic `.mn` source
+- Custom regex-based PHP tokenizer + 13-level precedence expression parser
+- PHP stdlib shim: strlen→len, count→len, strtolower→.to_lower, explode→.split, implode→join, array_push→.push, etc.
+- Class → struct+impl: typed properties become fields, methods become impl block
+- PHP array heuristics: `[1,2,3]` → List, `["a"=>1]` → Map
+- String interpolation: `"hello $name"` → `"hello " + str(name)`
+- C-style for loop pattern detection: `for ($i=0; $i<10; $i++)` → `for i in 0..10`
+- Arrow functions: `fn($x) => $x + 1` → `(x) => x + 1`
+- 47 PHP compatibility tests across 16 test classes
+
 ## [3.24.0] - 2026-04-07
 
 ### Added
@@ -653,7 +668,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.24.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.25.0...HEAD
+[3.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.24.0...v3.25.0
 [3.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.23.0...v3.24.0
 [3.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.22.0...v3.23.0
 [3.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.21.0...v3.22.0

@@ -51,6 +51,17 @@ def _read_source(path: str) -> str:
             sys.exit(1)
         print(f"info: translated {path} from Python to Mapanare", file=sys.stderr)
 
+    if path.endswith(".php"):
+        from mapanare.from_php import TranslateError as PhpTranslateError
+        from mapanare.from_php import translate_to_mn as php_translate_to_mn
+
+        try:
+            source = php_translate_to_mn(source, filename=path)
+        except PhpTranslateError as e:
+            print(f"error: PHP translation failed: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"info: translated {path} from PHP to Mapanare", file=sys.stderr)
+
     return source
 
 
