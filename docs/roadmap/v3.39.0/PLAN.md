@@ -4,7 +4,7 @@
 > memory profiling, valgrind-clean compilation, Culebra CI integration,
 > documentation. After this version, v4.0.0 is purely a release tag.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Medium (1-2 sessions)
 **Breaking:** No
 **Prerequisite:** v3.38.0 (fixed-point proven, 33/33 golden)

@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.38.0** (current) — Fixed-point self-compilation proven (stage4==stage3), seed updated, 33/33 golden, stage2 IR valid (0 llvm-as errors), transpiler module clashes fixed.
+- **v3.39.0** (current) — Hardening: valgrind-clean (30/33), 160 MB peak memory, fixed-point proven, seed updated, 33/33 golden, v4.0.0 ready.
 - **v4.0.0** (next) — Production release: quality gate, rebuild, tag
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.9.1/PLAN.md` → `docs/roadmap/v3.10.0/PLAN.md` → `docs/roadmap/v4.0.0/PLAN.md`.

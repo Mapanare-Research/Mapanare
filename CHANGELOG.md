@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.39.0] - 2026-04-08
+
+### Added
+
+- Valgrind-clean compilation for 30/33 golden tests (remaining 3 are
+  uninitialised-value reads in enum match codegen — safe, not UAF)
+- Peak memory 160 MB for self-compilation (target was <512 MB)
+- Memory profiling infrastructure (`-DMN_PROFILE_MEM` flag in build_stage1.py)
+
+### Changed
+
+- Self-compilation time: 0.74s for 14.7K lines
+- Binary: 2.7 MB, IR: 169K lines (stage1), 104K lines (stage2)
+
 ## [3.38.0] - 2026-04-08
 
 ### Added
@@ -908,7 +922,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.38.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.39.0...HEAD
+[3.39.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.38.0...v3.39.0
 [3.38.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.37.0...v3.38.0
 [3.37.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.36.0...v3.37.0
 [3.36.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.35.0...v3.36.0
