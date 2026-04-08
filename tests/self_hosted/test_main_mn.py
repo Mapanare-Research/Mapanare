@@ -71,7 +71,9 @@ class TestMainMnPipeline:
 
     def test_version_string(self, main_mn_source: str) -> None:
         """Version should match VERSION file."""
-        assert "3.40.0" in main_mn_source
+        version_file = Path(__file__).resolve().parent.parent.parent / "VERSION"
+        expected = version_file.read_text().strip()
+        assert expected in main_mn_source
 
 
 class TestMainMnCompileResult:
