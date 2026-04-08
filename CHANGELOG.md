@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.45.0] - 2026-04-08
+
+### Added
+
+- Exit criteria verified: new user can write → compile → run interactive programs end-to-end
+- Package manager (`mapanare install`) confirmed functional: registry + git fallback, lock files, integrity
+
+### Changed
+
+- Test count: 4,845+ (up from 4,465+)
+- 38 golden tests, 3 new CLI/network examples, transpile pipeline verified
+- All v3.41.0-v3.45.0 roadmap items complete — ready for v4.0.0
+
 ## [3.44.0] - 2026-04-08
 
 ### Added
@@ -999,7 +1012,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.44.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.45.0...HEAD
+[3.45.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.44.0...v3.45.0
 [3.44.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.43.0...v3.44.0
 [3.43.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.42.0...v3.43.0
 [3.42.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.41.0...v3.42.0

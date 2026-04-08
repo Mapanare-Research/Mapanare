@@ -3,7 +3,7 @@
 > `mapanare install` works. Error messages are helpful.
 > Documentation matches reality. Ready for v4.0.0.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v3.44.0 (real examples)
 

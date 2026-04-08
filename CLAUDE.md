@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.44.0** (current) — Real Examples: CLI/network examples compile+run, transpile .py end-to-end works.
-- **v3.45.0** (next) — Package Manager: `mapanare install` works, error recovery, docs match reality.
+- **v3.45.0** (current) — Package Manager + Polish: `mapanare install` works, error recovery, 4845+ tests, ready for v4.0.0.
+- **v4.0.0** (target) — Production release tag.
 - **v4.0.0** (target) — Production release: real apps, working examples, package manager, transpile end-to-end.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.41.0/PLAN.md` → `v3.42.0` → `v3.43.0` → `v3.44.0` → `v3.45.0` → `docs/roadmap/v4.0.0/PLAN.md`.
@@ -444,7 +444,7 @@ GitHub Actions on push/PR to `dev`:
 - **wasm** — WASM cross-compilation: emit WAT, convert to WASM via wat2wasm, run WASI examples on wasmtime.
 - **android** — Android cross-compilation: NDK setup, ARM64 + x86_64 `.o` generation, ELF format verification.
 
-4,465+ tests across the full pipeline.
+4,845+ tests across the full pipeline.
 
 ## Skills (slash commands)
 
