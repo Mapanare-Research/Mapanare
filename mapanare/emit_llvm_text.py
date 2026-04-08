@@ -266,6 +266,18 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_file_copy": {"nounwind"},
     "__mn_realpath": {"nounwind"},
     "__mn_tmpfile_path": {"nounwind"},
+    # Network, crypto, regex (v3.42.0)
+    "__mn_http_get": {"nounwind"},
+    "__mn_sha256_str": {"nounwind"},
+    "__mn_base64_encode_str": {"nounwind"},
+    "__mn_base64_decode_str": {"nounwind"},
+    "__mn_hmac_sha256_str": {"nounwind"},
+    "__mn_hex_encode_str": {"nounwind"},
+    "__mn_random_bytes_str": {"nounwind"},
+    "__mn_regex_compile_str": {"nounwind"},
+    "__mn_regex_exec_str": {"nounwind"},
+    "__mn_regex_replace_str": {"nounwind"},
+    "__mn_regex_free": {"nounwind"},
 }
 
 
@@ -2191,6 +2203,78 @@ class LLVMTextEmitter:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_dir_list_strings", LIST, [STR], [(a, STR)])
             self._put(i.dest, r, LIST)
+            return
+
+        # Network, crypto, regex builtins (v3.42.0)
+        if fn == "http_get" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_http_get", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "sha256" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_sha256_str", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "base64_encode" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_base64_encode_str", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "base64_decode" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_base64_decode_str", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "hmac_sha256" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            r = self._rt("__mn_hmac_sha256_str", STR, [STR, STR], [(a0, STR), (a1, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "hex_encode" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_hex_encode_str", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "random_bytes" and args:
+            a = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
+            r = self._rt("__mn_random_bytes_str", STR, [I64], [(a, I64)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "regex_match" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            h = self._rt("__mn_regex_compile_str", I64, [STR], [(a0, STR)])
+            r = self._rt(
+                "__mn_regex_exec_str", I64, [I64, STR, I64], [(h, I64), (a1, STR), ("0", I64)]
+            )
+            self._rt("__mn_regex_free", I64, [I64], [(h, I64)])
+            tb = self._f("rm")
+            self._L(f"{tb} = icmp sgt i64 {r}, 0")
+            self._put(i.dest, tb, I1)
+            return
+        if fn == "regex_replace" and len(args) >= 3:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            a2 = self._coerce(args[2][0], args[2][1], STR) if args[2][1] != STR else args[2][0]
+            h = self._rt("__mn_regex_compile_str", I64, [STR], [(a0, STR)])
+            r = self._rt(
+                "__mn_regex_replace_str",
+                STR,
+                [I64, STR, STR, I64],
+                [(h, I64), (a1, STR), (a2, STR), ("1", I64)],
+            )
+            self._rt("__mn_regex_free", I64, [I64], [(h, I64)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
             return
 
         # join

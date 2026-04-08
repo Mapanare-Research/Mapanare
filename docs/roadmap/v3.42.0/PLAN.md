@@ -3,7 +3,7 @@
 > A native binary can fetch data from the internet.
 > TCP, TLS, HTTP, crypto, regex — all from .mn code.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v3.41.0 (mapanare_io.c linked)
 

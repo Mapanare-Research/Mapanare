@@ -300,6 +300,16 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "append_file": VOID_TYPE,
     "file_exists": TypeInfo(kind=TypeKind.BOOL),
     "list_dir": TypeInfo(kind=TypeKind.LIST),
+    # Network, crypto, regex builtins (v3.42.0)
+    "http_get": STRING_TYPE,
+    "sha256": STRING_TYPE,
+    "base64_encode": STRING_TYPE,
+    "base64_decode": STRING_TYPE,
+    "hmac_sha256": STRING_TYPE,
+    "hex_encode": STRING_TYPE,
+    "random_bytes": STRING_TYPE,
+    "regex_match": TypeInfo(kind=TypeKind.BOOL),
+    "regex_replace": STRING_TYPE,
 }
 
 # Builtin call name mapping (Mapanare name -> Python name) for emit_python.py

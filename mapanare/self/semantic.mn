@@ -148,6 +148,16 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "append_file" { return true }
     if name == "file_exists" { return true }
     if name == "list_dir" { return true }
+    // Network, crypto, regex builtins (v3.42.0)
+    if name == "http_get" { return true }
+    if name == "sha256" { return true }
+    if name == "base64_encode" { return true }
+    if name == "base64_decode" { return true }
+    if name == "hmac_sha256" { return true }
+    if name == "hex_encode" { return true }
+    if name == "random_bytes" { return true }
+    if name == "regex_match" { return true }
+    if name == "regex_replace" { return true }
     return false
 }
 
@@ -175,6 +185,16 @@ fn builtin_return_type(name: String) -> String {
     if name == "append_file" { return "Void" }
     if name == "file_exists" { return "Bool" }
     if name == "list_dir" { return "List" }
+    // Network, crypto, regex builtins (v3.42.0)
+    if name == "http_get" { return "String" }
+    if name == "sha256" { return "String" }
+    if name == "base64_encode" { return "String" }
+    if name == "base64_decode" { return "String" }
+    if name == "hmac_sha256" { return "String" }
+    if name == "hex_encode" { return "String" }
+    if name == "random_bytes" { return "String" }
+    if name == "regex_match" { return "Bool" }
+    if name == "regex_replace" { return "String" }
     return "Void"
 }
 
@@ -1776,6 +1796,26 @@ fn register_builtins(st: SemState) -> SemState {
     st2 = define_in_scope(st2, "file_exists", fileexists_sym)
     let listdir_sym: Symbol = new_symbol("list_dir", "function", make_builtin_fn_type(make_type("List")), false)
     st2 = define_in_scope(st2, "list_dir", listdir_sym)
+
+    // Network, crypto, regex builtins (v3.42.0)
+    let httpget_sym: Symbol = new_symbol("http_get", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "http_get", httpget_sym)
+    let sha256_sym: Symbol = new_symbol("sha256", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "sha256", sha256_sym)
+    let b64enc_sym: Symbol = new_symbol("base64_encode", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "base64_encode", b64enc_sym)
+    let b64dec_sym: Symbol = new_symbol("base64_decode", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "base64_decode", b64dec_sym)
+    let hmac_sym: Symbol = new_symbol("hmac_sha256", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "hmac_sha256", hmac_sym)
+    let hexenc_sym: Symbol = new_symbol("hex_encode", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "hex_encode", hexenc_sym)
+    let randbytes_sym: Symbol = new_symbol("random_bytes", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "random_bytes", randbytes_sym)
+    let regmatch_sym: Symbol = new_symbol("regex_match", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "regex_match", regmatch_sym)
+    let regrepl_sym: Symbol = new_symbol("regex_replace", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "regex_replace", regrepl_sym)
 
     return st2
 }

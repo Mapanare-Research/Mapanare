@@ -340,4 +340,12 @@ MN_IO_EXPORT int64_t __mn_regex_free(int64_t handle);
 /** Get error message from last failed compile. Returns empty if no error. */
 MN_IO_EXPORT MnString __mn_regex_error_str(int64_t handle);
 
+/* -----------------------------------------------------------------------
+ * 8. HTTP Client
+ * ----------------------------------------------------------------------- */
+
+/** HTTP GET — fetch URL body. Returns empty string on error.
+ *  Supports http:// and https:// (TLS via OpenSSL dlopen). */
+MN_IO_EXPORT MnString __mn_http_get(MnString url);
+
 #endif /* MAPANARE_IO_H */

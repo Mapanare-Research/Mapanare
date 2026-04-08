@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.41.0** (current) — IO Foundation: linked mapanare_io.c, added `read_line()`, enabled `append_file`/`list_dir`, 6 new I/O builtins, 35 golden tests.
-- **v3.42.0** (next) — Network Native: HTTP GET from native binary, crypto/regex work.
+- **v3.42.0** (current) — Network Native: HTTP GET, SHA-256, base64, HMAC, regex builtins. 38 golden tests.
+- **v3.43.0** (next) — Agent Runtime: link mapanare_runtime.c, spawn/send/sync with OS threads.
 - **v4.0.0** (target) — Production release: real apps, working examples, package manager, transpile end-to-end.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.41.0/PLAN.md` → `v3.42.0` → `v3.43.0` → `v3.44.0` → `v3.45.0` → `docs/roadmap/v4.0.0/PLAN.md`.

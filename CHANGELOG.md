@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.42.0] - 2026-04-08
+
+### Added
+
+- `http_get(url)` builtin — HTTP GET with automatic TLS for https:// URLs
+- `sha256(data)`, `hmac_sha256(key, data)` crypto builtins (OpenSSL via dlopen)
+- `base64_encode(data)`, `base64_decode(data)`, `hex_encode(data)` encoding builtins
+- `random_bytes(n)` — cryptographically secure random data (/dev/urandom)
+- `regex_match(pattern, subject)`, `regex_replace(pattern, subject, replacement)` builtins (PCRE2 via dlopen)
+- `__mn_http_get` HTTP client in mapanare_io.c (URL parsing, TCP/TLS, HTTP/1.1)
+- Golden tests: `36_crypto.mn`, `37_regex.mn`, `38_http.mn` (38/38 pass)
+- 11 new runtime function entries in `_RUNTIME_FN_ATTRS`
+
+### Fixed
+
+- Crypto functions (sha1/sha256/sha512): call `evp_load()` before passing function pointers to prevent NULL dereference when OpenSSL not available
+
 ## [3.41.0] - 2026-04-08
 
 ### Added
@@ -955,7 +972,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.41.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.42.0...HEAD
+[3.42.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.41.0...v3.42.0
 [3.41.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.40.0...v3.41.0
 [3.40.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.39.0...v3.40.0
 [3.39.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.38.0...v3.39.0

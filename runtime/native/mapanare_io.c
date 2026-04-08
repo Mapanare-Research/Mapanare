@@ -1041,14 +1041,17 @@ static MnString evp_hash(MnString data, void *(*md_fn)(void), int digest_len) {
 }
 
 MN_IO_EXPORT MnString __mn_sha1_str(MnString data) {
+    if (evp_load() < 0) return __mn_str_empty();
     return evp_hash(data, s_evp.EVP_sha1, 20);
 }
 
 MN_IO_EXPORT MnString __mn_sha256_str(MnString data) {
+    if (evp_load() < 0) return __mn_str_empty();
     return evp_hash(data, s_evp.EVP_sha256, 32);
 }
 
 MN_IO_EXPORT MnString __mn_sha512_str(MnString data) {
+    if (evp_load() < 0) return __mn_str_empty();
     return evp_hash(data, s_evp.EVP_sha512, 64);
 }
 
@@ -1525,4 +1528,127 @@ MN_IO_EXPORT MnString __mn_regex_error_str(int64_t handle) {
     }
 
     return __mn_str_from_cstr("regex compilation failed");
+}
+
+/* =======================================================================
+ * 8. HTTP Client (convenience wrapper over TCP + TLS)
+ * ======================================================================= */
+
+MN_IO_EXPORT MnString __mn_http_get(MnString url) {
+    /* Parse URL: scheme://host[:port]/path */
+    char *curl = mnstr_to_cstr(url);
+    if (!curl) return __mn_str_empty();
+
+    int use_tls = 0;
+    const char *p = curl;
+    if (strncmp(p, "https://", 8) == 0) { use_tls = 1; p += 8; }
+    else if (strncmp(p, "http://", 7) == 0) { p += 7; }
+    else { free(curl); return __mn_str_empty(); }
+
+    /* Extract host and path */
+    char host[256];
+    char path[2048];
+    int port = use_tls ? 443 : 80;
+
+    const char *slash = strchr(p, '/');
+    const char *colon = strchr(p, ':');
+
+    if (colon && (!slash || colon < slash)) {
+        size_t hlen = (size_t)(colon - p);
+        if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
+        memcpy(host, p, hlen);
+        host[hlen] = '\0';
+        port = atoi(colon + 1);
+        if (slash) {
+            strncpy(path, slash, sizeof(path) - 1);
+            path[sizeof(path) - 1] = '\0';
+        } else {
+            strcpy(path, "/");
+        }
+    } else if (slash) {
+        size_t hlen = (size_t)(slash - p);
+        if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
+        memcpy(host, p, hlen);
+        host[hlen] = '\0';
+        strncpy(path, slash, sizeof(path) - 1);
+        path[sizeof(path) - 1] = '\0';
+    } else {
+        strncpy(host, p, sizeof(host) - 1);
+        host[sizeof(host) - 1] = '\0';
+        strcpy(path, "/");
+    }
+    free(curl);
+
+    /* Connect */
+    int64_t fd = __mn_tcp_connect(host, (int64_t)port);
+    if (fd < 0) return __mn_str_empty();
+
+    void *tls_ctx = NULL;
+    if (use_tls) {
+        __mn_tls_init();
+        tls_ctx = __mn_tls_connect(fd, host);
+        if (!tls_ctx) { __mn_tcp_close(fd); return __mn_str_empty(); }
+    }
+
+    /* Build and send HTTP request */
+    char request[4096];
+    snprintf(request, sizeof(request),
+             "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\nUser-Agent: Mapanare/3.42\r\n\r\n",
+             path, host);
+    size_t reqlen = strlen(request);
+
+    if (tls_ctx) {
+        __mn_tls_write(tls_ctx, request, (int64_t)reqlen);
+    } else {
+        __mn_tcp_send(fd, request, (int64_t)reqlen);
+    }
+
+    /* Read response (grow buffer as needed) */
+    size_t cap = 8192;
+    size_t total = 0;
+    char *resp = (char *)malloc(cap);
+    if (!resp) {
+        if (tls_ctx) __mn_tls_close(tls_ctx);
+        __mn_tcp_close(fd);
+        return __mn_str_empty();
+    }
+
+    for (;;) {
+        if (total + 4096 > cap) {
+            cap *= 2;
+            char *tmp = (char *)realloc(resp, cap);
+            if (!tmp) break;
+            resp = tmp;
+        }
+        int64_t n;
+        if (tls_ctx) {
+            n = __mn_tls_read(tls_ctx, resp + total, 4096);
+        } else {
+            n = __mn_tcp_recv(fd, resp + total, 4096);
+        }
+        if (n <= 0) break;
+        total += (size_t)n;
+    }
+
+    if (tls_ctx) __mn_tls_close(tls_ctx);
+    __mn_tcp_close(fd);
+
+    /* Extract body after \r\n\r\n */
+    const char *body = NULL;
+    for (size_t i = 0; i + 3 < total; i++) {
+        if (resp[i] == '\r' && resp[i+1] == '\n' && resp[i+2] == '\r' && resp[i+3] == '\n') {
+            body = resp + i + 4;
+            break;
+        }
+    }
+
+    MnString result;
+    if (body) {
+        size_t body_len = total - (size_t)(body - resp);
+        result = __mn_str_from_parts(body, (int64_t)body_len);
+    } else {
+        result = __mn_str_from_parts(resp, (int64_t)total);
+    }
+    free(resp);
+    return result;
 }
