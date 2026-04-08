@@ -310,7 +310,26 @@ clang -O2 p.ll -o primes -lm         # LLVM IR → native binary
 ./primes                               # 29-68x faster than Python
 ```
 
-### WebAssembly (v2.0.0)
+### Drop Into Any Stack (Coming in v4.2)
+
+Write your heavy compute in Mapanare, use it from Python, TypeScript, or Go — the compiler generates the bindings for you.
+
+```bash
+mapanare build mylib.mn --lib              # compile to shared library (.so/.dylib/.dll)
+mapanare build mylib.mn --lib --bindings   # also generate Python .pyi, TypeScript .d.ts, Go wrappers
+```
+
+```python
+# In your existing Python project — zero friction
+from mylib import gpu_matmul, count_primes
+
+result = gpu_matmul(a, b)       # runs native Mapanare code, 68x faster
+primes = count_primes(500_000)  # no rewrite needed, just import
+```
+
+The idea: you shouldn't have to rewrite your entire stack to get native performance. Write the hot path in Mapanare, compile to a shared object, and the compiler auto-generates typed stubs (`.pyi` for Python, `.d.ts` for TypeScript, Go wrappers) so your existing codebase imports it like any other library. GPU kernels, data pipelines, tensor math — all callable from Python with one `import`.
+
+### WebAssembly
 
 Compile Mapanare to WebAssembly for browser and server-side execution.
 

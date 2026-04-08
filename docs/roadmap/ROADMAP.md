@@ -35,14 +35,35 @@ The compiler is done. Now make the ecosystem work like a real language toolchain
 | **Phase 4** | CI release pipeline: native binary builds for Linux/macOS/Windows, SHA256 checksums, staged releases (beta/stable channels) | Planned |
 | **Phase 5** | Blog tutorials (transpile Python, GPU compute), new doc pages (package manager, version manager), v4.0.0 docs audit | Planned |
 
-### v4.2.0+ — Language Evolution (Future)
+### v4.2.0+ — Language Evolution & Adoption (Future)
+
+**Auto-Generated FFI Bindings (the growth hack)**
+
+Write performance-critical code in Mapanare (GPU kernels, data pipelines, tensor
+math), compile to a shared library, and the compiler auto-generates typed
+bindings for Python (`.pyi`), TypeScript (`.d.ts`), and Go — so existing
+codebases can import Mapanare libraries with zero friction. This flips the
+adoption model: you don't rewrite your stack, you accelerate the hot path.
+
+```bash
+mapanare build mylib.mn --lib --bindings   # .so + Python .pyi + TypeScript .d.ts + Go wrappers
+```
+
+**Compile-Time Tensor Shape Checking**
+
+Connect `Tensor<Float>[shape]` to the `gpu_tensor_*` builtins with static shape
+verification in the semantic analyzer. Combined with the `const` keyword,
+tensor dimensions would be evaluated at compile time — multiplying a `[100, 50]`
+by a `[20, 50]` is a compile error, not a GPU crash. This would make Mapanare
+one of the safest languages for neural network math.
 
 | Feature | Description |
 |---------|-------------|
-| Drop glue for struct returns | Fix the 8-cycle carry-forward: free locals when function returns a struct |
-| `const` keyword | Compile-time constants in grammar and semantic checker |
-| Tensor ↔ GPU integration | Connect `Tensor<Float>[shape]` type system to `gpu_tensor_*` builtins |
+| **FFI binding generation** | `--bindings` flag on `mapanare build --lib`: auto-generate `.pyi`, `.d.ts`, Go wrappers from exported functions |
+| **Compile-time tensor shapes** | Semantic analyzer validates `Tensor<Float>[M, K] @ Tensor<Float>[K, N]` — shape mismatch is a compile error |
+| `const` keyword | Compile-time constants in grammar and semantic checker, enables static tensor dimensions |
 | `@gpu` decorator codegen | Wire decorator recognition → kernel extraction → PTX/SPIR-V emission |
+| Drop glue for struct returns | Fix the 8-cycle carry-forward: free locals when function returns a struct |
 | Typed pointers cleanup | Replace `i64*`, `void ()*` in self-hosted emitter with opaque `ptr` |
 | Async/await | First-class async functions with cooperative scheduling |
 | LSP improvements | Better autocomplete, hover docs, find-all-references |
