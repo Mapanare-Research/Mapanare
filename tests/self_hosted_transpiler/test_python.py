@@ -88,8 +88,10 @@ class TestFromPythonMnInConcat:
         src = concat_py.read_text(encoding="utf-8")
         assert '"from_python.mn"' in src
 
-    def test_mnc_all_contains_module(self) -> None:
+    def test_mnc_all_excludes_transpiler(self) -> None:
+        """Transpiler modules excluded from mnc_all.mn to avoid symbol clashes."""
         mnc_all = SELF_DIR / "mnc_all.mn"
         if mnc_all.exists():
             src = mnc_all.read_text(encoding="utf-8")
-            assert "from_python.mn" in src
+            # from_python.mn excluded — its new_token clashes with lexer's
+            assert "from_python.mn" not in src

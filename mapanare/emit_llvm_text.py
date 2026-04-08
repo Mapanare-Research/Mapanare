@@ -1108,7 +1108,6 @@ class LLVMTextEmitter:
             all_list_ptrs = ret_list_ptrs + ret_ptr_fields
             if all_list_ptrs:
                 # Check if this list's data pointer matches ANY returned pointer
-                cur_lbl = check_lbl
                 for rlp in all_list_ptrs:
                     lsame = self._f("drop.lsame")
                     self._L(f"{lsame} = icmp eq ptr {lp}, {rlp}")
@@ -1117,7 +1116,6 @@ class LLVMTextEmitter:
                     self._L(f"br i1 {lsame}, label %{skip_lbl}, label %{next_check}")
                     self._blk[next_check] = []
                     self._cb = next_check
-                    cur_lbl = next_check
             # Pass the variable's alloca directly to __mn_list_free
             self._L(f"call void @__mn_list_free(ptr {addr})")
             self._L(f"br label %{skip_lbl}")

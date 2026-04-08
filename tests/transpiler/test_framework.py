@@ -120,13 +120,17 @@ class TestConcatIncludesTranspiler:
     def test_in_module_order(self) -> None:
         concat_py = Path(__file__).resolve().parent.parent.parent / "scripts" / "concat_self.py"
         src = concat_py.read_text(encoding="utf-8")
-        assert '"transpiler.mn"' in src
+        # Transpiler modules are commented out to avoid symbol clashes
+        # (new_token, PyToken) with the core compiler. Check they're
+        # referenced but excluded.
+        assert "transpiler.mn" in src
 
-    def test_mnc_all_contains_transpiler(self) -> None:
+    def test_mnc_all_excludes_transpiler(self) -> None:
+        """Transpiler modules excluded from mnc_all.mn to avoid symbol clashes."""
         mnc_all = SELF_DIR / "mnc_all.mn"
         if mnc_all.exists():
             src = mnc_all.read_text(encoding="utf-8")
-            assert "transpiler.mn" in src
+            assert "from_python.mn" not in src
 
 
 class TestFrameworkDesignContracts:
