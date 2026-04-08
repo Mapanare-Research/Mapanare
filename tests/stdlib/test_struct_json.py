@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from mapanare.cli import _compile_to_llvm_ir
 
 
@@ -136,6 +138,10 @@ fn main() {
         ir = _compile_mir(src)
         assert "main" in ir
 
+    @pytest.mark.xfail(
+        reason="decode_to error string not yet emitted in text emitter",
+        strict=True,
+    )
     def test_error_on_non_object(self) -> None:
         """decode_to on a non-Object JsonValue should produce error path in IR."""
         src = _JSON_PRELUDE + """

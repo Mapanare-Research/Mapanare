@@ -131,6 +131,7 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "ord" { return true }
     if name == "chr" { return true }
     if name == "join" { return true }
+    if name == "typeof" { return true }
     // C runtime functions used by the self-hosted compiler driver
     if name == "__mn_argc" { return true }
     if name == "__mn_argv" { return true }
@@ -159,6 +160,7 @@ fn builtin_return_type(name: String) -> String {
     if name == "ord" { return "Int" }
     if name == "chr" { return "String" }
     if name == "join" { return "String" }
+    if name == "typeof" { return "String" }
     return "Void"
 }
 
@@ -1724,6 +1726,10 @@ fn register_builtins(st: SemState) -> SemState {
     // join -> String
     let join_sym: Symbol = new_symbol("join", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "join", join_sym)
+
+    // typeof -> String
+    let typeof_sym: Symbol = new_symbol("typeof", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "typeof", typeof_sym)
 
     // C runtime functions used by the self-hosted compiler driver
     let argc_sym: Symbol = new_symbol("__mn_argc", "function", make_builtin_fn_type(int_type()), false)
