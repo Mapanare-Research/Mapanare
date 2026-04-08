@@ -588,6 +588,8 @@ When you `spawn` an agent, the returned handle exposes the input and output chan
 
 ### 3.10 Tensor Types
 
+> **Status:** Tensor types are specified but not yet implemented in any backend. The syntax, type checking, and shape verification described below represent the target design. See the roadmap for implementation status.
+
 Tensors have their element type and shape verified at compile time.
 
 ```mn

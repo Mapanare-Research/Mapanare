@@ -381,6 +381,7 @@ class BreakStmt(Stmt):
     pass
 
 
+@dataclass
 class ContinueStmt(Stmt):
     """Continue statement: `continue` / `sigue`."""
 

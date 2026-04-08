@@ -552,7 +552,7 @@ MN_EXPORT MnString __mn_str_trim(MnString s) {
         end--;
     }
     if (start == 0 && end == s.len) {
-        return __mn_str_from_parts(data, s.len);
+        return s;
     }
     return __mn_str_from_parts(data + start, end - start);
 }
@@ -564,7 +564,7 @@ MN_EXPORT MnString __mn_str_trim_start(MnString s) {
            data[start] == '\n' || data[start] == '\r')) {
         start++;
     }
-    if (start == 0) return __mn_str_from_parts(data, s.len);
+    if (start == 0) return s;
     return __mn_str_from_parts(data + start, s.len - start);
 }
 
@@ -575,7 +575,7 @@ MN_EXPORT MnString __mn_str_trim_end(MnString s) {
            data[end - 1] == '\n' || data[end - 1] == '\r')) {
         end--;
     }
-    if (end == s.len) return __mn_str_from_parts(data, s.len);
+    if (end == s.len) return s;
     return __mn_str_from_parts(data, end);
 }
 
@@ -1092,12 +1092,6 @@ MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
             /* Fresh allocation — __mn_list_new returns data=NULL */
             result.data = mn_list_alloc_buf(total, es);
             result.managed = 1;
-        } else {
-            /* Grow: realloc must include the COW header */
-            int64_t new_bytes = mn_checked_add(MN_LIST_HEADER_SIZE, mn_checked_mul(total, es));
-            char *raw = ((char *)result.data) - MN_LIST_HEADER_SIZE;
-            raw = (char *)__mn_realloc(raw, new_bytes);
-            result.data = raw + MN_LIST_HEADER_SIZE;
         }
         result.cap = total;
     }

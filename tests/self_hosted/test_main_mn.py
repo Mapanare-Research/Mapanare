@@ -71,7 +71,7 @@ class TestMainMnPipeline:
 
     def test_version_string(self, main_mn_source: str) -> None:
         """Version should match VERSION file."""
-        assert "3.39.0" in main_mn_source
+        assert "3.40.0" in main_mn_source
 
 
 class TestMainMnCompileResult:

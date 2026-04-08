@@ -1719,10 +1719,7 @@ class LLVMTextEmitter:
         vals = ", ".join(f"i64 {o}" for o in offsets)
         self._globals.append(f"{name} = private constant [{len(offsets)} x i64] [{vals}]")
         gep = self._f("offp")
-        self._L(
-            f"{gep} = getelementptr [{len(offsets)} x i64], "
-            f"[{len(offsets)} x i64]* {name}, i64 0, i64 0"
-        )
+        self._L(f"{gep} = getelementptr [{len(offsets)} x i64], " f"ptr {name}, i64 0, i64 0")
         return gep
 
     # --- Cast ---
@@ -3420,7 +3417,7 @@ class LLVMTextEmitter:
             if hn in self._sigs:
                 hp = f"@{hn}"
             lines.append(f"  %name.{i} = alloca [1 x i8], align 1")
-            lines.append(f"  %np.{i} = getelementptr [1 x i8], [1 x i8]* %name.{i}, i64 0, i64 0")
+            lines.append(f"  %np.{i} = getelementptr [1 x i8], ptr %name.{i}, i64 0, i64 0")
             lines.append(
                 f"  %ag.{i} = call ptr @mapanare_agent_new(ptr %np.{i}, ptr {hp},"
                 f" ptr null, i32 256, i32 256)"

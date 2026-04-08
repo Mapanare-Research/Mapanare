@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.40.0] - 2026-04-08
+
+### Fixed
+
+- SPEC Section 3.10: added "not yet implemented" disclaimer for Tensor types
+- `emit_c.py`: version string now reads from VERSION file instead of hardcoded
+- `emit_llvm_text.py`: two remaining typed pointers migrated to opaque `ptr` (LLVM 17+ compat)
+- `ast_nodes.py`: added missing `@dataclass` decorator on `ContinueStmt`
+- `mapanare_core.c`: `__mn_str_trim*` functions return input directly when no trimming needed (avoids unnecessary allocation)
+- `mapanare_core.c`: removed dead `realloc` branch in `__mn_list_concat`
+
 ## [3.39.0] - 2026-04-08
 
 ### Added
