@@ -192,6 +192,24 @@ def _zero(ty: str) -> str:
     return "0"
 
 
+def _struct_field0_type(sty: str) -> str:
+    """Extract the type of field 0 from an LLVM struct type string like '{i64, {ptr, i64}}'."""
+    inner = sty.strip()
+    if not inner.startswith("{"):
+        return "ptr"
+    inner = inner[1:]  # strip leading {
+    depth = 0
+    for k, ch in enumerate(inner):
+        if ch in "({":
+            depth += 1
+        elif ch in ")}":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            return inner[:k].strip()
+    # Single-field struct
+    return inner.rstrip("}").strip() or "ptr"
+
+
 # ── Emitter ─────────────────────────────────────────────────────────
 _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     # Read-only string functions
@@ -2444,6 +2462,11 @@ class LLVMTextEmitter:
             else:
                 r = self._f("ev")
                 self._L(f"{r} = extractvalue {ot} {ov}, {idx}")
+                # If struct lookup gave ptr but dest type is a struct, use dest type
+                if ft == PTR and i.dest.ty:
+                    dt = self._rty(i.dest.ty)
+                    if dt != VOID and dt != PTR:
+                        ft = dt
                 self._put(i.dest, r, ft)
         else:
             if self._is_ptr(ot):
@@ -2451,7 +2474,11 @@ class LLVMTextEmitter:
             elif ot.startswith("{"):
                 r = self._f("ev")
                 self._L(f"{r} = extractvalue {ot} {ov}, 0")
-                self._put(i.dest, r, PTR)
+                # Infer field 0 type: prefer dest type, fall back to parsing struct
+                ft0 = self._rty(i.dest.ty) if i.dest.ty else PTR
+                if ft0 == VOID or ft0 == PTR:
+                    ft0 = _struct_field0_type(ot)
+                self._put(i.dest, r, ft0)
             else:
                 self._put(i.dest, ov, ot)
 

@@ -63,17 +63,14 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y llvm-18 clang-18
 
       - name: Build mnc-stage1 (from committed IR)
-        # Builds but cannot run golden/stage2: committed main.ll is v3.26.0
-        # (4-field MnList) linked against current runtime (5-field MnList).
-        # Re-enable golden/stage2 once main.ll is regenerated with current ABI.
         run: python scripts/build_stage1.py --use-committed
 
       - name: Run golden tests (33/33)
-        if: false  # disabled: mnc-stage1 ABI mismatch (see above)
+        if: success()
         run: python scripts/ir_doctor.py golden
 
       - name: Run stage2 validation
-        if: false  # disabled: mnc-stage1 ABI mismatch (see above)
+        if: success()
         run: python scripts/ir_doctor.py stage2 --timeout 30
 
   # ---------------------------------------------------------------------------
@@ -93,11 +90,6 @@ jobs:
         run: sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
 
       - name: Two-stage bootstrap + verify
-        # Disabled: seed binary uses v3.26.0 ABI (4-field MnList) but current
-        # C runtime uses 5-field MnList. Seed rebuild blocked by text emitter
-        # codegen bug with complex enum types. Re-enable once main.ll is
-        # regenerated from a fixed emitter.
-        if: false
         run: bash scripts/build_from_seed.sh --verify
 
   native:
@@ -471,19 +463,15 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y llvm gcc
 
       - name: Build from seed
-        # Disabled: seed binary ABI mismatch (see bootstrap job comment)
-        if: false
         run: bash scripts/build_from_seed.sh
 
       - name: Validate output (compile hello → llvm-as)
-        if: false
         run: |
           ./mnc tests/golden/01_hello.mn > /tmp/hello.ll
           llvm-as /tmp/hello.ll -o /dev/null
           echo "Bootstrap compiler produces valid IR"
 
       - name: Run golden subset (smoke test)
-        if: false
         run: |
           PASS=0; FAIL=0
           for mn in tests/golden/01_hello.mn tests/golden/02_arithmetic.mn tests/golden/03_functions.mn; do
