@@ -2437,7 +2437,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         s_gt = emit_line(s_gt, "  " + pb + " = alloca " + llvm_list_rt())
         s_gt = emit_line(s_gt, "  store " + llvm_list_rt() + " " + args[0].name + ", ptr " + pa)
         s_gt = emit_line(s_gt, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + pb)
-        pon rt_name: String = "__mn_gpu_tensor_add"
+        let mut rt_name: String = "__mn_gpu_tensor_add"
         if fn_name == "gpu_tensor_sub" { rt_name = "__mn_gpu_tensor_sub" }
         if fn_name == "gpu_tensor_mul" { rt_name = "__mn_gpu_tensor_mul" }
         if fn_name == "gpu_tensor_div" { rt_name = "__mn_gpu_tensor_div" }
