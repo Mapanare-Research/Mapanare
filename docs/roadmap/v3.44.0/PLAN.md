@@ -3,7 +3,7 @@
 > Every example in the repo compiles and runs. No fake shit.
 > Transpilation works end-to-end: .py → .mn → native binary.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v3.43.0 (agents native)
 

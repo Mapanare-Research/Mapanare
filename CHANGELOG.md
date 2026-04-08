@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.44.0] - 2026-04-08
+
+### Added
+
+- `examples/cli/word_count.mn` — count words/lines/chars in a file (uses read_line, read_file)
+- `examples/cli/todo.mn` — interactive TODO manager (uses read_line, read_file, write_file, append_file)
+- `examples/network/http_fetch.mn` — fetch a URL and print response (uses http_get)
+- `examples/transpile/fibonacci.py` → `fibonacci.mn` — end-to-end transpile → compile → run verified
+- All new examples compile to valid LLVM IR and run as native binaries
+
+### Changed
+
+- GPU and mobile examples moved to `examples/experimental/` (require unimplemented backends)
+
 ## [3.43.0] - 2026-04-08
 
 ### Added
@@ -985,7 +999,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.43.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.44.0...HEAD
+[3.44.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.43.0...v3.44.0
 [3.43.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.42.0...v3.43.0
 [3.42.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.41.0...v3.42.0
 [3.41.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.40.0...v3.41.0

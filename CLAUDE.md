@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.43.0** (current) — Agent Runtime: linked mapanare_runtime.c, agent lifecycle in native binaries. 38 golden tests.
-- **v3.44.0** (next) — Real Examples: all examples compile+run, transpile .py/.php end-to-end.
+- **v3.44.0** (current) — Real Examples: CLI/network examples compile+run, transpile .py end-to-end works.
+- **v3.45.0** (next) — Package Manager: `mapanare install` works, error recovery, docs match reality.
 - **v4.0.0** (target) — Production release: real apps, working examples, package manager, transpile end-to-end.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.41.0/PLAN.md` → `v3.42.0` → `v3.43.0` → `v3.44.0` → `v3.45.0` → `docs/roadmap/v4.0.0/PLAN.md`.
