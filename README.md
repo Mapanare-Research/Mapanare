@@ -12,7 +12,7 @@
 
 Built after years of hitting Python's limits in AI-native, concurrent, and tensor-heavy software.
 
-Mapanare compiles to native binaries via LLVM and WebAssembly, with a self-hosted compiler in progress. A legacy Python transpiler backend exists for reference and bootstrapping only.
+Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler (15,000+ lines of `.mn`) compiles itself to a fixed point. A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
 
 English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [Português](docs/README.pt.md)
 
@@ -104,19 +104,37 @@ Extract and add `mapanare` to your PATH, then verify:
 mapanare --version
 ```
 
+### Install a Specific Version
+
+```bash
+curl -fsSL https://mapanare.dev/install | bash -s -- --version 4.0.0
+```
+
+### Version Manager (`mapanare-up`)
+
+Manage multiple Mapanare versions side-by-side, like pyenv:
+
+```bash
+mapanare-up install latest       # install latest version
+mapanare-up install 4.0.0        # install specific version
+mapanare-up list                 # show installed versions
+mapanare-up default 4.0.0        # set global default
+echo "4.0.0" > .mapanare-version # pin version per project
+```
+
 ### Build from Source (No Python Required)
 
 The self-hosted compiler bootstraps from a checked-in seed binary.
-You only need `gcc` and `llvm`:
+You only need `gcc`/`clang` and `llvm`:
 
 ```bash
 git clone https://github.com/Mapanare-Research/Mapanare.git
 cd Mapanare
-make build-native    # or: bash scripts/build_from_seed.sh
+bash scripts/build_from_seed.sh
 ./mnc hello.mn       # compile a .mn file → LLVM IR on stdout
 ```
 
-Python is only needed for the development toolchain (tests, linters, IR doctor).
+Python is only needed for the development toolchain (tests, linters, transpiler).
 
 ---
 
@@ -317,6 +335,16 @@ Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each 
 | Matrix Multiply (100x100) | Nested loops, arithmetic, variables | 0.1769s | **0.0199s** | 0.4556s | 0.0005s | 0.0009s | 22.9x (native) |
 | Agent Pipeline (1K msgs) | Agents, spawn, send, sync, string ops, multi-stage | — | — | — | — | — | — |
 
+### Python Transpile Benchmarks (zero manual edits)
+
+| Benchmark | Python | Mapanare (native) | Speedup |
+|-----------|--------|-------------------|---------|
+| Fibonacci (recursive, n=40) | 7.230s | **0.174s** | **41x** |
+| Prime counting (500K) | 1.038s | **0.035s** | **29x** |
+| Collatz conjecture (1M) | 5.546s | **0.081s** | **68x** |
+
+> Pipeline: `mapanare transpile file.py` → `mapanare emit-llvm` → `clang -O2` → native binary. Types inferred from Python annotations.
+
 ### Expressiveness (lines of code, lower is better)
 
 | Benchmark | Features Tested | Mapanare | Python | Go | Rust |
@@ -327,7 +355,7 @@ Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each 
 | Matrix Multiply (100x100) | Nested loops, math | **12** | 21 | 37 | 33 |
 | Agent Pipeline (1K msgs) | Multi-stage agents, strings | **18** | 32 | 33 | 28 |
 
-> **Key takeaway:** Mapanare's interpreted backend matches Python speed (it transpiles to Python), but the LLVM native backend delivers **22-63x** speedups over Python. Mapanare programs are consistently the shortest across all benchmarks.
+> **Key takeaway:** The LLVM native backend delivers **22-68x** speedups over Python. The Python transpiler (`mapanare transpile`) achieves 29-68x on real-world algorithms with zero manual edits. Mapanare programs are consistently the shortest across all benchmarks.
 
 **Benchmark notes:**
 - **Fibonacci:** Tests pure computation speed. No I/O, no concurrency. Interpreted backend runs as Python; native backend compiles to LLVM IR.
@@ -400,7 +428,7 @@ Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target 
 | **Semantic** | Type checking, scope analysis, builtins registry |
 | **MIR Lowering** | AST -> typed SSA intermediate representation with basic blocks |
 | **MIR Optimizer** | Constant folding, dead code elimination, copy propagation, block merging (`-O0` to `-O3`) |
-| **Emit LLVM** | MIR -> LLVM IR generation via llvmlite with cross-compilation targets |
+| **Emit LLVM** | MIR -> LLVM IR text generation with cross-compilation targets |
 | **Emit WASM** | MIR -> WebAssembly text format (WAT) with linear memory and JS bridge |
 | **Emit Python** | MIR -> Python (deprecated): agents map to asyncio, signals to reactive containers |
 
@@ -461,28 +489,6 @@ See the full [stdlib reference](docs/stdlib.md).
 | **Crawl** (`crawl/`) | Web crawler with robots.txt, URL frontier, content extraction, persistence |
 | **Scan** (`scan/`) | Template-driven vulnerability scanner with fingerprinting and report generation |
 | **Fuzz** (`fuzz/`) | HTTP fuzzer with mutation engine and wordlist generation |
-
----
-
-## GPU Compute (v2.0.0)
-
-GPU compute via CUDA and Vulkan, loaded dynamically at runtime (no compile-time SDK dependency):
-
-- `@gpu`, `@cuda`, `@vulkan` annotations on functions for automatic dispatch
-- Built-in kernels: PTX for CUDA, GLSL/SPIR-V for Vulkan (tensor add/sub/mul/div/matmul)
-- `stdlib/gpu/`: device detection, kernel management, GPU-accelerated tensors
-- C runtime (`runtime/native/mapanare_gpu.c`): CUDA Driver API + Vulkan compute via `dlopen`
-
----
-
-## WebAssembly Backend (v2.0.0)
-
-Compile Mapanare to WebAssembly for browser and server-side execution:
-
-- MIR-to-WAT emitter with linear memory, bump allocation, string constants, JS bridge
-- Targets: `wasm32-unknown-unknown` (browser), `wasm32-wasi` (server)
-- WASI preview 1 support: file I/O, environment, clock, random
-- Playground runtime for in-browser execution
 
 ---
 
@@ -568,9 +574,12 @@ mapanare/
 │   ├── roadmap/           Version roadmaps and plans
 │   └── SPEC.md            Language specification
 ├── examples/              Example programs (GPU, WASM, ...)
-├── packaging/             Installers and build specs
-│   ├── install.sh         Linux/macOS installer
+├── packaging/             Installers, version manager, build specs
+│   ├── install.sh         Linux/macOS installer (supports --version)
 │   ├── install.ps1        Windows installer
+│   ├── mapanare-up.sh     Version manager (Linux/macOS)
+│   ├── mapanare-up.ps1    Version manager (Windows)
+│   ├── mapanare-shim.sh   Version dispatch shim
 │   └── mapanare.spec      PyInstaller spec for binary builds
 
 ```
