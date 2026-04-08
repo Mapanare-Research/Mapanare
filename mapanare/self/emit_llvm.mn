@@ -300,7 +300,7 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_byte_at", llvm_int(), llvm_string() + ", i64")
     s = declare_runtime_fn(s, "__mn_str_substr", llvm_string(), llvm_string() + ", i64, i64")
     s = declare_runtime_fn(s, "__mn_str_from_int", llvm_string(), "i64")
-    s = declare_runtime_fn(s, "__mn_str_from_bool", llvm_string(), "i1")
+    s = declare_runtime_fn(s, "__mn_str_from_bool", llvm_string(), "i64")
     s = declare_runtime_fn(s, "__mn_str_from_float", llvm_string(), "double")
     s = declare_runtime_fn(s, "__mn_str_to_int", llvm_int(), llvm_string())
     s = declare_runtime_fn(s, "__mn_str_to_float", llvm_float(), llvm_string())
@@ -382,6 +382,22 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_signal_new", "ptr", "ptr")
     s = declare_runtime_fn(s, "__mn_signal_get", "ptr", "ptr")
     s = declare_runtime_fn(s, "__mn_signal_set", "void", "ptr, ptr")
+
+    // I/O builtins (v3.41.0)
+    s = declare_runtime_fn(s, "__mn_read_line", llvm_string(), "")
+    s = declare_runtime_fn(s, "__mn_file_append", "i64", llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_file_exists", "i64", llvm_string())
+    s = declare_runtime_fn(s, "__mn_dir_list_strings", llvm_list_rt(), llvm_string())
+    // Network/crypto/regex builtins (v3.42.0)
+    s = declare_runtime_fn(s, "__mn_http_get", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_sha256_str", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_base64_encode_str", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_base64_decode_str", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_hmac_sha256_str", llvm_string(), llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_hex_encode_str", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_random_bytes_str", llvm_string(), "i64")
+    s = declare_runtime_fn(s, "__mn_regex_match", "i1", llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_regex_replace", llvm_string(), llvm_string() + ", " + llvm_string() + ", " + llvm_string())
 
     return emit_blank(s)
 }
@@ -2286,6 +2302,67 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     }
     if fn_name == "ord" {
         return emit_line(st, emit_call_ir(dn, "i64", "__mn_str_ord", llvm_string() + " " + args[0].name))
+    }
+
+    // I/O builtins (v3.41.0)
+    if fn_name == "read_line" {
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_read_line", ""))
+    }
+    if fn_name == "read_file" {
+        let as_rf: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_file_read_or_empty", as_rf))
+    }
+    if fn_name == "write_file" {
+        let as_wf: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        return emit_line(st, emit_call_void("__mn_file_write", as_wf))
+    }
+    if fn_name == "append_file" {
+        let as_af: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        return emit_line(st, emit_call_void("__mn_file_append", as_af))
+    }
+    if fn_name == "file_exists" {
+        let as_fe: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_ir(dn, "i1", "__mn_file_exists", as_fe))
+    }
+    if fn_name == "list_dir" {
+        let as_ld: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_ir(dn, llvm_list_rt(), "__mn_dir_list_strings", as_ld))
+    }
+    // Network/crypto/regex builtins (v3.42.0)
+    if fn_name == "http_get" {
+        let as_hg: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_http_get", as_hg))
+    }
+    if fn_name == "sha256" {
+        let as_sh: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_sha256_str", as_sh))
+    }
+    if fn_name == "base64_encode" {
+        let as_be: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_base64_encode_str", as_be))
+    }
+    if fn_name == "base64_decode" {
+        let as_bd: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_base64_decode_str", as_bd))
+    }
+    if fn_name == "hmac_sha256" {
+        let as_hm: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_hmac_sha256_str", as_hm))
+    }
+    if fn_name == "hex_encode" {
+        let as_he: String = llvm_string() + " " + args[0].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_hex_encode_str", as_he))
+    }
+    if fn_name == "random_bytes" {
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_random_bytes_str", "i64 " + args[0].name))
+    }
+    if fn_name == "regex_match" {
+        let as_rm: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        return emit_line(st, emit_call_ir(dn, "i1", "__mn_regex_match", as_rm))
+    }
+    if fn_name == "regex_replace" {
+        let as_rr: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_regex_replace", as_rr))
     }
 
     // Map iteration helpers
