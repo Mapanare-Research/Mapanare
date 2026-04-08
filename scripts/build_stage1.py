@@ -94,6 +94,8 @@ def build() -> pathlib.Path:
     core_o = SELF_DIR / "mapanare_core.o"
     io_c = NATIVE_DIR / "mapanare_io.c"
     io_o = SELF_DIR / "mapanare_io.o"
+    rt_c = NATIVE_DIR / "mapanare_runtime.c"
+    rt_o = SELF_DIR / "mapanare_runtime.o"
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
     profile_flags = ["-DMN_PROFILE_MEM"] if "--profile-mem" in sys.argv else []
     c_base_flags = [CC, "-c", "-O2", "-g", "-fPIC", "-Wall", "-Wextra", "-I", str(NATIVE_DIR)]
@@ -105,7 +107,11 @@ def build() -> pathlib.Path:
         c_base_flags + asan_flags + [str(io_c), "-o", str(io_o)],
         check=True,
     )
-    print(f"  Runtime: {core_o}, {io_o}")
+    subprocess.run(
+        c_base_flags + asan_flags + [str(rt_c), "-o", str(rt_o)],
+        check=True,
+    )
+    print(f"  Runtime: {core_o}, {io_o}, {rt_o}")
 
     # 5. Compile main wrapper
     print("[5/6] Compiling C main wrapper ...")
@@ -143,6 +149,7 @@ def build() -> pathlib.Path:
             str(obj_path),
             str(core_o),
             str(io_o),
+            str(rt_o),
         ]
         + link_flags
         + asan_flags
@@ -152,7 +159,7 @@ def build() -> pathlib.Path:
     print(f"  Binary: {binary} ({binary.stat().st_size} bytes)")
 
     # Cleanup intermediate .o files
-    for f in [main_o, core_o, io_o]:
+    for f in [main_o, core_o, io_o, rt_o]:
         if f.exists():
             f.unlink()
 

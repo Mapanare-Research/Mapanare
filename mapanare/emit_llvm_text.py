@@ -278,6 +278,13 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_regex_exec_str": {"nounwind"},
     "__mn_regex_replace_str": {"nounwind"},
     "__mn_regex_free": {"nounwind"},
+    # Agent runtime (v3.43.0)
+    "mapanare_agent_new": {"nounwind"},
+    "mapanare_agent_spawn": {"nounwind"},
+    "mapanare_agent_send": {"nounwind"},
+    "mapanare_agent_recv_blocking": {"nounwind"},
+    "mapanare_agent_stop": {"nounwind"},
+    "mapanare_agent_destroy": {"nounwind"},
 }
 
 

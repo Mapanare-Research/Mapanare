@@ -3,7 +3,7 @@
 > Agents work from native binaries with real OS threads.
 > spawn, send (<-), sync — the core concurrency model.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v3.42.0 (network native)
 

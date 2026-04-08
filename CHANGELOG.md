@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.43.0] - 2026-04-08
+
+### Added
+
+- `mapanare_runtime.c` linked into mnc-stage1 (agent thread pool, ring buffers, lifecycle management)
+- Agent runtime symbols available in native binaries (spawn, send, recv, stop, destroy)
+- 6 agent runtime entries in `_RUNTIME_FN_ATTRS` (LLVM emitter)
+
+### Changed
+
+- `build_stage1.py`: compiles and links `mapanare_runtime.o` alongside core and io
+- Binary size: 2.94 MB (up from 2.86 MB with agent runtime)
+
 ## [3.42.0] - 2026-04-08
 
 ### Added
@@ -972,7 +985,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.42.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.43.0...HEAD
+[3.43.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.42.0...v3.43.0
 [3.42.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.41.0...v3.42.0
 [3.41.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.40.0...v3.41.0
 [3.40.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.39.0...v3.40.0
