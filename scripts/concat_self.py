@@ -24,11 +24,14 @@ MODULE_ORDER = [
     "lower.mn",
     "emit_llvm_ir.mn",
     "emit_llvm.mn",
-    "transpiler.mn",
-    "from_python.mn",
-    "from_php.mn",
-    "from_typescript.mn",
-    "from_go.mn",
+    # Transpiler modules excluded: they define clashing symbols (new_token,
+    # PyToken) and are not needed for core compiler operation — the compile
+    # command shells out to an external transpiler binary.
+    # "transpiler.mn",
+    # "from_python.mn",
+    # "from_php.mn",
+    # "from_typescript.mn",
+    # "from_go.mn",
     "main.mn",
 ]
 

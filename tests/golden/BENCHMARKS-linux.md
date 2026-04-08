@@ -1,123 +1,123 @@
 # Mapanare Benchmarks - Linux
 
-Generated: 2026-04-08 04:56 UTC  
-Version: 3.36.0 (`1c7b497`)  
+Generated: 2026-04-08 05:07 UTC  
+Version: 3.37.0 (`da8d2d8`)  
 Platform: Linux x86_64, Python 3.12.3  
-Total time: 3.6s  
+Total time: 1.2s  
 
 ## Bootstrap Compiler (Python)
 
 | Test | Src | IR | KB | Fns | BBs | Stk | ms | Trend | Status |
 |------|----:|---:|---:|----:|----:|----:|---:|-------|--------|
-| 01_hello | 3 | 30 | 0.9 | 1 | 2 | 9 | 602 | `......_. ^` | PASS |
-| 02_arithmetic | 4 | 44 | 1.4 | 1 | 4 | 25 | 7 | `        ` | PASS |
-| 03_function | 8 | 71 | 2.1 | 2 | 6 | 65 | 6 | `         v` | PASS |
+| 01_hello | 3 | 30 | 0.9 | 1 | 2 | 9 | 697 | `...._... ^` | PASS |
+| 02_arithmetic | 4 | 44 | 1.4 | 1 | 4 | 25 | 6 | `         v` | PASS |
+| 03_function | 8 | 71 | 2.1 | 2 | 6 | 65 | 6 | `        ` | PASS |
 | 04_if_else | 8 | 34 | 0.9 | 1 | 4 | 9 | 5 | `        ` | PASS |
 | 05_for_loop | 7 | 90 | 2.9 | 1 | 7 | 67 | 5 | `        ` | PASS |
-| 06_struct | 9 | 59 | 2.0 | 1 | 4 | 49 | 6 | `         ^` | PASS |
+| 06_struct | 9 | 59 | 2.0 | 1 | 4 | 49 | 5 | `         v` | PASS |
 | 07_enum_match | 13 | 65 | 2.1 | 1 | 5 | 42 | 6 | `        ` | PASS |
-| 08_list | 5 | 101 | 3.8 | 1 | 6 | 121 | 7 | `         v` | PASS |
-| 09_string_methods | 5 | 85 | 3.2 | 1 | 6 | 51 | 5 | `        ` | PASS |
-| 10_result | 14 | 140 | 4.9 | 2 | 10 | 147 | 7 | `        ` | PASS |
-| 11_closure | 5 | 100 | 3.3 | 1 | 8 | 89 | 5 | `        ` | PASS |
-| 12_while | 7 | 71 | 2.2 | 1 | 7 | 50 | 5 | `         ^` | PASS |
+| 08_list | 5 | 101 | 3.8 | 1 | 6 | 121 | 6 | `         v` | PASS |
+| 09_string_methods | 5 | 85 | 3.2 | 1 | 6 | 51 | 4 | `         v` | PASS |
+| 10_result | 14 | 140 | 4.9 | 2 | 10 | 147 | 6 | `         v` | PASS |
+| 11_closure | 5 | 100 | 3.3 | 1 | 8 | 89 | 5 | `         v` | PASS |
+| 12_while | 7 | 71 | 2.2 | 1 | 7 | 50 | 4 | `         v` | PASS |
 | 13_fib | 10 | 110 | 3.2 | 2 | 9 | 106 | 5 | `         ^` | PASS |
-| 14_nested_struct | 9 | 59 | 2.0 | 1 | 4 | 49 | 6 | `         ^` | PASS |
+| 14_nested_struct | 9 | 59 | 2.0 | 1 | 4 | 49 | 4 | `         v` | PASS |
 | 15_multifunction | 12 | 116 | 3.5 | 3 | 10 | 114 | 5 | `        ` | PASS |
-| 16_string_escape | 8 | 54 | 1.9 | 1 | 2 | 27 | 5 | `..---...` | PASS |
-| 17_option | 19 | 186 | 6.2 | 2 | 15 | 173 | 6 | `..---...` | PASS |
-| 18_method_chain | 9 | 121 | 4.7 | 1 | 8 | 84 | 5 | `..--.--. v` | PASS |
-| 19_nested_match | 18 | 197 | 6.7 | 2 | 15 | 186 | 9 | `---.----` | PASS |
-| 20_recursion | 11 | 128 | 4.0 | 2 | 11 | 123 | 5 | `         ^` | PASS |
-| 21_list_ops | 15 | 224 | 8.2 | 2 | 13 | 269 | 6 | `-~..-..- ^` | PASS |
-| 22_string_builder | 14 | 126 | 4.4 | 2 | 7 | 116 | 6 | `---.*--. v` | PASS |
-| 23_multi_return | 15 | 117 | 4.1 | 2 | 8 | 114 | 5 | `._..*_._ v` | PASS |
-| 24_enum_methods | 20 | 107 | 3.8 | 2 | 8 | 82 | 6 | `         v` | PASS |
-| 25_fizzbuzz | 18 | 184 | 5.8 | 2 | 16 | 166 | 6 | `-_.--...` | PASS |
-| 26_generics | 29 | 164 | 5.2 | 5 | 12 | 129 | 8 | `        ` | PASS |
-| 27_impl | 21 | 97 | 2.7 | 3 | 6 | 106 | 6 | `___*_ ._ v` | PASS |
-| 28_traits | 25 | 96 | 2.8 | 3 | 6 | 98 | 6 | `.---..~. v` | PASS |
-| 29_generic_impl | 24 | 99 | 3.0 | 3 | 6 | 99 | 8 | `_ ._._~  v` | PASS |
-| 30_nested_generics | 20 | 113 | 4.2 | 1 | 2 | 117 | 9 | `-*-*---_ v` | PASS |
-| 31_generic_multi | 35 | 143 | 4.6 | 4 | 8 | 141 | 7 | `        ` | PASS |
-| 32_generic_enum | 16 | 37 | 1.1 | 1 | 2 | 18 | 5 | `-**-*---` | PASS |
-| 33_break_continue | 58 | 402 | 12.2 | 5 | 36 | 398 | 9 | `------**` | PASS |
-| **Total** | **494** | **3770** | **124.3** | **63** | **273** | **3439** | **799** | | **33/33** |
+| 16_string_escape | 8 | 54 | 1.9 | 1 | 2 | 27 | 4 | `---.....` | PASS |
+| 17_option | 19 | 186 | 6.2 | 2 | 15 | 173 | 6 | `---....* ^` | PASS |
+| 18_method_chain | 9 | 121 | 4.7 | 1 | 8 | 84 | 4 | `--.--...` | PASS |
+| 19_nested_match | 18 | 197 | 6.7 | 2 | 15 | 186 | 6 | `-.----*. v` | PASS |
+| 20_recursion | 11 | 128 | 4.0 | 2 | 11 | 123 | 4 | `        ` | PASS |
+| 21_list_ops | 15 | 224 | 8.2 | 2 | 13 | 269 | 5 | `..-..-..` | PASS |
+| 22_string_builder | 14 | 126 | 4.4 | 2 | 7 | 116 | 5 | `-.*--.-. v` | PASS |
+| 23_multi_return | 15 | 117 | 4.1 | 2 | 8 | 114 | 4 | `..*_.___` | PASS |
+| 24_enum_methods | 20 | 107 | 3.8 | 2 | 8 | 82 | 5 | `         v` | PASS |
+| 25_fizzbuzz | 18 | 184 | 5.8 | 2 | 16 | 166 | 5 | `.--...._ v` | PASS |
+| 26_generics | 29 | 164 | 5.2 | 5 | 12 | 129 | 7 | `         v` | PASS |
+| 27_impl | 21 | 97 | 2.7 | 3 | 6 | 106 | 5 | `_*_ .__  v` | PASS |
+| 28_traits | 25 | 96 | 2.8 | 3 | 6 | 98 | 5 | `--..~.._ v` | PASS |
+| 29_generic_impl | 24 | 99 | 3.0 | 3 | 6 | 99 | 5 | `._._~ -  v` | PASS |
+| 30_nested_generics | 20 | 113 | 4.2 | 1 | 2 | 117 | 5 | `.-..._*_ v` | PASS |
+| 31_generic_multi | 35 | 143 | 4.6 | 4 | 8 | 141 | 5 | `         v` | PASS |
+| 32_generic_enum | 16 | 37 | 1.1 | 1 | 2 | 18 | 4 | `*-*----_ v` | PASS |
+| 33_break_continue | 58 | 402 | 12.2 | 5 | 36 | 398 | 7 | `----**-_ v` | PASS |
+| **Total** | **494** | **3770** | **124.3** | **63** | **273** | **3439** | **860** | | **33/33** |
 
 ## Native Compiler (mnc-stage1)
 
 | Test | IR | KB | Fns | ms | Match | Status |
 |------|---:|---:|----:|---:|-------|--------|
-| 01_hello | 88 | 4.1 | 1 | 59 | YES | PASS |
-| 02_arithmetic | 93 | 4.1 | 1 | 57 | YES | PASS |
-| 03_function | 103 | 4.3 | 2 | 67 | YES | PASS |
-| 04_if_else | 105 | 4.6 | 1 | 64 | YES | PASS |
-| 05_for_loop | 116 | 4.9 | 1 | 73 | YES | PASS |
-| 06_struct | 98 | 4.3 | 1 | 70 | YES | PASS |
-| 07_enum_match | 110 | 4.9 | 1 | 69 | YES | PASS |
-| 08_list | 120 | 5.4 | 1 | 70 | YES | PASS |
-| 09_string_methods | 100 | 4.7 | 1 | 70 | YES | PASS |
-| 10_result | 145 | 6.3 | 2 | 80 | YES | PASS |
-| 11_closure | 106 | 4.4 | 1 | 68 | YES | PASS |
-| 12_while | 102 | 4.3 | 1 | 66 | YES | PASS |
-| 13_fib | 113 | 4.5 | 2 | 77 | YES | PASS |
-| 14_nested_struct | 98 | 4.3 | 1 | 77 | YES | PASS |
-| 15_multifunction | 111 | 4.5 | 3 | 71 | YES | PASS |
-| 16_string_escape | 107 | 5.0 | 1 | 59 | YES | PASS |
-| 17_option | 171 | 6.9 | 2 | 79 | YES | PASS |
-| 18_method_chain | 117 | 5.5 | 1 | 67 | YES | PASS |
-| 19_nested_match | 153 | 6.1 | 2 | 92 | YES | PASS |
-| 20_recursion | 114 | 4.6 | 2 | 79 | YES | PASS |
-| 21_list_ops | 179 | 7.7 | 2 | 77 | YES | PASS |
-| 22_string_builder | 146 | 6.4 | 2 | 79 | YES | PASS |
-| 23_multi_return | 129 | 5.5 | 2 | 73 | YES | PASS |
-| 24_enum_methods | 134 | 5.7 | 2 | 84 | YES | PASS |
-| 25_fizzbuzz | 163 | 6.4 | 2 | 87 | YES | PASS |
-| 26_generics | 159 | 6.2 | 5 | 70 | YES | PASS |
-| 27_impl | 127 | 5.2 | 3 | 68 | YES | PASS |
-| 28_traits | 129 | 5.2 | 3 | 70 | YES | PASS |
-| 29_generic_impl | 136 | 5.7 | 3 | 105 | YES | PASS |
-| 30_nested_generics | 128 | 6.1 | 1 | 109 | YES | PASS |
-| 31_generic_multi | 154 | 6.5 | 4 | 85 | YES | PASS |
-| 32_generic_enum | 105 | 4.6 | 1 | 78 | YES | PASS |
-| 33_break_continue | 297 | 10.2 | 5 | 92 | YES | PASS |
-| **Total** | | | | **2491** | **33/33** | **33/33** |
+| 01_hello | 88 | 4.1 | 1 | 4 | YES | PASS |
+| 02_arithmetic | 93 | 4.1 | 1 | 3 | YES | PASS |
+| 03_function | 103 | 4.3 | 2 | 4 | YES | PASS |
+| 04_if_else | 105 | 4.6 | 1 | 4 | YES | PASS |
+| 05_for_loop | 116 | 4.9 | 1 | 4 | YES | PASS |
+| 06_struct | 98 | 4.3 | 1 | 3 | YES | PASS |
+| 07_enum_match | 111 | 4.9 | 1 | 3 | YES | PASS |
+| 08_list | 120 | 5.4 | 1 | 3 | YES | PASS |
+| 09_string_methods | 100 | 4.7 | 1 | 3 | YES | PASS |
+| 10_result | 146 | 6.2 | 2 | 4 | YES | PASS |
+| 11_closure | 106 | 4.4 | 1 | 4 | YES | PASS |
+| 12_while | 102 | 4.3 | 1 | 4 | YES | PASS |
+| 13_fib | 113 | 4.5 | 2 | 4 | YES | PASS |
+| 14_nested_struct | 98 | 4.3 | 1 | 4 | YES | PASS |
+| 15_multifunction | 111 | 4.5 | 3 | 4 | YES | PASS |
+| 16_string_escape | 107 | 5.0 | 1 | 3 | YES | PASS |
+| 17_option | 173 | 6.9 | 2 | 4 | YES | PASS |
+| 18_method_chain | 117 | 5.5 | 1 | 3 | YES | PASS |
+| 19_nested_match | 153 | 6.1 | 2 | 3 | YES | PASS |
+| 20_recursion | 114 | 4.6 | 2 | 4 | YES | PASS |
+| 21_list_ops | 179 | 7.7 | 2 | 4 | YES | PASS |
+| 22_string_builder | 146 | 6.4 | 2 | 4 | YES | PASS |
+| 23_multi_return | 129 | 5.5 | 2 | 4 | YES | PASS |
+| 24_enum_methods | 134 | 5.7 | 2 | 3 | YES | PASS |
+| 25_fizzbuzz | 163 | 6.4 | 2 | 4 | YES | PASS |
+| 26_generics | 159 | 6.2 | 5 | 4 | YES | PASS |
+| 27_impl | 127 | 5.2 | 3 | 3 | YES | PASS |
+| 28_traits | 129 | 5.2 | 3 | 3 | YES | PASS |
+| 29_generic_impl | 136 | 5.7 | 3 | 4 | YES | PASS |
+| 30_nested_generics | 128 | 6.1 | 1 | 3 | YES | PASS |
+| 31_generic_multi | 154 | 6.5 | 4 | 4 | YES | PASS |
+| 32_generic_enum | 105 | 4.6 | 1 | 3 | YES | PASS |
+| 33_break_continue | 297 | 10.2 | 5 | 4 | YES | PASS |
+| **Total** | | | | **119** | **33/33** | **33/33** |
 
 ## Speed Comparison
 
 | Test | Bootstrap (ms) | Stage1 (ms) | Speedup |
 |------|---------------:|------------:|--------:|
-| 01_hello | 602 | 59 | 10.3x |
-| 02_arithmetic | 7 | 57 | 0.1x |
-| 03_function | 6 | 67 | 0.1x |
-| 04_if_else | 5 | 64 | 0.1x |
-| 05_for_loop | 5 | 73 | 0.1x |
-| 06_struct | 6 | 70 | 0.1x |
-| 07_enum_match | 6 | 69 | 0.1x |
-| 08_list | 7 | 70 | 0.1x |
-| 09_string_methods | 5 | 70 | 0.1x |
-| 10_result | 7 | 80 | 0.1x |
-| 11_closure | 5 | 68 | 0.1x |
-| 12_while | 5 | 66 | 0.1x |
-| 13_fib | 5 | 77 | 0.1x |
-| 14_nested_struct | 6 | 77 | 0.1x |
-| 15_multifunction | 5 | 71 | 0.1x |
-| 16_string_escape | 5 | 59 | 0.1x |
-| 17_option | 6 | 79 | 0.1x |
-| 18_method_chain | 5 | 67 | 0.1x |
-| 19_nested_match | 9 | 92 | 0.1x |
-| 20_recursion | 5 | 79 | 0.1x |
-| 21_list_ops | 6 | 77 | 0.1x |
-| 22_string_builder | 6 | 79 | 0.1x |
-| 23_multi_return | 5 | 73 | 0.1x |
-| 24_enum_methods | 6 | 84 | 0.1x |
-| 25_fizzbuzz | 6 | 87 | 0.1x |
-| 26_generics | 8 | 70 | 0.1x |
-| 27_impl | 6 | 68 | 0.1x |
-| 28_traits | 6 | 70 | 0.1x |
-| 29_generic_impl | 8 | 105 | 0.1x |
-| 30_nested_generics | 9 | 109 | 0.1x |
-| 31_generic_multi | 7 | 85 | 0.1x |
-| 32_generic_enum | 5 | 78 | 0.1x |
-| 33_break_continue | 9 | 92 | 0.1x |
+| 01_hello | 697 | 4 | 196.7x |
+| 02_arithmetic | 6 | 3 | 1.7x |
+| 03_function | 6 | 4 | 1.5x |
+| 04_if_else | 5 | 4 | 1.4x |
+| 05_for_loop | 5 | 4 | 1.4x |
+| 06_struct | 5 | 3 | 1.5x |
+| 07_enum_match | 6 | 3 | 1.7x |
+| 08_list | 6 | 3 | 1.7x |
+| 09_string_methods | 4 | 3 | 1.2x |
+| 10_result | 6 | 4 | 1.4x |
+| 11_closure | 5 | 4 | 1.4x |
+| 12_while | 4 | 4 | 1.2x |
+| 13_fib | 5 | 4 | 1.2x |
+| 14_nested_struct | 4 | 4 | 1.0x |
+| 15_multifunction | 5 | 4 | 1.3x |
+| 16_string_escape | 4 | 3 | 1.3x |
+| 17_option | 6 | 4 | 1.5x |
+| 18_method_chain | 4 | 3 | 1.3x |
+| 19_nested_match | 6 | 3 | 1.9x |
+| 20_recursion | 4 | 4 | 1.2x |
+| 21_list_ops | 5 | 4 | 1.3x |
+| 22_string_builder | 5 | 4 | 1.2x |
+| 23_multi_return | 4 | 4 | 1.2x |
+| 24_enum_methods | 5 | 3 | 1.6x |
+| 25_fizzbuzz | 5 | 4 | 1.4x |
+| 26_generics | 7 | 4 | 1.7x |
+| 27_impl | 5 | 3 | 1.4x |
+| 28_traits | 5 | 3 | 1.5x |
+| 29_generic_impl | 5 | 4 | 1.4x |
+| 30_nested_generics | 5 | 3 | 1.5x |
+| 31_generic_multi | 5 | 4 | 1.4x |
+| 32_generic_enum | 4 | 3 | 1.2x |
+| 33_break_continue | 7 | 4 | 1.8x |
 

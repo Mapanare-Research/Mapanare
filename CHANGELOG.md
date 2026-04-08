@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.38.0] - 2026-04-08
+
+### Added
+
+- Fixed-point self-compilation verified: stage4 == stage3 (compiler converges
+  after two rounds of self-compilation)
+- Seed binary updated to fixed-point stage3 build (bootstrap/seed/linux-x86_64/)
+
+### Fixed
+
+- `parser.mn`: field access `fr.fn_data` → `fr.data` (field name mismatch caused
+  FnDefData to be typed as i64 in stage2 IR, the only llvm-as error)
+
+### Changed
+
+- Transpiler modules (from_python, from_php, from_typescript, from_go) excluded
+  from mnc_all.mn — they contain symbol clashes (new_token) and aren't needed
+  for core compiler operation
+- mnc_all.mn reduced from 20K to 14.7K lines
+- Stage2 IR: 104K lines, valid (0 llvm-as errors)
+
 ## [3.37.0] - 2026-04-08
 
 ### Fixed
@@ -887,7 +908,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.37.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.38.0...HEAD
+[3.38.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.37.0...v3.38.0
 [3.37.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.36.0...v3.37.0
 [3.36.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.35.0...v3.36.0
 [3.35.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.34.0...v3.35.0

@@ -5,7 +5,7 @@
 > type errors. Update the seed binary. The compiler compiles itself
 > with zero Python, zero hacks.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Medium (1-2 sessions)
 **Breaking:** No
 **Prerequisite:** v3.37.0 (self-compilation must work)

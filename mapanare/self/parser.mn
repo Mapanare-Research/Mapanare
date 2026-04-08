@@ -495,7 +495,7 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
                 }
                 if peek_type(tokens, tp) == "KW_FN" {
                     let fr: FnDataResult = parse_fn_def_as_data(tokens, tp, filename)
-                    trait_methods.push(fr.fn_data)
+                    trait_methods.push(fr.data)
                     tp = fr.pos
                 } else {
                     tp = tp + 1
