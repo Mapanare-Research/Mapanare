@@ -1,0 +1,14 @@
+// Transpiled from fibonacci_bench.py — type-annotated for native compilation
+// Original: python3 fibonacci_bench.py       (~30s in Python)
+// Native:   mapanare emit-llvm fibonacci_bench.mn -o fib.ll && clang -O2 fib.ll -o fib -lm
+
+fn fibonacci(n: Int) -> Int {
+    si n <= 1 {
+        da n
+    }
+    da fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+fn main() {
+    print(fibonacci(40))
+}

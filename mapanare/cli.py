@@ -828,10 +828,10 @@ def cmd_build(args: argparse.Namespace) -> None:
 
     obj_bytes = jit_compile_to_object(llvm_ir, opt_level=opt_level.value)
 
-    # Write object file
+    # Write object file to a temporary location (not the final output path)
     base = os.path.splitext(args.source)[0]
     obj_ext = ".obj" if os.name == "nt" else ".o"
-    obj_path = args.o or (base + obj_ext)
+    obj_path = base + obj_ext
     with open(obj_path, "wb") as f:
         f.write(obj_bytes)
 

@@ -526,43 +526,39 @@ def constant_folding(fn: MIRFunction, stats: MIRPassStats) -> bool:
 def constant_propagation(fn: MIRFunction, stats: MIRPassStats) -> bool:
     """Replace uses of Const-assigned values with the constant itself.
 
-    SSA makes this straightforward: each value has exactly one definition.
+    Only propagates through values with a single definition — values that are
+    reassigned (e.g., loop variables) are excluded to avoid propagating stale
+    constants across loop back-edges.
     Returns True if any changes were made.
     """
-    # Build map: value name -> Const instruction
+    # Count definitions per variable name.  Mapanare's MIR allows the same
+    # name to be redefined (mutable variables), so a name with >1 definition
+    # must NOT be constant-propagated.
+    def_counts: dict[str, int] = {}
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            dest = getattr(inst, "dest", None)
+            if dest is not None and hasattr(dest, "name") and dest.name:
+                def_counts[dest.name] = def_counts.get(dest.name, 0) + 1
+
+    # Build map: value name -> Const instruction (single-def only)
     const_defs: dict[str, Const] = {}
     for bb in fn.blocks:
         for inst in bb.instructions:
             if isinstance(inst, Const) and inst.dest.name:
-                const_defs[inst.dest.name] = inst
+                if def_counts.get(inst.dest.name, 0) == 1:
+                    const_defs[inst.dest.name] = inst
 
     changed = False
-    for bb in fn.blocks:
-        for inst in bb.instructions:
-            # Don't propagate into the defining Const itself
-            if isinstance(inst, Const):
-                continue
-            uses = _get_uses(inst)
-            for use in uses:
-                if use.name in const_defs:
-                    # Create a new Const instruction before this one isn't needed —
-                    # we just note the propagation. The actual benefit comes when
-                    # this enables more folding on the next iteration.
-                    # For now, track that the value could be propagated.
-                    pass
 
-    # Actually, constant propagation on SSA-MIR means: if a value is defined by
-    # a Const, replace all references to that value with a fresh Const-defined
-    # value. But since SSA already has single definitions, the real benefit is
-    # enabling constant folding in the next iteration. The folding pass already
-    # looks up const_vals by name. So propagation here means: if %x = copy %y
-    # and %y is const, then %x is also const. Let's handle that case.
+    # If %x = copy %y and %y is a single-def constant, replace with a Const.
+    # Only do this when %x itself is also single-def to avoid breaking loops.
     for bb in fn.blocks:
         for i, inst in enumerate(bb.instructions):
             if isinstance(inst, Copy) and inst.src.name in const_defs:
-                # This copy of a constant can be turned into a constant itself
+                if def_counts.get(inst.dest.name, 0) > 1:
+                    continue
                 src_const = const_defs[inst.src.name]
-                # Replace the Copy with a Const
                 new_const = Const(
                     dest=inst.dest,
                     ty=src_const.ty,

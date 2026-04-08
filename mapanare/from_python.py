@@ -126,6 +126,8 @@ class PythonTranslator:
     _current_class: str | None = None
     # Track variables that have been assigned (for let vs reassignment)
     _declared_vars: list[set[str]] = field(default_factory=lambda: [set()])
+    # Track function return types for call-site type inference
+    _func_return_types: dict[str, str] = field(default_factory=dict)
 
     # -- Scope helpers --
 
@@ -228,6 +230,9 @@ class PythonTranslator:
                 name = node.func.id
                 if name in _PY_TYPE_MAP:
                     return _PY_TYPE_MAP[name]
+                # Check if we know the function's return type
+                if name in self._func_return_types:
+                    return self._func_return_types[name]
                 # Constructor call — assume it returns the class type
                 return name
         if isinstance(node, ast.BoolOp):
@@ -553,6 +558,10 @@ class PythonTranslator:
 
         params = self._translate_params(node.args)
         ret_type = self._translate_type(node.returns)
+
+        # Track return type for call-site type inference
+        if ret_type not in ("any", "Void"):
+            self._func_return_types[name] = ret_type
 
         ret_annotation = f" -> {ret_type}" if ret_type not in ("any", "Void") else ""
         self._emit(f"fn {name}({params}){ret_annotation} {{")
