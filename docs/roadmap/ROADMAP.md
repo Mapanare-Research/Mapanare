@@ -168,6 +168,11 @@ from the seed binary.
 | **v3.29.0** | **"Morrocoy" — Self-Hosted PHP Transpiler** | `from_php.mn`: PHP tokenizer/parser in .mn, proper char-by-char lexer (replaces regex), zero Python dependency for .php compilation |
 | **v3.30.0** | **"Turpial" — TypeScript Transpiler** | `from_typescript.mn`: TS tokenizer/parser, interfaces→traits, classes→structs, union types→enums, async/await→agents, optional chaining→Option |
 | **v3.31.0** | **"Tonina" — Go Transpiler** | `from_go.mn`: Go tokenizer/parser, goroutines→agents, channels→streams, error returns→Result, interfaces→traits, struct methods |
+| **v3.32.0** ✅ | **"Sapoara" — Review Hardening** | Fix all remaining code review findings before v4.0.0 |
+| **v3.33.0** ✅ | **"Curito" — Final Polish** | Dead code removal, overhead elimination, edge case hardening |
+| **v3.34.0** | **"Cachicamo" — Zero-Python Driver** | `mnc run`/`build`/`compile` as default, precompiled C runtime, <100ms startup, Python CLI deprecated to dev-only |
+| **v3.35.0** | **"Báquiro" — Incremental Compilation** | Hash-based module caching, parallel module compilation, `.mni` interfaces, `--watch` mode, <2s rebuild |
+| **v3.36.0** | **"Cunaguaro II" — Performance + Release Prep** | IR dedup (<200K lines), binary size (<10MB), memory optimization (<512MB), compile-time benchmarks in CI, LLVM pass tuning |
 | **v4.0.0** | **"Mapanare" — Production Release** | Docs, demos, quality gate — the compiler is ready for real programs |
 
 ---

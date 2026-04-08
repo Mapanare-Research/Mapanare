@@ -1,104 +1,92 @@
-# Master Prompt — Roadmap to v4.0.0 (Production Release)
+# Master Prompt — Execute Roadmap v3.34.0 → v3.36.0
 
-> Close all review items, fix CI, ship v4.0.0.
-> Read CLAUDE.md for full project context.
+> Kill the Python dependency, make compilation snappy, prepare for v4.0.0.
+> Each version has its own prompt.md with full instructions.
+> Execute one at a time, verify, commit, then move to next.
+> Read CLAUDE.md for project context.
 
 ---
 
-## Current State
+## Instructions
 
-- **Version:** 3.35.0
-- **Branch:** dev
-- **Aggregate review score:** 9.44/10 (7 reviewers, all PASS)
-- **Self-hosted compiler:** 20K+ lines, 16 modules, compiles itself
-- **Transpilers:** Python, PHP, TypeScript, Go (all self-hosted in .mn)
-- **CI status:** green (all lint/test/mypy pass, golden tests pass with regenerated main.ll)
+You are executing the Mapanare performance roadmap from v3.34.0 through v3.36.0.
+There are 3 versions to complete, each building on the previous one.
 
-## Completed Versions
+**For each version N:**
 
-### v3.34.0 — "Review Fixes" (DONE)
+1. Read `docs/roadmap/vN/prompt.md` — it has the full instructions
+2. Read `docs/roadmap/vN/PLAN.md` — it has the item breakdown
+3. Execute all items in the prompt, following its phasing and priority order
+4. Run the verification checklist from the prompt
+5. Run `/bump-version` to bump to version N
+6. Commit with the message format from the prompt
+7. Update `docs/roadmap/vN/PLAN.md` status to DONE
+8. Move to version N+1
 
-All 20 action items from the v3.33.0 code review addressed in one release:
+**Execution order (strict — each depends on the previous):**
 
-- `__mn_map_new` explicit `val_type` parameter (eliminates size heuristic — 4 reviewers)
-- `__mn_file_copy` returns -1 on write failure
-- `__mn_signal_on_change` thread-safe locking
-- LLVM 17+ opaque pointer fixes (bitcast removal, `ptr` syntax)
-- `continue` added to SPEC keyword table
-- `cow_shares` duplicate declaration removed
-- Self-hosted `types_compatible` strengthened (param + return type comparison)
-- `getattr` replaced with direct field access
-- `is_digit` name collision resolved
-- Shared `is_transpiler_alpha` (removed ~200 lines of duplication)
-- Dead `llvm_list_type()` removed
-- Module-scope `_ARITH_TRAIT_MAP` / `_OP_TO_TRAIT`
-- `Err.unwrap()` -> `NoReturn`
-- Version strings updated across codebase
-- 843 tests passed, 0 failed
+| # | Version | Codename | Theme | User-Facing Result |
+|---|---------|----------|-------|--------------------|
+| 1 | v3.34.0 | Cachicamo | Zero-Python driver | `mnc run hello.mn` in <100ms, no Python needed |
+| 2 | v3.35.0 | Baquiro | Incremental compilation | <2s rebuild after single-file change |
+| 3 | v3.36.0 | Cunaguaro II | Performance + release prep | <10MB binary, <200K IR, benchmarks in CI |
 
-### v3.35.0 — "Break-in-For Fix" (DONE)
+**Dependencies:**
 
-- Break-in-for bug investigated and confirmed already fixed in Python lowerer
-- `lexer.mn:tokenize()` migrated from `for _ in 0..2000000` to `while pos < slen`
-- 6 stale "avoids break-in-for bug" comments removed from `lower.mn`
-- Golden test `33_break_continue.mn` added (break/continue/while validation)
-- 680 tests passed, 0 failed
+```
+v3.34.0 (native driver) ── mnc becomes the default binary
+    │
+    ▼
+v3.35.0 (incremental) ── caching and parallel compilation on top of mnc
+    │
+    ▼
+v3.36.0 (performance) ── optimize compiler output, establish CI gates
+    │
+    ▼
+v4.0.0 (production) ── pure quality gate, no new features
+```
 
-### CI Fixes (DONE)
+**Rules:**
 
-- `noalias` emitted as return attribute (not function attribute) for LLVM compat
-- `__mn_map_new` backward-compatible with 3-arg callers (sentinel-based fallback)
-- Text emitter field-type codegen bug fixed (`_struct_field0_type` parser)
-- `main.ll` regenerated (275K lines, current 5-field MnList ABI)
-- Seed binary updated (matches current ABI)
-- iOS `system()` guard: `#if/#elif/#else` so compiler never sees unavailable decl
-- All CI jobs re-enabled (golden tests, stage2, bootstrap)
+- Do NOT skip versions or reorder them
+- Do NOT start version N+1 until version N is committed
+- If a verification step fails, fix it before moving on
+- Make decisions autonomously — do not ask for confirmation on implementation choices
+- Commit at each milestone within a version (not just at the end)
+- Use `/golden` after every compiler change
+- Measure startup time (`time mnc run hello.mn`) after every phase
+- Use Culebra to verify IR quality after emitter changes
+- Use ASan/TSan after C runtime changes
+- Run `.\dev.ps1` (full validate) before every version bump
 
-## What Remains for v4.0.0
+**Performance targets (cumulative):**
 
-v4.0.0 is a **pure quality gate** — no new features, just validation:
+| Metric | v3.34.0 | v3.35.0 | v3.36.0 |
+|--------|---------|---------|---------|
+| `mnc run hello.mn` | <100ms | <100ms | <100ms |
+| Clean build (11 modules) | — | <15s | <15s |
+| Incremental rebuild (1 file) | — | <2s | <2s |
+| IR blowup ratio | — | — | <10x |
+| Binary size (stripped) | — | — | <10MB |
+| Peak memory (self-compile) | — | — | <512MB |
 
-1. Update `VERSION` to `4.0.0`
-2. Update `main.mn` version string to `"mapanare 4.0.0"`
-3. Update version badges (README, README.es, CHANGELOG)
-4. Final `bash scripts/rebuild.sh` (rebuild main.ll + mnc_all.mn)
-5. Final `python scripts/test_native.py --bless` (re-bless golden refs)
-6. Full validation: `make test && make lint`
-7. Verify CI is green on all jobs
-8. Tag `v4.0.0` and release
+**Current state:**
+- Version: 3.35.0
+- Branch: dev
+- Self-hosted compiler works (20K+ lines, 16 modules, compiles itself)
+- Python/PHP/TypeScript/Go transpilers working (all self-hosted in .mn)
+- `any` type implemented
+- All 20 v3.33.0 review items addressed, break-in-for confirmed fixed
+- Text emitter codegen bug fixed, main.ll regenerated (275K lines, current ABI)
+- Seed binary updated, all CI jobs re-enabled
+- User-facing CLI still goes through Python (~437ms for hello.mn)
+- All golden tests pass (33/33)
+- 843+ tests passing, mypy/ruff/black clean
 
-## Post-v4.0.0 Roadmap (v4.1+)
-
-Items deferred from the review or identified during this sprint:
-
-### Performance (originally planned for v3.34-v3.36)
-- Native driver: `mnc run hello.mn` in <100ms (no Python)
-- Incremental compilation: <2s rebuild after single-file change
-- Binary size optimization: <10MB stripped
-- IR blowup ratio: <10x source-to-IR
-- Compile-time benchmarks in CI
-
-### Language Features
-- `const` keyword in grammar and spec (Coral)
-- Tensor proof-of-concept compilation demo (Coral)
-- `Map` literal syntax for self-hosted code (Coral)
-
-### Self-Hosted Compiler
-- Migrate remaining ~480 bounded-for loops to while/break/continue
-- Fix text emitter semantic checker false positives for self-hosted compilation
-- Achieve full fixed-point: stage2 == stage3
-
-### Code Quality
-- Refactor `_emit_drop_glue` into template helper (Cobra)
-- Thread-safe `mn_init_tag_strings` (Viper)
-- Iterative signal propagation (Viper)
-- Root `conftest.py` for shared test fixtures (Anaconda)
-- Remove deprecated llvmlite emitter (`emit_llvm_mir.py`, 5,293 lines)
-
-## Rules
-
-- Do NOT add features in v4.0.0 — it is a quality gate only
-- Run full validation before tagging
-- Verify CI green on ALL jobs (ci, self-hosted, bootstrap, native, wasm, android, macOS/iOS)
-- Use `/bump-version` for the version bump
-- Commit message: `v4.0.0: production release`
+**After all 3 versions are done:**
+- `mnc` is the default compiler — no Python required for end users
+- Single-file compilation: <100ms
+- Multi-module incremental rebuild: <2s
+- Compiler binary: <10MB
+- Compile-time benchmarks enforced in CI
+- v4.0.0 is next — docs, demos, quality gate
