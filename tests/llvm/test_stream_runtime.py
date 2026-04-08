@@ -16,7 +16,6 @@ import tempfile
 import pytest
 
 _IS_WINDOWS = platform.system() == "Windows"
-_IS_MACOS_ARM64 = platform.system() == "Darwin" and platform.machine() == "arm64"
 
 RUNTIME_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "runtime", "native")
 CORE_C = os.path.join(RUNTIME_DIR, "mapanare_core.c")
@@ -100,6 +99,7 @@ class MnList(ctypes.Structure):
         ("len", ctypes.c_int64),
         ("cap", ctypes.c_int64),
         ("elem_size", ctypes.c_int64),
+        ("managed", ctypes.c_int64),
     ]
 
 
@@ -303,7 +303,6 @@ class TestStreamMap:
 # ===========================================================================
 
 
-@pytest.mark.skipif(_IS_MACOS_ARM64, reason="ctypes filter callback segfaults on ARM64")
 class TestStreamFilter:
     """Task 4: Lazy filter."""
 
@@ -522,7 +521,6 @@ class TestStreamBounded:
 # ===========================================================================
 
 
-@pytest.mark.skipif(_IS_MACOS_ARM64, reason="ctypes filter callback segfaults on ARM64")
 class TestStreamPipeline:
     """Combined: filter |> map |> take |> collect."""
 
