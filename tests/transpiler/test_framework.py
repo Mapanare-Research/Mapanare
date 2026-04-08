@@ -9,10 +9,7 @@ Since the framework is a self-hosted .mn module, these tests verify:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-
-import pytest
 
 SELF_DIR = Path(__file__).resolve().parent.parent.parent / "mapanare" / "self"
 TRANSPILER_MN = SELF_DIR / "transpiler.mn"
@@ -100,11 +97,7 @@ class TestTranspilerCompiles:
 
         src = TRANSPILER_MN.read_text(encoding="utf-8")
         program = parse(src, filename="transpiler.mn")
-        errors = check(program, filename="transpiler.mn")
-        # Filter out "Undefined function" for builtins that exist at runtime
-        real_errors = [
-            e for e in errors if "Undefined function" not in e.message or "substr" not in e.message
-        ]
+        check(program, filename="transpiler.mn")
         # Some errors are expected (substr, starts_with are runtime builtins)
         # Just verify no crash during semantic analysis
         assert program is not None

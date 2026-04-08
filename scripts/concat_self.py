@@ -3,7 +3,8 @@
 
 Strips ``import self::*`` lines so the result can be compiled as a single
 file without multi-module support.  Modules are ordered by dependency:
-ast → lexer → parser → semantic → mir → lower_state → lower → emit_llvm_ir → emit_llvm → transpiler → main.
+ast → lexer → parser → semantic → mir → lower_state → lower →
+emit_llvm_ir → emit_llvm → transpiler → main.
 """
 
 import re

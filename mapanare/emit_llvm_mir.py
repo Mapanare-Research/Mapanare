@@ -47,7 +47,7 @@ except ImportError:
     _HAS_LLVMLITE = False
     ir = None  # type: ignore[assignment,unused-ignore]
 
-from mapanare.mir import (
+from mapanare.mir import (  # noqa: E402
     AgentSend,
     AgentSpawn,
     AgentSync,
@@ -103,7 +103,7 @@ from mapanare.mir import (
     WrapOk,
     WrapSome,
 )
-from mapanare.types import TypeKind
+from mapanare.types import TypeKind  # noqa: E402
 
 
 def _require_llvmlite() -> None:
