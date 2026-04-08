@@ -11,7 +11,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 - **v4.0.0** (current) — Production release: self-hosted compiler (15,000+ lines .mn), 40/40 golden, 4,845+ pytest, GPU compute, Python transpiler, package manager, 7-reviewer 9.79/10.
 - **v4.1.0** (next) — Post-production improvements.
 
-See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.41.0/PLAN.md` → `v3.42.0` → `v3.43.0` → `v3.44.0` → `v3.45.0` → `docs/roadmap/v4.0.0/PLAN.md`.
+See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 
 ## Pre-Push Validation (MANDATORY)
 
@@ -380,7 +380,7 @@ All type definitions, builtin registries, and type-name mappings live in `types.
 - Builtins are dispatched via `BUILTIN_CALL_MAP` in both emitters
 - Self-hosted compiler sources are in `mapanare/self/*.mn`
 - Language spec: `docs/SPEC.md` | Design philosophy: `docs/manifesto.md` | RFCs: `docs/rfcs/`
-- Roadmap: `docs/roadmap/ROADMAP.md` | Current plan: `docs/roadmap/v3.3.0/PLAN.md`
+- Roadmap: `docs/roadmap/ROADMAP.md` | Era READMEs: `docs/roadmap/v0/` through `docs/roadmap/v4/`
 - Version tracked in `VERSION` file
 - Bootstrap frozen at v0.6.0 in `bootstrap/`
 
