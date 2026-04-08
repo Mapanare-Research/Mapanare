@@ -101,8 +101,10 @@ def test_example_dirs_exist() -> None:
     """Example directories referenced in the roadmap should exist."""
     examples = REPO_ROOT / "examples"
     assert (examples / "wasm").is_dir(), "examples/wasm/ missing"
-    assert (examples / "gpu").is_dir(), "examples/gpu/ missing"
-    assert (examples / "mobile").is_dir(), "examples/mobile/ missing"
+    assert (examples / "experimental" / "gpu").is_dir(), "examples/experimental/gpu/ missing"
+    assert (examples / "experimental" / "mobile").is_dir(), "examples/experimental/mobile/ missing"
+    assert (examples / "cli").is_dir(), "examples/cli/ missing"
+    assert (examples / "network").is_dir(), "examples/network/ missing"
 
 
 def test_stdlib_dirs_exist() -> None:
