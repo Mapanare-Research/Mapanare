@@ -402,6 +402,27 @@ fn run_test(filename: String) {
 // ---------------------------------------------------------------------------
 
 fn run_build(filename: String) {
+    // Check if argument is a directory (try reading it as file — empty = dir or missing)
+    let ext: String = file_extension(filename)
+
+    // Directory build: delegate to mnc-build.sh for incremental compilation
+    if len(ext) == 0 {
+        let mut cmd: String = "bash scripts/mnc-build.sh " + filename
+        // Forward remaining args (e.g., -o output --timing)
+        let mut ai: Int = 3
+        for _ in 0..20 {
+            if ai >= __mn_argc() { ai = __mn_argc() + 1 }
+            if ai < __mn_argc() {
+                cmd = cmd + " " + __mn_argv(ai)
+                ai = ai + 1
+            }
+        }
+        let r: Int = __mn_system(cmd)
+        if r != 0 { __mn_exit(r) }
+        return
+    }
+
+    // Single-file build
     // Derive output name
     let mut out_name: String = "a.out"
     if __mn_argc() >= 4 {
@@ -610,9 +631,10 @@ fn mn_main() {
     if __mn_argc() < 2 {
         __mn_str_eprint("usage: mnc <file.mn>\n")
         __mn_str_eprint("       mnc test <file.mn>\n")
-        __mn_str_eprint("       mnc build <file.mn> [-o output]\n")
+        __mn_str_eprint("       mnc build <file.mn|dir> [-o output] [--timing]\n")
         __mn_str_eprint("       mnc run <file.mn> [args...]\n")
         __mn_str_eprint("       mnc compile <file> [-o output]\n")
+        __mn_str_eprint("       mnc cache <stats|clean>\n")
         __mn_str_eprint("       mnc version\n")
         __mn_exit(1)
     }
@@ -642,6 +664,27 @@ fn mn_main() {
         }
         run_program(__mn_argv(2))
         return
+    }
+    if arg1 == "cache" {
+        if __mn_argc() < 3 {
+            __mn_str_eprint("usage: mnc cache <stats|clean>\n")
+            __mn_exit(1)
+        }
+        let cache_cmd: String = __mn_argv(2)
+        if cache_cmd == "clean" {
+            let rc: Int = __mn_system("rm -rf .mnc_cache && echo 'Cache cleared.'")
+            if rc != 0 { __mn_exit(rc) }
+            return
+        }
+        if cache_cmd == "stats" {
+            let rs: Int = __mn_system("if [ -d .mnc_cache ]; then echo \"Cache: .mnc_cache/\"; echo \"  Files: $(find .mnc_cache -type f | wc -l)\"; echo \"  Size: $(du -sh .mnc_cache | cut -f1)\"; if [ -f .mnc_cache/manifest.txt ]; then echo \"  Modules: $(wc -l < .mnc_cache/manifest.txt)\"; fi; else echo 'No cache (run mnc build <dir> first)'; fi")
+            if rs != 0 { __mn_exit(rs) }
+            return
+        }
+        __mn_str_eprint("unknown cache command: ")
+        __mn_str_eprint(cache_cmd)
+        __mn_str_eprint("\n")
+        __mn_exit(1)
     }
     if arg1 == "compile" {
         if __mn_argc() < 3 {

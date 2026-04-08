@@ -60,4 +60,4 @@ tmp*.py
 .culebra-journal.jsonl
 .culebra-baseline.json
 .culebra-session.jsonl
-docs/roadmap/MASTER_PROMPT.md
+docs/roadmap/MASTER_PROMPT.md.mnc_cache/

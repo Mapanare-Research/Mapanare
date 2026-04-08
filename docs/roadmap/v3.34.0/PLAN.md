@@ -4,7 +4,7 @@
 > binary. `mapanare run hello.mn` goes through the native compiler, not Python.
 > Target: hello.mn compiles in <100ms.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Medium-Large (2-3 sessions)
 **Breaking:** No (Python bootstrap still works, just not the default path)
 **Prerequisite:** v3.33.0
