@@ -1178,6 +1178,7 @@ MN_IO_EXPORT MnString __mn_base64_decode_str(MnString data) {
     int64_t olen = (slen / 4) * 3;
     if (slen >= 1 && src[slen - 1] == '=') olen--;
     if (slen >= 2 && src[slen - 2] == '=') olen--;
+    if (olen <= 0) return __mn_str_empty();
 
     char *out = (char *)malloc((size_t)olen + 1);
     if (!out) return __mn_str_empty();
