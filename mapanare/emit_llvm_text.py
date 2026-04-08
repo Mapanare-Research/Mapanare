@@ -252,6 +252,20 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "mn_arena_create": {"nounwind"},
     "mn_arena_alloc": {"nounwind"},
     "mn_arena_destroy": {"nounwind"},
+    # I/O (v3.41.0)
+    "__mn_read_line": {"nounwind"},
+    "__mn_file_append": {"nounwind"},
+    "__mn_dir_list_strings": {"nounwind"},
+    "__mn_file_exists": {"nounwind", "readonly"},
+    "__mn_file_remove": {"nounwind"},
+    "__mn_file_size": {"nounwind", "readonly"},
+    "__mn_file_mtime": {"nounwind", "readonly"},
+    "__mn_dir_create": {"nounwind"},
+    "__mn_dir_remove": {"nounwind"},
+    "__mn_file_rename": {"nounwind"},
+    "__mn_file_copy": {"nounwind"},
+    "__mn_realpath": {"nounwind"},
+    "__mn_tmpfile_path": {"nounwind"},
 }
 
 
@@ -2140,6 +2154,43 @@ class LLVMTextEmitter:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_system", I64, [STR], [(a, STR)])
             self._put(i.dest, r, I64)
+            return
+
+        # High-level I/O builtins (v3.41.0)
+        if fn == "read_line":
+            r = self._rt("__mn_read_line", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "read_file" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_file_read_or_empty", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "write_file" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            self._rt("__mn_file_write", I64, [STR, STR], [(a0, STR), (a1, STR)])
+            self._put(i.dest, "0", I1)
+            return
+        if fn == "append_file" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            self._rt("__mn_file_append", I64, [STR, STR], [(a0, STR), (a1, STR)])
+            self._put(i.dest, "0", I1)
+            return
+        if fn == "file_exists" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_file_exists", I64, [STR], [(a, STR)])
+            tb = self._f("tb")
+            self._L(f"{tb} = icmp ne i64 {r}, 0")
+            self._put(i.dest, tb, I1)
+            return
+        if fn == "list_dir" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_dir_list_strings", LIST, [STR], [(a, STR)])
+            self._put(i.dest, r, LIST)
             return
 
         # join

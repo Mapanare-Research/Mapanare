@@ -293,6 +293,13 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "__mn_str_eprintln": VOID_TYPE,
     "__mn_system": INT_TYPE,
     "__mn_file_write": VOID_TYPE,
+    # High-level I/O builtins (v3.41.0)
+    "read_line": STRING_TYPE,
+    "read_file": STRING_TYPE,
+    "write_file": VOID_TYPE,
+    "append_file": VOID_TYPE,
+    "file_exists": TypeInfo(kind=TypeKind.BOOL),
+    "list_dir": TypeInfo(kind=TypeKind.LIST),
 }
 
 # Builtin call name mapping (Mapanare name -> Python name) for emit_python.py

@@ -1,0 +1,19 @@
+fn main() {
+    // Write a file
+    write_file("/tmp/mn_test_34.txt", "hello world")
+    // Read it back
+    pon content: String = read_file("/tmp/mn_test_34.txt")
+    print(content)
+    // Append to it
+    append_file("/tmp/mn_test_34.txt", " appended")
+    pon content2: String = read_file("/tmp/mn_test_34.txt")
+    print(content2)
+    // Check existence
+    pon ex: Bool = file_exists("/tmp/mn_test_34.txt")
+    print(str(ex))
+    pon no: Bool = file_exists("/tmp/mn_nonexistent_34.txt")
+    print(str(no))
+    // List directory
+    pon files: List<String> = list_dir("/tmp")
+    print(str(len(files)))
+}

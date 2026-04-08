@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <dirent.h>
 #ifndef _WIN32
 #include <sys/wait.h>
 #endif
@@ -1288,6 +1289,48 @@ MN_EXPORT int64_t __mn_file_copy(MnString src, MnString dst) {
 
 MN_EXPORT MnString __mn_tmpfile_path(void) {
     return __mn_str_from_cstr("/tmp/mn_tmp_XXXXXX");
+}
+
+MN_EXPORT MnString __mn_read_line(void) {
+    char buf[4096];
+    if (!fgets(buf, sizeof(buf), stdin)) return __mn_str_empty();
+    size_t len = strlen(buf);
+    if (len > 0 && buf[len - 1] == '\n') buf[--len] = '\0';
+    if (len > 0 && buf[len - 1] == '\r') buf[--len] = '\0';
+    return __mn_str_from_cstr(buf);
+}
+
+MN_EXPORT int64_t __mn_file_append(MnString path, MnString content) {
+    char *cpath = mn_to_cstr(path);
+    FILE *f = fopen(cpath, "ab");
+    __mn_free(cpath);
+    if (!f) return -1;
+    if (content.len > 0) {
+        size_t written = fwrite(mn_untag(content.data), 1, (size_t)content.len, f);
+        fclose(f);
+        return written == (size_t)content.len ? 0 : -1;
+    }
+    fclose(f);
+    return 0;
+}
+
+MN_EXPORT MnList __mn_dir_list_strings(MnString path) {
+    MnList list = __mn_list_new((int64_t)sizeof(MnString));
+    char *cpath = mn_to_cstr(path);
+    DIR *d = opendir(cpath);
+    __mn_free(cpath);
+    if (!d) return list;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.' &&
+            (ent->d_name[1] == '\0' ||
+             (ent->d_name[1] == '.' && ent->d_name[2] == '\0')))
+            continue;
+        MnString name = __mn_str_from_cstr(ent->d_name);
+        __mn_list_push(&list, &name);
+    }
+    closedir(d);
+    return list;
 }
 
 /* -----------------------------------------------------------------------

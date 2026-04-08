@@ -18,11 +18,12 @@ extern "C" fn __mn_dir_create(path: String, recursive: Int) -> Int
 extern "C" fn __mn_dir_remove(path: String) -> Int
 extern "C" fn __mn_file_rename(old_path: String, new_path: String) -> Int
 extern "C" fn __mn_file_copy(src: String, dst: String) -> Int
+extern "C" fn __mn_file_append(path: String, content: String) -> Int
+extern "C" fn __mn_dir_list_strings(path: String) -> List<String>
 extern "C" fn __mn_tmpfile_path() -> String
 extern "C" fn __mn_realpath(path: String) -> String
 extern "C" fn __mn_file_size(path: String) -> Int
 extern "C" fn __mn_file_mtime(path: String) -> Int
-// __mn_dir_list disabled — C ABI uses raw pointers, not available in native build
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -271,10 +272,16 @@ pub fn write_file(path: String, content: String) -> Result<Bool, FsError> {
     da Ok(true)
 }
 
-/// Append content to an existing file.
-/// NOTE: Disabled in native build — requires __mn_file_open ABI (raw pointers).
+/// Append content to a file, creating it if it doesn't exist.
 pub fn append_file(path: String, content: String) -> Result<Bool, FsError> {
-    da Err(new_io_error("append_file not yet available in native build"))
+    si len(path) == 0 {
+        da Err(new_invalid_path("empty file path"))
+    }
+    pon result: Int = __mn_file_append(path, content)
+    si result < 0 {
+        da Err(new_io_error("failed to append to file: " + path))
+    }
+    da Ok(true)
 }
 
 /// Check whether a path exists on the filesystem.
@@ -442,65 +449,17 @@ pub fn rmdir(path: String) -> Result<Bool, FsError> {
     da Ok(true)
 }
 
-/// List the contents of a directory.
-///
-/// The C runtime returns entries as a newline-separated string with a trailing
-/// type indicator: "name\tD" for directories, "name\tF" for files.
-/// We parse that into a list of DirEntry structs.
-pub fn list_dir(path: String) -> Result<List<DirEntry>, FsError> {
-    // NOTE: Disabled in native build — __mn_dir_list requires raw pointer ABI
-    da Err(new_io_error("list_dir not yet available in native build"))
+/// List the contents of a directory as a list of filenames.
+pub fn list_dir(path: String) -> Result<List<String>, FsError> {
+    si len(path) == 0 {
+        da Err(new_invalid_path("empty directory path"))
+    }
     pon ex: Int = __mn_file_exists(path)
     si ex == 0 {
         da Err(new_not_found("directory not found: " + path))
     }
-
-    pon raw: String = ""
-    pon mut entries: List<DirEntry> = []
-
-    si len(raw) == 0 {
-        da Ok(entries)
-    }
-
-    // Parse newline-separated entries: "name\tD\nname2\tF\n..."
-    pon mut pos: Int = 0
-    pon slen: Int = len(raw)
-
-    mien pos < slen {
-        pon remaining: String = raw.substr(pos, slen)
-        pon nl_rel: Int = remaining.find("\n")
-        pon mut line: String = ""
-        si nl_rel < 0 {
-            // Last line, no trailing newline
-            line = remaining
-            pos = slen
-        } sino {
-            line = remaining.substr(0, nl_rel)
-            pos = pos + nl_rel + 1
-        }
-
-        si len(line) > 0 {
-            // Strip trailing \r if present
-            si line.ends_with("\r") {
-                line = line.substr(0, len(line) - 1)
-            }
-            si len(line) > 0 {
-                // Look for tab separator
-                pon tab_pos: Int = line.find("\t")
-                si tab_pos >= 0 {
-                    pon entry_name: String = line.substr(0, tab_pos)
-                    pon entry_type: String = line.substr(tab_pos + 1, len(line))
-                    pon entry_is_dir: Bool = entry_type == "D"
-                    entries.push(new DirEntry { name: entry_name, is_dir: entry_is_dir })
-                } sino {
-                    // No type indicator — treat as file
-                    entries.push(new DirEntry { name: line, is_dir: false })
-                }
-            }
-        }
-    }
-
-    da Ok(entries)
+    pon names: List<String> = __mn_dir_list_strings(path)
+    da Ok(names)
 }
 
 /// Recursively list all file paths under a directory.
@@ -524,16 +483,17 @@ pub fn walk(path: String) -> List<String> {
         pon current: String = stack[stack_len - 1]
         stack = list_take(stack, stack_len - 1)
 
-        pon listing_result: Result<List<DirEntry>, FsError> = list_dir(current)
+        pon listing_result: Result<List<String>, FsError> = list_dir(current)
         match listing_result {
-            Ok(entries) => {
-                pon entry_count: Int = len(entries)
+            Ok(names) => {
+                pon entry_count: Int = len(names)
                 pon mut i: Int = 0
                 mien i < entry_count {
-                    pon entry: DirEntry = entries[i]
-                    pon full_path: String = current + "/" + entry.name
+                    pon name: String = names[i]
+                    pon full_path: String = current + "/" + name
                     result.push(full_path)
-                    si entry.is_dir {
+                    // Try listing as directory — if it works, it is one
+                    si is_dir(full_path) {
                         stack.push(full_path)
                     }
                     i = i + 1

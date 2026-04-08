@@ -7,28 +7,34 @@
 
 ---
 
-## Where We Are (v3.31.0 — Tonina)
+## Where We Are (v3.40.0 — Review Cleanup)
 
-**4 language front-ends, all self-hosted.** v3.26.0 fixed all review blockers.
-v3.27.0 built the shared transpiler framework (`transpiler.mn`). v3.28.0-v3.29.0
-ported Python and PHP transpilers to self-hosted `.mn`. v3.30.0-v3.31.0 added
-TypeScript and Go transpilers. The self-hosted compiler is now 16 modules,
-~20,000+ lines of Mapanare.
+**The compiler engineering is production-quality (9.76/10).** The self-hosted
+compiler is 15,500+ lines across 11 core modules with fixed-point verification
+(stage4 == stage3). 33 golden tests, 30/33 valgrind-clean, 4,465+ pytest tests.
+Seven independent reviewers gave unanimous PASS with zero CRITICAL/HIGH issues.
 
-`mapanare compile {.py,.php,.ts,.go}` all produce native binaries through
-self-hosted transpiler modules using the shared framework.
+**But you can't build real apps yet.** The C runtime has TCP, TLS, crypto, regex,
+and extended file I/O in `mapanare_io.c` (49KB of code) — but it's not linked
+into native binaries. There's no `read_line()`. Agents only work in the Python
+interpreter. The package manager is scaffolding. Most examples don't run.
 
-**Next:** v4.0.0 is the production quality gate — pure quality, no new features.
+**Next:** v3.41.0–v3.45.0 bridge the gap from "compiler works" to "language is
+usable." v4.0.0 is when someone who isn't the compiler author can build a real
+program.
 
-The self-hosted compiler is 15,000+ lines across 11 modules.
+### Path to v4.0.0
 
-**35 stdlib modules** compile natively. **32 golden tests** cover all features
-including generics, impl dispatch, traits, generic enums, and generic impl
-blocks. **4465+ pytest tests** pass. **104 native assertions** across 7 test
-modules. Fixed point maintained (stage3 == stage4).
+| Version | Theme | What It Enables |
+|---------|-------|-----------------|
+| **v3.41.0** | IO Foundation | Link mapanare_io.c, add `read_line()`, fix file I/O |
+| **v3.42.0** | Network Native | TCP/TLS/HTTP client, crypto, regex from native binaries |
+| **v3.43.0** | Agent Runtime | spawn/send/sync with real OS threads |
+| **v3.44.0** | Real Examples | ALL examples run, transpile .py/.php end-to-end |
+| **v3.45.0** | Package Manager | `mapanare install` works, error recovery, docs updated |
+| **v4.0.0** | Production | Build real programs. Install → write → compile → run. |
 
-**No Python required to build.** `bash scripts/build_from_seed.sh` bootstraps
-from the seed binary.
+See each plan: `docs/roadmap/v3.41.0/PLAN.md` through `docs/roadmap/v4.0.0/PLAN.md`.
 
 ### What works today
 

@@ -114,6 +114,8 @@ jobs:
             runtime/native/mapanare_core.c \
             runtime/native/mapanare_runtime.c \
             -o test_c_runtime
+          gcc -c -O2 -g -Wall -Wextra -I runtime/native/ \
+            runtime/native/mapanare_io.c -o /tmp/mapanare_io.o
           ./test_c_runtime
 
       - name: Compile and run with AddressSanitizer

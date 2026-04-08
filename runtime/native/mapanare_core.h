@@ -231,6 +231,45 @@ MN_EXPORT MnString __mn_file_read_or_empty(MnString path);
 /** Write a string to a file. Returns 0 on success, -1 on error. */
 MN_EXPORT int64_t __mn_file_write(MnString path, MnString content);
 
+/** Append a string to a file. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_file_append(MnString path, MnString content);
+
+/** Read one line from stdin (strips trailing newline). */
+MN_EXPORT MnString __mn_read_line(void);
+
+/** List directory entries as a List<String> (skips . and ..). */
+MN_EXPORT MnList __mn_dir_list_strings(MnString path);
+
+/** Check if a file exists. Returns 1 if it does, 0 otherwise. */
+MN_EXPORT int64_t __mn_file_exists(MnString path);
+
+/** Remove a file. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_file_remove(MnString path);
+
+/** Get file size in bytes. Returns -1 on error. */
+MN_EXPORT int64_t __mn_file_size(MnString path);
+
+/** Get file modification time (epoch seconds). Returns -1 on error. */
+MN_EXPORT int64_t __mn_file_mtime(MnString path);
+
+/** Create a directory. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_dir_create(MnString path, int64_t recursive);
+
+/** Remove a directory. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_dir_remove(MnString path);
+
+/** Rename a file. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_file_rename(MnString old_path, MnString new_path);
+
+/** Copy a file. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_file_copy(MnString src, MnString dst);
+
+/** Resolve real path. Returns empty string on error. */
+MN_EXPORT MnString __mn_realpath(MnString path);
+
+/** Generate a temporary file path. */
+MN_EXPORT MnString __mn_tmpfile_path(void);
+
 /* -----------------------------------------------------------------------
  * Memory
  * ----------------------------------------------------------------------- */

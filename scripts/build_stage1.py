@@ -5,7 +5,7 @@ Pipeline:
     1. Compile mapanare/self/*.mn (10 modules) → LLVM IR via Python bootstrap
     2. Post-process IR: make compile() externally visible
     3. Compile IR → native object code
-    4. Compile C runtime (mapanare_core.c)
+    4. Compile C runtime (mapanare_core.c + mapanare_io.c)
     5. Compile C main wrapper (mnc_main.c)
     6. Link: main wrapper + compiler object + C runtime → mnc-stage1
 """
@@ -92,16 +92,20 @@ def build() -> pathlib.Path:
     print("[4/6] Compiling C runtime ...")
     core_c = NATIVE_DIR / "mapanare_core.c"
     core_o = SELF_DIR / "mapanare_core.o"
+    io_c = NATIVE_DIR / "mapanare_io.c"
+    io_o = SELF_DIR / "mapanare_io.o"
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
     profile_flags = ["-DMN_PROFILE_MEM"] if "--profile-mem" in sys.argv else []
+    c_base_flags = [CC, "-c", "-O2", "-g", "-fPIC", "-Wall", "-Wextra", "-I", str(NATIVE_DIR)]
     subprocess.run(
-        [CC, "-c", "-O2", "-g", "-fPIC", "-Wall", "-Wextra", "-Werror", "-I", str(NATIVE_DIR)]
-        + asan_flags
-        + profile_flags
-        + [str(core_c), "-o", str(core_o)],
+        c_base_flags + ["-Werror"] + asan_flags + profile_flags + [str(core_c), "-o", str(core_o)],
         check=True,
     )
-    print(f"  Runtime: {core_o}")
+    subprocess.run(
+        c_base_flags + asan_flags + [str(io_c), "-o", str(io_o)],
+        check=True,
+    )
+    print(f"  Runtime: {core_o}, {io_o}")
 
     # 5. Compile main wrapper
     print("[5/6] Compiling C main wrapper ...")
@@ -138,6 +142,7 @@ def build() -> pathlib.Path:
             str(main_o),
             str(obj_path),
             str(core_o),
+            str(io_o),
         ]
         + link_flags
         + asan_flags
@@ -147,7 +152,7 @@ def build() -> pathlib.Path:
     print(f"  Binary: {binary} ({binary.stat().st_size} bytes)")
 
     # Cleanup intermediate .o files
-    for f in [main_o, core_o]:
+    for f in [main_o, core_o, io_o]:
         if f.exists():
             f.unlink()
 

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.41.0] - 2026-04-08
+
+### Added
+
+- `read_line()` builtin — read one line from stdin (strips newline)
+- `read_file()`, `write_file()`, `append_file()`, `file_exists()`, `list_dir()` builtins
+- `__mn_read_line`, `__mn_file_append`, `__mn_dir_list_strings` C runtime functions
+- `mapanare_io.c` linked into mnc-stage1 (TCP, TLS, crypto, regex symbols available)
+- Golden tests: `34_file_io.mn`, `35_stdin.mn` (35/35 pass)
+- 13 new I/O function entries in `_RUNTIME_FN_ATTRS` (LLVM emitter)
+
+### Changed
+
+- `stdlib/fs.mn`: `append_file()` and `list_dir()` now functional (were disabled stubs)
+- `list_dir()` returns `List<String>` instead of `List<DirEntry>` (simpler ABI)
+- `build_stage1.py`: compiles and links `mapanare_io.o` alongside `mapanare_core.o`
+- Self-hosted `semantic.mn`: registers all 6 new I/O builtins
+
+### Fixed
+
+- CI native job: `mapanare_io.c` now compiled in CI pipeline
+
 ## [3.40.0] - 2026-04-08
 
 ### Fixed
@@ -933,7 +955,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.39.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.41.0...HEAD
+[3.41.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.40.0...v3.41.0
+[3.40.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.39.0...v3.40.0
 [3.39.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.38.0...v3.39.0
 [3.38.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.37.0...v3.38.0
 [3.37.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.36.0...v3.37.0

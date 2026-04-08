@@ -141,6 +141,13 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "__mn_str_eprintln" { return true }
     if name == "__mn_system" { return true }
     if name == "__mn_file_write" { return true }
+    // High-level I/O builtins (v3.41.0)
+    if name == "read_line" { return true }
+    if name == "read_file" { return true }
+    if name == "write_file" { return true }
+    if name == "append_file" { return true }
+    if name == "file_exists" { return true }
+    if name == "list_dir" { return true }
     return false
 }
 
@@ -161,6 +168,13 @@ fn builtin_return_type(name: String) -> String {
     if name == "chr" { return "String" }
     if name == "join" { return "String" }
     if name == "typeof" { return "String" }
+    // High-level I/O builtins (v3.41.0)
+    if name == "read_line" { return "String" }
+    if name == "read_file" { return "String" }
+    if name == "write_file" { return "Void" }
+    if name == "append_file" { return "Void" }
+    if name == "file_exists" { return "Bool" }
+    if name == "list_dir" { return "List" }
     return "Void"
 }
 
@@ -1748,6 +1762,20 @@ fn register_builtins(st: SemState) -> SemState {
     st2 = define_in_scope(st2, "__mn_system", system_sym)
     let fwrite_sym: Symbol = new_symbol("__mn_file_write", "function", make_builtin_fn_type(void_type()), false)
     st2 = define_in_scope(st2, "__mn_file_write", fwrite_sym)
+
+    // High-level I/O builtins (v3.41.0)
+    let readline_sym: Symbol = new_symbol("read_line", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "read_line", readline_sym)
+    let readfile_sym: Symbol = new_symbol("read_file", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "read_file", readfile_sym)
+    let writefile_sym: Symbol = new_symbol("write_file", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "write_file", writefile_sym)
+    let appendfile_sym: Symbol = new_symbol("append_file", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "append_file", appendfile_sym)
+    let fileexists_sym: Symbol = new_symbol("file_exists", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "file_exists", fileexists_sym)
+    let listdir_sym: Symbol = new_symbol("list_dir", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "list_dir", listdir_sym)
 
     return st2
 }
