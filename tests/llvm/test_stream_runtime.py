@@ -339,6 +339,8 @@ class TestStreamFilter:
             return 1 if val % 2 == 0 else 0
 
         pred_cb = FILTER_FN_TYPE(is_even)
+        # prevent GC of callback during collect (segfaults on macOS ARM64)
+        _prevent_gc = [pred_cb]  # noqa: F841
         filtered = _fn(lib, "__mn_stream_filter")(stream, pred_cb, None)
         result = _fn(lib, "__mn_stream_collect")(filtered, 8)
         assert result.len == 0
