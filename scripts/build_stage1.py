@@ -50,6 +50,7 @@ def build() -> pathlib.Path:
             opt_level=2,
             emitter_backend=emitter,
             skip_check="--skip-check" in sys.argv or "--no-check" in sys.argv,
+            no_drop_glue=True,
         )
 
         # 2. Post-process: make compile() and format_error() externally visible

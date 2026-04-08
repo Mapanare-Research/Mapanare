@@ -264,7 +264,9 @@ class LLVMTextEmitter:
         target_triple: str | None = None,
         data_layout: str | None = None,
         debug: bool = False,
+        no_drop_glue: bool = False,
     ) -> None:
+        self._no_drop_glue = no_drop_glue
         self._name = module_name
         self._triple = target_triple or "x86_64-pc-linux-gnu"
         self._layout = data_layout or (
@@ -890,6 +892,8 @@ class LLVMTextEmitter:
         For each tracked string, loads the {ptr, i64} value, extracts the data
         pointer, and frees it unless it's the same pointer being returned.
         """
+        if self._no_drop_glue:
+            return
         has_any = (
             self._local_strings
             or self._local_closures
@@ -906,15 +910,43 @@ class LLVMTextEmitter:
 
         # Extract returned string's data pointer (to avoid freeing it)
         ret_ptr: str | None = None
+        ret_str_ptrs: list[str] = []
         if ret_val and ret_ty == STR:
             ret_ptr = self._f("ret.ptr")
             self._L(f"{ret_ptr} = extractvalue {{ptr, i64}} {ret_val}, 0")
+            ret_str_ptrs.append(ret_ptr)
+
+        # Extract string data pointers from returned struct fields
+        if ret_val and ret_ty != STR and ret_ty.startswith("{"):
+            sn_s = self._struct_name_for_llvm_type(ret_ty)
+            if sn_s and sn_s in self._structs:
+                for idx, (_, ft) in enumerate(self._structs[sn_s]):
+                    if ft == STR:
+                        sf = self._f("ret.ssf")
+                        self._L(f"{sf} = extractvalue {ret_ty} {ret_val}, {idx}")
+                        sp_ret = self._f("ret.ssp")
+                        self._L(f"{sp_ret} = extractvalue {{ptr, i64}} {sf}, 0")
+                        ret_str_ptrs.append(sp_ret)
 
         # Extract returned list's data pointer (to avoid freeing it)
         ret_list_ptr: str | None = None
+        ret_list_ptrs: list[str] = []
         if ret_val and ret_ty == LIST:
             ret_list_ptr = self._f("ret.lp")
             self._L(f"{ret_list_ptr} = extractvalue {LIST} {ret_val}, 0")
+            ret_list_ptrs.append(ret_list_ptr)
+
+        # Extract list data pointers from returned struct fields (avoid freeing them)
+        if ret_val and ret_ty != LIST and ret_ty.startswith("{"):
+            sn = self._struct_name_for_llvm_type(ret_ty)
+            if sn and sn in self._structs:
+                for idx, (_, ft) in enumerate(self._structs[sn]):
+                    if ft == LIST:
+                        lf = self._f("ret.slf")
+                        self._L(f"{lf} = extractvalue {ret_ty} {ret_val}, {idx}")
+                        lp = self._f("ret.slp")
+                        self._L(f"{lp} = extractvalue {LIST} {lf}, 0")
+                        ret_list_ptrs.append(lp)
 
         # Extract returned closure's env pointer (to avoid freeing it)
         ret_env: str | None = None
@@ -938,14 +970,15 @@ class LLVMTextEmitter:
             # check block: compare with return pointer if applicable
             self._blk[free_lbl] = []
             self._cb = free_lbl
-            if ret_ptr:
-                same = self._f("drop.same")
-                self._L(f"{same} = icmp eq ptr {sp}, {ret_ptr}")
-                do_free_lbl = f"drop.free.{self._c}"
-                self._c += 1
-                self._L(f"br i1 {same}, label %{skip_lbl}, label %{do_free_lbl}")
-                self._blk[do_free_lbl] = []
-                self._cb = do_free_lbl
+            if ret_str_ptrs:
+                for rsp in ret_str_ptrs:
+                    same = self._f("drop.same")
+                    self._L(f"{same} = icmp eq ptr {sp}, {rsp}")
+                    next_check = f"drop.snext.{self._c}"
+                    self._c += 1
+                    self._L(f"br i1 {same}, label %{skip_lbl}, label %{next_check}")
+                    self._blk[next_check] = []
+                    self._cb = next_check
             self._L(f"call void @__mn_str_free({{ptr, i64}} {sv})")
             self._L(f"br label %{skip_lbl}")
 
@@ -1025,14 +1058,18 @@ class LLVMTextEmitter:
 
             self._blk[check_lbl] = []
             self._cb = check_lbl
-            if ret_list_ptr:
-                lsame = self._f("drop.lsame")
-                self._L(f"{lsame} = icmp eq ptr {lp}, {ret_list_ptr}")
-                do_free_lbl = f"drop.lfree.{self._c}"
-                self._c += 1
-                self._L(f"br i1 {lsame}, label %{skip_lbl}, label %{do_free_lbl}")
-                self._blk[do_free_lbl] = []
-                self._cb = do_free_lbl
+            if ret_list_ptrs:
+                # Check if this list's data pointer matches ANY returned list
+                cur_lbl = check_lbl
+                for rlp in ret_list_ptrs:
+                    lsame = self._f("drop.lsame")
+                    self._L(f"{lsame} = icmp eq ptr {lp}, {rlp}")
+                    next_check = f"drop.lnext.{self._c}"
+                    self._c += 1
+                    self._L(f"br i1 {lsame}, label %{skip_lbl}, label %{next_check}")
+                    self._blk[next_check] = []
+                    self._cb = next_check
+                    cur_lbl = next_check
             # Pass the variable's alloca directly to __mn_list_free
             self._L(f"call void @__mn_list_free(ptr {addr})")
             self._L(f"br label %{skip_lbl}")

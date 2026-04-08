@@ -73,6 +73,10 @@ jobs:
         if: success()
         run: python scripts/ir_doctor.py stage2 --timeout 30
 
+      - name: Startup benchmark
+        if: success()
+        run: bash tests/bench/bench_startup.sh --gate
+
   # ---------------------------------------------------------------------------
   # Native bootstrap: build from seed binary, no Python
   # ---------------------------------------------------------------------------

@@ -86,6 +86,20 @@ fn basename_of(path: String) -> String {
     return path
 }
 
+// Extract file extension: "hello.py" -> ".py", "foo.mn" -> ".mn"
+fn file_extension(filename: String) -> String {
+    let flen: Int = len(filename)
+    let mut i: Int = flen - 1
+    for _ in 0..20 {
+        if i < 0 { return "" }
+        if filename.substr(i, 1) == "." {
+            return filename.substr(i, flen - i)
+        }
+        i = i - 1
+    }
+    return ""
+}
+
 // Try a single directory + relative path combination.
 // Resolution order: <rel>.mn, <rel>/mod.mn, <rel>/<basename>.mn
 fn try_resolve(dir: String, rel: String) -> String {
@@ -323,6 +337,16 @@ fn rename_main(ir: String) -> String {
     return ir.replace("@main(", "@mn_main(")
 }
 
+// Link an object file with the Mapanare runtime.
+// Tries precompiled libmapanare_rt.a first, falls back to C source.
+fn link_with_runtime(obj_path: String, out_path: String) -> Int {
+    let link_pre: String = "gcc " + obj_path + " runtime/native/libmapanare_rt.a -o " + out_path + " -no-pie -rdynamic -lm -lpthread 2>/dev/null"
+    let r: Int = __mn_system(link_pre)
+    if r == 0 { return 0 }
+    let link_src: String = "gcc " + obj_path + " runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_path + " -no-pie -rdynamic -lm -lpthread 2>/dev/null"
+    return __mn_system(link_src)
+}
+
 fn run_test(filename: String) {
     let source: String = __mn_file_read_or_empty(filename)
     if len(source) == 0 {
@@ -351,7 +375,7 @@ fn run_test(filename: String) {
     }
 
     // Link with runtime
-    let r2: Int = __mn_system("gcc /tmp/mnc_test.o runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o /tmp/mnc_test -no-pie -rdynamic -lm -lpthread 2>/dev/null")
+    let r2: Int = link_with_runtime("/tmp/mnc_test.o", "/tmp/mnc_test")
     if r2 != 0 {
         __mn_str_eprint("FAIL ")
         __mn_str_eprint(filename)
@@ -410,8 +434,7 @@ fn run_build(filename: String) {
     }
 
     // Link
-    let link_cmd: String = "gcc /tmp/mnc_build.o runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_name + " -no-pie -rdynamic -lm -lpthread"
-    let r2: Int = __mn_system(link_cmd)
+    let r2: Int = link_with_runtime("/tmp/mnc_build.o", out_name)
     if r2 != 0 {
         __mn_str_eprint("error: link failed\n")
         __mn_exit(1)
@@ -439,16 +462,21 @@ fn run_program(filename: String) {
     }
     __mn_file_write("/tmp/mnc_run.ll", rename_main(cr.ir_text))
 
-    let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_run.ll -o /tmp/mnc_run.o 2>/dev/null")
+    // Single-step compile+link via clang (faster than separate clang + gcc)
+    let compile_cmd: String = "clang -O0 /tmp/mnc_run.ll runtime/native/libmapanare_rt.a -o /tmp/mnc_run -lm -lpthread 2>/dev/null"
+    let r1: Int = __mn_system(compile_cmd)
     if r1 != 0 {
-        __mn_str_eprint("error: clang failed\n")
-        __mn_exit(1)
-    }
-
-    let r2: Int = __mn_system("gcc /tmp/mnc_run.o runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o /tmp/mnc_run -no-pie -rdynamic -lm -lpthread 2>/dev/null")
-    if r2 != 0 {
-        __mn_str_eprint("error: link failed\n")
-        __mn_exit(1)
+        // Fall back to two-step compile+link
+        let r1b: Int = __mn_system("clang -c -O0 /tmp/mnc_run.ll -o /tmp/mnc_run.o 2>/dev/null")
+        if r1b != 0 {
+            __mn_str_eprint("error: clang failed\n")
+            __mn_exit(1)
+        }
+        let r2: Int = link_with_runtime("/tmp/mnc_run.o", "/tmp/mnc_run")
+        if r2 != 0 {
+            __mn_str_eprint("error: link failed\n")
+            __mn_exit(1)
+        }
     }
 
     // Build command with forwarded args: /tmp/mnc_run [args...]
@@ -468,6 +496,110 @@ fn run_program(filename: String) {
 }
 
 // ---------------------------------------------------------------------------
+// compile — transpile foreign source (.py/.php/.ts/.go) then compile to native.
+// For non-.mn files, shells out to the transpiler binary (mnc-transpile) or
+// falls back to the Python CLI for transpilation, then compiles the .mn output.
+// ---------------------------------------------------------------------------
+
+fn run_compile(filename: String) {
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) == 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+
+    let ext: String = file_extension(filename)
+
+    // .mn files compile directly
+    if ext == ".mn" {
+        let cr: CompileResult = compile(source, filename)
+        if !cr.success {
+            __mn_str_eprint("error: compile failed\n")
+            __mn_exit(1)
+        }
+        let mut out_name: String = "a.out"
+        if __mn_argc() >= 4 {
+            let flag: String = __mn_argv(3)
+            if flag == "-o" && __mn_argc() >= 5 {
+                out_name = __mn_argv(4)
+            }
+        }
+        __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr.ir_text))
+        let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o 2>/dev/null")
+        if r1 != 0 {
+            __mn_str_eprint("error: clang failed\n")
+            __mn_exit(1)
+        }
+        let r2: Int = link_with_runtime("/tmp/mnc_compile.o", out_name)
+        if r2 != 0 {
+            __mn_str_eprint("error: link failed\n")
+            __mn_exit(1)
+        }
+        print("compiled: " + out_name)
+        return
+    }
+
+    // Foreign source: transpile via mapanare CLI, then compile the .mn result
+    let mut ok: Bool = false
+    if ext == ".py" { ok = true }
+    if ext == ".php" { ok = true }
+    if ext == ".ts" { ok = true }
+    if ext == ".go" { ok = true }
+    if !ok {
+        __mn_str_eprint("error: unsupported file type '")
+        __mn_str_eprint(ext)
+        __mn_str_eprint("' (supported: .mn, .py, .php, .ts, .go)\n")
+        __mn_exit(1)
+    }
+
+    // Transpile to .mn via the Python CLI (mapanare transpile <file> -o /tmp/mnc_transpiled.mn)
+    let transpile_cmd: String = "mapanare transpile " + filename + " -o /tmp/mnc_transpiled.mn 2>/dev/null"
+    let rt: Int = __mn_system(transpile_cmd)
+    if rt != 0 {
+        __mn_str_eprint("error: transpilation failed for '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+
+    // Now compile the transpiled .mn source
+    let mn_source: String = __mn_file_read_or_empty("/tmp/mnc_transpiled.mn")
+    if len(mn_source) == 0 {
+        __mn_str_eprint("error: transpiler produced empty output\n")
+        __mn_exit(1)
+    }
+
+    let cr2: CompileResult = compile(mn_source, filename)
+    if !cr2.success {
+        __mn_str_eprint("error: compile failed\n")
+        __mn_exit(1)
+    }
+
+    let mut out_name2: String = "a.out"
+    if __mn_argc() >= 4 {
+        let flag2: String = __mn_argv(3)
+        if flag2 == "-o" && __mn_argc() >= 5 {
+            out_name2 = __mn_argv(4)
+        }
+    }
+
+    __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr2.ir_text))
+    let r3: Int = __mn_system("clang -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o 2>/dev/null")
+    if r3 != 0 {
+        __mn_str_eprint("error: clang failed\n")
+        __mn_exit(1)
+    }
+    let r4: Int = link_with_runtime("/tmp/mnc_compile.o", out_name2)
+    if r4 != 0 {
+        __mn_str_eprint("error: link failed\n")
+        __mn_exit(1)
+    }
+    print("compiled: " + out_name2)
+}
+
+// ---------------------------------------------------------------------------
 // mn_main — native compiler entry point (called from C shim)
 //
 // Reads source file from argv[1], compiles to LLVM IR, prints to stdout.
@@ -480,6 +612,8 @@ fn mn_main() {
         __mn_str_eprint("       mnc test <file.mn>\n")
         __mn_str_eprint("       mnc build <file.mn> [-o output]\n")
         __mn_str_eprint("       mnc run <file.mn> [args...]\n")
+        __mn_str_eprint("       mnc compile <file> [-o output]\n")
+        __mn_str_eprint("       mnc version\n")
         __mn_exit(1)
     }
     let arg1: String = __mn_argv(1)
@@ -507,6 +641,14 @@ fn mn_main() {
             __mn_exit(1)
         }
         run_program(__mn_argv(2))
+        return
+    }
+    if arg1 == "compile" {
+        if __mn_argc() < 3 {
+            __mn_str_eprint("usage: mnc compile <file> [-o output]\n")
+            __mn_exit(1)
+        }
+        run_compile(__mn_argv(2))
         return
     }
     if arg1 == "version" || arg1 == "--version" {
