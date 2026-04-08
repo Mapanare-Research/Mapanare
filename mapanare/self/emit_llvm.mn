@@ -2674,10 +2674,14 @@ fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
         return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
     }
     if arg.ty.kind == "bool" {
-        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
+        let cnt_b: String = str(s.counter)
+        s.counter = s.counter + 1
+        let bext: String = "%bext" + cnt_b
+        s = emit_line(s, "  " + bext + " = zext i1 " + an + " to i64")
+        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + bext + ")")
     }
-    // Unknown type: assume string
-    return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
+    // Unknown type: default to integer (impl methods return i64)
+    return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
 }
 
 fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
@@ -2698,10 +2702,14 @@ fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
         return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
     }
     if arg.ty.kind == "bool" {
-        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
+        let cnt_bp: String = str(s.counter)
+        s.counter = s.counter + 1
+        let bextp: String = "%bext" + cnt_bp
+        s = emit_line(s, "  " + bextp + " = zext i1 " + an + " to i64")
+        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + bextp + ")")
     }
-    // Unknown type: assume string (common from str()/toString() calls)
-    return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
+    // Unknown type: default to integer (impl methods return i64)
+    return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
 }
 
 fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
