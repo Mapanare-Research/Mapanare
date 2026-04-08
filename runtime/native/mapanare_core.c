@@ -858,18 +858,30 @@ static void mn_list_grow(MnList *list) {
     mn_grow_count++;
 #endif
     int64_t new_cap = list->cap > 0 ? list->cap * 2 : MN_LIST_INITIAL_CAP;
-    /* Always allocate a fresh buffer instead of realloc.  Struct copies
-     * share the same data pointer without refcount management (bitwise
-     * copy).  realloc would free the old pointer, invalidating the other
-     * copy's data.  Allocating new + memcpy leaves the old buffer valid
-     * for any aliased copies (they keep their original len/data view). */
+    /* Allocate a fresh buffer instead of realloc.  Struct copies may share
+     * the same data pointer (bitwise copy without refcount).  realloc would
+     * free the old pointer, invalidating the alias.  New + memcpy is safe:
+     * if sole owner we free old; if shared the alias keeps valid data. */
+    char *old_data = list->data;
+    int old_managed = list->managed;
     char *new_data = mn_list_alloc_buf(new_cap, list->elem_size);
-    if (list->data && list->len > 0) {
-        memcpy(new_data, list->data, (size_t)(list->len * list->elem_size));
+    if (old_data && list->len > 0) {
+        memcpy(new_data, old_data, (size_t)(list->len * list->elem_size));
     }
     list->data = new_data;
     list->managed = 1;
     list->cap = new_cap;
+    /* Free the old buffer if we're the sole owner.  If shared (refcount > 1),
+     * decrement but don't free — the other copy still references it. */
+    if (old_data && old_managed) {
+        int64_t *rc = ((int64_t *)old_data) - 2;
+        if (rc[0] == MN_COW_MAGIC) {
+            int64_t prev = __atomic_fetch_sub(&rc[1], 1, __ATOMIC_ACQ_REL);
+            if (prev <= 1) {
+                __mn_free(((char *)old_data) - MN_LIST_HEADER_SIZE);
+            }
+        }
+    }
 }
 
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {

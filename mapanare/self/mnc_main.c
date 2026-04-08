@@ -88,11 +88,6 @@ extern CompileResult compile_and_print(MnString source, MnString filename);
  * main
  * ----------------------------------------------------------------------- */
 
-static void print_usage(const char *prog) {
-    fprintf(stderr, "Usage: %s <file.mn>\n", prog);
-    fprintf(stderr, "  Compiles a Mapanare source file and prints LLVM IR to stdout.\n");
-}
-
 extern void __mn_argv_init(int argc, char **argv);
 extern void mn_main(void);
 

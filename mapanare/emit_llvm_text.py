@@ -987,9 +987,7 @@ class LLVMTextEmitter:
         # Walk the return type recursively and extractvalue every ptr-typed leaf.
         # Always extract when we have param list fields or list vars to compare.
         ret_ptr_fields: list[str] = []
-        need_ret_ptrs = (
-            self._local_boxed or self._local_strings or self._list_vars
-        )
+        need_ret_ptrs = self._local_boxed or self._local_strings or self._list_vars
         if ret_val and ret_ty.startswith("{") and need_ret_ptrs:
             self._extract_ret_ptrs(ret_val, ret_ty, ret_ptr_fields)
 
@@ -1219,9 +1217,7 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-    def _extract_ret_ptrs(
-        self, val: str, ty: str, out: list[str], depth: int = 0
-    ) -> None:
+    def _extract_ret_ptrs(self, val: str, ty: str, out: list[str], depth: int = 0) -> None:
         """Recursively extract all ptr-typed fields from a return value.
 
         Used to prevent drop glue from freeing boxed enum payloads that are

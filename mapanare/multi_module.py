@@ -674,8 +674,7 @@ def compile_multi_module_mir(
         mir_opt_level = MIROptLevel(opt_level)
         mir_module, _ = mir_optimize(mir_module, mir_opt_level)
         target = get_target(target_name)
-        return _emit_with_backend(
-            emitter_backend, module_name, target, mir_module, debug        )
+        return _emit_with_backend(emitter_backend, module_name, target, mir_module, debug)
 
     # 3. Lower each dependency, rename symbols.
     #   Dependencies are in topological order, so when we lower module B that
@@ -856,5 +855,4 @@ def compile_multi_module_mir(
 
     # 8. Emit LLVM IR
     target = get_target(target_name)
-    return _emit_with_backend(
-        emitter_backend, root_module_name, target, root_mir, debug    )
+    return _emit_with_backend(emitter_backend, root_module_name, target, root_mir, debug)

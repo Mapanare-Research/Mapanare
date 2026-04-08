@@ -1957,8 +1957,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     """CLI entry point."""
     print(
-        "[dev mode] Using Python bootstrap compiler. "
-        "For native speed: mnc run <file.mn>",
+        "[dev mode] Using Python bootstrap compiler. " "For native speed: mnc run <file.mn>",
         file=sys.stderr,
     )
     parser = build_parser()
