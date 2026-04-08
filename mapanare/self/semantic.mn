@@ -335,8 +335,27 @@ fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool {
     if b.name == "<unknown>" { return true }
     if a.is_function {
         if b.is_function {
-            // Compare param counts and return types
+            // Compare param counts
             if len(a.param_types) != len(b.param_types) { return false }
+            // Compare parameter types pairwise
+            let mut j: Int = 0
+            for _ in 0..200 {
+                if j >= len(a.param_types) { break }
+                if types_compatible(a.param_types[j], b.param_types[j]) == false { return false }
+                j = j + 1
+            }
+            // Compare return types
+            match a.return_type {
+                Some(a_ret) => {
+                    match b.return_type {
+                        Some(b_ret) => {
+                            if types_compatible(a_ret, b_ret) == false { return false }
+                        },
+                        _ => {}
+                    }
+                },
+                _ => {}
+            }
             return true
         }
         return false

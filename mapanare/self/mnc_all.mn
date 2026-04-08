@@ -3972,8 +3972,27 @@ fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool {
     if b.name == "<unknown>" { return true }
     if a.is_function {
         if b.is_function {
-            // Compare param counts and return types
+            // Compare param counts
             if len(a.param_types) != len(b.param_types) { return false }
+            // Compare parameter types pairwise
+            let mut j: Int = 0
+            for _ in 0..200 {
+                if j >= len(a.param_types) { break }
+                if types_compatible(a.param_types[j], b.param_types[j]) == false { return false }
+                j = j + 1
+            }
+            // Compare return types
+            match a.return_type {
+                Some(a_ret) => {
+                    match b.return_type {
+                        Some(b_ret) => {
+                            if types_compatible(a_ret, b_ret) == false { return false }
+                        },
+                        _ => {}
+                    }
+                },
+                _ => {}
+            }
             return true
         }
         return false
@@ -10551,10 +10570,6 @@ fn llvm_tensor_type(elem_ty: String) -> String {
     return "{ ptr, i64, ptr, i64 }"
 }
 
-fn llvm_list_type(elem_ty: String) -> String {
-    return "{ ptr, i64, i64, i64 }"
-}
-
 fn llvm_map_type() -> String {
     return "{ ptr, i64 }"
 }
@@ -14057,22 +14072,69 @@ fn translate_type(source_type: String, mappings: List<TypeMapping>) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Local type inference from initializer expressions
+// Shared character classification for transpiler front-ends
 // ---------------------------------------------------------------------------
 
-fn is_digit(c: String) -> Bool {
-    if c == "0" { return true }
-    if c == "1" { return true }
-    if c == "2" { return true }
-    if c == "3" { return true }
-    if c == "4" { return true }
-    if c == "5" { return true }
-    if c == "6" { return true }
-    if c == "7" { return true }
-    if c == "8" { return true }
-    if c == "9" { return true }
+fn is_transpiler_alpha(c: String) -> Bool {
+    if c == "_" { return true }
+    if c == "a" { return true }
+    if c == "b" { return true }
+    if c == "c" { return true }
+    if c == "d" { return true }
+    if c == "e" { return true }
+    if c == "f" { return true }
+    if c == "g" { return true }
+    if c == "h" { return true }
+    if c == "i" { return true }
+    if c == "j" { return true }
+    if c == "k" { return true }
+    if c == "l" { return true }
+    if c == "m" { return true }
+    if c == "n" { return true }
+    if c == "o" { return true }
+    if c == "p" { return true }
+    if c == "q" { return true }
+    if c == "r" { return true }
+    if c == "s" { return true }
+    if c == "t" { return true }
+    if c == "u" { return true }
+    if c == "v" { return true }
+    if c == "w" { return true }
+    if c == "x" { return true }
+    if c == "y" { return true }
+    if c == "z" { return true }
+    if c == "A" { return true }
+    if c == "B" { return true }
+    if c == "C" { return true }
+    if c == "D" { return true }
+    if c == "E" { return true }
+    if c == "F" { return true }
+    if c == "G" { return true }
+    if c == "H" { return true }
+    if c == "I" { return true }
+    if c == "J" { return true }
+    if c == "K" { return true }
+    if c == "L" { return true }
+    if c == "M" { return true }
+    if c == "N" { return true }
+    if c == "O" { return true }
+    if c == "P" { return true }
+    if c == "Q" { return true }
+    if c == "R" { return true }
+    if c == "S" { return true }
+    if c == "T" { return true }
+    if c == "U" { return true }
+    if c == "V" { return true }
+    if c == "W" { return true }
+    if c == "X" { return true }
+    if c == "Y" { return true }
+    if c == "Z" { return true }
     return false
 }
+
+// ---------------------------------------------------------------------------
+// Local type inference from initializer expressions
+// ---------------------------------------------------------------------------
 
 fn infer_local_type(initializer: String) -> String {
     if len(initializer) == 0 {
@@ -14614,60 +14676,7 @@ fn is_py_keyword(s: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 fn is_py_alpha(c: String) -> Bool {
-    if c == "_" { return true }
-    if c == "a" { return true }
-    if c == "b" { return true }
-    if c == "c" { return true }
-    if c == "d" { return true }
-    if c == "e" { return true }
-    if c == "f" { return true }
-    if c == "g" { return true }
-    if c == "h" { return true }
-    if c == "i" { return true }
-    if c == "j" { return true }
-    if c == "k" { return true }
-    if c == "l" { return true }
-    if c == "m" { return true }
-    if c == "n" { return true }
-    if c == "o" { return true }
-    if c == "p" { return true }
-    if c == "q" { return true }
-    if c == "r" { return true }
-    if c == "s" { return true }
-    if c == "t" { return true }
-    if c == "u" { return true }
-    if c == "v" { return true }
-    if c == "w" { return true }
-    if c == "x" { return true }
-    if c == "y" { return true }
-    if c == "z" { return true }
-    if c == "A" { return true }
-    if c == "B" { return true }
-    if c == "C" { return true }
-    if c == "D" { return true }
-    if c == "E" { return true }
-    if c == "F" { return true }
-    if c == "G" { return true }
-    if c == "H" { return true }
-    if c == "I" { return true }
-    if c == "J" { return true }
-    if c == "K" { return true }
-    if c == "L" { return true }
-    if c == "M" { return true }
-    if c == "N" { return true }
-    if c == "O" { return true }
-    if c == "P" { return true }
-    if c == "Q" { return true }
-    if c == "R" { return true }
-    if c == "S" { return true }
-    if c == "T" { return true }
-    if c == "U" { return true }
-    if c == "V" { return true }
-    if c == "W" { return true }
-    if c == "X" { return true }
-    if c == "Y" { return true }
-    if c == "Z" { return true }
-    return false
+    return is_transpiler_alpha(c)
 }
 
 fn is_py_alnum(c: String) -> Bool {
@@ -15252,60 +15261,7 @@ fn is_php_keyword(s: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 fn is_php_alpha(c: String) -> Bool {
-    if c == "_" { return true }
-    if c == "a" { return true }
-    if c == "b" { return true }
-    if c == "c" { return true }
-    if c == "d" { return true }
-    if c == "e" { return true }
-    if c == "f" { return true }
-    if c == "g" { return true }
-    if c == "h" { return true }
-    if c == "i" { return true }
-    if c == "j" { return true }
-    if c == "k" { return true }
-    if c == "l" { return true }
-    if c == "m" { return true }
-    if c == "n" { return true }
-    if c == "o" { return true }
-    if c == "p" { return true }
-    if c == "q" { return true }
-    if c == "r" { return true }
-    if c == "s" { return true }
-    if c == "t" { return true }
-    if c == "u" { return true }
-    if c == "v" { return true }
-    if c == "w" { return true }
-    if c == "x" { return true }
-    if c == "y" { return true }
-    if c == "z" { return true }
-    if c == "A" { return true }
-    if c == "B" { return true }
-    if c == "C" { return true }
-    if c == "D" { return true }
-    if c == "E" { return true }
-    if c == "F" { return true }
-    if c == "G" { return true }
-    if c == "H" { return true }
-    if c == "I" { return true }
-    if c == "J" { return true }
-    if c == "K" { return true }
-    if c == "L" { return true }
-    if c == "M" { return true }
-    if c == "N" { return true }
-    if c == "O" { return true }
-    if c == "P" { return true }
-    if c == "Q" { return true }
-    if c == "R" { return true }
-    if c == "S" { return true }
-    if c == "T" { return true }
-    if c == "U" { return true }
-    if c == "V" { return true }
-    if c == "W" { return true }
-    if c == "X" { return true }
-    if c == "Y" { return true }
-    if c == "Z" { return true }
-    return false
+    return is_transpiler_alpha(c)
 }
 
 fn is_php_alnum(c: String) -> Bool {
@@ -16472,61 +16428,8 @@ fn is_ts_keyword(s: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 fn is_ts_alpha(c: String) -> Bool {
-    if c == "_" { return true }
     if c == "$" { return true }
-    if c == "a" { return true }
-    if c == "b" { return true }
-    if c == "c" { return true }
-    if c == "d" { return true }
-    if c == "e" { return true }
-    if c == "f" { return true }
-    if c == "g" { return true }
-    if c == "h" { return true }
-    if c == "i" { return true }
-    if c == "j" { return true }
-    if c == "k" { return true }
-    if c == "l" { return true }
-    if c == "m" { return true }
-    if c == "n" { return true }
-    if c == "o" { return true }
-    if c == "p" { return true }
-    if c == "q" { return true }
-    if c == "r" { return true }
-    if c == "s" { return true }
-    if c == "t" { return true }
-    if c == "u" { return true }
-    if c == "v" { return true }
-    if c == "w" { return true }
-    if c == "x" { return true }
-    if c == "y" { return true }
-    if c == "z" { return true }
-    if c == "A" { return true }
-    if c == "B" { return true }
-    if c == "C" { return true }
-    if c == "D" { return true }
-    if c == "E" { return true }
-    if c == "F" { return true }
-    if c == "G" { return true }
-    if c == "H" { return true }
-    if c == "I" { return true }
-    if c == "J" { return true }
-    if c == "K" { return true }
-    if c == "L" { return true }
-    if c == "M" { return true }
-    if c == "N" { return true }
-    if c == "O" { return true }
-    if c == "P" { return true }
-    if c == "Q" { return true }
-    if c == "R" { return true }
-    if c == "S" { return true }
-    if c == "T" { return true }
-    if c == "U" { return true }
-    if c == "V" { return true }
-    if c == "W" { return true }
-    if c == "X" { return true }
-    if c == "Y" { return true }
-    if c == "Z" { return true }
-    return false
+    return is_transpiler_alpha(c)
 }
 
 fn is_ts_alnum(c: String) -> Bool {
@@ -18072,60 +17975,7 @@ fn is_go_keyword(s: String) -> Bool {
 // ---------------------------------------------------------------------------
 
 fn is_go_alpha(c: String) -> Bool {
-    if c == "_" { return true }
-    if c == "a" { return true }
-    if c == "b" { return true }
-    if c == "c" { return true }
-    if c == "d" { return true }
-    if c == "e" { return true }
-    if c == "f" { return true }
-    if c == "g" { return true }
-    if c == "h" { return true }
-    if c == "i" { return true }
-    if c == "j" { return true }
-    if c == "k" { return true }
-    if c == "l" { return true }
-    if c == "m" { return true }
-    if c == "n" { return true }
-    if c == "o" { return true }
-    if c == "p" { return true }
-    if c == "q" { return true }
-    if c == "r" { return true }
-    if c == "s" { return true }
-    if c == "t" { return true }
-    if c == "u" { return true }
-    if c == "v" { return true }
-    if c == "w" { return true }
-    if c == "x" { return true }
-    if c == "y" { return true }
-    if c == "z" { return true }
-    if c == "A" { return true }
-    if c == "B" { return true }
-    if c == "C" { return true }
-    if c == "D" { return true }
-    if c == "E" { return true }
-    if c == "F" { return true }
-    if c == "G" { return true }
-    if c == "H" { return true }
-    if c == "I" { return true }
-    if c == "J" { return true }
-    if c == "K" { return true }
-    if c == "L" { return true }
-    if c == "M" { return true }
-    if c == "N" { return true }
-    if c == "O" { return true }
-    if c == "P" { return true }
-    if c == "Q" { return true }
-    if c == "R" { return true }
-    if c == "S" { return true }
-    if c == "T" { return true }
-    if c == "U" { return true }
-    if c == "V" { return true }
-    if c == "W" { return true }
-    if c == "X" { return true }
-    if c == "Y" { return true }
-    if c == "Z" { return true }
-    return false
+    return is_transpiler_alpha(c)
 }
 
 fn is_go_alnum(c: String) -> Bool {
@@ -19614,7 +19464,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 3.26.0"
+    return "mapanare 3.34.0"
 }
 
 // ---------------------------------------------------------------------------

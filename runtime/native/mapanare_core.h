@@ -367,7 +367,7 @@ typedef struct MnMapIter MnMapIter;
 #define MN_MAP_VAL_STR    1
 
 /** Create a new empty map. key_type: MN_MAP_KEY_INT/STR/FLOAT. */
-MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type);
+MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type, int64_t val_type);
 
 /** Insert or update a key-value pair. */
 MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val);

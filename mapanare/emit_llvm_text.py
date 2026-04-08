@@ -2230,7 +2230,7 @@ class LLVMTextEmitter:
         for v, t in coerced2:
             if self._use_byref(t):
                 a2 = self._alloca(t, "barg")
-                self._L(f"store {t} {v}, {t}* {a2}")
+                self._L(f"store {t} {v}, ptr {a2}")
                 abi_args2.append((a2, "ptr"))
             else:
                 abi_args2.append((v, t))
@@ -2638,11 +2638,12 @@ class LLVMTextEmitter:
             )
         else:
             ksz, vsz, ktag = 8, 8, 0
+        vtag = 1 if i.val_type.kind == TypeKind.STRING else 0
         mp = self._rt(
             "__mn_map_new",
             PTR,
-            [I64, I64, I64],
-            [(str(ksz), I64), (str(vsz), I64), (str(ktag), I64)],
+            [I64, I64, I64, I64],
+            [(str(ksz), I64), (str(vsz), I64), (str(ktag), I64), (str(vtag), I64)],
         )
         self._track_container(i.dest.name, "map")
         for kv, vv in i.pairs:
@@ -2970,10 +2971,8 @@ class LLVMTextEmitter:
         for j in range(i.index + 1):
             pflds.append(ft if j == i.index else I64)
         esty = "{" + ", ".join(pflds) + "}"
-        etp = self._f("elp")
-        self._L(f"{etp} = bitcast {et} {ev} to {esty}*")
         fp = self._f("elf")
-        self._L(f"{fp} = getelementptr inbounds {esty}, ptr {etp}, i32 0, i32 {i.index}")
+        self._L(f"{fp} = getelementptr inbounds {esty}, ptr {ev}, i32 0, i32 {i.index}")
         r = self._f("elv")
         self._L(f"{r} = load {ft}, ptr {fp}")
         self._put(i.dest, r, ft)

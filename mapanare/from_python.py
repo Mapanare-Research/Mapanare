@@ -37,7 +37,7 @@ _BINOP_MAP: dict[type[ast.operator], str] = {
     ast.Mult: "*",
     ast.Div: "/",
     ast.Mod: "%",
-    ast.FloorDiv: "/",  # Mapanare Int / is truncating division (matches Python // for positive ints)
+    ast.FloorDiv: "/",  # truncating div (matches // for pos; neg differs: Py floors, Mn truncs)
     ast.Pow: "**",
     ast.BitAnd: "&",
     ast.BitOr: "|",

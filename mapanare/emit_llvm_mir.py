@@ -1420,7 +1420,9 @@ class LLVMMIREmitter:
     # -- Map runtime functions ------------------------------------------------
 
     def _rt_map_new(self) -> Any:
-        return self._declare_runtime_fn("__mn_map_new", LLVM_PTR, [LLVM_INT, LLVM_INT, LLVM_INT])
+        return self._declare_runtime_fn(
+            "__mn_map_new", LLVM_PTR, [LLVM_INT, LLVM_INT, LLVM_INT, LLVM_INT]
+        )
 
     def _rt_map_set(self) -> Any:
         return self._declare_runtime_fn("__mn_map_set", LLVM_VOID, [LLVM_PTR, LLVM_PTR, LLVM_PTR])
@@ -4184,6 +4186,7 @@ class LLVMMIREmitter:
             key_type_tag = self._map_key_type_tag(inst.key_type)
         else:
             key_size, val_size, key_type_tag = 8, 8, 0
+        val_type_tag = 1 if inst.val_type.kind == TypeKind.STRING else 0
 
         # Create map
         map_ptr = builder.call(
@@ -4192,6 +4195,7 @@ class LLVMMIREmitter:
                 ir.Constant(LLVM_INT, key_size),
                 ir.Constant(LLVM_INT, val_size),
                 ir.Constant(LLVM_INT, key_type_tag),
+                ir.Constant(LLVM_INT, val_type_tag),
             ],
             name=name,
         )

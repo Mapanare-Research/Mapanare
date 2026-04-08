@@ -224,6 +224,8 @@ _TENSOR_ARITH_KINDS = frozenset(
     {TypeKind.UNKNOWN, TypeKind.TENSOR, TypeKind.INT, TypeKind.FLOAT, TypeKind.ANY}
 )
 
+_OP_TO_TRAIT: dict[str, str] = {"+": "Add", "-": "Sub", "*": "Mul", "/": "Div"}
+
 
 # ---------------------------------------------------------------------------
 # Semantic Checker
@@ -628,14 +630,13 @@ class SemanticChecker:
                 return left
 
             # Arithmetic trait dispatch for user-defined types
-            _op_to_trait = {"+": "Add", "-": "Sub", "*": "Mul", "/": "Div"}
             if (
-                expr.op in _op_to_trait
+                expr.op in _OP_TO_TRAIT
                 and left.kind in (TypeKind.STRUCT, TypeKind.ENUM)
                 and left.name
-                and self._type_implements_trait(left.name, _op_to_trait[expr.op])
+                and self._type_implements_trait(left.name, _OP_TO_TRAIT[expr.op])
             ):
-                expr.trait_dispatch = _op_to_trait[expr.op].lower()
+                expr.trait_dispatch = _OP_TO_TRAIT[expr.op].lower()
                 return left  # Self -> Self
 
             if left.kind not in _ARITHMETIC_KINDS or right.kind not in _ARITHMETIC_KINDS:

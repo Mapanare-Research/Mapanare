@@ -47,10 +47,6 @@ fn llvm_tensor_type(elem_ty: String) -> String {
     return "{ ptr, i64, ptr, i64 }"
 }
 
-fn llvm_list_type(elem_ty: String) -> String {
-    return "{ ptr, i64, i64, i64 }"
-}
-
 fn llvm_map_type() -> String {
     return "{ ptr, i64 }"
 }

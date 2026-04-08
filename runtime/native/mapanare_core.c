@@ -760,8 +760,9 @@ static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
 }
 
 static int mn_list_is_managed(MnList *list);
-/* Forward declarations — defined with initializers at line ~937 */
-static int64_t cow_shares, cow_fallbacks, cow_detaches;
+static int64_t cow_shares = 0;
+static int64_t cow_fallbacks = 0;
+static int64_t cow_detaches = 0;
 
 /* Detach: if refcount > 1, allocate a private copy of the data.
  * Also handles lists that were zero-initialized (data == NULL). */
@@ -938,10 +939,6 @@ static int mn_list_is_managed(MnList *list) {
      * Without it, reading data[-8] on a non-COW buffer is undefined behavior. */
     return mn_list_has_magic(list);
 }
-
-static int64_t cow_shares = 0;
-static int64_t cow_fallbacks = 0;
-static int64_t cow_detaches = 0;
 
 MN_EXPORT void __mn_cow_stats(void) {
     fprintf(stderr, "[COW] shares=%ld fallbacks=%ld detaches=%ld\n",
@@ -1221,13 +1218,14 @@ MN_EXPORT int64_t __mn_file_copy(MnString src, MnString dst) {
     if (!fout) { fclose(fin); return -1; }
     char buf[8192];
     size_t n;
+    int err = 0;
     while ((n = fread(buf, 1, sizeof(buf), fin)) > 0) {
         size_t w = fwrite(buf, 1, n, fout);
-        if (w < n) break;  /* write error (e.g., disk full) */
+        if (w < n) { err = 1; break; }
     }
     fclose(fin);
     fclose(fout);
-    return 0;
+    return err ? -1 : 0;
 }
 
 MN_EXPORT MnString __mn_tmpfile_path(void) {
@@ -1362,12 +1360,12 @@ static inline void *mn_bucket_val(char *bucket, int64_t key_size) {
 
 static void mn_map_grow(MnMap *map);
 
-MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type) {
+MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type, int64_t val_type) {
     MnMap *map = (MnMap *)__mn_alloc(sizeof(MnMap));
     map->key_size = key_size;
     map->val_size = val_size;
     map->key_type = key_type;
-    map->val_type = (val_size == (int64_t)sizeof(MnString)) ? MN_MAP_VAL_STR : MN_MAP_VAL_OPAQUE;
+    map->val_type = val_type;
     map->bucket_size = 2 + key_size + val_size;  /* status + psl + key + val */
     map->len = 0;
     map->cap = MN_MAP_INITIAL_CAP;
@@ -1860,10 +1858,12 @@ MN_EXPORT void __mn_signal_unsubscribe(MnSignal *signal, MnSignal *subscriber) {
 /* --- Callbacks --- */
 
 MN_EXPORT void __mn_signal_on_change(MnSignal *signal, MnSignalCallback cb, void *user_data) {
-    if (signal->cb_len >= signal->cb_cap) return;  /* Silently ignore overflow */
+    mn_signal_lock();
+    if (signal->cb_len >= signal->cb_cap) { mn_signal_unlock(); return; }
     signal->callbacks[signal->cb_len].fn = cb;
     signal->callbacks[signal->cb_len].user_data = user_data;
     signal->cb_len++;
+    mn_signal_unlock();
 }
 
 /* --- Propagation (topological, depth-first) --- */

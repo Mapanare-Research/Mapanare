@@ -868,14 +868,14 @@ TEST(test_shutdown_with_agents) {
  * ----------------------------------------------------------------------- */
 
 TEST(test_map_new_free) {
-    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT, MN_MAP_VAL_OPAQUE);
     ASSERT_NE(m, NULL);
     ASSERT_EQ(__mn_map_len(m), 0);
     __mn_map_free(m);
 }
 
 TEST(test_map_set_get) {
-    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT, MN_MAP_VAL_OPAQUE);
     int64_t k1 = 10, v1 = 100;
     int64_t k2 = 20, v2 = 200;
     int64_t k3 = 30, v3 = 300;
@@ -889,7 +889,7 @@ TEST(test_map_set_get) {
 }
 
 TEST(test_map_overwrite) {
-    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT, MN_MAP_VAL_OPAQUE);
     int64_t k = 42, v1 = 1, v2 = 2;
     __mn_map_set(m, &k, &v1);
     __mn_map_set(m, &k, &v2);
@@ -901,7 +901,7 @@ TEST(test_map_overwrite) {
 }
 
 TEST(test_map_del) {
-    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT, MN_MAP_VAL_OPAQUE);
     int64_t k = 7, v = 77;
     __mn_map_set(m, &k, &v);
     ASSERT_EQ(__mn_map_contains(m, &k), 1);
@@ -912,7 +912,7 @@ TEST(test_map_del) {
 }
 
 TEST(test_map_contains) {
-    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT, MN_MAP_VAL_OPAQUE);
     int64_t k = 5, v = 55, absent = 99;
     __mn_map_set(m, &k, &v);
     ASSERT_EQ(__mn_map_contains(m, &k), 1);
@@ -921,7 +921,7 @@ TEST(test_map_contains) {
 }
 
 TEST(test_map_len) {
-    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT, MN_MAP_VAL_OPAQUE);
     for (int64_t i = 0; i < 10; i++) {
         int64_t v = i * 10;
         __mn_map_set(m, &i, &v);
@@ -931,7 +931,7 @@ TEST(test_map_len) {
 }
 
 TEST(test_map_iter) {
-    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT);
+    MnMap *m = __mn_map_new(sizeof(int64_t), sizeof(int64_t), MN_MAP_KEY_INT, MN_MAP_VAL_OPAQUE);
     for (int64_t i = 1; i <= 3; i++) {
         int64_t v = i * 100;
         __mn_map_set(m, &i, &v);
@@ -947,7 +947,7 @@ TEST(test_map_iter) {
 }
 
 TEST(test_map_free_deep) {
-    MnMap *m = __mn_map_new(sizeof(MnString), sizeof(MnString), MN_MAP_KEY_STR);
+    MnMap *m = __mn_map_new(sizeof(MnString), sizeof(MnString), MN_MAP_KEY_STR, MN_MAP_VAL_STR);
     MnString k = __mn_str_from_cstr("key1");
     MnString v = __mn_str_from_cstr("val1");
     __mn_map_set(m, &k, &v);

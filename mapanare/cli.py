@@ -1945,9 +1945,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # transpile (Python → Mapanare)
     p_transpile = subparsers.add_parser(
-        "transpile", help="Transpile Python (.py) source to Mapanare (.mn)"
+        "transpile", help="Transpile Python (.py) or PHP (.php) source to Mapanare (.mn)"
     )
-    p_transpile.add_argument("source", help="Path to .py source file")
+    p_transpile.add_argument("source", help="Path to .py or .php source file")
     p_transpile.add_argument("-o", metavar="OUTPUT", help="Output .mn file path", default=None)
     p_transpile.set_defaults(func=cmd_transpile)
 

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.34.0] - 2026-04-07
+
+### Fixed
+
+- `__mn_map_new` now takes explicit `val_type` parameter — eliminates size-based heuristic that
+  misclassified 16-byte non-string structs as String, causing memory corruption in `__mn_map_free_deep`
+  (flagged by 4 reviewers: Viper, Mamba, Cobra, Rattler)
+- `__mn_file_copy` returns -1 on write failure instead of unconditional 0
+- `__mn_signal_on_change` wrapped in `mn_signal_lock()`/`mn_signal_unlock()` (thread safety)
+- Typed pointer `bitcast` in `_do_env_load` removed — LLVM 17+ opaque pointer compatibility
+- Typed pointer `{t}*` syntax in auto-declare store changed to `ptr` — LLVM 17+ compatibility
+- Self-hosted `types_compatible` now compares function parameter types pairwise and return types
+  (was only checking parameter count)
+- `is_digit` name collision in concatenated `mnc_all.mn` resolved (deleted duplicate from transpiler.mn)
+- Vestigial `getattr(expr, "trait_dispatch", None)` replaced with direct field access in lower.py
+- `Err.unwrap()` return type changed from `-> E` to `-> NoReturn`
+- Version strings updated: main.mn 3.26.0→3.34.0, emit_c.py v3.0.0→v3.34.0
+
+### Removed
+
+- Duplicate `cow_shares` forward declaration (mapanare_core.c line 764)
+- Dead `llvm_list_type()` function from emit_llvm_ir.mn (stale 4-field layout, never called)
+- ~200 lines of duplicated `is_XX_alpha` functions across 4 transpilers (replaced with shared
+  `is_transpiler_alpha` in transpiler.mn)
+
+### Changed
+
+- `_ARITH_TRAIT_MAP` and `_op_to_trait` moved to module scope (lower.py, semantic.py)
+- `continue` keyword added to SPEC.md Section 2.1 keyword table
+- FloorDiv annotation expanded to note negative operand divergence
+- Transpiler CLI help text updated to mention PHP (.php) alongside Python (.py)
+
 ## [3.33.0] - 2026-04-07
 
 ### Removed
@@ -784,7 +816,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.33.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.34.0...HEAD
+[3.34.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.33.0...v3.34.0
 [3.33.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.32.0...v3.33.0
 [3.32.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.31.0...v3.32.0
 [3.31.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.30.0...v3.31.0

@@ -178,6 +178,8 @@ _STREAM_OP_MAP: dict[str, StreamOpKind] = {
     "collect": StreamOpKind.COLLECT,
 }
 
+_ARITH_TRAIT_MAP: dict[str, str] = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
+
 
 def _ast_span_to_mir(node: ASTNode | None) -> SourceSpan | None:
     """Convert an AST node's span to a MIR SourceSpan, or None if unavailable."""
@@ -1471,7 +1473,7 @@ class MIRLowerer:
 
         # Trait dispatch: if the semantic checker annotated this expression with
         # a trait method, emit a method call instead of a primitive BinOp.
-        trait = getattr(expr, "trait_dispatch", None)
+        trait = expr.trait_dispatch
         if trait == "eq":
             dest = self._make_value(ty=mir_bool())
             self._emit(Call(dest=dest, fn_name="eq", args=[lhs, rhs]))
@@ -1491,7 +1493,6 @@ class MIRLowerer:
             self._emit(BinOp(dest=dest, op=cmp_op[expr.op], lhs=cmp_val, rhs=zero))
             return dest
         # Arithmetic trait dispatch: add/sub/mul/div impl methods
-        _ARITH_TRAIT_MAP = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
         if trait in ("add", "sub", "mul", "div"):
             method = _ARITH_TRAIT_MAP.get(expr.op, trait)
             dest = self._make_value(ty=lhs.ty)

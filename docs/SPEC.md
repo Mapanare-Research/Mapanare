@@ -80,6 +80,7 @@ The following identifiers are reserved as keywords and cannot be used as variabl
 | `while` | Loop while a condition is true: `while cond { }`. |
 | `in` | Used with `for` to specify the iterable. |
 | `break` | Exit the innermost `for` or `while` loop immediately. |
+| `continue` | Skip to the next iteration of the innermost `for` or `while` loop. |
 | `assert` | Assert a boolean condition; abort with an error if false. |
 
 #### Types and Data
