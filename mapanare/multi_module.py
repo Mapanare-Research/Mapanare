@@ -597,7 +597,6 @@ def _emit_with_backend(
     target: Any,
     mir_module: MIRModule,
     debug: bool,
-    no_drop_glue: bool = False,
 ) -> str:
     """Emit LLVM IR using the selected backend."""
     if backend == "text":
@@ -608,7 +607,6 @@ def _emit_with_backend(
             target_triple=target.triple,
             data_layout=target.data_layout,
             debug=debug,
-            no_drop_glue=no_drop_glue,
         )
         return emitter.emit(mir_module)
     from mapanare.emit_llvm_mir import LLVMMIREmitter
@@ -631,7 +629,6 @@ def compile_multi_module_mir(
     debug: bool = False,
     emitter_backend: str = "text",
     skip_check: bool = False,
-    no_drop_glue: bool = False,
 ) -> str:
     """Compile a root .mn file and all its imports into a single LLVM IR string.
 
@@ -678,8 +675,7 @@ def compile_multi_module_mir(
         mir_module, _ = mir_optimize(mir_module, mir_opt_level)
         target = get_target(target_name)
         return _emit_with_backend(
-            emitter_backend, module_name, target, mir_module, debug, no_drop_glue=no_drop_glue
-        )
+            emitter_backend, module_name, target, mir_module, debug        )
 
     # 3. Lower each dependency, rename symbols.
     #   Dependencies are in topological order, so when we lower module B that
@@ -861,5 +857,4 @@ def compile_multi_module_mir(
     # 8. Emit LLVM IR
     target = get_target(target_name)
     return _emit_with_backend(
-        emitter_backend, root_module_name, target, root_mir, debug, no_drop_glue=no_drop_glue
-    )
+        emitter_backend, root_module_name, target, root_mir, debug    )

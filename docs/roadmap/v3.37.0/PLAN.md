@@ -5,7 +5,7 @@
 > in returned structs. After this version, `no_drop_glue` is gone and
 > `mnc-stage1` can compile `mnc_all.mn` without crashing.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Large (2-3 sessions)
 **Breaking:** No (ABI-compatible — same struct layouts, same runtime functions)
 **Prerequisite:** v3.36.0

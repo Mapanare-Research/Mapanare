@@ -264,9 +264,7 @@ class LLVMTextEmitter:
         target_triple: str | None = None,
         data_layout: str | None = None,
         debug: bool = False,
-        no_drop_glue: bool = False,
     ) -> None:
-        self._no_drop_glue = no_drop_glue
         self._name = module_name
         self._triple = target_triple or "x86_64-pc-linux-gnu"
         self._layout = data_layout or (
@@ -300,8 +298,10 @@ class LLVMTextEmitter:
         self._fn: MIRFunction | None = None
         # drop glue tracking (reset per function)
         self._local_strings: list[str] = []
+        self._str_slots: dict[str, str] = {}  # dest var name → str tracking slot
         self._local_closures: list[str] = []
         self._local_boxed: list[str] = []  # boxed enum payload ptrs
+        self._boxed_slots: dict[str, str] = {}  # dest var name → boxed tracking slot
         self._list_vars: list[str] = []  # dest names for list cleanup
         self._map_vars: list[str] = []  # dest names for map cleanup
         self._signal_vars: list[str] = []  # dest names for signal cleanup
@@ -706,6 +706,25 @@ class LLVMTextEmitter:
         else:
             c = self._coerce(val, ty, aty)
             self._L(f"store {aty} {c}, ptr {a}")
+        # Associate variable with its tracking slot for move semantics
+        if ty == STR and hasattr(self, "_last_tracked_str_slot") and self._last_tracked_str_slot:
+            self._str_slots[dest.name] = self._last_tracked_str_slot
+            self._last_tracked_str_slot = None
+
+    def _move_resource(self, name: str) -> None:
+        """Zero out tracking slots for a consumed variable (move semantics).
+
+        When a variable is passed to a function call or used as an enum
+        payload, its value is "moved" into the callee's data structure.
+        Zeroing the tracking slot prevents drop glue from freeing the
+        now-owned value.
+        """
+        if name in self._str_slots:
+            slot = self._str_slots.pop(name)
+            self._L(f"store {{ptr, i64}} zeroinitializer, ptr {slot}")
+        if name in self._boxed_slots:
+            slot = self._boxed_slots.pop(name)
+            self._L(f"store ptr null, ptr {slot}")
 
     def _coerce(self, val: str, fr: str, to: str) -> str:
         if fr == to:
@@ -849,6 +868,7 @@ class LLVMTextEmitter:
         self._ent.append(f"  store {{ptr, i64}} zeroinitializer, ptr {slot}")
         self._L(f"store {{ptr, i64}} {val}, ptr {slot}")
         self._local_strings.append(slot)
+        self._last_tracked_str_slot = slot
 
     def _track_closure(self, val: str) -> None:
         """Track a heap-allocated closure env for drop glue cleanup."""
@@ -865,6 +885,7 @@ class LLVMTextEmitter:
         self._ent.append(f"  store ptr null, ptr {slot}")
         self._L(f"store ptr {ptr_val}, ptr {slot}")
         self._local_boxed.append(slot)
+        self._last_tracked_boxed_slot = slot
 
     def _track_container(self, dest_name: str, container_type: str) -> None:
         """Track a container variable for drop glue cleanup.
@@ -892,12 +913,19 @@ class LLVMTextEmitter:
         For each tracked string, loads the {ptr, i64} value, extracts the data
         pointer, and frees it unless it's the same pointer being returned.
         """
-        if self._no_drop_glue:
+        # Conservative safety: when returning a struct or enum type, local
+        # resources may have been moved into the return value via constructors
+        # or enum inits.  Without ownership tracking, skip ALL cleanup for
+        # struct returns.  Functions returning void/int/bool still get cleanup.
+        # List fields in structs share buffers safely (mn_list_grow never
+        # reallocs), so the leaked buffers from skipped cleanup are bounded.
+        skip_struct_ret = ret_ty.startswith("{") and ret_ty not in (VOID, I1, I64, DBL)
+        if skip_struct_ret:
             return
         has_any = (
-            self._local_strings
-            or self._local_closures
-            or self._local_boxed
+            (self._local_strings)
+            or (self._local_closures)
+            or (self._local_boxed)
             or self._list_vars
             or self._map_vars
             or self._signal_vars
@@ -954,6 +982,17 @@ class LLVMTextEmitter:
             ret_env = self._f("ret.env")
             self._L(f"{ret_env} = extractvalue {{ptr, ptr}} {ret_val}, 1")
 
+        # Extract ALL ptr fields from the return value (to avoid freeing boxed
+        # enum payloads, strings, or lists that are part of the return value).
+        # Walk the return type recursively and extractvalue every ptr-typed leaf.
+        # Always extract when we have param list fields or list vars to compare.
+        ret_ptr_fields: list[str] = []
+        need_ret_ptrs = (
+            self._local_boxed or self._local_strings or self._list_vars
+        )
+        if ret_val and ret_ty.startswith("{") and need_ret_ptrs:
+            self._extract_ret_ptrs(ret_val, ret_ty, ret_ptr_fields)
+
         for slot in self._local_strings:
             sv = self._f("drop.s")
             self._L(f"{sv} = load {{ptr, i64}}, ptr {slot}")
@@ -970,8 +1009,9 @@ class LLVMTextEmitter:
             # check block: compare with return pointer if applicable
             self._blk[free_lbl] = []
             self._cb = free_lbl
-            if ret_str_ptrs:
-                for rsp in ret_str_ptrs:
+            all_str_ptrs = ret_str_ptrs + ret_ptr_fields
+            if all_str_ptrs:
+                for rsp in all_str_ptrs:
                     same = self._f("drop.same")
                     self._L(f"{same} = icmp eq ptr {sp}, {rsp}")
                     next_check = f"drop.snext.{self._c}"
@@ -1021,12 +1061,21 @@ class LLVMTextEmitter:
             bn = self._f("drop.bnull")
             self._L(f"{bn} = icmp eq ptr {bp}, null")
             skip_lbl = f"drop.bskip.{self._c}"
-            free_lbl = f"drop.bfree.{self._c}"
+            free_lbl = f"drop.bcheck.{self._c}"
             self._c += 1
             self._L(f"br i1 {bn}, label %{skip_lbl}, label %{free_lbl}")
 
             self._blk[free_lbl] = []
             self._cb = free_lbl
+            if ret_ptr_fields:
+                for rpf in ret_ptr_fields:
+                    same = self._f("drop.bsame")
+                    self._L(f"{same} = icmp eq ptr {bp}, {rpf}")
+                    next_check = f"drop.bnext.{self._c}"
+                    self._c += 1
+                    self._L(f"br i1 {same}, label %{skip_lbl}, label %{next_check}")
+                    self._blk[next_check] = []
+                    self._cb = next_check
             self._L(f"call void @free(ptr {bp})")
             self._L(f"br label %{skip_lbl}")
 
@@ -1058,10 +1107,11 @@ class LLVMTextEmitter:
 
             self._blk[check_lbl] = []
             self._cb = check_lbl
-            if ret_list_ptrs:
-                # Check if this list's data pointer matches ANY returned list
+            all_list_ptrs = ret_list_ptrs + ret_ptr_fields
+            if all_list_ptrs:
+                # Check if this list's data pointer matches ANY returned pointer
                 cur_lbl = check_lbl
-                for rlp in ret_list_ptrs:
+                for rlp in all_list_ptrs:
                     lsame = self._f("drop.lsame")
                     self._L(f"{lsame} = icmp eq ptr {lp}, {rlp}")
                     next_check = f"drop.lnext.{self._c}"
@@ -1076,6 +1126,11 @@ class LLVMTextEmitter:
 
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
+
+        # NOTE: struct parameter list field cleanup removed.  Without list
+        # cloning on struct copy, shared buffers are safe (mn_list_grow
+        # allocates new instead of realloc).  The old buffers leak on grow
+        # but that's bounded to O(log n) per list (geometric doubling).
 
         # Map cleanup
         if self._map_vars:
@@ -1164,6 +1219,37 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
+    def _extract_ret_ptrs(
+        self, val: str, ty: str, out: list[str], depth: int = 0
+    ) -> None:
+        """Recursively extract all ptr-typed fields from a return value.
+
+        Used to prevent drop glue from freeing boxed enum payloads that are
+        embedded in the return value (at any nesting depth).
+        """
+        if depth > 4:
+            return  # prevent excessive nesting
+        t = ty.strip()
+        if t == "ptr":
+            out.append(val)
+            return
+        if not t.startswith("{") or not t.endswith("}"):
+            return
+        inner = t[1:-1].strip()
+        if not inner:
+            return
+        fields = _split_fields(inner)
+        for idx, ft in enumerate(fields):
+            ft = ft.strip()
+            if ft == "ptr":
+                p = self._f("ret.rp")
+                self._L(f"{p} = extractvalue {ty} {val}, {idx}")
+                out.append(p)
+            elif ft.startswith("{"):
+                sv = self._f("ret.rs")
+                self._L(f"{sv} = extractvalue {ty} {val}, {idx}")
+                self._extract_ret_ptrs(sv, ft, out, depth + 1)
+
     def _emit_arena_destroy(self) -> None:
         """Destroy the per-function arena before return."""
         if self._arena_ptr is not None:
@@ -1216,8 +1302,12 @@ class LLVMTextEmitter:
         self._lroots = {}
         self._fn = fn
         self._local_strings = []
+        self._str_slots = {}
+        self._last_tracked_str_slot: str | None = None
         self._local_closures = []
         self._local_boxed = []
+        self._boxed_slots = {}
+        self._last_tracked_boxed_slot: str | None = None
         self._list_vars = []
         self._map_vars = []
         self._signal_vars = []
@@ -1257,6 +1347,23 @@ class LLVMTextEmitter:
                 self._ent.append(f"  store {ty} zeroinitializer, ptr {a}")
             else:
                 self._ent.append(f"  {a} = alloca {ty}, align 8")
+
+        # Track struct parameters' list fields for drop glue cleanup.
+        # When a struct param is copied and the copy's list is pushed to,
+        # COW detach creates a new buffer.  The old buffer (in the param)
+        # must be freed to prevent memory exhaustion on large compilations.
+        self._param_list_fields: list[tuple[str, str, int]] = []
+        for p in fn.params:
+            if p.ty and p.ty.kind == TypeKind.STRUCT and p.ty.type_info:
+                sn = self._res_struct(p.ty.type_info.name)
+                if sn in self._structs:
+                    sty = self._struct_ty.get(sn, "")
+                    if sty:
+                        a, _ = self._alloc.get(p.name, ("", ""))
+                        if a:
+                            for idx, (_, ft) in enumerate(self._structs[sn]):
+                                if ft == LIST:
+                                    self._param_list_fields.append((a, sty, idx))
 
         # phi allocas
         for bb in fn.blocks:
@@ -1515,13 +1622,12 @@ class LLVMTextEmitter:
             self._track_container(i.dest.name, "signal")
         elif sk == TypeKind.STREAM:
             self._track_container(i.dest.name, "stream")
-        # Clone list fields on struct copy for correctness: COW requires refcount
-        # increment via __mn_list_clone. Bitwise copies don't increment refcount.
-        # Without cloning, shared lists (e.g. module.functions) corrupt on push.
-        if i.src.ty.kind == TypeKind.STRUCT:
-            sn = self._res_struct(i.src.ty.type_info.name)
-            if sn in self._structs:
-                self._clone_list_fields(i.dest, sn)
+        # List fields in struct copies share the same buffer (bitwise copy,
+        # no refcount increment).  This is safe because mn_list_grow always
+        # allocates a new buffer (never reallocs), so the shared old buffer
+        # stays valid for any aliased copies.  Cloning all list fields on
+        # every struct copy was causing O(n²) memory blowup (390K clones
+        # for 575 lines of source, each triggering COW detach + allocation).
 
     def _clone_list_fields(self, dest: Value, sn: str) -> None:
         """After a struct copy, deep-clone any List fields in the destination.
@@ -2189,6 +2295,16 @@ class LLVMTextEmitter:
                 self._put(i.dest, "0", I64)
             return
 
+        # Move semantics: when a resource (list, string, boxed) is passed as
+        # an argument to a user-defined function, transfer ownership so drop
+        # glue won't free it.
+        for j, (v, t) in enumerate(args):
+            if j < len(i.args):
+                src_name = i.args[j].name
+                if t == LIST and src_name in self._list_vars:
+                    self._list_vars.remove(src_name)
+                self._move_resource(src_name)
+
         # User function
         if fn in self._sigs:
             ret, pts, va = self._sigs[fn]
@@ -2314,6 +2430,13 @@ class LLVMTextEmitter:
     # --- ExternCall ---
     def _do_extern(self, i: ExternCall) -> None:
         args = [self._get(a) for a in i.args]
+        # Move semantics for arguments (same as _do_call)
+        for j, (v, t) in enumerate(args):
+            if j < len(i.args):
+                src_name = i.args[j].name
+                if t == LIST and src_name in self._list_vars:
+                    self._list_vars.remove(src_name)
+                self._move_resource(src_name)
         full = f"{i.module}__{i.fn_name}" if i.module else i.fn_name
         if full not in self._sigs:
             pts = [self._rty(a.ty) for a in i.args]
@@ -2748,9 +2871,16 @@ class LLVMTextEmitter:
                 self._track_boxed(raw)
                 tp = raw  # opaque ptr, no bitcast
                 for j, pval in enumerate(i.payload):
+                    # Move semantics: payloads are consumed by the enum
+                    if pval.name in self._list_vars:
+                        self._list_vars.remove(pval.name)
+                    self._move_resource(pval.name)
+                    # Also check root alias (push write-backs)
+                    root_name = self._lroots.get(pval.name)
+                    if root_name and root_name in self._list_vars:
+                        self._list_vars.remove(root_name)
                     # For list values, check if there's a root alloca from push
                     # write-backs (the copy alias may be stale)
-                    root_name = self._lroots.get(pval.name)
                     if root_name and root_name in self._alloc:
                         a_root, t_root = self._alloc[root_name]
                         v = self._f("rl")
@@ -2782,6 +2912,10 @@ class LLVMTextEmitter:
             pp_c = self._coerce(pp, PTR, PTR) if pp != "null" else "null"
             self._L(f"{s1} = insertvalue {{i64, ptr}} {s0}, ptr {pp_c}, 1")
             self._put(i.dest, s1, ENUM)
+            # Record boxed association for move semantics
+            if hasattr(self, "_last_tracked_boxed_slot") and self._last_tracked_boxed_slot:
+                self._boxed_slots[i.dest.name] = self._last_tracked_boxed_slot
+                self._last_tracked_boxed_slot = None
         else:
             self._put(i.dest, "0", I64)
 

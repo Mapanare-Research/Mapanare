@@ -24,8 +24,51 @@
  * Memory helpers
  * ----------------------------------------------------------------------- */
 
+/* --- Memory profiling counters (compile with -DMN_PROFILE_MEM to enable) --- */
+#ifdef MN_PROFILE_MEM
+static int64_t mn_alloc_count = 0;
+static int64_t mn_alloc_bytes = 0;
+static int64_t mn_alloc_peak  = 0;   /* high-water mark of live bytes */
+static int64_t mn_alloc_live  = 0;   /* current live bytes (alloc - free) */
+static int64_t mn_concat_count = 0;
+static int64_t mn_concat_bytes = 0;
+static int64_t mn_clone_count = 0;
+static int64_t mn_grow_count  = 0;
+static int64_t mn_listbuf_count = 0;
+static int64_t mn_listbuf_bytes = 0;
+
+static void mn_profile_report(void) {
+    fprintf(stderr, "\n=== MN MEMORY PROFILE ===\n");
+    fprintf(stderr, "alloc:    %lld calls, %lld MB total\n",
+            (long long)mn_alloc_count, (long long)(mn_alloc_bytes / (1024*1024)));
+    fprintf(stderr, "peak:     %lld MB live\n",
+            (long long)(mn_alloc_peak / (1024*1024)));
+    fprintf(stderr, "listbuf:  %lld calls, %lld MB total\n",
+            (long long)mn_listbuf_count, (long long)(mn_listbuf_bytes / (1024*1024)));
+    fprintf(stderr, "grow:     %lld calls\n", (long long)mn_grow_count);
+    fprintf(stderr, "clone:    %lld calls\n", (long long)mn_clone_count);
+    fprintf(stderr, "detach:   (see cow_detaches counter)\n");
+    fprintf(stderr, "concat:   %lld calls, %lld MB total\n",
+            (long long)mn_concat_count, (long long)(mn_concat_bytes / (1024*1024)));
+    fprintf(stderr, "=========================\n");
+}
+static int mn_profile_init_done = 0;
+static void mn_profile_init(void) {
+    if (!mn_profile_init_done) {
+        mn_profile_init_done = 1;
+        atexit(mn_profile_report);
+    }
+}
+#define MN_PROFILE_ALLOC(sz) do { mn_profile_init(); mn_alloc_count++; mn_alloc_bytes += (sz); mn_alloc_live += (sz); if (mn_alloc_live > mn_alloc_peak) mn_alloc_peak = mn_alloc_live; } while(0)
+#define MN_PROFILE_FREE(sz) do { mn_alloc_live -= (sz); } while(0)
+#else
+#define MN_PROFILE_ALLOC(sz) ((void)0)
+#define MN_PROFILE_FREE(sz)  ((void)0)
+#endif
+
 MN_EXPORT void *__mn_alloc(int64_t size) {
     if (size < 0) return NULL;
+    MN_PROFILE_ALLOC(size);
     void *ptr = calloc(1, (size_t)size);
     if (!ptr && size > 0) {
         fprintf(stderr, "mapanare: out of memory (requested %lld bytes)\n",
@@ -368,6 +411,10 @@ MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
     if (total == 0) {
         return __mn_str_empty();
     }
+#ifdef MN_PROFILE_MEM
+    mn_concat_count++;
+    mn_concat_bytes += total + 1;
+#endif
     char *buf = (char *)__mn_alloc(total + 1);
     if (a.len > 0) memcpy(buf, a_data, (size_t)a.len);
     if (b.len > 0) memcpy(buf + a.len, b_data, (size_t)b.len);
@@ -739,8 +786,10 @@ MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts) {
 
 /* Access the refcount for a list's data buffer */
 static int64_t *mn_list_rc(MnList *list) {
-    if (!list->data) return NULL;
-    return ((int64_t *)list->data) - 1;
+    if (!list->data || !list->managed) return NULL;
+    int64_t *header = ((int64_t *)list->data) - 2;
+    if (header[0] != MN_COW_MAGIC) return NULL;  /* corrupted — don't touch */
+    return &header[1];
 }
 
 /* Check if the buffer has a valid COW magic header.
@@ -752,6 +801,10 @@ static int mn_list_has_magic(MnList *list) {
 /* Allocate a new COW buffer: [magic][refcount=1][cap * elem_size] */
 static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
     int64_t data_bytes = mn_checked_mul(cap, elem_size);
+#ifdef MN_PROFILE_MEM
+    mn_listbuf_count++;
+    mn_listbuf_bytes += MN_LIST_HEADER_SIZE + data_bytes;
+#endif
     char *raw = (char *)__mn_alloc(mn_checked_add(MN_LIST_HEADER_SIZE, data_bytes));
     int64_t *header = (int64_t *)raw;
     header[0] = MN_COW_MAGIC;  /* magic */
@@ -801,25 +854,21 @@ MN_EXPORT MnList __mn_list_new(int64_t elem_size) {
 }
 
 static void mn_list_grow(MnList *list) {
+#ifdef MN_PROFILE_MEM
+    mn_grow_count++;
+#endif
     int64_t new_cap = list->cap > 0 ? list->cap * 2 : MN_LIST_INITIAL_CAP;
-    if (list->data && mn_list_is_managed(list)) {
-        /* Detach first if shared */
-        mn_list_detach(list);
-        /* After detach, we're sole owner — safe to realloc */
-        int64_t new_bytes = mn_checked_add(MN_LIST_HEADER_SIZE,
-                                mn_checked_mul(new_cap, list->elem_size));
-        char *raw = ((char *)list->data) - MN_LIST_HEADER_SIZE;
-        raw = (char *)__mn_realloc(raw, new_bytes);
-        list->data = raw + MN_LIST_HEADER_SIZE;
-    } else {
-        /* Unmanaged or NULL — allocate fresh COW buffer */
-        char *new_data = mn_list_alloc_buf(new_cap, list->elem_size);
-        if (list->data && list->len > 0) {
-            memcpy(new_data, list->data, (size_t)(list->len * list->elem_size));
-        }
-        list->data = new_data;
-        list->managed = 1;
+    /* Always allocate a fresh buffer instead of realloc.  Struct copies
+     * share the same data pointer without refcount management (bitwise
+     * copy).  realloc would free the old pointer, invalidating the other
+     * copy's data.  Allocating new + memcpy leaves the old buffer valid
+     * for any aliased copies (they keep their original len/data view). */
+    char *new_data = mn_list_alloc_buf(new_cap, list->elem_size);
+    if (list->data && list->len > 0) {
+        memcpy(new_data, list->data, (size_t)(list->len * list->elem_size));
     }
+    list->data = new_data;
+    list->managed = 1;
     list->cap = new_cap;
 }
 
@@ -946,6 +995,9 @@ MN_EXPORT void __mn_cow_stats(void) {
 }
 
 MN_EXPORT MnList __mn_list_clone(MnList *src) {
+#ifdef MN_PROFILE_MEM
+    mn_clone_count++;
+#endif
     /* If the buffer is a managed COW buffer, share it (O(1)).
      * Otherwise, just copy the header (no allocation). */
     MnList dst;

@@ -50,7 +50,6 @@ def build() -> pathlib.Path:
             opt_level=2,
             emitter_backend=emitter,
             skip_check="--skip-check" in sys.argv or "--no-check" in sys.argv,
-            no_drop_glue=True,
         )
 
         # 2. Post-process: make compile() and format_error() externally visible
@@ -94,9 +93,11 @@ def build() -> pathlib.Path:
     core_c = NATIVE_DIR / "mapanare_core.c"
     core_o = SELF_DIR / "mapanare_core.o"
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
+    profile_flags = ["-DMN_PROFILE_MEM"] if "--profile-mem" in sys.argv else []
     subprocess.run(
         [CC, "-c", "-O2", "-g", "-fPIC", "-Wall", "-Wextra", "-Werror", "-I", str(NATIVE_DIR)]
         + asan_flags
+        + profile_flags
         + [str(core_c), "-o", str(core_o)],
         check=True,
     )

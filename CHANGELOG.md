@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.37.0] - 2026-04-08
+
+### Fixed
+
+- `mn_list_grow` now always allocates a new buffer instead of calling `realloc`,
+  preventing use-after-free when struct copies share list data pointers
+- Conservative drop glue: skip cleanup for struct-returning functions to prevent
+  freeing resources that were moved into the return value via constructors
+- List move semantics: lists passed to function calls or enum inits are removed
+  from drop glue tracking (ownership transfer)
+- `mn_list_rc` validates COW magic before reading refcount (prevents crash on
+  corrupted headers)
+- Self-compilation restored: mnc-stage1 compiles mnc_all.mn (20K lines) in <1s,
+  123 MB peak memory (was 59 GB / OOM from O(n^2) list cloning)
+
+### Removed
+
+- `no_drop_glue` hack — proper conservative drop glue replaces the blanket disable
+- List cloning on struct copy (`_clone_list_fields`) — caused O(n^2) memory blowup
+  (390K clones for 575 lines). Safe list growth makes sharing without cloning safe
+
+### Changed
+
+- 33/33 golden tests pass (was 29/33)
+- Binary size: 2.7 MB (was 3.4 MB)
+- IR: 169K lines (was 185K)
+- Memory profiling infrastructure added to C runtime (`-DMN_PROFILE_MEM`)
+
 ## [3.36.0] - 2026-04-07
 
 ### Added
@@ -859,7 +887,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.36.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.37.0...HEAD
+[3.37.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.36.0...v3.37.0
 [3.36.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.35.0...v3.36.0
 [3.35.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.34.0...v3.35.0
 [3.34.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.33.0...v3.34.0
