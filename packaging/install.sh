@@ -1,10 +1,32 @@
 #!/usr/bin/env bash
 # Mapanare Language Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/Mapanare-Research/Mapanare/main/install.sh | bash
+# Usage:
+#   curl -fsSL https://mapanare.dev/install | bash
+#   curl -fsSL https://mapanare.dev/install | bash -s -- --version 4.0.0
+#   curl -fsSL https://mapanare.dev/install | bash -s -- --install-dir ~/.local/bin
 set -euo pipefail
 
 REPO="Mapanare-Research/Mapanare"
 INSTALL_DIR="${MAPANARE_INSTALL_DIR:-/usr/local/bin}"
+REQUESTED_VERSION=""
+
+# ---------- Parse arguments ----------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version)    REQUESTED_VERSION="$2"; shift 2 ;;
+    --install-dir) INSTALL_DIR="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: curl -fsSL https://mapanare.dev/install | bash -s -- [OPTIONS]"
+      echo ""
+      echo "Options:"
+      echo "  --version VERSION    Install a specific version (e.g. 4.0.0)"
+      echo "  --install-dir DIR    Install to DIR (default: /usr/local/bin)"
+      echo "  --help               Show this help"
+      exit 0 ;;
+    *) echo "Unknown option: $1. Use --help for usage."; exit 1 ;;
+  esac
+done
+
 TMP_DIR="$(mktemp -d)"
 
 cleanup() { rm -rf "$TMP_DIR"; }
@@ -29,7 +51,16 @@ esac
 ARTIFACT="mapanare-${PLATFORM}-${ARCH_TAG}.tar.gz"
 
 # ---------- Resolve version ----------
-VERSION="${MAPANARE_VERSION:-latest}"
+if [ -n "$REQUESTED_VERSION" ]; then
+  # Ensure v prefix
+  case "$REQUESTED_VERSION" in
+    v*) VERSION="$REQUESTED_VERSION" ;;
+    *)  VERSION="v${REQUESTED_VERSION}" ;;
+  esac
+else
+  VERSION="${MAPANARE_VERSION:-latest}"
+fi
+
 if [ "$VERSION" = "latest" ]; then
   echo "Fetching latest release..."
   VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')"
@@ -37,7 +68,7 @@ fi
 
 if [ -z "$VERSION" ]; then
   echo "Error: Could not determine latest version."
-  echo "Set MAPANARE_VERSION=vX.Y.Z to install a specific version."
+  echo "Set MAPANARE_VERSION=vX.Y.Z or use --version to install a specific version."
   exit 1
 fi
 

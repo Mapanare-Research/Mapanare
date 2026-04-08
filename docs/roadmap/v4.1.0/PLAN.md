@@ -72,9 +72,9 @@ web login, download page, version manager, and native binary distribution.
 
 ### 2A. Install Script Version Pinning
 
-- [ ] `packaging/install.sh` — add `--version` and `--install-dir` argument parsing
-- [ ] `packaging/install.ps1` — add `-Version` parameter
-- [ ] Enable: `curl ... | bash -s -- --version 4.0.0`
+- [x] `packaging/install.sh` — add `--version` and `--install-dir` argument parsing
+- [x] `packaging/install.ps1` — add `-Version` parameter
+- [x] Enable: `curl ... | bash -s -- --version 4.0.0`
 
 ### 2B. Native Compiler Distribution in CI
 
@@ -97,9 +97,9 @@ web login, download page, version manager, and native binary distribution.
 
 ### 3A. Shell Scripts
 
-- [ ] `packaging/mapanare-up.sh` (~300 lines) — `install`, `list`, `default`, `use`, `update`, `uninstall`
-- [ ] `packaging/mapanare-shim.sh` (~30 lines) — walks up dirs for `.mapanare-version`, falls back to `~/.mapanare/default`
-- [ ] `packaging/mapanare-up.ps1` — Windows equivalent
+- [x] `packaging/mapanare-up.sh` (~300 lines) — `install`, `list`, `default`, `use`, `update`, `uninstall`
+- [x] `packaging/mapanare-shim.sh` (~30 lines) — walks up dirs for `.mapanare-version`, falls back to `~/.mapanare/default`
+- [x] `packaging/mapanare-up.ps1` — Windows equivalent
 
 ### 3B. Directory Layout
 
