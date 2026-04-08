@@ -61,3 +61,5 @@ tmp*.py
 .culebra-baseline.json
 .culebra-session.jsonl
 docs/roadmap/MASTER_PROMPT.md.mnc_cache/
+/.mnc_cache
+*.o.tmp
