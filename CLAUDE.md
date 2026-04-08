@@ -8,9 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v3.45.0** (current) — Package Manager + Polish: `mapanare install` works, error recovery, 4845+ tests, ready for v4.0.0.
-- **v4.0.0** (target) — Production release tag.
-- **v4.0.0** (target) — Production release: real apps, working examples, package manager, transpile end-to-end.
+- **v4.0.0** (current) — Production release: self-hosted compiler (15,000+ lines .mn), 40/40 golden, 4,845+ pytest, GPU compute, Python transpiler, package manager, 7-reviewer 9.79/10.
+- **v4.1.0** (next) — Post-production improvements.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Path to v4.0.0: `docs/roadmap/v3.41.0/PLAN.md` → `v3.42.0` → `v3.43.0` → `v3.44.0` → `v3.45.0` → `docs/roadmap/v4.0.0/PLAN.md`.
 

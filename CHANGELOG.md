@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-04-08
+
+**Production Release — "Build Real Programs"**
+
+The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are complete.
+
+- **Self-hosted compiler**: 15,000+ lines of `.mn`, fixed-point verified (stage4 == stage3)
+- **40/40 golden tests** pass on both bootstrap and stage1
+- **4,845+ pytest tests** across the full pipeline
+- **GPU compute**: 8 builtins (`gpu_available`, `gpu_tensor_add/sub/mul/div/matmul`) via CUDA dlopen, verified on RTX 4090
+- **Python transpiler**: `mapanare transpile file.py` → native binary, 29-68x speedup over Python
+- **C runtime**: arena allocator, thread pool, ring buffers, TCP/TLS, crypto, regex, HTTP, GPU dispatch
+- **Package manager**: `mapanare install`, registry, git fallback
+- **7-reviewer code review**: 9.79/10 aggregate, all PASS
+- Fix: MIR constant propagation through loop back-edges
+- Fix: transpiler function return type inference at call sites
+- Fix: `cmd_build` object file path collision
+
+## [3.47.0] - 2026-04-08
+
+**Guacamaya — GPU Examples + v4.0.0 Gate**
+
+- Add GPU examples: `vector_add.mn`, `matmul_bench.mn` with compiled LLVM IR
+- Rewrite SPEC Section 23 with compilable GPU code examples
+- Fix self-hosted emitter: `str(false)` zext, `file_exists` i64, regex compile+exec+free, 9 I/O declarations
+- Thread-safe dlopen loaders (atomic CAS for ssl_load, evp_load, pcre2_load)
+- Add 64MB `__mn_http_get` response limit
+- Move `intern_ensure_table()` inside lock
+- Add `__mn_str_concat` early returns for empty operands
+- Deduplicate `mnstr_to_cstr`/`MnHandleTable` into shared `mapanare_internal.h`
+- All C files compile with -Werror
+- 40/40 golden tests pass
+
+## [3.46.0] - 2026-04-08
+
+**Caiman — GPU Foundation**
+
+- Link `mapanare_gpu.c` and `mapanare_gpu_builtins.c` into native binaries
+- Add 8 GPU builtins: `gpu_available`, `gpu_device_name`, `gpu_device_memory`, `gpu_tensor_add/sub/mul/div/matmul`
+- Embedded PTX kernels for CUDA tensor operations (f64 precision)
+- CPU fallback when no GPU available
+- Fix PTX kernel register name conflicts
+- Fix all 5 v3.45.0 review hard blockers
+- Apply `-Werror` to all C runtime files
+- Correct GPU tensor math verified on NVIDIA RTX 4090
+
 ## [3.45.0] - 2026-04-08
 
 ### Added
