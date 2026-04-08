@@ -299,9 +299,11 @@ class LLVMTextEmitter:
         # drop glue tracking (reset per function)
         self._local_strings: list[str] = []
         self._str_slots: dict[str, str] = {}  # dest var name → str tracking slot
+        self._last_tracked_str_slot: str | None = None
         self._local_closures: list[str] = []
         self._local_boxed: list[str] = []  # boxed enum payload ptrs
         self._boxed_slots: dict[str, str] = {}  # dest var name → boxed tracking slot
+        self._last_tracked_boxed_slot: str | None = None
         self._list_vars: list[str] = []  # dest names for list cleanup
         self._map_vars: list[str] = []  # dest names for map cleanup
         self._signal_vars: list[str] = []  # dest names for signal cleanup
@@ -707,7 +709,7 @@ class LLVMTextEmitter:
             c = self._coerce(val, ty, aty)
             self._L(f"store {aty} {c}, ptr {a}")
         # Associate variable with its tracking slot for move semantics
-        if ty == STR and hasattr(self, "_last_tracked_str_slot") and self._last_tracked_str_slot:
+        if ty == STR and self._last_tracked_str_slot:
             self._str_slots[dest.name] = self._last_tracked_str_slot
             self._last_tracked_str_slot = None
 
@@ -1297,11 +1299,11 @@ class LLVMTextEmitter:
         self._fn = fn
         self._local_strings = []
         self._str_slots = {}
-        self._last_tracked_str_slot: str | None = None
+        self._last_tracked_str_slot = None
         self._local_closures = []
         self._local_boxed = []
         self._boxed_slots = {}
-        self._last_tracked_boxed_slot: str | None = None
+        self._last_tracked_boxed_slot = None
         self._list_vars = []
         self._map_vars = []
         self._signal_vars = []
@@ -2907,7 +2909,7 @@ class LLVMTextEmitter:
             self._L(f"{s1} = insertvalue {{i64, ptr}} {s0}, ptr {pp_c}, 1")
             self._put(i.dest, s1, ENUM)
             # Record boxed association for move semantics
-            if hasattr(self, "_last_tracked_boxed_slot") and self._last_tracked_boxed_slot:
+            if self._last_tracked_boxed_slot:
                 self._boxed_slots[i.dest.name] = self._last_tracked_boxed_slot
                 self._last_tracked_boxed_slot = None
         else:
