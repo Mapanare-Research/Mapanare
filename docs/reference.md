@@ -1,6 +1,6 @@
 # Mapanare Language Reference
 
-**Version:** 0.5.0
+**Version:** 3.47.0
 
 This is the complete language reference for Mapanare. For a tutorial introduction, see [Getting Started](getting-started.md). For the formal specification, see [SPEC.md](SPEC.md).
 

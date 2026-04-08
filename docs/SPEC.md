@@ -18,7 +18,7 @@ Mapanare is an AI-native compiled programming language where agents, signals, st
 - **Concurrency via agents and message passing.** No raw threads, no shared mutable state. Agents are concurrent actors that communicate through typed channels.
 - **Reactive via signals.** Signals propagate changes automatically. Computed values recompute when their dependencies change, enabling declarative reactive dataflow.
 - **Pipeline-oriented.** The `|>` pipe operator chains transformations naturally. Named pipelines compose agents into data-processing graphs.
-- **ML-ready.** First-class `Tensor<T>[shape]` types with compile-time shape verification. Tensor operations are built in, not bolted on.
+- **ML-ready (via GPU builtins).** GPU-accelerated tensor operations via `gpu_tensor_add/mul/matmul` builtins using CUDA. `Tensor<T>[shape]` type with compile-time shape verification is planned.
 
 ### Non-Goals
 
@@ -1721,76 +1721,58 @@ Generates a multi-stage Dockerfile optimized for Mapanare agent applications.
 
 ## 23. GPU Computing
 
-> **Status (v3.46.0):** Basic GPU compute is functional via builtins (`gpu_available()`,
-> `gpu_tensor_add()`, etc.). The `@gpu`/`@cuda`/`@vulkan` decorator syntax described
-> below is planned for a future release. GPU backends are loaded dynamically at runtime
-> via `dlopen`, requiring no compile-time SDK dependency.
-
-### 23.1 GPU Annotations
-
-Functions can be annotated for GPU dispatch:
-
-| Decorator | Behavior |
-|-----------|----------|
-| `@gpu` | Auto-selects CUDA or Vulkan based on runtime device detection |
-| `@cuda` | Forces CUDA backend; compile error if unavailable at runtime |
-| `@vulkan` | Forces Vulkan backend; compile error if unavailable at runtime |
-| `@metal` | Reserved for future macOS/iOS Metal support (not yet implemented) |
+Mapanare provides GPU-accelerated tensor operations via built-in functions. GPU compute uses the CUDA Driver API loaded at runtime via `dlopen` — no SDK installation required. Programs degrade gracefully to CPU when no GPU is available.
 
 ```mn
+fn main() {
+    si gpu_available() {
+        print("GPU: " + gpu_device_name())
+
+        pon a: List<Float> = [1.0, 2.0, 3.0, 4.0]
+        pon b: List<Float> = [5.0, 6.0, 7.0, 8.0]
+        pon c: List<Float> = gpu_tensor_add(a, b)
+        // c = [6.0, 8.0, 10.0, 12.0]
+        print("c[0] = " + str(c[0]))
+    }
+}
+```
+
+### 23.1 Built-in GPU Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `gpu_available()` | `() -> Bool` | True if a CUDA GPU was detected |
+| `gpu_device_name()` | `() -> String` | Device name (e.g., "NVIDIA GeForce RTX 4090") |
+| `gpu_device_memory()` | `() -> Int` | Total VRAM in bytes |
+| `gpu_tensor_add(a, b)` | `(List<Float>, List<Float>) -> List<Float>` | Element-wise addition |
+| `gpu_tensor_sub(a, b)` | `(List<Float>, List<Float>) -> List<Float>` | Element-wise subtraction |
+| `gpu_tensor_mul(a, b)` | `(List<Float>, List<Float>) -> List<Float>` | Element-wise multiplication |
+| `gpu_tensor_div(a, b)` | `(List<Float>, List<Float>) -> List<Float>` | Element-wise division |
+| `gpu_tensor_matmul(a, b, m, n, k)` | `(List<Float>, List<Float>, Int, Int, Int) -> List<Float>` | Matrix multiply (M,K)@(K,N) |
+
+All tensor operations fall back to CPU when no GPU is available. No code changes needed.
+
+### 23.2 Supported Backends
+
+| Backend | Library | Detection | Status |
+|---------|---------|-----------|--------|
+| CUDA | `libcuda.so` / `nvcuda.dll` | `dlopen` at runtime | Functional (v3.46.0) |
+| Vulkan | `libvulkan.so` / `vulkan-1.dll` | `dlopen` at runtime | Infrastructure present, not exposed as builtins |
+| Metal | macOS/iOS framework | Compile-time detection | Planned |
+
+Built-in PTX kernels for CUDA cover `add`, `sub`, `mul`, `div`, `matmul` at float64 precision.
+
+### 23.3 Future: @gpu Decorator
+
+> **Status:** The `@gpu` decorator syntax is specified but not yet connected to codegen. The decorator, PTX embedding, and kernel dispatch infrastructure exist in `emit_llvm_mir.py` and `mapanare_gpu.c`. Enabling this path requires porting GPU dispatch to the text emitter. Use `gpu_*` builtins for GPU compute in the current release.
+
+```mn
+// Planned syntax — not yet functional
 @gpu
 fn vector_add(a: Tensor<Float>[1024], b: Tensor<Float>[1024]) -> Tensor<Float>[1024] {
     return a + b
 }
-
-@cuda
-fn matrix_mul(a: Tensor<Float>[64, 128], b: Tensor<Float>[128, 256]) -> Tensor<Float>[64, 256] {
-    return a @ b
-}
 ```
-
-When `@gpu` is used, the runtime probes for CUDA first (via `libcuda.so` / `nvcuda.dll`), then Vulkan (`libvulkan.so` / `vulkan-1.dll`). If neither is available, the operation falls back to CPU execution transparently.
-
-### 23.2 Tensor Type
-
-`Tensor<T>` is the primary data type for GPU computing. Tensors carry metadata:
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `shape` | `List<Int>` | Dimension sizes |
-| `ndim` | `Int` | Number of dimensions |
-| `size` | `Int` | Total element count |
-| `device` | `String` | Current device (`"cpu"`, `"cuda"`, `"vulkan"`) |
-
-### 23.3 Tensor Operations
-
-**Creation:**
-
-```mn
-let z = Tensor.zeros<Float>(3, 3)      // 3x3 zero tensor
-let o = Tensor.ones<Float>(4)          // length-4 ones vector
-let t = Tensor.from_list([1.0, 2.0])   // from list literal
-```
-
-**Arithmetic (element-wise):** `add`, `sub`, `mul`, `div` via operators `+`, `-`, `*`, `/`.
-
-**Matrix operations:** `matmul` via `@` operator, `dot`, `transpose`.
-
-**Reductions:** `sum`, `mean`, `max`, `min`.
-
-### 23.4 Device Transfer
-
-```mn
-let cpu_tensor: Tensor<Float>[1024] = Tensor.ones<Float>(1024)
-let gpu_tensor = cpu_tensor.to_device("cuda")   // CPU -> GPU
-let back = gpu_tensor.to_device("cpu")           // GPU -> CPU
-```
-
-All operations degrade gracefully to CPU when no GPU is available. Code does not need separate CPU and GPU paths.
-
-### 23.5 Built-in Kernels
-
-The compiler ships with pre-compiled PTX kernels (CUDA) and SPIR-V shaders (Vulkan) for standard tensor operations: `add`, `sub`, `mul`, `div`, `matmul`. Custom kernels can be defined via `stdlib/gpu/kernel.mn`.
 
 ---
 

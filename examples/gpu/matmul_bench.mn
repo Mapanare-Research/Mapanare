@@ -1,0 +1,25 @@
+// GPU matrix multiply — 64x64 identity * values on GPU
+fn main() {
+    si gpu_available() {
+        pon n: Int = 64
+        let mut a: List<Float> = []
+        let mut b: List<Float> = []
+        cada i en 0..(n * n) {
+            // a = identity matrix
+            si i / n == i % n {
+                a.push(1.0)
+            } sino {
+                a.push(0.0)
+            }
+            b.push(float(i % n))
+        }
+
+        pon result: List<Float> = gpu_tensor_matmul(a, b, n, n, n)
+        print("Matmul " + str(n) + "x" + str(n) + " done on " + gpu_device_name())
+        // Identity * B = B, so result[0] should be 0.0
+        print("result[0] = " + str(result[0]))
+        print("result[1] = " + str(result[1]))
+    } sino {
+        print("No GPU available")
+    }
+}

@@ -291,10 +291,10 @@ MN_EXPORT void __mn_intern_set_cap(size_t cap) {
 
 MN_EXPORT MnString __mn_str_intern(MnString s) {
     if (s.len <= 0 || !s.data) return s;
-    intern_ensure_table();
-    if (!s_intern_table) return s;  /* alloc failed */
 
     intern_lock();
+    intern_ensure_table();
+    if (!s_intern_table) { intern_unlock(); return s; }
 
     const char *raw = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
     uint64_t h = intern_hash(raw, s.len);
@@ -406,12 +406,11 @@ MN_EXPORT MnString __mn_str_empty(void) {
 }
 
 MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
+    if (a.len <= 0) return b;
+    if (b.len <= 0) return a;
     const char *a_data = mn_untag(a.data);
     const char *b_data = mn_untag(b.data);
     int64_t total = mn_checked_add(a.len, b.len);
-    if (total == 0) {
-        return __mn_str_empty();
-    }
 #ifdef MN_PROFILE_MEM
     mn_concat_count++;
     mn_concat_bytes += total + 1;

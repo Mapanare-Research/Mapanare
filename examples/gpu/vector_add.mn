@@ -1,0 +1,21 @@
+// GPU vector addition — adds two 1000-element float vectors on GPU
+fn main() {
+    si gpu_available() {
+        print("Running on " + gpu_device_name())
+
+        let mut a: List<Float> = []
+        let mut b: List<Float> = []
+        cada i en 0..1000 {
+            a.push(float(i))
+            b.push(float(i) * 2.0)
+        }
+
+        pon c: List<Float> = gpu_tensor_add(a, b)
+        // Print first 5 results: i + i*2 = i*3
+        cada i en 0..5 {
+            print(str(i) + ": " + str(c[i]))
+        }
+    } sino {
+        print("No GPU available")
+    }
+}

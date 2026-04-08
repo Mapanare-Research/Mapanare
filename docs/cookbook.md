@@ -30,14 +30,14 @@ The simplest Mapanare program, using string interpolation.
 ```mn
 fn main() {
     let name = "Mapanare"
-    let version = "3.20.0"
+    let version = "3.47.0"
     print("Hello from ${name} v${version}!")
 }
 ```
 
 ```bash
 mapanare run hello.mn
-# Output: Hello from Mapanare v3.20.0!
+# Output: Hello from Mapanare v3.47.0!
 ```
 
 ---

@@ -396,8 +396,20 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_hmac_sha256_str", llvm_string(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_hex_encode_str", llvm_string(), llvm_string())
     s = declare_runtime_fn(s, "__mn_random_bytes_str", llvm_string(), "i64")
-    s = declare_runtime_fn(s, "__mn_regex_match", "i1", llvm_string() + ", " + llvm_string())
-    s = declare_runtime_fn(s, "__mn_regex_replace", llvm_string(), llvm_string() + ", " + llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_regex_compile_str", "i64", llvm_string())
+    s = declare_runtime_fn(s, "__mn_regex_exec_str", "i64", "i64, " + llvm_string() + ", i64")
+    s = declare_runtime_fn(s, "__mn_regex_replace_str", llvm_string(), "i64, " + llvm_string() + ", " + llvm_string() + ", i64")
+    s = declare_runtime_fn(s, "__mn_regex_free", "i64", "i64")
+    // Missing I/O builtins (v3.47.0)
+    s = declare_runtime_fn(s, "__mn_file_remove", "i64", llvm_string())
+    s = declare_runtime_fn(s, "__mn_file_size", "i64", llvm_string())
+    s = declare_runtime_fn(s, "__mn_file_mtime", "i64", llvm_string())
+    s = declare_runtime_fn(s, "__mn_dir_create", "i64", llvm_string())
+    s = declare_runtime_fn(s, "__mn_dir_remove", "i64", llvm_string())
+    s = declare_runtime_fn(s, "__mn_file_rename", "i64", llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_file_copy", "i64", llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_realpath", llvm_string(), llvm_string())
+    s = declare_runtime_fn(s, "__mn_tmpfile_path", llvm_string(), "")
     // GPU builtins (v3.46.0)
     s = declare_runtime_fn(s, "__mn_gpu_available", "i64", "")
     s = declare_runtime_fn(s, "__mn_gpu_device_name", llvm_string(), "")
@@ -2331,7 +2343,13 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     }
     if fn_name == "file_exists" {
         let as_fe: String = llvm_string() + " " + args[0].name
-        return emit_line(st, emit_call_ir(dn, "i1", "__mn_file_exists", as_fe))
+        let cnt_fe: String = toString(st.counter)
+        let mut s_fe: EmitState = st
+        s_fe.counter = s_fe.counter + 1
+        let fe_raw: String = "%fe_raw" + cnt_fe
+        s_fe = emit_line(s_fe, "  " + fe_raw + " = call i64 @__mn_file_exists(" + as_fe + ")")
+        s_fe = emit_line(s_fe, "  " + dn + " = icmp ne i64 " + fe_raw + ", 0")
+        return s_fe
     }
     if fn_name == "list_dir" {
         let as_ld: String = llvm_string() + " " + args[0].name
@@ -2366,12 +2384,31 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_random_bytes_str", "i64 " + args[0].name))
     }
     if fn_name == "regex_match" {
-        let as_rm: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        return emit_line(st, emit_call_ir(dn, "i1", "__mn_regex_match", as_rm))
+        // compile + exec + free pattern (matches Python emitter)
+        let cnt_rm: String = toString(st.counter)
+        let mut s_rm: EmitState = st
+        s_rm.counter = s_rm.counter + 3
+        let rh: String = "%rh" + cnt_rm
+        let re: String = "%re" + cnt_rm
+        let rf: String = "%rf" + cnt_rm
+        s_rm = emit_line(s_rm, "  " + rh + " = call i64 @__mn_regex_compile_str(" + llvm_string() + " " + args[0].name + ")")
+        s_rm = emit_line(s_rm, "  " + re + " = call i64 @__mn_regex_exec_str(i64 " + rh + ", " + llvm_string() + " " + args[1].name + ", i64 0)")
+        s_rm = emit_line(s_rm, "  " + rf + " = call i64 @__mn_regex_free(i64 " + rh + ")")
+        s_rm = emit_line(s_rm, "  " + dn + " = icmp sgt i64 " + re + ", 0")
+        return s_rm
     }
     if fn_name == "regex_replace" {
-        let as_rr: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_regex_replace", as_rr))
+        // compile + replace + free pattern (matches Python emitter)
+        let cnt_rr: String = toString(st.counter)
+        let mut s_rr: EmitState = st
+        s_rr.counter = s_rr.counter + 3
+        let rh2: String = "%rh2_" + cnt_rr
+        let rr2: String = "%rr2_" + cnt_rr
+        let rf2: String = "%rf2_" + cnt_rr
+        s_rr = emit_line(s_rr, "  " + rh2 + " = call i64 @__mn_regex_compile_str(" + llvm_string() + " " + args[0].name + ")")
+        s_rr = emit_line(s_rr, "  " + dn + " = call " + llvm_string() + " @__mn_regex_replace_str(i64 " + rh2 + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name + ", i64 1)")
+        s_rr = emit_line(s_rr, "  " + rf2 + " = call i64 @__mn_regex_free(i64 " + rh2 + ")")
+        return s_rr
     }
     // GPU builtins (v3.46.0)
     if fn_name == "gpu_available" {
@@ -2799,7 +2836,11 @@ fn emit_builtin_tostring(st: EmitState, dest: Value, args: List<Value>) -> EmitS
         return emit_copy(s, dest, args[0])
     }
     if args[0].ty.kind == "bool" {
-        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_from_bool", "i1 " + an))
+        let cnt_zb: String = toString(s.counter)
+        s.counter = s.counter + 1
+        let zext_b: String = "%zb" + cnt_zb
+        s = emit_line(s, "  " + zext_b + " = zext i1 " + an + " to i64")
+        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_from_bool", "i64 " + zext_b))
     } else {
     if args[0].ty.kind == "float" {
         s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_from_float", "double " + an))

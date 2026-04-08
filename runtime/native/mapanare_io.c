@@ -297,10 +297,14 @@ static struct {
     fn_SSL_CTX_set_default_verify_paths SSL_CTX_set_default_verify_paths;
 } s_ssl = {0};
 
-/* Internal: load OpenSSL dynamically */
+/* Internal: load OpenSSL dynamically (thread-safe via atomic flag) */
 static int ssl_load_library(void) {
-    if (s_ssl.loaded) return s_ssl.available ? 0 : -1;
-    s_ssl.loaded = 1;
+    if (__atomic_load_n(&s_ssl.loaded, __ATOMIC_ACQUIRE))
+        return s_ssl.available ? 0 : -1;
+    int expected = 0;
+    if (!__atomic_compare_exchange_n(&s_ssl.loaded, &expected, 1, 0,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+        return s_ssl.available ? 0 : -1;
     s_ssl.available = 0;
 
 #ifdef _WIN32
@@ -980,8 +984,12 @@ static struct {
 } s_evp = {0};
 
 static int evp_load(void) {
-    if (s_evp.loaded) return s_evp.available ? 0 : -1;
-    s_evp.loaded = 1;
+    if (__atomic_load_n(&s_evp.loaded, __ATOMIC_ACQUIRE))
+        return s_evp.available ? 0 : -1;
+    int evp_expected = 0;
+    if (!__atomic_compare_exchange_n(&s_evp.loaded, &evp_expected, 1, 0,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+        return s_evp.available ? 0 : -1;
     s_evp.available = 0;
 
     /* Ensure libcrypto is loaded (reuse TLS loader) */
@@ -1302,8 +1310,12 @@ static struct {
 } s_pcre2 = {0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 
 static int pcre2_load(void) {
-    if (s_pcre2.loaded) return s_pcre2.available ? 0 : -1;
-    s_pcre2.loaded = 1;
+    if (__atomic_load_n(&s_pcre2.loaded, __ATOMIC_ACQUIRE))
+        return s_pcre2.available ? 0 : -1;
+    int pcre2_expected = 0;
+    if (!__atomic_compare_exchange_n(&s_pcre2.loaded, &pcre2_expected, 1, 0,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+        return s_pcre2.available ? 0 : -1;
     s_pcre2.available = 0;
 
     void *lib = NULL;
@@ -1621,6 +1633,7 @@ MN_IO_EXPORT MnString __mn_http_get(MnString url) {
     for (;;) {
         if (total + 4096 > cap) {
             cap *= 2;
+            if (cap > 64 * 1024 * 1024) break;  /* 64 MB response limit */
             char *tmp = (char *)realloc(resp, cap);
             if (!tmp) break;
             resp = tmp;
