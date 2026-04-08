@@ -282,10 +282,10 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_gpu_available": {"nounwind"},
     "__mn_gpu_device_name": {"nounwind"},
     "__mn_gpu_device_memory": {"nounwind"},
-    "__mn_gpu_tensor_add": {"nounwind"},     # (ptr, ptr) -> LIST
-    "__mn_gpu_tensor_sub": {"nounwind"},     # (ptr, ptr) -> LIST
-    "__mn_gpu_tensor_mul": {"nounwind"},     # (ptr, ptr) -> LIST
-    "__mn_gpu_tensor_div": {"nounwind"},     # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_add": {"nounwind"},  # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_sub": {"nounwind"},  # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_mul": {"nounwind"},  # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_div": {"nounwind"},  # (ptr, ptr) -> LIST
     "__mn_gpu_tensor_matmul": {"nounwind"},  # (ptr, ptr, i64, i64, i64) -> LIST
     # Agent runtime (v3.43.0)
     "mapanare_agent_new": {"nounwind"},
@@ -2312,7 +2312,10 @@ class LLVMTextEmitter:
             r = self._rt("__mn_gpu_device_memory", I64, [], [])
             self._put(i.dest, r, I64)
             return
-        if fn in ("gpu_tensor_add", "gpu_tensor_sub", "gpu_tensor_mul", "gpu_tensor_div") and len(args) >= 2:
+        if (
+            fn in ("gpu_tensor_add", "gpu_tensor_sub", "gpu_tensor_mul", "gpu_tensor_div")
+            and len(args) >= 2
+        ):
             a0 = self._coerce(args[0][0], args[0][1], LIST) if args[0][1] != LIST else args[0][0]
             a1 = self._coerce(args[1][0], args[1][1], LIST) if args[1][1] != LIST else args[1][0]
             # Pass lists by pointer to avoid ABI mismatch (MnList is 40 bytes)
@@ -2320,8 +2323,12 @@ class LLVMTextEmitter:
             pb = self._alloca(LIST, "gtb")
             self._L(f"store {LIST} {a0}, ptr {pa}")
             self._L(f"store {LIST} {a1}, ptr {pb}")
-            cfn = {"gpu_tensor_add": "__mn_gpu_tensor_add", "gpu_tensor_sub": "__mn_gpu_tensor_sub",
-                   "gpu_tensor_mul": "__mn_gpu_tensor_mul", "gpu_tensor_div": "__mn_gpu_tensor_div"}[fn]
+            cfn = {
+                "gpu_tensor_add": "__mn_gpu_tensor_add",
+                "gpu_tensor_sub": "__mn_gpu_tensor_sub",
+                "gpu_tensor_mul": "__mn_gpu_tensor_mul",
+                "gpu_tensor_div": "__mn_gpu_tensor_div",
+            }[fn]
             r = self._rt(cfn, LIST, [PTR, PTR], [(pa, PTR), (pb, PTR)])
             self._put(i.dest, r, LIST)
             return

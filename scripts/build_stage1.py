@@ -102,7 +102,18 @@ def build() -> pathlib.Path:
     gpu_bi_o = SELF_DIR / "mapanare_gpu_builtins.o"
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
     profile_flags = ["-DMN_PROFILE_MEM"] if "--profile-mem" in sys.argv else []
-    c_base_flags = [CC, "-c", "-O2", "-g", "-fPIC", "-Wall", "-Wextra", "-Werror", "-I", str(NATIVE_DIR)]
+    c_base_flags = [
+        CC,
+        "-c",
+        "-O2",
+        "-g",
+        "-fPIC",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I",
+        str(NATIVE_DIR),
+    ]
     subprocess.run(
         c_base_flags + asan_flags + profile_flags + [str(core_c), "-o", str(core_o)],
         check=True,

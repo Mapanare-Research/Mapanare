@@ -406,8 +406,9 @@ MN_EXPORT MnString __mn_str_empty(void) {
 }
 
 MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
-    if (a.len <= 0) return b;
-    if (b.len <= 0) return a;
+    if (a.len <= 0 && b.len <= 0) return __mn_str_empty();
+    if (a.len <= 0) return __mn_str_from_parts(mn_untag(b.data), b.len);
+    if (b.len <= 0) return __mn_str_from_parts(mn_untag(a.data), a.len);
     const char *a_data = mn_untag(a.data);
     const char *b_data = mn_untag(b.data);
     int64_t total = mn_checked_add(a.len, b.len);
