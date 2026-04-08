@@ -602,10 +602,12 @@ class LLVMTextEmitter:
         if va:
             ps += ", ..." if ps else "..."
         attrs = _RUNTIME_FN_ATTRS.get(nm, set())
-        attr_str = " ".join(sorted(attrs))
-        decl = f"declare {abi_ret} @{nm}({ps})"
-        if attr_str:
-            decl += f" {attr_str}"
+        # noalias is a return attribute — must appear before the return type
+        ret_attrs = sorted(a for a in attrs if a == "noalias")
+        fn_attrs = sorted(a for a in attrs if a != "noalias")
+        ret_prefix = " ".join(ret_attrs) + " " if ret_attrs else ""
+        fn_suffix = " " + " ".join(fn_attrs) if fn_attrs else ""
+        decl = f"declare {ret_prefix}{abi_ret} @{nm}({ps}){fn_suffix}"
         self._decls.append(decl)
 
     def _ensure(self, nm: str, ret: str, pts: list[str], va: bool = False) -> None:

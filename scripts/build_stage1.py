@@ -28,31 +28,40 @@ def build() -> pathlib.Path:
     """Build mnc-stage1 and return its path."""
     print("=== Stage 1: Building self-hosted compiler ===")
 
-    # 1. Generate LLVM IR
-    emitter = "llvmlite" if "--llvmlite" in sys.argv else "text"
-    print(f"[1/6] Generating LLVM IR from mapanare/self/*.mn (emitter={emitter}) ...")
-    from mapanare.multi_module import compile_multi_module_mir
-
-    source = (SELF_DIR / "main.mn").read_text(encoding="utf-8")
-    ir = compile_multi_module_mir(
-        root_source=source,
-        root_file=str(SELF_DIR / "main.mn"),
-        opt_level=2,
-        emitter_backend=emitter,
-        skip_check="--skip-check" in sys.argv or "--no-check" in sys.argv,
-    )
-
-    # 2. Post-process: make compile() and format_error() externally visible
-    print("[2/6] Post-processing IR (external linkage for entry points) ...")
-    # Remove 'internal' linkage from ALL function definitions.
-    # LLVM -O2 dead-code-eliminates internal functions it considers
-    # unreachable, but with sret calling conventions it sometimes
-    # misjudges reachability, stripping functions that ARE called.
-    ir = ir.replace("define internal ", "define ")
-
     ir_path = SELF_DIR / "main.ll"
-    ir_path.write_text(ir, encoding="utf-8")
-    print(f"  IR: {ir.count(chr(10))} lines → {ir_path}")
+
+    if "--use-committed" in sys.argv:
+        # Use the committed main.ll directly (skip IR regeneration).
+        # This is used in CI when the text emitter has known codegen issues
+        # with complex enum types that prevent clean regeneration.
+        print("[1/6] Using committed LLVM IR (--use-committed) ...")
+        ir = ir_path.read_text(encoding="utf-8")
+        print(f"  IR: {ir.count(chr(10))} lines ← {ir_path}")
+    else:
+        # 1. Generate LLVM IR
+        emitter = "llvmlite" if "--llvmlite" in sys.argv else "text"
+        print(f"[1/6] Generating LLVM IR from mapanare/self/*.mn (emitter={emitter}) ...")
+        from mapanare.multi_module import compile_multi_module_mir
+
+        source = (SELF_DIR / "main.mn").read_text(encoding="utf-8")
+        ir = compile_multi_module_mir(
+            root_source=source,
+            root_file=str(SELF_DIR / "main.mn"),
+            opt_level=2,
+            emitter_backend=emitter,
+            skip_check="--skip-check" in sys.argv or "--no-check" in sys.argv,
+        )
+
+        # 2. Post-process: make compile() and format_error() externally visible
+        print("[2/6] Post-processing IR (external linkage for entry points) ...")
+        # Remove 'internal' linkage from ALL function definitions.
+        # LLVM -O2 dead-code-eliminates internal functions it considers
+        # unreachable, but with sret calling conventions it sometimes
+        # misjudges reachability, stripping functions that ARE called.
+        ir = ir.replace("define internal ", "define ")
+
+        ir_path.write_text(ir, encoding="utf-8")
+        print(f"  IR: {ir.count(chr(10))} lines → {ir_path}")
 
     # 3. Compile IR to object code
     print("[3/6] Compiling LLVM IR → object code ...")

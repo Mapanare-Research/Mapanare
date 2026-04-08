@@ -1365,7 +1365,15 @@ MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_ty
     map->key_size = key_size;
     map->val_size = val_size;
     map->key_type = key_type;
-    map->val_type = val_type;
+    /* Backward compat: old callers pass only 3 args (val_type is garbage).
+       Accept 0 (OPAQUE) and 1 (STR) explicitly; anything else falls back to
+       the size heuristic so pre-v3.34 compiled code still works. */
+    if (val_type == MN_MAP_VAL_OPAQUE || val_type == MN_MAP_VAL_STR) {
+        map->val_type = val_type;
+    } else {
+        map->val_type = (val_size == (int64_t)sizeof(MnString))
+            ? MN_MAP_VAL_STR : MN_MAP_VAL_OPAQUE;
+    }
     map->bucket_size = 2 + key_size + val_size;  /* status + psl + key + val */
     map->len = 0;
     map->cap = MN_MAP_INITIAL_CAP;
