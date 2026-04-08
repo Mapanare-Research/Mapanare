@@ -2314,6 +2314,12 @@ MN_EXPORT void __mn_exit(int64_t code) {
 
 MN_EXPORT int64_t __mn_system(MnString command) {
     char *cmd = mn_to_cstr(command);
+#if defined(__APPLE__) && defined(__arm64__) && defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)
+    /* system() is unavailable on iOS — return -1 (error) */
+    (void)cmd;
+    __mn_free(cmd);
+    return -1;
+#endif
     int ret = system(cmd);
     __mn_free(cmd);
     /* system() returns -1 on error, or the full status on POSIX.

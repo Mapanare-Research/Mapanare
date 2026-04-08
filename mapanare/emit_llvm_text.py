@@ -1454,7 +1454,7 @@ class LLVMTextEmitter:
             self._track_container(i.dest.name, "list")
         # Propagate container tracking for maps/signals/streams
         sk = i.src.ty.kind if i.src.ty else TypeKind.UNKNOWN
-        if sk == TypeKind.MAP or (t == PTR and sk == TypeKind.MAP):
+        if sk == TypeKind.MAP:
             self._track_container(i.dest.name, "map")
         elif sk == TypeKind.SIGNAL:
             self._track_container(i.dest.name, "signal")
