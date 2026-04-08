@@ -4,7 +4,7 @@
 > parallel module compilation, precompiled imports. Target: <2s rebuild on
 > 20K-line codebase after single-file change.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Large (3-4 sessions)
 **Breaking:** No
 **Prerequisite:** v3.34.0

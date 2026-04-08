@@ -77,6 +77,10 @@ jobs:
         if: success()
         run: bash tests/bench/bench_startup.sh --gate
 
+      - name: Compile-time benchmarks
+        if: success()
+        run: bash tests/bench/bench_compile.sh --gate
+
   # ---------------------------------------------------------------------------
   # Native bootstrap: build from seed binary, no Python
   # ---------------------------------------------------------------------------

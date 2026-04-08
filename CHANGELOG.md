@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.36.0] - 2026-04-07
+
+### Added
+
+- `mnc run` — compile and execute .mn files natively (<200ms startup, no Python)
+- `mnc build` — produce native binaries with `--release`, `--debug`, `--small` modes
+- `mnc build <dir>` — incremental multi-module builds with SHA-256 cache
+- `mnc compile` — transpile .py/.php/.ts/.go to native (shells out for transpilation step)
+- `mnc cache stats|clean` — manage `.mnc_cache/` compilation cache
+- `--timing` flag for per-module build timing reports
+- `--watch` mode for continuous rebuild on file changes (via inotifywait)
+- Precompiled C runtime (`make build-rt` → `libmapanare_rt.a`) for faster linking
+- Startup benchmark (`tests/bench/bench_startup.sh`) and compile-time benchmark suite
+  (`tests/bench/bench_compile.sh`) with CI gates
+- Python CLI shows `[dev mode]` notice recommending `mnc run` for native speed
+
+### Changed
+
+- IR output reduced from 275K to 185K lines (no drop glue for batch compiler builds)
+- Binary size: 3.4MB stripped (was 3.7MB)
+- IR blowup ratio: 4.5x (was 13.75x)
+
+### Fixed
+
+- Text emitter drop glue use-after-free: list/string fields embedded in returned structs
+  were freed before the caller read them, causing SIGSEGV on any compilation (29/33 golden
+  tests now pass, was 0/33)
+- `no_drop_glue` option added to text emitter — disables all drop glue for batch compiler
+  builds where memory leaking is acceptable (compiler processes one file and exits)
+- `concat_self.sh` missing transpiler modules (now matches `concat_self.py` order)
+
 ## [3.35.0] - 2026-04-07
 
 ### Changed
@@ -828,7 +859,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.35.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.36.0...HEAD
+[3.36.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.35.0...v3.36.0
 [3.35.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.34.0...v3.35.0
 [3.34.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.33.0...v3.34.0
 [3.33.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.32.0...v3.33.0

@@ -4,7 +4,7 @@
 > add compile-time benchmarks to CI, and prepare the ground for v4.0.0.
 > After this version, v4.0.0 is purely docs, demos, and the quality gate.
 
-**Status:** PLANNED
+**Status:** DONE
 **Estimated scope:** Medium (1-2 sessions)
 **Breaking:** No
 **Prerequisite:** v3.35.0
