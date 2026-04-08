@@ -7703,7 +7703,7 @@ for_exit17:
   store i64 0, ptr %t108.a.157
   %l.158 = load i64, ptr %t107.a.156
   %l.159 = load i64, ptr %t108.a.157
-  %i.160 = icmp eq i64 %l.158, %l.159
+  %i.160 = icmp sle i64 %l.158, %l.159
   store i1 %i.160, ptr %t109.a.161
   %l.162 = load i1, ptr %t109.a.161
   br i1 %l.162, label %if_then39, label %if_else40
@@ -8419,7 +8419,7 @@ entry:
   store i64 0, ptr %t2.a.7
   %l.8 = load i64, ptr %t1.a.6
   %l.9 = load i64, ptr %t2.a.7
-  %i.10 = icmp eq i64 %l.8, %l.9
+  %i.10 = icmp sle i64 %l.8, %l.9
   store i1 %i.10, ptr %t3.a.11
   %l.12 = load i1, ptr %t3.a.11
   br i1 %l.12, label %if_then0, label %if_else1
@@ -9038,7 +9038,7 @@ entry:
   store i64 0, ptr %t2.a.7
   %l.8 = load i64, ptr %t1.a.6
   %l.9 = load i64, ptr %t2.a.7
-  %i.10 = icmp eq i64 %l.8, %l.9
+  %i.10 = icmp sle i64 %l.8, %l.9
   store i1 %i.10, ptr %t3.a.11
   %l.12 = load i1, ptr %t3.a.11
   br i1 %l.12, label %if_then0, label %if_else1
@@ -10512,7 +10512,7 @@ if_merge47:
   store i64 0, ptr %t126.a.451
   %l.452 = load i64, ptr %t125.a.450
   %l.453 = load i64, ptr %t126.a.451
-  %i.454 = icmp eq i64 %l.452, %l.453
+  %i.454 = icmp sle i64 %l.452, %l.453
   store i1 %i.454, ptr %t127.a.455
   %l.456 = load i1, ptr %t127.a.455
   br i1 %l.456, label %if_then48, label %if_else49
@@ -171623,4 +171623,4 @@ if_merge62:
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.42.0"}
+!0 = !{!"3.45.0"}

@@ -657,9 +657,10 @@ MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) 
 }
 
 MN_EXPORT MnString __mn_str_from_bool(int64_t value) {
-    static const MnString s_true  = { "true",  4 };
-    static const MnString s_false = { "false", 5 };
-    return value ? s_true : s_false;
+    /* Return heap-allocated copies so the tag bit system works correctly.
+     * Static string literals have no alignment guarantee and may have bit 0
+     * set, which mn_is_heap() would misidentify as heap-allocated. */
+    return __mn_str_from_cstr(value ? "true" : "false");
 }
 
 MN_EXPORT MnString __mn_str_from_int(int64_t value) {

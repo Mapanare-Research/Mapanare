@@ -1787,7 +1787,8 @@ class LLVMTextEmitter:
             self._track_string(r)
             self._put(i.dest, r, STR)
         elif sk == TypeKind.BOOL and tk == TypeKind.STRING:
-            r = self._rt("__mn_str_from_bool", STR, [I1], [(sv, st)])
+            bv = self._coerce(sv, st, I64) if st != I64 else sv
+            r = self._rt("__mn_str_from_bool", STR, [I64], [(bv, I64)])
             self._track_string(r)
             self._put(i.dest, r, STR)
         elif sk == TypeKind.INT and tk == TypeKind.CHAR:
@@ -2030,7 +2031,8 @@ class LLVMTextEmitter:
             elif i.args and i.args[0].ty.kind == TypeKind.FLOAT:
                 self._printf("%f\n" if nl else "%f", [(args[0][0], DBL)])
             elif i.args and i.args[0].ty.kind == TypeKind.BOOL:
-                s = self._rt("__mn_str_from_bool", STR, [I1], [args[0]])
+                bv = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
+                s = self._rt("__mn_str_from_bool", STR, [I64], [(bv, I64)])
                 self._track_string(s)
                 rt_fn_b = "__mn_str_println" if nl else "__mn_str_print"
                 self._rt(rt_fn_b, VOID, [STR], [(s, STR)])
@@ -2083,7 +2085,8 @@ class LLVMTextEmitter:
                 r = self._rt("__mn_str_from_float", STR, [DBL], [args[0]])
                 self._track_string(r)
             elif ak == TypeKind.BOOL:
-                r = self._rt("__mn_str_from_bool", STR, [I1], [args[0]])
+                bv = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
+                r = self._rt("__mn_str_from_bool", STR, [I64], [(bv, I64)])
                 self._track_string(r)
             elif ak == TypeKind.STRING:
                 self._put(i.dest, args[0][0], args[0][1])
@@ -3205,7 +3208,8 @@ class LLVMTextEmitter:
                 self._track_string(s)
                 parts.append((s, STR))
             elif pk == TypeKind.BOOL:
-                s = self._rt("__mn_str_from_bool", STR, [I1], [(v, t)])
+                bv = self._coerce(v, t, I64) if t != I64 else v
+                s = self._rt("__mn_str_from_bool", STR, [I64], [(bv, I64)])
                 self._track_string(s)
                 parts.append((s, STR))
             else:
