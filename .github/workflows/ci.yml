@@ -114,8 +114,12 @@ jobs:
             runtime/native/mapanare_core.c \
             runtime/native/mapanare_runtime.c \
             -o test_c_runtime
-          gcc -c -O2 -g -Wall -Wextra -I runtime/native/ \
+          gcc -c -O2 -g -Wall -Wextra -Werror -I runtime/native/ \
             runtime/native/mapanare_io.c -o /tmp/mapanare_io.o
+          gcc -c -O2 -g -Wall -Wextra -Werror -I runtime/native/ \
+            runtime/native/mapanare_gpu.c -o /tmp/mapanare_gpu.o
+          gcc -c -O2 -g -Wall -Wextra -Werror -I runtime/native/ \
+            runtime/native/mapanare_gpu_builtins.c -o /tmp/mapanare_gpu_builtins.o
           ./test_c_runtime
 
       - name: Compile and run with AddressSanitizer
@@ -334,7 +338,8 @@ jobs:
           clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_runtime.c -o mapanare_runtime.o
           clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_io.c -o mapanare_io.o
           clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_gpu.c -o mapanare_gpu.o
-          ar rcs libmapanare.a mapanare_core.o mapanare_runtime.o mapanare_io.o mapanare_gpu.o
+          clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_gpu_builtins.c -o mapanare_gpu_builtins.o
+          ar rcs libmapanare.a mapanare_core.o mapanare_runtime.o mapanare_io.o mapanare_gpu.o mapanare_gpu_builtins.o
           echo "Static library built:"
           ls -la libmapanare.a
           file mapanare_core.o
@@ -371,7 +376,7 @@ jobs:
         run: |
           cd runtime/native
           for arch in arm64 x86_64; do
-            for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c; do
+            for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c mapanare_gpu_builtins.c; do
               clang -c -std=c11 -O2 -arch $arch "$src" -o "${src%.c}_${arch}.o"
             done
             ar rcs "libmapanare_${arch}.a" *_${arch}.o
@@ -393,7 +398,7 @@ jobs:
           IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "iOS SDK: $IOS_SDK"
           cd runtime/native
-          for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c; do
+          for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c mapanare_gpu_builtins.c; do
             echo "--- Compiling $src for iOS ---"
             xcrun --sdk iphoneos clang -c -std=c11 -O2 -Wall \
               -target arm64-apple-ios17.0 \

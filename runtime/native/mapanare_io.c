@@ -1212,20 +1212,24 @@ MN_IO_EXPORT MnString __mn_random_bytes_str(int64_t n) {
     if (!buf) return __mn_str_empty();
 
 #ifdef _WIN32
-    /* Use BCryptGenRandom (Vista+) or CryptGenRandom */
+    /* Use BCryptGenRandom (Vista+) — cached HMODULE to avoid leak */
     typedef long (WINAPI *fn_BCryptGenRandom)(void*, unsigned char*, unsigned long, unsigned long);
-    HMODULE bcrypt = LoadLibraryA("bcrypt.dll");
-    if (bcrypt) {
-        fn_BCryptGenRandom gen = (fn_BCryptGenRandom)GetProcAddress(bcrypt, "BCryptGenRandom");
-        if (gen && gen(NULL, (unsigned char *)buf, (unsigned long)n, 2 /*BCRYPT_USE_SYSTEM_PREFERRED_RNG*/) == 0) {
-            MnString result = __mn_str_from_parts(buf, n);
-            free(buf);
-            return result;
+    static HMODULE s_bcrypt = NULL;
+    static fn_BCryptGenRandom s_bcrypt_gen = NULL;
+    if (!s_bcrypt) {
+        s_bcrypt = LoadLibraryA("bcrypt.dll");
+        if (s_bcrypt) {
+            s_bcrypt_gen = (fn_BCryptGenRandom)GetProcAddress(s_bcrypt, "BCryptGenRandom");
         }
     }
-    /* Fallback: rand() seeded by time — NOT cryptographically secure */
-    srand((unsigned int)GetTickCount());
-    for (int64_t i = 0; i < n; i++) buf[i] = (char)(rand() & 0xFF);
+    if (s_bcrypt_gen && s_bcrypt_gen(NULL, (unsigned char *)buf, (unsigned long)n, 2 /*BCRYPT_USE_SYSTEM_PREFERRED_RNG*/) == 0) {
+        MnString result = __mn_str_from_parts(buf, n);
+        free(buf);
+        return result;
+    }
+    /* BCrypt unavailable — return empty instead of insecure rand() */
+    free(buf);
+    return __mn_str_empty();
 #else
     FILE *f = fopen("/dev/urandom", "rb");
     if (f) {

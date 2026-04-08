@@ -310,6 +310,15 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "random_bytes": STRING_TYPE,
     "regex_match": TypeInfo(kind=TypeKind.BOOL),
     "regex_replace": STRING_TYPE,
+    # GPU builtins (v3.46.0)
+    "gpu_available": TypeInfo(kind=TypeKind.BOOL),
+    "gpu_device_name": STRING_TYPE,
+    "gpu_device_memory": INT_TYPE,
+    "gpu_tensor_add": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
+    "gpu_tensor_sub": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
+    "gpu_tensor_mul": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
+    "gpu_tensor_div": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
+    "gpu_tensor_matmul": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
 }
 
 # Builtin call name mapping (Mapanare name -> Python name) for emit_python.py

@@ -5,7 +5,7 @@ Pipeline:
     1. Compile mapanare/self/*.mn (10 modules) → LLVM IR via Python bootstrap
     2. Post-process IR: make compile() externally visible
     3. Compile IR → native object code
-    4. Compile C runtime (mapanare_core.c + mapanare_io.c)
+    4. Compile C runtime (mapanare_core.c + mapanare_io.c + mapanare_gpu.c)
     5. Compile C main wrapper (mnc_main.c)
     6. Link: main wrapper + compiler object + C runtime → mnc-stage1
 """
@@ -73,7 +73,7 @@ def build() -> pathlib.Path:
     import shutil
 
     clang_bin = shutil.which("clang")
-    opt_flag = "-O2" if "--O2" in sys.argv else "-O2"
+    opt_flag = "-O2"
     if clang_bin:
         subprocess.run(
             [clang_bin, "-c", opt_flag, str(ir_path), "-o", str(obj_path)],
@@ -96,11 +96,15 @@ def build() -> pathlib.Path:
     io_o = SELF_DIR / "mapanare_io.o"
     rt_c = NATIVE_DIR / "mapanare_runtime.c"
     rt_o = SELF_DIR / "mapanare_runtime.o"
+    gpu_c = NATIVE_DIR / "mapanare_gpu.c"
+    gpu_o = SELF_DIR / "mapanare_gpu.o"
+    gpu_bi_c = NATIVE_DIR / "mapanare_gpu_builtins.c"
+    gpu_bi_o = SELF_DIR / "mapanare_gpu_builtins.o"
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
     profile_flags = ["-DMN_PROFILE_MEM"] if "--profile-mem" in sys.argv else []
-    c_base_flags = [CC, "-c", "-O2", "-g", "-fPIC", "-Wall", "-Wextra", "-I", str(NATIVE_DIR)]
+    c_base_flags = [CC, "-c", "-O2", "-g", "-fPIC", "-Wall", "-Wextra", "-Werror", "-I", str(NATIVE_DIR)]
     subprocess.run(
-        c_base_flags + ["-Werror"] + asan_flags + profile_flags + [str(core_c), "-o", str(core_o)],
+        c_base_flags + asan_flags + profile_flags + [str(core_c), "-o", str(core_o)],
         check=True,
     )
     subprocess.run(
@@ -111,7 +115,15 @@ def build() -> pathlib.Path:
         c_base_flags + asan_flags + [str(rt_c), "-o", str(rt_o)],
         check=True,
     )
-    print(f"  Runtime: {core_o}, {io_o}, {rt_o}")
+    subprocess.run(
+        c_base_flags + asan_flags + [str(gpu_c), "-o", str(gpu_o)],
+        check=True,
+    )
+    subprocess.run(
+        c_base_flags + asan_flags + [str(gpu_bi_c), "-o", str(gpu_bi_o)],
+        check=True,
+    )
+    print(f"  Runtime: {core_o}, {io_o}, {rt_o}, {gpu_o}, {gpu_bi_o}")
 
     # 5. Compile main wrapper
     print("[5/6] Compiling C main wrapper ...")
@@ -137,6 +149,7 @@ def build() -> pathlib.Path:
             "-rdynamic",
             "-lm",
             "-lpthread",
+            "-ldl",
             "-Wl,-z,stacksize=67108864",  # 64MB stack for deep recursion on Linux
         ]
 
@@ -150,16 +163,17 @@ def build() -> pathlib.Path:
             str(core_o),
             str(io_o),
             str(rt_o),
+            str(gpu_o),
+            str(gpu_bi_o),
         ]
         + link_flags
-        + asan_flags
-        + [],
+        + asan_flags,
         check=True,
     )
     print(f"  Binary: {binary} ({binary.stat().st_size} bytes)")
 
     # Cleanup intermediate .o files
-    for f in [main_o, core_o, io_o, rt_o]:
+    for f in [main_o, obj_path, core_o, io_o, rt_o, gpu_o, gpu_bi_o]:
         if f.exists():
             f.unlink()
 

@@ -1,7 +1,8 @@
-# Master Prompt — Execute Roadmap v3.41.0 → v4.0.0
+# Master Prompt — Execute Roadmap v3.46.0 → v4.0.0
 
-> Bridge the gap from "compiler works" to "language is usable."
-> The compiler engineering is 9.76/10. The usability is 3/10. Fix that.
+> Bridge the gap from "language is usable" to "GPU works and it ships."
+> The usability arc (v3.41–v3.45) scored 9.69/10. The GPU runtime is built but not linked.
+> The 4090 is sitting right there. Wire it up, fix the review items, ship v4.0.0.
 > Each version has its own PLAN.md with full instructions.
 > Execute one at a time, verify, commit, then move to next.
 > Read CLAUDE.md for project context.
@@ -10,8 +11,8 @@
 
 ## Instructions
 
-You are executing the Mapanare usability roadmap from v3.41.0 through v4.0.0.
-There are 5 versions to complete before the production release, each building
+You are executing the Mapanare GPU + production roadmap from v3.46.0 through v4.0.0.
+There are 2 versions to complete before the production release tag, each building
 on the previous one.
 
 **For each version N:**
@@ -29,37 +30,31 @@ on the previous one.
 
 | # | Version | Codename | Theme | Proof |
 |---|---------|----------|-------|-------|
-| 1 | v3.41.0 | Culebrita | IO Foundation | `read_line()` works, file I/O complete, `mapanare_io.c` linked |
-| 2 | v3.42.0 | Cascabel | Network Native | HTTP GET fetches a URL from native binary, crypto/regex work |
-| 3 | v3.43.0 | Mapanare | Agent Runtime | `spawn`/`send`/`sync` work with real OS threads in native |
-| 4 | v3.44.0 | Cunaguaro | Real Examples | ALL examples compile+run, transpile .py/.php → native end-to-end |
-| 5 | v3.45.0 | Turpial | Package Manager | `mapanare install` works, error recovery, docs match reality |
+| 1 | v3.46.0 | Caimán | GPU Foundation | `gpu_available()` returns true, `gpu_tensor_add()` runs on 4090 |
+| 2 | v3.47.0 | Guacamaya | GPU Examples + v4.0.0 Gate | Real GPU examples, SPEC S23 honest, all review items fixed |
 
-After all 5: tag v4.0.0.
+After both: tag v4.0.0.
 
 **Dependencies:**
 
 ```
-v3.40.0 (review cleanup) ── compiler engineering 9.76/10, zero CRITICAL/HIGH
+v3.45.0 (package manager) ── 9.69/10 review, 5 hard blockers, GPU runtime unlinked
     │
     ▼
-v3.41.0 (IO foundation) ── link mapanare_io.c, add read_line(), fix file I/O
-    │                       UNLOCKS: all IO functions available in native binaries
+v3.46.0 (GPU foundation) ── link mapanare_gpu.c, add gpu_* builtins, fix review blockers
+    │                        UNLOCKS: GPU tensor math from Mapanare code on the 4090
+    │                        FIXES: SPEC S23, random_bytes, HMODULE leak, tar filter,
+    │                               test_examples, -Werror all C files, version strings
     ▼
-v3.42.0 (network native) ── HTTP client, TCP/TLS, crypto, regex from native
-    │                        UNLOCKS: programs that talk to the internet
+v3.47.0 (GPU examples + gate) ── real GPU programs, SPEC rewrite, ABI fixes, polish
+    │                              UNLOCKS: SPEC Section 23 shows code that compiles
+    │                              FIXES: self-hosted emitter ABI (regex, file_exists,
+    │                                     str(false)), thread-safe dlopen, intern lock,
+    │                                     concat early return, dedup, golden refs
     ▼
-v3.43.0 (agent runtime) ── link mapanare_runtime.c, spawn/send/sync with threads
-    │                       UNLOCKS: concurrent programs
-    ▼
-v3.44.0 (real examples) ── fix all examples, CLI demos, transpile end-to-end
-    │                       UNLOCKS: someone can look at examples and learn
-    ▼
-v3.45.0 (package manager) ── install works, error recovery, docs updated
-    │                         UNLOCKS: ecosystem, discoverability
-    ▼
-v4.0.0 (production) ── release tag, website update, blog post
-                        THE BAR: a new user can install → write → compile → run
+v4.0.0 (production) ── release tag
+                        THE BAR: GPU works, every review item addressed,
+                        a new user can install → write → compile → run
 ```
 
 ---
@@ -77,52 +72,137 @@ v4.0.0 (production) ── release tag, website update, blog post
 - Use ASan/TSan after C runtime changes
 - Use `valgrind` after memory-related changes
 - Every new golden test must also pass through mnc-stage1
+- GPU golden tests must handle no-GPU gracefully (CI has no GPU)
+- Test GPU builtins on the 4090 in WSL before committing
 
 ---
 
 ## What must be true after each version
 
-| Check | v3.41.0 | v3.42.0 | v3.43.0 | v3.44.0 | v3.45.0 |
-|-------|---------|---------|---------|---------|---------|
-| `mapanare_io.c` linked | YES | YES | YES | YES | YES |
-| `read_line()` works | YES | YES | YES | YES | YES |
-| File I/O complete (append, list_dir) | YES | YES | YES | YES | YES |
-| IO functions declared in LLVM emitter | YES | YES | YES | YES | YES |
-| HTTP GET works from native binary | — | YES | YES | YES | YES |
-| Crypto (SHA-256, base64) works | — | YES | YES | YES | YES |
-| Regex works (with PCRE2 fallback) | — | YES | YES | YES | YES |
-| `mapanare_runtime.c` linked | — | — | YES | YES | YES |
-| Agent spawn/send/sync native | — | — | YES | YES | YES |
-| ALL examples compile and run | — | — | — | YES | YES |
-| Transpile .py → .mn → native works | — | — | — | YES | YES |
-| `mapanare install` works | — | — | — | — | YES |
-| Multiple errors reported (not crash) | — | — | — | — | YES |
-| Getting Started guide works e2e | — | — | — | — | YES |
-| Fixed point maintained (stage4==stage3) | YES | YES | YES | YES | YES |
-| Valgrind-clean 30+/N golden | YES | YES | YES | YES | YES |
-| Culebra scan clean (zero critical) | YES | YES | YES | YES | YES |
+| Check | v3.46.0 | v3.47.0 |
+|-------|---------|---------|
+| Everything from v3.45.0 (IO, network, agents, examples, pkg mgr) | YES | YES |
+| `mapanare_gpu.c` linked into mnc-stage1 | YES | YES |
+| `gpu_available()` returns true on 4090 | YES | YES |
+| `gpu_device_name()` returns "NVIDIA GeForce RTX 4090" | YES | YES |
+| `gpu_tensor_add/sub/mul/div` produce correct results on GPU | YES | YES |
+| `gpu_tensor_matmul` produces correct results on GPU | YES | YES |
+| GPU builtins degrade to CPU when no GPU available | YES | YES |
+| Golden tests 39-40 pass (bootstrap + stage1) | YES | YES |
+| CI passes (GPU tests skip gracefully) | YES | YES |
+| SPEC S23 has honest status note | YES | YES |
+| `random_bytes` no longer falls back to `rand()` | YES | YES |
+| HMODULE leak fixed (bcrypt.dll cached) | YES | YES |
+| `tar.extractall(filter='data')` in pkg manager | YES | YES |
+| `test_examples.py` includes all example dirs | YES | YES |
+| `-Werror` on ALL C files in build_stage1.py | YES | YES |
+| Real GPU examples in `examples/gpu/` | — | YES |
+| SPEC S23 code example actually compiles | — | YES |
+| Self-hosted emitter: regex ABI fixed | — | YES |
+| Self-hosted emitter: `file_exists` i64 return | — | YES |
+| Self-hosted emitter: `str(false)` zext fixed | — | YES |
+| Self-hosted emitter: GPU builtins wired | — | YES |
+| Thread-safe dlopen loaders (pthread_once) | — | YES |
+| `intern_ensure_table()` inside lock | — | YES |
+| `__mn_str_concat` early return for empty operands | — | YES |
+| `mnstr_to_cstr` / `MnHandleTable` deduplicated | — | YES |
+| `__mn_http_get` 64 MB response limit | — | YES |
+| All version strings updated (main.mn, refs, docs) | — | YES |
+| Golden refs re-blessed | — | YES |
+| mnc-stage1 rebuilt with current version | — | YES |
+| Fixed point maintained (stage4==stage3) | YES | YES |
+| Valgrind-clean 30+/N golden | YES | YES |
+| Culebra scan clean (zero critical) | YES | YES |
 
 ---
 
-## The real gap (audited at v3.40.0)
+## The GPU gap (audited at v3.45.0)
 
-The compiler is 9.76/10. Here's why the language is 3/10 for usability:
+The v3.41–v3.45 usability arc crossed the chasm — real programs compile and run.
+The v3.45.0 review (9.69/10, 7 reviewers, all PASS) identified:
 
-| Layer | What exists | What's broken |
-|-------|------------|---------------|
-| `mapanare_core.c` (linked) | Strings, lists, maps, basic file I/O, signals, streams | `append_file` disabled, `list_dir` disabled (ABI issues) |
-| `mapanare_io.c` (NOT linked) | TCP, TLS, crypto, regex, extended file I/O, event loop | Never compiled into native binaries |
-| `mapanare_runtime.c` (NOT linked) | Agent scheduler, thread pool, ring buffers, backpressure | Agents only work in Python interpreter |
-| `mapanare_gpu.c` (NOT linked) | CUDA/Vulkan loading | GPU annotations don't codegen (SPEC disclaimed) |
-| Stdin | — | `read_line()` doesn't exist — can't build interactive programs |
-| LLVM emitter | Declares ~80 mapanare_core.c functions | Doesn't declare ANY mapanare_io.c or runtime functions |
-| Package manager | Parses mapanare.toml manifests | `install` is a no-op |
-| Examples | 14 .mn files in examples/ | Most don't compile (depend on unlinked features) |
-| Transpilers | Python + PHP → .mn works | Nobody tested transpile → compile → run end-to-end |
+| Layer | What exists | What's not wired |
+|-------|------------|------------------|
+| `mapanare_gpu.c` (NOT linked) | 1,938 lines: CUDA Driver API via dlopen, PTX kernels for tensor add/sub/mul/div/matmul, Vulkan compute pipeline, GPU memory management | Never compiled into native binaries |
+| `mapanare_gpu.h` (complete) | 28 exported functions, mn_gpu_ctx_t, buffer/kernel/pipeline structs | Not declared in LLVM emitter |
+| CUDA driver in WSL | `libcuda.so` at `/usr/lib/wsl/lib/`, NVIDIA 591.86, CUDA 13.1 | `mapanare_gpu.c` does `dlopen("libcuda.so")` — just needs linking |
+| `emit_llvm_mir.py` (deprecated) | Full GPU dispatch: @gpu/@cuda/@vulkan detection, PTX embedding, kernel launch | This is the DEPRECATED emitter — not the shipping one |
+| `emit_llvm_text.py` (shipping) | Zero GPU code | Needs gpu_* builtin dispatch (same pattern as http_get, sha256, etc.) |
+| `lower.py:959` | `raise NotImplementedError` on @gpu decorators | Blocks @gpu syntax — but builtins bypass this entirely |
+| SPEC Section 23 | "Mapanare supports GPU-accelerated computation as a first-class feature" with non-functional code examples | The ONLY remaining P0 from v3.40.0 review — 3 cycles unfixed |
+| GPU tests | 1,600+ lines across 3 test files | Test the infrastructure, not actual GPU execution |
+| GPU examples | 3 examples in `examples/experimental/gpu/` using @gpu decorators | Don't compile (decorators raise NotImplementedError) |
 
-**The good news:** mapanare_io.c is 49KB of working C code. mapanare_runtime.c
-is 1,343 lines of working C code. The code EXISTS — it needs to be linked,
-declared in the emitter, and tested. v3.41.0 is the biggest unlock.
+**The approach:** Same as v3.41.0. The code EXISTS — link it, add builtins,
+wire the emitter, add golden tests. Builtins (`gpu_tensor_add()`) bypass the
+`@gpu` decorator path entirely — no changes to `lower.py` needed.
+
+**Hardware available:** NVIDIA GeForce RTX 4090, 24GB VRAM, visible in WSL2.
+
+---
+
+## v3.45.0 Review — All action items mapped to versions
+
+The v3.45.0 code review (9.69/10 aggregate, 7 reviewers) produced 28 action items.
+Every item is assigned to either v3.46.0 or v3.47.0:
+
+### Hard Blockers → v3.46.0
+
+| # | Item | Effort | Reviewer |
+|---|------|--------|----------|
+| 1 | SPEC S23 GPU disclaimer (add honest status note) | 30 sec | Coral, Cobra, Boa |
+| 2 | `random_bytes` — return empty when BCrypt unavailable | 2 lines | Viper |
+| 3 | `__mn_random_bytes_str` — cache bcrypt.dll HMODULE | 15 lines | Mamba, Viper |
+| 4 | `tar.extractall(filter='data')` | 1 line | Boa |
+| 5 | `test_examples.py` — add cli/network/transpile dirs | 1 line | Boa |
+
+### Build Hygiene → v3.46.0
+
+| # | Item | Effort | Reviewer |
+|---|------|--------|----------|
+| 6 | `-Werror` on all C files in build_stage1.py | 1 line | Cobra, Anaconda |
+| 7 | Dead conditional build_stage1.py:76 | 1 line | Anaconda |
+| 8 | `obj_path` in cleanup loop | 1 word | Anaconda |
+| 9 | `main.mn:31` version string | 1 line | Anaconda, Rattler, Coral |
+| 10 | `emit_c.py:1` docstring version | 1 line | Cobra |
+
+### Self-Hosted Emitter ABI → v3.47.0
+
+| # | Item | Effort | Reviewer |
+|---|------|--------|----------|
+| 11 | `str(false)` i1→i64 zext | 5 lines .mn | Rattler |
+| 12 | `file_exists` i1→i64 return type | 5 lines .mn | Viper, Rattler |
+| 13 | Regex phantom symbols → compile+exec+free | ~30 lines .mn | Viper, Rattler |
+| 14 | 9 missing I/O builtin declarations | 9 lines .mn | Rattler |
+
+### Runtime Fixes → v3.47.0
+
+| # | Item | Effort | Reviewer |
+|---|------|--------|----------|
+| 15 | Thread-safe dlopen (pthread_once) | 30 lines | Cobra, Viper |
+| 16 | `__mn_http_get` 64 MB response limit | 3 lines | Viper |
+| 17 | `intern_ensure_table()` inside lock | 2 lines | Mamba |
+| 18 | `__mn_str_concat` early return empty | 2 lines | Mamba |
+| 19 | `mnstr_to_cstr` dedup to shared header | 1 header | Mamba |
+| 20 | `MnHandleTable` dedup to shared header | same header | Mamba |
+
+### Version/Doc Cleanup → v3.47.0
+
+| # | Item | Effort | Reviewer |
+|---|------|--------|----------|
+| 21 | `reference.md` version 0.5.0 → current | 1 line | Coral |
+| 22 | `cookbook.md` example version 3.20.0 | 1 line | Coral |
+| 23 | Re-bless golden refs (still at v3.14.0) | 30 sec | Rattler |
+| 24 | Rebuild main.ll + mnc-stage1 | 1 min | Rattler |
+| 25 | SPEC S1 "ML-ready" caveat | 1 word | Coral |
+
+### Deferred to v4.1 (not blocking v4.0.0)
+
+| # | Item | Reviewer |
+|---|------|----------|
+| 26 | Drop glue for struct-returning functions | Viper |
+| 27 | Self-hosted typed pointers, nsw, noalias/willreturn | Rattler, Cobra |
+| 28 | Dead arena code, _mn_iters leak, _Indent duplication | Cobra, Boa |
 
 ---
 
@@ -144,7 +224,7 @@ culebra verify mapanare/self/main.ll return-type-divergence
 # When debugging crashes
 culebra crashmap mapanare/self/main.ll --offset <addr>
 culebra trace mapanare/self/main.ll --function <fn> --var '%state'
-culebra wrap -- valgrind ./mapanare/self/mnc-stage1 tests/golden/34_file_io.mn
+culebra wrap -- valgrind ./mapanare/self/mnc-stage1 tests/golden/39_gpu_detect.mn
 
 # Track progress across fixes
 culebra baseline save mapanare/self/main.ll
@@ -156,32 +236,34 @@ culebra summary mapanare/self/main.ll
 
 ---
 
-## Current state (v3.40.0)
+## Current state (v3.45.0)
 
-- Version: 3.40.0
+- Version: 3.45.0
 - Branch: dev
-- 33/33 golden tests pass, 30/33 valgrind-clean
+- 38/38 golden tests pass, 30/33 valgrind-clean
 - Fixed point: stage4 == stage3 (proven v3.38.0)
-- Self-hosted compiler: 15,500+ lines across 11 modules
-- 4,465+ pytest tests, 181 native C assertions
+- Self-hosted compiler: 14,764 lines core (mnc_all.mn), 35,868 total across 17 modules
+- 4,845+ pytest tests, 74 native C assertions, 4,004 lines of native tests
 - 7 CI jobs: ci, self-hosted, bootstrap, native, wasm, android, macos
-- Peak memory: 160 MB, binary: 2.7 MB, self-compile: 0.74s
-- LLVM 17+ compliant: zero typed pointer sites
-- Code review: 9.76/10 aggregate (7 reviewers, unanimous PASS)
-- `mapanare_io.c`: 49KB, NOT linked — TCP, TLS, crypto, regex, extended file I/O
-- `mapanare_runtime.c`: 1,343 lines, NOT linked — agents, thread pool, ring buffers
-- `read_line()`: does not exist
-- Package manager: scaffolding only
-- Examples: mostly non-functional
+- Peak memory: 160 MB, binary: 2.94 MB, self-compile: 0.74s
+- LLVM 17+ compliant: zero typed pointer sites in Python emitter output
+- Code review: 9.69/10 aggregate (7 reviewers, all PASS, 28 action items)
+- `mapanare_io.c`: 1,655 lines, LINKED — TCP, TLS, crypto, regex, HTTP
+- `mapanare_runtime.c`: 1,343 lines, LINKED — agents, thread pool, ring buffers
+- `mapanare_gpu.c`: 1,938 lines, NOT LINKED — CUDA/Vulkan via dlopen, PTX kernels
+- Package manager: functional (`mapanare install` works)
+- Examples: 3 working CLI/network examples + transpile demo
+- GPU: `nvidia-smi` shows RTX 4090, `libcuda.so` present in WSL
+- SPEC Section 23: still claims GPU works (it doesn't) — P0 carry-forward, 3 cycles
 
-## After all 5 versions are done
+## After both versions are done
 
-- Native binaries can read stdin, process files, fetch URLs, run agents
-- ALL examples compile and run
-- Transpile .py/.php → .mn → native binary works end-to-end
-- `mapanare install` installs packages
-- Error messages are helpful (multiple errors, suggestions)
-- Getting Started guide works from install to running program
-- Documentation matches reality
+- GPU tensor operations run on the 4090 from Mapanare code
+- SPEC Section 23 shows code that actually compiles and runs
+- All 25 review action items addressed (3 deferred to v4.1 by panel consensus)
+- Self-hosted emitter ABI matches C runtime for all builtins
+- Thread-safe initialization for all dlopen loaders
+- All version strings current, golden refs re-blessed
+- CI green across all 7 jobs
 - Ready for v4.0.0 production release tag
-- **A new user can build a real program.**
+- **A new user can build a GPU-accelerated program.**

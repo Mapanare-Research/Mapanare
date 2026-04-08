@@ -398,6 +398,15 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_random_bytes_str", llvm_string(), "i64")
     s = declare_runtime_fn(s, "__mn_regex_match", "i1", llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_regex_replace", llvm_string(), llvm_string() + ", " + llvm_string() + ", " + llvm_string())
+    // GPU builtins (v3.46.0)
+    s = declare_runtime_fn(s, "__mn_gpu_available", "i64", "")
+    s = declare_runtime_fn(s, "__mn_gpu_device_name", llvm_string(), "")
+    s = declare_runtime_fn(s, "__mn_gpu_device_memory", "i64", "")
+    s = declare_runtime_fn(s, "__mn_gpu_tensor_add", llvm_list_rt(), "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_gpu_tensor_sub", llvm_list_rt(), "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_gpu_tensor_mul", llvm_list_rt(), "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_gpu_tensor_div", llvm_list_rt(), "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_gpu_tensor_matmul", llvm_list_rt(), "ptr, ptr, i64, i64, i64")
 
     return emit_blank(s)
 }
@@ -2363,6 +2372,55 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "regex_replace" {
         let as_rr: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name
         return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_regex_replace", as_rr))
+    }
+    // GPU builtins (v3.46.0)
+    if fn_name == "gpu_available" {
+        let cnt_ga: String = toString(st.counter)
+        let mut s_ga: EmitState = st
+        s_ga.counter = s_ga.counter + 1
+        let raw_ga: String = "%ga_raw" + cnt_ga
+        s_ga = emit_line(s_ga, "  " + raw_ga + " = call i64 @__mn_gpu_available()")
+        s_ga = emit_line(s_ga, "  " + dn + " = icmp ne i64 " + raw_ga + ", 0")
+        return s_ga
+    }
+    if fn_name == "gpu_device_name" {
+        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_gpu_device_name", ""))
+    }
+    if fn_name == "gpu_device_memory" {
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_gpu_device_memory", ""))
+    }
+    if fn_name == "gpu_tensor_add" || fn_name == "gpu_tensor_sub" || fn_name == "gpu_tensor_mul" || fn_name == "gpu_tensor_div" {
+        // Pass lists by pointer to avoid ABI mismatch
+        let cnt_gt: String = toString(st.counter)
+        let mut s_gt: EmitState = st
+        s_gt.counter = s_gt.counter + 2
+        let pa: String = "%gta" + cnt_gt
+        let pb: String = "%gtb" + cnt_gt
+        s_gt = emit_line(s_gt, "  " + pa + " = alloca " + llvm_list_rt())
+        s_gt = emit_line(s_gt, "  " + pb + " = alloca " + llvm_list_rt())
+        s_gt = emit_line(s_gt, "  store " + llvm_list_rt() + " " + args[0].name + ", ptr " + pa)
+        s_gt = emit_line(s_gt, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + pb)
+        pon rt_name: String = "__mn_gpu_tensor_add"
+        if fn_name == "gpu_tensor_sub" { rt_name = "__mn_gpu_tensor_sub" }
+        if fn_name == "gpu_tensor_mul" { rt_name = "__mn_gpu_tensor_mul" }
+        if fn_name == "gpu_tensor_div" { rt_name = "__mn_gpu_tensor_div" }
+        let as_gt: String = "ptr " + pa + ", ptr " + pb
+        s_gt = emit_line(s_gt, emit_call_ir(dn, llvm_list_rt(), rt_name, as_gt))
+        return s_gt
+    }
+    if fn_name == "gpu_tensor_matmul" {
+        let cnt_gm: String = toString(st.counter)
+        let mut s_gm: EmitState = st
+        s_gm.counter = s_gm.counter + 2
+        let gma: String = "%gma" + cnt_gm
+        let gmb: String = "%gmb" + cnt_gm
+        s_gm = emit_line(s_gm, "  " + gma + " = alloca " + llvm_list_rt())
+        s_gm = emit_line(s_gm, "  " + gmb + " = alloca " + llvm_list_rt())
+        s_gm = emit_line(s_gm, "  store " + llvm_list_rt() + " " + args[0].name + ", ptr " + gma)
+        s_gm = emit_line(s_gm, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + gmb)
+        let as_gm: String = "ptr " + gma + ", ptr " + gmb + ", i64 " + args[2].name + ", i64 " + args[3].name + ", i64 " + args[4].name
+        s_gm = emit_line(s_gm, emit_call_ir(dn, llvm_list_rt(), "__mn_gpu_tensor_matmul", as_gm))
+        return s_gm
     }
 
     // Map iteration helpers

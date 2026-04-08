@@ -158,6 +158,15 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "random_bytes" { return true }
     if name == "regex_match" { return true }
     if name == "regex_replace" { return true }
+    // GPU builtins (v3.46.0)
+    if name == "gpu_available" { return true }
+    if name == "gpu_device_name" { return true }
+    if name == "gpu_device_memory" { return true }
+    if name == "gpu_tensor_add" { return true }
+    if name == "gpu_tensor_sub" { return true }
+    if name == "gpu_tensor_mul" { return true }
+    if name == "gpu_tensor_div" { return true }
+    if name == "gpu_tensor_matmul" { return true }
     return false
 }
 
@@ -195,6 +204,15 @@ fn builtin_return_type(name: String) -> String {
     if name == "random_bytes" { return "String" }
     if name == "regex_match" { return "Bool" }
     if name == "regex_replace" { return "String" }
+    // GPU builtins (v3.46.0)
+    if name == "gpu_available" { return "Bool" }
+    if name == "gpu_device_name" { return "String" }
+    if name == "gpu_device_memory" { return "Int" }
+    if name == "gpu_tensor_add" { return "List" }
+    if name == "gpu_tensor_sub" { return "List" }
+    if name == "gpu_tensor_mul" { return "List" }
+    if name == "gpu_tensor_div" { return "List" }
+    if name == "gpu_tensor_matmul" { return "List" }
     return "Void"
 }
 
@@ -1816,6 +1834,24 @@ fn register_builtins(st: SemState) -> SemState {
     st2 = define_in_scope(st2, "regex_match", regmatch_sym)
     let regrepl_sym: Symbol = new_symbol("regex_replace", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "regex_replace", regrepl_sym)
+
+    // GPU builtins (v3.46.0)
+    let gpu_avail_sym: Symbol = new_symbol("gpu_available", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "gpu_available", gpu_avail_sym)
+    let gpu_name_sym: Symbol = new_symbol("gpu_device_name", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "gpu_device_name", gpu_name_sym)
+    let gpu_mem_sym: Symbol = new_symbol("gpu_device_memory", "function", make_builtin_fn_type(make_type("Int")), false)
+    st2 = define_in_scope(st2, "gpu_device_memory", gpu_mem_sym)
+    let gpu_tadd_sym: Symbol = new_symbol("gpu_tensor_add", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "gpu_tensor_add", gpu_tadd_sym)
+    let gpu_tsub_sym: Symbol = new_symbol("gpu_tensor_sub", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "gpu_tensor_sub", gpu_tsub_sym)
+    let gpu_tmul_sym: Symbol = new_symbol("gpu_tensor_mul", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "gpu_tensor_mul", gpu_tmul_sym)
+    let gpu_tdiv_sym: Symbol = new_symbol("gpu_tensor_div", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "gpu_tensor_div", gpu_tdiv_sym)
+    let gpu_tmat_sym: Symbol = new_symbol("gpu_tensor_matmul", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "gpu_tensor_matmul", gpu_tmat_sym)
 
     return st2
 }

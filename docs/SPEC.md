@@ -1721,7 +1721,10 @@ Generates a multi-stage Dockerfile optimized for Mapanare agent applications.
 
 ## 23. GPU Computing
 
-Mapanare supports GPU-accelerated computation as a first-class feature. GPU backends are loaded dynamically at runtime via `dlopen`, requiring no compile-time SDK dependency.
+> **Status (v3.46.0):** Basic GPU compute is functional via builtins (`gpu_available()`,
+> `gpu_tensor_add()`, etc.). The `@gpu`/`@cuda`/`@vulkan` decorator syntax described
+> below is planned for a future release. GPU backends are loaded dynamically at runtime
+> via `dlopen`, requiring no compile-time SDK dependency.
 
 ### 23.1 GPU Annotations
 

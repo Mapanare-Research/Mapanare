@@ -1,4 +1,4 @@
-"""emit_c.py — MIR to C emitter for Mapanare (v3.40.0).
+"""emit_c.py — MIR to C emitter for Mapanare (v3.46.0).
 
 Emits portable C99 from the MIR (Mid-level IR).  This backend eliminates
 the PHI nodes, SSA renaming, and block-terminator discipline that plague

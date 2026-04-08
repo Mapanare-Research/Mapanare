@@ -278,6 +278,15 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_regex_exec_str": {"nounwind"},
     "__mn_regex_replace_str": {"nounwind"},
     "__mn_regex_free": {"nounwind"},
+    # GPU builtins (v3.46.0)
+    "__mn_gpu_available": {"nounwind"},
+    "__mn_gpu_device_name": {"nounwind"},
+    "__mn_gpu_device_memory": {"nounwind"},
+    "__mn_gpu_tensor_add": {"nounwind"},     # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_sub": {"nounwind"},     # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_mul": {"nounwind"},     # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_div": {"nounwind"},     # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_matmul": {"nounwind"},  # (ptr, ptr, i64, i64, i64) -> LIST
     # Agent runtime (v3.43.0)
     "mapanare_agent_new": {"nounwind"},
     "mapanare_agent_spawn": {"nounwind"},
@@ -2285,6 +2294,54 @@ class LLVMTextEmitter:
             self._rt("__mn_regex_free", I64, [I64], [(h, I64)])
             self._track_string(r)
             self._put(i.dest, r, STR)
+            return
+
+        # GPU builtins (v3.46.0)
+        if fn == "gpu_available":
+            r = self._rt("__mn_gpu_available", I64, [], [])
+            tb = self._f("ga")
+            self._L(f"{tb} = icmp ne i64 {r}, 0")
+            self._put(i.dest, tb, I1)
+            return
+        if fn == "gpu_device_name":
+            r = self._rt("__mn_gpu_device_name", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "gpu_device_memory":
+            r = self._rt("__mn_gpu_device_memory", I64, [], [])
+            self._put(i.dest, r, I64)
+            return
+        if fn in ("gpu_tensor_add", "gpu_tensor_sub", "gpu_tensor_mul", "gpu_tensor_div") and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], LIST) if args[0][1] != LIST else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], LIST) if args[1][1] != LIST else args[1][0]
+            # Pass lists by pointer to avoid ABI mismatch (MnList is 40 bytes)
+            pa = self._alloca(LIST, "gta")
+            pb = self._alloca(LIST, "gtb")
+            self._L(f"store {LIST} {a0}, ptr {pa}")
+            self._L(f"store {LIST} {a1}, ptr {pb}")
+            cfn = {"gpu_tensor_add": "__mn_gpu_tensor_add", "gpu_tensor_sub": "__mn_gpu_tensor_sub",
+                   "gpu_tensor_mul": "__mn_gpu_tensor_mul", "gpu_tensor_div": "__mn_gpu_tensor_div"}[fn]
+            r = self._rt(cfn, LIST, [PTR, PTR], [(pa, PTR), (pb, PTR)])
+            self._put(i.dest, r, LIST)
+            return
+        if fn == "gpu_tensor_matmul" and len(args) >= 5:
+            a0 = self._coerce(args[0][0], args[0][1], LIST) if args[0][1] != LIST else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], LIST) if args[1][1] != LIST else args[1][0]
+            a2 = self._coerce(args[2][0], args[2][1], I64) if args[2][1] != I64 else args[2][0]
+            a3 = self._coerce(args[3][0], args[3][1], I64) if args[3][1] != I64 else args[3][0]
+            a4 = self._coerce(args[4][0], args[4][1], I64) if args[4][1] != I64 else args[4][0]
+            pa = self._alloca(LIST, "gma")
+            pb = self._alloca(LIST, "gmb")
+            self._L(f"store {LIST} {a0}, ptr {pa}")
+            self._L(f"store {LIST} {a1}, ptr {pb}")
+            r = self._rt(
+                "__mn_gpu_tensor_matmul",
+                LIST,
+                [PTR, PTR, I64, I64, I64],
+                [(pa, PTR), (pb, PTR), (a2, I64), (a3, I64), (a4, I64)],
+            )
+            self._put(i.dest, r, LIST)
             return
 
         # join
