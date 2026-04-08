@@ -1292,10 +1292,7 @@ fn tokenize(source: String, filename: String) -> List<Token> {
     let slen: Int = len(source)
 
     // Single loop: handles whitespace, comments, and tokens.
-    // No inner whitespace loop (avoids break-inside-if-inside-for bug).
-    // No nested else chain (avoids dropped else body pattern).
-    for _ in 0..2000000 {
-        if pos >= slen { return tokens }
+    while pos < slen {
 
         let c: String = source.char_at(pos)
 
@@ -7143,7 +7140,7 @@ fn lower_definition(st: LowerState, defn: Definition) -> LowerState {
 // Function lowering
 // ---------------------------------------------------------------------------
 
-// Helper: build MIR params from FnDefData.params (avoids break-in-for bug)
+// Helper: build MIR params from FnDefData.params (helper for clarity)
 fn build_mir_params(st: LowerState, fn_params: List<Param>) -> List<MIRParam> {
     let mut params: List<MIRParam> = []
     let mut pi: Int = 0
@@ -7158,7 +7155,7 @@ fn build_mir_params(st: LowerState, fn_params: List<Param>) -> List<MIRParam> {
     return params
 }
 
-// Helper: collect decorator names (avoids break-in-for bug)
+// Helper: collect decorator names (helper for clarity)
 fn collect_decorator_names(decorators: List<Decorator>) -> List<String> {
     let mut names: List<String> = []
     let mut dix: Int = 0
@@ -7171,7 +7168,7 @@ fn collect_decorator_names(decorators: List<Decorator>) -> List<String> {
     return names
 }
 
-// Helper: bind params as variables in entry block (avoids break-in-for bug)
+// Helper: bind params as variables in entry block (helper for clarity)
 fn bind_fn_params(st: LowerState, fn_params: List<Param>) -> LowerState {
     let mut s: LowerState = st
     let mut bi: Int = 0
@@ -7193,7 +7190,7 @@ fn bind_fn_params(st: LowerState, fn_params: List<Param>) -> LowerState {
 fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerState {
     let fn_name: String = name_prefix + fn_def.name
 
-    // Build params and decorators using helpers (avoid break-in-for bug)
+    // Build params and decorators using helpers (helper for clarity)
     let params: List<MIRParam> = build_mir_params(st, fn_def.params)
     let ret_type: MIRType = resolve_return_type_checked(st, fn_def.return_type)
     let decorators: List<String> = collect_decorator_names(fn_def.decorators)
@@ -8105,7 +8102,7 @@ fn lower_unary(st: LowerState, op: String, operand: Expr) -> LowerResult {
 // ---------------------------------------------------------------------------
 
 fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResult {
-    // Lower all arguments first (guard pattern avoids break-in-for bug)
+    // Lower all arguments first (guard pattern for clarity)
     let mut s: LowerState = st
     let mut args: List<Value> = []
     let mut i: Int = 0
@@ -10185,7 +10182,7 @@ fn get_literal_value(expr: Expr) -> String {
 // ---------------------------------------------------------------------------
 
 // Bind pattern fields for a constructor pattern like Rect(w, h).
-// Extracted from inline loop to avoid break-inside-if-inside-for bug.
+// Extracted from inline loop for clarity.
 // Uses return-based iteration (return works, break doesn't).
 fn has_non_zero_phi(entries: List<PhiEntry>) -> Bool {
     let mut i: Int = 0

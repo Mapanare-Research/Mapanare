@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.35.0] - 2026-04-07
+
+### Changed
+
+- `lexer.mn:tokenize()` migrated from `for _ in 0..2000000` bounded loop to `while pos < slen`
+  — proves break/continue work correctly in the Python lowerer
+- Removed 6 stale "avoids break-in-for bug" comments from `lower.mn` (bug was already fixed)
+
+### Added
+
+- Golden test `33_break_continue.mn` — validates break-in-for, break-in-while, continue, nested break
+
 ## [3.34.0] - 2026-04-07
 
 ### Fixed
@@ -816,7 +828,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.34.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.35.0...HEAD
+[3.35.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.34.0...v3.35.0
 [3.34.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.33.0...v3.34.0
 [3.33.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.32.0...v3.33.0
 [3.32.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.31.0...v3.32.0

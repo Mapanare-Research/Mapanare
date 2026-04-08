@@ -486,10 +486,7 @@ fn tokenize(source: String, filename: String) -> List<Token> {
     let slen: Int = len(source)
 
     // Single loop: handles whitespace, comments, and tokens.
-    // No inner whitespace loop (avoids break-inside-if-inside-for bug).
-    // No nested else chain (avoids dropped else body pattern).
-    for _ in 0..2000000 {
-        if pos >= slen { return tokens }
+    while pos < slen {
 
         let c: String = source.char_at(pos)
 
