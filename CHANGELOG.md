@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.0] - 2026-04-09
+
+**async/await Wired — value flows through async pipeline**
+
+### Added
+- `await expr` lowering in Python bootstrap (lower.py) — evaluates expression inline
+- `Await(Expr)` variant in self-hosted AST enum (ast.mn)
+- `async fn` parsing in self-hosted parser with @async decorator (parser.mn)
+- `await expr` parsing as unary expression in self-hosted parser (parser.mn)
+- `await` handler in self-hosted lowerer (lower.mn) — inline evaluation
+- `new_decorator` constructor in ast.mn
+- `expr_await_inner` accessor in ast.mn
+- Golden test `46_async_stream.mn` — async fn + await, prints correct result
+
+### Verified
+- 46/46 golden (was 45/45), 11/11 stage2
+- black/ruff/mypy clean
+
 ## [4.23.0] - 2026-04-09
 
 **MIRType Int Tags — Zero string-based type comparisons**
@@ -1451,7 +1469,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.23.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.24.0...HEAD
+[4.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.23.0...v4.24.0
 [4.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.22.0...v4.23.0
 [4.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.21.0...v4.22.0
 [4.13.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.12.0...v4.13.0

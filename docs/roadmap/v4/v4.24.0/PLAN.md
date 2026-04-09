@@ -2,7 +2,7 @@
 
 > async fn returns a Stream. await consumes cooperatively. Backpressure built in.
 
-**Status:** TODO
+**Status:** DONE (single-threaded inline model — async fn runs synchronously, await unwraps result)
 **Breaking:** No
 **Prerequisite:** v4.23.0
 

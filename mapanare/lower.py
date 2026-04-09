@@ -16,6 +16,7 @@ from mapanare.ast_nodes import (
     AssertStmt,
     AssignExpr,
     ASTNode,
+    AwaitExpr,
     BinaryExpr,
     Block,
     BoolLiteral,
@@ -1389,6 +1390,12 @@ class MIRLowerer:
 
         if isinstance(expr, SyncExpr):
             return self._lower_sync(expr)
+
+        if isinstance(expr, AwaitExpr):
+            # v4.24.0: single-threaded await — evaluate expression inline.
+            # In single-threaded mode (lli), async fn runs synchronously and
+            # returns its value directly. await just unwraps that value.
+            return self._lower_expr(expr.expr)
 
         if isinstance(expr, SendExpr):
             return self._lower_send(expr)

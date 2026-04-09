@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.23.0** (current) — MIRType.kind: String → Int. Zero string-based type comparisons. TK_*() return Int constants. 45/45 golden, 11/11 stage2.
-- **v4.24.0-v4.25.0** (next) — async/await runtime wiring, FFI end-to-end + tensor shape checking.
+- **v4.24.0** (current) — async/await wired: parser + lowerer + emitter in both pipelines. 46/46 golden, 11/11 stage2.
+- **v4.25.0** (next) — FFI end-to-end + tensor shape checking.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

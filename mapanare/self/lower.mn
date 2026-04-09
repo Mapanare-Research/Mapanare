@@ -1190,6 +1190,10 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     if ek == "sync" {
         return lower_sync(st, expr_sync_inner(expr))
     }
+    if ek == "await" {
+        // Single-threaded await: just evaluate the inner expression inline
+        return lower_expr(st, expr_await_inner(expr))
+    }
     if ek == "send" {
         return lower_send(st, expr_send_target(expr), expr_send_value(expr))
     }

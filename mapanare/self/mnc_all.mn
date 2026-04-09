@@ -98,7 +98,8 @@ enum Expr {
     SignalVal(Expr, Bool),
     Assign(Expr, String, Expr),
     If(Expr, Block, Option<ElseClause>),
-    Match(Expr, List<MatchArm>)
+    Match(Expr, List<MatchArm>),
+    Await(Expr)
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +154,11 @@ struct Decorator {
     span: Span,
     name: String,
     args: List<Expr>
+}
+
+fn new_decorator(name: String) -> Decorator {
+    let args: List<Expr> = []
+    return new Decorator { span: new_span(0, 0, 0, 0), name: name, args: args }
 }
 
 struct Param {
@@ -334,7 +340,8 @@ pub fn expr_kind(e: Expr) -> String {
         SignalVal(_, _) => { return "signal_val" },
         Assign(_, _, _) => { return "assign" },
         If(_, _, _) => { return "if" },
-        Match(_, _) => { return "match" }
+        Match(_, _) => { return "match" },
+        Await(_) => { return "await" }
     }
 }
 
@@ -460,6 +467,11 @@ pub fn expr_spawn_args(e: Expr) -> List<Expr> {
 // Sync
 pub fn expr_sync_inner(e: Expr) -> Expr {
     match e { Sync(x) => { return x }, _ => { return Expr::NoneLit } }
+}
+
+// Await
+pub fn expr_await_inner(e: Expr) -> Expr {
+    match e { Await(x) => { return x }, _ => { return Expr::NoneLit } }
 }
 
 // Send
@@ -1854,11 +1866,13 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     if tt == "KW_PUB" {
         let next_tt: String = peek_type(tokens, pos + 1)
         if next_tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
+        if next_tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
         if next_tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
         if next_tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
         if next_tt == "KW_AGENT" { return parse_agent_def(tokens, pos, filename) }
         if next_tt == "KW_PIPE" { return parse_pipe_def(tokens, pos, filename) }
     }
+    if tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
     if tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
     if tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
     if tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
@@ -2061,9 +2075,14 @@ fn parse_export_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
     let mut p: Int = pos
     let mut is_pub: Bool = false
+    let mut is_async: Bool = false
 
     if peek_type(tokens, p) == "KW_PUB" {
         is_pub = true
+        p = p + 1
+    }
+    if peek_type(tokens, p) == "KW_ASYNC" {
+        is_async = true
         p = p + 1
     }
     p = expect(tokens, p, "KW_FN")
@@ -2080,7 +2099,7 @@ fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
         for _ in 0..20 {
             if peek_type(tokens, p) != "COMMA" {
                 p = expect(tokens, p, "GT")
-                return parse_fn_params(tokens, p, filename, name, is_pub, type_params)
+                return parse_fn_params(tokens, p, filename, name, is_pub, type_params, is_async)
             }
             p = p + 1
             type_params.push(peek_value(tokens, p))
@@ -2089,10 +2108,10 @@ fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
         p = expect(tokens, p, "GT")
     }
 
-    return parse_fn_params(tokens, p, filename, name, is_pub, type_params)
+    return parse_fn_params(tokens, p, filename, name, is_pub, type_params, is_async)
 }
 
-fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> DefResult {
+fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, is_async: Bool) -> DefResult {
     let mut p: Int = pos
     p = expect(tokens, p, "LPAREN")
     let mut params: List<Param> = []
@@ -2105,12 +2124,12 @@ fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String
         for _ in 0..50 {
             if peek_type(tokens, p) != "COMMA" {
                 p = expect(tokens, p, "RPAREN")
-                return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params)
+                return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params, is_async)
             }
             p = p + 1
             if peek_type(tokens, p) == "RPAREN" {
                 p = p + 1
-                return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params)
+                return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params, is_async)
             }
             let pr2: ParamResult = parse_param(tokens, p, filename)
             params.push(pr2.param)
@@ -2119,10 +2138,10 @@ fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String
     }
     p = expect(tokens, p, "RPAREN")
 
-    return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params)
+    return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params, is_async)
 }
 
-fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, params: List<Param>) -> DefResult {
+fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, params: List<Param>, is_async: Bool) -> DefResult {
     let mut p: Int = pos
 
     let mut ret_type: Option<TypeExpr> = none
@@ -2136,7 +2155,10 @@ fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, 
     let br: BlockResult = parse_block(tokens, p, filename)
     p = br.pos
 
-    let decorators: List<Decorator> = []
+    let mut decorators: List<Decorator> = []
+    if is_async {
+        decorators.push(new_decorator("async"))
+    }
     let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, br.block, decorators)
     return new_def_result(Definition::FnDef(fd), p)
 }
@@ -2967,6 +2989,11 @@ fn parse_unary(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     if tt == "BANG" {
         let r_not: ExprResult = parse_unary(tokens, pos + 1, filename)
         return new_expr_result(Expr::Unary("!", r_not.expr), r_not.pos)
+    }
+    if tt == "KW_AWAIT" {
+        // await expr — in single-threaded mode, just evaluate the expression
+        let r_await: ExprResult = parse_unary(tokens, pos + 1, filename)
+        return new_expr_result(Expr::Await(r_await.expr), r_await.pos)
     }
 
     return parse_postfix(tokens, pos, filename)
@@ -8253,6 +8280,10 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     }
     if ek == "sync" {
         return lower_sync(st, expr_sync_inner(expr))
+    }
+    if ek == "await" {
+        // Single-threaded await: just evaluate the inner expression inline
+        return lower_expr(st, expr_await_inner(expr))
     }
     if ek == "send" {
         return lower_send(st, expr_send_target(expr), expr_send_value(expr))

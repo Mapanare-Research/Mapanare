@@ -94,7 +94,8 @@ enum Expr {
     SignalVal(Expr, Bool),
     Assign(Expr, String, Expr),
     If(Expr, Block, Option<ElseClause>),
-    Match(Expr, List<MatchArm>)
+    Match(Expr, List<MatchArm>),
+    Await(Expr)
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +150,11 @@ struct Decorator {
     span: Span,
     name: String,
     args: List<Expr>
+}
+
+fn new_decorator(name: String) -> Decorator {
+    let args: List<Expr> = []
+    return new Decorator { span: new_span(0, 0, 0, 0), name: name, args: args }
 }
 
 struct Param {
@@ -330,7 +336,8 @@ pub fn expr_kind(e: Expr) -> String {
         SignalVal(_, _) => { return "signal_val" },
         Assign(_, _, _) => { return "assign" },
         If(_, _, _) => { return "if" },
-        Match(_, _) => { return "match" }
+        Match(_, _) => { return "match" },
+        Await(_) => { return "await" }
     }
 }
 
@@ -456,6 +463,11 @@ pub fn expr_spawn_args(e: Expr) -> List<Expr> {
 // Sync
 pub fn expr_sync_inner(e: Expr) -> Expr {
     match e { Sync(x) => { return x }, _ => { return Expr::NoneLit } }
+}
+
+// Await
+pub fn expr_await_inner(e: Expr) -> Expr {
+    match e { Await(x) => { return x }, _ => { return Expr::NoneLit } }
 }
 
 // Send
