@@ -37,6 +37,7 @@ static inline int32_t atomic_load_i32(mapanare_atomic_i32 *p) {
 static inline void atomic_store_i32(mapanare_atomic_i32 *p, int32_t v) {
     __atomic_store_n(p, v, __ATOMIC_RELEASE);
 }
+__attribute__((unused))
 static inline int32_t atomic_add_i32(mapanare_atomic_i32 *p, int32_t v) {
     return __atomic_fetch_add(p, v, __ATOMIC_ACQ_REL);
 }
@@ -70,8 +71,9 @@ static inline void mapanare_sem_destroy(mapanare_semaphore_t *s) {
 }
 
 static inline int64_t mapanare_time_us(void) {
-    LARGE_INTEGER freq, now;
-    QueryPerformanceFrequency(&freq);
+    static LARGE_INTEGER freq = {0};
+    LARGE_INTEGER now;
+    if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&now);
     return (int64_t)((double)now.QuadPart / (double)freq.QuadPart * 1000000.0);
 }
@@ -967,7 +969,6 @@ MAPANARE_EXPORT mapanare_gpu_detection_t *mapanare_detect_gpus(void) {
     det->cuda_available = 0;
 #else
     {
-        void *cuda = NULL;
         /* Try dlopen if available (linked dynamically) */
         /* For portability, we just check the file system */
         FILE *f = fopen("/usr/lib/x86_64-linux-gnu/libcuda.so.1", "r");
@@ -1092,9 +1093,7 @@ static volatile sig_atomic_t s_shutdown_signal = 0;
 static BOOL WINAPI mapanare_console_handler(DWORD sig) {
     if (sig == CTRL_C_EVENT || sig == CTRL_BREAK_EVENT || sig == CTRL_CLOSE_EVENT) {
         s_shutdown_requested = 1;
-        if (s_shutdown_registry) {
-            mapanare_registry_stop_all(s_shutdown_registry);
-        }
+        s_shutdown_signal = (sig_atomic_t)sig;
         return TRUE;
     }
     return FALSE;

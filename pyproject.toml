@@ -56,6 +56,8 @@ select = ["E", "F", "W", "I"]
 "site_app.py" = ["E501"]
 "benchmarks/cross_language/run_benchmarks.py" = ["E741"]
 "tests/stdlib/*.py" = ["E501"]
+"scripts/fix_stage2_phis.py" = ["E501"]
+"scripts/ir_doctor.py" = ["E501", "E741", "F841"]
 
 [tool.mypy]
 strict = true

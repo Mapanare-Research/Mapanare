@@ -55,24 +55,25 @@ class TestMainMnPipeline:
 
     def test_calls_lower(self, main_mn_source: str) -> None:
         """compile() should call lower() to produce MIR."""
-        assert "lower(program" in main_mn_source
+        assert "lower(resolved" in main_mn_source or "lower(program" in main_mn_source
 
     def test_calls_emit(self, main_mn_source: str) -> None:
         """compile() should call emit_mir_module()."""
         assert "emit_mir_module(" in main_mn_source
 
     def test_pipeline_order(self, main_mn_source: str) -> None:
-        """Pipeline should be: parse → check → lower → emit_mir_module."""
+        """Pipeline should be: parse → resolve → lower → emit_mir_module."""
         src = main_mn_source
         parse_pos = src.index("parse(source")
-        check_pos = src.index("check(program")
-        lower_pos = src.index("lower(program")
+        lower_pos = src.index("lower(")
         emit_pos = src.index("emit_mir_module(")
-        assert parse_pos < check_pos < lower_pos < emit_pos
+        assert parse_pos < lower_pos < emit_pos
 
     def test_version_string(self, main_mn_source: str) -> None:
-        """Version should be 2.1.0."""
-        assert "2.1.0" in main_mn_source
+        """Version should match VERSION file."""
+        version_file = Path(__file__).resolve().parent.parent.parent / "VERSION"
+        expected = version_file.read_text().strip()
+        assert expected in main_mn_source
 
 
 class TestMainMnCompileResult:

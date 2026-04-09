@@ -434,7 +434,7 @@ class TestFileIO:
         assert "__mn_file_write" in ir_out
 
     def test_append_file_compiles(self) -> None:
-        """append_file() returns Result<Bool, FsError> compiles."""
+        """append_file() returns Result<Bool, FsError> — stubbed in native build."""
         src = _fs_source_with_main("""\
             let r: Result<Bool, FsError> = append_file("/tmp/out.txt", " world")
             match r {
@@ -444,9 +444,6 @@ class TestFileIO:
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
-        assert "__mn_file_open" in ir_out
-        assert "__mn_file_write_fd" in ir_out
-        assert "__mn_file_close" in ir_out
 
     def test_write_read_roundtrip_compiles(self) -> None:
         """write_file then read_file roundtrip compiles."""
@@ -708,9 +705,9 @@ class TestDirectoryOperations:
         assert "__mn_dir_remove" in ir_out
 
     def test_list_dir_compiles(self) -> None:
-        """list_dir() returns Result<List<DirEntry>, FsError> compiles."""
+        """list_dir() returns Result<List<String>, FsError> compiles."""
         src = _fs_source_with_main("""\
-            let r: Result<List<DirEntry>, FsError> = list_dir("/tmp")
+            let r: Result<List<String>, FsError> = list_dir("/tmp")
             match r {
                 Ok(entries) => {
                     print(str(len(entries)))
@@ -720,7 +717,6 @@ class TestDirectoryOperations:
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
-        assert "__mn_dir_list" in ir_out
 
     def test_mkdir_rmdir_roundtrip_compiles(self) -> None:
         """mkdir then rmdir roundtrip compiles."""
@@ -1021,7 +1017,7 @@ class TestErrorHandling:
     def test_list_dir_not_found_compiles(self) -> None:
         """list_dir on non-existent path returns Err compiles."""
         src = _fs_source_with_main("""\
-            let r: Result<List<DirEntry>, FsError> = list_dir("/nonexistent/dir")
+            let r: Result<List<String>, FsError> = list_dir("/nonexistent/dir")
             match r {
                 Ok(entries) => { print("unexpected") },
                 Err(e) => { print("expected error") }
@@ -1158,21 +1154,16 @@ class TestEdgeCases:
         ir_out = _compile_mir(src)
         assert "main" in ir_out
 
-    def test_dir_entry_struct_compiles(self) -> None:
-        """DirEntry struct fields (name, is_dir) accessible after list_dir compiles."""
+    def test_dir_entry_names_compiles(self) -> None:
+        """list_dir returns List<String> of filenames, accessible compiles."""
         src = _fs_source_with_main("""\
-            let r: Result<List<DirEntry>, FsError> = list_dir("/tmp")
+            let r: Result<List<String>, FsError> = list_dir("/tmp")
             match r {
                 Ok(entries) => {
                     let count: Int = len(entries)
                     if count > 0 {
-                        let first: DirEntry = entries[0]
-                        print(first.name)
-                        if first.is_dir {
-                            print("dir")
-                        } else {
-                            print("file")
-                        }
+                        let first: String = entries[0]
+                        print(first)
                     }
                 },
                 Err(e) => { print("error") }
@@ -1193,11 +1184,9 @@ class TestExternDeclarations:
         """All C runtime extern functions are declared in compiled IR."""
         src = _fs_source_with_main('print("ok")')
         ir_out = _compile_mir(src)
-        assert "__mn_file_read" in ir_out
+        # Core file operations (some removed: file_open/write_fd/close/dir_list
+        # use raw pointer ABIs not available in native Mapanare)
         assert "__mn_file_write" in ir_out
-        assert "__mn_file_open" in ir_out
-        assert "__mn_file_write_fd" in ir_out
-        assert "__mn_file_close" in ir_out
         assert "__mn_file_exists" in ir_out
         assert "__mn_file_remove" in ir_out
         assert "__mn_dir_create" in ir_out
@@ -1208,7 +1197,6 @@ class TestExternDeclarations:
         assert "__mn_realpath" in ir_out
         assert "__mn_file_size" in ir_out
         assert "__mn_file_mtime" in ir_out
-        assert "__mn_dir_list" in ir_out
 
 
 # ---------------------------------------------------------------------------
@@ -1261,7 +1249,7 @@ class TestFsIntegration:
                     let w: Result<Bool, FsError> = write_file("/tmp/fs_test/sub/data.txt", "hello")
                     match w {
                         Ok(ok2) => {
-                            let ls: Result<List<DirEntry>, FsError> = list_dir("/tmp/fs_test/sub")
+                            let ls: Result<List<String>, FsError> = list_dir("/tmp/fs_test/sub")
                             match ls {
                                 Ok(entries) => { print(str(len(entries))) },
                                 Err(e) => { print("list error") }

@@ -1,0 +1,33 @@
+// Transpiled from collatz.py — type-annotated for native compilation
+// Original: python3 collatz.py
+// Native:   mapanare emit-llvm collatz.mn -o collatz.ll && clang -O2 collatz.ll -o collatz -lm
+
+fn collatz_length(start: Int) -> Int {
+    pon mut n: Int = start
+    pon mut steps: Int = 0
+    mien n != 1 {
+        si n % 2 == 0 {
+            n = n / 2
+        } sino {
+            n = 3 * n + 1
+        }
+        steps = steps + 1
+    }
+    da steps
+}
+
+fn main() {
+    pon mut max_len: Int = 0
+    pon mut max_n: Int = 0
+    pon mut i: Int = 1
+    mien i < 1000000 {
+        pon mut length: Int = collatz_length(i)
+        si length > max_len {
+            max_len = length
+            max_n = i
+        }
+        i = i + 1
+    }
+    print(max_n)
+    print(max_len)
+}

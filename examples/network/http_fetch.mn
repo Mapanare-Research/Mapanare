@@ -1,0 +1,16 @@
+// http_fetch.mn — Fetch a URL and print the response body.
+// Usage: echo "http://httpbin.org/ip" | mnc run http_fetch.mn
+
+fn main() {
+    pon url: String = read_line()
+    si len(url) == 0 {
+        print("Usage: echo <url> | mnc run http_fetch.mn")
+        da
+    }
+    pon body: String = http_get(url)
+    si len(body) == 0 {
+        print("Error: could not fetch URL (check network or TLS)")
+    } sino {
+        print(body)
+    }
+}

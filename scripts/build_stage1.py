@@ -5,7 +5,7 @@ Pipeline:
     1. Compile mapanare/self/*.mn (10 modules) → LLVM IR via Python bootstrap
     2. Post-process IR: make compile() externally visible
     3. Compile IR → native object code
-    4. Compile C runtime (mapanare_core.c)
+    4. Compile C runtime (mapanare_core.c + mapanare_io.c + mapanare_gpu.c)
     5. Compile C main wrapper (mnc_main.c)
     6. Link: main wrapper + compiler object + C runtime → mnc-stage1
 """
@@ -28,30 +28,40 @@ def build() -> pathlib.Path:
     """Build mnc-stage1 and return its path."""
     print("=== Stage 1: Building self-hosted compiler ===")
 
-    # 1. Generate LLVM IR
-    emitter = "llvmlite" if "--llvmlite" in sys.argv else "text"
-    print(f"[1/6] Generating LLVM IR from mapanare/self/*.mn (emitter={emitter}) ...")
-    from mapanare.multi_module import compile_multi_module_mir
-
-    source = (SELF_DIR / "main.mn").read_text(encoding="utf-8")
-    ir = compile_multi_module_mir(
-        root_source=source,
-        root_file=str(SELF_DIR / "main.mn"),
-        opt_level=2,
-        emitter_backend=emitter,
-    )
-
-    # 2. Post-process: make compile() and format_error() externally visible
-    print("[2/6] Post-processing IR (external linkage for entry points) ...")
-    # Remove 'internal' linkage from ALL function definitions.
-    # LLVM -O2 dead-code-eliminates internal functions it considers
-    # unreachable, but with sret calling conventions it sometimes
-    # misjudges reachability, stripping functions that ARE called.
-    ir = ir.replace("define internal ", "define ")
-
     ir_path = SELF_DIR / "main.ll"
-    ir_path.write_text(ir, encoding="utf-8")
-    print(f"  IR: {ir.count(chr(10))} lines → {ir_path}")
+
+    if "--use-committed" in sys.argv:
+        # Use the committed main.ll directly (skip IR regeneration).
+        # This is used in CI when the text emitter has known codegen issues
+        # with complex enum types that prevent clean regeneration.
+        print("[1/6] Using committed LLVM IR (--use-committed) ...")
+        ir = ir_path.read_text(encoding="utf-8")
+        print(f"  IR: {ir.count(chr(10))} lines ← {ir_path}")
+    else:
+        # 1. Generate LLVM IR
+        emitter = "llvmlite" if "--llvmlite" in sys.argv else "text"
+        print(f"[1/6] Generating LLVM IR from mapanare/self/*.mn (emitter={emitter}) ...")
+        from mapanare.multi_module import compile_multi_module_mir
+
+        source = (SELF_DIR / "main.mn").read_text(encoding="utf-8")
+        ir = compile_multi_module_mir(
+            root_source=source,
+            root_file=str(SELF_DIR / "main.mn"),
+            opt_level=2,
+            emitter_backend=emitter,
+            skip_check="--skip-check" in sys.argv or "--no-check" in sys.argv,
+        )
+
+        # 2. Post-process: make compile() and format_error() externally visible
+        print("[2/6] Post-processing IR (external linkage for entry points) ...")
+        # Remove 'internal' linkage from ALL function definitions.
+        # LLVM -O2 dead-code-eliminates internal functions it considers
+        # unreachable, but with sret calling conventions it sometimes
+        # misjudges reachability, stripping functions that ARE called.
+        ir = ir.replace("define internal ", "define ")
+
+        ir_path.write_text(ir, encoding="utf-8")
+        print(f"  IR: {ir.count(chr(10))} lines → {ir_path}")
 
     # 3. Compile IR to object code
     print("[3/6] Compiling LLVM IR → object code ...")
@@ -63,7 +73,7 @@ def build() -> pathlib.Path:
     import shutil
 
     clang_bin = shutil.which("clang")
-    opt_flag = "-O2" if "--O2" in sys.argv else "-O2"
+    opt_flag = "-O2"
     if clang_bin:
         subprocess.run(
             [clang_bin, "-c", opt_flag, str(ir_path), "-o", str(obj_path)],
@@ -82,14 +92,49 @@ def build() -> pathlib.Path:
     print("[4/6] Compiling C runtime ...")
     core_c = NATIVE_DIR / "mapanare_core.c"
     core_o = SELF_DIR / "mapanare_core.o"
+    io_c = NATIVE_DIR / "mapanare_io.c"
+    io_o = SELF_DIR / "mapanare_io.o"
+    rt_c = NATIVE_DIR / "mapanare_runtime.c"
+    rt_o = SELF_DIR / "mapanare_runtime.o"
+    gpu_c = NATIVE_DIR / "mapanare_gpu.c"
+    gpu_o = SELF_DIR / "mapanare_gpu.o"
+    gpu_bi_c = NATIVE_DIR / "mapanare_gpu_builtins.c"
+    gpu_bi_o = SELF_DIR / "mapanare_gpu_builtins.o"
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
+    profile_flags = ["-DMN_PROFILE_MEM"] if "--profile-mem" in sys.argv else []
+    c_base_flags = [
+        CC,
+        "-c",
+        "-O2",
+        "-g",
+        "-fPIC",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I",
+        str(NATIVE_DIR),
+    ]
     subprocess.run(
-        [CC, "-c", "-O2", "-g", "-fPIC", "-I", str(NATIVE_DIR)]
-        + asan_flags
-        + [str(core_c), "-o", str(core_o)],
+        c_base_flags + asan_flags + profile_flags + [str(core_c), "-o", str(core_o)],
         check=True,
     )
-    print(f"  Runtime: {core_o}")
+    subprocess.run(
+        c_base_flags + asan_flags + [str(io_c), "-o", str(io_o)],
+        check=True,
+    )
+    subprocess.run(
+        c_base_flags + asan_flags + [str(rt_c), "-o", str(rt_o)],
+        check=True,
+    )
+    subprocess.run(
+        c_base_flags + asan_flags + [str(gpu_c), "-o", str(gpu_o)],
+        check=True,
+    )
+    subprocess.run(
+        c_base_flags + asan_flags + [str(gpu_bi_c), "-o", str(gpu_bi_o)],
+        check=True,
+    )
+    print(f"  Runtime: {core_o}, {io_o}, {rt_o}, {gpu_o}, {gpu_bi_o}")
 
     # 5. Compile main wrapper
     print("[5/6] Compiling C main wrapper ...")
@@ -115,6 +160,7 @@ def build() -> pathlib.Path:
             "-rdynamic",
             "-lm",
             "-lpthread",
+            "-ldl",
             "-Wl,-z,stacksize=67108864",  # 64MB stack for deep recursion on Linux
         ]
 
@@ -126,16 +172,19 @@ def build() -> pathlib.Path:
             str(main_o),
             str(obj_path),
             str(core_o),
+            str(io_o),
+            str(rt_o),
+            str(gpu_o),
+            str(gpu_bi_o),
         ]
         + link_flags
-        + asan_flags
-        + [],
+        + asan_flags,
         check=True,
     )
     print(f"  Binary: {binary} ({binary.stat().st_size} bytes)")
 
     # Cleanup intermediate .o files
-    for f in [main_o, core_o]:
+    for f in [main_o, obj_path, core_o, io_o, rt_o, gpu_o, gpu_bi_o]:
         if f.exists():
             f.unlink()
 

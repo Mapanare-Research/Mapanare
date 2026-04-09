@@ -1,0 +1,24 @@
+// fizzbuzz.mn — Classic FizzBuzz up to N
+// Usage: ./fizzbuzz [N]  (default 20)
+
+fn fizzbuzz(n: Int) {
+    for i in 1..n {
+        if i % 15 == 0 {
+            print("FizzBuzz")
+        } else if i % 3 == 0 {
+            print("Fizz")
+        } else if i % 5 == 0 {
+            print("Buzz")
+        } else {
+            print(str(i))
+        }
+    }
+}
+
+fn main() {
+    let mut n: Int = 21
+    if __mn_argc() > 1 {
+        n = int(__mn_argv(1)) + 1
+    }
+    fizzbuzz(n)
+}

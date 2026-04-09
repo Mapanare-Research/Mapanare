@@ -1,0 +1,8 @@
+fn main() {
+    si gpu_available() {
+        print("GPU: " + gpu_device_name())
+        print("VRAM: " + str(gpu_device_memory()))
+    } sino {
+        print("No GPU available")
+    }
+}

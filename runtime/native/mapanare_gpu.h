@@ -143,7 +143,7 @@ typedef struct {
     char     deviceName[256];
     uint8_t  pipelineCacheUUID[16];
     /* ... trimmed — we only read deviceName and deviceType */
-    uint8_t  _padding[512];     /* oversize to handle full struct */
+    uint8_t  _padding[544];     /* oversize to handle full struct (>= 824 bytes total) */
 } MnVkPhysicalDeviceProperties;
 
 /** Vulkan device queue create info. */

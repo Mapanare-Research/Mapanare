@@ -462,7 +462,7 @@ pub fn split(s: String, sep: String) -> List<String> {
         pon mut i: Int = 0
         mien i < slen {
             pon ch: String = s.char_at(i)
-            parts = parts + [ch]
+            parts.push(ch)
             i = i + 1
         }
         da parts
@@ -472,14 +472,14 @@ pub fn split(s: String, sep: String) -> List<String> {
     mien keep_going {
         pon pos: Int = remaining.find(sep)
         si pos < 0 {
-            parts = parts + [remaining]
+            parts.push(remaining)
             keep_going = false
         } sino {
             pon rlen: Int = len(remaining)
             si pos > 0 {
-                parts = parts + [remaining.substr(0, pos)]
+                parts.push(remaining.substr(0, pos))
             } sino {
-                parts = parts + [""]
+                parts.push("")
             }
             remaining = remaining.substr(pos + sep_len, rlen)
         }
@@ -528,7 +528,7 @@ pub fn words(s: String) -> List<String> {
         pon ch: String = trimmed.char_at(i)
         si is_space(ch) {
             si len(current) > 0 {
-                parts = parts + [current]
+                parts.push(current)
                 current = ""
             }
         } sino {
@@ -537,7 +537,7 @@ pub fn words(s: String) -> List<String> {
         i = i + 1
     }
     si len(current) > 0 {
-        parts = parts + [current]
+        parts.push(current)
     }
     da parts
 }

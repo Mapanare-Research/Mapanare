@@ -74,9 +74,10 @@ DBL = "double"
 VOID = "void"
 PTR = "ptr"
 STR = "{ptr, i64}"
-LIST = "{ptr, i64, i64, i64}"
+LIST = "{ptr, i64, i64, i64, i64}"
 CLOS = "{ptr, ptr}"
 ENUM = "{i64, ptr}"
+MN_VALUE = "{i32, i32, {ptr, i64}}"  # 24-byte boxed any: {type_tag, subtype, payload}
 
 
 # ── Module-level helpers ────────────────────────────────────────────
@@ -191,7 +192,111 @@ def _zero(ty: str) -> str:
     return "0"
 
 
+def _struct_field0_type(sty: str) -> str:
+    """Extract the type of field 0 from an LLVM struct type string like '{i64, {ptr, i64}}'."""
+    inner = sty.strip()
+    if not inner.startswith("{"):
+        return "ptr"
+    inner = inner[1:]  # strip leading {
+    depth = 0
+    for k, ch in enumerate(inner):
+        if ch in "({":
+            depth += 1
+        elif ch in ")}":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            return inner[:k].strip()
+    # Single-field struct
+    return inner.rstrip("}").strip() or "ptr"
+
+
 # ── Emitter ─────────────────────────────────────────────────────────
+_RUNTIME_FN_ATTRS: dict[str, set[str]] = {
+    # Read-only string functions
+    "__mn_str_len": {"nounwind", "readonly"},
+    "__mn_str_eq": {"nounwind", "readonly"},
+    "__mn_str_cmp": {"nounwind", "readonly"},
+    "__mn_str_hash": {"nounwind", "readonly"},
+    "__mn_list_len": {"nounwind", "readonly"},
+    "__mn_list_get": {"nounwind", "readonly"},
+    "__mn_map_len": {"nounwind", "readonly"},
+    "__mn_map_contains": {"nounwind", "readonly"},
+    # Allocation
+    "malloc": {"nounwind", "noalias"},
+    "__mn_alloc": {"nounwind", "noalias"},
+    # Cleanup
+    "free": {"nounwind", "willreturn"},
+    "__mn_str_free": {"nounwind", "willreturn"},
+    "__mn_list_free": {"nounwind", "willreturn"},
+    "__mn_map_free": {"nounwind", "willreturn"},
+    "__mn_stream_free": {"nounwind", "willreturn"},
+    "__mn_stream_free_chain": {"nounwind", "willreturn"},
+    "__mn_range_free": {"nounwind", "willreturn"},
+    "__mn_signal_free": {"nounwind", "willreturn"},
+    "__mn_map_free_deep": {"nounwind", "willreturn"},
+    # Mutation
+    "__mn_str_concat": {"nounwind"},
+    "__mn_str_from_int": {"nounwind"},
+    "__mn_str_from_float": {"nounwind"},
+    "__mn_str_from_bool": {"nounwind"},
+    "__mn_list_push": {"nounwind"},
+    "__mn_list_set": {"nounwind"},
+    "__mn_list_new": {"nounwind"},
+    "__mn_list_concat": {"nounwind"},
+    "__mn_map_set": {"nounwind"},
+    "__mn_map_new": {"nounwind"},
+    # Print
+    "__mn_print": {"nounwind"},
+    "__mn_println": {"nounwind"},
+    # Arena
+    "mn_arena_create": {"nounwind"},
+    "mn_arena_alloc": {"nounwind"},
+    "mn_arena_destroy": {"nounwind"},
+    # I/O (v3.41.0)
+    "__mn_read_line": {"nounwind"},
+    "__mn_file_append": {"nounwind"},
+    "__mn_dir_list_strings": {"nounwind"},
+    "__mn_file_exists": {"nounwind", "readonly"},
+    "__mn_file_remove": {"nounwind"},
+    "__mn_file_size": {"nounwind", "readonly"},
+    "__mn_file_mtime": {"nounwind", "readonly"},
+    "__mn_dir_create": {"nounwind"},
+    "__mn_dir_remove": {"nounwind"},
+    "__mn_file_rename": {"nounwind"},
+    "__mn_file_copy": {"nounwind"},
+    "__mn_realpath": {"nounwind"},
+    "__mn_tmpfile_path": {"nounwind"},
+    # Network, crypto, regex (v3.42.0)
+    "__mn_http_get": {"nounwind"},
+    "__mn_sha256_str": {"nounwind"},
+    "__mn_base64_encode_str": {"nounwind"},
+    "__mn_base64_decode_str": {"nounwind"},
+    "__mn_hmac_sha256_str": {"nounwind"},
+    "__mn_hex_encode_str": {"nounwind"},
+    "__mn_random_bytes_str": {"nounwind"},
+    "__mn_regex_compile_str": {"nounwind"},
+    "__mn_regex_exec_str": {"nounwind"},
+    "__mn_regex_replace_str": {"nounwind"},
+    "__mn_regex_free": {"nounwind"},
+    # GPU builtins (v3.46.0)
+    "__mn_gpu_available": {"nounwind"},
+    "__mn_gpu_device_name": {"nounwind"},
+    "__mn_gpu_device_memory": {"nounwind"},
+    "__mn_gpu_tensor_add": {"nounwind"},  # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_sub": {"nounwind"},  # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_mul": {"nounwind"},  # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_div": {"nounwind"},  # (ptr, ptr) -> LIST
+    "__mn_gpu_tensor_matmul": {"nounwind"},  # (ptr, ptr, i64, i64, i64) -> LIST
+    # Agent runtime (v3.43.0)
+    "mapanare_agent_new": {"nounwind"},
+    "mapanare_agent_spawn": {"nounwind"},
+    "mapanare_agent_send": {"nounwind"},
+    "mapanare_agent_recv_blocking": {"nounwind"},
+    "mapanare_agent_stop": {"nounwind"},
+    "mapanare_agent_destroy": {"nounwind"},
+}
+
+
 class LLVMTextEmitter:
     """Emit LLVM IR as text from a MIR module. No llvmlite dependency."""
 
@@ -233,6 +338,18 @@ class LLVMTextEmitter:
         self._dphi: list[tuple[str, str, list[tuple[str, Value]]]] = []
         self._lroots: dict[str, str] = {}
         self._fn: MIRFunction | None = None
+        # drop glue tracking (reset per function)
+        self._local_strings: list[str] = []
+        self._str_slots: dict[str, str] = {}  # dest var name → str tracking slot
+        self._last_tracked_str_slot: str | None = None
+        self._local_closures: list[str] = []
+        self._local_boxed: list[str] = []  # boxed enum payload ptrs
+        self._boxed_slots: dict[str, str] = {}  # dest var name → boxed tracking slot
+        self._last_tracked_boxed_slot: str | None = None
+        self._list_vars: list[str] = []  # dest names for list cleanup
+        self._map_vars: list[str] = []  # dest names for map cleanup
+        self._signal_vars: list[str] = []  # dest names for signal cleanup
+        self._stream_vars: list[str] = []  # dest names for stream cleanup
         # dispatch
         self._disp: dict[type, Any] = {}
         self._init_disp()
@@ -379,6 +496,8 @@ class LLVMTextEmitter:
             if len(a) >= 2:
                 return "{" + f"i1, {{{self._rti(a[0])}, {self._rti(a[1])}}}" + "}"
             return "{i1, {ptr, ptr}}"
+        if k == TypeKind.ANY:
+            return MN_VALUE
         if k in (TypeKind.AGENT, TypeKind.SIGNAL, TypeKind.STREAM, TypeKind.CHANNEL, TypeKind.FN):
             return PTR
         nm = mt.type_info.name
@@ -546,7 +665,14 @@ class LLVMTextEmitter:
         ps = ", ".join(abi_pts)
         if va:
             ps += ", ..." if ps else "..."
-        self._decls.append(f"declare {abi_ret} @{nm}({ps})")
+        attrs = _RUNTIME_FN_ATTRS.get(nm, set())
+        # noalias is a return attribute — must appear before the return type
+        ret_attrs = sorted(a for a in attrs if a == "noalias")
+        fn_attrs = sorted(a for a in attrs if a != "noalias")
+        ret_prefix = " ".join(ret_attrs) + " " if ret_attrs else ""
+        fn_suffix = " " + " ".join(fn_attrs) if fn_attrs else ""
+        decl = f"declare {ret_prefix}{abi_ret} @{nm}({ps}){fn_suffix}"
+        self._decls.append(decl)
 
     def _ensure(self, nm: str, ret: str, pts: list[str], va: bool = False) -> None:
         if nm not in self._sigs:
@@ -624,6 +750,25 @@ class LLVMTextEmitter:
         else:
             c = self._coerce(val, ty, aty)
             self._L(f"store {aty} {c}, ptr {a}")
+        # Associate variable with its tracking slot for move semantics
+        if ty == STR and self._last_tracked_str_slot:
+            self._str_slots[dest.name] = self._last_tracked_str_slot
+            self._last_tracked_str_slot = None
+
+    def _move_resource(self, name: str) -> None:
+        """Zero out tracking slots for a consumed variable (move semantics).
+
+        When a variable is passed to a function call or used as an enum
+        payload, its value is "moved" into the callee's data structure.
+        Zeroing the tracking slot prevents drop glue from freeing the
+        now-owned value.
+        """
+        if name in self._str_slots:
+            slot = self._str_slots.pop(name)
+            self._L(f"store {{ptr, i64}} zeroinitializer, ptr {slot}")
+        if name in self._boxed_slots:
+            slot = self._boxed_slots.pop(name)
+            self._L(f"store ptr null, ptr {slot}")
 
     def _coerce(self, val: str, fr: str, to: str) -> str:
         if fr == to:
@@ -676,7 +821,7 @@ class LLVMTextEmitter:
         gn = f"@.str.{self._strc}"
         self._strc += 1
         at = f"[{n} x i8]"
-        self._globals.append(f'{gn} = private constant {at} c"{esc}", align 2')
+        self._globals.append(f'{gn} = private constant {at} c"{esc}", align 8')
         p = self._f("sp")
         self._L(f"{p} = getelementptr inbounds {at}, ptr {gn}, i64 0, i64 0")
         s0 = self._f("s")
@@ -692,7 +837,7 @@ class LLVMTextEmitter:
             gn = f"@.fmt.{len(self._fmts)}"
             self._fmts[fmt] = gn
             at = f"[{n} x i8]"
-            self._globals.append(f'{gn} = private constant {at} c"{_esc(raw)}", align 2')
+            self._globals.append(f'{gn} = private constant {at} c"{_esc(raw)}", align 8')
         gn = self._fmts[fmt]
         raw = fmt.encode("utf-8") + b"\x00"
         at = f"[{len(raw)} x i8]"
@@ -754,6 +899,436 @@ class LLVMTextEmitter:
         self._L(f"{r} = call {ret} @{fn}({a})")
         return r
 
+    # ── drop glue ──────────────────────────────────────────────────
+    def _track_string(self, val: str) -> None:
+        """Track a heap-allocated string for drop glue cleanup.
+
+        Emits an alloca in the entry block and stores the string value into it.
+        _emit_drop_glue iterates these allocas at every return site and frees
+        non-returned strings.
+        """
+        slot = self._f("str_track")
+        self._ent.append(f"  {slot} = alloca {{ptr, i64}}, align 8")
+        self._ent.append(f"  store {{ptr, i64}} zeroinitializer, ptr {slot}")
+        self._L(f"store {{ptr, i64}} {val}, ptr {slot}")
+        self._local_strings.append(slot)
+        self._last_tracked_str_slot = slot
+
+    def _track_closure(self, val: str) -> None:
+        """Track a heap-allocated closure env for drop glue cleanup."""
+        slot = self._f("clos_track")
+        self._ent.append(f"  {slot} = alloca {{ptr, ptr}}, align 8")
+        self._ent.append(f"  store {{ptr, ptr}} zeroinitializer, ptr {slot}")
+        self._L(f"store {{ptr, ptr}} {val}, ptr {slot}")
+        self._local_closures.append(slot)
+
+    def _track_boxed(self, ptr_val: str) -> None:
+        """Track a boxed enum payload pointer for drop glue cleanup."""
+        slot = self._f("box_track")
+        self._ent.append(f"  {slot} = alloca ptr, align 8")
+        self._ent.append(f"  store ptr null, ptr {slot}")
+        self._L(f"store ptr {ptr_val}, ptr {slot}")
+        self._local_boxed.append(slot)
+        self._last_tracked_boxed_slot = slot
+
+    def _track_container(self, dest_name: str, container_type: str) -> None:
+        """Track a container variable for drop glue cleanup.
+
+        Unlike strings (immutable, tracked by value snapshot), containers are
+        mutable — push/set operations change them in place. We track by variable
+        name and load the final value at return time from the dest alloca.
+        """
+        if container_type == "list":
+            if dest_name not in self._list_vars:
+                self._list_vars.append(dest_name)
+        elif container_type == "map":
+            if dest_name not in self._map_vars:
+                self._map_vars.append(dest_name)
+        elif container_type == "signal":
+            if dest_name not in self._signal_vars:
+                self._signal_vars.append(dest_name)
+        elif container_type == "stream":
+            if dest_name not in self._stream_vars:
+                self._stream_vars.append(dest_name)
+
+    def _emit_drop_glue(self, ret_val: str | None, ret_ty: str) -> None:
+        """Emit cleanup code before a return instruction.
+
+        For each tracked string, loads the {ptr, i64} value, extracts the data
+        pointer, and frees it unless it's the same pointer being returned.
+        """
+        # Conservative safety: when returning a struct or enum type, local
+        # resources may have been moved into the return value via constructors
+        # or enum inits.  Without ownership tracking, skip ALL cleanup for
+        # struct returns.  Functions returning void/int/bool still get cleanup.
+        # List fields in structs share buffers safely (mn_list_grow never
+        # reallocs), so the leaked buffers from skipped cleanup are bounded.
+        skip_struct_ret = ret_ty.startswith("{") and ret_ty not in (VOID, I1, I64, DBL)
+        if skip_struct_ret:
+            return
+        has_any = (
+            (self._local_strings)
+            or (self._local_closures)
+            or (self._local_boxed)
+            or self._list_vars
+            or self._map_vars
+            or self._signal_vars
+            or self._stream_vars
+        )
+        if not has_any:
+            return
+
+        self._ensure("__mn_str_free", VOID, [STR])
+
+        # Extract returned string's data pointer (to avoid freeing it)
+        ret_ptr: str | None = None
+        ret_str_ptrs: list[str] = []
+        if ret_val and ret_ty == STR:
+            ret_ptr = self._f("ret.ptr")
+            self._L(f"{ret_ptr} = extractvalue {{ptr, i64}} {ret_val}, 0")
+            ret_str_ptrs.append(ret_ptr)
+
+        # Extract string data pointers from returned struct fields
+        if ret_val and ret_ty != STR and ret_ty.startswith("{"):
+            sn_s = self._struct_name_for_llvm_type(ret_ty)
+            if sn_s and sn_s in self._structs:
+                for idx, (_, ft) in enumerate(self._structs[sn_s]):
+                    if ft == STR:
+                        sf = self._f("ret.ssf")
+                        self._L(f"{sf} = extractvalue {ret_ty} {ret_val}, {idx}")
+                        sp_ret = self._f("ret.ssp")
+                        self._L(f"{sp_ret} = extractvalue {{ptr, i64}} {sf}, 0")
+                        ret_str_ptrs.append(sp_ret)
+
+        # Extract returned list's data pointer (to avoid freeing it)
+        ret_list_ptr: str | None = None
+        ret_list_ptrs: list[str] = []
+        if ret_val and ret_ty == LIST:
+            ret_list_ptr = self._f("ret.lp")
+            self._L(f"{ret_list_ptr} = extractvalue {LIST} {ret_val}, 0")
+            ret_list_ptrs.append(ret_list_ptr)
+
+        # Extract list data pointers from returned struct fields (avoid freeing them)
+        if ret_val and ret_ty != LIST and ret_ty.startswith("{"):
+            sn = self._struct_name_for_llvm_type(ret_ty)
+            if sn and sn in self._structs:
+                for idx, (_, ft) in enumerate(self._structs[sn]):
+                    if ft == LIST:
+                        lf = self._f("ret.slf")
+                        self._L(f"{lf} = extractvalue {ret_ty} {ret_val}, {idx}")
+                        lp = self._f("ret.slp")
+                        self._L(f"{lp} = extractvalue {LIST} {lf}, 0")
+                        ret_list_ptrs.append(lp)
+
+        # Extract returned closure's env pointer (to avoid freeing it)
+        ret_env: str | None = None
+        if ret_val and ret_ty == CLOS:
+            ret_env = self._f("ret.env")
+            self._L(f"{ret_env} = extractvalue {{ptr, ptr}} {ret_val}, 1")
+
+        # Extract ALL ptr fields from the return value (to avoid freeing boxed
+        # enum payloads, strings, or lists that are part of the return value).
+        # Walk the return type recursively and extractvalue every ptr-typed leaf.
+        # Always extract when we have param list fields or list vars to compare.
+        ret_ptr_fields: list[str] = []
+        need_ret_ptrs = self._local_boxed or self._local_strings or self._list_vars
+        if ret_val and ret_ty.startswith("{") and need_ret_ptrs:
+            self._extract_ret_ptrs(ret_val, ret_ty, ret_ptr_fields)
+
+        for slot in self._local_strings:
+            sv = self._f("drop.s")
+            self._L(f"{sv} = load {{ptr, i64}}, ptr {slot}")
+            sp = self._f("drop.p")
+            self._L(f"{sp} = extractvalue {{ptr, i64}} {sv}, 0")
+            # Check if pointer is null (string was never assigned)
+            sn = self._f("drop.null")
+            self._L(f"{sn} = icmp eq ptr {sp}, null")
+            skip_lbl = f"drop.skip.{self._c}"
+            free_lbl = f"drop.check.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {sn}, label %{skip_lbl}, label %{free_lbl}")
+
+            # check block: compare with return pointer if applicable
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            all_str_ptrs = ret_str_ptrs + ret_ptr_fields
+            if all_str_ptrs:
+                for rsp in all_str_ptrs:
+                    same = self._f("drop.same")
+                    self._L(f"{same} = icmp eq ptr {sp}, {rsp}")
+                    next_check = f"drop.snext.{self._c}"
+                    self._c += 1
+                    self._L(f"br i1 {same}, label %{skip_lbl}, label %{next_check}")
+                    self._blk[next_check] = []
+                    self._cb = next_check
+            self._L(f"call void @__mn_str_free({{ptr, i64}} {sv})")
+            self._L(f"br label %{skip_lbl}")
+
+            # skip block: continue
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+        self._ensure("free", VOID, [PTR])
+        for slot in self._local_closures:
+            cv = self._f("drop.c")
+            self._L(f"{cv} = load {{ptr, ptr}}, ptr {slot}")
+            ep = self._f("drop.ep")
+            self._L(f"{ep} = extractvalue {{ptr, ptr}} {cv}, 1")
+            en = self._f("drop.enull")
+            self._L(f"{en} = icmp eq ptr {ep}, null")
+            skip_lbl = f"drop.cskip.{self._c}"
+            free_lbl = f"drop.ccheck.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {en}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            if ret_env:
+                same = self._f("drop.csame")
+                self._L(f"{same} = icmp eq ptr {ep}, {ret_env}")
+                do_free_lbl = f"drop.cfree.{self._c}"
+                self._c += 1
+                self._L(f"br i1 {same}, label %{skip_lbl}, label %{do_free_lbl}")
+                self._blk[do_free_lbl] = []
+                self._cb = do_free_lbl
+            self._L(f"call void @free(ptr {ep})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+        for slot in self._local_boxed:
+            bp = self._f("drop.bp")
+            self._L(f"{bp} = load ptr, ptr {slot}")
+            bn = self._f("drop.bnull")
+            self._L(f"{bn} = icmp eq ptr {bp}, null")
+            skip_lbl = f"drop.bskip.{self._c}"
+            free_lbl = f"drop.bcheck.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {bn}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            if ret_ptr_fields:
+                for rpf in ret_ptr_fields:
+                    same = self._f("drop.bsame")
+                    self._L(f"{same} = icmp eq ptr {bp}, {rpf}")
+                    next_check = f"drop.bnext.{self._c}"
+                    self._c += 1
+                    self._L(f"br i1 {same}, label %{skip_lbl}, label %{next_check}")
+                    self._blk[next_check] = []
+                    self._cb = next_check
+            self._L(f"call void @free(ptr {bp})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+        # List cleanup — load from the variable's alloca (gets final post-push value)
+        if self._list_vars:
+            self._ensure("__mn_list_free", VOID, ["ptr"])
+        for var_name in self._list_vars:
+            alloc_info = None
+            for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
+                if k in self._alloc:
+                    alloc_info = self._alloc[k]
+                    break
+            if alloc_info is None:
+                continue
+            addr, aty = alloc_info
+            lv = self._f("drop.lv")
+            self._L(f"{lv} = load {LIST}, ptr {addr}")
+            lp = self._f("drop.lp")
+            self._L(f"{lp} = extractvalue {LIST} {lv}, 0")
+            ln = self._f("drop.lnull")
+            self._L(f"{ln} = icmp eq ptr {lp}, null")
+            skip_lbl = f"drop.lskip.{self._c}"
+            check_lbl = f"drop.lcheck.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {ln}, label %{skip_lbl}, label %{check_lbl}")
+
+            self._blk[check_lbl] = []
+            self._cb = check_lbl
+            all_list_ptrs = ret_list_ptrs + ret_ptr_fields
+            if all_list_ptrs:
+                # Check if this list's data pointer matches ANY returned pointer
+                for rlp in all_list_ptrs:
+                    lsame = self._f("drop.lsame")
+                    self._L(f"{lsame} = icmp eq ptr {lp}, {rlp}")
+                    next_check = f"drop.lnext.{self._c}"
+                    self._c += 1
+                    self._L(f"br i1 {lsame}, label %{skip_lbl}, label %{next_check}")
+                    self._blk[next_check] = []
+                    self._cb = next_check
+            # Pass the variable's alloca directly to __mn_list_free
+            self._L(f"call void @__mn_list_free(ptr {addr})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+        # NOTE: struct parameter list field cleanup removed.  Without list
+        # cloning on struct copy, shared buffers are safe (mn_list_grow
+        # allocates new instead of realloc).  The old buffers leak on grow
+        # but that's bounded to O(log n) per list (geometric doubling).
+
+        # Map cleanup
+        if self._map_vars:
+            self._ensure("__mn_map_free_deep", VOID, [PTR])
+        for var_name in self._map_vars:
+            alloc_info = None
+            for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
+                if k in self._alloc:
+                    alloc_info = self._alloc[k]
+                    break
+            if alloc_info is None:
+                continue
+            addr, _ = alloc_info
+            mp = self._f("drop.mp")
+            self._L(f"{mp} = load ptr, ptr {addr}")
+            mn = self._f("drop.mnull")
+            self._L(f"{mn} = icmp eq ptr {mp}, null")
+            skip_lbl = f"drop.mskip.{self._c}"
+            free_lbl = f"drop.mfree.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {mn}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            self._L(f"call void @__mn_map_free_deep(ptr {mp})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+        # Signal cleanup
+        if self._signal_vars:
+            self._ensure("__mn_signal_free", VOID, [PTR])
+        for var_name in self._signal_vars:
+            alloc_info = None
+            for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
+                if k in self._alloc:
+                    alloc_info = self._alloc[k]
+                    break
+            if alloc_info is None:
+                continue
+            addr, _ = alloc_info
+            sp = self._f("drop.sig")
+            self._L(f"{sp} = load ptr, ptr {addr}")
+            sn = self._f("drop.signull")
+            self._L(f"{sn} = icmp eq ptr {sp}, null")
+            skip_lbl = f"drop.sigskip.{self._c}"
+            free_lbl = f"drop.sigfree.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {sn}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            self._L(f"call void @__mn_signal_free(ptr {sp})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+        # Stream cleanup
+        if self._stream_vars:
+            self._ensure("__mn_stream_free_chain", VOID, [PTR])
+        for var_name in self._stream_vars:
+            alloc_info = None
+            for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
+                if k in self._alloc:
+                    alloc_info = self._alloc[k]
+                    break
+            if alloc_info is None:
+                continue
+            addr, _ = alloc_info
+            sp = self._f("drop.strm")
+            self._L(f"{sp} = load ptr, ptr {addr}")
+            sn = self._f("drop.strmnull")
+            self._L(f"{sn} = icmp eq ptr {sp}, null")
+            skip_lbl = f"drop.strmskip.{self._c}"
+            free_lbl = f"drop.strmfree.{self._c}"
+            self._c += 1
+            self._L(f"br i1 {sn}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            self._L(f"call void @__mn_stream_free_chain(ptr {sp})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+    def _extract_ret_ptrs(self, val: str, ty: str, out: list[str], depth: int = 0) -> None:
+        """Recursively extract all ptr-typed fields from a return value.
+
+        Used to prevent drop glue from freeing boxed enum payloads that are
+        embedded in the return value (at any nesting depth).
+        """
+        if depth > 4:
+            return  # prevent excessive nesting
+        t = ty.strip()
+        if t == "ptr":
+            out.append(val)
+            return
+        if not t.startswith("{") or not t.endswith("}"):
+            return
+        inner = t[1:-1].strip()
+        if not inner:
+            return
+        fields = _split_fields(inner)
+        for idx, ft in enumerate(fields):
+            ft = ft.strip()
+            if ft == "ptr":
+                p = self._f("ret.rp")
+                self._L(f"{p} = extractvalue {ty} {val}, {idx}")
+                out.append(p)
+            elif ft.startswith("{"):
+                sv = self._f("ret.rs")
+                self._L(f"{sv} = extractvalue {ty} {val}, {idx}")
+                self._extract_ret_ptrs(sv, ft, out, depth + 1)
+
+    def _emit_arena_destroy(self) -> None:
+        """Destroy the per-function arena before return."""
+        if self._arena_ptr is not None:
+            self._ensure("mn_arena_destroy", VOID, [PTR])
+            a = self._f("arena.d")
+            self._L(f"{a} = load ptr, ptr {self._arena_ptr}")
+            self._L(f"call void @mn_arena_destroy(ptr {a})")
+
+    @staticmethod
+    def _fn_is_arena_eligible(fn: MIRFunction) -> bool:
+        """Conservative escape analysis: enable arena for functions that return
+        non-heap types and have no user function calls."""
+        if fn.name == "main":
+            return False
+        rk = fn.return_type.kind
+        non_heap = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL, TypeKind.VOID, TypeKind.CHAR}
+        if rk not in non_heap:
+            return False
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                if isinstance(inst, Call):
+                    fn_name = inst.fn_name.lstrip("%")
+                    if not fn_name.startswith("__mn_") and not fn_name.startswith("__new_"):
+                        if fn_name not in (
+                            "print",
+                            "println",
+                            "len",
+                            "str",
+                            "toString",
+                            "int",
+                            "float",
+                            "ord",
+                            "chr",
+                            "Some",
+                            "Ok",
+                            "Err",
+                            "join",
+                        ):
+                            return False
+        return True
+
     # ── function emission ───────────────────────────────────────────
     def _emit_fn(self, fn: MIRFunction) -> str:
         self._c = 0
@@ -764,6 +1339,22 @@ class LLVMTextEmitter:
         self._dphi = []
         self._lroots = {}
         self._fn = fn
+        self._local_strings = []
+        self._str_slots = {}
+        self._last_tracked_str_slot = None
+        self._local_closures = []
+        self._local_boxed = []
+        self._boxed_slots = {}
+        self._last_tracked_boxed_slot = None
+        self._list_vars = []
+        self._map_vars = []
+        self._signal_vars = []
+        self._stream_vars = []
+
+        # Per-function arena — disabled: text emitter never routes allocations
+        # through mn_arena_alloc, so create/destroy was pure overhead.
+        # Arena allocation is properly implemented in emit_llvm_mir.py.
+        self._arena_ptr: str | None = None
 
         # Determine which params use byref and if return uses sret
         rt_orig = self._rty(fn.return_type)
@@ -794,6 +1385,23 @@ class LLVMTextEmitter:
                 self._ent.append(f"  store {ty} zeroinitializer, ptr {a}")
             else:
                 self._ent.append(f"  {a} = alloca {ty}, align 8")
+
+        # Track struct parameters' list fields for drop glue cleanup.
+        # When a struct param is copied and the copy's list is pushed to,
+        # COW detach creates a new buffer.  The old buffer (in the param)
+        # must be freed to prevent memory exhaustion on large compilations.
+        self._param_list_fields: list[tuple[str, str, int]] = []
+        for p in fn.params:
+            if p.ty and p.ty.kind == TypeKind.STRUCT and p.ty.type_info:
+                sn = self._res_struct(p.ty.type_info.name)
+                if sn in self._structs:
+                    sty = self._struct_ty.get(sn, "")
+                    if sty:
+                        a, _ = self._alloc.get(p.name, ("", ""))
+                        if a:
+                            for idx, (_, ft) in enumerate(self._structs[sn]):
+                                if ft == LIST:
+                                    self._param_list_fields.append((a, sty, idx))
 
         # phi allocas
         for bb in fn.blocks:
@@ -971,9 +1579,15 @@ class LLVMTextEmitter:
                 out.append(f"  store {ty} %{s}, ptr %{s}.addr")
         if fn.blocks:
             out.append(f"  br label %{fn.blocks[0].label}")
+        mir_labels = {bb.label for bb in fn.blocks}
         for bb in fn.blocks:
             out.append(f"{bb.label}:")
             out.extend(self._blk[bb.label])
+        # Emit drop glue blocks (drop.skip.*, drop.check.*, drop.free.*, etc.)
+        for lbl, lines in self._blk.items():
+            if lbl not in mir_labels:
+                out.append(f"{lbl}:")
+                out.extend(lines)
         out.append("}")
         out.append("")
         return "\n".join(out)
@@ -1033,13 +1647,25 @@ class LLVMTextEmitter:
         if t == LIST:
             root = self._lroots.get(i.src.name, i.src.name)
             self._lroots[i.dest.name] = root
-        # Clone list fields on struct copy for correctness: COW requires refcount
-        # increment via __mn_list_clone. Bitwise copies don't increment refcount.
-        # Without cloning, shared lists (e.g. module.functions) corrupt on push.
-        if i.src.ty.kind == TypeKind.STRUCT:
-            sn = self._res_struct(i.src.ty.type_info.name)
-            if sn in self._structs:
-                self._clone_list_fields(i.dest, sn)
+            # Replace source tracking with dest (they share the same data pointer;
+            # freeing both would double-free)
+            if i.src.name in self._list_vars:
+                self._list_vars.remove(i.src.name)
+            self._track_container(i.dest.name, "list")
+        # Propagate container tracking for maps/signals/streams
+        sk = i.src.ty.kind if i.src.ty else TypeKind.UNKNOWN
+        if sk == TypeKind.MAP:
+            self._track_container(i.dest.name, "map")
+        elif sk == TypeKind.SIGNAL:
+            self._track_container(i.dest.name, "signal")
+        elif sk == TypeKind.STREAM:
+            self._track_container(i.dest.name, "stream")
+        # List fields in struct copies share the same buffer (bitwise copy,
+        # no refcount increment).  This is safe because mn_list_grow always
+        # allocates a new buffer (never reallocs), so the shared old buffer
+        # stays valid for any aliased copies.  Cloning all list fields on
+        # every struct copy was causing O(n²) memory blowup (390K clones
+        # for 575 lines of source, each triggering COW detach + allocation).
 
     def _clone_list_fields(self, dest: Value, sn: str) -> None:
         """After a struct copy, deep-clone any List fields in the destination.
@@ -1070,11 +1696,6 @@ class LLVMTextEmitter:
         self._ensure("__mn_list_clone", LIST, ["ptr"])
         for idx, (fn, ft) in enumerate(fields):
             if ft == LIST:
-                # Skip append-only list fields that cause O(n²) clone overhead.
-                # EmitState.lines (field "lines") and str_globals grow huge but
-                # are never independently modified from copies — only appended.
-                if fn in ("lines", "str_globals"):
-                    continue
                 fp = self._f("clf")
                 self._L(f"{fp} = getelementptr inbounds {sty}, ptr {addr}, i32 0, i32 {idx}")
                 cloned = self._rt("__mn_list_clone", LIST, ["ptr"], [(fp, "ptr")])
@@ -1140,10 +1761,7 @@ class LLVMTextEmitter:
         vals = ", ".join(f"i64 {o}" for o in offsets)
         self._globals.append(f"{name} = private constant [{len(offsets)} x i64] [{vals}]")
         gep = self._f("offp")
-        self._L(
-            f"{gep} = getelementptr [{len(offsets)} x i64], "
-            f"[{len(offsets)} x i64]* {name}, i64 0, i64 0"
-        )
+        self._L(f"{gep} = getelementptr [{len(offsets)} x i64], " f"ptr {name}, i64 0, i64 0")
         return gep
 
     # --- Cast ---
@@ -1171,12 +1789,16 @@ class LLVMTextEmitter:
             self._put(i.dest, r, I64)
         elif sk == TypeKind.INT and tk == TypeKind.STRING:
             r = self._rt("__mn_str_from_int", STR, [I64], [(sv, st)])
+            self._track_string(r)
             self._put(i.dest, r, STR)
         elif sk == TypeKind.FLOAT and tk == TypeKind.STRING:
             r = self._rt("__mn_str_from_float", STR, [DBL], [(sv, st)])
+            self._track_string(r)
             self._put(i.dest, r, STR)
         elif sk == TypeKind.BOOL and tk == TypeKind.STRING:
-            r = self._rt("__mn_str_from_bool", STR, [I1], [(sv, st)])
+            bv = self._coerce(sv, st, I64) if st != I64 else sv
+            r = self._rt("__mn_str_from_bool", STR, [I64], [(bv, I64)])
+            self._track_string(r)
             self._put(i.dest, r, STR)
         elif sk == TypeKind.INT and tk == TypeKind.CHAR:
             r = self._f("cc")
@@ -1214,6 +1836,7 @@ class LLVMTextEmitter:
             rv = self._coerce(rv, rt_, STR) if rt_ != STR else rv
             if op == BinOpKind.ADD:
                 r = self._rt("__mn_str_concat", STR, [STR, STR], [(lv, STR), (rv, STR)])
+                self._track_string(r)
                 self._put(i.dest, r, STR)
             elif op in (BinOpKind.EQ, BinOpKind.NE):
                 c = self._rt("__mn_str_eq", I64, [STR, STR], [(lv, STR), (rv, STR)])
@@ -1250,6 +1873,7 @@ class LLVMTextEmitter:
                 ["ptr", "ptr"],
                 [(la, "ptr"), (ra, "ptr")],
             )
+            self._track_container(i.dest.name, "list")
             self._put(i.dest, r, LIST)
             return
 
@@ -1416,7 +2040,9 @@ class LLVMTextEmitter:
             elif i.args and i.args[0].ty.kind == TypeKind.FLOAT:
                 self._printf("%f\n" if nl else "%f", [(args[0][0], DBL)])
             elif i.args and i.args[0].ty.kind == TypeKind.BOOL:
-                s = self._rt("__mn_str_from_bool", STR, [I1], [args[0]])
+                bv = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
+                s = self._rt("__mn_str_from_bool", STR, [I64], [(bv, I64)])
+                self._track_string(s)
                 rt_fn_b = "__mn_str_println" if nl else "__mn_str_print"
                 self._rt(rt_fn_b, VOID, [STR], [(s, STR)])
             elif i.args:
@@ -1463,10 +2089,14 @@ class LLVMTextEmitter:
                     ak = TypeKind.STRING
             if ak == TypeKind.INT:
                 r = self._rt("__mn_str_from_int", STR, [I64], [args[0]])
+                self._track_string(r)
             elif ak == TypeKind.FLOAT:
                 r = self._rt("__mn_str_from_float", STR, [DBL], [args[0]])
+                self._track_string(r)
             elif ak == TypeKind.BOOL:
-                r = self._rt("__mn_str_from_bool", STR, [I1], [args[0]])
+                bv = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
+                r = self._rt("__mn_str_from_bool", STR, [I64], [(bv, I64)])
+                self._track_string(r)
             elif ak == TypeKind.STRING:
                 self._put(i.dest, args[0][0], args[0][1])
                 return
@@ -1509,7 +2139,216 @@ class LLVMTextEmitter:
             return
         if fn == "chr" and i.args:
             r = self._rt("__mn_str_chr", STR, [I64], [args[0]])
+            self._track_string(r)
             self._put(i.dest, r, STR)
+            return
+
+        # C runtime: process + file I/O (self-hosted compiler driver)
+        if fn == "__mn_argc":
+            r = self._rt("__mn_argc", I64, [], [])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_argv" and args:
+            a = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
+            r = self._rt("__mn_argv", STR, [I64], [(a, I64)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "__mn_file_read_or_empty" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_file_read_or_empty", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "__mn_exit" and args:
+            a = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
+            self._rt("__mn_exit", VOID, [I64], [(a, I64)])
+            self._put(i.dest, "0", I1)
+            return
+        if fn == "__mn_str_eprint" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            self._rt("__mn_str_eprint", VOID, [STR], [(a, STR)])
+            self._put(i.dest, "0", I1)
+            return
+        if fn == "__mn_str_eprintln" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            self._rt("__mn_str_eprintln", VOID, [STR], [(a, STR)])
+            self._put(i.dest, "0", I1)
+            return
+        if fn == "__mn_file_write" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            r = self._rt("__mn_file_write", I64, [STR, STR], [(a0, STR), (a1, STR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_system" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_system", I64, [STR], [(a, STR)])
+            self._put(i.dest, r, I64)
+            return
+
+        # High-level I/O builtins (v3.41.0)
+        if fn == "read_line":
+            r = self._rt("__mn_read_line", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "read_file" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_file_read_or_empty", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "write_file" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            self._rt("__mn_file_write", I64, [STR, STR], [(a0, STR), (a1, STR)])
+            self._put(i.dest, "0", I1)
+            return
+        if fn == "append_file" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            self._rt("__mn_file_append", I64, [STR, STR], [(a0, STR), (a1, STR)])
+            self._put(i.dest, "0", I1)
+            return
+        if fn == "file_exists" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_file_exists", I64, [STR], [(a, STR)])
+            tb = self._f("tb")
+            self._L(f"{tb} = icmp ne i64 {r}, 0")
+            self._put(i.dest, tb, I1)
+            return
+        if fn == "list_dir" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_dir_list_strings", LIST, [STR], [(a, STR)])
+            self._put(i.dest, r, LIST)
+            return
+
+        # Network, crypto, regex builtins (v3.42.0)
+        if fn == "http_get" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_http_get", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "sha256" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_sha256_str", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "base64_encode" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_base64_encode_str", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "base64_decode" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_base64_decode_str", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "hmac_sha256" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            r = self._rt("__mn_hmac_sha256_str", STR, [STR, STR], [(a0, STR), (a1, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "hex_encode" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_hex_encode_str", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "random_bytes" and args:
+            a = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
+            r = self._rt("__mn_random_bytes_str", STR, [I64], [(a, I64)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "regex_match" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            h = self._rt("__mn_regex_compile_str", I64, [STR], [(a0, STR)])
+            r = self._rt(
+                "__mn_regex_exec_str", I64, [I64, STR, I64], [(h, I64), (a1, STR), ("0", I64)]
+            )
+            self._rt("__mn_regex_free", I64, [I64], [(h, I64)])
+            tb = self._f("rm")
+            self._L(f"{tb} = icmp sgt i64 {r}, 0")
+            self._put(i.dest, tb, I1)
+            return
+        if fn == "regex_replace" and len(args) >= 3:
+            a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
+            a2 = self._coerce(args[2][0], args[2][1], STR) if args[2][1] != STR else args[2][0]
+            h = self._rt("__mn_regex_compile_str", I64, [STR], [(a0, STR)])
+            r = self._rt(
+                "__mn_regex_replace_str",
+                STR,
+                [I64, STR, STR, I64],
+                [(h, I64), (a1, STR), (a2, STR), ("1", I64)],
+            )
+            self._rt("__mn_regex_free", I64, [I64], [(h, I64)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+
+        # GPU builtins (v3.46.0)
+        if fn == "gpu_available":
+            r = self._rt("__mn_gpu_available", I64, [], [])
+            tb = self._f("ga")
+            self._L(f"{tb} = icmp ne i64 {r}, 0")
+            self._put(i.dest, tb, I1)
+            return
+        if fn == "gpu_device_name":
+            r = self._rt("__mn_gpu_device_name", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "gpu_device_memory":
+            r = self._rt("__mn_gpu_device_memory", I64, [], [])
+            self._put(i.dest, r, I64)
+            return
+        if (
+            fn in ("gpu_tensor_add", "gpu_tensor_sub", "gpu_tensor_mul", "gpu_tensor_div")
+            and len(args) >= 2
+        ):
+            a0 = self._coerce(args[0][0], args[0][1], LIST) if args[0][1] != LIST else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], LIST) if args[1][1] != LIST else args[1][0]
+            # Pass lists by pointer to avoid ABI mismatch (MnList is 40 bytes)
+            pa = self._alloca(LIST, "gta")
+            pb = self._alloca(LIST, "gtb")
+            self._L(f"store {LIST} {a0}, ptr {pa}")
+            self._L(f"store {LIST} {a1}, ptr {pb}")
+            cfn = {
+                "gpu_tensor_add": "__mn_gpu_tensor_add",
+                "gpu_tensor_sub": "__mn_gpu_tensor_sub",
+                "gpu_tensor_mul": "__mn_gpu_tensor_mul",
+                "gpu_tensor_div": "__mn_gpu_tensor_div",
+            }[fn]
+            r = self._rt(cfn, LIST, [PTR, PTR], [(pa, PTR), (pb, PTR)])
+            self._put(i.dest, r, LIST)
+            return
+        if fn == "gpu_tensor_matmul" and len(args) >= 5:
+            a0 = self._coerce(args[0][0], args[0][1], LIST) if args[0][1] != LIST else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], LIST) if args[1][1] != LIST else args[1][0]
+            a2 = self._coerce(args[2][0], args[2][1], I64) if args[2][1] != I64 else args[2][0]
+            a3 = self._coerce(args[3][0], args[3][1], I64) if args[3][1] != I64 else args[3][0]
+            a4 = self._coerce(args[4][0], args[4][1], I64) if args[4][1] != I64 else args[4][0]
+            pa = self._alloca(LIST, "gma")
+            pb = self._alloca(LIST, "gmb")
+            self._L(f"store {LIST} {a0}, ptr {pa}")
+            self._L(f"store {LIST} {a1}, ptr {pb}")
+            r = self._rt(
+                "__mn_gpu_tensor_matmul",
+                LIST,
+                [PTR, PTR, I64, I64, I64],
+                [(pa, PTR), (pb, PTR), (a2, I64), (a3, I64), (a4, I64)],
+            )
+            self._put(i.dest, r, LIST)
             return
 
         # join
@@ -1519,6 +2358,7 @@ class LLVMTextEmitter:
             la = self._alloca(LIST, "jl")
             self._L(f"store {LIST} {lv}, ptr {la}")
             r = self._rt("__mn_str_join", STR, [STR, "ptr"], [(sep, STR), (la, "ptr")])
+            self._track_string(r)
             self._put(i.dest, r, STR)
             return
 
@@ -1548,6 +2388,10 @@ class LLVMTextEmitter:
             rtn, pts, ret = _smeth[fn]
             if len(args) == len(pts):
                 r = self._rt(rtn, ret, pts, args)
+                if ret == STR:
+                    self._track_string(r)
+                elif ret == LIST:
+                    self._track_container(i.dest.name, "list")
                 self._put(i.dest, r, ret)
                 return
 
@@ -1653,6 +2497,16 @@ class LLVMTextEmitter:
                 self._put(i.dest, "0", I64)
             return
 
+        # Move semantics: when a resource (list, string, boxed) is passed as
+        # an argument to a user-defined function, transfer ownership so drop
+        # glue won't free it.
+        for j, (v, t) in enumerate(args):
+            if j < len(i.args):
+                src_name = i.args[j].name
+                if t == LIST and src_name in self._list_vars:
+                    self._list_vars.remove(src_name)
+                self._move_resource(src_name)
+
         # User function
         if fn in self._sigs:
             ret, pts, va = self._sigs[fn]
@@ -1751,7 +2605,7 @@ class LLVMTextEmitter:
         for v, t in coerced2:
             if self._use_byref(t):
                 a2 = self._alloca(t, "barg")
-                self._L(f"store {t} {v}, {t}* {a2}")
+                self._L(f"store {t} {v}, ptr {a2}")
                 abi_args2.append((a2, "ptr"))
             else:
                 abi_args2.append((v, t))
@@ -1778,6 +2632,13 @@ class LLVMTextEmitter:
     # --- ExternCall ---
     def _do_extern(self, i: ExternCall) -> None:
         args = [self._get(a) for a in i.args]
+        # Move semantics for arguments (same as _do_call)
+        for j, (v, t) in enumerate(args):
+            if j < len(i.args):
+                src_name = i.args[j].name
+                if t == LIST and src_name in self._list_vars:
+                    self._list_vars.remove(src_name)
+                self._move_resource(src_name)
         full = f"{i.module}__{i.fn_name}" if i.module else i.fn_name
         if full not in self._sigs:
             pts = [self._rty(a.ty) for a in i.args]
@@ -1806,16 +2667,24 @@ class LLVMTextEmitter:
             assert self._fn is not None
             rt = self._rty(self._fn.return_type)
             if rt == VOID:
+                self._emit_drop_glue(None, VOID)
+                self._emit_arena_destroy()
                 self._L("ret void")
             elif self._fn_use_sret:
                 # Store return value into sret pointer and return void
                 v = self._coerce(v, t, self._fn_sret_ty) if t != self._fn_sret_ty else v
+                self._emit_drop_glue(v, self._fn_sret_ty)
+                self._emit_arena_destroy()
                 self._L(f"store {self._fn_sret_ty} {v}, ptr {self._sret_ptr}")
                 self._L("ret void")
             else:
                 v = self._coerce(v, t, rt) if t != rt else v
+                self._emit_drop_glue(v, rt)
+                self._emit_arena_destroy()
                 self._L(f"ret {rt} {v}")
         else:
+            self._emit_drop_glue(None, VOID)
+            self._emit_arena_destroy()
             if self._fn_use_sret:
                 self._L("ret void")
             else:
@@ -1955,6 +2824,11 @@ class LLVMTextEmitter:
             else:
                 r = self._f("ev")
                 self._L(f"{r} = extractvalue {ot} {ov}, {idx}")
+                # If struct lookup gave ptr but dest type is a struct, use dest type
+                if ft == PTR and i.dest.ty:
+                    dt = self._rty(i.dest.ty)
+                    if dt != VOID and dt != PTR:
+                        ft = dt
                 self._put(i.dest, r, ft)
         else:
             if self._is_ptr(ot):
@@ -1962,7 +2836,11 @@ class LLVMTextEmitter:
             elif ot.startswith("{"):
                 r = self._f("ev")
                 self._L(f"{r} = extractvalue {ot} {ov}, 0")
-                self._put(i.dest, r, PTR)
+                # Infer field 0 type: prefer dest type, fall back to parsing struct
+                ft0 = self._rty(i.dest.ty) if i.dest.ty else PTR
+                if ft0 == VOID or ft0 == PTR:
+                    ft0 = _struct_field0_type(ot)
+                self._put(i.dest, r, ft0)
             else:
                 self._put(i.dest, ov, ot)
 
@@ -2011,6 +2889,7 @@ class LLVMTextEmitter:
                 ety = et
         esz = _tsz(ety)
         lv = self._rt("__mn_list_new", LIST, [I64], [(str(esz), I64)], "ln")
+        self._track_container(i.dest.name, "list")
         if i.elements:
             la = self._alloca(LIST, "lp")
             self._L(f"store {LIST} {lv}, ptr {la}")
@@ -2150,12 +3029,14 @@ class LLVMTextEmitter:
             )
         else:
             ksz, vsz, ktag = 8, 8, 0
+        vtag = 1 if i.val_type.kind == TypeKind.STRING else 0
         mp = self._rt(
             "__mn_map_new",
             PTR,
-            [I64, I64, I64],
-            [(str(ksz), I64), (str(vsz), I64), (str(ktag), I64)],
+            [I64, I64, I64, I64],
+            [(str(ksz), I64), (str(vsz), I64), (str(ktag), I64), (str(vtag), I64)],
         )
+        self._track_container(i.dest.name, "map")
         for kv, vv in i.pairs:
             k, kt = self._get(kv)
             v, vt = self._get(vv)
@@ -2189,11 +3070,19 @@ class LLVMTextEmitter:
                 self._ensure("malloc", PTR, [I64])
                 raw = self._f("ep")
                 self._L(f"{raw} = call ptr @malloc(i64 {psz})")
+                self._track_boxed(raw)
                 tp = raw  # opaque ptr, no bitcast
                 for j, pval in enumerate(i.payload):
+                    # Move semantics: payloads are consumed by the enum
+                    if pval.name in self._list_vars:
+                        self._list_vars.remove(pval.name)
+                    self._move_resource(pval.name)
+                    # Also check root alias (push write-backs)
+                    root_name = self._lroots.get(pval.name)
+                    if root_name and root_name in self._list_vars:
+                        self._list_vars.remove(root_name)
                     # For list values, check if there's a root alloca from push
                     # write-backs (the copy alias may be stale)
-                    root_name = self._lroots.get(pval.name)
                     if root_name and root_name in self._alloc:
                         a_root, t_root = self._alloc[root_name]
                         v = self._f("rl")
@@ -2225,6 +3114,10 @@ class LLVMTextEmitter:
             pp_c = self._coerce(pp, PTR, PTR) if pp != "null" else "null"
             self._L(f"{s1} = insertvalue {{i64, ptr}} {s0}, ptr {pp_c}, 1")
             self._put(i.dest, s1, ENUM)
+            # Record boxed association for move semantics
+            if self._last_tracked_boxed_slot:
+                self._boxed_slots[i.dest.name] = self._last_tracked_boxed_slot
+                self._last_tracked_boxed_slot = None
         else:
             self._put(i.dest, "0", I64)
 
@@ -2372,15 +3265,20 @@ class LLVMTextEmitter:
                 parts.append((self._coerce(v, t, STR) if t != STR else v, STR))
             elif pk == TypeKind.INT:
                 s = self._rt("__mn_str_from_int", STR, [I64], [(v, t)])
+                self._track_string(s)
                 parts.append((s, STR))
             elif pk == TypeKind.FLOAT:
                 s = self._rt("__mn_str_from_float", STR, [DBL], [(v, t)])
+                self._track_string(s)
                 parts.append((s, STR))
             elif pk == TypeKind.BOOL:
-                s = self._rt("__mn_str_from_bool", STR, [I1], [(v, t)])
+                bv = self._coerce(v, t, I64) if t != I64 else v
+                s = self._rt("__mn_str_from_bool", STR, [I64], [(bv, I64)])
+                self._track_string(s)
                 parts.append((s, STR))
             else:
                 s = self._rt("__mn_str_from_int", STR, [I64], [(self._coerce(v, t, I64), I64)])
+                self._track_string(s)
                 parts.append((s, STR))
         cur = parts[0][0]
         self._ensure("__mn_str_concat", STR, [STR, STR])
@@ -2389,6 +3287,7 @@ class LLVMTextEmitter:
             self._L(
                 f"{r} = call {{ptr, i64}} @__mn_str_concat({{ptr, i64}} {cur}, {{ptr, i64}} {pstr})"
             )
+            self._track_string(r)
             cur = r
         self._put(i.dest, cur, STR)
 
@@ -2430,6 +3329,7 @@ class LLVMTextEmitter:
         self._L(f"{s0} = insertvalue {{ptr, ptr}} undef, ptr {fnp}, 0")
         s1 = self._f("cc")
         self._L(f"{s1} = insertvalue {{ptr, ptr}} {s0}, ptr {raw}, 1")
+        self._track_closure(s1)
         self._put(i.dest, s1, CLOS)
 
     def _do_clos_call(self, i: ClosureCall) -> None:
@@ -2474,10 +3374,8 @@ class LLVMTextEmitter:
         for j in range(i.index + 1):
             pflds.append(ft if j == i.index else I64)
         esty = "{" + ", ".join(pflds) + "}"
-        etp = self._f("elp")
-        self._L(f"{etp} = bitcast {et} {ev} to {esty}*")
         fp = self._f("elf")
-        self._L(f"{fp} = getelementptr inbounds {esty}, ptr {etp}, i32 0, i32 {i.index}")
+        self._L(f"{fp} = getelementptr inbounds {esty}, ptr {ev}, i32 0, i32 {i.index}")
         r = self._f("elv")
         self._L(f"{r} = load {ft}, ptr {fp}")
         self._put(i.dest, r, ft)
@@ -2536,6 +3434,7 @@ class LLVMTextEmitter:
         self._L(f"store {t} {v}, ptr {va}")
         vp = va  # opaque ptr, no bitcast
         r = self._rt("__mn_signal_new", PTR, [PTR, I64], [(vp, PTR), (str(vsz), I64)])
+        self._track_container(i.dest.name, "signal")
         self._put(i.dest, r, PTR)
 
     def _do_sig_get(self, i: SignalGet) -> None:
@@ -2595,6 +3494,7 @@ class LLVMTextEmitter:
         la = self._alloca(LIST, "slp")
         self._L(f"store {LIST} {sv}, ptr {la}")
         r = self._rt("__mn_stream_from_list", PTR, ["ptr", I64], [(la, "ptr"), ("8", I64)])
+        self._track_container(i.dest.name, "stream")
         self._put(i.dest, r, PTR)
 
     def _do_stream_op(self, i: StreamOp) -> None:
@@ -2607,23 +3507,28 @@ class LLVMTextEmitter:
                 [PTR, PTR, PTR, I64],
                 [(sv, st), (fp, PTR), ("null", PTR), ("8", I64)],
             )
+            self._track_container(i.dest.name, "stream")
             self._put(i.dest, r, PTR)
         elif i.op_kind == StreamOpKind.FILTER:
             fp = self._stream_fn(i)
             r = self._rt(
                 "__mn_stream_filter", PTR, [PTR, PTR, PTR], [(sv, st), (fp, PTR), ("null", PTR)]
             )
+            self._track_container(i.dest.name, "stream")
             self._put(i.dest, r, PTR)
         elif i.op_kind == StreamOpKind.TAKE:
             nv, nt = self._get(i.args[0]) if i.args else ("0", I64)
             r = self._rt("__mn_stream_take", PTR, [PTR, I64], [(sv, st), (nv, nt)])
+            self._track_container(i.dest.name, "stream")
             self._put(i.dest, r, PTR)
         elif i.op_kind == StreamOpKind.SKIP:
             nv, nt = self._get(i.args[0]) if i.args else ("0", I64)
             r = self._rt("__mn_stream_skip", PTR, [PTR, I64], [(sv, st), (nv, nt)])
+            self._track_container(i.dest.name, "stream")
             self._put(i.dest, r, PTR)
         elif i.op_kind == StreamOpKind.COLLECT:
             r = self._rt("__mn_stream_collect", LIST, [PTR, I64], [(sv, st), ("8", I64)])
+            self._track_container(i.dest.name, "list")
             self._put(i.dest, r, LIST)
         elif i.op_kind == StreamOpKind.FOLD:
             if len(i.args) >= 2:
@@ -2722,7 +3627,7 @@ class LLVMTextEmitter:
             if hn in self._sigs:
                 hp = f"@{hn}"
             lines.append(f"  %name.{i} = alloca [1 x i8], align 1")
-            lines.append(f"  %np.{i} = getelementptr [1 x i8], [1 x i8]* %name.{i}, i64 0, i64 0")
+            lines.append(f"  %np.{i} = getelementptr [1 x i8], ptr %name.{i}, i64 0, i64 0")
             lines.append(
                 f"  %ag.{i} = call ptr @mapanare_agent_new(ptr %np.{i}, ptr {hp},"
                 f" ptr null, i32 256, i32 256)"

@@ -1,0 +1,34 @@
+// Transpiled from primes.py — type-annotated for native compilation
+// Original: python3 primes.py
+// Native:   mapanare emit-llvm primes.mn -o primes.ll && clang -O2 primes.ll -o primes -lm
+
+fn is_prime(n: Int) -> Bool {
+    si n < 2 {
+        da false
+    }
+    pon mut i: Int = 2
+    mien i * i <= n {
+        si n % i == 0 {
+            da false
+        }
+        i = i + 1
+    }
+    da true
+}
+
+fn count_primes(limit: Int) -> Int {
+    pon mut count: Int = 0
+    pon mut n: Int = 2
+    mien n < limit {
+        si is_prime(n) {
+            count = count + 1
+        }
+        n = n + 1
+    }
+    da count
+}
+
+fn main() {
+    pon result: Int = count_primes(500000)
+    print(result)
+}

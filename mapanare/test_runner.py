@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass, field
 
 from mapanare.ast_nodes import Decorator, Definition, DocComment, ExportDef, FnDef
+from mapanare.diagnostics import _supports_color
 from mapanare.parser import ParseError, parse
 from mapanare.semantic import SemanticErrors, check_or_raise
 
@@ -318,11 +319,16 @@ def format_results(suite: TestSuite, verbose: bool = False) -> str:
     for r in suite.results:
         by_file.setdefault(r.file, []).append(r)
 
+    use_color = _supports_color()
+
     for filepath, results in by_file.items():
         rel = os.path.relpath(filepath)
         lines.append(f"  {rel}")
         for r in results:
-            status = "PASS" if r.passed else "FAIL"
+            if r.passed:
+                status = "\033[32mPASS\033[0m" if use_color else "PASS"
+            else:
+                status = "\033[31mFAIL\033[0m" if use_color else "FAIL"
             duration_ms = r.duration * 1000
             line = f"    {status}  {r.name} ({duration_ms:.1f}ms)"
             lines.append(line)

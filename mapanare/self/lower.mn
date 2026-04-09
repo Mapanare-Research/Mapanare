@@ -26,7 +26,7 @@ fn register_declarations(st: LowerState, program: Program) -> LowerState {
 fn register_declarations_pass1(st: LowerState, program: Program) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..5000 {
         if i >= len(program.definitions) { return s }
         let defn: Definition = program.definitions[i]
         // Use register_enum_if_enum to avoid match PHI zeroinitializer bug
@@ -36,19 +36,27 @@ fn register_declarations_pass1(st: LowerState, program: Program) -> LowerState {
     return s
 }
 
-// If defn is EnumDef, register it. Otherwise return state unchanged.
+// If defn is EnumDef, register it. Generic enums are deferred.
 fn register_enum_if_enum(st: LowerState, defn: Definition) -> LowerState {
-    match defn {
-        EnumDef(data) => { return register_enum(st, data) },
-        _ => { return st }
+    if def_kind(defn) == "enum_def" {
+        let ed: EnumDefData = def_enum_data(defn)
+        if len(ed.type_params) > 0 {
+            let mut new_st_ge: LowerState = st
+            let mut ge_list: List<EnumDefData> = new_st_ge.generic_enums
+            ge_list.push(ed)
+            new_st_ge.generic_enums = ge_list
+            return new_st_ge
+        }
+        return register_enum(st, ed)
     }
+    return st
 }
 
 // Pass 2: register non-enum definitions. Extracted for return-based exit.
 fn register_declarations_pass2(st: LowerState, program: Program) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..5000 {
         if i >= len(program.definitions) { return s }
         let defn: Definition = program.definitions[i]
         s = register_nonenums(s, defn)
@@ -59,53 +67,158 @@ fn register_declarations_pass2(st: LowerState, program: Program) -> LowerState {
 
 // If defn is NOT EnumDef, register it. Otherwise return state unchanged.
 fn register_nonenums(st: LowerState, defn: Definition) -> LowerState {
-    match defn {
-        EnumDef(_) => { return st },
-        _ => { return register_definition(st, defn) }
-    }
+    if def_kind(defn) == "enum_def" { return st }
+    return register_definition(st, defn)
 }
 
 fn register_definition(st: LowerState, defn: Definition) -> LowerState {
-    match defn {
-        StructDef(data) => {
-            return register_struct(st, data)
-        },
-        EnumDef(data) => {
-            return register_enum(st, data)
-        },
-        ImplDef(target, methods) => {
-            return register_impl(st, target, methods)
-        },
-        ImportDef(path, items) => {
-            let info: ImportInfo = new_import_info(path, items)
-            let mut new_st: LowerState = st
-            let mut mod_tmp: MIRModule = new_st.module
-            let mut imp_list: List<ImportInfo> = mod_tmp.imports
-            imp_list.push(info)
-            mod_tmp.imports = imp_list
-            new_st.module = mod_tmp
-            return new_st
-        },
-        ExportDef(inner_opt, _) => {
-            match inner_opt {
-                Some(inner) => { return register_definition(st, inner) },
-                _ => { return st }
-            }
-        },
-        FnDef(fd) => {
-            // Register function return type via lambda_vars (top-level list,
-            // properly COW-cloned). Using "__ret__fn_name" as the key.
-            // This avoids the nested MIRModule.functions COW corruption issue.
-            let ret_ty: MIRType = resolve_return_type_checked(st, fd.return_type)
-            let ret_key: String = "__ret__" + fd.name
-            let ret_val: String = ret_ty.kind + ":" + ret_ty.name
-            let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
-            let mut new_st: LowerState = st
-            new_st.lambda_vars.push(entry)
-            return new_st
-        },
-        _ => { return st }
+    let dk: String = def_kind(defn)
+    if dk == "struct_def" {
+        let sd: StructDefData = def_struct_data(defn)
+        if len(sd.type_params) > 0 {
+            let mut new_st_gs: LowerState = st
+            let mut gs_list: List<StructDefData> = new_st_gs.generic_structs
+            gs_list.push(sd)
+            new_st_gs.generic_structs = gs_list
+            return new_st_gs
+        }
+        return register_struct(st, sd)
     }
+    if dk == "enum_def" {
+        let ed: EnumDefData = def_enum_data(defn)
+        if len(ed.type_params) > 0 {
+            let mut new_st_ge: LowerState = st
+            let mut ge_list: List<EnumDefData> = new_st_ge.generic_enums
+            ge_list.push(ed)
+            new_st_ge.generic_enums = ge_list
+            return new_st_ge
+        }
+        return register_enum(st, ed)
+    }
+    if dk == "impl_def" {
+        let impl_target: String = def_impl_target(defn)
+        // Check if target is a generic struct — if so, store methods for later monomorphization
+        let gs_check: Option<StructDefData> = find_generic_struct(st, impl_target)
+        match gs_check {
+            Some(gs_data) => {
+                // Store each method in generic_fns with target prefix and struct's type_params
+                let mut s_gi: LowerState = st
+                let gi_methods: List<FnDefData> = def_impl_methods(defn)
+                let mut gi: Int = 0
+                for _ in 0..500 {
+                    if gi >= len(gi_methods) { return s_gi }
+                    let gm: FnDefData = gi_methods[gi]
+                    // Create a copy with prefixed name and struct type params
+                    let prefixed_name: String = impl_target + "_" + gm.name
+                    let impl_fn: FnDefData = new_fn_def_data(gm.span, prefixed_name, false, gs_data.type_params, gm.params, gm.return_type, gm.body, gm.decorators)
+                    let mut gfn_list: List<FnDefData> = s_gi.generic_fns
+                    gfn_list.push(impl_fn)
+                    s_gi.generic_fns = gfn_list
+                    gi = gi + 1
+                }
+                return s_gi
+            },
+            _ => { return register_impl(st, impl_target, def_impl_methods(defn)) }
+        }
+    }
+    if dk == "import_def" {
+        let info: ImportInfo = new_import_info(def_import_path(defn), def_import_items(defn))
+        let mut new_st_imp: LowerState = st
+        let mut mod_tmp: MIRModule = new_st_imp.module
+        let mut imp_list: List<ImportInfo> = mod_tmp.imports
+        imp_list.push(info)
+        mod_tmp.imports = imp_list
+        new_st_imp.module = mod_tmp
+        return new_st_imp
+    }
+    if dk == "export_def" {
+        let inner_opt: Option<Definition> = def_export_inner(defn)
+        match inner_opt {
+            Some(inner) => { return register_definition(st, inner) },
+            _ => { return st }
+        }
+    }
+    if dk == "fn_def" {
+        let fd: FnDefData = def_fn_data(defn)
+        // Store generic functions for on-demand monomorphization
+        if len(fd.type_params) > 0 {
+            let mut new_st_gen: LowerState = st
+            let mut gfns: List<FnDefData> = new_st_gen.generic_fns
+            gfns.push(fd)
+            new_st_gen.generic_fns = gfns
+            return new_st_gen
+        }
+        // Register function return type via lambda_vars (top-level list,
+        // properly COW-cloned). Using "__ret__fn_name" as the key.
+        // This avoids the nested MIRModule.functions COW corruption issue.
+        let ret_ty: MIRType = resolve_return_type_checked(st, fd.return_type)
+        let ret_key: String = "__ret__" + fd.name
+        let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+        let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
+        let mut new_st_fn: LowerState = st
+        let mut lv_fn: List<LambdaEntry> = new_st_fn.lambda_vars
+        lv_fn.push(entry)
+        new_st_fn.lambda_vars = lv_fn
+        return new_st_fn
+    }
+    if dk == "extern_fn_def" {
+        return register_extern_fn(st, defn)
+    }
+    return st
+}
+
+fn register_extern_fn(st: LowerState, defn: Definition) -> LowerState {
+    let abi: String = def_extern_abi(defn)
+    let fn_name: String = def_extern_name(defn)
+    let params: List<Param> = def_extern_params(defn)
+    let ret_opt: Option<TypeExpr> = def_extern_return_type(defn)
+
+    // Resolve return type
+    let ret_ty: MIRType = resolve_return_type_checked(st, ret_opt)
+
+    // Register function return type in lambda_vars (for call resolution)
+    let ret_key: String = "__ret__" + fn_name
+    let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+    let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
+    let mut s: LowerState = st
+    let mut lv: List<LambdaEntry> = s.lambda_vars
+    lv.push(entry)
+    s.lambda_vars = lv
+
+    // Resolve parameter types
+    let mut param_types: List<MIRType> = []
+    let mut i: Int = 0
+    for _ in 0..50 {
+        if i >= len(params) {
+            // Push ExternFnInfo to module.extern_fns
+            let info: ExternFnInfo = new_extern_fn_info(abi, "", fn_name, param_types, ret_ty)
+            let mut mod_tmp: MIRModule = s.module
+            let mut ext_list: List<ExternFnInfo> = mod_tmp.extern_fns
+            ext_list.push(info)
+            mod_tmp.extern_fns = ext_list
+            s.module = mod_tmp
+            return s
+        }
+        let p: Param = params[i]
+        match p.type_annotation {
+            Some(te) => {
+                param_types.push(lower_resolve_type_checked(s, te))
+            },
+            _ => {
+                param_types.push(mir_unknown())
+            }
+        }
+        i = i + 1
+    }
+
+    // Fallback: push whatever we have
+    let info_fb: ExternFnInfo = new_extern_fn_info(abi, "", fn_name, param_types, ret_ty)
+    let mut mod_fb: MIRModule = s.module
+    let mut ext_fb: List<ExternFnInfo> = mod_fb.extern_fns
+    ext_fb.push(info_fb)
+    mod_fb.extern_fns = ext_fb
+    s.module = mod_fb
+    return s
 }
 
 fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
@@ -115,12 +228,14 @@ fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
     let mut i: Int = 0
     let mut s: LowerState = st
 
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i >= len(data.fields) {
             let info: StructInfo = new_struct_info(data.name, fields)
             s.module = module_push_struct(s.module, info)
             let sfi: StructFieldInfo = new_struct_field_info(data.name, field_names, field_types)
-            s.struct_fields.push(sfi)
+            let mut sf_lst: List<StructFieldInfo> = s.struct_fields
+            sf_lst.push(sfi)
+            s.struct_fields = sf_lst
             return s
         }
         let field: StructField = data.fields[i]
@@ -140,12 +255,14 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
     let mut i: Int = 0
     let mut s: LowerState = st
 
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i >= len(data.variants) {
             let info: EnumInfo = new_enum_info(data.name, variants)
             s.module = module_push_enum(s.module, info)
             let evn: EnumVariantNames = new_enum_variant_names(data.name, variant_names)
-            s.enum_variants.push(evn)
+            let mut ev_lst: List<EnumVariantNames> = s.enum_variants
+            ev_lst.push(evn)
+            s.enum_variants = ev_lst
             return s
         }
         let variant: EnumVariant = data.variants[i]
@@ -169,13 +286,15 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
 fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i >= len(methods) { return s }
         let method: FnDefData = methods[i]
         let key: String = target + "." + method.name
         let mir_name: String = target + "_" + method.name
         let entry: ImplEntry = new_impl_entry(key, mir_name)
-        s.impl_methods.push(entry)
+        let mut im_lst: List<ImplEntry> = s.impl_methods
+        im_lst.push(entry)
+        s.impl_methods = im_lst
         i = i + 1
     }
     return s
@@ -188,7 +307,7 @@ fn register_impl(st: LowerState, target: String, methods: List<FnDefData>) -> Lo
 fn lower_definitions(st: LowerState, program: Program) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..5000 {
         if i >= len(program.definitions) {
             return s
         }
@@ -201,40 +320,46 @@ fn lower_definitions(st: LowerState, program: Program) -> LowerState {
 }
 
 fn lower_definition(st: LowerState, defn: Definition) -> LowerState {
-    match defn {
-        FnDef(data) => {
-            return lower_fn(st, data, "")
-        },
-        AgentDef(data) => {
-            return lower_agent(st, data)
-        },
-        ImplDef(target, methods) => {
-            return lower_impl(st, target, methods)
-        },
-        ExportDef(inner_opt, _) => {
-            match inner_opt {
-                Some(inner) => {
-                    let s: LowerState = lower_definition(st, inner)
-                    return s
-                },
-                _ => { return st }
-            }
-        },
-        _ => {
-            return st
+    let dk: String = def_kind(defn)
+    if dk == "fn_def" {
+        let fd: FnDefData = def_fn_data(defn)
+        if len(fd.type_params) > 0 { return st }
+        return lower_fn(st, fd, "")
+    }
+    if dk == "agent_def" {
+        return lower_agent(st, def_agent_data(defn))
+    }
+    if dk == "impl_def" {
+        let impl_tgt: String = def_impl_target(defn)
+        // Skip generic impls — methods lowered on demand via struct monomorphization
+        let gs_lower: Option<StructDefData> = find_generic_struct(st, impl_tgt)
+        match gs_lower {
+            Some(_) => { return st },
+            _ => { return lower_impl(st, impl_tgt, def_impl_methods(defn)) }
         }
     }
+    if dk == "export_def" {
+        let inner_opt: Option<Definition> = def_export_inner(defn)
+        match inner_opt {
+            Some(inner) => {
+                let s: LowerState = lower_definition(st, inner)
+                return s
+            },
+            _ => { return st }
+        }
+    }
+    return st
 }
 
 // ---------------------------------------------------------------------------
 // Function lowering
 // ---------------------------------------------------------------------------
 
-// Helper: build MIR params from FnDefData.params (avoids break-in-for bug)
+// Helper: build MIR params from FnDefData.params (helper for clarity)
 fn build_mir_params(st: LowerState, fn_params: List<Param>) -> List<MIRParam> {
     let mut params: List<MIRParam> = []
     let mut pi: Int = 0
-    for _ in 0..200 {
+    for _ in 0..500 {
         if pi >= len(fn_params) { return params }
         let p: Param = fn_params[pi]
         let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
@@ -245,24 +370,24 @@ fn build_mir_params(st: LowerState, fn_params: List<Param>) -> List<MIRParam> {
     return params
 }
 
-// Helper: collect decorator names (avoids break-in-for bug)
+// Helper: collect decorator names (helper for clarity)
 fn collect_decorator_names(decorators: List<Decorator>) -> List<String> {
     let mut names: List<String> = []
-    let mut di: Int = 0
+    let mut dix: Int = 0
     for _ in 0..100 {
-        if di >= len(decorators) { return names }
-        let dec: Decorator = decorators[di]
+        if dix >= len(decorators) { return names }
+        let dec: Decorator = decorators[dix]
         names.push(dec.name)
-        di = di + 1
+        dix = dix + 1
     }
     return names
 }
 
-// Helper: bind params as variables in entry block (avoids break-in-for bug)
+// Helper: bind params as variables in entry block (helper for clarity)
 fn bind_fn_params(st: LowerState, fn_params: List<Param>) -> LowerState {
     let mut s: LowerState = st
     let mut bi: Int = 0
-    for _ in 0..200 {
+    for _ in 0..500 {
         if bi >= len(fn_params) { return s }
         let p: Param = fn_params[bi]
         let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
@@ -280,7 +405,7 @@ fn bind_fn_params(st: LowerState, fn_params: List<Param>) -> LowerState {
 fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerState {
     let fn_name: String = name_prefix + fn_def.name
 
-    // Build params and decorators using helpers (avoid break-in-for bug)
+    // Build params and decorators using helpers (helper for clarity)
     let params: List<MIRParam> = build_mir_params(st, fn_def.params)
     let ret_type: MIRType = resolve_return_type_checked(st, fn_def.return_type)
     let decorators: List<String> = collect_decorator_names(fn_def.decorators)
@@ -293,6 +418,7 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     let prev_tmp: Int = st.tmp_counter
     let prev_blk_cnt: Int = st.block_counter
     let prev_vars: List<VarInfo> = st.vars
+    let prev_blocks: List<BasicBlock> = st.fn_blocks
 
     let mut s: LowerState = st
     s.current_fn = Some(mir_fn)
@@ -300,6 +426,8 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     s.block_counter = 0
     let fresh_vars: List<VarInfo> = []
     s.vars = fresh_vars
+    let fresh_blocks: List<BasicBlock> = []
+    s.fn_blocks = fresh_blocks
 
     // Create entry block
     s = add_block(s, "entry")
@@ -322,13 +450,10 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
         }
     }
 
-    // Add function to module
-    match s.current_fn {
-        Some(f) => {
-            s.module = module_push_function(s.module, f)
-        },
-        _ => {}
-    }
+    // Copy fn_blocks into MIRFunction and add to module.
+    let mut final_fn: MIRFunction = mir_fn
+    final_fn.blocks = s.fn_blocks
+    s.module = module_push_function(s.module, final_fn)
 
     // Restore state
     s.current_fn = prev_fn
@@ -336,6 +461,7 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     s.tmp_counter = prev_tmp
     s.block_counter = prev_blk_cnt
     s.vars = prev_vars
+    s.fn_blocks = prev_blocks
 
     return s
 }
@@ -346,7 +472,7 @@ fn lower_agent(st: LowerState, data: AgentDefData) -> LowerState {
 
     // Lower each method
     let mut i: Int = 0
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i >= len(data.methods) {
             let inputs: List<String> = extract_agent_input_names(data)
             let outputs: List<String> = extract_agent_output_names(data)
@@ -390,13 +516,39 @@ fn extract_agent_output_names(data: AgentDefData) -> List<String> {
 fn lower_impl(st: LowerState, target: String, methods: List<FnDefData>) -> LowerState {
     let mut s: LowerState = st
     let mut i: Int = 0
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i >= len(methods) { return s }
         let method: FnDefData = methods[i]
-        s = lower_fn(s, method, target + "_")
+        // Fix self parameter type: inject target struct type for untyped "self"
+        let fixed: FnDefData = fix_self_param_type(method, target)
+        s = lower_fn(s, fixed, target + "_")
         i = i + 1
     }
     return s
+}
+
+fn fix_self_param_type(method: FnDefData, target: String) -> FnDefData {
+    if len(method.params) == 0 { return method }
+    let first: Param = method.params[0]
+    if first.name != "self" { return method }
+    // Check if self already has a type annotation
+    match first.type_annotation {
+        Some(_) => { return method },
+        _ => {}
+    }
+    // Inject target struct type for self
+    let self_type: TypeExpr = TypeExpr::Named(target)
+    let fixed_self: Param = new Param { span: first.span, name: "self", type_annotation: Some(self_type) }
+    let mut new_params: List<Param> = []
+    new_params.push(fixed_self)
+    let mut pi: Int = 1
+    for _ in 0..50 {
+        if pi < len(method.params) {
+            new_params.push(method.params[pi])
+            pi = pi + 1
+        }
+    }
+    return new_fn_def_data(method.span, method.name, method.public, method.type_params, new_params, method.return_type, method.body, method.decorators)
 }
 
 // ---------------------------------------------------------------------------
@@ -416,7 +568,7 @@ fn lower_block_stmts(st: LowerState, stmts: List<Stmt>) -> LowerResult {
     let mut s: LowerState = st
     let mut last_val: Value = void_value()
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if i >= len(stmts) { return new_lower_result(last_val, s) }
         if current_block_terminated(s) { return new_lower_result(last_val, s) }
         let stmt: Stmt = stmts[i]
@@ -429,31 +581,53 @@ fn lower_block_stmts(st: LowerState, stmts: List<Stmt>) -> LowerResult {
 }
 
 fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
-    match stmt {
-        Let(name, mutable, type_ann, value) => {
-            let s: LowerState = lower_let(st, name, mutable, type_ann, value)
-            return new_lower_result(void_value(), s)
-        },
-        ExprStmt(expr) => {
-            return lower_expr(st, expr)
-        },
-        Return(value_opt) => {
-            let s: LowerState = lower_return(st, value_opt)
-            return new_lower_result(void_value(), s)
-        },
-        For(var_name, iterable, body) => {
-            let s: LowerState = lower_for(st, var_name, iterable, body)
-            return new_lower_result(void_value(), s)
-        },
-        SignalDecl(name, mutable, type_ann, value, _) => {
-            let s: LowerState = lower_signal_decl(st, name, mutable, type_ann, value)
-            return new_lower_result(void_value(), s)
-        },
-        StreamDecl(name, type_ann, value) => {
-            let s: LowerState = lower_stream_decl(st, name, value)
-            return new_lower_result(void_value(), s)
-        }
+    let sk: String = stmt_kind(stmt)
+    if sk == "let" {
+        let s_let: LowerState = lower_let(st, stmt_let_name(stmt), stmt_let_mutable(stmt), stmt_let_type(stmt), stmt_let_value(stmt))
+        return new_lower_result(void_value(), s_let)
     }
+    if sk == "expr_stmt" {
+        return lower_expr(st, stmt_expr(stmt))
+    }
+    if sk == "return" {
+        let s_ret: LowerState = lower_return(st, stmt_return_val(stmt))
+        return new_lower_result(void_value(), s_ret)
+    }
+    if sk == "for" {
+        let s_for: LowerState = lower_for(st, stmt_for_var(stmt), stmt_for_iter(stmt), stmt_for_body(stmt))
+        return new_lower_result(void_value(), s_for)
+    }
+    if sk == "while" {
+        let s_while: LowerState = lower_while(st, stmt_while_cond(stmt), stmt_while_body(stmt))
+        return new_lower_result(void_value(), s_while)
+    }
+    if sk == "break" {
+        if st.loop_exit_label != "" {
+            let s_brk: LowerState = emit_instr(st, Instruction::Jump(st.loop_exit_label))
+            return new_lower_result(void_value(), s_brk)
+        }
+        return new_lower_result(void_value(), st)
+    }
+    if sk == "continue" {
+        if st.loop_header_label != "" {
+            let s_cont: LowerState = emit_instr(st, Instruction::Jump(st.loop_header_label))
+            return new_lower_result(void_value(), s_cont)
+        }
+        return new_lower_result(void_value(), st)
+    }
+    if sk == "assert" {
+        let s_assert: LowerState = lower_assert(st, stmt_assert_expr(stmt), stmt_assert_msg(stmt))
+        return new_lower_result(void_value(), s_assert)
+    }
+    if sk == "signal_decl" {
+        let s_sig: LowerState = lower_signal_decl(st, stmt_signal_name(stmt), stmt_signal_mutable(stmt), stmt_signal_type(stmt), stmt_signal_value(stmt))
+        return new_lower_result(void_value(), s_sig)
+    }
+    if sk == "stream_decl" {
+        let s_strm: LowerState = lower_stream_decl(st, stmt_stream_name(stmt), stmt_stream_value(stmt))
+        return new_lower_result(void_value(), s_strm)
+    }
+    return new_lower_result(void_value(), st)
 }
 
 // ---------------------------------------------------------------------------
@@ -461,6 +635,10 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
 // ---------------------------------------------------------------------------
 
 fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState {
+    // Check if the value expression is a None literal BEFORE lowering.
+    // This flag is used later to decide whether to re-wrap with typed WrapNone.
+    let mut is_none_literal: Bool = false
+    if expr_kind(value) == "none_lit" { is_none_literal = true }
     let r: LowerResult = lower_expr(st, value)
     let mut s: LowerState = r.state
 
@@ -503,7 +681,12 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeE
 
     // For None stored to a typed Option alloca: re-emit WrapNone with the
     // declared type so the value and alloca types match.
-    if val_ty.kind == "option" && r.value.ty.kind == "option" && len(val_ty.args) > 0 && len(r.value.ty.args) == 0 {
+    // ONLY do this for actual None literals (value name contains "tnone" or
+    // is the WrapNone result), NOT for function call results that happen to
+    // have untyped Option return. Check: if the expression was NoneLit, the
+    // value name starts with "%t" and has no "_val" (it's a direct constant,
+    // not a loaded variable or call result).
+    if is_none_literal && val_ty.kind == "option" && len(val_ty.args) > 0 {
         let typed_none_r: LowerResult = make_value(s, val_ty, "tnone")
         s = emit_instr(typed_none_r.state, Instruction::WrapNone(typed_none_r.value, val_ty))
         val = typed_none_r.value
@@ -539,10 +722,123 @@ fn lower_return(st: LowerState, value_opt: Option<Expr>) -> LowerState {
 // For loop
 // ---------------------------------------------------------------------------
 
+fn lower_for_map(st: LowerState, var_name: String, map_val: Value, body: Block) -> LowerState {
+    let mut s: LowerState = st
+
+    // Get keys list: __mn_map_keys(map_ptr)
+    // First extract the map pointer from the {ptr, i64} map value
+    let keys_r: LowerResult = make_value(s, mir_list(), "map_keys")
+    s = keys_r.state
+    let mut keys_args: List<Value> = []
+    keys_args.push(map_val)
+    s = emit_instr(s, Instruction::Call(keys_r.value, "__mn_map_keys", keys_args))
+
+    // Get key count: len(keys)
+    let len_r: LowerResult = make_value(s, mir_int(), "map_len")
+    s = len_r.state
+    let mut len_args: List<Value> = []
+    len_args.push(keys_r.value)
+    s = emit_instr(s, Instruction::Call(len_r.value, "len", len_args))
+
+    // Counter alloca
+    let counter_addr: Value = new_value("%for_counter" + toString(s.tmp_counter) + ".addr", mir_int())
+    s.tmp_counter = s.tmp_counter + 1
+    s = emit_instr(s, Instruction::Alloca(counter_addr, mir_int()))
+    let zero_r: LowerResult = make_value(s, mir_int(), "zero")
+    s = zero_r.state
+    s = emit_instr(s, Instruction::Const(zero_r.value, mir_int(), "0"))
+    s = emit_instr(s, Instruction::Store(counter_addr, zero_r.value))
+
+    let entry_idx: Int = s.current_block_idx
+
+    // Create blocks
+    let header_r: LowerResult = fresh_block_label(s, "mapfor_hdr")
+    s = header_r.state
+    let header_label: String = header_r.value.name
+    s = add_block(s, header_label)
+    let header_idx: Int = s.current_block_idx
+
+    let body_r: LowerResult = fresh_block_label(s, "mapfor_body")
+    s = body_r.state
+    let body_label: String = body_r.value.name
+    s = add_block(s, body_label)
+    let body_idx: Int = s.current_block_idx
+
+    let exit_r: LowerResult = fresh_block_label(s, "mapfor_exit")
+    s = exit_r.state
+    let exit_label: String = exit_r.value.name
+    s = add_block(s, exit_label)
+    let exit_idx: Int = s.current_block_idx
+
+    // Entry → header
+    s = set_block(s, entry_idx)
+    if !current_block_terminated(s) {
+        s = emit_instr(s, Instruction::Jump(header_label))
+    }
+
+    // Header: load counter, compare < len, branch
+    s = set_block(s, header_idx)
+    let ci: LowerResult = make_value(s, mir_int(), "mapfor_i")
+    s = ci.state
+    s = emit_instr(s, Instruction::Load(ci.value, counter_addr))
+    let cmp: LowerResult = make_value(s, mir_bool(), "mapfor_cmp")
+    s = cmp.state
+    s = emit_instr(s, Instruction::BinOp(cmp.value, BinOpKind::Lt, ci.value, len_r.value))
+    s = emit_instr(s, Instruction::Branch(cmp.value, body_label, exit_label))
+
+    // Body: get key from list, define loop variable, execute body, increment
+    s = set_block(s, body_idx)
+    // Load current index
+    let idx_val: LowerResult = make_value(s, mir_int(), "mapfor_idx")
+    s = idx_val.state
+    s = emit_instr(s, Instruction::Load(idx_val.value, counter_addr))
+    // Get key from keys list: keys[idx]
+    let key_r: LowerResult = make_value(s, mir_string(), "mapfor_key")
+    s = key_r.state
+    let mut get_args: List<Value> = []
+    get_args.push(keys_r.value)
+    get_args.push(idx_val.value)
+    s = emit_instr(s, Instruction::Call(key_r.value, "__list_get_string", get_args))
+    // Define loop variable
+    let var_addr: LowerResult = make_value(s, mir_string(), var_name + "_addr")
+    s = var_addr.state
+    s = emit_instr(s, Instruction::Alloca(var_addr.value, mir_string()))
+    s = emit_instr(s, Instruction::Store(var_addr.value, key_r.value))
+    s = define_var(s, var_name, var_addr.value, false)
+
+    s = lower_push_scope(s)
+    let body_result: LowerResult = lower_block(s, body)
+    s = body_result.state
+    s = lower_pop_scope(s)
+
+    // Increment counter, jump to header
+    if !current_block_terminated(s) {
+        let inc_i: LowerResult = make_value(s, mir_int(), "mapfor_ci")
+        s = inc_i.state
+        s = emit_instr(s, Instruction::Load(inc_i.value, counter_addr))
+        let one_r: LowerResult = make_value(s, mir_int(), "mapfor_one")
+        s = one_r.state
+        s = emit_instr(s, Instruction::Const(one_r.value, mir_int(), "1"))
+        let inc_r: LowerResult = make_value(s, mir_int(), "mapfor_inc")
+        s = inc_r.state
+        s = emit_instr(s, Instruction::BinOp(inc_r.value, BinOpKind::Add, inc_i.value, one_r.value))
+        s = emit_instr(s, Instruction::Store(counter_addr, inc_r.value))
+        s = emit_instr(s, Instruction::Jump(header_label))
+    }
+
+    s = set_block(s, exit_idx)
+    return s
+}
+
 fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> LowerState {
-    // Lower the iterable (Range expression: start..end)
+    // Lower the iterable (Range expression: start..end, or collection)
     let iter_r: LowerResult = lower_expr(st, iterable)
     let mut s: LowerState = iter_r.state
+
+    // Map iteration: cada key en map → iterate over __mn_map_keys(map)
+    if iter_r.value.ty.kind == "map" {
+        return lower_for_map(s, var_name, iter_r.value, body)
+    }
 
     // Counter-based loop: use __mn_range_start/end to extract bounds.
     // SSA-based iterator can't mutate, so we use alloca counter.
@@ -615,10 +911,16 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s = emit_instr(s, Instruction::Store(loop_addr_r.value, cur_i.value))
     s = define_var(s, var_name, loop_addr_r.value, false)
 
+    let old_header2: String = s.loop_header_label
+    let old_exit2: String = s.loop_exit_label
+    s.loop_header_label = header_label
+    s.loop_exit_label = exit_label
     s = lower_push_scope(s)
     let body_result: LowerResult = lower_block(s, body)
     s = body_result.state
     s = lower_pop_scope(s)
+    s.loop_header_label = old_header2
+    s.loop_exit_label = old_exit2
 
     // Increment counter and jump back to header
     if !current_block_terminated(s) {
@@ -637,6 +939,110 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
 
     // Exit block
     s = set_block(s, exit_idx)
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// While loop
+// ---------------------------------------------------------------------------
+
+fn lower_while(st: LowerState, cond: Expr, body: Block) -> LowerState {
+    let mut s: LowerState = st
+    let entry_idx: Int = s.current_block_idx
+
+    // Create blocks
+    let header_r: LowerResult = fresh_block_label(s, "while_header")
+    s = header_r.state
+    let header_label: String = header_r.value.name
+    s = add_block(s, header_label)
+    let header_idx: Int = s.current_block_idx
+
+    let body_r: LowerResult = fresh_block_label(s, "while_body")
+    s = body_r.state
+    let body_label: String = body_r.value.name
+    s = add_block(s, body_label)
+    let body_idx: Int = s.current_block_idx
+
+    let exit_r: LowerResult = fresh_block_label(s, "while_exit")
+    s = exit_r.state
+    let exit_label: String = exit_r.value.name
+    s = add_block(s, exit_label)
+    let exit_idx: Int = s.current_block_idx
+
+    // Jump from entry to header
+    s = set_block(s, entry_idx)
+    if !current_block_terminated(s) {
+        s = emit_instr(s, Instruction::Jump(header_label))
+    }
+
+    // Header: evaluate condition, branch
+    s = set_block(s, header_idx)
+    let cond_r: LowerResult = lower_expr(s, cond)
+    s = cond_r.state
+    s = emit_instr(s, Instruction::Branch(cond_r.value, body_label, exit_label))
+
+    // Body: save loop context, lower body, jump to header
+    s = set_block(s, body_idx)
+    let old_header: String = s.loop_header_label
+    let old_exit: String = s.loop_exit_label
+    s.loop_header_label = header_label
+    s.loop_exit_label = exit_label
+    s = lower_push_scope(s)
+    let body_result: LowerResult = lower_block(s, body)
+    s = body_result.state
+    s = lower_pop_scope(s)
+    s.loop_header_label = old_header
+    s.loop_exit_label = old_exit
+    if !current_block_terminated(s) {
+        s = emit_instr(s, Instruction::Jump(header_label))
+    }
+
+    // Exit
+    s = set_block(s, exit_idx)
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// Assert
+// ---------------------------------------------------------------------------
+
+fn lower_assert(st: LowerState, cond_expr: Expr, msg: Option<String>) -> LowerState {
+    let mut s: LowerState = st
+    let cond_r: LowerResult = lower_expr(s, cond_expr)
+    s = cond_r.state
+
+    let ok_r: LowerResult = fresh_block_label(s, "assert_ok")
+    s = ok_r.state
+    let ok_label: String = ok_r.value.name
+    s = add_block(s, ok_label)
+    let ok_idx: Int = s.current_block_idx
+
+    let fail_r: LowerResult = fresh_block_label(s, "assert_fail")
+    s = fail_r.state
+    let fail_label: String = fail_r.value.name
+    s = add_block(s, fail_label)
+    let fail_idx: Int = s.current_block_idx
+
+    // Branch on condition
+    let prev_idx: Int = s.current_block_idx
+    s = set_block(s, s.current_block_idx - 2)
+    s = emit_instr(s, Instruction::Branch(cond_r.value, ok_label, fail_label))
+
+    // Fail block: call __mn_assert_fail
+    s = set_block(s, fail_idx)
+    let msg_val: LowerResult = make_value(s, mir_string(), "assert_msg")
+    s = msg_val.state
+    let msg_str: String = "assertion failed"
+    s = emit_instr(s, Instruction::Const(msg_val.value, mir_string(), msg_str))
+    let mut fail_args: List<Value> = []
+    fail_args.push(msg_val.value)
+    let fail_ret: LowerResult = make_value(s, mir_void(), "assert_ret")
+    s = fail_ret.state
+    s = emit_instr(s, Instruction::Call(fail_ret.value, "__mn_assert_fail", fail_args))
+    s = emit_instr(s, Instruction::Jump(ok_label))
+
+    // OK block: continue
+    s = set_block(s, ok_idx)
     return s
 }
 
@@ -663,121 +1069,134 @@ fn lower_stream_decl(st: LowerState, name: String, value: Expr) -> LowerState {
 // ---------------------------------------------------------------------------
 
 fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
-    match expr {
-        IntLit(n) => {
-            let r: LowerResult = make_value(st, mir_int(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_int(), toString(n)))
-            return new_lower_result(r.value, s)
-        },
-        FloatLit(f) => {
-            let r: LowerResult = make_value(st, mir_float(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_float(), toString(f)))
-            return new_lower_result(r.value, s)
-        },
-        BoolLit(b) => {
-            let r: LowerResult = make_value(st, mir_bool(), "t")
-            let mut val_str: String = "false"
-            if b { val_str = "true" }
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_bool(), val_str))
-            return new_lower_result(r.value, s)
-        },
-        StringLit(text) => {
-            let r: LowerResult = make_value(st, mir_string(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_string(), text))
-            return new_lower_result(r.value, s)
-        },
-        CharLit(ch) => {
-            let r: LowerResult = make_value(st, mir_string(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_string(), ch))
-            return new_lower_result(r.value, s)
-        },
-        NoneLit => {
-            let r: LowerResult = make_value(st, mir_option(), "t")
-            let s: LowerState = emit_instr(r.state, Instruction::WrapNone(r.value, mir_option()))
-            return new_lower_result(r.value, s)
-        },
-        Ident(name) => {
-            return lower_identifier(st, name)
-        },
-        Binary(left, op, right) => {
-            return lower_binary(st, left, op, right)
-        },
-        Unary(op, operand) => {
-            return lower_unary(st, op, operand)
-        },
-        Call(callee, args) => {
-            return lower_call(st, callee, args)
-        },
-        MethodCall(obj, method, args) => {
-            return lower_method_call(st, obj, method, args)
-        },
-        FieldAccess(obj, field_name) => {
-            return lower_field_access(st, obj, field_name)
-        },
-        NamespaceAccess(ns, member) => {
-            return lower_namespace_access(st, ns, member)
-        },
-        Index(obj, idx) => {
-            return lower_index(st, obj, idx)
-        },
-        Pipe(left, right) => {
-            return lower_pipe(st, left, right)
-        },
-        Range(start, end, inclusive) => {
-            return lower_range(st, start, end, inclusive)
-        },
-        Lambda(params, body) => {
-            return lower_lambda(st, params, body)
-        },
-        Spawn(callee, args) => {
-            return lower_spawn(st, callee, args)
-        },
-        Sync(inner) => {
-            return lower_sync(st, inner)
-        },
-        Send(target, value) => {
-            return lower_send(st, target, value)
-        },
-        ErrorProp(inner) => {
-            return lower_error_prop(st, inner)
-        },
-        ListLit(elements) => {
-            return lower_list(st, elements)
-        },
-        Construct(name, fields) => {
-            return lower_construct(st, name, fields)
-        },
-        SomeWrap(inner) => {
-            let r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(r.state, mir_option(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapSome(dest_r.value, r.value))
-            return new_lower_result(dest_r.value, s)
-        },
-        OkWrap(inner) => {
-            let r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(r.state, mir_result(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapOk(dest_r.value, r.value))
-            return new_lower_result(dest_r.value, s)
-        },
-        ErrWrap(inner) => {
-            let r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(r.state, mir_result(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapErr(dest_r.value, r.value))
-            return new_lower_result(dest_r.value, s)
-        },
-        SignalVal(inner, _) => {
-            return lower_signal_expr(st, inner)
-        },
-        Assign(target, op, value) => {
-            return lower_assign(st, target, op, value)
-        },
-        If(cond, then_block, else_clause) => {
-            return lower_if(st, cond, then_block, else_clause)
-        },
-        Match(subject, arms) => {
-            return lower_match(st, subject, arms)
-        }
+    let ek: String = expr_kind(expr)
+    if ek == "int_lit" {
+        let n: Int = expr_int_val(expr)
+        let r_int: LowerResult = make_value(st, mir_int(), "t")
+        let s_int: LowerState = emit_instr(r_int.state, Instruction::Const(r_int.value, mir_int(), toString(n)))
+        return new_lower_result(r_int.value, s_int)
     }
+    if ek == "float_lit" {
+        let f: Float = expr_float_val(expr)
+        let r_flt: LowerResult = make_value(st, mir_float(), "t")
+        let s_flt: LowerState = emit_instr(r_flt.state, Instruction::Const(r_flt.value, mir_float(), toString(f)))
+        return new_lower_result(r_flt.value, s_flt)
+    }
+    if ek == "bool_lit" {
+        let b: Bool = expr_bool_val(expr)
+        let r_bool: LowerResult = make_value(st, mir_bool(), "t")
+        let mut val_str: String = "false"
+        if b { val_str = "true" }
+        let s_bool: LowerState = emit_instr(r_bool.state, Instruction::Const(r_bool.value, mir_bool(), val_str))
+        return new_lower_result(r_bool.value, s_bool)
+    }
+    if ek == "string_lit" {
+        let text: String = expr_string_val(expr)
+        let r_str: LowerResult = make_value(st, mir_string(), "t")
+        let s_str: LowerState = emit_instr(r_str.state, Instruction::Const(r_str.value, mir_string(), text))
+        return new_lower_result(r_str.value, s_str)
+    }
+    if ek == "char_lit" {
+        let ch: String = expr_char_val(expr)
+        let r_chr: LowerResult = make_value(st, mir_string(), "t")
+        let s_chr: LowerState = emit_instr(r_chr.state, Instruction::Const(r_chr.value, mir_string(), ch))
+        return new_lower_result(r_chr.value, s_chr)
+    }
+    if ek == "none_lit" {
+        let r_none: LowerResult = make_value(st, mir_option(), "t")
+        let s_none: LowerState = emit_instr(r_none.state, Instruction::WrapNone(r_none.value, mir_option()))
+        return new_lower_result(r_none.value, s_none)
+    }
+    if ek == "ident" {
+        return lower_identifier(st, expr_ident_name(expr))
+    }
+    if ek == "binary" {
+        return lower_binary(st, expr_binary_left(expr), expr_binary_op(expr), expr_binary_right(expr))
+    }
+    if ek == "unary" {
+        return lower_unary(st, expr_unary_op(expr), expr_unary_operand(expr))
+    }
+    if ek == "call" {
+        return lower_call(st, expr_call_callee(expr), expr_call_args(expr))
+    }
+    if ek == "method_call" {
+        return lower_method_call(st, expr_method_obj(expr), expr_method_name(expr), expr_method_args(expr))
+    }
+    if ek == "field_access" {
+        return lower_field_access(st, expr_field_obj(expr), expr_field_name(expr))
+    }
+    if ek == "namespace_access" {
+        return lower_namespace_access(st, expr_ns_name(expr), expr_ns_member(expr))
+    }
+    if ek == "index" {
+        return lower_index(st, expr_index_obj(expr), expr_index_idx(expr))
+    }
+    if ek == "pipe" {
+        return lower_pipe(st, expr_pipe_left(expr), expr_pipe_right(expr))
+    }
+    if ek == "range" {
+        return lower_range(st, expr_range_start(expr), expr_range_end(expr), expr_range_inclusive(expr))
+    }
+    if ek == "lambda" {
+        return lower_lambda(st, expr_lambda_params(expr), expr_lambda_body(expr))
+    }
+    if ek == "spawn" {
+        return lower_spawn(st, expr_spawn_callee(expr), expr_spawn_args(expr))
+    }
+    if ek == "sync" {
+        return lower_sync(st, expr_sync_inner(expr))
+    }
+    if ek == "send" {
+        return lower_send(st, expr_send_target(expr), expr_send_value(expr))
+    }
+    if ek == "error_prop" {
+        return lower_error_prop(st, expr_errorprop_inner(expr))
+    }
+    if ek == "list_lit" {
+        return lower_list(st, expr_list_elements(expr))
+    }
+    if ek == "map_lit" {
+        return lower_map(st, expr_map_entries(expr))
+    }
+    if ek == "construct" {
+        return lower_construct(st, expr_construct_name(expr), expr_construct_fields(expr))
+    }
+    if ek == "some_wrap" {
+        let inner: Expr = expr_wrap_inner(expr)
+        let r_some: LowerResult = lower_expr(st, inner)
+        let dr_some: LowerResult = make_value(r_some.state, mir_option(), "t")
+        let s_some: LowerState = emit_instr(dr_some.state, Instruction::WrapSome(dr_some.value, r_some.value))
+        return new_lower_result(dr_some.value, s_some)
+    }
+    if ek == "ok_wrap" {
+        let inner: Expr = expr_wrap_inner(expr)
+        let r_ok: LowerResult = lower_expr(st, inner)
+        let dr_ok: LowerResult = make_value(r_ok.state, mir_result(), "t")
+        let s_ok: LowerState = emit_instr(dr_ok.state, Instruction::WrapOk(dr_ok.value, r_ok.value))
+        return new_lower_result(dr_ok.value, s_ok)
+    }
+    if ek == "err_wrap" {
+        let inner: Expr = expr_wrap_inner(expr)
+        let r_err: LowerResult = lower_expr(st, inner)
+        let dr_err: LowerResult = make_value(r_err.state, mir_result(), "t")
+        let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, r_err.value))
+        return new_lower_result(dr_err.value, s_err)
+    }
+    if ek == "signal_val" {
+        return lower_signal_expr(st, expr_signal_inner(expr))
+    }
+    if ek == "assign" {
+        return lower_assign(st, expr_assign_target(expr), expr_assign_op(expr), expr_assign_value(expr))
+    }
+    if ek == "if" {
+        return lower_if(st, expr_if_cond(expr), expr_if_then(expr), expr_if_else(expr))
+    }
+    if ek == "match" {
+        return lower_match(st, expr_match_subject(expr), expr_match_arms(expr))
+    }
+    // Fallback
+    let r_fallback: LowerResult = make_value(st, mir_unknown(), "t")
+    return new_lower_result(r_fallback.value, r_fallback.state)
 }
 
 // ---------------------------------------------------------------------------
@@ -790,27 +1209,30 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult {
     match var_opt {
         Some(addr) => {
             // var_opt now returns the alloca address. Emit a Load to get the value.
-            let r: LowerResult = make_value(st, addr.ty, name + "_val")
-            let s: LowerState = emit_instr(r.state, Instruction::Load(r.value, addr))
-            return new_lower_result(r.value, s)
+            let r_var: LowerResult = make_value(st, addr.ty, name + "_val")
+            let s_var: LowerState = emit_instr(r_var.state, Instruction::Load(r_var.value, addr))
+            return new_lower_result(r_var.value, s_var)
         },
         _ => {}
     }
+
+    // Check if it's a bare generic enum variant (no payload — can't infer type, skip)
+    // Generic bare variants need explicit type context, handled by match pattern lowering
 
     // Check if it's a bare enum variant (no payload)
     if is_enum_variant(st, name) {
         let enum_name: String = enum_name_for_variant(st, name)
         let enum_ty: MIRType = mir_enum(enum_name)
-        let r: LowerResult = make_value(st, enum_ty, "t")
+        let r_enum: LowerResult = make_value(st, enum_ty, "t")
         let empty_payload: List<Value> = []
-        let s: LowerState = emit_instr(r.state, Instruction::EnumInit(r.value, enum_ty, name, empty_payload))
-        return new_lower_result(r.value, s)
+        let s_enum: LowerState = emit_instr(r_enum.state, Instruction::EnumInit(r_enum.value, enum_ty, name, empty_payload))
+        return new_lower_result(r_enum.value, s_enum)
     }
 
     // Unknown — emit placeholder
-    let r: LowerResult = make_value(st, mir_unknown(), name)
-    let s: LowerState = emit_instr(r.state, Instruction::Const(r.value, mir_unknown(), ""))
-    return new_lower_result(r.value, s)
+    let r_unk: LowerResult = make_value(st, mir_unknown(), name)
+    let s_unk: LowerState = emit_instr(r_unk.state, Instruction::Const(r_unk.value, mir_unknown(), ""))
+    return new_lower_result(r_unk.value, s_unk)
 }
 
 // ---------------------------------------------------------------------------
@@ -845,18 +1267,18 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
             let is_cmp: Bool = op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=" || op == "and" || op == "or"
             let mut result_ty: MIRType = lhs_val.ty
             if is_cmp { result_ty = mir_bool() }
-            let dest_r: LowerResult = make_value(rhs_r.state, result_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::BinOp(dest_r.value, binop, lhs_val, rhs_val))
-            return new_lower_result(dest_r.value, s)
+            let dr_binop: LowerResult = make_value(rhs_r.state, result_ty, "t")
+            let s_binop: LowerState = emit_instr(dr_binop.state, Instruction::BinOp(dr_binop.value, binop, lhs_val, rhs_val))
+            return new_lower_result(dr_binop.value, s_binop)
         },
         _ => {
             // Unknown operator — emit as call
-            let dest_r: LowerResult = make_value(rhs_r.state, mir_unknown(), "t")
+            let dr_opcall: LowerResult = make_value(rhs_r.state, mir_unknown(), "t")
             let mut args: List<Value> = []
             args.push(lhs_r.value)
             args.push(rhs_r.value)
-            let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__op_" + op, args))
-            return new_lower_result(dest_r.value, s)
+            let s_opcall: LowerState = emit_instr(dr_opcall.state, Instruction::Call(dr_opcall.value, "__op_" + op, args))
+            return new_lower_result(dr_opcall.value, s_opcall)
         }
     }
 }
@@ -866,10 +1288,8 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
 // ---------------------------------------------------------------------------
 
 fn resolve_unary_result_type(uop: UnaryOpKind, operand_ty: MIRType) -> MIRType {
-    match uop {
-        Not => { return mir_bool() },
-        _ => { return operand_ty }
-    }
+    if unaryop_kind_to_str(uop) == "not" { return mir_bool() }
+    return operand_ty
 }
 
 fn lower_unary(st: LowerState, op: String, operand: Expr) -> LowerResult {
@@ -878,16 +1298,16 @@ fn lower_unary(st: LowerState, op: String, operand: Expr) -> LowerResult {
     match uop_opt {
         Some(uop) => {
             let result_ty: MIRType = resolve_unary_result_type(uop, op_r.value.ty)
-            let dest_r: LowerResult = make_value(op_r.state, result_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::UnaryOp(dest_r.value, uop, op_r.value))
-            return new_lower_result(dest_r.value, s)
+            let dr_uop: LowerResult = make_value(op_r.state, result_ty, "t")
+            let s_uop: LowerState = emit_instr(dr_uop.state, Instruction::UnaryOp(dr_uop.value, uop, op_r.value))
+            return new_lower_result(dr_uop.value, s_uop)
         },
         _ => {
-            let dest_r: LowerResult = make_value(op_r.state, mir_unknown(), "t")
+            let dr_ucall: LowerResult = make_value(op_r.state, mir_unknown(), "t")
             let mut args: List<Value> = []
             args.push(op_r.value)
-            let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__unary_" + op, args))
-            return new_lower_result(dest_r.value, s)
+            let s_ucall: LowerState = emit_instr(dr_ucall.state, Instruction::Call(dr_ucall.value, "__unary_" + op, args))
+            return new_lower_result(dr_ucall.value, s_ucall)
         }
     }
 }
@@ -897,12 +1317,12 @@ fn lower_unary(st: LowerState, op: String, operand: Expr) -> LowerResult {
 // ---------------------------------------------------------------------------
 
 fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResult {
-    // Lower all arguments first (guard pattern avoids break-in-for bug)
+    // Lower all arguments first (guard pattern for clarity)
     let mut s: LowerState = st
     let mut args: List<Value> = []
     let mut i: Int = 0
     let nae: Int = len(arg_exprs)
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i < nae {
             let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
             s = arg_r.state
@@ -912,133 +1332,696 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
     }
 
     // Dispatch on callee type
-    match callee {
-        Ident(fn_name) => {
-            return lower_call_by_name(s, fn_name, args)
-        },
-        FieldAccess(obj, method) => {
-            // obj.method(args) that parsed as Call(FieldAccess, args)
-            let obj_r: LowerResult = lower_expr(s, obj)
-            let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
-            let mut all_args: List<Value> = []
-            all_args.push(obj_r.value)
-            let mut j: Int = 0
-            let nargs_fa: Int = len(args)
-            for _ in 0..200 {
-                if j < nargs_fa {
-                    all_args.push(args[j])
-                    j = j + 1
+    let ck: String = expr_kind(callee)
+    if ck == "ident" {
+        return lower_call_by_name(s, expr_ident_name(callee), args)
+    }
+    if ck == "field_access" {
+        // obj.method(args) that parsed as Call(FieldAccess, args)
+        let method: String = expr_field_name(callee)
+        let obj_r: LowerResult = lower_expr(s, expr_field_obj(callee))
+        let dr_meth: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+        let mut all_args: List<Value> = []
+        all_args.push(obj_r.value)
+        let mut j: Int = 0
+        let nargs_fa: Int = len(args)
+        for _ in 0..500 {
+            if j < nargs_fa {
+                all_args.push(args[j])
+                j = j + 1
+            }
+        }
+        let ns_meth: LowerState = emit_instr(dr_meth.state, Instruction::Call(dr_meth.value, method, all_args))
+        return new_lower_result(dr_meth.value, ns_meth)
+    }
+    if ck == "namespace_access" {
+        let ns: String = expr_ns_name(callee)
+        let member: String = expr_ns_member(callee)
+        // Check if this is an enum variant constructor: Enum::Variant(...)
+        // Directly check if the namespace enum has this variant (avoids
+        // returning the wrong enum when variants share names like Return).
+        if is_variant_of_enum(s, ns, member) {
+            let enum_ty: MIRType = mir_enum(ns)
+            let dr_evar: LowerResult = make_value(s, enum_ty, "t")
+            let ns_evar: LowerState = emit_instr(dr_evar.state, Instruction::EnumInit(dr_evar.value, enum_ty, member, args))
+            return new_lower_result(dr_evar.value, ns_evar)
+        }
+        // For struct statics like Program::start(defs), try bare function
+        // name first (the function is `start`, not `Program_start`).
+        return lower_call_by_name(s, member, args)
+    }
+    // Dynamic call (lambda, etc.)
+    let callee_r: LowerResult = lower_expr(s, callee)
+    let dr_dyn: LowerResult = make_value(callee_r.state, mir_unknown(), "t")
+    let ns_dyn: LowerState = emit_instr(dr_dyn.state, Instruction::Call(dr_dyn.value, callee_r.value.name, args))
+    return new_lower_result(dr_dyn.value, ns_dyn)
+}
+
+// ---------------------------------------------------------------------------
+// Generics monomorphization
+// ---------------------------------------------------------------------------
+
+fn decode_ret_type(encoded: String) -> MIRType {
+    if encoded == "" { return mir_unknown() }
+    let colon: Int = encoded.find(":")
+    if colon < 0 { return mir_unknown() }
+    let kind: String = encoded.substr(0, colon)
+    let name: String = encoded.substr(colon + 1, len(encoded))
+    if kind == "int" { return mir_int() }
+    if kind == "float" { return mir_float() }
+    if kind == "string" { return mir_string() }
+    if kind == "bool" { return mir_bool() }
+    if kind == "void" { return mir_void() }
+    if kind == "struct" { return mir_struct(name) }
+    if kind == "enum" { return mir_enum(name) }
+    if kind == "option" { return mir_option() }
+    if kind == "result" { return mir_result() }
+    if kind == "list" { return mir_list() }
+    if kind == "map" { return mir_map() }
+    return mir_unknown()
+}
+
+fn find_generic_fn(st: LowerState, name: String) -> Option<FnDefData> {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_fns) {
+            if st.generic_fns[i].name == name { return Some(st.generic_fns[i]) }
+            i = i + 1
+        }
+    }
+    return none
+}
+
+fn mangle_generic_name(base: String, arg_types: List<MIRType>) -> String {
+    let mut result: String = base + "__"
+    let mut i: Int = 0
+    for _ in 0..20 {
+        if i < len(arg_types) {
+            if i > 0 { result = result + "_" }
+            let tk: String = arg_types[i].kind
+            if tk == "int" { result = result + "Int" }
+            if tk == "float" { result = result + "Float" }
+            if tk == "bool" { result = result + "Bool" }
+            if tk == "string" { result = result + "String" }
+            if tk == "struct" { result = result + arg_types[i].name }
+            if tk == "enum" { result = result + arg_types[i].name }
+            if tk == "list" { result = result + "List" }
+            if tk == "map" { result = result + "Map" }
+            if tk == "option" { result = result + "Option" }
+            if tk == "result" { result = result + "Result" }
+            if tk == "void" { result = result + "Void" }
+            if tk == "unknown" { result = result + "Unknown" }
+            i = i + 1
+        }
+    }
+    return result
+}
+
+fn infer_type_args_from_call(gfn: FnDefData, arg_types: List<MIRType>) -> List<MIRType> {
+    // Build substitution: match type_params[i] against param annotations
+    let mut result: List<MIRType> = []
+    let ntp: Int = len(gfn.type_params)
+    let mut ti: Int = 0
+    for _ in 0..20 {
+        if ti < ntp {
+            let tp_name: String = gfn.type_params[ti]
+            // Find the first parameter whose type annotation matches this type param
+            let mut found: Bool = false
+            let mut pi: Int = 0
+            for _ in 0..50 {
+                if pi < len(gfn.params) && !found {
+                    let p: Param = gfn.params[pi]
+                    match p.type_annotation {
+                        Some(ann) => {
+                            if type_expr_name(ann) == tp_name {
+                                if pi < len(arg_types) {
+                                    result.push(arg_types[pi])
+                                    found = true
+                                }
+                            }
+                        },
+                        _ => {}
+                    }
+                    pi = pi + 1
                 }
             }
-            let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
-            return new_lower_result(dest_r.value, new_s)
-        },
-        NamespaceAccess(ns, member) => {
-            // Check if this is an enum variant constructor: Enum::Variant(...)
-            // Verify the variant belongs specifically to the namespace enum
-            let found_enum: String = enum_name_for_variant(s, member)
-            if found_enum == ns {
-                let enum_ty: MIRType = mir_enum(ns)
-                let dest_r: LowerResult = make_value(s, enum_ty, "t")
-                let new_s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, member, args))
-                return new_lower_result(dest_r.value, new_s)
+            if !found { result.push(mir_unknown()) }
+            ti = ti + 1
+        }
+    }
+    return result
+}
+
+fn substitute_type_annotation(ann: Option<TypeExpr>, type_params: List<String>, concrete: List<MIRType>) -> Option<TypeExpr> {
+    match ann {
+        Some(te) => {
+            let te_name: String = type_expr_name(te)
+            let mut i: Int = 0
+            for _ in 0..20 {
+                if i < len(type_params) {
+                    if type_params[i] == te_name {
+                        if i < len(concrete) {
+                            // Replace with concrete type name
+                            let mut cname: String = concrete[i].name
+                            if cname == "" { cname = kind_to_type_name(concrete[i].kind) }
+                            return Some(TypeExpr::Named(cname))
+                        }
+                    }
+                    i = i + 1
+                }
             }
-            // For struct statics like Program::start(defs), try bare function
-            // name first (the function is `start`, not `Program_start`).
-            return lower_call_by_name(s, member, args)
+            return ann
+        },
+        _ => { return none }
+    }
+}
+
+fn specialize_fn(gfn: FnDefData, mangled: String, type_params: List<String>, concrete: List<MIRType>) -> FnDefData {
+    // Build new params with substituted type annotations
+    let mut new_params: List<Param> = []
+    let mut pi: Int = 0
+    for _ in 0..50 {
+        if pi < len(gfn.params) {
+            let p: Param = gfn.params[pi]
+            let new_ann: Option<TypeExpr> = substitute_type_annotation(p.type_annotation, type_params, concrete)
+            let np: Param = new Param { span: p.span, name: p.name, type_annotation: new_ann }
+            new_params.push(np)
+            pi = pi + 1
+        }
+    }
+    // Substitute return type
+    let new_ret: Option<TypeExpr> = substitute_type_annotation(gfn.return_type, type_params, concrete)
+    let empty_tp: List<String> = []
+    return new_fn_def_data(gfn.span, mangled, gfn.public, empty_tp, new_params, new_ret, gfn.body, gfn.decorators)
+}
+
+fn is_already_specialized(st: LowerState, mangled: String) -> Bool {
+    // Check if __ret__mangled exists in lambda_vars
+    let key: String = "__ret__" + mangled
+    match find_lambda(st, key) {
+        Some(_) => { return true },
+        _ => { return false }
+    }
+}
+
+fn try_monomorphize_call(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
+    let gfn_opt: Option<FnDefData> = find_generic_fn(st, fn_name)
+    match gfn_opt {
+        Some(gfn) => {
+            // Infer concrete types from argument types
+            let mut arg_types: List<MIRType> = []
+            let mut ai: Int = 0
+            for _ in 0..50 {
+                if ai < len(args) {
+                    arg_types.push(args[ai].ty)
+                    ai = ai + 1
+                }
+            }
+            let concrete: List<MIRType> = infer_type_args_from_call(gfn, arg_types)
+            let mangled: String = mangle_generic_name(fn_name, concrete)
+
+            let mut s: LowerState = st
+            if !is_already_specialized(s, mangled) {
+                // Specialize and lower the function
+                let specialized: FnDefData = specialize_fn(gfn, mangled, gfn.type_params, concrete)
+                s = lower_fn(s, specialized, "")
+            }
+
+            // Look up return type and emit call
+            let ret_key: String = "__ret__" + mangled
+            let ret_ty: MIRType = decode_ret_type(unwrap_or_default(find_lambda(s, ret_key), ""))
+
+            let dr: LowerResult = make_value(s, ret_ty, "t")
+            let s2: LowerState = emit_instr(dr.state, Instruction::Call(dr.value, mangled, args))
+            return new_lower_result(dr.value, s2)
         },
         _ => {
-            let callee_r: LowerResult = lower_expr(s, callee)
-            let dest_r: LowerResult = make_value(callee_r.state, mir_unknown(), "t")
-            let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, callee_r.value.name, args))
-            return new_lower_result(dest_r.value, new_s)
+            // Not a generic function — return sentinel
+            return new_lower_result(void_value(), st)
         }
     }
 }
 
+fn find_type_param_index(type_params: List<String>, name: String) -> Int {
+    let mut i: Int = 0
+    for _ in 0..20 {
+        if i < len(type_params) {
+            if type_params[i] == name { return i }
+            i = i + 1
+        }
+    }
+    return 0 - 1
+}
+
+fn substitute_field_type(st: LowerState, ann: Option<TypeExpr>, type_params: List<String>, concrete: List<MIRType>) -> MIRType {
+    let fty: MIRType = lower_resolve_type_opt_checked(st, ann)
+    match ann {
+        Some(a) => {
+            let idx: Int = find_type_param_index(type_params, type_expr_name(a))
+            if idx >= 0 {
+                if idx < len(concrete) { return concrete[idx] }
+            }
+            return fty
+        },
+        _ => { return fty }
+    }
+}
+
+fn find_generic_struct(st: LowerState, name: String) -> Option<StructDefData> {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_structs) {
+            if st.generic_structs[i].name == name { return Some(st.generic_structs[i]) }
+            i = i + 1
+        }
+    }
+    return none
+}
+
+fn infer_struct_type_args(gs: StructDefData, args: List<Value>) -> List<MIRType> {
+    let mut concrete: List<MIRType> = []
+    let mut ti: Int = 0
+    for _ in 0..20 {
+        if ti < len(gs.type_params) {
+            let tp_name: String = gs.type_params[ti]
+            let idx: Int = find_struct_field_for_tp(gs, tp_name)
+            if idx >= 0 {
+                if idx < len(args) { concrete.push(args[idx].ty) }
+            }
+            if idx < 0 { concrete.push(mir_unknown()) }
+            ti = ti + 1
+        }
+    }
+    return concrete
+}
+
+fn find_struct_field_for_tp(gs: StructDefData, tp_name: String) -> Int {
+    let mut i: Int = 0
+    for _ in 0..50 {
+        if i < len(gs.fields) {
+            if type_expr_name(gs.fields[i].type_annotation) == tp_name { return i }
+            i = i + 1
+        }
+    }
+    return 0 - 1
+}
+
+fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value>) -> LowerResult {
+    let gs_opt: Option<StructDefData> = find_generic_struct(st, struct_name)
+    match gs_opt {
+        Some(gs) => {
+            let concrete: List<MIRType> = infer_struct_type_args(gs, args)
+            let mangled: String = mangle_generic_name(struct_name, concrete)
+
+            let mut s: LowerState = st
+            if !is_struct_name(s, mangled) {
+                let mut fields: List<FieldPair> = []
+                let mut field_names: List<String> = []
+                let mut field_types: List<MIRType> = []
+                let mut fi: Int = 0
+                for _ in 0..500 {
+                    if fi < len(gs.fields) {
+                        let sf: StructField = gs.fields[fi]
+                        let fty: MIRType = substitute_field_type(s, Some(sf.type_annotation), gs.type_params, concrete)
+                        fields.push(new_field_pair(sf.name, new_value("", fty)))
+                        field_names.push(sf.name)
+                        field_types.push(fty)
+                        fi = fi + 1
+                    }
+                }
+                let info: StructInfo = new_struct_info(mangled, fields)
+                s.module = module_push_struct(s.module, info)
+                let sfi: StructFieldInfo = new_struct_field_info(mangled, field_names, field_types)
+                let mut sf_lst: List<StructFieldInfo> = s.struct_fields
+                sf_lst.push(sfi)
+                s.struct_fields = sf_lst
+
+                // Monomorphize generic impl methods for this struct
+                s = monomorphize_impl_methods(s, struct_name, mangled, gs.type_params, concrete)
+            }
+            let fnames: List<String> = get_struct_field_names(s, mangled)
+            let mut init_pairs: List<FieldPair> = []
+            let mut pi: Int = 0
+            for _ in 0..500 {
+                if pi < len(fnames) {
+                    if pi < len(args) { init_pairs.push(new_field_pair(fnames[pi], args[pi])) }
+                    pi = pi + 1
+                }
+            }
+            let struct_ty: MIRType = mir_struct(mangled)
+            let dr: LowerResult = make_value(s, struct_ty, "t")
+            let s2: LowerState = emit_instr(dr.state, Instruction::StructInit(dr.value, struct_ty, init_pairs))
+            return new_lower_result(dr.value, s2)
+        },
+        _ => { return new_lower_result(void_value(), st) }
+    }
+}
+
+fn monomorphize_impl_methods(st: LowerState, base_name: String, mangled: String, type_params: List<String>, concrete: List<MIRType>) -> LowerState {
+    // Find generic impl methods stored as "Base_method" in generic_fns
+    let prefix: String = base_name + "_"
+    let prefix_len: Int = len(prefix)
+    let mut s: LowerState = st
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i >= len(s.generic_fns) { return s }
+        let gfn: FnDefData = s.generic_fns[i]
+        if starts_with(gfn.name, prefix) {
+            // This is a generic impl method — specialize it
+            let method_name: String = substr(gfn.name, prefix_len, len(gfn.name) - prefix_len)
+            let mir_name: String = mangled + "_" + method_name
+            // Register impl method for dispatch
+            let impl_key: String = mangled + "." + method_name
+            let entry: ImplEntry = new_impl_entry(impl_key, mir_name)
+            let mut im_list: List<ImplEntry> = s.impl_methods
+            im_list.push(entry)
+            s.impl_methods = im_list
+            // Specialize the method
+            let specialized: FnDefData = specialize_fn(gfn, mir_name, type_params, concrete)
+            // Fix self param type to the monomorphized struct
+            let fixed: FnDefData = fix_self_param_type(specialized, mangled)
+            // Register return type
+            let ret_ty: MIRType = resolve_return_type_checked(s, fixed.return_type)
+            let ret_key: String = "__ret__" + mir_name
+            let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+            let ret_entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
+            let mut lv_list: List<LambdaEntry> = s.lambda_vars
+            lv_list.push(ret_entry)
+            s.lambda_vars = lv_list
+            // Lower the specialized method (name is already set by specialize_fn)
+            s = lower_fn(s, fixed, "")
+        }
+        i = i + 1
+    }
+    return s
+}
+
+// ---------------------------------------------------------------------------
+// Generic enum monomorphization
+// ---------------------------------------------------------------------------
+
+fn find_generic_enum(st: LowerState, name: String) -> Option<EnumDefData> {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_enums) {
+            if st.generic_enums[i].name == name { return Some(st.generic_enums[i]) }
+            i = i + 1
+        }
+    }
+    return none
+}
+
+fn is_generic_enum_variant(st: LowerState, variant_name: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_enums) {
+            let ge: EnumDefData = st.generic_enums[i]
+            let mut j: Int = 0
+            for _ in 0..100 {
+                if j < len(ge.variants) {
+                    if ge.variants[j].name == variant_name { return true }
+                    j = j + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+    return false
+}
+
+fn generic_enum_name_for_variant(st: LowerState, variant_name: String) -> String {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.generic_enums) {
+            let ge: EnumDefData = st.generic_enums[i]
+            let mut j: Int = 0
+            for _ in 0..100 {
+                if j < len(ge.variants) {
+                    if ge.variants[j].name == variant_name { return ge.name }
+                    j = j + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+    return ""
+}
+
+fn find_variant_in_enum(ge: EnumDefData, variant_name: String) -> Option<EnumVariant> {
+    let mut i: Int = 0
+    for _ in 0..100 {
+        if i < len(ge.variants) {
+            if ge.variants[i].name == variant_name { return Some(ge.variants[i]) }
+            i = i + 1
+        }
+    }
+    return none
+}
+
+fn infer_enum_type_args(ge: EnumDefData, variant: EnumVariant, args: List<Value>) -> List<MIRType> {
+    // Match variant field type annotations against concrete arg types
+    let mut concrete: List<MIRType> = []
+    let mut ti: Int = 0
+    for _ in 0..20 {
+        if ti < len(ge.type_params) {
+            let tp_name: String = ge.type_params[ti]
+            // Find which variant field uses this type param
+            let mut found: Bool = false
+            let mut fi: Int = 0
+            for _ in 0..100 {
+                if fi < len(variant.fields) {
+                    if type_expr_name(variant.fields[fi]) == tp_name {
+                        if fi < len(args) {
+                            concrete.push(args[fi].ty)
+                            found = true
+                        }
+                    }
+                    fi = fi + 1
+                }
+            }
+            if !found { concrete.push(mir_unknown()) }
+            ti = ti + 1
+        }
+    }
+    return concrete
+}
+
+fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>) -> LowerResult {
+    let enum_name: String = generic_enum_name_for_variant(st, variant_name)
+    if len(enum_name) == 0 { return new_lower_result(void_value(), st) }
+
+    let ge_opt: Option<EnumDefData> = find_generic_enum(st, enum_name)
+    match ge_opt {
+        Some(ge) => {
+            let v_opt: Option<EnumVariant> = find_variant_in_enum(ge, variant_name)
+            match v_opt {
+                Some(variant) => {
+                    let concrete: List<MIRType> = infer_enum_type_args(ge, variant, args)
+                    let mangled: String = mangle_generic_name(enum_name, concrete)
+
+                    let mut s: LowerState = st
+                    if !is_enum_name(s, mangled) {
+                        // Monomorphize: create EnumInfo with substituted variant types
+                        let mut new_variants: List<EnumVariantInfo> = []
+                        let mut new_variant_names: List<String> = []
+                        let mut vi: Int = 0
+                        for _ in 0..500 {
+                            if vi < len(ge.variants) {
+                                let orig_v: EnumVariant = ge.variants[vi]
+                                let mut payload_types: List<MIRType> = []
+                                let mut fi: Int = 0
+                                for _ in 0..100 {
+                                    if fi < len(orig_v.fields) {
+                                        let fty: MIRType = substitute_field_type(s, Some(orig_v.fields[fi]), ge.type_params, concrete)
+                                        payload_types.push(fty)
+                                        fi = fi + 1
+                                    }
+                                }
+                                let vi_info: EnumVariantInfo = new_enum_variant_info(orig_v.name, payload_types)
+                                new_variants.push(vi_info)
+                                new_variant_names.push(orig_v.name)
+                                vi = vi + 1
+                            }
+                        }
+                        let info: EnumInfo = new_enum_info(mangled, new_variants)
+                        s.module = module_push_enum(s.module, info)
+                        let evn: EnumVariantNames = new_enum_variant_names(mangled, new_variant_names)
+                        let mut ev_lst: List<EnumVariantNames> = s.enum_variants
+                        ev_lst.push(evn)
+                        s.enum_variants = ev_lst
+                    }
+
+                    // Emit EnumInit with mangled type name
+                    let enum_ty: MIRType = mir_enum(mangled)
+                    let dr_enum: LowerResult = make_value(s, enum_ty, "t")
+                    let s2: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, variant_name, args))
+                    return new_lower_result(dr_enum.value, s2)
+                },
+                _ => { return new_lower_result(void_value(), st) }
+            }
+        },
+        _ => { return new_lower_result(void_value(), st) }
+    }
+}
+
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
+    // Monomorphize generic function calls
+    let mono_r: LowerResult = try_monomorphize_call(st, fn_name, args)
+    if mono_r.value.name != "%void" { return mono_r }
+
     // Builtin void functions
     if fn_name == "print" {
-        let dest_r: LowerResult = make_value(st, mir_void(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_print: LowerResult = make_value(st, mir_void(), "t")
+        let s_print: LowerState = emit_instr(dr_print.state, Instruction::Call(dr_print.value, fn_name, args))
+        return new_lower_result(dr_print.value, s_print)
     }
     if fn_name == "println" {
-        let dest_r: LowerResult = make_value(st, mir_void(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_pln: LowerResult = make_value(st, mir_void(), "t")
+        let s_pln: LowerState = emit_instr(dr_pln.state, Instruction::Call(dr_pln.value, fn_name, args))
+        return new_lower_result(dr_pln.value, s_pln)
     }
     // Builtin conversion functions — set correct MIR return types
     if fn_name == "int" {
-        let dest_r: LowerResult = make_value(st, mir_int(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_int: LowerResult = make_value(st, mir_int(), "t")
+        let s_int: LowerState = emit_instr(dr_int.state, Instruction::Call(dr_int.value, fn_name, args))
+        return new_lower_result(dr_int.value, s_int)
     }
     if fn_name == "float" {
-        let dest_r: LowerResult = make_value(st, mir_float(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_flt: LowerResult = make_value(st, mir_float(), "t")
+        let s_flt: LowerState = emit_instr(dr_flt.state, Instruction::Call(dr_flt.value, fn_name, args))
+        return new_lower_result(dr_flt.value, s_flt)
     }
     if fn_name == "str" || fn_name == "toString" {
-        let dest_r: LowerResult = make_value(st, mir_string(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_str: LowerResult = make_value(st, mir_string(), "t")
+        let s_str: LowerState = emit_instr(dr_str.state, Instruction::Call(dr_str.value, fn_name, args))
+        return new_lower_result(dr_str.value, s_str)
     }
     if fn_name == "len" {
-        let dest_r: LowerResult = make_value(st, mir_int(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_len: LowerResult = make_value(st, mir_int(), "t")
+        let s_len: LowerState = emit_instr(dr_len.state, Instruction::Call(dr_len.value, fn_name, args))
+        return new_lower_result(dr_len.value, s_len)
+    }
+
+    // Runtime: process + file I/O
+    if fn_name == "__mn_argc" {
+        let dr_argc: LowerResult = make_value(st, mir_int(), "t")
+        let s_argc: LowerState = emit_instr(dr_argc.state, Instruction::Call(dr_argc.value, fn_name, args))
+        return new_lower_result(dr_argc.value, s_argc)
+    }
+    if fn_name == "__mn_argv" {
+        let dr_argv: LowerResult = make_value(st, mir_string(), "t")
+        let s_argv: LowerState = emit_instr(dr_argv.state, Instruction::Call(dr_argv.value, fn_name, args))
+        return new_lower_result(dr_argv.value, s_argv)
+    }
+    if fn_name == "__mn_file_read_or_empty" {
+        let dr_fr: LowerResult = make_value(st, mir_string(), "t")
+        let s_fr: LowerState = emit_instr(dr_fr.state, Instruction::Call(dr_fr.value, fn_name, args))
+        return new_lower_result(dr_fr.value, s_fr)
+    }
+    if fn_name == "__mn_exit" {
+        let dr_exit: LowerResult = make_value(st, mir_void(), "t")
+        let s_exit: LowerState = emit_instr(dr_exit.state, Instruction::Call(dr_exit.value, fn_name, args))
+        return new_lower_result(dr_exit.value, s_exit)
+    }
+    if fn_name == "__mn_str_eprint" {
+        let dr_epr: LowerResult = make_value(st, mir_void(), "t")
+        let s_epr: LowerState = emit_instr(dr_epr.state, Instruction::Call(dr_epr.value, fn_name, args))
+        return new_lower_result(dr_epr.value, s_epr)
+    }
+    if fn_name == "chr" {
+        let dr_chr: LowerResult = make_value(st, mir_string(), "t")
+        let s_chr: LowerState = emit_instr(dr_chr.state, Instruction::Call(dr_chr.value, "chr", args))
+        return new_lower_result(dr_chr.value, s_chr)
+    }
+    if fn_name == "ord" {
+        let dr_ord: LowerResult = make_value(st, mir_int(), "t")
+        let s_ord: LowerState = emit_instr(dr_ord.state, Instruction::Call(dr_ord.value, "ord", args))
+        return new_lower_result(dr_ord.value, s_ord)
     }
 
     // Handle Option/Result builtins
     if fn_name == "Some" {
         if len(args) == 1 {
-            let dest_r: LowerResult = make_value(st, mir_option(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapSome(dest_r.value, args[0]))
-            return new_lower_result(dest_r.value, s)
+            let dr_some: LowerResult = make_value(st, mir_option(), "t")
+            let s_some: LowerState = emit_instr(dr_some.state, Instruction::WrapSome(dr_some.value, args[0]))
+            return new_lower_result(dr_some.value, s_some)
         }
     }
     if fn_name == "Ok" {
         if len(args) == 1 {
             // Use the function's return type (with generic args) if available
-            let mut res_ty: MIRType = mir_result()
+            let mut res_ty_ok: MIRType = mir_result()
             match st.current_fn {
                 Some(cf) => {
                     if cf.return_type.kind == "result" {
-                        res_ty = cf.return_type
+                        res_ty_ok = cf.return_type
                     }
                 },
                 _ => {}
             }
-            let dest_r: LowerResult = make_value(st, res_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapOk(dest_r.value, args[0]))
-            return new_lower_result(dest_r.value, s)
+            let dr_ok: LowerResult = make_value(st, res_ty_ok, "t")
+            let s_ok: LowerState = emit_instr(dr_ok.state, Instruction::WrapOk(dr_ok.value, args[0]))
+            return new_lower_result(dr_ok.value, s_ok)
         }
     }
     if fn_name == "Err" {
         if len(args) == 1 {
-            let mut res_ty: MIRType = mir_result()
+            let mut res_ty_err: MIRType = mir_result()
             match st.current_fn {
                 Some(cf) => {
                     if cf.return_type.kind == "result" {
-                        res_ty = cf.return_type
+                        res_ty_err = cf.return_type
                     }
                 },
                 _ => {}
             }
-            let dest_r: LowerResult = make_value(st, res_ty, "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::WrapErr(dest_r.value, args[0]))
-            return new_lower_result(dest_r.value, s)
+            let dr_err: LowerResult = make_value(st, res_ty_err, "t")
+            let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, args[0]))
+            return new_lower_result(dr_err.value, s_err)
         }
+    }
+
+    // Handle __new_StructName calls (from `new StructName { ... }` syntax)
+    if fn_name.starts_with("__new_") {
+        let struct_name: String = fn_name.substr(6, len(fn_name) - 6)
+        // Check for generic struct — specialize on demand
+        let mono_struct_r: LowerResult = try_monomorphize_struct(st, struct_name, args)
+        if mono_struct_r.value.name != "%void" { return mono_struct_r }
+        if is_struct_name(st, struct_name) {
+            let field_names: List<String> = get_struct_field_names(st, struct_name)
+            let struct_ty: MIRType = mir_struct(struct_name)
+            let mut field_pairs: List<FieldPair> = []
+            let mut fi: Int = 0
+            let nfn: Int = len(field_names)
+            let na: Int = len(args)
+            for _ in 0..500 {
+                if fi < nfn {
+                    if fi < na {
+                        let fp: FieldPair = new_field_pair(field_names[fi], args[fi])
+                        field_pairs.push(fp)
+                        fi = fi + 1
+                    }
+                }
+            }
+            let dr_new: LowerResult = make_value(st, struct_ty, "t")
+            let s_new: LowerState = emit_instr(dr_new.state, Instruction::StructInit(dr_new.value, struct_ty, field_pairs))
+            return new_lower_result(dr_new.value, s_new)
+        }
+    }
+
+    // Check if it's a generic enum variant constructor (monomorphize on demand)
+    if is_generic_enum_variant(st, fn_name) {
+        let ge_r: LowerResult = try_monomorphize_enum(st, fn_name, args)
+        if ge_r.value.name != "%void" { return ge_r }
     }
 
     // Check if it's an enum variant constructor
     if is_enum_variant(st, fn_name) {
         let enum_name: String = enum_name_for_variant(st, fn_name)
         let enum_ty: MIRType = mir_enum(enum_name)
-        let dest_r: LowerResult = make_value(st, enum_ty, "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, fn_name, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_enum: LowerResult = make_value(st, enum_ty, "t")
+        let s_enum: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, fn_name, args))
+        return new_lower_result(dr_enum.value, s_enum)
     }
 
     // Check if it's a struct constructor (use if instead of match to avoid
@@ -1050,7 +2033,7 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let mut fi: Int = 0
         let nfn: Int = len(field_names)
         let na: Int = len(args)
-        for _ in 0..200 {
+        for _ in 0..500 {
             if fi < nfn {
                 if fi < na {
                     let fp: FieldPair = new_field_pair(field_names[fi], args[fi])
@@ -1059,9 +2042,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
                 }
             }
         }
-        let dest_r: LowerResult = make_value(st, struct_ty, "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::StructInit(dest_r.value, struct_ty, field_pairs))
-        return new_lower_result(dest_r.value, s)
+        let dr_ctor: LowerResult = make_value(st, struct_ty, "t")
+        let s_ctor: LowerState = emit_instr(dr_ctor.state, Instruction::StructInit(dr_ctor.value, struct_ty, field_pairs))
+        return new_lower_result(dr_ctor.value, s_ctor)
     }
 
     // Resolve lambda variable names to actual function names
@@ -1079,7 +2062,7 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
                 let colon: Int = ret_encoded.find(":")
                 if colon >= 0 {
                     let kind: String = ret_encoded.substr(0, colon)
-                    // substr(start, END) not substr(start, LENGTH)
+                    // substr(start, count) — count is clamped to s.len
                     let name: String = ret_encoded.substr(colon + 1, len(ret_encoded))
                     if kind == "struct" { call_ret = mir_struct(name) }
                     if kind == "enum" { call_ret = mir_enum(name) }
@@ -1089,15 +2072,32 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
                     if kind == "bool" { call_ret = mir_bool() }
                     if kind == "void" { call_ret = mir_void() }
                     if kind == "option" { call_ret = mir_option() }
-                    if kind == "result" { call_ret = mir_result() }
+                    if kind == "result" {
+                        // Look up the FULL parameterized return type from the
+                        // module's function list (preserves generic args).
+                        let mut found_full: Bool = false
+                        let mut fk: Int = 0
+                        for _ in 0..5000 {
+                            if fk < len(st.module.functions) {
+                                if st.module.functions[fk].name == resolved {
+                                    call_ret = st.module.functions[fk].return_type
+                                    found_full = true
+                                    fk = len(st.module.functions)
+                                }
+                                fk = fk + 1
+                            }
+                        }
+                        if found_full == false { call_ret = mir_result() }
+                    }
                     if kind == "list" { call_ret = mir_list() }
+                    if kind == "map" { call_ret = mir_map() }
                 }
             },
             _ => {}
         }
-        let dest_r: LowerResult = make_value(st, call_ret, "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, resolved, args))
-        return new_lower_result(dest_r.value, s)
+        let dr_call: LowerResult = make_value(st, call_ret, "t")
+        let s_call: LowerState = emit_instr(dr_call.state, Instruction::Call(dr_call.value, resolved, args))
+        return new_lower_result(dr_call.value, s_call)
     }
 
     // Lambda call with captures — decode "lambda1:x,y" and load captured vars.
@@ -1147,12 +2147,50 @@ fn str_method_return_type(method: String) -> MIRType {
     if method == "trim_start" { return mir_string() }
     if method == "trim_end" { return mir_string() }
     if method == "concat" { return mir_string() }
+    if method == "join" { return mir_string() }
+    if method == "strip" { return mir_string() }
+    if method == "upper" { return mir_string() }
+    if method == "lower" { return mir_string() }
+    if method == "slice" { return mir_string() }
+    if method == "reverse" { return mir_string() }
+    if method == "repeat" { return mir_string() }
+    if method == "center" { return mir_string() }
+    if method == "pad_start" { return mir_string() }
+    if method == "pad_end" { return mir_string() }
     if method == "byte_at" { return mir_int() }
     if method == "find" { return mir_int() }
+    if method == "index" { return mir_int() }
+    if method == "len" { return mir_int() }
+    if method == "count" { return mir_int() }
     if method == "starts_with" { return mir_bool() }
     if method == "ends_with" { return mir_bool() }
     if method == "contains" { return mir_bool() }
+    if method == "is_empty" { return mir_bool() }
     if method == "split" { return mir_list() }
+    return mir_unknown()
+}
+
+fn list_method_return_type(method: String) -> MIRType {
+    if method == "len" { return mir_int() }
+    if method == "push" { return mir_void() }
+    if method == "is_empty" { return mir_bool() }
+    if method == "contains" { return mir_bool() }
+    if method == "pop" { return mir_unknown() }
+    if method == "reverse" { return mir_list() }
+    if method == "sort" { return mir_list() }
+    if method == "concat" { return mir_list() }
+    return mir_unknown()
+}
+
+fn map_method_return_type(method: String) -> MIRType {
+    if method == "len" { return mir_int() }
+    if method == "contains_key" { return mir_bool() }
+    if method == "is_empty" { return mir_bool() }
+    if method == "keys" { return mir_list() }
+    if method == "values" { return mir_list() }
+    if method == "get" { return mir_unknown() }
+    if method == "set" { return mir_void() }
+    if method == "remove" { return mir_void() }
     return mir_unknown()
 }
 
@@ -1171,7 +2209,7 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     all_args.push(obj_r.value)
     let nae: Int = len(arg_exprs)
     let mut i: Int = 0
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i < nae {
             let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
             s = arg_r.state
@@ -1184,10 +2222,39 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     if obj_r.value.ty.kind == "string" {
         ret_ty = str_method_return_type(method)
     }
+    if obj_r.value.ty.kind == "list" {
+        ret_ty = list_method_return_type(method)
+    }
+    if obj_r.value.ty.kind == "map" {
+        ret_ty = map_method_return_type(method)
+    }
+
+    // Resolve impl method: if obj has struct/enum type, check impl_methods
+    let mut call_name: String = method
+    let obj_type_name: String = obj_r.value.ty.name
+    if obj_type_name != "" {
+        let impl_key: String = obj_type_name + "." + method
+        let impl_opt: Option<String> = lookup_impl_method(s, impl_key)
+        match impl_opt {
+            Some(mangled) => { call_name = mangled },
+            _ => {}
+        }
+    }
 
     let dest_r: LowerResult = make_value(s, ret_ty, "t")
-    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, method, all_args))
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, call_name, all_args))
     return new_lower_result(dest_r.value, new_s)
+}
+
+fn lookup_impl_method(st: LowerState, key: String) -> Option<String> {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i < len(st.impl_methods) {
+            if st.impl_methods[i].key == key { return Some(st.impl_methods[i].mir_name) }
+            i = i + 1
+        }
+    }
+    return none
 }
 
 fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: List<Expr>) -> LowerResult {
@@ -1209,42 +2276,39 @@ fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: L
 }
 
 fn find_list_alloca(st: LowerState, obj: Expr, obj_r: LowerResult) -> Value {
-    match obj {
-        Ident(name) => {
-            // Simple variable push: use the variable's alloca directly
-            let var_opt: Option<Value> = lookup_var(st, name)
-            match var_opt {
-                Some(addr) => { return addr },
-                _ => { return obj_r.value }
-            }
-        },
-        FieldAccess(inner, field_name) => {
-            // struct.field.push(): GEP into the struct alloca
-            // to get a pointer to the list field
-            return find_field_alloca(st, inner, field_name, obj_r)
-        },
-        _ => { return obj_r.value }
+    let ok: String = expr_kind(obj)
+    if ok == "ident" {
+        // Simple variable push: use the variable's alloca directly
+        let var_opt: Option<Value> = lookup_var(st, expr_ident_name(obj))
+        match var_opt {
+            Some(addr) => { return addr },
+            _ => { return obj_r.value }
+        }
     }
+    if ok == "field_access" {
+        // struct.field.push(): GEP into the struct alloca
+        // to get a pointer to the list field
+        return find_field_alloca(st, expr_field_obj(obj), expr_field_name(obj), obj_r)
+    }
+    return obj_r.value
 }
 
 fn find_field_alloca(st: LowerState, inner: Expr, field_name: String, obj_r: LowerResult) -> Value {
-    match inner {
-        Ident(name) => {
-            let var_opt: Option<Value> = lookup_var(st, name)
-            match var_opt {
-                Some(addr) => {
-                    // Encode the field name in the Value's type name
-                    // so the emitter can find the correct field index.
-                    // Convention: ty.name = "StructName:field_name"
-                    // Encode struct_name:field_name in ty.name
-                    let combined: MIRType = new_mir_type(addr.ty.name + ":" + field_name, addr.ty.kind)
-                    return new_value(addr.name, combined)
-                },
-                _ => { return obj_r.value }
-            }
-        },
-        _ => { return obj_r.value }
+    if expr_kind(inner) == "ident" {
+        let name: String = expr_ident_name(inner)
+        let var_opt: Option<Value> = lookup_var(st, name)
+        match var_opt {
+            Some(addr) => {
+                // Encode the field name in the Value's type name
+                // so the emitter can find the correct field index.
+                // Convention: ty.name = "StructName:field_name"
+                let combined: MIRType = new_mir_type(addr.ty.name + ":" + field_name, addr.ty.kind)
+                return new_value(addr.name, combined)
+            },
+            _ => { return obj_r.value }
+        }
     }
+    return obj_r.value
 }
 
 // ---------------------------------------------------------------------------
@@ -1258,7 +2322,7 @@ fn lookup_struct_field_type(st: LowerState, struct_name: String, field_name: Str
         let info: StructFieldInfo = st.struct_fields[i]
         if info.name == struct_name {
             let mut j: Int = 0
-            for _ in 0..200 {
+            for _ in 0..500 {
                 if j >= len(info.field_names) { return mir_unknown() }
                 if info.field_names[j] == field_name {
                     if j < len(info.field_types) {
@@ -1279,17 +2343,17 @@ fn lower_field_access(st: LowerState, obj: Expr, field_name: String) -> LowerRes
 
     // Only emit SignalGet for actual signal types, not for struct .value fields
     if field_name == "value" && obj_r.value.ty.kind == "signal" {
-        let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
-        let s: LowerState = emit_instr(dest_r.state, Instruction::SignalGet(dest_r.value, obj_r.value))
-        return new_lower_result(dest_r.value, s)
+        let dr_sig: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+        let s_sig: LowerState = emit_instr(dr_sig.state, Instruction::SignalGet(dr_sig.value, obj_r.value))
+        return new_lower_result(dr_sig.value, s_sig)
     }
 
     // Resolve field type from struct registry
     let field_ty: MIRType = lookup_struct_field_type(obj_r.state, obj_r.value.ty.name, field_name)
 
-    let dest_r: LowerResult = make_value(obj_r.state, field_ty, "t")
-    let s: LowerState = emit_instr(dest_r.state, Instruction::FieldGet(dest_r.value, obj_r.value, field_name))
-    return new_lower_result(dest_r.value, s)
+    let dr_fld: LowerResult = make_value(obj_r.state, field_ty, "t")
+    let s_fld: LowerState = emit_instr(dr_fld.state, Instruction::FieldGet(dr_fld.value, obj_r.value, field_name))
+    return new_lower_result(dr_fld.value, s_fld)
 }
 
 // ---------------------------------------------------------------------------
@@ -1298,7 +2362,7 @@ fn lower_field_access(st: LowerState, obj: Expr, field_name: String) -> LowerRes
 
 fn is_enum_name(st: LowerState, name: String) -> Bool {
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if i >= len(st.enum_variants) { return false }
         if st.enum_variants[i].enum_name == name { return true }
         i = i + 1
@@ -1310,17 +2374,17 @@ fn lower_namespace_access(st: LowerState, ns: String, member: String) -> LowerRe
     // Check if namespace is a registered enum → emit EnumInit
     if is_enum_name(st, ns) {
         let enum_ty: MIRType = mir_enum(ns)
-        let dest_r: LowerResult = make_value(st, enum_ty, "t")
-        let empty_args: List<Value> = []
-        let s: LowerState = emit_instr(dest_r.state, Instruction::EnumInit(dest_r.value, enum_ty, member, empty_args))
-        return new_lower_result(dest_r.value, s)
+        let dr_ns_enum: LowerResult = make_value(st, enum_ty, "t")
+        let eargs_enum: List<Value> = []
+        let s_ns_enum: LowerState = emit_instr(dr_ns_enum.state, Instruction::EnumInit(dr_ns_enum.value, enum_ty, member, eargs_enum))
+        return new_lower_result(dr_ns_enum.value, s_ns_enum)
     }
     // Otherwise: module function call
-    let dest_r: LowerResult = make_value(st, mir_unknown(), "t")
+    let dr_ns_mod: LowerResult = make_value(st, mir_unknown(), "t")
     let fn_name: String = ns + "_" + member
-    let empty_args: List<Value> = []
-    let s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, empty_args))
-    return new_lower_result(dest_r.value, s)
+    let eargs_mod: List<Value> = []
+    let s_ns_mod: LowerState = emit_instr(dr_ns_mod.state, Instruction::Call(dr_ns_mod.value, fn_name, eargs_mod))
+    return new_lower_result(dr_ns_mod.value, s_ns_mod)
 }
 
 // ---------------------------------------------------------------------------
@@ -1333,12 +2397,17 @@ fn lower_index(st: LowerState, obj: Expr, idx: Expr) -> LowerResult {
 
     // For string indexing, result is a string (char_at)
     // For list indexing, result is the element type from List<T>.args[0]
+    // For map indexing, result is the value type from Map<K,V>.args[1]
     let mut elem_ty: MIRType = mir_unknown()
     if obj_r.value.ty.kind == "string" {
         elem_ty = mir_string()
     } else if obj_r.value.ty.kind == "list" {
         if len(obj_r.value.ty.args) > 0 {
             elem_ty = obj_r.value.ty.args[0]
+        }
+    } else if obj_r.value.ty.kind == "map" {
+        if len(obj_r.value.ty.args) > 1 {
+            elem_ty = obj_r.value.ty.args[1]
         }
     }
 
@@ -1357,7 +2426,7 @@ fn lower_pipe_call(arg_r: LowerResult, fn_name: String, extra_exprs: List<Expr>)
     args.push(arg_r.value)
     let mut i: Int = 0
     let nee: Int = len(extra_exprs)
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i < nee {
             let extra_r: LowerResult = lower_expr(s, extra_exprs[i])
             s = extra_r.state
@@ -1371,27 +2440,21 @@ fn lower_pipe_call(arg_r: LowerResult, fn_name: String, extra_exprs: List<Expr>)
 }
 
 fn lower_pipe_with_call(arg_r: LowerResult, callee: Expr, extra_arg_exprs: List<Expr>) -> LowerResult {
-    match callee {
-        Ident(fn_name) => {
-            return lower_pipe_call(arg_r, fn_name, extra_arg_exprs)
-        },
-        _ => {
-            return new_lower_result(arg_r.value, arg_r.state)
-        }
+    if expr_kind(callee) == "ident" {
+        return lower_pipe_call(arg_r, expr_ident_name(callee), extra_arg_exprs)
     }
+    return new_lower_result(arg_r.value, arg_r.state)
 }
 
 fn lower_pipe(st: LowerState, left: Expr, right: Expr) -> LowerResult {
     let arg_r: LowerResult = lower_expr(st, left)
 
-    match right {
-        Ident(fn_name) => {
-            return lower_pipe_call(arg_r, fn_name, [])
-        },
-        Call(callee, extra_arg_exprs) => {
-            return lower_pipe_with_call(arg_r, callee, extra_arg_exprs)
-        },
-        _ => {}
+    let rk: String = expr_kind(right)
+    if rk == "ident" {
+        return lower_pipe_call(arg_r, expr_ident_name(right), [])
+    }
+    if rk == "call" {
+        return lower_pipe_with_call(arg_r, expr_call_callee(right), expr_call_args(right))
     }
 
     // General case
@@ -1426,16 +2489,14 @@ fn lower_range(st: LowerState, start: Expr, end: Expr, inclusive: Bool) -> Lower
 
 fn find_expr_alloca(st: LowerState, expr: Expr, obj_r: LowerResult) -> Value {
     // For Ident(name), return the variable's alloca address
-    match expr {
-        Ident(name) => {
-            let var_opt: Option<Value> = lookup_var(st, name)
-            match var_opt {
-                Some(addr) => { return addr },
-                _ => { return obj_r.value }
-            }
-        },
-        _ => { return obj_r.value }
+    if expr_kind(expr) == "ident" {
+        let var_opt: Option<Value> = lookup_var(st, expr_ident_name(expr))
+        match var_opt {
+            Some(addr) => { return addr },
+            _ => { return obj_r.value }
+        }
     }
+    return obj_r.value
 }
 
 // Module mutation: extract list to local variable, push, reconstruct.
@@ -1466,17 +2527,13 @@ fn module_push_agent(m: MIRModule, info: AgentInfo) -> MIRModule {
 }
 
 fn lower_arm_body(st: LowerState, body: MatchArmBody) -> LowerResult {
-    match body {
-        BlockBody(block) => { return lower_block(st, block) },
-        ExprBody(expr) => { return lower_expr(st, expr) }
-    }
+    if match_arm_body_kind(body) == "block" { return lower_block(st, match_arm_body_block(body)) }
+    return lower_expr(st, match_arm_body_expr(body))
 }
 
 fn extract_ident_name(expr: Expr) -> String {
-    match expr {
-        Ident(name) => { return name },
-        _ => { return "" }
-    }
+    if expr_kind(expr) == "ident" { return expr_ident_name(expr) }
+    return ""
 }
 
 fn unwrap_or_default(opt: Option<String>, default: String) -> String {
@@ -1487,21 +2544,31 @@ fn unwrap_or_default(opt: Option<String>, default: String) -> String {
 }
 
 fn lambda_body_to_block(body: LambdaBody) -> Block {
-    match body {
-        BlockBody(block) => { return block },
-        ExprBody(expr) => {
-            let ret_stmt: Stmt = Stmt::Return(Some(expr))
-            let stmts: List<Stmt> = []
-            stmts.push(ret_stmt)
-            let span: Span = new_span(0, 0, 0, 0)
-            return new_block(span, stmts)
+    if lambda_body_kind(body) == "block" { return lambda_body_block(body) }
+    let ret_stmt: Stmt = Stmt::Return(Some(lambda_body_expr(body)))
+    let stmts: List<Stmt> = []
+    stmts.push(ret_stmt)
+    let span: Span = new_span(0, 0, 0, 0)
+    return new_block(span, stmts)
+}
+
+fn count_actual_lambdas(st: LowerState) -> Int {
+    let mut count: Int = 0
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(st.lambda_vars) { return count }
+        let e: LambdaEntry = st.lambda_vars[i]
+        if !e.var_name.starts_with("__ret__") {
+            count = count + 1
         }
+        i = i + 1
     }
+    return count
 }
 
 fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerResult {
     let name_r: LowerResult = fresh_tmp(st, "lambda")
-    let lambda_name: String = "lambda" + toString(st.tmp_counter)
+    let lambda_name: String = "lambda" + toString(count_actual_lambdas(st) + 1)
 
     let body_block: Block = lambda_body_to_block(body)
 
@@ -1519,7 +2586,7 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
     }
     let mut ci: Int = 0
     let npv: Int = len(parent_vars)
-    for _ in 0..200 {
+    for _ in 0..500 {
         if ci < npv {
             let pv: VarInfo = parent_vars[ci]
             let cap_param: Param = new Param { span: new_span(0, 0, 0, 0), name: pv.name, type_annotation: none }
@@ -1546,7 +2613,9 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
     // Register lambda with capture info
     let encoded_name: String = lambda_name + capture_suffix
     let entry: LambdaEntry = new_lambda_entry("", encoded_name)
-    s.lambda_vars.push(entry)
+    let mut lv_lam: List<LambdaEntry> = s.lambda_vars
+    lv_lam.push(entry)
+    s.lambda_vars = lv_lam
 
     // Return a reference to the lambda function
     let dest_r: LowerResult = make_value(s, mir_fn_type(), "t")
@@ -1563,7 +2632,7 @@ fn lower_spawn(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResu
     let mut args: List<Value> = []
     let mut i: Int = 0
     let nae_sp: Int = len(arg_exprs)
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i < nae_sp {
             let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
             s = arg_r.state
@@ -1581,41 +2650,33 @@ fn lower_spawn(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResu
 }
 
 fn lower_sync(st: LowerState, inner: Expr) -> LowerResult {
-    match inner {
-        FieldAccess(obj, field_name) => {
-            let obj_r: LowerResult = lower_expr(st, obj)
-            let dest_r: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::AgentSync(dest_r.value, obj_r.value, field_name))
-            return new_lower_result(dest_r.value, s)
-        },
-        _ => {
-            let val_r: LowerResult = lower_expr(st, inner)
-            let dest_r: LowerResult = make_value(val_r.state, mir_unknown(), "t")
-            let s: LowerState = emit_instr(dest_r.state, Instruction::AgentSync(dest_r.value, val_r.value, ""))
-            return new_lower_result(dest_r.value, s)
-        }
+    if expr_kind(inner) == "field_access" {
+        let obj_r: LowerResult = lower_expr(st, expr_field_obj(inner))
+        let dr_sync_fa: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
+        let s_sync_fa: LowerState = emit_instr(dr_sync_fa.state, Instruction::AgentSync(dr_sync_fa.value, obj_r.value, expr_field_name(inner)))
+        return new_lower_result(dr_sync_fa.value, s_sync_fa)
     }
+    let val_r: LowerResult = lower_expr(st, inner)
+    let dr_sync_bare: LowerResult = make_value(val_r.state, mir_unknown(), "t")
+    let s_sync_bare: LowerState = emit_instr(dr_sync_bare.state, Instruction::AgentSync(dr_sync_bare.value, val_r.value, ""))
+    return new_lower_result(dr_sync_bare.value, s_sync_bare)
 }
 
 fn lower_send(st: LowerState, target: Expr, value: Expr) -> LowerResult {
     let val_r: LowerResult = lower_expr(st, value)
 
-    match target {
-        FieldAccess(obj, field_name) => {
-            let obj_r: LowerResult = lower_expr(val_r.state, obj)
-            let s: LowerState = emit_instr(obj_r.state, Instruction::AgentSend(obj_r.value, field_name, val_r.value))
-            let dest_r: LowerResult = make_value(s, mir_void(), "t")
-            let s2: LowerState = emit_instr(dest_r.state, Instruction::Const(dest_r.value, mir_void(), ""))
-            return new_lower_result(dest_r.value, s2)
-        },
-        _ => {
-            let target_r: LowerResult = lower_expr(val_r.state, target)
-            let s: LowerState = emit_instr(target_r.state, Instruction::AgentSend(target_r.value, "", val_r.value))
-            let dest_r: LowerResult = make_value(s, mir_void(), "t")
-            let s2: LowerState = emit_instr(dest_r.state, Instruction::Const(dest_r.value, mir_void(), ""))
-            return new_lower_result(dest_r.value, s2)
-        }
+    if expr_kind(target) == "field_access" {
+        let obj_r: LowerResult = lower_expr(val_r.state, expr_field_obj(target))
+        let s_field: LowerState = emit_instr(obj_r.state, Instruction::AgentSend(obj_r.value, expr_field_name(target), val_r.value))
+        let dr_field: LowerResult = make_value(s_field, mir_void(), "t")
+        let s2_field: LowerState = emit_instr(dr_field.state, Instruction::Const(dr_field.value, mir_void(), ""))
+        return new_lower_result(dr_field.value, s2_field)
     }
+    let target_r: LowerResult = lower_expr(val_r.state, target)
+    let s_plain: LowerState = emit_instr(target_r.state, Instruction::AgentSend(target_r.value, "", val_r.value))
+    let dr_plain: LowerResult = make_value(s_plain, mir_void(), "t")
+    let s2_plain: LowerState = emit_instr(dr_plain.state, Instruction::Const(dr_plain.value, mir_void(), ""))
+    return new_lower_result(dr_plain.value, s2_plain)
 }
 
 // ---------------------------------------------------------------------------
@@ -1670,7 +2731,7 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
     let mut vals: List<Value> = []
     let mut i: Int = 0
     let nel: Int = len(elements)
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if i < nel {
             let el_r: LowerResult = lower_expr(s, elements[i])
             s = el_r.state
@@ -1680,9 +2741,44 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
     }
 
     let mut elem_type: MIRType = mir_unknown()
-    if len(vals) > 0 { elem_type = vals[0].ty }
+    if len(vals) > 0 {
+        let first_v: Value = vals[0]
+        elem_type = first_v.ty
+    }
     let dest_r: LowerResult = make_value(s, mir_list(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::ListInit(dest_r.value, elem_type, vals))
+    return new_lower_result(dest_r.value, new_s)
+}
+
+// ---------------------------------------------------------------------------
+// Map lowering
+// ---------------------------------------------------------------------------
+
+fn lower_map(st: LowerState, entries: List<MapEntry>) -> LowerResult {
+    let mut s: LowerState = st
+    let mut pairs: List<KVPair> = []
+    let mut i: Int = 0
+    let nent: Int = len(entries)
+    for _ in 0..2000 {
+        if i < nent {
+            let entry: MapEntry = entries[i]
+            let kr: LowerResult = lower_expr(s, entry.key)
+            s = kr.state
+            let vr: LowerResult = lower_expr(s, entry.value)
+            s = vr.state
+            pairs.push(new_kv_pair(kr.value, vr.value))
+            i = i + 1
+        }
+    }
+
+    let mut key_ty: MIRType = mir_string()
+    let mut val_ty: MIRType = mir_unknown()
+    if len(pairs) > 0 {
+        key_ty = pairs[0].key.ty
+        val_ty = pairs[0].val.ty
+    }
+    let dest_r: LowerResult = make_value(s, mir_map(), "t")
+    let new_s: LowerState = emit_instr(dest_r.state, Instruction::MapInit(dest_r.value, key_ty, val_ty, pairs))
     return new_lower_result(dest_r.value, new_s)
 }
 
@@ -1693,13 +2789,12 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
 fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -> LowerResult {
     let mut s: LowerState = st
 
-    // Debug: emit the number of field_inits as a constant to verify the list works
     let nfields: Int = len(field_inits)
 
     // Lower each field value
     let mut vals: List<Value> = []
     let mut i: Int = 0
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i < nfields {
             let fi: FieldInit = field_inits[i]
             let val_r: LowerResult = lower_expr(s, fi.value)
@@ -1712,10 +2807,7 @@ fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -
     // Emit as Call to "__new_<StructName>" (emitter handles this specially)
     let struct_ty: MIRType = mir_struct(name)
     let dest_r: LowerResult = make_value(s, struct_ty, "t")
-    // Debug: emit nfields as a const to see if the field_inits list is intact
-    let dbg_r: LowerResult = make_value(dest_r.state, mir_int(), "dbg_nfields")
-    s = emit_instr(dbg_r.state, Instruction::Const(dbg_r.value, mir_int(), toString(nfields)))
-    s = emit_instr(s, Instruction::Call(dest_r.value, "__new_" + name, vals))
+    s = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__new_" + name, vals))
     return new_lower_result(dest_r.value, s)
 }
 
@@ -1738,67 +2830,66 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
     let val_r: LowerResult = lower_expr(st, value)
     let mut s: LowerState = val_r.state
 
-    match target {
-        Ident(name) => {
-            if op != "=" {
-                // Compound assignment: x += 1 → x = x + 1
-                let old_r: LowerResult = lower_identifier(s, name)
-                s = old_r.state
-                let op_str: String = strip_assign_op(op)
-                let binop_opt: Option<BinOpKind> = binop_from_str(op_str)
-                match binop_opt {
-                    Some(binop) => {
-                        let result_r: LowerResult = make_value(s, old_r.value.ty, "t")
-                        s = emit_instr(result_r.state, Instruction::BinOp(result_r.value, binop, old_r.value, val_r.value))
-                        
-                        let var_opt: Option<Value> = lookup_var(s, name)
-                        match var_opt {
-                            Some(addr) => {
-                                s = emit_instr(s, Instruction::Store(addr, result_r.value))
-                                return new_lower_result(result_r.value, s)
-                            },
-                            _ => {}
-                        }
-                    },
-                    _ => {}
-                }
-            }
+    let tk: String = expr_kind(target)
+    if tk == "ident" {
+        let name: String = expr_ident_name(target)
+        if op != "=" {
+            // Compound assignment: x += 1 → x = x + 1
+            let old_r: LowerResult = lower_identifier(s, name)
+            s = old_r.state
+            let op_str: String = strip_assign_op(op)
+            let binop_opt: Option<BinOpKind> = binop_from_str(op_str)
+            match binop_opt {
+                Some(binop) => {
+                    let result_r: LowerResult = make_value(s, old_r.value.ty, "t")
+                    s = emit_instr(result_r.state, Instruction::BinOp(result_r.value, binop, old_r.value, val_r.value))
 
-            let var_opt: Option<Value> = lookup_var(s, name)
-            match var_opt {
-                Some(addr) => {
-                    // Update var type if the new value is more specific
-                    // (e.g. from unknown/i64 to a concrete struct type)
-                    let mut store_addr: Value = addr
-                    if addr.ty.kind == "unknown" && val_r.value.ty.kind != "unknown" {
-                        store_addr = new_value(addr.name, val_r.value.ty)
-                        s = define_var(s, name, store_addr, true)
+                    let var_opt_cmp: Option<Value> = lookup_var(s, name)
+                    match var_opt_cmp {
+                        Some(addr) => {
+                            s = emit_instr(s, Instruction::Store(addr, result_r.value))
+                            return new_lower_result(result_r.value, s)
+                        },
+                        _ => {}
                     }
-                    s = emit_instr(s, Instruction::Store(store_addr, val_r.value))
-                    return new_lower_result(val_r.value, s)
                 },
                 _ => {}
             }
-            return new_lower_result(val_r.value, s)
-        },
-        FieldAccess(obj, field_name) => {
-            // Pass the ALLOCA address (not loaded value) so the emitter
-            // can GEP+store directly to the struct field.
-            let obj_r: LowerResult = lower_expr(s, obj)
-            let obj_alloca: Value = find_expr_alloca(obj_r.state, obj, obj_r)
-            s = emit_instr(obj_r.state, Instruction::FieldSet(obj_alloca, field_name, val_r.value))
-            return new_lower_result(val_r.value, s)
-        },
-        Index(obj, idx) => {
-            let obj_r: LowerResult = lower_expr(s, obj)
-            let idx_r: LowerResult = lower_expr(obj_r.state, idx)
-            s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r.value, idx_r.value, val_r.value))
-            return new_lower_result(val_r.value, s)
-        },
-        _ => {
-            return new_lower_result(val_r.value, s)
         }
+
+        let var_opt_asgn: Option<Value> = lookup_var(s, name)
+        match var_opt_asgn {
+            Some(addr) => {
+                // Update var type if the new value is more specific
+                // (e.g. from unknown/i64 to a concrete struct type)
+                let mut store_addr: Value = addr
+                if addr.ty.kind == "unknown" && val_r.value.ty.kind != "unknown" {
+                    store_addr = new_value(addr.name, val_r.value.ty)
+                    s = define_var(s, name, store_addr, true)
+                }
+                s = emit_instr(s, Instruction::Store(store_addr, val_r.value))
+                return new_lower_result(val_r.value, s)
+            },
+            _ => {}
+        }
+        return new_lower_result(val_r.value, s)
     }
+    if tk == "field_access" {
+        // Pass the ALLOCA address (not loaded value) so the emitter
+        // can GEP+store directly to the struct field.
+        let fa_obj: Expr = expr_field_obj(target)
+        let obj_r_fa: LowerResult = lower_expr(s, fa_obj)
+        let obj_alloca: Value = find_expr_alloca(obj_r_fa.state, fa_obj, obj_r_fa)
+        s = emit_instr(obj_r_fa.state, Instruction::FieldSet(obj_alloca, expr_field_name(target), val_r.value))
+        return new_lower_result(val_r.value, s)
+    }
+    if tk == "index" {
+        let obj_r_idx: LowerResult = lower_expr(s, expr_index_obj(target))
+        let idx_r: LowerResult = lower_expr(obj_r_idx.state, expr_index_idx(target))
+        s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r_idx.value, idx_r.value, val_r.value))
+        return new_lower_result(val_r.value, s)
+    }
+    return new_lower_result(val_r.value, s)
 }
 
 // Strip the '=' suffix from compound assignment operators: "+=" → "+"
@@ -1835,16 +2926,19 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
     }
     // If one arm has value but other is void, add zeroinitializer for the void arm
     if len(result) == 1 {
+        let r0_pe: PhiEntry = result[0]
+        let r0_val: Value = r0_pe.val
+        let r0_ty: MIRType = r0_val.ty
         if then_ok {
             if !then_non_void {
-                let zero_v: Value = new_value("zeroinitializer", result[0].val.ty)
-                result.push(new_phi_entry(then_lbl, zero_v))
+                let zero_v_then: Value = new_value("zeroinitializer", r0_ty)
+                result.push(new_phi_entry(then_lbl, zero_v_then))
             }
         }
         if else_ok {
             if !else_non_void {
-                let zero_v: Value = new_value("zeroinitializer", result[0].val.ty)
-                result.push(new_phi_entry(else_lbl, zero_v))
+                let zero_v_else: Value = new_value("zeroinitializer", r0_ty)
+                result.push(new_phi_entry(else_lbl, zero_v_else))
             }
         }
     }
@@ -1866,17 +2960,21 @@ fn infer_variant_payload_type(st: LowerState, subject: Value, variant_name: Stri
         }
     }
     // Regular enums — look up from module registry
-    if subject.ty.kind == "enum" {
+    // Also handle kind=="struct" when the name is a registered enum
+    // (happens when enum types appear as generic args, e.g. List<TomlValue>)
+    let is_enum_kind: Bool = subject.ty.kind == "enum"
+    let is_struct_actually_enum: Bool = subject.ty.kind == "struct" && is_enum_name(st, subject.ty.name)
+    if is_enum_kind || is_struct_actually_enum {
         let enum_name: String = subject.ty.name
         let mut ei: Int = 0
         let nei: Int = len(st.module.enums)
-        for _ in 0..200 {
+        for _ in 0..500 {
             if ei < nei {
                 let einfo: EnumInfo = st.module.enums[ei]
                 if einfo.name == enum_name {
                     let mut vi: Int = 0
                     let nvi: Int = len(einfo.variants)
-                    for _ in 0..200 {
+                    for _ in 0..500 {
                         if vi < nvi {
                             let vinfo: EnumVariantInfo = einfo.variants[vi]
                             if vinfo.name == variant_name {
@@ -1912,14 +3010,10 @@ fn lower_else_clause(st: LowerState, clause_opt: Option<ElseClause>) -> LowerRes
 }
 
 fn lower_else_clause_inner(st: LowerState, clause: ElseClause) -> LowerResult {
-    match clause {
-        ElseBlock(block) => {
-            return lower_block(st, block)
-        },
-        ElseIf(next_cond, next_then, next_else) => {
-            return lower_if(st, next_cond, next_then, next_else)
-        }
+    if else_clause_kind(clause) == "else_block" {
+        return lower_block(st, else_clause_block(clause))
     }
+    return lower_if(st, else_clause_cond(clause), else_clause_then(clause), else_clause_else(clause))
 }
 
 fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<ElseClause>) -> LowerResult {
@@ -1942,11 +3036,10 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     s = add_block(s, else_label)
     let else_idx: Int = s.current_block_idx
 
+    // Reserve if_merge label (block added AFTER then/else — see below)
     let merge_label_r: LowerResult = fresh_block_label(s, "if_merge")
     s = merge_label_r.state
     let merge_label: String = merge_label_r.value.name
-    s = add_block(s, merge_label)
-    let merge_idx: Int = s.current_block_idx
 
     // Branch (emitted in the entry block, not the merge block)
     s = set_block(s, entry_idx)
@@ -1977,6 +3070,10 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     if !else_terminated {
         s = emit_instr(s, Instruction::Jump(merge_label))
     }
+
+    // NOW add the if_merge block — after all inner blocks from then/else
+    s = add_block(s, merge_label)
+    let merge_idx: Int = s.current_block_idx
 
     // Merge block with phi — only include arms that reach the merge block
     s = set_block(s, merge_idx)
@@ -2037,46 +3134,46 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
         // Mismatched types (e.g., i64 vs Expr from side-effect if-else) → void fallback.
         let types_match: Bool = then_val.ty.kind == else_val.ty.kind
         if types_match {
-            let mut entries: List<PhiEntry> = []
-            entries.push(new_phi_entry(then_exit_label, then_val))
-            entries.push(new_phi_entry(else_exit_label, else_val))
-            let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
-            s = result_r.state
-            s = emit_instr(s, Instruction::Phi(result_r.value, entries))
-            final_val = result_r.value
+            let mut ents_both: List<PhiEntry> = []
+            ents_both.push(new_phi_entry(then_exit_label, then_val))
+            ents_both.push(new_phi_entry(else_exit_label, else_val))
+            let rr_both: LowerResult = make_value(s, then_val.ty, "if_result")
+            s = rr_both.state
+            s = emit_instr(s, Instruction::Phi(rr_both.value, ents_both))
+            final_val = rr_both.value
         }
     }
     if only_then {
-        let mut entries: List<PhiEntry> = []
-        entries.push(new_phi_entry(then_exit_label, then_val))
+        let mut ents_then: List<PhiEntry> = []
+        ents_then.push(new_phi_entry(then_exit_label, then_val))
         // Only include else branch if it's not terminated (reaches merge)
         if !else_terminated {
-            let zero_v: Value = new_value("zeroinitializer", then_val.ty)
-            entries.push(new_phi_entry(else_exit_label, zero_v))
+            let zero_v_t: Value = new_value("zeroinitializer", then_val.ty)
+            ents_then.push(new_phi_entry(else_exit_label, zero_v_t))
         }
-        let result_r: LowerResult = make_value(s, then_val.ty, "if_result")
-        s = result_r.state
-        s = emit_instr(s, Instruction::Phi(result_r.value, entries))
-        final_val = result_r.value
+        let rr_then: LowerResult = make_value(s, then_val.ty, "if_result")
+        s = rr_then.state
+        s = emit_instr(s, Instruction::Phi(rr_then.value, ents_then))
+        final_val = rr_then.value
     }
     if only_else {
-        let mut entries: List<PhiEntry> = []
+        let mut ents_else: List<PhiEntry> = []
         // Only include then branch if it's not terminated (reaches merge)
         if !then_terminated {
-            let zero_v: Value = new_value("zeroinitializer", else_val.ty)
-            entries.push(new_phi_entry(then_exit_label, zero_v))
+            let zero_v_e: Value = new_value("zeroinitializer", else_val.ty)
+            ents_else.push(new_phi_entry(then_exit_label, zero_v_e))
         }
-        entries.push(new_phi_entry(else_exit_label, else_val))
-        let result_r: LowerResult = make_value(s, else_val.ty, "if_result")
-        s = result_r.state
-        s = emit_instr(s, Instruction::Phi(result_r.value, entries))
-        final_val = result_r.value
+        ents_else.push(new_phi_entry(else_exit_label, else_val))
+        let rr_else: LowerResult = make_value(s, else_val.ty, "if_result")
+        s = rr_else.state
+        s = emit_instr(s, Instruction::Phi(rr_else.value, ents_else))
+        final_val = rr_else.value
     }
     let is_void: Bool = !both && !only_then && !only_else
     if is_void {
-        let result_r: LowerResult = make_value(s, mir_void(), "t")
-        s = emit_instr(result_r.state, Instruction::Const(result_r.value, mir_void(), ""))
-        final_val = result_r.value
+        let rr_void: LowerResult = make_value(s, mir_void(), "t")
+        s = emit_instr(rr_void.state, Instruction::Const(rr_void.value, mir_void(), ""))
+        final_val = rr_void.value
         // Both branches terminated — merge block is unreachable.
         // Emit return terminator AFTER const so current_block_terminated returns true
         // and callers don't emit additional jumps to this block's successors.
@@ -2098,18 +3195,13 @@ fn get_current_fn_ret_type(st: LowerState) -> MIRType {
 }
 
 fn get_block_label(st: LowerState, idx: Int) -> String {
-    match st.current_fn {
-        Some(f) => {
-            if idx >= 0 {
-                if idx < len(f.blocks) {
-                    let bb: BasicBlock = f.blocks[idx]
-                    return bb.label
-                }
-            }
-            return "unknown"
-        },
-        _ => { return "unknown" }
+    if idx >= 0 {
+        if idx < len(st.fn_blocks) {
+            let bb: BasicBlock = st.fn_blocks[idx]
+            return bb.label
+        }
     }
+    return "unknown"
 }
 
 // ---------------------------------------------------------------------------
@@ -2125,39 +3217,40 @@ struct MatchBuildResult {
 }
 
 fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -> MatchBuildResult {
-    let labels: List<String> = []
-    let indices: List<Int> = []
-    let cases: List<SwitchCase> = []
-    let init: MatchBuildResult = new MatchBuildResult { state: st, arm_labels: labels, arm_indices: indices, cases: cases, default_label: merge_label }
+    let mut labels: List<String> = []
+    let mut indices: List<Int> = []
+    let mut cases: List<SwitchCase> = []
+    let mut default_lbl: String = merge_label
     let mut s: LowerState = st
     let mut i: Int = 0
     let n: Int = len(arms)
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i < n {
             let label_r: LowerResult = fresh_block_label(s, "match_arm")
             s = label_r.state
             let label: String = label_r.value.name
             s = add_block(s, label)
-            init.arm_labels.push(label)
-            init.arm_indices.push(s.current_block_idx)
+            labels.push(label)
+            indices.push(s.current_block_idx)
             let arm: MatchArm = arms[i]
-            match arm.pattern {
-                ConstructorPat(name, _) => { init.cases.push(new_switch_case(name, label)) },
-                LiteralPat(expr) => { init.cases.push(new_switch_case(get_literal_value(expr), label)) },
-                IdentPat(name) => {
-                    if is_enum_variant(s, name) {
-                        init.cases.push(new_switch_case(name, label))
-                    } else {
-                        init.default_label = label
-                    }
-                },
-                Wildcard => { init.default_label = label }
+            let pk_arm: String = pattern_kind(arm.pattern)
+            if pk_arm == "constructor" { cases.push(new_switch_case(pattern_ctor_name(arm.pattern), label)) }
+            if pk_arm == "literal" { cases.push(new_switch_case(get_literal_value(pattern_literal_expr(arm.pattern)), label)) }
+            if pk_arm == "ident" {
+                let pn: String = pattern_ident_name(arm.pattern)
+                if is_enum_variant(s, pn) {
+                    cases.push(new_switch_case(pn, label))
+                } else {
+                    default_lbl = label
+                }
             }
+            if pk_arm == "wildcard" { default_lbl = label }
             i = i + 1
         }
     }
-    init.state = s
-    return init
+    // Build result ONLY after all mutations are done — avoids aliasing
+    // the LowerState (which shares fn_blocks buffers with s)
+    return new MatchBuildResult { state: s, arm_labels: labels, arm_indices: indices, cases: cases, default_label: default_lbl }
 }
 
 fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResult {
@@ -2167,12 +3260,10 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     // Save entry block for switch/branch emission
     let match_entry_idx: Int = s.current_block_idx
 
-    // Create merge block
+    // Reserve merge label (block added AFTER arms — see below)
     let merge_label_r: LowerResult = fresh_block_label(s, "match_merge")
     s = merge_label_r.state
     let merge_label: String = merge_label_r.value.name
-    s = add_block(s, merge_label)
-    let merge_idx: Int = s.current_block_idx
 
     // Create arm blocks AND build switch cases.
     // Note: we use build_match_arms which returns accumulated results,
@@ -2201,7 +3292,7 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     let mut arm_results: List<PhiEntry> = []
     let mut ai: Int = 0
     let na_match: Int = len(arms)
-    for _ in 0..200 {
+    for _ in 0..500 {
         if ai < na_match {
             let arm: MatchArm = arms[ai]
             let arm_idx: Int = arm_indices[ai]
@@ -2209,24 +3300,10 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             s = set_block(s, arm_idx)
             s = lower_push_scope(s)
 
-            // Bind pattern variables
-            match arm.pattern {
-                ConstructorPat(name, sub_patterns) => {
-                    // Bind each sub-pattern. Uses helper function to avoid
-                    // break-inside-if-inside-for bug (break is dropped by Python lowerer).
-                    s = bind_pattern_fields(s, subject_r.value, name, sub_patterns)
-                },
-                IdentPat(name) => {
-                    if !is_enum_variant(s, name) {
-                        // Store subject to alloca so lower_identifier can load from it
-                        let ident_addr: Value = new_value("%" + name + ".addr", subject_r.value.ty)
-                        s = emit_instr(s, Instruction::Alloca(ident_addr, subject_r.value.ty))
-                        s = emit_instr(s, Instruction::Store(ident_addr, subject_r.value))
-                        s = define_var(s, name, ident_addr, false)
-                    }
-                },
-                _ => {}
-            }
+            // Bind pattern variables — uses helper + explicit typed temp
+            // to preserve LowerState type (avoids emitter type tracking loss)
+            let s_bound: LowerState = bind_arm_pattern(s, subject_r.value, arm.pattern)
+            s = s_bound
 
             // Lower arm body
             let arm_val_r: LowerResult = lower_arm_body(s, arm.body)
@@ -2242,12 +3319,12 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                 // Use zeroinitializer for void/unknown results to avoid referencing %void
                 let arm_kind: String = arm_val_r.value.ty.kind
                 if arm_kind == "void" || arm_kind == "unknown" || arm_val_r.value.name == "%void" {
-                    let zero_v: Value = new_value("zeroinitializer", arm_val_r.value.ty)
-                    let pe: PhiEntry = new_phi_entry(exit_label, zero_v)
-                    arm_results.push(pe)
+                    let zero_arm: Value = new_value("zeroinitializer", arm_val_r.value.ty)
+                    let pe_zero: PhiEntry = new_phi_entry(exit_label, zero_arm)
+                    arm_results.push(pe_zero)
                 } else {
-                    let pe: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
-                    arm_results.push(pe)
+                    let pe_val: PhiEntry = new_phi_entry(exit_label, arm_val_r.value)
+                    arm_results.push(pe_val)
                 }
             }
             s = lower_pop_scope(s)
@@ -2255,44 +3332,64 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         }
     }
 
+    // NOW add the merge block — after all arms, so arm-internal blocks
+    // (from nested if/match) are emitted first, avoiding forward references.
+    s = add_block(s, merge_label)
+    let merge_idx: Int = s.current_block_idx
+
     // Add zeroinitializer entry for switch default→merge path
     if default_label == merge_label && len(arm_results) > 0 {
         let entry_label: String = get_block_label(s, match_entry_idx)
-        let zero_ty: MIRType = arm_results[0].val.ty
-        let zero_v: Value = new_value("zeroinitializer", zero_ty)
-        let def_pe: PhiEntry = new_phi_entry(entry_label, zero_v)
+        let first_pe: PhiEntry = arm_results[0]
+        let first_val: Value = first_pe.val
+        let zero_ty: MIRType = first_val.ty
+        let zero_def: Value = new_value("zeroinitializer", zero_ty)
+        let def_pe: PhiEntry = new_phi_entry(entry_label, zero_def)
         arm_results.push(def_pe)
     }
 
     // Merge block
     s = set_block(s, merge_idx)
+    // Skip PHI when all arm results are zeroinitializer (dead match result)
+    let mut all_zero: Bool = true
     if len(arm_results) > 0 {
-        let result_r: LowerResult = make_value(s, arm_results[0].val.ty, "match_result")
-        s = result_r.state
-        s = emit_instr(s, Instruction::Phi(result_r.value, arm_results))
-        return new_lower_result(result_r.value, s)
+        let mut zi: Int = 0
+        for _ in 0..500 {
+            if zi < len(arm_results) {
+                if arm_results[zi].val.name != "zeroinitializer" { all_zero = false }
+                zi = zi + 1
+            }
+        }
+    }
+    if len(arm_results) > 0 && !all_zero {
+        let first_pe2: PhiEntry = arm_results[0]
+        let first_val2: Value = first_pe2.val
+        let phi_ty: MIRType = first_val2.ty
+        let rr_phi: LowerResult = make_value(s, phi_ty, "match_result")
+        s = rr_phi.state
+        s = emit_instr(s, Instruction::Phi(rr_phi.value, arm_results))
+        return new_lower_result(rr_phi.value, s)
     }
 
     // All arms terminated (all have return/break). Merge block is unreachable
     // but callers may reference the result. Use the function's return type
     // to create a properly-typed dummy value (alloca+load of zeroed memory).
     let fn_ret: MIRType = get_current_fn_ret_type(s)
-    let result_r: LowerResult = make_value(s, fn_ret, "match_result")
-    s = result_r.state
-    let dummy_addr: Value = new_value(result_r.value.name + ".dummy", fn_ret)
+    let rr_unreach: LowerResult = make_value(s, fn_ret, "match_result")
+    s = rr_unreach.state
+    let dummy_addr: Value = new_value(rr_unreach.value.name + ".dummy", fn_ret)
     s = emit_instr(s, Instruction::Alloca(dummy_addr, fn_ret))
-    s = emit_instr(s, Instruction::Load(result_r.value, dummy_addr))
-    return new_lower_result(result_r.value, s)
+    s = emit_instr(s, Instruction::Load(rr_unreach.value, dummy_addr))
+    return new_lower_result(rr_unreach.value, s)
 }
 
 fn get_literal_value(expr: Expr) -> String {
-    match expr {
-        IntLit(n) => { return toString(n) },
-        FloatLit(f) => { return toString(f) },
-        BoolLit(b) => { if b { return "true" } else { return "false" } },
-        StringLit(s) => { return s },
-        _ => { return "" }
-    }
+    let ek: String = expr_kind(expr)
+    if ek == "int_lit" { return toString(expr_int_val(expr)) }
+    if ek == "float_lit" { return toString(expr_float_val(expr)) }
+    if ek == "bool_lit" { if expr_bool_val(expr) { return "true" } else { return "false" } }
+    if ek == "string_lit" { return expr_string_val(expr) }
+    return ""
 }
 
 // ---------------------------------------------------------------------------
@@ -2300,29 +3397,63 @@ fn get_literal_value(expr: Expr) -> String {
 // ---------------------------------------------------------------------------
 
 // Bind pattern fields for a constructor pattern like Rect(w, h).
-// Extracted from inline loop to avoid break-inside-if-inside-for bug.
+// Extracted from inline loop for clarity.
 // Uses return-based iteration (return works, break doesn't).
+fn has_non_zero_phi(entries: List<PhiEntry>) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i >= len(entries) { return false }
+        let pe: PhiEntry = entries[i]
+        if pe.val.name != "zeroinitializer" { return true }
+        i = i + 1
+    }
+    return false
+}
+
+fn bind_arm_pattern(st: LowerState, subject_val: Value, pat: Pattern) -> LowerState {
+    let pk: String = pattern_kind(pat)
+    if pk == "constructor" {
+        return bind_pattern_fields(st, subject_val, pattern_ctor_name(pat), pattern_ctor_args(pat))
+    }
+    if pk == "ident" {
+        return bind_ident_pattern(st, subject_val, pattern_ident_name(pat))
+    }
+    return st
+}
+
+fn bind_ident_pattern(st: LowerState, subject_val: Value, name: String) -> LowerState {
+    if is_enum_variant(st, name) { return st }
+    let ident_addr: Value = new_value("%" + name + ".addr", subject_val.ty)
+    let mut s: LowerState = emit_instr(st, Instruction::Alloca(ident_addr, subject_val.ty))
+    s = emit_instr(s, Instruction::Store(ident_addr, subject_val))
+    s = define_var(s, name, ident_addr, false)
+    return s
+}
+
+fn bind_one_pattern_field(st: LowerState, sub_pat: Pattern, subject: Value, variant_name: String, pi: Int) -> LowerState {
+    if pattern_kind(sub_pat) != "ident" { return st }
+    let var_name: String = pattern_ident_name(sub_pat)
+    let pay_ty: MIRType = infer_variant_payload_type(st, subject, variant_name, pi)
+    let payload_r: LowerResult = make_value(st, pay_ty, var_name)
+    let mut s: LowerState = payload_r.state
+    let indexed_name: String = variant_name + ":" + toString(pi)
+    s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject, indexed_name))
+    let payload_addr: Value = new_value("%" + var_name + toString(s.tmp_counter) + ".addr", pay_ty)
+    s.tmp_counter = s.tmp_counter + 1
+    s = emit_instr(s, Instruction::Alloca(payload_addr, pay_ty))
+    s = emit_instr(s, Instruction::Store(payload_addr, payload_r.value))
+    s = define_var(s, var_name, payload_addr, false)
+    return s
+}
+
 fn bind_pattern_fields(st: LowerState, subject: Value, variant_name: String, sub_patterns: List<Pattern>) -> LowerState {
     let mut s: LowerState = st
     let mut pi: Int = 0
     for _ in 0..100 {
         if pi >= len(sub_patterns) { return s }
         let sub_pat: Pattern = sub_patterns[pi]
-        match sub_pat {
-            IdentPat(var_name) => {
-                let pay_ty: MIRType = infer_variant_payload_type(s, subject, variant_name, pi)
-                let payload_r: LowerResult = make_value(s, pay_ty, var_name)
-                s = payload_r.state
-                let indexed_name: String = variant_name + ":" + toString(pi)
-                s = emit_instr(s, Instruction::EnumPayload(payload_r.value, subject, indexed_name))
-                let payload_addr: Value = new_value("%" + var_name + toString(s.tmp_counter) + ".addr", pay_ty)
-                s.tmp_counter = s.tmp_counter + 1
-                s = emit_instr(s, Instruction::Alloca(payload_addr, pay_ty))
-                s = emit_instr(s, Instruction::Store(payload_addr, payload_r.value))
-                s = define_var(s, var_name, payload_addr, false)
-            },
-            _ => {}
-        }
+        let s_next: LowerState = bind_one_pattern_field(s, sub_pat, subject, variant_name, pi)
+        s = s_next
         pi = pi + 1
     }
     return s
@@ -2337,128 +3468,58 @@ fn format_type(t: MIRType) -> String {
 }
 
 fn format_instruction(inst: Instruction) -> String {
-    match inst {
-        Const(dest, ty, val) => {
-            return dest.name + " = const " + format_type(ty) + " " + val
-        },
-        Copy(dest, src) => {
-            return dest.name + " = copy " + src.name
-        },
-        Cast(dest, src, target) => {
-            return dest.name + " = cast " + src.name + " to " + format_type(target)
-        },
-        BinOp(dest, op, lhs, rhs) => {
-            return dest.name + " = binop " + lhs.name + ", " + rhs.name
-        },
-        UnaryOp(dest, op, operand) => {
-            return dest.name + " = unaryop " + operand.name
-        },
-        StructInit(dest, ty, fields) => {
-            return dest.name + " = struct_init " + format_type(ty)
-        },
-        FieldGet(dest, obj, field) => {
-            return dest.name + " = field_get " + obj.name + "." + field
-        },
-        FieldSet(obj, field, val) => {
-            return "field_set " + obj.name + "." + field + " = " + val.name
-        },
-        ListInit(dest, ty, elems) => {
-            return dest.name + " = list_init " + format_type(ty)
-        },
-        IndexGet(dest, obj, idx) => {
-            return dest.name + " = index_get " + obj.name + "[" + idx.name + "]"
-        },
-        IndexSet(obj, idx, val) => {
-            return "index_set " + obj.name + "[" + idx.name + "] = " + val.name
-        },
-        Alloca(dest, ty) => {
-            return dest.name + " = alloca " + format_type(ty)
-        },
-        Load(dest, ptr) => {
-            return dest.name + " = load " + ptr.name
-        },
-        Store(ptr, val) => {
-            return "store " + val.name + " to " + ptr.name
-        },
-        MapInit(dest, kt, vt, pairs) => {
-            return "map_init"
-        },
-        EnumInit(dest, ty, variant, payload) => {
-            return dest.name + " = enum_init " + format_type(ty) + "::" + variant
-        },
-        EnumTag(dest, val) => {
-            return dest.name + " = enum_tag " + val.name
-        },
-        EnumPayload(dest, val, variant) => {
-            return dest.name + " = enum_payload " + val.name + "::" + variant
-        },
-        WrapSome(dest, val) => {
-            return dest.name + " = wrap_some " + val.name
-        },
-        WrapNone(dest, ty) => {
-            return dest.name + " = wrap_none " + format_type(ty)
-        },
-        WrapOk(dest, val) => {
-            return dest.name + " = wrap_ok " + val.name
-        },
-        WrapErr(dest, val) => {
-            return dest.name + " = wrap_err " + val.name
-        },
-        Unwrap(dest, val) => {
-            return dest.name + " = unwrap " + val.name
-        },
-        Call(dest, fn_name, args) => {
-            return dest.name + " = call " + fn_name + "(...)"
-        },
-        Return(val_opt) => {
-            match val_opt {
-                Some(v) => { return "ret " + v.name },
-                _ => { return "ret void" }
-            }
-        },
-        Jump(target) => {
-            return "jump " + target
-        },
-        Branch(cond, true_bb, false_bb) => {
-            return "branch " + cond.name + ", " + true_bb + ", " + false_bb
-        },
-        Switch(tag, cases, default_bb) => {
-            return "switch " + tag.name + " default " + default_bb
-        },
-        AgentSpawn(dest, ty, args) => {
-            return dest.name + " = agent_spawn " + format_type(ty)
-        },
-        AgentSend(ag, channel, val) => {
-            return "agent_send"
-        },
-        AgentSync(dest, ag, channel) => {
-            return "agent_sync"
-        },
-        SignalInit(dest, ty, val) => {
-            return dest.name + " = signal_init " + format_type(ty) + " " + val.name
-        },
-        SignalGet(dest, sig) => {
-            return dest.name + " = signal_get " + sig.name
-        },
-        SignalSet(sig, val) => {
-            return "signal_set " + sig.name + " = " + val.name
-        },
-        StreamOp(dest, kind, source, args) => {
-            return "stream_op"
-        },
-        InterpConcat(dest, parts) => {
-            return dest.name + " = interp_concat [...]"
-        },
-        Phi(dest, incoming) => {
-            return dest.name + " = phi [...]"
+    let k: String = instr_kind(inst)
+    let d: Value = instr_dest(inst)
+    if k == "const" { return d.name + " = const " + format_type(instr_const_type(inst)) + " " + instr_const_val(inst) }
+    if k == "copy" { return d.name + " = copy " + instr_copy_src(inst).name }
+    if k == "cast" { return d.name + " = cast " + instr_cast_src(inst).name + " to " + format_type(instr_cast_type(inst)) }
+    if k == "binop" { return d.name + " = binop " + instr_binop_lhs(inst).name + ", " + instr_binop_rhs(inst).name }
+    if k == "unaryop" { return d.name + " = unaryop " + instr_unaryop_operand(inst).name }
+    if k == "struct_init" { return d.name + " = struct_init " + format_type(instr_struct_type(inst)) }
+    if k == "field_get" { return d.name + " = field_get " + instr_fieldget_obj(inst).name + "." + instr_fieldget_name(inst) }
+    if k == "field_set" { return "field_set " + instr_fieldset_obj(inst).name + "." + instr_fieldset_name(inst) + " = " + instr_fieldset_val(inst).name }
+    if k == "list_init" { return d.name + " = list_init " + format_type(instr_list_type(inst)) }
+    if k == "index_get" { return d.name + " = index_get " + instr_indexget_obj(inst).name + "[" + instr_indexget_idx(inst).name + "]" }
+    if k == "index_set" { return "index_set " + instr_indexset_obj(inst).name + "[" + instr_indexset_idx(inst).name + "] = " + instr_indexset_val(inst).name }
+    if k == "alloca" { return d.name + " = alloca " + format_type(instr_alloca_type(inst)) }
+    if k == "load" { return d.name + " = load " + instr_load_ptr(inst).name }
+    if k == "store" { return "store " + instr_store_val(inst).name + " to " + instr_store_ptr(inst).name }
+    if k == "map_init" { return "map_init" }
+    if k == "enum_init" { return d.name + " = enum_init " + format_type(instr_enum_type(inst)) + "::" + instr_enum_variant(inst) }
+    if k == "enum_tag" { return d.name + " = enum_tag " + instr_enumtag_val(inst).name }
+    if k == "enum_payload" { return d.name + " = enum_payload " + instr_enumpayload_val(inst).name + "::" + instr_enumpayload_variant(inst) }
+    if k == "wrap_some" { return d.name + " = wrap_some " + instr_wrap_val(inst).name }
+    if k == "wrap_none" { return d.name + " = wrap_none " + format_type(instr_wrapnone_type(inst)) }
+    if k == "wrap_ok" { return d.name + " = wrap_ok " + instr_wrap_val(inst).name }
+    if k == "wrap_err" { return d.name + " = wrap_err " + instr_wrap_val(inst).name }
+    if k == "unwrap" { return d.name + " = unwrap " + instr_wrap_val(inst).name }
+    if k == "call" { return d.name + " = call " + instr_call_fn(inst) + "(...)" }
+    if k == "return" {
+        let val_opt: Option<Value> = instr_return_val(inst)
+        match val_opt {
+            Some(v) => { return "ret " + v.name },
+            _ => { return "ret void" }
         }
     }
+    if k == "jump" { return "jump " + instr_jump_target(inst) }
+    if k == "branch" { return "branch " + instr_branch_cond(inst).name + ", " + instr_branch_true(inst) + ", " + instr_branch_false(inst) }
+    if k == "switch" { return "switch " + instr_switch_tag(inst).name + " default " + instr_switch_default(inst) }
+    if k == "agent_spawn" { return d.name + " = agent_spawn " + format_type(instr_agent_type(inst)) }
+    if k == "agent_send" { return "agent_send" }
+    if k == "agent_sync" { return "agent_sync" }
+    if k == "signal_init" { return d.name + " = signal_init " + format_type(instr_signal_type(inst)) + " " + instr_signal_val(inst).name }
+    if k == "signal_get" { return d.name + " = signal_get " + instr_signalget_sig(inst).name }
+    if k == "signal_set" { return "signal_set " + instr_signalset_sig(inst).name + " = " + instr_signalset_val(inst).name }
+    if k == "stream_op" { return "stream_op" }
+    if k == "interp_concat" { return d.name + " = interp_concat [...]" }
+    if k == "phi" { return d.name + " = phi [...]" }
+    return "<unknown_instruction>"
 }
 
 fn pretty_print_block(bb: BasicBlock) -> String {
     let mut result: String = "  " + bb.label + ":\n"
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if i >= len(bb.instructions) { return result }
         let inst: Instruction = bb.instructions[i]
         result = result + "    " + format_instruction(inst) + "\n"
@@ -2471,7 +3532,7 @@ fn pretty_print_function(f: MIRFunction) -> String {
     let mut params_str: String = ""
     let mut i: Int = 0
     let nfp: Int = len(f.params)
-    for _ in 0..200 {
+    for _ in 0..500 {
         if i < nfp {
             let p: MIRParam = f.params[i]
             if i > 0 { params_str = params_str + ", " }
@@ -2486,7 +3547,7 @@ fn pretty_print_function(f: MIRFunction) -> String {
     let mut result: String = header + " {\n"
     let mut bi: Int = 0
     let nfb: Int = len(f.blocks)
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if bi < nfb {
             let bb: BasicBlock = f.blocks[bi]
             result = result + pretty_print_block(bb)
@@ -2506,7 +3567,7 @@ fn pretty_print_module(module: MIRModule) -> String {
     // Print structs
     let mut si_idx: Int = 0
     let nms: Int = len(module.structs)
-    for _ in 0..200 {
+    for _ in 0..500 {
         if si_idx < nms {
             let s: StructInfo = module.structs[si_idx]
             result = result + "struct " + s.name + " {...}\n"
@@ -2517,7 +3578,7 @@ fn pretty_print_module(module: MIRModule) -> String {
     // Print enums
     let mut ei: Int = 0
     let nme: Int = len(module.enums)
-    for _ in 0..200 {
+    for _ in 0..500 {
         if ei < nme {
             let e: EnumInfo = module.enums[ei]
             result = result + "enum " + e.name + " {...}\n"
@@ -2531,7 +3592,7 @@ fn pretty_print_module(module: MIRModule) -> String {
     // Print functions
     let mut fi: Int = 0
     let nmf: Int = len(module.functions)
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if fi < nmf {
             let f: MIRFunction = module.functions[fi]
             result = result + pretty_print_function(f) + "\n\n"
@@ -2559,13 +3620,13 @@ fn new_verify_error(fn_name: String, block: String, msg: String) -> VerifyError 
 fn verify_module(module: MIRModule) -> List<VerifyError> {
     let mut errors: List<VerifyError> = []
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if i >= len(module.functions) { return errors }
         let f: MIRFunction = module.functions[i]
         let fn_errors: List<VerifyError> = verify_function(f)
         let mut j: Int = 0
         let nfe: Int = len(fn_errors)
-        for _ in 0..600 {
+        for _ in 0..2000 {
             if j < nfe {
                 errors.push(fn_errors[j])
                 j = j + 1
@@ -2586,13 +3647,13 @@ fn verify_function(f: MIRFunction) -> List<VerifyError> {
     }
 
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if i >= len(f.blocks) { return errors }
         let bb: BasicBlock = f.blocks[i]
         let bb_errors: List<VerifyError> = verify_block(f.name, bb, f)
         let mut j: Int = 0
         let nbe: Int = len(bb_errors)
-        for _ in 0..600 {
+        for _ in 0..2000 {
             if j < nbe {
                 errors.push(bb_errors[j])
                 j = j + 1
@@ -2607,27 +3668,27 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
     let mut errors: List<VerifyError> = []
 
     if len(bb.instructions) == 0 {
-        let e: VerifyError = new_verify_error(fn_name, bb.label, "block has no instructions")
-        errors.push(e)
+        let e_empty: VerifyError = new_verify_error(fn_name, bb.label, "block has no instructions")
+        errors.push(e_empty)
         return errors
     }
 
     // Check terminator
     let last: Instruction = bb.instructions[len(bb.instructions) - 1]
     if !is_terminator(last) {
-        let e: VerifyError = new_verify_error(fn_name, bb.label, "block does not end with a terminator")
-        errors.push(e)
+        let e_noterm: VerifyError = new_verify_error(fn_name, bb.label, "block does not end with a terminator")
+        errors.push(e_noterm)
     }
 
     // Check no terminators in the middle
     let mut i: Int = 0
     let nbi_m1: Int = len(bb.instructions) - 1
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if i < nbi_m1 {
-            let inst: Instruction = bb.instructions[i]
-            if is_terminator(inst) {
-                let e: VerifyError = new_verify_error(fn_name, bb.label, "terminator at position " + toString(i) + " (not last)")
-                errors.push(e)
+            let inst_mid: Instruction = bb.instructions[i]
+            if is_terminator(inst_mid) {
+                let e_midterm: VerifyError = new_verify_error(fn_name, bb.label, "terminator at position " + toString(i) + " (not last)")
+                errors.push(e_midterm)
             }
             i = i + 1
         }
@@ -2635,23 +3696,20 @@ fn verify_block(fn_name: String, bb: BasicBlock, f: MIRFunction) -> List<VerifyE
 
     // Check phi nodes are at the start
     let mut seen_non_phi: Bool = false
-    let mut pi: Int = 0
+    let mut phi_i: Int = 0
     let nbi_phi: Int = len(bb.instructions)
-    for _ in 0..600 {
-        if pi < nbi_phi {
-            let inst: Instruction = bb.instructions[pi]
-            match inst {
-                Phi(_, _) => {
-                    if seen_non_phi {
-                        let e: VerifyError = new_verify_error(fn_name, bb.label, "phi node after non-phi instruction")
-                        errors.push(e)
-                    }
-                },
-                _ => {
-                    seen_non_phi = true
+    for _ in 0..2000 {
+        if phi_i < nbi_phi {
+            let inst_phi: Instruction = bb.instructions[phi_i]
+            if instr_kind(inst_phi) == "phi" {
+                if seen_non_phi {
+                    let e_phi: VerifyError = new_verify_error(fn_name, bb.label, "phi node after non-phi instruction")
+                    errors.push(e_phi)
                 }
+            } else {
+                seen_non_phi = true
             }
-            pi = pi + 1
+            phi_i = phi_i + 1
         }
     }
 
@@ -2674,118 +3732,3 @@ pub fn lower(program: Program, module_name: String) -> MIRModule {
     return st.module
 }
 
-// Streaming API: lower header only (types, externs), return state for per-function lowering
-pub fn lower_header(program: Program, module_name: String) -> LowerState {
-    let mut st: LowerState = new_lower_state(module_name)
-    st = register_declarations(st, program)
-    return st
-}
-
-// Lower a single function and return the MIR function + updated state
-// The function is NOT added to module.functions (caller handles emission)
-pub fn lower_one_fn(st: LowerState, fn_def: FnDefData, prefix: String) -> LowerResult {
-    let fn_name: String = prefix + fn_def.name
-
-    // Build params
-    let mut params: List<MIRParam> = []
-    let mut pi: Int = 0
-    let nfdp: Int = len(fn_def.params)
-    for _ in 0..200 {
-        if pi < nfdp {
-            let p: Param = fn_def.params[pi]
-            let pty: MIRType = lower_resolve_type_opt_checked(st, p.type_annotation)
-            let mp: MIRParam = new_mir_param(p.name, pty)
-            params.push(mp)
-            pi = pi + 1
-        }
-    }
-
-    let ret_type: MIRType = resolve_return_type_checked(st, fn_def.return_type)
-
-    let mut decorators: List<String> = []
-    let mut di: Int = 0
-    let ndec: Int = len(fn_def.decorators)
-    for _ in 0..100 {
-        if di < ndec {
-            decorators.push(fn_def.decorators[di].name)
-            di = di + 1
-        }
-    }
-
-    let mir_fn: MIRFunction = new_mir_function(fn_name, params, ret_type, decorators, fn_def.public)
-
-    // Save state
-    let prev_fn: Option<MIRFunction> = st.current_fn
-    let prev_block_idx: Int = st.current_block_idx
-    let prev_tmp: Int = st.tmp_counter
-    let prev_blk_cnt: Int = st.block_counter
-    let prev_vars: List<VarInfo> = st.vars
-
-    let mut s: LowerState = st
-    s.current_fn = Some(mir_fn)
-    s.tmp_counter = 0
-    s.block_counter = 0
-    let fresh_vars: List<VarInfo> = []
-    s.vars = fresh_vars
-
-    s = add_block(s, "entry")
-    s = set_block(s, 0)
-
-    // Bind params
-    let mut bi: Int = 0
-    for _ in 0..200 {
-        if bi < nfdp {
-            let p: Param = fn_def.params[bi]
-            let pty: MIRType = lower_resolve_type_opt_checked(s, p.type_annotation)
-            let addr_name: String = "%" + p.name + ".addr"
-            let addr: Value = new_value(addr_name, pty)
-            let param_val: Value = new_value("%" + p.name, pty)
-            s = emit_instr(s, Instruction::Alloca(addr, pty))
-            s = emit_instr(s, Instruction::Store(addr, param_val))
-            s = define_var(s, p.name, addr, false)
-            bi = bi + 1
-        }
-    }
-
-    // Lower body
-    let body_r: LowerResult = lower_block(s, fn_def.body)
-    s = body_r.state
-
-    if !current_block_terminated(s) {
-        if ret_type.kind == "void" {
-            s = emit_instr(s, Instruction::Return(none))
-        } else {
-            s = emit_instr(s, Instruction::Return(Some(body_r.value)))
-        }
-    }
-
-    // Extract the completed function (DO NOT add to module — caller emits it)
-    let mut result_fn: MIRFunction = mir_fn
-    match s.current_fn {
-        Some(f) => { result_fn = f },
-        _ => {}
-    }
-
-    // Restore counters/vars but KEEP current_fn so caller can extract it
-    s.current_fn = Some(result_fn)
-    s.current_block_idx = prev_block_idx
-    s.tmp_counter = prev_tmp
-    s.block_counter = prev_blk_cnt
-    s.vars = prev_vars
-
-    let fn_val: Value = new_value(fn_name, mir_void())
-    return new_lower_result(fn_val, s)
-}
-
-// Get the last-added function from a LowerState's current_fn
-pub fn extract_current_fn(st: LowerState) -> MIRFunction {
-    match st.current_fn {
-        Some(f) => { return f },
-        _ => {
-            let empty_params: List<MIRParam> = []
-            let empty_blocks: List<BasicBlock> = []
-            let empty_decorators: List<String> = []
-            return new MIRFunction { name: "unknown", params: empty_params, return_type: mir_void(), blocks: empty_blocks, decorators: empty_decorators, is_public: false }
-        }
-    }
-}

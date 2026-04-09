@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import Generic, NoReturn, TypeVar
 
 T = TypeVar("T")
 E = TypeVar("E")
@@ -46,7 +46,7 @@ class Err(Generic[E]):
     def is_err(self) -> bool:
         return True
 
-    def unwrap(self) -> E:
+    def unwrap(self) -> NoReturn:
         raise RuntimeError(f"Called unwrap on Err: {self.value!r}")
 
     def __repr__(self) -> str:

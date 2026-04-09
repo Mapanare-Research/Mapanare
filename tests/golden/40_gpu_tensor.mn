@@ -1,0 +1,18 @@
+fn main() {
+    pon a: List<Float> = [1.0, 2.0, 3.0, 4.0]
+    pon b: List<Float> = [5.0, 6.0, 7.0, 8.0]
+
+    si gpu_available() {
+        pon c: List<Float> = gpu_tensor_add(a, b)
+        // Expected: 6.0, 8.0, 10.0, 12.0
+        print("add[0]=" + str(c[0]))
+        print("add[1]=" + str(c[1]))
+
+        pon d: List<Float> = gpu_tensor_mul(a, b)
+        // Expected: 5.0, 12.0, 21.0, 32.0
+        print("mul[0]=" + str(d[0]))
+        print("mul[3]=" + str(d[3]))
+    } sino {
+        print("GPU not available, skipping")
+    }
+}

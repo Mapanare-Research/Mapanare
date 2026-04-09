@@ -154,6 +154,9 @@ class BinaryExpr(Expr):
     left: Expr = field(default_factory=Expr)
     op: str = ""
     right: Expr = field(default_factory=Expr)
+    trait_dispatch: str | None = (
+        None  # Set by semantic checker for trait-based ops (e.g., "add", "eq")
+    )
 
 
 @dataclass
@@ -378,6 +381,7 @@ class BreakStmt(Stmt):
     pass
 
 
+@dataclass
 class ContinueStmt(Stmt):
     """Continue statement: `continue` / `sigue`."""
 
@@ -665,6 +669,7 @@ class ImplDef(Definition):
     target: str = ""
     trait_name: str | None = None
     methods: list[FnDef] = field(default_factory=list)
+    type_params: list[str] = field(default_factory=list)
 
 
 @dataclass

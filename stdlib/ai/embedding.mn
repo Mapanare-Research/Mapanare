@@ -241,7 +241,7 @@ pub fn normalize(v: List<Float>) -> List<Float> {
     pon mut result: List<Float> = []
     pon mut i: Int = 0
     mien i < n {
-        result = result + [v[i] / mag]
+        result.push(v[i] / mag)
         i = i + 1
     }
     da result
@@ -255,7 +255,7 @@ pub fn vector_add(a: List<Float>, b: List<Float>) -> List<Float> {
     pon mut result: List<Float> = []
     pon mut i: Int = 0
     mien i < size {
-        result = result + [a[i] + b[i]]
+        result.push(a[i] + b[i])
         i = i + 1
     }
     da result
@@ -266,7 +266,7 @@ pub fn vector_scale(v: List<Float>, scalar: Float) -> List<Float> {
     pon mut result: List<Float> = []
     pon mut i: Int = 0
     mien i < n {
-        result = result + [v[i] * scalar]
+        result.push(v[i] * scalar)
         i = i + 1
     }
     da result
@@ -279,7 +279,7 @@ pub fn vector_mean(vectors: List<List<Float>>) -> List<Float> {
     pon mut sums: List<Float> = []
     pon mut d: Int = 0
     mien d < dims {
-        sums = sums + [0.0]
+        sums.push(0.0)
         d = d + 1
     }
     pon mut i: Int = 0
@@ -296,7 +296,7 @@ pub fn vector_mean(vectors: List<List<Float>>) -> List<Float> {
     pon mut result: List<Float> = []
     pon mut k: Int = 0
     mien k < dims {
-        result = result + [sums[k] / float(count)]
+        result.push(sums[k] / float(count))
         k = k + 1
     }
     da result
@@ -433,7 +433,7 @@ fn jget_str(text: String, key: String) -> String {
 fn jget_int(text: String, key: String) -> Int {
     pon raw: String = jget(text, key)
     si len(raw) == 0 { da 0 }
-    da string_utils.parse_int_manual(raw)
+    da parse_int_manual(raw)
 }
 
 fn jget_first(text: String, key: String) -> String {
@@ -483,7 +483,7 @@ fn parse_float_array(text: String) -> List<Float> {
 
         si len(num_str) > 0 {
             pon val: Float = float(num_str)
-            result = result + [val]
+            result.push(val)
         }
     }
     da result
@@ -540,7 +540,7 @@ fn parse_http_status(raw: String) -> Int {
     pos = pos + 1
     pon mut status_str: String = ""
     mien pos < slen { pon ch: String = raw.char_at(pos); si ch == " " { sal }; si ch == "\r" { sal }; status_str = status_str + ch; pos = pos + 1 }
-    da string_utils.parse_int_manual(status_str)
+    da parse_int_manual(status_str)
 }
 
 fn extract_http_body(raw: String) -> String {
@@ -663,6 +663,10 @@ fn check_http_status(status: Int, body: String) -> Result<String, EmbeddingError
     da Err(new_api_error("Unexpected status: " + str(status)))
 }
 
+fn parse_err_vectors(msg: String) -> Result<List<List<Float>>, EmbeddingError> {
+    da Err(new_parse_error(msg))
+}
+
 fn parse_openai_embed_response(body: String) -> Result<List<List<Float>>, EmbeddingError> {
     // {"data":[{"embedding":[0.1,...],"index":0}],"usage":{"prompt_tokens":N}}
     pon data_raw: String = jget(body, "data")
@@ -690,7 +694,7 @@ fn parse_openai_embed_response(body: String) -> Result<List<List<Float>>, Embedd
 
         pon emb_raw: String = jget(obj_str, "embedding")
         pon vec: List<Float> = parse_float_array(emb_raw)
-        vectors = vectors + [vec]
+        vectors.push(vec)
 
         pos = value_end
     }
@@ -723,7 +727,7 @@ fn parse_ollama_embed_response(body: String) -> Result<List<List<Float>>, Embedd
                 pon mut vi: Int = value_start
                 mien vi < value_end { arr_str = arr_str + emb_raw.char_at(vi); vi = vi + 1 }
                 pon vec: List<Float> = parse_float_array(arr_str)
-                vectors = vectors + [vec]
+                vectors.push(vec)
                 pos = value_end
             } sino {
                 pos = pos + 1
@@ -755,7 +759,7 @@ pub fn embed(config: EmbedConfig, text: String) -> Result<EmbeddingResult, Embed
     match status_check {
         Err(e) => { da Err(e) },
         Ok(resp_body) => {
-            pon mut parse_result: Result<List<List<Float>>, EmbeddingError> = Err(new_parse_error("Unknown provider"))
+            pon mut parse_result: Result<List<List<Float>>, EmbeddingError> = parse_err_vectors("Unknown provider")
             match config.provider {
                 OpenAI => { parse_result = parse_openai_embed_response(resp_body) },
                 Ollama => { parse_result = parse_ollama_embed_response(resp_body) },
@@ -793,7 +797,7 @@ pub fn embed_batch(config: EmbedConfig, texts: List<String>) -> Result<BatchEmbe
     match status_check {
         Err(e) => { da Err(e) },
         Ok(resp_body) => {
-            pon mut parse_result: Result<List<List<Float>>, EmbeddingError> = Err(new_parse_error("Unknown provider"))
+            pon mut parse_result: Result<List<List<Float>>, EmbeddingError> = parse_err_vectors("Unknown provider")
             match config.provider {
                 OpenAI => { parse_result = parse_openai_embed_response(resp_body) },
                 Ollama => { parse_result = parse_ollama_embed_response(resp_body) },
@@ -840,12 +844,16 @@ pub fn new_store() -> VectorStore {
 
 pub fn store_add(store: VectorStore, id: String, text: String, vector: List<Float>) -> VectorStore {
     pon entry: VectorEntry = new VectorEntry {id: id, text: text, vector: vector, metadata: #{}}
-    da new VectorStore {entries: store.entries + [entry], count: store.count + 1}
+    pon mut new_entries: List<VectorEntry> = store.entries
+    new_entries.push(entry)
+    da new VectorStore {entries: new_entries, count: store.count + 1}
 }
 
 pub fn store_add_with_meta(store: VectorStore, id: String, text: String, vector: List<Float>, metadata: Map<String, String>) -> VectorStore {
     pon entry: VectorEntry = new VectorEntry {id: id, text: text, vector: vector, metadata: metadata}
-    da new VectorStore {entries: store.entries + [entry], count: store.count + 1}
+    pon mut new_entries: List<VectorEntry> = store.entries
+    new_entries.push(entry)
+    da new VectorStore {entries: new_entries, count: store.count + 1}
 }
 
 pub fn store_search(store: VectorStore, query: List<Float>, top_k: Int) -> List<SearchResult> {
@@ -856,7 +864,7 @@ pub fn store_search(store: VectorStore, query: List<Float>, top_k: Int) -> List<
     mien i < count {
         pon score: Float = cosine_similarity(query, store.entries[i].vector)
         pon sr: SearchResult = new SearchResult {id: store.entries[i].id, text: store.entries[i].text, score: score, metadata: store.entries[i].metadata}
-        scored = scored + [sr]
+        scored.push(sr)
         i = i + 1
     }
 
@@ -865,7 +873,7 @@ pub fn store_search(store: VectorStore, query: List<Float>, top_k: Int) -> List<
     pon mut results: List<SearchResult> = []
     pon mut selected: List<Bool> = []
     pon mut si_idx: Int = 0
-    mien si_idx < scored_count { selected = selected + [false]; si = si_idx + 1 }
+    mien si_idx < scored_count { selected.push(false); si_idx = si_idx + 1 }
 
     pon mut k: Int = 0
     mien k < top_k {
@@ -884,7 +892,7 @@ pub fn store_search(store: VectorStore, query: List<Float>, top_k: Int) -> List<
         }
         si best_idx >= 0 {
             selected[best_idx] = true
-            results = results + [scored[best_idx]]
+            results.push(scored[best_idx])
         }
         k = k + 1
     }
@@ -900,7 +908,7 @@ pub fn store_search_threshold(store: VectorStore, query: List<Float>, min_score:
         pon score: Float = cosine_similarity(query, store.entries[i].vector)
         si score >= min_score {
             pon sr: SearchResult = new SearchResult {id: store.entries[i].id, text: store.entries[i].text, score: score, metadata: store.entries[i].metadata}
-            results = results + [sr]
+            results.push(sr)
         }
         i = i + 1
     }
@@ -913,7 +921,7 @@ pub fn store_remove(store: VectorStore, id: String) -> VectorStore {
     pon mut i: Int = 0
     mien i < count {
         si store.entries[i].id != id {
-            new_entries = new_entries + [store.entries[i]]
+            new_entries.push(store.entries[i])
         }
         i = i + 1
     }

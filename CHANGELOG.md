@@ -7,6 +7,652 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-04-08
+
+**Production Release — "Build Real Programs"**
+
+The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are complete.
+
+- **Self-hosted compiler**: 15,000+ lines of `.mn`, fixed-point verified (stage4 == stage3)
+- **40/40 golden tests** pass on both bootstrap and stage1
+- **4,845+ pytest tests** across the full pipeline
+- **GPU compute**: 8 builtins (`gpu_available`, `gpu_tensor_add/sub/mul/div/matmul`) via CUDA dlopen, verified on RTX 4090
+- **Python transpiler**: `mapanare transpile file.py` → native binary, 29-68x speedup over Python
+- **C runtime**: arena allocator, thread pool, ring buffers, TCP/TLS, crypto, regex, HTTP, GPU dispatch
+- **Package manager**: `mapanare install`, registry, git fallback
+- **7-reviewer code review**: 9.79/10 aggregate, all PASS
+- Fix: MIR constant propagation through loop back-edges
+- Fix: transpiler function return type inference at call sites
+- Fix: `cmd_build` object file path collision
+
+## [3.47.0] - 2026-04-08
+
+**Guacamaya — GPU Examples + v4.0.0 Gate**
+
+- Add GPU examples: `vector_add.mn`, `matmul_bench.mn` with compiled LLVM IR
+- Rewrite SPEC Section 23 with compilable GPU code examples
+- Fix self-hosted emitter: `str(false)` zext, `file_exists` i64, regex compile+exec+free, 9 I/O declarations
+- Thread-safe dlopen loaders (atomic CAS for ssl_load, evp_load, pcre2_load)
+- Add 64MB `__mn_http_get` response limit
+- Move `intern_ensure_table()` inside lock
+- Add `__mn_str_concat` early returns for empty operands
+- Deduplicate `mnstr_to_cstr`/`MnHandleTable` into shared `mapanare_internal.h`
+- All C files compile with -Werror
+- 40/40 golden tests pass
+
+## [3.46.0] - 2026-04-08
+
+**Caiman — GPU Foundation**
+
+- Link `mapanare_gpu.c` and `mapanare_gpu_builtins.c` into native binaries
+- Add 8 GPU builtins: `gpu_available`, `gpu_device_name`, `gpu_device_memory`, `gpu_tensor_add/sub/mul/div/matmul`
+- Embedded PTX kernels for CUDA tensor operations (f64 precision)
+- CPU fallback when no GPU available
+- Fix PTX kernel register name conflicts
+- Fix all 5 v3.45.0 review hard blockers
+- Apply `-Werror` to all C runtime files
+- Correct GPU tensor math verified on NVIDIA RTX 4090
+
+## [3.45.0] - 2026-04-08
+
+### Added
+
+- Exit criteria verified: new user can write → compile → run interactive programs end-to-end
+- Package manager (`mapanare install`) confirmed functional: registry + git fallback, lock files, integrity
+
+### Changed
+
+- Test count: 4,845+ (up from 4,465+)
+- 38 golden tests, 3 new CLI/network examples, transpile pipeline verified
+- All v3.41.0-v3.45.0 roadmap items complete — ready for v4.0.0
+
+## [3.44.0] - 2026-04-08
+
+### Added
+
+- `examples/cli/word_count.mn` — count words/lines/chars in a file (uses read_line, read_file)
+- `examples/cli/todo.mn` — interactive TODO manager (uses read_line, read_file, write_file, append_file)
+- `examples/network/http_fetch.mn` — fetch a URL and print response (uses http_get)
+- `examples/transpile/fibonacci.py` → `fibonacci.mn` — end-to-end transpile → compile → run verified
+- All new examples compile to valid LLVM IR and run as native binaries
+
+### Changed
+
+- GPU and mobile examples moved to `examples/experimental/` (require unimplemented backends)
+
+## [3.43.0] - 2026-04-08
+
+### Added
+
+- `mapanare_runtime.c` linked into mnc-stage1 (agent thread pool, ring buffers, lifecycle management)
+- Agent runtime symbols available in native binaries (spawn, send, recv, stop, destroy)
+- 6 agent runtime entries in `_RUNTIME_FN_ATTRS` (LLVM emitter)
+
+### Changed
+
+- `build_stage1.py`: compiles and links `mapanare_runtime.o` alongside core and io
+- Binary size: 2.94 MB (up from 2.86 MB with agent runtime)
+
+## [3.42.0] - 2026-04-08
+
+### Added
+
+- `http_get(url)` builtin — HTTP GET with automatic TLS for https:// URLs
+- `sha256(data)`, `hmac_sha256(key, data)` crypto builtins (OpenSSL via dlopen)
+- `base64_encode(data)`, `base64_decode(data)`, `hex_encode(data)` encoding builtins
+- `random_bytes(n)` — cryptographically secure random data (/dev/urandom)
+- `regex_match(pattern, subject)`, `regex_replace(pattern, subject, replacement)` builtins (PCRE2 via dlopen)
+- `__mn_http_get` HTTP client in mapanare_io.c (URL parsing, TCP/TLS, HTTP/1.1)
+- Golden tests: `36_crypto.mn`, `37_regex.mn`, `38_http.mn` (38/38 pass)
+- 11 new runtime function entries in `_RUNTIME_FN_ATTRS`
+
+### Fixed
+
+- Crypto functions (sha1/sha256/sha512): call `evp_load()` before passing function pointers to prevent NULL dereference when OpenSSL not available
+
+## [3.41.0] - 2026-04-08
+
+### Added
+
+- `read_line()` builtin — read one line from stdin (strips newline)
+- `read_file()`, `write_file()`, `append_file()`, `file_exists()`, `list_dir()` builtins
+- `__mn_read_line`, `__mn_file_append`, `__mn_dir_list_strings` C runtime functions
+- `mapanare_io.c` linked into mnc-stage1 (TCP, TLS, crypto, regex symbols available)
+- Golden tests: `34_file_io.mn`, `35_stdin.mn` (35/35 pass)
+- 13 new I/O function entries in `_RUNTIME_FN_ATTRS` (LLVM emitter)
+
+### Changed
+
+- `stdlib/fs.mn`: `append_file()` and `list_dir()` now functional (were disabled stubs)
+- `list_dir()` returns `List<String>` instead of `List<DirEntry>` (simpler ABI)
+- `build_stage1.py`: compiles and links `mapanare_io.o` alongside `mapanare_core.o`
+- Self-hosted `semantic.mn`: registers all 6 new I/O builtins
+
+### Fixed
+
+- CI native job: `mapanare_io.c` now compiled in CI pipeline
+
+## [3.40.0] - 2026-04-08
+
+### Fixed
+
+- SPEC Section 3.10: added "not yet implemented" disclaimer for Tensor types
+- `emit_c.py`: version string now reads from VERSION file instead of hardcoded
+- `emit_llvm_text.py`: two remaining typed pointers migrated to opaque `ptr` (LLVM 17+ compat)
+- `ast_nodes.py`: added missing `@dataclass` decorator on `ContinueStmt`
+- `mapanare_core.c`: `__mn_str_trim*` functions return input directly when no trimming needed (avoids unnecessary allocation)
+- `mapanare_core.c`: removed dead `realloc` branch in `__mn_list_concat`
+
+## [3.39.0] - 2026-04-08
+
+### Added
+
+- Valgrind-clean compilation for 30/33 golden tests (remaining 3 are
+  uninitialised-value reads in enum match codegen — safe, not UAF)
+- Peak memory 160 MB for self-compilation (target was <512 MB)
+- Memory profiling infrastructure (`-DMN_PROFILE_MEM` flag in build_stage1.py)
+
+### Changed
+
+- Self-compilation time: 0.74s for 14.7K lines
+- Binary: 2.7 MB, IR: 169K lines (stage1), 104K lines (stage2)
+
+## [3.38.0] - 2026-04-08
+
+### Added
+
+- Fixed-point self-compilation verified: stage4 == stage3 (compiler converges
+  after two rounds of self-compilation)
+- Seed binary updated to fixed-point stage3 build (bootstrap/seed/linux-x86_64/)
+
+### Fixed
+
+- `parser.mn`: field access `fr.fn_data` → `fr.data` (field name mismatch caused
+  FnDefData to be typed as i64 in stage2 IR, the only llvm-as error)
+
+### Changed
+
+- Transpiler modules (from_python, from_php, from_typescript, from_go) excluded
+  from mnc_all.mn — they contain symbol clashes (new_token) and aren't needed
+  for core compiler operation
+- mnc_all.mn reduced from 20K to 14.7K lines
+- Stage2 IR: 104K lines, valid (0 llvm-as errors)
+
+## [3.37.0] - 2026-04-08
+
+### Fixed
+
+- `mn_list_grow` now always allocates a new buffer instead of calling `realloc`,
+  preventing use-after-free when struct copies share list data pointers
+- Conservative drop glue: skip cleanup for struct-returning functions to prevent
+  freeing resources that were moved into the return value via constructors
+- List move semantics: lists passed to function calls or enum inits are removed
+  from drop glue tracking (ownership transfer)
+- `mn_list_rc` validates COW magic before reading refcount (prevents crash on
+  corrupted headers)
+- Self-compilation restored: mnc-stage1 compiles mnc_all.mn (20K lines) in <1s,
+  123 MB peak memory (was 59 GB / OOM from O(n^2) list cloning)
+
+### Removed
+
+- `no_drop_glue` hack — proper conservative drop glue replaces the blanket disable
+- List cloning on struct copy (`_clone_list_fields`) — caused O(n^2) memory blowup
+  (390K clones for 575 lines). Safe list growth makes sharing without cloning safe
+
+### Changed
+
+- 33/33 golden tests pass (was 29/33)
+- Binary size: 2.7 MB (was 3.4 MB)
+- IR: 169K lines (was 185K)
+- Memory profiling infrastructure added to C runtime (`-DMN_PROFILE_MEM`)
+
+## [3.36.0] - 2026-04-07
+
+### Added
+
+- `mnc run` — compile and execute .mn files natively (<200ms startup, no Python)
+- `mnc build` — produce native binaries with `--release`, `--debug`, `--small` modes
+- `mnc build <dir>` — incremental multi-module builds with SHA-256 cache
+- `mnc compile` — transpile .py/.php/.ts/.go to native (shells out for transpilation step)
+- `mnc cache stats|clean` — manage `.mnc_cache/` compilation cache
+- `--timing` flag for per-module build timing reports
+- `--watch` mode for continuous rebuild on file changes (via inotifywait)
+- Precompiled C runtime (`make build-rt` → `libmapanare_rt.a`) for faster linking
+- Startup benchmark (`tests/bench/bench_startup.sh`) and compile-time benchmark suite
+  (`tests/bench/bench_compile.sh`) with CI gates
+- Python CLI shows `[dev mode]` notice recommending `mnc run` for native speed
+
+### Changed
+
+- IR output reduced from 275K to 185K lines (no drop glue for batch compiler builds)
+- Binary size: 3.4MB stripped (was 3.7MB)
+- IR blowup ratio: 4.5x (was 13.75x)
+
+### Fixed
+
+- Text emitter drop glue use-after-free: list/string fields embedded in returned structs
+  were freed before the caller read them, causing SIGSEGV on any compilation (29/33 golden
+  tests now pass, was 0/33)
+- `no_drop_glue` option added to text emitter — disables all drop glue for batch compiler
+  builds where memory leaking is acceptable (compiler processes one file and exits)
+- `concat_self.sh` missing transpiler modules (now matches `concat_self.py` order)
+
+## [3.35.0] - 2026-04-07
+
+### Changed
+
+- `lexer.mn:tokenize()` migrated from `for _ in 0..2000000` bounded loop to `while pos < slen`
+  — proves break/continue work correctly in the Python lowerer
+- Removed 6 stale "avoids break-in-for bug" comments from `lower.mn` (bug was already fixed)
+
+### Added
+
+- Golden test `33_break_continue.mn` — validates break-in-for, break-in-while, continue, nested break
+
+## [3.34.0] - 2026-04-07
+
+### Fixed
+
+- `__mn_map_new` now takes explicit `val_type` parameter — eliminates size-based heuristic that
+  misclassified 16-byte non-string structs as String, causing memory corruption in `__mn_map_free_deep`
+  (flagged by 4 reviewers: Viper, Mamba, Cobra, Rattler)
+- `__mn_file_copy` returns -1 on write failure instead of unconditional 0
+- `__mn_signal_on_change` wrapped in `mn_signal_lock()`/`mn_signal_unlock()` (thread safety)
+- Typed pointer `bitcast` in `_do_env_load` removed — LLVM 17+ opaque pointer compatibility
+- Typed pointer `{t}*` syntax in auto-declare store changed to `ptr` — LLVM 17+ compatibility
+- Self-hosted `types_compatible` now compares function parameter types pairwise and return types
+  (was only checking parameter count)
+- `is_digit` name collision in concatenated `mnc_all.mn` resolved (deleted duplicate from transpiler.mn)
+- Vestigial `getattr(expr, "trait_dispatch", None)` replaced with direct field access in lower.py
+- `Err.unwrap()` return type changed from `-> E` to `-> NoReturn`
+- Version strings updated: main.mn 3.26.0→3.34.0, emit_c.py v3.0.0→v3.34.0
+
+### Removed
+
+- Duplicate `cow_shares` forward declaration (mapanare_core.c line 764)
+- Dead `llvm_list_type()` function from emit_llvm_ir.mn (stale 4-field layout, never called)
+- ~200 lines of duplicated `is_XX_alpha` functions across 4 transpilers (replaced with shared
+  `is_transpiler_alpha` in transpiler.mn)
+
+### Changed
+
+- `_ARITH_TRAIT_MAP` and `_op_to_trait` moved to module scope (lower.py, semantic.py)
+- `continue` keyword added to SPEC.md Section 2.1 keyword table
+- FloorDiv annotation expanded to note negative operand divergence
+- Transpiler CLI help text updated to mention PHP (.php) alongside Python (.py)
+
+## [3.33.0] - 2026-04-07
+
+### Removed
+
+- Dead GPU kernel stubs (`_generate_ptx_kernel`, `_generate_glsl_kernel`) from lower.py
+  (live GPU dispatch remains in emit_llvm_mir.py + mapanare_gpu.c)
+- Arena create/destroy overhead from text emitter (was creating arenas but never allocating from them)
+- Hardcoded `"lines"`/`"str_globals"` skip in `_clone_list_fields` (all list fields now cloned uniformly)
+
+### Fixed
+
+- `trait_dispatch` added as proper field on BinaryExpr (was monkey-patched with `# type: ignore`)
+- Robin Hood PSL uint8_t overflow guard — forces rehash at PSL=255 instead of wrapping
+- LLVM fn attrs: `noalias` on allocators, `willreturn` on free functions, `readonly` on getters
+
+## [3.32.0] - 2026-04-07
+
+### Fixed
+
+- Duplicate `cow_shares` forward declaration annotated (mapanare_core.c)
+- `__mn_any_typename` no longer heap-allocates per call (lazy-init cached strings)
+- `QueryPerformanceFrequency` cached in `mapanare_time_us()` (Windows performance)
+- `__mn_file_copy` now checks `fwrite` return value (silent data loss on disk full)
+- `__mn_clock_monotonic_ns` implemented on Windows (was returning 0)
+- `__mn_sleep_ms` implemented on Windows (was no-op)
+- `__mn_list_push` release-mode reinit now logs diagnostic before recovery
+- List drop glue now skips freeing returned list via pointer comparison (use-after-free fix)
+- Python transpiler `FloorDiv` mapping annotated with semantic note
+
+### Added
+
+- MnMap test suite (8 tests: new, set, get, del, contains, len, iter, free_deep)
+- MnSignal test suite (4 tests: new, set/get, subscribe/unsubscribe, no-change skip)
+- MnStream test suite (4 tests: from_list/collect, map, filter, free_chain)
+- MnValue/any test suite (5 tests: box_int, box_float, box_bool, unbox_int, typename)
+- C runtime tests: 53 → 74 (21 new tests)
+
+## [3.31.0] - 2026-04-07
+
+### Added
+
+- Go transpiler (`mapanare/self/from_go.mn`) — new language front-end
+- Go tokenizer: raw strings, rune literals, hex, `:=`, `<-`, `&^` operators
+- ~28 Go keywords, struct/interface/func/const/var translation
+- goroutine `go func()` → `spawn`, `defer` → comment, `range` → `for in`
+- Multiple return `(T, error)` → `Result<T, String>` pattern
+- Method receivers → self parameter in impl block
+- Go stdlib shims: fmt.Println→print, append→push, strings.Contains→contains, etc.
+- 9 self-hosted Go transpiler tests
+- Self-hosted compiler now 16 modules, ~20,000+ lines across all .mn files
+
+## [3.30.0] - 2026-04-07
+
+### Added
+
+- TypeScript transpiler (`mapanare/self/from_typescript.mn`) — new language front-end
+- TS tokenizer: template literals, `===`/`!==`/`...`/`>>>`/`?.`/`??`/`=>` operators
+- ~45 TS keywords, interface→trait, class→struct+impl, enum translation
+- TS stdlib shims: console.log→print, parseInt→int, Math.abs→abs, etc.
+- 8 self-hosted TypeScript transpiler tests
+
+## [3.29.0] - 2026-04-07
+
+### Added
+
+- Self-hosted PHP transpiler (`mapanare/self/from_php.mn`)
+- PHP tokenizer: `$variable`, `<?php` tag, `//`/`#`/`/* */` comments, `=>`/`::`/`===`
+- PHP keyword table (~40 keywords), class/function/method translation
+- PHP stdlib shims: strlen→len, strtolower→.to_lower, explode→.split, etc.
+- 9 self-hosted PHP transpiler tests
+
+## [3.28.0] - 2026-04-07
+
+### Added
+
+- Self-hosted Python transpiler (`mapanare/self/from_python.mn`) — ~630 lines
+- Python tokenizer: strings, numbers, identifiers, keywords, operators, comments
+- Python keyword table (35 keywords)
+- PyParser recursive descent with expression/statement translation
+- Python stdlib shims (18 mappings: append→push, upper→to_upper, etc.)
+- Type translation via transpiler.mn framework (int→Int, str→String, etc.)
+- Function, class, import, return statement translation
+- 14 self-hosted transpiler tests across 3 test classes
+- Module wired into self-hosted build (13th module in concat order)
+
+## [3.27.0] - 2026-04-07
+
+### Added
+
+- Shared transpiler framework (`mapanare/self/transpiler.mn`) — ~500 lines
+- TypeMapping struct + `translate_type()` with nullable/generic support
+- FieldDef, MethodDef, ParamDef structs + `translate_class_to_struct()`
+- CatchClause struct + `translate_exception_to_result()`
+- StdlibShim struct + `translate_stdlib_call()` with arg reorder
+- TranspilerState with scope push/pop, var tracking, indent management
+- `infer_local_type()` for literal-based type inference
+- `report_unsupported()` diagnostic helper
+- `needs_any_boxing()` + `emit_any_annotation()` helpers
+- Language-specific mapping factories: Python, PHP, TypeScript, Go
+- 23 framework tests across 4 test classes
+- Module wired into self-hosted build (12th module in concat order)
+
+## [3.26.0] - 2026-04-07
+
+### Fixed
+
+- TypeKind.ANY mapped in text emitter (MN_VALUE) and llvmlite emitter
+- Arithmetic on `any` values rejected at semantic check with clear error
+- PHP transpiler: `$this` → `self`, return type translation, isset/empty/is_array mappings
+- C backend stream operation call signatures match runtime declarations
+- Signal unsubscribe race: added locking to `__mn_signal_unsubscribe`
+- Map free heuristic: explicit `val_type` field replaces size-based guessing
+- llvmlite emitter deprecated with warning
+- CLI: wired PHP in `cmd_transpile`, fixed "an Mapanare" typo
+- Cookbook output version corrected, `di`/`any` keywords added to spec
+
+## [3.25.0] - 2026-04-07
+
+### Added
+
+- PHP transpiler — `mapanare compile app.php` compiles typed PHP 7.4+ to native
+- `mapanare transpile app.php` outputs idiomatic `.mn` source
+- Custom regex-based PHP tokenizer + 13-level precedence expression parser
+- PHP stdlib shim: strlen→len, count→len, strtolower→.to_lower, explode→.split, implode→join, array_push→.push, etc.
+- Class → struct+impl: typed properties become fields, methods become impl block
+- PHP array heuristics: `[1,2,3]` → List, `["a"=>1]` → Map
+- String interpolation: `"hello $name"` → `"hello " + str(name)`
+- C-style for loop pattern detection: `for ($i=0; $i<10; $i++)` → `for i in 0..10`
+- Arrow functions: `fn($x) => $x + 1` → `(x) => x + 1`
+- 47 PHP compatibility tests across 16 test classes
+
+## [3.24.0] - 2026-04-07
+
+### Added
+
+- Python transpiler — `mapanare compile main.py` compiles typed Python to native
+- `mapanare transpile main.py` outputs idiomatic `.mn` source
+- `from_python.py`: PythonTranslator class (~500 lines) — functions, classes (→struct+impl), control flow, type inference, f-strings, lambdas
+- Python method mapping (append→push, strip→trim, upper→to_upper, etc.)
+- Type mapping: int→Int, float→Float, str→String, bool→Bool, list→List, dict→Map
+- Auto-detection: `.py` files transparently translated in all CLI commands
+- 44 Python compatibility tests across 11 test classes
+
+## [3.23.0] - 2026-04-07
+
+### Added
+
+- `any` type — tagged `MnValue` union in C runtime (12 type tags, box/unbox/typename)
+- `TypeKind.ANY` in type system — `any` unifies with every type (gradual typing)
+- `typeof` builtin — compile-time constant for concrete types, runtime call for `any`
+- Semantic support: `any` in arithmetic/comparison/assignment/function calls
+- `__mn_any_box_int`, `__mn_any_box_float`, `__mn_any_box_bool` runtime functions
+- `__mn_any_unbox_int`, `__mn_any_unbox_float` with tag-mismatch abort
+
+## [3.22.0] - 2026-04-07
+
+### Changed
+
+- Monomorphization uses `dataclasses.replace()` + targeted body deepcopy instead of full `deepcopy` (structural sharing)
+- Optimizer constant propagation uses `replace()` for literal nodes (no deepcopy overhead)
+- Added `TYPE_CHECKING` guard for llvmlite type annotations (scaffolding for future type stubs)
+
+## [3.21.0] - 2026-04-07
+
+### Added
+
+- Colorized PASS/FAIL in `mapanare test` output (green/red ANSI when terminal supports it)
+- Trait polymorphism cross-link in `for-python-devs.md`
+
+### Changed
+
+- `@cuda`/`@vulkan`/`@gpu` decorators now raise `NotImplementedError` with clear message
+- WASM TODO stubs emit `(unreachable)` trap instead of silently skipping
+- REPL shows exception type names in error messages
+
+### Fixed
+
+- Tutorial dead `return "unreachable"` after exhaustive match removed
+- JSON tutorial match syntax: `Object(obj)` → `JsonValue_Object(obj)`
+- Cookbook version string updated to 3.20.0
+- Self-hosted `len(source) < 0` → `len(source) == 0` for file detection
+
+## [3.20.0] - 2026-04-07
+
+### Added
+
+- `SymbolKind` enum replaces string-based `Symbol.kind` (10 values, `StrEnum` for compatibility)
+
+### Changed
+
+- MIR optimizer O2 passes now iterate to convergence (max 10 iterations, same as O1)
+- Emitter globals (`_current_alloca_block`, `_COERCE_FALLBACK_COUNT`) moved to instance state
+- AST constant folding removed from `optimizer.py` (MIR optimizer is canonical)
+
+### Fixed
+
+- Arithmetic trait dispatch (Add/Sub/Mul/Div) now lowered to impl method calls (was silently ignored)
+- DWARF debug info struct members now use actual type sizes (was hardcoded 64 bits)
+
+## [3.19.0] - 2026-04-07
+
+### Added
+
+- Self-hosted While/Break/Continue/Assert: Stmt enum variants, parser, semantic checker, lowerer
+- Loop context (header/exit labels) in LowerState for Break/Continue support in both For and While
+- Assert statement lowers to conditional branch + `__mn_assert_fail` call
+- Function attributes (`nounwind`/`readonly`) in self-hosted LLVM emitter (30+ runtime declarations)
+- Trait method signature parsing (was brace-skip only)
+
+### Fixed
+
+- For-loop variables now typed from iterable (Range → Int, List<T> → T; was always UNKNOWN)
+- Restored 5 commented-out `.push()` calls for generic type tracking (Tensor, call args, lambda params, Signal)
+
+## [3.18.0] - 2026-04-07
+
+### Added
+
+- Container drop glue — lists, maps, signals, streams now freed on function exit (text emitter)
+- Per-function arena allocation for non-escaping temporaries (conservative escape analysis)
+
+### Changed
+
+- `__mn_list_push` asserts on corrupted lists in debug builds (release builds keep defensive reinit)
+
+### Fixed
+
+- `__mn_list_push` reinit path now sets `managed = 1` (fixes list data buffer leak in drop glue)
+
+## [3.17.0] - 2026-04-07
+
+### Added
+
+- String/closure drop glue in text emitter — default pipeline no longer leaks heap strings
+- Runtime function attributes (`nounwind`/`readonly`) on text emitter `declare` statements
+- Boxed enum payload cleanup in drop glue (both emitters)
+
+### Fixed
+
+- `_llvm_type_size` now delegates to `_approx_type_size` for correct alignment padding (fixes closure env buffer overruns on mixed-type captures)
+
+## [3.16.0] - 2026-04-07
+
+### Added
+
+- `__mn_map_free_deep` — frees string keys/values before freeing the map struct
+- `__mn_stream_free_chain` — frees entire upstream stream pipeline (iterative, no stack overflow)
+
+### Changed
+
+- String constant alignment from `align 2` to `align 8` (future-proofs 3-bit pointer tagging)
+- `mapanare run` now compiles C with `-Wall -Wextra`
+- CI stage2 validation no longer uses `continue-on-error` (failures are real)
+
+### Fixed
+
+- Signal tracking context now `_Thread_local` (concurrent computed signals safe)
+- Signal subscriber list protected during propagation (snapshot under lock prevents use-after-free on realloc)
+- Spec `char_at` return type corrected to `String` (matches implementation)
+- Test `test_list_type` updated for 5-field MnList ABI (from v3.15.0)
+
+## [3.15.0] - 2026-04-07
+
+### Fixed
+
+- `__mn_list_concat` null-pointer UB: realloc on NULL-16 when concatenating into a fresh list
+- Windows console handler deadlock: removed `mapanare_registry_stop_all()` mutex call from handler thread
+- COW list refcount now atomic: `__atomic_fetch_add`/`__atomic_fetch_sub` at 3 sites (safe on ARM64 agent workloads)
+- MnList ABI mismatch: added 5th `managed` field to `emit_llvm_text.py`, `emit_llvm.py`, and `mnc_main.c`
+- `VkPhysicalDeviceProperties` padding undersized: 804 -> 836 bytes (prevents stack smash on Vulkan)
+- `__mn_str_from_bool` no longer heap-allocates per call (static constants)
+- `__mn_list_oob_buf` now `_Thread_local` (safe for concurrent agent OOB access)
+
+## [3.14.0] - 2026-04-07
+
+### Added
+
+- Generic arity validation (`List<Int, String>` now errors with "expects 1 type argument(s), got 2")
+- Arithmetic operator traits: `Add`, `Sub`, `Mul`, `Div` in `BUILTIN_TRAITS`
+- Trait-dispatched binary ops for user-defined types implementing Add/Sub/Mul/Div
+- WASM `CHAR` type mapping to `i32` (was falling through to `i64`)
+- `BUILTIN_GENERIC_ARITY` dict for compile-time arity checking
+- `scope-define-noop` Culebra template for bootstrap regression testing
+- Debug info producer now reads version from VERSION file dynamically
+
+### Changed
+
+- `TypeInfo.__hash__` now includes `tuple(self.args)` — fixes pathological collisions for `List<Int>` vs `List<String>`
+- CLAUDE.md self-hosted module table updated to match actual line counts (15,000+ lines, 11 modules)
+- CI: removed `continue-on-error` on stage1 build step (broken compiler now fails CI)
+- Local build scripts use `-Wall -Wextra -Werror` for C compilation
+
+### Fixed
+
+- IdentPattern (named catch-all) now treated as wildcard in match exhaustiveness checks
+- Self-hosted `scope_define` fixed: push call was commented out since v2.0.0, symbols now tracked
+- Getting-started tutorial: `Point(3.0, 4.0)` -> `new Point { x: 3.0, y: 4.0 }`, removed `Shape_` prefix
+- Spec section 27 subsection numbering (was `24.1`/`24.2`/`24.3`)
+- Spec `batch {}` syntax marked as not yet implemented
+
+## [3.13.0] - 2026-04-07
+
+### Added
+
+- Runtime function attributes (`nounwind`, `readonly`) on 30+ LLVM declarations
+- Target-aware pointer size in `_approx_type_size` (correct for wasm32/i686)
+- `managed` field on `MnList` struct for O(1) COW ownership check
+- `__mn_range_free` runtime function for range iterator cleanup
+- Intern table thread safety (pthread mutex / Windows CriticalSection)
+- 2 new Culebra templates: `string-track-noop`, `syscall-in-hot-path`
+
+### Changed
+
+- MnList ABI: 32 bytes -> 40 bytes (added `int64_t managed` field)
+- Self-hosted compiler list type updated: `{ ptr, i64, i64, i64 }` -> `{ ptr, i64, i64, i64, i64 }`
+
+### Fixed
+
+- Re-enabled `_track_string` — every heap string now tracked for drop glue cleanup
+- Range iterators freed after for-loop exit (was leaking 16 bytes per loop)
+- Removed `write(2)` syscall probe from COW list `mn_list_has_magic()` — replaced with `managed` flag
+- Windows signal mutex TOCTOU: `InterlockedCompareExchange` replaces plain `int` check
+
+## [3.9.0] - 2026-04-06
+
+### Added
+
+### Changed
+
+### Fixed
+
+## [3.0.3] - 2026-04-04
+
+### Added
+
+- While/mien loop support in self-hosted parser (desugared to for+if)
+- `scripts/test_runtime.sh`: automated runtime correctness tests (compile → execute → compare output)
+
+### Fixed
+
+- Exit codes: `main()` now returns `i32 0` (C ABI) instead of `void`
+- 12_while golden test: was producing empty output (missing while-loop parsing)
+
+### Changed
+
+- All 15 golden tests produce correct output when executed as native binaries
+- Stage1 AND stage2 compiled binaries produce identical correct results
+- Three-stage fixed point preserved (78,881 lines, 0 diff)
+
+## [3.0.2] - 2026-04-04
+
+### Added
+
+- Bilingual keywords in self-hosted lexer: `pon`/`si`/`da`/`cada`/`mien`/`sino`/`en`/`tipo`/`nada`/`sal`/`sigue`/`yo`/`modo`/`way`/`usa`/`di`
+- `tipo` unified type definitions: `tipo Name { fields }` for structs, `tipo Name { | Variant }` for enums
+- BAR token (`|`) for tipo enum variant syntax
+- `mnc_driver.c`: C entry point for LLVM-compiled stage2 binary
+- `verify_fixed_point.sh`: automated three-stage bootstrap verification
+
+### Fixed
+
+- Result variant index extraction: strip `:N` suffix before Ok/Err comparison
+- MIRType hardcoded field index swap (`name`/`kind` were reversed)
+- WrapNone in `lower_let`: condition fired on Option-typed function call results, not just None literals — root cause of "vars not found" in stage2 binary
+- SSA name collisions: 80 variable renames across 5 self-hosted modules
+
+### Changed
+
+- Three-stage fixed point achieved: `stage2.ll == stage3.ll` (78,676 lines, 0 diff)
+- Golden tests: 15/15 pass through mnc-stage1 + llvm-as
+- Stage2 IR validates with zero post-processing
+
 ## [3.0.1] - 2026-04-03
 
 ### Added
@@ -412,7 +1058,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.1...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.45.0...HEAD
+[3.45.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.44.0...v3.45.0
+[3.44.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.43.0...v3.44.0
+[3.43.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.42.0...v3.43.0
+[3.42.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.41.0...v3.42.0
+[3.41.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.40.0...v3.41.0
+[3.40.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.39.0...v3.40.0
+[3.39.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.38.0...v3.39.0
+[3.38.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.37.0...v3.38.0
+[3.37.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.36.0...v3.37.0
+[3.36.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.35.0...v3.36.0
+[3.35.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.34.0...v3.35.0
+[3.34.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.33.0...v3.34.0
+[3.33.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.32.0...v3.33.0
+[3.32.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.31.0...v3.32.0
+[3.31.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.30.0...v3.31.0
+[3.30.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.29.0...v3.30.0
+[3.29.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.28.0...v3.29.0
+[3.28.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.27.0...v3.28.0
+[3.27.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.26.0...v3.27.0
+[3.26.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.25.0...v3.26.0
+[3.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.24.0...v3.25.0
+[3.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.23.0...v3.24.0
+[3.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.22.0...v3.23.0
+[3.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.21.0...v3.22.0
+[3.21.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.20.0...v3.21.0
+[3.20.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.19.0...v3.20.0
+[3.19.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.18.0...v3.19.0
+[3.18.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.17.0...v3.18.0
+[3.17.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.16.0...v3.17.0
+[3.16.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.15.0...v3.16.0
+[3.15.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.14.0...v3.15.0
+[3.0.3]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.2...v3.0.3
+[3.0.2]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/Mapanare-Research/Mapanare/compare/v3.0.0...v3.0.1
 [2.0.0]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.11...v2.0.0
 [1.0.11]: https://github.com/Mapanare-Research/Mapanare/compare/v1.0.0...v1.0.11

@@ -1,0 +1,35 @@
+// tests/golden/31_generic_multi.mn — Multiple generic instantiations
+
+struct Container<T> {
+    value: T,
+    count: Int
+}
+
+impl<T> Container<T> {
+    fn get(self) -> T {
+        return self.value
+    }
+
+    fn times(self) -> Int {
+        return self.count
+    }
+}
+
+fn identity<T>(x: T) -> T {
+    return x
+}
+
+fn main() {
+    // Int instantiation
+    let a = new Container { value: 42, count: 1 }
+    print(a.get())
+    print(a.times())
+
+    // Second Int instantiation (same monomorphized type)
+    let b = new Container { value: 100, count: 3 }
+    print(b.get())
+    print(b.times())
+
+    // Generic function standalone
+    print(identity(77))
+}

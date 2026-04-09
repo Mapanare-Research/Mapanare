@@ -18,7 +18,7 @@ Mapanare is an AI-native compiled programming language where agents, signals, st
 - **Concurrency via agents and message passing.** No raw threads, no shared mutable state. Agents are concurrent actors that communicate through typed channels.
 - **Reactive via signals.** Signals propagate changes automatically. Computed values recompute when their dependencies change, enabling declarative reactive dataflow.
 - **Pipeline-oriented.** The `|>` pipe operator chains transformations naturally. Named pipelines compose agents into data-processing graphs.
-- **ML-ready.** First-class `Tensor<T>[shape]` types with compile-time shape verification. Tensor operations are built in, not bolted on.
+- **ML-ready (via GPU builtins).** GPU-accelerated tensor operations via `gpu_tensor_add/mul/matmul` builtins using CUDA. `Tensor<T>[shape]` type with compile-time shape verification is planned.
 
 ### Non-Goals
 
@@ -80,6 +80,7 @@ The following identifiers are reserved as keywords and cannot be used as variabl
 | `while` | Loop while a condition is true: `while cond { }`. |
 | `in` | Used with `for` to specify the iterable. |
 | `break` | Exit the innermost `for` or `while` loop immediately. |
+| `continue` | Skip to the next iteration of the innermost `for` or `while` loop. |
 | `assert` | Assert a boolean condition; abort with an error if false. |
 
 #### Types and Data
@@ -117,6 +118,8 @@ These identifiers are keywords only in specific grammar positions:
 | `input` | Inside `agent` blocks — declares an input channel. |
 | `output` | Inside `agent` blocks — declares an output channel. |
 | `Tensor` | Type expressions — the tensor type constructor. |
+| `di` | Bilingual alias for `let` (Spanish: "di" = "say/declare"). |
+| `any` | Type expressions — the dynamic type. |
 | `_` | Pattern matching — wildcard pattern. |
 
 ### 2.2 Operators
@@ -328,7 +331,46 @@ Identifiers start with a letter or underscore, followed by letters, digits, or u
 | (unknown) | `UNKNOWN` | Compiler-internal placeholder for unresolved types. Compatible with all types during inference. |
 | (builtin fn) | `BUILTIN_FN` | Compiler-internal type for builtin function references. |
 
-### 3.5 Type Inference Rules
+### 3.5 Dynamic Type (`any`)
+
+| Type | TypeKind | Description |
+|---|---|---|
+| `any` | `ANY` | Dynamic type — a boxed value that carries its runtime type tag. 24 bytes: `{i32 type_tag, i32 subtype, {ptr, i64} payload}`. |
+
+The `any` type enables gradual typing: statically-typed code can interoperate with
+dynamically-typed values at an explicit opt-in boundary.
+
+#### Boxing and Unboxing
+
+When a concrete value is assigned to an `any` variable, the compiler emits a
+boxing call (`__mn_any_box_int`, `__mn_any_box_float`, `__mn_any_box_bool`,
+`__mn_any_box_str`). The runtime type tag is stored alongside the payload.
+
+```mn
+let x: any = 42        // boxes Int → MnValue{tag=INT, payload=42}
+let y: any = "hello"   // boxes String → MnValue{tag=STRING, payload=ptr}
+```
+
+#### Runtime Type Inspection
+
+The `typeof` builtin returns the runtime type name as a `String`:
+
+```mn
+let x: any = 42
+assert typeof(x) == "Int"
+```
+
+For concrete (non-`any`) types, `typeof` is resolved at compile time.
+
+#### Compatibility Rules
+
+- Any concrete type can be assigned to `any` (implicit boxing).
+- `any` is compatible with all types for equality (`==`, `!=`) and comparison.
+- Arithmetic on `any` values (`+`, `-`, `*`, `/`, `%`) is **rejected** at compile
+  time with a clear error. Cast to a concrete type first.
+- `any` values can be passed to functions expecting `any` parameters.
+
+### 3.6 Type Inference Rules
 
 Mapanare uses local type inference. The compiler infers types from the immediate context of each expression.
 
@@ -545,6 +587,8 @@ agent Counter {
 When you `spawn` an agent, the returned handle exposes the input and output channels with their declared types. See section 9 (Agent Model) for full semantics.
 
 ### 3.10 Tensor Types
+
+> **Status:** Tensor types are specified but not yet implemented in any backend. The syntax, type checking, and shape verification described below represent the target design. See the roadmap for implementation status.
 
 Tensors have their element type and shape verified at compile time.
 
@@ -1119,6 +1163,8 @@ temperature.subscribe((t) => {
 
 ### 10.5 Batched Updates
 
+> **Note:** The `batch` block syntax is not yet implemented in the compiler. Signal batching is handled automatically by the runtime (see `mn_signal_batch_begin`/`mn_signal_batch_end` in the C runtime). This section describes the planned language-level syntax.
+
 Multiple signal updates within a `batch` block are coalesced into a single recomputation pass, avoiding intermediate recalculations:
 
 ```mn
@@ -1330,7 +1376,7 @@ Strings support the following methods, all callable via dot syntax:
 | Method | Signature | Description |
 |---|---|---|
 | `len()` | `() -> Int` | Return the byte length of the string. |
-| `char_at(index)` | `(Int) -> Char` | Return the character at the given index. |
+| `char_at(index)` | `(Int) -> String` | Return the character at the given index as a single-character string. |
 | `byte_at(index)` | `(Int) -> Int` | Return the byte value at the given index. |
 | `substr(start, length)` | `(Int, Int) -> String` | Extract a substring starting at `start` with the given `length`. |
 | `find(needle)` | `(String) -> Int` | Return the index of the first occurrence of `needle`, or -1 if not found. |
@@ -1675,73 +1721,58 @@ Generates a multi-stage Dockerfile optimized for Mapanare agent applications.
 
 ## 23. GPU Computing
 
-Mapanare supports GPU-accelerated computation as a first-class feature. GPU backends are loaded dynamically at runtime via `dlopen`, requiring no compile-time SDK dependency.
-
-### 23.1 GPU Annotations
-
-Functions can be annotated for GPU dispatch:
-
-| Decorator | Behavior |
-|-----------|----------|
-| `@gpu` | Auto-selects CUDA or Vulkan based on runtime device detection |
-| `@cuda` | Forces CUDA backend; compile error if unavailable at runtime |
-| `@vulkan` | Forces Vulkan backend; compile error if unavailable at runtime |
-| `@metal` | Reserved for future macOS/iOS Metal support (not yet implemented) |
+Mapanare provides GPU-accelerated tensor operations via built-in functions. GPU compute uses the CUDA Driver API loaded at runtime via `dlopen` — no SDK installation required. Programs degrade gracefully to CPU when no GPU is available.
 
 ```mn
+fn main() {
+    si gpu_available() {
+        print("GPU: " + gpu_device_name())
+
+        pon a: List<Float> = [1.0, 2.0, 3.0, 4.0]
+        pon b: List<Float> = [5.0, 6.0, 7.0, 8.0]
+        pon c: List<Float> = gpu_tensor_add(a, b)
+        // c = [6.0, 8.0, 10.0, 12.0]
+        print("c[0] = " + str(c[0]))
+    }
+}
+```
+
+### 23.1 Built-in GPU Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `gpu_available()` | `() -> Bool` | True if a CUDA GPU was detected |
+| `gpu_device_name()` | `() -> String` | Device name (e.g., "NVIDIA GeForce RTX 4090") |
+| `gpu_device_memory()` | `() -> Int` | Total VRAM in bytes |
+| `gpu_tensor_add(a, b)` | `(List<Float>, List<Float>) -> List<Float>` | Element-wise addition |
+| `gpu_tensor_sub(a, b)` | `(List<Float>, List<Float>) -> List<Float>` | Element-wise subtraction |
+| `gpu_tensor_mul(a, b)` | `(List<Float>, List<Float>) -> List<Float>` | Element-wise multiplication |
+| `gpu_tensor_div(a, b)` | `(List<Float>, List<Float>) -> List<Float>` | Element-wise division |
+| `gpu_tensor_matmul(a, b, m, n, k)` | `(List<Float>, List<Float>, Int, Int, Int) -> List<Float>` | Matrix multiply (M,K)@(K,N) |
+
+All tensor operations fall back to CPU when no GPU is available. No code changes needed.
+
+### 23.2 Supported Backends
+
+| Backend | Library | Detection | Status |
+|---------|---------|-----------|--------|
+| CUDA | `libcuda.so` / `nvcuda.dll` | `dlopen` at runtime | Functional (v3.46.0) |
+| Vulkan | `libvulkan.so` / `vulkan-1.dll` | `dlopen` at runtime | Infrastructure present, not exposed as builtins |
+| Metal | macOS/iOS framework | Compile-time detection | Planned |
+
+Built-in PTX kernels for CUDA cover `add`, `sub`, `mul`, `div`, `matmul` at float64 precision.
+
+### 23.3 Future: @gpu Decorator
+
+> **Status:** The `@gpu` decorator syntax is specified but not yet connected to codegen. The decorator, PTX embedding, and kernel dispatch infrastructure exist in `emit_llvm_mir.py` and `mapanare_gpu.c`. Enabling this path requires porting GPU dispatch to the text emitter. Use `gpu_*` builtins for GPU compute in the current release.
+
+```mn
+// Planned syntax — not yet functional
 @gpu
 fn vector_add(a: Tensor<Float>[1024], b: Tensor<Float>[1024]) -> Tensor<Float>[1024] {
     return a + b
 }
-
-@cuda
-fn matrix_mul(a: Tensor<Float>[64, 128], b: Tensor<Float>[128, 256]) -> Tensor<Float>[64, 256] {
-    return a @ b
-}
 ```
-
-When `@gpu` is used, the runtime probes for CUDA first (via `libcuda.so` / `nvcuda.dll`), then Vulkan (`libvulkan.so` / `vulkan-1.dll`). If neither is available, the operation falls back to CPU execution transparently.
-
-### 23.2 Tensor Type
-
-`Tensor<T>` is the primary data type for GPU computing. Tensors carry metadata:
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `shape` | `List<Int>` | Dimension sizes |
-| `ndim` | `Int` | Number of dimensions |
-| `size` | `Int` | Total element count |
-| `device` | `String` | Current device (`"cpu"`, `"cuda"`, `"vulkan"`) |
-
-### 23.3 Tensor Operations
-
-**Creation:**
-
-```mn
-let z = Tensor.zeros<Float>(3, 3)      // 3x3 zero tensor
-let o = Tensor.ones<Float>(4)          // length-4 ones vector
-let t = Tensor.from_list([1.0, 2.0])   // from list literal
-```
-
-**Arithmetic (element-wise):** `add`, `sub`, `mul`, `div` via operators `+`, `-`, `*`, `/`.
-
-**Matrix operations:** `matmul` via `@` operator, `dot`, `transpose`.
-
-**Reductions:** `sum`, `mean`, `max`, `min`.
-
-### 23.4 Device Transfer
-
-```mn
-let cpu_tensor: Tensor<Float>[1024] = Tensor.ones<Float>(1024)
-let gpu_tensor = cpu_tensor.to_device("cuda")   // CPU -> GPU
-let back = gpu_tensor.to_device("cpu")           // GPU -> CPU
-```
-
-All operations degrade gracefully to CPU when no GPU is available. Code does not need separate CPU and GPU paths.
-
-### 23.5 Built-in Kernels
-
-The compiler ships with pre-compiled PTX kernels (CUDA) and SPIR-V shaders (Vulkan) for standard tensor operations: `add`, `sub`, `mul`, `div`, `matmul`. Custom kernels can be defined via `stdlib/gpu/kernel.mn`.
 
 ---
 
@@ -1934,7 +1965,7 @@ print(label)
 
 ## 27. Stability
 
-### 24.1 What Is Frozen
+### 27.1 What Is Frozen
 
 Starting with v1.0.0, the following are frozen and will not change without an RFC and deprecation cycle:
 
@@ -1948,7 +1979,7 @@ Starting with v1.0.0, the following are frozen and will not change without an RF
 - **Stream operators:** All documented operators and their behavior.
 - **Error codes:** Format (`MN-X0000`) and assigned codes.
 
-### 24.2 What Can Still Change
+### 27.2 What Can Still Change
 
 The following areas may evolve without a breaking change:
 
@@ -1958,7 +1989,7 @@ The following areas may evolve without a breaking change:
 - **Tooling:** New CLI commands, LSP features, formatter improvements.
 - **Performance:** Implementation changes that do not affect observable behavior.
 
-### 24.3 Breaking Change Process
+### 27.3 Breaking Change Process
 
 Any change to a frozen area requires:
 

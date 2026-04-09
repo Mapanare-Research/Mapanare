@@ -143,7 +143,8 @@ trait_param_list: trait_param (COMMA trait_param)* COMMA?
 // ------------------------------------------------------------
 
 impl_trait_def: KW_IMPL NAME KW_FOR NAME LBRACE _nl* (fn_def _nl*)* RBRACE
-impl_def: KW_IMPL NAME LBRACE _nl* (fn_def _nl*)* RBRACE
+impl_def: KW_IMPL type_params NAME (LT type_expr (COMMA type_expr)* GT)? LBRACE _nl* (fn_def _nl*)* RBRACE
+        | KW_IMPL NAME LBRACE _nl* (fn_def _nl*)* RBRACE
 
 // ------------------------------------------------------------
 // Type expressions

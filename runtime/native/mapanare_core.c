@@ -14,13 +14,62 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <dirent.h>
+#ifndef _WIN32
+#include <sys/wait.h>
+#endif
 
 /* -----------------------------------------------------------------------
  * Memory helpers
  * ----------------------------------------------------------------------- */
 
+/* --- Memory profiling counters (compile with -DMN_PROFILE_MEM to enable) --- */
+#ifdef MN_PROFILE_MEM
+static int64_t mn_alloc_count = 0;
+static int64_t mn_alloc_bytes = 0;
+static int64_t mn_alloc_peak  = 0;   /* high-water mark of live bytes */
+static int64_t mn_alloc_live  = 0;   /* current live bytes (alloc - free) */
+static int64_t mn_concat_count = 0;
+static int64_t mn_concat_bytes = 0;
+static int64_t mn_clone_count = 0;
+static int64_t mn_grow_count  = 0;
+static int64_t mn_listbuf_count = 0;
+static int64_t mn_listbuf_bytes = 0;
+
+static void mn_profile_report(void) {
+    fprintf(stderr, "\n=== MN MEMORY PROFILE ===\n");
+    fprintf(stderr, "alloc:    %lld calls, %lld MB total\n",
+            (long long)mn_alloc_count, (long long)(mn_alloc_bytes / (1024*1024)));
+    fprintf(stderr, "peak:     %lld MB live\n",
+            (long long)(mn_alloc_peak / (1024*1024)));
+    fprintf(stderr, "listbuf:  %lld calls, %lld MB total\n",
+            (long long)mn_listbuf_count, (long long)(mn_listbuf_bytes / (1024*1024)));
+    fprintf(stderr, "grow:     %lld calls\n", (long long)mn_grow_count);
+    fprintf(stderr, "clone:    %lld calls\n", (long long)mn_clone_count);
+    fprintf(stderr, "detach:   (see cow_detaches counter)\n");
+    fprintf(stderr, "concat:   %lld calls, %lld MB total\n",
+            (long long)mn_concat_count, (long long)(mn_concat_bytes / (1024*1024)));
+    fprintf(stderr, "=========================\n");
+}
+static int mn_profile_init_done = 0;
+static void mn_profile_init(void) {
+    if (!mn_profile_init_done) {
+        mn_profile_init_done = 1;
+        atexit(mn_profile_report);
+    }
+}
+#define MN_PROFILE_ALLOC(sz) do { mn_profile_init(); mn_alloc_count++; mn_alloc_bytes += (sz); mn_alloc_live += (sz); if (mn_alloc_live > mn_alloc_peak) mn_alloc_peak = mn_alloc_live; } while(0)
+#define MN_PROFILE_FREE(sz) do { mn_alloc_live -= (sz); } while(0)
+#else
+#define MN_PROFILE_ALLOC(sz) ((void)0)
+#define MN_PROFILE_FREE(sz)  ((void)0)
+#endif
+
 MN_EXPORT void *__mn_alloc(int64_t size) {
     if (size < 0) return NULL;
+    MN_PROFILE_ALLOC(size);
     void *ptr = calloc(1, (size_t)size);
     if (!ptr && size > 0) {
         fprintf(stderr, "mapanare: out of memory (requested %lld bytes)\n",
@@ -193,6 +242,24 @@ static size_t         s_intern_bytes  = 0;    /* total bytes of interned string 
 static size_t         s_intern_tbl_sz = 0;    /* hash table slot count (>= cap * 2)      */
 static int            s_intern_sealed = 0;    /* 1 after first use — cap is locked        */
 
+/* Thread safety for the intern table */
+#ifdef _WIN32
+static CRITICAL_SECTION s_intern_cs;
+static volatile LONG s_intern_cs_init = 0;
+static void intern_lock(void) {
+    if (InterlockedCompareExchange(&s_intern_cs_init, 1, 0) == 0) {
+        InitializeCriticalSection(&s_intern_cs);
+    }
+    EnterCriticalSection(&s_intern_cs);
+}
+static void intern_unlock(void) { LeaveCriticalSection(&s_intern_cs); }
+#else
+#include <pthread.h>
+static pthread_mutex_t s_intern_mutex = PTHREAD_MUTEX_INITIALIZER;
+static void intern_lock(void)   { pthread_mutex_lock(&s_intern_mutex); }
+static void intern_unlock(void) { pthread_mutex_unlock(&s_intern_mutex); }
+#endif
+
 static uint64_t intern_hash(const char *data, int64_t len) {
     /* FNV-1a 64-bit */
     uint64_t h = 14695981039346656037ULL;
@@ -224,8 +291,10 @@ MN_EXPORT void __mn_intern_set_cap(size_t cap) {
 
 MN_EXPORT MnString __mn_str_intern(MnString s) {
     if (s.len <= 0 || !s.data) return s;
+
+    intern_lock();
     intern_ensure_table();
-    if (!s_intern_table) return s;  /* alloc failed */
+    if (!s_intern_table) { intern_unlock(); return s; }
 
     const char *raw = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
     uint64_t h = intern_hash(raw, s.len);
@@ -240,6 +309,7 @@ MN_EXPORT MnString __mn_str_intern(MnString s) {
         if (e->hash == h && e->str.len == s.len) {
             const char *eraw = (const char *)((uintptr_t)e->str.data & ~(uintptr_t)1);
             if (memcmp(eraw, raw, (size_t)s.len) == 0) {
+                intern_unlock();
                 return e->str;  /* deduplicated */
             }
         }
@@ -247,6 +317,7 @@ MN_EXPORT MnString __mn_str_intern(MnString s) {
 
     /* Not found — insert if under cap */
     if (s_intern_count >= s_intern_cap) {
+        intern_unlock();
         /* Cap reached — return a plain heap copy, no dedup */
         return __mn_str_from_parts(raw, s.len);
     }
@@ -262,10 +333,12 @@ MN_EXPORT MnString __mn_str_intern(MnString s) {
             e->occupied = 1;
             s_intern_count++;
             s_intern_bytes += (size_t)s.len;
+            intern_unlock();
             return copy;
         }
     }
 
+    intern_unlock();
     /* Table completely full (should not happen with 2x sizing) */
     return __mn_str_from_parts(raw, s.len);
 }
@@ -333,12 +406,16 @@ MN_EXPORT MnString __mn_str_empty(void) {
 }
 
 MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
+    if (a.len <= 0 && b.len <= 0) return __mn_str_empty();
+    if (a.len <= 0) return __mn_str_from_parts(mn_untag(b.data), b.len);
+    if (b.len <= 0) return __mn_str_from_parts(mn_untag(a.data), a.len);
     const char *a_data = mn_untag(a.data);
     const char *b_data = mn_untag(b.data);
     int64_t total = mn_checked_add(a.len, b.len);
-    if (total == 0) {
-        return __mn_str_empty();
-    }
+#ifdef MN_PROFILE_MEM
+    mn_concat_count++;
+    mn_concat_bytes += total + 1;
+#endif
     char *buf = (char *)__mn_alloc(total + 1);
     if (a.len > 0) memcpy(buf, a_data, (size_t)a.len);
     if (b.len > 0) memcpy(buf + a.len, b_data, (size_t)b.len);
@@ -476,7 +553,7 @@ MN_EXPORT MnString __mn_str_trim(MnString s) {
         end--;
     }
     if (start == 0 && end == s.len) {
-        return __mn_str_from_parts(data, s.len);
+        return s;
     }
     return __mn_str_from_parts(data + start, end - start);
 }
@@ -488,7 +565,7 @@ MN_EXPORT MnString __mn_str_trim_start(MnString s) {
            data[start] == '\n' || data[start] == '\r')) {
         start++;
     }
-    if (start == 0) return __mn_str_from_parts(data, s.len);
+    if (start == 0) return s;
     return __mn_str_from_parts(data + start, s.len - start);
 }
 
@@ -499,7 +576,7 @@ MN_EXPORT MnString __mn_str_trim_end(MnString s) {
            data[end - 1] == '\n' || data[end - 1] == '\r')) {
         end--;
     }
-    if (end == s.len) return __mn_str_from_parts(data, s.len);
+    if (end == s.len) return s;
     return __mn_str_from_parts(data, end);
 }
 
@@ -580,7 +657,10 @@ MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) 
 }
 
 MN_EXPORT MnString __mn_str_from_bool(int64_t value) {
-    return value ? __mn_str_from_cstr("true") : __mn_str_from_cstr("false");
+    /* Return heap-allocated copies so the tag bit system works correctly.
+     * Static string literals have no alignment guarantee and may have bit 0
+     * set, which mn_is_heap() would misidentify as heap-allocated. */
+    return __mn_str_from_cstr(value ? "true" : "false");
 }
 
 MN_EXPORT MnString __mn_str_from_int(int64_t value) {
@@ -635,6 +715,12 @@ MN_EXPORT void __mn_str_eprintln(MnString s) {
         fwrite(mn_untag(s.data), 1, (size_t)s.len, stderr);
     }
     fputc('\n', stderr);
+}
+
+MN_EXPORT void __mn_str_eprint(MnString s) {
+    if (s.len > 0) {
+        fwrite(mn_untag(s.data), 1, (size_t)s.len, stderr);
+    }
 }
 
 MN_EXPORT int64_t __mn_str_ord(MnString s) {
@@ -702,39 +788,25 @@ MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts) {
 
 /* Access the refcount for a list's data buffer */
 static int64_t *mn_list_rc(MnList *list) {
-    if (!list->data) return NULL;
-    return ((int64_t *)list->data) - 1;
+    if (!list->data || !list->managed) return NULL;
+    int64_t *header = ((int64_t *)list->data) - 2;
+    if (header[0] != MN_COW_MAGIC) return NULL;  /* corrupted — don't touch */
+    return &header[1];
 }
 
 /* Check if the buffer has a valid COW magic header.
- * MUST only be called after validating len > 0, cap > 0, elem_size > 0. */
+ * Uses the `managed` field instead of probing memory with write(2). */
 static int mn_list_has_magic(MnList *list) {
-    if (!list->data) return 0;
-    uintptr_t p = (uintptr_t)list->data;
-    /* Reject garbage pointers: must be 8-byte aligned, in reasonable heap range */
-    if ((p & 7) != 0) return 0;
-    if (p < 0x10000) return 0;  /* too low (near NULL) */
-    /* Use write(2) trick: try reading from the address. If it segfaults,
-     * the kernel returns EFAULT. This is the only portable safe probe. */
-#ifdef __linux__
-    /* Probe: can we read 16 bytes before data? */
-    {
-        /* Use /dev/null fd trick: write() returns EFAULT for unmapped memory */
-        static int devnull_fd = -1;
-        if (devnull_fd < 0) devnull_fd = open("/dev/null", 1 /*O_WRONLY*/);
-        if (devnull_fd >= 0) {
-            ssize_t r = write(devnull_fd, ((char *)list->data) - 16, 16);
-            if (r < 0) return 0;  /* EFAULT: unmapped memory */
-        }
-    }
-#endif
-    int64_t *magic = ((int64_t *)list->data) - 2;
-    return *magic == MN_COW_MAGIC;
+    return list->managed && list->data != NULL;
 }
 
 /* Allocate a new COW buffer: [magic][refcount=1][cap * elem_size] */
 static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
     int64_t data_bytes = mn_checked_mul(cap, elem_size);
+#ifdef MN_PROFILE_MEM
+    mn_listbuf_count++;
+    mn_listbuf_bytes += MN_LIST_HEADER_SIZE + data_bytes;
+#endif
     char *raw = (char *)__mn_alloc(mn_checked_add(MN_LIST_HEADER_SIZE, data_bytes));
     int64_t *header = (int64_t *)raw;
     header[0] = MN_COW_MAGIC;  /* magic */
@@ -743,7 +815,9 @@ static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
 }
 
 static int mn_list_is_managed(MnList *list);
-static int64_t cow_shares, cow_fallbacks, cow_detaches;
+static int64_t cow_shares = 0;
+static int64_t cow_fallbacks = 0;
+static int64_t cow_detaches = 0;
 
 /* Detach: if refcount > 1, allocate a private copy of the data.
  * Also handles lists that were zero-initialized (data == NULL). */
@@ -753,14 +827,15 @@ static void mn_list_detach(MnList *list) {
         int64_t cap = list->cap > 0 ? list->cap : MN_LIST_INITIAL_CAP;
         list->data = mn_list_alloc_buf(cap, list->elem_size > 0 ? list->elem_size : 8);
         list->cap = cap;
+        list->managed = 1;
         return;
     }
     if (!mn_list_is_managed(list)) return;  /* unmanaged buffer — nothing to detach */
     int64_t *rc = mn_list_rc(list);
-    if (*rc <= 1) return;  /* sole owner, no detach needed */
+    if (__atomic_load_n(rc, __ATOMIC_ACQUIRE) <= 1) return;  /* sole owner, no detach needed */
     cow_detaches++;
     /* Shared — make a private copy */
-    (*rc)--;  /* decrement original's refcount */
+    __atomic_fetch_sub(rc, 1, __ATOMIC_ACQ_REL);  /* decrement original's refcount */
     int64_t cap = list->cap > 0 ? list->cap : MN_LIST_INITIAL_CAP;
     char *new_data = mn_list_alloc_buf(cap, list->elem_size);
     if (list->len > 0) {
@@ -776,29 +851,39 @@ MN_EXPORT MnList __mn_list_new(int64_t elem_size) {
     list.len = 0;
     list.cap = 0;
     list.data = NULL;  /* Lazy allocation: first push allocates */
+    list.managed = 0;  /* No COW header until first allocation */
     return list;
 }
 
 static void mn_list_grow(MnList *list) {
+#ifdef MN_PROFILE_MEM
+    mn_grow_count++;
+#endif
     int64_t new_cap = list->cap > 0 ? list->cap * 2 : MN_LIST_INITIAL_CAP;
-    if (list->data && mn_list_is_managed(list)) {
-        /* Detach first if shared */
-        mn_list_detach(list);
-        /* After detach, we're sole owner — safe to realloc */
-        int64_t new_bytes = mn_checked_add(MN_LIST_HEADER_SIZE,
-                                mn_checked_mul(new_cap, list->elem_size));
-        char *raw = ((char *)list->data) - MN_LIST_HEADER_SIZE;
-        raw = (char *)__mn_realloc(raw, new_bytes);
-        list->data = raw + MN_LIST_HEADER_SIZE;
-    } else {
-        /* Unmanaged or NULL — allocate fresh COW buffer */
-        char *new_data = mn_list_alloc_buf(new_cap, list->elem_size);
-        if (list->data && list->len > 0) {
-            memcpy(new_data, list->data, (size_t)(list->len * list->elem_size));
-        }
-        list->data = new_data;
+    /* Allocate a fresh buffer instead of realloc.  Struct copies may share
+     * the same data pointer (bitwise copy without refcount).  realloc would
+     * free the old pointer, invalidating the alias.  New + memcpy is safe:
+     * if sole owner we free old; if shared the alias keeps valid data. */
+    char *old_data = list->data;
+    int old_managed = list->managed;
+    char *new_data = mn_list_alloc_buf(new_cap, list->elem_size);
+    if (old_data && list->len > 0) {
+        memcpy(new_data, old_data, (size_t)(list->len * list->elem_size));
     }
+    list->data = new_data;
+    list->managed = 1;
     list->cap = new_cap;
+    /* Free the old buffer if we're the sole owner.  If shared (refcount > 1),
+     * decrement but don't free — the other copy still references it. */
+    if (old_data && old_managed) {
+        int64_t *rc = ((int64_t *)old_data) - 2;
+        if (rc[0] == MN_COW_MAGIC) {
+            int64_t prev = __atomic_fetch_sub(&rc[1], 1, __ATOMIC_ACQ_REL);
+            if (prev <= 1) {
+                __mn_free(((char *)old_data) - MN_LIST_HEADER_SIZE);
+            }
+        }
+    }
 }
 
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
@@ -807,11 +892,26 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
     if (!list->data || list->cap <= 0 || list->elem_size <= 0
         || list->elem_size > 65536 || list->cap > 100000000
         || list->len < 0 || list->len > list->cap) {
-        /* Reinitialize: treat as empty list */
+#ifndef NDEBUG
+        if (list->data) {
+            /* Non-NULL data with corrupted fields — compiler bug, not first push */
+            fprintf(stderr, "FATAL: __mn_list_push received corrupted list "
+                    "(data=%p len=%lld cap=%lld esz=%lld)\n",
+                    (void *)list->data, (long long)list->len,
+                    (long long)list->cap, (long long)list->elem_size);
+            abort();
+        }
+#endif
+        /* First push to empty list — initialize buffer */
+        if (list->data) {
+            fprintf(stderr, "WARNING: __mn_list_push: reinitializing corrupted list (data=%p len=%lld cap=%lld elem=%lld)\n",
+                    (void *)list->data, (long long)list->len, (long long)list->cap, (long long)list->elem_size);
+        }
         if (list->elem_size <= 0 || list->elem_size > 65536) list->elem_size = 8;
         list->data = mn_list_alloc_buf(MN_LIST_INITIAL_CAP, list->elem_size);
         list->cap = MN_LIST_INITIAL_CAP;
         list->len = 0;
+        list->managed = 1;
     } else {
         mn_list_detach(list);  /* COW: ensure sole ownership */
     }
@@ -829,7 +929,7 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
    causing loops to access list elements past the end.  Returning a zeroed
    buffer instead of NULL prevents segfaults — the caller reads zeros and
    the loop eventually exits when the outer for-counter expires. */
-static char __mn_list_oob_buf[4096] = {0};
+static _Thread_local char __mn_list_oob_buf[4096] = {0};
 
 MN_EXPORT void *__mn_list_get(MnList *list, int64_t i) {
     if (i < 0 || i >= list->len) return __mn_list_oob_buf;
@@ -880,11 +980,11 @@ MN_EXPORT void __mn_list_clear(MnList *list) {
 }
 
 MN_EXPORT void __mn_list_free(MnList *list) {
-    if (list->data) {
+    if (list->data && list->managed) {
         int64_t *rc = mn_list_rc(list);
         if (rc) {
-            (*rc)--;
-            if (*rc <= 0) {
+            int64_t prev = __atomic_fetch_sub(rc, 1, __ATOMIC_ACQ_REL);
+            if (prev <= 1) {
                 __mn_free(((char *)list->data) - MN_LIST_HEADER_SIZE);
             }
         }
@@ -892,6 +992,7 @@ MN_EXPORT void __mn_list_free(MnList *list) {
     }
     list->len = 0;
     list->cap = 0;
+    list->managed = 0;
 }
 
 /* Check if a list looks like it was properly allocated with a COW header */
@@ -902,16 +1003,15 @@ static int mn_list_is_managed(MnList *list) {
     return mn_list_has_magic(list);
 }
 
-static int64_t cow_shares = 0;
-static int64_t cow_fallbacks = 0;
-static int64_t cow_detaches = 0;
-
 MN_EXPORT void __mn_cow_stats(void) {
     fprintf(stderr, "[COW] shares=%ld fallbacks=%ld detaches=%ld\n",
             (long)cow_shares, (long)cow_fallbacks, (long)cow_detaches);
 }
 
 MN_EXPORT MnList __mn_list_clone(MnList *src) {
+#ifdef MN_PROFILE_MEM
+    mn_clone_count++;
+#endif
     /* If the buffer is a managed COW buffer, share it (O(1)).
      * Otherwise, just copy the header (no allocation). */
     MnList dst;
@@ -926,15 +1026,18 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
         /* Garbage or empty — just copy the raw header */
         dst.cap = src->cap;
         dst.data = src->data;
+        dst.managed = src->managed;
         cow_fallbacks++;
         return dst;
     }
     if (mn_list_has_magic(src)) {
         int64_t *rc = mn_list_rc(src);
-        if (rc && *rc > 0 && *rc < 10000000) {
+        int64_t rc_val = rc ? __atomic_load_n(rc, __ATOMIC_ACQUIRE) : 0;
+        if (rc && rc_val > 0 && rc_val < 10000000) {
             dst.cap = src->cap;
             dst.data = src->data;
-            (*rc)++;
+            dst.managed = 1;
+            __atomic_fetch_add(rc, 1, __ATOMIC_RELAXED);
             cow_shares++;
             return dst;
         }
@@ -948,11 +1051,13 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
             /* Unreasonable size — just copy header */
             dst.cap = src->cap;
             dst.data = src->data;
+            dst.managed = src->managed;
             cow_fallbacks++;
             return dst;
         }
         dst.cap = src->cap;
         dst.data = mn_list_alloc_buf(dst.cap, src->elem_size);
+        dst.managed = 1;
         if (src->len > 0) {
             memcpy(dst.data, src->data, (size_t)(src->len * src->elem_size));
         }
@@ -985,11 +1090,11 @@ MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
     MnList result = __mn_list_new(es);
     int64_t total = mn_checked_add(a->len, b->len);
     if (total > result.cap) {
-        /* Grow: realloc must include the COW header */
-        int64_t new_bytes = mn_checked_add(MN_LIST_HEADER_SIZE, mn_checked_mul(total, es));
-        char *raw = ((char *)result.data) - MN_LIST_HEADER_SIZE;
-        raw = (char *)__mn_realloc(raw, new_bytes);
-        result.data = raw + MN_LIST_HEADER_SIZE;
+        if (result.data == NULL) {
+            /* Fresh allocation — __mn_list_new returns data=NULL */
+            result.data = mn_list_alloc_buf(total, es);
+            result.managed = 1;
+        }
         result.cap = total;
     }
     if (a->len > 0) {
@@ -1091,6 +1196,144 @@ MN_EXPORT int64_t __mn_file_write(MnString path, MnString content) {
     return 0;
 }
 
+/* Helper: MnString → null-terminated C string (caller must __mn_free) */
+static char *mn_to_cstr(MnString s) {
+    char *c = (char *)__mn_alloc(s.len + 1);
+    memcpy(c, mn_untag(s.data), (size_t)s.len);
+    c[s.len] = '\0';
+    return c;
+}
+
+MN_EXPORT int64_t __mn_file_exists(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int exists = access(cpath, F_OK) == 0;
+    __mn_free(cpath);
+    return exists ? 1 : 0;
+}
+
+MN_EXPORT int64_t __mn_file_remove(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int rc = remove(cpath);
+    __mn_free(cpath);
+    return rc == 0 ? 0 : -1;
+}
+
+MN_EXPORT int64_t __mn_file_size(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    struct stat st;
+    int rc = stat(cpath, &st);
+    __mn_free(cpath);
+    return rc == 0 ? (int64_t)st.st_size : -1;
+}
+
+MN_EXPORT int64_t __mn_file_mtime(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    struct stat st;
+    int rc = stat(cpath, &st);
+    __mn_free(cpath);
+    return rc == 0 ? (int64_t)st.st_mtime : -1;
+}
+
+MN_EXPORT MnString __mn_realpath(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    char resolved[4096];
+    char *rp = realpath(cpath, resolved);
+    __mn_free(cpath);
+    if (!rp) return __mn_str_empty();
+    return __mn_str_from_cstr(rp);
+}
+
+MN_EXPORT int64_t __mn_dir_create(MnString path, int64_t recursive) {
+    char *cpath = mn_to_cstr(path);
+    int rc = mkdir(cpath, 0755);
+    __mn_free(cpath);
+    (void)recursive; /* TODO: recursive mkdir */
+    return rc == 0 ? 0 : -1;
+}
+
+MN_EXPORT int64_t __mn_dir_remove(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int rc = rmdir(cpath);
+    __mn_free(cpath);
+    return rc == 0 ? 0 : -1;
+}
+
+MN_EXPORT int64_t __mn_file_rename(MnString old_path, MnString new_path) {
+    char *cold = mn_to_cstr(old_path);
+    char *cnew = mn_to_cstr(new_path);
+    int rc = rename(cold, cnew);
+    __mn_free(cold);
+    __mn_free(cnew);
+    return rc == 0 ? 0 : -1;
+}
+
+MN_EXPORT int64_t __mn_file_copy(MnString src, MnString dst) {
+    char *csrc = mn_to_cstr(src);
+    char *cdst = mn_to_cstr(dst);
+    FILE *fin = fopen(csrc, "rb");
+    __mn_free(csrc);
+    if (!fin) { __mn_free(cdst); return -1; }
+    FILE *fout = fopen(cdst, "wb");
+    __mn_free(cdst);
+    if (!fout) { fclose(fin); return -1; }
+    char buf[8192];
+    size_t n;
+    int err = 0;
+    while ((n = fread(buf, 1, sizeof(buf), fin)) > 0) {
+        size_t w = fwrite(buf, 1, n, fout);
+        if (w < n) { err = 1; break; }
+    }
+    fclose(fin);
+    fclose(fout);
+    return err ? -1 : 0;
+}
+
+MN_EXPORT MnString __mn_tmpfile_path(void) {
+    return __mn_str_from_cstr("/tmp/mn_tmp_XXXXXX");
+}
+
+MN_EXPORT MnString __mn_read_line(void) {
+    char buf[4096];
+    if (!fgets(buf, sizeof(buf), stdin)) return __mn_str_empty();
+    size_t len = strlen(buf);
+    if (len > 0 && buf[len - 1] == '\n') buf[--len] = '\0';
+    if (len > 0 && buf[len - 1] == '\r') buf[--len] = '\0';
+    return __mn_str_from_cstr(buf);
+}
+
+MN_EXPORT int64_t __mn_file_append(MnString path, MnString content) {
+    char *cpath = mn_to_cstr(path);
+    FILE *f = fopen(cpath, "ab");
+    __mn_free(cpath);
+    if (!f) return -1;
+    if (content.len > 0) {
+        size_t written = fwrite(mn_untag(content.data), 1, (size_t)content.len, f);
+        fclose(f);
+        return written == (size_t)content.len ? 0 : -1;
+    }
+    fclose(f);
+    return 0;
+}
+
+MN_EXPORT MnList __mn_dir_list_strings(MnString path) {
+    MnList list = __mn_list_new((int64_t)sizeof(MnString));
+    char *cpath = mn_to_cstr(path);
+    DIR *d = opendir(cpath);
+    __mn_free(cpath);
+    if (!d) return list;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.' &&
+            (ent->d_name[1] == '\0' ||
+             (ent->d_name[1] == '.' && ent->d_name[2] == '\0')))
+            continue;
+        MnString name = __mn_str_from_cstr(ent->d_name);
+        __mn_list_push(&list, &name);
+    }
+    closedir(d);
+    return list;
+}
+
 /* -----------------------------------------------------------------------
  * MnMap — Robin Hood open-addressing hash table
  * ----------------------------------------------------------------------- */
@@ -1112,6 +1355,7 @@ struct MnMap {
     int64_t  val_size;
     int64_t  bucket_size; /* 2 + key_size + val_size (status + psl + key + val) */
     int64_t  key_type;    /* MN_MAP_KEY_INT / STR / FLOAT */
+    int64_t  val_type;    /* MN_MAP_VAL_OPAQUE / STR */
 };
 
 struct MnMapIter {
@@ -1218,11 +1462,20 @@ static inline void *mn_bucket_val(char *bucket, int64_t key_size) {
 
 static void mn_map_grow(MnMap *map);
 
-MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type) {
+MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type, int64_t val_type) {
     MnMap *map = (MnMap *)__mn_alloc(sizeof(MnMap));
     map->key_size = key_size;
     map->val_size = val_size;
     map->key_type = key_type;
+    /* Backward compat: old callers pass only 3 args (val_type is garbage).
+       Accept 0 (OPAQUE) and 1 (STR) explicitly; anything else falls back to
+       the size heuristic so pre-v3.34 compiled code still works. */
+    if (val_type == MN_MAP_VAL_OPAQUE || val_type == MN_MAP_VAL_STR) {
+        map->val_type = val_type;
+    } else {
+        map->val_type = (val_size == (int64_t)sizeof(MnString))
+            ? MN_MAP_VAL_STR : MN_MAP_VAL_OPAQUE;
+    }
     map->bucket_size = 2 + key_size + val_size;  /* status + psl + key + val */
     map->len = 0;
     map->cap = MN_MAP_INITIAL_CAP;
@@ -1306,6 +1559,15 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
         }
 
         psl++;
+        if (psl == 255) {
+            /* PSL overflow — map is pathologically full. Force a grow to
+             * redistribute entries and keep PSL values bounded. */
+            if (temp != stack_buf) __mn_free(temp);
+            mn_map_grow(map);
+            /* Retry the insert from scratch after rehash */
+            __mn_map_set(map, key, val);
+            return;
+        }
         idx = (idx + 1) & mask;
     }
 }
@@ -1419,11 +1681,46 @@ MN_EXPORT void __mn_map_iter_free(MnMapIter *iter) {
     __mn_free(iter);
 }
 
+MN_EXPORT MnList __mn_map_keys(MnMap *map) {
+    MnList lst = __mn_list_new(sizeof(MnString));
+    if (!map) return lst;
+    MnMapIter *iter = __mn_map_iter_new(map);
+    void *key_out, *val_out;
+    while (__mn_map_iter_next(iter, &key_out, &val_out)) {
+        /* key_out points to the stored key; for string maps, that's an MnString */
+        __mn_list_push(&lst, key_out);
+    }
+    __mn_map_iter_free(iter);
+    return lst;
+}
+
 MN_EXPORT void __mn_map_free(MnMap *map) {
     if (map) {
         if (map->buckets) __mn_free(map->buckets);
         __mn_free(map);
     }
+}
+
+MN_EXPORT void __mn_map_free_deep(MnMap *map) {
+    if (!map) return;
+    if (map->buckets) {
+        for (int64_t i = 0; i < map->cap; i++) {
+            char *bucket = mn_bucket_at(map, i);
+            if ((uint8_t)bucket[0] != MN_BUCKET_OCCUPIED) continue;
+            /* Free string keys */
+            if (map->key_type == MN_MAP_KEY_STR) {
+                MnString *key = (MnString *)(bucket + 2);
+                __mn_str_free(*key);
+            }
+            /* Free string values using explicit val_type tag */
+            if (map->val_type == MN_MAP_VAL_STR) {
+                MnString *val = (MnString *)(bucket + 2 + map->key_size);
+                __mn_str_free(*val);
+            }
+        }
+        __mn_free(map->buckets);
+    }
+    __mn_free(map);
 }
 
 /* -----------------------------------------------------------------------
@@ -1476,11 +1773,10 @@ static int64_t    mn_signal_batch_pending_len = 0;
 #ifdef _WIN32
 #include <windows.h>
 static CRITICAL_SECTION mn_signal_mutex;
-static int mn_signal_mutex_initialized = 0;
+static volatile LONG mn_signal_mutex_initialized = 0;
 static void mn_signal_ensure_mutex(void) {
-    if (!mn_signal_mutex_initialized) {
+    if (InterlockedCompareExchange(&mn_signal_mutex_initialized, 1, 0) == 0) {
         InitializeCriticalSection(&mn_signal_mutex);
-        mn_signal_mutex_initialized = 1;
     }
 }
 static inline void mn_signal_lock(void)   { mn_signal_ensure_mutex(); EnterCriticalSection(&mn_signal_mutex); }
@@ -1494,7 +1790,7 @@ static inline void mn_signal_unlock(void) { pthread_mutex_unlock(&mn_signal_mute
 
 /* --- Dependency tracking context (for auto-tracking) --- */
 
-static MnSignal *mn_signal_tracking_context = NULL;
+static _Thread_local MnSignal *mn_signal_tracking_context = NULL;
 
 /* --- Forward declarations --- */
 
@@ -1635,9 +1931,10 @@ static void mn_signal_recompute(MnSignal *signal) {
 /* --- Subscribe / Unsubscribe --- */
 
 MN_EXPORT void __mn_signal_subscribe(MnSignal *signal, MnSignal *subscriber) {
+    mn_signal_lock();
     /* Check for duplicates */
     for (int64_t i = 0; i < signal->sub_len; i++) {
-        if (signal->subscribers[i] == subscriber) return;
+        if (signal->subscribers[i] == subscriber) { mn_signal_unlock(); return; }
     }
     /* Grow if needed */
     if (signal->sub_len >= signal->sub_cap) {
@@ -1647,9 +1944,11 @@ MN_EXPORT void __mn_signal_subscribe(MnSignal *signal, MnSignal *subscriber) {
         signal->sub_cap = new_cap;
     }
     signal->subscribers[signal->sub_len++] = subscriber;
+    mn_signal_unlock();
 }
 
 MN_EXPORT void __mn_signal_unsubscribe(MnSignal *signal, MnSignal *subscriber) {
+    mn_signal_lock();
     for (int64_t i = 0; i < signal->sub_len; i++) {
         if (signal->subscribers[i] == subscriber) {
             /* Shift remaining elements */
@@ -1659,38 +1958,55 @@ MN_EXPORT void __mn_signal_unsubscribe(MnSignal *signal, MnSignal *subscriber) {
             signal->sub_len--;
             /* Null out the vacated slot to prevent dangling references */
             signal->subscribers[signal->sub_len] = NULL;
+            mn_signal_unlock();
             return;
         }
     }
+    mn_signal_unlock();
 }
 
 /* --- Callbacks --- */
 
 MN_EXPORT void __mn_signal_on_change(MnSignal *signal, MnSignalCallback cb, void *user_data) {
-    if (signal->cb_len >= signal->cb_cap) return;  /* Silently ignore overflow */
+    mn_signal_lock();
+    if (signal->cb_len >= signal->cb_cap) { mn_signal_unlock(); return; }
     signal->callbacks[signal->cb_len].fn = cb;
     signal->callbacks[signal->cb_len].user_data = user_data;
     signal->cb_len++;
+    mn_signal_unlock();
 }
 
 /* --- Propagation (topological, depth-first) --- */
 
 static void mn_signal_propagate(MnSignal *signal) {
+    /* Snapshot subscriber list under the lock so realloc in subscribe
+     * cannot invalidate our iteration pointer. */
+    mn_signal_lock();
+    int64_t n = signal->sub_len;
+    MnSignal **snap = NULL;
+    if (n > 0) {
+        snap = (MnSignal **)__mn_alloc(n * (int64_t)sizeof(MnSignal *));
+        memcpy(snap, signal->subscribers, (size_t)(n * (int64_t)sizeof(MnSignal *)));
+    }
+    mn_signal_unlock();
+
     /* 1. Mark all subscribers dirty */
-    for (int64_t i = 0; i < signal->sub_len; i++) {
-        signal->subscribers[i]->dirty = 1;
+    for (int64_t i = 0; i < n; i++) {
+        snap[i]->dirty = 1;
     }
 
     /* 2. Re-evaluate computed subscribers and propagate recursively.
      *    This is a depth-first topological traversal: each computed signal
      *    is recomputed before its own subscribers are notified. */
-    for (int64_t i = 0; i < signal->sub_len; i++) {
-        MnSignal *sub = signal->subscribers[i];
+    for (int64_t i = 0; i < n; i++) {
+        MnSignal *sub = snap[i];
         if (sub->compute_fn != NULL && sub->dirty) {
             mn_signal_recompute(sub);
             mn_signal_propagate(sub);
         }
     }
+
+    if (snap) __mn_free(snap);
 
     /* 3. Fire callbacks on this signal */
     for (int64_t i = 0; i < signal->cb_len; i++) {
@@ -2048,12 +2364,74 @@ MN_EXPORT void __mn_stream_free(MnStream *stream) {
     __mn_free(stream);
 }
 
+MN_EXPORT void __mn_stream_free_chain(MnStream *stream) {
+    while (stream) {
+        MnStream *source = stream->source;
+        __mn_stream_free(stream);
+        stream = source;
+    }
+}
+
 /* -----------------------------------------------------------------------
- * Process
+ * Process + CLI arguments
  * ----------------------------------------------------------------------- */
+
+/* Saved by __mn_argv_init() (called from mnc_main.c or a Mapanare main). */
+static int    g_argc = 0;
+static char **g_argv = NULL;
+
+MN_EXPORT void __mn_argv_init(int argc, char **argv) {
+    g_argc = argc;
+    g_argv = argv;
+}
+
+MN_EXPORT int64_t __mn_argc(void) {
+    return (int64_t)g_argc;
+}
+
+MN_EXPORT MnString __mn_argv(int64_t index) {
+    if (index < 0 || index >= g_argc || !g_argv) {
+        return __mn_str_empty();
+    }
+    return __mn_str_from_cstr(g_argv[index]);
+}
+
+/** Read a file, returning its content. Returns empty string on error.
+ *  Unlike __mn_file_read which uses a pointer param, this returns a
+ *  sentinel (empty string with len == -1) on failure so Mapanare code
+ *  can call it without pointer types. */
+MN_EXPORT MnString __mn_file_read_or_empty(MnString path) {
+    int64_t ok = 0;
+    MnString result = __mn_file_read(path, &ok);
+    if (!ok) {
+        MnString empty = { "", -1 };  /* len == -1 signals failure */
+        return empty;
+    }
+    return result;
+}
 
 MN_EXPORT void __mn_exit(int64_t code) {
     exit((int)code);
+}
+
+MN_EXPORT int64_t __mn_system(MnString command) {
+    char *cmd = mn_to_cstr(command);
+#if (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE) || \
+    (defined(__APPLE__) && defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__))
+    /* system() is unavailable on iOS */
+    __mn_free(cmd);
+    return -1;
+#elif defined(_WIN32)
+    int ret = system(cmd);
+    __mn_free(cmd);
+    return (int64_t)ret;
+#else
+    int ret = system(cmd);
+    __mn_free(cmd);
+    if (ret == -1) return -1;
+    if (WIFEXITED(ret)) return (int64_t)WEXITSTATUS(ret);
+    return -1;
+#endif
 }
 
 MN_EXPORT void __mn_panic(MnString message) {
@@ -2099,6 +2477,10 @@ MN_EXPORT void *__iter_next(void *iter_ptr) {
     int64_t val = iter->current;
     iter->current++;
     return (void *)(intptr_t)val;
+}
+
+MN_EXPORT void __mn_range_free(void *iter_ptr) {
+    free(iter_ptr);
 }
 
 /* -----------------------------------------------------------------------
@@ -2192,4 +2574,112 @@ MN_EXPORT MnString __mn_type_registry_get_name(MnString fn_name) {
 
 MN_EXPORT void __mn_type_registry_clear(void) {
     memset(mn_type_reg, 0, sizeof(mn_type_reg));
+}
+
+/* -----------------------------------------------------------------------
+ * Clock / sleep — used by stdlib/time.mn
+ * ----------------------------------------------------------------------- */
+
+#ifndef _WIN32
+#include <time.h>
+#endif
+
+MN_EXPORT int64_t __mn_clock_monotonic_ns(void) {
+#ifndef _WIN32
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
+#else
+    static LARGE_INTEGER freq = {0};
+    LARGE_INTEGER now;
+    if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&now);
+    return (int64_t)((double)now.QuadPart / (double)freq.QuadPart * 1e9);
+#endif
+}
+
+MN_EXPORT void __mn_sleep_ms(int64_t ms) {
+#ifndef _WIN32
+    struct timespec req;
+    req.tv_sec  = ms / 1000;
+    req.tv_nsec = (ms % 1000) * 1000000L;
+    nanosleep(&req, NULL);
+#else
+    Sleep((DWORD)ms);
+#endif
+}
+
+/* -----------------------------------------------------------------------
+ * Dynamic `any` type — boxing / unboxing / tag inspection
+ * ----------------------------------------------------------------------- */
+
+MN_EXPORT MnValue __mn_any_box_int(int64_t v) {
+    MnValue val;
+    val.tag = MN_TAG_INT;
+    val._pad = 0;
+    val.data.i = v;
+    return val;
+}
+
+MN_EXPORT MnValue __mn_any_box_float(double v) {
+    MnValue val;
+    val.tag = MN_TAG_FLOAT;
+    val._pad = 0;
+    val.data.f = v;
+    return val;
+}
+
+MN_EXPORT MnValue __mn_any_box_bool(uint8_t v) {
+    MnValue val;
+    val.tag = MN_TAG_BOOL;
+    val._pad = 0;
+    val.data.b = v;
+    return val;
+}
+
+MN_EXPORT int64_t __mn_any_unbox_int(MnValue v) {
+    if (v.tag != MN_TAG_INT) {
+        fprintf(stderr, "TypeError: expected Int, got tag %d\n", v.tag);
+        abort();
+    }
+    return v.data.i;
+}
+
+MN_EXPORT double __mn_any_unbox_float(MnValue v) {
+    if (v.tag != MN_TAG_FLOAT) {
+        fprintf(stderr, "TypeError: expected Float, got tag %d\n", v.tag);
+        abort();
+    }
+    return v.data.f;
+}
+
+MN_EXPORT int32_t __mn_any_tag(MnValue v) {
+    return v.tag;
+}
+
+static const char *mn_tag_names[] = {
+    "Int", "Float", "Bool", "String",
+    "List", "Map", "Struct", "Enum",
+    "Fn", "Option", "Result", "None",
+};
+#define MN_TAG_COUNT (int)(sizeof(mn_tag_names) / sizeof(mn_tag_names[0]))
+static MnString mn_tag_strings[12];
+static MnString mn_tag_unknown;
+static int mn_tag_strings_init = 0;
+
+static void mn_init_tag_strings(void) {
+    if (mn_tag_strings_init) return;
+    for (int i = 0; i < MN_TAG_COUNT; i++)
+        mn_tag_strings[i] = __mn_str_from_cstr(mn_tag_names[i]);
+    mn_tag_unknown = __mn_str_from_cstr("Unknown");
+    mn_tag_strings_init = 1;
+}
+
+MN_EXPORT MnString __mn_any_typename(MnValue v) {
+    mn_init_tag_strings();
+    int idx = v.tag;
+    if (idx >= 0 && idx < MN_TAG_COUNT) {
+        return mn_tag_strings[idx];
+    }
+    return mn_tag_unknown;
 }

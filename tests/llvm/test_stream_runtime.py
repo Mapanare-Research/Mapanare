@@ -99,6 +99,7 @@ class MnList(ctypes.Structure):
         ("len", ctypes.c_int64),
         ("cap", ctypes.c_int64),
         ("elem_size", ctypes.c_int64),
+        ("managed", ctypes.c_int64),
     ]
 
 

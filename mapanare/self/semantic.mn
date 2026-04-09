@@ -131,6 +131,42 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "ord" { return true }
     if name == "chr" { return true }
     if name == "join" { return true }
+    if name == "typeof" { return true }
+    // C runtime functions used by the self-hosted compiler driver
+    if name == "__mn_argc" { return true }
+    if name == "__mn_argv" { return true }
+    if name == "__mn_file_read_or_empty" { return true }
+    if name == "__mn_exit" { return true }
+    if name == "__mn_str_eprint" { return true }
+    if name == "__mn_str_eprintln" { return true }
+    if name == "__mn_system" { return true }
+    if name == "__mn_file_write" { return true }
+    // High-level I/O builtins (v3.41.0)
+    if name == "read_line" { return true }
+    if name == "read_file" { return true }
+    if name == "write_file" { return true }
+    if name == "append_file" { return true }
+    if name == "file_exists" { return true }
+    if name == "list_dir" { return true }
+    // Network, crypto, regex builtins (v3.42.0)
+    if name == "http_get" { return true }
+    if name == "sha256" { return true }
+    if name == "base64_encode" { return true }
+    if name == "base64_decode" { return true }
+    if name == "hmac_sha256" { return true }
+    if name == "hex_encode" { return true }
+    if name == "random_bytes" { return true }
+    if name == "regex_match" { return true }
+    if name == "regex_replace" { return true }
+    // GPU builtins (v3.46.0)
+    if name == "gpu_available" { return true }
+    if name == "gpu_device_name" { return true }
+    if name == "gpu_device_memory" { return true }
+    if name == "gpu_tensor_add" { return true }
+    if name == "gpu_tensor_sub" { return true }
+    if name == "gpu_tensor_mul" { return true }
+    if name == "gpu_tensor_div" { return true }
+    if name == "gpu_tensor_matmul" { return true }
     return false
 }
 
@@ -150,6 +186,33 @@ fn builtin_return_type(name: String) -> String {
     if name == "ord" { return "Int" }
     if name == "chr" { return "String" }
     if name == "join" { return "String" }
+    if name == "typeof" { return "String" }
+    // High-level I/O builtins (v3.41.0)
+    if name == "read_line" { return "String" }
+    if name == "read_file" { return "String" }
+    if name == "write_file" { return "Void" }
+    if name == "append_file" { return "Void" }
+    if name == "file_exists" { return "Bool" }
+    if name == "list_dir" { return "List" }
+    // Network, crypto, regex builtins (v3.42.0)
+    if name == "http_get" { return "String" }
+    if name == "sha256" { return "String" }
+    if name == "base64_encode" { return "String" }
+    if name == "base64_decode" { return "String" }
+    if name == "hmac_sha256" { return "String" }
+    if name == "hex_encode" { return "String" }
+    if name == "random_bytes" { return "String" }
+    if name == "regex_match" { return "Bool" }
+    if name == "regex_replace" { return "String" }
+    // GPU builtins (v3.46.0)
+    if name == "gpu_available" { return "Bool" }
+    if name == "gpu_device_name" { return "String" }
+    if name == "gpu_device_memory" { return "Int" }
+    if name == "gpu_tensor_add" { return "List" }
+    if name == "gpu_tensor_sub" { return "List" }
+    if name == "gpu_tensor_mul" { return "List" }
+    if name == "gpu_tensor_div" { return "List" }
+    if name == "gpu_tensor_matmul" { return "List" }
     return "Void"
 }
 
@@ -182,8 +245,8 @@ fn scope_define(scope: Scope, name: String, sym: Symbol) -> Scope {
     // Append symbol to scope's symbol list.
     // Later entries shadow earlier ones (last-match-wins in lookup).
     let mut syms: List<Symbol> = scope.symbols
-    // syms.push(sym) — append to list
-    return new_scope(scope.parent)
+    syms.push(sym)
+    return new Scope { parent: scope.parent, symbols: syms }
 }
 
 fn scope_lookup(scope: Scope, name: String) -> Option<Symbol> {
@@ -240,7 +303,8 @@ fn new_checker(filename: String) -> SemanticChecker {
 struct SemState {
     errors: List<SemanticError>,
     scope: Scope,
-    filename: String
+    filename: String,
+    current_span: Span
 }
 
 struct InferResult {
@@ -255,7 +319,8 @@ struct CheckResult {
 fn new_sem_state(filename: String) -> SemState {
     let scope: Scope = new_scope(none)
     let sem_errs: List<SemanticError> = []
-    return new SemState { errors: sem_errs, scope: scope, filename: filename }
+    let zero_span: Span = make_span(0, 0, 0, 0)
+    return new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span }
 }
 
 fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult {
@@ -272,12 +337,17 @@ fn new_check_result(st: SemState) -> CheckResult {
 
 fn add_error(st: SemState, msg: String, line: Int, col: Int) -> SemState {
     let err: SemanticError = new_semantic_error(msg, line, col, st.filename)
-    // st.errors.push(err)
-    return st
+    let mut errs: List<SemanticError> = st.errors
+    errs.push(err)
+    return new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span }
+}
+
+fn add_error_here(st: SemState, msg: String) -> SemState {
+    return add_error(st, msg, st.current_span.line, st.current_span.column)
 }
 
 fn add_error_msg(st: SemState, msg: String) -> SemState {
-    return add_error(st, msg, 0, 0)
+    return add_error_here(st, msg)
 }
 
 // ---------------------------------------------------------------------------
@@ -286,23 +356,27 @@ fn add_error_msg(st: SemState, msg: String) -> SemState {
 
 fn push_scope(st: SemState) -> SemState {
     let child: Scope = new_scope(Some(st.scope))
-    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename }
+    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span }
     return new_st
 }
 
 fn pop_scope(st: SemState) -> SemState {
     match st.scope.parent {
         Some(parent) => {
-            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename }
+            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span }
             return new_st
         },
         _ => { return st }
     }
 }
 
+fn set_span(st: SemState, span: Span) -> SemState {
+    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span }
+}
+
 fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState {
     let new_scope_val: Scope = scope_define(st.scope, name, sym)
-    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename }
+    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span }
     return new_st
 }
 
@@ -315,8 +389,27 @@ fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool {
     if b.name == "<unknown>" { return true }
     if a.is_function {
         if b.is_function {
-            // Compare param counts and return types
+            // Compare param counts
             if len(a.param_types) != len(b.param_types) { return false }
+            // Compare parameter types pairwise
+            let mut j: Int = 0
+            for _ in 0..200 {
+                if j >= len(a.param_types) { break }
+                if types_compatible(a.param_types[j], b.param_types[j]) == false { return false }
+                j = j + 1
+            }
+            // Compare return types
+            match a.return_type {
+                Some(a_ret) => {
+                    match b.return_type {
+                        Some(b_ret) => {
+                            if types_compatible(a_ret, b_ret) == false { return false }
+                        },
+                        _ => {}
+                    }
+                },
+                _ => {}
+            }
             return true
         }
         return false
@@ -389,38 +482,41 @@ fn check_logical_result(left: String, right: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
-    match te {
-        Named(name) => { return make_type(name) },
-        Generic(name, args) => {
-            let mut resolved: List<TypeInfo> = []
-            let mut i: Int = 0
-            for _ in 0..200 {
-                if i >= len(args) { return make_generic_type(name, resolved) }
-                let arg: TypeExpr = args[i]
-                let rt: TypeInfo = resolve_type_expr(arg)
-                resolved.push(rt)
-                i = i + 1
-            }
-            return make_generic_type(name, resolved)
-        },
-        FnTy(param_types, return_type) => {
-            let mut params: List<TypeInfo> = []
-            let mut i: Int = 0
-            for _ in 0..200 {
-                if i >= len(param_types) {
-                    let ret: TypeInfo = resolve_type_expr(return_type)
-                    return make_fn_type(params, ret)
-                }
-                let pt: TypeExpr = param_types[i]
-                let rp: TypeInfo = resolve_type_expr(pt)
-                params.push(rp)
-                i = i + 1
-            }
-            let ret2: TypeInfo = resolve_type_expr(return_type)
-            return make_fn_type(params, ret2)
-        },
-        _ => { return unknown_type() }
+    let tek: String = type_expr_kind(te)
+    if tek == "named" { return make_type(type_expr_name(te)) }
+    if tek == "generic" {
+        let name: String = type_expr_name(te)
+        let args: List<TypeExpr> = type_expr_args(te)
+        let mut resolved: List<TypeInfo> = []
+        let mut i: Int = 0
+        for _ in 0..200 {
+            if i >= len(args) { return make_generic_type(name, resolved) }
+            let arg: TypeExpr = args[i]
+            let rt: TypeInfo = resolve_type_expr(arg)
+            resolved.push(rt)
+            i = i + 1
+        }
+        return make_generic_type(name, resolved)
     }
+    if tek == "fn" {
+        let param_types: List<TypeExpr> = type_expr_fn_params(te)
+        let return_type: TypeExpr = type_expr_fn_ret(te)
+        let mut params: List<TypeInfo> = []
+        let mut i_fn: Int = 0
+        for _ in 0..200 {
+            if i_fn >= len(param_types) {
+                let ret: TypeInfo = resolve_type_expr(return_type)
+                return make_fn_type(params, ret)
+            }
+            let pt: TypeExpr = param_types[i_fn]
+            let rp: TypeInfo = resolve_type_expr(pt)
+            params.push(rp)
+            i_fn = i_fn + 1
+        }
+        let ret2: TypeInfo = resolve_type_expr(return_type)
+        return make_fn_type(params, ret2)
+    }
+    return unknown_type()
 }
 
 fn resolve_type_opt(te: Option<TypeExpr>) -> TypeInfo {
@@ -435,161 +531,161 @@ fn resolve_type_opt(te: Option<TypeExpr>) -> TypeInfo {
 // ---------------------------------------------------------------------------
 
 fn infer_expr(st: SemState, expr: Expr) -> InferResult {
-    match expr {
-        IntLit(_) => { return new_infer_result(int_type(), st) },
-        FloatLit(_) => { return new_infer_result(float_type(), st) },
-        BoolLit(_) => { return new_infer_result(bool_type(), st) },
-        StringLit(_) => { return new_infer_result(string_type(), st) },
-        CharLit(_) => { return new_infer_result(char_type(), st) },
-        NoneLit => { return new_infer_result(make_type("Option"), st) },
+    let ek: String = expr_kind(expr)
+    if ek == "int_lit" { return new_infer_result(int_type(), st) }
+    if ek == "float_lit" { return new_infer_result(float_type(), st) }
+    if ek == "bool_lit" { return new_infer_result(bool_type(), st) }
+    if ek == "string_lit" { return new_infer_result(string_type(), st) }
+    if ek == "char_lit" { return new_infer_result(char_type(), st) }
+    if ek == "none_lit" { return new_infer_result(make_type("Option"), st) }
 
-        Ident(name) => {
-            let result: Option<Symbol> = scope_lookup(st.scope, name)
-            match result {
-                Some(sym) => { return new_infer_result(sym.type_info, st) },
-                _ => {
-                    let st2: SemState = add_error(st, "Undefined variable '" + name + "'", 0, 0)
-                    return new_infer_result(unknown_type(), st2)
-                }
+    if ek == "ident" {
+        let name: String = expr_ident_name(expr)
+        let result: Option<Symbol> = scope_lookup(st.scope, name)
+        match result {
+            Some(sym) => { return new_infer_result(sym.type_info, st) },
+            _ => {
+                let st_ident_err: SemState = add_error_here(st, "Undefined variable '" + name + "'")
+                return new_infer_result(unknown_type(), st_ident_err)
             }
-        },
-
-        Binary(left, op, right) => { return check_binary_expr(st, left, op, right) },
-        Unary(op, operand) => { return check_unary_expr(st, op, operand) },
-        Call(callee, args) => { return check_call_expr(st, callee, args) },
-
-        MethodCall(obj, method_name, args) => {
-            let obj_r: InferResult = infer_expr(st, obj)
-            let mut st2: SemState = obj_r.st
-            let mut i: Int = 0
-            for _ in 0..200 {
-                if i >= len(args) { return new_infer_result(unknown_type(), st2) }
-                let arg: Expr = args[i]
-                let ar: InferResult = infer_expr(st2, arg)
-                st2 = ar.st
-                i = i + 1
-            }
-            return new_infer_result(unknown_type(), st2)
-        },
-
-        FieldAccess(obj, field_name) => {
-            let obj_r: InferResult = infer_expr(st, obj)
-            return new_infer_result(unknown_type(), obj_r.st)
-        },
-
-        NamespaceAccess(ns, name) => {
-            return new_infer_result(unknown_type(), st)
-        },
-
-        Index(obj, idx) => {
-            let obj_r: InferResult = infer_expr(st, obj)
-            let idx_r: InferResult = infer_expr(obj_r.st, idx)
-            // List<T>[i] -> T
-            if obj_r.type_info.name == "List" {
-                if len(obj_r.type_info.args) > 0 {
-                    let elem: TypeInfo = obj_r.type_info.args[0]
-                    return new_infer_result(elem, idx_r.st)
-                }
-            }
-            return new_infer_result(unknown_type(), idx_r.st)
-        },
-
-        Pipe(left, right) => { return check_pipe_expr(st, left, right) },
-
-        Range(start, end, inclusive) => {
-            let sr: InferResult = infer_expr(st, start)
-            let er: InferResult = infer_expr(sr.st, end)
-            return new_infer_result(make_type("Range"), er.st)
-        },
-
-        Lambda(params, body) => { return check_lambda_expr(st, params, body) },
-        Spawn(callee, args) => { return check_spawn_expr(st, callee, args) },
-
-        Sync(inner) => {
-            let ir: InferResult = infer_expr(st, inner)
-            return new_infer_result(unknown_type(), ir.st)
-        },
-
-        Send(value, target) => {
-            let st2: SemState = check_send_expr(st, value, target)
-            return new_infer_result(void_type(), st2)
-        },
-
-        ErrorProp(inner) => {
-            let ir: InferResult = infer_expr(st, inner)
-            return new_infer_result(unknown_type(), ir.st)
-        },
-
-        ListLit(elements) => {
-            if len(elements) > 0 {
-                let first: Expr = elements[0]
-                let fr: InferResult = infer_expr(st, first)
-                let mut st2: SemState = fr.st
-                let mut i: Int = 1
-                for _ in 0..600 {
-                    if i >= len(elements) {
-                        let args: List<TypeInfo> = []
-                        // args.push(fr.type_info)
-                        return new_infer_result(make_generic_type("List", args), st2)
-                    }
-                    let elem: Expr = elements[i]
-                    let er: InferResult = infer_expr(st2, elem)
-                    st2 = er.st
-                    i = i + 1
-                }
-                let args2: List<TypeInfo> = []
-                return new_infer_result(make_generic_type("List", args2), st2)
-            }
-            let empty_args: List<TypeInfo> = []
-            return new_infer_result(make_generic_type("List", empty_args), st)
-        },
-
-        Construct(name, fields) => {
-            let mut st2: SemState = st
-            let mut i: Int = 0
-            for _ in 0..200 {
-                if i >= len(fields) { return new_infer_result(make_type(name), st2) }
-                let fi: FieldInit = fields[i]
-                let fr: InferResult = infer_expr(st2, fi.value)
-                st2 = fr.st
-                i = i + 1
-            }
-            return new_infer_result(make_type(name), st2)
-        },
-
-        SomeWrap(value) => {
-            let vr: InferResult = infer_expr(st, value)
-            let args: List<TypeInfo> = []
-            // args.push(vr.type_info)
-            return new_infer_result(make_generic_type("Option", args), vr.st)
-        },
-
-        OkWrap(value) => {
-            let vr: InferResult = infer_expr(st, value)
-            let args: List<TypeInfo> = []
-            // args.push(vr.type_info)
-            return new_infer_result(make_generic_type("Result", args), vr.st)
-        },
-
-        ErrWrap(value) => {
-            let vr: InferResult = infer_expr(st, value)
-            let args: List<TypeInfo> = []
-            return new_infer_result(make_generic_type("Result", args), vr.st)
-        },
-
-        SignalVal(value, _) => {
-            let vr: InferResult = infer_expr(st, value)
-            let args: List<TypeInfo> = []
-            // args.push(vr.type_info)
-            return new_infer_result(make_generic_type("Signal", args), vr.st)
-        },
-
-        Assign(target, op, value) => { return check_assign_expr(st, target, op, value) },
-        If(cond, then_block, else_clause) => { return check_if_expr(st, cond, then_block, else_clause) },
-        Match(subject, arms) => { return check_match_expr(st, subject, arms) },
-
-        _ => { return new_infer_result(unknown_type(), st) }
+        }
     }
+
+    if ek == "binary" { return check_binary_expr(st, expr_binary_left(expr), expr_binary_op(expr), expr_binary_right(expr)) }
+    if ek == "unary" { return check_unary_expr(st, expr_unary_op(expr), expr_unary_operand(expr)) }
+    if ek == "call" { return check_call_expr(st, expr_call_callee(expr), expr_call_args(expr)) }
+
+    if ek == "method_call" {
+        let obj_r: InferResult = infer_expr(st, expr_method_obj(expr))
+        let mut st_method: SemState = obj_r.st
+        let args: List<Expr> = expr_method_args(expr)
+        let mut i_method: Int = 0
+        for _ in 0..200 {
+            if i_method >= len(args) { return new_infer_result(unknown_type(), st_method) }
+            let arg: Expr = args[i_method]
+            let ar: InferResult = infer_expr(st_method, arg)
+            st_method = ar.st
+            i_method = i_method + 1
+        }
+        return new_infer_result(unknown_type(), st_method)
+    }
+
+    if ek == "field_access" {
+        let obj_r_field: InferResult = infer_expr(st, expr_field_obj(expr))
+        return new_infer_result(unknown_type(), obj_r_field.st)
+    }
+
+    if ek == "namespace_access" {
+        return new_infer_result(unknown_type(), st)
+    }
+
+    if ek == "index" {
+        let obj_r_idx: InferResult = infer_expr(st, expr_index_obj(expr))
+        let idx_r: InferResult = infer_expr(obj_r_idx.st, expr_index_idx(expr))
+        // List<T>[i] -> T
+        if obj_r_idx.type_info.name == "List" {
+            if len(obj_r_idx.type_info.args) > 0 {
+                let elem_ti: TypeInfo = obj_r_idx.type_info.args[0]
+                return new_infer_result(elem_ti, idx_r.st)
+            }
+        }
+        return new_infer_result(unknown_type(), idx_r.st)
+    }
+
+    if ek == "pipe" { return check_pipe_expr(st, expr_pipe_left(expr), expr_pipe_right(expr)) }
+
+    if ek == "range" {
+        let sr: InferResult = infer_expr(st, expr_range_start(expr))
+        let er_range: InferResult = infer_expr(sr.st, expr_range_end(expr))
+        return new_infer_result(make_type("Range"), er_range.st)
+    }
+
+    if ek == "lambda" { return check_lambda_expr(st, expr_lambda_params(expr), expr_lambda_body(expr)) }
+    if ek == "spawn" { return check_spawn_expr(st, expr_spawn_callee(expr), expr_spawn_args(expr)) }
+
+    if ek == "sync" {
+        let ir_sync: InferResult = infer_expr(st, expr_sync_inner(expr))
+        return new_infer_result(unknown_type(), ir_sync.st)
+    }
+
+    if ek == "send" {
+        let st_send: SemState = check_send_expr(st, expr_send_target(expr), expr_send_value(expr))
+        return new_infer_result(void_type(), st_send)
+    }
+
+    if ek == "error_prop" {
+        let ir_errprop: InferResult = infer_expr(st, expr_errorprop_inner(expr))
+        return new_infer_result(unknown_type(), ir_errprop.st)
+    }
+
+    if ek == "list_lit" {
+        let elements: List<Expr> = expr_list_elements(expr)
+        if len(elements) > 0 {
+            let first: Expr = elements[0]
+            let fr_list: InferResult = infer_expr(st, first)
+            let mut st_list: SemState = fr_list.st
+            let mut i_list: Int = 1
+            for _ in 0..600 {
+                if i_list >= len(elements) {
+                    let args_list: List<TypeInfo> = []
+                    return new_infer_result(make_generic_type("List", args_list), st_list)
+                }
+                let elem: Expr = elements[i_list]
+                let er_list: InferResult = infer_expr(st_list, elem)
+                st_list = er_list.st
+                i_list = i_list + 1
+            }
+            let args2: List<TypeInfo> = []
+            return new_infer_result(make_generic_type("List", args2), st_list)
+        }
+        let empty_args: List<TypeInfo> = []
+        return new_infer_result(make_generic_type("List", empty_args), st)
+    }
+
+    if ek == "construct" {
+        let name: String = expr_construct_name(expr)
+        let fields: List<FieldInit> = expr_construct_fields(expr)
+        let mut st_ctor: SemState = st
+        let mut i_ctor: Int = 0
+        for _ in 0..200 {
+            if i_ctor >= len(fields) { return new_infer_result(make_type(name), st_ctor) }
+            let fi: FieldInit = fields[i_ctor]
+            let fr_ctor: InferResult = infer_expr(st_ctor, fi.value)
+            st_ctor = fr_ctor.st
+            i_ctor = i_ctor + 1
+        }
+        return new_infer_result(make_type(name), st_ctor)
+    }
+
+    if ek == "some_wrap" {
+        let vr_some: InferResult = infer_expr(st, expr_wrap_inner(expr))
+        let args_some: List<TypeInfo> = []
+        return new_infer_result(make_generic_type("Option", args_some), vr_some.st)
+    }
+
+    if ek == "ok_wrap" {
+        let vr_ok: InferResult = infer_expr(st, expr_wrap_inner(expr))
+        let args_ok: List<TypeInfo> = []
+        return new_infer_result(make_generic_type("Result", args_ok), vr_ok.st)
+    }
+
+    if ek == "err_wrap" {
+        let vr_err: InferResult = infer_expr(st, expr_wrap_inner(expr))
+        let args_err: List<TypeInfo> = []
+        return new_infer_result(make_generic_type("Result", args_err), vr_err.st)
+    }
+
+    if ek == "signal_val" {
+        let vr_signal: InferResult = infer_expr(st, expr_signal_inner(expr))
+        let args_signal: List<TypeInfo> = []
+        return new_infer_result(make_generic_type("Signal", args_signal), vr_signal.st)
+    }
+
+    if ek == "assign" { return check_assign_expr(st, expr_assign_target(expr), expr_assign_op(expr), expr_assign_value(expr)) }
+    if ek == "if" { return check_if_expr(st, expr_if_cond(expr), expr_if_then(expr), expr_if_else(expr)) }
+    if ek == "match" { return check_match_expr(st, expr_match_subject(expr), expr_match_arms(expr)) }
+
+    return new_infer_result(unknown_type(), st)
 }
 
 // ---------------------------------------------------------------------------
@@ -635,8 +731,8 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
             if rt != "Tensor" {
                 if rt != "Int" {
                     if rt != "Float" {
-                        let st2: SemState = add_error(st, "Operator '" + op + "' not supported for Tensor and " + rt, 0, 0)
-                        return new_infer_result(make_type("Tensor"), st2)
+                        let st_tensor_lt: SemState = add_error_here(st, "Operator '" + op + "' not supported for Tensor and " + rt)
+                        return new_infer_result(make_type("Tensor"), st_tensor_lt)
                     }
                 }
             }
@@ -647,8 +743,8 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if lt != "<unknown>" {
             if lt != "Int" {
                 if lt != "Float" {
-                    let st2: SemState = add_error(st, "Operator '" + op + "' not supported for " + lt + " and Tensor", 0, 0)
-                    return new_infer_result(make_type("Tensor"), st2)
+                    let st_tensor_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for " + lt + " and Tensor")
+                    return new_infer_result(make_type("Tensor"), st_tensor_rt)
                 }
             }
         }
@@ -660,8 +756,8 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if lt != "Int" {
             if lt != "Float" {
                 if lt != "String" {
-                    let st2: SemState = add_error(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt, 0, 0)
-                    return new_infer_result(unknown_type(), st2)
+                    let st_arith_lt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
+                    return new_infer_result(unknown_type(), st_arith_lt)
                 }
             }
         }
@@ -670,8 +766,8 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         if rt != "Int" {
             if rt != "Float" {
                 if rt != "String" {
-                    let st2: SemState = add_error(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt, 0, 0)
-                    return new_infer_result(unknown_type(), st2)
+                    let st_arith_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
+                    return new_infer_result(unknown_type(), st_arith_rt)
                 }
             }
         }
@@ -685,12 +781,12 @@ fn check_logical_binary(st: SemState, lt: String, rt: String, op: String) -> Inf
     let mut st2: SemState = st
     if lt != "<unknown>" {
         if lt != "Bool" {
-            st2 = add_error(st2, "Operator '" + op + "' requires Bool, got " + lt, 0, 0)
+            st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + lt)
         }
     }
     if rt != "<unknown>" {
         if rt != "Bool" {
-            st2 = add_error(st2, "Operator '" + op + "' requires Bool, got " + rt, 0, 0)
+            st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + rt)
         }
     }
     return new_infer_result(bool_type(), st2)
@@ -700,19 +796,19 @@ fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, 
     let mut st2: SemState = st
     if lt != "<unknown>" {
         if lt != "Tensor" {
-            st2 = add_error(st2, "Operator '@' requires Tensor, got " + lt, 0, 0)
+            st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + lt)
         }
     }
     if rt != "<unknown>" {
         if rt != "Tensor" {
-            st2 = add_error(st2, "Operator '@' requires Tensor, got " + rt, 0, 0)
+            st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + rt)
         }
     }
     let elem: TypeInfo = unknown_type()
     if len(left_ti.args) > 0 {
         let elem2: TypeInfo = left_ti.args[0]
-        let args: List<TypeInfo> = []
-        // args.push(elem2)
+        let mut args: List<TypeInfo> = []
+        args.push(elem2)
         return new_infer_result(make_generic_type("Tensor", args), st2)
     }
     let args3: List<TypeInfo> = []
@@ -731,8 +827,8 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
         if ot != "<unknown>" {
             if ot != "Int" {
                 if ot != "Float" {
-                    let st2: SemState = add_error(or.st, "Unary '-' not supported for type " + ot, 0, 0)
-                    return new_infer_result(or.type_info, st2)
+                    let st_neg: SemState = add_error_here(or.st, "Unary '-' not supported for type " + ot)
+                    return new_infer_result(or.type_info, st_neg)
                 }
             }
         }
@@ -742,8 +838,8 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
     if op == "!" {
         if ot != "<unknown>" {
             if ot != "Bool" {
-                let st2: SemState = add_error(or.st, "Unary '!' requires Bool, got " + ot, 0, 0)
-                return new_infer_result(bool_type(), st2)
+                let st_not: SemState = add_error_here(or.st, "Unary '!' requires Bool, got " + ot)
+                return new_infer_result(bool_type(), st_not)
             }
         }
         return new_infer_result(bool_type(), or.st)
@@ -768,55 +864,51 @@ fn check_call_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult 
         let arg: Expr = args[i]
         let ar: InferResult = infer_expr(st2, arg)
         st2 = ar.st
-        // arg_types.push(ar.type_info)
+        arg_types.push(ar.type_info)
         i = i + 1
     }
     return check_call_resolved(st2, callee, arg_types)
 }
 
 fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) -> InferResult {
-    match callee {
-        Ident(name) => {
-            let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
-            match sym_opt {
-                Some(sym) => {
-                    if sym.kind == "function" {
-                        if sym.type_info.is_function {
-                            match sym.type_info.return_type {
-                                Some(ret) => {
-                                    // Check argument count
-                                    if len(sym.type_info.param_types) > 0 {
-                                        if len(arg_types) != len(sym.type_info.param_types) {
-                                            let st2: SemState = add_error(st, "Function '" + name + "' argument count mismatch", 0, 0)
-                                            return new_infer_result(ret, st2)
-                                        }
+    if expr_kind(callee) == "ident" {
+        let name: String = expr_ident_name(callee)
+        let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+        match sym_opt {
+            Some(sym) => {
+                if sym.kind == "function" {
+                    if sym.type_info.is_function {
+                        match sym.type_info.return_type {
+                            Some(ret) => {
+                                if len(sym.type_info.param_types) > 0 {
+                                    if len(arg_types) != len(sym.type_info.param_types) {
+                                        let st_argc: SemState = add_error_here(st, "Function '" + name + "' argument count mismatch")
+                                        return new_infer_result(ret, st_argc)
                                     }
-                                    return new_infer_result(ret, st)
-                                },
-                                _ => { return new_infer_result(unknown_type(), st) }
-                            }
+                                }
+                                return new_infer_result(ret, st)
+                            },
+                            _ => { return new_infer_result(unknown_type(), st) }
                         }
-                        return new_infer_result(unknown_type(), st)
-                    }
-                    if sym.kind == "agent" {
-                        return new_infer_result(make_type(sym.name), st)
-                    }
-                    if sym.kind == "struct" {
-                        return new_infer_result(make_type(sym.name), st)
                     }
                     return new_infer_result(unknown_type(), st)
-                },
-                _ => {
-                    let st2: SemState = add_error(st, "Undefined function '" + name + "'", 0, 0)
-                    return new_infer_result(unknown_type(), st2)
                 }
+                if sym.kind == "agent" {
+                    return new_infer_result(make_type(sym.name), st)
+                }
+                if sym.kind == "struct" {
+                    return new_infer_result(make_type(sym.name), st)
+                }
+                return new_infer_result(unknown_type(), st)
+            },
+            _ => {
+                let st_undef: SemState = add_error_here(st, "Undefined function '" + name + "'")
+                return new_infer_result(unknown_type(), st_undef)
             }
-        },
-        _ => {
-            let cr: InferResult = infer_expr(st, callee)
-            return new_infer_result(unknown_type(), cr.st)
         }
     }
+    let cr: InferResult = infer_expr(st, callee)
+    return new_infer_result(unknown_type(), cr.st)
 }
 
 // ---------------------------------------------------------------------------
@@ -826,36 +918,33 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
 fn check_assign_expr(st: SemState, target: Expr, op: String, value: Expr) -> InferResult {
     let vr: InferResult = infer_expr(st, value)
 
-    match target {
-        Ident(name) => {
-            let sym_opt: Option<Symbol> = scope_lookup(vr.st.scope, name)
-            match sym_opt {
-                Some(sym) => {
-                    let mut st2: SemState = vr.st
-                    if sym.mutable == false {
-                        st2 = add_error(st2, "Cannot assign to immutable variable '" + name + "'", 0, 0)
-                    }
-                    if sym.type_info.name != "<unknown>" {
-                        if vr.type_info.name != "<unknown>" {
-                            if types_compatible(sym.type_info, vr.type_info) == false {
-                                st2 = add_error(st2, "Type mismatch in assignment to '" + name + "'", 0, 0)
-                            }
+    if expr_kind(target) == "ident" {
+        let name: String = expr_ident_name(target)
+        let sym_opt: Option<Symbol> = scope_lookup(vr.st.scope, name)
+        match sym_opt {
+            Some(sym) => {
+                let mut st_assign: SemState = vr.st
+                if sym.mutable == false {
+                    st_assign = add_error_here(st_assign, "Cannot assign to immutable variable '" + name + "'")
+                }
+                if sym.type_info.name != "<unknown>" {
+                    if vr.type_info.name != "<unknown>" {
+                        if types_compatible(sym.type_info, vr.type_info) == false {
+                            st_assign = add_error_here(st_assign, "Type mismatch in assignment to '" + name + "'")
                         }
                     }
-                    return new_infer_result(void_type(), st2)
-                },
-                _ => {
-                    let st2: SemState = add_error(vr.st, "Undefined variable '" + name + "'", 0, 0)
-                    return new_infer_result(void_type(), st2)
                 }
+                return new_infer_result(void_type(), st_assign)
+            },
+            _ => {
+                let st_assign_undef: SemState = add_error_here(vr.st, "Undefined variable '" + name + "'")
+                return new_infer_result(void_type(), st_assign_undef)
             }
-        },
-        _ => {
-            // Field or index target — infer both sides
-            let tr: InferResult = infer_expr(vr.st, target)
-            return new_infer_result(void_type(), tr.st)
         }
     }
+    // Field or index target — infer both sides
+    let tr: InferResult = infer_expr(vr.st, target)
+    return new_infer_result(void_type(), tr.st)
 }
 
 // ---------------------------------------------------------------------------
@@ -868,7 +957,7 @@ fn check_if_expr(st: SemState, cond: Expr, then_block: Block, else_clause: Optio
 
     if cr.type_info.name != "<unknown>" {
         if cr.type_info.name != "Bool" {
-            st2 = add_error(st2, "If condition must be Bool, got " + cr.type_info.name, 0, 0)
+            st2 = add_error_here(st2, "If condition must be Bool, got " + cr.type_info.name)
         }
     }
 
@@ -889,17 +978,13 @@ fn check_if_expr(st: SemState, cond: Expr, then_block: Block, else_clause: Optio
 }
 
 fn check_else_clause(st: SemState, ec: ElseClause) -> SemState {
-    match ec {
-        ElseBlock(block) => {
-            let inner: SemState = push_scope(st)
-            let after: SemState = check_block(inner, block)
-            return pop_scope(after)
-        },
-        ElseIf(cond, block, next_else) => {
-            let r: InferResult = check_if_expr(st, cond, block, next_else)
-            return r.st
-        }
+    if else_clause_kind(ec) == "else_block" {
+        let inner: SemState = push_scope(st)
+        let after: SemState = check_block(inner, else_clause_block(ec))
+        return pop_scope(after)
     }
+    let r: InferResult = check_if_expr(st, else_clause_cond(ec), else_clause_then(ec), else_clause_else(ec))
+    return r.st
 }
 
 // ---------------------------------------------------------------------------
@@ -923,37 +1008,35 @@ fn check_match_expr(st: SemState, subject: Expr, arms: List<MatchArm>) -> InferR
 }
 
 fn check_match_arm_body(st: SemState, body: MatchArmBody) -> SemState {
-    match body {
-        ExprBody(expr) => {
-            let r: InferResult = infer_expr(st, expr)
-            return r.st
-        },
-        BlockBody(block) => {
-            return check_block(st, block)
-        }
+    if match_arm_body_kind(body) == "expr" {
+        let r: InferResult = infer_expr(st, match_arm_body_expr(body))
+        return r.st
     }
+    return check_block(st, match_arm_body_block(body))
 }
 
 fn bind_pattern(st: SemState, pat: Pattern) -> SemState {
-    match pat {
-        Wildcard => { return st },
-        IdentPat(name) => {
-            let sym: Symbol = new_symbol(name, "variable", unknown_type(), false)
-            return define_in_scope(st, name, sym)
-        },
-        LiteralPat(_) => { return st },
-        ConstructorPat(name, args) => {
-            let mut st2: SemState = st
-            let mut i: Int = 0
-            for _ in 0..200 {
-                if i >= len(args) { return st2 }
-                let arg: Pattern = args[i]
-                st2 = bind_pattern(st2, arg)
-                i = i + 1
-            }
-            return st2
-        }
+    let pk: String = pattern_kind(pat)
+    if pk == "wildcard" { return st }
+    if pk == "ident" {
+        let name: String = pattern_ident_name(pat)
+        let sym: Symbol = new_symbol(name, "variable", unknown_type(), false)
+        return define_in_scope(st, name, sym)
     }
+    if pk == "literal" { return st }
+    if pk == "constructor" {
+        let args: List<Pattern> = pattern_ctor_args(pat)
+        let mut st2: SemState = st
+        let mut i: Int = 0
+        for _ in 0..200 {
+            if i >= len(args) { return st2 }
+            let arg: Pattern = args[i]
+            st2 = bind_pattern(st2, arg)
+            i = i + 1
+        }
+        return st2
+    }
+    return st
 }
 
 // ---------------------------------------------------------------------------
@@ -977,7 +1060,7 @@ fn check_lambda_expr(st: SemState, params: List<Param>, body: LambdaBody) -> Inf
         }
         let p: Param = params[i]
         let pt: TypeInfo = resolve_type_opt(p.type_annotation)
-        // param_types.push(pt)
+        param_types.push(pt)
         let sym: Symbol = new_symbol(p.name, "param", pt, false)
         st2 = define_in_scope(st2, p.name, sym)
         i = i + 1
@@ -988,55 +1071,52 @@ fn check_lambda_expr(st: SemState, params: List<Param>, body: LambdaBody) -> Inf
 }
 
 fn check_lambda_body(st: SemState, body: LambdaBody) -> InferResult {
-    match body {
-        ExprBody(expr) => { return infer_expr(st, expr) },
-        BlockBody(block) => {
-            let st2: SemState = check_block(st, block)
-            return new_infer_result(unknown_type(), st2)
-        }
-    }
+    if lambda_body_kind(body) == "expr" { return infer_expr(st, lambda_body_expr(body)) }
+    let st2: SemState = check_block(st, lambda_body_block(body))
+    return new_infer_result(unknown_type(), st2)
 }
 
 // ---------------------------------------------------------------------------
 // Spawn / Send
 // ---------------------------------------------------------------------------
 
+fn check_spawn_callee(st: SemState, callee: Expr) -> InferResult {
+    if expr_kind(callee) == "ident" {
+        let name: String = expr_ident_name(callee)
+        let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+        match sym_opt {
+            Some(sym) => {
+                let mut st2: SemState = st
+                if sym.kind != "agent" {
+                    if sym.kind != "variable" {
+                        st2 = add_error_here(st2, "'spawn' requires an agent, but '" + name + "' is a " + sym.kind)
+                    }
+                }
+                return new_infer_result(make_type(sym.name), st2)
+            },
+            _ => {
+                let st_err: SemState = add_error_here(st, "Undefined agent '" + name + "'")
+                return new_infer_result(unknown_type(), st_err)
+            }
+        }
+    }
+    return new_infer_result(unknown_type(), st)
+}
+
 fn check_spawn_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult {
-    // Infer arguments
+    // Infer arguments first
     let mut st2: SemState = st
     let mut i: Int = 0
     for _ in 0..200 {
-        if i >= len(args) {
-            // Check callee
-            match callee {
-                Ident(name) => {
-                    let sym_opt: Option<Symbol> = scope_lookup(st2.scope, name)
-                    match sym_opt {
-                        Some(sym) => {
-                            if sym.kind != "agent" {
-                                if sym.kind != "variable" {
-                                    st2 = add_error(st2, "'spawn' requires an agent, but '" + name + "' is a " + sym.kind, 0, 0)
-                                }
-                            }
-                            return new_infer_result(make_type(sym.name), st2)
-                        },
-                        _ => {
-                            st2 = add_error(st2, "Undefined agent '" + name + "'", 0, 0)
-                            return new_infer_result(unknown_type(), st2)
-                        }
-                    }
-                },
-                _ => {
-                    return new_infer_result(unknown_type(), st2)
-                }
-            }
+        if i < len(args) {
+            let arg: Expr = args[i]
+            let ar: InferResult = infer_expr(st2, arg)
+            st2 = ar.st
+            i = i + 1
         }
-        let arg: Expr = args[i]
-        let ar: InferResult = infer_expr(st2, arg)
-        st2 = ar.st
-        i = i + 1
     }
-    return new_infer_result(unknown_type(), st2)
+    // Then check callee (no nested match-in-if-in-for)
+    return check_spawn_callee(st2, callee)
 }
 
 fn check_send_expr(st: SemState, value: Expr, target: Expr) -> SemState {
@@ -1053,53 +1133,50 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
     let lr: InferResult = infer_expr(st, left)
     let st2: SemState = lr.st
 
-    match right {
-        Ident(name) => {
-            let sym_opt: Option<Symbol> = scope_lookup(st2.scope, name)
-            match sym_opt {
-                Some(sym) => {
-                    if sym.kind == "function" {
-                        if sym.type_info.is_function {
-                            // Check piped value type matches first param
-                            if len(sym.type_info.param_types) > 0 {
-                                let expected: TypeInfo = sym.type_info.param_types[0]
-                                if expected.name != "<unknown>" {
-                                    if lr.type_info.name != "<unknown>" {
-                                        if types_compatible(expected, lr.type_info) == false {
-                                            let st3: SemState = add_error(st2, "Pipe type mismatch: piped to '" + name + "'", 0, 0)
-                                            match sym.type_info.return_type {
-                                                Some(ret) => { return new_infer_result(ret, st3) },
-                                                _ => { return new_infer_result(unknown_type(), st3) }
-                                            }
+    let rk: String = expr_kind(right)
+    if rk == "ident" {
+        let name: String = expr_ident_name(right)
+        let sym_opt: Option<Symbol> = scope_lookup(st2.scope, name)
+        match sym_opt {
+            Some(sym) => {
+                if sym.kind == "function" {
+                    if sym.type_info.is_function {
+                        if len(sym.type_info.param_types) > 0 {
+                            let expected: TypeInfo = sym.type_info.param_types[0]
+                            if expected.name != "<unknown>" {
+                                if lr.type_info.name != "<unknown>" {
+                                    if types_compatible(expected, lr.type_info) == false {
+                                        let st3_mismatch: SemState = add_error_here(st2, "Pipe type mismatch: piped to '" + name + "'")
+                                        match sym.type_info.return_type {
+                                            Some(ret) => { return new_infer_result(ret, st3_mismatch) },
+                                            _ => { return new_infer_result(unknown_type(), st3_mismatch) }
                                         }
                                     }
                                 }
                             }
-                            match sym.type_info.return_type {
-                                Some(ret) => { return new_infer_result(ret, st2) },
-                                _ => { return new_infer_result(unknown_type(), st2) }
-                            }
+                        }
+                        match sym.type_info.return_type {
+                            Some(ret) => { return new_infer_result(ret, st2) },
+                            _ => { return new_infer_result(unknown_type(), st2) }
                         }
                     }
-                    if sym.kind == "agent" {
-                        return new_infer_result(make_type(sym.name), st2)
-                    }
-                    return new_infer_result(unknown_type(), st2)
-                },
-                _ => {
-                    let st3: SemState = add_error(st2, "Undefined function '" + name + "'", 0, 0)
-                    return new_infer_result(unknown_type(), st3)
                 }
+                if sym.kind == "agent" {
+                    return new_infer_result(make_type(sym.name), st2)
+                }
+                return new_infer_result(unknown_type(), st2)
+            },
+            _ => {
+                let st3_undef: SemState = add_error_here(st2, "Undefined function '" + name + "'")
+                return new_infer_result(unknown_type(), st3_undef)
             }
-        },
-        Call(callee, args) => {
-            return check_call_expr(st2, callee, args)
-        },
-        _ => {
-            let rr: InferResult = infer_expr(st2, right)
-            return new_infer_result(unknown_type(), rr.st)
         }
     }
+    if rk == "call" {
+        return check_call_expr(st2, expr_call_callee(right), expr_call_args(right))
+    }
+    let rr: InferResult = infer_expr(st2, right)
+    return new_infer_result(unknown_type(), rr.st)
 }
 
 // ---------------------------------------------------------------------------
@@ -1107,7 +1184,7 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
 // ---------------------------------------------------------------------------
 
 fn check_block(st: SemState, block: Block) -> SemState {
-    let mut st2: SemState = st
+    let mut st2: SemState = set_span(st, block.span)
     let mut i: Int = 0
     for _ in 0..600 {
         if i >= len(block.stmts) { return st2 }
@@ -1119,33 +1196,46 @@ fn check_block(st: SemState, block: Block) -> SemState {
 }
 
 fn check_stmt(st: SemState, stmt: Stmt) -> SemState {
-    match stmt {
-        Let(name, mutable, type_ann, value) => {
-            return check_let_stmt(st, name, mutable, type_ann, value)
-        },
-        ExprStmt(expr) => {
-            let r: InferResult = infer_expr(st, expr)
-            return r.st
-        },
-        Return(value_opt) => {
-            match value_opt {
-                Some(value) => {
-                    let r: InferResult = infer_expr(st, value)
-                    return r.st
-                },
-                _ => { return st }
-            }
-        },
-        For(var_name, iterable, body) => {
-            return check_for_stmt(st, var_name, iterable, body)
-        },
-        SignalDecl(name, mutable, type_ann, value, _) => {
-            return check_signal_decl(st, name, mutable, type_ann, value)
-        },
-        StreamDecl(name, type_ann, value) => {
-            return check_stream_decl(st, name, type_ann, value)
+    let sk: String = stmt_kind(stmt)
+    if sk == "let" {
+        return check_let_stmt(st, stmt_let_name(stmt), stmt_let_mutable(stmt), stmt_let_type(stmt), stmt_let_value(stmt))
+    }
+    if sk == "expr_stmt" {
+        let r_expr: InferResult = infer_expr(st, stmt_expr(stmt))
+        return r_expr.st
+    }
+    if sk == "return" {
+        let value_opt: Option<Expr> = stmt_return_val(stmt)
+        match value_opt {
+            Some(value) => {
+                let r_ret: InferResult = infer_expr(st, value)
+                return r_ret.st
+            },
+            _ => { return st }
         }
     }
+    if sk == "for" {
+        return check_for_stmt(st, stmt_for_var(stmt), stmt_for_iter(stmt), stmt_for_body(stmt))
+    }
+    if sk == "while" {
+        let wr: InferResult = infer_expr(st, stmt_while_cond(stmt))
+        let inner: SemState = push_scope(wr.st)
+        let after: SemState = check_block(inner, stmt_while_body(stmt))
+        return pop_scope(after)
+    }
+    if sk == "break" { return st }
+    if sk == "continue" { return st }
+    if sk == "assert" {
+        let ar: InferResult = infer_expr(st, stmt_assert_expr(stmt))
+        return ar.st
+    }
+    if sk == "signal_decl" {
+        return check_signal_decl(st, stmt_signal_name(stmt), stmt_signal_mutable(stmt), stmt_signal_type(stmt), stmt_signal_value(stmt))
+    }
+    if sk == "stream_decl" {
+        return check_stream_decl(st, stmt_stream_name(stmt), stmt_stream_type(stmt), stmt_stream_value(stmt))
+    }
+    return st
 }
 
 // ---------------------------------------------------------------------------
@@ -1161,7 +1251,7 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
     if ann_type.name != "<unknown>" {
         if vr.type_info.name != "<unknown>" {
             if types_compatible(ann_type, vr.type_info) == false {
-                st2 = add_error(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + vr.type_info.name, 0, 0)
+                st2 = add_error_here(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + vr.type_info.name)
             }
         }
     }
@@ -1184,7 +1274,17 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
 fn check_for_stmt(st: SemState, var_name: String, iterable: Expr, body: Block) -> SemState {
     let ir: InferResult = infer_expr(st, iterable)
     let inner: SemState = push_scope(ir.st)
-    let sym: Symbol = new_symbol(var_name, "variable", unknown_type(), false)
+    // Infer loop variable type from iterable
+    let mut var_type: TypeInfo = unknown_type()
+    if ir.type_info.kind == "range" {
+        var_type = int_type()
+    }
+    if ir.type_info.kind == "list" {
+        if len(ir.type_info.args) > 0 {
+            var_type = ir.type_info.args[0]
+        }
+    }
+    let sym: Symbol = new_symbol(var_name, "variable", var_type, false)
     let bound: SemState = define_in_scope(inner, var_name, sym)
     let after: SemState = check_block(bound, body)
     return pop_scope(after)
@@ -1200,14 +1300,14 @@ fn check_signal_decl(st: SemState, name: String, mutable: Bool, type_ann: Option
     let resolved: TypeInfo = ann_type
     if ann_type.name == "<unknown>" {
         let resolved2: TypeInfo = vr.type_info
-        let args: List<TypeInfo> = []
-        // args.push(resolved2)
+        let mut args: List<TypeInfo> = []
+        args.push(resolved2)
         let sig_type: TypeInfo = make_generic_type("Signal", args)
         let sym: Symbol = new_symbol(name, "variable", sig_type, mutable)
         return define_in_scope(vr.st, name, sym)
     }
-    let args2: List<TypeInfo> = []
-    // args2.push(resolved)
+    let mut args2: List<TypeInfo> = []
+    args2.push(resolved)
     let sig_type2: TypeInfo = make_generic_type("Signal", args2)
     let sym2: Symbol = new_symbol(name, "variable", sig_type2, mutable)
     return define_in_scope(vr.st, name, sym2)
@@ -1237,7 +1337,7 @@ fn check_stream_decl(st: SemState, name: String, type_ann: Option<TypeExpr>, val
 fn register_definitions(st: SemState, program: Program) -> SemState {
     let mut st2: SemState = st
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if i >= len(program.definitions) { return st2 }
         let def: Definition = program.definitions[i]
         st2 = register_def(st2, def)
@@ -1247,95 +1347,109 @@ fn register_definitions(st: SemState, program: Program) -> SemState {
 }
 
 fn register_def(st: SemState, def: Definition) -> SemState {
-    match def {
-        FnDef(data) => {
-            let mut params: List<TypeInfo> = []
-            let mut pi: Int = 0
+    let dk: String = def_kind(def)
+    if dk == "fn_def" {
+        let data: FnDefData = def_fn_data(def)
+        let mut params: List<TypeInfo> = []
+        let mut pi: Int = 0
+        for _ in 0..200 {
+            if pi >= len(data.params) {
+                let ret: TypeInfo = resolve_type_opt(data.return_type)
+                let fn_type: TypeInfo = make_fn_type(params, ret)
+                let sym_fn: Symbol = new_symbol(data.name, "function", fn_type, false)
+                return define_in_scope(st, data.name, sym_fn)
+            }
+            let p: Param = data.params[pi]
+            let pt: TypeInfo = resolve_type_opt(p.type_annotation)
+            pi = pi + 1
+        }
+        return st
+    }
+    if dk == "agent_def" {
+        let data: AgentDefData = def_agent_data(def)
+        let sym_agent: Symbol = new_symbol(data.name, "agent", make_type(data.name), false)
+        return define_in_scope(st, data.name, sym_agent)
+    }
+    if dk == "pipe_def" {
+        let sym_pipe: Symbol = new_symbol("pipe", "pipe", unknown_type(), false)
+        return define_in_scope(st, "pipe", sym_pipe)
+    }
+    if dk == "struct_def" {
+        let data: StructDefData = def_struct_data(def)
+        let sym_struct: Symbol = new_symbol(data.name, "struct", make_type(data.name), false)
+        return define_in_scope(st, data.name, sym_struct)
+    }
+    if dk == "enum_def" {
+        let data: EnumDefData = def_enum_data(def)
+        let sym_enum: Symbol = new_symbol(data.name, "enum", make_type(data.name), false)
+        let mut st2: SemState = define_in_scope(st, data.name, sym_enum)
+        let mut vi: Int = 0
+        for _ in 0..200 {
+            if vi >= len(data.variants) { return st2 }
+            let v: EnumVariant = data.variants[vi]
+            let variant_type: TypeInfo = make_builtin_fn_type(make_type(data.name))
+            let vsym: Symbol = new_symbol(v.name, "function", variant_type, false)
+            st2 = define_in_scope(st2, v.name, vsym)
+            vi = vi + 1
+        }
+        return st2
+    }
+    if dk == "type_alias" {
+        let name: String = def_type_alias_name(def)
+        let resolved: TypeInfo = resolve_type_expr(def_type_alias_type(def))
+        let sym_alias: Symbol = new_symbol(name, "type_alias", resolved, false)
+        return define_in_scope(st, name, sym_alias)
+    }
+    if dk == "import_def" {
+        let path: List<String> = def_import_path(def)
+        let items: List<String> = def_import_items(def)
+        let mut st2: SemState = st
+        if len(items) > 0 {
+            let mut ii: Int = 0
             for _ in 0..200 {
-                if pi >= len(data.params) {
-                    let ret: TypeInfo = resolve_type_opt(data.return_type)
-                    let fn_type: TypeInfo = make_fn_type(params, ret)
-                    let sym: Symbol = new_symbol(data.name, "function", fn_type, false)
-                    return define_in_scope(st, data.name, sym)
-                }
-                let p: Param = data.params[pi]
-                let pt: TypeInfo = resolve_type_opt(p.type_annotation)
-                // params.push(pt)
-                pi = pi + 1
+                if ii >= len(items) { return st2 }
+                let item: String = items[ii]
+                let sym_item: Symbol = new_symbol(item, "variable", unknown_type(), false)
+                st2 = define_in_scope(st2, item, sym_item)
+                ii = ii + 1
             }
-            return st
-        },
-
-        AgentDef(data) => {
-            let sym: Symbol = new_symbol(data.name, "agent", make_type(data.name), false)
-            return define_in_scope(st, data.name, sym)
-        },
-
-        PipeDef(data) => {
-            let sym: Symbol = new_symbol(data.name, "pipe", unknown_type(), false)
-            return define_in_scope(st, data.name, sym)
-        },
-
-        StructDef(data) => {
-            let sym: Symbol = new_symbol(data.name, "struct", make_type(data.name), false)
-            return define_in_scope(st, data.name, sym)
-        },
-
-        EnumDef(data) => {
-            let sym: Symbol = new_symbol(data.name, "enum", make_type(data.name), false)
-            let mut st2: SemState = define_in_scope(st, data.name, sym)
-            // Register variants as constructors
-            let mut vi: Int = 0
-            for _ in 0..200 {
-                if vi >= len(data.variants) { return st2 }
-                let v: EnumVariant = data.variants[vi]
-                let variant_type: TypeInfo = make_builtin_fn_type(make_type(data.name))
-                let vsym: Symbol = new_symbol(v.name, "function", variant_type, false)
-                st2 = define_in_scope(st2, v.name, vsym)
-                vi = vi + 1
+        } else {
+            if len(path) > 0 {
+                let mod_name: String = path[len(path) - 1]
+                let sym_mod: Symbol = new_symbol(mod_name, "variable", unknown_type(), false)
+                st2 = define_in_scope(st2, mod_name, sym_mod)
             }
-            return st2
-        },
-
-        TypeAlias(name, type_expr) => {
-            let resolved: TypeInfo = resolve_type_expr(type_expr)
-            let sym: Symbol = new_symbol(name, "type_alias", resolved, false)
-            return define_in_scope(st, name, sym)
-        },
-
-        ImportDef(path, items) => {
-            let mut st2: SemState = st
-            if len(items) > 0 {
-                let mut ii: Int = 0
-                for _ in 0..200 {
-                    if ii >= len(items) { return st2 }
-                    let item: String = items[ii]
-                    let sym: Symbol = new_symbol(item, "variable", unknown_type(), false)
-                    st2 = define_in_scope(st2, item, sym)
-                    ii = ii + 1
-                }
-            } else {
-                if len(path) > 0 {
-                    let mod_name: String = path[len(path) - 1]
-                    let sym: Symbol = new_symbol(mod_name, "variable", unknown_type(), false)
-                    st2 = define_in_scope(st2, mod_name, sym)
-                }
-            }
-            return st2
-        },
-
-        ExportDef(inner_def, names) => {
-            match inner_def {
-                Some(d) => { return register_def(st, d) },
-                _ => { return st }
-            }
-        },
-
-        ImplDef(target, methods) => {
-            // Methods handled in second pass
-            return st
+        }
+        return st2
+    }
+    if dk == "export_def" {
+        let inner_def: Option<Definition> = def_export_inner(def)
+        match inner_def {
+            Some(d) => { return register_def(st, d) },
+            _ => { return st }
         }
     }
+    if dk == "trait_def" {
+        let trait_name: String = def_trait_name(def)
+        let trait_methods: List<FnDefData> = def_trait_methods(def)
+        // Store method count in args list length for validation
+        let mut trait_type: TypeInfo = make_type(trait_name)
+        let sym_trait: Symbol = new_symbol(trait_name, "trait", trait_type, false)
+        let mut st2_trait: SemState = define_in_scope(st, trait_name, sym_trait)
+        // Register each trait method as "TraitName.method_name" for impl validation
+        let mut tmi: Int = 0
+        for _ in 0..200 {
+            if tmi >= len(trait_methods) { return st2_trait }
+            let tm: FnDefData = trait_methods[tmi]
+            let tm_key: String = trait_name + "." + tm.name
+            let tm_sym: Symbol = new_symbol(tm_key, "trait_method", unknown_type(), false)
+            st2_trait = define_in_scope(st2_trait, tm_key, tm_sym)
+            tmi = tmi + 1
+        }
+        return st2_trait
+    }
+    // impl_def — methods handled in second pass
+    return st
 }
 
 // ---------------------------------------------------------------------------
@@ -1345,7 +1459,7 @@ fn register_def(st: SemState, def: Definition) -> SemState {
 fn check_definitions(st: SemState, program: Program) -> SemState {
     let mut st2: SemState = st
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..2000 {
         if i >= len(program.definitions) { return st2 }
         let def: Definition = program.definitions[i]
         st2 = check_def(st2, def)
@@ -1355,19 +1469,19 @@ fn check_definitions(st: SemState, program: Program) -> SemState {
 }
 
 fn check_def(st: SemState, def: Definition) -> SemState {
-    match def {
-        FnDef(data) => { return check_fn_body(st, data) },
-        AgentDef(data) => { return check_agent_body(st, data) },
-        PipeDef(data) => { return check_pipe_stages(st, data) },
-        ImplDef(target, methods) => { return check_impl_body(st, target, methods) },
-        ExportDef(inner_def, _) => {
-            match inner_def {
-                Some(d) => { return check_def(st, d) },
-                _ => { return st }
-            }
-        },
-        _ => { return st }
+    let dk: String = def_kind(def)
+    if dk == "fn_def" { return check_fn_body(st, def_fn_data(def)) }
+    if dk == "agent_def" { return check_agent_body(st, def_agent_data(def)) }
+    if dk == "pipe_def" { return check_pipe_stages(st, def_pipe_data(def)) }
+    if dk == "impl_def" { return check_impl_body(st, def_impl_target(def), def_impl_trait_name(def), def_impl_methods(def)) }
+    if dk == "export_def" {
+        let inner_def: Option<Definition> = def_export_inner(def)
+        match inner_def {
+            Some(d) => { return check_def(st, d) },
+            _ => { return st }
+        }
     }
+    return st
 }
 
 // ---------------------------------------------------------------------------
@@ -1375,7 +1489,7 @@ fn check_def(st: SemState, def: Definition) -> SemState {
 // ---------------------------------------------------------------------------
 
 fn check_fn_body(st: SemState, data: FnDefData) -> SemState {
-    let inner: SemState = push_scope(st)
+    let inner: SemState = push_scope(set_span(st, data.span))
     let mut st2: SemState = inner
 
     // Register parameters
@@ -1401,7 +1515,7 @@ fn check_fn_body(st: SemState, data: FnDefData) -> SemState {
 // ---------------------------------------------------------------------------
 
 fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
-    let inner: SemState = push_scope(st)
+    let inner: SemState = push_scope(set_span(st, data.span))
     let mut st2: SemState = inner
 
     // Register self
@@ -1460,14 +1574,34 @@ fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
 // Impl block checking
 // ---------------------------------------------------------------------------
 
-fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> SemState {
+fn check_impl_body(st: SemState, target: String, trait_name_opt: Option<String>, methods: List<FnDefData>) -> SemState {
     let sym_opt: Option<Symbol> = scope_lookup(st.scope, target)
     let mut st2: SemState = st
     match sym_opt {
         Some(_) => {},
         _ => {
-            st2 = add_error(st2, "Undefined type '" + target + "' in impl block", 0, 0)
+            st2 = add_error_here(st2, "Undefined type '" + target + "' in impl block")
         }
+    }
+
+    // Validate trait requirements if this is "impl Trait for Type"
+    match trait_name_opt {
+        Some(trait_name) => {
+            let trait_sym: Option<Symbol> = scope_lookup(st2.scope, trait_name)
+            match trait_sym {
+                Some(ts) => {
+                    if ts.kind != "trait" {
+                        st2 = add_error_here(st2, "'" + trait_name + "' is not a trait")
+                    }
+                    // Check each trait method is implemented
+                    st2 = validate_trait_methods(st2, trait_name, target, methods)
+                },
+                _ => {
+                    st2 = add_error_here(st2, "Undefined trait '" + trait_name + "'")
+                }
+            }
+        },
+        _ => {}
     }
 
     let mut mi: Int = 0
@@ -1480,17 +1614,58 @@ fn check_impl_body(st: SemState, target: String, methods: List<FnDefData>) -> Se
     return st2
 }
 
+fn validate_trait_methods(st: SemState, trait_name: String, target: String, impl_methods: List<FnDefData>) -> SemState {
+    // Build list of implemented method names
+    let mut impl_names: List<String> = []
+    let mut ii: Int = 0
+    for _ in 0..200 {
+        if ii >= len(impl_methods) { ii = len(impl_methods) + 1 }
+        if ii < len(impl_methods) {
+            impl_names.push(impl_methods[ii].name)
+            ii = ii + 1
+        }
+    }
+
+    // Check each registered trait method "TraitName.method" exists in impl
+    let mut st2: SemState = st
+    let mut ti: Int = 0
+    let scope_syms: List<Symbol> = st.scope.symbols
+    for _ in 0..10000 {
+        if ti >= len(scope_syms) { return st2 }
+        let sym: Symbol = scope_syms[ti]
+        if sym.kind == "trait_method" {
+            let prefix: String = trait_name + "."
+            if sym.name.starts_with(prefix) {
+                // Extract method name after "TraitName."
+                let method_name: String = sym.name.substr(len(prefix), len(sym.name) - len(prefix))
+                // Check if impl provides this method
+                if !list_contains(impl_names, method_name) {
+                    st2 = add_error_here(st2, "Missing method '" + method_name + "' required by trait '" + trait_name + "' for type '" + target + "'")
+                }
+            }
+        }
+        ti = ti + 1
+    }
+    return st2
+}
+
+fn list_contains(lst: List<String>, item: String) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..200 {
+        if i >= len(lst) { return false }
+        if lst[i] == item { return true }
+        i = i + 1
+    }
+    return false
+}
+
 // ---------------------------------------------------------------------------
 // Pipe definition checking
 // ---------------------------------------------------------------------------
 
 fn check_pipe_stage_type(st: SemState, stage: Expr, pipe_name: String) -> TypeInfo {
-    match stage {
-        Ident(name) => {
-            return resolve_pipe_ident_type(st, name)
-        },
-        _ => { return unknown_type() }
-    }
+    if expr_kind(stage) == "ident" { return resolve_pipe_ident_type(st, expr_ident_name(stage)) }
+    return unknown_type()
 }
 
 fn resolve_pipe_ident_type(st: SemState, name: String) -> TypeInfo {
@@ -1513,19 +1688,16 @@ fn resolve_sym_output_type(sym: Symbol) -> TypeInfo {
 }
 
 fn check_pipe_stage_err(st: SemState, stage: Expr, pipe_name: String) -> SemState {
-    match stage {
-        Ident(name) => {
-            let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
-            match sym_opt {
-                Some(sym) => { return st },
-                _ => { return add_error(st, "Undefined stage '" + name + "' in pipe '" + pipe_name + "'", 0, 0) }
-            }
-        },
-        _ => {
-            let sr: InferResult = infer_expr(st, stage)
-            return sr.st
+    if expr_kind(stage) == "ident" {
+        let name: String = expr_ident_name(stage)
+        let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+        match sym_opt {
+            Some(sym) => { return st },
+            _ => { return add_error_here(st, "Undefined stage '" + name + "' in pipe '" + pipe_name + "'") }
         }
     }
+    let sr: InferResult = infer_expr(st, stage)
+    return sr.st
 }
 
 fn check_pipe_stages(st: SemState, data: PipeDefData) -> SemState {
@@ -1606,6 +1778,80 @@ fn register_builtins(st: SemState) -> SemState {
     // join -> String
     let join_sym: Symbol = new_symbol("join", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "join", join_sym)
+
+    // typeof -> String
+    let typeof_sym: Symbol = new_symbol("typeof", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "typeof", typeof_sym)
+
+    // C runtime functions used by the self-hosted compiler driver
+    let argc_sym: Symbol = new_symbol("__mn_argc", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_argc", argc_sym)
+    let argv_sym: Symbol = new_symbol("__mn_argv", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_argv", argv_sym)
+    let fread_sym: Symbol = new_symbol("__mn_file_read_or_empty", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_file_read_or_empty", fread_sym)
+    let exit_sym: Symbol = new_symbol("__mn_exit", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_exit", exit_sym)
+    let eprint_sym: Symbol = new_symbol("__mn_str_eprint", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_str_eprint", eprint_sym)
+    let eprintln_sym: Symbol = new_symbol("__mn_str_eprintln", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_str_eprintln", eprintln_sym)
+    let system_sym: Symbol = new_symbol("__mn_system", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_system", system_sym)
+    let fwrite_sym: Symbol = new_symbol("__mn_file_write", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_file_write", fwrite_sym)
+
+    // High-level I/O builtins (v3.41.0)
+    let readline_sym: Symbol = new_symbol("read_line", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "read_line", readline_sym)
+    let readfile_sym: Symbol = new_symbol("read_file", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "read_file", readfile_sym)
+    let writefile_sym: Symbol = new_symbol("write_file", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "write_file", writefile_sym)
+    let appendfile_sym: Symbol = new_symbol("append_file", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "append_file", appendfile_sym)
+    let fileexists_sym: Symbol = new_symbol("file_exists", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "file_exists", fileexists_sym)
+    let listdir_sym: Symbol = new_symbol("list_dir", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "list_dir", listdir_sym)
+
+    // Network, crypto, regex builtins (v3.42.0)
+    let httpget_sym: Symbol = new_symbol("http_get", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "http_get", httpget_sym)
+    let sha256_sym: Symbol = new_symbol("sha256", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "sha256", sha256_sym)
+    let b64enc_sym: Symbol = new_symbol("base64_encode", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "base64_encode", b64enc_sym)
+    let b64dec_sym: Symbol = new_symbol("base64_decode", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "base64_decode", b64dec_sym)
+    let hmac_sym: Symbol = new_symbol("hmac_sha256", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "hmac_sha256", hmac_sym)
+    let hexenc_sym: Symbol = new_symbol("hex_encode", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "hex_encode", hexenc_sym)
+    let randbytes_sym: Symbol = new_symbol("random_bytes", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "random_bytes", randbytes_sym)
+    let regmatch_sym: Symbol = new_symbol("regex_match", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "regex_match", regmatch_sym)
+    let regrepl_sym: Symbol = new_symbol("regex_replace", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "regex_replace", regrepl_sym)
+
+    // GPU builtins (v3.46.0)
+    let gpu_avail_sym: Symbol = new_symbol("gpu_available", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "gpu_available", gpu_avail_sym)
+    let gpu_name_sym: Symbol = new_symbol("gpu_device_name", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "gpu_device_name", gpu_name_sym)
+    let gpu_mem_sym: Symbol = new_symbol("gpu_device_memory", "function", make_builtin_fn_type(make_type("Int")), false)
+    st2 = define_in_scope(st2, "gpu_device_memory", gpu_mem_sym)
+    let gpu_tadd_sym: Symbol = new_symbol("gpu_tensor_add", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "gpu_tensor_add", gpu_tadd_sym)
+    let gpu_tsub_sym: Symbol = new_symbol("gpu_tensor_sub", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "gpu_tensor_sub", gpu_tsub_sym)
+    let gpu_tmul_sym: Symbol = new_symbol("gpu_tensor_mul", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "gpu_tensor_mul", gpu_tmul_sym)
+    let gpu_tdiv_sym: Symbol = new_symbol("gpu_tensor_div", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "gpu_tensor_div", gpu_tdiv_sym)
+    let gpu_tmat_sym: Symbol = new_symbol("gpu_tensor_matmul", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "gpu_tensor_matmul", gpu_tmat_sym)
 
     return st2
 }

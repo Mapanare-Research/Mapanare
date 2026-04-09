@@ -1,0 +1,53 @@
+// todo.mn — Simple TODO manager.
+// Commands: add <task>, list, done <n>, quit
+// Stores tasks in /tmp/mn_todo.txt
+
+fn load_tasks() -> List<String> {
+    pon content: String = read_file("/tmp/mn_todo.txt")
+    si len(content) == 0 {
+        da []
+    }
+    da content.split("\n")
+}
+
+fn save_tasks(tasks: List<String>) {
+    pon mut text: String = ""
+    pon mut i: Int = 0
+    mien i < len(tasks) {
+        si len(tasks[i]) > 0 {
+            si len(text) > 0 {
+                text = text + "\n"
+            }
+            text = text + tasks[i]
+        }
+        i = i + 1
+    }
+    write_file("/tmp/mn_todo.txt", text)
+}
+
+fn main() {
+    print("TODO Manager (add/list/done/quit)")
+    pon mut running: Bool = true
+    mien running {
+        print("> ")
+        pon line: String = read_line()
+        si line.starts_with("add ") {
+            pon task: String = line.substr(4, len(line))
+            append_file("/tmp/mn_todo.txt", task + "\n")
+            print("Added: " + task)
+        } sino si line == "list" {
+            pon tasks: List<String> = load_tasks()
+            pon mut i: Int = 0
+            mien i < len(tasks) {
+                si len(tasks[i]) > 0 {
+                    print(str(i + 1) + ". " + tasks[i])
+                }
+                i = i + 1
+            }
+        } sino si line == "quit" {
+            running = false
+        } sino {
+            print("Commands: add <task>, list, quit")
+        }
+    }
+}

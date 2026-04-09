@@ -1524,9 +1524,24 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def impl_def(self, children: list[Any]) -> ImplDef:
         items = _filter(children)
-        name = str(items[0])
-        methods = [m for m in items[1:] if isinstance(m, FnDef)]
-        return ImplDef(target=name, methods=methods, span=_span_from_children(children))
+        # Extract type params if present (impl<T> syntax)
+        type_params: list[str] = []
+        idx = 0
+        if (
+            idx < len(items)
+            and isinstance(items[idx], list)
+            and all(isinstance(tp, TypeParam) for tp in items[idx])
+        ):
+            type_params = [tp.name for tp in items[idx]]
+            idx += 1
+        name = str(items[idx]) if idx < len(items) else ""
+        methods = [m for m in items[idx + 1 :] if isinstance(m, FnDef)]
+        return ImplDef(
+            target=name,
+            methods=methods,
+            type_params=type_params,
+            span=_span_from_children(children),
+        )
 
     # ------------------------------------------------------------------
     # Import / Export

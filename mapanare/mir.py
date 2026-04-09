@@ -71,6 +71,7 @@ _MIR_BOOL = MIRType(TypeInfo(kind=TypeKind.BOOL))
 _MIR_STRING = MIRType(TypeInfo(kind=TypeKind.STRING))
 _MIR_VOID = MIRType(TypeInfo(kind=TypeKind.VOID))
 _MIR_UNKNOWN = MIRType(TypeInfo(kind=TypeKind.UNKNOWN))
+_MIR_ANY = MIRType(TypeInfo(kind=TypeKind.ANY))
 
 
 # Convenience factories (return cached singletons)
@@ -96,6 +97,10 @@ def mir_void() -> MIRType:
 
 def mir_unknown() -> MIRType:
     return _MIR_UNKNOWN
+
+
+def mir_any() -> MIRType:
+    return _MIR_ANY
 
 
 # ---------------------------------------------------------------------------

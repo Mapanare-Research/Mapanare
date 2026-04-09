@@ -1,5 +1,5 @@
 // main.mn — Compiler driver for the Mapanare self-hosted compiler.
-// Wires the pipeline: source -> parse -> check -> lower -> emit_llvm -> LLVM IR.
+// Wires the pipeline: source -> parse -> resolve imports -> lower -> emit_llvm -> LLVM IR.
 
 import self::ast
 import self::mir
@@ -28,7 +28,251 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 2.1.0"
+    return "mapanare 4.0.0"
+}
+
+// ---------------------------------------------------------------------------
+// Path helpers for module resolution
+// ---------------------------------------------------------------------------
+
+// Extract directory part of a path: "/foo/bar/baz.mn" -> "/foo/bar/"
+// Returns "" if no directory separator found.
+// Scans from end to find last separator (avoids nested-assign MIR bug).
+fn dir_of_path(path: String) -> String {
+    let slen: Int = len(path)
+    if slen == 0 { return "" }
+    let mut i: Int = slen - 1
+    for _ in 0..4096 {
+        if i < 0 { return "" }
+        let ch: String = path.substr(i, 1)
+        if ch == "/" {
+            return path.substr(0, i + 1)
+        }
+        i = i - 1
+    }
+    return ""
+}
+
+// Join import path segments with "/": ["stdlib", "math"] -> "stdlib/math"
+fn join_import_path(segments: List<String>) -> String {
+    let mut result: String = ""
+    let mut i: Int = 0
+    let n: Int = len(segments)
+    for _ in 0..20 {
+        if i >= n { return result }
+        if i > 0 {
+            result = result + "/" + segments[i]
+        } else {
+            result = segments[i]
+        }
+        i = i + 1
+    }
+    return result
+}
+
+// Extract last path component: "stdlib/text" -> "text", "math" -> "math"
+fn basename_of(path: String) -> String {
+    let slen: Int = len(path)
+    if slen == 0 { return "" }
+    let mut i: Int = slen - 1
+    for _ in 0..256 {
+        if i < 0 { return path }
+        let ch: String = path.substr(i, 1)
+        if ch == "/" {
+            return path.substr(i + 1, slen - i - 1)
+        }
+        i = i - 1
+    }
+    return path
+}
+
+// Extract file extension: "hello.py" -> ".py", "foo.mn" -> ".mn"
+fn file_extension(filename: String) -> String {
+    let flen: Int = len(filename)
+    let mut i: Int = flen - 1
+    for _ in 0..20 {
+        if i < 0 { return "" }
+        if filename.substr(i, 1) == "." {
+            return filename.substr(i, flen - i)
+        }
+        i = i - 1
+    }
+    return ""
+}
+
+// Try a single directory + relative path combination.
+// Resolution order: <rel>.mn, <rel>/mod.mn, <rel>/<basename>.mn
+fn try_resolve(dir: String, rel: String) -> String {
+    let c1: String = dir + rel + ".mn"
+    let r1: String = __mn_file_read_or_empty(c1)
+    if len(r1) > 0 { return c1 }
+    let c2: String = dir + rel + "/mod.mn"
+    let r2: String = __mn_file_read_or_empty(c2)
+    if len(r2) > 0 { return c2 }
+    // Try <rel>/<basename>.mn (e.g., stdlib/text -> stdlib/text/text.mn)
+    let base: String = basename_of(rel)
+    if len(base) > 0 {
+        let c3: String = dir + rel + "/" + base + ".mn"
+        let r3: String = __mn_file_read_or_empty(c3)
+        if len(r3) > 0 { return c3 }
+    }
+    return ""
+}
+
+// Resolve an import path to a file path, reading to check existence.
+// Search order: source_dir, parent dirs of source_dir, then CWD.
+// Returns "" if not found.
+fn resolve_import_file(segments: List<String>, source_dir: String) -> String {
+    let rel: String = join_import_path(segments)
+    // Try relative to source directory and each parent up to root
+    let mut dir: String = source_dir
+    for _ in 0..20 {
+        if len(dir) == 0 {
+            // Try CWD-relative (empty prefix)
+            let cwd_result: String = try_resolve("", rel)
+            if len(cwd_result) > 0 { return cwd_result }
+            return ""
+        }
+        let result: String = try_resolve(dir, rel)
+        if len(result) > 0 { return result }
+        // Climb to parent: strip trailing slash, then find last slash
+        let trimmed: String = dir.substr(0, len(dir) - 1)
+        dir = dir_of_path(trimmed)
+    }
+    return ""
+}
+
+// ---------------------------------------------------------------------------
+// Definition dedup — remove earlier duplicates from circular imports.
+// When module A imports B and B imports A, stubs from A appear before
+// real definitions from B. Keep the LAST occurrence of each function name.
+// ---------------------------------------------------------------------------
+
+fn definition_name(defn: Definition) -> String {
+    let dk: String = def_kind(defn)
+    if dk == "fn_def" { return "__fn__" + def_fn_data(defn).name }
+    if dk == "struct_def" { return "__st__" + def_struct_data(defn).name }
+    if dk == "enum_def" { return "__en__" + def_enum_data(defn).name }
+    if dk == "extern_fn_def" { return "__ex__" + def_extern_name(defn) }
+    return ""
+}
+
+fn has_later_def(defs: List<Definition>, idx: Int, name: String, total: Int) -> Bool {
+    // Check if any definition after idx has the same name
+    let mut found: Bool = false
+    let mut j: Int = idx + 1
+    for _ in 0..10000 {
+        if j < total {
+            if definition_name(defs[j]) == name {
+                found = true
+            }
+            j = j + 1
+        }
+    }
+    return found
+}
+
+fn dedup_definitions(defs: List<Definition>) -> List<Definition> {
+    let mut result: List<Definition> = []
+    let n: Int = len(defs)
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i < n {
+            let defn: Definition = defs[i]
+            let name: String = definition_name(defn)
+            // Keep definitions with no extractable name
+            if len(name) == 0 {
+                result.push(defn)
+            } else {
+                // Only keep if no later definition has the same name
+                if has_later_def(defs, i, name, n) == false {
+                    result.push(defn)
+                }
+            }
+            i = i + 1
+        }
+    }
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Import resolution — read imported files, parse, merge definitions
+// ---------------------------------------------------------------------------
+
+// Resolve all imports in a program. Reads imported files, parses them,
+// and prepends their definitions to the program.
+// visited tracks already-resolved files to prevent circular imports.
+fn resolve_imports(program: Program, filename: String, visited: List<String>) -> Program {
+    let source_dir: String = dir_of_path(filename)
+    let mut all_defs: List<Definition> = []
+    let mut vis: List<String> = visited
+    vis.push(filename)
+
+    // First pass: find and resolve import definitions
+    let mut i: Int = 0
+    let ndefs: Int = len(program.definitions)
+    for _ in 0..2000 {
+        if i >= ndefs {
+            // Append the original non-import definitions
+            let mut j: Int = 0
+            for _ in 0..10000 {
+                if j >= ndefs {
+                    // Dedup: remove earlier stubs when real implementations exist
+                    let deduped: List<Definition> = dedup_definitions(all_defs)
+                    return start(deduped)
+                }
+                let defn_j: Definition = program.definitions[j]
+                if def_kind(defn_j) != "import_def" {
+                    all_defs.push(defn_j)
+                }
+                j = j + 1
+            }
+            let deduped2: List<Definition> = dedup_definitions(all_defs)
+            return start(deduped2)
+        }
+        let defn: Definition = program.definitions[i]
+        if def_kind(defn) == "import_def" {
+            let imp_path: List<String> = def_import_path(defn)
+            if len(imp_path) > 0 {
+                let resolved_file: String = resolve_import_file(imp_path, source_dir)
+                if len(resolved_file) > 0 {
+                    // Check if already visited (circular import guard)
+                    if is_visited(vis, resolved_file) == false {
+                        vis.push(resolved_file)
+                        let imp_source: String = __mn_file_read_or_empty(resolved_file)
+                        if len(imp_source) > 0 {
+                            let imp_program: Program = parse(imp_source, resolved_file)
+                            // Recursively resolve imports in the imported module
+                            let resolved_imp: Program = resolve_imports(imp_program, resolved_file, vis)
+                            // Prepend imported definitions (skip import defs themselves)
+                            let mut k: Int = 0
+                            let nimp: Int = len(resolved_imp.definitions)
+                            for _ in 0..10000 {
+                                if k >= nimp { k = nimp + 1 }
+                                if k < nimp {
+                                    all_defs.push(resolved_imp.definitions[k])
+                                    k = k + 1
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return start(all_defs)
+}
+
+fn is_visited(visited: List<String>, path: String) -> Bool {
+    let mut i: Int = 0
+    let n: Int = len(visited)
+    for _ in 0..100 {
+        if i >= n { return false }
+        if visited[i] == path { return true }
+        i = i + 1
+    }
+    return false
 }
 
 // ---------------------------------------------------------------------------
@@ -39,14 +283,12 @@ fn compile(source: String, filename: String) -> CompileResult {
     // Stage 1: parse
     let program: Program = parse(source, filename)
 
-    // Stage 2: semantic analysis
-    let errors: List<SemanticError> = check(program, filename)
-    if len(errors) > 0 {
-        return new_compile_result(false, "", errors)
-    }
+    // Stage 2: resolve imports — read imported files, parse, merge definitions
+    let visited: List<String> = []
+    let resolved: Program = resolve_imports(program, filename, visited)
 
     // Stage 3: lower AST to MIR
-    let mir_module: MIRModule = lower(program, filename)
+    let mir_module: MIRModule = lower(resolved, filename)
 
     // Stage 4: emit LLVM IR from MIR
     let ir_text: String = emit_mir_module(mir_module, filename)
@@ -63,7 +305,7 @@ fn format_error(err: SemanticError) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// compile_and_print — compile and print result or errors to stdout
+// compile_and_print — compile and print result or errors
 // ---------------------------------------------------------------------------
 
 fn compile_and_print(source: String, filename: String) -> CompileResult {
@@ -78,4 +320,436 @@ fn compile_and_print(source: String, filename: String) -> CompileResult {
         }
     }
     return cr
+}
+
+// ---------------------------------------------------------------------------
+// mn_main — native compiler entry point (called from C shim)
+//
+// Reads source file from argv[1], compiles to LLVM IR, prints to stdout.
+// Errors go to stderr. Returns exit code via __mn_exit.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// test — compile, link, run, report pass/fail
+// ---------------------------------------------------------------------------
+
+fn rename_main(ir: String) -> String {
+    return ir.replace("@main(", "@mn_main(")
+}
+
+// Link an object file with the Mapanare runtime.
+// Tries precompiled libmapanare_rt.a first, falls back to C source.
+fn link_with_runtime(obj_path: String, out_path: String) -> Int {
+    let link_pre: String = "gcc " + obj_path + " runtime/native/libmapanare_rt.a -o " + out_path + " -no-pie -rdynamic -lm -lpthread 2>/dev/null"
+    let r: Int = __mn_system(link_pre)
+    if r == 0 { return 0 }
+    let link_src: String = "gcc " + obj_path + " runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_path + " -no-pie -rdynamic -lm -lpthread 2>/dev/null"
+    return __mn_system(link_src)
+}
+
+fn run_test(filename: String) {
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) == 0 {
+        __mn_str_eprint("FAIL ")
+        __mn_str_eprint(filename)
+        __mn_str_eprint(" (cannot read file)\n")
+        __mn_exit(1)
+    }
+    let cr: CompileResult = compile(source, filename)
+    if !cr.success {
+        __mn_str_eprint("FAIL ")
+        __mn_str_eprint(filename)
+        __mn_str_eprint(" (compile errors)\n")
+        __mn_exit(1)
+    }
+    // Rename @main → @mn_main so the C wrapper provides the real main()
+    __mn_file_write("/tmp/mnc_test.ll", rename_main(cr.ir_text))
+
+    // Compile IR -> object
+    let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_test.ll -o /tmp/mnc_test.o 2>/dev/null")
+    if r1 != 0 {
+        __mn_str_eprint("FAIL ")
+        __mn_str_eprint(filename)
+        __mn_str_eprint(" (clang failed)\n")
+        __mn_exit(1)
+    }
+
+    // Link with runtime
+    let r2: Int = link_with_runtime("/tmp/mnc_test.o", "/tmp/mnc_test")
+    if r2 != 0 {
+        __mn_str_eprint("FAIL ")
+        __mn_str_eprint(filename)
+        __mn_str_eprint(" (link failed)\n")
+        __mn_exit(1)
+    }
+
+    // Run
+    let r3: Int = __mn_system("/tmp/mnc_test")
+    if r3 != 0 {
+        __mn_str_eprint("FAIL ")
+        __mn_str_eprint(filename)
+        __mn_str_eprint(" (runtime exit code ")
+        __mn_str_eprint(str(r3))
+        __mn_str_eprint(")\n")
+        __mn_exit(1)
+    }
+
+    print("PASS " + filename)
+}
+
+// ---------------------------------------------------------------------------
+// build — compile, link, produce executable
+// ---------------------------------------------------------------------------
+
+fn run_build(filename: String) {
+    // Check if argument is a directory (try reading it as file — empty = dir or missing)
+    let ext: String = file_extension(filename)
+
+    // Directory build: delegate to mnc-build.sh for incremental compilation
+    if len(ext) == 0 {
+        let mut cmd: String = "bash scripts/mnc-build.sh " + filename
+        // Forward remaining args (e.g., -o output --timing)
+        let mut ai: Int = 3
+        for _ in 0..20 {
+            if ai >= __mn_argc() { ai = __mn_argc() + 1 }
+            if ai < __mn_argc() {
+                cmd = cmd + " " + __mn_argv(ai)
+                ai = ai + 1
+            }
+        }
+        let r: Int = __mn_system(cmd)
+        if r != 0 { __mn_exit(r) }
+        return
+    }
+
+    // Single-file build
+    // Parse flags: -o <output>, --release, --debug, --small
+    let mut out_name: String = "a.out"
+    let mut opt_flag: String = "-O1"
+    let mut strip_flag: String = ""
+    let mut lto_flag: String = ""
+    let mut ai2: Int = 3
+    for _ in 0..20 {
+        if ai2 >= __mn_argc() { ai2 = __mn_argc() + 1 }
+        if ai2 < __mn_argc() {
+            let fl: String = __mn_argv(ai2)
+            if fl == "-o" && ai2 + 1 < __mn_argc() {
+                out_name = __mn_argv(ai2 + 1)
+                ai2 = ai2 + 2
+            }
+            if fl == "--release" {
+                opt_flag = "-O2"
+                lto_flag = " -flto"
+                strip_flag = " -s"
+                ai2 = ai2 + 1
+            }
+            if fl == "--debug" {
+                opt_flag = "-O0"
+                ai2 = ai2 + 1
+            }
+            if fl == "--small" {
+                opt_flag = "-Os"
+                lto_flag = " -flto"
+                strip_flag = " -s"
+                ai2 = ai2 + 1
+            }
+            if fl != "-o" && fl != "--release" && fl != "--debug" && fl != "--small" {
+                ai2 = ai2 + 1
+            }
+        }
+    }
+
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) <= 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+    let cr: CompileResult = compile(source, filename)
+    if !cr.success {
+        __mn_str_eprint("error: compile failed\n")
+        __mn_exit(1)
+    }
+    // Rename @main → @mn_main so the C wrapper provides the real main()
+    __mn_file_write("/tmp/mnc_build.ll", rename_main(cr.ir_text))
+
+    // Compile with selected optimization level
+    let clang_cmd: String = "clang -c " + opt_flag + " /tmp/mnc_build.ll -o /tmp/mnc_build.o 2>/dev/null"
+    let r1: Int = __mn_system(clang_cmd)
+    if r1 != 0 {
+        __mn_str_eprint("error: clang failed\n")
+        __mn_exit(1)
+    }
+
+    // Link
+    let r2: Int = link_with_runtime("/tmp/mnc_build.o", out_name)
+    // Strip if release/small mode
+    if len(strip_flag) > 0 {
+        let strip_cmd: String = "strip " + out_name + " 2>/dev/null"
+        __mn_system(strip_cmd)
+    }
+    if r2 != 0 {
+        __mn_str_eprint("error: link failed\n")
+        __mn_exit(1)
+    }
+
+    print("built: " + out_name)
+}
+
+// ---------------------------------------------------------------------------
+// run — compile, link, execute in one step
+// ---------------------------------------------------------------------------
+
+fn run_program(filename: String) {
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) <= 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+    let cr: CompileResult = compile(source, filename)
+    if !cr.success {
+        __mn_str_eprint("error: compile failed\n")
+        __mn_exit(1)
+    }
+    __mn_file_write("/tmp/mnc_run.ll", rename_main(cr.ir_text))
+
+    // Single-step compile+link via clang (faster than separate clang + gcc)
+    let compile_cmd: String = "clang -O0 /tmp/mnc_run.ll runtime/native/libmapanare_rt.a -o /tmp/mnc_run -lm -lpthread 2>/dev/null"
+    let r1: Int = __mn_system(compile_cmd)
+    if r1 != 0 {
+        // Fall back to two-step compile+link
+        let r1b: Int = __mn_system("clang -c -O0 /tmp/mnc_run.ll -o /tmp/mnc_run.o 2>/dev/null")
+        if r1b != 0 {
+            __mn_str_eprint("error: clang failed\n")
+            __mn_exit(1)
+        }
+        let r2: Int = link_with_runtime("/tmp/mnc_run.o", "/tmp/mnc_run")
+        if r2 != 0 {
+            __mn_str_eprint("error: link failed\n")
+            __mn_exit(1)
+        }
+    }
+
+    // Build command with forwarded args: /tmp/mnc_run [args...]
+    let mut cmd: String = "/tmp/mnc_run"
+    let mut ai: Int = 3
+    for _ in 0..100 {
+        if ai >= __mn_argc() { ai = __mn_argc() + 1 }
+        if ai < __mn_argc() {
+            cmd = cmd + " " + __mn_argv(ai)
+            ai = ai + 1
+        }
+    }
+    let r3: Int = __mn_system(cmd)
+    if r3 != 0 {
+        __mn_exit(r3)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// compile — transpile foreign source (.py/.php/.ts/.go) then compile to native.
+// For non-.mn files, shells out to the transpiler binary (mnc-transpile) or
+// falls back to the Python CLI for transpilation, then compiles the .mn output.
+// ---------------------------------------------------------------------------
+
+fn run_compile(filename: String) {
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) <= 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+
+    let ext: String = file_extension(filename)
+
+    // .mn files compile directly
+    if ext == ".mn" {
+        let cr: CompileResult = compile(source, filename)
+        if !cr.success {
+            __mn_str_eprint("error: compile failed\n")
+            __mn_exit(1)
+        }
+        let mut out_name: String = "a.out"
+        if __mn_argc() >= 4 {
+            let flag: String = __mn_argv(3)
+            if flag == "-o" && __mn_argc() >= 5 {
+                out_name = __mn_argv(4)
+            }
+        }
+        __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr.ir_text))
+        let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o 2>/dev/null")
+        if r1 != 0 {
+            __mn_str_eprint("error: clang failed\n")
+            __mn_exit(1)
+        }
+        let r2: Int = link_with_runtime("/tmp/mnc_compile.o", out_name)
+        if r2 != 0 {
+            __mn_str_eprint("error: link failed\n")
+            __mn_exit(1)
+        }
+        print("compiled: " + out_name)
+        return
+    }
+
+    // Foreign source: transpile via mapanare CLI, then compile the .mn result
+    let mut ok: Bool = false
+    if ext == ".py" { ok = true }
+    if ext == ".php" { ok = true }
+    if ext == ".ts" { ok = true }
+    if ext == ".go" { ok = true }
+    if !ok {
+        __mn_str_eprint("error: unsupported file type '")
+        __mn_str_eprint(ext)
+        __mn_str_eprint("' (supported: .mn, .py, .php, .ts, .go)\n")
+        __mn_exit(1)
+    }
+
+    // Transpile to .mn via the Python CLI (mapanare transpile <file> -o /tmp/mnc_transpiled.mn)
+    let transpile_cmd: String = "mapanare transpile " + filename + " -o /tmp/mnc_transpiled.mn 2>/dev/null"
+    let rt: Int = __mn_system(transpile_cmd)
+    if rt != 0 {
+        __mn_str_eprint("error: transpilation failed for '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+
+    // Now compile the transpiled .mn source
+    let mn_source: String = __mn_file_read_or_empty("/tmp/mnc_transpiled.mn")
+    if len(mn_source) == 0 {
+        __mn_str_eprint("error: transpiler produced empty output\n")
+        __mn_exit(1)
+    }
+
+    let cr2: CompileResult = compile(mn_source, filename)
+    if !cr2.success {
+        __mn_str_eprint("error: compile failed\n")
+        __mn_exit(1)
+    }
+
+    let mut out_name2: String = "a.out"
+    if __mn_argc() >= 4 {
+        let flag2: String = __mn_argv(3)
+        if flag2 == "-o" && __mn_argc() >= 5 {
+            out_name2 = __mn_argv(4)
+        }
+    }
+
+    __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr2.ir_text))
+    let r3: Int = __mn_system("clang -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o 2>/dev/null")
+    if r3 != 0 {
+        __mn_str_eprint("error: clang failed\n")
+        __mn_exit(1)
+    }
+    let r4: Int = link_with_runtime("/tmp/mnc_compile.o", out_name2)
+    if r4 != 0 {
+        __mn_str_eprint("error: link failed\n")
+        __mn_exit(1)
+    }
+    print("compiled: " + out_name2)
+}
+
+// ---------------------------------------------------------------------------
+// mn_main — native compiler entry point (called from C shim)
+//
+// Reads source file from argv[1], compiles to LLVM IR, prints to stdout.
+// Errors go to stderr. Returns exit code via __mn_exit.
+// ---------------------------------------------------------------------------
+
+fn mn_main() {
+    if __mn_argc() < 2 {
+        __mn_str_eprint("usage: mnc <file.mn>\n")
+        __mn_str_eprint("       mnc test <file.mn>\n")
+        __mn_str_eprint("       mnc build <file.mn|dir> [-o output] [--timing]\n")
+        __mn_str_eprint("       mnc run <file.mn> [args...]\n")
+        __mn_str_eprint("       mnc compile <file> [-o output]\n")
+        __mn_str_eprint("       mnc cache <stats|clean>\n")
+        __mn_str_eprint("       mnc version\n")
+        __mn_exit(1)
+    }
+    let arg1: String = __mn_argv(1)
+
+    // Subcommands
+    if arg1 == "test" {
+        if __mn_argc() < 3 {
+            __mn_str_eprint("usage: mnc test <file.mn>\n")
+            __mn_exit(1)
+        }
+        run_test(__mn_argv(2))
+        return
+    }
+    if arg1 == "build" {
+        if __mn_argc() < 3 {
+            __mn_str_eprint("usage: mnc build <file.mn> [-o output]\n")
+            __mn_exit(1)
+        }
+        run_build(__mn_argv(2))
+        return
+    }
+    if arg1 == "run" {
+        if __mn_argc() < 3 {
+            __mn_str_eprint("usage: mnc run <file.mn> [args...]\n")
+            __mn_exit(1)
+        }
+        run_program(__mn_argv(2))
+        return
+    }
+    if arg1 == "cache" {
+        if __mn_argc() < 3 {
+            __mn_str_eprint("usage: mnc cache <stats|clean>\n")
+            __mn_exit(1)
+        }
+        let cache_cmd: String = __mn_argv(2)
+        if cache_cmd == "clean" {
+            let rc: Int = __mn_system("rm -rf .mnc_cache && echo 'Cache cleared.'")
+            if rc != 0 { __mn_exit(rc) }
+            return
+        }
+        if cache_cmd == "stats" {
+            let rs: Int = __mn_system("if [ -d .mnc_cache ]; then echo \"Cache: .mnc_cache/\"; echo \"  Files: $(find .mnc_cache -type f | wc -l)\"; echo \"  Size: $(du -sh .mnc_cache | cut -f1)\"; if [ -f .mnc_cache/manifest.txt ]; then echo \"  Modules: $(wc -l < .mnc_cache/manifest.txt)\"; fi; else echo 'No cache (run mnc build <dir> first)'; fi")
+            if rs != 0 { __mn_exit(rs) }
+            return
+        }
+        __mn_str_eprint("unknown cache command: ")
+        __mn_str_eprint(cache_cmd)
+        __mn_str_eprint("\n")
+        __mn_exit(1)
+    }
+    if arg1 == "compile" {
+        if __mn_argc() < 3 {
+            __mn_str_eprint("usage: mnc compile <file> [-o output]\n")
+            __mn_exit(1)
+        }
+        run_compile(__mn_argv(2))
+        return
+    }
+    if arg1 == "version" || arg1 == "--version" {
+        print(version())
+        return
+    }
+
+    // Default: compile to IR
+    let filename: String = arg1
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) <= 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+    let cr: CompileResult = compile(source, filename)
+    if cr.success {
+        print(cr.ir_text)
+    } else {
+        for i in 0..len(cr.errors) {
+            let err: SemanticError = cr.errors[i]
+            __mn_str_eprint(format_error(err))
+            __mn_str_eprint("\n")
+        }
+        __mn_exit(1)
+    }
 }

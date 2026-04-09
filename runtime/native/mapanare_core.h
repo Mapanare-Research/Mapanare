@@ -128,6 +128,9 @@ MN_EXPORT void __mn_str_println(MnString s);
 /** Print a string to stderr with newline (for diagnostics). */
 MN_EXPORT void __mn_str_eprintln(MnString s);
 
+/** Print a string to stderr (no newline). */
+MN_EXPORT void __mn_str_eprint(MnString s);
+
 /** Return the ASCII/byte value of the first character. Returns -1 if empty. */
 MN_EXPORT int64_t __mn_str_ord(MnString s);
 
@@ -152,6 +155,7 @@ typedef struct MnList {
     int64_t len;
     int64_t cap;
     int64_t elem_size;
+    int64_t managed;      /* 1 if data was allocated via mn_list_alloc_buf (COW header present) */
 } MnList;
 
 /** Split `s` by `delim`. Returns a List<String>. */
@@ -220,8 +224,51 @@ MN_EXPORT MnString __mn_list_str_get(MnList *list, int64_t i);
  *  The `ok` flag is set to 1 on success, 0 on failure. */
 MN_EXPORT MnString __mn_file_read(MnString path, int64_t *ok);
 
+/** Read a file, returning content or empty string with len == -1 on error.
+ *  Pointer-free alternative to __mn_file_read for Mapanare code. */
+MN_EXPORT MnString __mn_file_read_or_empty(MnString path);
+
 /** Write a string to a file. Returns 0 on success, -1 on error. */
 MN_EXPORT int64_t __mn_file_write(MnString path, MnString content);
+
+/** Append a string to a file. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_file_append(MnString path, MnString content);
+
+/** Read one line from stdin (strips trailing newline). */
+MN_EXPORT MnString __mn_read_line(void);
+
+/** List directory entries as a List<String> (skips . and ..). */
+MN_EXPORT MnList __mn_dir_list_strings(MnString path);
+
+/** Check if a file exists. Returns 1 if it does, 0 otherwise. */
+MN_EXPORT int64_t __mn_file_exists(MnString path);
+
+/** Remove a file. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_file_remove(MnString path);
+
+/** Get file size in bytes. Returns -1 on error. */
+MN_EXPORT int64_t __mn_file_size(MnString path);
+
+/** Get file modification time (epoch seconds). Returns -1 on error. */
+MN_EXPORT int64_t __mn_file_mtime(MnString path);
+
+/** Create a directory. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_dir_create(MnString path, int64_t recursive);
+
+/** Remove a directory. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_dir_remove(MnString path);
+
+/** Rename a file. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_file_rename(MnString old_path, MnString new_path);
+
+/** Copy a file. Returns 0 on success, -1 on error. */
+MN_EXPORT int64_t __mn_file_copy(MnString src, MnString dst);
+
+/** Resolve real path. Returns empty string on error. */
+MN_EXPORT MnString __mn_realpath(MnString path);
+
+/** Generate a temporary file path. */
+MN_EXPORT MnString __mn_tmpfile_path(void);
 
 /* -----------------------------------------------------------------------
  * Memory
@@ -288,6 +335,52 @@ MN_EXPORT MnArena *mn_agent_arena_create(void);
 MN_EXPORT void mn_agent_arena_destroy(MnArena *arena);
 
 /* -----------------------------------------------------------------------
+ * MnValue — Dynamic `any` type (tagged union for gradual typing)
+ *
+ * MnValue holds a type tag and a value of any primitive or pointer type.
+ * Used by the `any` type in the Mapanare language for dynamic dispatch.
+ * ----------------------------------------------------------------------- */
+
+typedef enum {
+    MN_TAG_INT = 0, MN_TAG_FLOAT, MN_TAG_BOOL, MN_TAG_STRING,
+    MN_TAG_LIST, MN_TAG_MAP, MN_TAG_STRUCT, MN_TAG_ENUM,
+    MN_TAG_FN, MN_TAG_OPTION, MN_TAG_RESULT, MN_TAG_NONE,
+} MnTypeTag;
+
+typedef struct {
+    int32_t tag;
+    int32_t _pad;
+    union {
+        int64_t  i;
+        double   f;
+        uint8_t  b;
+        MnString s;
+        void*    ptr;
+    } data;
+} MnValue;
+
+/** Box an integer into an MnValue. */
+MN_EXPORT MnValue __mn_any_box_int(int64_t v);
+
+/** Box a float into an MnValue. */
+MN_EXPORT MnValue __mn_any_box_float(double v);
+
+/** Box a boolean into an MnValue. */
+MN_EXPORT MnValue __mn_any_box_bool(uint8_t v);
+
+/** Unbox an MnValue as an integer. Aborts on type mismatch. */
+MN_EXPORT int64_t __mn_any_unbox_int(MnValue v);
+
+/** Unbox an MnValue as a float. Aborts on type mismatch. */
+MN_EXPORT double __mn_any_unbox_float(MnValue v);
+
+/** Get the type tag of an MnValue. */
+MN_EXPORT int32_t __mn_any_tag(MnValue v);
+
+/** Get the type name of an MnValue as a string. */
+MN_EXPORT MnString __mn_any_typename(MnValue v);
+
+/* -----------------------------------------------------------------------
  * MnMap — open-addressing hash table with Robin Hood hashing
  *
  * Opaque struct; all access via __mn_map_* functions.
@@ -308,8 +401,12 @@ typedef struct MnMapIter MnMapIter;
 #define MN_MAP_KEY_STR   1
 #define MN_MAP_KEY_FLOAT 2
 
+/** Value type tags for deep-free behavior. */
+#define MN_MAP_VAL_OPAQUE 0
+#define MN_MAP_VAL_STR    1
+
 /** Create a new empty map. key_type: MN_MAP_KEY_INT/STR/FLOAT. */
-MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type);
+MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type, int64_t val_type);
 
 /** Insert or update a key-value pair. */
 MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val);
@@ -335,8 +432,14 @@ MN_EXPORT int64_t __mn_map_iter_next(MnMapIter *iter, void **key_out, void **val
 /** Free the iterator (does NOT free the map). */
 MN_EXPORT void __mn_map_iter_free(MnMapIter *iter);
 
+/** Return a list of all keys (as MnString). Caller owns the list. */
+MN_EXPORT MnList __mn_map_keys(MnMap *map);
+
 /** Free the map and its storage. Does NOT free contained strings. */
 MN_EXPORT void __mn_map_free(MnMap *map);
+
+/** Free the map, its storage, AND free string keys/values. */
+MN_EXPORT void __mn_map_free_deep(MnMap *map);
 
 /* -----------------------------------------------------------------------
  * Hash functions (exposed for testing; used internally by MnMap)
@@ -483,6 +586,9 @@ MN_EXPORT MnStream *__mn_stream_bounded(MnStream *source, int64_t capacity,
 /** Free a stream node (does NOT free upstream sources). */
 MN_EXPORT void __mn_stream_free(MnStream *stream);
 
+/** Free a stream node AND all upstream sources (iterative, no stack overflow). */
+MN_EXPORT void __mn_stream_free_chain(MnStream *stream);
+
 /* -----------------------------------------------------------------------
  * String Interning — deduplication pool with configurable cap
  *
@@ -516,8 +622,20 @@ MN_EXPORT void __mn_intern_destroy(void);
  * Process
  * ----------------------------------------------------------------------- */
 
+/** Initialize CLI argument storage (call from main before any Mapanare code). */
+MN_EXPORT void __mn_argv_init(int argc, char **argv);
+
+/** Get the number of CLI arguments. */
+MN_EXPORT int64_t __mn_argc(void);
+
+/** Get CLI argument at index as a string. Returns empty string if OOB. */
+MN_EXPORT MnString __mn_argv(int64_t index);
+
 /** Exit with status code. */
 MN_EXPORT void __mn_exit(int64_t code);
+
+/** Run a shell command, return exit code (0 = success). */
+MN_EXPORT int64_t __mn_system(MnString command);
 
 /** Print an error and exit with code 1. */
 MN_EXPORT void __mn_panic(MnString message);

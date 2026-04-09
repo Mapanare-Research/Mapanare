@@ -1,0 +1,55 @@
+// wordcount.mn — Count words in a file
+// Usage: ./wordcount <file>
+
+fn count_words(text: String) -> Int {
+    let mut count: Int = 0
+    let mut in_word: Bool = false
+    let n: Int = len(text)
+    for i in 0..n {
+        let ch: String = text.substr(i, 1)
+        if ch == " " || ch == "\n" || ch == "\t" {
+            if in_word {
+                count = count + 1
+                in_word = false
+            }
+        } else {
+            in_word = true
+        }
+    }
+    if in_word {
+        count = count + 1
+    }
+    return count
+}
+
+fn count_lines(text: String) -> Int {
+    let mut count: Int = 0
+    let n: Int = len(text)
+    for i in 0..n {
+        let ch: String = text.substr(i, 1)
+        if ch == "\n" {
+            count = count + 1
+        }
+    }
+    return count
+}
+
+fn main() {
+    if __mn_argc() < 2 {
+        print("usage: wordcount <file>")
+        __mn_exit(1)
+    }
+    let filename: String = __mn_argv(1)
+    let content: String = __mn_file_read_or_empty(filename)
+    if len(content) == 0 {
+        print("error: cannot read '" + filename + "'")
+        __mn_exit(1)
+    }
+    let words: Int = count_words(content)
+    let lines: Int = count_lines(content)
+    let chars: Int = len(content)
+    print("  " + str(lines) + " lines")
+    print("  " + str(words) + " words")
+    print("  " + str(chars) + " chars")
+    print("  " + filename)
+}

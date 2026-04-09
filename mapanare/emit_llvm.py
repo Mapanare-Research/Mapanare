@@ -85,8 +85,10 @@ LLVM_I32 = ir.IntType(32)  # i32 for C int
 # String: { i8*, i64 } — pointer to data + length (matches MnString in C runtime)
 LLVM_STRING = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
 
-# List: { i8*, i64, i64, i64 } — data, len, cap, elem_size (matches MnList in C runtime)
-LLVM_LIST = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT])
+# List: { i8*, i64, i64, i64, i64 } — data, len, cap, elem_size, managed (matches MnList)
+LLVM_LIST = ir.LiteralStructType(
+    [ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT, LLVM_INT]
+)
 
 # Closure: { i8*, i8* } — fn_ptr, env_ptr
 LLVM_CLOSURE = ir.LiteralStructType([ir.IntType(8).as_pointer(), ir.IntType(8).as_pointer()])
@@ -1454,8 +1456,24 @@ class LLVMEmitter:
                 args = [self._emit_expr(a) for a in node.args]
                 return self._call_closure(closure, args)
             if name not in self._functions:
-                raise NameError(f"Undefined function: {name}")
-            func = self._functions[name]
+                # Auto-declare __mn_* runtime functions with best-guess signatures
+                if name.startswith("__mn_"):
+                    if "str" in name and name != "__mn_str_eprint":
+                        func = self._declare_runtime_fn(name, LLVM_STRING, [LLVM_STRING])
+                    elif name in ("__mn_argc",):
+                        func = self._declare_runtime_fn(name, LLVM_INT, [])
+                    elif name in ("__mn_argv",):
+                        func = self._declare_runtime_fn(name, LLVM_STRING, [LLVM_INT])
+                    elif name in ("__mn_exit",):
+                        func = self._declare_runtime_fn(name, LLVM_VOID, [LLVM_INT])
+                    elif name in ("__mn_str_eprint", "__mn_str_eprintln"):
+                        func = self._declare_runtime_fn(name, LLVM_VOID, [LLVM_STRING])
+                    else:
+                        func = self._declare_runtime_fn(name, LLVM_INT, [LLVM_STRING])
+                else:
+                    raise NameError(f"Undefined function: {name}")
+            else:
+                func = self._functions[name]
         else:
             func = self._emit_expr(node.callee)
             # If the result is a closure struct, call it as a closure

@@ -53,6 +53,7 @@ class TypeKind(Enum):
     # Special
     TYPE_VAR = auto()
     RANGE = auto()
+    ANY = auto()
     UNKNOWN = auto()
     BUILTIN_FN = auto()
 
@@ -78,6 +79,7 @@ _NAME_TO_KIND: dict[str, TypeKind] = {
     "Channel": TypeKind.CHANNEL,
     "Tensor": TypeKind.TENSOR,
     "Range": TypeKind.RANGE,
+    "any": TypeKind.ANY,
 }
 
 # Map from TypeKind to canonical display name
@@ -92,6 +94,7 @@ _KIND_TO_NAME[TypeKind.PIPE] = "pipe"
 _KIND_TO_NAME[TypeKind.TYPE_ALIAS] = "type"
 _KIND_TO_NAME[TypeKind.TRAIT] = "trait"
 _KIND_TO_NAME[TypeKind.TYPE_VAR] = "TypeVar"
+_KIND_TO_NAME[TypeKind.ANY] = "any"
 
 
 def kind_from_name(name: str) -> TypeKind:
@@ -139,7 +142,7 @@ class TypeInfo:
         return all(a == b for a, b in zip(self.args, other.args))
 
     def __hash__(self) -> int:
-        return hash((self.kind, self.name))
+        return hash((self.kind, self.name, tuple(self.args)))
 
     def __repr__(self) -> str:
         if self.is_function:
@@ -168,6 +171,9 @@ class TypeInfo:
         Use __eq__ for strict equality.
         """
         if self.kind == TypeKind.UNKNOWN or other.kind == TypeKind.UNKNOWN:
+            return True
+        # Dynamic `any` type is compatible with everything (gradual typing)
+        if self.kind == TypeKind.ANY or other.kind == TypeKind.ANY:
             return True
         if self.is_function and other.is_function:
             if self.return_type and other.return_type:
@@ -219,6 +225,7 @@ STRING_TYPE = TypeInfo(kind=TypeKind.STRING)
 CHAR_TYPE = TypeInfo(kind=TypeKind.CHAR)
 VOID_TYPE = TypeInfo(kind=TypeKind.VOID)
 RANGE_TYPE = TypeInfo(kind=TypeKind.RANGE)
+ANY_TYPE = TypeInfo(kind=TypeKind.ANY)
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +241,17 @@ PRIMITIVE_KINDS = frozenset(
 BUILTIN_GENERIC_TYPES = frozenset(
     {"Option", "Result", "List", "Map", "Signal", "Stream", "Channel", "Tensor"}
 )
+
+BUILTIN_GENERIC_ARITY: dict[str, int] = {
+    "List": 1,
+    "Map": 2,
+    "Option": 1,
+    "Result": 2,
+    "Signal": 1,
+    "Stream": 1,
+    "Tensor": 1,
+    "Channel": 1,
+}
 
 BUILTIN_GENERIC_KINDS = frozenset(
     {
@@ -265,6 +283,42 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "ord": INT_TYPE,
     "chr": STRING_TYPE,
     "join": STRING_TYPE,
+    "typeof": STRING_TYPE,
+    # C runtime functions used by the self-hosted compiler driver (main.mn)
+    "__mn_argc": INT_TYPE,
+    "__mn_argv": STRING_TYPE,
+    "__mn_file_read_or_empty": STRING_TYPE,
+    "__mn_exit": VOID_TYPE,
+    "__mn_str_eprint": VOID_TYPE,
+    "__mn_str_eprintln": VOID_TYPE,
+    "__mn_system": INT_TYPE,
+    "__mn_file_write": VOID_TYPE,
+    # High-level I/O builtins (v3.41.0)
+    "read_line": STRING_TYPE,
+    "read_file": STRING_TYPE,
+    "write_file": VOID_TYPE,
+    "append_file": VOID_TYPE,
+    "file_exists": TypeInfo(kind=TypeKind.BOOL),
+    "list_dir": TypeInfo(kind=TypeKind.LIST),
+    # Network, crypto, regex builtins (v3.42.0)
+    "http_get": STRING_TYPE,
+    "sha256": STRING_TYPE,
+    "base64_encode": STRING_TYPE,
+    "base64_decode": STRING_TYPE,
+    "hmac_sha256": STRING_TYPE,
+    "hex_encode": STRING_TYPE,
+    "random_bytes": STRING_TYPE,
+    "regex_match": TypeInfo(kind=TypeKind.BOOL),
+    "regex_replace": STRING_TYPE,
+    # GPU builtins (v3.46.0)
+    "gpu_available": TypeInfo(kind=TypeKind.BOOL),
+    "gpu_device_name": STRING_TYPE,
+    "gpu_device_memory": INT_TYPE,
+    "gpu_tensor_add": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
+    "gpu_tensor_sub": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
+    "gpu_tensor_mul": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
+    "gpu_tensor_div": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
+    "gpu_tensor_matmul": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
 }
 
 # Builtin call name mapping (Mapanare name -> Python name) for emit_python.py
@@ -286,6 +340,7 @@ PYTHON_TYPE_MAP: dict[str, str] = {
     "Char": "str",
     "Void": "None",
     "Any": "Any",
+    "any": "Any",
 }
 
 
@@ -296,6 +351,10 @@ BUILTIN_TRAITS: dict[str, list[tuple[str, bool, list[tuple[str, str]], str | Non
     "Eq": [("eq", True, [("other", "Self")], "Bool")],
     "Ord": [("cmp", True, [("other", "Self")], "Int")],
     "Hash": [("hash", True, [], "Int")],
+    "Add": [("add", True, [("other", "Self")], "Self")],
+    "Sub": [("sub", True, [("other", "Self")], "Self")],
+    "Mul": [("mul", True, [("other", "Self")], "Self")],
+    "Div": [("div", True, [("other", "Self")], "Self")],
 }
 
 

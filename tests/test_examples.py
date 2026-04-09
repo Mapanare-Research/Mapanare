@@ -45,7 +45,7 @@ def _preprocess_source(source: str) -> str:
 WASM_EXAMPLES = _find_mn_files("wasm")
 GPU_EXAMPLES = _find_mn_files("gpu")
 MOBILE_EXAMPLES = _find_mn_files("mobile")
-ALL_EXAMPLES = _find_mn_files("wasm", "gpu", "mobile", "packages")
+ALL_EXAMPLES = _find_mn_files("wasm", "gpu", "mobile", "packages", "cli", "network", "transpile")
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,10 @@
 """LLVM IR emitter that consumes MIR (not AST).
 
+# DEPRECATED — use emit_llvm_text.py (the default text emitter) instead.
+# This emitter is kept for backwards compatibility but is no longer the
+# recommended path. The text emitter produces identical IR without the
+# llvmlite dependency and its large-struct codegen bugs.
+
 Translates MIR basic blocks, instructions, and phi nodes into LLVM IR
 via llvmlite. Because LLVM IR natively uses basic blocks and SSA form,
 the mapping is nearly 1:1 with MIR.
@@ -14,7 +19,25 @@ Usage:
 from __future__ import annotations
 
 import logging
-from typing import Any
+import pathlib
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    # Import concrete llvmlite types for annotations under type-checking only.
+    # At runtime llvmlite may be absent, so ``Any`` is the safe fallback
+    # throughout this module (~200 annotations).  A bulk replacement is
+    # deferred until llvmlite ships proper type stubs (currently
+    # ignore_missing_imports makes these resolve to Any anyway).
+    from llvmlite import ir as ir_types  # noqa: F401
+
+
+def _read_version() -> str:
+    """Read project version from the VERSION file."""
+    try:
+        return (pathlib.Path(__file__).parent.parent / "VERSION").read_text().strip()
+    except OSError:
+        return "unknown"
+
 
 try:
     from llvmlite import ir
@@ -24,7 +47,7 @@ except ImportError:
     _HAS_LLVMLITE = False
     ir = None  # type: ignore[assignment,unused-ignore]
 
-from mapanare.mir import (
+from mapanare.mir import (  # noqa: E402
     AgentSend,
     AgentSpawn,
     AgentSync,
@@ -80,7 +103,7 @@ from mapanare.mir import (
     WrapOk,
     WrapSome,
 )
-from mapanare.types import TypeKind
+from mapanare.types import TypeKind  # noqa: E402
 
 
 def _require_llvmlite() -> None:
@@ -108,13 +131,14 @@ LLVM_STRING: Any = None
 LLVM_LIST: Any = None
 LLVM_MAP: Any = None
 LLVM_CLOSURE: Any = None  # {i8* fn_ptr, i8* env_ptr}
+LLVM_MN_VALUE: Any = None  # {i32 type_tag, i32 subtype, {ptr, i64} payload} — 24-byte boxed any
 
 
 def _init_llvm_types() -> None:
     """Initialize LLVM type constants. Must be called after confirming llvmlite exists."""
     global _llvm_types_initialized
     global LLVM_INT, LLVM_FLOAT, LLVM_BOOL, LLVM_CHAR, LLVM_VOID
-    global LLVM_PTR, LLVM_I32, LLVM_STRING, LLVM_LIST, LLVM_MAP, LLVM_CLOSURE
+    global LLVM_PTR, LLVM_I32, LLVM_STRING, LLVM_LIST, LLVM_MAP, LLVM_CLOSURE, LLVM_MN_VALUE
 
     if _llvm_types_initialized:
         return
@@ -127,36 +151,46 @@ def _init_llvm_types() -> None:
     LLVM_PTR = ir.IntType(8).as_pointer()
     LLVM_I32 = ir.IntType(32)
     LLVM_STRING = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])
-    LLVM_LIST = ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT])
+    LLVM_LIST = ir.LiteralStructType(
+        [ir.IntType(8).as_pointer(), LLVM_INT, LLVM_INT, LLVM_INT, LLVM_INT]
+    )
     LLVM_MAP = ir.IntType(8).as_pointer()  # Opaque pointer to C MnMap struct
     LLVM_CLOSURE = ir.LiteralStructType(
         [ir.IntType(8).as_pointer(), ir.IntType(8).as_pointer()]
     )  # {fn_ptr, env_ptr}
+    LLVM_MN_VALUE = ir.LiteralStructType(
+        [LLVM_I32, LLVM_I32, ir.LiteralStructType([ir.IntType(8).as_pointer(), LLVM_INT])]
+    )  # {type_tag, subtype, {ptr, i64}} — 24-byte boxed any
 
     _llvm_types_initialized = True
 
 
-_COERCE_FALLBACK_COUNT = 0
+# Coerce-arg fallback counter.  Stored in a single-element list so the free
+# function _coerce_arg can increment it without the ``global`` keyword.
+# The emitter's __init__ resets this to 0.
+_coerce_fallback_count_holder: list[int] = [0]
+
+# Target pointer size in bytes. Updated by the emitter when a wasm32 or
+# 32-bit target triple is detected.  Used by _approx_type_size and
+# _type_alignment (standalone utility functions).
+_target_ptr_size: int = 8
 
 
-# Thread-local reference to the current function's alloca block (pre_entry).
-# Set by the emitter before processing each function, used by _aligned_alloca
-# to place temporaries in the entry block instead of the current block.
-_current_alloca_block: Any = None
-
-
-def _aligned_alloca(builder: Any, ty: Any, name: str = "") -> Any:
+def _aligned_alloca(builder: Any, ty: Any, name: str = "", alloca_block: Any = None) -> Any:
     """Create an alloca in the entry block with 16-byte alignment.
 
     Dynamic allocas in non-entry blocks adjust RSP at runtime, which can
     misalign the stack for SSE ``movaps`` instructions.  By placing all
     temporaries in the pre_entry block, LLVM includes them in the static
     frame size, maintaining proper 16-byte RSP alignment.
+
+    *alloca_block*, when provided, is the pre_entry block where the alloca
+    is placed.  Previously this was a module-level global; now callers pass
+    it explicitly.
     """
-    global _current_alloca_block
-    if _current_alloca_block is not None:
-        ab = ir.IRBuilder(_current_alloca_block)
-        ab.position_at_end(_current_alloca_block)
+    if alloca_block is not None:
+        ab = ir.IRBuilder(alloca_block)
+        ab.position_at_end(alloca_block)
         inst = ab.alloca(ty, name=name)
     else:
         inst = builder.alloca(ty, name=name)
@@ -191,13 +225,13 @@ def _coerce_arg(
         return builder.load(typed_ptr, name=name)
     # Array → pointer: alloca, store, GEP
     if isinstance(actual, ir.ArrayType) and isinstance(expected_ty, ir.PointerType):
-        tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp")
+        tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp", alloca_block=alloca_block)
         builder.store(arg, tmp)
         zero = ir.Constant(ir.IntType(64), 0)
         return builder.gep(tmp, [zero, zero], inbounds=True, name=name)
     # Struct → pointer: alloca, store, bitcast
     if isinstance(actual, ir.LiteralStructType) and isinstance(expected_ty, ir.PointerType):
-        tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp")
+        tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp", alloca_block=alloca_block)
         builder.store(arg, tmp)
         return builder.bitcast(tmp, expected_ty, name=name)
     # Struct → struct: reinterpret via memory
@@ -206,7 +240,7 @@ def _coerce_arg(
         expected_size = _approx_type_size(expected_ty)
         if actual_size >= expected_size:
             # Source >= dest: safe to reinterpret directly
-            tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp")
+            tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp", alloca_block=alloca_block)
             if _is_large_struct(actual):
                 _store_struct_fields(builder, arg, tmp, actual)
             else:
@@ -218,7 +252,9 @@ def _coerce_arg(
         else:
             # Source < dest (e.g. None {i1, i8*} → Option<BigStruct>):
             # allocate the larger type, zero it, overlay the source
-            tmp = _aligned_alloca(builder, expected_ty, name=f"{name}.tmp")
+            tmp = _aligned_alloca(
+                builder, expected_ty, name=f"{name}.tmp", alloca_block=alloca_block
+            )
             _zero_init_alloca(builder, tmp, expected_ty)
             src_ptr = builder.bitcast(tmp, actual.as_pointer(), name=f"{name}.src")
             if _is_large_struct(actual):
@@ -238,7 +274,7 @@ def _coerce_arg(
     if isinstance(expected_ty, (ir.LiteralStructType, ir.ArrayType)):
         if isinstance(actual, ir.VoidType):
             return ir.Constant(expected_ty, ir.Undefined)
-        tmp = _aligned_alloca(builder, expected_ty, name=f"{name}.tmp")
+        tmp = _aligned_alloca(builder, expected_ty, name=f"{name}.tmp", alloca_block=alloca_block)
         # Zero-fill first to avoid reading garbage bytes
         builder.store(ir.Constant(expected_ty, None), tmp)
         src_ptr_ty = (
@@ -253,7 +289,7 @@ def _coerce_arg(
     if isinstance(actual, (ir.LiteralStructType, ir.ArrayType)) and isinstance(
         expected_ty, ir.IntType
     ):
-        tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp")
+        tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp", alloca_block=alloca_block)
         builder.store(arg, tmp)
         int_ptr = builder.bitcast(tmp, expected_ty.as_pointer(), name=f"{name}.iptr")
         return builder.load(int_ptr, name=name)
@@ -261,11 +297,10 @@ def _coerce_arg(
     try:
         return builder.bitcast(arg, expected_ty, name=name)
     except (TypeError, AttributeError) as exc:
-        global _COERCE_FALLBACK_COUNT
-        _COERCE_FALLBACK_COUNT += 1
+        _coerce_fallback_count_holder[0] += 1
         logging.warning(
             "coerce_arg fallback #%d: %s → %s for '%s'",
-            _COERCE_FALLBACK_COUNT,
+            _coerce_fallback_count_holder[0],
             arg.type,
             expected_ty,
             name,
@@ -275,13 +310,15 @@ def _coerce_arg(
         actual_size = _approx_type_size(actual)
         expected_size = _approx_type_size(expected_ty)
         if expected_size > actual_size:
-            tmp = _aligned_alloca(builder, expected_ty, name=f"{name}.tmp")
+            tmp = _aligned_alloca(
+                builder, expected_ty, name=f"{name}.tmp", alloca_block=alloca_block
+            )
             builder.store(ir.Constant(expected_ty, None), tmp)  # zero-fill
             src_ptr = builder.bitcast(tmp, actual.as_pointer(), name=f"{name}.sptr")
             builder.store(arg, src_ptr)
             return builder.load(tmp, name=name)
         else:
-            tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp")
+            tmp = _aligned_alloca(builder, actual, name=f"{name}.tmp", alloca_block=alloca_block)
             builder.store(arg, tmp)
             cast_ptr = builder.bitcast(tmp, expected_ty.as_pointer(), name=f"{name}.cptr")
             return builder.load(cast_ptr, name=name)
@@ -480,6 +517,17 @@ class LLVMMIREmitter:
         if data_layout is not None:
             self.module.data_layout = data_layout
 
+        # Reset coerce-arg fallback counter for this emitter instance
+        _coerce_fallback_count_holder[0] = 0
+
+        # Set pointer size based on target triple
+        global _target_ptr_size
+        triple = self.module.triple
+        if "wasm32" in triple or "i686" in triple or "i386" in triple or "arm-" in triple:
+            _target_ptr_size = 4
+        else:
+            _target_ptr_size = 8
+
         # Embed compiler version as LLVM named metadata
         self._add_version_metadata()
 
@@ -510,6 +558,8 @@ class LLVMMIREmitter:
         self._di_subprograms: dict[str, Any] = {}  # fn name -> DISubprogram
         self._di_type_cache: dict[str, Any] = {}  # type key -> DIType
 
+        # Per-function alloca block (pre_entry); set before emitting each function.
+        self._alloca_block: Any = None
         # Per-function state for alloca-based dominance fix
         self._fn_allocas: dict[str, Any] = {}
         # Track source alloca for each SSA value (for alloca-to-alloca memcpy)
@@ -557,6 +607,14 @@ class LLVMMIREmitter:
         # Instruction dispatch table (type -> bound handler)
         self._inst_dispatch_bound: dict[type, Any] = {}
         self._init_dispatch()
+
+    # -----------------------------------------------------------------------
+    # Alloca helper — delegates to the free function with instance state
+    # -----------------------------------------------------------------------
+
+    def _alloca(self, builder: Any, ty: Any, name: str = "") -> Any:
+        """Create an alloca using the current function's pre_entry block."""
+        return _aligned_alloca(builder, ty, name=name, alloca_block=self._alloca_block)
 
     # -----------------------------------------------------------------------
     # Version metadata
@@ -663,7 +721,7 @@ class LLVMMIREmitter:
             {
                 "language": ir.DIToken("DW_LANG_C"),
                 "file": self._di_file,
-                "producer": "mapanare 2.0.1",
+                "producer": f"mapanare {_read_version()}",
                 "isOptimized": False,
                 "runtimeVersion": 0,
                 "emissionKind": ir.DIToken("FullDebug"),
@@ -730,24 +788,31 @@ class LLVMMIREmitter:
             )
         elif kind == TypeKind.STRUCT:
             name = mir_type.type_info.name
-            # Build member list from registered struct fields
+            # Build member list from registered struct fields, using actual
+            # LLVM type sizes instead of a hardcoded 64-bit assumption.
             members: list[Any] = []
-            if name in self._struct_fields:
-                offset = 0
-                for field_name in self._struct_fields[name]:
-                    member = self.module.add_debug_info(
-                        "DIDerivedType",
-                        {
-                            "tag": ir.DIToken("DW_TAG_member"),
-                            "name": field_name,
-                            "file": self._di_file,
-                            "size": 64,
-                            "offset": offset,
-                        },
-                    )
-                    members.append(member)
-                    offset += 64
-            total_size = len(members) * 64 if members else 0
+            llvm_struct = self._struct_types.get(name)
+            field_names = self._struct_fields.get(name, [])
+            offset = 0
+            for idx, field_name in enumerate(field_names):
+                # Look up the LLVM type for this field to compute its size
+                if llvm_struct is not None and idx < len(llvm_struct.elements):
+                    field_size_bits = _approx_type_size(llvm_struct.elements[idx]) * 8
+                else:
+                    field_size_bits = 64  # conservative fallback
+                member = self.module.add_debug_info(
+                    "DIDerivedType",
+                    {
+                        "tag": ir.DIToken("DW_TAG_member"),
+                        "name": field_name,
+                        "file": self._di_file,
+                        "size": field_size_bits,
+                        "offset": offset,
+                    },
+                )
+                members.append(member)
+                offset += field_size_bits
+            total_size = offset
             di_type = self.module.add_debug_info(
                 "DICompositeType",
                 {
@@ -917,6 +982,8 @@ class LLVMMIREmitter:
                 elem = self._resolve_type_info_arg(args[0])
                 return _tensor_llvm_type(elem)
             return _tensor_llvm_type(LLVM_FLOAT)
+        if kind == TypeKind.ANY:
+            return LLVM_MN_VALUE
         if kind in (TypeKind.AGENT, TypeKind.SIGNAL, TypeKind.STREAM, TypeKind.CHANNEL):
             return LLVM_PTR
         if kind == TypeKind.FN:
@@ -943,16 +1010,8 @@ class LLVMMIREmitter:
         return self._resolve_mir_type(MIRType(type_info=ti))
 
     def _llvm_type_size(self, ty: Any) -> int:
-        """Approximate byte size of an LLVM type."""
-        if isinstance(ty, ir.IntType):
-            return int(ty.width) // 8
-        if isinstance(ty, ir.DoubleType):
-            return 8
-        if isinstance(ty, ir.PointerType):
-            return 8
-        if isinstance(ty, ir.LiteralStructType):
-            return sum(self._llvm_type_size(e) for e in ty.elements)
-        return 8
+        """Approximate byte size of an LLVM type (with alignment padding)."""
+        return _approx_type_size(ty)
 
     def _resolve_enum_variant_tag(self, variant_name: str, enum_hint: str = "") -> int:
         """Look up the integer tag for an enum variant name.
@@ -1249,6 +1308,46 @@ class LLVMMIREmitter:
     # Runtime function helpers
     # -----------------------------------------------------------------------
 
+    _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
+        # Read-only string functions
+        "__mn_str_len": {"nounwind", "readonly"},
+        "__mn_str_eq": {"nounwind", "readonly"},
+        "__mn_str_cmp": {"nounwind", "readonly"},
+        "__mn_str_hash": {"nounwind", "readonly"},
+        "__mn_list_len": {"nounwind", "readonly"},
+        "__mn_list_get": {"nounwind", "readonly"},
+        "__mn_map_len": {"nounwind", "readonly"},
+        "__mn_map_contains": {"nounwind", "readonly"},
+        # Allocation
+        "malloc": {"nounwind"},
+        "__mn_alloc": {"nounwind"},
+        # Cleanup
+        "free": {"nounwind"},
+        "__mn_str_free": {"nounwind"},
+        "__mn_list_free": {"nounwind"},
+        "__mn_map_free": {"nounwind"},
+        "__mn_stream_free": {"nounwind"},
+        "__mn_range_free": {"nounwind"},
+        # Mutation
+        "__mn_str_concat": {"nounwind"},
+        "__mn_str_from_int": {"nounwind"},
+        "__mn_str_from_float": {"nounwind"},
+        "__mn_str_from_bool": {"nounwind"},
+        "__mn_list_push": {"nounwind"},
+        "__mn_list_set": {"nounwind"},
+        "__mn_list_new": {"nounwind"},
+        "__mn_list_concat": {"nounwind"},
+        "__mn_map_set": {"nounwind"},
+        "__mn_map_new": {"nounwind"},
+        # Print
+        "__mn_print": {"nounwind"},
+        "__mn_println": {"nounwind"},
+        # Arena
+        "mn_arena_create": {"nounwind"},
+        "mn_arena_alloc": {"nounwind"},
+        "mn_arena_destroy": {"nounwind"},
+    }
+
     def _declare_runtime_fn(self, name: str, ret_ty: Any, param_types: list[Any]) -> Any:
         """Declare an external C runtime function if not already declared."""
         if name in self._runtime_fns:
@@ -1256,6 +1355,8 @@ class LLVMMIREmitter:
         fn_ty = ir.FunctionType(ret_ty, param_types)
         func = ir.Function(self.module, fn_ty, name=name)
         func.linkage = "external"
+        for attr in self._RUNTIME_FN_ATTRS.get(name, set()):
+            func.attributes.add(attr)
         self._runtime_fns[name] = func
         return func
 
@@ -1319,7 +1420,9 @@ class LLVMMIREmitter:
     # -- Map runtime functions ------------------------------------------------
 
     def _rt_map_new(self) -> Any:
-        return self._declare_runtime_fn("__mn_map_new", LLVM_PTR, [LLVM_INT, LLVM_INT, LLVM_INT])
+        return self._declare_runtime_fn(
+            "__mn_map_new", LLVM_PTR, [LLVM_INT, LLVM_INT, LLVM_INT, LLVM_INT]
+        )
 
     def _rt_map_set(self) -> Any:
         return self._declare_runtime_fn("__mn_map_set", LLVM_VOID, [LLVM_PTR, LLVM_PTR, LLVM_PTR])
@@ -1354,6 +1457,48 @@ class LLVMMIREmitter:
 
     def _rt_free(self) -> Any:
         return self._declare_runtime_fn("__mn_free", LLVM_VOID, [LLVM_PTR])
+
+    # -- Arena eligibility -------------------------------------------------------
+
+    @staticmethod
+    def _fn_is_arena_eligible(fn: MIRFunction) -> bool:
+        """Conservative escape analysis: enable arena only for functions that
+        return non-heap types and have no user function calls.
+
+        This covers: constructors, simple accessors, arithmetic helpers.
+        """
+        # Don't arena-ify main (it runs for the lifetime of the program)
+        if fn.name == "main":
+            return False
+        # Return type must be non-heap (Int, Float, Bool, Void, Char)
+        rk = fn.return_type.kind
+        non_heap = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL, TypeKind.VOID, TypeKind.CHAR}
+        if rk not in non_heap:
+            return False
+        # No user function calls — only runtime calls allowed
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                if isinstance(inst, Call):
+                    # User function calls are not prefixed with __mn_ or __new_
+                    fn_name = inst.fn_name.lstrip("%")
+                    if not fn_name.startswith("__mn_") and not fn_name.startswith("__new_"):
+                        if fn_name not in (
+                            "print",
+                            "println",
+                            "len",
+                            "str",
+                            "toString",
+                            "int",
+                            "float",
+                            "ord",
+                            "chr",
+                            "Some",
+                            "Ok",
+                            "Err",
+                            "join",
+                        ):
+                            return False
+        return True
 
     # -- Arena runtime functions ------------------------------------------------
 
@@ -1779,7 +1924,7 @@ class LLVMMIREmitter:
             # [N x i8] → GEP to i8*, then wrap in string struct
             zero = ir.Constant(LLVM_INT, 0)
             # Need to store array in alloca for GEP
-            tmp = _aligned_alloca(builder, val.type, name=f"{name}.arr")
+            tmp = self._alloca(builder, val.type, name=f"{name}.arr")
             builder.store(val, tmp)
             ptr = builder.gep(tmp, [zero, zero], inbounds=True, name=f"{name}.ptr")
             length = ir.Constant(LLVM_INT, val.type.count)
@@ -1853,14 +1998,16 @@ class LLVMMIREmitter:
         values: dict[str, Any] = {}
 
         # 2b. Per-function arena for scoped allocations.
-        #     Arena lifecycle is available but disabled by default — it causes
-        #     use-after-free when returned values (especially strings built via
-        #     concatenation) are allocated on the callee's arena and then freed
-        #     before the caller can use them. The arena helpers remain declared
-        #     so the infrastructure is ready when the return-value escape
-        #     analysis is implemented.
-        ir.IRBuilder(pre_entry)  # pre_entry builder (unused — arena disabled)
+        #     Conservative escape analysis: enable arena only for functions that
+        #     return non-heap types and have no user function calls. This covers
+        #     constructors, simple accessors, and arithmetic helpers.
         self._arena_ptr = None
+        if self._fn_is_arena_eligible(mir_fn):
+            pe_builder = ir.IRBuilder(pre_entry)
+            block_size = ir.Constant(LLVM_INT, 4096)
+            arena = pe_builder.call(self._rt_arena_create(), [block_size], name="arena")
+            self._arena_ptr = self._alloca(pe_builder, LLVM_PTR, "arena.ptr")
+            pe_builder.store(arena, self._arena_ptr)
 
         # 2c. Reset per-function drop glue tracking lists.
         self._local_strings = []
@@ -1905,8 +2052,6 @@ class LLVMMIREmitter:
         self._value_src_alloca = {}
         self._list_roots = {}
         self._alloca_block = pre_entry
-        global _current_alloca_block
-        _current_alloca_block = pre_entry
 
         deferred_phi_stores: list[tuple[Any, list[tuple[str, Value]], dict[str, Any]]] = []
 
@@ -2590,9 +2735,9 @@ class LLVMMIREmitter:
             if rhs.type != LLVM_LIST:
                 rhs = _coerce_arg(builder, rhs, LLVM_LIST, f"{name}.rc")
             # Pass both lists by pointer
-            lhs_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.lptr")
+            lhs_ptr = self._alloca(builder, LLVM_LIST, name=f"{name}.lptr")
             builder.store(lhs, lhs_ptr)
-            rhs_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.rptr")
+            rhs_ptr = self._alloca(builder, LLVM_LIST, name=f"{name}.rptr")
             builder.store(rhs, rhs_ptr)
             result = builder.call(fn_concat, [lhs_ptr, rhs_ptr], name=name)
             self._store_value(inst.dest, result, values)
@@ -2644,12 +2789,12 @@ class LLVMMIREmitter:
                 operand = builder.ptrtoint(operand, LLVM_INT, name=f"{name}.{tag}")
             elif isinstance(operand.type, ir.LiteralStructType):
                 # Struct → i64 via memory reinterpretation
-                tmp = _aligned_alloca(builder, operand.type, name=f"{name}.{tag}.tmp")
+                tmp = self._alloca(builder, operand.type, name=f"{name}.{tag}.tmp")
                 builder.store(operand, tmp)
                 int_ptr = builder.bitcast(tmp, LLVM_INT.as_pointer(), name=f"{name}.{tag}.ptr")
                 operand = builder.load(int_ptr, name=f"{name}.{tag}")
             elif isinstance(operand.type, ir.ArrayType):
-                tmp = _aligned_alloca(builder, operand.type, name=f"{name}.{tag}.tmp")
+                tmp = self._alloca(builder, operand.type, name=f"{name}.{tag}.tmp")
                 builder.store(operand, tmp)
                 int_ptr = builder.bitcast(tmp, LLVM_INT.as_pointer(), name=f"{name}.{tag}.ptr")
                 operand = builder.load(int_ptr, name=f"{name}.{tag}")
@@ -2784,7 +2929,7 @@ class LLVMMIREmitter:
                 # Coerce i8* → LLVM_LIST if needed (cross-module type resolution)
                 if list_val.type != LLVM_LIST:
                     list_val = _coerce_arg(builder, list_val, LLVM_LIST, f"{name}.lc")
-                list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.tmp")
+                list_ptr = self._alloca(builder, LLVM_LIST, name=f"{name}.tmp")
                 builder.store(list_val, list_ptr)
                 result = builder.call(fn, [list_ptr], name=name)
             elif inst.args and inst.args[0].ty.kind == TypeKind.MAP:
@@ -2795,7 +2940,7 @@ class LLVMMIREmitter:
                 # (common in cross-module calls where return type info is UNKNOWN)
                 fn = self._rt_list_len()
                 list_val = args[0]
-                list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.tmp")
+                list_ptr = self._alloca(builder, LLVM_LIST, name=f"{name}.tmp")
                 builder.store(list_val, list_ptr)
                 result = builder.call(fn, [list_ptr], name=name)
             else:
@@ -2890,7 +3035,7 @@ class LLVMMIREmitter:
                 list_val = args[1]
                 if list_val.type != LLVM_LIST:
                     list_val = _coerce_arg(builder, list_val, LLVM_LIST, f"{name}.lc")
-                list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.list.ptr")
+                list_ptr = self._alloca(builder, LLVM_LIST, name=f"{name}.list.ptr")
                 builder.store(list_val, list_ptr)
                 result = builder.call(fn, [sep, list_ptr], name=name)
                 self._local_strings.append(result)
@@ -2906,7 +3051,7 @@ class LLVMMIREmitter:
         ST = LLVM_STRING  # {i8*, i64}
         IT = LLVM_INT  # i64
         BT = LLVM_BOOL  # i1
-        LT = LLVM_LIST  # {i8*, i64, i64, i64}
+        LT = LLVM_LIST  # {i8*, i64, i64, i64, i64}
         _str_method_sig: dict[str, tuple[str, list[Any], Any]] = {
             # method: (runtime_name, [param_types], return_type)
             "char_at": ("__mn_str_char_at", [ST, IT], ST),
@@ -2982,8 +3127,8 @@ class LLVMMIREmitter:
                 map_iter = builder.call(self._rt_map_iter_new(), [map_val], name=iter_name)
                 values[iter_name] = map_iter
                 # Allocate key/val output pointers
-                key_out = _aligned_alloca(builder, LLVM_PTR, name=f"{iter_name}.kout")
-                val_out = _aligned_alloca(builder, LLVM_PTR, name=f"{iter_name}.vout")
+                key_out = self._alloca(builder, LLVM_PTR, name=f"{iter_name}.kout")
+                val_out = self._alloca(builder, LLVM_PTR, name=f"{iter_name}.vout")
                 values[f"{iter_name}.kout"] = key_out
                 values[f"{iter_name}.vout"] = val_out
             map_iter = values[iter_name]
@@ -3017,7 +3162,7 @@ class LLVMMIREmitter:
             iter_name = f"_stream_iter_{inst.args[0].name}"
             if f"{iter_name}.out" not in values:
                 # Allocate output buffer for stream_next
-                out_alloca = _aligned_alloca(builder, LLVM_INT, name=f"{iter_name}.out")
+                out_alloca = self._alloca(builder, LLVM_INT, name=f"{iter_name}.out")
                 values[f"{iter_name}.out"] = out_alloca
             out_alloca = values[f"{iter_name}.out"]
             out_ptr = builder.bitcast(out_alloca, LLVM_PTR)
@@ -3091,7 +3236,7 @@ class LLVMMIREmitter:
                 if idx < len(args):
                     a = args[idx]
                     if not isinstance(a.type, ir.PointerType):
-                        tmp = _aligned_alloca(builder, a.type, name=f"{name}.byptr.{idx}")
+                        tmp = self._alloca(builder, a.type, name=f"{name}.byptr.{idx}")
                         builder.store(a, tmp)
                         args[idx] = tmp
 
@@ -3110,7 +3255,7 @@ class LLVMMIREmitter:
                     values[inst.dest.name] = None
                     self._value_blocks[inst.dest.name] = self._current_block_label
                 else:
-                    sret_alloca = _aligned_alloca(builder, orig_ret_ty, name=f"{name}.sret")
+                    sret_alloca = self._alloca(builder, orig_ret_ty, name=f"{name}.sret")
                     _zero_init_alloca(builder, sret_alloca, orig_ret_ty)
                     args.append(sret_alloca)
                     builder.call(target_fn, args)
@@ -3229,7 +3374,7 @@ class LLVMMIREmitter:
             if idx < len(args):
                 a = args[idx]
                 if not isinstance(a.type, ir.PointerType):
-                    tmp = _aligned_alloca(builder, a.type, name=f"{name}.byptr.{idx}")
+                    tmp = self._alloca(builder, a.type, name=f"{name}.byptr.{idx}")
                     builder.store(a, tmp)
                     args[idx] = tmp
 
@@ -3248,7 +3393,7 @@ class LLVMMIREmitter:
                 values[inst.dest.name] = None
                 self._value_blocks[inst.dest.name] = self._current_block_label
             else:
-                sret_alloca = _aligned_alloca(builder, orig_ret_ty, name=f"{name}.sret")
+                sret_alloca = self._alloca(builder, orig_ret_ty, name=f"{name}.sret")
                 _zero_init_alloca(builder, sret_alloca, orig_ret_ty)
                 args.append(sret_alloca)
                 builder.call(target_fn, args)
@@ -3336,12 +3481,13 @@ class LLVMMIREmitter:
     def _track_string(self, builder: Any, val: Any) -> None:
         """Track a heap-allocated string for drop glue cleanup.
 
-        Currently disabled: adding allocas to the pre_entry block after
-        the terminator was placed corrupts the IR. Drop glue will be
-        re-implemented with a proper alloca insertion strategy (before the
-        terminator) in a future patch.
+        Each tracked string gets an alloca in pre_entry (via _aligned_alloca)
+        that holds the {i8*, i64} value.  _emit_drop_glue iterates these
+        allocas at every return site and frees non-returned strings.
         """
-        return
+        slot = self._alloca(builder, LLVM_STRING, f"str.track.{len(self._local_strings)}")
+        builder.store(val, slot)
+        self._local_strings.append(slot)
 
     def _emit_drop_glue(self, builder: Any, ret_val: Any) -> None:
         """Free locally-allocated strings and closure environments.
@@ -3455,7 +3601,7 @@ class LLVMMIREmitter:
         if hasattr(cond, "type") and cond.type != LLVM_BOOL:
             if isinstance(cond.type, (ir.LiteralStructType, ir.ArrayType)):
                 # Struct/array → i64 via memory, then compare != 0
-                tmp = _aligned_alloca(builder, cond.type, name="br.cond.tmp")
+                tmp = self._alloca(builder, cond.type, name="br.cond.tmp")
                 builder.store(cond, tmp)
                 int_ptr = builder.bitcast(tmp, LLVM_INT.as_pointer(), name="br.cond.iptr")
                 cond = builder.load(int_ptr, name="br.cond.ival")
@@ -3818,14 +3964,14 @@ class LLVMMIREmitter:
         if inst.elements:
             fn_push = self._rt_list_push()
             # Alloca for the list struct (push needs a pointer)
-            list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.ptr")
+            list_ptr = self._alloca(builder, LLVM_LIST, name=f"{name}.ptr")
             builder.store(list_val, list_ptr)
 
             for i, elem in enumerate(inst.elements):
                 elem_val = self._get_value(elem, values)
                 # Use the actual LLVM type of the element value for the alloca
                 actual_elem_ty = elem_val.type if elem_val.type != LLVM_PTR else elem_llvm_ty
-                elem_alloca = _aligned_alloca(builder, actual_elem_ty, name=f"{name}.e{i}")
+                elem_alloca = self._alloca(builder, actual_elem_ty, name=f"{name}.e{i}")
                 builder.store(elem_val, elem_alloca)
                 elem_ptr = builder.bitcast(elem_alloca, ir.IntType(8).as_pointer())
                 builder.call(fn_push, [list_ptr, elem_ptr])
@@ -3860,7 +4006,7 @@ class LLVMMIREmitter:
             list_val = _coerce_arg(builder, list_val, LLVM_LIST, f"{name}.lc")
 
         # Store list to alloca so push can mutate it
-        list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.lptr")
+        list_ptr = self._alloca(builder, LLVM_LIST, name=f"{name}.lptr")
         builder.store(list_val, list_ptr)
 
         # For large struct/enum elements, pass the existing alloca pointer
@@ -3895,7 +4041,7 @@ class LLVMMIREmitter:
 
         # Small element or no existing alloca: load + store
         elem_val = self._get_value(inst.element, values)
-        elem_alloca = _aligned_alloca(builder, elem_val.type, name=f"{name}.eptr")
+        elem_alloca = self._alloca(builder, elem_val.type, name=f"{name}.eptr")
         builder.store(elem_val, elem_alloca)
         elem_ptr = builder.bitcast(elem_alloca, ir.IntType(8).as_pointer())
 
@@ -3943,7 +4089,7 @@ class LLVMMIREmitter:
             # Coerce i8* → LLVM_LIST if needed (cross-module type resolution)
             if list_val.type != LLVM_LIST:
                 list_val = _coerce_arg(builder, list_val, LLVM_LIST, f"{name}.lc")
-            list_ptr = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.lptr")
+            list_ptr = self._alloca(builder, LLVM_LIST, name=f"{name}.lptr")
             builder.store(list_val, list_ptr)
             # Ensure index is i64 (cross-module lowering may resolve as i8*)
             if index.type != LLVM_INT:
@@ -3989,7 +4135,7 @@ class LLVMMIREmitter:
             result = builder.call(fn, [obj, index], name=name)
         elif obj_kind == TypeKind.MAP:
             # Map indexing: __mn_map_get(map, &key) -> val_ptr
-            key_alloca = _aligned_alloca(builder, index.type, name=f"{name}.key")
+            key_alloca = self._alloca(builder, index.type, name=f"{name}.key")
             builder.store(index, key_alloca)
             key_ptr = builder.bitcast(key_alloca, LLVM_PTR)
             raw_ptr = builder.call(self._rt_map_get(), [obj, key_ptr], name=f"{name}.raw")
@@ -4010,7 +4156,7 @@ class LLVMMIREmitter:
 
         if inst.obj.ty.kind == TypeKind.LIST:
             fn_get = self._rt_list_get()
-            list_ptr = _aligned_alloca(builder, LLVM_LIST, name="idxset.lptr")
+            list_ptr = self._alloca(builder, LLVM_LIST, name="idxset.lptr")
             builder.store(obj, list_ptr)
             raw_ptr = builder.call(fn_get, [list_ptr, index], name="idxset.raw")
             elem_ty = val.type
@@ -4018,10 +4164,10 @@ class LLVMMIREmitter:
             builder.store(val, typed_ptr)
         elif inst.obj.ty.kind == TypeKind.MAP:
             # Map assignment: __mn_map_set(map, &key, &val)
-            key_alloca = _aligned_alloca(builder, index.type, name="idxset.key")
+            key_alloca = self._alloca(builder, index.type, name="idxset.key")
             builder.store(index, key_alloca)
             key_ptr = builder.bitcast(key_alloca, LLVM_PTR)
-            val_alloca = _aligned_alloca(builder, val.type, name="idxset.val")
+            val_alloca = self._alloca(builder, val.type, name="idxset.val")
             builder.store(val, val_alloca)
             val_ptr = builder.bitcast(val_alloca, LLVM_PTR)
             builder.call(self._rt_map_set(), [obj, key_ptr, val_ptr])
@@ -4040,6 +4186,7 @@ class LLVMMIREmitter:
             key_type_tag = self._map_key_type_tag(inst.key_type)
         else:
             key_size, val_size, key_type_tag = 8, 8, 0
+        val_type_tag = 1 if inst.val_type.kind == TypeKind.STRING else 0
 
         # Create map
         map_ptr = builder.call(
@@ -4048,6 +4195,7 @@ class LLVMMIREmitter:
                 ir.Constant(LLVM_INT, key_size),
                 ir.Constant(LLVM_INT, val_size),
                 ir.Constant(LLVM_INT, key_type_tag),
+                ir.Constant(LLVM_INT, val_type_tag),
             ],
             name=name,
         )
@@ -4056,10 +4204,10 @@ class LLVMMIREmitter:
         for k_val, v_val in inst.pairs:
             k = self._get_value(k_val, values)
             v = self._get_value(v_val, values)
-            k_alloca = _aligned_alloca(builder, k.type, name=f"{name}.k")
+            k_alloca = self._alloca(builder, k.type, name=f"{name}.k")
             builder.store(k, k_alloca)
             k_ptr = builder.bitcast(k_alloca, LLVM_PTR)
-            v_alloca = _aligned_alloca(builder, v.type, name=f"{name}.v")
+            v_alloca = self._alloca(builder, v.type, name=f"{name}.v")
             builder.store(v, v_alloca)
             v_ptr = builder.bitcast(v_alloca, LLVM_PTR)
             builder.call(self._rt_map_set(), [map_ptr, k_ptr, v_ptr])
@@ -4133,7 +4281,7 @@ class LLVMMIREmitter:
 
                 # Build the result via alloca: zero-init, store tag,
                 # conditionally store the inner value.
-                tmp = _aligned_alloca(builder, reg_ty, name=f"{prefix}.opt")
+                tmp = self._alloca(builder, reg_ty, name=f"{prefix}.opt")
                 _zero_init_alloca(builder, tmp, reg_ty)
                 tag_ptr = builder.gep(
                     tmp,
@@ -4613,7 +4761,7 @@ class LLVMMIREmitter:
         agent = self._get_value(inst.agent, values)
         val = self._get_value(inst.val, values)
         # Box the value: alloca, store, bitcast to i8*
-        val_alloca = _aligned_alloca(builder, val.type, name="send.box")
+        val_alloca = self._alloca(builder, val.type, name="send.box")
         builder.store(val, val_alloca)
         val_ptr = builder.bitcast(val_alloca, LLVM_PTR)
         fn_send = self._rt_agent_send()
@@ -4625,7 +4773,7 @@ class LLVMMIREmitter:
         agent = self._get_value(inst.agent, values)
         name = self._val_name(inst.dest)
         # Alloca a pointer for the result
-        out_ptr = _aligned_alloca(builder, LLVM_PTR, name=f"{name}.out")
+        out_ptr = self._alloca(builder, LLVM_PTR, name=f"{name}.out")
         fn_recv = self._rt_agent_recv_blocking()
         builder.call(fn_recv, [agent, out_ptr])
         raw_ptr = builder.load(out_ptr, name=f"{name}.raw")
@@ -4646,7 +4794,7 @@ class LLVMMIREmitter:
         val_size = _approx_type_size(initial.type)
 
         # Alloca the initial value so we can pass a pointer to __mn_signal_new
-        val_alloca = _aligned_alloca(builder, initial.type, name=f"{name}.init")
+        val_alloca = self._alloca(builder, initial.type, name=f"{name}.init")
         builder.store(initial, val_alloca)
         val_ptr = builder.bitcast(val_alloca, LLVM_PTR)
 
@@ -4678,7 +4826,7 @@ class LLVMMIREmitter:
         val = self._get_value(inst.val, values)
 
         # Alloca value and pass pointer to __mn_signal_set
-        val_alloca = _aligned_alloca(builder, val.type, name="sig.set.val")
+        val_alloca = self._alloca(builder, val.type, name="sig.set.val")
         builder.store(val, val_alloca)
         val_ptr = builder.bitcast(val_alloca, LLVM_PTR)
 
@@ -4707,7 +4855,7 @@ class LLVMMIREmitter:
         n_deps = len(inst.deps)
         if n_deps > 0:
             deps_array_ty = ir.ArrayType(LLVM_PTR, n_deps)
-            deps_alloca = _aligned_alloca(builder, deps_array_ty, name=f"{name}.deps")
+            deps_alloca = self._alloca(builder, deps_array_ty, name=f"{name}.deps")
             for i, dep_val in enumerate(inst.deps):
                 dep = self._get_value(dep_val, values)
                 gep = builder.gep(
@@ -4920,7 +5068,7 @@ class LLVMMIREmitter:
                 elem_size = _approx_type_size(inner_ty)
 
         # Store list in alloca so we can pass a pointer
-        list_alloca = _aligned_alloca(builder, LLVM_LIST, name=f"{name}.lptr")
+        list_alloca = self._alloca(builder, LLVM_LIST, name=f"{name}.lptr")
         builder.store(source, list_alloca)
 
         fn = self._rt_stream_from_list()
@@ -4975,10 +5123,10 @@ class LLVMMIREmitter:
             if len(inst.args) >= 2:
                 init_val = self._get_value(inst.args[0], values)
                 fn_ptr = self._get_stream_fn_ptr(inst, builder, values, fn_arg_idx=1)
-                init_alloca = _aligned_alloca(builder, init_val.type, name=f"{name}.init")
+                init_alloca = self._alloca(builder, init_val.type, name=f"{name}.init")
                 builder.store(init_val, init_alloca)
                 init_ptr = builder.bitcast(init_alloca, LLVM_PTR)
-                out_alloca = _aligned_alloca(builder, init_val.type, name=f"{name}.out")
+                out_alloca = self._alloca(builder, init_val.type, name=f"{name}.out")
                 out_ptr = builder.bitcast(out_alloca, LLVM_PTR)
                 acc_size = _approx_type_size(init_val.type)
                 builder.call(
@@ -5070,7 +5218,7 @@ class LLVMMIREmitter:
             )
             builder.call(fn_spawn, [agent])
             builder.call(fn_send, [agent, current_val])
-            out_ptr = _aligned_alloca(builder, LLVM_PTR, name=f"stage{i}.out")
+            out_ptr = self._alloca(builder, LLVM_PTR, name=f"stage{i}.out")
             builder.call(fn_recv, [agent, out_ptr])
             current_val = builder.load(out_ptr, name=f"stage{i}.result")
             builder.call(fn_stop, [agent])
@@ -5101,7 +5249,7 @@ def _type_alignment(llvm_ty: Any) -> int:
     if isinstance(llvm_ty, ir.FloatType):
         return 4
     if isinstance(llvm_ty, ir.PointerType):
-        return 8
+        return _target_ptr_size
     if isinstance(llvm_ty, ir.VoidType):
         return 1
     if isinstance(llvm_ty, ir.LiteralStructType):
@@ -5110,13 +5258,13 @@ def _type_alignment(llvm_ty: Any) -> int:
         return max(_type_alignment(e) for e in llvm_ty.elements)
     if isinstance(llvm_ty, ir.ArrayType):
         return _type_alignment(llvm_ty.element)
-    return 8
+    return _target_ptr_size
 
 
 def _approx_type_size(llvm_ty: Any) -> int:
     """Compute the ABI size in bytes of an LLVM type, including alignment padding."""
     if not _HAS_LLVMLITE:
-        return 8
+        return _target_ptr_size
     if isinstance(llvm_ty, ir.IntType):
         return int(max(llvm_ty.width // 8, 1))
     if isinstance(llvm_ty, ir.DoubleType):
@@ -5124,7 +5272,7 @@ def _approx_type_size(llvm_ty: Any) -> int:
     if isinstance(llvm_ty, ir.FloatType):
         return 4
     if isinstance(llvm_ty, ir.PointerType):
-        return 8
+        return _target_ptr_size
     if isinstance(llvm_ty, ir.VoidType):
         return 0
     if isinstance(llvm_ty, ir.LiteralStructType):
@@ -5146,4 +5294,4 @@ def _approx_type_size(llvm_ty: Any) -> int:
         return offset
     if isinstance(llvm_ty, ir.ArrayType):
         return int(llvm_ty.count) * _approx_type_size(llvm_ty.element)
-    return 8  # Conservative default
+    return _target_ptr_size  # Conservative default

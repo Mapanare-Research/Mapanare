@@ -152,7 +152,7 @@ pub fn kv_keys(store: KVStore) -> List<String> {
         Embedded(es) => {
             pon mut result: List<String> = []
             cada k en es.data {
-                result = result + [k]
+                result.push(k)
             }
             da result
         }
@@ -186,11 +186,14 @@ pub fn error_message(err: KVError) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Internal: Redis backend stubs (implemented in db::redis)
-// These are forward declarations — the real logic lives in redis.mn
-// and uses extern "C" FFI. At link time they resolve to redis module.
-// For now, these return error/empty to satisfy the type checker.
+// Forward declarations: real implementations in db::redis and db::embedded_kv.
+// Stub bodies satisfy the type checker; at link time the real modules provide
+// the actual logic.
 // ---------------------------------------------------------------------------
+
+fn embedded_get(store: EmbeddedStore, key: String) -> Option<String> {
+    da nada
+}
 
 fn redis_get(rs: RedisStore, key: String) -> Option<String> {
     da nada

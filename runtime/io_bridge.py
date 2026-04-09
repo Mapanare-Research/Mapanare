@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import ctypes
 import platform
+import subprocess
+import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -19,6 +21,24 @@ _NATIVE_DIR = Path(__file__).parent / "native"
 IO_AVAILABLE = False
 _lib = None
 
+
+def _probe_library(lib_path: str) -> bool:
+    """Check if a shared library can be loaded without crashing the process.
+
+    A corrupt or incompatible .so will segfault inside ctypes.CDLL (uncatchable).
+    We probe in a subprocess to protect the host process.
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", f"import ctypes; ctypes.CDLL({lib_path!r})"],
+            capture_output=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 try:
     system = platform.system()
     if system == "Windows":
@@ -29,7 +49,7 @@ try:
         lib_name = "libmapanare_io.so"
 
     lib_path = _NATIVE_DIR / lib_name
-    if lib_path.exists():
+    if lib_path.exists() and _probe_library(str(lib_path)):
         _lib = ctypes.CDLL(str(lib_path))
         IO_AVAILABLE = True
 except OSError:

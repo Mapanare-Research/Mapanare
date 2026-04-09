@@ -1,0 +1,20 @@
+// tests/golden/30_nested_generics.mn — Nested generic structs
+
+struct Pair<A, B> {
+    first: A,
+    second: B
+}
+
+fn main() {
+    let inner = new Pair { first: 10, second: 20 }
+    let outer = new Pair { first: inner, second: 99 }
+
+    // Access nested fields
+    print(outer.second)
+    print(outer.first.first)
+    print(outer.first.second)
+
+    // Two different Pair types
+    let p2 = new Pair { first: 42, second: true }
+    print(p2.first)
+}

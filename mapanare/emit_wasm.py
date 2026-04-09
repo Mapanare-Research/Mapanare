@@ -161,6 +161,8 @@ class WasmOptions:
     export_all_functions: bool = False
     debug_names: bool = True
     optimize: bool = False
+    # Target WASI (wasm32-wasi) instead of browser (wasm32-unknown-unknown)
+    wasi: bool = False
     # Cross-module imports: functions this module needs from other modules
     module_imports: list[WasmModuleImport] = field(default_factory=list)
 
@@ -307,11 +309,11 @@ class WasmEmitter:
         lines: list[str] = []
         lines.append(f"(module ${self._options.module_name}")
 
+        # Imports (JS bridge) — must come before all non-import definitions
+        lines.extend(self._emit_import_section())
+
         # Memory declaration
         lines.extend(self._emit_memory_section())
-
-        # Imports (JS bridge)
-        lines.extend(self._emit_import_section())
 
         # Global variables (heap pointer)
         lines.extend(self._emit_globals_section())
@@ -460,6 +462,8 @@ class WasmEmitter:
             return _WASM_F64
         if kind == TypeKind.BOOL:
             return _WASM_I32
+        if kind == TypeKind.CHAR:
+            return _WASM_I32
         if kind == TypeKind.VOID:
             return ""  # No WASM type for void
         # All heap-allocated types use i32 pointer
@@ -513,26 +517,27 @@ class WasmEmitter:
         ]
 
     def _emit_import_section(self) -> list[str]:
-        """Emit JS bridge imports.
-
-        Imported functions provide host-side capabilities:
-        - env.console_log_i32: print an i32 value
-        - env.console_log_i64: print an i64 value
-        - env.console_log_f64: print an f64 value
-        - env.console_log_str: print a string at (ptr, len)
-        - env.console_log_newline: print a newline
-        - env.abort: abort execution with a message
-        """
+        """Emit host imports (JS bridge or WASI depending on target)."""
         lines: list[str] = []
-        imports = [
-            ("env", "console_log_i32", [_WASM_I32], None),
-            ("env", "console_log_i64", [_WASM_I64], None),
-            ("env", "console_log_f64", [_WASM_F64], None),
-            ("env", "console_log_str", [_WASM_I32, _WASM_I32], None),
-            ("env", "console_log_newline", [], None),
-            ("env", "console_log_bool", [_WASM_I32], None),
-            ("env", "abort", [_WASM_I32, _WASM_I32], None),
-        ]
+        if self._options.wasi:
+            imports: list[tuple[str, str, list[str], str | None]] = [
+                (
+                    "wasi_snapshot_preview1",
+                    "fd_write",
+                    [_WASM_I32, _WASM_I32, _WASM_I32, _WASM_I32],
+                    _WASM_I32,
+                ),
+            ]
+        else:
+            imports = [
+                ("env", "console_log_i32", [_WASM_I32], None),
+                ("env", "console_log_i64", [_WASM_I64], None),
+                ("env", "console_log_f64", [_WASM_F64], None),
+                ("env", "console_log_str", [_WASM_I32, _WASM_I32], None),
+                ("env", "console_log_newline", [], None),
+                ("env", "console_log_bool", [_WASM_I32], None),
+                ("env", "abort", [_WASM_I32, _WASM_I32], None),
+            ]
         for mod, name, params, ret in imports:
             param_str = " ".join(f"(param {p})" for p in params)
             result_str = f" (result {ret})" if ret else ""
@@ -837,27 +842,75 @@ class WasmEmitter:
             ]
         )
 
-        # __builtin_print_str: print string via imported console_log_str
-        lines.extend(
-            [
-                "  (func $__builtin_print_str (param $ptr i32)",
-                "    (call $console_log_str",
-                "      (i32.add (local.get $ptr) (i32.const 4))  ;; skip length prefix",
-                "      (i32.load (local.get $ptr))                ;; length",
-                "    )",
-                "  )",
-            ]
-        )
-
-        # __builtin_println_str: print string + newline
-        lines.extend(
-            [
-                "  (func $__builtin_println_str (param $ptr i32)",
-                "    (call $__builtin_print_str (local.get $ptr))",
-                "    (call $console_log_newline)",
-                "  )",
-            ]
-        )
+        if self._options.wasi:
+            # WASI: write bytes to stdout via fd_write
+            lines.extend(
+                [
+                    "  (func $__wasi_write (param $ptr i32) (param $len i32)",
+                    "    ;; Build iovec at scratch area (heap_ptr)",
+                    "    (i32.store (global.get $__heap_ptr) (local.get $ptr))",
+                    "    (i32.store (i32.add (global.get $__heap_ptr) (i32.const 4))"
+                    " (local.get $len))",
+                    "    (drop (call $fd_write",
+                    "      (i32.const 1)",
+                    "      (global.get $__heap_ptr)",
+                    "      (i32.const 1)",
+                    "      (i32.add (global.get $__heap_ptr) (i32.const 8))",
+                    "    ))",
+                    "  )",
+                ]
+            )
+            lines.extend(
+                [
+                    "  (func $__builtin_print_str (param $ptr i32)",
+                    "    (call $__wasi_write",
+                    "      (i32.add (local.get $ptr) (i32.const 4))",
+                    "      (i32.load (local.get $ptr))",
+                    "    )",
+                    "  )",
+                ]
+            )
+            lines.extend(
+                [
+                    "  (func $__wasi_write_newline",
+                    "    ;; Store newline byte at scratch+12 (after iovec+nwritten)",
+                    "    (i32.store8 (i32.add (global.get $__heap_ptr) (i32.const 12))"
+                    " (i32.const 10))",
+                    "    (call $__wasi_write",
+                    "      (i32.add (global.get $__heap_ptr) (i32.const 12))",
+                    "      (i32.const 1)",
+                    "    )",
+                    "  )",
+                ]
+            )
+            lines.extend(
+                [
+                    "  (func $__builtin_println_str (param $ptr i32)",
+                    "    (call $__builtin_print_str (local.get $ptr))",
+                    "    (call $__wasi_write_newline)",
+                    "  )",
+                ]
+            )
+        else:
+            # Browser: print string via imported console_log_str
+            lines.extend(
+                [
+                    "  (func $__builtin_print_str (param $ptr i32)",
+                    "    (call $console_log_str",
+                    "      (i32.add (local.get $ptr) (i32.const 4))",
+                    "      (i32.load (local.get $ptr))",
+                    "    )",
+                    "  )",
+                ]
+            )
+            lines.extend(
+                [
+                    "  (func $__builtin_println_str (param $ptr i32)",
+                    "    (call $__builtin_print_str (local.get $ptr))",
+                    "    (call $console_log_newline)",
+                    "  )",
+                ]
+            )
 
         return lines
 
@@ -898,7 +951,9 @@ class WasmEmitter:
 
         # Build local declarations (excluding params)
         local_decls: list[str] = []
-        param_names = {p.name for p in mir_fn.params}
+        param_names = {p.name for p in mir_fn.params} | {
+            f"%{p.name}" for p in mir_fn.params if not p.name.startswith("%")
+        }
         for local_name, wasm_ty in self._locals.items():
             if local_name not in param_names and wasm_ty:
                 safe_local = _sanitize_name(local_name)
@@ -914,6 +969,12 @@ class WasmEmitter:
         # Emit body from basic blocks using structured control flow
         body = self._emit_function_body(mir_fn)
         lines.extend(body)
+
+        # Functions with a return type need (unreachable) after the block
+        # structure, since WASM requires the function body to produce a value
+        # on the stack.  All real paths end with (return), so this is dead code.
+        if ret_type:
+            lines.append("    (unreachable)")
 
         lines.append("  )")
         return lines
@@ -957,45 +1018,140 @@ class WasmEmitter:
     # ------------------------------------------------------------------
 
     def _emit_function_body(self, mir_fn: MIRFunction) -> list[str]:
-        """Emit the function body as a sequence of blocks.
+        """Emit the function body using a Stackifier approach.
 
-        Uses a simple linearization strategy: emit blocks in order,
-        using WASM block/loop constructs for branches. Forward jumps
-        use (block ... (br N)), backward jumps use (loop ... (br N)).
+        For each forward branch target, a ``(block $B_target ...)`` wrapper is
+        opened before the earliest branch source and closed right before the
+        target's code — so ``br $B_target`` exits the wrapper and lands at the
+        target.
+
+        For each loop header, a ``(loop $L_header ...)`` wrapper is opened at
+        the header and closed after the last loop-body block — so
+        ``br $L_header`` re-enters the loop.
         """
         lines: list[str] = []
         if not mir_fn.blocks:
             return lines
 
-        # Detect loop headers (blocks targeted by backward edges)
-        loop_headers = self._find_loop_headers(mir_fn)
-
-        # Emit blocks in linear order using a label-indexed block stack
-        # Strategy: wrap the entire body in nested blocks, one per BB.
-        # Each block label maps to a br depth. Forward branches break out
-        # of blocks; backward branches use loop constructs.
+        block_order = {bb.label: i for i, bb in enumerate(mir_fn.blocks)}
         num_blocks = len(mir_fn.blocks)
 
-        # Open block wrappers for forward branching
-        for i in range(num_blocks - 1, -1, -1):
-            bb = mir_fn.blocks[i]
-            if bb.label in loop_headers:
-                lines.append(f"    (loop $L_{_sanitize_name(bb.label)}")
-            else:
-                lines.append(f"    (block $L_{_sanitize_name(bb.label)}")
+        # Detect loop headers and their body blocks
+        loop_headers = self._find_loop_headers(mir_fn)
+        loop_bodies = self._compute_loop_bodies(mir_fn)
 
-        # Emit each block's instructions
+        # Store metadata for br target resolution
+        self._fn_block_order = block_order
+        self._fn_block_labels = [bb.label for bb in mir_fn.blocks]
+        self._fn_loop_headers = loop_headers
+
+        # ---- Collect forward-branch targets ----
+        # Exclude blocks that are inside a loop body — they are reached
+        # by fall-through inside the loop, not by forward br.
+        loop_body_blocks: set[str] = set()
+        for body_set in loop_bodies.values():
+            loop_body_blocks.update(body_set)
+        # Also track which headers each block belongs to
+        self._fn_loop_body_blocks = loop_body_blocks
+
+        fwd_targets: set[str] = set()
         for i, bb in enumerate(mir_fn.blocks):
+            for t in self._get_terminator_targets(bb):
+                t_idx = block_order.get(t, -1)
+                if t_idx > i and t not in loop_body_blocks:
+                    fwd_targets.add(t)
+
+        # ---- Build open/close event lists ----
+        # All forward-target (block) wrappers open at position 0 to avoid
+        # overlapping nesting. Sorted by close position so the longest span
+        # is outermost.
+        opens_before: dict[int, list[tuple[int, str, str]]] = {}
+        closes_before: dict[int, int] = {}
+
+        for target_label in fwd_targets:
+            target_idx = block_order[target_label]
+            lbl = _sanitize_name(target_label)
+            opens_before.setdefault(0, []).append((target_idx, "block", f"$B_{lbl}"))
+            closes_before[target_idx] = closes_before.get(target_idx, 0) + 1
+
+        for header_label in loop_headers:
+            header_idx = block_order[header_label]
+            body = loop_bodies.get(header_label, {header_label})
+            last_body_idx = max(block_order[b] for b in body)
+            lbl = _sanitize_name(header_label)
+            opens_before.setdefault(header_idx, []).append((last_body_idx + 1, "loop", f"$L_{lbl}"))
+            closes_before[last_body_idx + 1] = closes_before.get(last_body_idx + 1, 0) + 1
+
+        # Sort opens: longer span (later close) outermost
+        for idx in opens_before:
+            opens_before[idx].sort(key=lambda x: -x[0])
+
+        # ---- Emit ----
+        for i, bb in enumerate(mir_fn.blocks):
+            # Close wrappers that end before this block
+            for _ in range(closes_before.get(i, 0)):
+                lines.append("    )")
+
+            # Open new wrappers
+            for _close_idx, wtype, wlabel in opens_before.get(i, []):
+                lines.append(f"    ({wtype} {wlabel}")
+
+            # Emit block instructions
             lines.append(f"      ;; -- {bb.label} --")
             for inst in bb.instructions:
                 inst_lines = self._emit_instruction(inst, bb.label, mir_fn)
                 lines.extend(inst_lines)
 
-        # Close all block wrappers
-        for _i in range(num_blocks):
+        # Close any remaining wrappers (those that close after the last block)
+        for _ in range(closes_before.get(num_blocks, 0)):
             lines.append("    )")
 
         return lines
+
+    def _get_terminator_targets(self, bb: BasicBlock) -> list[str]:
+        """Extract branch target labels from a block's terminator instruction."""
+        if not bb.instructions:
+            return []
+        term = bb.instructions[-1]
+        if isinstance(term, Jump):
+            return [term.target]
+        if isinstance(term, Branch):
+            return [term.true_block, term.false_block]
+        if isinstance(term, Switch):
+            targets = [lbl for _, lbl in term.cases]
+            if term.default_block:
+                targets.append(term.default_block)
+            return targets
+        return []
+
+    def _compute_loop_bodies(self, mir_fn: MIRFunction) -> dict[str, set[str]]:
+        """For each loop header, find the set of blocks in its body."""
+        block_order = {bb.label: i for i, bb in enumerate(mir_fn.blocks)}
+        loop_bodies: dict[str, set[str]] = {}
+        for i, bb in enumerate(mir_fn.blocks):
+            for target in self._get_terminator_targets(bb):
+                if target in block_order and block_order[target] <= i:
+                    header = target
+                    header_idx = block_order[header]
+                    if header not in loop_bodies:
+                        loop_bodies[header] = set()
+                    for j in range(header_idx, i + 1):
+                        loop_bodies[header].add(mir_fn.blocks[j].label)
+        return loop_bodies
+
+    def _resolve_br_target(self, target_label: str, from_label: str) -> str:
+        """Get the correct WAT label for ``br`` to reach *target_label*.
+
+        Forward jumps use ``$B_<target>`` (exits the block wrapper).
+        Backward jumps use ``$L_<loop_header>`` (re-enters the loop).
+        """
+        target_idx = self._fn_block_order.get(target_label, -1)
+        from_idx = self._fn_block_order.get(from_label, -1)
+
+        if target_idx <= from_idx and target_label in self._fn_loop_headers:
+            return f"$L_{_sanitize_name(target_label)}"
+        else:
+            return f"$B_{_sanitize_name(target_label)}"
 
     def _find_loop_headers(self, mir_fn: MIRFunction) -> set[str]:
         """Identify basic blocks that are targets of backward edges (loop headers)."""
@@ -1029,7 +1185,7 @@ class WasmEmitter:
         if handler is not None:
             return list(handler(inst, block_label, fn))
         _logger.warning("Unhandled MIR instruction: %s", type(inst).__name__)
-        return [f"      ;; TODO: {type(inst).__name__}"]
+        return [f"      ;; TODO: {type(inst).__name__}", "      (unreachable)"]
 
     # ------------------------------------------------------------------
     # Instruction emitters
@@ -1227,7 +1383,7 @@ class WasmEmitter:
                     f" (local.get ${lhs}) (local.get ${rhs})))"
                 ]
 
-        return [f"      ;; TODO: binop {inst.op.value} for {lhs_ty}"]
+        return [f"      ;; TODO: binop {inst.op.value} for {lhs_ty}", "      (unreachable)"]
 
     def _emit_unaryop(self, inst: UnaryOp, _bl: str, _fn: MIRFunction) -> list[str]:
         """Emit a unary operation."""
@@ -1254,7 +1410,7 @@ class WasmEmitter:
                 f" (i32.wrap_i64 (local.get ${operand})) (i32.const 1))))"
             ]
 
-        return [f"      ;; TODO: unary {inst.op.value}"]
+        return [f"      ;; TODO: unary {inst.op.value}", "      (unreachable)"]
 
     def _emit_call(self, inst: Call, _bl: str, _fn: MIRFunction) -> list[str]:
         """Emit a function call."""
@@ -1367,31 +1523,91 @@ class WasmEmitter:
                 ]
             return None
 
+        # Range iterator: __mn_range(start, end) → allocate {current, end} in linear memory
+        # All values stay i64; use i32.wrap_i64 for memory addresses.
+        if fn == "__mn_range" and len(args) >= 2:
+            _ = f"${dest}.ptr"  # temp i32 for address (reserved)
+            return [
+                f"      ;; __mn_range({args[0]}, {args[1]})",
+                f"      (local.set ${dest}"
+                f" (i64.extend_i32_u (call $__alloc (i32.const 16) (i32.const 8))))",
+                f"      (i64.store (i32.wrap_i64 (local.get ${dest}))" f" (local.get ${args[0]}))",
+                f"      (i64.store offset=8 (i32.wrap_i64 (local.get ${dest}))"
+                f" (local.get ${args[1]}))",
+            ]
+
+        # __iter_has_next(iter) → current < end (returns i32 bool)
+        if fn == "__iter_has_next" and args:
+            return [
+                "      ;; __iter_has_next",
+                f"      (local.set ${dest}"
+                f" (i64.lt_s"
+                f" (i64.load (i32.wrap_i64 (local.get ${args[0]})))"
+                f" (i64.load offset=8 (i32.wrap_i64 (local.get ${args[0]})))))",
+            ]
+
+        # __iter_next(iter) → read current, then current++
+        if fn == "__iter_next" and args:
+            return [
+                "      ;; __iter_next",
+                f"      (local.set ${dest}" f" (i64.load (i32.wrap_i64 (local.get ${args[0]}))))",
+                f"      (i64.store (i32.wrap_i64 (local.get ${args[0]}))"
+                f" (i64.add"
+                f" (i64.load (i32.wrap_i64 (local.get ${args[0]})))"
+                f" (i64.const 1)))",
+            ]
+
         return None
 
     def _emit_print_call(self, inst: Call, with_newline: bool) -> list[str]:
-        """Emit a print/println call, dispatching by argument type."""
+        """Emit a print/println call, dispatching by argument type and target."""
         lines: list[str] = []
         for arg_val in inst.args:
             arg = _sanitize_name(arg_val.name)
             arg_ty = self._locals.get(arg_val.name, _WASM_I64)
 
-            if arg_ty == _WASM_I64:
-                lines.append(f"      (call $console_log_i64 (local.get ${arg}))")
-            elif arg_ty == _WASM_F64:
-                lines.append(f"      (call $console_log_f64 (local.get ${arg}))")
-            elif arg_ty == _WASM_I32:
-                # Could be bool or string pointer; check MIR type
+            if self._options.wasi:
+                # WASI: all output goes through fd_write. Strings use __builtin_print_str.
+                # Non-string types should already be converted via str() in MIR.
                 mir_kind = arg_val.ty.kind if arg_val.ty else TypeKind.UNKNOWN
-                if mir_kind == TypeKind.BOOL:
-                    lines.append(f"      (call $console_log_bool (local.get ${arg}))")
-                elif mir_kind == TypeKind.STRING:
+                if arg_ty == _WASM_I32 and mir_kind == TypeKind.STRING:
+                    lines.append(f"      (call $__builtin_print_str (local.get ${arg}))")
+                elif arg_ty == _WASM_I32:
+                    # i32 as string pointer (generic fallback)
                     lines.append(f"      (call $__builtin_print_str (local.get ${arg}))")
                 else:
-                    lines.append(f"      (call $console_log_i32 (local.get ${arg}))")
+                    # i64/f64 — convert to string first via __mn_str_from_int/float
+                    # These return i32 string pointers in WASM
+                    if arg_ty == _WASM_I64:
+                        lines.append(
+                            f"      (call $__builtin_print_str"
+                            f" (call $__mn_str_from_int (local.get ${arg})))"
+                        )
+                    elif arg_ty == _WASM_F64:
+                        lines.append(
+                            f"      (call $__builtin_print_str"
+                            f" (call $__mn_str_from_float (local.get ${arg})))"
+                        )
+            else:
+                # Browser: use console_log_* host imports
+                if arg_ty == _WASM_I64:
+                    lines.append(f"      (call $console_log_i64 (local.get ${arg}))")
+                elif arg_ty == _WASM_F64:
+                    lines.append(f"      (call $console_log_f64 (local.get ${arg}))")
+                elif arg_ty == _WASM_I32:
+                    mir_kind = arg_val.ty.kind if arg_val.ty else TypeKind.UNKNOWN
+                    if mir_kind == TypeKind.BOOL:
+                        lines.append(f"      (call $console_log_bool (local.get ${arg}))")
+                    elif mir_kind == TypeKind.STRING:
+                        lines.append(f"      (call $__builtin_print_str (local.get ${arg}))")
+                    else:
+                        lines.append(f"      (call $console_log_i32 (local.get ${arg}))")
 
         if with_newline:
-            lines.append("      (call $console_log_newline)")
+            if self._options.wasi:
+                lines.append("      (call $__wasi_write_newline)")
+            else:
+                lines.append("      (call $console_log_newline)")
         return lines
 
     def _emit_extern_call(self, inst: ExternCall, _bl: str, _fn: MIRFunction) -> list[str]:
@@ -1414,22 +1630,69 @@ class WasmEmitter:
 
     def _emit_jump(self, inst: Jump, _bl: str, _fn: MIRFunction) -> list[str]:
         """Emit an unconditional jump as a br to the target block."""
-        target = _sanitize_name(inst.target)
         # Emit phi assignments for the target block before branching
         lines = self._emit_phi_assignments(inst.target, _bl, _fn)
-        lines.append(f"      (br $L_{target})")
+
+        # If the target is a loop body block that's the next block,
+        # we fall through — no br needed.
+        if self._is_loop_body_block(inst.target):
+            from_idx = self._fn_block_order.get(_bl, -1)
+            target_idx = self._fn_block_order.get(inst.target, -1)
+            if target_idx == from_idx + 1:
+                # Fall-through to next block in loop
+                return lines
+
+        br_label = self._resolve_br_target(inst.target, _bl)
+        lines.append(f"      (br {br_label})")
         return lines
+
+    def _is_loop_body_block(self, label: str) -> bool:
+        """Check if a block is inside a loop body (reached by fall-through)."""
+        return label in getattr(self, "_fn_loop_body_blocks", set())
 
     def _emit_branch(self, inst: Branch, _bl: str, _fn: MIRFunction) -> list[str]:
         """Emit a conditional branch as br_if / br."""
         cond = _sanitize_name(inst.cond.name)
         cond_ty = self._locals.get(inst.cond.name, _WASM_I32)
-        true_target = _sanitize_name(inst.true_block)
-        false_target = _sanitize_name(inst.false_block)
 
         lines: list[str] = []
 
-        # Get the condition as i32 for br_if
+        # For loop conditions: true=body (fall-through), false=exit (br)
+        # When the true target is a loop body block, use fall-through.
+        true_is_fallthrough = self._is_loop_body_block(inst.true_block)
+        false_is_fallthrough = self._is_loop_body_block(inst.false_block)
+
+        if true_is_fallthrough and not false_is_fallthrough:
+            # Loop pattern: if !cond, exit; else fall through to body
+            false_br = self._resolve_br_target(inst.false_block, _bl)
+            false_phis = self._emit_phi_assignments(inst.false_block, _bl, _fn)
+            true_phis = self._emit_phi_assignments(inst.true_block, _bl, _fn)
+
+            # Emit: if (cond) { phis } else { phis; br exit }
+            if cond_ty == _WASM_I64:
+                lines.append(f"      (if (i32.wrap_i64 (local.get ${cond}))")
+            elif cond_ty == _WASM_I32:
+                lines.append(f"      (if (local.get ${cond})")
+            else:
+                lines.append(f"      (if (i32.trunc_f64_s (local.get ${cond}))")
+            lines.append("        (then")
+            for phi_line in true_phis:
+                lines.append(f"    {phi_line}")
+            if not true_phis:
+                lines.append("          (nop)")
+            lines.append("        )")
+            lines.append("        (else")
+            for phi_line in false_phis:
+                lines.append(f"    {phi_line}")
+            lines.append(f"          (br {false_br})")
+            lines.append("        )")
+            lines.append("      )")
+            return lines
+
+        # Default: standard if/then/else with explicit branches
+        true_br = self._resolve_br_target(inst.true_block, _bl)
+        false_br = self._resolve_br_target(inst.false_block, _bl)
+
         if cond_ty == _WASM_I64:
             lines.append(f"      (if (i32.wrap_i64 (local.get ${cond}))")
         elif cond_ty == _WASM_I32:
@@ -1437,20 +1700,18 @@ class WasmEmitter:
         else:
             lines.append(f"      (if (i32.trunc_f64_s (local.get ${cond}))")
 
-        # True branch: emit phi assignments then branch
         true_phis = self._emit_phi_assignments(inst.true_block, _bl, _fn)
         lines.append("        (then")
         for phi_line in true_phis:
             lines.append(f"    {phi_line}")
-        lines.append(f"          (br $L_{true_target})")
+        lines.append(f"          (br {true_br})")
         lines.append("        )")
 
-        # False branch
         false_phis = self._emit_phi_assignments(inst.false_block, _bl, _fn)
         lines.append("        (else")
         for phi_line in false_phis:
             lines.append(f"    {phi_line}")
-        lines.append(f"          (br $L_{false_target})")
+        lines.append(f"          (br {false_br})")
         lines.append("        )")
         lines.append("      )")
 
@@ -1464,7 +1725,7 @@ class WasmEmitter:
 
         # Use nested if-else for small case counts
         for case_val, case_label in inst.cases:
-            safe_label = _sanitize_name(case_label)
+            br_label = self._resolve_br_target(case_label, _bl)
             if tag_ty == _WASM_I64:
                 cmp = f"(i64.eq (local.get ${tag}) (i64.const {case_val}))"
                 lines.append(f"      (if (i32.wrap_i64 {cmp})")
@@ -1476,17 +1737,17 @@ class WasmEmitter:
             lines.append("        (then")
             for pl in phi_lines:
                 lines.append(f"    {pl}")
-            lines.append(f"          (br $L_{safe_label})")
+            lines.append(f"          (br {br_label})")
             lines.append("        )")
             lines.append("      )")
 
         # Default case
         if inst.default_block:
-            default_label = _sanitize_name(inst.default_block)
+            default_br = self._resolve_br_target(inst.default_block, _bl)
             default_phis = self._emit_phi_assignments(inst.default_block, _bl, _fn)
             for pl in default_phis:
                 lines.append(f"      {pl}")
-            lines.append(f"      (br $L_{default_label})")
+            lines.append(f"      (br {default_br})")
 
         return lines
 

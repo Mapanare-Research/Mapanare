@@ -60,8 +60,8 @@ pub fn new_pool(config: PoolConfig) -> Result<Pool, SqlError> {
                 da Err(e)
             },
             Ok(conn) => {
-                connections = connections + [conn]
-                in_use = in_use + [false]
+                connections.push(conn)
+                in_use.push(false)
             }
         }
         i = i + 1
@@ -89,9 +89,9 @@ pub fn checkout(pool: Pool) -> Result<Connection, SqlError> {
             pon mut j: Int = 0
             mien j < count {
                 si j == i {
-                    new_in_use = new_in_use + [true]
+                    new_in_use.push(true)
                 } sino {
-                    new_in_use = new_in_use + [pool.in_use[j]]
+                    new_in_use.push(pool.in_use[j])
                 }
                 j = j + 1
             }
@@ -143,9 +143,9 @@ pub fn checkout_with_pool(pool: Pool) -> CheckoutResult {
             pon mut j: Int = 0
             mien j < count {
                 si j == i {
-                    new_in_use = new_in_use + [true]
+                    new_in_use.push(true)
                 } sino {
-                    new_in_use = new_in_use + [pool.in_use[j]]
+                    new_in_use.push(pool.in_use[j])
                 }
                 j = j + 1
             }
@@ -163,8 +163,10 @@ pub fn checkout_with_pool(pool: Pool) -> CheckoutResult {
                 da new_checkout_error(e)
             },
             Ok(conn) => {
-                pon new_conns: List<Connection> = pool.connections + [conn]
-                pon new_in_use: List<Bool> = pool.in_use + [true]
+                pon mut new_conns: List<Connection> = pool.connections
+                new_conns.push(conn)
+                pon mut new_in_use: List<Bool> = pool.in_use
+                new_in_use.push(true)
                 pon new_pool: Pool = new Pool { connections: new_conns, in_use: new_in_use, config: pool.config }
                 da new CheckoutResult { conn: conn, pool: new_pool, ok: true, error: ConnectionFailed("") }
             }
@@ -185,9 +187,9 @@ pub fn checkin(pool: Pool, conn: Connection) -> Pool {
 
     mien i < count {
         si pool.connections[i].handle == conn.handle {
-            new_in_use = new_in_use + [false]
+            new_in_use.push(false)
         } sino {
-            new_in_use = new_in_use + [pool.in_use[i]]
+            new_in_use.push(pool.in_use[i])
         }
         i = i + 1
     }

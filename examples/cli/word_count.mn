@@ -1,0 +1,64 @@
+// word_count.mn — Count words, lines, and characters in a file.
+// Usage: echo "filename" | mnc run word_count.mn
+
+fn count_lines(text: String) -> Int {
+    pon mut count: Int = 1
+    pon slen: Int = len(text)
+    pon mut i: Int = 0
+    mien i < slen {
+        si text.char_at(i) == "\n" {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    da count
+}
+
+fn count_words(text: String) -> Int {
+    pon mut count: Int = 0
+    pon mut in_word: Bool = false
+    pon slen: Int = len(text)
+    pon mut i: Int = 0
+    mien i < slen {
+        pon c: String = text.char_at(i)
+        si c == " " {
+            si in_word {
+                count = count + 1
+                in_word = false
+            }
+        } sino si c == "\n" {
+            si in_word {
+                count = count + 1
+                in_word = false
+            }
+        } sino si c == "\t" {
+            si in_word {
+                count = count + 1
+                in_word = false
+            }
+        } sino {
+            in_word = true
+        }
+        i = i + 1
+    }
+    si in_word {
+        count = count + 1
+    }
+    da count
+}
+
+fn main() {
+    pon filename: String = read_line()
+    pon content: String = read_file(filename)
+    si len(content) == 0 {
+        print("Error: could not read file: " + filename)
+        da
+    }
+    pon lines: Int = count_lines(content)
+    pon words: Int = count_words(content)
+    pon chars: Int = len(content)
+    print("  " + str(lines) + " lines")
+    print("  " + str(words) + " words")
+    print("  " + str(chars) + " chars")
+    print("  " + filename)
+}

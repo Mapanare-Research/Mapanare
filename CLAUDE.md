@@ -4,19 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language (v3.0.0 "La Culebra Se Muerde La Cola") with first-class agents, signals, streams, and tensors. It compiles to C (default backend via gcc) and LLVM IR (release builds via optional llvmlite). A WebAssembly backend exists for browser/server targets. The self-hosted compiler is 9,400+ lines of `.mn` across 10 modules in `mapanare/self/`. v3.0.0 features bilingual keywords (Spanglish/English), indentation-based syntax, `tipo`/`modo` type unification, `@Agent` syntax, and a C emit backend.
+Mapanare is an AI-native compiled programming language with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (primary) and C (fallback via gcc). A WebAssembly backend exists for browser/server targets. The self-hosted compiler is 15,000+ lines of `.mn` across 11 modules in `mapanare/self/`. The compiler compiles itself — `bash scripts/build_from_seed.sh` builds from source with no Python.
 
 ## Current Version & Roadmap
 
-- **v1.0.0** — Language freeze, self-hosted fixed-point, formal memory model, stability guarantees
-- **v1.1.0** — AI native: LLM drivers, embeddings, RAG as stdlib
-- **v1.2.0** — Data & storage: SQL drivers, Dato v1.0, YAML/TOML
-- **v1.3.0** — Web platform & security: crawler, vulnerability scanner, web framework
-- **v2.0.0** — GPU compute (CUDA/Vulkan via dlopen), WebAssembly backend, mobile targets, Python backend deprecated
-- **v2.1.0** — Self-hosted compiler approaching fixed-point, stage2 validation, valgrind-based crash diagnostics
-- **v3.0.0** (current) — C emit backend, bilingual keywords, indentation syntax, tipo/modo, @Agent, migration tool
+- **v4.0.0** (current) — Production release: self-hosted compiler (15,000+ lines .mn), 40/40 golden, 4,845+ pytest, GPU compute, Python transpiler, package manager, 7-reviewer 9.79/10.
+- **v4.1.0** (next) — Post-production improvements.
 
-See `docs/roadmap/ROADMAP.md` for the full roadmap and `docs/roadmap/v3.0.0/PLAN.md` for the current execution plan.
+See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 
 ## Pre-Push Validation (MANDATORY)
 
@@ -59,17 +54,17 @@ pytest tests/wasm/ -v
 ```bash
 make install          # pip install -e ".[dev]"
 make build            # pip install -e .
-make test             # pytest tests/ -v
+make test             # pytest tests/ -v (add -n auto for parallel)
 make lint             # ruff check . && black --check . && mypy mapanare/ runtime/
 make fmt              # black . && ruff check --fix .
 make benchmark        # python -m benchmarks.run_all
 make clean            # Remove caches and egg-info
 
-# Run specific tests
-pytest tests/parser/ -v              # Parser tests only
-pytest tests/semantic/test_types.py  # Single test file
-pytest tests/llvm/ -v                # LLVM emitter tests
-pytest tests/bootstrap/ -v           # Self-hosted compiler tests
+# Run specific tests (always use -n auto for parallel execution via pytest-xdist)
+pytest tests/parser/ -v -n auto              # Parser tests only
+pytest tests/semantic/test_types.py -n auto  # Single test file
+pytest tests/llvm/ -v -n auto               # LLVM emitter tests
+pytest tests/bootstrap/ -v -n auto           # Self-hosted compiler tests
 
 # Golden test harness (native compiler validation)
 python scripts/test_native.py                                    # Bootstrap-only (Windows)
@@ -358,20 +353,21 @@ All type definitions, builtin registries, and type-name mappings live in `types.
 
 ## Self-Hosted Compiler (`mapanare/self/`)
 
-10 modules, 9,400+ lines of Mapanare. Mirrors the Python bootstrap pipeline:
+11 modules, 15,000+ lines of Mapanare. Mirrors the Python bootstrap pipeline:
 
 | Module | Lines | Role |
 |--------|-------|------|
-| `ast.mn` | 277 | AST node definitions (structs + enums) + shared constructors |
-| `lexer.mn` | 508 | Character-by-character tokenizer |
-| `parser.mn` | 1,879 | Recursive descent parser, 13-level precedence |
-| `semantic.mn` | 1,617 | Two-pass type checker and scope resolver |
-| `mir.mn` | 415 | MIR data structures (types, values, instructions, blocks, module) |
-| `lower_state.mn` | 530 | Lowerer state, scope management, lookups, type resolution |
-| `lower.mn` | 2,007 | AST → MIR lowering (registration + expression/statement lowering) |
+| `ast.mn` | 781 | AST node definitions (structs + enums) + shared constructors |
+| `lexer.mn` | 575 | Character-by-character tokenizer |
+| `parser.mn` | 2,249 | Recursive descent parser, 13-level precedence |
+| `semantic.mn` | 1,729 | Two-pass type checker and scope resolver |
+| `mir.mn` | 791 | MIR data structures (types, values, instructions, blocks, module) |
+| `lower_state.mn` | 587 | Lowerer state, scope management, lookups, type resolution |
+| `lower.mn` | 3,602 | AST → MIR lowering (registration + expression/statement lowering) |
 | `emit_llvm_ir.mn` | 258 | LLVM type constants and IR instruction string builders |
-| `emit_llvm.mn` | 1,879 | MIR → LLVM IR emitter (state, handlers, module emission) |
-| `main.mn` | 79 | Compiler driver |
+| `emit_llvm.mn` | 3,206 | MIR → LLVM IR emitter (state, handlers, module emission) |
+| `emit_c.mn` | 770 | MIR → C emitter |
+| `main.mn` | 537 | Compiler driver |
 
 **Patterns:** Constructor functions (`let r: T = first_field; return r`), state-threading (functions thread state structs), no struct literal syntax in grammar yet.
 
@@ -384,7 +380,7 @@ All type definitions, builtin registries, and type-name mappings live in `types.
 - Builtins are dispatched via `BUILTIN_CALL_MAP` in both emitters
 - Self-hosted compiler sources are in `mapanare/self/*.mn`
 - Language spec: `docs/SPEC.md` | Design philosophy: `docs/manifesto.md` | RFCs: `docs/rfcs/`
-- Roadmap: `docs/roadmap/ROADMAP.md` | Current plan: `docs/roadmap/v2.0.0/PLAN.md`
+- Roadmap: `docs/roadmap/ROADMAP.md` | Era READMEs: `docs/roadmap/v0/` through `docs/roadmap/v4/`
 - Version tracked in `VERSION` file
 - Bootstrap frozen at v0.6.0 in `bootstrap/`
 
@@ -447,7 +443,7 @@ GitHub Actions on push/PR to `dev`:
 - **wasm** — WASM cross-compilation: emit WAT, convert to WASM via wat2wasm, run WASI examples on wasmtime.
 - **android** — Android cross-compilation: NDK setup, ARM64 + x86_64 `.o` generation, ELF format verification.
 
-4,465+ tests across the full pipeline.
+4,845+ tests across the full pipeline.
 
 ## Skills (slash commands)
 

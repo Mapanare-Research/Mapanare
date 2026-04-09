@@ -11,8 +11,6 @@
 
 usa net::http::server
 
-extern "C" fn __mn_file_read(path: String) -> String
-
 // ---------------------------------------------------------------------------
 // Full server configuration struct
 // ---------------------------------------------------------------------------
@@ -214,11 +212,11 @@ pub fn load_config(path: String) -> Result<FullServerConfig, String> {
 }
 
 // ---------------------------------------------------------------------------
-// Convert FullServerConfig to the base ServerConfig from server.mn
+// Convert FullServerConfig to the base ServerConfig from mn
 // ---------------------------------------------------------------------------
 
-pub fn to_server_config(cfg: FullServerConfig) -> server.ServerConfig {
-    da new server.ServerConfig {
+pub fn to_server_config(cfg: FullServerConfig) -> ServerConfig {
+    da new ServerConfig {
         host: cfg.host,
         port: cfg.port,
         max_connections: cfg.max_connections,

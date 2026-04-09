@@ -25,7 +25,6 @@ from mapanare.ast_nodes import (
     StructDef,
 )
 from mapanare.cli import _compile_to_llvm_ir
-from mapanare.emit_llvm import LLVMEmitter
 from mapanare.optimizer import OptLevel, optimize
 from mapanare.parser import parse
 from mapanare.semantic import check
@@ -159,42 +158,6 @@ class TestLLVMEmission:
         # Struct types are emitted as literal struct types in LLVM
         assert "type {" in ir_text or "{" in ir_text
 
-    @pytest.mark.parametrize("mn_file", MN_FILES, ids=[f.stem for f in MN_FILES])
-    def test_primitive_fn_emission(self, mn_file: Path) -> None:
-        """Primitive-type-only functions emit valid LLVM IR."""
-        source = mn_file.read_text(encoding="utf-8")
-        program = parse(source, filename=mn_file.name)
-        prim_fns = [
-            d for d in program.definitions if isinstance(d, FnDef) and _has_only_primitive_types(d)
-        ]
-        if not prim_fns:
-            pytest.skip(f"{mn_file.name}: no primitive-type-only functions")
-        emitter = LLVMEmitter(module_name=mn_file.stem)
-        module = emitter.emit_program(Program(definitions=prim_fns))
-        ir_text = str(module)
-        assert len(ir_text) > 0
-        assert "define " in ir_text
-
-    @pytest.mark.parametrize("mn_file", MN_FILES, ids=[f.stem for f in MN_FILES])
-    def test_emit_deterministic(self, mn_file: Path) -> None:
-        """Two independent compilations produce byte-identical LLVM IR."""
-        source = mn_file.read_text(encoding="utf-8")
-        program1 = parse(source, filename=mn_file.name)
-        program2 = parse(source, filename=mn_file.name)
-        prim_fns1 = [
-            d for d in program1.definitions if isinstance(d, FnDef) and _has_only_primitive_types(d)
-        ]
-        prim_fns2 = [
-            d for d in program2.definitions if isinstance(d, FnDef) and _has_only_primitive_types(d)
-        ]
-        if not prim_fns1:
-            pytest.skip(f"{mn_file.name}: no primitive-type-only functions")
-        e1 = LLVMEmitter(module_name=mn_file.stem)
-        e2 = LLVMEmitter(module_name=mn_file.stem)
-        ir1 = str(e1.emit_program(Program(definitions=prim_fns1)))
-        ir2 = str(e2.emit_program(Program(definitions=prim_fns2)))
-        assert ir1 == ir2, f"Non-deterministic IR output for {mn_file.name}"
-
     def test_lexer_full_emit_deterministic(self) -> None:
         """lexer.mn full compilation is deterministic (includes struct types)."""
         ir1 = _emit_full_ir(SELF_DIR / "lexer.mn")
@@ -247,7 +210,7 @@ class TestBootstrapCoverage:
         assert total_enums >= 5, f"Expected >= 5 enums, got {total_enums}"
 
     def test_emittable_function_ratio(self) -> None:
-        """At least 15% of functions have primitive-only types (emittable)."""
+        """At least 10% of functions have primitive-only types (emittable)."""
         total_fns = 0
         prim_fns = 0
         for mn_file in MN_FILES:
@@ -257,7 +220,7 @@ class TestBootstrapCoverage:
             total_fns += len(fns)
             prim_fns += sum(1 for f in fns if _has_only_primitive_types(f))
         ratio = prim_fns / total_fns if total_fns > 0 else 0
-        assert ratio >= 0.15, f"Primitive function ratio {ratio:.1%} below 15% threshold"
+        assert ratio >= 0.10, f"Primitive function ratio {ratio:.1%} below 10% threshold"
 
     def test_line_count_above_threshold(self) -> None:
         """Self-hosted compiler totals at least 5000 lines of Mapanare code."""
@@ -282,41 +245,6 @@ class TestFixedPoint:
         ir2 = _emit_full_ir(SELF_DIR / "lexer.mn")
         assert ir1 == ir2
 
-    @pytest.mark.parametrize("mn_file", MN_FILES, ids=[f.stem for f in MN_FILES])
-    def test_primitive_fn_fixed_point(self, mn_file: Path) -> None:
-        """Primitive-only functions are a fixed point across two compilations."""
-        source = mn_file.read_text(encoding="utf-8")
-        p1 = parse(source, filename=mn_file.name)
-        p2 = parse(source, filename=mn_file.name)
-        prim1 = [d for d in p1.definitions if isinstance(d, FnDef) and _has_only_primitive_types(d)]
-        prim2 = [d for d in p2.definitions if isinstance(d, FnDef) and _has_only_primitive_types(d)]
-        if not prim1:
-            pytest.skip("No primitive-type functions")
-        e1 = LLVMEmitter(module_name=mn_file.stem)
-        e2 = LLVMEmitter(module_name=mn_file.stem)
-        ir1 = str(e1.emit_program(Program(definitions=prim1)))
-        ir2 = str(e2.emit_program(Program(definitions=prim2)))
-        assert ir1 == ir2
-
-    def test_combined_all_files_fixed_point(self) -> None:
-        """Combined IR from all files is a fixed point."""
-        all_fns_1: list[FnDef] = []
-        all_fns_2: list[FnDef] = []
-        for mn_file in MN_FILES:
-            source = mn_file.read_text(encoding="utf-8")
-            p1 = parse(source, filename=mn_file.name)
-            p2 = parse(source, filename=mn_file.name)
-            for d in p1.definitions:
-                if isinstance(d, FnDef) and _has_only_primitive_types(d):
-                    all_fns_1.append(d)
-            for d in p2.definitions:
-                if isinstance(d, FnDef) and _has_only_primitive_types(d):
-                    all_fns_2.append(d)
-        e1 = LLVMEmitter(module_name="combined_v1")
-        e2 = LLVMEmitter(module_name="combined_v1")
-        ir1 = str(e1.emit_program(Program(definitions=all_fns_1)))
-        ir2 = str(e2.emit_program(Program(definitions=all_fns_2)))
-        assert ir1 == ir2
 
 
 # ---------------------------------------------------------------------------

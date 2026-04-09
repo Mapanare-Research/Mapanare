@@ -1,0 +1,596 @@
+// transpiler.mn — Shared transpiler framework for language front-ends.
+// Provides type mapping, class→struct translation, exception→Result conversion,
+// stdlib shim lookup, local type inference, diagnostics, and state management.
+//
+// Used by: from_python.mn, from_php.mn, from_typescript.mn, from_go.mn
+
+// ---------------------------------------------------------------------------
+// Type mapping
+// ---------------------------------------------------------------------------
+
+struct TypeMapping {
+    source_name: String,
+    target_kind: String,
+    generic_args: List<String>
+}
+
+fn new_type_mapping(source: String, target: String) -> TypeMapping {
+    let args: List<String> = []
+    return new TypeMapping { source_name: source, target_kind: target, generic_args: args }
+}
+
+fn translate_type(source_type: String, mappings: List<TypeMapping>) -> String {
+    // Handle nullable: "?Type" → "Option<Type>"
+    if len(source_type) > 1 {
+        if source_type[0] == "?" {
+            let inner: String = substr(source_type, 1, len(source_type) - 1)
+            let mapped: String = translate_type(inner, mappings)
+            return "Option<" + mapped + ">"
+        }
+    }
+
+    // Handle generic types: split on "<"
+    let angle: Int = -1
+    for i in 0..len(source_type) {
+        if source_type[i] == "<" {
+            angle = i
+            break
+        }
+    }
+    if angle > 0 {
+        let base: String = substr(source_type, 0, angle)
+        let mapped_base: String = translate_type(base, mappings)
+        // Extract inner type(s) between < and >
+        let inner: String = substr(source_type, angle + 1, len(source_type) - angle - 2)
+        let mapped_inner: String = translate_type(inner, mappings)
+        return mapped_base + "<" + mapped_inner + ">"
+    }
+
+    // Direct lookup
+    for i in 0..len(mappings) {
+        let m: TypeMapping = mappings[i]
+        if m.source_name == source_type {
+            return m.target_kind
+        }
+    }
+
+    // Fallback: return "any" for unmapped types
+    return "any"
+}
+
+// ---------------------------------------------------------------------------
+// Shared character classification for transpiler front-ends
+// ---------------------------------------------------------------------------
+
+fn is_transpiler_alpha(c: String) -> Bool {
+    if c == "_" { return true }
+    if c == "a" { return true }
+    if c == "b" { return true }
+    if c == "c" { return true }
+    if c == "d" { return true }
+    if c == "e" { return true }
+    if c == "f" { return true }
+    if c == "g" { return true }
+    if c == "h" { return true }
+    if c == "i" { return true }
+    if c == "j" { return true }
+    if c == "k" { return true }
+    if c == "l" { return true }
+    if c == "m" { return true }
+    if c == "n" { return true }
+    if c == "o" { return true }
+    if c == "p" { return true }
+    if c == "q" { return true }
+    if c == "r" { return true }
+    if c == "s" { return true }
+    if c == "t" { return true }
+    if c == "u" { return true }
+    if c == "v" { return true }
+    if c == "w" { return true }
+    if c == "x" { return true }
+    if c == "y" { return true }
+    if c == "z" { return true }
+    if c == "A" { return true }
+    if c == "B" { return true }
+    if c == "C" { return true }
+    if c == "D" { return true }
+    if c == "E" { return true }
+    if c == "F" { return true }
+    if c == "G" { return true }
+    if c == "H" { return true }
+    if c == "I" { return true }
+    if c == "J" { return true }
+    if c == "K" { return true }
+    if c == "L" { return true }
+    if c == "M" { return true }
+    if c == "N" { return true }
+    if c == "O" { return true }
+    if c == "P" { return true }
+    if c == "Q" { return true }
+    if c == "R" { return true }
+    if c == "S" { return true }
+    if c == "T" { return true }
+    if c == "U" { return true }
+    if c == "V" { return true }
+    if c == "W" { return true }
+    if c == "X" { return true }
+    if c == "Y" { return true }
+    if c == "Z" { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Local type inference from initializer expressions
+// ---------------------------------------------------------------------------
+
+fn infer_local_type(initializer: String) -> String {
+    if len(initializer) == 0 {
+        return "any"
+    }
+
+    // Boolean literals
+    if initializer == "true" || initializer == "false" {
+        return "Bool"
+    }
+
+    // None literal
+    if initializer == "None" || initializer == "none" || initializer == "null" {
+        return "Option<any>"
+    }
+
+    // String literal: starts with quote
+    let first: String = initializer[0]
+    if first == "\"" || first == "'" {
+        return "String"
+    }
+
+    // List literal: starts with [
+    if first == "[" {
+        return "List<any>"
+    }
+
+    // Map literal: starts with { or #{
+    if first == "{" || (first == "#" && len(initializer) > 1) {
+        return "Map<String, any>"
+    }
+
+    // Numeric literals
+    if is_digit(first) || first == "-" {
+        // Check for float: contains "."
+        let mut has_dot: Bool = false
+        for i in 0..len(initializer) {
+            if initializer[i] == "." {
+                has_dot = true
+                break
+            }
+        }
+        if has_dot {
+            return "Float"
+        }
+        return "Int"
+    }
+
+    // Anything else: could be a function call, constructor, etc.
+    return "any"
+}
+
+// ---------------------------------------------------------------------------
+// Class → struct + impl translation
+// ---------------------------------------------------------------------------
+
+struct ParamDef {
+    name: String,
+    type_name: String,
+    default_value: String
+}
+
+fn new_param(name: String, type_name: String) -> ParamDef {
+    return new ParamDef { name: name, type_name: type_name, default_value: "" }
+}
+
+struct FieldDef {
+    name: String,
+    type_name: String,
+    default_value: String
+}
+
+fn new_field(name: String, type_name: String) -> FieldDef {
+    return new FieldDef { name: name, type_name: type_name, default_value: "" }
+}
+
+struct MethodDef {
+    name: String,
+    params: List<ParamDef>,
+    return_type: String,
+    body_lines: List<String>,
+    is_static: Bool
+}
+
+fn new_method(name: String, return_type: String) -> MethodDef {
+    let params: List<ParamDef> = []
+    let body: List<String> = []
+    return new MethodDef { name: name, params: params, return_type: return_type, body_lines: body, is_static: false }
+}
+
+fn translate_class_to_struct(name: String, fields: List<FieldDef>, methods: List<MethodDef>, indent_str: String) -> String {
+    let mut out: String = ""
+
+    // Emit struct definition
+    out = out + indent_str + "struct " + name + " {\n"
+    for i in 0..len(fields) {
+        let f: FieldDef = fields[i]
+        let mut ty: String = f.type_name
+        if len(ty) == 0 {
+            ty = "any"
+        }
+        out = out + indent_str + "    " + f.name + ": " + ty + "\n"
+    }
+    out = out + indent_str + "}\n\n"
+
+    // Separate static and instance methods
+    let has_instance: Bool = false
+    let has_static: Bool = false
+    for i in 0..len(methods) {
+        if methods[i].is_static {
+            has_static = true
+        } else {
+            has_instance = true
+        }
+    }
+
+    // Emit impl block for instance methods
+    if has_instance {
+        out = out + indent_str + "impl " + name + " {\n"
+        for i in 0..len(methods) {
+            let m: MethodDef = methods[i]
+            if m.is_static {
+                continue
+            }
+            // Build parameter string: self, param1: Type, ...
+            let mut param_str: String = "self"
+            for j in 0..len(m.params) {
+                let p: ParamDef = m.params[j]
+                param_str = param_str + ", " + p.name
+                if len(p.type_name) > 0 {
+                    param_str = param_str + ": " + p.type_name
+                }
+            }
+            // Return type annotation
+            let ret: String = ""
+            if len(m.return_type) > 0 && m.return_type != "Void" && m.return_type != "any" {
+                ret = " -> " + m.return_type
+            }
+            out = out + indent_str + "    fn " + m.name + "(" + param_str + ")" + ret + " {\n"
+            for k in 0..len(m.body_lines) {
+                out = out + indent_str + "        " + m.body_lines[k] + "\n"
+            }
+            out = out + indent_str + "    }\n"
+        }
+        out = out + indent_str + "}\n"
+    }
+
+    // Emit static methods as standalone functions
+    if has_static {
+        out = out + "\n"
+        for i in 0..len(methods) {
+            let m: MethodDef = methods[i]
+            if !m.is_static {
+                continue
+            }
+            let mut param_str: String = ""
+            for j in 0..len(m.params) {
+                let p: ParamDef = m.params[j]
+                if j > 0 {
+                    param_str = param_str + ", "
+                }
+                param_str = param_str + p.name
+                if len(p.type_name) > 0 {
+                    param_str = param_str + ": " + p.type_name
+                }
+            }
+            let ret: String = ""
+            if len(m.return_type) > 0 && m.return_type != "Void" && m.return_type != "any" {
+                ret = " -> " + m.return_type
+            }
+            out = out + indent_str + "fn " + m.name + "(" + param_str + ")" + ret + " {\n"
+            for k in 0..len(m.body_lines) {
+                out = out + indent_str + "    " + m.body_lines[k] + "\n"
+            }
+            out = out + indent_str + "}\n"
+        }
+    }
+
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// Exception → Result translation
+// ---------------------------------------------------------------------------
+
+struct CatchClause {
+    exception_type: String,
+    variable: String,
+    body_lines: List<String>
+}
+
+fn new_catch(exc_type: String, var_name: String) -> CatchClause {
+    let body: List<String> = []
+    return new CatchClause { exception_type: exc_type, variable: var_name, body_lines: body }
+}
+
+fn translate_exception_to_result(try_body: List<String>, catch_clauses: List<CatchClause>, finally_body: List<String>, indent_str: String) -> String {
+    let mut out: String = ""
+
+    // Emit try body as Ok path
+    out = out + indent_str + "// try → Result pattern\n"
+    out = out + indent_str + "let result = {\n"
+    for i in 0..len(try_body) {
+        out = out + indent_str + "    " + try_body[i] + "\n"
+    }
+    out = out + indent_str + "}\n"
+
+    // Emit catch clauses as comments (full runtime Result dispatch requires
+    // language-specific exception type mapping — each transpiler handles this)
+    if len(catch_clauses) > 0 {
+        out = out + indent_str + "// catch clauses (converted to match arms by transpiler):\n"
+        for i in 0..len(catch_clauses) {
+            let c: CatchClause = catch_clauses[i]
+            out = out + indent_str + "// catch " + c.exception_type + " as " + c.variable + "\n"
+            for j in 0..len(c.body_lines) {
+                out = out + indent_str + "//   " + c.body_lines[j] + "\n"
+            }
+        }
+    }
+
+    // Emit finally body unconditionally
+    if len(finally_body) > 0 {
+        out = out + indent_str + "// finally\n"
+        for i in 0..len(finally_body) {
+            out = out + indent_str + finally_body[i] + "\n"
+        }
+    }
+
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// Stdlib shim registry
+// ---------------------------------------------------------------------------
+
+struct StdlibShim {
+    source_name: String,
+    target_expr: String,
+    is_method: Bool,
+    arg_reorder: List<Int>
+}
+
+fn new_shim(source: String, target: String, is_method: Bool) -> StdlibShim {
+    let reorder: List<Int> = []
+    return new StdlibShim { source_name: source, target_expr: target, is_method: is_method, arg_reorder: reorder }
+}
+
+fn new_shim_reorder(source: String, target: String, is_method: Bool, reorder: List<Int>) -> StdlibShim {
+    return new StdlibShim { source_name: source, target_expr: target, is_method: is_method, arg_reorder: reorder }
+}
+
+fn join_args(args: List<String>) -> String {
+    let mut result: String = ""
+    for i in 0..len(args) {
+        if i > 0 {
+            result = result + ", "
+        }
+        result = result + args[i]
+    }
+    return result
+}
+
+fn translate_stdlib_call(func_name: String, args: List<String>, shims: List<StdlibShim>) -> String {
+    // Lookup in shim registry
+    for i in 0..len(shims) {
+        let s: StdlibShim = shims[i]
+        if s.source_name == func_name {
+            // Apply argument reorder if specified
+            let mut reordered: List<String> = args
+            if len(s.arg_reorder) > 0 {
+                reordered = []
+                for j in 0..len(s.arg_reorder) {
+                    let idx: Int = s.arg_reorder[j]
+                    if idx < len(args) {
+                        reordered.push(args[idx])
+                    }
+                }
+            }
+
+            if s.is_method {
+                // Method-style: first arg is receiver
+                if len(reordered) > 0 {
+                    let receiver: String = reordered[0]
+                    let mut rest: List<String> = []
+                    for k in 1..len(reordered) {
+                        rest.push(reordered[k])
+                    }
+                    return receiver + "." + s.target_expr + "(" + join_args(rest) + ")"
+                }
+                return s.target_expr + "()"
+            }
+
+            // Function-style
+            return s.target_expr + "(" + join_args(reordered) + ")"
+        }
+    }
+
+    // Unknown function: pass through with comment
+    return func_name + "(" + join_args(args) + ")"
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics
+// ---------------------------------------------------------------------------
+
+fn report_unsupported(feature: String, suggestion: String, source_line: Int, filename: String) -> String {
+    return "// WARNING: " + feature + " not supported (line " + str(source_line) + "). " + suggestion
+}
+
+// ---------------------------------------------------------------------------
+// any boxing decision helper
+// ---------------------------------------------------------------------------
+
+fn needs_any_boxing(source_type: String, mappings: List<TypeMapping>) -> Bool {
+    let mapped: String = translate_type(source_type, mappings)
+    return mapped == "any"
+}
+
+fn emit_any_annotation(param_name: String, inferred_type: String) -> String {
+    if inferred_type == "any" {
+        return "// NOTE: " + param_name + " typed as any -- add type annotation for safety"
+    }
+    return ""
+}
+
+// ---------------------------------------------------------------------------
+// TranspilerState — shared state for all transpilers
+// ---------------------------------------------------------------------------
+
+struct TranspilerState {
+    filename: String,
+    source_language: String,
+    indent_level: Int,
+    declared_vars: List<String>,
+    scope_markers: List<Int>,
+    type_mappings: List<TypeMapping>,
+    stdlib_shims: List<StdlibShim>,
+    warnings: List<String>,
+    errors: List<String>
+}
+
+fn new_state(filename: String, lang: String) -> TranspilerState {
+    let vars: List<String> = []
+    let markers: List<Int> = []
+    let mappings: List<TypeMapping> = []
+    let shims: List<StdlibShim> = []
+    let warns: List<String> = []
+    let errs: List<String> = []
+    return new TranspilerState { filename: filename, source_language: lang, indent_level: 0, declared_vars: vars, scope_markers: markers, type_mappings: mappings, stdlib_shims: shims, warnings: warns, errors: errs }
+}
+
+fn push_scope(state: TranspilerState) -> TranspilerState {
+    state.scope_markers.push(len(state.declared_vars))
+    state.indent_level = state.indent_level + 1
+    return state
+}
+
+fn pop_scope(state: TranspilerState) -> TranspilerState {
+    if len(state.scope_markers) > 0 {
+        let marker: Int = state.scope_markers[len(state.scope_markers) - 1]
+        // Trim declared_vars back to the marker
+        let mut new_vars: List<String> = []
+        for i in 0..marker {
+            new_vars.push(state.declared_vars[i])
+        }
+        state.declared_vars = new_vars
+        // Pop the marker
+        let mut new_markers: List<Int> = []
+        for i in 0..len(state.scope_markers) - 1 {
+            new_markers.push(state.scope_markers[i])
+        }
+        state.scope_markers = new_markers
+    }
+    if state.indent_level > 0 {
+        state.indent_level = state.indent_level - 1
+    }
+    return state
+}
+
+fn is_declared(state: TranspilerState, name: String) -> Bool {
+    for i in 0..len(state.declared_vars) {
+        if state.declared_vars[i] == name {
+            return true
+        }
+    }
+    return false
+}
+
+fn declare_var(state: TranspilerState, name: String) -> TranspilerState {
+    state.declared_vars.push(name)
+    return state
+}
+
+fn indent(state: TranspilerState) -> String {
+    let mut result: String = ""
+    for i in 0..state.indent_level {
+        result = result + "    "
+    }
+    return result
+}
+
+fn add_warning(state: TranspilerState, msg: String) -> TranspilerState {
+    state.warnings.push(msg)
+    return state
+}
+
+fn add_error(state: TranspilerState, msg: String) -> TranspilerState {
+    state.errors.push(msg)
+    return state
+}
+
+// ---------------------------------------------------------------------------
+// Language-specific mapping factories
+// ---------------------------------------------------------------------------
+
+fn python_type_mappings() -> List<TypeMapping> {
+    let mut m: List<TypeMapping> = []
+    m.push(new_type_mapping("int", "Int"))
+    m.push(new_type_mapping("float", "Float"))
+    m.push(new_type_mapping("str", "String"))
+    m.push(new_type_mapping("bool", "Bool"))
+    m.push(new_type_mapping("list", "List"))
+    m.push(new_type_mapping("dict", "Map"))
+    m.push(new_type_mapping("None", "Void"))
+    m.push(new_type_mapping("Optional", "Option"))
+    return m
+}
+
+fn php_type_mappings() -> List<TypeMapping> {
+    let mut m: List<TypeMapping> = []
+    m.push(new_type_mapping("int", "Int"))
+    m.push(new_type_mapping("float", "Float"))
+    m.push(new_type_mapping("string", "String"))
+    m.push(new_type_mapping("bool", "Bool"))
+    m.push(new_type_mapping("array", "List"))
+    m.push(new_type_mapping("void", "Void"))
+    m.push(new_type_mapping("null", "Void"))
+    m.push(new_type_mapping("mixed", "any"))
+    return m
+}
+
+fn typescript_type_mappings() -> List<TypeMapping> {
+    let mut m: List<TypeMapping> = []
+    m.push(new_type_mapping("number", "Float"))
+    m.push(new_type_mapping("string", "String"))
+    m.push(new_type_mapping("boolean", "Bool"))
+    m.push(new_type_mapping("void", "Void"))
+    m.push(new_type_mapping("undefined", "Void"))
+    m.push(new_type_mapping("null", "Void"))
+    m.push(new_type_mapping("any", "any"))
+    m.push(new_type_mapping("unknown", "any"))
+    m.push(new_type_mapping("Array", "List"))
+    m.push(new_type_mapping("Map", "Map"))
+    m.push(new_type_mapping("Promise", "Stream"))
+    return m
+}
+
+fn go_type_mappings() -> List<TypeMapping> {
+    let mut m: List<TypeMapping> = []
+    m.push(new_type_mapping("int", "Int"))
+    m.push(new_type_mapping("int64", "Int"))
+    m.push(new_type_mapping("int32", "Int"))
+    m.push(new_type_mapping("float64", "Float"))
+    m.push(new_type_mapping("float32", "Float"))
+    m.push(new_type_mapping("string", "String"))
+    m.push(new_type_mapping("bool", "Bool"))
+    m.push(new_type_mapping("error", "String"))
+    m.push(new_type_mapping("byte", "Int"))
+    m.push(new_type_mapping("rune", "Int"))
+    m.push(new_type_mapping("interface{}", "any"))
+    return m
+}

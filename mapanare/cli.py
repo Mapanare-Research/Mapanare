@@ -30,12 +30,39 @@ except Exception:
 
 
 def _read_source(path: str) -> str:
-    """Read an .mn source file, exiting on error."""
+    """Read a source file, exiting on error.
+
+    If *path* ends with ``.py``, the file is first translated from Python
+    to Mapanare source text via :mod:`mapanare.from_python`.
+    """
     if not os.path.isfile(path):
         print(f"error: file not found: {path}", file=sys.stderr)
         sys.exit(1)
     with open(path, encoding="utf-8") as f:
-        return f.read()
+        source = f.read()
+
+    if path.endswith(".py"):
+        from mapanare.from_python import TranslateError, translate_to_mn
+
+        try:
+            source = translate_to_mn(source, filename=path)
+        except TranslateError as e:
+            print(f"error: Python translation failed: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"info: translated {path} from Python to Mapanare", file=sys.stderr)
+
+    if path.endswith(".php"):
+        from mapanare.from_php import TranslateError as PhpTranslateError
+        from mapanare.from_php import translate_to_mn as php_translate_to_mn
+
+        try:
+            source = php_translate_to_mn(source, filename=path)
+        except PhpTranslateError as e:
+            print(f"error: PHP translation failed: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"info: translated {path} from PHP to Mapanare", file=sys.stderr)
+
+    return source
 
 
 def _emit_parse_error(e: ParseError, source: str, filename: str) -> None:
@@ -126,6 +153,7 @@ def _compile_to_llvm_ir(
     debug: bool = False,
     werror: bool = False,
     emitter_backend: str = "text",
+    skip_check: bool = False,
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source.
 
@@ -153,8 +181,10 @@ def _compile_to_llvm_ir(
                 target_name=target_name,
                 debug=debug,
                 emitter_backend=emitter_backend,
+                skip_check=skip_check,
             )
-    check_or_raise(ast, filename=filename, resolver=resolver, werror=werror)
+    if not skip_check:
+        check_or_raise(ast, filename=filename, resolver=resolver, werror=werror)
 
     if use_mir:
         from mapanare.lower import lower as build_mir
@@ -525,7 +555,7 @@ def cmd_repl(args: argparse.Namespace) -> None:
         except SystemExit:
             break
         except Exception as exc:
-            print(f"runtime error: {exc}")
+            print(f"runtime error ({type(exc).__name__}): {exc}")
 
 
 def cmd_fmt(args: argparse.Namespace) -> None:
@@ -798,10 +828,10 @@ def cmd_build(args: argparse.Namespace) -> None:
 
     obj_bytes = jit_compile_to_object(llvm_ir, opt_level=opt_level.value)
 
-    # Write object file
+    # Write object file to a temporary location (not the final output path)
     base = os.path.splitext(args.source)[0]
     obj_ext = ".obj" if os.name == "nt" else ".o"
-    obj_path = args.o or (base + obj_ext)
+    obj_path = base + obj_ext
     with open(obj_path, "wb") as f:
         f.write(obj_bytes)
 
@@ -942,6 +972,14 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     use_mir = not getattr(args, "no_mir", False)
     debug = getattr(args, "debug", False)
     emitter_backend = getattr(args, "emitter", "llvmlite")
+    if emitter_backend == "llvmlite":
+        import warnings
+
+        warnings.warn(
+            "The llvmlite emitter is deprecated. Use the default text emitter instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -1024,6 +1062,8 @@ def _run_c_source(c_source: str, source_file: str) -> None:
         gcc_cmd = [
             "gcc",
             "-O0",
+            "-Wall",
+            "-Wextra",
             f"-I{runtime_dir}",
             c_path,
             runtime_c,
@@ -1104,7 +1144,7 @@ def cmd_emit_mir(args: argparse.Namespace) -> None:
 
 def cmd_emit_wasm(args: argparse.Namespace) -> None:
     """Emit WebAssembly (WAT) for .mn source file(s), optionally linking."""
-    from mapanare.emit_wasm import WasmEmitter
+    from mapanare.emit_wasm import WasmEmitter, WasmOptions
     from mapanare.lower import lower as build_mir
     from mapanare.mir_opt import MIROptLevel
     from mapanare.mir_opt import optimize_module as mir_optimize
@@ -1127,7 +1167,9 @@ def cmd_emit_wasm(args: argparse.Namespace) -> None:
             mir_opt_level = MIROptLevel(opt_level.value)
             mir_module, _ = mir_optimize(mir_module, mir_opt_level)
 
-            emitter = WasmEmitter()
+            use_wasi = getattr(args, "wasi", False)
+            wasm_opts = WasmOptions(wasi=use_wasi)
+            emitter = WasmEmitter(options=wasm_opts)
             wat_output = emitter.emit(mir_module)
         except ParseError as e:
             _emit_parse_error(e, source, src_file)
@@ -1362,6 +1404,41 @@ def cmd_deploy(args: argparse.Namespace) -> None:
         print(f"\ndeploy: {len(created)} file(s) generated in {os.path.abspath(project_dir)}")
 
 
+def cmd_transpile(args: argparse.Namespace) -> None:
+    """Transpile a source file (.py or .php) to Mapanare (.mn) source."""
+    path = args.source
+    if not os.path.isfile(path):
+        print(f"error: file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(path, encoding="utf-8") as f:
+        source = f.read()
+
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext == ".php":
+            from mapanare.from_php import translate_to_mn
+
+            mn_source = translate_to_mn(source, filename=path)
+        else:
+            from mapanare.from_python import translate_to_mn
+
+            mn_source = translate_to_mn(source, filename=path)
+    except Exception as e:
+        print(f"error: translation failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    out_path = args.o
+    if out_path is None:
+        base = os.path.splitext(path)[0]
+        out_path = base + ".mn"
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(mn_source)
+
+    print(f"transpiled {path} -> {out_path}")
+
+
 def cmd_targets(args: argparse.Namespace) -> None:
     """List all supported compilation targets."""
     print("Supported targets:\n")
@@ -1575,7 +1652,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.set_defaults(func=cmd_init)
 
     # install
-    p_install = subparsers.add_parser("install", help="Install an Mapanare package (git-based)")
+    p_install = subparsers.add_parser("install", help="Install a Mapanare package (git-based)")
     p_install.add_argument("package", help="Package name to install")
     p_install.add_argument("--git", default=None, help="Git repository URL")
     p_install.add_argument("--branch", default=None, help="Git branch (default: main)")
@@ -1866,11 +1943,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_deploy.set_defaults(func=cmd_deploy)
 
+    # transpile (Python → Mapanare)
+    p_transpile = subparsers.add_parser(
+        "transpile", help="Transpile Python (.py) or PHP (.php) source to Mapanare (.mn)"
+    )
+    p_transpile.add_argument("source", help="Path to .py or .php source file")
+    p_transpile.add_argument("-o", metavar="OUTPUT", help="Output .mn file path", default=None)
+    p_transpile.set_defaults(func=cmd_transpile)
+
     return parser
 
 
 def main() -> None:
     """CLI entry point."""
+    print(
+        "[dev mode] Using Python bootstrap compiler. " "For native speed: mnc run <file.mn>",
+        file=sys.stderr,
+    )
     parser = build_parser()
     args = parser.parse_args()
 

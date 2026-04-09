@@ -731,7 +731,7 @@ def _install_from_registry(
         for member in tar.getmembers():
             if member.name.startswith("/") or ".." in member.name:
                 raise PackageError(f"unsafe path in tarball: {member.name}")
-        tar.extractall(pkg_dir)
+        tar.extractall(pkg_dir, filter="data")
 
     integrity = _compute_integrity(pkg_dir)
     checksum = f"sha256:{hashlib.sha256(tarball_data).hexdigest()}"

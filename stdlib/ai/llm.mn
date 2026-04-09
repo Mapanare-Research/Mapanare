@@ -553,7 +553,7 @@ fn jget_str(text: String, key: String) -> String {
 fn jget_int(text: String, key: String) -> Int {
     pon raw: String = jget(text, key)
     si len(raw) == 0 { da 0 }
-    da string_utils.parse_int_manual(raw)
+    da parse_int_manual(raw)
 }
 
 // Get the first element of a JSON array value
@@ -671,7 +671,7 @@ fn parse_http_status(raw: String) -> Int {
         status_str = status_str + ch
         pos = pos + 1
     }
-    da string_utils.parse_int_manual(status_str)
+    da parse_int_manual(status_str)
 }
 
 fn extract_http_body(raw: String) -> String {
@@ -829,9 +829,11 @@ fn build_anthropic_body(config: LLMConfig, messages: List<ChatMessage>) -> Strin
             System => {
                 system_text = messages[i].content
                 has_sys = true
+                i = i  // ensure both arms have same type (void assignment)
             },
             _ => {
                 non_system = non_system + [messages[i]]
+                i = i
             }
         }
         i = i + 1

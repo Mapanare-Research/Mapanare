@@ -173,7 +173,9 @@ match command {
 
 ## What's Different
 
-- No inheritance — use traits for polymorphism
+- No inheritance — use traits for polymorphism.
+  See [Trait Polymorphism](cookbook.md#13-trait-polymorphism) for a complete example
+  with `trait Describable`, `impl Describable for Dog/Cat`, and generic constraints.
 - No exceptions — use `Result<T, E>` and `?`
 - Immutable by default — use `let mut` when you need mutation
 - Types required on function signatures (inferred elsewhere)

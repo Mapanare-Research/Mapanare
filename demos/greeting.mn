@@ -1,0 +1,29 @@
+// greeting.mn — Interactive greeter with string operations
+// Usage: ./greeting [name]
+
+fn greet(name: String) -> String {
+    return "Hello, " + name + "! Welcome to Mapanare."
+}
+
+fn repeat_char(ch: String, n: Int) -> String {
+    let mut result: String = ""
+    for i in 0..n {
+        result = result + ch
+    }
+    return result
+}
+
+fn box_message(msg: String) -> String {
+    let n: Int = len(msg) + 4
+    let border: String = repeat_char("=", n)
+    return border + "\n| " + msg + " |\n" + border
+}
+
+fn main() {
+    let mut name: String = "World"
+    if __mn_argc() > 1 {
+        name = __mn_argv(1)
+    }
+    let msg: String = greet(name)
+    print(box_message(msg))
+}

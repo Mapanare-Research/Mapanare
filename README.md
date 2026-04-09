@@ -25,8 +25,8 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-3.0.1-blue.svg?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-3698_passing-brightgreen.svg?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-4.0.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-4845_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
@@ -104,6 +104,20 @@ Extract and add `mapanare` to your PATH, then verify:
 mapanare --version
 ```
 
+### Build from Source (No Python Required)
+
+The self-hosted compiler bootstraps from a checked-in seed binary.
+You only need `gcc` and `llvm`:
+
+```bash
+git clone https://github.com/Mapanare-Research/Mapanare.git
+cd Mapanare
+make build-native    # or: bash scripts/build_from_seed.sh
+./mnc hello.mn       # compile a .mn file → LLVM IR on stdout
+```
+
+Python is only needed for the development toolchain (tests, linters, IR doctor).
+
 ---
 
 ## Feature Status
@@ -128,7 +142,8 @@ What works today vs. what's planned.
 | Streams + `\|>` pipe operator | Yes | Yes | Yes | Stable |
 | Pipes (multi-agent composition) | Yes | Yes | Yes | Stable |
 | Tensors (shape validation, `@` matmul) | No | No | No | Experimental |
-| GPU compute (`@gpu`, `@cuda`, `@vulkan`) | Yes | No | No | New in v2.0.0 |
+| GPU compute (8 builtins: detect, tensor ops) | Yes | No | No | Stable |
+| Python/PHP transpiler (`mapanare transpile`) | Yes | — | — | Stable |
 | WebAssembly output (WAT/WASM) | — | Yes | — | New in v2.0.0 |
 | WASI support (file I/O, env, clock) | — | Yes | — | New in v2.0.0 |
 | AI stdlib (LLM, embeddings, RAG) | Yes | No | No | New in v1.1.0 |
@@ -250,15 +265,31 @@ let result = data
     |> map(fn(x) { x * 10 })
 ```
 
-### GPU Compute (v2.0.0)
+### GPU Compute
 
-GPU-accelerated tensor operations via CUDA and Vulkan, loaded dynamically at runtime.
+GPU-accelerated tensor operations via 8 built-in functions. CUDA loaded dynamically via dlopen (no SDK required). Programs degrade gracefully to CPU when no GPU is available.
 
 ```mn
-@gpu
-fn matmul(a: Tensor<Float>[M, K], b: Tensor<Float>[K, N]) -> Tensor<Float>[M, N] {
-    return a @ b
+fn main() {
+    if gpu_available() {
+        print(gpu_device_name())
+        let a: List<Float> = [1.0, 2.0, 3.0]
+        let b: List<Float> = [4.0, 5.0, 6.0]
+        let result = gpu_tensor_add(a, b)
+        print(result)  // [5.0, 7.0, 9.0]
+    }
 }
+```
+
+### Python Transpiler
+
+Transpile Python files to Mapanare and compile to native binaries — 29-68x faster than Python, zero manual edits.
+
+```bash
+mapanare transpile primes.py          # Python → Mapanare
+mapanare emit-llvm primes.mn -o p.ll  # Mapanare → LLVM IR
+clang -O2 p.ll -o primes -lm         # LLVM IR → native binary
+./primes                               # 29-68x faster than Python
 ```
 
 ### WebAssembly (v2.0.0)
@@ -332,6 +363,7 @@ mapanare build <file>         Compile to native binary via LLVM
 mapanare jit <file>           JIT-compile and run natively
 mapanare check <file>         Type-check only
 mapanare compile <file>       Transpile to Python (deprecated)
+mapanare transpile <file>     Transpile Python/PHP to Mapanare
 mapanare emit-llvm <file>     Emit LLVM IR
 mapanare emit-wasm <file>     Emit WebAssembly (WAT/WASM)
 mapanare test [path]          Discover and run @test functions
@@ -495,17 +527,21 @@ See [Mapanare-Research/skills](https://github.com/Mapanare-Research/skills) for 
 
 ## Self-Hosted Compiler
 
-The compiler is written in Mapanare itself (`mapanare/self/`) — 8,288+ lines across 7 modules:
+The compiler is written in Mapanare itself (`mapanare/self/`) — 15,000+ lines across 11 modules, plus 4 language transpilers:
 
-- `lexer.mn` — Tokenizer (498 lines)
-- `ast.mn` — AST definitions (255 lines)
-- `parser.mn` — Recursive descent parser (1,721 lines)
-- `semantic.mn` — Type checker (1,607 lines)
-- `lower.mn` — MIR lowering (2,629 lines)
-- `emit_llvm.mn` — LLVM IR emitter from MIR (1,497 lines)
-- `main.mn` — Compiler driver (81 lines)
+- `lexer.mn` — Tokenizer (575 lines)
+- `ast.mn` — AST definitions (781 lines)
+- `parser.mn` — Recursive descent parser (2,249 lines)
+- `semantic.mn` — Type checker (1,880 lines)
+- `lower.mn` + `lower_state.mn` — MIR lowering (4,189 lines)
+- `mir.mn` — MIR data structures (791 lines)
+- `emit_llvm.mn` + `emit_llvm_ir.mn` — LLVM IR emitter (3,672 lines)
+- `emit_c.mn` — C emitter (770 lines)
+- `main.mn` — Compiler driver (755 lines)
+- `transpiler.mn` — Shared transpiler framework (596 lines)
+- `from_python.mn`, `from_php.mn`, `from_typescript.mn`, `from_go.mn` — Language transpilers (4,824 lines)
 
-Bootstrap strategy: Python compiler (Stage 0) compiles self-hosted `.mn` sources (Stage 1), which must reproduce identical output (Stage 2 fixed-point verification).
+Fixed-point self-compilation verified: stage4 == stage3. The seed binary bootstraps without Python.
 
 ---
 
@@ -525,7 +561,7 @@ mapanare/
 ├── fuzz/                  HTTP fuzzer (mutation engine, wordlists)
 ├── bootstrap/             Frozen Python compiler for bootstrapping
 ├── playground/            Browser-based playground with WASM runtime
-├── tests/                 Test suite (3,698+ tests)
+├── tests/                 Test suite (4,845+ tests)
 ├── benchmarks/            Performance benchmarks
 ├── docs/                  Documentation
 │   ├── rfcs/              Language change proposals
@@ -573,7 +609,9 @@ Requires Python 3.11+.
 | **v1.1.0** | AI Native — LLM drivers, embeddings, RAG as stdlib | Released |
 | **v1.2.0** | Data & Storage — SQL drivers, Dato v1.0, YAML/TOML, filesystem | Released |
 | **v1.3.0** | Web & Security — crawler, vulnerability scanner, fuzzer, HTTP toolkit | Released |
-| **v2.0.0** | GPU & WASM — GPU compute (CUDA/Vulkan), WebAssembly backend, mobile targets | **Current** |
+| **v2.0.0** | GPU & WASM — GPU compute (CUDA/Vulkan), WebAssembly backend, mobile targets | Released |
+| **v3.x** | Production Sprint — IO, networking, agents, real examples, package manager, GPU builtins | Released |
+| **v4.0.0** | Production — self-hosted compiler, Python transpiler, GPU compute, 4,845+ tests | **Current** |
 
 See the full [ROADMAP](docs/roadmap/ROADMAP.md) for details.
 

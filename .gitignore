@@ -1,3 +1,6 @@
+# Built compiler binary (output of build_from_seed.sh)
+/mnc
+
 # IR Doctor baselines (local, per-machine)
 .ir_doctor/
 
@@ -38,6 +41,10 @@ docs/roadmap/*/prompt.md
 
 sprint_runner.py
 
+# Golden test build artifacts (stage1 output, not reference files)
+tests/golden/*.ll
+!tests/golden/*.ref.ll
+
 # Native build artifacts (platform-specific, should not be tracked)
 runtime/native/*.so
 runtime/native/*.dll
@@ -52,3 +59,7 @@ mapanare/self/mnc-stage3*
 tmp*.py
 .culebra-journal.jsonl
 .culebra-baseline.json
+.culebra-session.jsonl
+docs/roadmap/MASTER_PROMPT.md.mnc_cache/
+/.mnc_cache
+*.o.tmp

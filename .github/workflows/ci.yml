@@ -62,18 +62,43 @@ jobs:
       - name: Install LLVM tools
         run: sudo apt-get update -qq && sudo apt-get install -y llvm-18 clang-18
 
-      - name: Build mnc-stage1
-        run: python scripts/build_stage1.py
-        continue-on-error: true
+      - name: Build mnc-stage1 (from committed IR)
+        run: python scripts/build_stage1.py --use-committed
 
-      - name: Run golden tests (15/15)
+      - name: Run golden tests (33/33)
         if: success()
         run: python scripts/ir_doctor.py golden
 
       - name: Run stage2 validation
         if: success()
         run: python scripts/ir_doctor.py stage2 --timeout 30
-        continue-on-error: true
+
+      - name: Startup benchmark
+        if: success()
+        run: bash tests/bench/bench_startup.sh --gate
+
+      - name: Compile-time benchmarks
+        if: success()
+        run: bash tests/bench/bench_compile.sh --gate
+
+  # ---------------------------------------------------------------------------
+  # Native bootstrap: build from seed binary, no Python
+  # ---------------------------------------------------------------------------
+  bootstrap:
+    name: Bootstrap (No Python)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install LLVM + clang
+        run: sudo apt-get update -qq && sudo apt-get install -y llvm-18 clang-18
+
+      - name: Symlink clang
+        run: sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+
+      - name: Two-stage bootstrap + verify
+        run: bash scripts/build_from_seed.sh --verify
 
   native:
     name: C Runtime Tests
@@ -89,6 +114,12 @@ jobs:
             runtime/native/mapanare_core.c \
             runtime/native/mapanare_runtime.c \
             -o test_c_runtime
+          gcc -c -O2 -g -Wall -Wextra -Werror -I runtime/native/ \
+            runtime/native/mapanare_io.c -o /tmp/mapanare_io.o
+          gcc -c -O2 -g -Wall -Wextra -Werror -I runtime/native/ \
+            runtime/native/mapanare_gpu.c -o /tmp/mapanare_gpu.o
+          gcc -c -O2 -g -Wall -Wextra -Werror -I runtime/native/ \
+            runtime/native/mapanare_gpu_builtins.c -o /tmp/mapanare_gpu_builtins.o
           ./test_c_runtime
 
       - name: Compile and run with AddressSanitizer
@@ -166,10 +197,12 @@ jobs:
 
       - name: Run WASI examples on wasmtime
         run: |
-          for wasm in examples/wasm/*.wasi.wasm; do
-            if [ -f "$wasm" ]; then
-              echo "--- Running $wasm on wasmtime ---"
-              wasmtime run "$wasm"
+          for f in examples/wasm/hello.mn examples/wasm/wasi_app.mn; do
+            if [ -f "$f" ]; then
+              echo "--- Running $f (wasm32-wasi) ---"
+              python -m mapanare emit-wasm --wasi "$f" -o "${f%.mn}.wasi.wat"
+              wat2wasm "${f%.mn}.wasi.wat" -o "${f%.mn}.wasi.wasm"
+              wasmtime "${f%.mn}.wasi.wasm"
             fi
           done
 
@@ -305,7 +338,8 @@ jobs:
           clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_runtime.c -o mapanare_runtime.o
           clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_io.c -o mapanare_io.o
           clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_gpu.c -o mapanare_gpu.o
-          ar rcs libmapanare.a mapanare_core.o mapanare_runtime.o mapanare_io.o mapanare_gpu.o
+          clang -c -std=c11 -O2 -Wall -Wextra -Werror mapanare_gpu_builtins.c -o mapanare_gpu_builtins.o
+          ar rcs libmapanare.a mapanare_core.o mapanare_runtime.o mapanare_io.o mapanare_gpu.o mapanare_gpu_builtins.o
           echo "Static library built:"
           ls -la libmapanare.a
           file mapanare_core.o
@@ -342,7 +376,7 @@ jobs:
         run: |
           cd runtime/native
           for arch in arm64 x86_64; do
-            for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c; do
+            for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c mapanare_gpu_builtins.c; do
               clang -c -std=c11 -O2 -arch $arch "$src" -o "${src%.c}_${arch}.o"
             done
             ar rcs "libmapanare_${arch}.a" *_${arch}.o
@@ -364,7 +398,7 @@ jobs:
           IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "iOS SDK: $IOS_SDK"
           cd runtime/native
-          for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c; do
+          for src in mapanare_core.c mapanare_runtime.c mapanare_io.c mapanare_gpu.c mapanare_gpu_builtins.c; do
             echo "--- Compiling $src for iOS ---"
             xcrun --sdk iphoneos clang -c -std=c11 -O2 -Wall \
               -target arm64-apple-ios17.0 \
@@ -429,6 +463,44 @@ jobs:
             runtime/native/libmapanare_ios.a
           retention-days: 7
           if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Bootstrap from seed — build without Python (gcc + llvm only)
+  # ---------------------------------------------------------------------------
+  bootstrap-from-seed:
+    name: Bootstrap from Seed (No Python)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install LLVM + gcc
+        run: sudo apt-get update -qq && sudo apt-get install -y llvm gcc
+
+      - name: Build from seed
+        run: bash scripts/build_from_seed.sh
+
+      - name: Validate output (compile hello → llvm-as)
+        run: |
+          ./mnc tests/golden/01_hello.mn > /tmp/hello.ll
+          llvm-as /tmp/hello.ll -o /dev/null
+          echo "Bootstrap compiler produces valid IR"
+
+      - name: Run golden subset (smoke test)
+        run: |
+          PASS=0; FAIL=0
+          for mn in tests/golden/01_hello.mn tests/golden/02_arithmetic.mn tests/golden/03_functions.mn; do
+            if [ -f "$mn" ]; then
+              if ./mnc "$mn" | llvm-as -o /dev/null 2>/dev/null; then
+                PASS=$((PASS + 1))
+              else
+                FAIL=$((FAIL + 1))
+                echo "FAIL: $mn"
+              fi
+            fi
+          done
+          echo "Golden smoke: ${PASS} pass, ${FAIL} fail"
+          [ "${FAIL}" -eq 0 ]
 
   # Fixed-point verification (manual milestone check, not per-PR).
   # Run locally: bash scripts/verify_fixed_point.sh

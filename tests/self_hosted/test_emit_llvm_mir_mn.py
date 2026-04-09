@@ -95,7 +95,7 @@ class TestEmitLlvmMnTypeResolution:
             "llvm_option_type",
             "llvm_result_type",
             "llvm_tensor_type",
-            "llvm_list_type",
+            "llvm_list_rt",
             "llvm_map_type",
         ],
     )

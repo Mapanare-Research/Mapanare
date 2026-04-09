@@ -65,6 +65,9 @@ def test_relative_links_valid(md_file: Path) -> None:
         # Skip image badges, shields.io, and other known external patterns
         if target.endswith((".svg", ".png", ".jpg", ".gif")):
             continue
+        # Skip .reviews/ links — code review archives are not committed to git
+        if ".reviews/" in target:
+            continue
         # Resolve relative to the markdown file's directory
         resolved = (md_file.parent / target).resolve()
         if not resolved.exists():
@@ -98,8 +101,10 @@ def test_example_dirs_exist() -> None:
     """Example directories referenced in the roadmap should exist."""
     examples = REPO_ROOT / "examples"
     assert (examples / "wasm").is_dir(), "examples/wasm/ missing"
-    assert (examples / "gpu").is_dir(), "examples/gpu/ missing"
-    assert (examples / "mobile").is_dir(), "examples/mobile/ missing"
+    assert (examples / "experimental" / "gpu").is_dir(), "examples/experimental/gpu/ missing"
+    assert (examples / "experimental" / "mobile").is_dir(), "examples/experimental/mobile/ missing"
+    assert (examples / "cli").is_dir(), "examples/cli/ missing"
+    assert (examples / "network").is_dir(), "examples/network/ missing"
 
 
 def test_stdlib_dirs_exist() -> None:

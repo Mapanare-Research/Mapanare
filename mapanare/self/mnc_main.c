@@ -17,6 +17,7 @@
 #ifndef _WIN32
 #include <execinfo.h>
 #include <unistd.h>
+#include <pthread.h>
 #endif
 
 static void crash_handler(int sig) {
@@ -47,6 +48,7 @@ typedef struct {
     int64_t len;
     int64_t cap;
     int64_t elem_size;
+    int64_t managed;
 } MnList;
 
 /* SemanticError: { filename: String, line: Int, column: Int, message: String } */
@@ -86,60 +88,42 @@ extern CompileResult compile_and_print(MnString source, MnString filename);
  * main
  * ----------------------------------------------------------------------- */
 
-static void print_usage(const char *prog) {
-    fprintf(stderr, "Usage: %s <file.mn>\n", prog);
-    fprintf(stderr, "  Compiles a Mapanare source file and prints LLVM IR to stdout.\n");
+extern void __mn_argv_init(int argc, char **argv);
+extern void mn_main(void);
+
+/* Stack size for compiler thread: 32 MB (self-compilation needs ~16 MB) */
+#define MNC_STACK_SIZE (32 * 1024 * 1024)
+
+#ifndef _WIN32
+static void *compiler_thread(void *arg) {
+    (void)arg;
+    mn_main();
+    return NULL;
 }
+#endif
 
 int main(int argc, char *argv[]) {
     signal(SIGSEGV, crash_handler);
     signal(SIGABRT, crash_handler);
-    if (argc < 2) {
-        print_usage(argv[0]);
-        return 1;
-    }
+    __mn_argv_init(argc, argv);
 
-    const char *filepath = argv[1];
-
-    /* Read the source file */
-    MnString path_str = __mn_str_from_cstr(filepath);
-    int64_t ok = 0;
-    MnString source = __mn_file_read(path_str, &ok);
-
-    if (!ok) {
-        fprintf(stderr, "error: cannot read file '%s'\n", filepath);
-        return 1;
-    }
-
-    /* Compile */
-    MnString filename_str = __mn_str_from_cstr(filepath);
-
-    CompileResult result = compile(source, filename_str);
-
-    if (result.success) {
-        /* Print LLVM IR to stdout — untag heap-allocated string pointer (bit 0) */
-        if (result.ir_text.len > 0) {
-            const char *ir_data = (const char *)((uintptr_t)result.ir_text.data & ~(uintptr_t)1);
-            fwrite(ir_data, 1, (size_t)result.ir_text.len, stdout);
-            /* Ensure trailing newline */
-            if (ir_data[result.ir_text.len - 1] != '\n') {
-                putchar('\n');
-            }
-        }
-        return 0;
+    /* Run mn_main() on a thread with a larger stack so the compiler
+     * can handle self-compilation (13K+ lines) without ulimit. */
+#ifndef _WIN32
+    pthread_t tid;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, MNC_STACK_SIZE);
+    if (pthread_create(&tid, &attr, compiler_thread, NULL) == 0) {
+        pthread_attr_destroy(&attr);
+        pthread_join(tid, NULL);
     } else {
-        /* Print errors to stderr */
-        int64_t n_errors = result.errors.len;
-        for (int64_t i = 0; i < n_errors; i++) {
-            SemanticError *err = (SemanticError *)(result.errors.data +
-                                                    i * result.errors.elem_size);
-            MnString msg = format_error(*err);
-            if (msg.len > 0) {
-                const char *msg_data = (const char *)((uintptr_t)msg.data & ~(uintptr_t)1);
-                fwrite(msg_data, 1, (size_t)msg.len, stderr);
-            }
-            fputc('\n', stderr);
-        }
-        return 1;
+        /* Fallback: run on main thread if thread creation fails */
+        pthread_attr_destroy(&attr);
+        mn_main();
     }
+#else
+    mn_main();
+#endif
+    return 0;
 }

@@ -1,0 +1,17 @@
+// Translated from examples/transpile/fibonacci.py by mapanare transpile
+// (manually type-annotated for compilation)
+
+fn fibonacci(n: Int) -> Int {
+    si n <= 1 {
+        da n
+    }
+    da fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+fn main() {
+    pon mut i: Int = 0
+    mien i < 10 {
+        print(fibonacci(i))
+        i = i + 1
+    }
+}

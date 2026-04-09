@@ -7,7 +7,8 @@ control flow becomes explicit jumps/branches.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, replace
 from typing import Any
 
 from mapanare.ast_nodes import (
@@ -110,7 +111,6 @@ from mapanare.mir import (
     MapInit,
     MIRAgentInfo,
     MIRFunction,
-    MIRGpuKernel,
     MIRModule,
     MIRParam,
     MIRPipeInfo,
@@ -134,6 +134,7 @@ from mapanare.mir import (
     WrapNone,
     WrapOk,
     WrapSome,
+    mir_any,
     mir_bool,
     mir_float,
     mir_int,
@@ -177,107 +178,7 @@ _STREAM_OP_MAP: dict[str, StreamOpKind] = {
     "collect": StreamOpKind.COLLECT,
 }
 
-
-# ---------------------------------------------------------------------------
-# GPU kernel source generation
-# ---------------------------------------------------------------------------
-
-_PTX_TYPE_MAP: dict[TypeKind, str] = {
-    TypeKind.INT: ".s64",
-    TypeKind.FLOAT: ".f64",
-    TypeKind.BOOL: ".pred",
-}
-
-_GLSL_TYPE_MAP: dict[TypeKind, str] = {
-    TypeKind.INT: "int",
-    TypeKind.FLOAT: "double",
-    TypeKind.BOOL: "bool",
-}
-
-
-def _mir_type_to_ptx_param(ty: MIRType, name: str) -> str:
-    """Convert a MIR parameter to a PTX kernel parameter declaration."""
-    ptx_ty = _PTX_TYPE_MAP.get(ty.kind, ".b64")
-    return f".param {ptx_ty} {name}"
-
-
-def _generate_ptx_kernel(fn: MIRFunction) -> str:
-    """Generate a PTX kernel stub from a MIR function signature.
-
-    Produces a valid PTX kernel with thread-index gating and parameter
-    loading. For simple element-wise functions (pointer params + scalar
-    length), generates the standard parallel dispatch pattern.
-    """
-    name = fn.name
-    params = fn.params
-    param_decls = []
-    param_loads = []
-    for i, p in enumerate(params):
-        ptx_ty = _PTX_TYPE_MAP.get(p.ty.kind, ".b64")
-        param_decls.append(f"    .param {ptx_ty} param_{i}")
-        param_loads.append(f"    ld.param{ptx_ty} %rd{i}, [param_{i}];")
-
-    param_str = ",\n".join(param_decls)
-    load_str = "\n".join(param_loads)
-    n_params = len(params)
-
-    return f"""\
-.version 7.0
-.target sm_52
-.address_size 64
-
-.visible .entry {name}(
-{param_str}
-)
-{{
-    .reg .s64 %rd<{n_params + 4}>;
-    .reg .pred %p<2>;
-
-{load_str}
-
-    // Thread index computation
-    mov.u32 %r0, %ctaid.x;
-    mov.u32 %r1, %ntid.x;
-    mov.u32 %r2, %tid.x;
-    mad.lo.s32 %r3, %r0, %r1, %r2;
-    cvt.s64.s32 %rd{n_params}, %r3;
-
-    // Bounds check (last param assumed to be length N)
-    setp.ge.s64 %p0, %rd{n_params}, %rd{n_params - 1};
-    @%p0 bra $L_exit;
-
-    // Kernel body — element-wise dispatch placeholder
-    // The runtime loads actual kernel logic from the decorated function.
-
-$L_exit:
-    ret;
-}}
-"""
-
-
-def _generate_glsl_kernel(fn: MIRFunction) -> str:
-    """Generate a GLSL compute shader stub from a MIR function signature."""
-    name = fn.name
-    bindings = []
-    for i, p in enumerate(fn.params):
-        glsl_ty = _GLSL_TYPE_MAP.get(p.ty.kind, "float")
-        bindings.append(f"layout(set = 0, binding = {i}) buffer Buf{i} {{ {glsl_ty} data{i}[]; }};")
-    binding_str = "\n".join(bindings)
-
-    return f"""\
-#version 450
-// Auto-generated compute shader for {name}
-
-layout(local_size_x = 256) in;
-
-{binding_str}
-
-void main() {{
-    uint idx = gl_GlobalInvocationID.x;
-    // Kernel body — element-wise dispatch
-    // The runtime loads actual logic from the decorated function.
-}}
-"""
+_ARITH_TRAIT_MAP: dict[str, str] = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
 
 
 def _ast_span_to_mir(node: ASTNode | None) -> SourceSpan | None:
@@ -390,6 +291,11 @@ class MIRLowerer:
         self._imported_enum_defs: dict[str, list[tuple[str, list[MIRType]]]] = dict(
             imported_enum_defs or {}
         )
+        # Generics monomorphization state
+        self._generic_fn_defs: dict[str, FnDef] = {}  # name → AST of generic fn
+        self._specialized_fns: set[str] = set()  # mangled names already lowered
+        self._generic_struct_defs: dict[str, StructDef] = {}  # name → AST of generic struct
+        self._generic_impl_defs: dict[str, ImplDef] = {}  # target → AST of generic impl
 
     # -- Name generation ---------------------------------------------------
 
@@ -405,6 +311,191 @@ class MIRLowerer:
 
     def _make_value(self, ty: MIRType = mir_unknown(), prefix: str = "t") -> Value:
         return Value(name=self._fresh_tmp(prefix), ty=ty)
+
+    # -- Generics monomorphization -----------------------------------------
+
+    def _mangle_generic(self, name: str, type_args: list[MIRType]) -> str:
+        """Produce a mangled name: identity + [Int] → identity__Int."""
+        parts = []
+        for ta in type_args:
+            ti = ta.type_info if hasattr(ta, "type_info") else ta
+            if hasattr(ti, "name") and ti.name:
+                parts.append(ti.name)
+            elif hasattr(ti, "kind"):
+                parts.append(str(ti.kind).split(".")[-1].capitalize())
+            else:
+                parts.append("Unknown")
+        return f"{name}__{'_'.join(parts)}"
+
+    def _infer_type_args(
+        self, fn_def: FnDef, arg_types: list[MIRType]
+    ) -> dict[str, MIRType] | None:
+        """Infer type parameter → concrete type mapping from call-site arguments."""
+        subst: dict[str, MIRType] = {}
+        tp_set = set(fn_def.type_params)
+        for param, arg_ty in zip(fn_def.params, arg_types):
+            if param.type_annotation is None:
+                continue
+            ann = param.type_annotation
+            if isinstance(ann, NamedType) and ann.name in tp_set:
+                subst[ann.name] = arg_ty
+        return subst if len(subst) == len(tp_set) else None
+
+    def _substitute_type_expr(
+        self, te: "TypeExpr | None", subst: dict[str, MIRType]
+    ) -> "TypeExpr | None":
+        """Replace type parameter names with concrete NamedType nodes."""
+        if te is None:
+            return None
+        if isinstance(te, NamedType) and te.name in subst:
+            concrete = subst[te.name]
+            ti = concrete.type_info if hasattr(concrete, "type_info") else concrete
+            kind = ti.kind if hasattr(ti, "kind") else None
+            name = ti.name if hasattr(ti, "name") and ti.name else ""
+            if not name and kind is not None:
+                _kind_names = {
+                    TypeKind.INT: "Int",
+                    TypeKind.FLOAT: "Float",
+                    TypeKind.BOOL: "Bool",
+                    TypeKind.STRING: "String",
+                    TypeKind.CHAR: "Char",
+                    TypeKind.VOID: "Void",
+                    TypeKind.LIST: "List",
+                    TypeKind.MAP: "Map",
+                }
+                name = _kind_names.get(kind, "Int")
+            return NamedType(name=name, span=te.span)
+        if isinstance(te, GenericType):
+            new_args = [self._substitute_type_expr(a, subst) or a for a in te.args]
+            return GenericType(name=te.name, args=new_args, span=te.span)
+        return te
+
+    def _specialize_fn(self, fn_def: FnDef, subst: dict[str, MIRType]) -> FnDef:
+        """Create a specialized copy of a generic function with concrete types.
+
+        Uses dataclasses.replace() for a shallow copy, only deep-copying the
+        body and params (where type substitution mutates nodes).  This avoids
+        the overhead of copy.deepcopy() on the entire FnDef tree.
+        """
+        specialized = replace(
+            fn_def,
+            type_params=[],
+            trait_bounds={},
+            params=[replace(p) for p in fn_def.params],
+            body=deepcopy(fn_def.body),
+        )
+
+        # Substitute parameter types
+        for p in specialized.params:
+            p.type_annotation = self._substitute_type_expr(p.type_annotation, subst)
+
+        # Substitute return type
+        specialized.return_type = self._substitute_type_expr(specialized.return_type, subst)
+
+        return specialized
+
+    def _monomorphize_call(
+        self, fn_name: str, arg_types: list[MIRType], type_args: list[MIRType] | None
+    ) -> str | None:
+        """If fn_name is generic, specialize it and return the mangled name."""
+        fn_def = self._generic_fn_defs.get(fn_name)
+        if fn_def is None:
+            return None
+
+        # Determine type arguments: explicit (turbofish) or inferred
+        if type_args and len(type_args) == len(fn_def.type_params):
+            concrete_types = type_args
+        else:
+            subst = self._infer_type_args(fn_def, arg_types)
+            if subst is None:
+                return None
+            concrete_types = [subst[tp] for tp in fn_def.type_params]
+
+        mangled = self._mangle_generic(fn_name, concrete_types)
+
+        # Specialize and lower if not already done
+        if mangled not in self._specialized_fns:
+            self._specialized_fns.add(mangled)
+            subst_map = dict(zip(fn_def.type_params, concrete_types))
+            specialized = self._specialize_fn(fn_def, subst_map)
+            specialized.name = mangled
+            # Register return type before lowering (for recursive calls)
+            if specialized.return_type:
+                self._fn_return_types[mangled] = _resolve_type_expr(specialized.return_type)
+            self._lower_fn(specialized)
+
+        return mangled
+
+    def _monomorphize_struct(self, struct_name: str, field_values: list[Value]) -> str | None:
+        """If struct_name is generic, specialize it and return the mangled name."""
+        struct_def = self._generic_struct_defs.get(struct_name)
+        if struct_def is None:
+            return None
+
+        # Infer type arguments from field value types
+        tp_set = set(struct_def.type_params)
+        subst: dict[str, MIRType] = {}
+        for sf, fv in zip(struct_def.fields, field_values):
+            if sf.type_annotation and isinstance(sf.type_annotation, NamedType):
+                if sf.type_annotation.name in tp_set:
+                    subst[sf.type_annotation.name] = fv.ty
+
+        if len(subst) != len(struct_def.type_params):
+            return None
+
+        concrete_types = [subst[tp] for tp in struct_def.type_params]
+        mangled = self._mangle_generic(struct_name, concrete_types)
+
+        # Register the specialized struct if not already done
+        if mangled not in self._module.structs:
+            specialized_fields: list[tuple[str, MIRType]] = []
+            for sf in struct_def.fields:
+                if (
+                    sf.type_annotation
+                    and isinstance(sf.type_annotation, NamedType)
+                    and sf.type_annotation.name in subst
+                ):
+                    specialized_fields.append((sf.name, subst[sf.type_annotation.name]))
+                else:
+                    specialized_fields.append((sf.name, _resolve_type_expr(sf.type_annotation)))
+            self._module.structs[mangled] = specialized_fields
+            self._struct_fields[mangled] = [sf.name for sf in struct_def.fields]
+            self._fn_param_types[mangled] = [ft for _, ft in specialized_fields]
+
+            # Monomorphize generic impl methods for this struct instantiation
+            self._monomorphize_impl(struct_name, mangled, subst)
+
+        return mangled
+
+    def _monomorphize_impl(
+        self, base_name: str, mangled_name: str, subst: dict[str, MIRType]
+    ) -> None:
+        """Specialize generic impl methods for a monomorphized struct."""
+        impl_def = self._generic_impl_defs.get(base_name)
+        if impl_def is None:
+            return
+        struct_ty = NamedType(name=mangled_name)
+        for method in impl_def.methods:
+            specialized = self._specialize_fn(method, subst)
+            # Inject struct type for bare `self` parameter
+            for p in specialized.params:
+                if p.name == "self" and p.type_annotation is None:
+                    p.type_annotation = struct_ty
+            mir_name = f"{mangled_name}_{method.name}"
+            # Register the impl method for dispatch
+            self._impl_methods[(mangled_name, method.name)] = mir_name
+            # Register return/param types
+            if specialized.return_type is not None:
+                self._fn_return_types[mir_name] = _resolve_type_expr(specialized.return_type)
+            if specialized.params:
+                self._fn_param_types[mir_name] = [
+                    _resolve_type_expr(p.type_annotation) if p.type_annotation else mir_unknown()
+                    for p in specialized.params
+                ]
+            # Lower the specialized method
+            if mir_name not in self._specialized_fns:
+                self._specialized_fns.add(mir_name)
+                self._lower_fn(specialized, name_prefix=f"{mangled_name}_")
 
     # -- Block management --------------------------------------------------
 
@@ -597,11 +688,16 @@ class MIRLowerer:
                 actual = actual.definition
 
             if isinstance(actual, StructDef):
-                fields = [(f.name, _resolve_type_expr(f.type_annotation)) for f in actual.fields]
-                self._module.structs[actual.name] = fields
-                self._struct_fields[actual.name] = [f.name for f in actual.fields]
-                # Register struct constructor param types for arg patching
-                self._fn_param_types[actual.name] = [ft for _, ft in fields]
+                if actual.type_params:
+                    self._generic_struct_defs[actual.name] = actual
+                else:
+                    fields = [
+                        (f.name, _resolve_type_expr(f.type_annotation)) for f in actual.fields
+                    ]
+                    self._module.structs[actual.name] = fields
+                    self._struct_fields[actual.name] = [f.name for f in actual.fields]
+                    # Register struct constructor param types for arg patching
+                    self._fn_param_types[actual.name] = [ft for _, ft in fields]
 
             elif isinstance(actual, EnumDef):
                 variants = []
@@ -626,9 +722,13 @@ class MIRLowerer:
                     self._fn_return_types[actual.name] = ret_type
 
             elif isinstance(actual, ImplDef):
-                for method in actual.methods:
-                    mir_name = f"{actual.target}_{method.name}"
-                    self._impl_methods[(actual.target, method.name)] = mir_name
+                if actual.type_params:
+                    # Store generic impl for on-demand monomorphization
+                    self._generic_impl_defs[actual.target] = actual
+                else:
+                    for method in actual.methods:
+                        mir_name = f"{actual.target}_{method.name}"
+                        self._impl_methods[(actual.target, method.name)] = mir_name
 
             elif isinstance(actual, ImportDef):
                 self._module.imports.append((actual.path, actual.items))
@@ -643,6 +743,10 @@ class MIRLowerer:
                         stages.append(s.name)
                 self._module.pipes[actual.name] = MIRPipeInfo(name=actual.name, stages=stages)
 
+            # Store generic function AST definitions for monomorphization
+            if isinstance(actual, FnDef) and actual.type_params:
+                self._generic_fn_defs[actual.name] = actual
+
             # Collect function return/param types for call-site type propagation
             if isinstance(actual, FnDef):
                 if actual.return_type is not None:
@@ -656,7 +760,7 @@ class MIRLowerer:
                         )
                         for p in actual.params
                     ]
-            elif isinstance(actual, ImplDef):
+            elif isinstance(actual, ImplDef) and not actual.type_params:
                 for method in actual.methods:
                     mir_name = f"{actual.target}_{method.name}"
                     if method.return_type is not None:
@@ -681,10 +785,14 @@ class MIRLowerer:
                 return
 
         if isinstance(actual, FnDef):
+            if actual.type_params:
+                return  # Generic functions lowered on demand via monomorphization
             self._lower_fn(actual)
         elif isinstance(actual, AgentDef):
             self._lower_agent(actual)
         elif isinstance(actual, ImplDef):
+            if actual.type_params:
+                return  # Generic impls lowered on demand via monomorphization
             self._lower_impl(actual)
         elif isinstance(actual, ExportDef):
             if actual.definition is not None:
@@ -852,20 +960,10 @@ class MIRLowerer:
         for dec in decorators:
             d = dec.lower()
             if d in ("cuda", "vulkan", "gpu"):
-                ptx = ""
-                spirv = b""
-                if d in ("cuda", "gpu"):
-                    ptx = _generate_ptx_kernel(mir_fn)
-                if d in ("vulkan", "gpu"):
-                    spirv = _generate_glsl_kernel(mir_fn).encode("utf-8")
-                kernel = MIRGpuKernel(
-                    name=fn_name,
-                    device=d,
-                    ptx_source=ptx,
-                    spirv_bytes=spirv,
-                    num_buffers=len(mir_fn.params),
+                raise NotImplementedError(
+                    "GPU code generation is not yet implemented. "
+                    "@cuda/@vulkan/@gpu decorators will be available in a future release."
                 )
-                self._module.gpu_kernels[fn_name] = kernel
                 break
 
         # Restore state
@@ -971,6 +1069,43 @@ class MIRLowerer:
             return None
         return None
 
+    # ── any-type box/unbox helpers ────────────────────────────────────
+    _ANY_BOX_FN: dict[TypeKind, str] = {
+        TypeKind.INT: "__mn_any_box_int",
+        TypeKind.FLOAT: "__mn_any_box_float",
+        TypeKind.BOOL: "__mn_any_box_bool",
+        TypeKind.STRING: "__mn_any_box_str",
+    }
+
+    def _box_for_any(self, val: Value) -> Value:
+        """Box a concrete-typed value into an MnValue (any).
+
+        Returns the original value unchanged if no boxing is needed.
+        """
+        box_fn = self._ANY_BOX_FN.get(val.ty.kind)
+        if box_fn is None:
+            # Non-boxable types: just reinterpret as any
+            return Value(name=val.name, ty=mir_any())
+        dest = self._make_value(ty=mir_any())
+        self._emit(Call(dest=dest, fn_name=box_fn, args=[val]))
+        return dest
+
+    def _unbox_from_any(self, val: Value, target_kind: TypeKind) -> Value:
+        """Unbox an MnValue (any) to a concrete type."""
+        _UNBOX_FN: dict[TypeKind, tuple[str, MIRType]] = {
+            TypeKind.INT: ("__mn_any_unbox_int", mir_int()),
+            TypeKind.FLOAT: ("__mn_any_unbox_float", MIRType(TypeInfo(kind=TypeKind.FLOAT))),
+            TypeKind.BOOL: ("__mn_any_unbox_bool", MIRType(TypeInfo(kind=TypeKind.BOOL))),
+            TypeKind.STRING: ("__mn_any_unbox_str", mir_string()),
+        }
+        info = _UNBOX_FN.get(target_kind)
+        if info is None:
+            return val
+        fn_name, result_ty = info
+        dest = self._make_value(ty=result_ty)
+        self._emit(Call(dest=dest, fn_name=fn_name, args=[val]))
+        return dest
+
     def _lower_let(self, let: LetBinding) -> None:
         """Lower a let binding."""
         # Track lambda bindings so calls can resolve the function name
@@ -1006,7 +1141,10 @@ class MIRLowerer:
         # annotation is provided, use the annotation to preserve full type info.
         if let.type_annotation:
             declared = _resolve_type_expr(let.type_annotation)
-            if val.ty.kind == TypeKind.UNKNOWN and declared.kind != TypeKind.UNKNOWN:
+            if declared.kind == TypeKind.ANY and val.ty.kind != TypeKind.ANY:
+                # Box concrete value into MnValue for `let x: any = 42`
+                val = self._box_for_any(val)
+            elif val.ty.kind == TypeKind.UNKNOWN and declared.kind != TypeKind.UNKNOWN:
                 val = Value(name=val.name, ty=declared)
             elif val.ty.kind in (TypeKind.OPTION, TypeKind.RESULT) and not val.ty.type_info.args:
                 if declared.kind == val.ty.kind and declared.type_info.args:
@@ -1098,8 +1236,11 @@ class MIRLowerer:
         if not self._block_terminated():
             self._emit(Jump(target=header.label))
 
-        # Exit
+        # Exit — free range iterator if the iterable was a range
         self._set_block(exit_bb)
+        if iterable.ty.kind == TypeKind.RANGE:
+            free_dest = self._make_value(ty=mir_bool(), prefix="range_free")
+            self._emit(Call(dest=free_dest, fn_name="__mn_range_free", args=[iterable]))
 
     def _lower_while(self, loop: WhileLoop) -> None:
         """Lower a while loop to basic blocks.
@@ -1332,7 +1473,7 @@ class MIRLowerer:
 
         # Trait dispatch: if the semantic checker annotated this expression with
         # a trait method, emit a method call instead of a primitive BinOp.
-        trait = getattr(expr, "trait_dispatch", None)
+        trait = expr.trait_dispatch
         if trait == "eq":
             dest = self._make_value(ty=mir_bool())
             self._emit(Call(dest=dest, fn_name="eq", args=[lhs, rhs]))
@@ -1350,6 +1491,12 @@ class MIRLowerer:
             self._emit(Const(dest=zero, value=0, ty=mir_int()))
             cmp_op = {"<": BinOpKind.LT, ">": BinOpKind.GT, "<=": BinOpKind.LE, ">=": BinOpKind.GE}
             self._emit(BinOp(dest=dest, op=cmp_op[expr.op], lhs=cmp_val, rhs=zero))
+            return dest
+        # Arithmetic trait dispatch: add/sub/mul/div impl methods
+        if trait in ("add", "sub", "mul", "div"):
+            method = _ARITH_TRAIT_MAP.get(expr.op, trait)
+            dest = self._make_value(ty=lhs.ty)
+            self._emit(Call(dest=dest, fn_name=method, args=[lhs, rhs]))
             return dest
 
         op = _BINOP_MAP.get(expr.op)
@@ -1477,6 +1624,19 @@ class MIRLowerer:
             if fn_name == "decode_to" and len(args) == 1:
                 return self._lower_decode_to(expr, args[0])
 
+        # Monomorphize generic function calls
+        if isinstance(expr.callee, Identifier):
+            fn_name = expr.callee.name
+            type_args_mir = (
+                [_resolve_type_expr(ta) for ta in expr.type_args] if expr.type_args else None
+            )
+            mangled = self._monomorphize_call(fn_name, [a.ty for a in args], type_args_mir)
+            if mangled is not None:
+                ret_ty = self._fn_return_types.get(mangled, mir_unknown())
+                dest = self._make_value(ty=ret_ty)
+                self._emit(Call(dest=dest, fn_name=mangled, args=args))
+                return dest
+
         # Infer return type from function declaration or builtins
         _BUILTIN_RET: dict[str, MIRType] = {
             "str": mir_string(),
@@ -1486,6 +1646,13 @@ class MIRLowerer:
             "len": mir_int(),
             "print": mir_void(),
             "println": mir_void(),
+            # C runtime functions used by self-hosted compiler driver
+            "__mn_argc": mir_int(),
+            "__mn_argv": mir_string(),
+            "__mn_file_read_or_empty": mir_string(),
+            "__mn_exit": mir_void(),
+            "__mn_str_eprint": mir_void(),
+            "__mn_str_eprintln": mir_void(),
         }
         _call_ret_ty = mir_unknown()
         if isinstance(expr.callee, Identifier):
@@ -1551,6 +1718,46 @@ class MIRLowerer:
                 self._emit(
                     StreamInit(dest=dest, source=args[0], elem_type=MIRType(elem_type.type_info))
                 )
+                return dest
+
+            # Handle typeof() builtin: compile-time type name for concrete types,
+            # runtime __mn_any_tag for dynamic `any` values
+            if fn_name == "typeof" and len(args) == 1:
+                arg_kind = args[0].ty.type_info.kind
+                _KIND_TO_TYPENAME: dict[TypeKind, str] = {
+                    TypeKind.INT: "Int",
+                    TypeKind.FLOAT: "Float",
+                    TypeKind.BOOL: "Bool",
+                    TypeKind.STRING: "String",
+                    TypeKind.CHAR: "Char",
+                    TypeKind.LIST: "List",
+                    TypeKind.MAP: "Map",
+                    TypeKind.OPTION: "Option",
+                    TypeKind.RESULT: "Result",
+                    TypeKind.SIGNAL: "Signal",
+                    TypeKind.STREAM: "Stream",
+                    TypeKind.AGENT: "Agent",
+                    TypeKind.ENUM: "Enum",
+                    TypeKind.STRUCT: "Struct",
+                    TypeKind.FN: "Fn",
+                    TypeKind.VOID: "Void",
+                    TypeKind.RANGE: "Range",
+                    TypeKind.ANY: "any",
+                }
+                # For concrete types, produce a compile-time string constant
+                if arg_kind != TypeKind.ANY and arg_kind != TypeKind.UNKNOWN:
+                    type_name = _KIND_TO_TYPENAME.get(arg_kind, "Unknown")
+                    # Use user-defined name for struct/enum types
+                    if arg_kind in (TypeKind.STRUCT, TypeKind.ENUM, TypeKind.AGENT):
+                        uname = args[0].ty.type_info.name
+                        if uname:
+                            type_name = uname
+                    dest = self._make_value(ty=mir_string())
+                    self._emit(Const(dest=dest, ty=mir_string(), value=type_name))
+                    return dest
+                # For `any`/unknown, emit runtime call to __mn_any_typename
+                dest = self._make_value(ty=mir_string())
+                self._emit(Call(dest=dest, fn_name="__mn_any_typename", args=args))
                 return dest
 
             # Check if this is an enum variant constructor
@@ -2001,7 +2208,20 @@ class MIRLowerer:
             dest = self._make_value(ty=MIRType(TypeInfo(kind=ret_kind)))
         else:
             dest = self._make_value()
-        self._emit(Call(dest=dest, fn_name=expr.method, args=[obj] + args))
+
+        # Resolve impl method: if obj has a struct/enum type, check _impl_methods
+        call_name = expr.method
+        obj_type_name = obj.ty.type_info.name if obj.ty.type_info.name else ""
+        if obj_type_name:
+            mangled = self._impl_methods.get((obj_type_name, expr.method))
+            if mangled:
+                call_name = mangled
+                # Use registered return type for the mangled method
+                impl_ret = self._fn_return_types.get(mangled)
+                if impl_ret is not None:
+                    dest = self._make_value(ty=impl_ret)
+
+        self._emit(Call(dest=dest, fn_name=call_name, args=[obj] + args))
         return dest
 
     def _infer_payload_type(
@@ -2452,12 +2672,18 @@ class MIRLowerer:
     def _lower_construct(self, expr: ConstructExpr) -> Value:
         """Lower struct construction: `Point { x: 1.0, y: 2.0 }`."""
         fields = [(f.name, self._lower_expr(f.value)) for f in expr.fields]
-        struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name=expr.name))
+        field_vals = [v for _, v in fields]
+
+        # Monomorphize generic struct if needed
+        struct_name = expr.name
+        mangled = self._monomorphize_struct(struct_name, field_vals)
+        if mangled is not None:
+            struct_name = mangled
+
+        struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name=struct_name))
         dest = self._make_value(ty=struct_ty)
         self._emit(StructInit(dest=dest, struct_type=struct_ty, fields=fields))
-        # Patch Option/Result/List argument types from struct field definitions
-        field_vals = [v for _, v in fields]
-        self._patch_arg_types_from_params(expr.name, field_vals)
+        self._patch_arg_types_from_params(struct_name, field_vals)
         return dest
 
     def _lower_signal_expr(self, expr: SignalExpr) -> Value:
@@ -2504,6 +2730,11 @@ class MIRLowerer:
             obj = self._lower_expr(expr.target.object)
             index = self._lower_expr(expr.target.index)
             self._emit(IndexSet(obj=obj, index=index, val=val))
+            # Write back: if the list came from a struct field, the IndexSet
+            # only modifies a local copy.  Emit FieldSet to persist the change.
+            if isinstance(expr.target.object, FieldAccessExpr):
+                base = self._lower_expr(expr.target.object.object)
+                self._emit(FieldSet(obj=base, field_name=expr.target.object.field_name, val=obj))
             return val
 
         return val
@@ -2556,7 +2787,10 @@ class MIRLowerer:
             ev = else_val if else_val is not None else Value(name="%void", ty=mir_void())
             assert then_exit_bb is not None
             assert else_exit_bb is not None
-            result = self._make_value(ty=tv.ty, prefix="if_result")
+            phi_ty = tv.ty
+            if self._fn and self._fn.return_type.kind != TypeKind.VOID:
+                phi_ty = self._fn.return_type
+            result = self._make_value(ty=phi_ty, prefix="if_result")
             self._emit(
                 Phi(
                     dest=result,
@@ -2568,9 +2802,12 @@ class MIRLowerer:
             )
             return result
 
-        # Void if — no value
-        result = self._make_value(ty=mir_void())
-        self._emit(Const(dest=result, ty=mir_void(), value=None))
+        # Both branches terminated — merge block is unreachable but callers
+        # may reference the result.  Use the function's return type so the C
+        # emitter generates a correctly-sized variable.
+        ret_ty = self._fn.return_type if self._fn else mir_void()
+        result = self._make_value(ty=ret_ty, prefix="if_result")
+        self._emit(Const(dest=result, ty=ret_ty, value=None))
         return result
 
     def _lower_match(self, expr: MatchExpr) -> Value:
@@ -2669,12 +2906,21 @@ class MIRLowerer:
         # Merge block
         self._set_block(merge_bb)
         if arm_results:
-            result = self._make_value(ty=arm_results[0][1].ty, prefix="match_result")
+            # Use the function's return type when the arm type doesn't match —
+            # this prevents the C emitter from generating undersized variables.
+            phi_ty = arm_results[0][1].ty
+            if self._fn and self._fn.return_type.kind != TypeKind.VOID:
+                phi_ty = self._fn.return_type
+            result = self._make_value(ty=phi_ty, prefix="match_result")
             self._emit(Phi(dest=result, incoming=arm_results))
             return result
 
-        result = self._make_value(ty=mir_void())
-        self._emit(Const(dest=result, ty=mir_void(), value=None))
+        # All arms terminated — merge block is unreachable but callers may
+        # reference the result.  Use the function's return type so the C
+        # emitter generates a correctly-sized variable (not int64_t).
+        ret_ty = self._fn.return_type if self._fn else mir_void()
+        result = self._make_value(ty=ret_ty, prefix="match_result")
+        self._emit(Const(dest=result, ty=ret_ty, value=None))
         return result
 
     def _lower_interp_string(self, expr: InterpString) -> Value:
