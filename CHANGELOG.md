@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.17.0] - 2026-04-09
+
+**Fixed-Point Bootstrap — Python Independence**
+
+### Added
+- Three-stage bootstrap: stage1→stage2→stage3 all produce valid LLVM IR
+- mnc-stage2 (self-compiled binary) compiles the full 15,000+ line compiler
+- Updated `scripts/verify_fixed_point.sh` with LLVM pipeline (clang + gcc link)
+
+### Verified
+- Near fixed-point: 69 diff lines out of 111,246 (0.062%)
+- Both stage2.ll and stage3.ll pass llvm-as validation
+- Python bootstrap still works (not broken)
+- 41/41 golden, 11/11 stage2
+
 ## [4.16.0] - 2026-04-09
 
 **Optimizer — Constant Propagation**

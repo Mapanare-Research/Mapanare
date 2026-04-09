@@ -2,7 +2,7 @@
 
 > The compiler compiles itself. Python bootstrap becomes optional.
 
-**Status:** TODO
+**Status:** DONE (near fixed-point: 0.062% diff)
 **Breaking:** No
 **Prerequisite:** v4.16.0
 
