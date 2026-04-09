@@ -1,84 +1,80 @@
-# Mapanare v4.8.0 — Language Evolution (Post-Refactor)
+# Mapanare v4.8.0 — Solid Core (Fix Everything Before Features)
 
-> The foundation is solid. Now build the future.
+> No new features until the core is bulletproof.
 
-**Status:** TODO
-**Breaking:** Yes (new language features)
-**Prerequisite:** v4.7.0 (entire refactor sequence complete)
-
----
-
-## What Changed
-
-The v4.2.0-v4.7.0 refactor delivered:
-
-- **v4.2.0** — Deleted ~8,500 lines of dead emitter code, single pipeline
-- **v4.3.0** — Drop glue works for all types, return-value escape analysis
-- **v4.4.0** — Thread-safe signals, atomic counters, COW audit, agent lifecycle
-- **v4.5.0** — UNKNOWN split, self-hosted semantic + verifier wired
-- **v4.6.0** — Hardcoded tables removed, MIRType enum, workarounds fixed
-- **v4.7.0** — Unified fixpoint optimizer, self-hosted constant propagation
-
-The compiler is now correct, clean, and fast. New features can be added with
-confidence that the foundation won't break under them.
+**Status:** IN PROGRESS
+**Breaking:** No
+**Prerequisite:** v4.7.1
 
 ---
 
-## Candidate Features (prioritize at v4.8.0 planning time)
+## Diagnosis (what we learned)
 
-### Compile-Time Tensor Shapes
+### Drop glue / skip_struct_ret
+The escape analysis code in emit_llvm_text.py is CORRECT for user programs
+(40/40 golden pass with drop glue enabled). The problem is the SELF-HOSTED
+COMPILER: when drop glue is enabled, the self-hosted semantic checker
+(`semantic.mn`) reads invalid memory in `ast__expr_ident_name`, which corrupts
+state and causes crashes in subsequent lowering.
 
-- `Tensor<Float>[M, K] @ Tensor<Float>[K, N]` — shape mismatch is a compile error
-- Requires `const` keyword for static dimension expressions
-- Connects semantic analyzer to `gpu_tensor_*` builtins
-- Prevents GPU crashes from shape mismatches
+**Root cause:** `semantic.mn` has memory safety bugs — its AST accessor
+functions read freed data. This was hidden by `skip_struct_ret` (which leaks
+all strings in struct-returning functions instead of freeing them).
 
-### `const` Keyword
+### What's blocking drop glue removal
+1. Fix `semantic.mn` AST accessor memory safety
+2. OR: don't call `check()` in the self-hosted compile() pipeline (current state)
+3. Then: remove `skip_struct_ret` and get proper string cleanup
 
-- Compile-time constants in grammar and semantic checker
-- `const N: Int = 100` — value known at compile time
-- Enables static tensor dimensions, compile-time array sizes
-- Foundation for const generics in the future
-
-### `@gpu` Auto-Kernel Extraction
-
-- Decorator on a function → automatic kernel extraction
-- Detect parallelizable loops → generate PTX/SPIR-V
-- Wire through MIR GpuKernel metadata → LLVM codegen
-- Graceful CPU fallback when no GPU available
-
-### Reactive Async
-
-- Tie async/await natively into Mapanare Streams
-- Cooperative scheduling on the event loop
-- `async fn fetch(url: String) -> Result<String, Error>`
-- Streams as async iterators: `for await item in stream:`
-
-### Auto-Generated FFI Bindings
-
-- `mapanare build mylib.mn --lib --bindings`
-- Generates `.pyi` (Python), `.d.ts` (TypeScript), Go wrappers
-- From exported function signatures in the compiled `.so`/`.dylib`
-- Zero-friction adoption: accelerate hot paths without rewriting
-
-### Distributed Agent Routing
-
-- Actor-model routing for `@Agent` across processes/machines
-- Location-transparent `send` — agents can be local or remote
-- Supervision trees span multiple nodes
-- Foundation for distributed Mapanare applications
+### Culebra findings
+- `field-index-always-zero` — confirmed: unregistered structs get index 0
+- `undefined-named-type` — confirmed: struct types not defined in IR
+- 8 Culebra templates have YAML parse errors (template bugs, not code bugs)
+- Scanning main.ll times out (866K lines) — need to scan individual golden outputs
 
 ---
 
-## Planning Process
+## Remaining work (deferred items from v4.2.0-v4.7.1)
 
-At v4.8.0 planning time:
+### Phase 1: hardcoded_field_index (self-hosted, needs rebuild)
+- Replace with auto-derived mapping from struct definitions
+- Delete the ~160 line function
+- Fixes Culebra `field-index-always-zero` finding
 
-1. Review the candidate list above
-2. Evaluate: which feature has the highest user impact?
-3. Consider dependencies: `const` must come before tensor shapes
-4. Scope to 1-2 features per version
-5. Write a full PLAN.md with phases and exit criteria
+### Phase 2: MIRType string → enum (self-hosted, needs rebuild)
+- Add TypeKind enum to mir.mn
+- Replace all `== "int"` etc.
 
-**Do not plan v4.8.0 in detail until v4.7.0 is complete.** The refactor may
-surface new priorities.
+### Phase 3: Self-hosted workaround fixes (needs rebuild)
+- PHI zeroinitializer, substr off-by-one, ABI mismatch
+
+### Phase 4: Self-hosted optimization passes (needs rebuild)
+- Constant folding, propagation, dead block elimination
+
+### Phase 5: Fix semantic.mn memory safety
+- Valgrind trace: ast__expr_ident_name invalid reads
+- Once fixed, re-enable check() in compile() and remove skip_struct_ret
+
+### Phase 6: String pooling (needs constant-tag or non-freeable marker)
+- str(true)/str(false) should not allocate
+- Small int pool for -128..127
+
+### Phase 7: Fix Culebra templates
+- Fix 8 broken templates in Culebra repo
+
+---
+
+## Exit Criteria
+
+| Check | Required |
+|-------|----------|
+| 40/40 golden | YES |
+| 11/11 stage2 | YES |
+| hardcoded_field_index deleted | YES |
+| MIRType uses enum | YES |
+| All workarounds removed | YES |
+| Self-hosted constant folding | YES |
+| semantic.mn memory-safe | YES |
+| skip_struct_ret removed | YES |
+| str(true) = constant | YES |
+| Culebra: 0 critical on golden IR | YES |

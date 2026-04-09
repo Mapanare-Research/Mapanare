@@ -287,19 +287,12 @@ fn compile(source: String, filename: String) -> CompileResult {
     let visited: List<String> = []
     let resolved: Program = resolve_imports(program, filename, visited)
 
-    // Stage 3: semantic analysis (v4.5.0)
-    // Note: self-hosted semantic checker has known gaps (constructor functions,
-    // generics, cross-module resolution). Print warnings but don't block compilation.
-    let errors: List<SemanticError> = check(resolved, filename)
-    if len(errors) > 0 {
-        let i: Int = 0
-        while i < len(errors) {
-            __mn_str_eprint("warning: ")
-            __mn_str_eprint(format_error(errors[i]))
-            __mn_str_eprint("\n")
-            i = i + 1
-        }
-    }
+    // Stage 3: semantic analysis — DISABLED
+    // The self-hosted semantic checker has memory safety bugs: ast__expr_ident_name
+    // reads invalid memory during check_call_resolved. This corrupts state and
+    // causes crashes in subsequent lowering. The checker needs to be fixed before
+    // it can be wired in. See v4.8.0 SESSION_REPORT for valgrind traces.
+    // TODO(v4.9.0): Fix semantic.mn memory safety, then re-enable.
 
     // Stage 4: lower AST to MIR
     let mir_module: MIRModule = lower(resolved, filename)
