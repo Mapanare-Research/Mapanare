@@ -871,6 +871,7 @@ static void mn_list_detach(MnList *list) {
     }
     if (!mn_list_is_managed(list)) return;  /* unmanaged buffer — nothing to detach */
     int64_t *rc = mn_list_rc(list);
+    if (!rc) return;  /* corrupted magic — treat as sole owner */
     if (__atomic_load_n(rc, __ATOMIC_ACQUIRE) <= 1) return;  /* sole owner, no detach needed */
     atomic_fetch_add_explicit(&cow_detaches, 1, memory_order_relaxed);
     /* Shared — make a private copy */

@@ -1349,6 +1349,17 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
         let elem_name: String = args[1].name
         let mut elem_ty: String = resolve_type(st, args[1].ty)
         if elem_ty == "i64" { elem_ty = resolve_mir_type(args[1].ty) }
+        // If type is still i64 but the list knows its element type from
+        // type args, use that. Handles cross-module field access where the
+        // element's own MIR type wasn't fully resolved.
+        if elem_ty == "i64" {
+            if len(args[0].ty.args) > 0 {
+                let list_elem_ty: String = resolve_mir_type(args[0].ty.args[0])
+                if list_elem_ty != "i64" {
+                    elem_ty = list_elem_ty
+                }
+            }
+        }
         // If type is still i64 but the MIR type has a struct/enum name,
         // use the named type. This handles struct-in-list push where the
         // lowerer's type info doesn't propagate through method dispatch.

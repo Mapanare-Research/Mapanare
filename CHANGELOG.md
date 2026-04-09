@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.14.0] - 2026-04-09
+
+**Break Fix + 11/11 Stage2**
+
+### Fixed
+- Runtime: null pointer dereference in `mn_list_detach` when COW magic is corrupted — added NULL check after `mn_list_rc()`
+- Emitter: `emit_list_push_call` in `emit_llvm.mn` — fallback to list type args for cross-module list push element types
+- main.mn stage2 crash (Signal 11 in `resolve_imports` → `__mn_list_push`)
+
+### Added
+- Regression tests for break inside nested if/for (`tests/llvm/test_break_nested.py`)
+
+### Verified
+- 40/40 golden tests pass
+- 11/11 stage2 valid (main.mn now compiles — 109,347 lines of IR)
+- Break lowering confirmed correct (42 Culebra findings are false positives on `return`-in-for)
+
 ## [4.13.0] - 2026-04-09
 
 **Foundation Gate — Complete**
