@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import textwrap
 
-import pytest
-
 from mapanare.parser import parse
 from mapanare.semantic import check
 

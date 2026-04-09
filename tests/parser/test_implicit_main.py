@@ -47,7 +47,7 @@ class TestImplicitMain:
     # 2. Multiple top-level statements → synthetic main with all stmts
     # ------------------------------------------------------------------
     def test_implicit_main_with_let(self) -> None:
-        src = "let x: Int = 42\nlet y: Int = x + 8\nprint(y)"
+        src = "let mut x: Int = 42\nlet mut y: Int = x + 8\nprint(y)"
         p = parse(src)
         assert len(p.definitions) == 1
         fn = p.definitions[0]

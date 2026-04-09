@@ -826,9 +826,7 @@ class MIRModule:
     gpu_kernels: dict[str, MIRGpuKernel] = field(default_factory=dict)  # fn_name -> kernel meta
     imports: list[tuple[list[str], list[str]]] = field(default_factory=list)  # (path, items)
     trait_names: list[str] = field(default_factory=list)
-    consts: list[tuple[str, str, Any]] = field(
-        default_factory=list
-    )  # (name, type_name, value)
+    consts: list[tuple[str, str, Any]] = field(default_factory=list)  # (name, type_name, value)
 
     def get_function(self, name: str) -> MIRFunction | None:
         for fn in self.functions:

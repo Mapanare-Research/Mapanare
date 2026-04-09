@@ -421,9 +421,7 @@ class LLVMTextEmitter:
         for cname, ctype, cval in mir.consts:
             if isinstance(cval, str):
                 slen = len(cval)
-                self._globals.append(
-                    f'@{cname} = private constant [{slen} x i8] c"{cval}"'
-                )
+                self._globals.append(f'@{cname} = private constant [{slen} x i8] c"{cval}"')
             elif isinstance(cval, int):
                 self._globals.append(f"@{cname} = private constant i64 {cval}")
             elif isinstance(cval, float):

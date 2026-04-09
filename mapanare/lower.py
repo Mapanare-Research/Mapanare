@@ -737,7 +737,7 @@ class MIRLowerer:
                 self._module.imports.append((actual.path, actual.items))
 
             elif isinstance(actual, ModuleLetDef):
-                val = None
+                val: int | float | str | None = None
                 ty = mir_int()
                 if actual.value is not None:
                     if isinstance(actual.value, IntLiteral):
@@ -2821,7 +2821,11 @@ class MIRLowerer:
             # type.  The old unconditional override caused string
             # if-expressions inside struct-returning functions to get the
             # wrong PHI type (e.g., EmitState instead of String).
-            if phi_ty.kind in (TypeKind.VOID, TypeKind.UNKNOWN) and self._fn and self._fn.return_type.kind != TypeKind.VOID:
+            if (
+                phi_ty.kind in (TypeKind.VOID, TypeKind.UNKNOWN)
+                and self._fn
+                and self._fn.return_type.kind != TypeKind.VOID
+            ):
                 phi_ty = self._fn.return_type
             result = self._make_value(ty=phi_ty, prefix="if_result")
             self._emit(

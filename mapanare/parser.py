@@ -963,11 +963,19 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         name = str(items[idx])
         idx += 1
         type_params: list[str] = []
-        if idx < len(items) and isinstance(items[idx], list) and all(isinstance(t, str) for t in items[idx]):
+        if (
+            idx < len(items)
+            and isinstance(items[idx], list)
+            and all(isinstance(t, str) for t in items[idx])
+        ):
             type_params = items[idx]
             idx += 1
         params: list[Param] = []
-        if idx < len(items) and isinstance(items[idx], list) and all(isinstance(p, Param) for p in items[idx]):
+        if (
+            idx < len(items)
+            and isinstance(items[idx], list)
+            and all(isinstance(p, Param) for p in items[idx])
+        ):
             params = items[idx]
             idx += 1
         return_type = None

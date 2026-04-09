@@ -89,7 +89,7 @@ class TestStage1CrossFile:
                 if isinstance(d, FnDef) and _has_only_primitive_types(d)
             ]
             # ast.mn and mir.mn have no primitive-only fns (all return custom types), so skip
-            if mn_file.name in ("ast.mn", "mir.mn"):
+            if mn_file.name in ("ast.mn", "mir.mn", "mir_opt.mn"):
                 continue
             assert len(prim_fns) > 0, f"{mn_file.name}: no primitive fns"
 

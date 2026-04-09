@@ -26,7 +26,7 @@ class TestASTSpans:
     """All AST nodes produced by the parser should have non-zero spans."""
 
     def test_int_literal_span(self) -> None:
-        prog = parse("let x: Int = 42")
+        prog = parse("let mut x: Int = 42")
         let_stmt = prog.definitions[0].body.stmts[0]  # type: ignore[union-attr]
         assert let_stmt.span.line >= 1
         assert let_stmt.value.span.line >= 1
@@ -38,13 +38,13 @@ class TestASTSpans:
         assert fn.span.column >= 1
 
     def test_binary_expr_span(self) -> None:
-        prog = parse("let x: Int = 1 + 2")
+        prog = parse("let mut x: Int = 1 + 2")
         let_stmt = prog.definitions[0].body.stmts[0]  # type: ignore[union-attr]
         binop = let_stmt.value
         assert binop.span.line >= 1
 
     def test_if_expr_span(self) -> None:
-        prog = parse("let x: Int = if true { 1 } else { 2 }")
+        prog = parse("let mut x: Int = if true { 1 } else { 2 }")
         let_stmt = prog.definitions[0].body.stmts[0]  # type: ignore[union-attr]
         if_expr = let_stmt.value
         assert if_expr.span.line >= 1
@@ -60,12 +60,12 @@ class TestASTSpans:
         assert enum.span.line == 1
 
     def test_bool_literal_span(self) -> None:
-        prog = parse("let x: Bool = true")
+        prog = parse("let mut x: Bool = true")
         let_stmt = prog.definitions[0].body.stmts[0]  # type: ignore[union-attr]
         assert let_stmt.value.span.line >= 1
 
     def test_string_literal_span(self) -> None:
-        prog = parse('let x: String = "hello"')
+        prog = parse('let mut x: String = "hello"')
         let_stmt = prog.definitions[0].body.stmts[0]  # type: ignore[union-attr]
         assert let_stmt.value.span.line >= 1
 
