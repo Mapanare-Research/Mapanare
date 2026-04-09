@@ -93,8 +93,8 @@ def test_spec_exists() -> None:
 
 
 def test_plan_exists() -> None:
-    """The v2.0.0 plan should exist."""
-    assert (DOCS_DIR / "roadmap" / "v2.0.0" / "PLAN.md").is_file()
+    """The v2.0.0 plan should exist (under era subdirectory)."""
+    assert (DOCS_DIR / "roadmap" / "v2" / "v2.0.0" / "PLAN.md").is_file()
 
 
 def test_example_dirs_exist() -> None:
