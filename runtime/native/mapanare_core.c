@@ -8,6 +8,7 @@
 #include "mapanare_core.h"
 #include "mapanare_platform.h"
 
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,30 +28,30 @@
 
 /* --- Memory profiling counters (compile with -DMN_PROFILE_MEM to enable) --- */
 #ifdef MN_PROFILE_MEM
-static int64_t mn_alloc_count = 0;
-static int64_t mn_alloc_bytes = 0;
-static int64_t mn_alloc_peak  = 0;   /* high-water mark of live bytes */
-static int64_t mn_alloc_live  = 0;   /* current live bytes (alloc - free) */
-static int64_t mn_concat_count = 0;
-static int64_t mn_concat_bytes = 0;
-static int64_t mn_clone_count = 0;
-static int64_t mn_grow_count  = 0;
-static int64_t mn_listbuf_count = 0;
-static int64_t mn_listbuf_bytes = 0;
+static _Atomic int64_t mn_alloc_count = 0;
+static _Atomic int64_t mn_alloc_bytes = 0;
+static _Atomic int64_t mn_alloc_peak  = 0;   /* high-water mark of live bytes */
+static _Atomic int64_t mn_alloc_live  = 0;   /* current live bytes (alloc - free) */
+static _Atomic int64_t mn_concat_count = 0;
+static _Atomic int64_t mn_concat_bytes = 0;
+static _Atomic int64_t mn_clone_count = 0;
+static _Atomic int64_t mn_grow_count  = 0;
+static _Atomic int64_t mn_listbuf_count = 0;
+static _Atomic int64_t mn_listbuf_bytes = 0;
 
 static void mn_profile_report(void) {
     fprintf(stderr, "\n=== MN MEMORY PROFILE ===\n");
     fprintf(stderr, "alloc:    %lld calls, %lld MB total\n",
-            (long long)mn_alloc_count, (long long)(mn_alloc_bytes / (1024*1024)));
+            (long long)atomic_load(&mn_alloc_count), (long long)(atomic_load(&mn_alloc_bytes) / (1024*1024)));
     fprintf(stderr, "peak:     %lld MB live\n",
-            (long long)(mn_alloc_peak / (1024*1024)));
+            (long long)(atomic_load(&mn_alloc_peak) / (1024*1024)));
     fprintf(stderr, "listbuf:  %lld calls, %lld MB total\n",
-            (long long)mn_listbuf_count, (long long)(mn_listbuf_bytes / (1024*1024)));
-    fprintf(stderr, "grow:     %lld calls\n", (long long)mn_grow_count);
-    fprintf(stderr, "clone:    %lld calls\n", (long long)mn_clone_count);
+            (long long)atomic_load(&mn_listbuf_count), (long long)(atomic_load(&mn_listbuf_bytes) / (1024*1024)));
+    fprintf(stderr, "grow:     %lld calls\n", (long long)atomic_load(&mn_grow_count));
+    fprintf(stderr, "clone:    %lld calls\n", (long long)atomic_load(&mn_clone_count));
     fprintf(stderr, "detach:   (see cow_detaches counter)\n");
     fprintf(stderr, "concat:   %lld calls, %lld MB total\n",
-            (long long)mn_concat_count, (long long)(mn_concat_bytes / (1024*1024)));
+            (long long)atomic_load(&mn_concat_count), (long long)(atomic_load(&mn_concat_bytes) / (1024*1024)));
     fprintf(stderr, "=========================\n");
 }
 static int mn_profile_init_done = 0;
@@ -60,8 +61,17 @@ static void mn_profile_init(void) {
         atexit(mn_profile_report);
     }
 }
-#define MN_PROFILE_ALLOC(sz) do { mn_profile_init(); mn_alloc_count++; mn_alloc_bytes += (sz); mn_alloc_live += (sz); if (mn_alloc_live > mn_alloc_peak) mn_alloc_peak = mn_alloc_live; } while(0)
-#define MN_PROFILE_FREE(sz) do { mn_alloc_live -= (sz); } while(0)
+#define MN_PROFILE_ALLOC(sz) do { \
+    mn_profile_init(); \
+    atomic_fetch_add_explicit(&mn_alloc_count, 1, memory_order_relaxed); \
+    atomic_fetch_add_explicit(&mn_alloc_bytes, (int64_t)(sz), memory_order_relaxed); \
+    int64_t _live = atomic_fetch_add_explicit(&mn_alloc_live, (int64_t)(sz), memory_order_relaxed) + (int64_t)(sz); \
+    int64_t _peak = atomic_load_explicit(&mn_alloc_peak, memory_order_relaxed); \
+    while (_live > _peak && !atomic_compare_exchange_weak_explicit(&mn_alloc_peak, &_peak, _live, memory_order_relaxed, memory_order_relaxed)) {} \
+} while(0)
+#define MN_PROFILE_FREE(sz) do { \
+    atomic_fetch_sub_explicit(&mn_alloc_live, (int64_t)(sz), memory_order_relaxed); \
+} while(0)
 #else
 #define MN_PROFILE_ALLOC(sz) ((void)0)
 #define MN_PROFILE_FREE(sz)  ((void)0)
@@ -413,8 +423,8 @@ MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
     const char *b_data = mn_untag(b.data);
     int64_t total = mn_checked_add(a.len, b.len);
 #ifdef MN_PROFILE_MEM
-    mn_concat_count++;
-    mn_concat_bytes += total + 1;
+    atomic_fetch_add_explicit(&mn_concat_count, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&mn_concat_bytes, (int64_t)(total + 1), memory_order_relaxed);
 #endif
     char *buf = (char *)__mn_alloc(total + 1);
     if (a.len > 0) memcpy(buf, a_data, (size_t)a.len);
@@ -804,8 +814,8 @@ static int mn_list_has_magic(MnList *list) {
 static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
     int64_t data_bytes = mn_checked_mul(cap, elem_size);
 #ifdef MN_PROFILE_MEM
-    mn_listbuf_count++;
-    mn_listbuf_bytes += MN_LIST_HEADER_SIZE + data_bytes;
+    atomic_fetch_add_explicit(&mn_listbuf_count, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&mn_listbuf_bytes, (int64_t)(MN_LIST_HEADER_SIZE + data_bytes), memory_order_relaxed);
 #endif
     char *raw = (char *)__mn_alloc(mn_checked_add(MN_LIST_HEADER_SIZE, data_bytes));
     int64_t *header = (int64_t *)raw;
@@ -815,9 +825,9 @@ static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
 }
 
 static int mn_list_is_managed(MnList *list);
-static int64_t cow_shares = 0;
-static int64_t cow_fallbacks = 0;
-static int64_t cow_detaches = 0;
+static _Atomic int64_t cow_shares = 0;
+static _Atomic int64_t cow_fallbacks = 0;
+static _Atomic int64_t cow_detaches = 0;
 
 /* Detach: if refcount > 1, allocate a private copy of the data.
  * Also handles lists that were zero-initialized (data == NULL). */
@@ -833,7 +843,7 @@ static void mn_list_detach(MnList *list) {
     if (!mn_list_is_managed(list)) return;  /* unmanaged buffer — nothing to detach */
     int64_t *rc = mn_list_rc(list);
     if (__atomic_load_n(rc, __ATOMIC_ACQUIRE) <= 1) return;  /* sole owner, no detach needed */
-    cow_detaches++;
+    atomic_fetch_add_explicit(&cow_detaches, 1, memory_order_relaxed);
     /* Shared — make a private copy */
     __atomic_fetch_sub(rc, 1, __ATOMIC_ACQ_REL);  /* decrement original's refcount */
     int64_t cap = list->cap > 0 ? list->cap : MN_LIST_INITIAL_CAP;
@@ -857,7 +867,7 @@ MN_EXPORT MnList __mn_list_new(int64_t elem_size) {
 
 static void mn_list_grow(MnList *list) {
 #ifdef MN_PROFILE_MEM
-    mn_grow_count++;
+    atomic_fetch_add_explicit(&mn_grow_count, 1, memory_order_relaxed);
 #endif
     int64_t new_cap = list->cap > 0 ? list->cap * 2 : MN_LIST_INITIAL_CAP;
     /* Allocate a fresh buffer instead of realloc.  Struct copies may share
@@ -1010,7 +1020,7 @@ MN_EXPORT void __mn_cow_stats(void) {
 
 MN_EXPORT MnList __mn_list_clone(MnList *src) {
 #ifdef MN_PROFILE_MEM
-    mn_clone_count++;
+    atomic_fetch_add_explicit(&mn_clone_count, 1, memory_order_relaxed);
 #endif
     /* If the buffer is a managed COW buffer, share it (O(1)).
      * Otherwise, just copy the header (no allocation). */
@@ -1027,7 +1037,7 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
         dst.cap = src->cap;
         dst.data = src->data;
         dst.managed = src->managed;
-        cow_fallbacks++;
+        atomic_fetch_add_explicit(&cow_fallbacks, 1, memory_order_relaxed);
         return dst;
     }
     if (mn_list_has_magic(src)) {
@@ -1038,7 +1048,7 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
             dst.data = src->data;
             dst.managed = 1;
             __atomic_fetch_add(rc, 1, __ATOMIC_RELAXED);
-            cow_shares++;
+            atomic_fetch_add_explicit(&cow_shares, 1, memory_order_relaxed);
             return dst;
         }
     }
@@ -1052,7 +1062,7 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
             dst.cap = src->cap;
             dst.data = src->data;
             dst.managed = src->managed;
-            cow_fallbacks++;
+            atomic_fetch_add_explicit(&cow_fallbacks, 1, memory_order_relaxed);
             return dst;
         }
         dst.cap = src->cap;
@@ -1062,7 +1072,7 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
             memcpy(dst.data, src->data, (size_t)(src->len * src->elem_size));
         }
     }
-    cow_fallbacks++;
+    atomic_fetch_add_explicit(&cow_fallbacks, 1, memory_order_relaxed);
     return dst;
 }
 
@@ -2051,23 +2061,37 @@ MN_EXPORT void __mn_signal_batch_end(void) {
 
 MN_EXPORT void __mn_signal_free(MnSignal *signal) {
     if (!signal) return;
-    /* Unsubscribe from dependencies */
-    for (int64_t i = 0; i < signal->dep_len; i++) {
-        __mn_signal_unsubscribe(signal->dependencies[i], signal);
+
+    /* Acquire lock, detach arrays, release lock. Then free outside lock
+     * to avoid holding the mutex during deallocation. */
+    MnSignal **deps = NULL;
+    int64_t dep_len = 0;
+    MnSignal **subs = NULL;
+    MnSignal **cbs = NULL;
+
+    mn_signal_lock();
+    /* Unsubscribe from dependencies while holding the lock. */
+    deps = signal->dependencies;
+    dep_len = signal->dep_len;
+    for (int64_t i = 0; i < dep_len; i++) {
+        __mn_signal_unsubscribe(deps[i], signal);
     }
-    if (signal->dependencies) __mn_free(signal->dependencies);
     signal->dependencies = NULL;
     signal->dep_len = 0;
 
-    if (signal->subscribers) __mn_free(signal->subscribers);
-    /* Null out subscriber pointers to prevent dangling references */
+    subs = signal->subscribers;
     signal->subscribers = NULL;
     signal->sub_len = 0;
 
-    if (signal->callbacks) __mn_free(signal->callbacks);
-    /* Null out callback pointers to prevent dangling references */
+    cbs = (MnSignal **)signal->callbacks;
     signal->callbacks = NULL;
     signal->cb_len = 0;
+    mn_signal_unlock();
+
+    /* Free arrays outside the lock. */
+    if (deps) __mn_free(deps);
+    if (subs) __mn_free(subs);
+    if (cbs) __mn_free(cbs);
 
     if (signal->value) {
         if (signal->dtor) signal->dtor(signal->value);

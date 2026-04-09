@@ -2,7 +2,7 @@
 
 > Concurrent agents don't corrupt shared state.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.3.0 (memory ownership must be clear before adding concurrency)
 
