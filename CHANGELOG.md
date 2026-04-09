@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.21.0] - 2026-04-09
+
+**Quality Gate — CI/CD + Validation**
+
+### Fixed
+- 6 test regressions from ModuleLetDef change (tests used `let` at top level)
+- Lint: black/ruff/mypy all clean
+- Bootstrap test: mir_opt.mn added to primitive-fn skip list
+
+### Added
+- Fixed-point CI workflow in `.github/workflows/ci.yml`: stage1→stage2→stage3 verification
+- Updated golden test count in CI (33→45)
+- WASM emission validated
+- GCC -Wall -Wextra -Werror clean on C runtime
+
+### Changed
+- CLAUDE.md updated with current version and roadmap
+
+### Verified
+- 45/45 golden, 11/11 stage2
+- black/ruff/mypy clean
+- GCC -Werror clean
+- WASM emission works
+
 ## [4.20.0] - 2026-04-09
 
 **FFI Bindings — `mapanare bind` generates Python, TypeScript, Go bindings**

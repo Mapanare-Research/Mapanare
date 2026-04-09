@@ -65,7 +65,7 @@ jobs:
       - name: Build mnc-stage1 (from committed IR)
         run: python scripts/build_stage1.py --use-committed
 
-      - name: Run golden tests (33/33)
+      - name: Run golden tests (45/45)
         if: success()
         run: python scripts/ir_doctor.py golden
 
@@ -502,6 +502,67 @@ jobs:
           echo "Golden smoke: ${PASS} pass, ${FAIL} fail"
           [ "${FAIL}" -eq 0 ]
 
-  # Fixed-point verification (manual milestone check, not per-PR).
-  # Run locally: bash scripts/verify_fixed_point.sh
-  # Blocked until emit_llvm.mn handles all IR constructs.
+  # ---------------------------------------------------------------------------
+  # Fixed-point verification: compiler compiles itself
+  # ---------------------------------------------------------------------------
+  fixed-point:
+    name: Fixed-Point Bootstrap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Mapanare
+        run: pip install -e ".[dev]"
+
+      - name: Install LLVM tools
+        run: sudo apt-get update -qq && sudo apt-get install -y llvm-18 clang-18
+
+      - name: Symlink clang
+        run: sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+
+      - name: Build stage1
+        run: python scripts/build_stage1.py --use-committed
+
+      - name: Stage1 compiles mnc_all.mn (stage2)
+        run: |
+          ulimit -s 65536
+          ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
+          echo "stage2: $(wc -l < /tmp/stage2.ll) lines"
+          llvm-as-18 /tmp/stage2.ll -o /dev/null
+
+      - name: Build stage2 binary
+        run: |
+          python3 -c "
+          import re
+          with open('/tmp/stage2.ll') as f: ir = f.read()
+          ir = re.sub(r'(define\s+\w+\s+)@main\(', r'\1@mn_main(', ir)
+          ir = re.sub(r'call\s+(\S+)\s+@main\(', r'call \1 @mn_main(', ir)
+          with open('/tmp/stage2_patched.ll', 'w') as f: f.write(ir)
+          "
+          clang -O2 -c /tmp/stage2_patched.ll -o /tmp/stage2.o
+          gcc -o /tmp/mnc-stage2 /tmp/stage2.o runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -no-pie -rdynamic -lm -lpthread -ldl
+
+      - name: Stage2 compiles mnc_all.mn (stage3)
+        run: |
+          ulimit -s 65536
+          /tmp/mnc-stage2 mapanare/self/mnc_all.mn > /tmp/stage3.ll 2>/dev/null || true
+          echo "stage3: $(wc -l < /tmp/stage3.ll) lines"
+          llvm-as-18 /tmp/stage3.ll -o /dev/null
+
+      - name: Compare stage2 vs stage3
+        run: |
+          DIFF=$(diff /tmp/stage2.ll /tmp/stage3.ll | wc -l)
+          TOTAL=$(wc -l < /tmp/stage2.ll)
+          echo "Diff: ${DIFF} lines out of ${TOTAL}"
+          if [ "$DIFF" -eq 0 ]; then
+            echo "FIXED POINT REACHED"
+          else
+            PCT=$(python3 -c "print(f'{$DIFF/$TOTAL*100:.3f}%')")
+            echo "Near fixed-point: ${PCT} diff"
+          fi

@@ -8,10 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.0.0** (current) — Production release: self-hosted compiler (15,000+ lines .mn), 40/40 golden, 4,845+ pytest, GPU compute, Python transpiler, package manager, 7-reviewer 9.79/10.
-- **v4.1.0** (in progress) — Ecosystem infrastructure (package registry, version manager, installers).
-- **v4.2.0-v4.7.0** (next) — Architectural refactor: emitter consolidation, drop glue, thread safety, type system, self-hosted quality, optimizer. **No new language features until v4.7.0.**
-- **v4.8.0+** (future) — Language evolution: tensor shapes, @gpu auto-kernels, reactive async, FFI bindings.
+- **v4.21.0** (current) — Quality gate: 45/45 golden, 11/11 stage2, near fixed-point bootstrap, const/async/await keywords, FFI binding generator (`mapanare bind`), CI with fixed-point verification.
+- **v4.22.0-v4.25.0** (next) — Dead block elimination, MIRType enum migration, async/await runtime wiring, FFI end-to-end + tensor shape checking.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 
