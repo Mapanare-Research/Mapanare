@@ -2,7 +2,7 @@
 
 > Fix the BFS, enable the optimizer pass, measure IR reduction.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.21.0
 

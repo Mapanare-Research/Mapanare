@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.22.0] - 2026-04-09
+
+**Dead Block Elimination — Fix BFS, enable pass, PHI-safe approach**
+
+### Added
+- Dead block elimination pass enabled in self-hosted MIR optimizer
+- Fixed-point reachability algorithm (replaces broken worklist BFS)
+- PHI-safe block removal: keeps blocks referenced by PHI entries + transitive closure
+- `collect_phi_refs`, `block_terminator_targets`, `phi_needs_cleaning` helpers in mir_opt.mn
+
+### Fixed
+- SwitchCase field access bug: `.label` → `.block_label` in `collect_targets`
+- Target iteration limit: 20 → 500 (handles large enums like Expr with 24+ variants)
+- Pre-existing ruff E501 in `scripts/build_stage1.py`
+
+### Verified
+- 45/45 golden, 11/11 stage2
+- black/ruff/mypy clean
+
 ## [4.21.0] - 2026-04-09
 
 **Quality Gate — CI/CD + Validation**
@@ -1410,7 +1429,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.13.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.22.0...HEAD
+[4.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.21.0...v4.22.0
 [4.13.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.12.0...v4.13.0
 [4.12.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.11.0...v4.12.0
 [4.11.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.10.0...v4.11.0

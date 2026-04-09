@@ -48,7 +48,8 @@ def build() -> pathlib.Path:
             root_source=source,
             root_file=str(SELF_DIR / "main.mn"),
             opt_level=2,
-            skip_check=True,  # Self-hosted .mn uses patterns (methods, cross-module) the Python checker can't resolve
+            # Self-hosted .mn uses patterns the Python checker can't resolve
+            skip_check=True,
         )
 
         # 2. Post-process: make compile() and format_error() externally visible

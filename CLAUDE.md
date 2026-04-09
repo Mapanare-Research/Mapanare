@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.21.0** (current) — Quality gate: 45/45 golden, 11/11 stage2, near fixed-point bootstrap, const/async/await keywords, FFI binding generator (`mapanare bind`), CI with fixed-point verification.
-- **v4.22.0-v4.25.0** (next) — Dead block elimination, MIRType enum migration, async/await runtime wiring, FFI end-to-end + tensor shape checking.
+- **v4.22.0** (current) — Dead block elimination enabled: fixed-point BFS, PHI-safe block removal, SwitchCase field fix. 45/45 golden, 11/11 stage2.
+- **v4.23.0-v4.25.0** (next) — MIRType enum migration, async/await runtime wiring, FFI end-to-end + tensor shape checking.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

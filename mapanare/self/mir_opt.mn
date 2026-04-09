@@ -204,7 +204,7 @@ fn collect_targets(inst: Instruction) -> List<String> {
         let mut ci: Int = 0
         for _ in 0..200 {
             if ci >= len(cases) { break }
-            targets.push(cases[ci].label)
+            targets.push(cases[ci].block_label)
             ci = ci + 1
         }
         targets.push(instr_switch_default(inst))
@@ -222,46 +222,186 @@ fn is_in_list(name: String, lst: List<String>) -> Bool {
     return false
 }
 
+fn clean_phi_entries(inst: Instruction, reachable: List<String>) -> Instruction {
+    let entries: List<PhiEntry> = instr_phi_entries(inst)
+    let mut kept: List<PhiEntry> = []
+    let mut ei: Int = 0
+    for _ in 0..200 {
+        if ei >= len(entries) { break }
+        if is_in_list(entries[ei].block_label, reachable) {
+            kept.push(entries[ei])
+        }
+        ei = ei + 1
+    }
+    if len(kept) == len(entries) { return inst }
+    return Instruction::Phi(instr_dest(inst), kept)
+}
+
+fn phi_needs_cleaning(bb: BasicBlock, reachable: List<String>) -> Bool {
+    // Check if any PHI in this block references a non-reachable block
+    let mut ji: Int = 0
+    for _ in 0..10000 {
+        if ji >= len(bb.instructions) { break }
+        let inst: Instruction = bb.instructions[ji]
+        if instr_kind(inst) == "phi" {
+            let entries: List<PhiEntry> = instr_phi_entries(inst)
+            let mut ei: Int = 0
+            for _ in 0..200 {
+                if ei >= len(entries) { break }
+                if is_in_list(entries[ei].block_label, reachable) == false {
+                    return true
+                }
+                ei = ei + 1
+            }
+        }
+        ji = ji + 1
+    }
+    return false
+}
+
+fn clean_phis_in_block(bb: BasicBlock, reachable: List<String>) -> BasicBlock {
+    // Only rebuild if this block actually has PHIs referencing removed blocks
+    if phi_needs_cleaning(bb, reachable) == false { return bb }
+    let saved_label: String = bb.label
+    let mut new_instrs: List<Instruction> = []
+    let mut ji: Int = 0
+    for _ in 0..10000 {
+        if ji >= len(bb.instructions) { break }
+        let inst: Instruction = bb.instructions[ji]
+        if instr_kind(inst) == "phi" {
+            let cleaned: Instruction = clean_phi_entries(inst, reachable)
+            new_instrs.push(cleaned)
+        } else {
+            new_instrs.push(inst)
+        }
+        ji = ji + 1
+    }
+    return new BasicBlock { label: saved_label, instructions: new_instrs }
+}
+
+fn block_terminator_targets(bb: BasicBlock) -> List<String> {
+    // Only check the last instruction (terminator) — matches Python _compute_reachable
+    if len(bb.instructions) == 0 {
+        let empty: List<String> = []
+        return empty
+    }
+    let last: Instruction = bb.instructions[len(bb.instructions) - 1]
+    return collect_targets(last)
+}
+
+fn find_block_by_label(blocks: List<BasicBlock>, label: String) -> Option<BasicBlock> {
+    let mut i: Int = 0
+    for _ in 0..5000 {
+        if i >= len(blocks) { return none }
+        if blocks[i].label == label { return Some(blocks[i]) }
+        i = i + 1
+    }
+    return none
+}
+
+fn add_targets_to_worklist(targets: List<String>, reachable: List<String>, worklist: List<String>) -> Bool {
+    let mut ti: Int = 0
+    let mut added: Bool = false
+    for _ in 0..500 {
+        if ti >= len(targets) { break }
+        if is_in_list(targets[ti], reachable) == false {
+            reachable.push(targets[ti])
+            worklist.push(targets[ti])
+            added = true
+        }
+        ti = ti + 1
+    }
+    return added
+}
+
+fn collect_phi_refs(f: MIRFunction) -> List<String> {
+    // Collect all block labels referenced by PHI entries in any block
+    let mut refs: List<String> = []
+    let mut bi: Int = 0
+    for _ in 0..5000 {
+        if bi >= len(f.blocks) { break }
+        let mut ii: Int = 0
+        for _ in 0..10000 {
+            if ii >= len(f.blocks[bi].instructions) { break }
+            if instr_kind(f.blocks[bi].instructions[ii]) == "phi" {
+                let entries: List<PhiEntry> = instr_phi_entries(f.blocks[bi].instructions[ii])
+                let mut ei: Int = 0
+                for _ in 0..200 {
+                    if ei >= len(entries) { break }
+                    if is_in_list(entries[ei].block_label, refs) == false {
+                        refs.push(entries[ei].block_label)
+                    }
+                    ei = ei + 1
+                }
+            }
+            ii = ii + 1
+        }
+        bi = bi + 1
+    }
+    return refs
+}
+
 fn dead_block_elim_function(f: MIRFunction) -> MIRFunction {
     if len(f.blocks) <= 1 { return f }
-    // BFS from entry block to find reachable blocks
+    // Fixed-point reachability: start with entry, iterate until stable
     let mut reachable: List<String> = []
-    let mut worklist: List<String> = []
-    if len(f.blocks) > 0 {
-        worklist.push(f.blocks[0].label)
-        reachable.push(f.blocks[0].label)
-    }
-    let mut wi: Int = 0
-    for _ in 0..5000 {
-        if wi >= len(worklist) { break }
-        let current: String = worklist[wi]
-        // Find the block and collect its targets
+    reachable.push(f.blocks[0].label)
+    let mut changed: Bool = true
+    for _ in 0..1000 {
+        if changed == false { break }
+        changed = false
         let mut bi: Int = 0
         for _ in 0..5000 {
             if bi >= len(f.blocks) { break }
-            if f.blocks[bi].label == current {
-                let mut ii: Int = 0
-                for _ in 0..10000 {
-                    if ii >= len(f.blocks[bi].instructions) { break }
-                    let targets: List<String> = collect_targets(f.blocks[bi].instructions[ii])
-                    let mut ti: Int = 0
-                    for _ in 0..20 {
-                        if ti >= len(targets) { break }
-                        if is_in_list(targets[ti], reachable) == false {
-                            reachable.push(targets[ti])
-                            worklist.push(targets[ti])
-                        }
-                        ti = ti + 1
+            if is_in_list(f.blocks[bi].label, reachable) {
+                let targets: List<String> = block_terminator_targets(f.blocks[bi])
+                let mut ti: Int = 0
+                for _ in 0..500 {
+                    if ti >= len(targets) { break }
+                    if is_in_list(targets[ti], reachable) == false {
+                        reachable.push(targets[ti])
+                        changed = true
                     }
-                    ii = ii + 1
+                    ti = ti + 1
                 }
-                break
             }
             bi = bi + 1
         }
-        wi = wi + 1
     }
-    // Keep only reachable blocks
+    // Also keep blocks referenced by PHI entries to avoid dangling labels
+    let phi_refs: List<String> = collect_phi_refs(f)
+    let mut pi: Int = 0
+    for _ in 0..5000 {
+        if pi >= len(phi_refs) { break }
+        if is_in_list(phi_refs[pi], reachable) == false {
+            reachable.push(phi_refs[pi])
+        }
+        pi = pi + 1
+    }
+    // Extend reachability from PHI-preserved blocks (they may jump to other blocks)
+    let mut changed2: Bool = true
+    for _ in 0..1000 {
+        if changed2 == false { break }
+        changed2 = false
+        let mut bi2: Int = 0
+        for _ in 0..5000 {
+            if bi2 >= len(f.blocks) { break }
+            if is_in_list(f.blocks[bi2].label, reachable) {
+                let targets2: List<String> = block_terminator_targets(f.blocks[bi2])
+                let mut ti2: Int = 0
+                for _ in 0..500 {
+                    if ti2 >= len(targets2) { break }
+                    if is_in_list(targets2[ti2], reachable) == false {
+                        reachable.push(targets2[ti2])
+                        changed2 = true
+                    }
+                    ti2 = ti2 + 1
+                }
+            }
+            bi2 = bi2 + 1
+        }
+    }
+    // Keep only reachable blocks (now includes PHI-referenced blocks)
     let mut new_blocks: List<BasicBlock> = []
     let mut ki: Int = 0
     for _ in 0..5000 {
@@ -289,7 +429,8 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule {
         let f: MIRFunction = module.functions[i]
         let f2: MIRFunction = constant_fold_function(f)
         let f3: MIRFunction = const_prop_function(f2)
-        new_fns.push(f3)
+        let f4: MIRFunction = dead_block_elim_function(f3)
+        new_fns.push(f4)
         i = i + 1
     }
     return module
