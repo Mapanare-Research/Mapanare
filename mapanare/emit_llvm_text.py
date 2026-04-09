@@ -957,15 +957,6 @@ class LLVMTextEmitter:
         For each tracked string, loads the {ptr, i64} value, extracts the data
         pointer, and frees it unless it's the same pointer being returned.
         """
-        # Conservative safety: when returning a struct or enum type, local
-        # resources may have been moved into the return value via constructors
-        # or enum inits.  Without ownership tracking, skip ALL cleanup for
-        # struct returns.  Functions returning void/int/bool still get cleanup.
-        # List fields in structs share buffers safely (mn_list_grow never
-        # reallocs), so the leaked buffers from skipped cleanup are bounded.
-        skip_struct_ret = ret_ty.startswith("{") and ret_ty not in (VOID, I1, I64, DBL)
-        if skip_struct_ret:
-            return
         has_any = (
             (self._local_strings)
             or (self._local_closures)
@@ -1031,7 +1022,9 @@ class LLVMTextEmitter:
         # Walk the return type recursively and extractvalue every ptr-typed leaf.
         # Always extract when we have param list fields or list vars to compare.
         ret_ptr_fields: list[str] = []
-        need_ret_ptrs = self._local_boxed or self._local_strings or self._list_vars
+        need_ret_ptrs = (
+            self._local_boxed or self._local_strings or self._local_closures or self._list_vars
+        )
         if ret_val and ret_ty.startswith("{") and need_ret_ptrs:
             self._extract_ret_ptrs(ret_val, ret_ty, ret_ptr_fields)
 
@@ -1083,14 +1076,19 @@ class LLVMTextEmitter:
 
             self._blk[free_lbl] = []
             self._cb = free_lbl
+            # Compare closure env against returned pointers (ret_env for direct
+            # closure return, ret_ptr_fields for closures embedded in structs).
+            all_env_ptrs = list(ret_ptr_fields)
             if ret_env:
+                all_env_ptrs.append(ret_env)
+            for renv in all_env_ptrs:
                 same = self._f("drop.csame")
-                self._L(f"{same} = icmp eq ptr {ep}, {ret_env}")
-                do_free_lbl = f"drop.cfree.{self._c}"
+                self._L(f"{same} = icmp eq ptr {ep}, {renv}")
+                next_check = f"drop.cnext.{self._c}"
                 self._c += 1
-                self._L(f"br i1 {same}, label %{skip_lbl}, label %{do_free_lbl}")
-                self._blk[do_free_lbl] = []
-                self._cb = do_free_lbl
+                self._L(f"br i1 {same}, label %{skip_lbl}, label %{next_check}")
+                self._blk[next_check] = []
+                self._cb = next_check
             self._L(f"call void @free(ptr {ep})")
             self._L(f"br label %{skip_lbl}")
 
