@@ -27,6 +27,7 @@ start: (_nl* (definition | stmt))* _nl*
            | trait_def
            | impl_trait_def
            | impl_def
+           | const_def
 
 decorated_def: (decorator _nl*)+ (fn_def | agent_def | struct_def | enum_def | tipo_def)
 decorator: AT NAME (LPAREN arg_list? RPAREN)?
@@ -128,6 +129,9 @@ tipo_variant: BAR NAME (LPAREN type_list RPAREN)?
 // ------------------------------------------------------------
 
 type_alias: KW_PUB? KW_TYPE NAME ASSIGN type_expr
+
+// Compile-time constant
+const_def: KW_CONST NAME (COLON type_expr)? ASSIGN expr
 
 // ------------------------------------------------------------
 // Trait definition
@@ -372,6 +376,7 @@ KW_NEW: "new"
 KW_ASSERT: "assert"
 KW_BREAK.2: /(?:break|sal)(?![a-zA-Z0-9_])/
 KW_CONTINUE.2: /(?:continue|sigue)(?![a-zA-Z0-9_])/
+KW_CONST: "const"
 KW_DI.2: /di(?![a-zA-Z0-9_])/
 ELLIPSIS: "..."
 

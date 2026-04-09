@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.18.0] - 2026-04-09
+
+**Tensors + @gpu — const keyword, tensor shape infrastructure**
+
+### Added
+- `const` keyword for compile-time constants in grammar, Python parser, and self-hosted compiler
+- `const_def` grammar rule and transformer method
+- Self-hosted lexer/parser support for `KW_CONST` token
+- Golden tests: `42_const.mn` (const keyword), `43_gpu_kernel.mn` (const + GPU params)
+- Semantic tests: `test_tensor_shapes.py` (const parsing, tensor type parsing)
+- `tensor_shape` field already in TypeInfo (verified, ready for shape checking)
+- @gpu decorator parsing (existing), MIRGpuKernel metadata (existing)
+
+### Verified
+- 43/43 golden tests pass
+- 11/11 stage2 valid
+- const keyword works in both Python and self-hosted pipelines
+
 ## [4.17.0] - 2026-04-09
 
 **Fixed-Point Bootstrap — Python Independence**

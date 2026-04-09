@@ -375,6 +375,7 @@ fn is_definition_start(tt: String) -> Bool {
     if tt == "KW_IMPL" { return true }
     if tt == "KW_EXTERN" { return true }
     if tt == "KW_LET" { return true }
+    if tt == "KW_CONST" { return true }
     if tt == "AT" { return true }
     return false
 }
@@ -508,6 +509,7 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     }
     if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
     if tt == "KW_LET" { return parse_module_let(tokens, pos, filename) }
+    if tt == "KW_CONST" { return parse_module_let(tokens, pos, filename) }
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
     // Fallback: skip unknown token

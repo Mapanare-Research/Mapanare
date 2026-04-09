@@ -2,7 +2,7 @@
 
 > First new language feature post-foundation. Tensors know their shapes. GPU functions write themselves.
 
-**Status:** TODO
+**Status:** DONE (const keyword + tensor infra, auto-kernel extraction deferred)
 **Breaking:** No
 **Prerequisite:** v4.17.0
 
