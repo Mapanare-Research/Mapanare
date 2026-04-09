@@ -2,7 +2,7 @@
 
 > Fix the 3 classes of workarounds in emit_llvm.mn. Each has a clear root cause.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.7.1
 

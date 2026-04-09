@@ -2788,7 +2788,12 @@ class MIRLowerer:
             assert then_exit_bb is not None
             assert else_exit_bb is not None
             phi_ty = tv.ty
-            if self._fn and self._fn.return_type.kind != TypeKind.VOID:
+            # Only fall back to function return type when the then-value
+            # type is unknown/void — otherwise use the actual expression
+            # type.  The old unconditional override caused string
+            # if-expressions inside struct-returning functions to get the
+            # wrong PHI type (e.g., EmitState instead of String).
+            if phi_ty.kind in (TypeKind.VOID, TypeKind.UNKNOWN) and self._fn and self._fn.return_type.kind != TypeKind.VOID:
                 phi_ty = self._fn.return_type
             result = self._make_value(ty=phi_ty, prefix="if_result")
             self._emit(

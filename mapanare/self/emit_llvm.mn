@@ -1144,11 +1144,10 @@ fn emit_field_set(st: EmitState, obj: Value, field_name: String, val: Value) -> 
 // ---------------------------------------------------------------------------
 
 fn strip_percent(name: String) -> String {
-    // Strip leading % from name (avoid if-expression — PHI zeroinit bug)
-    let starts: Bool = name.starts_with("%")
-    let mut result: String = name
-    if starts { result = name.substr(1, len(name) - 1) }
-    return result
+    if name.starts_with("%") {
+        return name.substr(1, len(name) - 1)
+    }
+    return name
 }
 
 fn has_struct(st: EmitState, name: String) -> Bool {
@@ -1221,7 +1220,6 @@ fn find_list_field_index(st: EmitState, struct_name: String, dest: Value) -> Str
     // The struct_name may be "StructName:field_name" (encoded by lowerer)
     let colon_pos: Int = struct_name.find(":")
     if colon_pos > 0 {
-        // Use char-by-char builders to avoid C runtime substr bug
         let base: String = strip_colon_suffix(struct_name)
         let field: String = extract_after_colon(struct_name, colon_pos)
         let opt: Option<StructEntry> = find_struct_entry(st, base)
@@ -1795,37 +1793,23 @@ fn resolve_variant_index(st: EmitState, enum_name: String, variant: String) -> I
 fn parse_field_index(variant: String) -> Int {
     let colon_pos: Int = variant.find(":")
     if colon_pos < 0 { return 0 }
-    // Use char_at instead of substr — substr has a C runtime bug for short substrings
     let idx_char: String = variant.char_at(colon_pos + 1)
     return int(idx_char)
 }
 
-// Strip ":N" suffix from "Variant:N". Uses char_at loop to avoid buggy substr.
+// Strip ":N" suffix from "Variant:N".
 fn strip_colon_suffix(s: String) -> String {
     let colon_pos: Int = s.find(":")
     if colon_pos < 0 { return s }
-    // Build result char by char (substr is buggy for non-zero start)
-    let mut result: String = ""
-    let mut i: Int = 0
-    for _ in 0..500 {
-        if i >= colon_pos { return result }
-        result = result + s.char_at(i)
-        i = i + 1
-    }
-    return result
+    return s.substr(0, colon_pos)
 }
 
-// Extract everything after ":" — char-by-char to avoid substr bug.
+// Extract everything after ":".
 fn extract_after_colon(s: String, colon_pos: Int) -> String {
-    let mut result: String = ""
     let slen: Int = len(s)
-    let mut i: Int = colon_pos + 1
-    for _ in 0..500 {
-        if i >= slen { return result }
-        result = result + s.char_at(i)
-        i = i + 1
-    }
-    return result
+    let start: Int = colon_pos + 1
+    if start >= slen { return "" }
+    return s.substr(start, slen - start)
 }
 
 // Compute byte offset to field_idx within a variant's payload.
@@ -1992,7 +1976,7 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
 
     if field_idx > 0 {
         // Compute byte offset: look up variant's payload types and sum sizes
-        // of fields 0..field_idx-1. Pass parsed values to avoid substr bug.
+        // of fields 0..field_idx-1.
         let stripped_name: String = strip_colon_suffix(variant)
         let offset: Int = compute_payload_offset(s, val.ty.name, stripped_name, field_idx)
         let pf: String = dn + ".pf"
@@ -2269,7 +2253,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_line(st, emit_call_ir(dn, "i64", "__mn_gpu_device_memory", ""))
     }
     if fn_name == "gpu_tensor_add" || fn_name == "gpu_tensor_sub" || fn_name == "gpu_tensor_mul" || fn_name == "gpu_tensor_div" {
-        // Pass lists by pointer to avoid ABI mismatch
+        // C runtime takes MnList* (ptr), so alloca+store to pass by pointer
         let cnt_gt: String = toString(st.counter)
         let mut s_gt: EmitState = st
         s_gt.counter = s_gt.counter + 2
@@ -2351,9 +2335,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_line(st, emit_add(dn, llvm_int(), an, bn))
     }
 
-    // Range construction — inline to avoid ABI mismatch with C runtime
-    // C runtime __mn_range returns void* (ptr), but self-hosted expects {i64, i64}.
-    // Fix: construct the {i64, i64} directly instead of calling the C function.
+    // Range construction — inline {i64, i64} (no heap allocation needed)
     if fn_name == "__mn_range" {
         let mut s_rng: EmitState = st
         let tmp_rng: String = dn + ".tmp"
@@ -3044,9 +3026,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     // Emit function header
     let fn_name: String = strip_percent(f.name)
     let is_lambda: Bool = fn_name != f.name
-    // Avoid if-expression (PHI zeroinitializer bug in stage2)
-    let mut visibility: String = "define"
-    if is_lambda { visibility = "define internal" }
+    let visibility: String = if is_lambda { "define internal" } else { "define" }
     let mut abi_ret: String = ret_ty
     if use_sret { abi_ret = "void" }
     // main() returns i32 (C ABI) instead of void for clean exit codes

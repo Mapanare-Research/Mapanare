@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.8.0] - 2026-04-09
+
+**Workaround Fixes — Root Cause Resolution**
+
+### Fixed
+- 4 substr workarounds removed: replaced char-by-char loops with direct `substr()` calls (bug was stale)
+- 2 PHI zeroinit workarounds removed: fixed root cause in Python lowerer — PHI type was unconditionally overridden to function return type instead of using actual expression type
+- 2 ABI mismatch workarounds clarified: GPU ptr-passing and range inline construction are correct implementations, not workarounds
+- `lower.py:_lower_if` — PHI type now uses expression type, only falls back to function return type when expression type is unknown/void
+
+### Changed
+- `emit_llvm.mn`: `strip_colon_suffix` and `extract_after_colon` use `substr()` instead of char-by-char loops
+- `emit_llvm.mn`: `strip_percent` uses early return pattern
+- `emit_llvm.mn`: `visibility` in `emit_fn` uses if-expression (no longer blocked by PHI bug)
+
+### Verified
+- 40/40 golden tests pass with mnc-stage1
+- 11/11 stage2 modules valid
+- `grep "avoid.*substr|avoid.*PHI|avoid.*ABI|char-by-char.*avoid" emit_llvm.mn` → 0
+
 ## [4.7.1] - 2026-04-08
 
 **Finish What We Started — WSL Rebuild Verification**
@@ -1155,7 +1175,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.7.1...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.8.0...HEAD
+[4.8.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.7.1...v4.8.0
 [4.7.1]: https://github.com/Mapanare-Research/Mapanare/compare/v4.7.0...v4.7.1
 [4.7.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.5.0...v4.6.0
