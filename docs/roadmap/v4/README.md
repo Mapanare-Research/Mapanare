@@ -11,8 +11,8 @@ Three phases:
 
 1. **v4.0.0** — Production release. Other people can use it.
 2. **v4.1.0-v4.7.0** — Architectural refactor. Fix memory leaks, thread safety, type system, and dead code. No new language features until v4.7.0.
-3. **v4.8.0** — Solid core. Fix every Culebra finding, replace hardcoded tables, fix memory safety.
-4. **v4.9.0+** — Language evolution. Tensor shapes, GPU auto-kernels, reactive async, FFI bindings.
+3. **v4.8.0-v4.13.0** — Deep fixes. Workarounds, memory safety, drop glue, MIRType enum, optimizer, Culebra gate.
+4. **v4.14.0+** — Language evolution. Tensor shapes, GPU auto-kernels, reactive async, FFI bindings.
 
 ## Headline Techs
 
@@ -37,8 +37,13 @@ Three phases:
 | **v4.6.0** | | Self-Hosted Quality | Replace field tables, MIRType enum, fix workarounds, typed pointers |
 | **v4.7.0** | | Optimizer | Unified fixpoint loop (O1+O2 merged) |
 | **v4.7.1** | | Verify | WSL rebuild verified: 40/40 golden, 11/11 stage2 |
-| **v4.8.0** | | Solid Core | Fix all Culebra findings, field indices, MIRType enum, workarounds, semantic.mn memory safety, string pooling, self-hosted optimizer |
-| **v4.9.0+** | | Language Evolution | Tensor shapes, `@gpu` auto-kernels, reactive async, FFI bindings |
+| **v4.8.0** | | Workaround Fixes | Fix substr bug (4 sites), PHI zeroinit (2), ABI mismatch (2) in emit_llvm.mn |
+| **v4.9.0** | | Semantic Safety | Fix semantic.mn memory corruption, re-enable check() in compile() |
+| **v4.10.0** | | Drop Glue Complete | Remove skip_struct_ret, add string pooling |
+| **v4.11.0** | | Global Constants | Add module-level constant support, MIRType string→enum |
+| **v4.12.0** | | Self-Hosted Optimizer | Constant folding, propagation, dead block elimination |
+| **v4.13.0** | | Foundation Gate | Culebra clean, valgrind clean, all exit criteria met |
+| **v4.14.0+** | | Language Evolution | Tensor shapes, `@gpu` auto-kernels, reactive async, FFI bindings |
 
 ## What v4.0.0 Delivered
 
