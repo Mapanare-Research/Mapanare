@@ -957,6 +957,16 @@ class LLVMTextEmitter:
         For each tracked string, loads the {ptr, i64} value, extracts the data
         pointer, and frees it unless it's the same pointer being returned.
         """
+        # Conservative safety: skip drop glue for complex struct returns until
+        # escape analysis handles all patterns (nested structs, state threading).
+        # Simple struct returns ({ptr, i64} = string, {ptr, ptr} = closure) are safe.
+        _simple_struct_tys = {STR, CLOS, ENUM, LIST}
+        if (
+            ret_ty.startswith("{")
+            and ret_ty not in (VOID, I1, I64, DBL)
+            and ret_ty not in _simple_struct_tys
+        ):
+            return
         has_any = (
             (self._local_strings)
             or (self._local_closures)

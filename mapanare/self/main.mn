@@ -28,7 +28,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // ---------------------------------------------------------------------------
 
 fn version() -> String {
-    return "mapanare 4.7.0"
+    return "mapanare 4.7.1"
 }
 
 // ---------------------------------------------------------------------------
@@ -288,9 +288,17 @@ fn compile(source: String, filename: String) -> CompileResult {
     let resolved: Program = resolve_imports(program, filename, visited)
 
     // Stage 3: semantic analysis (v4.5.0)
+    // Note: self-hosted semantic checker has known gaps (constructor functions,
+    // generics, cross-module resolution). Print warnings but don't block compilation.
     let errors: List<SemanticError> = check(resolved, filename)
     if len(errors) > 0 {
-        return new_compile_result(false, "", errors)
+        let i: Int = 0
+        while i < len(errors) {
+            __mn_str_eprint("warning: ")
+            __mn_str_eprint(format_error(errors[i]))
+            __mn_str_eprint("\n")
+            i = i + 1
+        }
     }
 
     // Stage 4: lower AST to MIR

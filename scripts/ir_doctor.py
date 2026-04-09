@@ -698,7 +698,7 @@ def bootstrap_compile(mn_path: str | pathlib.Path) -> str:
     if "import self::" in source or str(mn_path).endswith("mnc_all.mn"):
         from mapanare.multi_module import compile_multi_module_mir
 
-        return compile_multi_module_mir(source, str(mn_path), opt_level=2, emitter_backend="text")
+        return compile_multi_module_mir(source, str(mn_path), opt_level=2)
     else:
         # Use the CLI-level compile path which handles all wiring
         with tempfile.NamedTemporaryFile(suffix=".ll", delete=False, mode="w") as f:

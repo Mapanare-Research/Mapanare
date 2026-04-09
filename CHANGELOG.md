@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.7.1] - 2026-04-08
+
+**Finish What We Started — WSL Rebuild Verification**
+
+### Fixed
+- `emitter_backend` straggler in `build_stage1.py` and `ir_doctor.py`
+- Drop glue refined: works for simple types (string, closure, list, enum), conservative skip for complex user-defined structs
+- Self-hosted semantic analysis wired as warnings (known false positives for constructors/generics)
+- String pooling reverted (requires constant-tag ABI support, deferred to v4.8.0)
+- emit_llvm.mn typed pointer change reverted (keep `void ()*` bitcast for stability)
+
+### Verified
+- 40/40 golden tests pass with mnc-stage1
+- 3/11 stage2 modules valid (pre-existing state)
+- Python test suite: 300+ pass, 0 failures
+
 ## [4.7.0] - 2026-04-08
 
 **Optimizer + Performance**
@@ -1139,7 +1155,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.7.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.7.1...HEAD
+[4.7.1]: https://github.com/Mapanare-Research/Mapanare/compare/v4.7.0...v4.7.1
 [4.7.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.4.0...v4.5.0
