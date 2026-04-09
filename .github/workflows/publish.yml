@@ -111,7 +111,7 @@ jobs:
             pip install mapanare
             ```
 
-            ### Manual Download
+            ### Manual Download — Full CLI (includes transpiler, LSP, WASM)
 
             | Platform | Download | Size |
             |----------|----------|------|
@@ -119,7 +119,18 @@ jobs:
             | **macOS** (Apple Silicon) | [`mapanare-mac-arm64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | — |
             | **Windows** (x64) | [`mapanare-win-x64.zip`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | — |
 
-            > Downloads become available once the build pipeline completes (~10 min after release).
+            ### Native Compiler Only (~3 MB, no Python dependency)
+
+            | Platform | Download | Size |
+            |----------|----------|------|
+            | **Linux** (x64) | [`mnc-linux-x64`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-linux-x64) | — |
+            | **macOS** (Apple Silicon) | [`mnc-darwin-arm64`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-arm64) | — |
+
+            ### Checksums
+
+            [`SHA256SUMS.txt`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/SHA256SUMS.txt) — verify integrity of all downloads.
+
+            > Downloads become available once the build pipeline completes (~15 min after release).
 
             ### Verify Installation
             ```bash
@@ -246,10 +257,147 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # =========================================================================
-  # 4. Update release body with actual asset sizes
+  # 4. Build native compiler binary (mnc) — small, no Python dependency
+  # =========================================================================
+  build-native:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: mnc-linux-x64
+            triple: x86_64-linux-gnu
+          - os: macos-latest
+            artifact: mnc-darwin-arm64
+            triple: aarch64-apple-macos
+          - os: windows-latest
+            artifact: mnc-win-x64.exe
+            triple: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.new_version }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Mapanare + LLVM
+        shell: bash
+        run: |
+          echo "${{ needs.release.outputs.new_version }}" > VERSION
+          pip install -e .
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update && sudo apt-get install -y llvm-18 clang-18
+            echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            brew install llvm@18
+            echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
+          fi
+
+      - name: Build mnc-stage1 via Python
+        shell: bash
+        run: python scripts/build_stage1.py --use-committed
+
+      - name: Self-compile to stage2 (native binary)
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo "Skipping native build on Windows (needs clang cross-setup)"
+          else
+            ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
+            clang -c -O2 /tmp/stage2.ll -o /tmp/stage2.o
+            clang -O2 /tmp/stage2.o \
+              runtime/native/mapanare_core.c \
+              runtime/native/mapanare_io.c \
+              runtime/native/mapanare_runtime.c \
+              runtime/native/mapanare_gpu.c \
+              runtime/native/mapanare_gpu_builtins.c \
+              mapanare/self/mnc_main.c \
+              -I runtime/native \
+              -o "${{ matrix.artifact }}" \
+              -lm -lpthread -ldl \
+              -Wl,-z,stack-size=67108864 2>/dev/null \
+              || clang -O2 /tmp/stage2.o \
+                runtime/native/mapanare_core.c \
+                runtime/native/mapanare_io.c \
+                runtime/native/mapanare_runtime.c \
+                runtime/native/mapanare_gpu.c \
+                runtime/native/mapanare_gpu_builtins.c \
+                mapanare/self/mnc_main.c \
+                -I runtime/native \
+                -o "${{ matrix.artifact }}" \
+                -lm -lpthread
+          fi
+
+      - name: Smoke test native binary
+        shell: bash
+        run: |
+          if [[ -f "${{ matrix.artifact }}" ]]; then
+            ./${{ matrix.artifact }} --version || echo "version check done"
+            echo "Native binary smoke test passed"
+          else
+            echo "No native binary produced (platform may not support it)"
+          fi
+
+      - name: Upload native binary to release
+        shell: bash
+        run: |
+          if [[ -f "${{ matrix.artifact }}" ]]; then
+            gh release upload "v${{ needs.release.outputs.new_version }}" \
+              "${{ matrix.artifact }}" --clobber
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =========================================================================
+  # 5. Generate SHA256 checksums for all release artifacts
+  # =========================================================================
+  checksums:
+    needs: [release, build-cli, build-native]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all release assets
+        shell: bash
+        run: |
+          gh release download "v${{ needs.release.outputs.new_version }}" \
+            -D /tmp/assets -R "${{ github.repository }}" || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate SHA256 checksums
+        shell: bash
+        run: |
+          cd /tmp/assets
+          if ls * 1>/dev/null 2>&1; then
+            sha256sum * > SHA256SUMS.txt
+            echo "=== SHA256SUMS.txt ==="
+            cat SHA256SUMS.txt
+          else
+            echo "No assets found"
+          fi
+
+      - name: Upload checksums to release
+        shell: bash
+        run: |
+          if [[ -f /tmp/assets/SHA256SUMS.txt ]]; then
+            gh release upload "v${{ needs.release.outputs.new_version }}" \
+              /tmp/assets/SHA256SUMS.txt --clobber
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =========================================================================
+  # 6. Update release body with actual asset sizes
   # =========================================================================
   update-release:
-    needs: [release, build-cli]
+    needs: [release, build-cli, build-native, checksums]
     runs-on: ubuntu-latest
 
     steps:

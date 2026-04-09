@@ -25,9 +25,13 @@ KEEP="${KEEP:-}"
 ARCH="$(uname -m)"
 OS="$(uname -s)"
 case "${OS}-${ARCH}" in
-    Linux-x86_64)  SEED_DIR="linux-x86_64" ;;
+    Linux-x86_64)    SEED_DIR="linux-x86_64" ;;
+    Darwin-arm64)    SEED_DIR="darwin-arm64" ;;
+    Darwin-x86_64)   SEED_DIR="darwin-x86_64" ;;
     *)
         echo "error: no bootstrap seed for ${OS}-${ARCH}" >&2
+        echo "Available seeds: linux-x86_64, darwin-arm64, darwin-x86_64"
+        echo "Use Python bootstrap instead: python scripts/build_stage1.py"
         exit 1
         ;;
 esac

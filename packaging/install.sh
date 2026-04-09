@@ -125,6 +125,41 @@ if [ -d "${TMP_DIR}/mapanare/_internal" ]; then
   fi
 fi
 
+# ---------- Install mapanare-up (version manager) ----------
+MAPANARE_HOME="${MAPANARE_HOME:-$HOME/.mapanare}"
+UP_DIR="$MAPANARE_HOME/bin"
+mkdir -p "$UP_DIR"
+
+echo "Installing version manager (mapanare-up)..."
+UP_URL="https://raw.githubusercontent.com/${REPO}/main/packaging/mapanare-up.sh"
+SHIM_URL="https://raw.githubusercontent.com/${REPO}/main/packaging/mapanare-shim.sh"
+
+curl -fsSL "$UP_URL" -o "$UP_DIR/mapanare-up" 2>/dev/null && chmod +x "$UP_DIR/mapanare-up" || true
+curl -fsSL "$SHIM_URL" -o "$UP_DIR/mapanare-shim" 2>/dev/null && chmod +x "$UP_DIR/mapanare-shim" || true
+
+# Store this version for mapanare-up tracking
+VER_CLEAN="$(echo "$VERSION" | sed 's/^v//')"
+DEST_DIR="$MAPANARE_HOME/versions/$VER_CLEAN"
+mkdir -p "$DEST_DIR"
+if [ -f "${INSTALL_DIR}/mapanare" ]; then
+  ln -sf "${INSTALL_DIR}/mapanare" "$DEST_DIR/mapanare" 2>/dev/null || true
+fi
+echo "$VER_CLEAN" > "$MAPANARE_HOME/default"
+
+# Add ~/.mapanare/bin to PATH if not already there
+SHELL_RC=""
+if [ -f "$HOME/.zshrc" ]; then
+  SHELL_RC="$HOME/.zshrc"
+elif [ -f "$HOME/.bashrc" ]; then
+  SHELL_RC="$HOME/.bashrc"
+fi
+
+if [ -n "$SHELL_RC" ] && ! grep -q 'mapanare/bin' "$SHELL_RC" 2>/dev/null; then
+  echo "" >> "$SHELL_RC"
+  echo '# Mapanare version manager' >> "$SHELL_RC"
+  echo 'export PATH="$HOME/.mapanare/bin:$PATH"' >> "$SHELL_RC"
+fi
+
 # ---------- Verify ----------
 echo ""
 if command -v mapanare &>/dev/null; then
@@ -138,6 +173,11 @@ if command -v mapanare &>/dev/null; then
   echo "  mapanare run main.mn       # compile & run"
   echo "  mapanare check main.mn     # type-check only"
   echo "  mapanare build main.mn     # native binary (requires LLVM)"
+  echo ""
+  echo "Version manager:"
+  echo "  mapanare-up list           # show installed versions"
+  echo "  mapanare-up install 4.0.0  # install a specific version"
+  echo "  mapanare-up default 4.0.0  # set global default"
 else
   echo "Installed to ${INSTALL_DIR}/mapanare"
   echo ""
