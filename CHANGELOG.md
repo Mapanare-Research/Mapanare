@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.7.0] - 2026-04-08
+
+**Optimizer + Performance**
+
+### Changed
+- Unified fixpoint loop: O1 and O2 passes merged into single convergence loop
+- Convergence warning emitted if optimizer doesn't converge in 10 iterations
+- `str(true)` / `str(false)` returns constant strings (zero heap allocation)
+- `str(N)` for -128..127 uses pre-initialized static pool (zero allocation)
+
 ## [4.6.0] - 2026-04-08
 
 **Self-Hosted Quality — Clean Compiler**
@@ -1129,7 +1139,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.6.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.7.0...HEAD
+[4.7.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.6.0...v4.7.0
 [4.6.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.3.0...v4.4.0

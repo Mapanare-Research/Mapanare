@@ -2,7 +2,7 @@
 
 > Better code generation. Fewer allocations. Measurable speedups.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.6.0 (compiler must be correct before optimizing)
 

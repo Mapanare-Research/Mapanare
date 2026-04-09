@@ -666,14 +666,48 @@ MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) 
     return r;
 }
 
+/* Static constant strings for bool conversion — no allocation, no tag bit. */
+static const char mn_str_true_data[]  = "true";
+static const char mn_str_false_data[] = "false";
+
 MN_EXPORT MnString __mn_str_from_bool(int64_t value) {
-    /* Return heap-allocated copies so the tag bit system works correctly.
-     * Static string literals have no alignment guarantee and may have bit 0
-     * set, which mn_is_heap() would misidentify as heap-allocated. */
-    return __mn_str_from_cstr(value ? "true" : "false");
+    /* Return constant strings — mn_is_heap() returns 0, so __mn_str_free skips. */
+    MnString s;
+    if (value) {
+        s.data = mn_str_true_data;
+        s.len = 4;
+    } else {
+        s.data = mn_str_false_data;
+        s.len = 5;
+    }
+    return s;
+}
+
+/* Small int string pool: cache str(N) for -128..127. */
+static char mn_small_int_bufs[256][5];  /* max "-128\0" = 5 chars */
+static int64_t mn_small_int_lens[256];
+static int mn_small_int_init_done = 0;
+
+static void mn_small_int_init(void) {
+    if (mn_small_int_init_done) return;
+    mn_small_int_init_done = 1;
+    for (int i = 0; i < 256; i++) {
+        int val = i - 128;
+        int n = snprintf(mn_small_int_bufs[i], sizeof(mn_small_int_bufs[i]), "%d", val);
+        mn_small_int_lens[i] = (int64_t)n;
+    }
 }
 
 MN_EXPORT MnString __mn_str_from_int(int64_t value) {
+    /* Pool small integers: no allocation for -128..127. */
+    if (value >= -128 && value <= 127) {
+        mn_small_int_init();
+        int idx = (int)(value + 128);
+        MnString s;
+        s.data = mn_small_int_bufs[idx];
+        s.len = mn_small_int_lens[idx];
+        return s;
+    }
     char buf[32];
     int n = snprintf(buf, sizeof(buf), "%lld", (long long)value);
     return __mn_str_from_parts(buf, (int64_t)n);

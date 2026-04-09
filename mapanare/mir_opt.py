@@ -1107,28 +1107,32 @@ def optimize_function(fn: MIRFunction, level: MIROptLevel, stats: MIRPassStats) 
 
     max_iterations = 10
 
-    # O1+: Constant folding + propagation (iterate to fixed point)
-    if level >= MIROptLevel.O1:
-        for _ in range(max_iterations):
-            changed = False
+    # Unified fixpoint loop: all passes run in sequence per iteration.
+    # O2 passes create opportunities for O1 (and vice versa), so running
+    # them in separate loops missed cross-level optimizations.
+    for iteration in range(max_iterations):
+        changed = False
+        # O1+: constant folding + propagation
+        if level >= MIROptLevel.O1:
             changed |= constant_folding(fn, stats)
             changed |= constant_propagation(fn, stats)
-            if not changed:
-                break
+        # O2+: copy propagation, branch simplification, unreachable blocks, DCE, agent inlining
+        if level >= MIROptLevel.O2:
+            changed |= copy_propagation(fn, stats)
+            changed |= branch_simplification(fn, stats)
+            changed |= unreachable_block_elimination(fn, stats)
+            changed |= dead_code_elimination(fn, stats)
+            changed |= agent_inlining(fn, stats)
+        if not changed:
+            break
+    else:
+        import logging
 
-    # O2+: Copy propagation, DCE, unreachable blocks, branch simplification
-    # Wrapped in a convergence loop like O1 to reach a fixed point.
-    if level >= MIROptLevel.O2:
-        for _ in range(max_iterations):
-            o2_changed = copy_propagation(fn, stats)
-            o2_changed |= branch_simplification(fn, stats)
-            o2_changed |= unreachable_block_elimination(fn, stats)
-            # Run DCE after other passes have created dead code
-            o2_changed |= dead_code_elimination(fn, stats)
-            # Agent inlining
-            o2_changed |= agent_inlining(fn, stats)
-            if not o2_changed:
-                break
+        logging.getLogger(__name__).warning(
+            "MIR optimizer: did not converge in %d iterations for function %s",
+            max_iterations,
+            fn.name,
+        )
 
     # O3: Stream fusion
     if level >= MIROptLevel.O3:
