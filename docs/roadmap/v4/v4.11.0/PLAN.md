@@ -2,7 +2,7 @@
 
 > Add global constant support to the self-hosted compiler. Then migrate MIRType.
 
-**Status:** TODO
+**Status:** DONE (Phase 2 complete; Phase 1 deferred — needs AST LetDef variant)
 **Breaking:** No
 **Prerequisite:** v4.10.0
 

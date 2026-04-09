@@ -14,6 +14,22 @@ struct MIRType {
     args: List<MIRType>
 }
 
+// MIRType kind constants — use these instead of raw string literals
+pub fn TK_INT() -> String { return "int" }
+pub fn TK_FLOAT() -> String { return "float" }
+pub fn TK_BOOL() -> String { return "bool" }
+pub fn TK_STRING() -> String { return "string" }
+pub fn TK_VOID() -> String { return "void" }
+pub fn TK_LIST() -> String { return "list" }
+pub fn TK_MAP() -> String { return "map" }
+pub fn TK_OPTION() -> String { return "option" }
+pub fn TK_RESULT() -> String { return "result" }
+pub fn TK_ENUM() -> String { return "enum" }
+pub fn TK_STRUCT() -> String { return "struct" }
+pub fn TK_FN() -> String { return "fn" }
+pub fn TK_SIGNAL() -> String { return "signal" }
+pub fn TK_UNKNOWN() -> String { return "unknown" }
+
 fn new_mir_type(name: String, kind: String) -> MIRType {
     let args: List<MIRType> = []
     return new MIRType { name: name, kind: kind, args: args }

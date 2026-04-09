@@ -443,7 +443,7 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
 
     // Add implicit return if block isn't terminated
     if !current_block_terminated(s) {
-        if ret_type.kind == "void" {
+        if ret_type.kind == TK_VOID() {
             s = emit_instr(s, Instruction::Return(none))
         } else {
             s = emit_instr(s, Instruction::Return(Some(body_r.value)))
@@ -660,7 +660,7 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeE
     match type_ann {
         Some(te) => {
             let declared: MIRType = lower_resolve_type_checked(s, te)
-            if declared.kind != "unknown" {
+            if declared.kind != TK_UNKNOWN() {
                 val_ty = declared
                 // Patch the value to carry the declared type (same SSA name, correct type)
                 val = new_value(r.value.name, declared)
@@ -686,7 +686,7 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeE
     // have untyped Option return. Check: if the expression was NoneLit, the
     // value name starts with "%t" and has no "_val" (it's a direct constant,
     // not a loaded variable or call result).
-    if is_none_literal && val_ty.kind == "option" && len(val_ty.args) > 0 {
+    if is_none_literal && val_ty.kind == TK_OPTION() && len(val_ty.args) > 0 {
         let typed_none_r: LowerResult = make_value(s, val_ty, "tnone")
         s = emit_instr(typed_none_r.state, Instruction::WrapNone(typed_none_r.value, val_ty))
         val = typed_none_r.value
@@ -836,7 +836,7 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     let mut s: LowerState = iter_r.state
 
     // Map iteration: cada key en map → iterate over __mn_map_keys(map)
-    if iter_r.value.ty.kind == "map" {
+    if iter_r.value.ty.kind == TK_MAP() {
         return lower_for_map(s, var_name, iter_r.value, body)
     }
 
@@ -1252,10 +1252,10 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
     // propagate the known type to the unknown operand.
     let mut lhs_val: Value = lhs_r.value
     let mut rhs_val: Value = rhs_r.value
-    if lhs_val.ty.kind == "unknown" && rhs_val.ty.kind != "unknown" {
+    if lhs_val.ty.kind == TK_UNKNOWN() && rhs_val.ty.kind != TK_UNKNOWN() {
         lhs_val = new_value(lhs_val.name, rhs_val.ty)
     }
-    if rhs_val.ty.kind == "unknown" && lhs_val.ty.kind != "unknown" {
+    if rhs_val.ty.kind == TK_UNKNOWN() && lhs_val.ty.kind != TK_UNKNOWN() {
         rhs_val = new_value(rhs_val.name, lhs_val.ty)
     }
 
@@ -1953,7 +1953,7 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             let mut res_ty_ok: MIRType = mir_result()
             match st.current_fn {
                 Some(cf) => {
-                    if cf.return_type.kind == "result" {
+                    if cf.return_type.kind == TK_RESULT() {
                         res_ty_ok = cf.return_type
                     }
                 },
@@ -1969,7 +1969,7 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             let mut res_ty_err: MIRType = mir_result()
             match st.current_fn {
                 Some(cf) => {
-                    if cf.return_type.kind == "result" {
+                    if cf.return_type.kind == TK_RESULT() {
                         res_ty_err = cf.return_type
                     }
                 },
@@ -2219,13 +2219,13 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     }
 
     let mut ret_ty: MIRType = mir_unknown()
-    if obj_r.value.ty.kind == "string" {
+    if obj_r.value.ty.kind == TK_STRING() {
         ret_ty = str_method_return_type(method)
     }
-    if obj_r.value.ty.kind == "list" {
+    if obj_r.value.ty.kind == TK_LIST() {
         ret_ty = list_method_return_type(method)
     }
-    if obj_r.value.ty.kind == "map" {
+    if obj_r.value.ty.kind == TK_MAP() {
         ret_ty = map_method_return_type(method)
     }
 
@@ -2342,7 +2342,7 @@ fn lower_field_access(st: LowerState, obj: Expr, field_name: String) -> LowerRes
     let obj_r: LowerResult = lower_expr(st, obj)
 
     // Only emit SignalGet for actual signal types, not for struct .value fields
-    if field_name == "value" && obj_r.value.ty.kind == "signal" {
+    if field_name == "value" && obj_r.value.ty.kind == TK_SIGNAL() {
         let dr_sig: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
         let s_sig: LowerState = emit_instr(dr_sig.state, Instruction::SignalGet(dr_sig.value, obj_r.value))
         return new_lower_result(dr_sig.value, s_sig)
@@ -2399,13 +2399,13 @@ fn lower_index(st: LowerState, obj: Expr, idx: Expr) -> LowerResult {
     // For list indexing, result is the element type from List<T>.args[0]
     // For map indexing, result is the value type from Map<K,V>.args[1]
     let mut elem_ty: MIRType = mir_unknown()
-    if obj_r.value.ty.kind == "string" {
+    if obj_r.value.ty.kind == TK_STRING() {
         elem_ty = mir_string()
-    } else if obj_r.value.ty.kind == "list" {
+    } else if obj_r.value.ty.kind == TK_LIST() {
         if len(obj_r.value.ty.args) > 0 {
             elem_ty = obj_r.value.ty.args[0]
         }
-    } else if obj_r.value.ty.kind == "map" {
+    } else if obj_r.value.ty.kind == TK_MAP() {
         if len(obj_r.value.ty.args) > 1 {
             elem_ty = obj_r.value.ty.args[1]
         }
@@ -2863,7 +2863,7 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
                 // Update var type if the new value is more specific
                 // (e.g. from unknown/i64 to a concrete struct type)
                 let mut store_addr: Value = addr
-                if addr.ty.kind == "unknown" && val_r.value.ty.kind != "unknown" {
+                if addr.ty.kind == TK_UNKNOWN() && val_r.value.ty.kind != TK_UNKNOWN() {
                     store_addr = new_value(addr.name, val_r.value.ty)
                     s = define_var(s, name, store_addr, true)
                 }
@@ -2910,7 +2910,7 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
     let mut result: List<PhiEntry> = []
     // Add then arm if it has a usable value (not terminated, not void)
     let then_ok: Bool = !then_term
-    let then_non_void: Bool = then_val.ty.kind != "void"
+    let then_non_void: Bool = then_val.ty.kind != TK_VOID()
     if then_ok {
         if then_non_void {
             result.push(new_phi_entry(then_lbl, then_val))
@@ -2918,7 +2918,7 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
     }
     // Add else arm if it has a usable value
     let else_ok: Bool = !else_term
-    let else_non_void: Bool = else_val.ty.kind != "void"
+    let else_non_void: Bool = else_val.ty.kind != TK_VOID()
     if else_ok {
         if else_non_void {
             result.push(new_phi_entry(else_lbl, else_val))
@@ -2947,14 +2947,14 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
 
 fn infer_variant_payload_type(st: LowerState, subject: Value, variant_name: String, field_idx: Int) -> MIRType {
     // Result types
-    if subject.ty.kind == "result" {
+    if subject.ty.kind == TK_RESULT() {
         if len(subject.ty.args) >= 2 {
             if variant_name == "Ok" { return subject.ty.args[0] }
             if variant_name == "Err" { return subject.ty.args[1] }
         }
     }
     // Option types
-    if subject.ty.kind == "option" {
+    if subject.ty.kind == TK_OPTION() {
         if len(subject.ty.args) >= 1 {
             return subject.ty.args[0]
         }
@@ -2962,8 +2962,8 @@ fn infer_variant_payload_type(st: LowerState, subject: Value, variant_name: Stri
     // Regular enums — look up from module registry
     // Also handle kind=="struct" when the name is a registered enum
     // (happens when enum types appear as generic args, e.g. List<TomlValue>)
-    let is_enum_kind: Bool = subject.ty.kind == "enum"
-    let is_struct_actually_enum: Bool = subject.ty.kind == "struct" && is_enum_name(st, subject.ty.name)
+    let is_enum_kind: Bool = subject.ty.kind == TK_ENUM()
+    let is_struct_actually_enum: Bool = subject.ty.kind == TK_STRUCT() && is_enum_name(st, subject.ty.name)
     if is_enum_kind || is_struct_actually_enum {
         let enum_name: String = subject.ty.name
         let mut ei: Int = 0
@@ -3088,13 +3088,13 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     // - Neither has value → void fallback
     let then_ok: Bool = !then_terminated
     let mut then_non_void: Bool = true
-    if then_val.ty.kind == "void" { then_non_void = false }
-    if then_val.ty.kind == "unknown" { then_non_void = false }
+    if then_val.ty.kind == TK_VOID() { then_non_void = false }
+    if then_val.ty.kind == TK_UNKNOWN() { then_non_void = false }
     if then_val.name == "%void" { then_non_void = false }
     let else_ok: Bool = !else_terminated
     let mut else_non_void: Bool = true
-    if else_val.ty.kind == "void" { else_non_void = false }
-    if else_val.ty.kind == "unknown" { else_non_void = false }
+    if else_val.ty.kind == TK_VOID() { else_non_void = false }
+    if else_val.ty.kind == TK_UNKNOWN() { else_non_void = false }
     if else_val.name == "%void" { else_non_void = false }
 
     // Determine case using simple flags

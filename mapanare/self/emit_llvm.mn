@@ -509,19 +509,19 @@ fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
     // Range: { i64, i64 } = 2 slots
     if resolved == "{ i64, i64 }" { return 2 }
     // Option: { i1, T } ≈ 2 slots minimum
-    if ty.kind == "option" {
+    if ty.kind == TK_OPTION() {
         if len(ty.args) > 0 {
             return 1 + type_size_in_slots(st, ty.args[0])
         }
         return 2
     }
     // Result: { i1, { T, E } }
-    if ty.kind == "result" { return 4 }
+    if ty.kind == TK_RESULT() { return 4 }
     // Map: { ptr, i64 } = 2 slots
-    if ty.kind == "map" { return 2 }
+    if ty.kind == TK_MAP() { return 2 }
     // Enum: 1 (tag) + max_payload_slots.
     // If registered, look up; otherwise return 48 (conservative for recursive enums).
-    if ty.kind == "enum" {
+    if ty.kind == TK_ENUM() {
         let mut ei: Int = 0
         let neinfos: Int = len(st.enum_infos)
         for _ in 0..500 {
@@ -538,7 +538,7 @@ fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
         return 48
     }
     // Struct: field_count * 4 (average 4 slots per field — covers Span=4, String=2, List=4)
-    if ty.kind == "struct" {
+    if ty.kind == TK_STRUCT() {
         let struct_opt: Option<StructEntry> = find_struct_entry(st, ty.name)
         match struct_opt {
             Some(se) => { return len(se.field_types) * 4 },
@@ -725,12 +725,12 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     let llvm_ty: String = resolve_mir_type(ty)
 
     // Void constants are no-ops
-    if ty.kind == "void" {
+    if ty.kind == TK_VOID() {
         return s
     }
 
     // String constant: emit global at module level, build struct inline
-    if ty.kind == "string" {
+    if ty.kind == TK_STRING() {
         // Escape special chars for LLVM IR string constants
         let escaped: String = val.replace("\\", "\\5C").replace("\"", "\\22").replace("\n", "\\0A").replace("\t", "\\09").replace("\r", "\\0D")
         let slen: Int = len(val)
@@ -747,7 +747,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     }
 
     // Bool constant
-    if ty.kind == "bool" {
+    if ty.kind == TK_BOOL() {
         let mut bval: String = "0"
         if val == "true" { bval = "1" }
         s = emit_line(s, "  " + dn + " = add i1 0, " + bval)
@@ -755,7 +755,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     }
 
     // Int constant: emit `%dest = add i64 0, <val>` to define the SSA value
-    if ty.kind == "int" {
+    if ty.kind == TK_INT() {
         s = emit_line(s, "  " + dn + " = add i64 0, " + val)
         return s
     }
@@ -763,7 +763,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     // Float constant: emit `%dest = fadd double 0.0, <val>`
     // Ensure the value has a decimal point for valid LLVM IR.
     // Handle scientific notation: "1e+09" → "1.0e+09" (not "1e+09.0")
-    if ty.kind == "float" {
+    if ty.kind == TK_FLOAT() {
         let mut fval: String = val
         if fval.contains("e") {
             // Scientific notation — ensure mantissa has a decimal point
@@ -782,13 +782,13 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     }
 
     // Struct constant (undef initializer for struct construction)
-    if ty.kind == "struct" {
+    if ty.kind == TK_STRUCT() {
         s = emit_line(s, "  " + dn + " = insertvalue " + llvm_ty + " undef, " + llvm_ty + " undef, 0")
         return s
     }
 
     // Function constant: emit function pointer reference
-    if ty.kind == "fn" {
+    if ty.kind == TK_FN() {
         s = emit_line(s, "  " + dn + " = bitcast void ()* @" + val + " to ptr")
         return s
     }
@@ -845,15 +845,15 @@ fn emit_cast(st: EmitState, dest: Value, src: Value, target_ty: MIRType) -> Emit
     let dst_ty: String = resolve_mir_type(target_ty)
 
     // Int → Float
-    if src.ty.kind == "int" {
-        if target_ty.kind == "float" {
+    if src.ty.kind == TK_INT() {
+        if target_ty.kind == TK_FLOAT() {
             s = emit_line(s, "  " + dn + " =sitofp i64 " + sn + " to double")
             return s
         }
     }
     // Float → Int
-    if src.ty.kind == "float" {
-        if target_ty.kind == "int" {
+    if src.ty.kind == TK_FLOAT() {
+        if target_ty.kind == TK_INT() {
             s = emit_line(s, "  " + dn + " =fptosi double " + sn + " to i64")
             return s
         }
@@ -873,9 +873,9 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     let rn: String = rhs.name
 
     let dn: String = dest.name
-    let is_float: Bool = lhs.ty.kind == "float"
-    let is_string: Bool = lhs.ty.kind == "string"
-    let is_bool: Bool = lhs.ty.kind == "bool"
+    let is_float: Bool = lhs.ty.kind == TK_FLOAT()
+    let is_string: Bool = lhs.ty.kind == TK_STRING()
+    let is_bool: Bool = lhs.ty.kind == TK_BOOL()
     let mut cmp_ty: String = llvm_int()
     if is_bool { cmp_ty = "i1" }
 
@@ -886,7 +886,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     if op_str == "add" {
         if is_string {
             s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_concat", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
-        } else if lhs.ty.kind == "list" {
+        } else if lhs.ty.kind == TK_LIST() {
             // List concatenation: alloca both sides, call __mn_list_concat
             let la_name: String = dn + ".la"
             let ra_name: String = dn + ".ra"
@@ -977,7 +977,7 @@ fn emit_unaryop(st: EmitState, dest: Value, op: UnaryOpKind, operand: Value) -> 
     let op_str: String = unaryop_kind_to_str(op)
 
     if op_str == "neg" {
-        if operand.ty.kind == "float" {
+        if operand.ty.kind == TK_FLOAT() {
             s = emit_line(s, emit_fneg(dn, on))
         } else {
             s = emit_line(s, emit_neg(dn, llvm_int(), on))
@@ -1012,7 +1012,7 @@ fn emit_struct_init(st: EmitState, dest: Value, ty: MIRType, fields: List<FieldP
             let mut fty: String = resolve_mir_type(fp.val.ty)
             let val_name: String = fp.val.name
             // If MIR type is unknown, use the registered struct field type
-            if fty == "i64" && fp.val.ty.kind == "unknown" && i < len(field_types) {
+            if fty == "i64" && fp.val.ty.kind == TK_UNKNOWN() && i < len(field_types) {
                 fty = field_types[i]
             }
             let tmp_name: String = dn + ".f" + toString(i)
@@ -1043,7 +1043,7 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
     let obj_ty: String = resolve_type(st, obj.ty)
 
     // String .len → extractvalue index 1
-    if obj.ty.kind == "string" {
+    if obj.ty.kind == TK_STRING() {
         if field_name == "len" {
             s = emit_line(s, emit_extractvalue(dn, llvm_string(), on, "1"))
             return s
@@ -1055,7 +1055,7 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
     }
 
     // List .len
-    if obj.ty.kind == "list" {
+    if obj.ty.kind == TK_LIST() {
         if field_name == "len" {
             let lt: String = llvm_list_rt()
             let tmp: String = dn + ".lp"
@@ -1468,13 +1468,13 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
     let dn: String = dest.name
 
     // String indexing → char_at
-    if obj.ty.kind == "string" {
+    if obj.ty.kind == TK_STRING() {
         s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_char_at", llvm_string() + " " + obj.name + ", i64 " + idx.name))
         return s
     }
 
     // Map indexing → __mn_map_get(map_ptr, key_ptr)
-    if obj.ty.kind == "map" {
+    if obj.ty.kind == TK_MAP() {
         let cnt_mg: String = toString(s.counter)
         s.counter = s.counter + 1
         let idx_ty: String = resolve_type(st, idx.ty)
@@ -1540,7 +1540,7 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
     s.counter = s.counter + 1
 
     // Map index set: entries[key] = value → __mn_map_set
-    if obj.ty.kind == "map" {
+    if obj.ty.kind == TK_MAP() {
         let idx_ty: String = resolve_type(st, idx.ty)
         // Alloca key
         let ka: String = "%set_ka" + cnt
@@ -1610,7 +1610,7 @@ fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState {
     // When storing a generic None ({i1, ptr}) to a specific Option alloca
     // ({i1, %enum.T}), use zeroinitializer with the alloca's type instead.
     // None has tag=0 and null payload — zeroinitializer is equivalent.
-    if val.ty.kind == "option" && ptr_ty != val_ty && ptr_ty.starts_with("{") {
+    if val.ty.kind == TK_OPTION() && ptr_ty != val_ty && ptr_ty.starts_with("{") {
         return emit_line(st, "  store " + ptr_ty + " zeroinitializer, " + "ptr " + ptr.name)
     }
     return emit_line(st, llvm_store(val_ty, val.name, ptr.name))
@@ -1628,20 +1628,20 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
 
     // Determine key type tag: 0=int, 1=str, 2=float
     let mut key_tag: String = "1"
-    if key_ty.kind == "int" { key_tag = "0" }
-    if key_ty.kind == "float" { key_tag = "2" }
+    if key_ty.kind == TK_INT() { key_tag = "0" }
+    if key_ty.kind == TK_FLOAT() { key_tag = "2" }
 
     // Key/val sizes: strings are 16 bytes ({ptr,i64}), ints are 8 bytes
     // Default val_size = 16 to safely handle enums/strings in untyped empty maps
     let mut key_size: String = "16"
     let mut val_size: String = "16"
-    if key_ty.kind == "int" { key_size = "8" }
-    if key_ty.kind == "float" { key_size = "8" }
-    if val_ty.kind == "int" { val_size = "8" }
-    if val_ty.kind == "float" { val_size = "8" }
-    if val_ty.kind == "bool" { val_size = "8" }
-    if val_ty.kind == "struct" { val_size = "64" }
-    if val_ty.kind == "enum" { val_size = "64" }
+    if key_ty.kind == TK_INT() { key_size = "8" }
+    if key_ty.kind == TK_FLOAT() { key_size = "8" }
+    if val_ty.kind == TK_INT() { val_size = "8" }
+    if val_ty.kind == TK_FLOAT() { val_size = "8" }
+    if val_ty.kind == TK_BOOL() { val_size = "8" }
+    if val_ty.kind == TK_STRUCT() { val_size = "64" }
+    if val_ty.kind == TK_ENUM() { val_size = "64" }
 
     // Call __mn_map_new(key_size, val_size, key_type)
     let map_ptr: String = dn + ".mp"
@@ -1905,7 +1905,7 @@ fn emit_enum_tag(st: EmitState, dest: Value, val: Value) -> EmitState {
     let dn: String = dest.name
     // For Result/Option the tag field is i1; for enums it's i64.
     // Extract field 0 and zext to i64 if needed.
-    if val.ty.kind == "result" || val.ty.kind == "option" {
+    if val.ty.kind == TK_RESULT() || val.ty.kind == TK_OPTION() {
         let raw_tag: String = dn + ".raw"
         s = emit_line(s, emit_extractvalue(raw_tag, enum_ty, val.name, "0"))
         s = emit_line(s, "  " + dn + " = zext i1 " + raw_tag + " to i64")
@@ -1925,7 +1925,7 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
     let dn: String = dest.name
 
     // For Result/Option: use extractvalue on the inner struct
-    if val.ty.kind == "result" {
+    if val.ty.kind == TK_RESULT() {
         // Result = {i1, {ok_ty, err_ty}}. Extract inner struct, then payload.
         let inner_r: String = dn + ".inner"
         s = emit_line(s, "  " + inner_r + " = extractvalue " + enum_ty + " " + val.name + ", 1")
@@ -1946,7 +1946,7 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         }
         return s
     }
-    if val.ty.kind == "option" {
+    if val.ty.kind == TK_OPTION() {
         // Universal erasure: Option = {i1, ptr}. Extract ptr, then load.
         let ptr_name: String = dn + ".ptr"
         s = emit_line(s, "  " + ptr_name + " = extractvalue " + enum_ty + " " + val.name + ", 1")
@@ -2071,7 +2071,7 @@ fn emit_unwrap(st: EmitState, dest: Value, val: Value) -> EmitState {
     let mut s: EmitState = st
     let val_ty: String = resolve_mir_type(val.ty)
     let dn: String = dest.name
-    if val.ty.kind == "option" {
+    if val.ty.kind == TK_OPTION() {
         // Universal erasure: Option is {i1, ptr}. Extract ptr, then load.
         let ptr_name: String = dn + ".ptr"
         s = emit_line(s, emit_extractvalue(ptr_name, val_ty, val.name, "1"))
@@ -2422,7 +2422,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     // String methods: dispatched to __mn_str_<method> runtime functions
     if len(args) >= 1 {
         let first_arg: Value = args[0]
-        if first_arg.ty.kind == "string" {
+        if first_arg.ty.kind == TK_STRING() {
             let s0: String = first_arg.name
             if fn_name == "contains" {
                 s = emit_line(s, emit_call_ir(dn, llvm_bool(), "__mn_str_contains", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name))
@@ -2583,16 +2583,16 @@ fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
     let mut s: EmitState = st
     let an: String = arg.name
 
-    if arg.ty.kind == "string" {
+    if arg.ty.kind == TK_STRING() {
         return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
     }
-    if arg.ty.kind == "float" {
+    if arg.ty.kind == TK_FLOAT() {
         return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_float_nl, double " + an + ")")
     }
-    if arg.ty.kind == "int" {
+    if arg.ty.kind == TK_INT() {
         return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
     }
-    if arg.ty.kind == "bool" {
+    if arg.ty.kind == TK_BOOL() {
         let cnt_b: String = str(s.counter)
         s.counter = s.counter + 1
         let bext: String = "%bext" + cnt_b
@@ -2611,16 +2611,16 @@ fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
     let mut s: EmitState = st
     let an: String = arg.name
 
-    if arg.ty.kind == "string" {
+    if arg.ty.kind == TK_STRING() {
         return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
     }
-    if arg.ty.kind == "float" {
+    if arg.ty.kind == TK_FLOAT() {
         return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_float_nl, double " + an + ")")
     }
-    if arg.ty.kind == "int" {
+    if arg.ty.kind == TK_INT() {
         return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
     }
-    if arg.ty.kind == "bool" {
+    if arg.ty.kind == TK_BOOL() {
         let cnt_bp: String = str(s.counter)
         s.counter = s.counter + 1
         let bextp: String = "%bext" + cnt_bp
@@ -2637,7 +2637,7 @@ fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
     let an: String = args[0].name
     let dn: String = dest.name
 
-    if args[0].ty.kind == "string" {
+    if args[0].ty.kind == TK_STRING() {
         s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_len", llvm_string() + " " + an))
     } else {
         // __mn_list_len expects a pointer; alloca+store the list value first
@@ -2656,17 +2656,17 @@ fn emit_builtin_tostring(st: EmitState, dest: Value, args: List<Value>) -> EmitS
     let an: String = args[0].name
     let dn: String = dest.name
 
-    if args[0].ty.kind == "string" {
+    if args[0].ty.kind == TK_STRING() {
         return emit_copy(s, dest, args[0])
     }
-    if args[0].ty.kind == "bool" {
+    if args[0].ty.kind == TK_BOOL() {
         let cnt_zb: String = toString(s.counter)
         s.counter = s.counter + 1
         let zext_b: String = "%zb" + cnt_zb
         s = emit_line(s, "  " + zext_b + " = zext i1 " + an + " to i64")
         s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_from_bool", "i64 " + zext_b))
     } else {
-    if args[0].ty.kind == "float" {
+    if args[0].ty.kind == TK_FLOAT() {
         s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_from_float", "double " + an))
     } else {
         s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_from_int", "i64 " + an))
@@ -2680,10 +2680,10 @@ fn emit_builtin_int(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
     let an: String = args[0].name
     let dn: String = dest.name
 
-    if args[0].ty.kind == "float" {
+    if args[0].ty.kind == TK_FLOAT() {
         s = emit_line(s, "  " + dn + " =fptosi double " + an + " to i64")
     } else {
-    if args[0].ty.kind == "int" {
+    if args[0].ty.kind == TK_INT() {
         return emit_copy(s, dest, args[0])
     } else {
         s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_to_int", llvm_string() + " " + an))
@@ -2697,10 +2697,10 @@ fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitStat
     let an: String = args[0].name
     let dn: String = dest.name
 
-    if args[0].ty.kind == "int" {
+    if args[0].ty.kind == TK_INT() {
         s = emit_line(s, "  " + dn + " =sitofp i64 " + an + " to double")
     } else {
-    if args[0].ty.kind == "float" {
+    if args[0].ty.kind == TK_FLOAT() {
         return emit_copy(s, dest, args[0])
     } else {
         s = emit_line(s, emit_call_ir(dn, llvm_float(), "__mn_str_to_float", llvm_string() + " " + an))
