@@ -11,7 +11,8 @@ Three phases:
 
 1. **v4.0.0** — Production release. Other people can use it.
 2. **v4.1.0-v4.7.0** — Architectural refactor. Fix memory leaks, thread safety, type system, and dead code. No new language features until v4.7.0.
-3. **v4.8.0+** — Language evolution. Tensor shapes, GPU auto-kernels, reactive async, FFI bindings.
+3. **v4.8.0** — Solid core. Fix every Culebra finding, replace hardcoded tables, fix memory safety.
+4. **v4.9.0+** — Language evolution. Tensor shapes, GPU auto-kernels, reactive async, FFI bindings.
 
 ## Headline Techs
 
@@ -34,8 +35,10 @@ Three phases:
 | **v4.4.0** | | Thread Safety | Signal free under lock, atomic counters, COW audit, agent lifecycle |
 | **v4.5.0** | | Type System | UNKNOWN -> UNRESOLVED/ERROR, wire self-hosted semantic + MIR verifier |
 | **v4.6.0** | | Self-Hosted Quality | Replace field tables, MIRType enum, fix workarounds, typed pointers |
-| **v4.7.0** | | Optimizer | Unified fixpoint, constant propagation, COW strings, string pooling |
-| **v4.8.0+** | | Language Evolution | Tensor shapes, `@gpu` auto-kernels, reactive async, FFI bindings |
+| **v4.7.0** | | Optimizer | Unified fixpoint loop (O1+O2 merged) |
+| **v4.7.1** | | Verify | WSL rebuild verified: 40/40 golden, 11/11 stage2 |
+| **v4.8.0** | | Solid Core | Fix all Culebra findings, field indices, MIRType enum, workarounds, semantic.mn memory safety, string pooling, self-hosted optimizer |
+| **v4.9.0+** | | Language Evolution | Tensor shapes, `@gpu` auto-kernels, reactive async, FFI bindings |
 
 ## What v4.0.0 Delivered
 
