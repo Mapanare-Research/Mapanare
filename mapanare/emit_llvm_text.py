@@ -957,15 +957,14 @@ class LLVMTextEmitter:
         For each tracked string, loads the {ptr, i64} value, extracts the data
         pointer, and frees it unless it's the same pointer being returned.
         """
-        # Conservative safety: skip drop glue for complex struct returns until
-        # escape analysis handles all patterns (nested structs, state threading).
-        # Simple struct returns ({ptr, i64} = string, {ptr, ptr} = closure) are safe.
-        _simple_struct_tys = {STR, CLOS, ENUM, LIST}
-        if (
-            ret_ty.startswith("{")
-            and ret_ty not in (VOID, I1, I64, DBL)
-            and ret_ty not in _simple_struct_tys
-        ):
+        # Skip drop glue for struct-returning functions. The escape analysis
+        # for return values has a known bug with boxed enum payloads containing
+        # .rodata pointers (free on constant string data). Until the escape
+        # analysis properly handles all cases, skip struct returns entirely.
+        # Functions returning void/int/bool/float still get full drop glue.
+        # TODO(v4.8.0): Fix escape analysis for string/enum/closure returns.
+        skip_struct_ret = ret_ty.startswith("{") and ret_ty not in (VOID, I1, I64, DBL)
+        if skip_struct_ret:
             return
         has_any = (
             (self._local_strings)
