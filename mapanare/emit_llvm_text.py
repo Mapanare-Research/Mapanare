@@ -1541,10 +1541,12 @@ class LLVMTextEmitter:
         if fn.name == "main" and rt == VOID:
             rt = I64
             # patch any "ret void" to "ret i64 0" in all blocks
+            # and insert program epilogue (intern table cleanup)
+            self._ensure("__mn_intern_destroy", VOID, [])
             for lbl in self._blk:
                 for idx, ln in enumerate(self._blk[lbl]):
                     if ln.strip() == "ret void":
-                        self._blk[lbl][idx] = "  ret i64 0"
+                        self._blk[lbl][idx] = "  call void @__mn_intern_destroy()\n  ret i64 0"
 
         # Build param list with byref/sret ABI adjustments
         param_parts: list[str] = []

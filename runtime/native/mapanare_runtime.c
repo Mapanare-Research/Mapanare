@@ -673,6 +673,7 @@ MAPANARE_EXPORT double mapanare_agent_avg_latency_us(mapanare_agent_t *agent) {
 }
 
 MAPANARE_EXPORT void mapanare_agent_destroy(mapanare_agent_t *agent) {
+    if (!agent) return;
     /* Drain inbox/outbox — discard remaining messages.
      * Messages are void* and may not be heap-allocated,
      * so we cannot free them here. Callers own message lifetime. */
@@ -683,6 +684,9 @@ MAPANARE_EXPORT void mapanare_agent_destroy(mapanare_agent_t *agent) {
     mapanare_ring_destroy(&agent->outbox);
     mapanare_sem_destroy(&agent->inbox_ready);
     mapanare_sem_destroy(&agent->outbox_ready);
+    /* Note: caller is responsible for freeing the agent struct if heap-allocated.
+     * The emitter calls free(agent) after destroy for agents created with
+     * mapanare_agent_new(). Stack-allocated agents (via init) must not be freed. */
 }
 
 MAPANARE_EXPORT mapanare_agent_t *mapanare_agent_new(const char *name,
@@ -793,6 +797,12 @@ MAPANARE_EXPORT uint32_t mapanare_registry_count(mapanare_agent_registry_t *reg)
 }
 
 MAPANARE_EXPORT void mapanare_registry_destroy(mapanare_agent_registry_t *reg) {
+    if (!reg) return;
+    /* Clear agent pointers (caller owns agent lifetime). */
+    for (uint32_t i = 0; i < reg->count; i++) {
+        reg->agents[i] = NULL;
+    }
+    reg->count = 0;
     mapanare_mutex_destroy(&reg->lock);
 }
 

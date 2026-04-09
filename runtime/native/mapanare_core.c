@@ -2361,6 +2361,10 @@ MN_EXPORT void __mn_stream_free(MnStream *stream) {
     } else if (stream->state) {
         __mn_free(stream->state);
     }
+    /* Free closure environment if present (v4.3.0). */
+    if (stream->user_data) {
+        __mn_free(stream->user_data);
+    }
     __mn_free(stream);
 }
 
