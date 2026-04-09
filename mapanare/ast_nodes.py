@@ -689,6 +689,15 @@ class ExportDef(Definition):
 
 
 @dataclass
+class ModuleLetDef(Definition):
+    """Module-level constant: `let NAME: TYPE = EXPR`."""
+
+    name: str = ""
+    type_name: str = ""
+    value: Expr | None = None
+
+
+@dataclass
 class SignalDecl(Stmt):
     """Signal declaration as a statement (inside agent or fn)."""
 

@@ -243,7 +243,8 @@ enum Definition {
     ImportDef(List<String>, List<String>),
     ExportDef(Option<Definition>, List<String>),
     ExternFnDef(String, String, List<Param>, Option<TypeExpr>),
-    TraitDef(String, List<FnDefData>)
+    TraitDef(String, List<FnDefData>),
+    LetDef(String, String, Expr)
 }
 
 // ---------------------------------------------------------------------------
@@ -629,7 +630,8 @@ pub fn def_kind(d: Definition) -> String {
         ImportDef(_, _) => { return "import_def" },
         ExportDef(_, _) => { return "export_def" },
         ExternFnDef(_, _, _, _) => { return "extern_fn_def" },
-        TraitDef(_, _) => { return "trait_def" }
+        TraitDef(_, _) => { return "trait_def" },
+        LetDef(_, _, _) => { return "let_def" }
     }
 }
 
@@ -692,6 +694,15 @@ pub fn def_trait_name(d: Definition) -> String {
 }
 pub fn def_trait_methods(d: Definition) -> List<FnDefData> {
     match d { TraitDef(_, m) => { return m }, _ => { let empty: List<FnDefData> = []; return empty } }
+}
+pub fn def_let_name(d: Definition) -> String {
+    match d { LetDef(n, _, _) => { return n }, _ => { return "" } }
+}
+pub fn def_let_type(d: Definition) -> String {
+    match d { LetDef(_, t, _) => { return t }, _ => { return "" } }
+}
+pub fn def_let_value(d: Definition) -> Expr {
+    match d { LetDef(_, _, v) => { return v }, _ => { return Expr::IntLit(0) } }
 }
 
 // ---- TypeExpr kind + accessors --------------------------------------------

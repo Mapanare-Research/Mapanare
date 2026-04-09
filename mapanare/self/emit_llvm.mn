@@ -3176,6 +3176,24 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     if len(module.structs) > 0 { st = emit_blank(st) }
     if len(module.enums) > 0 { st = emit_blank(st) }
 
+    // Module-level constants
+    let mut ci: Int = 0
+    let nconsts: Int = len(module.consts)
+    for _ in 0..500 {
+        if ci < nconsts {
+            let mc: ModuleConst = module.consts[ci]
+            if mc.is_string {
+                let slen: Int = len(mc.str_value)
+                let arr_ty: String = "[" + toString(slen) + " x i8]"
+                st = emit_line(st, "@" + mc.name + " = private constant " + arr_ty + " c\"" + mc.str_value + "\"")
+            } else {
+                st = emit_line(st, "@" + mc.name + " = private constant i64 " + toString(mc.int_value))
+            }
+            ci = ci + 1
+        }
+    }
+    if nconsts > 0 { st = emit_blank(st) }
+
     // Declare extern functions
     let mut xi: Int = 0
     let nmodexterns: Int = len(module.extern_fns)

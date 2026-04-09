@@ -54,6 +54,7 @@ from mapanare.ast_nodes import (
     MapLiteral,
     MatchExpr,
     MethodCallExpr,
+    ModuleLetDef,
     NamedType,
     NamespaceAccessExpr,
     NoneLiteral,
@@ -276,6 +277,8 @@ class MIRLowerer:
         self._fn_param_types: dict[str, list[MIRType]] = {}
         # Current source span — set by _lower_expr/_lower_stmt for debug info
         self._current_span: SourceSpan | None = None
+        # Module-level constants: name → (MIRType, literal value)
+        self._module_consts: dict[str, tuple[MIRType, Any]] = {}
         # Loop exit label stack for break statements
         self._loop_exit_stack: list[str] = []
         self._loop_header_stack: list[str] = []
@@ -732,6 +735,25 @@ class MIRLowerer:
 
             elif isinstance(actual, ImportDef):
                 self._module.imports.append((actual.path, actual.items))
+
+            elif isinstance(actual, ModuleLetDef):
+                val = None
+                ty = mir_int()
+                if actual.value is not None:
+                    if isinstance(actual.value, IntLiteral):
+                        val = actual.value.value
+                        ty = mir_int()
+                    elif isinstance(actual.value, StringLiteral):
+                        val = actual.value.value
+                        ty = mir_string()
+                    elif isinstance(actual.value, BoolLiteral):
+                        val = 1 if actual.value.value else 0
+                        ty = mir_bool()
+                    elif isinstance(actual.value, FloatLiteral):
+                        val = actual.value.value
+                        ty = mir_float()
+                self._module_consts[actual.name] = (ty, val)
+                self._module.consts.append((actual.name, actual.type_name, val))
 
             elif isinstance(actual, TraitDef):
                 self._module.trait_names.append(actual.name)
@@ -1450,6 +1472,12 @@ class MIRLowerer:
         val = self._lookup_var(expr.name)
         if val is not None:
             return val
+        # Check if it's a module-level constant
+        if expr.name in self._module_consts:
+            ty, cval = self._module_consts[expr.name]
+            dest = self._make_value(ty=ty, prefix=expr.name)
+            self._emit(Const(dest=dest, ty=ty, value=cval))
+            return dest
         # Check if it's a bare enum variant (no payload)
         for enum_name, variant_names in self._enum_variants.items():
             if expr.name in variant_names:

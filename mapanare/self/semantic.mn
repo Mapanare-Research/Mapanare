@@ -1466,6 +1466,17 @@ fn register_def(st: SemState, def: Definition) -> SemState {
         }
         return st2_trait
     }
+    if dk == "let_def" {
+        let let_name: String = def_let_name(def)
+        let let_type_name: String = def_let_type(def)
+        let mut let_ty: TypeInfo = unknown_type()
+        if let_type_name == "Int" { let_ty = int_type() }
+        if let_type_name == "Float" { let_ty = float_type() }
+        if let_type_name == "Bool" { let_ty = bool_type() }
+        if let_type_name == "String" { let_ty = string_type() }
+        let sym_let: Symbol = new_symbol(let_name, "variable", let_ty, false)
+        return define_in_scope(st, let_name, sym_let)
+    }
     // impl_def — methods handled in second pass
     return st
 }

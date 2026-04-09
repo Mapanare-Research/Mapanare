@@ -417,6 +417,17 @@ class LLVMTextEmitter:
         for abi, mod, fn, pts, rt in mir.extern_fns:
             full = f"{mod}__{fn}" if mod else fn
             self._decl_fn(full, self._rty(rt), [self._rty(p) for p in pts])
+        # 2b) emit module-level constants
+        for cname, ctype, cval in mir.consts:
+            if isinstance(cval, str):
+                slen = len(cval)
+                self._globals.append(
+                    f'@{cname} = private constant [{slen} x i8] c"{cval}"'
+                )
+            elif isinstance(cval, int):
+                self._globals.append(f"@{cname} = private constant i64 {cval}")
+            elif isinstance(cval, float):
+                self._globals.append(f"@{cname} = private constant double {cval}")
         # 3) forward-declare MIR functions (strip % from names)
         for f in mir.functions:
             if f.name.startswith("%"):

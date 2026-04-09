@@ -2,7 +2,7 @@
 
 > Top-level constants and a real TypeKind enum. The compiler stops comparing strings for types.
 
-**Status:** TODO
+**Status:** PARTIAL (Phase 1-3 done, Phase 4-5 deferred)
 **Breaking:** No
 **Prerequisite:** v4.14.0
 

@@ -374,6 +374,7 @@ fn is_definition_start(tt: String) -> Bool {
     if tt == "KW_TYPE" { return true }
     if tt == "KW_IMPL" { return true }
     if tt == "KW_EXTERN" { return true }
+    if tt == "KW_LET" { return true }
     if tt == "AT" { return true }
     return false
 }
@@ -506,6 +507,7 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
         return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
     }
     if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
+    if tt == "KW_LET" { return parse_module_let(tokens, pos, filename) }
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
     // Fallback: skip unknown token
@@ -544,6 +546,34 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 
 // ---------------------------------------------------------------------------
 // Extern "C" function declaration
+// ---------------------------------------------------------------------------
+
+fn parse_module_let(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+    // let NAME: TYPE = EXPR
+    let mut p: Int = pos + 1
+    // Skip optional 'mut' (module-level let is always immutable, but tolerate it)
+    if peek_type(tokens, p) == "KW_MUT" { p = p + 1 }
+    let name: String = peek_value(tokens, p)
+    p = p + 1
+    // Optional type annotation: ": TYPE"
+    let mut type_name: String = ""
+    if peek_type(tokens, p) == "COLON" {
+        p = p + 1
+        type_name = peek_value(tokens, p)
+        p = p + 1
+    }
+    // Expect "="
+    if peek_type(tokens, p) == "ASSIGN" {
+        p = p + 1
+    }
+    // Parse value expression
+    let er: ExprResult = parse_expr(tokens, p, filename)
+    p = er.pos
+    // Skip optional semicolons/newlines
+    p = skip_semis(tokens, p)
+    return new_def_result(Definition::LetDef(name, type_name, er.expr), p)
+}
+
 // ---------------------------------------------------------------------------
 
 fn parse_extern_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {

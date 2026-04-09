@@ -58,6 +58,7 @@ from mapanare.ast_nodes import (
     MatchArm,
     MatchExpr,
     MethodCallExpr,
+    ModuleLetDef,
     NamedType,
     NamespaceAccessExpr,
     NoneLiteral,
@@ -395,6 +396,19 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         for child in children:
             if isinstance(child, Definition):
                 definitions.append(child)
+            elif isinstance(child, LetBinding) and not child.mutable:
+                # Top-level immutable let → module constant
+                type_name = ""
+                if child.type_annotation is not None:
+                    type_name = getattr(child.type_annotation, "name", "")
+                definitions.append(
+                    ModuleLetDef(
+                        name=child.name,
+                        type_name=type_name,
+                        value=child.value,
+                        span=child.span,
+                    )
+                )
             elif isinstance(child, Stmt):
                 top_level_stmts.append(child)
             elif isinstance(child, Expr):

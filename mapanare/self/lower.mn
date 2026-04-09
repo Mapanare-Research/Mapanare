@@ -164,7 +164,51 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
     if dk == "extern_fn_def" {
         return register_extern_fn(st, defn)
     }
+    if dk == "let_def" {
+        return register_module_let(st, defn)
+    }
     return st
+}
+
+fn register_module_let(st: LowerState, defn: Definition) -> LowerState {
+    let name: String = def_let_name(defn)
+    let type_name: String = def_let_type(defn)
+    let value_expr: Expr = def_let_value(defn)
+    let ek: String = expr_kind(value_expr)
+    let mut s: LowerState = st
+    let mut mod_tmp: MIRModule = s.module
+    let mut consts_list: List<ModuleConst> = mod_tmp.consts
+    let mut lv: List<LambdaEntry> = s.lambda_vars
+    if ek == "int_lit" {
+        let iv: Int = expr_int_val(value_expr)
+        let mc: ModuleConst = new_module_const_int(name, type_name, iv)
+        consts_list.push(mc)
+        let entry: LambdaEntry = new_lambda_entry("__const__" + name, "int:" + toString(iv))
+        lv.push(entry)
+    }
+    if ek == "string_lit" {
+        let sv: String = expr_string_val(value_expr)
+        let mc: ModuleConst = new_module_const_str(name, type_name, sv)
+        consts_list.push(mc)
+        let entry: LambdaEntry = new_lambda_entry("__const__" + name, "string:" + sv)
+        lv.push(entry)
+    }
+    if ek == "float_lit" {
+        let mc: ModuleConst = new_module_const_int(name, type_name, 0)
+        consts_list.push(mc)
+    }
+    if ek == "bool_lit" {
+        let bv: Int = 0
+        if expr_bool_val(value_expr) { let bv: Int = 1 }
+        let mc: ModuleConst = new_module_const_int(name, type_name, bv)
+        consts_list.push(mc)
+        let entry: LambdaEntry = new_lambda_entry("__const__" + name, "bool:" + toString(bv))
+        lv.push(entry)
+    }
+    mod_tmp.consts = consts_list
+    s.module = mod_tmp
+    s.lambda_vars = lv
+    return s
 }
 
 fn register_extern_fn(st: LowerState, defn: Definition) -> LowerState {
@@ -1216,8 +1260,32 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult {
         _ => {}
     }
 
-    // Check if it's a bare generic enum variant (no payload — can't infer type, skip)
-    // Generic bare variants need explicit type context, handled by match pattern lowering
+    // Check if it's a module-level constant
+    let const_key: String = "__const__" + name
+    let const_opt: Option<String> = find_lambda(st, const_key)
+    match const_opt {
+        Some(const_val) => {
+            if const_val.starts_with("int:") {
+                let iv_str: String = const_val.substr(4, len(const_val) - 4)
+                let r_const: LowerResult = make_value(st, mir_int(), name)
+                let s_const: LowerState = emit_instr(r_const.state, Instruction::Const(r_const.value, mir_int(), iv_str))
+                return new_lower_result(r_const.value, s_const)
+            }
+            if const_val.starts_with("string:") {
+                let sv: String = const_val.substr(7, len(const_val) - 7)
+                let r_const: LowerResult = make_value(st, mir_string(), name)
+                let s_const: LowerState = emit_instr(r_const.state, Instruction::Const(r_const.value, mir_string(), sv))
+                return new_lower_result(r_const.value, s_const)
+            }
+            if const_val.starts_with("bool:") {
+                let bv_str: String = const_val.substr(5, len(const_val) - 5)
+                let r_const: LowerResult = make_value(st, mir_bool(), name)
+                let s_const: LowerState = emit_instr(r_const.state, Instruction::Const(r_const.value, mir_bool(), bv_str))
+                return new_lower_result(r_const.value, s_const)
+            }
+        },
+        _ => {}
+    }
 
     // Check if it's a bare enum variant (no payload)
     if is_enum_variant(st, name) {

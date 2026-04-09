@@ -50,6 +50,7 @@ from mapanare.ast_nodes import (
     MapLiteral,
     MatchExpr,
     MethodCallExpr,
+    ModuleLetDef,
     NamedType,
     NamespaceAccessExpr,
     NoneLiteral,
@@ -1474,6 +1475,20 @@ class SemanticChecker:
                 self._register_def(defn.definition)
         elif isinstance(defn, ImplDef):
             pass  # methods handled in second pass
+        elif isinstance(defn, ModuleLetDef):
+            ty = UNKNOWN_TYPE
+            if defn.type_name == "Int":
+                ty = TypeInfo(kind=TypeKind.INT)
+            elif defn.type_name == "Float":
+                ty = TypeInfo(kind=TypeKind.FLOAT)
+            elif defn.type_name == "Bool":
+                ty = TypeInfo(kind=TypeKind.BOOL)
+            elif defn.type_name == "String":
+                ty = TypeInfo(kind=TypeKind.STRING)
+            self.global_scope.define(
+                defn.name,
+                Symbol(name=defn.name, kind=SymbolKind.VARIABLE, type_info=ty, node=defn),
+            )
         elif isinstance(defn, DocComment):
             if defn.definition:
                 self._register_def(defn.definition)

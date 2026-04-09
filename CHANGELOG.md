@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.15.0] - 2026-04-09
+
+**Module-Level Let Constants**
+
+### Added
+- Module-level `let` constants: `let NAME: TYPE = EXPR` at top level in `.mn` files
+- `LetDef` variant in `Definition` enum (`ast.mn`) with accessor functions
+- Parser support for `KW_LET` at module scope (`parser.mn`)
+- Lowerer registers module constants, stores in `MIRModule.consts` and `lambda_vars`
+- Emitter generates LLVM global constant definitions for module-level lets
+- Self-hosted semantic checker registers let_def names in scope
+- Self-hosted lowerer resolves module constants via `find_lambda` with `__const__` prefix
+- `ModuleConst` struct in `mir.mn` for storing constant metadata
+- Python pipeline: `ModuleLetDef` AST node, semantic registration, lowerer inlining
+- Golden test: `tests/golden/41_module_let.mn` (module-level Int constants)
+
+### Verified
+- 41/41 golden tests pass (new test 41_module_let)
+- 11/11 stage2 valid (including main.mn and mnc_all.mn)
+
 ## [4.14.0] - 2026-04-09
 
 **Break Fix + 11/11 Stage2**
