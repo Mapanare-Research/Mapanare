@@ -384,9 +384,21 @@ fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState {
 // Type compatibility checking
 // ---------------------------------------------------------------------------
 
+fn is_type_param(name: String) -> Bool {
+    // Single uppercase letter (T, A, B, ...) or <builtin> are type parameters
+    if name == "<builtin>" { return true }
+    if len(name) == 1 {
+        let c: Int = name.byte_at(0)
+        if c >= 65 && c <= 90 { return true }
+    }
+    return false
+}
+
 fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool {
     if a.name == "<unknown>" { return true }
     if b.name == "<unknown>" { return true }
+    if is_type_param(a.name) { return true }
+    if is_type_param(b.name) { return true }
     if a.is_function {
         if b.is_function {
             // Compare param counts
@@ -1377,7 +1389,13 @@ fn register_def(st: SemState, def: Definition) -> SemState {
     if dk == "struct_def" {
         let data: StructDefData = def_struct_data(def)
         let sym_struct: Symbol = new_symbol(data.name, "struct", make_type(data.name), false)
-        return define_in_scope(st, data.name, sym_struct)
+        let mut st2: SemState = define_in_scope(st, data.name, sym_struct)
+        // Register __new_StructName constructor function
+        let ctor_name: String = "__new_" + data.name
+        let ctor_type: TypeInfo = make_builtin_fn_type(make_type(data.name))
+        let ctor_sym: Symbol = new_symbol(ctor_name, "function", ctor_type, false)
+        st2 = define_in_scope(st2, ctor_name, ctor_sym)
+        return st2
     }
     if dk == "enum_def" {
         let data: EnumDefData = def_enum_data(def)
@@ -1852,6 +1870,35 @@ fn register_builtins(st: SemState) -> SemState {
     st2 = define_in_scope(st2, "gpu_tensor_div", gpu_tdiv_sym)
     let gpu_tmat_sym: Symbol = new_symbol("gpu_tensor_matmul", "function", make_builtin_fn_type(make_type("List")), false)
     st2 = define_in_scope(st2, "gpu_tensor_matmul", gpu_tmat_sym)
+
+    // String methods (lowered from .method() calls to function calls)
+    let sw_sym: Symbol = new_symbol("starts_with", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "starts_with", sw_sym)
+    let ew_sym: Symbol = new_symbol("ends_with", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "ends_with", ew_sym)
+    let find_sym: Symbol = new_symbol("find", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "find", find_sym)
+    let contains_sym2: Symbol = new_symbol("contains", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "contains", contains_sym2)
+    let substr_sym: Symbol = new_symbol("substr", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "substr", substr_sym)
+    let charat_sym: Symbol = new_symbol("char_at", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "char_at", charat_sym)
+    let byteat_sym: Symbol = new_symbol("byte_at", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "byte_at", byteat_sym)
+    let trim_sym: Symbol = new_symbol("trim", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "trim", trim_sym)
+    let toupper_sym: Symbol = new_symbol("to_upper", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "to_upper", toupper_sym)
+    let tolower_sym: Symbol = new_symbol("to_lower", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "to_lower", tolower_sym)
+    let replace_sym: Symbol = new_symbol("replace", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "replace", replace_sym)
+    let split_sym: Symbol = new_symbol("split", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "split", split_sym)
+    // List methods
+    let push_sym: Symbol = new_symbol("push", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "push", push_sym)
 
     return st2
 }

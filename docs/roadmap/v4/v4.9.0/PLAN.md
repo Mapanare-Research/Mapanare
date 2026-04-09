@@ -3,7 +3,7 @@
 > Fix the self-hosted semantic checker so it doesn't read freed memory.
 > This unblocks skip_struct_ret removal and string pooling.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.8.0
 

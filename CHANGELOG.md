@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.9.0] - 2026-04-09
+
+**Semantic Safety — Self-Hosted Checker Enabled**
+
+### Fixed
+- Semantic checker enabled as BLOCKING in compile() — was disabled due to misdiagnosed "memory safety" bug
+- Registered struct constructors (`__new_StructName`) in checker — fixes "Undefined function" false positives
+- Added generic type parameter handling — single uppercase letters (T, A, B) treated as compatible with any type
+- Registered all string methods (starts_with, substr, find, char_at, etc.) as builtins
+- Registered list method (push) as builtin
+
+### Verified
+- 40/40 golden tests pass with check() blocking
+- 11/11 stage2 modules valid with check() blocking
+- Valgrind: 0 errors on all tested golden programs
+- Deliberate type errors (`let x: Int = "not an int"`) correctly detected and reported
+
 ## [4.8.0] - 2026-04-09
 
 **Workaround Fixes — Root Cause Resolution**
@@ -1175,7 +1192,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.8.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.9.0...HEAD
+[4.9.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.8.0...v4.9.0
 [4.8.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.7.1...v4.8.0
 [4.7.1]: https://github.com/Mapanare-Research/Mapanare/compare/v4.7.0...v4.7.1
 [4.7.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.6.0...v4.7.0
