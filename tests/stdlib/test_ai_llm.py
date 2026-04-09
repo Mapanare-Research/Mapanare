@@ -48,7 +48,7 @@ _LLM_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "ai" / "ll
 
 def _compile_mir(source: str) -> str:
     """Compile via MIR-based LLVM emitter."""
-    return _compile_to_llvm_ir(source, "test_llm.mn", use_mir=True)
+    return _compile_to_llvm_ir(source, "test_llm.mn")
 
 
 def _llm_source_with_main(main_body: str) -> str:

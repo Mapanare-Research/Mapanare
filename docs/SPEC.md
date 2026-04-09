@@ -1764,7 +1764,7 @@ Built-in PTX kernels for CUDA cover `add`, `sub`, `mul`, `div`, `matmul` at floa
 
 ### 23.3 Future: @gpu Decorator
 
-> **Status:** The `@gpu` decorator syntax is specified but not yet connected to codegen. The decorator, PTX embedding, and kernel dispatch infrastructure exist in `emit_llvm_mir.py` and `mapanare_gpu.c`. Enabling this path requires porting GPU dispatch to the text emitter. Use `gpu_*` builtins for GPU compute in the current release.
+> **Status:** The `@gpu` decorator syntax is specified but not yet connected to codegen. The decorator, PTX embedding, and kernel dispatch infrastructure exist in `emit_llvm_text.py` and `mapanare_gpu.c`. Use `gpu_*` builtins for GPU compute in the current release.
 
 ```mn
 // Planned syntax — not yet functional

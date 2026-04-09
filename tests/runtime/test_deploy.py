@@ -342,7 +342,8 @@ class TestSupervisedDecorator:
             Program,
             StringLiteral,
         )
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         agent = AgentDef(
             name="MyAgent",
@@ -353,8 +354,9 @@ class TestSupervisedDecorator:
             decorators=[Decorator(name="supervised", args=[StringLiteral(value="one-for-all")])],
         )
         program = Program(definitions=[agent])
-        emitter = PythonEmitter()
-        code = emitter.emit(program)
+        mir_module = build_mir(program, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert "SupervisionStrategy" in code
         assert "RestartPolicy.RESTART" in code
         assert "one-for-all" in code
@@ -366,7 +368,8 @@ class TestSupervisedDecorator:
             Param,
             Program,
         )
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         agent = AgentDef(
             name="MyAgent",
@@ -377,8 +380,9 @@ class TestSupervisedDecorator:
             decorators=[Decorator(name="supervised", args=[])],
         )
         program = Program(definitions=[agent])
-        emitter = PythonEmitter()
-        code = emitter.emit(program)
+        mir_module = build_mir(program, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert "SupervisionStrategy" in code
         assert "one-for-one" in code  # default strategy
 
@@ -388,7 +392,8 @@ class TestSupervisedDecorator:
             Param,
             Program,
         )
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         agent = AgentDef(
             name="PlainAgent",
@@ -399,8 +404,9 @@ class TestSupervisedDecorator:
             decorators=[],
         )
         program = Program(definitions=[agent])
-        emitter = PythonEmitter()
-        code = emitter.emit(program)
+        mir_module = build_mir(program, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert "SupervisionStrategy" not in code
 
 

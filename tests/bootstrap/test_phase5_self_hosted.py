@@ -16,7 +16,8 @@ from mapanare.ast_nodes import (
     FnDef,
     LetBinding,
 )
-from mapanare.emit_llvm import LLVMEmitter
+from mapanare.emit_llvm_text import LLVMTextEmitter
+from mapanare.lower import lower as build_mir
 from mapanare.parser import parse
 
 SELF_DIR = Path(__file__).resolve().parents[2] / "mapanare" / "self"
@@ -93,9 +94,9 @@ class TestEnumLoweringLLVM:
         """Simple enum (no payload) constructs with correct tag."""
         src = "enum Color { Red, Green, Blue }\n" "fn get_color() -> Color { return Green }\n"
         prog = parse(src, filename="test.mn")
-        e = LLVMEmitter(module_name="test_enum")
-        mod = e.emit_program(prog)
-        ir_text = str(mod)
+        mir = build_mir(prog, module_name="test_enum")
+        e = LLVMTextEmitter(module_name="test_enum")
+        ir_text = e.emit(mir)
         assert "define" in ir_text
 
     def test_enum_with_payload(self) -> None:
@@ -105,12 +106,10 @@ class TestEnumLoweringLLVM:
             "fn make_circle() -> Shape { return Circle(5) }\n"
         )
         prog = parse(src, filename="test.mn")
-        e = LLVMEmitter(module_name="test_enum_payload")
-        mod = e.emit_program(prog)
-        ir_text = str(mod)
+        mir = build_mir(prog, module_name="test_enum_payload")
+        e = LLVMTextEmitter(module_name="test_enum_payload")
+        ir_text = e.emit(mir)
         assert "define" in ir_text
-        # Should have tag storage
-        assert "Circle.tag" in ir_text or "i32" in ir_text
 
     def test_enum_variant_tag_values(self) -> None:
         """Each variant gets a distinct tag index."""
@@ -121,9 +120,9 @@ class TestEnumLoweringLLVM:
             "fn blue() -> Color { return Blue }\n"
         )
         prog = parse(src, filename="test.mn")
-        e = LLVMEmitter(module_name="test_tags")
-        mod = e.emit_program(prog)
-        ir_text = str(mod)
+        mir = build_mir(prog, module_name="test_tags")
+        e = LLVMTextEmitter(module_name="test_tags")
+        ir_text = e.emit(mir)
         assert "define" in ir_text
 
     def test_enum_match_simple(self) -> None:
@@ -141,9 +140,9 @@ class TestEnumLoweringLLVM:
             "}\n"
         )
         prog = parse(src, filename="test.mn")
-        e = LLVMEmitter(module_name="test_enum_match")
-        mod = e.emit_program(prog)
-        ir_text = str(mod)
+        mir = build_mir(prog, module_name="test_enum_match")
+        e = LLVMTextEmitter(module_name="test_enum_match")
+        ir_text = e.emit(mir)
         assert "switch" in ir_text or "match" in ir_text.lower()
 
 

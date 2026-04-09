@@ -7,7 +7,6 @@ import os
 import subprocess
 import sys
 
-from mapanare.ast_nodes import Program
 from mapanare.diagnostics import (
     Diagnostic,
     Label,
@@ -112,7 +111,6 @@ def _compile_source(
     opt_level: OptLevel = OptLevel.O2,
     resolver: ModuleResolver | None = None,
     python_path: list[str] | None = None,
-    use_mir: bool = True,
 ) -> str:
     """Parse, check, optimize, and emit Python from Mapanare source. Returns Python code.
 
@@ -124,23 +122,16 @@ def _compile_source(
     ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename, resolver=resolver)
 
-    if use_mir:
-        from mapanare.emit_python_mir import PythonMIREmitter
-        from mapanare.lower import lower as build_mir
-        from mapanare.mir_opt import MIROptLevel
-        from mapanare.mir_opt import optimize_module as mir_optimize
+    from mapanare.emit_python_mir import PythonMIREmitter
+    from mapanare.lower import lower as build_mir
+    from mapanare.mir_opt import MIROptLevel
+    from mapanare.mir_opt import optimize_module as mir_optimize
 
-        mir_module = build_mir(ast, module_name=os.path.splitext(os.path.basename(filename))[0])
-        mir_opt_level = MIROptLevel(opt_level.value)
-        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
-        emitter = PythonMIREmitter(python_path=python_path)
-        return emitter.emit(mir_module)
-
-    from mapanare.emit_python import PythonEmitter
-
-    ast, stats = optimize(ast, opt_level)
-    py_emitter = PythonEmitter(python_path=python_path)
-    return py_emitter.emit(ast)
+    mir_module = build_mir(ast, module_name=os.path.splitext(os.path.basename(filename))[0])
+    mir_opt_level = MIROptLevel(opt_level.value)
+    mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+    emitter = PythonMIREmitter(python_path=python_path)
+    return emitter.emit(mir_module)
 
 
 def _compile_to_llvm_ir(
@@ -149,97 +140,64 @@ def _compile_to_llvm_ir(
     opt_level: OptLevel = OptLevel.O2,
     target_name: str | None = None,
     resolver: ModuleResolver | None = None,
-    use_mir: bool = True,
     debug: bool = False,
     werror: bool = False,
-    emitter_backend: str = "text",
     skip_check: bool = False,
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source.
 
-    When the source contains ``import`` statements and ``use_mir=True``,
-    automatically uses multi-module compilation to resolve and link all
-    imported modules into a single LLVM IR module.
-
-    *emitter_backend* selects the LLVM emitter: ``"llvmlite"`` (default)
-    or ``"text"`` (pure-text, no llvmlite dependency).
+    When the source contains ``import`` statements, automatically uses
+    multi-module compilation to resolve and link all imported modules
+    into a single LLVM IR module.
     """
     ast = parse(source, filename=filename)
 
-    # Check for imports — if present and using MIR, use multi-module pipeline
-    if use_mir:
-        from mapanare.ast_nodes import ImportDef
+    from mapanare.ast_nodes import ImportDef
 
-        has_imports = any(isinstance(d, ImportDef) for d in ast.definitions)
-        if has_imports:
-            from mapanare.multi_module import compile_multi_module_mir
+    has_imports = any(isinstance(d, ImportDef) for d in ast.definitions)
+    if has_imports:
+        from mapanare.multi_module import compile_multi_module_mir
 
-            return compile_multi_module_mir(
-                root_source=source,
-                root_file=filename,
-                opt_level=opt_level.value,
-                target_name=target_name,
-                debug=debug,
-                emitter_backend=emitter_backend,
-                skip_check=skip_check,
-            )
+        return compile_multi_module_mir(
+            root_source=source,
+            root_file=filename,
+            opt_level=opt_level.value,
+            target_name=target_name,
+            debug=debug,
+            skip_check=skip_check,
+        )
     if not skip_check:
         check_or_raise(ast, filename=filename, resolver=resolver, werror=werror)
 
-    if use_mir:
-        from mapanare.lower import lower as build_mir
-        from mapanare.mir_opt import MIROptLevel
-        from mapanare.mir_opt import optimize_module as mir_optimize
+    from mapanare.lower import lower as build_mir
+    from mapanare.mir_opt import MIROptLevel
+    from mapanare.mir_opt import optimize_module as mir_optimize
 
-        module_name = os.path.splitext(os.path.basename(filename))[0]
-        source_file = os.path.basename(filename)
-        source_dir = os.path.dirname(os.path.abspath(filename))
-        mir_module = build_mir(
-            ast,
-            module_name=module_name,
-            source_file=source_file,
-            source_directory=source_dir,
-        )
-        mir_opt_level = MIROptLevel(opt_level.value)
-        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
-        target = get_target(target_name)
-
-        if emitter_backend == "text":
-            from mapanare.emit_llvm_text import LLVMTextEmitter
-
-            emitter = LLVMTextEmitter(
-                module_name=module_name,
-                target_triple=target.triple,
-                data_layout=target.data_layout,
-                debug=debug,
-            )
-            return emitter.emit(mir_module)
-
-        from mapanare.emit_llvm_mir import LLVMMIREmitter
-
-        emitter_mir = LLVMMIREmitter(
-            module_name=module_name,
-            target_triple=target.triple,
-            data_layout=target.data_layout,
-            debug=debug,
-        )
-        llvm_module = emitter_mir.emit(mir_module)
-        return str(llvm_module)
-
-    from mapanare.emit_llvm import LLVMEmitter
-
-    ast, stats = optimize(ast, opt_level)
+    module_name = os.path.splitext(os.path.basename(filename))[0]
+    source_file = os.path.basename(filename)
+    source_dir = os.path.dirname(os.path.abspath(filename))
+    mir_module = build_mir(
+        ast,
+        module_name=module_name,
+        source_file=source_file,
+        source_directory=source_dir,
+    )
+    mir_opt_level = MIROptLevel(opt_level.value)
+    mir_module, _ = mir_optimize(mir_module, mir_opt_level)
     target = get_target(target_name)
-    llvm_emitter = LLVMEmitter(
-        module_name=os.path.splitext(os.path.basename(filename))[0],
+
+    from mapanare.emit_llvm_text import LLVMTextEmitter
+
+    emitter = LLVMTextEmitter(
+        module_name=module_name,
         target_triple=target.triple,
         data_layout=target.data_layout,
+        debug=debug,
     )
-    module = llvm_emitter.emit_program(ast)
-    return str(module)
+    return emitter.emit(mir_module)
 
 
-def _compile_multi_module_llvm(
+def _compile_multi_module_text(
     source_files: list[str],
     opt_level: OptLevel = OptLevel.O2,
     target_name: str | None = None,
@@ -247,35 +205,24 @@ def _compile_multi_module_llvm(
 ) -> str:
     """Compile multiple .mn files into a single linked LLVM IR module.
 
-    Resolves imports between modules and combines all LLVM IR into one module.
-    Link order matters: dependencies must be listed before dependents.
+    Uses the first file as root and treats the rest as dependencies via
+    the MIR-based multi-module pipeline.
     """
-    from mapanare.emit_llvm import LLVMEmitter
-    from mapanare.targets import get_target
+    if not source_files:
+        raise ValueError("no source files provided")
 
-    target = get_target(target_name)
-    resolver = ModuleResolver()
+    root_file = source_files[0]
+    root_source = _read_source(root_file)
 
-    # First pass: parse and check all files, building the resolver cache
-    parsed: list[tuple[str, Program]] = []
-    for filepath in source_files:
-        source = _read_source(filepath)
-        ast = parse(source, filename=filepath)
-        if not skip_check:
-            check_or_raise(ast, filename=filepath, resolver=resolver)
-        parsed.append((filepath, ast))
+    from mapanare.multi_module import compile_multi_module_mir
 
-    # Second pass: emit all modules into a single LLVM emitter
-    combined_emitter = LLVMEmitter(
-        module_name="mapanare_linked",
-        target_triple=target.triple,
-        data_layout=target.data_layout,
+    return compile_multi_module_mir(
+        root_source=root_source,
+        root_file=root_file,
+        opt_level=opt_level.value,
+        target_name=target_name,
+        skip_check=skip_check,
     )
-
-    for filepath, ast in parsed:
-        combined_emitter.emit_program(ast, resolver=resolver)
-
-    return str(combined_emitter.module)
 
 
 def cmd_compile(args: argparse.Namespace) -> None:
@@ -296,7 +243,6 @@ def cmd_compile(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     python_path: list[str] = getattr(args, "python_path", None) or []
-    use_mir = not getattr(args, "no_mir", False)
     resolver = ModuleResolver()
     try:
         python_code = _compile_source(
@@ -305,7 +251,6 @@ def cmd_compile(args: argparse.Namespace) -> None:
             opt_level=opt_level,
             resolver=resolver,
             python_path=python_path,
-            use_mir=use_mir,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -326,17 +271,21 @@ def cmd_compile(args: argparse.Namespace) -> None:
 
 def _compile_resolved_modules(resolver: ModuleResolver, opt_level: OptLevel, out_dir: str) -> None:
     """Compile all resolved imported modules to Python in the output directory."""
+    from mapanare.emit_python_mir import PythonMIREmitter
+    from mapanare.lower import lower as build_mir
+    from mapanare.mir_opt import MIROptLevel
+    from mapanare.mir_opt import optimize_module as mir_optimize
+
     for filepath, module in resolver.all_modules():
         mod_name = os.path.splitext(os.path.basename(filepath))[0]
         mod_out = os.path.join(out_dir, mod_name + ".py")
         if os.path.abspath(mod_out) == os.path.abspath(filepath.replace(".mn", ".py")):
-            # Already compiled as the main file
             continue
-        from mapanare.emit_python import PythonEmitter as _PyEmit
-
-        ast, _ = optimize(module.program, opt_level)
-        emitter = _PyEmit()
-        code = emitter.emit(ast)
+        mir_module = build_mir(module.program, module_name=mod_name)
+        mir_opt_level = MIROptLevel(opt_level.value)
+        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         with open(mod_out, "w", encoding="utf-8") as f:
             f.write(code)
         print(f"  compiled module {mod_name} -> {mod_out}")
@@ -468,7 +417,6 @@ def cmd_run(args: argparse.Namespace) -> None:
         return
 
     # --- LLVM backend (--release) ---
-    use_mir = not getattr(args, "no_mir", False)
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -476,7 +424,6 @@ def cmd_run(args: argparse.Namespace) -> None:
             args.source,
             opt_level=opt_level,
             resolver=resolver,
-            use_mir=use_mir,
             debug=debug,
         )
     except ParseError as e:
@@ -484,12 +431,6 @@ def cmd_run(args: argparse.Namespace) -> None:
         sys.exit(1)
     except SemanticErrors as e:
         _emit_semantic_errors(e, source)
-        sys.exit(1)
-    except ImportError:
-        print(
-            "error: LLVM backend requires llvmlite. " "Install with: pip install mapanare[llvm]",
-            file=sys.stderr,
-        )
         sys.exit(1)
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -751,7 +692,6 @@ def cmd_jit(args: argparse.Namespace) -> None:
     """JIT-compile an .mn source file via LLVM and execute natively."""
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    use_mir = not getattr(args, "no_mir", False)
     debug = getattr(args, "debug", False)
     resolver = ModuleResolver()
     try:
@@ -760,7 +700,6 @@ def cmd_jit(args: argparse.Namespace) -> None:
             args.source,
             opt_level=opt_level,
             resolver=resolver,
-            use_mir=use_mir,
             debug=debug,
         )
     except ParseError as e:
@@ -797,7 +736,6 @@ def cmd_build(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
-    use_mir = not getattr(args, "no_mir", False)
     debug = getattr(args, "debug", False)
     stdlib_path: str | None = getattr(args, "stdlib_path", None)
     search_paths = [stdlib_path] if stdlib_path else None
@@ -810,7 +748,6 @@ def cmd_build(args: argparse.Namespace) -> None:
             opt_level=opt_level,
             target_name=target_name,
             resolver=resolver,
-            use_mir=use_mir,
             debug=debug,
             werror=werror,
         )
@@ -969,17 +906,7 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
-    use_mir = not getattr(args, "no_mir", False)
     debug = getattr(args, "debug", False)
-    emitter_backend = getattr(args, "emitter", "llvmlite")
-    if emitter_backend == "llvmlite":
-        import warnings
-
-        warnings.warn(
-            "The llvmlite emitter is deprecated. Use the default text emitter instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -988,9 +915,7 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
             opt_level=opt_level,
             target_name=target_name,
             resolver=resolver,
-            use_mir=use_mir,
             debug=debug,
-            emitter_backend=emitter_backend,
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -1331,7 +1256,7 @@ def cmd_build_multi(args: argparse.Namespace) -> None:
     target_name: str | None = getattr(args, "target", None)
     skip_check = getattr(args, "no_check", False)
     try:
-        llvm_ir = _compile_multi_module_llvm(
+        llvm_ir = _compile_multi_module_text(
             source_files, opt_level=opt_level, target_name=target_name, skip_check=skip_check
         )
     except ParseError as e:
@@ -1491,16 +1416,6 @@ def _format_mapanare(source: str) -> str:
     return "\n".join(result)
 
 
-def _add_mir_flag(parser: argparse.ArgumentParser) -> None:
-    """Add --no-mir flag to disable MIR pipeline (use legacy AST path)."""
-    parser.add_argument(
-        "--no-mir",
-        action="store_true",
-        default=False,
-        help="Use legacy AST-based pipeline instead of MIR",
-    )
-
-
 def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
     """Add -g/--debug flag to emit DWARF debug info."""
     parser.add_argument(
@@ -1583,7 +1498,7 @@ def build_parser() -> argparse.ArgumentParser:
         help='Add directory to Python module search path (for extern "Python" interop)',
     )
     _add_opt_level_args(p_compile)
-    _add_mir_flag(p_compile)
+
     _add_edition_flag(p_compile)
     p_compile.set_defaults(func=cmd_compile)
 
@@ -1630,7 +1545,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use LLVM backend (requires llvmlite). Default: C backend via gcc.",
     )
     _add_opt_level_args(p_run)
-    _add_mir_flag(p_run)
     _add_debug_flag(p_run)
     _add_edition_flag(p_run)
     p_run.set_defaults(func=cmd_run)
@@ -1722,7 +1636,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_jit.add_argument("source", help="Path to .mn source file")
     p_jit.add_argument("--bench", action="store_true", help="Output benchmark metrics")
     _add_opt_level_args(p_jit)
-    _add_mir_flag(p_jit)
     _add_debug_flag(p_jit)
     p_jit.set_defaults(func=cmd_jit)
 
@@ -1761,7 +1674,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Produce a shared library (.so/.dylib/.dll) instead of an executable",
     )
     _add_opt_level_args(p_build)
-    _add_mir_flag(p_build)
     _add_debug_flag(p_build)
     _add_edition_flag(p_build)
     p_build.set_defaults(func=cmd_build)
@@ -1776,14 +1688,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target triple (e.g. x86_64-linux-gnu, aarch64-apple-macos, x86_64-windows-msvc)",
         default=None,
     )
-    p_emit_llvm.add_argument(
-        "--emitter",
-        choices=["text", "llvmlite"],
-        default="text",
-        help="LLVM emitter backend: text (default, no llvmlite dependency) or llvmlite (legacy)",
-    )
     _add_opt_level_args(p_emit_llvm)
-    _add_mir_flag(p_emit_llvm)
     _add_debug_flag(p_emit_llvm)
     _add_edition_flag(p_emit_llvm)
     p_emit_llvm.set_defaults(func=cmd_emit_llvm)

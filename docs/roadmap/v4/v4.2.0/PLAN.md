@@ -3,7 +3,7 @@
 > One emitter. One pipeline. Zero dead code.
 > You can't fix drop glue properly when you have 3 competing emitters.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** Yes (removes `--no-mir`, `--emitter llvmlite` flags)
 **Prerequisite:** v4.1.0
 

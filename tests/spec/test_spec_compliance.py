@@ -36,7 +36,7 @@ def _check_ok(source: str) -> None:
 
 def _compile_ok(source: str) -> str:
     """Assert that source compiles to LLVM IR."""
-    ir_out = _compile_to_llvm_ir(source, "spec_test.mn", use_mir=True)
+    ir_out = _compile_to_llvm_ir(source, "spec_test.mn")
     assert ir_out, "Expected non-empty LLVM IR"
     return ir_out
 

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-04-08
+
+**Clean House — Emitter Consolidation**
+
+### Changed
+- Single LLVM emitter: only `emit_llvm_text.py` remains (no llvmlite dependency)
+- Single Python emitter: only `emit_python_mir.py` remains (MIR-based)
+- All compilation paths now go through MIR pipeline unconditionally
+- `_compile_multi_module_llvm` ported to use `compile_multi_module_mir`
+- Self-hosted compiler reduced to 10 modules (was 11)
+
+### Removed
+- `mapanare/emit_llvm.py` (2,883 lines) — AST-based llvmlite LLVM emitter
+- `mapanare/emit_llvm_mir.py` (5,297 lines) — MIR-based llvmlite LLVM emitter
+- `mapanare/emit_python.py` (1,239 lines) — AST-based Python transpiler
+- `mapanare/self/emit_c.mn` (755 lines) — broken self-hosted C emitter
+- `--no-mir` CLI flag (MIR pipeline is now the only path)
+- `--emitter` CLI flag (text emitter is now the only LLVM backend)
+- `_coerce_arg` / `_coerce_args` (36 call sites of raw memory reinterpretation)
+- `tests/llvm/test_ir_emitter.py` and `tests/emit/test_emit_python.py` (tested deleted emitter internals)
+
+### Fixed
+- Added drop-glue no-op stubs to PythonMIREmitter (`__mn_range_free`, etc.)
+- Updated LLVM test assertions for text emitter (opaque pointers, unquoted names)
+- Net ~13,263 lines removed across 73 files
+
 ## [4.0.0] - 2026-04-08
 
 **Production Release — "Build Real Programs"**
@@ -1058,7 +1084,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v3.45.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.2.0...HEAD
+[4.2.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.0.0...v4.2.0
 [3.45.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.44.0...v3.45.0
 [3.44.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.43.0...v3.44.0
 [3.43.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.42.0...v3.43.0

@@ -285,7 +285,7 @@ culebra init                                                # Generate starter c
 Golden test corpus lives in `tests/golden/*.mn` (15 programs covering all features). Reference IR in `tests/golden/*.ref.ll`.
 
 **Workflow for debugging mnc-stage1:**
-1. Make changes to `mapanare/self/*.mn` or `mapanare/emit_llvm_mir.py`
+1. Make changes to `mapanare/self/*.mn` or `mapanare/emit_llvm_text.py`
 2. Rebuild: `python scripts/build_stage1.py`
 3. Test: `python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 -v`
 4. The harness compares mnc-stage1 output against the Python bootstrap — shows exactly which functions are missing or different.
@@ -302,11 +302,10 @@ Every run auto-updates `tests/golden/BENCHMARKS.md` with per-test metrics (sourc
 
 ```
 .mn source → Lark LALR parser → AST (dataclasses) → Semantic checker → MIR lowering → MIR optimizer (O0-O3) → Emitter
-                                                                                                                 ├→ emit_python.py     → Python source (DEPRECATED)
+                                                                                                                 ├→ emit_llvm_text.py  → LLVM IR (text, no llvmlite)
                                                                                                                  ├→ emit_python_mir.py → Python source (DEPRECATED)
-                                                                                                                 ├→ emit_llvm.py       → LLVM IR (AST-based)
-                                                                                                                 ├→ emit_llvm_mir.py   → LLVM IR (MIR-based, preferred)
-                                                                                                                 └→ emit_wasm.py       → WebAssembly (WAT/WASM, v2.0.0)
+                                                                                                                 ├→ emit_c.py          → C source
+                                                                                                                 └→ emit_wasm.py       → WebAssembly (WAT/WASM)
 ```
 
 Key modules in `mapanare/`:
@@ -318,10 +317,9 @@ Key modules in `mapanare/`:
 - `lower.py` — AST → MIR lowering (1,397 lines)
 - `mir_opt.py` — MIR optimizer passes (constant folding, DCE, copy propagation, block merging)
 - `optimizer.py` — AST-level optimizer (constant folding, DCE, agent inlining, stream fusion)
-- `emit_python.py` — Python transpiler (DEPRECATED in v2.0.0)
-- `emit_python_mir.py` — MIR-based Python transpiler (DEPRECATED in v2.0.0)
-- `emit_llvm.py` — LLVM IR generation via llvmlite (AST-based)
-- `emit_llvm_mir.py` — LLVM IR generation via llvmlite (MIR-based, preferred for new features)
+- `emit_llvm_text.py` — LLVM IR generation (text-based, no llvmlite dependency)
+- `emit_python_mir.py` — MIR-based Python transpiler (DEPRECATED)
+- `emit_c.py` — C source generation from MIR
 - `emit_wasm.py` — WebAssembly (WAT) generation from MIR (v2.0.0)
 - `wasm_linker.py` — wasm-ld integration for multi-module WASM linking (v2.0.0)
 - `types.py` — **Single source of truth** for the type system (TypeKind enum, TypeInfo, builtin registries)
@@ -343,7 +341,7 @@ Key modules in `mapanare/`:
 
 **Not yet on LLVM:** Tensors (experimental, GPU-backed via C runtime but no language-level integration).
 
-New LLVM features should target `emit_llvm_mir.py` (MIR-based emitter), not `emit_llvm.py` (AST-based).
+New LLVM features should target `emit_llvm_text.py` (the sole LLVM emitter).
 
 ## Type System (mapanare/types.py)
 
@@ -355,7 +353,7 @@ All type definitions, builtin registries, and type-name mappings live in `types.
 
 ## Self-Hosted Compiler (`mapanare/self/`)
 
-11 modules, 15,000+ lines of Mapanare. Mirrors the Python bootstrap pipeline:
+10 modules, 14,000+ lines of Mapanare. Mirrors the Python bootstrap pipeline:
 
 | Module | Lines | Role |
 |--------|-------|------|
@@ -368,7 +366,6 @@ All type definitions, builtin registries, and type-name mappings live in `types.
 | `lower.mn` | 3,602 | AST → MIR lowering (registration + expression/statement lowering) |
 | `emit_llvm_ir.mn` | 258 | LLVM type constants and IR instruction string builders |
 | `emit_llvm.mn` | 3,206 | MIR → LLVM IR emitter (state, handlers, module emission) |
-| `emit_c.mn` | 770 | MIR → C emitter |
 | `main.mn` | 537 | Compiler driver |
 
 **Patterns:** Constructor functions (`let r: T = first_field; return r`), state-threading (functions thread state structs), no struct literal syntax in grammar yet.
@@ -400,7 +397,7 @@ GPU compute via CUDA and Vulkan, loaded dynamically at runtime (no compile-time 
 - **C runtime** (`runtime/native/mapanare_gpu.h/.c`): CUDA Driver API + Vulkan compute via dlopen
 - **MIR metadata** (`mapanare/mir.py`): `MIRGpuKernel` dataclass with device, PTX/SPIR-V source, grid/block config
 - **Lowering** (`mapanare/lower.py`): `@cuda`/`@vulkan`/`@gpu` decorators populate `MIRModule.gpu_kernels`
-- **LLVM codegen** (`mapanare/emit_llvm_mir.py`): PTX string embedding + `cuModuleLoadData`/`cuLaunchKernel`, SPIR-V byte embedding + Vulkan pipeline create/dispatch
+- **LLVM codegen** (`mapanare/emit_llvm_text.py`): PTX string embedding + `cuModuleLoadData`/`cuLaunchKernel`, SPIR-V byte embedding + Vulkan pipeline create/dispatch
 - **Python layer** (`experimental/gpu.py`): Device detection, kernel dispatch abstractions
 - **Stdlib** (`stdlib/gpu/`): `device.mn` (GPU detection), `tensor.mn` (GPU-accelerated tensors), `kernel.mn` (kernel management)
 - **Annotations**: `@gpu`, `@cuda`, `@metal`, `@vulkan` on functions for automatic dispatch

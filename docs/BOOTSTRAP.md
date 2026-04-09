@@ -30,7 +30,7 @@ A frozen copy lives in `bootstrap/` for reproducibility.
 | `mapanare/parser.py` | Lark-based parser → AST dataclasses |
 | `mapanare/semantic.py` | Two-pass type checker and scope resolver |
 | `mapanare/optimizer.py` | Constant folding, DCE, inlining (O0–O3) |
-| `mapanare/emit_llvm.py` | LLVM IR generation via llvmlite |
+| `mapanare/emit_llvm_text.py` | LLVM IR generation (text-based) |
 | `mapanare/cli.py` | Entry point: `mapanare emit-llvm`, `build`, etc. |
 
 ## Stage 1 — Compile Self-Hosted Sources

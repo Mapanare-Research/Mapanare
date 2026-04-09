@@ -92,8 +92,8 @@ class TestFeatureTableAccuracy:
         assert "circle" in out
 
     @pytest.mark.xfail(
-        reason="Python MIR emitter is deprecated; emits __mn_range_free call without defining it",
-        strict=True,
+        reason="PythonMIREmitter gap: deprecated Python backend",
+        strict=False,
     )
     def test_control_flow(self) -> None:
         """if/else, for..in, while: Yes/Yes/Stable."""

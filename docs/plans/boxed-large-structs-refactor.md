@@ -97,7 +97,7 @@ This is the same approach we used for enums — change `_register_struct` to pro
 
 | File | Changes |
 |------|---------|
-| `mapanare/emit_llvm_mir.py` | `_get_value`: skip `_load_struct_fields` for large structs, keep alloca path |
+| `mapanare/emit_llvm_text.py` | Handle large struct values via alloca path |
 
 ## Test Strategy
 

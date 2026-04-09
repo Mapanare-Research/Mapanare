@@ -14,7 +14,8 @@ from mapanare.ast_nodes import (
     LetBinding,
     StringLiteral,
 )
-from mapanare.emit_python import PythonEmitter
+from mapanare.emit_python_mir import PythonMIREmitter
+from mapanare.lower import lower as build_mir
 from mapanare.parser import parse
 from mapanare.semantic import check
 
@@ -250,8 +251,9 @@ fn main() {
 }
 """
         prog = parse(source)
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
+        mir_module = build_mir(prog, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert 'f"Hello, {name}!"' in code
 
     def test_expr_fstring(self) -> None:
@@ -263,8 +265,9 @@ fn main() {
 }
 """
         prog = parse(source)
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
+        mir_module = build_mir(prog, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert 'f"sum: {' in code
 
     def test_no_interp_stays_repr(self) -> None:
@@ -274,16 +277,18 @@ fn main() {
 }
 """
         prog = parse(source)
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
+        mir_module = build_mir(prog, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert "'hello world'" in code or '"hello world"' in code
         assert "f'" not in code and 'f"' not in code
 
     def test_multi_line_string_emit(self) -> None:
         source = 'fn main() { let x = """line1\\nline2""" }'
         prog = parse(source)
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
+        mir_module = build_mir(prog, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert "line1" in code
 
 
@@ -298,9 +303,9 @@ class TestLLVMEmitInterpolation:
     def test_interp_emits_concat(self) -> None:
         """InterpString should generate __mn_str_concat calls in LLVM IR."""
         try:
-            from mapanare.emit_llvm import LLVMEmitter
+            from mapanare.emit_llvm_text import LLVMTextEmitter
         except ImportError:
-            pytest.skip("llvmlite not installed")
+            pytest.skip("emit_llvm_text not available")
 
         source = """
 fn main() {
@@ -309,18 +314,18 @@ fn main() {
 }
 """
         prog = parse(source)
-        emitter = LLVMEmitter()
-        module = emitter.emit_program(prog)
-        ir_code = str(module)
+        mir_module = build_mir(prog, module_name="test")
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_code = emitter.emit(mir_module)
         # Should contain str_concat for joining interpolation parts
         assert "__mn_str_concat" in ir_code
 
     def test_plain_string_no_extra_concat(self) -> None:
         """A plain string without interpolation should NOT generate concat."""
         try:
-            from mapanare.emit_llvm import LLVMEmitter
+            from mapanare.emit_llvm_text import LLVMTextEmitter
         except ImportError:
-            pytest.skip("llvmlite not installed")
+            pytest.skip("emit_llvm_text not available")
 
         source = """
 fn main() {
@@ -328,9 +333,9 @@ fn main() {
 }
 """
         prog = parse(source)
-        emitter = LLVMEmitter()
-        module = emitter.emit_program(prog)
-        ir_code = str(module)
+        mir_module = build_mir(prog, module_name="test")
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_code = emitter.emit(mir_module)
         assert "__mn_str_concat" not in ir_code
 
 
@@ -352,8 +357,9 @@ fn main() {
         prog = parse(source)
         errors = check(prog)
         assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
+        mir_module = build_mir(prog, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert 'f"Hello, {name}!"' in code
 
     def test_e2e_multi_interpolation(self) -> None:
@@ -367,8 +373,9 @@ fn main() {
         prog = parse(source)
         errors = check(prog)
         assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
+        mir_module = build_mir(prog, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert 'f"{first} {last}"' in code
 
     def test_e2e_nested_expr(self) -> None:
@@ -382,6 +389,7 @@ fn main() {
         prog = parse(source)
         errors = check(prog)
         assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
+        mir_module = build_mir(prog, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert 'f"result: {' in code

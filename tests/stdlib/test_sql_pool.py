@@ -68,7 +68,7 @@ _POOL_COMBINED = _SQL_PURE + "\n\n" + _POOL_PURE
 
 def _compile_mir(source: str) -> str:
     """Compile via MIR-based LLVM emitter."""
-    return _compile_to_llvm_ir(source, "test_sql_pool.mn", use_mir=True)
+    return _compile_to_llvm_ir(source, "test_sql_pool.mn")
 
 
 def _pool_with_main(main_body: str) -> str:

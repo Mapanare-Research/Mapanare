@@ -13,12 +13,12 @@ from mapanare.cli import _compile_to_llvm_ir
 
 def _compile_ast(source: str) -> str:
     """Compile via AST-based LLVM emitter."""
-    return _compile_to_llvm_ir(source, "test.mn", use_mir=False)
+    return _compile_to_llvm_ir(source, "test.mn")
 
 
 def _compile_mir(source: str) -> str:
     """Compile via MIR-based LLVM emitter."""
-    return _compile_to_llvm_ir(source, "test.mn", use_mir=True)
+    return _compile_to_llvm_ir(source, "test.mn")
 
 
 # ---------------------------------------------------------------------------

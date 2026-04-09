@@ -104,7 +104,7 @@ def _compile_test_to_llvm(source: str, filename: str, test_names: list[str]) -> 
 
     Test functions are marked public so the JIT engine can resolve them by name.
     """
-    from mapanare.emit_llvm_mir import LLVMMIREmitter
+    from mapanare.emit_llvm_text import LLVMTextEmitter
     from mapanare.lower import lower as build_mir
     from mapanare.mir_opt import MIROptLevel
     from mapanare.mir_opt import optimize_module as mir_optimize
@@ -124,9 +124,8 @@ def _compile_test_to_llvm(source: str, filename: str, test_names: list[str]) -> 
         if fn.name in test_name_set:
             fn.is_public = True
 
-    emitter = LLVMMIREmitter()
-    llvm_module = emitter.emit(mir_module)
-    return str(llvm_module)
+    emitter = LLVMTextEmitter(module_name=module_name)
+    return emitter.emit(mir_module)
 
 
 # Subprocess harness script template.  The subprocess loads the LLVM IR from a

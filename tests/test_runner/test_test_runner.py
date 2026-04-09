@@ -285,22 +285,26 @@ class TestAssertMIR:
 
 class TestAssertLegacy:
     def test_assert_compiles_legacy(self) -> None:
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         src = "fn f() { assert 1 == 1 }"
         ast = parse(src, filename="test.mn")
         check_or_raise(ast, filename="test.mn")
-        emitter = PythonEmitter()
-        code = emitter.emit(ast)
+        mir_module = build_mir(ast, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert "assert" in code
 
     def test_assert_with_message_legacy(self) -> None:
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         src = 'fn f() { assert 1 == 2, "msg" }'
         ast = parse(src, filename="test.mn")
         check_or_raise(ast, filename="test.mn")
-        emitter = PythonEmitter()
-        code = emitter.emit(ast)
+        mir_module = build_mir(ast, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert "assert" in code
         assert "msg" in code

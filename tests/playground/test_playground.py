@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from mapanare.emit_python import PythonEmitter
+from mapanare.emit_python_mir import PythonMIREmitter
+from mapanare.lower import lower as build_mir
 from mapanare.optimizer import OptLevel, optimize
 from mapanare.parser import parse
 from mapanare.semantic import check_or_raise
@@ -29,8 +30,9 @@ def compile_and_run(source: str) -> str:
     ast = parse(source, filename="<test>")
     check_or_raise(ast, filename="<test>")
     ast, _ = optimize(ast, OptLevel.O0)
-    emitter = PythonEmitter()
-    python_code = emitter.emit(ast)
+    mir_module = build_mir(ast, module_name="test")
+    emitter = PythonMIREmitter()
+    python_code = emitter.emit(mir_module)
 
     import io
     from contextlib import redirect_stdout

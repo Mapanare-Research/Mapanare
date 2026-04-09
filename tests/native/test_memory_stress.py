@@ -147,7 +147,8 @@ class TestMemoryStressPython:
             RangeExpr,
             StringLiteral,
         )
-        from mapanare.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm_text import LLVMTextEmitter
+        from mapanare.lower import lower as build_mir
 
         fn = FnDef(
             name="stress",
@@ -183,9 +184,9 @@ class TestMemoryStressPython:
             ),
         )
 
-        emitter = LLVMEmitter()
-        module = emitter.emit_program(Program(definitions=[fn]))
-        ir_text = str(module)
+        mir_module = build_mir(Program(definitions=[fn]), module_name="test")
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_text = emitter.emit(mir_module)
 
         # Should have arena management
         assert "mn_arena_create" in ir_text

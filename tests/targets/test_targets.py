@@ -142,23 +142,35 @@ class TestListTargets:
 
 class TestLLVMEmitterTarget:
     def test_emit_llvm_sets_target_triple(self) -> None:
-        from mapanare.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm_text import LLVMTextEmitter
+        from mapanare.lower import lower as build_mir
+        from mapanare.parser import parse
 
-        emitter = LLVMEmitter(
+        ast = parse(SIMPLE_FN, filename="test.mn")
+        mir = build_mir(ast, module_name="test")
+        emitter = LLVMTextEmitter(
+            module_name="test",
             target_triple="x86_64-unknown-linux-gnu",
             data_layout="e-m:e-p270:32:32",
         )
-        assert emitter.module.triple == "x86_64-unknown-linux-gnu"
-        assert emitter.module.data_layout == "e-m:e-p270:32:32"
+        ir_text = emitter.emit(mir)
+        assert 'target triple = "x86_64-unknown-linux-gnu"' in ir_text
+        assert 'target datalayout = "e-m:e-p270:32:32"' in ir_text
 
     def test_emit_llvm_no_target_no_crash(self) -> None:
-        from mapanare.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm_text import LLVMTextEmitter
+        from mapanare.lower import lower as build_mir
+        from mapanare.parser import parse
 
-        emitter = LLVMEmitter()
-        assert emitter.module is not None
+        ast = parse(SIMPLE_FN, filename="test.mn")
+        mir = build_mir(ast, module_name="test")
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_text = emitter.emit(mir)
+        assert ir_text is not None
 
     def test_emit_llvm_ir_for_each_target(self) -> None:
-        from mapanare.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm_text import LLVMTextEmitter
+        from mapanare.lower import lower as build_mir
         from mapanare.parser import parse
         from mapanare.semantic import check_or_raise
 
@@ -166,12 +178,13 @@ class TestLLVMEmitterTarget:
         check_or_raise(ast, filename="test.mn")
 
         for name, target in TARGETS.items():
-            emitter = LLVMEmitter(
+            mir = build_mir(ast, module_name="test")
+            emitter = LLVMTextEmitter(
+                module_name="test",
                 target_triple=target.triple,
                 data_layout=target.data_layout,
             )
-            module = emitter.emit_program(ast)
-            ir_str = str(module)
+            ir_str = emitter.emit(mir)
             assert f'target triple = "{target.triple}"' in ir_str
             assert f'target datalayout = "{target.data_layout}"' in ir_str
 

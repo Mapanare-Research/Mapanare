@@ -181,13 +181,15 @@ class TestExternPythonEmit:
 
     def _emit(self, src: str, python_path: list[str] | None = None) -> str:
         """Parse, check, and emit Python code."""
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         ast = parse(src)
         errors = check(ast)
         assert len(errors) == 0, f"Unexpected errors: {errors}"
-        emitter = PythonEmitter(python_path=python_path)
-        return emitter.emit(ast)
+        mir_module = build_mir(ast, module_name="test")
+        emitter = PythonMIREmitter(python_path=python_path)
+        return emitter.emit(mir_module)
 
     def test_emits_import(self) -> None:
         """extern 'Python' fn generates an import statement."""
@@ -333,13 +335,15 @@ fn main() {
     print(result)
 }
 """
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         ast = parse(src)
         errors = check(ast)
         assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(ast)
+        mir_module = build_mir(ast, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert "import math" in code
         assert "math.sqrt" in code
 
@@ -352,13 +356,15 @@ fn main() {
     print(result)
 }
 """
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         ast = parse(src)
         errors = check(ast)
         assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(ast)
+        mir_module = build_mir(ast, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
 
         # Execute and capture output
         import io
@@ -382,13 +388,15 @@ fn main() {
     print(result)
 }
 """
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         ast = parse(src)
         errors = check(ast)
         assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(ast)
+        mir_module = build_mir(ast, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
 
         import io
         import sys
@@ -432,13 +440,15 @@ fn main() {
     let result: Result<String, String> = loads("{}")
 }
 """
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         ast = parse(src)
         errors = check(ast)
         assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(ast)
+        mir_module = build_mir(ast, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert "try:" in code
         assert "json.loads" in code
 
@@ -450,13 +460,15 @@ fn main() {
     let result: Result<String, String> = loads("not valid json")
 }
 """
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         ast = parse(src)
         errors = check(ast)
         assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(ast)
+        mir_module = build_mir(ast, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         # Execute — should not raise, error is captured in Err
         exec(compile(code, "<test>", "exec"), {"__name__": "__test__"})
 
@@ -481,10 +493,12 @@ fn main() {
         errors = check(ast)
         assert len(errors) == 0
 
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
-        emitter = PythonEmitter()
-        code = emitter.emit(ast)
+        mir_module = build_mir(ast, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert "import numpy" in code
         assert "numpy.array" in code
 
@@ -508,13 +522,15 @@ fn main() {
     print(s)
 }
 """
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
 
         ast = parse(src)
         errors = check(ast)
         assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(ast)
+        mir_module = build_mir(ast, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
         assert "import math" in code
         assert "import os" in code
 
@@ -544,7 +560,8 @@ fn main() {
 
     def test_full_pipeline_math(self) -> None:
         """Full pipeline: parse → check → optimize → emit → execute."""
-        from mapanare.emit_python import PythonEmitter
+        from mapanare.emit_python_mir import PythonMIREmitter
+        from mapanare.lower import lower as build_mir
         from mapanare.optimizer import OptLevel, optimize
 
         src = """extern "Python" fn math::sqrt(x: Float) -> Float
@@ -560,8 +577,9 @@ fn main() {
         errors = check(ast)
         assert len(errors) == 0
         ast, _ = optimize(ast, OptLevel.O2)
-        emitter = PythonEmitter()
-        code = emitter.emit(ast)
+        mir_module = build_mir(ast, module_name="test")
+        emitter = PythonMIREmitter()
+        code = emitter.emit(mir_module)
 
         import io
         import sys
@@ -583,14 +601,15 @@ fn main() -> Int {
     return 0
 }
 """
-        from mapanare.emit_llvm import LLVMEmitter
+        from mapanare.emit_llvm_text import LLVMTextEmitter
+        from mapanare.lower import lower as build_mir
 
         ast = parse(src)
         errors = check(ast)
         assert len(errors) == 0
-        emitter = LLVMEmitter(module_name="test_skip_python")
-        module = emitter.emit_program(ast)
-        ir = str(module)
+        mir_module = build_mir(ast, module_name="test_skip_python")
+        emitter = LLVMTextEmitter(module_name="test_skip_python")
+        ir = emitter.emit(mir_module)
         # Should NOT declare sqrt as extern (it's Python-only)
         assert "sqrt" not in ir
         # main should still exist

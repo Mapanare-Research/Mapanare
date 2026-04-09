@@ -13,16 +13,7 @@ Tests verify:
 
 from __future__ import annotations
 
-import pytest
-
-try:
-    from llvmlite import ir  # noqa: F401
-
-    HAS_LLVMLITE = True
-except ImportError:
-    HAS_LLVMLITE = False
-
-from mapanare.emit_llvm_mir import LLVMMIREmitter
+from mapanare.emit_llvm_text import LLVMTextEmitter
 from mapanare.mir import (
     BasicBlock,
     Call,
@@ -155,7 +146,6 @@ class TestStreamMIRPrinting:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not installed")
 class TestStreamInitEmission:
     """StreamInit emits __mn_stream_from_list call."""
 
@@ -177,9 +167,8 @@ class TestStreamInitEmission:
             ),
         ]
         module = _make_mir_module(instructions)
-        emitter = LLVMMIREmitter(module_name="test_stream_init")
-        llvm_mod = emitter.emit(module)
-        ir_str = str(llvm_mod)
+        emitter = LLVMTextEmitter(module_name="test_stream_init")
+        ir_str = emitter.emit(module)
 
         assert "__mn_stream_from_list" in ir_str
 
@@ -189,7 +178,6 @@ class TestStreamInitEmission:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not installed")
 class TestStreamOpEmission:
     """StreamOp instructions emit correct runtime calls."""
 
@@ -235,8 +223,8 @@ class TestStreamOpEmission:
         # Prepend const for 'n'
         instructions.insert(0, Const(dest=n_val, ty=_mir_type(TypeKind.INT), value=3))
         module = _make_mir_module(instructions)
-        emitter = LLVMMIREmitter(module_name="test_take")
-        ir_str = str(emitter.emit(module))
+        emitter = LLVMTextEmitter(module_name="test_take")
+        ir_str = emitter.emit(module)
         assert "__mn_stream_take" in ir_str
 
     def test_skip_emits_runtime_call(self):
@@ -248,8 +236,8 @@ class TestStreamOpEmission:
         )
         instructions.insert(0, Const(dest=n_val, ty=_mir_type(TypeKind.INT), value=2))
         module = _make_mir_module(instructions)
-        emitter = LLVMMIREmitter(module_name="test_skip")
-        ir_str = str(emitter.emit(module))
+        emitter = LLVMTextEmitter(module_name="test_skip")
+        ir_str = emitter.emit(module)
         assert "__mn_stream_skip" in ir_str
 
     def test_collect_emits_runtime_call(self):
@@ -259,8 +247,8 @@ class TestStreamOpEmission:
             ]
         )
         module = _make_mir_module(instructions)
-        emitter = LLVMMIREmitter(module_name="test_collect")
-        ir_str = str(emitter.emit(module))
+        emitter = LLVMTextEmitter(module_name="test_collect")
+        ir_str = emitter.emit(module)
         assert "__mn_stream_collect" in ir_str
 
     def test_map_emits_runtime_call(self):
@@ -271,8 +259,8 @@ class TestStreamOpEmission:
             ]
         )
         module = _make_mir_module(instructions)
-        emitter = LLVMMIREmitter(module_name="test_map")
-        ir_str = str(emitter.emit(module))
+        emitter = LLVMTextEmitter(module_name="test_map")
+        ir_str = emitter.emit(module)
         assert "__mn_stream_map" in ir_str
 
     def test_filter_emits_runtime_call(self):
@@ -282,8 +270,8 @@ class TestStreamOpEmission:
             ]
         )
         module = _make_mir_module(instructions)
-        emitter = LLVMMIREmitter(module_name="test_filter")
-        ir_str = str(emitter.emit(module))
+        emitter = LLVMTextEmitter(module_name="test_filter")
+        ir_str = emitter.emit(module)
         assert "__mn_stream_filter" in ir_str
 
     def test_chained_pipeline_emits_all(self):
@@ -298,8 +286,8 @@ class TestStreamOpEmission:
         )
         instructions.insert(0, Const(dest=n_val, ty=_mir_type(TypeKind.INT), value=3))
         module = _make_mir_module(instructions)
-        emitter = LLVMMIREmitter(module_name="test_chain")
-        ir_str = str(emitter.emit(module))
+        emitter = LLVMTextEmitter(module_name="test_chain")
+        ir_str = emitter.emit(module)
         assert "__mn_stream_filter" in ir_str
         assert "__mn_stream_take" in ir_str
         assert "__mn_stream_collect" in ir_str
@@ -310,7 +298,6 @@ class TestStreamOpEmission:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not installed")
 class TestStreamIteration:
     """for x in stream iteration emits __mn_stream_next."""
 
@@ -334,6 +321,6 @@ class TestStreamIteration:
             Call(dest=has_next, fn_name="__iter_has_next", args=[stream_dest]),
         ]
         module = _make_mir_module(instructions)
-        emitter = LLVMMIREmitter(module_name="test_stream_iter")
-        ir_str = str(emitter.emit(module))
+        emitter = LLVMTextEmitter(module_name="test_stream_iter")
+        ir_str = emitter.emit(module)
         assert "__mn_stream_next" in ir_str

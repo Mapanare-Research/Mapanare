@@ -1353,7 +1353,6 @@ class LLVMTextEmitter:
 
         # Per-function arena — disabled: text emitter never routes allocations
         # through mn_arena_alloc, so create/destroy was pure overhead.
-        # Arena allocation is properly implemented in emit_llvm_mir.py.
         self._arena_ptr: str | None = None
 
         # Determine which params use byref and if return uses sret

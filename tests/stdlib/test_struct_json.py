@@ -8,7 +8,7 @@ from mapanare.cli import _compile_to_llvm_ir
 
 
 def _compile_mir(src: str) -> str:
-    return _compile_to_llvm_ir(src, "test_struct_json.mn", use_mir=True)
+    return _compile_to_llvm_ir(src, "test_struct_json.mn")
 
 
 # ── encode_struct tests ──────────────────────────────────────────────

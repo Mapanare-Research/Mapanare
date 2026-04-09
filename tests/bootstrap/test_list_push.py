@@ -13,7 +13,7 @@ from mapanare.cli import _compile_to_llvm_ir
 
 def _to_llvm_ir_mir(source: str, filename: str = "test.mn") -> str:
     """Compile Mapanare source to LLVM IR string via MIR pipeline."""
-    return _compile_to_llvm_ir(source, filename, use_mir=True)
+    return _compile_to_llvm_ir(source, filename)
 
 
 class TestListPushLLVM:

@@ -58,7 +58,7 @@ _SQL_PURE = _stub_externs(_SQL_MN)
 
 def _compile_mir(source: str) -> str:
     """Compile via MIR-based LLVM emitter."""
-    return _compile_to_llvm_ir(source, "test_sql_core.mn", use_mir=True)
+    return _compile_to_llvm_ir(source, "test_sql_core.mn")
 
 
 def _sql_with_main(main_body: str) -> str:

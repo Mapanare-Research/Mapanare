@@ -263,6 +263,22 @@ class PythonMIREmitter:
         self._emit_line("return _mn_iters[id(it)]._next")
         self._indent -= 1
         self._emit_line("")
+        # Drop-glue stubs — MIR emits these for memory management but Python
+        # uses GC, so they are no-ops.
+        self._emit_line("")
+        self._emit_line("def __mn_range_free(*a): pass")
+        self._emit_line("def __mn_str_drop(*a): pass")
+        self._emit_line("def __mn_str_free(*a): pass")
+        self._emit_line("def __mn_list_free(*a): pass")
+        self._emit_line("def __mn_map_free(*a): pass")
+        self._emit_line("def __mn_stream_free(*a): pass")
+        self._emit_line("def __mn_agent_free(*a): pass")
+        self._emit_line("def __mn_signal_free(*a): pass")
+        self._emit_line("def __mn_closure_free(*a): pass")
+        self._emit_line("def __mn_option_drop(*a): pass")
+        self._emit_line("def __mn_result_drop(*a): pass")
+        self._emit_line("def __mn_enum_drop(*a): pass")
+        self._emit_line("")
 
     # ------------------------------------------------------------------
     # Structs

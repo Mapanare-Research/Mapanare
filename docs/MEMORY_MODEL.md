@@ -228,7 +228,7 @@ containing the parent enum type) would create infinite-sized LLVM types. The com
 auto-detects these and **boxes** the recursive field:
 
 ```
-// In the LLVM emitter (emit_llvm_mir.py, lines 295-309):
+// In the LLVM emitter (emit_llvm_text.py, lines 295-309):
 // _boxed_struct_fields: struct_name -> set of field indices
 // _boxed_enum_fields:   enum_name -> set of (variant_name, field_index)
 ```
@@ -236,7 +236,7 @@ auto-detects these and **boxes** the recursive field:
 Boxed fields are heap-allocated via `malloc` at construction time:
 
 ```
-// emit_llvm_mir.py line 2296:
+// emit_llvm_text.py line 2296:
 // Auto-boxed recursive field: heap-allocate and store pointer
 malloc_fn = self._rt_malloc()
 raw_ptr = builder.call(malloc_fn, [alloc_size])
@@ -740,7 +740,7 @@ When a closure captures free variables, the LLVM emitter allocates an environmen
 struct on the heap via `__mn_alloc`:
 
 ```
-// emit_llvm_mir.py line 3143-3147
+// emit_llvm_text.py line 3143-3147
 env_struct_ty = ir.LiteralStructType(cap_llvm_types)
 alloc_fn = __mn_alloc
 env_raw = builder.call(alloc_fn, [size_of(env_struct_ty)])
@@ -767,7 +767,7 @@ If a closure captures no free variables, the environment pointer is `null`. No h
 allocation occurs:
 
 ```
-// emit_llvm_mir.py line 3135
+// emit_llvm_text.py line 3135
 closure = { fn_ptr, null }
 ```
 
