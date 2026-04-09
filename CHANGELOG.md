@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.19.0] - 2026-04-09
+
+**Reactive Async — async/await keywords**
+
+### Added
+- `async` and `await` keywords in grammar, Python parser, and self-hosted lexer
+- `async fn` definition parses as FnDef with @async decorator
+- `await expr` parses as AwaitExpr AST node
+- `AwaitExpr` AST node in ast_nodes.py
+- `async_fn_def` and `await_expr` grammar rules
+- Golden test: `44_async_basic.mn`
+
+### Verified
+- 44/44 golden tests pass
+- 11/11 stage2 valid
+- async/await keywords recognized in both Python and self-hosted pipelines
+
 ## [4.18.0] - 2026-04-09
 
 **Tensors + @gpu — const keyword, tensor shape infrastructure**

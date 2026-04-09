@@ -2,7 +2,7 @@
 
 > async/await tied to Streams. No separate futures. Backpressure built in.
 
-**Status:** TODO
+**Status:** DONE (syntax + parsing, runtime wiring deferred)
 **Breaking:** No
 **Prerequisite:** v4.18.0
 

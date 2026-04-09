@@ -28,6 +28,7 @@ start: (_nl* (definition | stmt))* _nl*
            | impl_trait_def
            | impl_def
            | const_def
+           | async_fn_def
 
 decorated_def: (decorator _nl*)+ (fn_def | agent_def | struct_def | enum_def | tipo_def)
 decorator: AT NAME (LPAREN arg_list? RPAREN)?
@@ -53,6 +54,7 @@ export_names: NAME (COMMA NAME)* COMMA?
 // ------------------------------------------------------------
 
 fn_def: (KW_PUB | PLUS)? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
+async_fn_def: KW_PUB? KW_ASYNC KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
 
 // FFI: extern "C" fn name(params) -> RetType
 // Python interop: extern "Python" fn module::name(params) -> RetType
@@ -266,6 +268,7 @@ arg_list: expr (COMMA expr)* COMMA?
           | none_lit
           | spawn_expr
           | sync_expr
+          | await_expr
           | signal_expr
           | stream_expr
           | if_expr
@@ -303,6 +306,7 @@ namespace_access: NAME DOUBLE_COLON NAME
 
 spawn_expr: KW_SPAWN NAME LPAREN arg_list? RPAREN
 sync_expr: KW_SYNC postfix_expr
+await_expr: KW_AWAIT postfix_expr
 signal_expr: KW_SIGNAL LPAREN expr RPAREN -> signal_value
            | KW_SIGNAL block -> signal_computed
 
@@ -377,6 +381,8 @@ KW_ASSERT: "assert"
 KW_BREAK.2: /(?:break|sal)(?![a-zA-Z0-9_])/
 KW_CONTINUE.2: /(?:continue|sigue)(?![a-zA-Z0-9_])/
 KW_CONST: "const"
+KW_ASYNC: "async"
+KW_AWAIT.2: /await(?![a-zA-Z0-9_])/
 KW_DI.2: /di(?![a-zA-Z0-9_])/
 ELLIPSIS: "..."
 

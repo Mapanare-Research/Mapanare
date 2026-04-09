@@ -250,6 +250,13 @@ class SyncExpr(Expr):
 
 
 @dataclass
+class AwaitExpr(Expr):
+    """Await expression: `await stream_expr`."""
+
+    expr: Expr = field(default_factory=Expr)
+
+
+@dataclass
 class SendExpr(Expr):
     """Send expression: `agent.input <- value`."""
 

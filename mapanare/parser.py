@@ -15,6 +15,7 @@ from mapanare.ast_nodes import (
     AssertStmt,
     AssignExpr,
     ASTNode,
+    AwaitExpr,
     BinaryExpr,
     Block,
     BoolLiteral,
@@ -947,6 +948,43 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
     def sync_expr(self, children: list[Any]) -> SyncExpr:
         items = _filter(children)
         return SyncExpr(expr=items[0], span=_span_from_children(children))
+
+    def await_expr(self, children: list[Any]) -> AwaitExpr:
+        items = _filter(children)
+        return AwaitExpr(expr=items[0], span=_span_from_children(children))
+
+    def async_fn_def(self, children: list[Any]) -> FnDef:
+        """async fn → FnDef with @async decorator."""
+        items = _filter(children)
+        public = _has_pub_prefix(children)
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
+            idx += 1
+        name = str(items[idx])
+        idx += 1
+        type_params: list[str] = []
+        if idx < len(items) and isinstance(items[idx], list) and all(isinstance(t, str) for t in items[idx]):
+            type_params = items[idx]
+            idx += 1
+        params: list[Param] = []
+        if idx < len(items) and isinstance(items[idx], list) and all(isinstance(p, Param) for p in items[idx]):
+            params = items[idx]
+            idx += 1
+        return_type = None
+        if idx < len(items) and isinstance(items[idx], TypeExpr):
+            return_type = items[idx]
+            idx += 1
+        body = items[idx] if idx < len(items) and isinstance(items[idx], Block) else Block()
+        return FnDef(
+            name=name,
+            public=public,
+            type_params=type_params,
+            params=params,
+            return_type=return_type,
+            body=body,
+            decorators=[Decorator(name="async")],
+            span=_span_from_children(children),
+        )
 
     def signal_value(self, children: list[Any]) -> SignalExpr:
         items = _filter(children)
