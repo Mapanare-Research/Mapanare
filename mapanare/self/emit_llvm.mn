@@ -368,7 +368,7 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mapanare_tensor_mul", "ptr", "ptr, ptr")
     s = declare_runtime_fn(s, "__mapanare_tensor_div", "ptr", "ptr, ptr")
     s = declare_runtime_fn(s, "__mapanare_matmul", "ptr", "ptr, ptr")
-    s = declare_runtime_fn(s, "__mapanare_tensor_alloc", "ptr", "i64, i64*, i64")
+    s = declare_runtime_fn(s, "__mapanare_tensor_alloc", "ptr", "i64, ptr, i64")
     s = declare_runtime_fn(s, "__mapanare_tensor_free", "void", "ptr")
     s = declare_runtime_fn(s, "__mapanare_tensor_shape_eq", "i1", "ptr, ptr")
     s = declare_runtime_fn(s, "__mapanare_detect_gpus", "ptr", "")
@@ -789,7 +789,11 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
 
     // Function constant: emit function pointer reference
     if ty.kind == "fn" {
-        s = emit_line(s, "  " + dn + " = bitcast void ()* @" + val + " to ptr")
+        // With opaque pointers, store function ptr via alloca+store+load
+        let fn_slot: String = dn + ".fslot"
+        s = emit_line(s, "  " + fn_slot + " = alloca ptr")
+        s = emit_line(s, "  store ptr @" + val + ", ptr " + fn_slot)
+        s = emit_line(s, "  " + dn + " = load ptr, ptr " + fn_slot)
         return s
     }
 

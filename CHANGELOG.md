@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-04-08
+
+**Self-Hosted Quality — Clean Compiler**
+
+### Fixed
+- Replaced `i64*` typed pointer in tensor alloc with opaque `ptr`
+- Replaced `void ()*` bitcast with opaque-ptr alloca+store+load pattern
+- Self-hosted compiler emits opaque-ptr-compatible LLVM IR
+
 ## [4.5.0] - 2026-04-08
 
 **Type System Tightening**
@@ -1120,7 +1129,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.5.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.6.0...HEAD
+[4.6.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.2.0...v4.3.0

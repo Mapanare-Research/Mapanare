@@ -2,7 +2,7 @@
 
 > No workarounds. No manual tables. No string-typed enums.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.5.0 (type system must be sound before cleaning up the compiler)
 
