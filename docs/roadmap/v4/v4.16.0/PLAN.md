@@ -2,7 +2,7 @@
 
 > Dead block elimination enabled. Constant and copy propagation. Measurable IR reduction.
 
-**Status:** TODO
+**Status:** PARTIAL (const prop done, dead block elim deferred)
 **Breaking:** No
 **Prerequisite:** v4.15.0
 

@@ -11168,7 +11168,109 @@ fn constant_fold_function(f: MIRFunction) -> MIRFunction {
 }
 
 // ---------------------------------------------------------------------------
-// Pass 2: Dead block elimination
+// Pass 2: Constant propagation
+// If Const(dest, ty, val), replace all uses of dest.name with the constant value.
+// ---------------------------------------------------------------------------
+
+struct ConstEntry {
+    name: String,
+    value: String,
+    ty: MIRType
+}
+
+fn find_const(consts: List<ConstEntry>, name: String) -> Option<String> {
+    let mut i: Int = 0
+    for _ in 0..5000 {
+        if i >= len(consts) { return none }
+        if consts[i].name == name { return Some(consts[i].value) }
+        i = i + 1
+    }
+    return none
+}
+
+fn find_const_ty(consts: List<ConstEntry>, name: String) -> MIRType {
+    let mut i: Int = 0
+    for _ in 0..5000 {
+        if i >= len(consts) { return mir_unknown() }
+        if consts[i].name == name { return consts[i].ty }
+        i = i + 1
+    }
+    return mir_unknown()
+}
+
+fn replace_value(v: Value, consts: List<ConstEntry>) -> Value {
+    let opt: Option<String> = find_const(consts, v.name)
+    match opt {
+        Some(cv) => {
+            let ct: MIRType = find_const_ty(consts, v.name)
+            return new Value { name: cv, ty: ct }
+        },
+        _ => { return v }
+    }
+}
+
+fn propagate_in_instruction(inst: Instruction, consts: List<ConstEntry>) -> Instruction {
+    let ik: String = instr_kind(inst)
+    // Replace operands in BinOp
+    if ik == "binop" {
+        let lhs: Value = replace_value(instr_binop_lhs(inst), consts)
+        let rhs: Value = replace_value(instr_binop_rhs(inst), consts)
+        return Instruction::BinOp(instr_dest(inst), instr_binop_op(inst), lhs, rhs)
+    }
+    // Replace source in Copy
+    if ik == "copy" {
+        let src: Value = replace_value(instr_copy_src(inst), consts)
+        return Instruction::Copy(instr_dest(inst), src)
+    }
+    return inst
+}
+
+fn const_prop_function(f: MIRFunction) -> MIRFunction {
+    // Collect all Const definitions across all blocks
+    let mut consts: List<ConstEntry> = []
+    let mut bi: Int = 0
+    for _ in 0..5000 {
+        if bi >= len(f.blocks) { break }
+        let bb: BasicBlock = f.blocks[bi]
+        let mut ii: Int = 0
+        for _ in 0..10000 {
+            if ii >= len(bb.instructions) { break }
+            let inst: Instruction = bb.instructions[ii]
+            if instr_kind(inst) == "const" {
+                let dest: Value = instr_dest(inst)
+                let cval: String = instr_const_val(inst)
+                // Only propagate simple integer constants (safe for BinOp operands)
+                if len(cval) > 0 && dest.name.starts_with("%") && dest.ty.kind == TK_INT() {
+                    let entry: ConstEntry = new ConstEntry { name: dest.name, value: cval, ty: dest.ty }
+                    consts.push(entry)
+                }
+            }
+            ii = ii + 1
+        }
+        bi = bi + 1
+    }
+    if len(consts) == 0 { return f }
+    // Propagate constants through instructions
+    let mut new_blocks: List<BasicBlock> = []
+    let mut bi2: Int = 0
+    for _ in 0..5000 {
+        if bi2 >= len(f.blocks) { break }
+        let bb: BasicBlock = f.blocks[bi2]
+        let mut new_instrs: List<Instruction> = []
+        let mut ji: Int = 0
+        for _ in 0..10000 {
+            if ji >= len(bb.instructions) { break }
+            new_instrs.push(propagate_in_instruction(bb.instructions[ji], consts))
+            ji = ji + 1
+        }
+        new_blocks.push(new BasicBlock { label: bb.label, instructions: new_instrs })
+        bi2 = bi2 + 1
+    }
+    return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: new_blocks, decorators: f.decorators, is_public: f.is_public }
+}
+
+// ---------------------------------------------------------------------------
+// Pass 3: Dead block elimination
 // Walk from entry block, mark reachable blocks, delete unreachable
 // ---------------------------------------------------------------------------
 
@@ -11249,18 +11351,14 @@ fn dead_block_elim_function(f: MIRFunction) -> MIRFunction {
     let mut new_blocks: List<BasicBlock> = []
     let mut ki: Int = 0
     for _ in 0..5000 {
-        if ki >= len(f.blocks) {
-            if len(new_blocks) < len(f.blocks) {
-                return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: new_blocks, decorators: f.decorators, is_public: f.is_public }
-            }
-            return f
-        }
+        if ki >= len(f.blocks) { break }
         if is_in_list(f.blocks[ki].label, reachable) {
             new_blocks.push(f.blocks[ki])
         }
         ki = ki + 1
     }
-    return f
+    if len(new_blocks) >= len(f.blocks) { return f }
+    return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: new_blocks, decorators: f.decorators, is_public: f.is_public }
 }
 
 // ---------------------------------------------------------------------------
@@ -11272,14 +11370,12 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule {
     let mut i: Int = 0
     for _ in 0..5000 {
         if i >= len(module.functions) {
-            return new MIRModule { name: module.name, functions: new_fns, structs: module.structs, enums: module.enums, extern_fns: module.extern_fns, agents: module.agents, pipes: module.pipes, imports: module.imports, trait_names: module.trait_names }
+            return new MIRModule { name: module.name, functions: new_fns, structs: module.structs, enums: module.enums, extern_fns: module.extern_fns, agents: module.agents, pipes: module.pipes, imports: module.imports, trait_names: module.trait_names, consts: module.consts }
         }
         let f: MIRFunction = module.functions[i]
         let f2: MIRFunction = constant_fold_function(f)
-        // Dead block elimination disabled: the emitter references blocks
-        // by label even if they're unreachable (e.g., match arm blocks).
-        // Removing them produces invalid IR. Enable when emitter is updated.
-        new_fns.push(f2)
+        let f3: MIRFunction = const_prop_function(f2)
+        new_fns.push(f3)
         i = i + 1
     }
     return module

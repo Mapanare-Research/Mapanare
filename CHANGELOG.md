@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.16.0] - 2026-04-09
+
+**Optimizer — Constant Propagation**
+
+### Added
+- Constant propagation pass in `mir_opt.mn`: propagates integer constants through Copy and BinOp instructions
+- `ConstEntry` struct for tracking constant name→value mappings
+- `const_prop_function`, `propagate_in_instruction`, `replace_value` optimizer functions
+- PHI cleanup infrastructure for dead block elimination (deferred)
+- Fixed `MIRModule` constructor in `optimize_mir` to include `consts` field
+
+### Changed
+- Dead block elimination remains disabled (BFS misses while/for header block references from self-hosted lowerer patterns)
+
+### Verified
+- 41/41 golden tests pass
+- 11/11 stage2 valid
+
 ## [4.15.0] - 2026-04-09
 
 **Module-Level Let Constants**
