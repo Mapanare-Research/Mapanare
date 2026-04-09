@@ -7,12 +7,13 @@
 
 ## Goal
 
-Three phases:
+Four phases:
 
 1. **v4.0.0** — Production release. Other people can use it.
 2. **v4.1.0-v4.7.0** — Architectural refactor. Fix memory leaks, thread safety, type system, and dead code. No new language features until v4.7.0.
 3. **v4.8.0-v4.13.0** — Deep fixes. Workarounds, memory safety, drop glue, MIRType enum, optimizer, Culebra gate.
-4. **v4.14.0+** — Language evolution. Tensor shapes, GPU auto-kernels, reactive async, FFI bindings.
+4. **v4.14.0-v4.17.0** — Final compiler maturity. Fix remaining bugs, complete optimizer, achieve fixed-point bootstrap (Python independence).
+5. **v4.18.0-v4.20.0** — Language evolution. Tensor shapes, GPU auto-kernels, reactive async, FFI bindings.
 
 ## Headline Techs
 
@@ -43,7 +44,13 @@ Three phases:
 | **v4.11.0** | | Global Constants | Add module-level constant support, MIRType string→enum |
 | **v4.12.0** | | Self-Hosted Optimizer | Constant folding, propagation, dead block elimination |
 | **v4.13.0** | | Foundation Gate | Culebra clean, valgrind clean, all exit criteria met |
-| **v4.14.0+** | | Language Evolution | Tensor shapes, `@gpu` auto-kernels, reactive async, FFI bindings |
+| **v4.14.0** | | Break Fix + 11/11 Stage2 | Fix 3 CRITICAL break-inside-nested-control, fix main.mn stage2 crash, 0 Culebra CRITICAL |
+| **v4.15.0** | | Module-Level Let + MIRType Enum | LetDef in AST, top-level `let`, TypeKind enum replaces string-based MIRType.kind |
+| **v4.16.0** | | Optimizer Complete | Enable dead block elimination, constant propagation, copy propagation, measure IR reduction |
+| **v4.17.0** | | Fixed-Point Bootstrap | mnc-stage1 compiles itself, 3-stage verification, Python bootstrap becomes optional |
+| **v4.18.0** | | Tensor Shapes + @gpu Auto-Kernels | `const` keyword, `Tensor<Float, [3,3]>` shapes, `@gpu` extracts function body to PTX/SPIR-V |
+| **v4.19.0** | | Reactive Async | async/await tied to Streams, backpressure via ring buffers, cooperative scheduling |
+| **v4.20.0** | | Auto-Generated FFI Bindings | `mapanare bind --lang python\|ts\|go` generates bindings from .mn signatures |
 
 ## What v4.0.0 Delivered
 
@@ -113,7 +120,17 @@ v4.6.0  Self-Hosted ─── clean up the compiler itself (needs type system fr
    │
 v4.7.0  Optimizer ───── better code generation (needs correct compiler from v4.6.0)
    │
-v4.8.0+ Evolution ──── new language features (ONLY after v4.7.0 is complete)
+v4.8.0-v4.13.0  Deep Fixes ── workarounds, memory safety, Culebra gate
+   │
+v4.14.0 Break Fix ───── fix CRITICAL break bug, 11/11 stage2
+   │
+v4.15.0 Module Let ──── top-level constants, MIRType enum
+   │
+v4.16.0 Optimizer ───── dead block elim, constant/copy propagation
+   │
+v4.17.0 Fixed Point ─── compiler compiles itself, Python optional
+   │
+v4.18.0+ Evolution ──── new language features (ONLY after v4.17.0 is complete)
 ```
 
 Each version builds on the previous. You can't fix drop glue with 3 competing
