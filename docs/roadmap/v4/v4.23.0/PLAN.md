@@ -2,7 +2,7 @@
 
 > Replace string-based type comparisons with a real TypeKind enum. Zero TK_*() calls.
 
-**Status:** TODO
+**Status:** DONE (adapted: Int tags instead of TypeKind enum — Python bootstrap can't handle enum-typed struct fields)
 **Breaking:** No
 **Prerequisite:** v4.22.0
 

@@ -5633,64 +5633,92 @@ fn check_or_raise(program: Program, filename: String) -> List<SemanticError> {
 
 struct MIRType {
     name: String,
-    kind: String,
+    kind: Int,
     args: List<MIRType>
 }
 
-// MIRType kind constants — use these instead of raw string literals
-pub fn TK_INT() -> String { return "int" }
-pub fn TK_FLOAT() -> String { return "float" }
-pub fn TK_BOOL() -> String { return "bool" }
-pub fn TK_STRING() -> String { return "string" }
-pub fn TK_VOID() -> String { return "void" }
-pub fn TK_LIST() -> String { return "list" }
-pub fn TK_MAP() -> String { return "map" }
-pub fn TK_OPTION() -> String { return "option" }
-pub fn TK_RESULT() -> String { return "result" }
-pub fn TK_ENUM() -> String { return "enum" }
-pub fn TK_STRUCT() -> String { return "struct" }
-pub fn TK_FN() -> String { return "fn" }
-pub fn TK_SIGNAL() -> String { return "signal" }
-pub fn TK_UNKNOWN() -> String { return "unknown" }
+// MIRType kind constants — integer tags (no string comparisons)
+pub fn TK_INT() -> Int { return 0 }
+pub fn TK_FLOAT() -> Int { return 1 }
+pub fn TK_BOOL() -> Int { return 2 }
+pub fn TK_STRING() -> Int { return 3 }
+pub fn TK_VOID() -> Int { return 4 }
+pub fn TK_LIST() -> Int { return 5 }
+pub fn TK_MAP() -> Int { return 6 }
+pub fn TK_OPTION() -> Int { return 7 }
+pub fn TK_RESULT() -> Int { return 8 }
+pub fn TK_ENUM() -> Int { return 9 }
+pub fn TK_STRUCT() -> Int { return 10 }
+pub fn TK_FN() -> Int { return 11 }
+pub fn TK_SIGNAL() -> Int { return 12 }
+pub fn TK_UNKNOWN() -> Int { return 13 }
+pub fn TK_CHAR() -> Int { return 14 }
+pub fn TK_AGENT() -> Int { return 15 }
+pub fn TK_RANGE() -> Int { return 16 }
+pub fn TK_STREAM() -> Int { return 17 }
+pub fn TK_TENSOR() -> Int { return 18 }
+pub fn TK_PTR() -> Int { return 19 }
 
-fn new_mir_type(name: String, kind: String) -> MIRType {
+// Convert kind tag to string name (for emit_llvm_ir and diagnostics)
+pub fn tk_name(k: Int) -> String {
+    if k == 0 { return "int" }
+    if k == 1 { return "float" }
+    if k == 2 { return "bool" }
+    if k == 3 { return "string" }
+    if k == 4 { return "void" }
+    if k == 5 { return "list" }
+    if k == 6 { return "map" }
+    if k == 7 { return "option" }
+    if k == 8 { return "result" }
+    if k == 9 { return "enum" }
+    if k == 10 { return "struct" }
+    if k == 11 { return "fn" }
+    if k == 12 { return "signal" }
+    if k == 13 { return "unknown" }
+    if k == 14 { return "char" }
+    if k == 15 { return "agent" }
+    if k == 16 { return "range" }
+    return "unknown"
+}
+
+fn new_mir_type(name: String, kind: Int) -> MIRType {
     let args: List<MIRType> = []
     return new MIRType { name: name, kind: kind, args: args }
 }
 
-fn new_mir_type_with_args(name: String, kind: String, args: List<MIRType>) -> MIRType {
+fn new_mir_type_with_args(name: String, kind: Int, args: List<MIRType>) -> MIRType {
     return new MIRType { name: name, kind: kind, args: args }
 }
 
-fn mir_int() -> MIRType { return new_mir_type("Int", "int") }
-fn mir_float() -> MIRType { return new_mir_type("Float", "float") }
-fn mir_bool() -> MIRType { return new_mir_type("Bool", "bool") }
-fn mir_string() -> MIRType { return new_mir_type("String", "string") }
-fn mir_void() -> MIRType { return new_mir_type("Void", "void") }
-fn mir_unknown() -> MIRType { return new_mir_type("<unknown>", "unknown") }
-fn mir_option() -> MIRType { return new_mir_type("Option", "option") }
+fn mir_int() -> MIRType { return new_mir_type("Int", TK_INT()) }
+fn mir_float() -> MIRType { return new_mir_type("Float", TK_FLOAT()) }
+fn mir_bool() -> MIRType { return new_mir_type("Bool", TK_BOOL()) }
+fn mir_string() -> MIRType { return new_mir_type("String", TK_STRING()) }
+fn mir_void() -> MIRType { return new_mir_type("Void", TK_VOID()) }
+fn mir_unknown() -> MIRType { return new_mir_type("<unknown>", TK_UNKNOWN()) }
+fn mir_option() -> MIRType { return new_mir_type("Option", TK_OPTION()) }
 fn mir_option_of(inner: MIRType) -> MIRType {
-    let mut t: MIRType = new_mir_type("Option", "option")
+    let mut t: MIRType = new_mir_type("Option", TK_OPTION())
     t.args.push(inner)
     return t
 }
-fn mir_result() -> MIRType { return new_mir_type("Result", "result") }
-fn mir_list() -> MIRType { return new_mir_type("List", "list") }
-fn mir_map() -> MIRType { return new_mir_type("Map", "map") }
-fn mir_signal() -> MIRType { return new_mir_type("Signal", "signal") }
-fn mir_range() -> MIRType { return new_mir_type("Range", "range") }
-fn mir_fn_type() -> MIRType { return new_mir_type("<fn>", "fn") }
+fn mir_result() -> MIRType { return new_mir_type("Result", TK_RESULT()) }
+fn mir_list() -> MIRType { return new_mir_type("List", TK_LIST()) }
+fn mir_map() -> MIRType { return new_mir_type("Map", TK_MAP()) }
+fn mir_signal() -> MIRType { return new_mir_type("Signal", TK_SIGNAL()) }
+fn mir_range() -> MIRType { return new_mir_type("Range", TK_RANGE()) }
+fn mir_fn_type() -> MIRType { return new_mir_type("<fn>", TK_FN()) }
 
 fn mir_struct(name: String) -> MIRType {
-    return new_mir_type(name, "struct")
+    return new_mir_type(name, TK_STRUCT())
 }
 
 fn mir_enum(name: String) -> MIRType {
-    return new_mir_type(name, "enum")
+    return new_mir_type(name, TK_ENUM())
 }
 
 fn mir_agent(name: String) -> MIRType {
-    return new_mir_type(name, "agent")
+    return new_mir_type(name, TK_AGENT())
 }
 
 // ---------------------------------------------------------------------------
@@ -6830,11 +6858,11 @@ fn lower_resolve_type_expr(te: TypeExpr) -> MIRType {
             let mut i: Int = 0
             for _ in 0..100 {
                 if i >= len(args) {
-                    let kind: String = kind_from_name(name)
-                    if kind != "unknown" {
+                    let kind: Int = kind_from_name(name)
+                    if kind != TK_UNKNOWN() {
                         return new_mir_type_with_args(name, kind, resolved_args)
                     }
-                    return new_mir_type_with_args(name, "struct", resolved_args)
+                    return new_mir_type_with_args(name, TK_STRUCT(), resolved_args)
                 }
                 let arg: TypeExpr = args[i]
                 let resolved: MIRType = lower_resolve_type_expr(arg)
@@ -6892,23 +6920,23 @@ fn resolve_type_name_checked(st: LowerState, name: String) -> MIRType {
     return mir_struct(name)
 }
 
-fn kind_from_name(name: String) -> String {
-    if name == "Int" { return "int" }
-    if name == "Float" { return "float" }
-    if name == "Bool" { return "bool" }
-    if name == "String" { return "string" }
-    if name == "Char" { return "string" }
-    if name == "Void" { return "void" }
-    if name == "Option" { return "option" }
-    if name == "Result" { return "result" }
-    if name == "List" { return "list" }
-    if name == "Map" { return "map" }
-    if name == "Signal" { return "signal" }
-    if name == "Stream" { return "stream" }
-    if name == "Agent" { return "agent" }
-    if name == "Tensor" { return "tensor" }
-    if name == "Range" { return "range" }
-    return "unknown"
+fn kind_from_name(name: String) -> Int {
+    if name == "Int" { return TK_INT() }
+    if name == "Float" { return TK_FLOAT() }
+    if name == "Bool" { return TK_BOOL() }
+    if name == "String" { return TK_STRING() }
+    if name == "Char" { return TK_STRING() }
+    if name == "Void" { return TK_VOID() }
+    if name == "Option" { return TK_OPTION() }
+    if name == "Result" { return TK_RESULT() }
+    if name == "List" { return TK_LIST() }
+    if name == "Map" { return TK_MAP() }
+    if name == "Signal" { return TK_SIGNAL() }
+    if name == "Stream" { return TK_STREAM() }
+    if name == "Agent" { return TK_AGENT() }
+    if name == "Tensor" { return TK_TENSOR() }
+    if name == "Range" { return TK_RANGE() }
+    return TK_UNKNOWN()
 }
 
 fn lower_resolve_type_opt(te: Option<TypeExpr>) -> MIRType {
@@ -6950,8 +6978,8 @@ fn lower_resolve_type_checked(st: LowerState, te: TypeExpr) -> MIRType {
             // Use recursion instead of for-loop to avoid the alloca aliasing bug
             let init_args: List<MIRType> = []
             let resolved_args: List<MIRType> = resolve_generic_args_rec(st, args, 0, init_args)
-            let kind: String = kind_from_name(name)
-            if kind != "unknown" {
+            let kind: Int = kind_from_name(name)
+            if kind != TK_UNKNOWN() {
                 return new_mir_type_with_args(name, kind, resolved_args)
             }
             let checked: MIRType = resolve_type_name_checked(st, name)
@@ -7022,15 +7050,15 @@ fn is_comparison_binop(op: BinOpKind) -> Bool {
     }
 }
 
-fn kind_to_type_name(kind: String) -> String {
-    if kind == "int" { return "Int" }
-    if kind == "float" { return "Float" }
-    if kind == "bool" { return "Bool" }
-    if kind == "string" { return "String" }
-    if kind == "char" { return "Char" }
-    if kind == "void" { return "Void" }
-    if kind == "list" { return "List" }
-    if kind == "map" { return "Map" }
+fn kind_to_type_name(kind: Int) -> String {
+    if kind == TK_INT() { return "Int" }
+    if kind == TK_FLOAT() { return "Float" }
+    if kind == TK_BOOL() { return "Bool" }
+    if kind == TK_STRING() { return "String" }
+    if kind == TK_CHAR() { return "Char" }
+    if kind == TK_VOID() { return "Void" }
+    if kind == TK_LIST() { return "List" }
+    if kind == TK_MAP() { return "Map" }
     return "Int"
 }
 
@@ -7189,7 +7217,7 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         // This avoids the nested MIRModule.functions COW corruption issue.
         let ret_ty: MIRType = resolve_return_type_checked(st, fd.return_type)
         let ret_key: String = "__ret__" + fd.name
-        let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+        let ret_val: String = tk_name(ret_ty.kind) + ":" + ret_ty.name
         let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
         let mut new_st_fn: LowerState = st
         let mut lv_fn: List<LambdaEntry> = new_st_fn.lambda_vars
@@ -7258,7 +7286,7 @@ fn register_extern_fn(st: LowerState, defn: Definition) -> LowerState {
 
     // Register function return type in lambda_vars (for call resolution)
     let ret_key: String = "__ret__" + fn_name
-    let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+    let ret_val: String = tk_name(ret_ty.kind) + ":" + ret_ty.name
     let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
     let mut s: LowerState = st
     let mut lv: List<LambdaEntry> = s.lambda_vars
@@ -8522,19 +8550,19 @@ fn mangle_generic_name(base: String, arg_types: List<MIRType>) -> String {
     for _ in 0..20 {
         if i < len(arg_types) {
             if i > 0 { result = result + "_" }
-            let tk: String = arg_types[i].kind
-            if tk == "int" { result = result + "Int" }
-            if tk == "float" { result = result + "Float" }
-            if tk == "bool" { result = result + "Bool" }
-            if tk == "string" { result = result + "String" }
-            if tk == "struct" { result = result + arg_types[i].name }
-            if tk == "enum" { result = result + arg_types[i].name }
-            if tk == "list" { result = result + "List" }
-            if tk == "map" { result = result + "Map" }
-            if tk == "option" { result = result + "Option" }
-            if tk == "result" { result = result + "Result" }
-            if tk == "void" { result = result + "Void" }
-            if tk == "unknown" { result = result + "Unknown" }
+            let tk: Int = arg_types[i].kind
+            if tk == TK_INT() { result = result + "Int" }
+            if tk == TK_FLOAT() { result = result + "Float" }
+            if tk == TK_BOOL() { result = result + "Bool" }
+            if tk == TK_STRING() { result = result + "String" }
+            if tk == TK_STRUCT() { result = result + arg_types[i].name }
+            if tk == TK_ENUM() { result = result + arg_types[i].name }
+            if tk == TK_LIST() { result = result + "List" }
+            if tk == TK_MAP() { result = result + "Map" }
+            if tk == TK_OPTION() { result = result + "Option" }
+            if tk == TK_RESULT() { result = result + "Result" }
+            if tk == TK_VOID() { result = result + "Void" }
+            if tk == TK_UNKNOWN() { result = result + "Unknown" }
             i = i + 1
         }
     }
@@ -8807,7 +8835,7 @@ fn monomorphize_impl_methods(st: LowerState, base_name: String, mangled: String,
             // Register return type
             let ret_ty: MIRType = resolve_return_type_checked(s, fixed.return_type)
             let ret_key: String = "__ret__" + mir_name
-            let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+            let ret_val: String = tk_name(ret_ty.kind) + ":" + ret_ty.name
             let ret_entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
             let mut lv_list: List<LambdaEntry> = s.lambda_vars
             lv_list.push(ret_entry)
@@ -10421,8 +10449,8 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                 s = emit_instr(s, Instruction::Jump(merge_label))
                 // Track arm result for phi (include all arms that reach merge)
                 // Use zeroinitializer for void/unknown results to avoid referencing %void
-                let arm_kind: String = arm_val_r.value.ty.kind
-                if arm_kind == "void" || arm_kind == "unknown" || arm_val_r.value.name == "%void" {
+                let arm_kind: Int = arm_val_r.value.ty.kind
+                if arm_kind == TK_VOID() || arm_kind == TK_UNKNOWN() || arm_val_r.value.name == "%void" {
                     let zero_arm: Value = new_value("zeroinitializer", arm_val_r.value.ty)
                     let pe_zero: PhiEntry = new_phi_entry(exit_label, zero_arm)
                     arm_results.push(pe_zero)
@@ -10903,22 +10931,22 @@ fn llvm_list_rt() -> String {
 // ---------------------------------------------------------------------------
 
 fn resolve_mir_type(t: MIRType) -> String {
-    if t.kind == "int" { return llvm_int() }
-    if t.kind == "float" { return llvm_float() }
-    if t.kind == "bool" { return llvm_bool() }
-    if t.kind == "string" { return llvm_string() }
-    if t.kind == "void" { return llvm_void() }
-    if t.kind == "char" { return llvm_char() }
-    if t.kind == "list" { return llvm_list_rt() }
-    if t.kind == "map" { return llvm_map_type() }
-    if t.kind == "option" {
+    if t.kind == TK_INT() { return llvm_int() }
+    if t.kind == TK_FLOAT() { return llvm_float() }
+    if t.kind == TK_BOOL() { return llvm_bool() }
+    if t.kind == TK_STRING() { return llvm_string() }
+    if t.kind == TK_VOID() { return llvm_void() }
+    if t.kind == TK_CHAR() { return llvm_char() }
+    if t.kind == TK_LIST() { return llvm_list_rt() }
+    if t.kind == TK_MAP() { return llvm_map_type() }
+    if t.kind == TK_OPTION() {
         // Universal type erasure: all Option types use {i1, ptr}.
         // The payload is stored via alloca and accessed through the ptr.
         // This ensures Option types are always consistent between
         // function signatures and match extraction.
         return llvm_option_type(llvm_ptr())
     }
-    if t.kind == "result" {
+    if t.kind == TK_RESULT() {
         if len(t.args) >= 2 {
             let ok_ty: String = resolve_mir_type(t.args[0])
             let err_ty: String = resolve_mir_type(t.args[1])
@@ -10926,13 +10954,13 @@ fn resolve_mir_type(t: MIRType) -> String {
         }
         return llvm_result_type(llvm_ptr(), llvm_ptr())
     }
-    if t.kind == "signal" { return llvm_ptr() }
-    if t.kind == "agent" { return llvm_ptr() }
-    if t.kind == "struct" { return "%struct." + t.name }
-    if t.kind == "enum" { return "%enum." + t.name }
-    if t.kind == "range" { return "{ i64, i64 }" }
-    if t.kind == "fn" { return llvm_ptr() }
-    if t.kind == "unknown" { return llvm_int() }
+    if t.kind == TK_SIGNAL() { return llvm_ptr() }
+    if t.kind == TK_AGENT() { return llvm_ptr() }
+    if t.kind == TK_STRUCT() { return "%struct." + t.name }
+    if t.kind == TK_ENUM() { return "%enum." + t.name }
+    if t.kind == TK_RANGE() { return "{ i64, i64 }" }
+    if t.kind == TK_FN() { return llvm_ptr() }
+    if t.kind == TK_UNKNOWN() { return llvm_int() }
     return llvm_int()
 }
 
@@ -12876,7 +12904,7 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
     let mut s: EmitState = st
     if len(args) >= 2 {
         let list_ref: String = args[0].name
-        let list_ty_kind: String = args[0].ty.kind
+        let list_ty_kind: Int = args[0].ty.kind
         let elem_name: String = args[1].name
         let mut elem_ty: String = resolve_type(st, args[1].ty)
         if elem_ty == "i64" { elem_ty = resolve_mir_type(args[1].ty) }
@@ -12912,7 +12940,7 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
         s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
         s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ea)
 
-        if list_ref.contains(".addr") && list_ty_kind == "struct" {
+        if list_ref.contains(".addr") && list_ty_kind == TK_STRUCT() {
             // Struct field push: GEP to field, load list to temp, push to temp,
             // WRITE BACK to struct field (matches Python text emitter pattern).
             let type_name: String = args[0].ty.name

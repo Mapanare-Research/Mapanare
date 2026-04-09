@@ -1345,7 +1345,7 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
     let mut s: EmitState = st
     if len(args) >= 2 {
         let list_ref: String = args[0].name
-        let list_ty_kind: String = args[0].ty.kind
+        let list_ty_kind: Int = args[0].ty.kind
         let elem_name: String = args[1].name
         let mut elem_ty: String = resolve_type(st, args[1].ty)
         if elem_ty == "i64" { elem_ty = resolve_mir_type(args[1].ty) }
@@ -1381,7 +1381,7 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
         s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
         s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ea)
 
-        if list_ref.contains(".addr") && list_ty_kind == "struct" {
+        if list_ref.contains(".addr") && list_ty_kind == TK_STRUCT() {
             // Struct field push: GEP to field, load list to temp, push to temp,
             // WRITE BACK to struct field (matches Python text emitter pattern).
             let type_name: String = args[0].ty.name

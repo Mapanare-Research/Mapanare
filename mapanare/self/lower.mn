@@ -153,7 +153,7 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
         // This avoids the nested MIRModule.functions COW corruption issue.
         let ret_ty: MIRType = resolve_return_type_checked(st, fd.return_type)
         let ret_key: String = "__ret__" + fd.name
-        let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+        let ret_val: String = tk_name(ret_ty.kind) + ":" + ret_ty.name
         let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
         let mut new_st_fn: LowerState = st
         let mut lv_fn: List<LambdaEntry> = new_st_fn.lambda_vars
@@ -222,7 +222,7 @@ fn register_extern_fn(st: LowerState, defn: Definition) -> LowerState {
 
     // Register function return type in lambda_vars (for call resolution)
     let ret_key: String = "__ret__" + fn_name
-    let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+    let ret_val: String = tk_name(ret_ty.kind) + ":" + ret_ty.name
     let entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
     let mut s: LowerState = st
     let mut lv: List<LambdaEntry> = s.lambda_vars
@@ -1486,19 +1486,19 @@ fn mangle_generic_name(base: String, arg_types: List<MIRType>) -> String {
     for _ in 0..20 {
         if i < len(arg_types) {
             if i > 0 { result = result + "_" }
-            let tk: String = arg_types[i].kind
-            if tk == "int" { result = result + "Int" }
-            if tk == "float" { result = result + "Float" }
-            if tk == "bool" { result = result + "Bool" }
-            if tk == "string" { result = result + "String" }
-            if tk == "struct" { result = result + arg_types[i].name }
-            if tk == "enum" { result = result + arg_types[i].name }
-            if tk == "list" { result = result + "List" }
-            if tk == "map" { result = result + "Map" }
-            if tk == "option" { result = result + "Option" }
-            if tk == "result" { result = result + "Result" }
-            if tk == "void" { result = result + "Void" }
-            if tk == "unknown" { result = result + "Unknown" }
+            let tk: Int = arg_types[i].kind
+            if tk == TK_INT() { result = result + "Int" }
+            if tk == TK_FLOAT() { result = result + "Float" }
+            if tk == TK_BOOL() { result = result + "Bool" }
+            if tk == TK_STRING() { result = result + "String" }
+            if tk == TK_STRUCT() { result = result + arg_types[i].name }
+            if tk == TK_ENUM() { result = result + arg_types[i].name }
+            if tk == TK_LIST() { result = result + "List" }
+            if tk == TK_MAP() { result = result + "Map" }
+            if tk == TK_OPTION() { result = result + "Option" }
+            if tk == TK_RESULT() { result = result + "Result" }
+            if tk == TK_VOID() { result = result + "Void" }
+            if tk == TK_UNKNOWN() { result = result + "Unknown" }
             i = i + 1
         }
     }
@@ -1771,7 +1771,7 @@ fn monomorphize_impl_methods(st: LowerState, base_name: String, mangled: String,
             // Register return type
             let ret_ty: MIRType = resolve_return_type_checked(s, fixed.return_type)
             let ret_key: String = "__ret__" + mir_name
-            let ret_val: String = ret_ty.kind + ":" + ret_ty.name
+            let ret_val: String = tk_name(ret_ty.kind) + ":" + ret_ty.name
             let ret_entry: LambdaEntry = new_lambda_entry(ret_key, ret_val)
             let mut lv_list: List<LambdaEntry> = s.lambda_vars
             lv_list.push(ret_entry)
@@ -3385,8 +3385,8 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                 s = emit_instr(s, Instruction::Jump(merge_label))
                 // Track arm result for phi (include all arms that reach merge)
                 // Use zeroinitializer for void/unknown results to avoid referencing %void
-                let arm_kind: String = arm_val_r.value.ty.kind
-                if arm_kind == "void" || arm_kind == "unknown" || arm_val_r.value.name == "%void" {
+                let arm_kind: Int = arm_val_r.value.ty.kind
+                if arm_kind == TK_VOID() || arm_kind == TK_UNKNOWN() || arm_val_r.value.name == "%void" {
                     let zero_arm: Value = new_value("zeroinitializer", arm_val_r.value.ty)
                     let pe_zero: PhiEntry = new_phi_entry(exit_label, zero_arm)
                     arm_results.push(pe_zero)

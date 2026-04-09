@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.23.0] - 2026-04-09
+
+**MIRType Int Tags — Zero string-based type comparisons**
+
+### Changed
+- `MIRType.kind`: `String` → `Int` — all type comparisons use integer tags
+- `TK_*()` functions now return `Int` constants (0-19) instead of strings
+- Added `tk_name(k: Int) -> String` for encoding type info as strings
+- `kind_from_name` returns `Int` instead of `String`
+- `kind_to_type_name` accepts `Int` instead of `String`
+- 110+ comparison sites migrated across emit_llvm.mn, emit_llvm_ir.mn, lower.mn, lower_state.mn, mir_opt.mn
+
+### Fixed
+- Generic monomorphization suffix: uses `tk_name()` for "kind:name" encoding
+- Match arm void detection: `arm_kind` changed from String to Int comparison
+- List push emit: `list_ty_kind` changed from String to Int comparison
+
+### Verified
+- 45/45 golden, 11/11 stage2
+- black/ruff/mypy clean
+- Zero `.kind == "..."` string comparisons in core modules
+
 ## [4.22.0] - 2026-04-09
 
 **Dead Block Elimination — Fix BFS, enable pass, PHI-safe approach**
@@ -1429,7 +1451,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.22.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.23.0...HEAD
+[4.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.22.0...v4.23.0
 [4.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.21.0...v4.22.0
 [4.13.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.12.0...v4.13.0
 [4.12.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.11.0...v4.12.0
