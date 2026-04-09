@@ -2,7 +2,7 @@
 
 > Every struct-returning function gets proper cleanup. No more leaks.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.9.0 (semantic.mn must be memory-safe first)
 

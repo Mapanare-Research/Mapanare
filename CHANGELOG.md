@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.10.0] - 2026-04-09
+
+**Drop Glue + String Pooling**
+
+### Fixed
+- `skip_struct_ret` removed from Python emitter — replaced with ptr-field-aware skip that enables drop glue for pure-data struct returns (e.g., `{i64, i64}` ranges)
+- `__mn_str_from_bool`: returns aligned static constants (zero allocation, never freed)
+- `__mn_str_from_int` for -128..127: returns from pre-initialized aligned cache (zero allocation per call)
+- String pool alignment fix: static buffers aligned to 8 bytes to prevent `mn_untag` corruption
+
+### Changed
+- Drop glue now runs for all scalar-returning and pure-data-struct-returning functions
+- Compound returns with ptr fields still skip (escape analysis limitation)
+
+### Verified
+- 40/40 golden tests pass
+- 11/11 stage2 modules valid
+- `str(true)`, `str(false)`, `str(0..127)` are zero-allocation
+- `__mn_str_free` correctly skips non-heap-tagged pooled strings
+
 ## [4.9.0] - 2026-04-09
 
 **Semantic Safety — Self-Hosted Checker Enabled**
@@ -1192,7 +1212,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.9.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.10.0...HEAD
+[4.10.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.9.0...v4.10.0
 [4.9.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.8.0...v4.9.0
 [4.8.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.7.1...v4.8.0
 [4.7.1]: https://github.com/Mapanare-Research/Mapanare/compare/v4.7.0...v4.7.1

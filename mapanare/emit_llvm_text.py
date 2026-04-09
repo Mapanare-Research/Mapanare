@@ -957,15 +957,6 @@ class LLVMTextEmitter:
         For each tracked string, loads the {ptr, i64} value, extracts the data
         pointer, and frees it unless it's the same pointer being returned.
         """
-        # Skip drop glue for struct-returning functions. The self-hosted
-        # compiler's semantic checker has memory safety bugs that corrupt AST
-        # data when drop glue frees intermediate strings. Until the self-hosted
-        # semantic.mn is fixed, keep the conservative skip for struct returns.
-        # Functions returning void/int/bool/float still get full drop glue.
-        # TODO(v4.9.0): Fix semantic.mn, then remove skip_struct_ret.
-        skip_struct_ret = ret_ty.startswith("{") and ret_ty not in (VOID, I1, I64, DBL)
-        if skip_struct_ret:
-            return
         has_any = (
             (self._local_strings)
             or (self._local_closures)
@@ -977,6 +968,15 @@ class LLVMTextEmitter:
         )
         if not has_any:
             return
+
+        # Skip drop glue for compound return types that contain pointer
+        # fields.  The escape analysis can't follow heap pointers, so any
+        # tracked allocation could be reachable through a returned ptr.
+        # Pure-data structs (e.g. {i64, i64} for ranges) get full drop
+        # glue — an improvement over the original blanket skip.
+        if ret_ty.startswith("{") and ret_ty not in (VOID, I1, I64, DBL):
+            if "ptr" in ret_ty:
+                return
 
         self._ensure("__mn_str_free", VOID, [STR])
 

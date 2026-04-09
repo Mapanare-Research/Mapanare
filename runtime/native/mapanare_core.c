@@ -666,11 +666,43 @@ MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) 
     return r;
 }
 
+/* str(true) / str(false) — return non-heap constants (never freed).
+ * Aligned to 2 so mn_untag (clear bit 0) is a no-op. */
+static const char s_true[]  __attribute__((aligned(2))) = "true";
+static const char s_false[] __attribute__((aligned(2))) = "false";
+
 MN_EXPORT MnString __mn_str_from_bool(int64_t value) {
-    return __mn_str_from_cstr(value ? "true" : "false");
+    MnString s;
+    if (value) { s.data = s_true;  s.len = 4; }
+    else       { s.data = s_false; s.len = 5; }
+    return s;  /* data pointer is NOT heap-tagged → mn_str_free is a no-op */
+}
+
+/* str(N) for -128..127 — pre-initialized cache (zero allocation). */
+#define SMALL_INT_MIN (-128)
+#define SMALL_INT_MAX  127
+#define SMALL_INT_RANGE (SMALL_INT_MAX - SMALL_INT_MIN + 1)
+
+static char   s_int_bufs[SMALL_INT_RANGE][8] __attribute__((aligned(8))); /* max "-128\0" = 5 chars, padded+aligned for mn_untag */
+static MnString s_int_cache[SMALL_INT_RANGE];
+static int      s_int_cache_init = 0;
+
+static void init_small_int_cache(void) {
+    if (s_int_cache_init) return;
+    for (int i = 0; i < SMALL_INT_RANGE; i++) {
+        int val = SMALL_INT_MIN + i;
+        int n = snprintf(s_int_bufs[i], sizeof(s_int_bufs[i]), "%d", val);
+        s_int_cache[i].data = s_int_bufs[i]; /* NOT heap-tagged */
+        s_int_cache[i].len  = (int64_t)n;
+    }
+    s_int_cache_init = 1;
 }
 
 MN_EXPORT MnString __mn_str_from_int(int64_t value) {
+    if (value >= SMALL_INT_MIN && value <= SMALL_INT_MAX) {
+        init_small_int_cache();
+        return s_int_cache[(int)(value - SMALL_INT_MIN)];
+    }
     char buf[32];
     int n = snprintf(buf, sizeof(buf), "%lld", (long long)value);
     return __mn_str_from_parts(buf, (int64_t)n);
