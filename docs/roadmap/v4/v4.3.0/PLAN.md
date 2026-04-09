@@ -2,7 +2,7 @@
 
 > Functions returning structs stop leaking. Every allocation has an owner.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.2.0 (single emitter — can't fix drop glue with 3 emitters)
 

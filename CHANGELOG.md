@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-04-08
+
+**Drop Glue Done Right — Memory Correctness**
+
+### Fixed
+- Remove `skip_struct_ret` — drop glue now runs for ALL functions, using return-value escape analysis to avoid use-after-free
+- Closure env comparison now handles closures embedded in returned structs
+- `__mn_stream_free` frees `user_data` (closure environment)
+- `__mn_intern_destroy()` called at program exit (main epilogue)
+- `mapanare_registry_destroy` properly clears agent references
+
 ## [4.2.0] - 2026-04-08
 
 **Clean House — Emitter Consolidation**
@@ -1084,7 +1095,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.2.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.3.0...HEAD
+[4.3.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.0.0...v4.2.0
 [3.45.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.44.0...v3.45.0
 [3.44.0]: https://github.com/Mapanare-Research/Mapanare/compare/v3.43.0...v3.44.0
