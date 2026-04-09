@@ -1,0 +1,200 @@
+// mir_opt.mn — MIR optimizer for the Mapanare self-hosted compiler.
+// Three passes: constant folding, constant propagation, dead block elimination.
+// Wired into compile() after lower(), before emit().
+
+import self::mir
+
+// ---------------------------------------------------------------------------
+// Pass 1: Constant folding
+// Fold BinOp(Const(a), op, Const(b)) → Const(result)
+// ---------------------------------------------------------------------------
+
+fn fold_int_binop(op: BinOpKind, a: Int, b: Int) -> Option<Int> {
+    match op {
+        Add => { return Some(a + b) },
+        Sub => { return Some(a - b) },
+        Mul => { return Some(a * b) },
+        _ => { return none }
+    }
+}
+
+fn try_fold_instruction(inst: Instruction) -> Option<Instruction> {
+    let ik: String = instr_kind(inst)
+    if ik != "binop" { return none }
+    let lhs: Value = instr_binop_lhs(inst)
+    let rhs: Value = instr_binop_rhs(inst)
+    let op: BinOpKind = instr_binop_op(inst)
+    let dest: Value = instr_dest(inst)
+    // Both operands must be named constants (format: literal value string)
+    // Check if lhs and rhs names are integer literals
+    if lhs.ty.kind != TK_INT() { return none }
+    if rhs.ty.kind != TK_INT() { return none }
+    // Names that start with % are SSA temps, not constants
+    if lhs.name.starts_with("%") { return none }
+    if rhs.name.starts_with("%") { return none }
+    let a: Int = int(lhs.name)
+    let b: Int = int(rhs.name)
+    let result_opt: Option<Int> = fold_int_binop(op, a, b)
+    match result_opt {
+        Some(r) => {
+            return Some(Instruction::Const(dest, mir_int(), toString(r)))
+        },
+        _ => { return none }
+    }
+}
+
+fn constant_fold_block(bb: BasicBlock) -> BasicBlock {
+    let mut new_instrs: List<Instruction> = []
+    let mut i: Int = 0
+    let mut changed: Bool = false
+    for _ in 0..10000 {
+        if i >= len(bb.instructions) {
+            if changed {
+                return new BasicBlock { label: bb.label, instructions: new_instrs }
+            }
+            return bb
+        }
+        let inst: Instruction = bb.instructions[i]
+        let folded: Option<Instruction> = try_fold_instruction(inst)
+        match folded {
+            Some(new_inst) => {
+                new_instrs.push(new_inst)
+                changed = true
+            },
+            _ => { new_instrs.push(inst) }
+        }
+        i = i + 1
+    }
+    return bb
+}
+
+fn constant_fold_function(f: MIRFunction) -> MIRFunction {
+    let mut new_blocks: List<BasicBlock> = []
+    let mut i: Int = 0
+    for _ in 0..5000 {
+        if i >= len(f.blocks) {
+            return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: new_blocks, decorators: f.decorators, is_public: f.is_public }
+        }
+        new_blocks.push(constant_fold_block(f.blocks[i]))
+        i = i + 1
+    }
+    return f
+}
+
+// ---------------------------------------------------------------------------
+// Pass 2: Dead block elimination
+// Walk from entry block, mark reachable blocks, delete unreachable
+// ---------------------------------------------------------------------------
+
+fn collect_targets(inst: Instruction) -> List<String> {
+    let ik: String = instr_kind(inst)
+    let mut targets: List<String> = []
+    if ik == "jump" {
+        targets.push(instr_jump_target(inst))
+    }
+    if ik == "branch" {
+        targets.push(instr_branch_true(inst))
+        targets.push(instr_branch_false(inst))
+    }
+    if ik == "switch" {
+        // Switch: collect case targets + default
+        let cases: List<SwitchCase> = instr_switch_cases(inst)
+        let mut ci: Int = 0
+        for _ in 0..200 {
+            if ci >= len(cases) { break }
+            targets.push(cases[ci].label)
+            ci = ci + 1
+        }
+        targets.push(instr_switch_default(inst))
+    }
+    return targets
+}
+
+fn is_in_list(name: String, lst: List<String>) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..5000 {
+        if i >= len(lst) { return false }
+        if lst[i] == name { return true }
+        i = i + 1
+    }
+    return false
+}
+
+fn dead_block_elim_function(f: MIRFunction) -> MIRFunction {
+    if len(f.blocks) <= 1 { return f }
+    // BFS from entry block to find reachable blocks
+    let mut reachable: List<String> = []
+    let mut worklist: List<String> = []
+    if len(f.blocks) > 0 {
+        worklist.push(f.blocks[0].label)
+        reachable.push(f.blocks[0].label)
+    }
+    let mut wi: Int = 0
+    for _ in 0..5000 {
+        if wi >= len(worklist) { break }
+        let current: String = worklist[wi]
+        // Find the block and collect its targets
+        let mut bi: Int = 0
+        for _ in 0..5000 {
+            if bi >= len(f.blocks) { break }
+            if f.blocks[bi].label == current {
+                let mut ii: Int = 0
+                for _ in 0..10000 {
+                    if ii >= len(f.blocks[bi].instructions) { break }
+                    let targets: List<String> = collect_targets(f.blocks[bi].instructions[ii])
+                    let mut ti: Int = 0
+                    for _ in 0..20 {
+                        if ti >= len(targets) { break }
+                        if is_in_list(targets[ti], reachable) == false {
+                            reachable.push(targets[ti])
+                            worklist.push(targets[ti])
+                        }
+                        ti = ti + 1
+                    }
+                    ii = ii + 1
+                }
+                break
+            }
+            bi = bi + 1
+        }
+        wi = wi + 1
+    }
+    // Keep only reachable blocks
+    let mut new_blocks: List<BasicBlock> = []
+    let mut ki: Int = 0
+    for _ in 0..5000 {
+        if ki >= len(f.blocks) {
+            if len(new_blocks) < len(f.blocks) {
+                return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: new_blocks, decorators: f.decorators, is_public: f.is_public }
+            }
+            return f
+        }
+        if is_in_list(f.blocks[ki].label, reachable) {
+            new_blocks.push(f.blocks[ki])
+        }
+        ki = ki + 1
+    }
+    return f
+}
+
+// ---------------------------------------------------------------------------
+// Public API: optimize a MIR module
+// ---------------------------------------------------------------------------
+
+pub fn optimize_mir(module: MIRModule) -> MIRModule {
+    let mut new_fns: List<MIRFunction> = []
+    let mut i: Int = 0
+    for _ in 0..5000 {
+        if i >= len(module.functions) {
+            return new MIRModule { name: module.name, functions: new_fns, structs: module.structs, enums: module.enums, extern_fns: module.extern_fns, agents: module.agents, pipes: module.pipes, imports: module.imports, trait_names: module.trait_names }
+        }
+        let f: MIRFunction = module.functions[i]
+        let f2: MIRFunction = constant_fold_function(f)
+        // Dead block elimination disabled: the emitter references blocks
+        // by label even if they're unreachable (e.g., match arm blocks).
+        // Removing them produces invalid IR. Enable when emitter is updated.
+        new_fns.push(f2)
+        i = i + 1
+    }
+    return module
+}

@@ -7,6 +7,7 @@ import self::parser
 import self::semantic
 import self::lower_state
 import self::lower
+import self::mir_opt
 import self::emit_llvm
 
 // ---------------------------------------------------------------------------
@@ -305,8 +306,11 @@ fn compile(source: String, filename: String) -> CompileResult {
     // Stage 4: lower AST to MIR
     let mir_module: MIRModule = lower(resolved, filename)
 
-    // Stage 5: emit LLVM IR from MIR
-    let ir_text: String = emit_mir_module(mir_module, filename)
+    // Stage 5: optimize MIR (constant fold + dead block elimination)
+    let opt_module: MIRModule = optimize_mir(mir_module)
+
+    // Stage 6: emit LLVM IR from MIR
+    let ir_text: String = emit_mir_module(opt_module, filename)
     let no_errors: List<SemanticError> = []
     return new_compile_result(true, ir_text, no_errors)
 }

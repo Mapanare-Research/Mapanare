@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.12.0] - 2026-04-09
+
+**Self-Hosted Optimizer — mir_opt.mn**
+
+### Added
+- New module: `mapanare/self/mir_opt.mn` — MIR optimizer for the self-hosted compiler
+- Constant folding pass: folds `BinOp(Const(a), op, Const(b))` for int add/sub/mul
+- Dead block elimination (implemented but disabled — emitter references unreachable blocks)
+- Optimizer wired into compile() pipeline: lower → optimize → emit
+
+### Verified
+- 40/40 golden tests pass
+- 10/11 stage2 valid (main.mn crash is drop glue issue from v4.10.0, not optimizer)
+- mnc_all.mn: 109067 lines valid
+
 ## [4.11.0] - 2026-04-09
 
 **MIRType Named Constants — Zero Raw String Comparisons**
@@ -1228,7 +1243,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.11.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.12.0...HEAD
+[4.12.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.11.0...v4.12.0
 [4.11.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.10.0...v4.11.0
 [4.10.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.9.0...v4.10.0
 [4.9.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.8.0...v4.9.0

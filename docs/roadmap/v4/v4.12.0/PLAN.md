@@ -2,7 +2,7 @@
 
 > The self-hosted compiler produces better code. Fewer instructions, faster binaries.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.11.0
 
