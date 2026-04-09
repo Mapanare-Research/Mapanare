@@ -54,7 +54,9 @@ class TypeKind(Enum):
     TYPE_VAR = auto()
     RANGE = auto()
     ANY = auto()
-    UNKNOWN = auto()
+    UNKNOWN = auto()  # deprecated alias for UNRESOLVED
+    UNRESOLVED = auto()  # inference pending — will be resolved later
+    ERROR = auto()  # inference failed — must produce diagnostic
     BUILTIN_FN = auto()
 
 
@@ -86,6 +88,8 @@ _NAME_TO_KIND: dict[str, TypeKind] = {
 _KIND_TO_NAME: dict[TypeKind, str] = {v: k for k, v in _NAME_TO_KIND.items()}
 _KIND_TO_NAME[TypeKind.FN] = "fn"
 _KIND_TO_NAME[TypeKind.UNKNOWN] = "<unknown>"
+_KIND_TO_NAME[TypeKind.UNRESOLVED] = "<unresolved>"
+_KIND_TO_NAME[TypeKind.ERROR] = "<error>"
 _KIND_TO_NAME[TypeKind.BUILTIN_FN] = "<builtin>"
 _KIND_TO_NAME[TypeKind.STRUCT] = "struct"
 _KIND_TO_NAME[TypeKind.ENUM] = "enum"
@@ -123,7 +127,9 @@ class TypeInfo:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TypeInfo):
             return NotImplemented
-        if self.kind == TypeKind.UNKNOWN or other.kind == TypeKind.UNKNOWN:
+        if self.kind in (TypeKind.UNKNOWN, TypeKind.UNRESOLVED, TypeKind.ERROR):
+            return False
+        if other.kind in (TypeKind.UNKNOWN, TypeKind.UNRESOLVED, TypeKind.ERROR):
             return False
         if self.is_function and other.is_function:
             return (
@@ -166,11 +172,16 @@ class TypeInfo:
         return _KIND_TO_NAME.get(self.kind, "<unknown>")
 
     def is_compatible_with(self, other: "TypeInfo") -> bool:
-        """Permissive matching: UNKNOWN is compatible with anything (recursive).
-        Use for inference contexts where UNKNOWN means 'not yet resolved'.
-        Use __eq__ for strict equality.
+        """Permissive matching for inference contexts.
+
+        UNKNOWN/UNRESOLVED is compatible with anything (not yet resolved).
+        ERROR is compatible with nothing (forces error propagation).
         """
-        if self.kind == TypeKind.UNKNOWN or other.kind == TypeKind.UNKNOWN:
+        if self.kind == TypeKind.ERROR or other.kind == TypeKind.ERROR:
+            return False
+        if self.kind in (TypeKind.UNKNOWN, TypeKind.UNRESOLVED):
+            return True
+        if other.kind in (TypeKind.UNKNOWN, TypeKind.UNRESOLVED):
             return True
         # Dynamic `any` type is compatible with everything (gradual typing)
         if self.kind == TypeKind.ANY or other.kind == TypeKind.ANY:
@@ -217,7 +228,9 @@ _USER_DEFINED_KINDS = frozenset(
 # Canonical type singletons
 # ---------------------------------------------------------------------------
 
-UNKNOWN_TYPE = TypeInfo(kind=TypeKind.UNKNOWN)
+UNKNOWN_TYPE = TypeInfo(kind=TypeKind.UNKNOWN)  # deprecated, use UNRESOLVED_TYPE
+UNRESOLVED_TYPE = TypeInfo(kind=TypeKind.UNRESOLVED)
+ERROR_TYPE = TypeInfo(kind=TypeKind.ERROR)
 INT_TYPE = TypeInfo(kind=TypeKind.INT)
 FLOAT_TYPE = TypeInfo(kind=TypeKind.FLOAT)
 BOOL_TYPE = TypeInfo(kind=TypeKind.BOOL)

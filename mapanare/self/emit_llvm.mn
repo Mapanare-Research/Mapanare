@@ -687,6 +687,9 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
     if kind == "stream_op" { return emit_stream_op(st, instr_dest(inst), instr_streamop_kind(inst), instr_streamop_source(inst), instr_streamop_args(inst)) }
     if kind == "interp_concat" { return emit_interp_concat(st, instr_dest(inst), instr_concat_parts(inst)) }
     if kind == "phi" { return emit_mir_phi(st, instr_dest(inst), instr_phi_entries(inst)) }
+    __mn_str_eprint("ERROR: unknown MIR instruction kind: ")
+    __mn_str_eprint(kind)
+    __mn_str_eprint("\n")
     return st
 }
 

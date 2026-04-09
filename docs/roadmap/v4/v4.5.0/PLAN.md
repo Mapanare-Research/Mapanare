@@ -2,7 +2,7 @@
 
 > Silent type errors become loud compile errors.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** Yes (programs that relied on UNKNOWN silently compiling will now fail)
 **Prerequisite:** v4.4.0 (needs stable memory + concurrency foundation)
 

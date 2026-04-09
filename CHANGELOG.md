@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-04-08
+
+**Type System Tightening**
+
+### Added
+- `TypeKind.UNRESOLVED` — inference pending (replaces UNKNOWN for forward references)
+- `TypeKind.ERROR` — inference failed (matches nothing, forces error propagation)
+- `UNRESOLVED_TYPE` and `ERROR_TYPE` sentinels in `types.py`
+- Self-hosted compiler now calls semantic analysis between parse and lower
+- Unknown MIR instruction kinds produce error diagnostics (not silent drop)
+
+### Changed
+- `TypeInfo.is_compatible_with()`: ERROR is incompatible with everything
+- `TypeInfo.__eq__()`: UNRESOLVED and ERROR compare as not-equal
+
 ## [4.4.0] - 2026-04-08
 
 **Thread Safety — Concurrency Hardening**
@@ -1105,7 +1120,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.4.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.5.0...HEAD
+[4.5.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.0.0...v4.2.0
