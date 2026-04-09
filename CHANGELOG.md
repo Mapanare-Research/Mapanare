@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.20.0] - 2026-04-09
+
+**FFI Bindings — `mapanare bind` generates Python, TypeScript, Go bindings**
+
+### Added
+- `mapanare bind --lang <python|ts|go> source.mn` CLI command
+- `mapanare/bind.py`: binding spec extraction from AST, type mappings, code generation
+- Python bindings: ctypes wrapper with struct/enum support
+- TypeScript bindings: .d.ts type declarations with interfaces and enums
+- Go bindings: cgo file with type-safe wrapper functions
+- Type mapping tables: Int→int/number/int64, Float→float/number/float64, etc.
+- `examples/bind/math_lib.mn` — example library for binding generation
+- Golden test: `45_ffi_bind.mn`
+
+### Verified
+- 45/45 golden tests pass
+- `mapanare bind` produces valid Python, TypeScript, and Go output
+- All three target languages handle functions, structs, and enums
+
 ## [4.19.0] - 2026-04-09
 
 **Reactive Async — async/await keywords**

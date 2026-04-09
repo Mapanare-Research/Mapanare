@@ -2,7 +2,7 @@
 
 > One command generates Python, TypeScript, and Go bindings from .mn function signatures.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.19.0
 

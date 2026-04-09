@@ -1329,6 +1329,30 @@ def cmd_deploy(args: argparse.Namespace) -> None:
         print(f"\ndeploy: {len(created)} file(s) generated in {os.path.abspath(project_dir)}")
 
 
+def cmd_bind(args: argparse.Namespace) -> None:
+    """Generate FFI bindings from .mn source."""
+    path = args.source
+    if not os.path.isfile(path):
+        print(f"error: file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(path, encoding="utf-8") as f:
+        source = f.read()
+
+    from mapanare.bind import generate_bindings
+
+    module_name = os.path.splitext(os.path.basename(path))[0]
+    result = generate_bindings(source, lang=args.lang, module_name=module_name)
+
+    output = args.o
+    if output:
+        with open(output, "w", encoding="utf-8") as f:
+            f.write(result)
+        print(f"Generated {args.lang} bindings: {output}")
+    else:
+        print(result)
+
+
 def cmd_transpile(args: argparse.Namespace) -> None:
     """Transpile a source file (.py or .php) to Mapanare (.mn) source."""
     path = args.source
@@ -1855,6 +1879,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_transpile.add_argument("source", help="Path to .py or .php source file")
     p_transpile.add_argument("-o", metavar="OUTPUT", help="Output .mn file path", default=None)
     p_transpile.set_defaults(func=cmd_transpile)
+
+    # bind — generate FFI bindings
+    p_bind = subparsers.add_parser(
+        "bind", help="Generate FFI bindings from .mn source (Python, TypeScript, Go)"
+    )
+    p_bind.add_argument("source", help="Path to .mn source file")
+    p_bind.add_argument(
+        "--lang",
+        required=True,
+        choices=["python", "ts", "go"],
+        help="Target language for bindings",
+    )
+    p_bind.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
+    p_bind.set_defaults(func=cmd_bind)
 
     return parser
 
