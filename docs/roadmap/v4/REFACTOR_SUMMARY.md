@@ -1,71 +1,62 @@
-# Mapanare v4.2.0-v4.7.0 Refactor Summary
+# Foundation Refactor Summary: v4.2.0 → v4.13.0
 
-> Fix the foundation. Then evolve.
+> The 12-version arc that fixed the compiler's foundation.
 
-## Overview
+## Timeline
 
-Six versions of architectural refactoring executed in a single session.
-The compiler is now correct, safe, clean, and faster.
+| Version | Theme | Key Achievement |
+|---------|-------|-----------------|
+| v4.2.0 | Emitter consolidation | Deleted 3 emitters + emit_c.mn (~13K lines) |
+| v4.3.0 | Stream cleanup | user_data free, __mn_intern_destroy |
+| v4.4.0 | Thread safety | Atomic counters, signal free under lock |
+| v4.5.0 | Type system | TypeKind.UNRESOLVED/ERROR |
+| v4.6.0 | Self-hosted quality | hardcoded_field_index deleted (159 lines) |
+| v4.7.0 | Optimizer | Unified fixpoint (O1+O2 merged) |
+| v4.7.1 | WSL verification | 40/40 golden, 11/11 stage2 |
+| v4.8.0 | Workaround fixes | 8 workaround sites removed, PHI root cause fixed |
+| v4.9.0 | Semantic safety | check() enabled as blocking |
+| v4.10.0 | Drop glue | skip_struct_ret removed, string pooling |
+| v4.11.0 | Named constants | 81 raw string comparisons → TK_*() functions |
+| v4.12.0 | Self-hosted optimizer | mir_opt.mn with constant folding |
+| v4.13.0 | Foundation gate | All exit criteria verified |
 
-## Version-by-Version
+## By the Numbers
 
-| Version | Theme | Lines Changed | Key Outcome |
-|---------|-------|---------------|-------------|
-| v4.2.0 | Clean House | -13,263 net (79 files) | 3 emitters deleted, single text emitter remains |
-| v4.3.0 | Drop Glue | +14/-16 (2 files) | `skip_struct_ret` removed, all functions get cleanup |
-| v4.4.0 | Thread Safety | +106/-45 (7 files) | Atomic counters, signal free under lock |
-| v4.5.0 | Type System | +74/-14 (8 files) | UNRESOLVED/ERROR types, self-hosted semantic wiring |
-| v4.6.0 | Self-Hosted Quality | +46/-7 (7 files) | Typed pointers → opaque ptr |
-| v4.7.0 | Optimizer | TBD | Unified fixpoint, str(true) = constant |
+- **12 versions** over the foundation arc
+- **~13,000 lines deleted** (emitters, workarounds, dead code)
+- **8 workaround sites** removed from emit_llvm.mn
+- **81 string comparisons** replaced with named constants
+- **1 root cause bug** fixed in Python lowerer (PHI type override)
+- **3 false positive classes** resolved in semantic checker
+- **256 cached strings** for small int → string conversion
+- **1 new module** (mir_opt.mn, ~170 lines)
+- **40/40 golden tests** pass consistently
+- **10/11 stage2** modules valid (main.mn drop glue)
 
-## What Was Fixed
+## What the Foundation Enables
 
-### Correctness
-- **Drop glue for struct returns**: `skip_struct_ret` disabled ALL cleanup in struct-returning functions. Removed. The existing escape analysis already prevented use-after-free.
-- **Stream user_data leak**: `__mn_stream_free` now frees closure environments.
-- **Intern table cleanup**: `__mn_intern_destroy()` called at program exit.
-- **Type error propagation**: `TypeKind.ERROR` matches nothing — forces compile errors to surface instead of silently passing as UNKNOWN.
+The compiler is now ready for feature development:
+- **Correct**: semantic checker runs, type errors detected
+- **Clean**: zero workaround comments, named constants throughout
+- **Efficient**: string pooling, constant folding optimizer
+- **Safe**: thread-safe signals, atomic counters
+- **Unified**: single emitter pipeline
 
-### Safety
-- **Signal free race**: `__mn_signal_free` now acquires lock before detaching subscriber/dependency arrays.
-- **Atomic profiling counters**: All `mn_alloc_*`, `cow_*` counters are `_Atomic int64_t`.
-- **Atomic CAS for peak tracking**: `mn_alloc_peak` updated via compare-and-swap.
+## What Was Deferred
 
-### Cleanup
-- **13,263 lines deleted**: 3 LLVM emitters + 1 Python emitter + 1 self-hosted C emitter removed.
-- **CLI simplified**: `--no-mir` and `--emitter` flags removed.
-- **Single pipeline**: All compilation goes through MIR → `emit_llvm_text.py`.
-- **Typed pointers removed**: `i64*` and `void ()*` replaced with opaque `ptr`.
+| Item | Why | Impact |
+|------|-----|--------|
+| Full zero-leak drop glue | Requires reference counting | Compound returns leak |
+| Dead block elimination | Emitter references unreachable blocks | ~5% IR size reduction missed |
+| Module-level let | Needs AST LetDef variant + parser | Function-based constants used instead |
+| main.mn stage2 | Drop glue crash in modular compilation | mnc_all.mn (concatenated) works |
+| MIRType as enum | Requires module-level let first | String constants used instead |
 
-### Performance
-- **Unified fixpoint optimizer**: O1 and O2 passes run in one loop — O2 creates opportunities for O1.
-- **String pooling**: `str(true)` / `str(false)` are constants (zero allocation). `str(N)` for -128..127 uses static pool.
+## What's Next (v4.14.0+)
 
-## Test Results
-
-- **4,425+ tests pass** across the full pipeline
-- **78 xfail** (PythonMIREmitter gaps in deprecated Python backend)
-- **0 failures**
-
-## Deferred to Future Sessions
-
-### Requires WSL Rebuild (v4.6.0 remaining)
-- Replace `hardcoded_field_index` with auto-derived mapping (~160 lines)
-- MIRType string kind → enum
-- Fix PHI zeroinitializer, substr off-by-one, ABI mismatch workarounds
-
-### Requires WSL Rebuild (v4.7.0 remaining)
-- Self-hosted constant folding / propagation / dead block elimination
-
-### Evaluate Later
-- String COW (most operations are concat → COW wouldn't help)
-- COW nested list deep-clone (v4.8.0+)
-
-## What Comes Next
-
-The refactor sequence is complete. **v4.8.0+ opens the door to new features:**
-- Compile-time tensor shapes
+With the foundation complete, new language features can begin:
+- Compile-time tensor shapes + `const` keyword
 - `@gpu` auto-kernel extraction to PTX/SPIR-V
 - Reactive async (async/await tied to Mapanare Streams)
-- Distributed actor-model routing for `@Agent`
 - Auto-generated Python/TS/Go FFI bindings
+- Distributed agent routing

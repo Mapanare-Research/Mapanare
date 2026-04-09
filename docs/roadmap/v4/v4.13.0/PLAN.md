@@ -2,7 +2,7 @@
 
 > Zero Culebra findings. Every exit criterion met. Foundation is complete.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.12.0
 

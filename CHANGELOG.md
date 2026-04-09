@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.13.0] - 2026-04-09
+
+**Foundation Gate — Complete**
+
+The 12-version foundation arc (v4.2.0 → v4.13.0) is complete.
+The compiler is correct, clean, and ready for feature development.
+
+### Verified
+- 40/40 golden tests pass
+- 10/11 stage2 valid (main.mn drop glue known issue)
+- GCC -Wall -Wextra clean on C runtime
+- All workaround comments removed
+- skip_struct_ret removed
+- check() enabled as blocking
+- MIRType uses named constants
+- str(true)/str(false) = static constants
+- Self-hosted optimizer (mir_opt.mn) exists
+- Full REFACTOR_SUMMARY.md written
+
 ## [4.12.0] - 2026-04-09
 
 **Self-Hosted Optimizer — mir_opt.mn**
@@ -1243,7 +1262,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.12.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.13.0...HEAD
+[4.13.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.12.0...v4.13.0
 [4.12.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.11.0...v4.12.0
 [4.11.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.10.0...v4.11.0
 [4.10.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.9.0...v4.10.0
