@@ -2,7 +2,7 @@
 
 > Generated bindings actually call compiled libraries. Tensor shapes checked at compile time.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.24.0
 

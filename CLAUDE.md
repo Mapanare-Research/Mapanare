@@ -8,8 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.24.0** (current) — async/await wired: parser + lowerer + emitter in both pipelines. 46/46 golden, 11/11 stage2.
-- **v4.25.0** (next) — FFI end-to-end + tensor shape checking.
+- **v4.25.0** (current) — FFI E2E: .mn → .so → Python calls compiled code. Tensor shape checking at compile time. 46/46 golden, 11/11 stage2.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

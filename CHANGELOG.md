@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.0] - 2026-04-09
+
+**FFI End-to-End + Tensor Shape Checking**
+
+### Added
+- `mapanare bind --lang python` now compiles .mn → .so shared library
+- Python ctypes can call compiled Mapanare functions (proven: `add(3,4)==7`)
+- Functions are exported (non-internal) in FFI .so builds
+- Graceful fallback when runtime archive not -fPIC compatible
+- Tensor shape mismatch test: `test_shape_mismatch_add`
+- Tensor matmul shape validation test: `test_matmul_shape_valid`
+
+### Fixed
+- FFI .so: `define internal` → `define` for function visibility
+- FFI .so: `@main` → `@mn_main` rename handles all signatures
+
+### Verified
+- 46/46 golden, 11/11 stage2
+- Python FFI: `add(3, 4) == 7` via ctypes
+- Tensor shape mismatch: compile-time error produced
+- black/ruff/mypy clean
+
 ## [4.24.0] - 2026-04-09
 
 **async/await Wired — value flows through async pipeline**
@@ -1469,7 +1491,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.24.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.25.0...HEAD
+[4.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.24.0...v4.25.0
 [4.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.23.0...v4.24.0
 [4.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.22.0...v4.23.0
 [4.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.21.0...v4.22.0

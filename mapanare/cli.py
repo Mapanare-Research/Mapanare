@@ -1330,7 +1330,11 @@ def cmd_deploy(args: argparse.Namespace) -> None:
 
 
 def cmd_bind(args: argparse.Namespace) -> None:
-    """Generate FFI bindings from .mn source."""
+    """Generate FFI bindings from .mn source.
+
+    Compiles .mn → .so shared library and generates a language wrapper
+    (Python ctypes, TypeScript .d.ts, or Go cgo) alongside it.
+    """
     path = args.source
     if not os.path.isfile(path):
         print(f"error: file not found: {path}", file=sys.stderr)
@@ -1342,15 +1346,74 @@ def cmd_bind(args: argparse.Namespace) -> None:
     from mapanare.bind import generate_bindings
 
     module_name = os.path.splitext(os.path.basename(path))[0]
-    result = generate_bindings(source, lang=args.lang, module_name=module_name)
 
-    output = args.o
-    if output:
-        with open(output, "w", encoding="utf-8") as f:
-            f.write(result)
-        print(f"Generated {args.lang} bindings: {output}")
-    else:
-        print(result)
+    # Determine output directory
+    out_dir = args.o if args.o else "."
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Step 1: Generate language wrapper
+    wrapper = generate_bindings(source, lang=args.lang, module_name=module_name)
+    ext = {"python": ".py", "ts": ".d.ts", "go": ".go"}.get(args.lang, ".py")
+    wrapper_path = os.path.join(out_dir, f"{module_name}{ext}")
+    with open(wrapper_path, "w", encoding="utf-8") as f:
+        f.write(wrapper)
+    print(f"Generated {args.lang} wrapper: {wrapper_path}")
+
+    # Step 2: Compile .mn → .ll → .o → .so
+    try:
+        llvm_ir = _compile_to_llvm_ir(source, path)
+        # Make all functions externally visible for FFI
+        llvm_ir = llvm_ir.replace("define internal ", "define ")
+        # Rename @main to @mn_main so it doesn't conflict with C main
+        import re
+
+        llvm_ir = re.sub(
+            r"define (.*?)@main\(",
+            r"define \1@mn_main(",
+            llvm_ir,
+        )
+
+        ll_path = os.path.join(out_dir, f"{module_name}.ll")
+        with open(ll_path, "w", encoding="utf-8") as f:
+            f.write(llvm_ir)
+
+        obj_path = os.path.join(out_dir, f"{module_name}.o")
+        so_path = os.path.join(out_dir, f"lib{module_name}.so")
+
+        # Compile IR → object
+        import subprocess
+
+        result = subprocess.run(
+            ["clang", "-c", "-fPIC", "-O2", ll_path, "-o", obj_path],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"warning: clang failed: {result.stderr.strip()}", file=sys.stderr)
+            return
+
+        # Find runtime archive
+        rt_dir = os.path.join(os.path.dirname(__file__), "..", "runtime", "native")
+        rt_archive = os.path.join(rt_dir, "libmapanare_rt.a")
+
+        # Link as shared library. Try with runtime first, fall back to without.
+        link_cmd = ["gcc", "-shared", "-o", so_path, obj_path]
+        if os.path.isfile(rt_archive):
+            link_cmd_rt = link_cmd + [rt_archive, "-lm", "-lpthread"]
+            result = subprocess.run(link_cmd_rt, capture_output=True, text=True)
+            if result.returncode == 0:
+                print(f"Compiled shared library: {so_path}")
+                return
+            # Runtime not -fPIC compatible — link without it (works for pure functions)
+        link_cmd.extend(["-lm", "-lpthread"])
+        result = subprocess.run(link_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"warning: linker failed: {result.stderr.strip()}", file=sys.stderr)
+            return
+
+        print(f"Compiled shared library: {so_path}")
+    except Exception as e:
+        print(f"warning: .so compilation skipped: {e}", file=sys.stderr)
 
 
 def cmd_transpile(args: argparse.Namespace) -> None:
