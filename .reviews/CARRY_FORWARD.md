@@ -7,12 +7,33 @@
 > file is the single source of truth for open carry-forwards across
 > reviews. Every recovery release's SESSION_REPORT updates it.
 
-## Legend
+## Schema
 
 - **Severity**: CRITICAL / HIGH / MEDIUM / LOW (from the originating panel)
 - **Cycles**: how many review cycles the item has survived. **Bold** when ≥ 3
 - **Status**: OPEN / CLOSED / STALE / DEFERRED
 - **Owner**: release that is scheduled to close it, or the person currently responsible
+
+### Dual-closure convention (added v4.32.0 Phase 1.3)
+
+Items that affect **both** the Python bootstrap emitter
+(`mapanare/emit_llvm_text.py`) and the self-hosted emitter
+(`mapanare/self/emit_llvm.mn`, `emit_llvm_ir.mn`, `mir_opt.mn`) are
+tracked with **two** closure states. Ledger rows with asymmetry are
+marked `PY: closed in vX.Y.0 | SH: open` (or vice versa). A symmetric
+closure requires both sides to be closed — one-sided closures stay on
+the carry-forward queue with the remaining side's tracking version
+named.
+
+This convention was added at v4.32.0 because the v4.31.0 arc-end panel
+(Rattler #8, Cobra #14) surfaced that the v4.30.0 claim "six 7-cycle
+emitter items re-verified clean" was verified Python-side only. The
+self-hosted source was never touched in the v4.30.0 sweep — a failure
+mode the single-column schema could not represent, and therefore could
+not prevent.
+
+`PY` = Python bootstrap emitter (`mapanare/emit_llvm_text.py`)
+`SH` = self-hosted emitter (`mapanare/self/emit_llvm.mn` et al.)
 
 ## Items resolved in the v4.27.0 → v4.31.0 recovery arc
 
@@ -51,12 +72,12 @@ commit/section in the CHANGELOG where the fix landed.
 | 27 | Optimizer non-convergence emits `logging.warning` | v4.26.0 | HIGH | v4.30.0 | `MIROptimizerNonConvergence` ICE replaces warning |
 | 28 | `stream_fusion` runs outside the fixpoint loop | v4.26.0 | HIGH | v4.30.0 | Moved inside the unified loop |
 | 29 | Self-hosted dead block elim never calls `clean_phis_in_block` | v4.26.0 | HIGH | v4.30.0 | Invoked on every surviving block; mnc_all.mn regenerated |
-| 30 | `i64*` opaque pointer migration (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | v4.30.0 | Re-verified clean via `culebra scan --id typed-pointer-legacy` |
-| 31 | `void ()*` opaque pointer migration (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | v4.30.0 | Same |
-| 32 | List `bitcast` cleanup (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | v4.30.0 | Every `bitcast` occurrence is now a comment |
-| 33 | Missing `nsw` flags on int arithmetic (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | v4.30.0 | `BinOpKind.ADD/SUB/MUL` emit `add nsw` / `sub nsw` / `mul nsw` |
-| 34 | `__mn_map_new` 3-param arity mismatch (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | v4.30.0 | 4-arg alignment verified on both sides |
-| 35 | Missing `noalias`/`willreturn` attrs (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | v4.30.0 | +70 attribute annotations across 55 runtime symbols |
+| 30 | `i64*` opaque pointer migration (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | **PY**: v4.30.0 / **SH**: OPEN | PY: `culebra scan --id typed-pointer-legacy` → 0 findings on `emit_llvm_text.py` (v4.30.0). SH: one live `i64*` at `mapanare/self/emit_llvm.mn:528` in the `__mapanare_tensor_alloc` declare line — tracked to v4.33.0. |
+| 31 | `void ()*` opaque pointer migration (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | **PY**: v4.30.0 / **SH**: OPEN | PY: clean per v4.30.0 sweep. SH: one live `bitcast void ()*` at `mapanare/self/emit_llvm.mn:949` in the TK_FN constant path — tracked to v4.33.0. |
+| 32 | List `bitcast` cleanup (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | **PY**: v4.30.0 / **SH**: v4.32.0 (verified) | PY: every `bitcast` in `emit_llvm_text.py` is a comment (v4.30.0). SH: re-verified v4.32.0 phase 1.2 — only `bitcast ptr ... to ptr` remains at `emit_llvm.mn:3015`, which is a type-preserving no-op and not a typed-pointer-legacy pattern. |
+| 33 | Missing `nsw` flags on int arithmetic (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | **PY**: v4.30.0 / **SH**: v4.32.0 | PY: `BinOpKind.ADD/SUB/MUL` emit `add nsw` / `sub nsw` / `mul nsw` at `emit_llvm_text.py:2060-2062` (v4.30.0). SH: `emit_add/sub/mul` in `mapanare/self/emit_llvm_ir.mn:117-129` emit `=add nsw` / `=sub nsw` / `=mul nsw` (v4.32.0 phase 1.2). Proof: `grep -c ' nsw ' /tmp/stage2.ll` = 1007 (was 0). |
+| 34 | `__mn_map_new` 3-param arity mismatch (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | **PY**: v4.30.0 / **SH**: v4.32.0 | PY: 4-arg call at `emit_llvm_text.py:3161-3166` (v4.30.0). SH: declare and call site both 4-arg at `mapanare/self/emit_llvm.mn:357` and `emit_llvm.mn:1665` (v4.32.0 phase 1.2). Proof: `declare noalias ptr @__mn_map_new(i64, i64, i64, i64) nounwind willreturn` at `/tmp/stage2.ll:55`. |
+| 35 | Missing `noalias`/`willreturn` attrs (7th cycle) | pre-v3.47.0 | HIGH (CARRY) | **PY**: v4.30.0 / **SH**: v4.32.0 | PY: +70 attribute annotations across 55 runtime symbols (v4.30.0). SH: `get_fn_attrs` grew from 25 entries to ~90 mirroring Python `_RUNTIME_FN_ATTRS`; new `get_fn_ret_prefix` for `noalias` on 13 allocators (v4.32.0 phase 1.2). Proof: `grep -c 'noalias' /tmp/stage2.ll` = 22 (was 0), `grep -c ' willreturn' /tmp/stage2.ll` = 188 (was 0). |
 | 36 | `const_def` parser collapses `TypeExpr` to `.name` | v4.26.0 | HIGH | v4.27.0 | Moot after `const` removal |
 | 37 | SPEC line 121 `di` mislabeled (5th cycle) | v3.47.0 | LOW (CARRY) | v4.31.0 | Fixed in this release |
 | 38 | Bilingual keywords table missing from SPEC (3rd cycle) | v3.47.0 | LOW (CARRY) | v4.31.0 | Added in this release |
@@ -87,6 +108,8 @@ items that were explicitly deferred out of the recovery arc.
 | A7 | Self-hosted semantic analysis never wired into `compile()` | v4.26.0 | LOW | **3** | OPEN | v5.0.0 self-hosted maturity sprint |
 | A8 | Split `UNKNOWN` into `UNRESOLVED` + `ERROR` in semantic.py | v4.26.0 | LOW | **3** | OPEN | v5.0.0 |
 | A9 | `emit_c.mn` (770 lines) references non-existent MIR types | v4.2.0 | LOW | **5** | OPEN | v5.0.0 — delete or rewrite |
+| 49 | Drop-glue skip-struct-ret early return at `emit_llvm_text.py:1097-1099` (8th cycle, Viper Issue #14 at v4.26.0, not previously in ledger) | v4.18.0 era | LOW | **8** | OPEN | v4.32.0 Phase 2.2 (opportunistic) or v4.33.0+. The early return short-circuits `_extract_ret_ptrs` before the per-type drop-glue helpers can consult `ret_ptr_fields`. Phase 2.2 is a pure-refactor extraction that may naturally eliminate this branch; if it does, mark CLOSED at PR-merge. If it doesn't, carries to v4.33.0. Viper V1. |
+| 50 | Agent `mapanare_agent_destroy` drops in-flight messages without freeing them (`runtime/native/mapanare_runtime.c:686-691`, 2nd cycle, Viper M5 at v4.26.0, not previously in ledger) | v4.26.0 | LOW | **2** | OPEN | v4.33.0+. The destroy path walks the inbox ring to count pending messages but does not free their payloads. 20-line runtime change: iterate the ring, call `__mn_free` on each payload before releasing the agent handle. Viper M5. |
 
 ## Items resolved in pre-v4.27.0 releases
 
