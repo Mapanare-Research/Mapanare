@@ -42,8 +42,17 @@
 
 static mn_gpu_ctx_t g_gpu_ctx;
 
+/*
+ * v4.28.0: swapped the Windows ``volatile LONG`` + ``InterlockedCompareExchange``
+ * pattern for ``INIT_ONCE`` + ``InitOnceExecuteOnce``. The old pattern was
+ * the canonical broken double-check: the CAS flipped the flag, but the
+ * subsequent ``mapanare_gpu_init_impl`` writes had no release barrier, so
+ * a reader that observed the flag transition could still see a
+ * half-initialised ``g_gpu_ctx``. Flagged by Cobra #5 in the v4.26.0
+ * panel (and carried forward from v3.47.0 under "Windows GPU init race").
+ */
 #ifdef _WIN32
-static volatile LONG g_gpu_init_once = 0;
+static INIT_ONCE g_gpu_init_once = INIT_ONCE_STATIC_INIT;
 #else
 #include <pthread.h>
 static pthread_once_t g_gpu_init_once = PTHREAD_ONCE_INIT;
@@ -818,17 +827,62 @@ static void vulkan_shutdown(mn_vulkan_ctx_t *ctx) {
 static uint32_t *vk_compile_glsl(const char *glsl_source, size_t *out_size_bytes) {
     *out_size_bytes = 0;
 
-    /* Write GLSL to a temp file */
-    const char *tmp_glsl = "/tmp/mn_gpu_shader.comp";
-    const char *tmp_spirv = "/tmp/mn_gpu_shader.spv";
+    /*
+     * v4.28.0: the prior version used fixed paths ``/tmp/mn_gpu_shader.comp``
+     * and ``/tmp/mn_gpu_shader.spv``. Two concurrent GPU codegen requests
+     * (from two threads or two Mapanare processes) would race on both
+     * files, producing garbled SPIR-V output and occasionally silent
+     * miscompiles. v3.47.0 panel carry-forward: Viper "GPU temp file race".
+     *
+     * The fix uses ``mkstemp`` on POSIX and ``GetTempFileNameW`` on
+     * Windows to obtain unique per-invocation paths. The buffers are
+     * large enough for the longest template path on each platform.
+     */
+    /* 256 for the GLSL template path + 8 bytes of ".spv" safety margin
+     * in ``tmp_spirv_buf``. Large enough for any reasonable temp dir. */
+    char tmp_glsl_buf[256];
+    char tmp_spirv_buf[264];
+    const char *tmp_glsl;
+    const char *tmp_spirv;
 
 #ifdef _WIN32
-    tmp_glsl  = "mn_gpu_shader.comp";
-    tmp_spirv = "mn_gpu_shader.spv";
+    {
+        wchar_t temp_dir[MAX_PATH];
+        wchar_t tmp_w[MAX_PATH];
+        DWORD n = GetTempPathW(MAX_PATH, temp_dir);
+        if (n == 0 || n > MAX_PATH) return NULL;
+        if (GetTempFileNameW(temp_dir, L"mng", 0, tmp_w) == 0) return NULL;
+        /* GetTempFileNameW creates the file atomically; we rename it to
+         * have the ``.comp`` suffix that glslc expects. The returned
+         * name is unique, so no other process can collide. */
+        int written = WideCharToMultiByte(CP_UTF8, 0, tmp_w, -1,
+                                          tmp_glsl_buf, (int)sizeof(tmp_glsl_buf),
+                                          NULL, NULL);
+        if (written <= 0) return NULL;
+        snprintf(tmp_spirv_buf, sizeof(tmp_spirv_buf), "%s.spv", tmp_glsl_buf);
+        tmp_glsl = tmp_glsl_buf;
+        tmp_spirv = tmp_spirv_buf;
+    }
+#else
+    {
+        /* mkstemp creates the file with 0600 permissions and returns a
+         * unique path. We close the fd and reopen with stdio because
+         * fputs is easier than write() for text data. The file is
+         * guaranteed unique by the kernel. */
+        strncpy(tmp_glsl_buf, "/tmp/mn_gpu_shader_XXXXXX.comp",
+                sizeof(tmp_glsl_buf) - 1);
+        tmp_glsl_buf[sizeof(tmp_glsl_buf) - 1] = '\0';
+        int fd = mkstemps(tmp_glsl_buf, 5); /* 5 = length of ".comp" suffix */
+        if (fd < 0) return NULL;
+        close(fd);
+        snprintf(tmp_spirv_buf, sizeof(tmp_spirv_buf), "%s.spv", tmp_glsl_buf);
+        tmp_glsl = tmp_glsl_buf;
+        tmp_spirv = tmp_spirv_buf;
+    }
 #endif
 
     FILE *f = fopen(tmp_glsl, "w");
-    if (!f) return NULL;
+    if (!f) { remove(tmp_glsl); return NULL; }
     fputs(glsl_source, f);
     fclose(f);
 
@@ -1054,12 +1108,21 @@ static void mapanare_gpu_init_impl(void) {
     g_gpu_init_result = 0;
 }
 
-MN_GPU_EXPORT int mapanare_gpu_init(void) {
-    /* Thread-safe one-shot initialization */
 #ifdef _WIN32
-    if (InterlockedCompareExchange(&g_gpu_init_once, 1, 0) == 0) {
-        mapanare_gpu_init_impl();
-    }
+static BOOL CALLBACK mapanare_gpu_init_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
+    mapanare_gpu_init_impl();
+    return TRUE;
+}
+#endif
+
+MN_GPU_EXPORT int mapanare_gpu_init(void) {
+    /* Thread-safe one-shot initialization.
+     * v4.28.0: ``InitOnceExecuteOnce`` on Windows provides the release /
+     * acquire barriers the old ``InterlockedCompareExchange`` pattern
+     * was missing. See comments on ``g_gpu_init_once`` above. */
+#ifdef _WIN32
+    InitOnceExecuteOnce(&g_gpu_init_once, mapanare_gpu_init_cb, NULL, NULL);
 #else
     pthread_once(&g_gpu_init_once, mapanare_gpu_init_impl);
 #endif

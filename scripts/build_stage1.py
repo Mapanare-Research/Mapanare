@@ -22,6 +22,33 @@ CC = os.environ.get("CC", "gcc")
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SELF_DIR = ROOT / "mapanare" / "self"
 NATIVE_DIR = ROOT / "runtime" / "native"
+VERSION_FILE = ROOT / "VERSION"
+
+# v4.28.0: build-time placeholder in ``mapanare/self/main.mn`` that the
+# build substitutes from the top-level ``VERSION`` file. Prior to this,
+# the self-hosted ``version()`` function returned a hardcoded string that
+# became 19 minor versions stale because the manual bump step was dropped
+# at v4.8.0. See ``docs/roadmap/v4/v4.28.0/FORENSICS.md``.
+VERSION_PLACEHOLDER = "__MN_VERSION__"
+
+
+def _substitute_version(source: str) -> str:
+    """Replace the ``__MN_VERSION__`` placeholder with the live VERSION contents.
+
+    Called on the self-hosted source text before it reaches the compiler.
+    The placeholder must occur; a missing placeholder is a build error so
+    that no future edit can silently unwire the substitution.
+    """
+    if VERSION_PLACEHOLDER not in source:
+        raise SystemExit(
+            f"error: {VERSION_PLACEHOLDER!r} placeholder not found in self-hosted "
+            "source. Re-add it to mapanare/self/main.mn:version() — see "
+            "docs/roadmap/v4/v4.28.0/FORENSICS.md for why this matters."
+        )
+    version = VERSION_FILE.read_text(encoding="utf-8").strip()
+    if not version:
+        raise SystemExit(f"error: {VERSION_FILE} is empty")
+    return source.replace(VERSION_PLACEHOLDER, version)
 
 
 def build() -> pathlib.Path:
@@ -44,6 +71,7 @@ def build() -> pathlib.Path:
         from mapanare.multi_module import compile_multi_module_mir
 
         source = (SELF_DIR / "main.mn").read_text(encoding="utf-8")
+        source = _substitute_version(source)
         ir = compile_multi_module_mir(
             root_source=source,
             root_file=str(SELF_DIR / "main.mn"),

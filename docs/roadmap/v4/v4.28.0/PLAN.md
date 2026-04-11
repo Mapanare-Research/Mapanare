@@ -5,11 +5,15 @@
 > and the v3.47.0 carry-forward items that were missed across 27 versions.
 > Still **zero new features.**
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-11)
 **Breaking:** No
 **Prerequisite:** v4.27.0
 **Estimated work:** 1 day
 **Theme:** Make concurrency safe; pay back the v3.47.0 debt that should never have aged.
+**Session log:** [`SESSION_REPORT.md`](./SESSION_REPORT.md)
+**Forensics (Phase 0):** [`FORENSICS.md`](./FORENSICS.md) — the v4.0.0 matmul fixes were never committed; there was no revert to bisect.
+**Carry-forward audit (Phase 4):** [`CARRY_FORWARD_AUDIT.md`](./CARRY_FORWARD_AUDIT.md) — every v3.47.0 + v4.26.0 item classified.
+**Decisions taken:** producer lock for agent inbox (not Vyukov MPSC); minimum TSan scope (4 stress tests, one per fixed race); signal write-side lock only (read-side pointer-return deferred).
 
 ---
 

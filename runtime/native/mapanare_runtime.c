@@ -597,6 +597,10 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
         return -1;
     }
 
+    /* v4.28.0: serialize the producer side of the inbox so concurrent
+     * ``mapanare_agent_send`` calls do not race on ``head`` / slot writes. */
+    mapanare_mutex_init(&agent->inbox_producer_lock);
+
     mapanare_bp_init(&agent->bp, (int64_t)agent->inbox.capacity);
 
     mapanare_sem_init(&agent->inbox_ready, 0);
@@ -617,7 +621,12 @@ MAPANARE_EXPORT int mapanare_agent_spawn(mapanare_agent_t *agent) {
 }
 
 MAPANARE_EXPORT int mapanare_agent_send(mapanare_agent_t *agent, void *msg) {
+    /* v4.28.0: take the producer lock so concurrent sends serialize on
+     * the MPSC side of the ring (the ring itself is still lock-free on
+     * the consumer side, which remains single-threaded). */
+    mapanare_mutex_lock(&agent->inbox_producer_lock);
     int rc = mapanare_ring_push(&agent->inbox, msg);
+    mapanare_mutex_unlock(&agent->inbox_producer_lock);
     if (rc == 0) {
         mapanare_bp_increment(&agent->bp);
         mapanare_sem_post(&agent->inbox_ready);
@@ -682,6 +691,8 @@ MAPANARE_EXPORT void mapanare_agent_destroy(mapanare_agent_t *agent) {
     while (mapanare_ring_pop(&agent->outbox, &msg) == 0) { (void)msg; }
     mapanare_ring_destroy(&agent->inbox);
     mapanare_ring_destroy(&agent->outbox);
+    /* v4.28.0: destroy the MPSC producer lock added in agent_init. */
+    mapanare_mutex_destroy(&agent->inbox_producer_lock);
     mapanare_sem_destroy(&agent->inbox_ready);
     mapanare_sem_destroy(&agent->outbox_ready);
     /* Note: caller is responsible for freeing the agent struct if heap-allocated.

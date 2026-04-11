@@ -28,8 +28,13 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // version — return the compiler version string
 // ---------------------------------------------------------------------------
 
+// v4.28.0: the literal ``__MN_VERSION__`` is a build-time placeholder that
+// ``scripts/build_stage1.py`` rewrites from the top-level ``VERSION`` file
+// before compiling the self-hosted sources. Prior to this release, the
+// version was hardcoded and became 19 minor versions stale. See
+// ``docs/roadmap/v4/v4.28.0/FORENSICS.md`` for the full history.
 fn version() -> String {
-    return "mapanare 4.7.1"
+    return "mapanare __MN_VERSION__"
 }
 
 // ---------------------------------------------------------------------------

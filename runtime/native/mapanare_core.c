@@ -254,12 +254,22 @@ static int            s_intern_sealed = 0;    /* 1 after first use — cap is lo
 
 /* Thread safety for the intern table */
 #ifdef _WIN32
+/*
+ * v4.28.0: swapped the ``InterlockedCompareExchange`` double-check pattern
+ * for ``InitOnceExecuteOnce`` (same fix as ``mn_signal_mutex`` above).
+ * The CAS pattern was flagged by Cobra #5 in the v4.26.0 panel — the
+ * Windows memory model does not guarantee the ``InitializeCriticalSection``
+ * write is visible to a thread that observed the flag transition.
+ */
 static CRITICAL_SECTION s_intern_cs;
-static volatile LONG s_intern_cs_init = 0;
+static INIT_ONCE s_intern_cs_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK s_intern_cs_init_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
+    InitializeCriticalSection(&s_intern_cs);
+    return TRUE;
+}
 static void intern_lock(void) {
-    if (InterlockedCompareExchange(&s_intern_cs_init, 1, 0) == 0) {
-        InitializeCriticalSection(&s_intern_cs);
-    }
+    InitOnceExecuteOnce(&s_intern_cs_once, s_intern_cs_init_cb, NULL, NULL);
     EnterCriticalSection(&s_intern_cs);
 }
 static void intern_unlock(void) { LeaveCriticalSection(&s_intern_cs); }
@@ -685,18 +695,40 @@ MN_EXPORT MnString __mn_str_from_bool(int64_t value) {
 
 static char   s_int_bufs[SMALL_INT_RANGE][8] __attribute__((aligned(8))); /* max "-128\0" = 5 chars, padded+aligned for mn_untag */
 static MnString s_int_cache[SMALL_INT_RANGE];
-static int      s_int_cache_init = 0;
 
-static void init_small_int_cache(void) {
-    if (s_int_cache_init) return;
+/*
+ * v4.28.0: same pattern as ``mn_init_tag_strings`` — the ``int init`` flag
+ * was racy. Switched to the canonical once-init primitive for each platform.
+ */
+#ifdef _WIN32
+static INIT_ONCE s_int_cache_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK init_small_int_cache_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
     for (int i = 0; i < SMALL_INT_RANGE; i++) {
         int val = SMALL_INT_MIN + i;
         int n = snprintf(s_int_bufs[i], sizeof(s_int_bufs[i]), "%d", val);
         s_int_cache[i].data = s_int_bufs[i]; /* NOT heap-tagged */
         s_int_cache[i].len  = (int64_t)n;
     }
-    s_int_cache_init = 1;
+    return TRUE;
 }
+static void init_small_int_cache(void) {
+    InitOnceExecuteOnce(&s_int_cache_once, init_small_int_cache_cb, NULL, NULL);
+}
+#else
+static pthread_once_t s_int_cache_once = PTHREAD_ONCE_INIT;
+static void init_small_int_cache_impl(void) {
+    for (int i = 0; i < SMALL_INT_RANGE; i++) {
+        int val = SMALL_INT_MIN + i;
+        int n = snprintf(s_int_bufs[i], sizeof(s_int_bufs[i]), "%d", val);
+        s_int_cache[i].data = s_int_bufs[i]; /* NOT heap-tagged */
+        s_int_cache[i].len  = (int64_t)n;
+    }
+}
+static void init_small_int_cache(void) {
+    pthread_once(&s_int_cache_once, init_small_int_cache_impl);
+}
+#endif
 
 MN_EXPORT MnString __mn_str_from_int(int64_t value) {
     if (value >= SMALL_INT_MIN && value <= SMALL_INT_MAX) {
@@ -1812,12 +1844,25 @@ static int64_t    mn_signal_batch_pending_len = 0;
 
 #ifdef _WIN32
 #include <windows.h>
+/*
+ * v4.28.0: replaced the prior ``InterlockedCompareExchange`` /
+ * ``volatile LONG`` double-checked-locking pattern (flagged by Cobra #5 in
+ * the v4.26.0 panel — the Windows memory model does not guarantee that the
+ * ``InitializeCriticalSection`` write is visible to a thread that observed
+ * the flag transition) with ``InitOnceExecuteOnce``, which is the
+ * canonical Windows one-shot initializer and provides the right release /
+ * acquire barriers on flag + payload. Do not reintroduce the CAS pattern
+ * here: the panel explicitly called it out.
+ */
 static CRITICAL_SECTION mn_signal_mutex;
-static volatile LONG mn_signal_mutex_initialized = 0;
-static void mn_signal_ensure_mutex(void) {
-    if (InterlockedCompareExchange(&mn_signal_mutex_initialized, 1, 0) == 0) {
-        InitializeCriticalSection(&mn_signal_mutex);
-    }
+static INIT_ONCE mn_signal_mutex_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK mn_signal_mutex_init_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
+    InitializeCriticalSection(&mn_signal_mutex);
+    return TRUE;
+}
+static inline void mn_signal_ensure_mutex(void) {
+    InitOnceExecuteOnce(&mn_signal_mutex_once, mn_signal_mutex_init_cb, NULL, NULL);
 }
 static inline void mn_signal_lock(void)   { mn_signal_ensure_mutex(); EnterCriticalSection(&mn_signal_mutex); }
 static inline void mn_signal_unlock(void) { LeaveCriticalSection(&mn_signal_mutex); }
@@ -1888,16 +1933,36 @@ MN_EXPORT void __mn_signal_set(MnSignal *signal, const void *value) {
     /* Don't allow setting computed signals */
     if (signal->compute_fn != NULL) return;
 
+    /*
+     * v4.28.0: the memcmp / dtor / memcpy trio used to run OUTSIDE the lock,
+     * racing any concurrent ``__mn_signal_set`` on the same signal (v4.26.0
+     * panel: Viper H5, Mamba H1). Now the entire value-mutation critical
+     * section runs under ``mn_signal_mutex``: readers that hold the lock
+     * observe either the full old value or the full new value, never a
+     * torn intermediate. Propagation is still called outside the lock so
+     * that callbacks that call back into ``__mn_signal_set`` (a common
+     * reactive pattern) do not deadlock.
+     */
+    mn_signal_lock();
+
     /* Check if value actually changed (memcmp) */
-    if (signal->val_size > 0 && memcmp(signal->value, value, (size_t)signal->val_size) == 0) {
+    int changed = 1;
+    if (signal->val_size > 0
+        && memcmp(signal->value, value, (size_t)signal->val_size) == 0) {
+        changed = 0;
+    }
+
+    if (!changed) {
+        mn_signal_unlock();
         return;  /* No change, skip propagation */
     }
 
-    /* Call destructor on old value before overwriting */
+    /* Call destructor on old value before overwriting — still under lock
+     * because the destructor reads ``signal->value`` and a concurrent set
+     * could otherwise free the same pointer twice. */
     if (signal->dtor) signal->dtor(signal->value);
     memcpy(signal->value, value, (size_t)signal->val_size);
 
-    mn_signal_lock();
     if (mn_signal_batch_depth > 0) {
         /* Defer propagation: add to pending list */
         if (mn_signal_batch_pending_len >= MN_SIGNAL_MAX_PENDING) {
@@ -2560,6 +2625,31 @@ typedef struct {
 
 static MnTypeRegEntry mn_type_reg[MN_TYPEREG_CAP];
 
+/*
+ * v4.28.0: the type registry used to be an unlocked global hash table
+ * (v4.26.0 panel: Viper H5). Under concurrent ``__mn_type_registry_put``
+ * calls, two threads could scribble on the same entry mid-probe. Reads
+ * were racing with writes too. This rwlock lets many readers proceed in
+ * parallel while serialising writers — the common case in the self-hosted
+ * compiler is many lookups vs. rare inserts during module lowering, so a
+ * reader-writer lock is the right primitive.
+ *
+ * Windows has no ``pthread_rwlock_t``; SRWLOCK is the native equivalent.
+ */
+#ifdef _WIN32
+static SRWLOCK mn_typereg_lock = SRWLOCK_INIT;
+static inline void mn_typereg_read_lock(void)    { AcquireSRWLockShared(&mn_typereg_lock); }
+static inline void mn_typereg_read_unlock(void)  { ReleaseSRWLockShared(&mn_typereg_lock); }
+static inline void mn_typereg_write_lock(void)   { AcquireSRWLockExclusive(&mn_typereg_lock); }
+static inline void mn_typereg_write_unlock(void) { ReleaseSRWLockExclusive(&mn_typereg_lock); }
+#else
+static pthread_rwlock_t mn_typereg_lock = PTHREAD_RWLOCK_INITIALIZER;
+static inline void mn_typereg_read_lock(void)    { pthread_rwlock_rdlock(&mn_typereg_lock); }
+static inline void mn_typereg_read_unlock(void)  { pthread_rwlock_unlock(&mn_typereg_lock); }
+static inline void mn_typereg_write_lock(void)   { pthread_rwlock_wrlock(&mn_typereg_lock); }
+static inline void mn_typereg_write_unlock(void) { pthread_rwlock_unlock(&mn_typereg_lock); }
+#endif
+
 static uint32_t mn_typereg_hash(const char *s, int64_t len) {
     uint32_t h = 5381;
     for (int64_t i = 0; i < len; i++)
@@ -2573,6 +2663,7 @@ MN_EXPORT void __mn_type_registry_put(MnString fn_name, MnString kind, MnString 
     int64_t flen = fn_name.len > 255 ? 255 : fn_name.len;
     uint32_t idx = mn_typereg_hash(fdata, fn_name.len) % MN_TYPEREG_CAP;
 
+    mn_typereg_write_lock();
     for (int probe = 0; probe < MN_TYPEREG_CAP; probe++) {
         uint32_t i = (idx + probe) % MN_TYPEREG_CAP;
         if (!mn_type_reg[i].occupied ||
@@ -2596,42 +2687,65 @@ MN_EXPORT void __mn_type_registry_put(MnString fn_name, MnString kind, MnString 
             mn_type_reg[i].type_name[tlen] = '\0';
 
             mn_type_reg[i].occupied = 1;
+            mn_typereg_write_unlock();
             return;
         }
     }
+    mn_typereg_write_unlock();
 }
 
-static MnTypeRegEntry *mn_typereg_find(MnString fn_name) {
-    if (fn_name.len <= 0 || fn_name.data == NULL) return NULL;
+/* Caller must hold the read lock. Populates *out_kind / *out_type_name
+ * with a snapshot-on-success so readers can release the lock before
+ * allocating a Mapanare string from the buffers. */
+static int mn_typereg_snapshot(MnString fn_name,
+                                char *out_kind, size_t kind_cap,
+                                char *out_type_name, size_t type_cap) {
+    if (fn_name.len <= 0 || fn_name.data == NULL) return 0;
     const char *fdata = mn_untag(fn_name.data);
     uint32_t idx = mn_typereg_hash(fdata, fn_name.len) % MN_TYPEREG_CAP;
 
     for (int probe = 0; probe < MN_TYPEREG_CAP; probe++) {
         uint32_t i = (idx + probe) % MN_TYPEREG_CAP;
-        if (!mn_type_reg[i].occupied) return NULL;
+        if (!mn_type_reg[i].occupied) return 0;
         int64_t flen = fn_name.len > 255 ? 255 : fn_name.len;
         if (mn_type_reg[i].fn_name[flen] == '\0' &&
             memcmp(mn_type_reg[i].fn_name, fdata, (size_t)flen) == 0) {
-            return &mn_type_reg[i];
+            if (out_kind && kind_cap > 0) {
+                strncpy(out_kind, mn_type_reg[i].kind, kind_cap - 1);
+                out_kind[kind_cap - 1] = '\0';
+            }
+            if (out_type_name && type_cap > 0) {
+                strncpy(out_type_name, mn_type_reg[i].type_name, type_cap - 1);
+                out_type_name[type_cap - 1] = '\0';
+            }
+            return 1;
         }
     }
-    return NULL;
+    return 0;
 }
 
 MN_EXPORT MnString __mn_type_registry_get_kind(MnString fn_name) {
-    MnTypeRegEntry *e = mn_typereg_find(fn_name);
-    if (e) return __mn_str_from_cstr(e->kind);
+    char kind_buf[64] = {0};
+    mn_typereg_read_lock();
+    int found = mn_typereg_snapshot(fn_name, kind_buf, sizeof(kind_buf), NULL, 0);
+    mn_typereg_read_unlock();
+    if (found) return __mn_str_from_cstr(kind_buf);
     return __mn_str_empty();
 }
 
 MN_EXPORT MnString __mn_type_registry_get_name(MnString fn_name) {
-    MnTypeRegEntry *e = mn_typereg_find(fn_name);
-    if (e) return __mn_str_from_cstr(e->type_name);
+    char name_buf[256] = {0};
+    mn_typereg_read_lock();
+    int found = mn_typereg_snapshot(fn_name, NULL, 0, name_buf, sizeof(name_buf));
+    mn_typereg_read_unlock();
+    if (found) return __mn_str_from_cstr(name_buf);
     return __mn_str_empty();
 }
 
 MN_EXPORT void __mn_type_registry_clear(void) {
+    mn_typereg_write_lock();
     memset(mn_type_reg, 0, sizeof(mn_type_reg));
+    mn_typereg_write_unlock();
 }
 
 /* -----------------------------------------------------------------------
@@ -2723,15 +2837,40 @@ static const char *mn_tag_names[] = {
 #define MN_TAG_COUNT (int)(sizeof(mn_tag_names) / sizeof(mn_tag_names[0]))
 static MnString mn_tag_strings[12];
 static MnString mn_tag_unknown;
-static int mn_tag_strings_init = 0;
 
-static void mn_init_tag_strings(void) {
-    if (mn_tag_strings_init) return;
+/*
+ * v4.28.0: ``mn_init_tag_strings`` used to be a hand-rolled "if (init)
+ * return; ...; init = 1" guard — the classic racy double-check without a
+ * memory barrier or mutex. Two concurrent callers could both run the
+ * init loop and scribble on ``mn_tag_strings[]`` at the same time. The
+ * v4.26.0 panel (Mamba) flagged this as the **7th** cycle carry-forward:
+ * the fix has been on the wishlist for seven review cycles without
+ * landing. It lands now, on the canonical primitive for each platform:
+ * ``pthread_once`` on POSIX, ``InitOnceExecuteOnce`` on Windows.
+ */
+#ifdef _WIN32
+static INIT_ONCE mn_tag_strings_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK mn_init_tag_strings_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
     for (int i = 0; i < MN_TAG_COUNT; i++)
         mn_tag_strings[i] = __mn_str_from_cstr(mn_tag_names[i]);
     mn_tag_unknown = __mn_str_from_cstr("Unknown");
-    mn_tag_strings_init = 1;
+    return TRUE;
 }
+static void mn_init_tag_strings(void) {
+    InitOnceExecuteOnce(&mn_tag_strings_once, mn_init_tag_strings_cb, NULL, NULL);
+}
+#else
+static pthread_once_t mn_tag_strings_once = PTHREAD_ONCE_INIT;
+static void mn_init_tag_strings_impl(void) {
+    for (int i = 0; i < MN_TAG_COUNT; i++)
+        mn_tag_strings[i] = __mn_str_from_cstr(mn_tag_names[i]);
+    mn_tag_unknown = __mn_str_from_cstr("Unknown");
+}
+static void mn_init_tag_strings(void) {
+    pthread_once(&mn_tag_strings_once, mn_init_tag_strings_impl);
+}
+#endif
 
 MN_EXPORT MnString __mn_any_typename(MnValue v) {
     mn_init_tag_strings();

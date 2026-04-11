@@ -191,6 +191,16 @@ typedef struct mapanare_agent {
     /* Message queues */
     mapanare_ring_buffer_t   inbox;            /* incoming messages   */
     mapanare_ring_buffer_t   outbox;           /* outgoing messages   */
+    /* v4.28.0: the ring itself is SPSC but ``mapanare_agent_send`` is
+     * called from any thread that has a handle to the agent, so the
+     * producer side is MPSC in practice (v4.26.0 panel: Viper H5).
+     * ``inbox_producer_lock`` serializes the producer side so no two
+     * senders race on ``head`` / slot writes. The thread pool's
+     * ``queue_lock`` already follows the same SPSC→MPSC-via-mutex pattern
+     * (see ``mapanare_thread_pool_t``). A bounded-MPSC structure (Vyukov)
+     * is the future perf improvement; for v4.28.0 correctness is what
+     * the panel asked for. */
+    mapanare_mutex_t         inbox_producer_lock;
     mapanare_backpressure_t  bp;               /* backpressure for inbox */
     mapanare_semaphore_t     inbox_ready;      /* signalled on inbox push  */
     mapanare_semaphore_t     outbox_ready;     /* signalled on outbox push */

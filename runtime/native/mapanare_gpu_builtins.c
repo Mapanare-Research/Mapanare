@@ -157,31 +157,102 @@ MN_EXPORT MnList __mn_gpu_tensor_div(const MnList *a, const MnList *b) {
     return out;
 }
 
-/** gpu_tensor_matmul(a: List<Float>, b: List<Float>, m: Int, n: Int, k: Int) -> List<Float> */
+/** gpu_tensor_matmul(a: List<Float>, b: List<Float>, m: Int, n: Int, k: Int) -> List<Float>
+ *
+ * v4.28.0: closes the v3.47.0 hard-blocker carry-forward that was
+ * byte-identical to the pre-v4.0.0 state for 27 review cycles (see
+ * ``docs/roadmap/v4/v4.28.0/FORENSICS.md``). Three classes of bug:
+ *
+ * 1. The ``ta->shape`` / ``tb->shape`` mallocs had no NULL check — if
+ *    either failed, the immediately following ``ta->shape[0] = m``
+ *    dereferenced NULL.
+ * 2. ``m * k`` and ``k * n`` were computed without overflow checking.
+ *    A caller passing pathological dimensions could produce a negative
+ *    ``size`` that the GPU backend would then use for buffer math.
+ * 3. The function trusted the caller's ``m, n, k`` values against the
+ *    input list lengths. A caller passing mismatched dimensions caused
+ *    undefined behaviour inside the GPU tensor compute path.
+ *
+ * All three are now checked up front. An empty list is returned on
+ * every error so the language-level behaviour is "matmul on invalid
+ * inputs returns the empty tensor" instead of "crash".
+ */
 MN_EXPORT MnList __mn_gpu_tensor_matmul(const MnList *a, const MnList *b,
                                          int64_t m, int64_t n, int64_t k) {
     mapanare_gpu_init();
+
+    /* Phase 2.2 — dimension validation up front. */
     if (!a || !a->data || !b || !b->data) {
         return __mn_list_new((int64_t)sizeof(double));
     }
+    if (m <= 0 || n <= 0 || k <= 0) {
+        return __mn_list_new((int64_t)sizeof(double));
+    }
+    /* Overflow-safe check: a->len == m*k, b->len == k*n. Use 128-bit mul
+     * via ``__int128`` where available, else fall back to a per-step
+     * overflow check. */
+    int64_t a_expected = 0;
+    int64_t b_expected = 0;
+#if defined(__SIZEOF_INT128__)
+    {
+        __int128 ak = (__int128)m * (__int128)k;
+        __int128 kn = (__int128)k * (__int128)n;
+        if (ak > (__int128)INT64_MAX || kn > (__int128)INT64_MAX) {
+            return __mn_list_new((int64_t)sizeof(double));
+        }
+        a_expected = (int64_t)ak;
+        b_expected = (int64_t)kn;
+    }
+#else
+    {
+        /* Portable overflow check: if m*k > INT64_MAX, return empty. */
+        if (m > INT64_MAX / k) {
+            return __mn_list_new((int64_t)sizeof(double));
+        }
+        if (k > INT64_MAX / n) {
+            return __mn_list_new((int64_t)sizeof(double));
+        }
+        a_expected = m * k;
+        b_expected = k * n;
+    }
+#endif
+    if (a->len != a_expected || b->len != b_expected) {
+        /* Caller-supplied dimensions don't match the flat list lengths.
+         * Rather than dispatching to the GPU kernel with a bogus shape,
+         * return the empty tensor. */
+        return __mn_list_new((int64_t)sizeof(double));
+    }
+
+    /* Phase 2.1 — struct-header NULL checks (unchanged from v3.47.0). */
     mapanare_tensor_t *ta = (mapanare_tensor_t *)malloc(sizeof(mapanare_tensor_t));
     mapanare_tensor_t *tb = (mapanare_tensor_t *)malloc(sizeof(mapanare_tensor_t));
     if (!ta || !tb) {
         free(ta); free(tb);
         return __mn_list_new((int64_t)sizeof(double));
     }
+
+    /* Phase 2.1 — shape-array NULL checks. The panel explicitly called
+     * these out: previously the code wrote ``ta->shape[0] = m`` without
+     * checking that ``malloc`` succeeded, which is a NULL-deref segfault
+     * under memory pressure. */
+    ta->shape = (int64_t *)malloc(2 * sizeof(int64_t));
+    tb->shape = (int64_t *)malloc(2 * sizeof(int64_t));
+    if (!ta->shape || !tb->shape) {
+        free(ta->shape); free(tb->shape);
+        free(ta); free(tb);
+        return __mn_list_new((int64_t)sizeof(double));
+    }
+
     ta->data = a->data;
     ta->ndim = 2;
-    ta->shape = (int64_t *)malloc(2 * sizeof(int64_t));
     ta->shape[0] = m; ta->shape[1] = k;
-    ta->size = m * k;
+    ta->size = a_expected;
     ta->elem_size = (int64_t)sizeof(double);
 
     tb->data = b->data;
     tb->ndim = 2;
-    tb->shape = (int64_t *)malloc(2 * sizeof(int64_t));
     tb->shape[0] = k; tb->shape[1] = n;
-    tb->size = k * n;
+    tb->size = b_expected;
     tb->elem_size = (int64_t)sizeof(double);
 
     mapanare_tensor_t *result = mapanare_gpu_tensor_matmul(ta, tb);

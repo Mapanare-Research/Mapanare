@@ -7,6 +7,170 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.28.0] - 2026-04-11
+
+**Concurrency + v3.47.0 Carry-Forwards — recovery release #2, zero new features.**
+
+v4.27.0 closed the 8 CRITICAL items from the v4.26.0 panel. v4.28.0
+closes the HIGH-severity concurrency regressions that appeared in the
+runtime since v4.0.0, the v3.47.0 carry-forward items that turned out
+to have never been committed (see
+[`FORENSICS.md`](./docs/roadmap/v4/v4.28.0/FORENSICS.md)), and the
+version-string regression that made the self-hosted `mnc-stage1
+version` command 19 releases stale. Still no new features.
+
+Full audit: [`CARRY_FORWARD_AUDIT.md`](./docs/roadmap/v4/v4.28.0/CARRY_FORWARD_AUDIT.md).
+Full session log: [`SESSION_REPORT.md`](./docs/roadmap/v4/v4.28.0/SESSION_REPORT.md).
+
+### Fixed — concurrency (v4.26.0 panel HIGH)
+
+- **Signal value mutation now holds the lock.** `__mn_signal_set` used to
+  read/write `signal->value` via `memcmp`/`dtor`/`memcpy` outside the
+  signal mutex (v4.26.0 panel: Viper H5, Mamba H1). All three operations
+  now run under the mutex; propagation is still called outside the lock
+  so reactive callbacks don't deadlock. `tests/runtime/tsan/signal_stress.c`
+  exercises the path under ThreadSanitizer.
+- **Agent inbox is MPSC-safe.** The inbox ring is still SPSC; the fix
+  wraps the producer side of `mapanare_agent_send` in a new
+  `inbox_producer_lock` so concurrent sends from multiple producer
+  threads no longer race on `head` / slot writes. The thread pool's
+  existing `queue_lock` uses the same pattern. Regression-gated by
+  `tests/runtime/tsan/inbox_stress.c` (4 producers × 5000 msgs).
+  Vyukov bounded MPSC is deferred to v4.32.0+ for performance; v4.28.0
+  ships correctness.
+- **Type registry uses a reader-writer lock.** The global
+  `mn_type_reg` hash table was unlocked; concurrent `__mn_type_registry_put`
+  / `__mn_type_registry_get_kind` calls could observe half-initialised
+  entries (v4.26.0 panel: Viper H5). Readers now take a shared
+  `pthread_rwlock_t` / Windows `SRWLOCK`, writers take an exclusive
+  lock, and `get_*` returns a snapshot copy so the read lock can be
+  released before the Mapanare-string allocator runs. Regression-gated
+  by `tests/runtime/tsan/type_registry_stress.c` (4 writers + 4 readers).
+- **`mn_init_tag_strings` once-init — 7th cycle carry-forward.** Replaced
+  the `if (init_flag) return; ...; init_flag = 1;` pattern with
+  `pthread_once` on POSIX and `InitOnceExecuteOnce` on Windows. The
+  same fix applied to three other sites the grep surfaced:
+  `init_small_int_cache` (`core.c:688`), the Windows intern-table
+  critical-section init (`core.c:258`), and the signal mutex init
+  (`core.c:1815-1823`). Closes v3.47.0 Viper #6 / Mamba L4 that had
+  been carrying forward for seven review cycles.
+
+### Fixed — v3.47.0 hard-blocker carry-forwards
+
+- **Matmul shape NULL check + dimension validation.** The v3.47.0 panel
+  marked these as must-fix before v4.0.0. Forensics found the v4.0.0
+  CHANGELOG claim was false: the file has **one commit** in its
+  entire history (`fbd382e v3.46.0`) and v4.0.0 never touched it. The
+  fix adds (a) NULL checks on the `ta->shape`/`tb->shape` mallocs, (b)
+  `m*k` / `k*n` overflow checks via `__int128` where available with
+  portable fallback, and (c) a flat-length consistency check
+  (`a->len == m*k`, `b->len == k*n`). Invalid inputs return the empty
+  list rather than crashing. Regression-gated by
+  `tests/runtime/tsan/matmul_validation.c` — all 7 cases pass against
+  a real RTX 4090.
+- **GLSL temp file race.** `vk_compile_glsl` used fixed paths
+  `/tmp/mn_gpu_shader.comp` and `/tmp/mn_gpu_shader.spv`, so two
+  concurrent invocations (from two threads or two processes) would
+  race on both files. Replaced with `mkstemps` on POSIX and
+  `GetTempFileNameW` on Windows; both variants produce unique
+  per-invocation paths and the files are cleaned up on every exit
+  path.
+- **Windows GPU init race.** `mapanare_gpu.c:1059-1062` used
+  `InterlockedCompareExchange` double-check locking — the CAS flipped
+  a flag but had no release barrier, so a reader observing the
+  transition could still see a half-initialised `g_gpu_ctx`. Replaced
+  with `InitOnceExecuteOnce`. Same pattern appeared at four other
+  Windows sites (signal mutex, intern table, tag strings, small-int
+  cache); all fixed in the same release so there is no more
+  `InterlockedCompareExchange`-based init anywhere in the runtime.
+- **Windows GPU init race propagated to signal mutex** (Cobra #5). Both
+  sites use `InitOnceExecuteOnce` now. A comment at each site explains
+  why double-checked locking is wrong under the Windows memory model so
+  this doesn't get reverted again.
+
+### Fixed — version string regression
+
+- **`mnc-stage1 version` is sourced from the `VERSION` file.**
+  `mapanare/self/main.mn:32` used to return a hardcoded
+  `"mapanare 4.7.1"` — 19 minor versions stale, because the manual
+  bump step was dropped from the release process at v4.8.0. Replaced
+  with a `"mapanare __MN_VERSION__"` placeholder that
+  `scripts/build_stage1.py` substitutes from `VERSION` before
+  compilation. A missing placeholder is now a build error so no future
+  edit can silently unwire the substitution.
+- **`test_version_string` is a real runtime check.** Previously it did
+  a substring match against the raw `main.mn` source — which produced
+  a false positive the moment any comment mentioned the current
+  version. The test is now three parts:
+  (a) `test_version_placeholder_in_source` — raw source has the
+  `__MN_VERSION__` placeholder;
+  (b) `test_version_string_is_not_hardcoded` — no `"mapanare X.Y.Z"`
+  literal inside the `version()` body;
+  (c) `test_mnc_stage1_version_matches_version_file` — runs
+  `./mnc-stage1 version` and asserts the output contains the live
+  `VERSION` file contents. The binary check is the actual regression
+  gate.
+
+### Added
+
+- `tests/runtime/tsan/` — new directory for C stress tests compiled
+  with `-fsanitize=thread`. Four test programs landed in v4.28.0:
+  - `signal_stress.c` — 4 writer threads × 5000 sets (Phase 1.1)
+  - `inbox_stress.c` — 4 producers × 5000 sends (Phase 1.2)
+  - `type_registry_stress.c` — 4 writers + 4 readers × 2000 ops (Phase 1.3)
+  - `matmul_validation.c` — 7 validation paths (Phase 2.1 + 2.2)
+- `docs/roadmap/v4/v4.28.0/FORENSICS.md` — the "there was no revert"
+  writeup from Phase 0.
+- `docs/roadmap/v4/v4.28.0/CARRY_FORWARD_AUDIT.md` — every item from
+  `.reviews/v3.47.0/README.md` and `.reviews/v4.26.0/README.md`
+  classified with a target release. No item sits in limbo.
+- `tests/self_hosted/test_main_mn.py::test_version_placeholder_in_source` and
+  `test_mnc_stage1_version_matches_version_file` — real regression tests
+  for the version string pipeline.
+
+### Changed
+
+- `scripts/build_stage1.py` — reads `VERSION` and substitutes the
+  `__MN_VERSION__` placeholder into the self-hosted source before
+  compilation.
+- `runtime/native/mapanare_core.c` — new `pthread_rwlock_t` /
+  `SRWLOCK` protecting `mn_type_reg`; new `inbox_producer_lock` field
+  in `mapanare_agent_t`; all `init` flags replaced with `pthread_once`
+  / `InitOnceExecuteOnce`.
+- `runtime/native/mapanare_runtime.h` — `mapanare_agent_t` gains a
+  `mapanare_mutex_t inbox_producer_lock` field (matches the thread
+  pool's existing `queue_lock` pattern).
+
+### Verified
+
+- 46/46 golden, 11/11 stage2
+- 614 passing + 4 pre-existing xfail in `parser` + `semantic` +
+  `diagnostics` + `bind` + `self_hosted` test suites
+- `black` / `ruff` / `mypy` clean across `mapanare/` and `runtime/`
+- `tests/runtime/tsan/signal_stress.c` — writer-only, 4 × 5000, TSan clean
+- `tests/runtime/tsan/inbox_stress.c` — 4 producers × 5000 = 20000 msgs, TSan clean
+- `tests/runtime/tsan/type_registry_stress.c` — 4 writers + 4 readers × 2000, TSan clean
+- `tests/runtime/tsan/matmul_validation.c` — 7/7 validation paths pass on a real RTX 4090
+- `readelf -d runtime/native/libmapanare_rt.a | grep -c TEXTREL` = 0
+- `grep InterlockedCompareExchange runtime/native/*.c` = 0 (outside comments)
+
+### Not in this release — deferred to v4.29.0+
+
+Per [`CARRY_FORWARD_AUDIT.md`](./docs/roadmap/v4/v4.28.0/CARRY_FORWARD_AUDIT.md):
+
+- Orphaned `mapanare_db.c`/`mapanare_html.c` (1,942 lines) → v4.29.0
+- `extern "Python" fn` silent xfails (79 tests) → v4.29.0
+- `verify_fixed_point.sh` `EXIT=0` unconditional → v4.29.0
+- `stage3.ll` zero-byte stale file → v4.29.0
+- `--no-check` silent bypass → v4.29.0
+- `await` coroutine lowering decision → v4.30.0
+- `_emit_agent_wrap` no-op stub → v4.30.0
+- Optimizer non-convergence → ICE → v4.30.0
+- Six 7-cycle emitter carry-forwards → v4.30.0
+- SPEC sync + CI honesty gates → v4.31.0
+- DWARF debug info decision → v4.31.0 OR v5.x
+- **Next 7-reviewer panel** → v4.31.0 (terminates arc externally)
+
 ## [4.27.0] - 2026-04-11
 
 **Honesty Recovery — close 8 CRITICAL panel items, no new features.**
