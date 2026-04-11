@@ -50,6 +50,14 @@ runtime/native/*.so
 runtime/native/*.dll
 runtime/native/*.dylib
 runtime/native/*.o
+# v4.32.0 Phase 2.1: libmapanare_rt.a is produced by `make build-rt`
+# from runtime/native/*.c. A committed copy is source-clean, artifact-
+# stale (Boa M1 at the v4.31.0 arc-end panel caught the committed
+# archive carrying __mn_list_oob_buf after the source had removed it).
+# The archive lives in runtime/native/ at build time but never in the
+# tree.
+runtime/native/*.a
+runtime/native/libmapanare_rt.a
 mapanare/self/*.o
 mapanare/self/mnc-stage1
 mapanare/self/mnc-stage1.exe

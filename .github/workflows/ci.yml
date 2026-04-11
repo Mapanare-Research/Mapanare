@@ -225,6 +225,17 @@ jobs:
       - name: Verify Makefile RUNTIME_SOURCES vs runtime/native/*.c
         run: make check-runtime-sources
 
+      # v4.32.0 Phase 2.1 (Boa M1): complementary gate to
+      # check-runtime-sources — fails if any binary artifact
+      # (.a / .o / .so / ELF / PE / Mach-O) is tracked in
+      # runtime/native/ or mapanare/self/ (except the frozen
+      # mnc-seed bootstrap binary). The v4.31.0 arc-end panel caught
+      # a committed libmapanare_rt.a carrying `__mn_list_oob_buf`
+      # after the source had removed it — this gate catches the next
+      # such regression at PR time.
+      - name: Verify no tracked binary artifacts
+        run: make check-no-tracked-binaries
+
       - name: Compile and run with AddressSanitizer
         run: |
           gcc -fsanitize=address -fno-omit-frame-pointer -g -Wall -Wextra -Werror -pthread \

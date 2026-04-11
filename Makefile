@@ -3,7 +3,7 @@
 # to /bin/dash which has no ``<(...)`` support.
 SHELL := /bin/bash
 
-.PHONY: install build build-native build-rt check-runtime-sources bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report
+.PHONY: install build build-native build-rt check-runtime-sources check-no-tracked-binaries bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report
 
 # v4.29.0: build-rt now enumerates every runtime object that is expected
 # to land in libmapanare_rt.a. The list used to be hand-maintained and
@@ -77,6 +77,31 @@ check-runtime-sources:  ## v4.29.0: fail if runtime/native/*.c drifts from RUNTI
 		echo ""; \
 		echo "Add any new file to RUNTIME_SOURCES (or RUNTIME_EXCLUDES if it"; \
 		echo "belongs to the self-hosted driver) in the Makefile."; \
+		exit 1; \
+	fi
+
+# v4.32.0 Phase 2.1 (Boa M1): fail if any binary artifact is tracked
+# in runtime/native/ or mapanare/self/. A committed archive / shared
+# object / ELF / PE32 is source-clean, artifact-stale waiting to
+# happen — the v4.31.0 arc-end panel caught libmapanare_rt.a carrying
+# `__mn_list_oob_buf` after the source had removed it. This check
+# complements check-runtime-sources on the binary side.
+#
+# Allowlist: mapanare/self/mnc-seed is the frozen v0.6.0 bootstrap
+# binary and is deliberately tracked (there is no other way to build
+# from scratch without Python).
+check-no-tracked-binaries:  ## v4.32.0: fail if runtime/native or self/ contains tracked binaries
+	@BINS=$$(git ls-files runtime/native/ mapanare/self/ | \
+		grep -v '^mapanare/self/mnc-seed$$' | \
+		xargs -I{} sh -c 'f=$$(file -b "{}" 2>/dev/null); case "$$f" in *ELF*|*"PE32"*|*"Mach-O"*|*"current ar archive"*|*"shared object"*) echo "{}";; esac'); \
+	if [ -n "$$BINS" ]; then \
+		echo "error: tracked binary artifact(s) found:"; \
+		echo "$$BINS" | sed 's/^/  /'; \
+		echo ""; \
+		echo "Binary artifacts (.a, .o, .so, .dll, .exe, ELF/PE/Mach-O)"; \
+		echo "should be built by 'make build-rt' or similar, never"; \
+		echo "committed. 'git rm' the offending file(s) and add them"; \
+		echo "to .gitignore. See v4.32.0 Phase 2.1 for the precedent."; \
 		exit 1; \
 	fi
 
