@@ -979,15 +979,13 @@ class MIRLowerer:
 
         self._module.functions.append(mir_fn)
 
-        # Register GPU kernel metadata for @cuda/@vulkan/@gpu decorated functions
-        for dec in decorators:
-            d = dec.lower()
-            if d in ("cuda", "vulkan", "gpu"):
-                raise NotImplementedError(
-                    "GPU code generation is not yet implemented. "
-                    "@cuda/@vulkan/@gpu decorators will be available in a future release."
-                )
-                break
+        # v4.27.0 Path B recovery: ``@cuda``/``@vulkan``/``@gpu`` decorators
+        # used to raise ``NotImplementedError`` here, which crashed the
+        # compiler on any decorated function. They were only ever cosmetic
+        # — GPU compute in Mapanare has always gone through the
+        # ``gpu_tensor_*`` runtime builtins (see ``runtime/native/mapanare_gpu*``),
+        # not a source-level decorator. The decorators are now rejected at
+        # parse-time via the ``decorated_def`` rule, so this loop is removed.
 
         # Restore state
         self._fn = prev_fn

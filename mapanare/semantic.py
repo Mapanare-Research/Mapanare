@@ -7,6 +7,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from mapanare.diagnostics import Diagnostic
     from mapanare.modules import ModuleExport, ModuleResolver
 
 from mapanare.ast_nodes import (
@@ -122,23 +123,59 @@ __all__ = [
 ]
 
 # ---------------------------------------------------------------------------
-# Semantic error
+# Semantic error — thin record that now carries a real source range.
+#
+# v4.27.0 recovery: previously this record only stored a single (line, column)
+# point, so every semantic error underlined exactly one character regardless
+# of how wide the offending expression was (v4.26.0 panel CRITICAL #8 from
+# Anaconda). The representation is now range-aware: errors constructed via
+# ``SemanticChecker._error`` pick up the full ``Span`` from the AST node, and
+# ``cli._emit_semantic_errors`` renders them through ``diagnostics.py``'s
+# ``Diagnostic`` formatter so the underline matches the offending expression.
+#
+# The dataclass name and ``line``/``column``/``message``/``filename`` fields
+# are preserved so that external consumers (LSP, playground, tests,
+# test_runner) continue to work without a mass rename.
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
 class SemanticError:
-    """A single semantic error with source location."""
+    """A single semantic error with a real source range."""
 
     message: str
     line: int = 0
     column: int = 0
+    end_line: int = 0
+    end_column: int = 0
     filename: str = "<input>"
     severity: str = "error"
 
     def __str__(self) -> str:
         prefix = "warning" if self.severity == "warning" else "error"
         return f"{self.filename}:{self.line}:{self.column}: {prefix}: {self.message}"
+
+    def to_diagnostic(self) -> "Diagnostic":
+        """Render this error as a :class:`mapanare.diagnostics.Diagnostic`.
+
+        Routes through ``mapanare.diagnostics`` so the CLI error path uses the
+        same rustc-quality formatter as parser errors. If ``end_line`` or
+        ``end_column`` were not populated (legacy call sites), the renderer
+        falls back to a one-character span so behaviour is unchanged.
+        """
+        from mapanare.ast_nodes import Span
+        from mapanare.diagnostics import Diagnostic, Label, Severity
+
+        end_line = self.end_line if self.end_line > 0 else self.line
+        end_column = self.end_column if self.end_column > 0 else self.column + 1
+        span = Span(line=self.line, column=self.column, end_line=end_line, end_column=end_column)
+        severity = Severity.WARNING if self.severity == "warning" else Severity.ERROR
+        return Diagnostic(
+            severity=severity,
+            message=self.message,
+            filename=self.filename,
+            labels=[Label(span=span, primary=True)],
+        )
 
 
 class SemanticErrors(Exception):
@@ -302,11 +339,15 @@ class SemanticChecker:
     # -- Error helpers --------------------------------------------------
 
     def _error(self, message: str, node: ASTNode) -> None:
+        # v4.27.0: capture the full AST span so diagnostics underline the
+        # offending expression instead of pointing at a single character.
         self.errors.append(
             SemanticError(
                 message=message,
                 line=node.span.line,
                 column=node.span.column,
+                end_line=node.span.end_line,
+                end_column=node.span.end_column,
                 filename=self.filename,
             )
         )
@@ -327,6 +368,8 @@ class SemanticChecker:
                 message=message,
                 line=node.span.line,
                 column=node.span.column,
+                end_line=node.span.end_line,
+                end_column=node.span.end_column,
                 filename=self.filename,
                 severity="warning",
             )

@@ -40,8 +40,16 @@ The following identifiers are reserved as keywords and cannot be used as variabl
 
 | Keyword | Description |
 |---|---|
-| `let` | Declare an immutable variable binding. |
+| `let` | Declare an immutable binding. Also used at module scope: a top-level `let NAME: Type = value` declares a module-level immutable value visible to every function in the module. |
 | `mut` | Declare a mutable variable binding: `let mut x = 0`. |
+
+> **Note (v4.27.0):** `const` is not a Mapanare keyword. It was briefly added
+> in v4.18.0 as a parser alias for module-level `let` and was removed in
+> v4.27.0 as part of the post-review recovery because it carried no
+> additional semantics (no `ConstDef` AST node, no immutability beyond what
+> `let` already provides, no compile-time evaluation). Use module-level
+> `let` to declare top-level immutable values. `const` remains reserved for
+> future use — see *Appendix C: Reserved Keywords*.
 
 #### Functions and Definitions
 
@@ -1762,17 +1770,23 @@ All tensor operations fall back to CPU when no GPU is available. No code changes
 
 Built-in PTX kernels for CUDA cover `add`, `sub`, `mul`, `div`, `matmul` at float64 precision.
 
-### 23.3 Future: @gpu Decorator
+### 23.3 Note: @gpu Decorator (reserved, no semantics)
 
-> **Status:** The `@gpu` decorator syntax is specified but not yet connected to codegen. The decorator, PTX embedding, and kernel dispatch infrastructure exist in `emit_llvm_text.py` and `mapanare_gpu.c`. Use `gpu_*` builtins for GPU compute in the current release.
-
-```mn
-// Planned syntax — not yet functional
-@gpu
-fn vector_add(a: Tensor<Float>[1024], b: Tensor<Float>[1024]) -> Tensor<Float>[1024] {
-    return a + b
-}
-```
+> **Status (v4.27.0):** The `@gpu` / `@cuda` / `@vulkan` decorators are
+> accepted by the parser as ordinary decorator attributes but have **no
+> compiler behaviour**: no kernel extraction, no PTX/SPIR-V emission, no
+> dispatch routing. GPU compute in Mapanare goes through the
+> `gpu_tensor_*` runtime builtins (see §23.1/23.2), which are the
+> supported surface for CUDA and Vulkan. The `lower.py` handler that
+> previously raised `NotImplementedError` when one of these decorators
+> was encountered was removed in v4.27.0 as part of the post-review
+> recovery — the decorator was never wired to the runtime and claiming it
+> was "auto-kernel extraction" misled users.
+>
+> The decorator names remain reserved. A future release may revive them
+> as the user-facing entry point to the runtime kernel infrastructure,
+> but doing so will require an AST-level extractor and a real end-to-end
+> pytest — not a parser alias.
 
 ---
 

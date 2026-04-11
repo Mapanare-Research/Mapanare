@@ -51,10 +51,15 @@ class TestTensorShapes:
         shape_errors = [e for e in errors if "shape" in e.message.lower()]
         assert len(shape_errors) == 0, f"Unexpected shape error: {shape_errors}"
 
-    def test_const_keyword_parses(self) -> None:
-        """const N: Int = 3 at module level is accepted."""
+    def test_module_level_let_parses(self) -> None:
+        """`let N: Int = 3` at module level is accepted.
+
+        v4.27.0 recovery: the former ``const`` keyword test was renamed after
+        Path B removed ``const`` from the grammar. Module-level ``let`` is the
+        only way to declare top-level immutable values.
+        """
         src = textwrap.dedent("""\
-            const N: Int = 3
+            let N: Int = 3
             fn main() {
                 print(N)
             }
@@ -62,3 +67,22 @@ class TestTensorShapes:
         ast = parse(src, filename="test.mn")
         errors = check(ast, filename="test.mn")
         assert not errors
+
+    def test_const_keyword_is_parse_error(self) -> None:
+        """`const` is not a Mapanare keyword and must fail to parse.
+
+        v4.27.0 Path B guard: prevents ``const`` from silently resurrecting
+        as a parser alias for ``ModuleLetDef``. If this test starts passing,
+        someone reintroduced the keyword without wiring its semantics.
+        """
+        from mapanare.parser import ParseError
+
+        src = "const N: Int = 3\nfn main() { print(N) }\n"
+        try:
+            parse(src, filename="test.mn")
+        except ParseError:
+            return
+        raise AssertionError(
+            "`const` parsed successfully — Path B revert has regressed; add a "
+            "ConstDef AST node and wire the semantics before allowing the keyword back."
+        )

@@ -316,7 +316,7 @@ SUMMARY.md files.
 | **v4.7.1** | Verify | WSL rebuild verified: 40/40 golden, 11/11 stage2 |
 | **v4.8.0–v4.13.0** | Deep Fixes | Workaround removal, semantic safety, drop glue complete, foundation gate |
 | **v4.14.0–v4.17.0** | Compiler Maturity | Break fix, module-level let, optimizer complete, fixed-point bootstrap |
-| **v4.18.0** | Tensor Shapes | `Tensor<Float, [3,3]>` shape annotations, compile-time mismatch errors |
+| **v4.18.0** | Tensor Shapes (claim) | `const` keyword (parser alias for module-level let; reverted v4.27.0); `Tensor<Float>[3,3]` shape annotations (the grammar form — the `Tensor<Float, [3,3]>` form the original entry claimed never parsed); compile-time mismatch errors (claimed but only delivered for element-type mismatches, not shape) |
 | **v4.19.0** | Reactive Async | async/await wired into Streams, backpressure ring buffers |
 | **v4.20.0** | FFI Bindings | `mapanare bind --lang python\|ts\|go` generates bindings from .mn signatures |
 | **v4.21.0** | Optimizer Hardening | Constant folding correctness on loop back-edges |
@@ -325,7 +325,7 @@ SUMMARY.md files.
 | **v4.24.0** | async/await Wired | Parser + lowerer + emitter in both pipelines, 46th golden test |
 | **v4.25.0** | FFI End-to-End | .mn → .so → Python ctypes calls compiled code; tensor shape checking E2E |
 | **v4.26.0** | `const` Keyword (claim) | Roadmap consolidation; **panel verdict NEEDS WORK** — `const` shipped as parser alias for ModuleLetDef without immutability or shape resolution; documents 6 hollow features across v4.18.0–v4.26.0 |
-| **v4.27.0** (planned) | Honesty Recovery (CRITICAL) | Close 8 CRITICAL items from v4.26.0 panel; FFI ctypes wrappers populate argtypes/restype; runtime archive built `-fPIC`; MIR verifier wired into `compile()`; `const` and `@gpu` decisions; diagnostics consolidated; CHANGELOG corrected |
+| **v4.27.0** | Honesty Recovery (CRITICAL) | Closed 8 CRITICAL items from v4.26.0 panel. FFI ctypes wrappers populate `argtypes`/`restype` from MIRType. Runtime archive built `-fPIC`. `MIRVerifier().verify_module()` wired into `_compile_to_llvm_ir` + `compile_multi_module_mir` + self-hosted `compile()`. `const` keyword reverted (Path B). `@gpu`/`@cuda`/`@vulkan` decorators removed (Path B). `semantic.py SemanticError` replaced by `diagnostics.py Diagnostic`. `define internal` `.replace()` sledgehammer deleted; exported set threaded through the emitter. CHANGELOG v4.26.0 entry corrected. |
 | **v4.28.0** (planned) | Concurrency + Carry-forwards | Signal value mutation under lock; agent inbox MPSC-safe; type registry locked; matmul shape NULL check + dimension validation (27 versions overdue); `main.ll` version string sourced from `VERSION` |
 | **v4.29.0** (planned) | Build Infrastructure + Test Honesty | `mapanare_db.c` + `mapanare_html.c` linked; Makefile build-rt enumeration; `extern "Python" fn` decision; `verify_fixed_point.sh` propagates exit; CI hollow-feature gate (`raise NotImplementedError` = 0) |
 | **v4.30.0** (planned) | Codegen + Emitter Carry-Forwards | `await` decision; agent dispatch wired; optimizer non-convergence ICE; `stream_fusion` in fixpoint; self-hosted DCE BFS + `clean_phis_in_block`; six 7-cycle emitter items closed |

@@ -1438,27 +1438,6 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         )
 
     # ------------------------------------------------------------------
-    # Compile-time constant
-    # ------------------------------------------------------------------
-
-    def const_def(self, children: list[Any]) -> ModuleLetDef:
-        items = _filter(children)
-        idx = 0
-        name = str(items[idx])
-        idx += 1
-        type_name = ""
-        if idx < len(items) and isinstance(items[idx], TypeExpr):
-            type_name = str(getattr(items[idx], "name", ""))
-            idx += 1
-        value = items[idx] if idx < len(items) else None
-        return ModuleLetDef(
-            name=name,
-            type_name=type_name,
-            value=value,
-            span=_span_from_children(children),
-        )
-
-    # ------------------------------------------------------------------
     # Trait definition
     # ------------------------------------------------------------------
 

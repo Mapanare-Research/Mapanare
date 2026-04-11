@@ -7,15 +7,145 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.27.0] - 2026-04-11
+
+**Honesty Recovery — close 8 CRITICAL panel items, no new features.**
+
+This release opens the five-version recovery arc prompted by the v4.26.0
+panel verdict (4 NEEDS WORK + 3 PASS WITH NOTES, aggregate 9.79 → ~8.2 —
+largest single-cycle regression in project history). The entire arc is
+**no new features**; v4.27.0 specifically closes the CRITICAL items. See
+`.reviews/v4.26.0/README.md` for the panel report and
+`docs/roadmap/v4/v4.27.0/SESSION_REPORT.md` for the recovery log.
+
+### Fixed — CRITICAL
+
+- **FFI wrapper ABI.** `mapanare/bind.py` now populates `argtypes` and
+  `restype` on every generated ctypes entry point from the Mapanare
+  `MIRType`. `Int` → `c_int64`, `Float` → `c_double`, `Bool` → `c_bool`,
+  `String` → `_MnString` (a two-field `{c_void_p, c_int64}` structure),
+  user struct → generated `ctypes.Structure` subclass. Previously ctypes
+  defaulted every argument and return to `c_int`, so the v4.25.0 claim
+  of end-to-end FFI was true only for `add(int, int) -> int` (and only
+  by coincidence). Regression-gated by
+  `tests/bind/test_python_binding.py::test_wrapper_populates_argtypes_and_restype`.
+- **FFI DCE drop.** `cli._compile_to_llvm_ir` grew an `ffi_mode=True`
+  code path that marks every non-underscore, non-`main` top-level
+  function as `public=True` before lowering. This flows through the
+  existing `mir_opt.py:735` dead-function pass (which preserves
+  `is_public=True`) and the `emit_llvm_text.py:1583` linkage chooser
+  (which emits `define` for public, `define internal` for private), so
+  the generated .so now exports every function in the bindable surface —
+  not just `main`'s transitive callees. Regression-gated by
+  `tests/bind/test_python_binding.py::test_so_exports_every_public_function`.
+- **`.replace("define internal ", "define ")` sledgehammer.** Deleted
+  from `cli.py:cmd_bind`. This textual hack was stripping `internal`
+  linkage from **every** function in the module, not just the bind
+  surface, masking the DCE defect above. Replaced by the `ffi_mode`
+  plumbing. Regression-gated by
+  `tests/bind/test_python_binding.py::test_define_internal_replace_hack_deleted`.
+- **Runtime archive now built with `-fPIC`.** `Makefile`'s `build-rt`
+  target adds `-fPIC` to both `mapanare_core.c` and `mn_user_main.c`
+  object compiles so `libmapanare_rt.a` can be linked into an FFI
+  shared library. Verified with `readelf -d` (0 `TEXTREL` entries) and
+  by loading an FFI .so through `dlopen(RTLD_NOW)`. Regression-gated by
+  `tests/bind/test_python_binding.py::test_rtld_now_succeeds`.
+- **`@gpu` / `@cuda` / `@vulkan` crash.** `mapanare/lower.py:986` used to
+  raise `NotImplementedError` on any decorated function; removed
+  (Path B). GPU compute in Mapanare has always gone through the
+  `gpu_tensor_*` runtime builtins, and the decorator was only ever
+  cosmetic. Its documentation has been rewritten in `docs/SPEC.md §23.3`
+  to reflect the ground truth.
+- **MIR verifier now wired.** `cli._compile_to_llvm_ir`,
+  `multi_module.compile_multi_module_mir`, and the self-hosted
+  `main.mn:compile()` all call `MIRVerifier().verify_module(...)` (or
+  the self-hosted `verify_module(...)`) after optimisation and before
+  emission. Closes the v4.5.0 CHANGELOG claim that had been false for
+  21 versions. A `--no-verify` escape hatch lives on `run`, `build`,
+  `jit`, `emit-llvm`, `build-multi`, and `bind`; using it prints a
+  warning to stderr.
+- **`const` keyword reverted (Path B).** Removed from the Lark grammar
+  (`const_def` rule + `KW_CONST` token), the `parser.py` transformer,
+  the self-hosted lexer/parser (`mapanare/self/lexer.mn`,
+  `mapanare/self/parser.mn`), and the docs. Previously `const` was a
+  parser alias for `ModuleLetDef` with no `ConstDef` AST node, no
+  immutability enforcement, and no MIR-level distinction.
+  `tests/semantic/test_tensor_shapes.py::test_const_keyword_is_parse_error`
+  is now a negative guard against future revival. Module-level `let` is
+  the supported way to declare top-level immutable values (see
+  `docs/SPEC.md §2.1 Bindings and Mutability`).
+- **Diagnostics unified on `diagnostics.Diagnostic`.** `SemanticError`
+  now carries a real source range (`line`, `column`, `end_line`,
+  `end_column`) and exposes a `to_diagnostic()` helper that renders
+  through the rustc-quality formatter in `mapanare/diagnostics.py`.
+  `cli._emit_semantic_errors` and the `check` command route every
+  error through that helper, so semantic errors now underline the
+  offending expression's full width instead of the one-character
+  `column+1` range the panel flagged. Closes the panel CRITICAL #8
+  "every semantic error underlines a single character regardless of
+  expression width."
+
+### Changed — CHANGELOG honesty
+
+- The v4.18.0, v4.24.0, v4.25.0, and v4.26.0 entries have been rewritten
+  in-place with strikethroughs and `NOTE (v4.27.0 recovery correction)`
+  blocks that distinguish the original (false) claims from ground truth.
+  The historical structure is preserved so reviewers can see the
+  recovery edit rather than a silent rewrite.
+
+### Verified
+
+- 46/46 golden tests pass on `mnc-stage1` (including two renamed tests:
+  `42_module_let_string.mn`, `43_module_let_math.mn`).
+- 11/11 stage2 modules valid.
+- `black`, `ruff`, `mypy` clean across `mapanare/` and `runtime/`.
+- `tests/bind/` — 10/10 FFI round-trip tests (Int, Float, String, struct)
+  via `ctypes.CDLL(RTLD_NOW)`.
+- `tests/parser/` (133), `tests/semantic/` (163), `tests/diagnostics/` (39)
+  all pass.
+- The MIR verifier runs clean on every golden-test module.
+- Four pre-existing LLVM test failures remain outside the scope of this
+  release (see SESSION_REPORT).
+
+### Not in this release — deferred to v4.28.0+
+
+See `docs/roadmap/v4/v4.27.0/PLAN.md` for the full defer list. Highlights:
+
+- v4.0.0 matmul carry-forwards → v4.28.0
+- signal/agent/registry concurrency races → v4.28.0
+- `main.ll` version string stale `mapanare 4.7.1` → v4.28.0
+- orphaned `mapanare_db.c`/`mapanare_html.c` → v4.29.0
+- `extern "Python" fn` silent xfails → v4.29.0
+- `verify_fixed_point.sh` cannot fail → v4.29.0
+- real `await` coroutine lowering OR revert → v4.30.0
+- `_emit_agent_wrap` no-op stub → v4.30.0
+- optimizer non-convergence ICE → v4.30.0
+- SPEC sync + CI honesty gates → v4.31.0
+- **next 7-reviewer panel re-run** → v4.31.0 (recovery arc terminates
+  externally when the panel agrees it is done)
+
 ## [4.26.0] - 2026-04-10
 
-**`const` Keyword + Roadmap Consolidation**
+**`const` Keyword (parser-only) + Roadmap Consolidation**
+
+> **NOTE (v4.27.0 recovery correction):** This release shipped `const` as a
+> parser alias for `ModuleLetDef`. There was no `ConstDef` AST node, no
+> immutability enforcement, and no MIR lowering beyond `let`. The original
+> entry claimed test files that did not exist on disk and tensor shape
+> syntax (`Tensor<Float, [DIM, DIM]>`) that the grammar did not parse. See
+> v4.27.0 for the honest recovery and Path B revert of this feature. The
+> original entry is preserved below in stricken form for traceability.
 
 ### Added
-- `const` keyword for compile-time constants (parser, semantic, MIR lowering)
-- Module-level `const NAME: Type = value` declarations
-- Constants usable in tensor shape annotations (`Tensor<Float, [DIM, DIM]>`)
-- `tests/parser/test_const.py` and `tests/semantic/test_const.py`
+- `const` keyword recognised in the lexer/parser as a parser alias for a
+  module-level `let` — **no `ConstDef` AST node, no immutability, no MIR
+  changes** (reverted in v4.27.0)
+- ~~Module-level `const NAME: Type = value` declarations~~ — alias only
+- ~~Constants usable in tensor shape annotations (`Tensor<Float, [DIM, DIM]>`)~~ —
+  grammar parses `Tensor<Float>[DIM, DIM]`; const-in-shape never resolved
+- ~~`tests/parser/test_const.py` and `tests/semantic/test_const.py`~~ —
+  **these files did not exist on disk at the time of the v4.26.0 tag; the
+  entry was false when written**
 
 ### Changed
 - Top-level `ROADMAP.md` "Where We Are" section refreshed from stale v4.0.0 to v4.26.0
@@ -28,39 +158,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.25.0] - 2026-04-09
 
-**FFI End-to-End + Tensor Shape Checking**
+**FFI "End-to-End" (Int-only) + Tensor Shape Checking**
+
+> **NOTE (v4.27.0 recovery correction):** This release claimed end-to-end
+> FFI from Mapanare to Python via ctypes. In practice only
+> ``add(int, int) -> int`` worked, and only by coincidence (ctypes'
+> default ``c_int`` return happened to match the Mapanare ABI for 64-bit
+> integers on 64-bit hosts). Every ``Float`` / ``Bool`` / ``String`` /
+> struct return silently corrupted. The .so also only contained ``add``
+> (MIR dead-code-elimination dropped the other functions before they
+> reached the emitter) and the runtime archive was not built with
+> ``-fPIC`` (so ``RTLD_NOW`` rejected any .so that linked it). The
+> ``ll_text.replace("define internal ", "define ")`` text hack stripped
+> ``internal`` linkage from every function in the module, not just the
+> bind surface. All of that is closed in v4.27.0 and regression-gated by
+> ``tests/bind/test_python_binding.py``.
+>
+> Tensor shape checking was also claimed but only delivered partially:
+> element-type mismatches produced errors, but shape mismatches did not
+> resolve const dimensions (``const`` itself was a parser alias).
 
 ### Added
-- `mapanare bind --lang python` now compiles .mn → .so shared library
-- Python ctypes can call compiled Mapanare functions (proven: `add(3,4)==7`)
-- Functions are exported (non-internal) in FFI .so builds
-- Graceful fallback when runtime archive not -fPIC compatible
+- `mapanare bind --lang python` compiles .mn → .so shared library
+- ~~Python ctypes can call compiled Mapanare functions (proven: `add(3,4)==7`)~~ — **only `add(Int, Int) -> Int` actually worked; see v4.27.0**
+- ~~Functions are exported (non-internal) in FFI .so builds~~ — **via the `.replace("define internal ", ...)` sledgehammer; deleted in v4.27.0 in favour of `ffi_mode=True`**
+- ~~Graceful fallback when runtime archive not -fPIC compatible~~ — **the fallback was load-time silent corruption; v4.27.0 builds the archive `-fPIC` so the primary path works**
 - Tensor shape mismatch test: `test_shape_mismatch_add`
 - Tensor matmul shape validation test: `test_matmul_shape_valid`
 
 ### Fixed
-- FFI .so: `define internal` → `define` for function visibility
+- FFI .so: `define internal` → `define` for function visibility **(via blanket `.replace`; this hack is deleted in v4.27.0)**
 - FFI .so: `@main` → `@mn_main` rename handles all signatures
 
 ### Verified
 - 46/46 golden, 11/11 stage2
-- Python FFI: `add(3, 4) == 7` via ctypes
-- Tensor shape mismatch: compile-time error produced
+- ~~Python FFI: `add(3, 4) == 7` via ctypes~~ — **true for Int only; Float/String/Struct fixed in v4.27.0**
+- Tensor shape mismatch: compile-time error produced **(element-type mismatches only)**
 - black/ruff/mypy clean
 
 ## [4.24.0] - 2026-04-09
 
-**async/await Wired — value flows through async pipeline**
+**async/await Parsed — grammar keywords only, no runtime wiring**
+
+> **NOTE (v4.27.0 recovery correction):** This release originally claimed
+> ``async/await Wired — value flows through async pipeline``. That was
+> false. ``await expr`` lowered to
+> ``return self._lower_expr(expr.expr)`` — a pure identity — with no
+> coroutine state machine, no suspension point, no Stream integration,
+> and no cooperative scheduler. ``async fn`` was recognised as a
+> decorator but produced no additional MIR. The ``46_async_stream``
+> golden test runs to completion only because the "async" path is
+> indistinguishable from the synchronous path at runtime. A real
+> ``await`` lowering (LLVM coroutine intrinsics or similar) is deferred
+> to v4.30.0; if that version does not ship it, the grammar keyword is
+> removed. The original entry is preserved below in stricken form.
 
 ### Added
-- `await expr` lowering in Python bootstrap (lower.py) — evaluates expression inline
-- `Await(Expr)` variant in self-hosted AST enum (ast.mn)
-- `async fn` parsing in self-hosted parser with @async decorator (parser.mn)
+- `await expr` lowering in Python bootstrap (lower.py) — ~~evaluates expression inline~~ **identity pass-through; no suspension**
+- `Await(Expr)` variant in self-hosted AST enum (ast.mn) — parsed, no runtime effect
+- `async fn` parsing in self-hosted parser with @async decorator (parser.mn) — parsed, no runtime effect
 - `await expr` parsing as unary expression in self-hosted parser (parser.mn)
-- `await` handler in self-hosted lowerer (lower.mn) — inline evaluation
+- `await` handler in self-hosted lowerer (lower.mn) — ~~inline evaluation~~ **identity pass-through**
 - `new_decorator` constructor in ast.mn
 - `expr_await_inner` accessor in ast.mn
-- Golden test `46_async_stream.mn` — async fn + await, prints correct result
+- Golden test `46_async_stream.mn` — ~~async fn + await, prints correct result~~ **runs synchronously; the "async" path does not branch from the normal lowering path**
 
 ### Verified
 - 46/46 golden (was 45/45), 11/11 stage2
@@ -169,21 +330,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.18.0] - 2026-04-09
 
-**Tensors + @gpu — const keyword, tensor shape infrastructure**
+**Tensors + @gpu (parser-only, reverted in v4.27.0)**
+
+> **NOTE (v4.27.0 recovery correction):** This release originally claimed
+> ``@gpu`` auto-kernel extraction and a ``const`` keyword with real
+> semantics. Neither reached runtime. The ``@gpu`` decorator raised
+> ``NotImplementedError`` at ``lower.py`` the moment a decorated function
+> was actually compiled, and the ``const`` keyword was a parser alias for
+> ``ModuleLetDef`` with no immutability, no compile-time evaluation, and no
+> MIR-level distinction. Both were removed in v4.27.0 (Path B). The
+> original entry is preserved below in stricken form for traceability.
 
 ### Added
-- `const` keyword for compile-time constants in grammar, Python parser, and self-hosted compiler
-- `const_def` grammar rule and transformer method
-- Self-hosted lexer/parser support for `KW_CONST` token
-- Golden tests: `42_const.mn` (const keyword), `43_gpu_kernel.mn` (const + GPU params)
-- Semantic tests: `test_tensor_shapes.py` (const parsing, tensor type parsing)
+- ~~`const` keyword for compile-time constants in grammar, Python parser, and self-hosted compiler~~ (reverted v4.27.0; use module-level `let`)
+- ~~`const_def` grammar rule and transformer method~~ (deleted v4.27.0)
+- ~~Self-hosted lexer/parser support for `KW_CONST` token~~ (deleted v4.27.0)
+- Golden tests: `42_const.mn` (const keyword), `43_gpu_kernel.mn` (const + GPU params) — **both renamed/rewritten in v4.27.0 to use module-level `let`**
+- Semantic tests: `test_tensor_shapes.py` (const parsing, tensor type parsing) — **`test_const_keyword_parses` became a negative test in v4.27.0**
 - `tensor_shape` field already in TypeInfo (verified, ready for shape checking)
-- @gpu decorator parsing (existing), MIRGpuKernel metadata (existing)
+- ~~@gpu decorator parsing (existing), MIRGpuKernel metadata (existing)~~ — **the decorator parsed but the lowerer raised `NotImplementedError` at `lower.py:986`; removed in v4.27.0 (GPU compute goes through `gpu_tensor_*` runtime builtins)**
 
 ### Verified
 - 43/43 golden tests pass
 - 11/11 stage2 valid
-- const keyword works in both Python and self-hosted pipelines
+- ~~const keyword works in both Python and self-hosted pipelines~~ — alias only; no semantics
 
 ## [4.17.0] - 2026-04-09
 

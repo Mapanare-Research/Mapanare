@@ -79,20 +79,14 @@ def _emit_parse_error(e: ParseError, source: str, filename: str) -> None:
 
 
 def _emit_semantic_errors(e: SemanticErrors, source: str) -> None:
-    """Print semantic errors as colorized diagnostics."""
-    from mapanare.ast_nodes import Span
+    """Print semantic errors as colorized diagnostics.
 
-    diagnostics: list[Diagnostic] = []
-    for err in e.errors:
-        span = Span(line=err.line, column=err.column, end_line=err.line, end_column=err.column + 1)
-        diagnostics.append(
-            Diagnostic(
-                severity=Severity.ERROR,
-                message=err.message,
-                filename=err.filename,
-                labels=[Label(span=span, primary=True)],
-            )
-        )
+    v4.27.0: routes every ``SemanticError`` through its ``to_diagnostic()``
+    helper so the underline matches the offending expression's full span
+    instead of always pointing at a single character. Closes v4.26.0 panel
+    CRITICAL #8 (Anaconda).
+    """
+    diagnostics: list[Diagnostic] = [err.to_diagnostic() for err in e.errors]
     for diag in diagnostics:
         print(format_diagnostic(diag, source), file=sys.stderr)
     summary = format_summary(diagnostics)
@@ -134,6 +128,32 @@ def _compile_source(
     return emitter.emit(mir_module)
 
 
+def _verify_mir_or_exit(mir_module: object, no_verify: bool) -> None:
+    """Run the MIR verifier unless the caller explicitly bypassed it.
+
+    The verifier checks block terminators, branch targets, phi placement, and
+    SSA definition uniqueness. This is the v4.27.0 wiring that closes the
+    v4.5.0 CHANGELOG claim: prior to this, ``MIRVerifier`` was defined but had
+    zero call sites in the compile pipeline.
+    """
+    if no_verify:
+        return
+    from mapanare.mir import MIRModule, MIRVerifier
+
+    assert isinstance(mir_module, MIRModule)
+    errors = MIRVerifier().verify_module(mir_module)
+    if errors:
+        print("error: MIR verifier detected malformed IR before emission:", file=sys.stderr)
+        for err in errors:
+            print(f"  {err}", file=sys.stderr)
+        print(
+            "hint: pass --no-verify to bypass (debugging only); the crash this "
+            "prevents is usually easier to diagnose than the LLVM error it would cause.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+
 def _compile_to_llvm_ir(
     source: str,
     filename: str,
@@ -143,16 +163,31 @@ def _compile_to_llvm_ir(
     debug: bool = False,
     werror: bool = False,
     skip_check: bool = False,
+    no_verify: bool = False,
+    ffi_mode: bool = False,
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source.
 
     When the source contains ``import`` statements, automatically uses
     multi-module compilation to resolve and link all imported modules
     into a single LLVM IR module.
+
+    When ``ffi_mode`` is True, every non-underscore, non-``main`` top-level
+    function is treated as if it were declared ``pub``. That single change
+    flows through the pipeline: the MIR dead-function pass (``mir_opt.py``)
+    keeps them, and the LLVM emitter gives them external linkage. This
+    replaces the v4.25.0 ``.replace("define internal ", "define ")`` text
+    hack, which stripped ``internal`` linkage from **every** function in the
+    module regardless of whether the user intended to export it.
     """
     ast = parse(source, filename=filename)
 
-    from mapanare.ast_nodes import ImportDef
+    from mapanare.ast_nodes import FnDef, ImportDef
+
+    if ffi_mode:
+        for defn in ast.definitions:
+            if isinstance(defn, FnDef) and defn.name != "main" and not defn.name.startswith("_"):
+                defn.public = True
 
     has_imports = any(isinstance(d, ImportDef) for d in ast.definitions)
     if has_imports:
@@ -165,6 +200,7 @@ def _compile_to_llvm_ir(
             target_name=target_name,
             debug=debug,
             skip_check=skip_check,
+            no_verify=no_verify,
         )
     if not skip_check:
         check_or_raise(ast, filename=filename, resolver=resolver, werror=werror)
@@ -184,6 +220,7 @@ def _compile_to_llvm_ir(
     )
     mir_opt_level = MIROptLevel(opt_level.value)
     mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+    _verify_mir_or_exit(mir_module, no_verify)
     target = get_target(target_name)
 
     from mapanare.emit_llvm_text import LLVMTextEmitter
@@ -202,6 +239,7 @@ def _compile_multi_module_text(
     opt_level: OptLevel = OptLevel.O2,
     target_name: str | None = None,
     skip_check: bool = False,
+    no_verify: bool = False,
 ) -> str:
     """Compile multiple .mn files into a single linked LLVM IR module.
 
@@ -222,6 +260,7 @@ def _compile_multi_module_text(
         opt_level=opt_level.value,
         target_name=target_name,
         skip_check=skip_check,
+        no_verify=no_verify,
     )
 
 
@@ -322,37 +361,16 @@ def cmd_check(args: argparse.Namespace) -> None:
 
         sem_errors = check(ast, filename=args.source, resolver=resolver)
         for err in sem_errors:
-            from mapanare.ast_nodes import Span
-
-            # With --werror, promote warnings to errors; otherwise still show them
+            # v4.27.0: use the real span carried by SemanticError via
+            # to_diagnostic(). --werror promotes warnings to errors.
+            diag = err.to_diagnostic()
             is_warning = err.severity == "warning"
             if is_warning and not werror:
-                span = Span(
-                    line=err.line,
-                    column=err.column,
-                    end_line=err.line,
-                    end_column=err.column + 1,
-                )
-                all_diagnostics.append(
-                    Diagnostic(
-                        severity=Severity.WARNING,
-                        message=err.message,
-                        filename=err.filename,
-                        labels=[Label(span=span, primary=True)],
-                    )
-                )
+                all_diagnostics.append(diag)
                 continue
-            span = Span(
-                line=err.line, column=err.column, end_line=err.line, end_column=err.column + 1
-            )
-            all_diagnostics.append(
-                Diagnostic(
-                    severity=Severity.ERROR,
-                    message=err.message,
-                    filename=err.filename,
-                    labels=[Label(span=span, primary=True)],
-                )
-            )
+            if is_warning and werror:
+                diag.severity = Severity.ERROR
+            all_diagnostics.append(diag)
 
     if all_diagnostics:
         for diag in all_diagnostics:
@@ -425,6 +443,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             opt_level=opt_level,
             resolver=resolver,
             debug=debug,
+            no_verify=_resolve_no_verify(args),
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -701,6 +720,7 @@ def cmd_jit(args: argparse.Namespace) -> None:
             opt_level=opt_level,
             resolver=resolver,
             debug=debug,
+            no_verify=_resolve_no_verify(args),
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -750,6 +770,7 @@ def cmd_build(args: argparse.Namespace) -> None:
             resolver=resolver,
             debug=debug,
             werror=werror,
+            no_verify=_resolve_no_verify(args),
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -916,6 +937,7 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
             target_name=target_name,
             resolver=resolver,
             debug=debug,
+            no_verify=_resolve_no_verify(args),
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -1255,9 +1277,14 @@ def cmd_build_multi(args: argparse.Namespace) -> None:
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
     skip_check = getattr(args, "no_check", False)
+    no_verify = _resolve_no_verify(args)
     try:
         llvm_ir = _compile_multi_module_text(
-            source_files, opt_level=opt_level, target_name=target_name, skip_check=skip_check
+            source_files,
+            opt_level=opt_level,
+            target_name=target_name,
+            skip_check=skip_check,
+            no_verify=no_verify,
         )
     except ParseError as e:
         print(f"parse error: {e}", file=sys.stderr)
@@ -1360,10 +1387,17 @@ def cmd_bind(args: argparse.Namespace) -> None:
     print(f"Generated {args.lang} wrapper: {wrapper_path}")
 
     # Step 2: Compile .mn → .ll → .o → .so
+    #
+    # v4.27.0 recovery: ``ffi_mode=True`` marks every bindable function as
+    # public before lowering, which flows through DCE and emitter linkage so
+    # the .so exports every surface-area function (not just ``main``'s
+    # transitive callees). The old ``ll_text.replace("define internal ",
+    # "define ")`` sledgehammer — which stripped ``internal`` linkage from
+    # **every** function in the module — has been removed.
     try:
-        llvm_ir = _compile_to_llvm_ir(source, path)
-        # Make all functions externally visible for FFI
-        llvm_ir = llvm_ir.replace("define internal ", "define ")
+        llvm_ir = _compile_to_llvm_ir(
+            source, path, no_verify=_resolve_no_verify(args), ffi_mode=True
+        )
         # Rename @main to @mn_main so it doesn't conflict with C main
         import re
 
@@ -1524,6 +1558,34 @@ def _add_edition_flag(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_no_verify_flag(parser: argparse.ArgumentParser) -> None:
+    """Add --no-verify escape hatch that bypasses the MIR verifier.
+
+    v4.27.0: the MIR verifier runs before emission by default. This flag
+    skips it for debugging the verifier itself. A warning is printed to
+    stderr when used because bypassing the verifier typically turns an
+    interpretable MIR-level error into a cryptic LLVM codegen crash.
+    """
+    parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        default=False,
+        help="Skip MIR structural verification before LLVM emission (debugging only)",
+    )
+
+
+def _resolve_no_verify(args: argparse.Namespace) -> bool:
+    """Return no_verify from argparse and warn on stderr if it was set."""
+    value = bool(getattr(args, "no_verify", False))
+    if value:
+        print(
+            "warning: --no-verify skips MIR structural checks; crashes below "
+            "are almost certainly malformed IR the verifier would have caught.",
+            file=sys.stderr,
+        )
+    return value
+
+
 def _add_opt_level_args(parser: argparse.ArgumentParser) -> None:
     """Add -O0 through -O3 optimization level flags to a subcommand parser."""
     opt_group = parser.add_mutually_exclusive_group()
@@ -1634,6 +1696,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_opt_level_args(p_run)
     _add_debug_flag(p_run)
     _add_edition_flag(p_run)
+    _add_no_verify_flag(p_run)
     p_run.set_defaults(func=cmd_run)
 
     # repl
@@ -1724,6 +1787,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_jit.add_argument("--bench", action="store_true", help="Output benchmark metrics")
     _add_opt_level_args(p_jit)
     _add_debug_flag(p_jit)
+    _add_no_verify_flag(p_jit)
     p_jit.set_defaults(func=cmd_jit)
 
     # build
@@ -1763,6 +1827,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_opt_level_args(p_build)
     _add_debug_flag(p_build)
     _add_edition_flag(p_build)
+    _add_no_verify_flag(p_build)
     p_build.set_defaults(func=cmd_build)
 
     # emit-llvm
@@ -1778,6 +1843,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_opt_level_args(p_emit_llvm)
     _add_debug_flag(p_emit_llvm)
     _add_edition_flag(p_emit_llvm)
+    _add_no_verify_flag(p_emit_llvm)
     p_emit_llvm.set_defaults(func=cmd_emit_llvm)
 
     # emit-c
@@ -1893,6 +1959,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip semantic checking (for bootstrapping self-hosted modules)",
     )
     _add_opt_level_args(p_build_multi)
+    _add_no_verify_flag(p_build_multi)
     p_build_multi.set_defaults(func=cmd_build_multi)
 
     # targets
@@ -1955,6 +2022,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target language for bindings",
     )
     p_bind.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
+    _add_no_verify_flag(p_bind)
     p_bind.set_defaults(func=cmd_bind)
 
     return parser

@@ -309,6 +309,31 @@ fn compile(source: String, filename: String) -> CompileResult {
     // Stage 5: optimize MIR (constant fold + dead block elimination)
     let opt_module: MIRModule = optimize_mir(mir_module)
 
+    // Stage 5.5: verify MIR structural correctness before emission.
+    // v4.27.0: closes the v4.5.0 CHANGELOG claim ("MIR verifier called before
+    // emission") on the self-hosted side. Prior to this, verify_module was
+    // defined in lower.mn but had zero call sites in the compile pipeline.
+    let verify_errs: List<VerifyError> = verify_module(opt_module)
+    if len(verify_errs) > 0 {
+        __mn_str_eprint("error: MIR verifier detected malformed IR before emission:\n")
+        let mut vi: Int = 0
+        for _ in 0..1000 {
+            if vi >= len(verify_errs) {
+                let empty: List<SemanticError> = []
+                return new_compile_result(false, "", empty)
+            }
+            let ve: VerifyError = verify_errs[vi]
+            __mn_str_eprint("  ")
+            __mn_str_eprint(ve.fn_name)
+            __mn_str_eprint("::")
+            __mn_str_eprint(ve.block_label)
+            __mn_str_eprint(": ")
+            __mn_str_eprint(ve.message)
+            __mn_str_eprint("\n")
+            vi = vi + 1
+        }
+    }
+
     // Stage 6: emit LLVM IR from MIR
     let ir_text: String = emit_mir_module(opt_module, filename)
     let no_errors: List<SemanticError> = []

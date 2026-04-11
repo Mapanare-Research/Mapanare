@@ -49,7 +49,7 @@ Six phases:
 | **v4.15.0** | | Module-Level Let + MIRType Enum | LetDef in AST, top-level `let`, TypeKind enum replaces string-based MIRType.kind |
 | **v4.16.0** | | Optimizer Complete | Enable dead block elimination, constant propagation, copy propagation, measure IR reduction |
 | **v4.17.0** | | Fixed-Point Bootstrap | mnc-stage1 compiles itself, 3-stage verification, Python bootstrap becomes optional |
-| **v4.18.0** | | Tensor Shapes + @gpu Auto-Kernels | `const` keyword, `Tensor<Float, [3,3]>` shapes, `@gpu` extracts function body to PTX/SPIR-V |
+| **v4.18.0** | | Tensor Shapes + @gpu Auto-Kernels (claim) | `const` keyword (parser alias for module-level let, reverted v4.27.0), `Tensor<Float>[3,3]` shapes (grammar form; the `Tensor<Float, [3,3]>` form the original CHANGELOG claimed never parsed), `@gpu` decorator (raised `NotImplementedError` at `lower.py:986`, removed v4.27.0) |
 | **v4.19.0** | | Reactive Async | async/await tied to Streams, backpressure via ring buffers, cooperative scheduling |
 | **v4.20.0** | | Auto-Generated FFI Bindings | `mapanare bind --lang python\|ts\|go` generates bindings from .mn signatures |
 | **v4.21.0** | | Optimizer Hardening | Constant folding correctness on loop back-edges, lint cleanup, CI gate |
@@ -58,7 +58,7 @@ Six phases:
 | **v4.24.0** | | async/await Wired | Parser + lowerer + emitter in both pipelines, 46th golden test |
 | **v4.25.0** | | FFI End-to-End | .mn → .so → Python ctypes calls compiled code; tensor shape checking E2E |
 | **v4.26.0** | | `const` Keyword (claim) | Roadmap consolidation; **panel NEEDS WORK** — `const` shipped as parser alias without semantics; 6 hollow features documented across v4.18.0–v4.26.0 |
-| **v4.27.0** (planned) | | Honesty Recovery (CRITICAL) | Close all 8 CRITICAL panel items; FFI argtypes/restype; runtime `-fPIC`; MIR verifier wired; `const`/`@gpu` decisions; CHANGELOG honesty |
+| **v4.27.0** | | Honesty Recovery (CRITICAL) | Close 8 CRITICAL panel items: FFI argtypes/restype, runtime `-fPIC`, MIR verifier wired into `compile()`, `const` reverted (Path B), `@gpu`/`@cuda`/`@vulkan` removed (Path B), diagnostics consolidated, CHANGELOG corrected |
 | **v4.28.0** (planned) | | Concurrency + Carry-forwards | New races (signal/agent/registry); matmul carry-forwards (27 versions overdue); version string regression |
 | **v4.29.0** (planned) | | Build Infrastructure + Test Honesty | Orphaned runtime files (1,942 lines); `extern "Python"` decision; CI hollow-feature gate; `verify_fixed_point.sh` teeth |
 | **v4.30.0** (planned) | | Codegen + Emitter Carry-Forwards | `await` decision; agent dispatch; optimizer non-convergence ICE; six 7-cycle emitter items |

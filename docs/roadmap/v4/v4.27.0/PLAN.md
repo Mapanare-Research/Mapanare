@@ -7,11 +7,13 @@
 > wiring. v4.27.0 closes the 8 CRITICAL items and brings the
 > CHANGELOG/ROADMAP/docs back into agreement with what the code actually does.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-11)
 **Breaking:** No (recovery — strictly closes claimed-but-not-real features)
 **Prerequisite:** v4.26.0
 **Estimated work:** 1–2 days of focused work per panel consensus
 **No new features. None.**
+**Session log:** [`SESSION_REPORT.md`](./SESSION_REPORT.md)
+**Decisions taken:** `const` → Path B (revert); `@gpu` → Path B (remove lowerer case); matmul fixes deferred to v4.28.0 per PLAN.
 
 ---
 

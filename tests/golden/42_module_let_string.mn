@@ -1,0 +1,19 @@
+// Golden test: module-level `let` with a String value.
+//
+// v4.27.0 Path B recovery: replaces the former 42_const.mn. The `const`
+// keyword was a parser alias for module-level `let` without immutability
+// enforcement or MIR-level distinction and was removed during the v4.26.0
+// recovery. Module-level `let` is the way to declare top-level immutable
+// values in Mapanare.
+
+let MAX: Int = 100
+let GREETING: String = "hello"
+
+fn get_max() -> Int {
+    return MAX
+}
+
+fn main() {
+    print(get_max())
+    print(GREETING)
+}

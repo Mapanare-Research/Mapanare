@@ -108,7 +108,6 @@ fn is_keyword(name: String) -> Bool {
     if name == "continue" { return true }
     if name == "sigue" { return true }
     if name == "di" { return true }
-    if name == "const" { return true }
     if name == "async" { return true }
     if name == "await" { return true }
     return false
@@ -166,7 +165,6 @@ fn keyword_token_type(name: String) -> String {
     if name == "continue" { return "KW_CONTINUE" }
     if name == "sigue" { return "KW_CONTINUE" }
     if name == "di" { return "KW_DI" }
-    if name == "const" { return "KW_CONST" }
     if name == "async" { return "KW_ASYNC" }
     if name == "await" { return "KW_AWAIT" }
     return "NAME"

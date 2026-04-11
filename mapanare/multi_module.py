@@ -616,6 +616,7 @@ def compile_multi_module_mir(
     target_name: str | None = None,
     debug: bool = False,
     skip_check: bool = False,
+    no_verify: bool = False,
 ) -> str:
     """Compile a root .mn file and all its imports into a single LLVM IR string.
 
@@ -660,6 +661,20 @@ def compile_multi_module_mir(
         )
         mir_opt_level = MIROptLevel(opt_level)
         mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+        if not no_verify:
+            from mapanare.mir import MIRVerifier
+
+            verify_errors = MIRVerifier().verify_module(mir_module)
+            if verify_errors:
+                import sys as _sys
+
+                print(
+                    "error: MIR verifier detected malformed IR before emission:",
+                    file=_sys.stderr,
+                )
+                for err in verify_errors:
+                    print(f"  {err}", file=_sys.stderr)
+                raise SystemExit(1)
         target = get_target(target_name)
         return _emit_with_backend(module_name, target, mir_module, debug)
 
@@ -839,6 +854,25 @@ def compile_multi_module_mir(
     # 7. Optimize merged MIR
     mir_opt_level = MIROptLevel(opt_level)
     root_mir, _ = mir_optimize(root_mir, mir_opt_level)
+
+    # 7.5. Verify MIR structural correctness before emission.
+    # v4.27.0: closes the v4.5.0 CHANGELOG claim ("MIR verifier called before
+    # emission"). Prior to this, MIRVerifier had zero call sites in the
+    # compile pipeline.
+    if not no_verify:
+        from mapanare.mir import MIRVerifier
+
+        verify_errors = MIRVerifier().verify_module(root_mir)
+        if verify_errors:
+            import sys as _sys
+
+            print(
+                "error: MIR verifier detected malformed IR before emission:",
+                file=_sys.stderr,
+            )
+            for err in verify_errors:
+                print(f"  {err}", file=_sys.stderr)
+            raise SystemExit(1)
 
     # 8. Emit LLVM IR
     target = get_target(target_name)
