@@ -255,36 +255,188 @@ fn resolve_type(st: EmitState, ty: MIRType) -> String {
 // Runtime function declarations
 // ---------------------------------------------------------------------------
 
+// v4.32.0 Phase 1.2: mirrors the Python `_RUNTIME_FN_ATTRS` table at
+// mapanare/emit_llvm_text.py:243-399. The v4.30.0 CARRY_FORWARD.md
+// claim "six 7-cycle emitter items re-verified clean" was Python-side-
+// only — Rattler #8 and Cobra #14 at the v4.31.0 arc-end panel flagged
+// the self-hosted emitter as still producing plain `nounwind readonly`
+// with no `noalias`/`willreturn` annotations. This release closes the
+// asymmetry.
+//
+// The attribute rule (from emit_llvm_text.py:239-242):
+//   - allocators  gain `noalias` (on return, ptr only) + `willreturn`
+//   - read-only   queries gain `readonly` + `willreturn`
+//   - every deterministic terminating function keeps `nounwind`
+//
+// `noalias` is a RETURN-VALUE attribute and LLVM rejects it on any non-
+// pointer return type, so we emit it in the ret_prefix (before the
+// return type) only when the declared ret is `ptr`. Every other
+// attribute is a FUNCTION attribute and emitted as a suffix after the
+// params list. This matches the split Python performs at
+// emit_llvm_text.py:790-794.
+
 fn declare_runtime_fn(st: EmitState, name: String, ret: String, params: String) -> EmitState {
-    let attrs: String = get_fn_attrs(name)
-    let line: String = "declare " + ret + " @" + name + "(" + params + ")" + attrs
+    let mut ret_prefix: String = ""
+    if ret == "ptr" {
+        ret_prefix = get_fn_ret_prefix(name)
+    }
+    let suffix: String = get_fn_attrs(name)
+    let line: String = "declare " + ret_prefix + ret + " @" + name + "(" + params + ")" + suffix
     return emit_line(st, line)
 }
 
+// Return-value attribute prefix. Only ``noalias`` qualifies, and only
+// for allocator functions that return a freshly-heap-allocated pointer
+// the caller did not previously hold. LLVM rejects ``noalias`` on any
+// non-pointer return type; the caller (``declare_runtime_fn``) guards
+// this with ``if ret == "ptr"`` before invoking us.
+fn get_fn_ret_prefix(name: String) -> String {
+    if name == "malloc" { return "noalias " }
+    if name == "__mn_alloc" { return "noalias " }
+    if name == "__mn_map_new" { return "noalias " }
+    if name == "__mn_signal_new" { return "noalias " }
+    if name == "mapanare_agent_new" { return "noalias " }
+    if name == "mn_arena_create" { return "noalias " }
+    if name == "mn_arena_alloc" { return "noalias " }
+    if name == "__mapanare_tensor_alloc" { return "noalias " }
+    if name == "__mapanare_tensor_add" { return "noalias " }
+    if name == "__mapanare_tensor_sub" { return "noalias " }
+    if name == "__mapanare_tensor_mul" { return "noalias " }
+    if name == "__mapanare_tensor_div" { return "noalias " }
+    if name == "__mapanare_matmul" { return "noalias " }
+    return ""
+}
+
+// Function-attribute suffix. Mirrors the Python `_RUNTIME_FN_ATTRS`
+// table, excluding `noalias` (which is a return-value attribute handled
+// by get_fn_ret_prefix). Entries that aren't declared by this emitter
+// (e.g. DB / HTML / crypto-str variants used only by the Python
+// bootstrap) are included for consistency — unreachable declare calls
+// won't fire the branches, and the cost of an unused branch is ~0.
 fn get_fn_attrs(name: String) -> String {
-    if name == "__mn_str_len" { return " nounwind readonly" }
-    if name == "__mn_str_eq" { return " nounwind readonly" }
-    if name == "__mn_str_cmp" { return " nounwind readonly" }
-    if name == "__mn_str_hash" { return " nounwind readonly" }
-    if name == "__mn_list_len" { return " nounwind readonly" }
-    if name == "__mn_list_get" { return " nounwind readonly" }
-    if name == "__mn_map_len" { return " nounwind readonly" }
-    if name == "__mn_map_contains" { return " nounwind readonly" }
-    if name == "__mn_str_free" { return " nounwind" }
-    if name == "__mn_list_free" { return " nounwind" }
-    if name == "__mn_map_free_deep" { return " nounwind" }
-    if name == "__mn_str_concat" { return " nounwind" }
-    if name == "__mn_str_from_int" { return " nounwind" }
-    if name == "__mn_str_from_float" { return " nounwind" }
-    if name == "__mn_str_from_bool" { return " nounwind" }
-    if name == "malloc" { return " nounwind" }
-    if name == "free" { return " nounwind" }
-    if name == "__mn_print" { return " nounwind" }
-    if name == "__mn_println" { return " nounwind" }
+    // -- Read-only string/collection queries --
+    if name == "__mn_str_len" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_eq" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_cmp" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_hash" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_byte_at" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_starts_with" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_ends_with" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_find" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_contains" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_to_int" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_to_float" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_ord" { return " nounwind readonly willreturn" }
+    if name == "__mn_list_len" { return " nounwind readonly willreturn" }
+    if name == "__mn_list_get" { return " nounwind readonly willreturn" }
+    if name == "__mn_map_len" { return " nounwind readonly willreturn" }
+    if name == "__mn_map_contains" { return " nounwind readonly willreturn" }
+    if name == "__mn_range" { return " nounwind readonly willreturn" }
+    // -- Allocators (noalias in prefix; suffix = nounwind willreturn) --
+    if name == "malloc" { return " nounwind willreturn" }
+    if name == "__mn_alloc" { return " nounwind willreturn" }
+    if name == "__mn_str_concat" { return " nounwind willreturn" }
+    if name == "__mn_str_from_int" { return " nounwind willreturn" }
+    if name == "__mn_str_from_float" { return " nounwind willreturn" }
+    if name == "__mn_str_from_bool" { return " nounwind willreturn" }
+    if name == "__mn_str_substr" { return " nounwind willreturn" }
+    if name == "__mn_str_chr" { return " nounwind willreturn" }
+    if name == "__mn_str_to_upper" { return " nounwind willreturn" }
+    if name == "__mn_str_to_lower" { return " nounwind willreturn" }
+    if name == "__mn_str_replace" { return " nounwind willreturn" }
+    if name == "__mn_str_split" { return " nounwind willreturn" }
+    if name == "__mn_str_trim" { return " nounwind willreturn" }
+    if name == "__mn_str_join" { return " nounwind willreturn" }
+    if name == "__mn_list_new" { return " nounwind willreturn" }
+    if name == "__mn_list_concat" { return " nounwind willreturn" }
+    if name == "__mn_map_new" { return " nounwind willreturn" }
+    if name == "__mn_map_keys" { return " nounwind willreturn" }
+    if name == "__mn_signal_new" { return " nounwind willreturn" }
+    if name == "mapanare_agent_new" { return " nounwind willreturn" }
+    if name == "mn_arena_create" { return " nounwind willreturn" }
+    if name == "mn_arena_alloc" { return " nounwind willreturn" }
+    // -- Cleanup / free (willreturn, no readonly — frees memory) --
+    if name == "free" { return " nounwind willreturn" }
+    if name == "__mn_str_free" { return " nounwind willreturn" }
+    if name == "__mn_list_free" { return " nounwind willreturn" }
+    if name == "__mn_map_free" { return " nounwind willreturn" }
+    if name == "__mn_map_free_deep" { return " nounwind willreturn" }
+    if name == "__mn_stream_free" { return " nounwind willreturn" }
+    if name == "__mn_stream_free_chain" { return " nounwind willreturn" }
+    if name == "__mn_range_free" { return " nounwind willreturn" }
+    if name == "__mn_signal_free" { return " nounwind willreturn" }
+    if name == "mn_arena_destroy" { return " nounwind willreturn" }
+    if name == "__mapanare_tensor_free" { return " nounwind willreturn" }
+    // -- Mutation (nounwind only — writes through caller-owned memory) --
     if name == "__mn_list_push" { return " nounwind" }
-    if name == "__mn_list_new" { return " nounwind" }
-    if name == "__mn_map_new" { return " nounwind" }
+    if name == "__mn_list_set" { return " nounwind" }
     if name == "__mn_map_set" { return " nounwind" }
+    if name == "__mn_map_get" { return " nounwind" }
+    // -- Print / I/O writes (observable but terminate) --
+    if name == "__mn_print" { return " nounwind willreturn" }
+    if name == "__mn_println" { return " nounwind willreturn" }
+    if name == "__mn_str_print" { return " nounwind willreturn" }
+    if name == "__mn_str_println" { return " nounwind willreturn" }
+    if name == "__mn_str_eprint" { return " nounwind willreturn" }
+    if name == "__mn_str_eprintln" { return " nounwind willreturn" }
+    // -- I/O (v3.41.0) --
+    if name == "__mn_read_line" { return " nounwind willreturn" }
+    if name == "__mn_file_append" { return " nounwind willreturn" }
+    if name == "__mn_dir_list_strings" { return " nounwind willreturn" }
+    if name == "__mn_file_exists" { return " nounwind readonly willreturn" }
+    if name == "__mn_file_remove" { return " nounwind willreturn" }
+    if name == "__mn_file_size" { return " nounwind readonly willreturn" }
+    if name == "__mn_file_mtime" { return " nounwind readonly willreturn" }
+    if name == "__mn_dir_create" { return " nounwind willreturn" }
+    if name == "__mn_dir_remove" { return " nounwind willreturn" }
+    if name == "__mn_file_rename" { return " nounwind willreturn" }
+    if name == "__mn_file_copy" { return " nounwind willreturn" }
+    if name == "__mn_realpath" { return " nounwind willreturn" }
+    if name == "__mn_tmpfile_path" { return " nounwind willreturn" }
+    // -- Network / crypto / regex (v3.42.0) --
+    if name == "__mn_http_get" { return " nounwind willreturn" }
+    if name == "__mn_sha256_str" { return " nounwind willreturn" }
+    if name == "__mn_base64_encode_str" { return " nounwind willreturn" }
+    if name == "__mn_base64_decode_str" { return " nounwind willreturn" }
+    if name == "__mn_hmac_sha256_str" { return " nounwind willreturn" }
+    if name == "__mn_hex_encode_str" { return " nounwind willreturn" }
+    if name == "__mn_random_bytes_str" { return " nounwind willreturn" }
+    if name == "__mn_regex_compile_str" { return " nounwind willreturn" }
+    if name == "__mn_regex_exec_str" { return " nounwind willreturn" }
+    if name == "__mn_regex_replace_str" { return " nounwind willreturn" }
+    if name == "__mn_regex_free" { return " nounwind willreturn" }
+    // -- GPU (v3.46.0) --
+    if name == "__mn_gpu_available" { return " nounwind readonly willreturn" }
+    if name == "__mn_gpu_device_name" { return " nounwind willreturn" }
+    if name == "__mn_gpu_device_memory" { return " nounwind readonly willreturn" }
+    if name == "__mn_gpu_tensor_add" { return " nounwind willreturn" }
+    if name == "__mn_gpu_tensor_sub" { return " nounwind willreturn" }
+    if name == "__mn_gpu_tensor_mul" { return " nounwind willreturn" }
+    if name == "__mn_gpu_tensor_div" { return " nounwind willreturn" }
+    if name == "__mn_gpu_tensor_matmul" { return " nounwind willreturn" }
+    // -- Tensor runtime --
+    if name == "__mapanare_tensor_add" { return " nounwind willreturn" }
+    if name == "__mapanare_tensor_sub" { return " nounwind willreturn" }
+    if name == "__mapanare_tensor_mul" { return " nounwind willreturn" }
+    if name == "__mapanare_tensor_div" { return " nounwind willreturn" }
+    if name == "__mapanare_matmul" { return " nounwind willreturn" }
+    if name == "__mapanare_tensor_alloc" { return " nounwind willreturn" }
+    if name == "__mapanare_tensor_shape_eq" { return " nounwind readonly willreturn" }
+    // -- Agent runtime (v3.43.0) --
+    if name == "mapanare_agent_spawn" { return " nounwind willreturn" }
+    if name == "mapanare_agent_send" { return " nounwind willreturn" }
+    if name == "mapanare_agent_recv_blocking" { return " nounwind" }
+    if name == "mapanare_agent_stop" { return " nounwind willreturn" }
+    if name == "mapanare_agent_destroy" { return " nounwind willreturn" }
+    if name == "__mn_agent_spawn" { return " nounwind willreturn" }
+    if name == "__mn_agent_send" { return " nounwind willreturn" }
+    if name == "__mn_agent_sync" { return " nounwind willreturn" }
+    // -- Signal runtime --
+    if name == "__mn_signal_get" { return " nounwind" }
+    if name == "__mn_signal_set" { return " nounwind willreturn" }
+    // -- Iterator --
+    if name == "__iter_has_next" { return " nounwind readonly willreturn" }
+    if name == "__iter_next" { return " nounwind" }
     return ""
 }
 
@@ -349,7 +501,12 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_ord", "i64", llvm_string())
 
     // Map runtime
-    s = declare_runtime_fn(s, "__mn_map_new", "ptr", "i64, i64, i64")
+    // v4.32.0 Phase 1.2: __mn_map_new takes (key_size, val_size, key_type, val_type)
+    // — four i64 arguments. The runtime signature is at
+    // runtime/native/mapanare_core.c:1561. Python bootstrap has always
+    // passed four args; the self-hosted emitter was declaring three
+    // (panel carry-forward, 7th cycle closed here).
+    s = declare_runtime_fn(s, "__mn_map_new", "ptr", "i64, i64, i64, i64")
     s = declare_runtime_fn(s, "__mn_map_set", "void", "ptr, ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_get", "ptr", "ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_len", "i64", "ptr")
@@ -1642,6 +1799,12 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
     if key_ty.kind == TK_INT() { key_tag = "0" }
     if key_ty.kind == TK_FLOAT() { key_tag = "2" }
 
+    // v4.32.0 Phase 1.2: val_tag mirrors the Python bootstrap at
+    // emit_llvm_text.py:3160 — 1 for String val types (so the runtime
+    // knows to apply the heap-tag low-bit strip on reads), 0 otherwise.
+    let mut val_tag: String = "0"
+    if val_ty.kind == TK_STRING() { val_tag = "1" }
+
     // Key/val sizes: strings are 16 bytes ({ptr,i64}), ints are 8 bytes
     // Default val_size = 16 to safely handle enums/strings in untyped empty maps
     let mut key_size: String = "16"
@@ -1654,9 +1817,11 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
     if val_ty.kind == TK_STRUCT() { val_size = "64" }
     if val_ty.kind == TK_ENUM() { val_size = "64" }
 
-    // Call __mn_map_new(key_size, val_size, key_type)
+    // Call __mn_map_new(key_size, val_size, key_type, val_type) — 4 args
+    // (v4.32.0 Phase 1.2 closes the arity mismatch flagged as a 7-cycle
+    // carry-forward by Rattler at the v4.31.0 arc-end panel).
     let map_ptr: String = dn + ".mp"
-    s = emit_line(s, "  " + map_ptr + " =call ptr @__mn_map_new(i64 " + key_size + ", i64 " + val_size + ", i64 " + key_tag + ")")
+    s = emit_line(s, "  " + map_ptr + " =call ptr @__mn_map_new(i64 " + key_size + ", i64 " + val_size + ", i64 " + key_tag + ", i64 " + val_tag + ")")
 
     // Insert each pair
     let npairs: Int = len(pairs)

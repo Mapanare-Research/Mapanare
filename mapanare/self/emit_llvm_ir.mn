@@ -113,16 +113,22 @@ fn llvm_load(name: String, ty: String, ptr: String) -> String {
     return "  " + name + " =load " + ty + ", ptr " + ptr
 }
 
+// v4.32.0 Phase 1.2: signed integer arithmetic emits `nsw` for parity
+// with the Python bootstrap emitter at emit_llvm_text.py:2060-2062. The
+// `nsw` ("no signed wrap") modifier lets LLVM prove that i64 add/sub/mul
+// won't overflow signed bounds, enabling a raft of downstream
+// optimizations (InstCombine, LoopStrengthReduce, LoopVectorize).
+// Unsigned overflow is still fine because Mapanare's Int is signed i64.
 fn emit_add(name: String, ty: String, left: String, right: String) -> String {
-    return "  " + name + " =add " + ty + " " + left + ", " + right
+    return "  " + name + " =add nsw " + ty + " " + left + ", " + right
 }
 
 fn emit_sub(name: String, ty: String, left: String, right: String) -> String {
-    return "  " + name + " =sub " + ty + " " + left + ", " + right
+    return "  " + name + " =sub nsw " + ty + " " + left + ", " + right
 }
 
 fn emit_mul(name: String, ty: String, left: String, right: String) -> String {
-    return "  " + name + " =mul " + ty + " " + left + ", " + right
+    return "  " + name + " =mul nsw " + ty + " " + left + ", " + right
 }
 
 fn emit_sdiv(name: String, ty: String, left: String, right: String) -> String {
