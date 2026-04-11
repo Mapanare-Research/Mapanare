@@ -1004,18 +1004,37 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
  * (``tests/llvm/test_break_nested.py::test_break_in_if_in_for``
  * is the regression gate), but the workaround and its comment
  * survived two cleanup passes — Mamba flagged it in the v4.26.0
- * panel. Now the OOB path returns NULL and the caller either
- * crashes loudly (correct behavior for a bug) or — once bounds
- * checks land in codegen — takes an explicit error path. Either
- * way, silent garbage reads are no longer possible. */
+ * panel.
+ *
+ * v4.32.0: when v4.31.0 removed the workaround, __mn_list_get
+ * began returning NULL on OOB — but the Python emitter at
+ * ``emit_llvm_text.py:3101-3108`` unconditionally dereferences
+ * the returned pointer. Viper V2 (arc-end panel) flagged this
+ * as a segfault window: any program path that used to silently
+ * read zeros now segfaults at a non-deterministic location.
+ * The fix is to abort loudly AT THE RUNTIME CALL SITE — a
+ * predictable crash with a diagnostic message, instead of a
+ * pointer-deref segfault in emitted code. Silent zero reads
+ * were a bug; NULL-deref segfaults were a worse bug; abort()
+ * with a clear message is the right answer. */
 MN_EXPORT void *__mn_list_get(MnList *list, int64_t i) {
-    if (i < 0 || i >= list->len) return NULL;
+    if (i < 0 || i >= list->len) {
+        fprintf(stderr,
+                "mapanare: list index %ld out of bounds (len=%ld)\n",
+                (long)i, (long)list->len);
+        abort();
+    }
     void *result = list->data + i * list->elem_size;
     return result;
 }
 
 MN_EXPORT void __mn_list_set(MnList *list, int64_t i, const void *elem_ptr) {
-    if (i < 0 || i >= list->len) return;
+    if (i < 0 || i >= list->len) {
+        fprintf(stderr,
+                "mapanare: list index %ld out of bounds (len=%ld)\n",
+                (long)i, (long)list->len);
+        abort();
+    }
     mn_list_detach(list);  /* COW: ensure sole ownership */
     memcpy(list->data + i * list->elem_size,
            elem_ptr, (size_t)list->elem_size);

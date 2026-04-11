@@ -108,6 +108,21 @@ fn main() {
 }
 ```
 
+**Bounds checking.** Reading or writing `list[i]` where `i < 0` or `i >= list.length()` is a hard abort, not a silent zero. The runtime
+prints `mapanare: list index N out of bounds (len=M)` on stderr and calls
+`abort()` at the call site. For defensive code, guard the access:
+
+```mn
+if i < list.length() && i >= 0 {
+    let x: Int = list[i]
+    // ...
+}
+```
+
+This replaces a v4.18.0–v4.31.0 era workaround where OOB reads silently
+returned zeros from a 4KB thread-local buffer — that workaround papered
+over upstream bugs and is gone as of v4.32.0 (Viper V2, arc-end panel).
+
 ---
 
 ## 4. Error Handling Pipeline
