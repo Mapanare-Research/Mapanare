@@ -7,6 +7,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.29.0] - 2026-04-11
+
+**Build Infrastructure + Test Honesty — recovery release #3, zero new features.**
+
+v4.27.0 closed CRITICAL items, v4.28.0 closed HIGH-severity concurrency +
+carry-forwards, v4.29.0 closes the build and test infrastructure that
+silently allowed the v4.18.0–v4.26.0 hollow-features arc to ship without
+any reviewer or CI catching it. The guiding rule: *if CI cannot fail,
+claims about CI passing are meaningless.* Still no new features.
+
+Full session log: [`SESSION_REPORT.md`](./docs/roadmap/v4/v4.29.0/SESSION_REPORT.md).
+
+### Added — CI gates that actually gate
+
+- **Hollow-feature gate (`raise NotImplementedError`)**: new CI step in
+  `ci.yml` greps `mapanare/` and `runtime/` for `raise NotImplementedError`
+  and fails the build on any hit (test tree excluded). `tracing.py`'s
+  `SpanExporter` stub was the only remaining in-source hit and has been
+  converted to a proper `abc.ABC` with `@abstractmethod`. The rule: if
+  you find yourself writing `raise NotImplementedError`, the feature is
+  not ready to merge.
+- **Silent-skip gate**: new `scripts/check_silent_skips.py` + CI step
+  requires every `pytest.mark.skip` / `pytest.mark.xfail` in `tests/`
+  to name a tracking version (`vN.N.N`) in its `reason=` string or in a
+  comment within five lines above the marker. `pytest.mark.skipif` is
+  allowed without a comment (environment gates are first-class). The
+  v4.26.0 panel flagged 79 `extern "Python"` silent xfails and 38 silent
+  DWARF skips — this gate prevents the next class of silent debt.
+- **Makefile vs `ls` drift gate**: the `build-rt` target now has an
+  explicit `RUNTIME_SOURCES` enumeration and a `check-runtime-sources`
+  prerequisite that `diff`s the enumeration against `ls runtime/native/*.c`.
+  Anaconda flagged this enumeration was on its 4th carry-forward cycle;
+  the gate ends the cycle.
+- **Fixed-point script has teeth**: `scripts/verify_fixed_point.sh` runs
+  under `set -euo pipefail` (was `set -uo pipefail`), captures and
+  propagates `mnc-stage2` exit codes, validates that `stage3.ll` is
+  non-empty and `llvm-as`-clean, and fails with a non-zero exit code
+  when the diff between `stage2.ll` and `stage3.ll` exceeds
+  `DIFF_THRESHOLD` (default 100, 0.09% of ~111k lines). The v4.17.0
+  "fixed-point bootstrap" claim was unfalsifiable by construction
+  before this release — the script ended with a hardcoded `EXIT=0`.
+  The CI `fixed-point` job now delegates to the script and propagates
+  its exit code.
+
+### Added — orphaned runtime wired into the build
+
+- **`runtime/native/mapanare_db.c` (1,130 lines)** — SQLite3, PostgreSQL,
+  Redis, and extended filesystem operations — is now compiled and
+  archived into `libmapanare_rt.a` by `Makefile build-rt` and by
+  `scripts/build_stage1.py`. All 38 public functions (`__mn_sqlite3_*`,
+  `__mn_pg_*`, `__mn_redis_*`) are declared in `emit_llvm_text.py`'s
+  `_RUNTIME_FN_ATTRS`. Stdlib `.mn` files that import `db` will now
+  link in non-developer builds. The duplicate "extended filesystem"
+  helpers (`__mn_file_exists`, `__mn_file_remove`, `__mn_mkdir_recursive`,
+  etc.) that collided with `mapanare_core.c` have been removed from
+  `mapanare_db.c` in favour of the canonical core.c implementations.
+- **`runtime/native/mapanare_html.c` (812 lines)** — HTML parser + time +
+  env + URL helpers — is wired the same way. Seventeen exports added
+  to `_RUNTIME_FN_ATTRS`. No third-party dependencies.
+- **`tests/runtime/test_db_smoke.c`** + **`tests/runtime/test_html_smoke.c`**
+  are new C smoke tests compiled and run as part of the `native` CI
+  job.
+
+### Fixed — test honesty
+
+- **`extern "Python" fn` removed (Path B)**. The syntax was a v0.5.0-era
+  convenience that broke silently when `emit_python.py` was deleted in
+  v4.2.0. Seventy-nine tests in `tests/ffi/test_python_interop.py` were
+  silently `pytest.mark.xfail`'d for nine releases; the v4.26.0
+  seven-reviewer panel flagged it as a core hollow-feature case.
+  v4.27.0's `mapanare bind --lang python` gives Python interop a real,
+  maintained path via ctypes against a compiled `.mn` module, so
+  `extern "Python"` was redundant. The semantic checker now rejects
+  any non-`"C"` ABI with a message pointing to `mapanare bind`;
+  `tests/ffi/test_python_interop.py` has been deleted (631 lines, 45
+  tests); `docs/cookbook.md` §12 and `docs/reference.md` §Python Interop
+  have been rewritten to document the bind path. See "Removed" below.
+- **DWARF debug info claim struck (Path B)**. Thirty-plus tests in
+  `tests/llvm/test_dwarf_debug_info.py` had been `pytest.mark.skip`'d
+  since v4.2.0. The `-g` / `--debug` flag was accepted by argparse but
+  the `LLVMTextEmitter` never emitted a single `!DICompileUnit` /
+  `!DISubprogram` / `!DILocation` / `!DILocalVariable` /
+  `DICompositeType` node. v4.29.0 strikes the claim: SPEC §21.3 and
+  README now document DWARF emission as deferred to v5.x, the flag
+  still parses for forward compatibility, and `_resolve_debug` prints
+  a loud stderr warning every time it is used. The skipped tests have
+  been deleted; the passing tests (`TestDebugCLIFlag`,
+  `TestNoDebugWhenDisabled`, `TestMIRSpanThreading`) and a new
+  `TestDebugFlagDeferred` that pins the warning remain. The "no DWARF
+  metadata when disabled" tests are the regression gate for when DWARF
+  eventually lands.
+- **`--no-check` warning**. `mapanare build-multi --no-check` previously
+  bypassed semantic analysis silently — exactly the kind of "diagnostics
+  hidden" escape hatch that let the v4.18.0–v4.26.0 arc ship. A new
+  `_resolve_no_check` helper prints a loud stderr warning every time
+  the flag is used, naming which diagnostic classes are suppressed.
+  Covered by `tests/cli/test_no_check_warning.py`.
+- **Stale `mapanare/self/stage3.ll` deleted**. The file was zero bytes
+  on disk since March 21, 2026 — predating v4.20.0 — and was used
+  nowhere; `scripts/verify_fixed_point.sh` produces fresh artifacts in
+  `/tmp/` on every run. `.gitignore` now blocks `mapanare/self/stage2.ll`
+  and `mapanare/self/stage3.ll` so no stale snapshot can become a lie
+  again.
+- **`tests/conftest.py` cleaned up**. The dynamic-xfail set is now
+  explicitly tracked as v5.0.0 work (deprecated Python backend removal).
+  The reason string names the tracking version, and a module docstring
+  explains why each category of test is xfail'd.
+
+### Removed
+
+- **`extern "Python" fn` syntax**. The semantic checker now rejects any
+  extern ABI other than `"C"` with a message pointing to
+  `mapanare bind --lang python`. Scripts that relied on the syntax
+  should migrate to the FFI bind path. `tests/ffi/test_python_interop.py`
+  has been deleted.
+- **Six `@pytest.mark.skip` DWARF test classes** in
+  `tests/llvm/test_dwarf_debug_info.py`. They tested a feature that did
+  not exist. New DWARF tests will be written against the real emitter
+  when v5.x picks up the work; the existing MIR-level source-span
+  plumbing is covered by `TestMIRSpanThreading`.
+
 ## [4.28.0] - 2026-04-11
 
 **Concurrency + v3.47.0 Carry-Forwards — recovery release #2, zero new features.**

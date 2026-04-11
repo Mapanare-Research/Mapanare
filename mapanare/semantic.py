@@ -1463,14 +1463,30 @@ class SemanticChecker:
                     ),
                 )
         elif isinstance(defn, ExternFnDef):
-            if defn.abi not in ("C", "Python"):
+            # v4.29.0: ``extern "Python" fn`` is removed. The feature was
+            # added in v0.5.0 as a convenience but broke silently when
+            # ``emit_python.py`` was deleted during the v4.2.0 emitter
+            # consolidation; the resulting 79 test xfails were not flagged
+            # until the v4.26.0 seven-reviewer panel. v4.27.0's
+            # ``mapanare bind --lang python`` ships a real, maintained FFI
+            # path (ctypes wrapper against the compiled ``.mn`` module),
+            # so ``extern "Python"`` is redundant. Path B from v4.29.0
+            # PLAN §2.1 deletes it.
+            if defn.abi == "Python":
                 self._error(
-                    f'Unsupported ABI \'{defn.abi}\'; only "C" and "Python" are supported', defn
+                    'extern "Python" fn was removed in v4.29.0. '
+                    "For Python interop, compile your Mapanare module "
+                    "normally and generate a Python binding with "
+                    "`mapanare bind --lang python <module.mn>`. "
+                    "The generated Python file imports a ctypes wrapper "
+                    "around the compiled .mn, which is type-checked and "
+                    "stays in sync with the Mapanare source.",
+                    defn,
                 )
-            if defn.abi == "Python" and not defn.module:
+            if defn.abi != "C":
                 self._error(
-                    'extern "Python" requires module qualifier: '
-                    'extern "Python" fn module::name(...)',
+                    f"Unsupported ABI '{defn.abi}'; only \"C\" is supported "
+                    "(use `mapanare bind --lang python` for Python interop)",
                     defn,
                 )
             param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]

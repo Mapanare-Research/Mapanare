@@ -1657,22 +1657,32 @@ Exposed metrics:
 | `mapanare_agent_stops_total` | Counter | Total agents stopped |
 | `mapanare_agent_handle_duration_seconds` | Histogram | Message handling latency |
 
-### 21.3 Debug Info (DWARF)
+### 21.3 Debug Info (DWARF) — **deferred to v5.x**
 
-Native binaries compiled with `-g` / `--debug` include DWARF debug information for source-level debugging with `gdb` or `lldb`:
-
-```bash
-mapanare build -g program.mn -o program
-lldb ./program
-```
-
-Debug info includes:
-
-- Compile unit metadata (source file, producer)
-- Function debug info (name, file, line, scope)
-- Line number mapping from MIR instructions to source locations
-- Variable debug info (names, types, locations)
-- Struct type debug info (member layout)
+> **v4.29.0 correction.** Earlier drafts of this section claimed that binaries
+> compiled with `-g` / `--debug` contain DWARF debug metadata. That claim was
+> aspirational: the MIR already threads `SourceSpan` per instruction, but
+> `LLVMTextEmitter` never emitted a single `!DICompileUnit`, `!DISubprogram`,
+> `!DILocation`, `!DILocalVariable`, or `DICompositeType` node. Thirty-plus
+> tests in `tests/llvm/test_dwarf_debug_info.py` had been silently
+> `pytest.mark.skip`'d since v4.2.0, and the v4.26.0 seven-reviewer panel
+> (Rattler #4) flagged it as a core hollow-feature case.
+>
+> The claim is hereby struck. DWARF debug info emission is deferred to the
+> v5.x line. Until it lands:
+>
+> - The `-g` / `--debug` flag is still accepted (for forward compatibility
+>   with scripts and IDEs that pass it unconditionally).
+> - Every use of the flag prints a loud stderr warning naming v5.x as the
+>   tracking version. The emitted IR/binary contains no DWARF metadata.
+> - Source-level debuggers (`gdb`, `lldb`) will show only machine-level
+>   frames for Mapanare programs. Stack traces from the C runtime are
+>   fully symbolic (the C runtime is built with `-g` by default).
+>
+> When v5.x picks this up, it will build on the existing `SourceSpan`
+> infrastructure; see `tests/llvm/test_dwarf_debug_info.py` for the
+> regression gate that currently pins "no DWARF metadata" so the next
+> implementation cannot land silently.
 
 ---
 

@@ -464,45 +464,50 @@ fn main() {
 
 ---
 
-## 12. Calling Python Libraries
+## 12. Calling Python Libraries (via FFI bindings)
 
-Use `extern "Python"` to call any Python function.
+> **v4.29.0 note.** The old `extern "Python" fn` syntax was removed.
+> Python interop now goes through `mapanare bind --lang python`, which
+> generates a ctypes wrapper against your compiled `.mn` module. Read
+> top-to-bottom once and the pattern will feel identical to other FFI
+> bindings (TypeScript, Go, etc.).
 
-```mn
-extern "Python" fn math::sqrt(x: Float) -> Float
-extern "Python" fn math::floor(x: Float) -> Float
+**Step 1.** Write your Mapanare module and compile it to a shared
+library:
 
-fn distance(x1: Float, y1: Float, x2: Float, y2: Float) -> Float {
-    let dx = x2 - x1
-    let dy = y2 - y1
-    return math::sqrt(dx * dx + dy * dy)
-}
-
-fn main() {
-    let d = distance(0.0, 0.0, 3.0, 4.0)
-    print("distance: ${str(d)}")
-}
+```bash
+mapanare build --release --crate-type=cdylib math_utils.mn -o libmath_utils.so
 ```
 
-### With Error Handling
+**Step 2.** Generate the Python binding:
 
-```mn
-extern "Python" fn json::loads(s: String) -> Result<String, String>
-
-fn main() {
-    let valid = json::loads("{\"name\": \"Mapanare\"}")
-    match valid {
-        Ok(data) => print("parsed: ${data}"),
-        Err(e) => print("error: ${e}"),
-    }
-
-    let invalid = json::loads("not json")
-    match invalid {
-        Ok(data) => print("parsed: ${data}"),
-        Err(e) => print("parse error: ${e}"),
-    }
-}
+```bash
+mapanare bind --lang python math_utils.mn -o math_utils_py.py
 ```
+
+**Step 3.** Import and use from Python:
+
+```python
+from math_utils_py import distance
+
+d = distance(0.0, 0.0, 3.0, 4.0)
+print(f"distance: {d}")
+```
+
+### Calling Python from Mapanare
+
+The reverse direction — calling a Python library **from** Mapanare —
+is less common and is deliberately not a first-class feature in v4.x.
+If you need it, two options work today:
+
+1. **Write a thin C wrapper around CPython's embed API**, declare it
+   with `extern "C" fn ...`, and link against `libpython3`. This is the
+   supported escape hatch and uses the same `extern "C"` FFI path as
+   any other C library.
+2. **Invert the control flow**: make Mapanare the library and Python
+   the driver. This is almost always cleaner — type-safe Mapanare code
+   called from a Python script is more robust than type-erased Python
+   called from Mapanare.
 
 ---
 

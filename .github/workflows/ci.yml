@@ -38,6 +38,44 @@ jobs:
       - name: Type check (mypy)
         run: mypy mapanare/ runtime/
 
+      # v4.29.0: hollow-feature gate.
+      # The v4.18.0-v4.26.0 evolution arc shipped multiple features
+      # that lowered to ``raise NotImplementedError`` at runtime
+      # (``@gpu``, early ``await``, etc). This step fails the build
+      # the moment a ``raise NotImplementedError`` appears anywhere
+      # under ``mapanare/`` or ``runtime/`` outside the test tree.
+      # The rule is: if you need to write ``raise NotImplementedError``,
+      # the feature is not ready to merge. Use ``abc.abstractmethod``
+      # for intended-to-be-overridden stubs.
+      - name: Hollow-feature gate (no raise NotImplementedError)
+        shell: bash
+        run: |
+          set -e
+          HITS=$(git grep -l 'raise NotImplementedError' mapanare/ runtime/ | grep -v '^tests/' || true)
+          if [ -n "$HITS" ]; then
+            echo "ERROR: 'raise NotImplementedError' found in source files:"
+            echo "$HITS" | sed 's/^/  /'
+            echo ""
+            echo "If the feature is not ready to merge, do not merge it."
+            echo "If the class is an abstract base, use 'from abc import ABC, abstractmethod'"
+            echo "and decorate the method with '@abstractmethod' instead."
+            exit 1
+          fi
+          echo "hollow-feature gate: clean"
+
+      # v4.29.0: skip-without-tracking-comment gate.
+      # Every ``@pytest.mark.skip`` or ``pytest.mark.xfail`` in
+      # ``tests/`` must have a comment on an adjacent line naming the
+      # tracking version (e.g. "# v4.30.0: ..."). A silent skip is a
+      # test that does not exist — and the v4.18.0-v4.26.0 regression
+      # happened because 79 ``extern "Python" fn`` tests had been
+      # silently xfailed since v4.2.0.
+      - name: Silent-skip gate (every pytest skip has a tracking version)
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_silent_skips.py tests/
+
       - name: Run tests
         run: pytest tests/ -v -n auto --durations=20
 
@@ -121,6 +159,35 @@ jobs:
           gcc -c -O2 -g -Wall -Wextra -Werror -I runtime/native/ \
             runtime/native/mapanare_gpu_builtins.c -o /tmp/mapanare_gpu_builtins.o
           ./test_c_runtime
+
+      # v4.29.0: orphaned runtime smoke tests. mapanare_db.c and
+      # mapanare_html.c were 1,942 lines of runtime code that no CI
+      # job touched until v4.29.0 (Anaconda HIGH, v4.26.0 panel). These
+      # smoke tests are the fuse: they call one symbol from each file
+      # so the linker MUST resolve mapanare_db.c / mapanare_html.c at
+      # build time. If a future edit re-orphans either file, this step
+      # fails to link and the CI job breaks loudly.
+      - name: Build runtime archive (Makefile path — all modules)
+        run: make build-rt
+
+      - name: Compile and run test_db_smoke
+        run: |
+          gcc -O2 -g -Wall -Wextra -pthread -I runtime/native \
+            tests/runtime/test_db_smoke.c \
+            runtime/native/libmapanare_rt.a \
+            -o /tmp/test_db_smoke -lm -lpthread -ldl
+          /tmp/test_db_smoke
+
+      - name: Compile and run test_html_smoke
+        run: |
+          gcc -O2 -g -Wall -Wextra -pthread -I runtime/native \
+            tests/runtime/test_html_smoke.c \
+            runtime/native/libmapanare_rt.a \
+            -o /tmp/test_html_smoke -lm -lpthread -ldl
+          /tmp/test_html_smoke
+
+      - name: Verify Makefile RUNTIME_SOURCES vs runtime/native/*.c
+        run: make check-runtime-sources
 
       - name: Compile and run with AddressSanitizer
         run: |
@@ -526,43 +593,26 @@ jobs:
       - name: Symlink clang
         run: sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
 
+      - name: Symlink llvm-as
+        run: sudo ln -sf /usr/bin/llvm-as-18 /usr/bin/llvm-as
+
       - name: Build stage1
         run: python scripts/build_stage1.py --use-committed
 
-      - name: Stage1 compiles mnc_all.mn (stage2)
+      # v4.29.0: the fixed-point job used to build stage2 by hand and
+      # then compare the results with a step whose failure mode was
+      # ``echo "Near fixed-point"``. Combined with the in-script
+      # ``EXIT=0`` and ``|| true`` patterns, the whole job was
+      # structurally incapable of failing — which made the v4.17.0
+      # "fixed-point bootstrap" claim unfalsifiable by construction
+      # (v4.26.0 panel: Rattler #7, Anaconda). All of that logic is
+      # now inside ``scripts/verify_fixed_point.sh`` with real teeth
+      # (``set -e``, explicit regression threshold, non-empty
+      # stage3.ll check, llvm-as validation). This job delegates to
+      # the script and propagates its exit code.
+      - name: Verify fixed-point bootstrap
+        shell: bash
         run: |
+          set -e
           ulimit -s 65536
-          ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
-          echo "stage2: $(wc -l < /tmp/stage2.ll) lines"
-          llvm-as-18 /tmp/stage2.ll -o /dev/null
-
-      - name: Build stage2 binary
-        run: |
-          python3 -c "
-          import re
-          with open('/tmp/stage2.ll') as f: ir = f.read()
-          ir = re.sub(r'(define\s+\w+\s+)@main\(', r'\1@mn_main(', ir)
-          ir = re.sub(r'call\s+(\S+)\s+@main\(', r'call \1 @mn_main(', ir)
-          with open('/tmp/stage2_patched.ll', 'w') as f: f.write(ir)
-          "
-          clang -O2 -c /tmp/stage2_patched.ll -o /tmp/stage2.o
-          gcc -o /tmp/mnc-stage2 /tmp/stage2.o runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -no-pie -rdynamic -lm -lpthread -ldl
-
-      - name: Stage2 compiles mnc_all.mn (stage3)
-        run: |
-          ulimit -s 65536
-          /tmp/mnc-stage2 mapanare/self/mnc_all.mn > /tmp/stage3.ll 2>/dev/null || true
-          echo "stage3: $(wc -l < /tmp/stage3.ll) lines"
-          llvm-as-18 /tmp/stage3.ll -o /dev/null
-
-      - name: Compare stage2 vs stage3
-        run: |
-          DIFF=$(diff /tmp/stage2.ll /tmp/stage3.ll | wc -l)
-          TOTAL=$(wc -l < /tmp/stage2.ll)
-          echo "Diff: ${DIFF} lines out of ${TOTAL}"
-          if [ "$DIFF" -eq 0 ]; then
-            echo "FIXED POINT REACHED"
-          else
-            PCT=$(python3 -c "print(f'{$DIFF/$TOTAL*100:.3f}%')")
-            echo "Near fixed-point: ${PCT} diff"
-          fi
+          bash scripts/verify_fixed_point.sh

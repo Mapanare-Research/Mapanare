@@ -92,7 +92,11 @@ class TestFeatureTableAccuracy:
         assert "circle" in out
 
     @pytest.mark.xfail(
-        reason="PythonMIREmitter gap: deprecated Python backend",
+        reason=(
+            "v5.0.0: PythonMIREmitter gap — deprecated Python backend "
+            "will be removed along with this test in v5.0.0. See "
+            "tests/conftest.py for the full tracking set."
+        ),
         strict=False,
     )
     def test_control_flow(self) -> None:

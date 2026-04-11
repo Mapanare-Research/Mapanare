@@ -19,6 +19,7 @@ import os
 import threading
 import time
 import uuid
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -245,11 +246,19 @@ class _NoOpSpanContext(SpanContext):
 # ---------------------------------------------------------------------------
 
 
-class SpanExporter:
-    """Base class for span exporters."""
+class SpanExporter(ABC):
+    """Abstract base class for span exporters.
 
+    v4.29.0: converted from a stub that raised a not-implemented error
+    into a proper ``abc.ABC`` so the v4.29.0 CI hollow-feature gate
+    does not have to special-case this file. Subclasses must implement
+    ``export``; ``shutdown`` has a no-op default because most exporters
+    have nothing to tear down.
+    """
+
+    @abstractmethod
     def export(self, spans: list[Span]) -> None:
-        raise NotImplementedError
+        """Export a batch of spans to the underlying backend."""
 
     def shutdown(self) -> None:
         pass

@@ -114,8 +114,17 @@ class TestDiscovery:
 # ---------------------------------------------------------------------------
 
 
+# v5.0.0: the llvmlite JIT emitter is being retired in favour of the
+# text-based LLVM emitter (``emit_llvm_text.py``) and the self-hosted
+# ``mnc-stage1``. The JIT crashes on these specific test fixtures and
+# the fix is "stop using the JIT", which happens when the llvmlite
+# dependency is dropped in v5.0.0. Until then the marker is a
+# non-regression placeholder.
 _LLVMLITE_JIT_XFAIL = pytest.mark.xfail(
-    reason="llvmlite JIT emitter crashes on test fixtures (pre-existing, tracked)",
+    reason=(
+        "v5.0.0: llvmlite JIT emitter crashes on test fixtures "
+        "(pre-existing, tracked to v5.0.0 llvmlite removal)"
+    ),
     strict=False,
 )
 

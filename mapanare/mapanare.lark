@@ -56,7 +56,12 @@ fn_def: (KW_PUB | PLUS)? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARRO
 async_fn_def: KW_PUB? KW_ASYNC KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
 
 // FFI: extern "C" fn name(params) -> RetType
-// Python interop: extern "Python" fn module::name(params) -> RetType
+//
+// v4.29.0: ``extern "Python" fn`` was removed. The grammar still accepts
+// a module-qualified form (``extern "C" fn module::name``) for the lexer
+// layer but the semantic checker rejects any ABI other than "C" with a
+// message pointing to ``mapanare bind --lang python``. See
+// ``docs/roadmap/v4/v4.29.0/PLAN.md`` Phase 2.1 (Path B).
 extern_fn_def: KW_EXTERN STRING_LIT KW_FN NAME (DOUBLE_COLON NAME)? LPAREN param_list? RPAREN (ARROW type_expr)?
 
 type_params: LT type_param (COMMA type_param)* GT

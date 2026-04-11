@@ -871,18 +871,29 @@ mapanare build program.mn --link-lib m    # links libm
 
 ### Python Interop
 
-```mn
-extern "Python" fn math::sqrt(x: Float) -> Float
-extern "Python" fn json::loads(s: String) -> Result<String, String>
-```
-
-Use `--python-path` to add module search paths:
+**v4.29.0 removal.** The `extern "Python" fn` syntax was removed. Python
+interop now goes through `mapanare bind --lang python`, which generates
+a ctypes wrapper around a compiled `.mn` shared library:
 
 ```bash
-mapanare run program.mn --python-path ./mymodules
+mapanare build --release --crate-type=cdylib math_utils.mn -o libmath_utils.so
+mapanare bind --lang python math_utils.mn -o math_utils_py.py
 ```
 
-Python exceptions are wrapped in `Result<T, String>` when the return type is `Result`.
+```python
+# Python driver
+from math_utils_py import sqrt, distance
+print(distance(0.0, 0.0, 3.0, 4.0))
+```
+
+Why the change: `extern "Python" fn` was added in v0.5.0 as a convenience
+but broke silently when the AST-based Python emitter was deleted in
+v4.2.0. Seventy-nine tests in `tests/ffi/test_python_interop.py` had
+been `pytest.mark.xfail`'d since then, which the v4.26.0 seven-reviewer
+panel flagged as a core hollow-feature case. `mapanare bind --lang python`
+has been shipping since v4.25.0 / v4.27.0 and offers the same ergonomics
+with real type-safety (the binding is generated from the compiled
+module's signatures, not from hand-written declarations).
 
 ---
 

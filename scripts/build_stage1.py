@@ -117,17 +117,21 @@ def build() -> pathlib.Path:
         print(f"  Object: {len(obj_bytes)} bytes → {obj_path} (llvmlite -O2)")
 
     # 4. Compile C runtime
+    # v4.29.0: ``mapanare_db.c`` (1,130 lines, SQLite/Postgres/Redis +
+    # extended filesystem) and ``mapanare_html.c`` (812 lines, HTML parser
+    # + time/env/URL helpers) are now compiled and linked into every
+    # mnc-stage1 build. Previously they were orphaned — 1,942 lines of
+    # runtime code that no CI job touched (v4.26.0 panel: Anaconda HIGH).
     print("[4/6] Compiling C runtime ...")
-    core_c = NATIVE_DIR / "mapanare_core.c"
-    core_o = SELF_DIR / "mapanare_core.o"
-    io_c = NATIVE_DIR / "mapanare_io.c"
-    io_o = SELF_DIR / "mapanare_io.o"
-    rt_c = NATIVE_DIR / "mapanare_runtime.c"
-    rt_o = SELF_DIR / "mapanare_runtime.o"
-    gpu_c = NATIVE_DIR / "mapanare_gpu.c"
-    gpu_o = SELF_DIR / "mapanare_gpu.o"
-    gpu_bi_c = NATIVE_DIR / "mapanare_gpu_builtins.c"
-    gpu_bi_o = SELF_DIR / "mapanare_gpu_builtins.o"
+    runtime_sources: list[tuple[pathlib.Path, pathlib.Path]] = [
+        (NATIVE_DIR / "mapanare_core.c", SELF_DIR / "mapanare_core.o"),
+        (NATIVE_DIR / "mapanare_io.c", SELF_DIR / "mapanare_io.o"),
+        (NATIVE_DIR / "mapanare_runtime.c", SELF_DIR / "mapanare_runtime.o"),
+        (NATIVE_DIR / "mapanare_gpu.c", SELF_DIR / "mapanare_gpu.o"),
+        (NATIVE_DIR / "mapanare_gpu_builtins.c", SELF_DIR / "mapanare_gpu_builtins.o"),
+        (NATIVE_DIR / "mapanare_db.c", SELF_DIR / "mapanare_db.o"),
+        (NATIVE_DIR / "mapanare_html.c", SELF_DIR / "mapanare_html.o"),
+    ]
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
     profile_flags = ["-DMN_PROFILE_MEM"] if "--profile-mem" in sys.argv else []
     c_base_flags = [
@@ -142,27 +146,13 @@ def build() -> pathlib.Path:
         "-I",
         str(NATIVE_DIR),
     ]
-    subprocess.run(
-        c_base_flags + asan_flags + profile_flags + [str(core_c), "-o", str(core_o)],
-        check=True,
-    )
-    subprocess.run(
-        c_base_flags + asan_flags + [str(io_c), "-o", str(io_o)],
-        check=True,
-    )
-    subprocess.run(
-        c_base_flags + asan_flags + [str(rt_c), "-o", str(rt_o)],
-        check=True,
-    )
-    subprocess.run(
-        c_base_flags + asan_flags + [str(gpu_c), "-o", str(gpu_o)],
-        check=True,
-    )
-    subprocess.run(
-        c_base_flags + asan_flags + [str(gpu_bi_c), "-o", str(gpu_bi_o)],
-        check=True,
-    )
-    print(f"  Runtime: {core_o}, {io_o}, {rt_o}, {gpu_o}, {gpu_bi_o}")
+    for src, obj in runtime_sources:
+        extra = profile_flags if src.name == "mapanare_core.c" else []
+        subprocess.run(
+            c_base_flags + asan_flags + extra + [str(src), "-o", str(obj)],
+            check=True,
+        )
+    print(f"  Runtime: {', '.join(str(o) for _, o in runtime_sources)}")
 
     # 5. Compile main wrapper
     print("[5/6] Compiling C main wrapper ...")
@@ -192,6 +182,7 @@ def build() -> pathlib.Path:
             "-Wl,-z,stacksize=67108864",  # 64MB stack for deep recursion on Linux
         ]
 
+    runtime_objects = [obj for _, obj in runtime_sources]
     subprocess.run(
         [
             CC,
@@ -199,11 +190,7 @@ def build() -> pathlib.Path:
             str(binary),
             str(main_o),
             str(obj_path),
-            str(core_o),
-            str(io_o),
-            str(rt_o),
-            str(gpu_o),
-            str(gpu_bi_o),
+            *(str(o) for o in runtime_objects),
         ]
         + link_flags
         + asan_flags,
@@ -212,7 +199,7 @@ def build() -> pathlib.Path:
     print(f"  Binary: {binary} ({binary.stat().st_size} bytes)")
 
     # Cleanup intermediate .o files
-    for f in [main_o, obj_path, core_o, io_o, rt_o, gpu_o, gpu_bi_o]:
+    for f in [main_o, obj_path, *runtime_objects]:
         if f.exists():
             f.unlink()
 

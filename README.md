@@ -426,7 +426,7 @@ mapanare login                Authenticate with registry
 mapanare targets              List supported compilation targets
 ```
 
-Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target <triple>` cross-compilation target, `--binary` (WASM binary output), `-g` debug info, `--trace` agent tracing, `--metrics :PORT` Prometheus metrics, `--filter` test filter.
+Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target <triple>` cross-compilation target, `--binary` (WASM binary output), `--trace` agent tracing, `--metrics :PORT` Prometheus metrics, `--filter` test filter. The `-g` / `--debug` flag is accepted for forward compatibility but is a no-op in v4.x (DWARF debug info emission is deferred to v5.x; see `docs/SPEC.md` §21.3).
 
 ---
 

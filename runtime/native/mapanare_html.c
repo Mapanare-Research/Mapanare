@@ -659,14 +659,10 @@ MN_HTML_EXPORT int64_t __mn_time_now_unix(void) {
     return (int64_t)time(NULL);
 }
 
-MN_HTML_EXPORT void __mn_sleep_ms(int64_t ms) {
-    if (ms <= 0) return;
-#ifdef _WIN32
-    Sleep((DWORD)ms);
-#else
-    usleep((useconds_t)(ms * 1000));
-#endif
-}
+/* v4.29.0: ``__mn_sleep_ms`` is defined in ``mapanare_core.c``. When
+ * ``mapanare_html.c`` was orphaned, a duplicate definition drifted
+ * into this file. Removed in favour of the core implementation; the
+ * runtime exports only one symbol. */
 
 /* =======================================================================
  * 3. Environment Variables

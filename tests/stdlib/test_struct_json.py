@@ -139,7 +139,10 @@ fn main() {
         assert "main" in ir
 
     @pytest.mark.xfail(
-        reason="decode_to error string not yet emitted in text emitter",
+        reason=(
+            "v4.30.0: decode_to error string not yet emitted in text emitter. "
+            "Tracked alongside the stdlib JSON rework in the v4.30.0 PLAN."
+        ),
         strict=True,
     )
     def test_error_on_non_object(self) -> None:

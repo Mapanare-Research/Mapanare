@@ -415,7 +415,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    debug = getattr(args, "debug", False)
+    debug = _resolve_debug(args)
 
     if not release:
         # --- C backend (default) ---
@@ -711,7 +711,7 @@ def cmd_jit(args: argparse.Namespace) -> None:
     """JIT-compile an .mn source file via LLVM and execute natively."""
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    debug = getattr(args, "debug", False)
+    debug = _resolve_debug(args)
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -756,7 +756,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
-    debug = getattr(args, "debug", False)
+    debug = _resolve_debug(args)
     stdlib_path: str | None = getattr(args, "stdlib_path", None)
     search_paths = [stdlib_path] if stdlib_path else None
     resolver = ModuleResolver(search_paths=search_paths)
@@ -927,7 +927,7 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
-    debug = getattr(args, "debug", False)
+    debug = _resolve_debug(args)
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -1033,7 +1033,7 @@ def cmd_emit_c(args: argparse.Namespace) -> None:
     """Emit C source for an .mn source file."""
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    debug = getattr(args, "debug", False)
+    debug = _resolve_debug(args)
     try:
         c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
     except ParseError as e:
@@ -1276,7 +1276,7 @@ def cmd_build_multi(args: argparse.Namespace) -> None:
     source_files = args.sources
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
-    skip_check = getattr(args, "no_check", False)
+    skip_check = _resolve_no_check(args)
     no_verify = _resolve_no_verify(args)
     try:
         llvm_ir = _compile_multi_module_text(
@@ -1538,14 +1538,52 @@ def _format_mapanare(source: str) -> str:
 
 
 def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
-    """Add -g/--debug flag to emit DWARF debug info."""
+    """Add -g/--debug flag.
+
+    v4.29.0: the flag is accepted for forward compatibility but is a
+    no-op. DWARF debug info emission was claimed in multiple v4.x
+    roadmap documents but never shipped — 38 tests in
+    ``tests/llvm/test_dwarf_debug_info.py`` had been ``pytest.mark.skip``
+    since v4.2.0, which the v4.26.0 seven-reviewer panel flagged as a
+    core hollow-feature case. The claim is now struck (SPEC 21.3 marks
+    DWARF as "deferred to v5.x"); the flag stays so scripts that pass
+    ``-g`` do not break, and ``_resolve_debug`` prints a loud stderr
+    warning every time it is used so nobody is silently misled into
+    believing debug info was emitted.
+    """
     parser.add_argument(
         "-g",
         "--debug",
         action="store_true",
         default=False,
-        help="Emit DWARF debug info for source-level debugging",
+        help=(
+            "Accepted for compatibility; DWARF debug info emission is not "
+            "implemented (deferred to v5.x). Using this flag prints a "
+            "warning and has no effect on the emitted IR."
+        ),
     )
+
+
+def _resolve_debug(args: argparse.Namespace) -> bool:
+    """Return ``debug`` from argparse and warn on stderr if it was set.
+
+    v4.29.0: DWARF debug info is deferred to v5.x. The ``-g`` / ``--debug``
+    flag is retained as a no-op for forward compatibility, but every use
+    emits a loud stderr warning so developers do not silently trust a
+    debug-less binary. The warning deliberately names the tracking
+    version so the reader knows where to look for the real feature.
+    """
+    value = bool(getattr(args, "debug", False))
+    if value:
+        print(
+            "warning: -g/--debug is a no-op in v4.x — DWARF debug info "
+            "emission is not implemented and has been deferred to v5.x. "
+            "The emitted IR/binary will NOT contain source-level debug "
+            "information; source-level debuggers (gdb, lldb) will show "
+            "only machine-level frames.",
+            file=sys.stderr,
+        )
+    return value
 
 
 def _add_edition_flag(parser: argparse.ArgumentParser) -> None:
@@ -1581,6 +1619,28 @@ def _resolve_no_verify(args: argparse.Namespace) -> bool:
         print(
             "warning: --no-verify skips MIR structural checks; crashes below "
             "are almost certainly malformed IR the verifier would have caught.",
+            file=sys.stderr,
+        )
+    return value
+
+
+def _resolve_no_check(args: argparse.Namespace) -> bool:
+    """Return ``skip_check`` from argparse and warn on stderr if it was set.
+
+    v4.29.0: ``--no-check`` previously bypassed semantic analysis silently,
+    which is exactly the kind of "looks fine, diagnostics hidden" problem
+    that let the v4.18.0–v4.26.0 hollow-features arc ship. The flag remains
+    the canonical escape hatch for bootstrapping self-hosted ``.mn`` modules
+    that intentionally use not-yet-checked constructs, but every use now
+    logs a loud warning to stderr so another developer reading CI logs can
+    see when diagnostics were suppressed.
+    """
+    value = bool(getattr(args, "no_check", False))
+    if value:
+        print(
+            "warning: --no-check bypasses semantic analysis; "
+            "type errors, undefined symbols, and trait violations "
+            "will NOT be reported.",
             file=sys.stderr,
         )
     return value
