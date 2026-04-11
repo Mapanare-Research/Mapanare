@@ -8,7 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.25.0** (current) — FFI E2E: .mn → .so → Python calls compiled code. Tensor shape checking at compile time. 46/46 golden, 11/11 stage2.
+- **v4.26.0** (shipped) — `const` keyword (claim) + roadmap consolidation. **Panel verdict: NEEDS WORK** (4 of 7 reviewers; first non-unanimous panel since v3.33.0). Aggregate 9.79 → ~8.2 — largest single-cycle regression in project history. The v4.18.0–v4.26.0 arc shipped 6 hollow features (parseable syntax without runtime wiring): `const`, `@gpu`, `await`, FFI bindings, MIR verifier, fixed-point bootstrap. Read `.reviews/v4.26.0/README.md`.
+- **v4.27.0–v4.31.0** (recovery arc, planned) — 5 versions, **zero new features**, terminate externally when next 7-reviewer panel returns ≥9.0 with zero NEEDS WORK. Read `docs/roadmap/v4/RECOVERY_MASTER_PROMPT.md` before starting any recovery work.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

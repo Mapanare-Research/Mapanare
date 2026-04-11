@@ -7,13 +7,14 @@
 
 ## Goal
 
-Four phases:
+Six phases:
 
 1. **v4.0.0** — Production release. Other people can use it.
 2. **v4.1.0-v4.7.0** — Architectural refactor. Fix memory leaks, thread safety, type system, and dead code. No new language features until v4.7.0.
 3. **v4.8.0-v4.13.0** — Deep fixes. Workarounds, memory safety, drop glue, MIRType enum, optimizer, Culebra gate.
 4. **v4.14.0-v4.17.0** — Final compiler maturity. Fix remaining bugs, complete optimizer, achieve fixed-point bootstrap (Python independence).
-5. **v4.18.0-v4.20.0** — Language evolution. Tensor shapes, GPU auto-kernels, reactive async, FFI bindings.
+5. **v4.18.0-v4.26.0** — Language evolution. Tensor shapes, GPU auto-kernels, reactive async, FFI bindings, `const`. **Panel found 6 hollow features in 8 versions; verdict NEEDS WORK at v4.26.0 (9.79 → ~8.2).**
+6. **v4.27.0-v4.31.0** — **Recovery arc.** Five focused versions, zero new features, terminate when next 7-reviewer panel certifies aggregate ≥9.0 with zero NEEDS WORK.
 
 ## Headline Techs
 
@@ -51,6 +52,17 @@ Four phases:
 | **v4.18.0** | | Tensor Shapes + @gpu Auto-Kernels | `const` keyword, `Tensor<Float, [3,3]>` shapes, `@gpu` extracts function body to PTX/SPIR-V |
 | **v4.19.0** | | Reactive Async | async/await tied to Streams, backpressure via ring buffers, cooperative scheduling |
 | **v4.20.0** | | Auto-Generated FFI Bindings | `mapanare bind --lang python\|ts\|go` generates bindings from .mn signatures |
+| **v4.21.0** | | Optimizer Hardening | Constant folding correctness on loop back-edges, lint cleanup, CI gate |
+| **v4.22.0** | | Dead Block Elimination | Fixed-point BFS, PHI-safe removal, SwitchCase fix |
+| **v4.23.0** | | MIRType Int Tags | Zero string-based type comparisons, 110+ sites migrated |
+| **v4.24.0** | | async/await Wired | Parser + lowerer + emitter in both pipelines, 46th golden test |
+| **v4.25.0** | | FFI End-to-End | .mn → .so → Python ctypes calls compiled code; tensor shape checking E2E |
+| **v4.26.0** | | `const` Keyword (claim) | Roadmap consolidation; **panel NEEDS WORK** — `const` shipped as parser alias without semantics; 6 hollow features documented across v4.18.0–v4.26.0 |
+| **v4.27.0** (planned) | | Honesty Recovery (CRITICAL) | Close all 8 CRITICAL panel items; FFI argtypes/restype; runtime `-fPIC`; MIR verifier wired; `const`/`@gpu` decisions; CHANGELOG honesty |
+| **v4.28.0** (planned) | | Concurrency + Carry-forwards | New races (signal/agent/registry); matmul carry-forwards (27 versions overdue); version string regression |
+| **v4.29.0** (planned) | | Build Infrastructure + Test Honesty | Orphaned runtime files (1,942 lines); `extern "Python"` decision; CI hollow-feature gate; `verify_fixed_point.sh` teeth |
+| **v4.30.0** (planned) | | Codegen + Emitter Carry-Forwards | `await` decision; agent dispatch; optimizer non-convergence ICE; six 7-cycle emitter items |
+| **v4.31.0** (planned) | | Documentation Truth + Process | SPEC sync (26 versions); CHANGELOG honesty CI; docs-drift CI; **next panel re-run certifies arc complete** |
 
 ## What v4.0.0 Delivered
 

@@ -7,31 +7,77 @@
 
 ---
 
-## Where We Are (v4.0.0 — Production Release + Architectural Audit)
+## Where We Are (v4.26.0 — Shipped, Verdict NEEDS WORK; entering recovery arc v4.27.0–v4.31.0)
 
-**The compiler is production-quality.** Self-hosted compiler: 15,000+ lines of
-`.mn` across 11 modules. Fixed-point verified (stage3 == stage4). 40/40 golden
-tests, 4,845+ pytest tests. Seven independent reviewers gave 9.79/10 with
-unanimous PASS and zero CRITICAL/HIGH issues.
+**The compiler core is in the best shape of its life.** 46/46 golden tests,
+11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural
+refactor (v4.2.0–v4.17.0) verified by reviewers as solid.
 
-**You can build real programs.** CLI tools, file processors, HTTP clients, GPU
-programs. Install -> write -> compile -> run works end-to-end.
+**But the v4.18.0–v4.26.0 evolution arc shipped six hollow features in eight
+versions.** A 7-reviewer panel ran against v4.26.0 and returned the largest
+single-cycle regression in project history: aggregate score **9.79 → ~8.2**,
+**4 NEEDS WORK + 3 PASS WITH NOTES, 0 unconditional PASS** (first non-unanimous
+panel since v3.33.0). Seven independent reviewers converged on the same finding:
+features were merged when they parsed, regardless of whether they ran. Read
+`.reviews/v4.26.0/README.md` for the full report.
 
-**But the foundation has cracks.** A deep architectural audit after v4.0.0
-revealed severe technical debt that accumulated across 70+ versions: memory leaks
-(drop glue disabled for all struct-returning functions), concurrency races
-(signal free without lock), dead code (3 LLVM emitters where only 1 is used),
-and silent type system escape hatches (UNKNOWN matches everything). Before we can
-build the future of this language, we must execute a disciplined refactor.
+The hollow features:
 
-**No new language features until v4.7.0 is complete.** The v4.2.0-v4.7.0
-sequence fixes the core sequentially. Each version builds on the previous.
+- `const` keyword is a parser alias for `ModuleLetDef` — no immutability, tensor `[N, N]` silently drops shape
+- `@gpu` / `@cuda` / `@vulkan` raise `NotImplementedError` at `lower.py:986`
+- `await` is `return self._lower_expr(expr.expr)` — pure identity
+- v4.25.0 FFI ships broken: DCE drops non-main-reachable functions, runtime archive not -fPIC, ctypes wrappers have no argtypes/restype
+- v4.5.0 MIR verifier never wired into `compile()` — dead code 21 versions
+- v4.17.0 fixed-point bootstrap verification cannot fail (`EXIT=0` unconditional)
+
+Plus process collapse: CHANGELOG advertises tests that don't exist; carry-
+forward resolution rate fell from ~64% to ~10%; two v4.0.0 hard-blockers
+(matmul) are byte-identical to v3.47.0 — 27 versions overdue.
+
+**v4.27.0 starts the recovery arc.** Five focused versions, each with strict
+"no new features" exit criteria. Goal: get the next 7-reviewer panel back to
+≥9.0 aggregate with zero NEEDS WORK verdicts. The recovery arc terminates
+externally — when the panel says it does, not when the lead does.
 
 ---
 
-## What's Next
+## What's Next — Recovery Arc (v4.27.0 → v4.31.0)
 
-### v4.1.0 — Ecosystem Infrastructure (In Progress)
+After the v4.26.0 panel verdict, the next 5 versions are a **recovery arc**.
+Zero new features. Each version has explicit no-new-features exit criteria.
+Each version's PLAN.md includes a "what this version explicitly does NOT do"
+section to prevent scope creep.
+
+| Version | Theme | Closes | Estimated |
+|---------|-------|--------|-----------|
+| **v4.27.0** | Honesty Recovery (CRITICAL) | 8 CRITICAL items: FFI argtypes/restype, FFI DCE, `.replace` hack, runtime `-fPIC`, `@gpu` decision, MIR verifier wiring, `const` decision, diagnostics consolidation, CHANGELOG honesty | 1–2 days |
+| **v4.28.0** | Concurrency + v3.47.0 carry-forwards | New races (signal set/recompute, agent inbox MPSC, type registry), matmul shape NULL check + dim validation (27 versions overdue), GPU temp file race, Windows GPU init race propagation, `main.ll` version string regression | 1 day |
+| **v4.29.0** | Build infrastructure + test honesty | Orphaned `mapanare_db.c` + `mapanare_html.c` (1,942 lines), `extern "Python" fn` decision (79 silent xfails), DWARF decision (38 silent skips), `--no-check` warning, `verify_fixed_point.sh` teeth, `stage3.ll` zero-byte stale file, NotImplementedError CI gate | 1 day |
+| **v4.30.0** | Codegen + optimizer + emitter carry-forwards | `await` decision, `_emit_agent_wrap` no-op stub, optimizer non-convergence ICE, `stream_fusion` placement, self-hosted DCE BFS + `clean_phis_in_block`, six 7-cycle emitter carry-forwards (i64*, void()*, list bitcast, nsw flags, `__mn_map_new` arity, noalias/willreturn) | 1–2 days |
+| **v4.31.0** | Documentation truth + process hardening | SPEC sync (26 versions stale), Spanish README sync, SPEC line 121 `di` label, bilingual keywords table, User-Agent bump, dead code removal (`__mn_list_oob_buf`), CI hollow-feature gate, CHANGELOG honesty script, docs-vs-code drift detector, carry-forward queue file, **next 7-reviewer panel re-run** | 1 day |
+
+**The recovery arc terminates externally.** v4.31.0 ships only when the next
+7-reviewer panel returns aggregate ≥9.0 with zero NEEDS WORK verdicts. If the
+panel doesn't agree the arc is done, the arc isn't done — outstanding items
+flow into v4.32.0 and continue.
+
+After the panel certifies v4.31.0, the project resumes normal feature work:
+
+| Feature | Target |
+|---------|--------|
+| **Distributed agent routing** | v5.0.0 |
+| **JIT hot-module replacement** | v5.x |
+| **LSP improvements** | v5.x |
+| **`await` coroutine lowering (LLVM coroutine intrinsics)** | v5.0.0 (deferred from v4.30.0) |
+| **DWARF debug info** | v4.32.0 if appetite, else v5.x (deferred from v4.29.0) |
+
+The historical "What's Next" sequence (v4.1.0–v4.7.0) below is preserved as
+the original refactor plan record. All items have been completed but the panel
+found that some were claimed working without being wired through to runtime.
+
+---
+
+### v4.1.0 — Ecosystem Infrastructure (DONE)
 
 The compiler is done. Now make the ecosystem work like a real language toolchain.
 
@@ -260,13 +306,30 @@ SUMMARY.md files.
 |---------|-------|------------|
 | **v4.0.0** | Mapanare | Build real programs. 15,000+ lines self-hosted, 40/40 golden, 4,845+ tests, 9.79/10 review |
 | **v4.0.0** | Bug fixes | MIR constant propagation fix (loop back-edges), transpiler return type inference, `cmd_build` obj path collision |
-| **v4.1.0** | Ecosystem (in progress) | Package registry persistence, web login, dashboard, download page, version manager, native CI binaries |
+| **v4.1.0** | Ecosystem | Package registry persistence, web login, dashboard, download page, version manager, native CI binaries |
 | **v4.2.0** | Clean House | Delete 3 dead emitters (~8,500 lines), remove `_coerce_arg` (36 call sites), consolidate to one pipeline |
 | **v4.3.0** | Drop Glue | Fix `skip_struct_ret` leak, return-value escape analysis, free string/map/stream temporaries |
 | **v4.4.0** | Thread Safety | Signal free under lock, atomic counters, COW struct-copy audit, agent lifecycle |
 | **v4.5.0** | Type System | Split UNKNOWN into UNRESOLVED/ERROR, wire self-hosted semantic analysis + MIR verifier |
 | **v4.6.0** | Self-Hosted Quality | Replace hardcoded field tables, MIRType string->enum, fix self-hosting workarounds |
 | **v4.7.0** | Optimizer | Unified fixpoint loop, constant propagation in self-hosted, COW strings, string pooling |
+| **v4.7.1** | Verify | WSL rebuild verified: 40/40 golden, 11/11 stage2 |
+| **v4.8.0–v4.13.0** | Deep Fixes | Workaround removal, semantic safety, drop glue complete, foundation gate |
+| **v4.14.0–v4.17.0** | Compiler Maturity | Break fix, module-level let, optimizer complete, fixed-point bootstrap |
+| **v4.18.0** | Tensor Shapes | `Tensor<Float, [3,3]>` shape annotations, compile-time mismatch errors |
+| **v4.19.0** | Reactive Async | async/await wired into Streams, backpressure ring buffers |
+| **v4.20.0** | FFI Bindings | `mapanare bind --lang python\|ts\|go` generates bindings from .mn signatures |
+| **v4.21.0** | Optimizer Hardening | Constant folding correctness on loop back-edges |
+| **v4.22.0** | Dead Block Elimination | Fixed-point BFS, PHI-safe removal, SwitchCase fix |
+| **v4.23.0** | MIRType Int Tags | Zero string-based type comparisons, 110+ sites migrated |
+| **v4.24.0** | async/await Wired | Parser + lowerer + emitter in both pipelines, 46th golden test |
+| **v4.25.0** | FFI End-to-End | .mn → .so → Python ctypes calls compiled code; tensor shape checking E2E |
+| **v4.26.0** | `const` Keyword (claim) | Roadmap consolidation; **panel verdict NEEDS WORK** — `const` shipped as parser alias for ModuleLetDef without immutability or shape resolution; documents 6 hollow features across v4.18.0–v4.26.0 |
+| **v4.27.0** (planned) | Honesty Recovery (CRITICAL) | Close 8 CRITICAL items from v4.26.0 panel; FFI ctypes wrappers populate argtypes/restype; runtime archive built `-fPIC`; MIR verifier wired into `compile()`; `const` and `@gpu` decisions; diagnostics consolidated; CHANGELOG corrected |
+| **v4.28.0** (planned) | Concurrency + Carry-forwards | Signal value mutation under lock; agent inbox MPSC-safe; type registry locked; matmul shape NULL check + dimension validation (27 versions overdue); `main.ll` version string sourced from `VERSION` |
+| **v4.29.0** (planned) | Build Infrastructure + Test Honesty | `mapanare_db.c` + `mapanare_html.c` linked; Makefile build-rt enumeration; `extern "Python" fn` decision; `verify_fixed_point.sh` propagates exit; CI hollow-feature gate (`raise NotImplementedError` = 0) |
+| **v4.30.0** (planned) | Codegen + Emitter Carry-Forwards | `await` decision; agent dispatch wired; optimizer non-convergence ICE; `stream_fusion` in fixpoint; self-hosted DCE BFS + `clean_phis_in_block`; six 7-cycle emitter items closed |
+| **v4.31.0** (planned) | Documentation Truth + Process | SPEC sync (26 versions stale); Spanish README sync; User-Agent bump; dead code sweep; CHANGELOG honesty + docs-drift CI scripts; **next 7-reviewer panel runs and certifies recovery arc complete** |
 
 ---
 

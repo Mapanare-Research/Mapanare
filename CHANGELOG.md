@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.26.0] - 2026-04-10
+
+**`const` Keyword + Roadmap Consolidation**
+
+### Added
+- `const` keyword for compile-time constants (parser, semantic, MIR lowering)
+- Module-level `const NAME: Type = value` declarations
+- Constants usable in tensor shape annotations (`Tensor<Float, [DIM, DIM]>`)
+- `tests/parser/test_const.py` and `tests/semantic/test_const.py`
+
+### Changed
+- Top-level `ROADMAP.md` "Where We Are" section refreshed from stale v4.0.0 to v4.26.0
+- `docs/roadmap/v4/README.md` versions table extended with v4.21–v4.26 rows
+- `MASTER_PROMPT.md` next-session pointer updated to v4.26.0
+
+### Verified
+- 46/46 golden, 11/11 stage2
+- black/ruff/mypy clean
+
 ## [4.25.0] - 2026-04-09
 
 **FFI End-to-End + Tensor Shape Checking**

@@ -1,4 +1,4 @@
-# Master Prompt — Execute Roadmap v4.22.0 → v4.25.0
+# Master Prompt — Execute Roadmap v4.22.0 → v4.26.0
 
 > Make it real. v4.14–v4.17 fixed bugs and achieved bootstrap. v4.18–v4.20
 > added syntax but skipped the hard parts. v4.21 cleaned up the mess.
@@ -37,6 +37,7 @@ v4.21.0 fixed lint, tests, and added CI — but the features are still hollow.
 2. Type-safe MIR — no more string comparisons (v4.23.0)
 3. async/await that actually runs (v4.24.0)
 4. FFI bindings that actually call compiled code + tensor shapes that actually check (v4.25.0)
+5. `const` keyword for compile-time constants + roadmap consolidation (v4.26.0)
 
 ---
 
@@ -76,7 +77,7 @@ v4.21.0 fixed lint, tests, and added CI — but the features are still hollow.
 
 ## Instructions
 
-You are executing Mapanare from v4.22.0 through v4.25.0. This is the
+You are executing Mapanare from v4.22.0 through v4.26.0. This is the
 "make it real" arc — every feature must have a working end-to-end test.
 
 **Anti-rush rules (these exist because the last arc was rushed):**
@@ -117,6 +118,7 @@ You are executing Mapanare from v4.22.0 through v4.25.0. This is the
 | 2 | v4.23.0 | MIRType Enum | TypeKind enum replaces all string comparisons | `grep 'TK_.*()' mapanare/self/*.mn` → 0 matches |
 | 3 | v4.24.0 | async/await Wired | async fn creates stream, await consumes | Golden test runs via lli and prints async result |
 | 4 | v4.25.0 | FFI E2E + Shapes | `mapanare bind` compiles .so, Python calls it | `python3 -c "from math_lib import add; assert add(3,4)==7"` |
+| 5 | v4.26.0 | `const` Keyword | Compile-time constants in grammar/semantic/MIR, top-level `const NAME: T = v` | `tests/parser/test_const.py` + tensor shape uses `const` dim |
 
 **Dependencies:**
 
@@ -143,10 +145,15 @@ v4.24.0 (async/await wired) ── async fn → create SPSC ring buffer + spawn 
     │                            UNLOCKS: real concurrent programs
     ▼
 v4.25.0 (FFI E2E + shapes) ── bind.py compiles .mn → .so
-                                 Python ctypes wrapper calls the .so
-                                 Tensor shape mismatch → compile-time error
-                                 PROOF: Python import + assert, shape error test
-                                 UNLOCKS: ecosystem interop
+    │                            Python ctypes wrapper calls the .so
+    │                            Tensor shape mismatch → compile-time error
+    │                            PROOF: Python import + assert, shape error test
+    │                            UNLOCKS: ecosystem interop
+    ▼
+v4.26.0 (const keyword) ──── Module-level `const NAME: Type = value`
+                              Constants usable in tensor shape annotations
+                              PROOF: tests/parser/test_const.py + semantic test
+                              UNLOCKS: static tensor dimensions, named constants
 ```
 
 ---
@@ -170,22 +177,24 @@ v4.25.0 (FFI E2E + shapes) ── bind.py compiles .mn → .so
 
 ## What must be true after each version
 
-| Check | v4.22 | v4.23 | v4.24 | v4.25 |
-|-------|:-----:|:-----:|:-----:|:-----:|
-| 45/45+ golden | YES | YES | YES+ | YES+ |
-| 11/11 stage2 | YES | YES | YES | YES |
-| black/ruff/mypy clean | YES | YES | YES | YES |
-| GCC -Werror clean | YES | YES | YES | YES |
-| Dead block elim enabled | **YES** | YES | YES | YES |
-| IR size reduction measured | **YES** | YES | YES | YES |
-| TypeKind enum in mir.mn | — | **YES** | YES | YES |
-| Zero TK_*() string functions | — | **YES** | YES | YES |
-| async fn creates stream at runtime | — | — | **YES** | YES |
-| await consumes stream cooperatively | — | — | **YES** | YES |
-| Golden test shows async behavior | — | — | **YES** | YES |
-| `mapanare bind` produces callable .so | — | — | — | **YES** |
-| Python calls compiled function | — | — | — | **YES** |
-| Tensor shape mismatch is compile error | — | — | — | **YES** |
+| Check | v4.22 | v4.23 | v4.24 | v4.25 | v4.26 |
+|-------|:-----:|:-----:|:-----:|:-----:|:-----:|
+| 45/45+ golden | YES | YES | YES+ | YES+ | YES+ |
+| 11/11 stage2 | YES | YES | YES | YES | YES |
+| black/ruff/mypy clean | YES | YES | YES | YES | YES |
+| GCC -Werror clean | YES | YES | YES | YES | YES |
+| Dead block elim enabled | **YES** | YES | YES | YES | YES |
+| IR size reduction measured | **YES** | YES | YES | YES | YES |
+| TypeKind enum in mir.mn | — | **YES** | YES | YES | YES |
+| Zero TK_*() string functions | — | **YES** | YES | YES | YES |
+| async fn creates stream at runtime | — | — | **YES** | YES | YES |
+| await consumes stream cooperatively | — | — | **YES** | YES | YES |
+| Golden test shows async behavior | — | — | **YES** | YES | YES |
+| `mapanare bind` produces callable .so | — | — | — | **YES** | YES |
+| Python calls compiled function | — | — | — | **YES** | YES |
+| Tensor shape mismatch is compile error | — | — | — | **YES** | YES |
+| Top-level `const NAME: T = v` parses + lowers | — | — | — | — | **YES** |
+| `const` usable in tensor shape annotation | — | — | — | — | **YES** |
 
 ---
 
@@ -270,13 +279,14 @@ write a session summary to `docs/roadmap/v4/vN/SESSION_REPORT.md`:**
 
 ---
 
-## After v4.25.0
+## After v4.26.0
 
 The language features are real (not just syntax):
 - **Dead block elimination** — optimizer produces smaller IR
 - **Type-safe MIR** — enum-based type comparisons, no string bugs
 - **async/await** — cooperative streams with backpressure via ring buffers
 - **FFI** — compile .mn → .so, call from Python/TS/Go
+- **`const` keyword** — compile-time constants, usable in tensor shapes
 
 Plan v5.0.0:
 - Perfect fixed-point (0 diff lines)

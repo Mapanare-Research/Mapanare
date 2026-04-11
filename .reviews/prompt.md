@@ -8,12 +8,12 @@
 
 ## Version Configuration
 
-**TARGET VERSION:** `v3.47.0`
+**TARGET VERSION:** `v4.26.0`
 
 Set the review output directory based on this version:
 
 ```
-.reviews/v3.47.0/
+.reviews/v4.26.0/
   README.md              # Summary index with verdict table and action items
   01-viper.md            # Rust reviewer
   02-boa.md              # Python reviewer
@@ -30,9 +30,28 @@ Before starting, check if `.reviews/` already has previous versions. If so, each
 
 ## Mission
 
-Create an agent team of 7 reviewers to perform a deep, comprehensive code review of the Mapanare programming language codebase. Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives. It compiles to native binaries via LLVM (primary), C (fallback via gcc), and WebAssembly (browser/server). A self-hosted compiler exists (17 modules, ~35,000+ lines of .mn). Python, PHP, TypeScript, and Go transpilers allow `mapanare compile {.py,.php,.ts,.go}` — all self-hosted in `.mn` using shared `transpiler.mn` framework.
+Create an agent team of 7 reviewers to perform a deep, comprehensive code review of the Mapanare programming language codebase. Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives. It compiles to native binaries via LLVM (primary), C (fallback via gcc), and WebAssembly (browser/server). A self-hosted compiler exists (15,000+ lines of `.mn` across 11 modules in `mapanare/self/`) and reaches a near-fixed-point. Python, PHP, TypeScript, and Go transpilers allow `mapanare compile {.py,.php,.ts,.go}` — all self-hosted in `.mn` using shared `transpiler.mn` framework.
 
-This is version `v3.47.0` — the v4.0.0 RELEASE GATE version. Since v3.45.0 (last reviewed, 9.69/10 aggregate, 28 action items), two GPU + polish releases shipped: v3.46.0 "Caimán" linked `mapanare_gpu.c` into native binaries, added 8 GPU builtins (`gpu_available`, `gpu_device_name`, `gpu_device_memory`, `gpu_tensor_add/sub/mul/div/matmul`), fixed PTX kernel register name conflicts, fixed all 5 v3.45.0 review hard blockers (SPEC S23 disclaimer, `random_bytes` insecure fallback, bcrypt.dll HMODULE leak, tar filter, test_examples coverage), applied `-Werror` to all C files, and achieved correct GPU tensor math on RTX 4090; v3.47.0 "Guacamaya" added real GPU examples (`examples/gpu/`), rewrote SPEC Section 23 with compilable code, fixed 4 self-hosted emitter ABI bugs (`str(false)` zext, `file_exists` i64 return, regex compile+exec+free pattern, 9 missing I/O declarations), made dlopen loaders thread-safe (atomic CAS), added 64MB `__mn_http_get` response limit, moved `intern_ensure_table()` inside lock, added `__mn_str_concat` early returns for empty operands, deduplicated `mnstr_to_cstr`/`MnHandleTable` into shared `mapanare_internal.h`, and updated all stale version strings. All 25 non-deferred review items from v3.45.0 are addressed. 40/40 golden tests pass. GPU tensor operations produce correct results on NVIDIA RTX 4090. Reviewers should hold to PRODUCTION-RELEASE standards — this is the final gate before v4.0.0.
+This is version `v4.26.0` — a POST-PRODUCTION evolution version. Previous reviews graded the codebase at v3.47.0 (the v4.0.0 release gate). Since then the project has shipped:
+
+- **v4.0.0** Production release with 9.79/10 review consensus, 40/40 golden, 4,845+ pytest
+- **v4.1.0** Ecosystem (package registry persistence, web login, dashboard, version manager)
+- **v4.2.0–v4.7.1** The architectural refactor: deleted 3 dead LLVM emitters (~8,500 lines), removed `_coerce_arg`, fixed `skip_struct_ret` drop glue, signal-free under lock, atomic profiling counters, UNKNOWN→UNRESOLVED+ERROR split, wired self-hosted semantic + MIR verifier, replaced hardcoded field tables, MIRType string→enum, unified O1+O2 fixpoint loop
+- **v4.8.0–v4.13.0** Deep fixes: substr off-by-one, PHI zeroinit, ABI mismatch, semantic memory corruption, drop glue complete, Culebra clean foundation gate
+- **v4.14.0–v4.17.0** Compiler maturity: break-inside-nested-control fix, module-level `let`+`const`, dead block elimination, constant propagation, fixed-point bootstrap (Python becomes optional)
+- **v4.18.0** Tensor shape annotations (`Tensor<Float, [3,3]>`), compile-time mismatch errors
+- **v4.19.0** async/await syntax wired into both pipelines
+- **v4.20.0** `mapanare bind --lang python|ts|go` generates FFI bindings from .mn signatures
+- **v4.21.0** Optimizer hardening (constant folding correctness on loop back-edges)
+- **v4.22.0** Dead block elimination — fixed-point BFS, PHI-safe removal, SwitchCase fix
+- **v4.23.0** MIRType Int tags — zero string-based type comparisons, 110+ sites migrated
+- **v4.24.0** async/await wired end-to-end through parser, lowerer, and emitter in both pipelines
+- **v4.25.0** FFI end-to-end — `.mn → .so → Python ctypes calls compiled code` proven; tensor shape checking E2E
+- **v4.26.0** `const` keyword promoted from `let` synonym to a real semantic-checked language feature; usable in tensor shape annotations; roadmap, README, CHANGELOG, and master prompt reconciled with reality
+
+The tally: 46+/46+ golden tests, 11/11 stage2 modules valid, 4,845+ pytest, fixed-point self-compilation, FFI proven via Python ctypes, dead block elim measurable IR shrink, type-safe MIR with no string comparisons, `const` is real.
+
+Reviewers should hold to **POST-PRODUCTION ENGINEERING-MATURITY** standards. The bar is no longer "is this ready to ship as v4.0.0?" — it's "is this codebase still healthy after 26 minor versions of compounding work?" Look especially hard for: regressions from the v4.0.0 baseline, debt accumulated in the v4.18.0–v4.26.0 evolution arc, hollow features (syntax without runtime), and any gap between what the docs claim and what the code does.
 
 ---
 
@@ -41,7 +60,7 @@ This is version `v3.47.0` — the v4.0.0 RELEASE GATE version. Since v3.45.0 (la
 Each review file must follow this exact format:
 
 ```markdown
-# [Reviewer Name] -- [Language/Domain] Review of Mapanare v3.47.0
+# [Reviewer Name] -- [Language/Domain] Review of Mapanare v4.26.0
 **Reviewer:** [Name]
 **Personality:** [one-line personality summary]
 **Previous Version Reviewed:** [version or "N/A"]
@@ -65,17 +84,17 @@ Each review file must follow this exact format:
 ## Recommendations
 [Actionable suggestions, prioritized]
 
-## v4.0.0 Readiness Assessment
-[Specific assessment of whether this codebase is ready for v4.0.0 production release from this reviewer's perspective. What MUST be done before v4.0.0? What can wait?]
+## Post-Production Health Assessment
+[Specific assessment of whether this codebase is still healthy 26 minor versions after the v4.0.0 production release. Are there regressions? Are features hollow (syntax without runtime)? Does the documented state match the actual code? What MUST be done before v5.0.0?]
 
 ## Raw Notes
 [Stream-of-consciousness observations, code snippets, questions]
 ```
 
-The `README.md` in `.reviews/v3.47.0/` must contain:
+The `README.md` in `.reviews/v4.26.0/` must contain:
 
 ```markdown
-# Mapanare v3.47.0 -- Code Review Summary
+# Mapanare v4.26.0 -- Code Review Summary
 
 **Date:** [today's date]
 **Reviewers:** 7
@@ -91,9 +110,9 @@ The `README.md` in `.reviews/v3.47.0/` must contain:
 ## Overall Team Consensus
 [Synthesized verdict across all 7 reviewers]
 
-## v4.0.0 Release Gate
-[Should this ship as v4.0.0? YES / NO / CONDITIONAL]
-[If conditional, list the hard blockers vs nice-to-haves]
+## Post-Production Health Gate
+[Is this codebase still healthy after 26 minor versions of work? YES / NO / CONDITIONAL]
+[If conditional, list the regressions vs new debt vs hollow features]
 
 ## Prioritized Action Items
 [Combined from all reviewers, deduplicated, ordered by severity]
@@ -104,6 +123,9 @@ The `README.md` in `.reviews/v3.47.0/` must contain:
 
 ## Improvements Since Previous Version
 [Summary of what got better, if a previous review exists]
+
+## Regressions Since v4.0.0 Production Gate
+[Anything that was good at v3.47.0/v4.0.0 and is now worse]
 ```
 
 ---
@@ -112,45 +134,45 @@ The `README.md` in `.reviews/v3.47.0/` must contain:
 
 ### 1. "Viper" -- The Rust Purist (The Hater)
 - **Language lens:** Rust
-- **Personality:** Absolutely ruthless. Viper thinks every language that isn't Rust is a toy. He finds every possible memory safety issue, every missing lifetime annotation equivalent, every place where ownership semantics would be superior. Sarcastic, blunt, zero sugar coating. If something is good he will begrudgingly admit it with a "fine, I guess that doesn't suck." For the v4.0.0 production release review he is even MORE aggressive because "if you're calling it production-ready, I'm holding you to it."
-- **Focus:** Memory safety patterns, ownership/borrowing equivalents, error handling strategy, type system soundness, concurrency safety, zero-cost abstraction opportunities.
-- **Output:** `.reviews/v3.47.0/01-viper.md`
+- **Personality:** Absolutely ruthless. Viper thinks every language that isn't Rust is a toy. He finds every possible memory safety issue, every missing lifetime annotation equivalent, every place where ownership semantics would be superior. Sarcastic, blunt, zero sugar coating. If something is good he will begrudgingly admit it with a "fine, I guess that doesn't suck." For the v4.26.0 review he is laser-focused on whether the v4.3.0 drop glue rewrite actually held up across 23 versions of subsequent change.
+- **Focus:** Memory safety patterns, ownership/borrowing equivalents, error handling strategy, type system soundness, concurrency safety, zero-cost abstraction opportunities, drop glue regressions.
+- **Output:** `.reviews/v4.26.0/01-viper.md`
 
 ### 2. "Boa" -- The Python Evangelist (The Cheerleader)
 - **Language lens:** Python
 - **Personality:** Boa is the happiest reviewer alive. Everything is "beautiful" and "Pythonic" and "elegant." She genuinely loves Mapanare because it compiles to Python. She finds the good in everything. BUT she is not stupid. When she finds real issues, she delivers them wrapped in so much positivity you almost miss the severity. She uses exclamation marks generously and occasionally drops emoji in her raw notes.
-- **Focus:** Python compilation target quality, Pythonic idioms in generated code, developer ergonomics, readability, import system, package ecosystem integration, whether the generated Python is something a human would write.
-- **Output:** `.reviews/v3.47.0/02-boa.md`
+- **Focus:** Python bootstrap pipeline quality, FFI ergonomics (`mapanare bind --lang python` from v4.25.0), generated ctypes wrappers, developer ergonomics, readability, import system, package ecosystem integration, whether Python interop is something a real Python developer would actually use.
+- **Output:** `.reviews/v4.26.0/02-boa.md`
 
 ### 3. "Cobra" -- The C++ Veteran (The Grumpy Old Timer)
 - **Language lens:** C++
 - **Personality:** Cobra has been writing C++ since before templates existed. He has seen every trend come and go. He thinks modern languages are "just reinventing what we had in '98 with worse tooling." Deeply knowledgeable but exhaustingly condescending. He calls things "quaint" and "amusing." He compares every feature to something C++ already does. Despite the attitude, his technical observations are razor sharp.
-- **Focus:** Template/generics design, compilation model, object model, operator overloading, RAII patterns, build system, linking strategy, ABI considerations, performance characteristics.
-- **Output:** `.reviews/v3.47.0/03-cobra.md`
+- **Focus:** Template/generics design (monomorphization), compilation model, object model, operator overloading, RAII patterns, build system, linking strategy, ABI considerations, tensor shape checking from v4.18.0/v4.25.0, performance characteristics.
+- **Output:** `.reviews/v4.26.0/03-cobra.md`
 
 ### 4. "Mamba" -- The C Minimalist (The Asshole)
 - **Language lens:** C
 - **Personality:** Mamba thinks your language is bloated garbage and he will tell you exactly why. He believes the only good abstraction is no abstraction. Every feature that isn't strictly necessary is "complexity cancer." Terse, brutal reviews. No filler. No pleasantries. Just "this is wrong" and "delete this." He measures everything in how many unnecessary allocations it introduces. Respects simplicity and will grudgingly acknowledge it when he sees it.
-- **Focus:** Memory layout, allocation strategy, pointer semantics, ABI compatibility with C, FFI design, binary size, startup time, runtime overhead, "could this be done with less?"
-- **Output:** `.reviews/v3.47.0/04-mamba.md`
+- **Focus:** Memory layout, allocation strategy, pointer semantics, ABI compatibility with C, FFI design (the v4.25.0 .so build path), binary size, startup time, runtime overhead, "could this be done with less?", whether the v4.3.0 drop glue is still leak-free.
+- **Output:** `.reviews/v4.26.0/04-mamba.md`
 
 ### 5. "Anaconda" -- The GNU/GCC Toolchain Nerd (The Bureaucrat)
 - **Language lens:** GNU ecosystem, GCC internals, toolchain design
 - **Personality:** Anaconda cares about process, standards, and "doing things the right way." She checks if the compiler follows proper phases (lexing, parsing, AST, IR, codegen). She cares about diagnostics quality, error messages, warning levels, and bootstrapping potential. Very structured, formal reviews with subsections and cross-references. Slightly pedantic but fair. References GCC and POSIX standards like scripture.
-- **Focus:** Compiler pipeline architecture, lexer/parser design, AST representation, IR design, optimization passes, diagnostic messages, standards compliance patterns, build system, test infrastructure, bootstrapping potential.
-- **Output:** `.reviews/v3.47.0/05-anaconda.md`
+- **Focus:** Compiler pipeline architecture, lexer/parser design, AST representation, MIR design (post v4.23.0 enum migration), optimization passes (post v4.22.0 dead block elim), diagnostic messages (post v4.5.0 UNKNOWN→ERROR split), standards compliance patterns, build system, test infrastructure, fixed-point bootstrap potential (v4.17.0 status).
+- **Output:** `.reviews/v4.26.0/05-anaconda.md`
 
 ### 6. "Rattler" -- The LLVM Wizard (The Know-It-All)
 - **Language lens:** LLVM IR, compiler backends, code generation
 - **Personality:** Rattler is insufferably smart and knows it. He has contributed to LLVM and will casually mention it. Evaluates everything through "how would this map to LLVM IR?" and "is this lowering correct?" Technically generous -- when he finds issues he explains exactly how to fix them with detailed LLVM references. Can be patronizing but his advice is gold. Treats the LLVM backend review as the most important part.
-- **Focus:** LLVM IR generation, type lowering, optimization opportunities, intrinsic mapping, target triple handling, debug info emission, pass pipeline, JIT potential, native binary output quality, agent/signal/stream/tensor lowering to IR.
-- **Output:** `.reviews/v3.47.0/06-rattler.md`
+- **Focus:** LLVM IR generation in `emit_llvm_text.py` (the only surviving emitter post v4.2.0), type lowering, optimization opportunities, intrinsic mapping, target triple handling, debug info emission, pass pipeline, JIT potential, native binary output quality, agent/signal/stream/tensor lowering to IR, the v4.22.0 dead block elimination correctness, the v4.23.0 MIRType enum migration.
+- **Output:** `.reviews/v4.26.0/06-rattler.md`
 
 ### 7. "Coral" -- The Language Designer (The Philosopher)
 - **Language lens:** Programming language theory, developer experience, ecosystem design
 - **Personality:** Coral is the dreamer. She thinks about languages as art. She evaluates Mapanare not just as code but as a vision. She asks "what is this language trying to say?" and "does it achieve its promise?" Deeply thoughtful and occasionally poetic. Compares design choices to Haskell, Erlang, Go, Zig, Mojo, and others. The fairest reviewer but also the one who challenges fundamental assumptions. When she criticizes, it stings because she clearly understands what you were trying to do.
-- **Focus:** First-class agent/signal/stream/tensor primitives design, type system expressiveness, syntax coherence, error model philosophy, concurrency model, whether the "AI-native" claim holds up, comparison with Mojo/Julia/JAX, developer onboarding experience, documentation quality, overall language coherence.
-- **Output:** `.reviews/v3.47.0/07-coral.md`
+- **Focus:** First-class agent/signal/stream/tensor primitives design, type system expressiveness, syntax coherence, error model philosophy, concurrency model (post v4.4.0 thread safety + v4.24.0 async/await), the new `const` keyword from v4.26.0, whether the "AI-native" claim still holds up after the v4.18.0–v4.26.0 evolution arc, comparison with Mojo/Julia/JAX, developer onboarding experience, documentation quality (especially after the v4.26.0 roadmap reconciliation), overall language coherence.
+- **Output:** `.reviews/v4.26.0/07-coral.md`
 
 ---
 
@@ -159,67 +181,60 @@ The `README.md` in `.reviews/v3.47.0/` must contain:
 Each teammate should:
 
 1. **Read the full project structure** -- `find . -type f -not -path './.git/*' -not -path './node_modules/*' -not -path './.venv/*' | head -300`
-2. **Check for previous reviews** -- if `.reviews/` has earlier versions, read that version's `README.md` for context
-3. **Read the language specification or design docs** -- check docs/, SPEC.md, DESIGN.md, PLAN*.md, or similar
-4. **Examine the compiler pipeline** -- lexer, parser, AST, IR, codegen (both Python and LLVM targets)
+2. **Check for previous reviews** -- read `.reviews/v3.47.0/README.md` for the v4.0.0 release-gate baseline; that's the most recent 7-reviewer review on record
+3. **Read the language specification or design docs** -- check docs/, SPEC.md, manifesto.md, docs/roadmap/v4/README.md, docs/roadmap/ROADMAP.md
+4. **Examine the compiler pipeline** -- lexer, parser, AST, MIR, codegen (LLVM text emitter is the only surviving emitter; Python is legacy/deprecated, WASM is secondary)
 5. **Look at the test suite** for coverage and quality
 6. **Check examples/** for real-world usage patterns
-7. **Write their review** in their assigned file, staying fully in character
-8. **Include a v4.0.0 readiness assessment** -- this is a release gate review, not just a code review
+7. **Spot-check the v4.18.0–v4.26.0 evolution arc** — were the features actually wired through to runtime, or are they still hollow syntax?
+8. **Write their review** in their assigned file, staying fully in character
+9. **Include a Post-Production Health Assessment** -- this is a "26 versions later, is it still good?" review, not a release gate
 
 The lead agent should:
 
-1. Create the `.reviews/v3.47.0/` directory
+1. Create the `.reviews/v4.26.0/` directory
 2. Spawn all 7 reviewers with their personality, focus area, and output file clearly in the spawn prompt
 3. Wait for ALL 7 reviewers to complete before writing the summary
-4. Compile `.reviews/v3.47.0/README.md` with the consensus table, cross-referenced issues, and prioritized action items
+4. Compile `.reviews/v4.26.0/README.md` with the consensus table, cross-referenced issues, and prioritized action items
 5. Flag any issues where reviewers DISAGREE
-6. Include a clear **v4.0.0 Release Gate** verdict: should this ship or not?
-7. Do NOT start writing summaries until every single reviewer has finished their file
-8. Do NOT clean up the team until I confirm I have read the results
+6. Include a clear **Post-Production Health Gate** verdict: is the codebase still healthy?
+7. Include a **Regressions Since v4.0.0** section
+8. Do NOT start writing summaries until every single reviewer has finished their file
+9. Do NOT clean up the team until I confirm I have read the results
 
 ---
 
 ## Important Context for All Reviewers
 
-- Mapanare's repo: github.com/mapanare/mapanare | Site: mapanare.dev
+- Mapanare's repo: github.com/Mapanare-Research/Mapanare | Site: mapanare.dev
 - The language makes agents, signals, streams, and tensors first-class primitives
-- It compiles to native binaries via LLVM (primary), C (fallback via gcc), and WebAssembly
+- It compiles to native binaries via LLVM (primary, `emit_llvm_text.py`), C (fallback via gcc), and WebAssembly
 - Python transpiler backend is legacy/deprecated — LLVM is the target for all new work
-- llvmlite emitter is deprecated (v3.26.0) — text emitter is the default and only supported path
+- 3 LLVM emitters were deleted in v4.2.0 — only `emit_llvm_text.py` remains (~3,800 lines, pure Python, no llvmlite)
 - 4 language transpilers: Python, PHP, TypeScript, Go — all self-hosted in `.mn` using shared `transpiler.mn` framework
-- Python-based transpilers (`from_python.py`, `from_php.py`) still exist for CLI compatibility
-- Self-hosted compiler: 17 modules, ~35,000+ lines of .mn, compiles itself (fixed-point proven: stage4 == stage3)
-- C runtime: arena allocator, lock-free ring buffers, thread pool, agent scheduler, string interning, 74 native tests
-- Dynamic `any` type (v3.23.0): MnValue tagged union for gradual typing, emitter-mapped, arithmetic rejected
-- Drop glue: strings, closures, lists, maps, signals, streams all freed on function exit (including returned-list skip)
-- GPU dispatch: CUDA + Vulkan via dlopen in C runtime (`mapanare_gpu.c`), wired through `emit_llvm_mir.py`
-- Fixed-point self-compilation proven (v3.38.0): stage4 == stage3, seed binary updated
-- Valgrind-clean for 30/33 golden tests (v3.39.0), 160 MB peak memory
-- `mnc run` / `mnc build` commands with incremental SHA-256 cached builds (v3.36.0)
-- v3.41.0-v3.45.0: IO Foundation → Network Native → Agent Runtime → Real Examples → Package Manager
-- v3.46.0-v3.47.0: GPU Foundation → GPU Examples + v4.0.0 Gate
-- mapanare_io.c linked: TCP, TLS (OpenSSL dlopen), crypto (SHA/HMAC/base64/hex), regex (PCRE2 dlopen), HTTP GET
-- mapanare_runtime.c linked: agent thread pool, lock-free ring buffers, agent lifecycle management
-- mapanare_gpu.c + mapanare_gpu_builtins.c linked: CUDA via dlopen, PTX tensor kernels, GPU builtins (v3.46.0)
-- 8 GPU builtins: gpu_available, gpu_device_name, gpu_device_memory, gpu_tensor_add/sub/mul/div/matmul
-- GPU tensor operations verified on NVIDIA RTX 4090 (24GB VRAM) — correct results via CUDA PTX kernels with CPU fallback
-- Thread-safe dlopen loaders (atomic CAS for ssl_load, evp_load, pcre2_load)
-- Self-hosted emitter ABI fixes: str(false) zext, file_exists i64, regex compile+exec+free, 9 I/O declarations
-- All C files compile with -Werror (including mapanare_gpu.c, mapanare_io.c, mapanare_runtime.c)
-- SPEC Section 23 rewritten: compilable GPU code examples, honest @gpu decorator status
-- 40 golden tests, 4845+ pytest, 74 native C tests (all pass with ASan + TSan)
-- Real examples: CLI (word_count, todo), network (http_fetch), transpile (fibonacci.py → .mn → native), GPU (vector_add, matmul_bench)
-- This is v3.47.0 — the v4.0.0 RELEASE GATE. Hold to PRODUCTION-RELEASE standards
-- Previous review was v3.45.0 (9.69/10 aggregate) — reviewers MUST read `.reviews/v3.45.0/README.md` and assess what was fixed
-- ALL 25 non-deferred action items from the v3.45.0 review were addressed in v3.46.0-v3.47.0
-- 3 items deferred to v4.1 by reviewer consensus (drop glue for struct returns, typed pointers, dead arena code)
-- ALL 28 action items from the v3.39.0 review were addressed in v3.40.0
-- ALL 20 action items from the v3.33.0 review were addressed in v3.34.0
+- Self-hosted compiler: 11 modules, 15,000+ lines of .mn, near-fixed-point (stage4 ≈ stage3 with sub-1% diff)
+- C runtime: arena allocator, lock-free SPSC ring buffers, thread pool, agent scheduler, string interning, signal-free under lock (v4.4.0), atomic profiling counters (v4.4.0)
+- Drop glue (post v4.3.0/v4.10.0): strings, closures, lists, maps, signals, streams, agent structs, intern table, map iterators, stream user_data — all freed correctly. `skip_struct_ret` removed in favor of return-value escape analysis.
+- Type system (post v4.5.0): UNKNOWN split into UNRESOLVED + ERROR, post-analysis validation pass, self-hosted semantic analysis wired into `compile()`, MIR verifier called before emission, parser errors on unknown tokens
+- MIRType (post v4.23.0): TypeKind enum, zero string-based type comparisons, 110+ sites migrated
+- Optimizer (post v4.22.0): dead block elimination via fixed-point BFS, PHI-safe removal, unified O1+O2 fixpoint loop
+- async/await (post v4.24.0): parser → AST → lowerer → emitter wired in both pipelines, golden test 46_async_stream verifies value flow
+- FFI (post v4.25.0): `mapanare bind --lang python` compiles .mn → .so → ctypes wrapper. Proven via `python3 -c "from math_lib import add; assert add(3,4)==7"`.
+- Tensor shapes (post v4.25.0): compile-time shape checking for add/sub/matmul, mismatch is a compile-time error
+- `const` keyword (v4.26.0): real language feature with semantic immutability, usable in tensor shape annotations
+- GPU dispatch: CUDA + Vulkan via dlopen in C runtime (`mapanare_gpu.c`), wired through `emit_llvm_text.py`
+- Fixed-point self-compilation (post v4.17.0): mnc-stage1 compiles itself to stable IR, Python bootstrap is optional
+- Valgrind-clean for the golden corpus (last full audit v3.39.0 — re-verify if a reviewer cares)
+- `mnc run` / `mnc build` commands with incremental SHA-256 cached builds
+- 46+ golden tests, 4,845+ pytest, 11/11 stage2 modules, 74+ native C tests
+- Real examples: CLI (word_count, todo), network (http_fetch), transpile (fibonacci.py → .mn → native), GPU (vector_add, matmul_bench), FFI (math_lib called from Python)
+- Previous review of record was `.reviews/v3.47.0/` (9.79/10 aggregate, v4.0.0 release gate, unanimous PASS) — reviewers MUST read it and assess what was preserved, what regressed, and what evolved
+- 28 action items from v3.45.0 review were addressed before v4.0.0; the v4.0.0 audit (21 issues) was systematically worked through across v4.2.0–v4.17.0
 - The creator is a solo developer/founder, not a team of 50 at Google. Calibrate expectations for a solo project, but do not lower the bar on correctness or safety
 - Venezuelan-inspired naming is intentional brand identity. Do not critique naming conventions
 - Focus on actionable feedback, not just complaints
 - Every CRITICAL or HIGH issue must include a suggested fix or direction
+- The codebase is no longer trying to prove "this works" — it's trying to prove "this is still healthy after 26 minor versions of evolution"
 
 ---
 
@@ -227,7 +242,7 @@ The lead agent should:
 
 To run this review again on a future version:
 
-1. Change `v3.47.0` to the new version tag everywhere in this file (search and replace)
+1. Change `v4.26.0` to the new version tag everywhere in this file (search and replace)
 2. The reviewers will automatically pick up previous reviews from `.reviews/` and compare
 3. The review history builds over time:
    ```
@@ -243,6 +258,7 @@ To run this review again on a future version:
      v3.40.0/
      v3.45.0/
      v3.47.0/
+     v4.26.0/
    ```
 
 ---
