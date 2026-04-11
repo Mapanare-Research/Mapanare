@@ -241,6 +241,55 @@ class TestLLVMAgentCodegen:
         assert "Echo" in ir
         assert "agent_new" in ir
 
+    def test_agent_wrap_dispatches_to_handle_method(self) -> None:
+        """v4.30.0 Phase 2: ``_emit_agent_wrap`` must dispatch to the
+        user's ``handle`` method, not store null and return 0.
+
+        Pre-v4.30.0, ``__mn_handler_Doubler`` was the same nine lines
+        for every agent — a ``store ptr null, ptr %out_msg`` followed
+        by ``ret i32 0``. Spawned agents received messages but
+        produced no reply; ``sync a.result`` returned garbage. The
+        v4.26.0 panel flagged it (Rattler #3 HIGH). This test is the
+        regression gate — it asserts the wrapper actually calls
+        ``Doubler_handle`` and writes a non-null buffer through
+        ``%out_msg``.
+        """
+        source = textwrap.dedent("""\
+            agent Doubler {
+                input val: Int
+                output result: Int
+
+                fn handle(val: Int) -> Int {
+                    return val * 2
+                }
+            }
+
+            fn main() {
+                let d = spawn Doubler()
+                d.val <- 21
+                let r = sync d.result
+                print(r)
+            }
+        """)
+        ir = _to_llvm_ir(source)
+        # The wrapper must exist and must call the user's handle fn.
+        assert "define i32 @__mn_handler_Doubler" in ir, "handler wrapper missing"
+        # The stub path was "store ptr null, ptr %out_msg" as the first
+        # instruction — the real wrapper never does that (it stores the
+        # malloc result). Allow the fallback stub but fail the test if
+        # the fallback is taken.
+        handler_block = ir.split("define i32 @__mn_handler_Doubler")[1]
+        handler_block = handler_block.split("\n}", 1)[0]
+        assert "fallback stub" not in handler_block, (
+            "wrapper took the fallback path:\n" + handler_block
+        )
+        assert "call i64 @Doubler_handle" in handler_block, (
+            "wrapper did not call Doubler_handle:\n" + handler_block
+        )
+        assert "call ptr @malloc" in handler_block, (
+            "wrapper did not allocate a reply buffer:\n" + handler_block
+        )
+
     def test_multiple_agents(self) -> None:
         source = textwrap.dedent("""\
             agent Add10 {

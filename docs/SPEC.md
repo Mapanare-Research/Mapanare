@@ -126,9 +126,56 @@ These identifiers are keywords only in specific grammar positions:
 | `input` | Inside `agent` blocks — declares an input channel. |
 | `output` | Inside `agent` blocks — declares an output channel. |
 | `Tensor` | Type expressions — the tensor type constructor. |
-| `di` | Bilingual alias for `let` (Spanish: "di" = "say/declare"). |
 | `any` | Type expressions — the dynamic type. |
 | `_` | Pattern matching — wildcard pattern. |
+
+#### Bilingual Keywords
+
+> **v4.31.0 correction.** Earlier drafts listed `di` in the Contextual
+> Keywords table with the description *"Bilingual alias for `let`"*.
+> That was wrong on both counts. `di` is a **statement keyword** (not
+> contextual — it is reserved unconditionally in every grammar
+> position), and it is a **print alias**, not a `let` alias. It
+> lowers through `di_stmt` to a `PrintStmt` in `parser.py:606`. The
+> table below is the canonical bilingual keyword list — every
+> English keyword with a Spanish alias is listed alongside its
+> counterpart. Coral flagged the `di` mislabel five review cycles
+> before v4.31.0; this release closes the carry-forward.
+
+Mapanare supports a Spanish-language keyword layer in parallel with
+the English layer. Both spellings lower to the same AST node, so a
+single program can mix them. The table is exhaustive:
+
+| English | Spanish | Role |
+|---|---|---|
+| `let` | `pon` | Local binding (`let x = 1` ≡ `pon x = 1`) |
+| `return` | `da` | Return from a function |
+| `self` | `yo` | Method receiver |
+| `if` | `si` | Conditional branch |
+| `else` | `sino` | Alternative branch |
+| `for` | `cada` | For-loop |
+| `while` | `mien` | While-loop |
+| `in` | `en` | For-loop iterable binding |
+| `type` | `tipo` | Type alias / tagged record |
+| `trait` | `modo` | Trait declaration (also `way`) |
+| `import` | `usa` | Module import |
+| `none` | `nada` | `None` literal |
+| `break` | `sal` | Loop break |
+| `continue` | `sigue` | Loop continue |
+| `print(...)` | `di <expr>` | Print expression (statement form) |
+
+Keywords that currently only have an English spelling:
+
+`fn`, `pub`, `agent`, `spawn`, `sync`, `signal`, `stream`, `pipe`,
+`match`, `struct`, `enum`, `impl`, `export`, `extern`, `true`,
+`false`, `new`, `input`, `output`, `assert`.
+
+Soft-reserved (v4.30.0 onwards — documented but not tokenized): `async`, `await`.
+
+The self-hosted lexer (`mapanare/self/lexer.mn`) treats both columns
+as keywords. The Python bootstrap lexer is defined in
+`mapanare/mapanare.lark` — each bilingual alias appears as a second
+pattern on the same terminal (e.g. `KW_RETURN.2: /(?:return|da)(?![a-zA-Z0-9_])/`).
 
 ### 2.2 Operators
 
@@ -274,6 +321,7 @@ let absent: Option<Int> = none
 
 ### 2.4 Comments
 
+<!-- pseudo -->
 ```mn
 // Single-line comment
 
@@ -473,6 +521,7 @@ struct Pair<A, B> {
 
 Enums are sum types -- tagged unions where each variant can carry different data.
 
+<!-- pseudo -->
 ```mn
 enum Shape {
     Circle(Float),
@@ -523,6 +572,7 @@ enum Either<A, B> {
 
 `Option<T>` represents a value that may or may not be present. It replaces null pointers.
 
+<!-- pseudo -->
 ```mn
 let x: Option<Int> = Some(42)
 let y: Option<Int> = none
@@ -547,6 +597,7 @@ match x {
 
 `Result<T, E>` represents an operation that can succeed with `Ok(value)` or fail with `Err(error)`. It is the primary error-handling mechanism.
 
+<!-- pseudo -->
 ```mn
 fn parse_int(s: String) -> Result<Int, String> {
     // ...
@@ -600,6 +651,7 @@ When you `spawn` an agent, the returned handle exposes the input and output chan
 
 Tensors have their element type and shape verified at compile time.
 
+<!-- pseudo -->
 ```mn
 let v: Tensor<Float>[3] = [1.0, 2.0, 3.0]         // 1D vector, 3 elements
 let m: Tensor<Float>[2, 3] = [[1.0, 2.0, 3.0],     // 2D matrix, 2x3
@@ -616,6 +668,7 @@ let c = a + b   // COMPILE ERROR: shape mismatch [3] vs [4]
 
 Matrix multiplication verifies dimensional compatibility:
 
+<!-- pseudo -->
 ```mn
 let a: Tensor<Float>[2, 3] = ...
 let b: Tensor<Float>[3, 4] = ...
@@ -733,6 +786,7 @@ fn double(x: Int) -> Int {
 
 Pattern matching dispatches on the structure of a value. See section 5 (Pattern Matching) for full details.
 
+<!-- pseudo -->
 ```mn
 match value {
     Some(x) => print("got ${x}"),
@@ -758,6 +812,7 @@ The optional second argument is an error message expression (typically a string)
 
 ### 5.1 Syntax
 
+<!-- pseudo -->
 ```mn
 match expr {
     pattern1 => expr_or_block,
@@ -781,6 +836,7 @@ Match arms are separated by commas. Each arm consists of a pattern, `=>`, and ei
 
 Enum variants are destructured by their constructor pattern:
 
+<!-- pseudo -->
 ```mn
 enum Expr {
     Num(Int),
@@ -795,6 +851,7 @@ match expr {
 
 Nested destructuring is supported:
 
+<!-- pseudo -->
 ```mn
 match result {
     Ok(Some(v)) => print("got ${v}"),
@@ -818,6 +875,7 @@ A missing arm is a compile-time error.
 
 When all arms produce a value, `match` is an expression:
 
+<!-- pseudo -->
 ```mn
 let name = match status {
     Ok(v) => v.name,
@@ -877,6 +935,7 @@ Note: Lambda parameter types are inferred from context. Type annotations on lamb
 
 Closures capture variables from the enclosing scope:
 
+<!-- pseudo -->
 ```mn
 let offset = 10
 let add_offset = (x: Int) => x + offset
@@ -1160,6 +1219,7 @@ print(sum.value)   // prints 12
 
 Signals support subscriptions for side effects on change:
 
+<!-- pseudo -->
 ```mn
 let mut temperature = signal(20.0)
 
@@ -1175,6 +1235,7 @@ temperature.subscribe((t) => {
 
 Multiple signal updates within a `batch` block are coalesced into a single recomputation pass, avoiding intermediate recalculations:
 
+<!-- pseudo -->
 ```mn
 batch {
     x.value = 10
@@ -1229,6 +1290,7 @@ Streams support a rich set of composable operators. These can be chained with th
 | `debounce(ms)` | Emit only after a quiet period. |
 | `collect()` | Collect all elements into a `List`. |
 
+<!-- pseudo -->
 ```mn
 let result = numbers
     |> Stream::filter((n) => n % 2 == 0)
@@ -2254,10 +2316,24 @@ The LLVM emitter translates MIR to LLVM IR, producing native machine code. This 
 
 The following identifiers are reserved for future use and cannot be used as variable or function names, even though they have no current semantics:
 
+> **v4.30.0 note on `async` / `await`:** Earlier v4.x releases tokenized
+> these as keywords and parsed an `async fn` / `await expr` syntax that
+> the lowerer treated as pure identity — grammar theatre with no
+> coroutine state machine, no suspension point, no Stream integration,
+> and no cooperative scheduler wiring. v4.30.0 Path B removed the
+> tokens, the grammar rules, the AST node, and the self-hosted
+> lexer/parser handling; the keywords are now **soft reserved**. The
+> Mapanare lexer will let you write `let await = 1` without an error,
+> but the SPEC continues to reserve both names because v5.0.0 is
+> scheduled to reintroduce them with a real lowering to LLVM coroutine
+> intrinsics on top of the cooperative scheduler in the C runtime. Any
+> production source that binds `async` or `await` as an identifier
+> today will break on the v5.0.0 upgrade.
+
 | Reserved | Potential Future Use |
 |---|---|
-| `async` | Asynchronous function declaration |
-| `await` | Asynchronous expression |
+| `async` | Asynchronous function declaration (v5.0.0; soft-reserved in v4.30.0+) |
+| `await` | Asynchronous expression (v5.0.0; soft-reserved in v4.30.0+) |
 | `yield` | Generator / coroutine yield |
 | `macro` | Compile-time macro system |
 | `where` | Generic constraint clauses |

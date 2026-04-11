@@ -3,6 +3,16 @@
  *
  * Implements TCP networking, TLS (OpenSSL), extended file I/O, and
  * cross-platform event loop multiplexing.
+ *
+ * v4.31.0: MAPANARE_VERSION is now set at build time from the repo
+ * VERSION file. The Python bootstrap (scripts/build_stage1.py) and
+ * the Makefile both pass ``-DMAPANARE_VERSION="\"X.Y.Z\""`` so the
+ * User-Agent string below is regenerated on every build. The fallback
+ * ``"unknown"`` only fires if someone compiles a ``.c`` file outside
+ * the canonical build path; that is visible in the User-Agent header
+ * and easy to spot in HTTP logs. The v4.26.0 panel (Mamba, Viper)
+ * flagged the hardcoded ``Mapanare/3.42`` string as 5+ minor versions
+ * stale; wiring it to the macro closes the carry-forward.
  */
 
 #include "mapanare_io.h"
@@ -11,6 +21,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+
+#ifndef MAPANARE_VERSION
+/* Fallback when compiled outside the canonical build path. Visible
+ * in the User-Agent header so the wrong path is caught in the logs. */
+#define MAPANARE_VERSION "unknown"
+#endif
 
 /* =======================================================================
  * Platform-specific includes and helpers
@@ -1607,10 +1623,12 @@ MN_IO_EXPORT MnString __mn_http_get(MnString url) {
         if (!tls_ctx) { __mn_tcp_close(fd); return __mn_str_empty(); }
     }
 
-    /* Build and send HTTP request */
+    /* Build and send HTTP request. v4.31.0: User-Agent is wired to
+     * the build-time MAPANARE_VERSION macro (see VERSION file). */
     char request[4096];
     snprintf(request, sizeof(request),
-             "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\nUser-Agent: Mapanare/3.42\r\n\r\n",
+             "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n"
+             "User-Agent: Mapanare/" MAPANARE_VERSION "\r\n\r\n",
              path, host);
     size_t reqlen = strlen(request);
 

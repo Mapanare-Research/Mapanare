@@ -108,8 +108,8 @@ fn is_keyword(name: String) -> Bool {
     if name == "continue" { return true }
     if name == "sigue" { return true }
     if name == "di" { return true }
-    if name == "async" { return true }
-    if name == "await" { return true }
+    // v4.30.0: "async" / "await" removed from the keyword set (Path B).
+    // See mapanare/mapanare.lark for the full rationale.
     return false
 }
 
@@ -165,8 +165,7 @@ fn keyword_token_type(name: String) -> String {
     if name == "continue" { return "KW_CONTINUE" }
     if name == "sigue" { return "KW_CONTINUE" }
     if name == "di" { return "KW_DI" }
-    if name == "async" { return "KW_ASYNC" }
-    if name == "await" { return "KW_AWAIT" }
+    // v4.30.0: "async" / "await" removed from the keyword token map.
     return "NAME"
 }
 

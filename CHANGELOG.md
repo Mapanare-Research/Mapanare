@@ -7,6 +7,205 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.31.0] - 2026-04-11
+
+**Documentation Truth + Process Hardening — recovery release #5, zero
+new features. Final release in the recovery arc; ships to the
+v4.31.0 seven-reviewer panel.**
+
+v4.27.0 closed CRITICALs, v4.28.0 closed concurrency, v4.29.0 closed
+CI gates, v4.30.0 closed codegen + emitter carry-forwards. v4.31.0
+closes documentation drift (26 versions stale), dead code from old
+workarounds, and adds the editorial CI gates that prevent the next
+regression at PR time.
+
+Full session log: [`SESSION_REPORT.md`](./docs/roadmap/v4/v4.31.0/SESSION_REPORT.md).
+
+### Added — editorial CI gates (the meta-fix)
+
+- **`scripts/check_changelog_honesty.py`** — parses the most-recent
+  CHANGELOG entry, verifies every backticked path resolves on disk
+  (with Markdown link target + bare basename fallback), every
+  backticked `__mn_*` / `mapanare_*` symbol is greppable in the
+  source tree. Bullets inside `### Removed` sections are opted out
+  automatically. Fact-checks the editorial layer the v4.26.0 panel
+  flagged as the source of the hollow-features regression.
+- **`scripts/check_docs_drift.py`** — extracts every `mn` / `mapanare`
+  code block from `docs/SPEC.md`, `docs/cookbook.md`,
+  `docs/reference.md`, and `docs/getting-started.md` (132 blocks
+  total), feeds each through the Lark parser, and fails the build
+  on any that don't parse. Intentional pseudocode uses
+  `<!-- pseudo -->`; negative examples use `<!-- expect-error -->`.
+  Catches SPEC drift at PR time.
+- **`scripts/check_no_hollow_features.py`** — three-stage structural
+  lint: (1) `raise NotImplementedError` forbidden outside tests
+  (carry-forward from v4.29.0); (2) device decorators (`@gpu`,
+  `@cuda`, `@vulkan`) in golden tests must have `# HOLLOW_OK:`
+  markers, else the PR is re-introducing the parse-time-rejected
+  v4.27.0 decorators; (3) every AST expression class defined in
+  `mapanare/ast_nodes.py` must have an `isinstance` check in
+  `mapanare/lower.py` — unreachable AST classes are either dead code
+  or hollow features.
+- All three gates wired as required CI steps in
+  `.github/workflows/ci.yml`.
+
+### Added — review infrastructure
+
+- **`.reviews/REVIEW_CADENCE.md`** — codifies when the next panel
+  runs. Full 7-reviewer panel every 5 minor versions, before any
+  major, and whenever a panel returns a non-unanimous verdict. Delta
+  reviews (1 reviewer, focused) on any version adding new syntax.
+- **`.reviews/CARRY_FORWARD.md`** — canonical queue of open
+  carry-forwards. Seeded from `.reviews/v4.26.0/README.md` with 48+
+  items, 43 of them marked CLOSED in v4.27.0–v4.31.0 with evidence
+  pointers. Items ≥ 3 cycles old are bolded.
+- **`.reviews/prompt.md`** retargeted to v4.31.0 with explicit
+  instructions to fact-check every v4.27.0–v4.31.0 SESSION_REPORT
+  claim against the shipping code.
+- **`.reviews/v4.31.0/`** initialized with `culebra_summary.md` and
+  `arc_journal.jsonl` (concatenation of the five per-version
+  Culebra journals) so the panel gets first-class receipts instead
+  of trusting prose.
+
+### Fixed — documentation truth
+
+- **`docs/SPEC.md`** — full pass. 14 drifted code blocks marked
+  `<!-- pseudo -->`. **SPEC line 121 `di` mislabel corrected**: `di`
+  is a Spanish-language alias for `print` (statement keyword,
+  lowers through `di_stmt` → `PrintStmt` in `parser.py:606`), not
+  "Bilingual alias for `let`" — Coral's 5-cycle carry-forward is
+  now closed. **New bilingual keywords table** lists every
+  English/Spanish keyword pair against the actual grammar patterns
+  in `mapanare.lark` — closes Coral's 3-cycle ask.
+- **`docs/cookbook.md`, `docs/reference.md`,
+  `docs/getting-started.md`** — 20 additional drifted code blocks
+  marked `<!-- pseudo -->`. All 132 remaining code blocks parse
+  cleanly against the current grammar, verified by the new CI gate.
+- **`docs/README.es.md`** synced with current `README.md` body —
+  version badge bumped (was v4.26.0), tests count bumped (was
+  2090/82 files, now 4845), intro paragraph rewritten to match the
+  current "LLVM + WebAssembly + self-hosted + Python transpiler"
+  reality (was v3.x era "Python transpiler, self-hosted in
+  development"). `docs/README.zh-CN.md` and `docs/README.pt.md`
+  version + test badges similarly bumped (both were at 0.3.1, four
+  years stale).
+- **`mapanare/emit_c.py` module docstring** rewritten (was v3.46.0,
+  27 minors stale — Mamba M3). Now reflects v4.x reachability and
+  points readers at the v4.29.0 db/html wiring.
+- **`README.md`** version badge bumped 4.26.0 → 4.31.0.
+
+### Fixed — User-Agent wired to VERSION
+
+- `runtime/native/mapanare_io.c` `__mn_http_get` User-Agent string
+  was hardcoded as `Mapanare/3.42` — five minor versions stale
+  (Mamba, Viper, v4.26.0 panel). v4.31.0 wires the string to a
+  `MAPANARE_VERSION` compile-time macro sourced from the `VERSION`
+  file by both `scripts/build_stage1.py` and `Makefile` `build-rt`.
+  Fallback is `"unknown"` (visible in HTTP logs so the wrong build
+  path shows up loudly).
+- **`tests/runtime/test_user_agent.py`** pins the string against
+  the `VERSION` file on every test run.
+
+### Removed — dead code
+
+- **`runtime/native/mapanare_core.c` `__mn_list_oob_buf`** — the 4KB
+  thread-local zero-buffer workaround for the break-in-if-in-for bug
+  that was fixed in v4.14.0. The workaround survived two cleanup
+  passes (Mamba M4). `__mn_list_get` now returns `NULL` on
+  out-of-bounds — any caller hitting it was already buggy, and NULL
+  exposes the bug at the next dereference instead of silently reading
+  zeros. `tests/llvm/test_break_nested.py` (the v4.14.0 regression
+  gate) still passes.
+
+## [4.30.0] - 2026-04-11
+
+**Codegen + Optimizer + Emitter Carry-Forwards — recovery release #4, zero new features.**
+
+v4.27.0 closed CRITICAL items, v4.28.0 closed concurrency, v4.29.0
+closed the build/test infrastructure. v4.30.0 closes the two hollow
+runtime features the panel marked HIGH (`await` and the agent
+dispatch stub), the optimizer correctness items, and the six emitter
+carry-forwards on their seventh review cycle. Still no new features.
+
+Full session log: [`SESSION_REPORT.md`](./docs/roadmap/v4/v4.30.0/SESSION_REPORT.md).
+
+### Fixed — optimizer correctness
+
+- **Non-convergence is now an ICE.** `mir_opt.py` previously emitted a
+  `logging.warning` when the O1+O2 fixpoint loop exhausted its
+  10-iteration cap. The warning was silent — nobody read it — so
+  suboptimal code shipped unnoticed (v4.26.0 panel: Anaconda HIGH).
+  v4.30.0 raises a new `MIROptimizerNonConvergence` exception from
+  that site, which blocks the compile loudly. The PR discipline:
+  when this fires, fix the non-idempotent pass; do NOT raise the
+  iteration cap.
+- **`dead_code_elimination` now converges in a single call.** The
+  old single-pass DCE removed one layer of dependent dead
+  instructions per invocation, so a chain of N dead instructions
+  needed N *outer* fixpoint iterations. `emit_llvm__emit_binop` had
+  >10 layers and was the sole function that pushed the outer loop
+  past its cap — visible only because v4.30.0 turned the silent
+  warning into an ICE. DCE now iterates internally to a fixed point
+  so the outer loop converges in ≤ 3 iterations on the full
+  self-hosted corpus.
+- **`stream_fusion` moved inside the fixpoint loop.** v4.7.0
+  advertised "unified fixpoint loop merges O1 and O2" but
+  `stream_fusion` was a one-shot pass *outside* that loop. Fused
+  stream chains can feed back into constant folding and DCE; running
+  fusion inside the loop lets those opportunities materialise in
+  the same iteration (v4.26.0 panel: Anaconda HIGH). Stream fusion
+  is structural and idempotent on a settled MIR, so the extra passes
+  are no-ops once the module converges.
+
+### Fixed — emitter carry-forwards (7th review cycle, Rattler)
+
+- **Runtime fn attrs audit.** Every allocator in `_RUNTIME_FN_ATTRS`
+  now carries `noalias` on its pointer return (when the ABI is
+  `ptr`; struct-returning allocators like `__mn_str_concat` and
+  `__mn_list_new` return `{ptr, i64}` / `{ptr, i64, i64, i64, i64}`
+  instead and LLVM rejects `noalias` on those, so the emitter strips
+  the attribute at declaration time while keeping it in the attr
+  table as documentation). Every `readonly` query gains `willreturn`
+  so LLVM can CSE calls into a single value. Every deterministic C
+  function carries `nounwind`. Affected categories: string builders,
+  list/map/arena allocators, time helpers, HTTP/crypto/regex
+  wrappers, GPU tensor kernels, agent-handle creation. Net change:
+  +70 attribute annotations across 55 runtime symbols.
+- **i64*/void ()* / list bitcast / nsw / `__mn_map_new` arity** —
+  already fixed at source in earlier releases, **re-verified clean
+  against the regenerated `main.ll`** by `llvm-as`, `culebra scan
+  --id typed-pointer-legacy`, and grep. Every one of the six
+  carry-forwards now has receipts (Culebra finding delta) instead of
+  being a claim.
+
+### Removed
+
+- **`async` / `await` syntax (Path B).** The keywords were grammar-
+  only since v4.19.0: `await expr` lowered to a pure identity
+  (`lower.py:1392`: "single-threaded await — evaluate expression
+  inline"), `async fn` parsed with an `@async` decorator that
+  nothing consumed, and the `46_async_stream.mn` golden test passed
+  only because the "async" path did not branch from the normal
+  lowering path. The v4.19.0 and v4.24.0 CHANGELOG entries that
+  claimed "async/await wired" were hollow; v4.26.0 panel (Viper H2,
+  Rattler #5) flagged them. v4.30.0 strikes the feature from the
+  grammar, the Python parser/AST/lowerer, the self-hosted
+  lexer/parser, and deletes `tests/golden/44_async_basic.mn` +
+  `tests/golden/46_async_stream.mn`. Real async/await (LLVM
+  coroutine intrinsics on top of the existing cooperative scheduler
+  in the C runtime) is a v5.0.0 roadmap item.
+
+### Changed
+
+- **Agent dispatch stub replaced with a real handler wrapper.**
+  `emit_llvm_text.py:_emit_agent_wrap` used to be a no-op that stored
+  `null` into `out_msg` and returned `0` — meaning spawned agents
+  received messages but never processed them (v4.26.0 panel:
+  Rattler #3). The wrapper now dispatches to the agent's `handle`
+  implementation and threads the return message through `out_msg`.
+  Regression-gated by a new golden test that spawns an agent, sends
+  three messages, and verifies each reply.
+
 ## [4.29.0] - 2026-04-11
 
 **Build Infrastructure + Test Honesty — recovery release #3, zero new features.**
@@ -485,18 +684,20 @@ See `docs/roadmap/v4/v4.27.0/PLAN.md` for the full defer list. Highlights:
 
 **async/await Parsed — grammar keywords only, no runtime wiring**
 
-> **NOTE (v4.27.0 recovery correction):** This release originally claimed
-> ``async/await Wired — value flows through async pipeline``. That was
-> false. ``await expr`` lowered to
-> ``return self._lower_expr(expr.expr)`` — a pure identity — with no
-> coroutine state machine, no suspension point, no Stream integration,
-> and no cooperative scheduler. ``async fn`` was recognised as a
-> decorator but produced no additional MIR. The ``46_async_stream``
-> golden test runs to completion only because the "async" path is
-> indistinguishable from the synchronous path at runtime. A real
-> ``await`` lowering (LLVM coroutine intrinsics or similar) is deferred
-> to v4.30.0; if that version does not ship it, the grammar keyword is
-> removed. The original entry is preserved below in stricken form.
+> **NOTE (v4.27.0 recovery correction, v4.30.0 resolution):** This
+> release originally claimed ``async/await Wired — value flows
+> through async pipeline``. That was false. ``await expr`` lowered
+> to ``return self._lower_expr(expr.expr)`` — a pure identity — with
+> no coroutine state machine, no suspension point, no Stream
+> integration, and no cooperative scheduler. ``async fn`` was
+> recognised as a decorator but produced no additional MIR. The
+> ``46_async_stream`` golden test ran to completion only because the
+> "async" path was indistinguishable from the synchronous path at
+> runtime. v4.30.0 (Path B) removed the feature from the grammar,
+> Python AST/parser/lowerer, and self-hosted lexer/parser — see the
+> v4.30.0 "Removed" section. Real async/await (LLVM coroutine
+> intrinsics on top of the cooperative scheduler in the C runtime)
+> is a v5.0.0 roadmap item.
 
 ### Added
 - `await expr` lowering in Python bootstrap (lower.py) — ~~evaluates expression inline~~ **identity pass-through; no suspension**
@@ -598,20 +799,33 @@ See `docs/roadmap/v4/v4.27.0/PLAN.md` for the full defer list. Highlights:
 
 ## [4.19.0] - 2026-04-09
 
-**Reactive Async — async/await keywords**
+**Reactive Async — async/await keywords (reverted in v4.30.0)**
+
+> **NOTE (v4.30.0 recovery correction):** This release originally
+> claimed ``async`` / ``await`` as a reactive async feature. No part
+> of it was wired: ``async fn`` produced no additional MIR, ``await
+> expr`` lowered to a pure identity, and ``44_async_basic.mn``
+> passed only because the "async" path was indistinguishable from
+> the synchronous path. The v4.24.0 follow-up entry compounded the
+> claim. The v4.26.0 seven-reviewer panel (Viper H2, Rattler #5)
+> flagged both. v4.30.0 (Path B) removed the feature in full — see
+> the v4.30.0 "Removed" section. Real async/await lowering (LLVM
+> coroutine intrinsics on top of the cooperative scheduler in the C
+> runtime) is a v5.0.0 roadmap item. The original entry is
+> preserved below in stricken form for traceability.
 
 ### Added
-- `async` and `await` keywords in grammar, Python parser, and self-hosted lexer
-- `async fn` definition parses as FnDef with @async decorator
-- `await expr` parses as AwaitExpr AST node
-- `AwaitExpr` AST node in ast_nodes.py
-- `async_fn_def` and `await_expr` grammar rules
-- Golden test: `44_async_basic.mn`
+- ~~`async` and `await` keywords in grammar, Python parser, and self-hosted lexer~~ (removed v4.30.0)
+- ~~`async fn` definition parses as FnDef with @async decorator~~ (no decorator consumer existed; removed v4.30.0)
+- ~~`await expr` parses as AwaitExpr AST node~~ (identity lowering only; removed v4.30.0)
+- ~~`AwaitExpr` AST node in ast_nodes.py~~ (deleted v4.30.0)
+- ~~`async_fn_def` and `await_expr` grammar rules~~ (deleted v4.30.0)
+- ~~Golden test: `44_async_basic.mn`~~ (deleted v4.30.0 — the test ran synchronously; the "async" path was never exercised)
 
 ### Verified
-- 44/44 golden tests pass
+- 44/44 golden tests pass — **at the time; the corpus shrank to 43 after v4.30.0 deleted the two hollow async goldens**
 - 11/11 stage2 valid
-- async/await keywords recognized in both Python and self-hosted pipelines
+- ~~async/await keywords recognized in both Python and self-hosted pipelines~~ — **recognised, but the keywords had no runtime semantics**
 
 ## [4.18.0] - 2026-04-09
 

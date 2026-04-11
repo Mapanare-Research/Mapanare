@@ -76,6 +76,42 @@ jobs:
           set -e
           python3 scripts/check_silent_skips.py tests/
 
+      # v4.31.0: CHANGELOG honesty gate.
+      # Every CHANGELOG claim that names a file path or a runtime
+      # symbol must be verifiable in the source tree at commit time.
+      # The v4.26.0 panel flagged v4.18.0/v4.24.0/v4.25.0 CHANGELOG
+      # entries that referenced tests + symbols that did not exist.
+      - name: CHANGELOG honesty gate
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_changelog_honesty.py
+
+      # v4.31.0: docs drift gate.
+      # Every Mapanare code block in docs/SPEC.md, cookbook.md,
+      # reference.md, and getting-started.md must parse cleanly via
+      # the current grammar. Intentional-pseudocode blocks are opted
+      # out with ``<!-- pseudo -->``; negative examples use
+      # ``<!-- expect-error -->``.
+      - name: Docs drift gate
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_docs_drift.py
+
+      # v4.31.0: hollow-feature structural gate.
+      # Catches device decorators re-introduced into golden tests and
+      # AST expression classes that have no isinstance check in
+      # ``lower.py``. Subsumes the v4.29.0 ``raise NotImplementedError``
+      # gate as a sub-check so the pipeline runs both from a single
+      # script (but the standalone gate above is kept for defence in
+      # depth).
+      - name: Hollow-feature structural gate
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_no_hollow_features.py
+
       - name: Run tests
         run: pytest tests/ -v -n auto --durations=20
 

@@ -114,6 +114,7 @@ fn main() {
 
 Chaining operations that can fail using `Result<T, E>` and `?`.
 
+<!-- pseudo -->
 ```mn
 fn parse_number(s: String) -> Result<Int, String> {
     // Simulate parsing
@@ -207,6 +208,7 @@ fn main() {
 
 Model application states with enums and pattern matching.
 
+<!-- pseudo -->
 ```mn
 enum OrderStatus {
     Pending,
@@ -251,6 +253,7 @@ fn main() {
 
 Build reusable containers with generics.
 
+<!-- pseudo -->
 ```mn
 struct Stack<T> {
     items: List<T>,
@@ -431,6 +434,7 @@ hot: true
 
 Process sequences of data with composable operators.
 
+<!-- pseudo -->
 ```mn
 fn main() {
     let numbers = stream([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
@@ -564,6 +568,7 @@ fn main() {
 
 A small program combining parsing, error handling, and pattern matching.
 
+<!-- pseudo -->
 ```mn
 enum Op {
     Add,

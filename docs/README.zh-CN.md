@@ -22,8 +22,8 @@ Mapanare 编译为 Python（转译器）和原生二进制文件（LLVM），自
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![许可证](https://img.shields.io/badge/许可证-MIT-green.svg?style=flat-square)](../LICENSE)
-[![版本](https://img.shields.io/badge/版本-0.3.1-blue.svg?style=flat-square)](../CHANGELOG.md)
-[![测试](https://img.shields.io/badge/测试-2090_通过_(82_文件)-brightgreen.svg?style=flat-square)]()
+[![版本](https://img.shields.io/badge/版本-4.31.0-blue.svg?style=flat-square)](../CHANGELOG.md)
+[![测试](https://img.shields.io/badge/测试-4845_通过-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
 <br>

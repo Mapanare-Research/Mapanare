@@ -134,6 +134,13 @@ def build() -> pathlib.Path:
     ]
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
     profile_flags = ["-DMN_PROFILE_MEM"] if "--profile-mem" in sys.argv else []
+    # v4.31.0: propagate the VERSION file contents into a compile-time
+    # ``MAPANARE_VERSION`` macro. ``mapanare_io.c`` uses this to build
+    # the User-Agent string for ``__mn_http_get``; prior to v4.31.0
+    # the string was hardcoded as ``Mapanare/3.42`` and five minors
+    # stale (Mamba, v4.26.0 panel).
+    version_str = VERSION_FILE.read_text(encoding="utf-8").strip()
+    version_flags = [f'-DMAPANARE_VERSION="{version_str}"']
     c_base_flags = [
         CC,
         "-c",
@@ -145,7 +152,7 @@ def build() -> pathlib.Path:
         "-Werror",
         "-I",
         str(NATIVE_DIR),
-    ]
+    ] + version_flags
     for src, obj in runtime_sources:
         extra = profile_flags if src.name == "mapanare_core.c" else []
         subprocess.run(

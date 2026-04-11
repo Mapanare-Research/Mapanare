@@ -40,6 +40,14 @@ build:
 build-native:  ## Build from seed (no Python required — needs gcc + llvm)
 	bash scripts/build_from_seed.sh
 
+# v4.31.0: MAPANARE_VERSION comes from the VERSION file and is passed
+# to every runtime .c at compile time. ``runtime/native/mapanare_io.c``
+# uses it to build the User-Agent string for HTTP requests. Mamba
+# flagged the hardcoded ``Mapanare/3.42`` string in the v4.26.0 panel
+# (5+ minor versions stale); the macro wiring closes that carry-
+# forward and guarantees the next staleness is a build-system bug.
+MAPANARE_VERSION := $(shell cat VERSION)
+
 build-rt: check-runtime-sources  ## Pre-compile C runtime into static library (faster linking)
 	# v4.27.0: build with -fPIC so the archive can be linked into FFI shared
 	# libraries produced by `mapanare bind --lang python`. Without -fPIC, the
@@ -52,12 +60,12 @@ build-rt: check-runtime-sources  ## Pre-compile C runtime into static library (f
 	@rm -f /tmp/mapanare_rt_*.o
 	@for src in $(RUNTIME_SOURCES); do \
 		obj=/tmp/mapanare_rt_$${src%.c}.o; \
-		echo "  gcc -O2 -fPIC -c runtime/native/$$src -o $$obj"; \
-		gcc -O2 -fPIC -c -I runtime/native runtime/native/$$src -o $$obj || exit 1; \
+		echo "  gcc -O2 -fPIC -DMAPANARE_VERSION=\"\\\"$(MAPANARE_VERSION)\\\"\" -c runtime/native/$$src -o $$obj"; \
+		gcc -O2 -fPIC '-DMAPANARE_VERSION="$(MAPANARE_VERSION)"' -c -I runtime/native runtime/native/$$src -o $$obj || exit 1; \
 	done
 	@ar rcs runtime/native/libmapanare_rt.a /tmp/mapanare_rt_*.o
 	@rm -f /tmp/mapanare_rt_*.o
-	@echo "Built runtime/native/libmapanare_rt.a ($(words $(RUNTIME_SOURCES)) modules, -fPIC)"
+	@echo "Built runtime/native/libmapanare_rt.a ($(words $(RUNTIME_SOURCES)) modules, -fPIC, MAPANARE_VERSION=$(MAPANARE_VERSION))"
 
 check-runtime-sources:  ## v4.29.0: fail if runtime/native/*.c drifts from RUNTIME_SOURCES
 	@ACTUAL=$$(ls runtime/native/*.c | xargs -n1 basename | sort); \

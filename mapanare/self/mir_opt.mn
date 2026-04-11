@@ -401,18 +401,31 @@ fn dead_block_elim_function(f: MIRFunction) -> MIRFunction {
             bi2 = bi2 + 1
         }
     }
-    // Keep only reachable blocks (now includes PHI-referenced blocks)
-    let mut new_blocks: List<BasicBlock> = []
+    // v4.30.0 Phase 3.3: walk the surviving blocks once and drop PHI
+    // entries that reference blocks that did NOT survive. Prior to
+    // v4.30.0, ``clean_phis_in_block`` was defined (line 262) but
+    // never invoked — Rattler #6 flagged it as dead-code-in-the-
+    // optimizer. Without this step, the pass could leave a PHI
+    // referencing a block that the block removal loop just deleted,
+    // which is the "dangling label" class of bug.
+    let mut cleaned_blocks: List<BasicBlock> = []
     let mut ki: Int = 0
     for _ in 0..5000 {
         if ki >= len(f.blocks) { break }
         if is_in_list(f.blocks[ki].label, reachable) {
-            new_blocks.push(f.blocks[ki])
+            let cleaned: BasicBlock = clean_phis_in_block(f.blocks[ki], reachable)
+            cleaned_blocks.push(cleaned)
         }
         ki = ki + 1
     }
-    if len(new_blocks) >= len(f.blocks) { return f }
-    return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: new_blocks, decorators: f.decorators, is_public: f.is_public }
+    if len(cleaned_blocks) >= len(f.blocks) {
+        // Same block count — either nothing was dropped, or every
+        // dropped block had already been pruned by a previous pass.
+        // Still return the cleaned version because PHI entries may
+        // have been trimmed even when no block vanished.
+        return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: cleaned_blocks, decorators: f.decorators, is_public: f.is_public }
+    }
+    return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: cleaned_blocks, decorators: f.decorators, is_public: f.is_public }
 }
 
 // ---------------------------------------------------------------------------

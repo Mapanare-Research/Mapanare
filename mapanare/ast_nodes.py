@@ -249,11 +249,12 @@ class SyncExpr(Expr):
     expr: Expr = field(default_factory=Expr)
 
 
-@dataclass
-class AwaitExpr(Expr):
-    """Await expression: `await stream_expr`."""
-
-    expr: Expr = field(default_factory=Expr)
+# v4.30.0: ``AwaitExpr`` deleted (Path B). ``async`` / ``await`` were
+# grammar-only since v4.19.0 — the lowerer treated ``await expr`` as
+# pure identity. See ``docs/roadmap/v4/v4.30.0/PLAN.md`` Phase 1 and
+# the ``Removed`` section of the v4.30.0 CHANGELOG entry for the full
+# hollow-feature diagnosis. Real async/await (LLVM coroutine
+# intrinsics) is a v5.0.0 roadmap item.
 
 
 @dataclass

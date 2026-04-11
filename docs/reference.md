@@ -199,6 +199,7 @@ x /= 2        // divide-assign
 
 ### Special Operators
 
+<!-- pseudo -->
 ```mn
 data |> transform |> format    // pipe: left-to-right data flow
 agent.input <- value           // send: message to agent channel
@@ -315,6 +316,7 @@ while i < 10 {
 
 `match` destructures values. All arms must be exhaustive for enums.
 
+<!-- pseudo -->
 ```mn
 match value {
     1 => print("one"),
@@ -325,6 +327,7 @@ match value {
 
 ### Enum Matching
 
+<!-- pseudo -->
 ```mn
 enum Shape {
     Circle(Float),
@@ -341,6 +344,7 @@ fn describe(s: Shape) -> String {
 
 ### Option and Result Matching
 
+<!-- pseudo -->
 ```mn
 match maybe_value {
     Some(v) => print("got ${str(v)}"),
@@ -561,6 +565,7 @@ let text = """
 
 Represents a value that may or may not be present. Replaces null.
 
+<!-- pseudo -->
 ```mn
 let x: Option<Int> = Some(42)
 let y: Option<Int> = none
@@ -677,6 +682,7 @@ print(str(doubled.value))    // 10
 
 ### Batched Updates
 
+<!-- pseudo -->
 ```mn
 batch {
     x.value = 10
@@ -691,6 +697,7 @@ batch {
 
 Streams are async iterables with composable operators.
 
+<!-- pseudo -->
 ```mn
 let s = stream([1, 2, 3, 4, 5])
 
@@ -758,6 +765,7 @@ pipe ClassifyText {
 
 Tensors have compile-time shape verification.
 
+<!-- pseudo -->
 ```mn
 let v: Tensor<Float>[3] = [1.0, 2.0, 3.0]
 let m: Tensor<Float>[2, 3] = [[1.0, 2.0, 3.0],
@@ -832,6 +840,7 @@ pub fn square(x: Int) -> Int {
 
 ### Importing
 
+<!-- pseudo -->
 ```mn
 // Import entire module
 import math_utils
@@ -842,6 +851,7 @@ import utils::{foo, bar}
 
 ### Exporting
 
+<!-- pseudo -->
 ```mn
 // Re-export a definition
 export fn public_api() -> Int {
@@ -901,6 +911,7 @@ module's signatures, not from hand-written declarations).
 
 Decorators annotate definitions with metadata.
 
+<!-- pseudo -->
 ```mn
 @allow(W001)
 fn unused_var_ok() {
@@ -947,6 +958,7 @@ GPU backends are loaded at runtime via `dlopen` -- no compile-time SDK installat
 
 Lambda expressions use `=>` syntax.
 
+<!-- pseudo -->
 ```mn
 // Single parameter
 let double = (x) => x * 2

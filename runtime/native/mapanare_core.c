@@ -996,15 +996,20 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
 }
 
 
-/* Static zero buffer for out-of-bounds list access.  The self-hosted compiler
-   has a Python-lowerer bug where `break` inside `if` inside `for` is dropped,
-   causing loops to access list elements past the end.  Returning a zeroed
-   buffer instead of NULL prevents segfaults — the caller reads zeros and
-   the loop eventually exits when the outer for-counter expires. */
-static _Thread_local char __mn_list_oob_buf[4096] = {0};
-
+/* v4.31.0: the old ``__mn_list_oob_buf`` 4KB thread-local
+ * zero-buffer workaround was removed. It papered over a Python
+ * lowerer bug where ``break`` inside ``if`` inside ``for`` was
+ * silently dropped, letting loops walk past ``list->len`` and
+ * read stale memory. That bug was fixed in v4.14.0
+ * (``tests/llvm/test_break_nested.py::test_break_in_if_in_for``
+ * is the regression gate), but the workaround and its comment
+ * survived two cleanup passes — Mamba flagged it in the v4.26.0
+ * panel. Now the OOB path returns NULL and the caller either
+ * crashes loudly (correct behavior for a bug) or — once bounds
+ * checks land in codegen — takes an explicit error path. Either
+ * way, silent garbage reads are no longer possible. */
 MN_EXPORT void *__mn_list_get(MnList *list, int64_t i) {
-    if (i < 0 || i >= list->len) return __mn_list_oob_buf;
+    if (i < 0 || i >= list->len) return NULL;
     void *result = list->data + i * list->elem_size;
     return result;
 }

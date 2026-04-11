@@ -458,13 +458,14 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     if tt == "KW_PUB" {
         let next_tt: String = peek_type(tokens, pos + 1)
         if next_tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
-        if next_tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
+        // v4.30.0: ``KW_ASYNC`` dispatch removed (Path B). The lexer
+        // no longer emits the token.
         if next_tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
         if next_tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
         if next_tt == "KW_AGENT" { return parse_agent_def(tokens, pos, filename) }
         if next_tt == "KW_PIPE" { return parse_pipe_def(tokens, pos, filename) }
     }
-    if tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
+    // v4.30.0: ``KW_ASYNC`` top-level dispatch removed (Path B).
     if tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
     if tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
     if tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
@@ -666,14 +667,16 @@ fn parse_export_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
     let mut p: Int = pos
     let mut is_pub: Bool = false
-    let mut is_async: Bool = false
+    // v4.30.0: ``is_async`` stays threaded through ``parse_fn_params``
+    // / ``parse_fn_body`` for now, but the only place it was set
+    // (``peek_type == "KW_ASYNC"``) is gone because the lexer no
+    // longer emits ``KW_ASYNC``. The parameter threading itself will
+    // be cleaned up in a future mechanical refactor; leaving it in
+    // place keeps this release's self-hosted diff small.
+    let is_async: Bool = false
 
     if peek_type(tokens, p) == "KW_PUB" {
         is_pub = true
-        p = p + 1
-    }
-    if peek_type(tokens, p) == "KW_ASYNC" {
-        is_async = true
         p = p + 1
     }
     p = expect(tokens, p, "KW_FN")
@@ -1581,11 +1584,10 @@ fn parse_unary(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
         let r_not: ExprResult = parse_unary(tokens, pos + 1, filename)
         return new_expr_result(Expr::Unary("!", r_not.expr), r_not.pos)
     }
-    if tt == "KW_AWAIT" {
-        // await expr — in single-threaded mode, just evaluate the expression
-        let r_await: ExprResult = parse_unary(tokens, pos + 1, filename)
-        return new_expr_result(Expr::Await(r_await.expr), r_await.pos)
-    }
+    // v4.30.0: ``KW_AWAIT`` branch removed. The lexer no longer emits
+    // the token; any remaining source that types ``await`` is now
+    // treated as a plain identifier and will fail at parse time with
+    // a clear ``unexpected token`` diagnostic.
 
     return parse_postfix(tokens, pos, filename)
 }

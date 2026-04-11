@@ -937,9 +937,8 @@ fn is_keyword(name: String) -> Bool {
     if name == "continue" { return true }
     if name == "sigue" { return true }
     if name == "di" { return true }
-    if name == "const" { return true }
-    if name == "async" { return true }
-    if name == "await" { return true }
+    // v4.30.0: "async" / "await" removed from the keyword set (Path B).
+    // See mapanare/mapanare.lark for the full rationale.
     return false
 }
 
@@ -995,9 +994,7 @@ fn keyword_token_type(name: String) -> String {
     if name == "continue" { return "KW_CONTINUE" }
     if name == "sigue" { return "KW_CONTINUE" }
     if name == "di" { return "KW_DI" }
-    if name == "const" { return "KW_CONST" }
-    if name == "async" { return "KW_ASYNC" }
-    if name == "await" { return "KW_AWAIT" }
+    // v4.30.0: "async" / "await" removed from the keyword token map.
     return "NAME"
 }
 
@@ -1782,7 +1779,6 @@ fn is_definition_start(tt: String) -> Bool {
     if tt == "KW_IMPL" { return true }
     if tt == "KW_EXTERN" { return true }
     if tt == "KW_LET" { return true }
-    if tt == "KW_CONST" { return true }
     if tt == "AT" { return true }
     return false
 }
@@ -1866,13 +1862,14 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     if tt == "KW_PUB" {
         let next_tt: String = peek_type(tokens, pos + 1)
         if next_tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
-        if next_tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
+        // v4.30.0: ``KW_ASYNC`` dispatch removed (Path B). The lexer
+        // no longer emits the token.
         if next_tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
         if next_tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
         if next_tt == "KW_AGENT" { return parse_agent_def(tokens, pos, filename) }
         if next_tt == "KW_PIPE" { return parse_pipe_def(tokens, pos, filename) }
     }
-    if tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
+    // v4.30.0: ``KW_ASYNC`` top-level dispatch removed (Path B).
     if tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
     if tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
     if tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
@@ -1918,7 +1915,6 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     }
     if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
     if tt == "KW_LET" { return parse_module_let(tokens, pos, filename) }
-    if tt == "KW_CONST" { return parse_module_let(tokens, pos, filename) }
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
     // Fallback: skip unknown token
@@ -2075,14 +2071,16 @@ fn parse_export_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
     let mut p: Int = pos
     let mut is_pub: Bool = false
-    let mut is_async: Bool = false
+    // v4.30.0: ``is_async`` stays threaded through ``parse_fn_params``
+    // / ``parse_fn_body`` for now, but the only place it was set
+    // (``peek_type == "KW_ASYNC"``) is gone because the lexer no
+    // longer emits ``KW_ASYNC``. The parameter threading itself will
+    // be cleaned up in a future mechanical refactor; leaving it in
+    // place keeps this release's self-hosted diff small.
+    let is_async: Bool = false
 
     if peek_type(tokens, p) == "KW_PUB" {
         is_pub = true
-        p = p + 1
-    }
-    if peek_type(tokens, p) == "KW_ASYNC" {
-        is_async = true
         p = p + 1
     }
     p = expect(tokens, p, "KW_FN")
@@ -2990,11 +2988,10 @@ fn parse_unary(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
         let r_not: ExprResult = parse_unary(tokens, pos + 1, filename)
         return new_expr_result(Expr::Unary("!", r_not.expr), r_not.pos)
     }
-    if tt == "KW_AWAIT" {
-        // await expr — in single-threaded mode, just evaluate the expression
-        let r_await: ExprResult = parse_unary(tokens, pos + 1, filename)
-        return new_expr_result(Expr::Await(r_await.expr), r_await.pos)
-    }
+    // v4.30.0: ``KW_AWAIT`` branch removed. The lexer no longer emits
+    // the token; any remaining source that types ``await`` is now
+    // treated as a plain identifier and will fail at parse time with
+    // a clear ``unexpected token`` diagnostic.
 
     return parse_postfix(tokens, pos, filename)
 }
@@ -11554,18 +11551,31 @@ fn dead_block_elim_function(f: MIRFunction) -> MIRFunction {
             bi2 = bi2 + 1
         }
     }
-    // Keep only reachable blocks (now includes PHI-referenced blocks)
-    let mut new_blocks: List<BasicBlock> = []
+    // v4.30.0 Phase 3.3: walk the surviving blocks once and drop PHI
+    // entries that reference blocks that did NOT survive. Prior to
+    // v4.30.0, ``clean_phis_in_block`` was defined (line 262) but
+    // never invoked — Rattler #6 flagged it as dead-code-in-the-
+    // optimizer. Without this step, the pass could leave a PHI
+    // referencing a block that the block removal loop just deleted,
+    // which is the "dangling label" class of bug.
+    let mut cleaned_blocks: List<BasicBlock> = []
     let mut ki: Int = 0
     for _ in 0..5000 {
         if ki >= len(f.blocks) { break }
         if is_in_list(f.blocks[ki].label, reachable) {
-            new_blocks.push(f.blocks[ki])
+            let cleaned: BasicBlock = clean_phis_in_block(f.blocks[ki], reachable)
+            cleaned_blocks.push(cleaned)
         }
         ki = ki + 1
     }
-    if len(new_blocks) >= len(f.blocks) { return f }
-    return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: new_blocks, decorators: f.decorators, is_public: f.is_public }
+    if len(cleaned_blocks) >= len(f.blocks) {
+        // Same block count — either nothing was dropped, or every
+        // dropped block had already been pruned by a previous pass.
+        // Still return the cleaned version because PHI entries may
+        // have been trimmed even when no block vanished.
+        return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: cleaned_blocks, decorators: f.decorators, is_public: f.is_public }
+    }
+    return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: cleaned_blocks, decorators: f.decorators, is_public: f.is_public }
 }
 
 // ---------------------------------------------------------------------------
@@ -14881,8 +14891,13 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // version — return the compiler version string
 // ---------------------------------------------------------------------------
 
+// v4.28.0: the literal ``__MN_VERSION__`` is a build-time placeholder that
+// ``scripts/build_stage1.py`` rewrites from the top-level ``VERSION`` file
+// before compiling the self-hosted sources. Prior to this release, the
+// version was hardcoded and became 19 minor versions stale. See
+// ``docs/roadmap/v4/v4.28.0/FORENSICS.md`` for the full history.
 fn version() -> String {
-    return "mapanare 4.7.1"
+    return "mapanare __MN_VERSION__"
 }
 
 // ---------------------------------------------------------------------------
@@ -15161,6 +15176,31 @@ fn compile(source: String, filename: String) -> CompileResult {
 
     // Stage 5: optimize MIR (constant fold + dead block elimination)
     let opt_module: MIRModule = optimize_mir(mir_module)
+
+    // Stage 5.5: verify MIR structural correctness before emission.
+    // v4.27.0: closes the v4.5.0 CHANGELOG claim ("MIR verifier called before
+    // emission") on the self-hosted side. Prior to this, verify_module was
+    // defined in lower.mn but had zero call sites in the compile pipeline.
+    let verify_errs: List<VerifyError> = verify_module(opt_module)
+    if len(verify_errs) > 0 {
+        __mn_str_eprint("error: MIR verifier detected malformed IR before emission:\n")
+        let mut vi: Int = 0
+        for _ in 0..1000 {
+            if vi >= len(verify_errs) {
+                let empty: List<SemanticError> = []
+                return new_compile_result(false, "", empty)
+            }
+            let ve: VerifyError = verify_errs[vi]
+            __mn_str_eprint("  ")
+            __mn_str_eprint(ve.fn_name)
+            __mn_str_eprint("::")
+            __mn_str_eprint(ve.block_label)
+            __mn_str_eprint(": ")
+            __mn_str_eprint(ve.message)
+            __mn_str_eprint("\n")
+            vi = vi + 1
+        }
+    }
 
     // Stage 6: emit LLVM IR from MIR
     let ir_text: String = emit_mir_module(opt_module, filename)

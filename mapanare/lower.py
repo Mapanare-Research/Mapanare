@@ -16,7 +16,6 @@ from mapanare.ast_nodes import (
     AssertStmt,
     AssignExpr,
     ASTNode,
-    AwaitExpr,
     BinaryExpr,
     Block,
     BoolLiteral,
@@ -1389,11 +1388,12 @@ class MIRLowerer:
         if isinstance(expr, SyncExpr):
             return self._lower_sync(expr)
 
-        if isinstance(expr, AwaitExpr):
-            # v4.24.0: single-threaded await — evaluate expression inline.
-            # In single-threaded mode (lli), async fn runs synchronously and
-            # returns its value directly. await just unwraps that value.
-            return self._lower_expr(expr.expr)
+        # v4.30.0: ``AwaitExpr`` branch removed (Path B). The expression
+        # used to lower to a pure identity (``return self._lower_expr(
+        # expr.expr)``) because v4.19.0–v4.24.0 never wired real
+        # coroutine intrinsics. The grammar + AST node are gone; any
+        # lingering source that tries to use ``await`` now fails at
+        # parse time with a clear ``unexpected token`` diagnostic.
 
         if isinstance(expr, SendExpr):
             return self._lower_send(expr)

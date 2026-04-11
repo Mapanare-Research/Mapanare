@@ -211,20 +211,54 @@ def _struct_field0_type(sty: str) -> str:
 
 
 # ── Emitter ─────────────────────────────────────────────────────────
+#
+# v4.30.0 Phase 4.5: runtime fn attrs audit.
+#
+# This table maps every Mapanare runtime C function to the LLVM
+# attributes declared on its ``@mn_*`` declaration. The panel flagged
+# missing ``noalias`` / ``willreturn`` / ``nounwind`` as a 7-cycle
+# carry-forward (Rattler #7): allocators didn't advertise that their
+# return pointers don't alias, and pure readonly functions didn't
+# advertise that they always return. LLVM uses both to enable folds
+# and inlining.
+#
+# Attribute semantics (LLVM Language Reference):
+#   - ``nounwind``   — function does not raise C++ exceptions. All
+#                      Mapanare C runtime functions qualify.
+#   - ``willreturn`` — function eventually returns control to its
+#                      caller (no infinite loop, no ``exit``). Every
+#                      pure/read/allocation function qualifies.
+#   - ``readonly``   — function does not modify any memory the caller
+#                      can observe. Implies pure w.r.t. heap state.
+#   - ``noalias``    — when applied to the return value, the returned
+#                      pointer does not alias any pointer the caller
+#                      already held. True for every fresh-allocation
+#                      path (``__mn_alloc``, ``__mn_str_from_int``,
+#                      ``__mn_list_new``, etc.).
+#
+# The audit rule: every allocator gains ``noalias`` + ``willreturn``;
+# every ``readonly`` function gains ``willreturn``; every deterministic
+# C function keeps ``nounwind`` (exceptions only matter on C++ ABIs
+# which Mapanare does not cross).
 _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
-    # Read-only string functions
-    "__mn_str_len": {"nounwind", "readonly"},
-    "__mn_str_eq": {"nounwind", "readonly"},
-    "__mn_str_cmp": {"nounwind", "readonly"},
-    "__mn_str_hash": {"nounwind", "readonly"},
-    "__mn_list_len": {"nounwind", "readonly"},
-    "__mn_list_get": {"nounwind", "readonly"},
-    "__mn_map_len": {"nounwind", "readonly"},
-    "__mn_map_contains": {"nounwind", "readonly"},
-    # Allocation
-    "malloc": {"nounwind", "noalias"},
-    "__mn_alloc": {"nounwind", "noalias"},
-    # Cleanup
+    # Read-only string/collection queries.
+    # v4.30.0: added ``willreturn`` to every pure-read function — LLVM
+    # can then hoist and CSE the call freely.
+    "__mn_str_len": {"nounwind", "readonly", "willreturn"},
+    "__mn_str_eq": {"nounwind", "readonly", "willreturn"},
+    "__mn_str_cmp": {"nounwind", "readonly", "willreturn"},
+    "__mn_str_hash": {"nounwind", "readonly", "willreturn"},
+    "__mn_list_len": {"nounwind", "readonly", "willreturn"},
+    "__mn_list_get": {"nounwind", "readonly", "willreturn"},
+    "__mn_map_len": {"nounwind", "readonly", "willreturn"},
+    "__mn_map_contains": {"nounwind", "readonly", "willreturn"},
+    # Allocators. v4.30.0: ``noalias`` on return + ``willreturn``.
+    # libc ``malloc`` is documented ``noalias`` by C11; every Mapanare
+    # ``__mn_*_new`` / ``__mn_str_from_*`` / ``__mn_*_concat`` wraps a
+    # fresh buffer and qualifies the same way.
+    "malloc": {"nounwind", "noalias", "willreturn"},
+    "__mn_alloc": {"nounwind", "noalias", "willreturn"},
+    # Cleanup — terminates, but frees memory so NOT readonly.
     "free": {"nounwind", "willreturn"},
     "__mn_str_free": {"nounwind", "willreturn"},
     "__mn_list_free": {"nounwind", "willreturn"},
@@ -234,66 +268,73 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_range_free": {"nounwind", "willreturn"},
     "__mn_signal_free": {"nounwind", "willreturn"},
     "__mn_map_free_deep": {"nounwind", "willreturn"},
-    # Mutation
-    "__mn_str_concat": {"nounwind"},
-    "__mn_str_from_int": {"nounwind"},
-    "__mn_str_from_float": {"nounwind"},
-    "__mn_str_from_bool": {"nounwind"},
+    # String-builder allocators — every one returns a fresh heap string.
+    "__mn_str_concat": {"nounwind", "noalias", "willreturn"},
+    "__mn_str_from_int": {"nounwind", "noalias", "willreturn"},
+    "__mn_str_from_float": {"nounwind", "noalias", "willreturn"},
+    "__mn_str_from_bool": {"nounwind", "noalias", "willreturn"},
+    # Mutation (no noalias — they write through a caller-owned pointer).
     "__mn_list_push": {"nounwind"},
     "__mn_list_set": {"nounwind"},
-    "__mn_list_new": {"nounwind"},
-    "__mn_list_concat": {"nounwind"},
+    # List/map allocators.
+    "__mn_list_new": {"nounwind", "noalias", "willreturn"},
+    "__mn_list_concat": {"nounwind", "noalias", "willreturn"},
     "__mn_map_set": {"nounwind"},
-    "__mn_map_new": {"nounwind"},
-    # Print
-    "__mn_print": {"nounwind"},
-    "__mn_println": {"nounwind"},
-    # Arena
-    "mn_arena_create": {"nounwind"},
-    "mn_arena_alloc": {"nounwind"},
-    "mn_arena_destroy": {"nounwind"},
-    # I/O (v3.41.0)
-    "__mn_read_line": {"nounwind"},
-    "__mn_file_append": {"nounwind"},
-    "__mn_dir_list_strings": {"nounwind"},
-    "__mn_file_exists": {"nounwind", "readonly"},
-    "__mn_file_remove": {"nounwind"},
-    "__mn_file_size": {"nounwind", "readonly"},
-    "__mn_file_mtime": {"nounwind", "readonly"},
-    "__mn_dir_create": {"nounwind"},
-    "__mn_dir_remove": {"nounwind"},
-    "__mn_file_rename": {"nounwind"},
-    "__mn_file_copy": {"nounwind"},
-    "__mn_realpath": {"nounwind"},
-    "__mn_tmpfile_path": {"nounwind"},
-    # Network, crypto, regex (v3.42.0)
-    "__mn_http_get": {"nounwind"},
-    "__mn_sha256_str": {"nounwind"},
-    "__mn_base64_encode_str": {"nounwind"},
-    "__mn_base64_decode_str": {"nounwind"},
-    "__mn_hmac_sha256_str": {"nounwind"},
-    "__mn_hex_encode_str": {"nounwind"},
-    "__mn_random_bytes_str": {"nounwind"},
-    "__mn_regex_compile_str": {"nounwind"},
-    "__mn_regex_exec_str": {"nounwind"},
-    "__mn_regex_replace_str": {"nounwind"},
-    "__mn_regex_free": {"nounwind"},
-    # GPU builtins (v3.46.0)
-    "__mn_gpu_available": {"nounwind"},
-    "__mn_gpu_device_name": {"nounwind"},
-    "__mn_gpu_device_memory": {"nounwind"},
-    "__mn_gpu_tensor_add": {"nounwind"},  # (ptr, ptr) -> LIST
-    "__mn_gpu_tensor_sub": {"nounwind"},  # (ptr, ptr) -> LIST
-    "__mn_gpu_tensor_mul": {"nounwind"},  # (ptr, ptr) -> LIST
-    "__mn_gpu_tensor_div": {"nounwind"},  # (ptr, ptr) -> LIST
-    "__mn_gpu_tensor_matmul": {"nounwind"},  # (ptr, ptr, i64, i64, i64) -> LIST
-    # Agent runtime (v3.43.0)
-    "mapanare_agent_new": {"nounwind"},
-    "mapanare_agent_spawn": {"nounwind"},
-    "mapanare_agent_send": {"nounwind"},
+    "__mn_map_new": {"nounwind", "noalias", "willreturn"},
+    # Print — writes to stdout (observable), so no readonly, but does
+    # terminate and never throws.
+    "__mn_print": {"nounwind", "willreturn"},
+    "__mn_println": {"nounwind", "willreturn"},
+    # Arena.
+    "mn_arena_create": {"nounwind", "noalias", "willreturn"},
+    "mn_arena_alloc": {"nounwind", "noalias", "willreturn"},
+    "mn_arena_destroy": {"nounwind", "willreturn"},
+    # I/O (v3.41.0). Terminates but observable; no readonly beyond
+    # the explicit ones below.
+    "__mn_read_line": {"nounwind", "willreturn"},
+    "__mn_file_append": {"nounwind", "willreturn"},
+    "__mn_dir_list_strings": {"nounwind", "willreturn"},
+    "__mn_file_exists": {"nounwind", "readonly", "willreturn"},
+    "__mn_file_remove": {"nounwind", "willreturn"},
+    "__mn_file_size": {"nounwind", "readonly", "willreturn"},
+    "__mn_file_mtime": {"nounwind", "readonly", "willreturn"},
+    "__mn_dir_create": {"nounwind", "willreturn"},
+    "__mn_dir_remove": {"nounwind", "willreturn"},
+    "__mn_file_rename": {"nounwind", "willreturn"},
+    "__mn_file_copy": {"nounwind", "willreturn"},
+    "__mn_realpath": {"nounwind", "willreturn"},
+    "__mn_tmpfile_path": {"nounwind", "noalias", "willreturn"},
+    # Network, crypto, regex (v3.42.0). The ``*_str`` wrappers all
+    # return freshly-allocated strings → noalias + willreturn.
+    "__mn_http_get": {"nounwind", "noalias", "willreturn"},
+    "__mn_sha256_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_base64_encode_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_base64_decode_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_hmac_sha256_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_hex_encode_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_random_bytes_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_regex_compile_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_regex_exec_str": {"nounwind", "willreturn"},
+    "__mn_regex_replace_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_regex_free": {"nounwind", "willreturn"},
+    # GPU builtins (v3.46.0). v4.30.0: query/metadata paths terminate;
+    # tensor kernels return new lists → noalias + willreturn.
+    "__mn_gpu_available": {"nounwind", "readonly", "willreturn"},
+    "__mn_gpu_device_name": {"nounwind", "willreturn"},
+    "__mn_gpu_device_memory": {"nounwind", "readonly", "willreturn"},
+    "__mn_gpu_tensor_add": {"nounwind", "noalias", "willreturn"},
+    "__mn_gpu_tensor_sub": {"nounwind", "noalias", "willreturn"},
+    "__mn_gpu_tensor_mul": {"nounwind", "noalias", "willreturn"},
+    "__mn_gpu_tensor_div": {"nounwind", "noalias", "willreturn"},
+    "__mn_gpu_tensor_matmul": {"nounwind", "noalias", "willreturn"},
+    # Agent runtime (v3.43.0). v4.30.0: ``agent_new`` returns a fresh
+    # heap agent handle (noalias); dispatch/send/recv do not.
+    "mapanare_agent_new": {"nounwind", "noalias", "willreturn"},
+    "mapanare_agent_spawn": {"nounwind", "willreturn"},
+    "mapanare_agent_send": {"nounwind", "willreturn"},
     "mapanare_agent_recv_blocking": {"nounwind"},
-    "mapanare_agent_stop": {"nounwind"},
-    "mapanare_agent_destroy": {"nounwind"},
+    "mapanare_agent_stop": {"nounwind", "willreturn"},
+    "mapanare_agent_destroy": {"nounwind", "willreturn"},
     # Database runtime (v1.2.0; linked from v4.29.0)
     # runtime/native/mapanare_db.c provides SQLite3, PostgreSQL, Redis,
     # and extended filesystem ops. All third-party libraries (libsqlite3,
@@ -736,8 +777,17 @@ class LLVMTextEmitter:
         if va:
             ps += ", ..." if ps else "..."
         attrs = _RUNTIME_FN_ATTRS.get(nm, set())
-        # noalias is a return attribute — must appear before the return type
-        ret_attrs = sorted(a for a in attrs if a == "noalias")
+        # v4.30.0 Phase 4.5: ``noalias`` is a return-value attribute and
+        # LLVM rejects it on any non-pointer return type. Several
+        # Mapanare runtime allocators return MnString (``{ptr, i64}``)
+        # or a list struct (``{ptr, i64, i64, i64, i64}``) rather than
+        # a raw ``ptr``; the attr table still lists ``noalias`` on
+        # those entries to document intent, but we strip it at the
+        # declaration site unless the function really returns ``ptr``.
+        # The large-struct sret rewrite above also drops the true
+        # return to ``void``; those paths never carry ``noalias``
+        # because the pointer comes in as a parameter, not out.
+        ret_attrs = sorted(a for a in attrs if a == "noalias" and abi_ret == "ptr")
         fn_attrs = sorted(a for a in attrs if a != "noalias")
         ret_prefix = " ".join(ret_attrs) + " " if ret_attrs else ""
         fn_suffix = " " + " ".join(fn_attrs) if fn_attrs else ""
@@ -3669,11 +3719,137 @@ class LLVMTextEmitter:
 
     # ── agent handler wrapper ───────────────────────────────────────
     def _emit_agent_wrap(self, agent_name: str, info: Any) -> str:
+        """Generate the per-agent ``__mn_handler_<name>`` thunk.
+
+        v4.30.0 Phase 2: previously this was a no-op stub — it stored
+        ``null`` into ``*out_msg`` and returned ``0``, which meant
+        spawned agents received messages from the runtime worker but
+        produced no reply, the outbox was never pushed, and
+        ``sync a.reply`` deadlocked or returned garbage (v4.26.0 panel:
+        Rattler #3 HIGH). The stub shipped for nine releases because
+        grammar-level agents parse and the scheduler path runs —
+        nothing *crashed*, so nobody noticed the dispatch path was
+        dead.
+
+        The real wrapper:
+
+        1. Finds the agent's ``handle`` method in ``info.method_names``
+           (convention: ``{agent_name}_handle``, built by
+           ``lower._lower_agent``).
+        2. Looks up its MIR signature — the single input type is the
+           agent's ``input`` channel payload, the return type is the
+           ``output`` channel payload.
+        3. Loads the caller-stored input value from ``msg`` (``msg`` is
+           a ``ptr`` to an alloca the sender wrote via
+           ``_do_agent_send``).
+        4. Calls the user's handle function.
+        5. ``malloc``'s a stable buffer sized for the output type,
+           stores the result there, writes the buffer pointer into
+           ``*out_msg``, and returns ``0``. The buffer leaks per
+           message — a leak is the right trade-off here because the
+           receiver side (``_do_agent_sync``) loads the value directly
+           from the buffer and has no ownership story. Free-on-receive
+           is a v5.x arena-reuse item, not a v4.30.0 recovery item.
+        6. Signals ABI errors (missing ``handle``, sret disagreements)
+           by falling back to the historical null-and-zero stub so the
+           compile keeps moving; every fallback is logged in
+           ``self._agent_wrap_fallbacks`` for the session report.
+
+        Large (>8-byte) return types use the LLVM ``sret`` ABI: the
+        caller allocates, we pass the buffer as the sret arg, and the
+        function returns ``void``. We mirror that convention by
+        allocating ``result_buf`` *first* and passing it as the sret
+        parameter; for scalar returns we capture the return value and
+        ``store`` into the buffer manually.
+        """
         hn = f"__mn_handler_{agent_name}"
+        # The wrapper's own signature is fixed by the runtime ABI.
         self._sigs[hn] = (I32, [PTR, PTR, "ptr"], False)
+
+        # 1. Find the handle method. Convention: ``{agent_name}_handle``.
+        method_names = getattr(info, "method_names", None) or []
+        handle_fn: str | None = None
+        for mn_name in method_names:
+            if mn_name == f"{agent_name}_handle" or mn_name.endswith("_handle"):
+                handle_fn = mn_name
+                break
+        if handle_fn is None:
+            return self._emit_agent_wrap_fallback(
+                hn, agent_name, reason="no handle method in method_names"
+            )
+
+        sig = self._sigs.get(handle_fn)
+        if sig is None:
+            return self._emit_agent_wrap_fallback(
+                hn, agent_name, reason=f"{handle_fn} signature not registered"
+            )
+        ret_ty, param_tys, _is_va = sig
+        if len(param_tys) != 1:
+            # The agent handle method convention is (input) -> output.
+            # If lowering produced a different shape (e.g. because of
+            # ``self`` threading), fall back rather than guess.
+            return self._emit_agent_wrap_fallback(
+                hn,
+                agent_name,
+                reason=f"{handle_fn} has {len(param_tys)} params, expected 1",
+            )
+        in_ty = param_tys[0]
+
+        large_ret = self._is_large_struct(ret_ty)
+        ret_sz = max(_tsz(ret_ty), 1)  # malloc(0) is implementation-defined
+
+        # Ensure malloc is available to the wrapper.
+        self._ensure("malloc", PTR, [I64])
+
+        lines: list[str] = [
+            f"define i32 @{hn}(ptr %agent_data, ptr %msg, ptr %out_msg) {{",
+            "entry:",
+            f"  ; v4.30.0 wired dispatch → {handle_fn}({in_ty}) -> {ret_ty}",
+            # Load the input value from %msg.
+            f"  %in_val = load {in_ty}, ptr %msg",
+            # Allocate a heap buffer for the reply.
+            f"  %result_buf = call ptr @malloc(i64 {ret_sz})",
+        ]
+
+        if ret_ty == "void":
+            # Void-returning handle: just invoke, store null into out.
+            lines.append(f"  call void @{handle_fn}({in_ty} %in_val)")
+            lines.append("  store ptr null, ptr %out_msg")
+        elif large_ret:
+            # sret ABI: function returns void, first arg is the sret
+            # buffer. %result_buf is already the right shape.
+            lines.append(
+                f"  call void @{handle_fn}(ptr sret({ret_ty}) %result_buf, {in_ty} %in_val)"
+            )
+            lines.append("  store ptr %result_buf, ptr %out_msg")
+        else:
+            # Scalar return: capture it and store through the buffer.
+            lines.append(f"  %ret_val = call {ret_ty} @{handle_fn}({in_ty} %in_val)")
+            lines.append(f"  store {ret_ty} %ret_val, ptr %result_buf")
+            lines.append("  store ptr %result_buf, ptr %out_msg")
+
+        lines.append("  ret i32 0")
+        lines.append("}")
+        lines.append("")
+        return "\n".join(lines)
+
+    def _emit_agent_wrap_fallback(self, hn: str, agent_name: str, reason: str) -> str:
+        """Emit the historical null-and-zero stub and record the reason.
+
+        Used when ``_emit_agent_wrap`` cannot find a usable ``handle``
+        method. Keeps the build moving — the old stub is what shipped
+        through v4.29.0 — and logs the reason so the session report
+        can show which agents (if any) fell back. On the golden corpus
+        the list should be empty; a non-empty list is a signal that
+        the lowering contract drifted.
+        """
+        if not hasattr(self, "_agent_wrap_fallbacks"):
+            self._agent_wrap_fallbacks: list[tuple[str, str]] = []
+        self._agent_wrap_fallbacks.append((agent_name, reason))
         out = [
             f"define i32 @{hn}(ptr %agent_data, ptr %msg, ptr %out_msg) {{",
             "entry:",
+            f"  ; v4.30.0 fallback stub — {reason}",
             "  store ptr null, ptr %out_msg",
             "  ret i32 0",
             "}",

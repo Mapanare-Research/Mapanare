@@ -6,24 +6,27 @@
 
 **/mah-pah-NAH-reh/**
 
-**El lenguaje de programacion AI-nativo.**
+**El lenguaje de programación AI-nativo.**
 
-*Agentes. Senales. Streams. Tensores. De primera clase, no frameworks.*
+*Agentes. Señales. Streams. Tensores. De primera clase, no frameworks.*
 
-Mapanare compila a Python (transpilador) y binarios nativos (LLVM), con un compilador auto-hospedado en desarrollo.
+Construido tras años de toparse con los límites de Python en software AI-nativo, concurrente y tensor-pesado.
 
-[English](../README.md) | Espanol | [中文版](README.zh-CN.md) | [Portugues](README.pt.md)
+Mapanare compila a binarios nativos vía LLVM y WebAssembly. El compilador auto-hospedado (15,000+ líneas de `.mn`) se compila a sí mismo hasta un punto fijo. Un transpilador de Python convierte archivos `.py` a binarios nativos 29-68x más rápido que CPython.
+
+[English](../README.md) | Español | [中文版](README.zh-CN.md) | [Português](README.pt.md)
 
 <br>
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![LLVM](https://img.shields.io/badge/LLVM-Backend_Nativo-262D3A?style=for-the-badge&logo=llvm&logoColor=white)
+![WebAssembly](https://img.shields.io/badge/WebAssembly-Backend-654FF0?style=for-the-badge&logo=webassembly&logoColor=white)
 ![Plataforma](https://img.shields.io/badge/Linux%20%7C%20macOS%20%7C%20Windows-grey?style=for-the-badge)
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![Licencia](https://img.shields.io/badge/licencia-MIT-green.svg?style=flat-square)](../LICENSE)
-[![Version](https://img.shields.io/badge/version-4.26.0-blue.svg?style=flat-square)](../CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-2090_pasando_(82_archivos)-brightgreen.svg?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-4.31.0-blue.svg?style=flat-square)](../CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-4845_pasando-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
 <br>

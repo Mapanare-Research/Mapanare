@@ -27,7 +27,17 @@ start: (_nl* (definition | stmt))* _nl*
            | trait_def
            | impl_trait_def
            | impl_def
-           | async_fn_def
+// v4.30.0: ``async_fn_def`` removed (Path B). ``async`` / ``await``
+// were grammar-only since v4.19.0 — the lowerer treated ``await expr``
+// as pure identity (v4.24.0: "single-threaded await: just evaluate the
+// expression"), so the keywords advertised a concurrency primitive the
+// compiler never implemented. The v4.26.0 seven-reviewer panel (Viper
+// H2, Rattler #5) flagged this as a core hollow-feature case. The
+// recovery arc is not the place to ship LLVM coroutine intrinsics;
+// async/await becomes a v5.0.0 roadmap item built on the existing
+// cooperative scheduler in the C runtime. See
+// ``docs/roadmap/v4/v4.30.0/PLAN.md`` Phase 1 (Path B) and
+// ``docs/roadmap/ROADMAP.md`` v5.0.0 feature list.
 
 decorated_def: (decorator _nl*)+ (fn_def | agent_def | struct_def | enum_def | tipo_def)
 decorator: AT NAME (LPAREN arg_list? RPAREN)?
@@ -53,7 +63,8 @@ export_names: NAME (COMMA NAME)* COMMA?
 // ------------------------------------------------------------
 
 fn_def: (KW_PUB | PLUS)? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
-async_fn_def: KW_PUB? KW_ASYNC KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
+// v4.30.0: ``async_fn_def`` rule removed. See the comment on the
+// ``_def`` alternation above for the full rationale.
 
 // FFI: extern "C" fn name(params) -> RetType
 //
@@ -269,7 +280,7 @@ arg_list: expr (COMMA expr)* COMMA?
           | none_lit
           | spawn_expr
           | sync_expr
-          | await_expr
+// v4.30.0: ``await_expr`` removed (Path B — see rationale above).
           | signal_expr
           | stream_expr
           | if_expr
@@ -307,7 +318,7 @@ namespace_access: NAME DOUBLE_COLON NAME
 
 spawn_expr: KW_SPAWN NAME LPAREN arg_list? RPAREN
 sync_expr: KW_SYNC postfix_expr
-await_expr: KW_AWAIT postfix_expr
+// v4.30.0: ``await_expr`` rule removed (Path B — see rationale above).
 signal_expr: KW_SIGNAL LPAREN expr RPAREN -> signal_value
            | KW_SIGNAL block -> signal_computed
 
@@ -381,8 +392,12 @@ KW_NEW: "new"
 KW_ASSERT: "assert"
 KW_BREAK.2: /(?:break|sal)(?![a-zA-Z0-9_])/
 KW_CONTINUE.2: /(?:continue|sigue)(?![a-zA-Z0-9_])/
-KW_ASYNC: "async"
-KW_AWAIT.2: /await(?![a-zA-Z0-9_])/
+// v4.30.0: KW_ASYNC / KW_AWAIT terminals removed (Path B). ``async``
+// and ``await`` are now plain identifiers — a user can write
+// ``let async = 1`` without the lexer trapping them. The v4.19.0 and
+// v4.24.0 "async/await wired" CHANGELOG claims were struck in this
+// release; see docs/roadmap/v4/v4.30.0/PLAN.md Phase 1 for the full
+// hollow-feature diagnosis.
 KW_DI.2: /di(?![a-zA-Z0-9_])/
 ELLIPSIS: "..."
 

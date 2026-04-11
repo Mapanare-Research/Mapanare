@@ -8,12 +8,20 @@
 
 ## Version Configuration
 
-**TARGET VERSION:** `v4.26.0`
+**TARGET VERSION:** `v4.31.0`
+
+> **This is the arc-end panel.** Mapanare v4.27.0–v4.31.0 is a
+> five-release recovery arc that closes out the v4.18.0–v4.26.0 hollow-
+> features regression the v4.26.0 panel flagged. v4.31.0 is the
+> terminator: if this panel returns aggregate ≥9.0 with zero NEEDS WORK
+> verdicts, the recovery arc is complete and the project resumes
+> normal feature work. If not, the arc extends into v4.32.0 with the
+> items this panel surfaces.
 
 Set the review output directory based on this version:
 
 ```
-.reviews/v4.26.0/
+.reviews/v4.31.0/
   README.md              # Summary index with verdict table and action items
   01-viper.md            # Rust reviewer
   02-boa.md              # Python reviewer
@@ -22,9 +30,31 @@ Set the review output directory based on this version:
   05-anaconda.md         # GNU/GCC toolchain reviewer
   06-rattler.md          # LLVM reviewer
   07-coral.md            # Language design reviewer
+  culebra_summary.md         # Arc-end Culebra summary
+  culebra_baseline_delta.md  # Fixed/New/Remaining across the arc
+  arc_journal.jsonl          # Concatenated per-version journals
 ```
 
-Before starting, check if `.reviews/` already has previous versions. If so, each reviewer should read the `README.md` from the most recent previous version to understand what issues were flagged before. Reviewers should note in their review whether previous issues were fixed, regressed, or ignored.
+Before starting, each reviewer MUST read:
+
+1. `.reviews/v4.26.0/README.md` — the arc-starting panel. All carry-
+   forwards and all v4.26.0 HIGH/CRITICAL items must be
+   cross-referenced against this release.
+2. `.reviews/CARRY_FORWARD.md` — the canonical carry-forward queue.
+   Shows which v4.26.0 items the arc has closed and where.
+3. `.reviews/REVIEW_CADENCE.md` — the cadence policy. Every reviewer
+   should flag cadence-breaking scenarios they see in their lens.
+4. Every `docs/roadmap/v4/v4.2{7,8,9}.0/SESSION_REPORT.md` and
+   `docs/roadmap/v4/v4.3{0,1}.0/SESSION_REPORT.md` — the session
+   reports are the lead's claims about what each recovery release
+   closed. The panel's job is to verify those claims against the code.
+
+Reviewers should note in their review whether previous-panel issues
+were **Fixed**, **Regressed**, **Still open**, or **Deferred with
+documented tracking**. The arc-end panel is specifically a
+verification panel — the lead has made 48+ claims across five
+releases, and the panel grades the fraction of those claims that
+actually hold.
 
 ---
 
@@ -32,26 +62,89 @@ Before starting, check if `.reviews/` already has previous versions. If so, each
 
 Create an agent team of 7 reviewers to perform a deep, comprehensive code review of the Mapanare programming language codebase. Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives. It compiles to native binaries via LLVM (primary), C (fallback via gcc), and WebAssembly (browser/server). A self-hosted compiler exists (15,000+ lines of `.mn` across 11 modules in `mapanare/self/`) and reaches a near-fixed-point. Python, PHP, TypeScript, and Go transpilers allow `mapanare compile {.py,.php,.ts,.go}` — all self-hosted in `.mn` using shared `transpiler.mn` framework.
 
-This is version `v4.26.0` — a POST-PRODUCTION evolution version. Previous reviews graded the codebase at v3.47.0 (the v4.0.0 release gate). Since then the project has shipped:
+This is version `v4.31.0` — the arc-ending release in a five-version
+**recovery arc** (v4.27.0 → v4.31.0) triggered by the v4.26.0 panel's
+verdict. The previous panel grades were 9.79/10 unanimous at v3.47.0
+and ~8.2/10 with 4 NEEDS WORK verdicts at v4.26.0 — the largest
+single-cycle regression in project history. The recovery arc shipped:
 
-- **v4.0.0** Production release with 9.79/10 review consensus, 40/40 golden, 4,845+ pytest
-- **v4.1.0** Ecosystem (package registry persistence, web login, dashboard, version manager)
-- **v4.2.0–v4.7.1** The architectural refactor: deleted 3 dead LLVM emitters (~8,500 lines), removed `_coerce_arg`, fixed `skip_struct_ret` drop glue, signal-free under lock, atomic profiling counters, UNKNOWN→UNRESOLVED+ERROR split, wired self-hosted semantic + MIR verifier, replaced hardcoded field tables, MIRType string→enum, unified O1+O2 fixpoint loop
-- **v4.8.0–v4.13.0** Deep fixes: substr off-by-one, PHI zeroinit, ABI mismatch, semantic memory corruption, drop glue complete, Culebra clean foundation gate
-- **v4.14.0–v4.17.0** Compiler maturity: break-inside-nested-control fix, module-level `let`+`const`, dead block elimination, constant propagation, fixed-point bootstrap (Python becomes optional)
-- **v4.18.0** Tensor shape annotations (`Tensor<Float, [3,3]>`), compile-time mismatch errors
-- **v4.19.0** async/await syntax wired into both pipelines
-- **v4.20.0** `mapanare bind --lang python|ts|go` generates FFI bindings from .mn signatures
-- **v4.21.0** Optimizer hardening (constant folding correctness on loop back-edges)
-- **v4.22.0** Dead block elimination — fixed-point BFS, PHI-safe removal, SwitchCase fix
-- **v4.23.0** MIRType Int tags — zero string-based type comparisons, 110+ sites migrated
-- **v4.24.0** async/await wired end-to-end through parser, lowerer, and emitter in both pipelines
-- **v4.25.0** FFI end-to-end — `.mn → .so → Python ctypes calls compiled code` proven; tensor shape checking E2E
-- **v4.26.0** `const` keyword promoted from `let` synonym to a real semantic-checked language feature; usable in tensor shape annotations; roadmap, README, CHANGELOG, and master prompt reconciled with reality
+**Arc structure:**
 
-The tally: 46+/46+ golden tests, 11/11 stage2 modules valid, 4,845+ pytest, fixed-point self-compilation, FFI proven via Python ctypes, dead block elim measurable IR shrink, type-safe MIR with no string comparisons, `const` is real.
+- **v4.27.0 "Honesty Recovery"** — closed 8 CRITICAL items: FFI
+  argtypes/restype wiring, FFI DCE respect for `pub`, runtime `-fPIC`,
+  `@gpu` removed (Path B), MIRVerifier wired into `compile()`, `const`
+  removed (Path B), two parallel diagnostic systems consolidated,
+  CHANGELOG v4.18.0–v4.26.0 rewritten in stricken form
+- **v4.28.0 "Concurrency + v3.47.0 carry-forwards"** — closed
+  HIGH-severity concurrency items: signal value mutation under lock,
+  agent inbox MPSC-safe producer lock, type registry reader-writer
+  lock, `mn_init_tag_strings` pthread_once (7-cycle carry-forward
+  finally closed), matmul shape NULL check + dimension validation
+  (27 versions overdue), GLSL temp file race, Windows GPU init race
+  propagation, `main.ll` version string regression
+- **v4.29.0 "Build infrastructure + test honesty"** — wired
+  `mapanare_db.c` (1,130 lines) and `mapanare_html.c` (812 lines) into
+  `build_stage1.py` + `Makefile` + `_RUNTIME_FN_ATTRS`; `extern
+  "Python" fn` removed (Path B); DWARF claim struck (Path B);
+  `--no-check` stderr warning; `verify_fixed_point.sh` `set -euo
+  pipefail` + `DIFF_THRESHOLD` ratchet + exit propagation; stale
+  `stage3.ll` zero-byte file deleted; `NotImplementedError` CI gate;
+  silent-skip CI gate
+- **v4.30.0 "Codegen + optimizer + emitter carry-forwards"** — `await`
+  removed (Path B); `_emit_agent_wrap` wired to real
+  `{AgentName}_handle` dispatch with `malloc`'d reply buffer;
+  `MIROptimizerNonConvergence` ICE replaces silent warning; `DCE`
+  drains internally to a fixed point in one call (fixed
+  `emit_llvm__emit_binop` non-convergence that had been silently
+  warning every build since v4.2.0); `stream_fusion` folded into the
+  unified fixpoint loop; self-hosted `clean_phis_in_block` invoked;
+  `_RUNTIME_FN_ATTRS` audited with +70 `noalias`/`willreturn`
+  annotations across 55 runtime symbols; all six 7th-cycle
+  carry-forwards verified clean
+- **v4.31.0 "Documentation truth + process hardening"** — SPEC code-
+  block drift cleaned (132 blocks across 4 docs verified parseable);
+  SPEC line 121 `di` mislabel fixed; bilingual keywords table added;
+  Spanish README synced; `mapanare/emit_c.py` docstring 27-version
+  stale update; User-Agent wired to `MAPANARE_VERSION` macro from
+  `VERSION` file (closes 5+ minor stale string); `__mn_list_oob_buf`
+  4KB dead workaround deleted; new CI scripts for changelog honesty,
+  docs drift, hollow features; `.reviews/CARRY_FORWARD.md` and
+  `REVIEW_CADENCE.md` initialized
 
-Reviewers should hold to **POST-PRODUCTION ENGINEERING-MATURITY** standards. The bar is no longer "is this ready to ship as v4.0.0?" — it's "is this codebase still healthy after 26 minor versions of compounding work?" Look especially hard for: regressions from the v4.0.0 baseline, debt accumulated in the v4.18.0–v4.26.0 evolution arc, hollow features (syntax without runtime), and any gap between what the docs claim and what the code does.
+**The tally at v4.31.0:** 44/44 golden tests, fixed-point at ≤100 diff
+lines out of ~111k (0.062%), 4,845+ pytest, `extern "Python"` +
+`async`/`await` + `@gpu` + `const` all removed (Path B), DWARF
+struck, `_emit_agent_wrap` + all six emitter carry-forwards closed,
+five SESSION_REPORT.md files documenting every change, three new CI
+gates from v4.29.0 + v4.31.0 specifically designed to catch the next
+hollow-feature regression at PR time.
+
+**Reviewers should hold to ARC-END VERIFICATION standards.** The
+question is not "is this code healthy?" — it is **"does every claim
+in every v4.27.0–v4.31.0 SESSION_REPORT.md hold up against the code
+that shipped in this tag?"** The lead has made ~50 claims across five
+recovery releases. Your job is to fact-check them.
+
+**Specifically look for:**
+
+- **Re-regression**: any v4.26.0 item marked CLOSED in
+  `.reviews/CARRY_FORWARD.md` that is actually still open
+- **Partial fixes that were advertised as full**: e.g. if
+  `_emit_agent_wrap` was wired but only handles scalar returns, the
+  v4.30.0 SESSION_REPORT's "Agents actually dispatch" claim is partial
+- **New hollow features introduced during the recovery arc**: v4.30.0
+  added a fallback stub path in `_emit_agent_wrap`; is it a real
+  fallback or a new hollow surface?
+- **Gaps between `SESSION_REPORT.md` prose and the code diff**: if a
+  SESSION_REPORT says "X was fixed in file Y:line Z", that file and
+  that line must reflect the fix at the v4.31.0 tag
+- **Carry-forwards not listed in `.reviews/CARRY_FORWARD.md`**: any
+  open item you find that isn't in the file is a process bug — either
+  the item was missed by the arc or the tracking file is incomplete
+
+The recovery arc's whole thesis is: a lead's self-assessment is not
+sufficient — an external panel is needed. This panel's output is the
+only thing that can end the arc.
 
 ---
 
@@ -60,7 +153,7 @@ Reviewers should hold to **POST-PRODUCTION ENGINEERING-MATURITY** standards. The
 Each review file must follow this exact format:
 
 ```markdown
-# [Reviewer Name] -- [Language/Domain] Review of Mapanare v4.26.0
+# [Reviewer Name] -- [Language/Domain] Review of Mapanare v4.31.0
 **Reviewer:** [Name]
 **Personality:** [one-line personality summary]
 **Previous Version Reviewed:** [version or "N/A"]

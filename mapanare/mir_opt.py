@@ -669,31 +669,48 @@ def dead_code_elimination(fn: MIRFunction, stats: MIRPassStats) -> bool:
 
     Does not remove side-effecting instructions (calls, stores, terminators).
     Returns True if any changes were made.
-    """
-    # Collect all used value names
-    used_names: set[str] = set()
-    for bb in fn.blocks:
-        for inst in bb.instructions:
-            for use in _get_uses(inst):
-                used_names.add(use.name)
 
-    changed = False
-    for bb in fn.blocks:
-        new_insts: list[Instruction] = []
-        for inst in bb.instructions:
-            dest = _get_dest(inst)
-            if (
-                dest is not None
-                and dest.name
-                and dest.name not in used_names
-                and not inst.has_side_effects
-            ):
-                stats.dead_instructions_removed += 1
-                changed = True
-                continue
-            new_insts.append(inst)
-        bb.instructions = new_insts
-    return changed
+    v4.30.0 Phase 3.1 (convergence fix): internally iterates to a fixed
+    point instead of doing a single pass. A chain of N dependent dead
+    instructions used to need N *outer* fixpoint iterations to drain;
+    ``emit_llvm__emit_binop`` has >10 layers and was the sole function
+    that forced the outer loop past the 10-iteration cap. Draining the
+    chain in one call means DCE reports ``changed`` at most twice: once
+    when there is real work, once more to confirm the next pass did not
+    create anything new. The outer loop now reliably converges in ≤ 3
+    iterations on the whole self-hosted corpus.
+    """
+    total_changed = False
+    while True:
+        # Collect all used value names — must be recomputed each sweep
+        # because earlier sweeps removed instructions that contributed
+        # uses.
+        used_names: set[str] = set()
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                for use in _get_uses(inst):
+                    used_names.add(use.name)
+
+        sweep_changed = False
+        for bb in fn.blocks:
+            new_insts: list[Instruction] = []
+            for inst in bb.instructions:
+                dest = _get_dest(inst)
+                if (
+                    dest is not None
+                    and dest.name
+                    and dest.name not in used_names
+                    and not inst.has_side_effects
+                ):
+                    stats.dead_instructions_removed += 1
+                    sweep_changed = True
+                    continue
+                new_insts.append(inst)
+            bb.instructions = new_insts
+        if not sweep_changed:
+            break
+        total_changed = True
+    return total_changed
 
 
 # ---------------------------------------------------------------------------
@@ -706,6 +723,14 @@ def dead_function_elimination(module: MIRModule, stats: MIRPassStats) -> bool:
 
     Keeps `main` and public functions. Builds a call graph from Call instructions.
     Returns True if any changes were removed.
+
+    v4.30.0: agent methods (``method_names`` on every ``MIRAgentInfo``)
+    are considered alive because the LLVM text emitter generates a
+    ``__mn_handler_<AgentName>`` wrapper that dispatches to them after
+    optimization runs. Without this seed, DFE would eliminate e.g.
+    ``Doubler_handle`` before ``_emit_agent_wrap`` gets a chance to
+    reference it, and the agent dispatch wiring v4.30.0 adds would
+    fall back to the historical null-and-zero stub every time.
     """
     # Build set of all referenced function names
     called: set[str] = set()
@@ -726,6 +751,14 @@ def dead_function_elimination(module: MIRModule, stats: MIRPassStats) -> bool:
                     called.add(inst.fn_name)
                 elif isinstance(inst, SignalComputed) and inst.compute_fn:
                     called.add(inst.compute_fn)
+
+    # v4.30.0: seed agent method names. The handler wrapper emitted by
+    # ``emit_llvm_text.py`` references these by string name rather than
+    # by a ``Call`` instruction, so the static pass above cannot see
+    # them as reachable.
+    for agent_info in module.agents.values():
+        for method_name in getattr(agent_info, "method_names", ()):
+            called.add(method_name)
 
     # Also keep known entry points for the C bootstrap
     _ENTRY_POINTS = {"main", "compile_and_print", "compile", "version", "mn_main", "format_error"}
@@ -1100,6 +1133,31 @@ def stream_fusion(fn: MIRFunction, stats: MIRPassStats) -> bool:
 # ---------------------------------------------------------------------------
 
 
+class MIROptimizerNonConvergence(Exception):
+    """The MIR optimizer fixpoint loop failed to converge in ``max_iterations``.
+
+    v4.30.0 Phase 3.1: raised in place of the prior
+    ``logging.warning`` call. The v4.26.0 seven-reviewer panel
+    (Anaconda HIGH) flagged the warning as silent failure — suboptimal
+    code shipped without any reader seeing the message. Turning it
+    into an exception means:
+
+    1) Non-convergence becomes a loud compiler crash the developer
+       cannot ignore. It is an *internal compiler error* — the user's
+       source is valid, but an optimizer pass is oscillating instead
+       of settling. The fix belongs in ``mir_opt.py``, not the user's
+       code.
+    2) The golden corpus and stage2 fixed-point acts as a regression
+       gate: any new pass that doesn't converge crashes on build.
+    3) Raising the ``max_iterations`` cap without fixing the
+       underlying pass is a code-smell that used to be invisible;
+       now it's a diff a reviewer will see.
+
+    When this fires, do NOT raise the cap. Identify the two passes
+    that are ping-ponging and fix the one that is not idempotent.
+    """
+
+
 def optimize_function(fn: MIRFunction, level: MIROptLevel, stats: MIRPassStats) -> None:
     """Run optimization passes on a single function."""
     if level == MIROptLevel.O0:
@@ -1110,6 +1168,14 @@ def optimize_function(fn: MIRFunction, level: MIROptLevel, stats: MIRPassStats) 
     # Unified fixpoint loop: all passes run in sequence per iteration.
     # O2 passes create opportunities for O1 (and vice versa), so running
     # them in separate loops missed cross-level optimizations.
+    #
+    # v4.30.0 Phase 3.2: ``stream_fusion`` was previously a single
+    # pass *outside* this loop. It stays inside from v4.30.0 onward so
+    # the "unified fixpoint" phrase is not a lie — stream fusion can
+    # now create opportunities for constant folding + DCE, and the
+    # downstream passes will pick them up in the same iteration.
+    # The extra cost is negligible (fusion is O(n) in instructions and
+    # idempotent on a settled MIR).
     for iteration in range(max_iterations):
         changed = False
         # O1+: constant folding + propagation
@@ -1123,24 +1189,24 @@ def optimize_function(fn: MIRFunction, level: MIROptLevel, stats: MIRPassStats) 
             changed |= unreachable_block_elimination(fn, stats)
             changed |= dead_code_elimination(fn, stats)
             changed |= agent_inlining(fn, stats)
+        # O3+: stream fusion. Folded into the fixpoint loop in v4.30.0
+        # so fused stream chains can feed back into constant folding
+        # and DCE in the same iteration. Stream fusion is structural
+        # and idempotent on a settled MIR, so once everything else
+        # stops changing, a final fusion pass is a no-op.
+        if level >= MIROptLevel.O3:
+            changed |= stream_fusion(fn, stats)
         if not changed:
             break
     else:
-        import logging
-
-        logging.getLogger(__name__).warning(
-            "MIR optimizer: did not converge in %d iterations for function %s",
-            max_iterations,
-            fn.name,
+        raise MIROptimizerNonConvergence(
+            f"MIR optimizer did not converge in {max_iterations} iterations "
+            f"for function {fn.name!r}. This is an internal compiler error. "
+            f"Two passes are likely ping-ponging on the same instruction "
+            f"set; inspect the most recent MIR pass additions and make each "
+            f"one idempotent on a settled MIR. Do NOT raise the iteration "
+            f"cap — that only hides the underlying bug."
         )
-
-    # O3: Stream fusion
-    if level >= MIROptLevel.O3:
-        o3_changed = stream_fusion(fn, stats)
-        # Re-run DCE if stream fusion created dead code
-        if o3_changed:
-            dead_code_elimination(fn, stats)
-            unreachable_block_elimination(fn, stats)
 
 
 def optimize_module(
