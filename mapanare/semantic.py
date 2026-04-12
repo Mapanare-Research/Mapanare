@@ -948,47 +948,95 @@ class SemanticChecker:
         return UNKNOWN_TYPE
 
     def _check_match_exhaustiveness(self, expr: MatchExpr, subject_type: TypeInfo) -> None:
-        """Error if a match on an enum type does not cover all variants."""
-        from mapanare.ast_nodes import ConstructorPattern, IdentPattern, WildcardPattern
+        """Error if a match is non-exhaustive; warn on unreachable arms.
 
-        if subject_type.kind != TypeKind.ENUM or not subject_type.name:
+        Uses Maranget decision-tree construction to detect missing patterns
+        and unreachable arms. See docs/roadmap/v4/v4.34.0/DESIGN.md §8.
+        """
+        from mapanare.pattern_matching import (
+            PatternMatrix,
+            PatternRow,
+            build_decision_tree,
+            build_witness_for_switch,
+            display_witness,
+            find_unreachable_arms,
+            has_any_fail,
+        )
+
+        ctx = self._semantic_type_context(subject_type)
+        rows = [
+            PatternRow(patterns=[arm.pattern], action_idx=i) for i, arm in enumerate(expr.arms)
+        ]
+        matrix = PatternMatrix(rows=rows, type_contexts=[ctx])
+        tree = build_decision_tree(matrix)
+
+        # Check exhaustiveness
+        if has_any_fail(tree):
+            from mapanare.pattern_matching import DTSwitch
+
+            if isinstance(tree, DTSwitch):
+                witness = build_witness_for_switch(tree, ctx)
+                if witness is not None:
+                    wtext = display_witness(witness)
+                    self._error(
+                        f"non-exhaustive match: pattern `{wtext}` is not covered",
+                        expr,
+                    )
+                    return
+            # Fallback: generic message
+            self._error("non-exhaustive match expression", expr)
             return
 
-        # Look up the enum definition to get all variant names
-        sym = self.current_scope.lookup(subject_type.name)
-        if sym is None or sym.node is None or not isinstance(sym.node, EnumDef):
-            return
+        # Check for unreachable arms
+        unreachable = find_unreachable_arms(tree, len(expr.arms))
+        for arm_idx in sorted(unreachable):
+            self._warning(f"unreachable match arm (arm {arm_idx + 1})", expr.arms[arm_idx])
 
-        all_variants = {v.name for v in sym.node.variants}
+    def _semantic_type_context(self, ty: TypeInfo) -> object:
+        """Build a TypeContext from a semantic TypeInfo for exhaustiveness checking."""
+        from mapanare.pattern_matching import ConstructorInfo, TypeContext
 
-        # Check for wildcard patterns — if any arm has a wildcard, the match
-        # is trivially exhaustive
-        has_wildcard = False
-        covered_variants: set[str] = set()
-        for arm in expr.arms:
-            if isinstance(arm.pattern, WildcardPattern):
-                has_wildcard = True
-                break
-            if isinstance(arm.pattern, ConstructorPattern):
-                covered_variants.add(arm.pattern.name)
-            elif isinstance(arm.pattern, IdentPattern):
-                if arm.pattern.name in all_variants:
-                    covered_variants.add(arm.pattern.name)
-                else:
-                    # Non-variant ident is a catch-all binding (like _ but named)
-                    has_wildcard = True
-                    break
-
-        if has_wildcard:
-            return
-
-        missing = all_variants - covered_variants
-        if missing:
-            names = ", ".join(sorted(missing))
-            self._error(
-                f"Non-exhaustive match on '{subject_type.name}': " f"missing variant(s) {names}",
-                expr,
+        if ty.kind == TypeKind.OPTION:
+            some_sub = [self._semantic_type_context(ty.args[0])] if ty.args else []
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("Some", 1), ConstructorInfo("None", 0)],
+                sub_contexts={"Some": some_sub},
             )
+
+        if ty.kind == TypeKind.RESULT:
+            ok_sub = [self._semantic_type_context(ty.args[0])] if ty.args else []
+            err_sub = [self._semantic_type_context(ty.args[1])] if len(ty.args) >= 2 else []
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("Ok", 1), ConstructorInfo("Err", 1)],
+                sub_contexts={"Ok": ok_sub, "Err": err_sub},
+            )
+
+        if ty.kind == TypeKind.ENUM and ty.name:
+            sym = self.current_scope.lookup(ty.name)
+            if sym is None:
+                sym = self.global_scope.lookup(ty.name)
+            if sym is not None and sym.node is not None and isinstance(sym.node, EnumDef):
+                ctors: list[ConstructorInfo] = []
+                sub_ctxs: dict[str, list[TypeContext]] = {}
+                for variant in sym.node.variants:
+                    arity = len(variant.fields)
+                    ctors.append(ConstructorInfo(variant.name, arity))
+                    if arity > 0:
+                        field_types = [self._resolve_type_expr(f) for f in variant.fields]
+                        sub_ctxs[variant.name] = [
+                            self._semantic_type_context(ft) for ft in field_types
+                        ]
+                return TypeContext(is_closed=True, all_constructors=ctors, sub_contexts=sub_ctxs)
+
+        if ty.kind == TypeKind.BOOL:
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("true", 0), ConstructorInfo("false", 0)],
+            )
+
+        return TypeContext(is_closed=False)
 
     def _bind_pattern(self, pattern: object, subject_type: TypeInfo | None = None) -> None:
         """Bind names introduced by a pattern into the current scope."""
