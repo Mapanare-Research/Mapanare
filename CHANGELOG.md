@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.39.0] - 2026-04-12
+
+**LSP Completion — context-aware completions in four contexts.**
+Arc 2 release 3. The most-used LSP feature day-to-day.
+
+### Added
+
+- `mapanare/lsp/completion.py` — new module: `complete_import()`,
+  `complete_type()`, `complete_field_method()`, `complete_identifiers()`.
+  Four completion contexts: import paths, type annotations, field/method
+  after `.`, and fallback identifiers.
+- Builtin method tables for Option, Result, List, String types.
+- Context detection: import (after `import`), type (after `:`), field
+  (after `.`), fallback (Ctrl+Space).
+- Visibility-aware: internal symbols from other modules are excluded.
+- Scope-ranked: current module > public imports > stdlib builtins.
+- `tests/lsp/test_completion.py` — 13 tests covering all 4 contexts.
+
+### Changed
+
+- `mapanare/lsp/server.py` — `on_completion` handler now detects context
+  and delegates to workspace-aware completion before falling back to
+  within-file analysis.
+
 ## [4.38.0] - 2026-04-12
 
 **LSP Navigation — find-references + rename refactoring.**

@@ -410,9 +410,50 @@ def on_completion(
 
     line = params.position.line
     col = params.position.character
-    candidates = analysis.completions_at(line, col)
 
+    # v4.39.0: context-aware completion via workspace index
     items: list[lsp.CompletionItem] = []
+
+    if _workspace._by_name:
+        from mapanare.lsp.completion import (
+            complete_field_method,
+            complete_identifiers,
+            complete_import,
+            complete_type,
+        )
+
+        source = _sources.get(uri, "")
+        context = _detect_completion_context(source, line, col)
+        current_module = Path(urlparse(uri).path).stem if uri else ""
+
+        ws_candidates = []
+        if context == "import":
+            prefix = _extract_import_prefix(source, line, col)
+            ws_candidates = complete_import(prefix, _workspace)
+        elif context == "type":
+            ws_candidates = complete_type(_workspace)
+        elif context == "field":
+            receiver_type = analysis.receiver_type_at(line, col) if hasattr(analysis, "receiver_type_at") else ""
+            ws_candidates = complete_field_method(receiver_type or "", _workspace)
+        else:
+            ws_candidates = complete_identifiers(_workspace, current_module)
+
+        for c in ws_candidates:
+            kind = _map_completion_kind(c.kind)
+            item = lsp.CompletionItem(
+                label=c.label,
+                kind=kind,
+                detail=c.detail,
+                documentation=lsp.MarkupContent(kind=lsp.MarkupKind.Markdown, value=c.documentation) if c.documentation else None,
+                sort_text=c.sort_text or None,
+            )
+            if c.insert_text:
+                item.insert_text = c.insert_text
+                item.insert_text_format = lsp.InsertTextFormat.Snippet
+            items.append(item)
+
+    # Also include within-file completions from analysis (existing v0.5.0)
+    candidates = analysis.completions_at(line, col)
     for c in candidates:
         kind = _map_completion_kind(c.kind)
         items.append(
@@ -549,6 +590,46 @@ def on_formatting(
             new_text=formatted,
         )
     ]
+
+
+def _detect_completion_context(source: str, line: int, col: int) -> str:
+    """Detect the completion context from source text and cursor position.
+
+    Returns: "import", "type", "field", or "identifier" (fallback).
+    """
+    lines = source.split("\n")
+    if line >= len(lines):
+        return "identifier"
+    text = lines[line][:col]
+
+    # After "import " → import completion
+    stripped = text.lstrip()
+    if stripped.startswith("import ") or stripped.startswith("importar "):
+        return "import"
+
+    # After "." → field/method completion
+    if text.rstrip().endswith("."):
+        return "field"
+
+    # After ":" in type position (let x: |, fn foo(x: |), -> |)
+    # Simple heuristic: last non-space char before cursor is ':'
+    before = text.rstrip()
+    if before.endswith(":") or before.endswith("->"):
+        return "type"
+
+    return "identifier"
+
+
+def _extract_import_prefix(source: str, line: int, col: int) -> str:
+    """Extract the import path prefix being typed."""
+    lines = source.split("\n")
+    if line >= len(lines):
+        return ""
+    text = lines[line][:col]
+    for keyword in ("import ", "importar "):
+        if keyword in text:
+            return text.split(keyword, 1)[1].strip()
+    return ""
 
 
 def _map_completion_kind(kind: str) -> lsp.CompletionItemKind:

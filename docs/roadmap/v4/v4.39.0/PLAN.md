@@ -4,7 +4,7 @@
 > index from v4.37.0. Three completion contexts: after `import`,
 > in type position, and after `.` on a value.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No
 **Prerequisite:** v4.38.0
 **Delta review:** No
