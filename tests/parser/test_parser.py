@@ -622,7 +622,8 @@ class TestCalls:
     def test_index_expr(self) -> None:
         e = parse_expr("arr[0]")
         assert isinstance(e, IndexExpr)
-        assert isinstance(e.index, IntLiteral)
+        assert len(e.indices) == 1
+        assert isinstance(e.indices[0], IntLiteral)
 
     def test_chained_calls(self) -> None:
         e = parse_expr("a.b().c()")

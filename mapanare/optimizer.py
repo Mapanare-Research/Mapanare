@@ -380,7 +380,7 @@ class ConstantFolder:
 
         if isinstance(expr, IndexExpr):
             expr.object = self._fold_expr(expr.object)
-            expr.index = self._fold_expr(expr.index)
+            expr.indices = [self._fold_expr(idx) for idx in expr.indices]
             return expr
 
         if isinstance(expr, MethodCallExpr):
@@ -619,7 +619,8 @@ class DeadCodeEliminator:
             self._collect_used_names_expr(expr.value, names)
         elif isinstance(expr, IndexExpr):
             self._collect_used_names_expr(expr.object, names)
-            self._collect_used_names_expr(expr.index, names)
+            for idx in expr.indices:
+                self._collect_used_names_expr(idx, names)
         elif isinstance(expr, MethodCallExpr):
             self._collect_used_names_expr(expr.object, names)
             for a in expr.args:

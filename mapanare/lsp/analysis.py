@@ -678,7 +678,8 @@ class DocumentAnalysis:
             self._visit_expr(expr.object)
         elif isinstance(expr, IndexExpr):
             self._visit_expr(expr.object)
-            self._visit_expr(expr.index)
+            for idx in expr.indices:
+                self._visit_expr(idx)
         elif isinstance(expr, PipeExpr):
             self._visit_expr(expr.left)
             self._visit_expr(expr.right)

@@ -773,7 +773,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def index_expr(self, children: list[Any]) -> IndexExpr:
         items = _filter(children)
-        return IndexExpr(object=items[0], index=items[1], span=_span_from_children(children))
+        # items[0] is the object; items[1:] are index expressions
+        indices = [c for c in items[1:] if isinstance(c, Expr)]
+        return IndexExpr(object=items[0], indices=indices, span=_span_from_children(children))
 
     def error_prop(self, children: list[Any]) -> ErrorPropExpr:
         items = _filter(children)

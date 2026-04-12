@@ -203,10 +203,10 @@ class NamespaceAccessExpr(Expr):
 
 @dataclass
 class IndexExpr(Expr):
-    """Index expression: `arr[i]`."""
+    """Index expression: `arr[i]` or `tensor[i, j, k]` (v4.43.0 multi-index)."""
 
     object: Expr = field(default_factory=Expr)
-    index: Expr = field(default_factory=Expr)
+    indices: list[Expr] = field(default_factory=list)
 
 
 @dataclass

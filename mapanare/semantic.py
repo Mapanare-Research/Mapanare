@@ -530,7 +530,27 @@ class SemanticChecker:
             return UNKNOWN_TYPE
         if isinstance(expr, IndexExpr):
             obj_type = self._infer_expr(expr.object)
-            self._infer_expr(expr.index)
+            for idx in expr.indices:
+                self._infer_expr(idx)
+            n_idx = len(expr.indices)
+            # Tensor: require rank match (v4.43.0)
+            if obj_type.kind == TypeKind.TENSOR:
+                rank = len(obj_type.tensor_shape) if obj_type.tensor_shape else None
+                if rank is not None and n_idx != rank:
+                    self._error(
+                        f"tensor index rank mismatch: got {n_idx} indices "
+                        f"for rank-{rank} tensor",
+                        expr.span,
+                    )
+                elem = obj_type.args[0] if obj_type.args else FLOAT_TYPE
+                return elem
+            # List/Map: require single index
+            if n_idx > 1:
+                self._error(
+                    f"multi-index not supported for {obj_type.kind.name}; "
+                    f"use single index",
+                    expr.span,
+                )
             if obj_type.kind == TypeKind.LIST and obj_type.args:
                 return obj_type.args[0]
             if obj_type.kind == TypeKind.MAP and len(obj_type.args) >= 2:

@@ -206,7 +206,7 @@ class TestASTEmitterMapIndex:
                 ExprStmt(
                     expr=IndexExpr(
                         object=Identifier(name="m"),
-                        index=IntLiteral(value=1),
+                        indices=[IntLiteral(value=1)],
                     )
                 ),
             ]

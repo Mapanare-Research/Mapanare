@@ -252,7 +252,8 @@ class Linter:
             self._collect_names_expr(expr.object)
         elif isinstance(expr, IndexExpr):
             self._collect_names_expr(expr.object)
-            self._collect_names_expr(expr.index)
+            for idx in expr.indices:
+                self._collect_names_expr(idx)
         elif isinstance(expr, PipeExpr):
             self._collect_names_expr(expr.left)
             self._collect_names_expr(expr.right)
@@ -340,7 +341,8 @@ class Linter:
         elif isinstance(expr.target, IndexExpr):
             # arr[i] = val — mark arr as mutated
             self._collect_names_expr(expr.target.object)
-            self._collect_names_expr(expr.target.index)
+            for idx in expr.target.indices:
+                self._collect_names_expr(idx)
             if isinstance(expr.target.object, Identifier):
                 info = self._scope.lookup(expr.target.object.name)
                 if info is not None:

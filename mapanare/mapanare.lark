@@ -266,7 +266,7 @@ expr_stmt: expr
              | postfix_expr LPAREN arg_list? RPAREN -> call_expr
              | postfix_expr DOT NAME LPAREN arg_list? RPAREN -> method_call_expr
              | postfix_expr DOT NAME -> field_access
-             | postfix_expr LBRACKET expr RBRACKET -> index_expr
+             | postfix_expr LBRACKET expr (COMMA expr)* RBRACKET -> index_expr
              | postfix_expr QUESTION -> error_prop
 
 arg_list: expr (COMMA expr)* COMMA?

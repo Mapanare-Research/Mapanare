@@ -2387,12 +2387,19 @@ class MIRLowerer:
         return dest
 
     def _lower_index(self, expr: IndexExpr) -> Value:
-        """Lower index access: `arr[i]`."""
+        """Lower index access: `arr[i]` or `tensor[i, j]` (v4.43.0)."""
         obj = self._lower_expr(expr.object)
-        index = self._lower_expr(expr.index)
-        # Infer element type from the container's type args
-        elem_ty = mir_unknown()
+        indices = [self._lower_expr(idx) for idx in expr.indices]
+
         obj_kind = obj.ty.kind
+
+        # Tensor: emit Call to __mn_tensor_get_*_nd (v4.43.0)
+        if obj_kind == TypeKind.TENSOR:
+            return self._lower_tensor_get(obj, indices)
+
+        # List/Map/String: single-index via IndexGet
+        index = indices[0] if indices else self._make_value()
+        elem_ty = mir_unknown()
         if obj_kind == TypeKind.LIST and obj.ty.type_info.args:
             elem_ty = MIRType(obj.ty.type_info.args[0])
         elif obj_kind == TypeKind.MAP and len(obj.ty.type_info.args) >= 2:
@@ -2402,6 +2409,44 @@ class MIRLowerer:
         dest = self._make_value(ty=elem_ty)
         self._emit(IndexGet(dest=dest, obj=obj, index=index))
         return dest
+
+    def _lower_tensor_get(self, obj: Value, indices: list[Value]) -> Value:
+        """Lower tensor[i, j, ...] to __mn_tensor_get_*_nd call (v4.43.0)."""
+        elem_ti = obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        elem_ty = MIRType(elem_ti)
+        rank = len(indices)
+
+        # Determine which runtime function to call
+        if elem_ti.kind == TypeKind.INT:
+            fn_name = "__mn_tensor_get_i64_nd"
+        else:
+            fn_name = "__mn_tensor_get_f64_nd"
+
+        # Build index array Value — emit as consecutive stores
+        dest = self._make_value(ty=elem_ty, prefix="tget")
+        rank_val = self._make_value(ty=mir_int(), prefix="trank")
+        self._emit(Const(dest=rank_val, ty=mir_int(), value=str(rank)))
+        self._emit(
+            Call(dest=dest, fn_name=fn_name, args=[obj, rank_val] + indices)
+        )
+        return dest
+
+    def _lower_tensor_set(self, obj: Value, indices: list[Value], val: Value) -> None:
+        """Lower tensor[i, j] = val to __mn_tensor_set_*_nd call (v4.43.0)."""
+        elem_ti = obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        rank = len(indices)
+
+        if elem_ti.kind == TypeKind.INT:
+            fn_name = "__mn_tensor_set_i64_nd"
+        else:
+            fn_name = "__mn_tensor_set_f64_nd"
+
+        rank_val = self._make_value(ty=mir_int(), prefix="trank")
+        self._emit(Const(dest=rank_val, ty=mir_int(), value=str(rank)))
+        void_dest = self._make_value(ty=mir_void(), prefix="tset")
+        self._emit(
+            Call(dest=void_dest, fn_name=fn_name, args=[obj, rank_val] + indices + [val])
+        )
 
     def _lower_pipe(self, expr: PipeExpr) -> Value:
         """Lower pipe expression: `a |> f`."""
@@ -2796,7 +2841,12 @@ class MIRLowerer:
 
         if isinstance(expr.target, IndexExpr):
             obj = self._lower_expr(expr.target.object)
-            index = self._lower_expr(expr.target.index)
+            indices = [self._lower_expr(idx) for idx in expr.target.indices]
+            # Tensor assignment: emit Call to __mn_tensor_set_*_nd (v4.43.0)
+            if obj.ty.kind == TypeKind.TENSOR:
+                self._lower_tensor_set(obj, indices, val)
+                return val
+            index = indices[0] if indices else self._make_value()
             self._emit(IndexSet(obj=obj, index=index, val=val))
             # Write back: if the list came from a struct field, the IndexSet
             # only modifies a local copy.  Emit FieldSet to persist the change.
