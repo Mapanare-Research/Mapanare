@@ -1,0 +1,23 @@
+// Golden test: nested pattern matching with exhaustiveness
+// Exercises Result<T, E> patterns in match (2-level decision tree).
+
+fn classify(x: Result<Int, String>) -> String {
+    match x {
+        Ok(v) => { return "ok: " + str(v) },
+        Err(e) => { return "err: " + e }
+    }
+}
+
+fn try_divide(a: Int, b: Int) -> Result<Int, String> {
+    if b == 0 {
+        return Err("zero")
+    }
+    return Ok(a / b)
+}
+
+fn main() {
+    print(classify(try_divide(10, 2)))
+    print(classify(try_divide(10, 0)))
+    print(classify(Ok(42)))
+    print(classify(Err("fail")))
+}
