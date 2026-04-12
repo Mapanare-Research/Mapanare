@@ -1,0 +1,36 @@
+// ai/structured.mn — Type-safe structured output from LLMs (v4.48.0)
+//
+// The core extraction logic lives in ai/llm.mn (extract_with_schema,
+// extract_text, ExtractError). This module provides the user-facing
+// documentation and usage patterns.
+//
+// Usage:
+//   import ai::llm
+//
+//   struct Address {
+//       street: String,
+//       city: String,
+//       state: String,
+//       zip: String,
+//   }
+//
+//   fn main() {
+//       let config = ollama("llama3.2")
+//       let schema = __struct_meta::<Address>()
+//       let result = extract_text(config, schema, "123 Main St, Springfield, IL 62701")
+//       match result {
+//           Ok(json) => print(json),
+//           Err(e) => print(extract_error_message(e))
+//       }
+//   }
+//
+// The __struct_meta::<T>() builtin generates a JSON schema string at compile
+// time from the struct definition. No runtime reflection.
+//
+// Retry: extract_with_schema() retries up to max_retries times on malformed
+// JSON. Set max_retries=0 for single attempt.
+//
+// Backend-native: OpenAI supports response_format: {type: "json_object"}
+// natively. The extraction prompt approach works across all backends.
+
+usa ai::llm
