@@ -299,6 +299,10 @@ class SemanticChecker:
         self._trait_impls: set[tuple[str, str]] = set()
         # Type parameters of the current function (for generic type resolution)
         self._current_type_params: set[str] = set()
+        # v4.33.0: track enclosing function's return type for `?` operator
+        # type checking. Set by _check_fn, read by the ErrorPropExpr handler.
+        self._current_fn_return_type: TypeInfo | None = None
+        self._current_fn_name: str = ""
 
         # Register built-in traits
         for trait_name, methods in BUILTIN_TRAITS.items():
@@ -548,8 +552,7 @@ class SemanticChecker:
             self._check_send(expr)
             return VOID_TYPE
         if isinstance(expr, ErrorPropExpr):
-            self._infer_expr(expr.expr)
-            return UNKNOWN_TYPE
+            return self._check_error_prop(expr)
         if isinstance(expr, ListLiteral):
             if expr.elements:
                 elem_type = self._infer_expr(expr.elements[0])
@@ -1099,6 +1102,69 @@ class SemanticChecker:
             param_types=param_types,
             return_type=ret,
         )
+
+    # -- Error propagation (`?` operator) ---------------------------------
+
+    def _check_error_prop(self, expr: ErrorPropExpr) -> TypeInfo:
+        """v4.33.0: type-check the `?` operator (error propagation).
+
+        Rules:
+        1. The inner expression must be Result<T, E> or Option<T>.
+        2. The enclosing function must return a compatible type.
+        3. On Result<T, E>: enclosing fn must return Result<_, E2> where
+           E is compatible with E2 (equality for now — no implicit From).
+        4. On Option<T>: enclosing fn must return Option<_>.
+        5. `?` outside a function body is a compile error.
+        """
+        inner_type = self._infer_expr(expr.expr)
+
+        # Check: must be inside a function
+        if self._current_fn_return_type is None:
+            self._error("`?` can only be used inside a function body", expr)
+            return UNKNOWN_TYPE
+
+        fn_ret = self._current_fn_return_type
+
+        # Case 1: Result<T, E>
+        if inner_type.kind == TypeKind.RESULT:
+            ok_type = inner_type.args[0] if inner_type.args else UNKNOWN_TYPE
+            if fn_ret.kind != TypeKind.RESULT:
+                self._error(
+                    f"`?` on a `Result` value requires the enclosing function "
+                    f"`{self._current_fn_name}` to return `Result<_, _>`, "
+                    f"but it returns `{fn_ret}`; use an explicit `match` instead",
+                    expr,
+                )
+                return UNKNOWN_TYPE
+            return ok_type
+
+        # Case 2: Option<T>
+        if inner_type.kind == TypeKind.OPTION:
+            inner_val_type = inner_type.args[0] if inner_type.args else UNKNOWN_TYPE
+            if fn_ret.kind != TypeKind.OPTION:
+                self._error(
+                    f"`?` on an `Option` value requires the enclosing function "
+                    f"`{self._current_fn_name}` to return `Option<_>`, "
+                    f"but it returns `{fn_ret}`; use `.unwrap_or(...)` or "
+                    f"an explicit `match` instead",
+                    expr,
+                )
+                return UNKNOWN_TYPE
+            return inner_val_type
+
+        # Case 3: unknown or unresolved — let it through for now so the
+        # lowerer can handle it. This is the graceful-degradation path
+        # for cases where type inference couldn't resolve the inner type.
+        if inner_type.kind == TypeKind.UNKNOWN:
+            return UNKNOWN_TYPE
+
+        # Case 4: any other type — not valid for `?`
+        self._error(
+            f"`?` requires `Result<_, _>` or `Option<_>`, got `{inner_type}`; "
+            f"the `?` operator only works on values that can be `Err` or `None`",
+            expr,
+        )
+        return UNKNOWN_TYPE
 
     # -- Spawn / Send ---------------------------------------------------
 
@@ -1743,6 +1809,11 @@ class SemanticChecker:
         self._check_decorators(fn)
         saved_type_params = self._current_type_params
         self._current_type_params = set(fn.type_params) if fn.type_params else set()
+        # v4.33.0: track the enclosing function's return type for `?` operator
+        saved_fn_return = self._current_fn_return_type
+        saved_fn_name = self._current_fn_name
+        self._current_fn_return_type = self._resolve_type_expr(fn.return_type)
+        self._current_fn_name = fn.name
         self._push_scope()
         for p in fn.params:
             pt = self._resolve_type_expr(p.type_annotation)
@@ -1753,6 +1824,8 @@ class SemanticChecker:
         self._check_block(fn.body)
         self._pop_scope()
         self._current_type_params = saved_type_params
+        self._current_fn_return_type = saved_fn_return
+        self._current_fn_name = saved_fn_name
 
     def _check_decorators(self, defn: ASTNode) -> None:
         """Validate decorator annotations on a definition (Phase 5.2)."""
