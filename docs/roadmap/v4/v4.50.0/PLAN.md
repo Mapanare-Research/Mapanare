@@ -5,7 +5,7 @@
 > a streaming chat agent, a RAG agent. Plus the full cookbook chapter
 > walking through each.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No
 **Prerequisite:** v4.49.0
 **Delta review:** No

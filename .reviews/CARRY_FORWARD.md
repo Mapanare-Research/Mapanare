@@ -116,7 +116,7 @@ items that were explicitly deferred out of the recovery arc.
 | P2 | `pattern_matching.py` zero dedicated unit tests | v4.36.0 (Boa M1, Anaconda) | MEDIUM | 1 | OPEN | v4.37.0 — add unit tests for specialize, default_matrix, expand_or_patterns |
 | P3 | Self-hosted guard fall-through divergence (jump-to-next vs decision-tree rebuild) | v4.36.0 (Cobra, Rattler) | MEDIUM | 1 | OPEN | v4.37.0 — latent for current test corpus but wrong for overlapping variant guards |
 | P4 | SPEC §5.6 "compatible types" wording vs name-set-only implementation | v4.36.0 (Coral) | MEDIUM | 1 | **CLOSED** | v4.42.0 — SPEC §5.6 corrected at `docs/SPEC.md:906` |
-| P5 | `examples/` showcase gap (3rd cycle) | v4.31.0 (Coral) | MEDIUM | **3** | OPEN | v4.37.0+ — needs agent/signal/stream/guard/or-pattern demos |
+| P5 | `examples/` showcase gap (3rd cycle) | v4.31.0 (Coral) | MEDIUM | **3** | **CLOSED** | v4.50.0 — 4 AI demos (basic_chat, basic_stream, chat_agent, rag_agent) + cookbook AI chapter + 8 sample docs |
 | P6 | Unreachable-arm warning path zero test coverage | v4.36.0 (Boa M2) | MEDIUM | 1 | OPEN | v4.37.0 — add test_unreachable_arm_warning |
 
 ## Items resolved in v4.36.0

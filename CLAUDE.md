@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.49.0** (shipped) — Arc 4 release 3: stdlib/ai/embedding.mn (vector embeddings, cosine similarity, vector store) + stdlib/ai/rag.mn (chunking, context building, prompt augmentation).
-- **v4.50.0** (next) — Arc 4 release 4: end-to-end demos, cookbook AI chapter, README update.
+- **v4.50.0** (shipped) — Arc 4 release 4: AI end-to-end demos (chat_agent, rag_agent), cookbook AI chapter (6-step walkthrough), README Hello AI snippet. P5 examples/ carry-forward CLOSED.
+- **v4.51.0** (next) — Arc 4 panel release. Zero new features.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 
