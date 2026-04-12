@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.36.0] - 2026-04-12
+
+**Arc 1 Panel Release — zero new features.**
+First 5-minor cadence panel since v4.31.0. Grades the Arc 1 work
+(v4.32.0-v4.35.0: `?` operator, decision-tree match, guards, or-patterns).
+
+### Fixed
+
+- `runtime/native/mapanare_gpu.c`: `cuda_matmul` upload/download return
+  values now checked; error path frees all GPU buffers. Closes LOW
+  carry-forward L7 (v3.47.0 #3).
+
+### Changed
+
+- `.reviews/CARRY_FORWARD.md`: A10 added (self-hosted bounded-for
+  sentinels, 442 sites, tracked to v4.37.0+). L7 closed.
+- `docs/SPEC.md` §5.5-5.8: guards, or-patterns, `?` operator documented.
+- `docs/cookbook.md`: three new cookbook sections (guards, or-patterns, `?`).
+
+### Panel
+
+- Full 7-reviewer panel: `.reviews/v4.36.0/README.md`
+- Pre-panel audit: 18/18 SESSION_REPORT claims verified (100% pass rate)
+- Ledger audit: 55/67 items CLOSED, 12 OPEN (8 DEFERRED to v5.0.0+)
+
 ## [4.35.0] - 2026-04-12
 
 **Match Guards + Or-Patterns — last growth release of Arc 1.**

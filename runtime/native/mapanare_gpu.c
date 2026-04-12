@@ -1753,13 +1753,25 @@ static mapanare_tensor_t *cuda_matmul(
         return NULL;
     }
 
-    mapanare_gpu_buffer_upload(d_a, a->data, a_bytes);
-    mapanare_gpu_buffer_upload(d_b, b->data, b_bytes);
+    /* v4.36.0: check upload return codes (LOW carry-forward, cuda_matmul). */
+    if (mapanare_gpu_buffer_upload(d_a, a->data, a_bytes) != 0 ||
+        mapanare_gpu_buffer_upload(d_b, b->data, b_bytes) != 0) {
+        mapanare_gpu_buffer_free(d_a);
+        mapanare_gpu_buffer_free(d_b);
+        mapanare_gpu_buffer_free(d_out);
+        return NULL;
+    }
 
     /* Zero the output buffer on device */
     void *zeros = calloc(1, out_bytes);
     if (zeros) {
-        mapanare_gpu_buffer_upload(d_out, zeros, out_bytes);
+        if (mapanare_gpu_buffer_upload(d_out, zeros, out_bytes) != 0) {
+            free(zeros);
+            mapanare_gpu_buffer_free(d_a);
+            mapanare_gpu_buffer_free(d_b);
+            mapanare_gpu_buffer_free(d_out);
+            return NULL;
+        }
         free(zeros);
     }
 
@@ -1796,7 +1808,10 @@ static mapanare_tensor_t *cuda_matmul(
     int64_t out_shape[2] = { m, n };
     mapanare_tensor_t *result = mapanare_tensor_alloc(2, out_shape, sizeof(double));
     if (result) {
-        mapanare_gpu_buffer_download(result->data, d_out, out_bytes);
+        if (mapanare_gpu_buffer_download(result->data, d_out, out_bytes) != 0) {
+            mapanare_tensor_free(result);
+            result = NULL;
+        }
     }
 
     mapanare_cuda_kernel_free(kernel);

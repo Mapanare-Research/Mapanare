@@ -110,6 +110,20 @@ items that were explicitly deferred out of the recovery arc.
 | A9 | `emit_c.mn` (770 lines) references non-existent MIR types | v4.2.0 | LOW | **5** | OPEN | v5.0.0 — delete or rewrite |
 | 49 | Drop-glue skip-struct-ret early return at `emit_llvm_text.py:1097-1099` (8th cycle, Viper Issue #14 at v4.26.0, not previously in ledger) | v4.18.0 era | LOW | **8** | OPEN | v4.32.0 Phase 2.2 (opportunistic) or v4.33.0+. The early return short-circuits `_extract_ret_ptrs` before the per-type drop-glue helpers can consult `ret_ptr_fields`. Phase 2.2 is a pure-refactor extraction that may naturally eliminate this branch; if it does, mark CLOSED at PR-merge. If it doesn't, carries to v4.33.0. Viper V1. |
 | 50 | Agent `mapanare_agent_destroy` drops in-flight messages without freeing them (`runtime/native/mapanare_runtime.c:686-691`, 2nd cycle, Viper M5 at v4.26.0, not previously in ledger) | v4.26.0 | LOW | **2** | OPEN | v4.33.0+. The destroy path walks the inbox ring to count pending messages but does not free their payloads. 20-line runtime change: iterate the ring, call `__mn_free` on each payload before releasing the agent handle. Viper M5. |
+| A10 | Self-hosted bounded-for sentinels (`for _ in 0..N` as pseudo-while) | v4.26.0 (Cobra #15) | LOW | **10** | OPEN | v4.37.0+ if grammar adds `loop { }`. Not a bug — grammar gap. 442 sites across 8 self-hosted modules. Accepted with comments in v4.36.0 Phase 1.2. |
+| L7 | `cuda_matmul` upload/download rc check | v3.47.0 #3 | LOW | **3** | **CLOSED** | v4.36.0 Phase 1.1 — `mapanare_gpu_buffer_upload` / `_download` return values checked at `runtime/native/mapanare_gpu.c:1756` |
+| P1 | `__mn_list_get` readonly+willreturn but calls abort — miscompilation at -O2 | v4.36.0 (Viper V1) | MEDIUM | 1 | OPEN | v4.37.0 — one-line fix: remove `readonly` or `willreturn` from attrs |
+| P2 | `pattern_matching.py` zero dedicated unit tests | v4.36.0 (Boa M1, Anaconda) | MEDIUM | 1 | OPEN | v4.37.0 — add unit tests for specialize, default_matrix, expand_or_patterns |
+| P3 | Self-hosted guard fall-through divergence (jump-to-next vs decision-tree rebuild) | v4.36.0 (Cobra, Rattler) | MEDIUM | 1 | OPEN | v4.37.0 — latent for current test corpus but wrong for overlapping variant guards |
+| P4 | SPEC §5.6 "compatible types" wording vs name-set-only implementation | v4.36.0 (Coral) | MEDIUM | 1 | OPEN | v4.37.0 — SPEC text correction |
+| P5 | `examples/` showcase gap (3rd cycle) | v4.31.0 (Coral) | MEDIUM | **3** | OPEN | v4.37.0+ — needs agent/signal/stream/guard/or-pattern demos |
+| P6 | Unreachable-arm warning path zero test coverage | v4.36.0 (Boa M2) | MEDIUM | 1 | OPEN | v4.37.0 — add test_unreachable_arm_warning |
+
+## Items resolved in v4.36.0
+
+| # | Item | First reported | Severity | Resolved in | Evidence |
+|---|------|----------------|----------|-------------|----------|
+| L7 | `cuda_matmul` upload/download rc check | v3.47.0 #3 | LOW | v4.36.0 | Return values checked at `runtime/native/mapanare_gpu.c:1756` |
 
 ## Items resolved in v4.34.0
 

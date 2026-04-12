@@ -8,20 +8,22 @@
 
 ## Version Configuration
 
-**TARGET VERSION:** `v4.31.0`
+**TARGET VERSION:** `v4.36.0`
 
-> **This is the arc-end panel.** Mapanare v4.27.0–v4.31.0 is a
-> five-release recovery arc that closes out the v4.18.0–v4.26.0 hollow-
-> features regression the v4.26.0 panel flagged. v4.31.0 is the
-> terminator: if this panel returns aggregate ≥9.0 with zero NEEDS WORK
-> verdicts, the recovery arc is complete and the project resumes
-> normal feature work. If not, the arc extends into v4.32.0 with the
-> items this panel surfaces.
+> **This is the Arc 1 cadence panel.** Mapanare v4.32.0–v4.36.0 is
+> Arc 1 (error handling + pattern matching), the first post-recovery
+> arc. v4.33.0 shipped the `?` operator, v4.34.0 the Maranget
+> decision-tree rewrite (closing A6), v4.35.0 match guards +
+> or-patterns. v4.36.0 is the 5-minor cadence panel: zero new
+> features, full 7-reviewer audit. If this panel returns aggregate
+> ≥9.0 with zero NEEDS WORK verdicts, Arc 1 closes and v4.37.0
+> opens Arc 2 (LSP maturity). If not, v4.37.0 becomes a recovery
+> release and Arc 2 slides.
 
 Set the review output directory based on this version:
 
 ```
-.reviews/v4.31.0/
+.reviews/v4.36.0/
   README.md              # Summary index with verdict table and action items
   01-viper.md            # Rust reviewer
   02-boa.md              # Python reviewer
@@ -37,17 +39,16 @@ Set the review output directory based on this version:
 
 Before starting, each reviewer MUST read:
 
-1. `.reviews/v4.26.0/README.md` — the arc-starting panel. All carry-
-   forwards and all v4.26.0 HIGH/CRITICAL items must be
-   cross-referenced against this release.
+1. `.reviews/v4.31.0/README.md` — the previous panel (recovery arc close, 9.343/10).
+   All carry-forwards and action items from v4.31.0 must be cross-referenced.
 2. `.reviews/CARRY_FORWARD.md` — the canonical carry-forward queue.
-   Shows which v4.26.0 items the arc has closed and where.
+   Shows which items Arc 1 has closed and where.
 3. `.reviews/REVIEW_CADENCE.md` — the cadence policy. Every reviewer
    should flag cadence-breaking scenarios they see in their lens.
-4. Every `docs/roadmap/v4/v4.2{7,8,9}.0/SESSION_REPORT.md` and
-   `docs/roadmap/v4/v4.3{0,1}.0/SESSION_REPORT.md` — the session
-   reports are the lead's claims about what each recovery release
-   closed. The panel's job is to verify those claims against the code.
+4. Every `docs/roadmap/v4/v4.3{2,3,4,5}.0/SESSION_REPORT.md` — the session
+   reports are the lead's claims about what each Arc 1 release shipped.
+   The panel's job is to verify those claims against the code.
+5. `.reviews/v4.36.0/PRE_PANEL_AUDIT.md` — the lead's own fact-check (18/18 claims PASS).
 
 Reviewers should note in their review whether previous-panel issues
 were **Fixed**, **Regressed**, **Still open**, or **Deferred with

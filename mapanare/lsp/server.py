@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
 from typing import Optional
+from urllib.parse import unquote, urlparse
 
 from lsprotocol import types as lsp
 from pygls.lsp.server import LanguageServer
@@ -14,6 +16,7 @@ from mapanare.lsp.analysis import (
     analyze_document,
     invalidate_document,
 )
+from mapanare.lsp.workspace import WorkspaceIndex
 
 logger = logging.getLogger("mapanare-lsp")
 
@@ -25,6 +28,23 @@ _documents: dict[str, DocumentAnalysis] = {}
 _sources: dict[str, str] = {}
 # Diagnostics with fix info: uri -> list of (lsp.Diagnostic, LspDiagnostic) pairs
 _fixable_diagnostics: dict[str, list[tuple[lsp.Diagnostic, object]]] = {}
+# v4.37.0: workspace-wide symbol index for cross-module go-to-def
+_workspace = WorkspaceIndex()
+
+
+def _uri_to_path(uri: str) -> Optional[Path]:
+    """Convert a file URI to a Path, or None if not a file URI."""
+    parsed = urlparse(uri)
+    if parsed.scheme == "file":
+        return Path(unquote(parsed.path))
+    return None
+
+
+def _rebuild_workspace_file(uri: str, source: str) -> None:
+    """Incrementally update the workspace index for a saved file."""
+    path = _uri_to_path(uri)
+    if path and path.suffix == ".mn":
+        _workspace.rebuild_file(path, source=source)
 
 
 def _analyze_and_publish(uri: str, source: str) -> None:
@@ -83,6 +103,19 @@ def _analyze_and_publish(uri: str, source: str) -> None:
 
 @server.feature(lsp.INITIALIZE)
 def on_initialize(params: lsp.InitializeParams) -> lsp.InitializeResult:
+    # v4.37.0: scan workspace root to build cross-module symbol index
+    if params.root_uri:
+        parsed = urlparse(params.root_uri)
+        root = Path(unquote(parsed.path))
+        if root.is_dir():
+            logger.info("Scanning workspace root: %s", root)
+            _workspace.scan_root(root)
+            logger.info("Indexed %d files, %d symbols", len(_workspace.files), len(_workspace._by_name))
+    elif params.root_path:
+        root = Path(params.root_path)
+        if root.is_dir():
+            _workspace.scan_root(root)
+
     return lsp.InitializeResult(
         capabilities=lsp.ServerCapabilities(
             text_document_sync=lsp.TextDocumentSyncOptions(
@@ -131,6 +164,8 @@ def on_save(params: lsp.DidSaveTextDocumentParams) -> None:
     uri = params.text_document.uri
     if params.text:
         _analyze_and_publish(uri, params.text)
+        # v4.37.0: incrementally update workspace index on save
+        _rebuild_workspace_file(uri, params.text)
 
 
 @server.feature(lsp.TEXT_DOCUMENT_DID_CLOSE)
@@ -180,6 +215,8 @@ def on_definition(
 
     line = params.position.line
     col = params.position.character
+
+    # Try within-file resolution first (existing v0.5.0 behavior)
     loc = analysis.definition_at(line, col)
     if loc:
         return lsp.Location(
@@ -189,6 +226,25 @@ def on_definition(
                 end=lsp.Position(line=loc.end_line, character=loc.end_column),
             ),
         )
+
+    # v4.37.0: cross-module resolution via workspace index
+    symbol_name = analysis.symbol_name_at(line, col)
+    if symbol_name and _workspace._by_name:
+        matches = _workspace.lookup_by_name(symbol_name)
+        if matches:
+            sym = matches[0]
+            sym_uri = sym.path.as_uri() if hasattr(sym.path, "as_uri") else f"file://{sym.path}"
+            span = sym.span
+            return lsp.Location(
+                uri=sym_uri,
+                range=lsp.Range(
+                    start=lsp.Position(line=max(0, span.line - 1), character=max(0, span.column - 1)),
+                    end=lsp.Position(
+                        line=max(0, (span.end_line or span.line) - 1),
+                        character=max(0, (span.end_column or span.column) - 1),
+                    ),
+                ),
+            )
     return None
 
 

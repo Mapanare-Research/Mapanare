@@ -871,7 +871,43 @@ The compiler checks that match expressions are exhaustive:
 
 A missing arm is a compile-time error.
 
-### 5.5 Match as Expression
+### 5.5 Match Guards
+
+A match arm can have an optional `if` guard between the pattern and `=>`:
+
+<!-- pseudo -->
+```mn
+match n {
+    x if x < 0 => "negative",
+    0 => "zero",
+    x if x > 0 => "positive",
+    _ => "unreachable"
+}
+```
+
+The guard expression must evaluate to `Bool`. If the guard is `false`, the match falls through to the next arm. Guards can reference names bound by the pattern (e.g., `Some(x) if x > 0`).
+
+Guards do not affect exhaustiveness checking: a guarded arm's pattern counts toward coverage regardless of the guard's truth value.
+
+### 5.6 Or-Patterns
+
+A pattern can be a disjunction of alternatives separated by `|`:
+
+<!-- pseudo -->
+```mn
+match token {
+    Plus | Minus => "additive",
+    Star | Slash | Mod => "multiplicative",
+    Eof => "end",
+    _ => "other"
+}
+```
+
+All alternatives in an or-pattern must bind the same set of variable names with compatible types. An or-pattern expands coverage: `A | B` covers both `A` and `B`.
+
+Or-patterns can be combined with guards: `A | B if cond => body`. The guard applies to the whole arm (all alternatives), not to individual alternatives.
+
+### 5.7 Match as Expression
 
 When all arms produce a value, `match` is an expression:
 
@@ -882,6 +918,21 @@ let name = match status {
     Err(_) => "unknown",
 }
 ```
+
+### 5.8 The `?` Operator (Error Propagation)
+
+The `?` operator propagates errors from `Result<T, E>` and unwraps `Option<T>`:
+
+<!-- pseudo -->
+```mn
+fn parse_config(path: String) -> Result<Config, String> {
+    let text = read_file(path)?
+    let config = parse(text)?
+    return Ok(config)
+}
+```
+
+When applied to a `Result`, `?` returns the `Ok` value or early-returns the `Err`. When applied to an `Option`, `?` returns the `Some` value or early-returns `None`. The enclosing function must return a compatible `Result` or `Option` type.
 
 ---
 

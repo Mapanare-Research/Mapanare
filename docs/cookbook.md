@@ -653,6 +653,46 @@ If a task can run independently, wrap it in an agent. Agents handle concurrency,
 
 When multiple values depend on a source, use signals instead of manual update calls.
 
+### Match Guards for Conditional Patterns
+
+Use `if` guards to add conditions to match arms:
+
+```mn
+fn classify(n: Int) -> String {
+    match n {
+        x if x < 0 => "negative",
+        0 => "zero",
+        x if x > 0 && x < 10 => "small",
+        x if x >= 10 => "large",
+        _ => "other"
+    }
+}
+```
+
+### Or-Patterns for Variant Groups
+
+Use `|` to group patterns that share the same action:
+
+```mn
+match token {
+    Plus | Minus => "additive",
+    Star | Slash | Mod => "multiplicative",
+    _ => "other"
+}
+```
+
+### The `?` Operator for Error Propagation
+
+Use `?` to propagate errors concisely instead of nested match expressions:
+
+```mn
+fn load_config(path: String) -> Result<Config, String> {
+    let text = read_file(path)?
+    let parsed = parse_json(text)?
+    return Ok(parsed)
+}
+```
+
 ### Leverage the Pipe Operator
 
 The `|>` operator makes data flow read left-to-right:

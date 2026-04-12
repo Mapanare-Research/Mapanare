@@ -6,7 +6,7 @@
 > release where the work from v4.32.0–v4.35.0 gets polished and the
 > external panel runs against the tagged artifact.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No
 **Prerequisite:** v4.35.0 (match guards + or-patterns, fixed-point still 0)
 **Delta review:** No (zero new syntax)
