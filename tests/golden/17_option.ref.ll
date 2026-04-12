@@ -3,11 +3,14 @@ source_filename = "17_option"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-@.str.0 = private constant [4 x i8] c"none", align 2
-@.str.1 = private constant [4 x i8] c"none", align 2
+@.str.0 = private constant [4 x i8] c"none", align 8
+@.str.1 = private constant [4 x i8] c"none", align 8
 
-declare {ptr, i64} @__mn_str_from_int(i64)
+declare {ptr, i64} @__mn_str_from_int(i64) nounwind willreturn
 declare void @__mn_str_println({ptr, i64})
+declare void @__mn_str_free({ptr, i64}) nounwind willreturn
+declare void @free(ptr) nounwind willreturn
+declare void @__mn_intern_destroy()
 
 define internal {i1, i64} @find_positive(i64 %x) {
 pre_entry:
@@ -71,24 +74,28 @@ pre_entry:
   store i64 0, ptr %tag12.a.21
   %v3.a.25 = alloca i64, align 8
   store i64 0, ptr %v3.a.25
-  %t4.a.28 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t4.a.28
-  %t5.a.30 = alloca i1, align 8
-  store i1 0, ptr %t5.a.30
-  %t6.a.34 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t6.a.34
-  %t7.a.36 = alloca i1, align 8
-  store i1 0, ptr %t7.a.36
-  %v13.a.39 = alloca i64, align 8
-  store i64 0, ptr %v13.a.39
-  %t14.a.42 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t14.a.42
-  %t15.a.44 = alloca i1, align 8
-  store i1 0, ptr %t15.a.44
-  %t16.a.48 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t16.a.48
-  %t17.a.50 = alloca i1, align 8
-  store i1 0, ptr %t17.a.50
+  %str_track.28 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %str_track.28
+  %t4.a.29 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t4.a.29
+  %t5.a.31 = alloca i1, align 8
+  store i1 0, ptr %t5.a.31
+  %t6.a.35 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t6.a.35
+  %t7.a.37 = alloca i1, align 8
+  store i1 0, ptr %t7.a.37
+  %v13.a.44 = alloca i64, align 8
+  store i64 0, ptr %v13.a.44
+  %str_track.47 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %str_track.47
+  %t14.a.48 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t14.a.48
+  %t15.a.50 = alloca i1, align 8
+  store i1 0, ptr %t15.a.50
+  %t16.a.54 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t16.a.54
+  %t17.a.56 = alloca i1, align 8
+  store i1 0, ptr %t17.a.56
   br label %entry
 entry:
   store i64 42, ptr %t0.a.0
@@ -127,44 +134,55 @@ match_arm1:
   store i64 %sm.24, ptr %v3.a.25
   %l.26 = load i64, ptr %v3.a.25
   %rt.27 = call {ptr, i64} @__mn_str_from_int(i64 %l.26)
-  store {ptr, i64} %rt.27, ptr %t4.a.28
-  %l.29 = load {ptr, i64}, ptr %t4.a.28
-  call void @__mn_str_println({ptr, i64} %l.29)
-  store i1 0, ptr %t5.a.30
+  store {ptr, i64} %rt.27, ptr %str_track.28
+  store {ptr, i64} %rt.27, ptr %t4.a.29
+  %l.30 = load {ptr, i64}, ptr %t4.a.29
+  call void @__mn_str_println({ptr, i64} %l.30)
+  store i1 0, ptr %t5.a.31
   br label %match_merge0
 match_arm2:
-  %sp.31 = getelementptr inbounds [4 x i8], ptr @.str.0, i64 0, i64 0
-  %s.32 = insertvalue {ptr, i64} undef, ptr %sp.31, 0
-  %s.33 = insertvalue {ptr, i64} %s.32, i64 4, 1
-  store {ptr, i64} %s.33, ptr %t6.a.34
-  %l.35 = load {ptr, i64}, ptr %t6.a.34
-  call void @__mn_str_println({ptr, i64} %l.35)
-  store i1 0, ptr %t7.a.36
+  %sp.32 = getelementptr inbounds [4 x i8], ptr @.str.0, i64 0, i64 0
+  %s.33 = insertvalue {ptr, i64} undef, ptr %sp.32, 0
+  %s.34 = insertvalue {ptr, i64} %s.33, i64 4, 1
+  store {ptr, i64} %s.34, ptr %t6.a.35
+  %l.36 = load {ptr, i64}, ptr %t6.a.35
+  call void @__mn_str_println({ptr, i64} %l.36)
+  store i1 0, ptr %t7.a.37
   br label %match_merge0
 match_merge3:
-  ret i64 0
+  %drop.s.38 = load {ptr, i64}, ptr %str_track.28
+  %drop.p.39 = extractvalue {ptr, i64} %drop.s.38, 0
+  %drop.null.40 = icmp eq ptr %drop.p.39, null
+  br i1 %drop.null.40, label %drop.skip.41, label %drop.check.41
 match_arm4:
-  %l.37 = load {i1, i64}, ptr %b.a.17
-  %sm.38 = extractvalue {i1, i64} %l.37, 1
-  store i64 %sm.38, ptr %v13.a.39
-  %l.40 = load i64, ptr %v13.a.39
-  %rt.41 = call {ptr, i64} @__mn_str_from_int(i64 %l.40)
-  store {ptr, i64} %rt.41, ptr %t14.a.42
-  %l.43 = load {ptr, i64}, ptr %t14.a.42
-  call void @__mn_str_println({ptr, i64} %l.43)
-  store i1 0, ptr %t15.a.44
+  %l.42 = load {i1, i64}, ptr %b.a.17
+  %sm.43 = extractvalue {i1, i64} %l.42, 1
+  store i64 %sm.43, ptr %v13.a.44
+  %l.45 = load i64, ptr %v13.a.44
+  %rt.46 = call {ptr, i64} @__mn_str_from_int(i64 %l.45)
+  store {ptr, i64} %rt.46, ptr %str_track.47
+  store {ptr, i64} %rt.46, ptr %t14.a.48
+  %l.49 = load {ptr, i64}, ptr %t14.a.48
+  call void @__mn_str_println({ptr, i64} %l.49)
+  store i1 0, ptr %t15.a.50
   br label %match_merge3
 match_arm5:
-  %sp.45 = getelementptr inbounds [4 x i8], ptr @.str.1, i64 0, i64 0
-  %s.46 = insertvalue {ptr, i64} undef, ptr %sp.45, 0
-  %s.47 = insertvalue {ptr, i64} %s.46, i64 4, 1
-  store {ptr, i64} %s.47, ptr %t16.a.48
-  %l.49 = load {ptr, i64}, ptr %t16.a.48
-  call void @__mn_str_println({ptr, i64} %l.49)
-  store i1 0, ptr %t17.a.50
+  %sp.51 = getelementptr inbounds [4 x i8], ptr @.str.1, i64 0, i64 0
+  %s.52 = insertvalue {ptr, i64} undef, ptr %sp.51, 0
+  %s.53 = insertvalue {ptr, i64} %s.52, i64 4, 1
+  store {ptr, i64} %s.53, ptr %t16.a.54
+  %l.55 = load {ptr, i64}, ptr %t16.a.54
+  call void @__mn_str_println({ptr, i64} %l.55)
+  store i1 0, ptr %t17.a.56
   br label %match_merge3
+drop.check.41:
+  call void @__mn_str_free({ptr, i64} %drop.s.38)
+  br label %drop.skip.41
+drop.skip.41:
+  call void @__mn_intern_destroy()
+  ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.14.0"}
+!0 = !{!"4.32.0"}

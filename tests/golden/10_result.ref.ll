@@ -3,10 +3,11 @@ source_filename = "10_result"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-@.str.0 = private constant [16 x i8] c"division by zero", align 2
+@.str.0 = private constant [16 x i8] c"division by zero", align 8
 
-declare {ptr, i64} @__mn_str_from_int(i64)
+declare {ptr, i64} @__mn_str_from_int(i64) nounwind willreturn
 declare void @__mn_str_println({ptr, i64})
+declare void @__mn_intern_destroy()
 
 define internal {i1, {i64, {ptr, i64}}} @divide(i64 %a, i64 %b) {
 pre_entry:
@@ -82,14 +83,16 @@ pre_entry:
   store i64 0, ptr %tag3.a.11
   %v4.a.15 = alloca i64, align 8
   store i64 0, ptr %v4.a.15
-  %t5.a.18 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t5.a.18
-  %t6.a.20 = alloca i1, align 8
-  store i1 0, ptr %t6.a.20
-  %e7.a.23 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %e7.a.23
-  %t8.a.25 = alloca i1, align 8
-  store i1 0, ptr %t8.a.25
+  %str_track.18 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %str_track.18
+  %t5.a.19 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t5.a.19
+  %t6.a.21 = alloca i1, align 8
+  store i1 0, ptr %t6.a.21
+  %e7.a.24 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %e7.a.24
+  %t8.a.26 = alloca i1, align 8
+  store i1 0, ptr %t8.a.26
   br label %entry
 entry:
   store i64 10, ptr %t0.a.0
@@ -110,6 +113,7 @@ entry:
     i64 0, label %match_arm2
   ]
 match_merge0:
+  call void @__mn_intern_destroy()
   ret i64 0
 match_arm1:
   %l.13 = load {i1, {i64, {ptr, i64}}}, ptr %r.a.7
@@ -117,21 +121,22 @@ match_arm1:
   store i64 %ok.14, ptr %v4.a.15
   %l.16 = load i64, ptr %v4.a.15
   %rt.17 = call {ptr, i64} @__mn_str_from_int(i64 %l.16)
-  store {ptr, i64} %rt.17, ptr %t5.a.18
-  %l.19 = load {ptr, i64}, ptr %t5.a.18
-  call void @__mn_str_println({ptr, i64} %l.19)
-  store i1 0, ptr %t6.a.20
+  store {ptr, i64} %rt.17, ptr %str_track.18
+  store {ptr, i64} %rt.17, ptr %t5.a.19
+  %l.20 = load {ptr, i64}, ptr %t5.a.19
+  call void @__mn_str_println({ptr, i64} %l.20)
+  store i1 0, ptr %t6.a.21
   br label %match_merge0
 match_arm2:
-  %l.21 = load {i1, {i64, {ptr, i64}}}, ptr %r.a.7
-  %er.22 = extractvalue {i1, {i64, {ptr, i64}}} %l.21, 1, 1
-  store {ptr, i64} %er.22, ptr %e7.a.23
-  %l.24 = load {ptr, i64}, ptr %e7.a.23
-  call void @__mn_str_println({ptr, i64} %l.24)
-  store i1 0, ptr %t8.a.25
+  %l.22 = load {i1, {i64, {ptr, i64}}}, ptr %r.a.7
+  %er.23 = extractvalue {i1, {i64, {ptr, i64}}} %l.22, 1, 1
+  store {ptr, i64} %er.23, ptr %e7.a.24
+  %l.25 = load {ptr, i64}, ptr %e7.a.24
+  call void @__mn_str_println({ptr, i64} %l.25)
+  store i1 0, ptr %t8.a.26
   br label %match_merge0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.14.0"}
+!0 = !{!"4.32.0"}

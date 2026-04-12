@@ -3,9 +3,10 @@ source_filename = "28_traits"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-@.fmt.0 = private constant [6 x i8] c"%lld\0A\00", align 2
+@.fmt.0 = private constant [6 x i8] c"%lld\0A\00", align 8
 
 declare i32 @printf(ptr, ...)
+declare void @__mn_intern_destroy()
 
 define internal i64 @Vec2_magnitude(ptr %self) {
 pre_entry:
@@ -88,9 +89,10 @@ entry:
   %fp.21 = getelementptr inbounds [6 x i8], ptr @.fmt.0, i64 0, i64 0
   %pf.22 = call i32 (ptr, ...) @printf(ptr %fp.21, i64 %l.20)
   store i1 0, ptr %t8.a.23
+  call void @__mn_intern_destroy()
   ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.14.0"}
+!0 = !{!"4.32.0"}

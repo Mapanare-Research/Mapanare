@@ -3,11 +3,12 @@ source_filename = "16_string_escape"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-@.str.0 = private constant [11 x i8] c"line1\0Aline2", align 2
-@.str.1 = private constant [9 x i8] c"col1\09col2", align 2
-@.str.2 = private constant [10 x i8] c"back\5Cslash", align 2
+@.str.0 = private constant [11 x i8] c"line1\0Aline2", align 8
+@.str.1 = private constant [9 x i8] c"col1\09col2", align 8
+@.str.2 = private constant [10 x i8] c"back\5Cslash", align 8
 
 declare void @__mn_str_println({ptr, i64})
+declare void @__mn_intern_destroy()
 
 define i64 @main() {
 pre_entry:
@@ -46,9 +47,10 @@ entry:
   %l.16 = load {ptr, i64}, ptr %bs.a.15
   call void @__mn_str_println({ptr, i64} %l.16)
   store i1 0, ptr %t5.a.17
+  call void @__mn_intern_destroy()
   ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.14.0"}
+!0 = !{!"4.32.0"}

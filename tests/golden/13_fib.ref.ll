@@ -3,8 +3,11 @@ source_filename = "13_fib"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-declare {ptr, i64} @__mn_str_from_int(i64)
+declare {ptr, i64} @__mn_str_from_int(i64) nounwind willreturn
 declare void @__mn_str_println({ptr, i64})
+declare void @__mn_str_free({ptr, i64}) nounwind willreturn
+declare void @free(ptr) nounwind willreturn
+declare void @__mn_intern_destroy()
 
 define internal i64 @fib(i64 %n) {
 pre_entry:
@@ -73,10 +76,12 @@ pre_entry:
   store i64 0, ptr %t0.a.0
   %t1.a.3 = alloca i64, align 8
   store i64 0, ptr %t1.a.3
-  %t2.a.6 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t2.a.6
-  %t3.a.8 = alloca i1, align 8
-  store i1 0, ptr %t3.a.8
+  %str_track.6 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %str_track.6
+  %t2.a.7 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t2.a.7
+  %t3.a.9 = alloca i1, align 8
+  store i1 0, ptr %t3.a.9
   br label %entry
 entry:
   store i64 10, ptr %t0.a.0
@@ -85,13 +90,23 @@ entry:
   store i64 %c.2, ptr %t1.a.3
   %l.4 = load i64, ptr %t1.a.3
   %rt.5 = call {ptr, i64} @__mn_str_from_int(i64 %l.4)
-  store {ptr, i64} %rt.5, ptr %t2.a.6
-  %l.7 = load {ptr, i64}, ptr %t2.a.6
-  call void @__mn_str_println({ptr, i64} %l.7)
-  store i1 0, ptr %t3.a.8
+  store {ptr, i64} %rt.5, ptr %str_track.6
+  store {ptr, i64} %rt.5, ptr %t2.a.7
+  %l.8 = load {ptr, i64}, ptr %t2.a.7
+  call void @__mn_str_println({ptr, i64} %l.8)
+  store i1 0, ptr %t3.a.9
+  %drop.s.10 = load {ptr, i64}, ptr %str_track.6
+  %drop.p.11 = extractvalue {ptr, i64} %drop.s.10, 0
+  %drop.null.12 = icmp eq ptr %drop.p.11, null
+  br i1 %drop.null.12, label %drop.skip.13, label %drop.check.13
+drop.check.13:
+  call void @__mn_str_free({ptr, i64} %drop.s.10)
+  br label %drop.skip.13
+drop.skip.13:
+  call void @__mn_intern_destroy()
   ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.14.0"}
+!0 = !{!"4.32.0"}

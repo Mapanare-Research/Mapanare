@@ -3,8 +3,11 @@ source_filename = "23_multi_return"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-declare {ptr, i64} @__mn_str_from_int(i64)
+declare {ptr, i64} @__mn_str_from_int(i64) nounwind willreturn
 declare void @__mn_str_println({ptr, i64})
+declare void @__mn_str_free({ptr, i64}) nounwind willreturn
+declare void @free(ptr) nounwind willreturn
+declare void @__mn_intern_destroy()
 
 define internal {i64, i64} @swap({i64, i64} %p) {
 pre_entry:
@@ -45,16 +48,20 @@ pre_entry:
   store {i64, i64} zeroinitializer, ptr %t3.a.9
   %t4.a.12 = alloca i64, align 8
   store i64 0, ptr %t4.a.12
-  %t5.a.15 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t5.a.15
-  %t6.a.17 = alloca i1, align 8
-  store i1 0, ptr %t6.a.17
-  %t7.a.20 = alloca i64, align 8
-  store i64 0, ptr %t7.a.20
-  %t8.a.23 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t8.a.23
-  %t9.a.25 = alloca i1, align 8
-  store i1 0, ptr %t9.a.25
+  %str_track.15 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %str_track.15
+  %t5.a.16 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t5.a.16
+  %t6.a.18 = alloca i1, align 8
+  store i1 0, ptr %t6.a.18
+  %t7.a.21 = alloca i64, align 8
+  store i64 0, ptr %t7.a.21
+  %str_track.24 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %str_track.24
+  %t8.a.25 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t8.a.25
+  %t9.a.27 = alloca i1, align 8
+  store i1 0, ptr %t9.a.27
   br label %entry
 entry:
   store i64 1, ptr %t0.a.0
@@ -72,22 +79,41 @@ entry:
   store i64 %fv.11, ptr %t4.a.12
   %l.13 = load i64, ptr %t4.a.12
   %rt.14 = call {ptr, i64} @__mn_str_from_int(i64 %l.13)
-  store {ptr, i64} %rt.14, ptr %t5.a.15
-  %l.16 = load {ptr, i64}, ptr %t5.a.15
-  call void @__mn_str_println({ptr, i64} %l.16)
-  store i1 0, ptr %t6.a.17
-  %fg.18 = getelementptr inbounds {i64, i64}, ptr %t3.a.9, i32 0, i32 1
-  %fv.19 = load i64, ptr %fg.18
-  store i64 %fv.19, ptr %t7.a.20
-  %l.21 = load i64, ptr %t7.a.20
-  %rt.22 = call {ptr, i64} @__mn_str_from_int(i64 %l.21)
-  store {ptr, i64} %rt.22, ptr %t8.a.23
-  %l.24 = load {ptr, i64}, ptr %t8.a.23
-  call void @__mn_str_println({ptr, i64} %l.24)
-  store i1 0, ptr %t9.a.25
+  store {ptr, i64} %rt.14, ptr %str_track.15
+  store {ptr, i64} %rt.14, ptr %t5.a.16
+  %l.17 = load {ptr, i64}, ptr %t5.a.16
+  call void @__mn_str_println({ptr, i64} %l.17)
+  store i1 0, ptr %t6.a.18
+  %fg.19 = getelementptr inbounds {i64, i64}, ptr %t3.a.9, i32 0, i32 1
+  %fv.20 = load i64, ptr %fg.19
+  store i64 %fv.20, ptr %t7.a.21
+  %l.22 = load i64, ptr %t7.a.21
+  %rt.23 = call {ptr, i64} @__mn_str_from_int(i64 %l.22)
+  store {ptr, i64} %rt.23, ptr %str_track.24
+  store {ptr, i64} %rt.23, ptr %t8.a.25
+  %l.26 = load {ptr, i64}, ptr %t8.a.25
+  call void @__mn_str_println({ptr, i64} %l.26)
+  store i1 0, ptr %t9.a.27
+  %drop.s.28 = load {ptr, i64}, ptr %str_track.15
+  %drop.p.29 = extractvalue {ptr, i64} %drop.s.28, 0
+  %drop.null.30 = icmp eq ptr %drop.p.29, null
+  br i1 %drop.null.30, label %drop.skip.31, label %drop.check.31
+drop.check.31:
+  call void @__mn_str_free({ptr, i64} %drop.s.28)
+  br label %drop.skip.31
+drop.skip.31:
+  %drop.s.32 = load {ptr, i64}, ptr %str_track.24
+  %drop.p.33 = extractvalue {ptr, i64} %drop.s.32, 0
+  %drop.null.34 = icmp eq ptr %drop.p.33, null
+  br i1 %drop.null.34, label %drop.skip.35, label %drop.check.35
+drop.check.35:
+  call void @__mn_str_free({ptr, i64} %drop.s.32)
+  br label %drop.skip.35
+drop.skip.35:
+  call void @__mn_intern_destroy()
   ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.14.0"}
+!0 = !{!"4.32.0"}

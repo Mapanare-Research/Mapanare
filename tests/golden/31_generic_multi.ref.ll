@@ -3,9 +3,10 @@ source_filename = "31_generic_multi"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-@.fmt.0 = private constant [6 x i8] c"%lld\0A\00", align 2
+@.fmt.0 = private constant [6 x i8] c"%lld\0A\00", align 8
 
 declare i32 @printf(ptr, ...)
+declare void @__mn_intern_destroy()
 
 define internal i64 @Container__Int_get({i64, i64} %self) {
 pre_entry:
@@ -135,9 +136,10 @@ entry:
   %fp.47 = getelementptr inbounds [6 x i8], ptr @.fmt.0, i64 0, i64 0
   %pf.48 = call i32 (ptr, ...) @printf(ptr %fp.47, i64 %l.46)
   store i1 0, ptr %t20.a.49
+  call void @__mn_intern_destroy()
   ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.14.0"}
+!0 = !{!"4.32.0"}

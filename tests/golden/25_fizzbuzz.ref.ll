@@ -3,16 +3,17 @@ source_filename = "25_fizzbuzz"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-@.str.0 = private constant [8 x i8] c"FizzBuzz", align 2
-@.str.1 = private constant [4 x i8] c"Fizz", align 2
-@.str.2 = private constant [4 x i8] c"Buzz", align 2
+@.str.0 = private constant [8 x i8] c"FizzBuzz", align 8
+@.str.1 = private constant [4 x i8] c"Fizz", align 8
+@.str.2 = private constant [4 x i8] c"Buzz", align 8
 
-declare {ptr, i64} @__mn_str_from_int(i64)
+declare {ptr, i64} @__mn_str_from_int(i64) nounwind willreturn
 declare ptr @__mn_range(i64, i64)
 declare i1 @__iter_has_next(ptr)
 declare i64 @__iter_next(ptr)
 declare void @__mn_str_println({ptr, i64})
-declare i1 @__mn_range_free(ptr)
+declare i1 @__mn_range_free(ptr) nounwind willreturn
+declare void @__mn_intern_destroy()
 
 define internal {ptr, i64} @fizzbuzz(i64 %n) {
 pre_entry:
@@ -47,8 +48,10 @@ pre_entry:
   store i1 0, ptr %t15.a.41
   %t16.a.46 = alloca {ptr, i64}, align 8
   store {ptr, i64} zeroinitializer, ptr %t16.a.46
-  %t18.a.50 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t18.a.50
+  %str_track.50 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %str_track.50
+  %t18.a.51 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t18.a.51
   store i64 %n, ptr %n.addr
   br label %entry
 entry:
@@ -120,9 +123,10 @@ if_else7:
 if_merge8:
   %l.48 = load i64, ptr %n.addr
   %rt.49 = call {ptr, i64} @__mn_str_from_int(i64 %l.48)
-  store {ptr, i64} %rt.49, ptr %t18.a.50
-  %l.51 = load {ptr, i64}, ptr %t18.a.50
-  ret {ptr, i64} %l.51
+  store {ptr, i64} %rt.49, ptr %str_track.50
+  store {ptr, i64} %rt.49, ptr %t18.a.51
+  %l.52 = load {ptr, i64}, ptr %t18.a.51
+  ret {ptr, i64} %l.52
 }
 
 define i64 @main() {
@@ -173,9 +177,10 @@ for_exit2:
   %l.18 = load ptr, ptr %t2.a.5
   %c.19 = call i1 @__mn_range_free(ptr %l.18)
   store i1 %c.19, ptr %range_free8.a.20
+  call void @__mn_intern_destroy()
   ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.14.0"}
+!0 = !{!"4.32.0"}
