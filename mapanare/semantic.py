@@ -529,11 +529,26 @@ class SemanticChecker:
                             return self._resolve_type_expr(f.type_annotation)
             return UNKNOWN_TYPE
         if isinstance(expr, IndexExpr):
+            from mapanare.ast_nodes import IndexItem
+
             obj_type = self._infer_expr(expr.object)
-            for idx in expr.indices:
-                self._infer_expr(idx)
+            has_slice = False
+            for idx_item in expr.indices:
+                if isinstance(idx_item, IndexItem):
+                    if idx_item.kind == "scalar" and idx_item.expr:
+                        self._infer_expr(idx_item.expr)
+                    elif idx_item.kind == "range":
+                        if idx_item.start:
+                            self._infer_expr(idx_item.start)
+                        if idx_item.end:
+                            self._infer_expr(idx_item.end)
+                        has_slice = True
+                    elif idx_item.kind == "wildcard":
+                        has_slice = True
+                elif isinstance(idx_item, Expr):
+                    self._infer_expr(idx_item)
             n_idx = len(expr.indices)
-            # Tensor: require rank match (v4.43.0)
+            # Tensor: rank match + slicing shape inference (v4.43.0 + v4.45.0)
             if obj_type.kind == TypeKind.TENSOR:
                 rank = len(obj_type.tensor_shape) if obj_type.tensor_shape else None
                 if rank is not None and n_idx != rank:
@@ -543,8 +558,26 @@ class SemanticChecker:
                         expr,
                     )
                 elem = obj_type.args[0] if obj_type.args else FLOAT_TYPE
+                if has_slice:
+                    # Slicing returns a tensor (view) — infer result shape
+                    result_shape: list[int] = []
+                    if obj_type.tensor_shape:
+                        for d, idx_item in enumerate(expr.indices):
+                            if isinstance(idx_item, IndexItem):
+                                if idx_item.kind == "wildcard":
+                                    result_shape.append(obj_type.tensor_shape[d] if d < len(obj_type.tensor_shape) else 0)
+                                elif idx_item.kind == "range":
+                                    s = idx_item.start.value if isinstance(idx_item.start, IntLiteral) else 0
+                                    e = idx_item.end.value if isinstance(idx_item.end, IntLiteral) else (obj_type.tensor_shape[d] if d < len(obj_type.tensor_shape) else 0)
+                                    result_shape.append(max(0, e - s))
+                                else:
+                                    pass  # scalar index removes dimension
+                    return TypeInfo(
+                        kind=TypeKind.TENSOR, args=[elem],
+                        tensor_shape=tuple(result_shape) if result_shape else None,
+                    )
                 return elem
-            # List/Map: require single index
+            # List/Map: require single scalar index
             if n_idx > 1:
                 self._error(
                     f"multi-index not supported for {obj_type.kind.name}; "

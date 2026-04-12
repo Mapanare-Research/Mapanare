@@ -47,6 +47,7 @@ from mapanare.ast_nodes import (
     ImplDef,
     ImportDef,
     IndexExpr,
+    IndexItem,
     InterpString,
     IntLiteral,
     LambdaExpr,
@@ -773,9 +774,20 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def index_expr(self, children: list[Any]) -> IndexExpr:
         items = _filter(children)
-        # items[0] is the object; items[1:] are index expressions
-        indices = [c for c in items[1:] if isinstance(c, Expr)]
-        return IndexExpr(object=items[0], indices=indices, span=_span_from_children(children))
+        # items[0] is the object; items[1:] are Expr
+        # v4.45.0: detect RangeExpr → IndexItem("range"), Identifier("_") → IndexItem("wildcard")
+        idx_items: list[IndexItem] = []
+        for c in items[1:]:
+            if isinstance(c, RangeExpr):
+                idx_items.append(IndexItem(
+                    kind="range", start=c.start, end=c.end,
+                    span=getattr(c, "span", Span()),
+                ))
+            elif isinstance(c, Identifier) and c.name == "_":
+                idx_items.append(IndexItem(kind="wildcard", span=getattr(c, "span", Span())))
+            elif isinstance(c, Expr):
+                idx_items.append(IndexItem(kind="scalar", expr=c, span=getattr(c, "span", Span())))
+        return IndexExpr(object=items[0], indices=idx_items, span=_span_from_children(children))
 
     def error_prop(self, children: list[Any]) -> ErrorPropExpr:
         items = _filter(children)

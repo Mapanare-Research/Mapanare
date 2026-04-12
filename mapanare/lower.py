@@ -2207,6 +2207,25 @@ class MIRLowerer:
             self._emit(SignalGet(dest=dest, signal=obj))
             return dest
 
+        # Tensor reduction methods (v4.45.0)
+        _TENSOR_REDUCTIONS_SCALAR = {"sum", "mean", "max", "min"}
+        _TENSOR_REDUCTIONS_IDX = {"argmax", "argmin"}
+        if obj.ty.kind == TypeKind.TENSOR and expr.method in (
+            _TENSOR_REDUCTIONS_SCALAR | _TENSOR_REDUCTIONS_IDX
+        ):
+            elem_ti = obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+            ty_suffix = "i64" if elem_ti.kind == TypeKind.INT else "f64"
+            fn_name = f"__mn_tensor_{expr.method}_{ty_suffix}"
+            if expr.method in _TENSOR_REDUCTIONS_SCALAR:
+                if elem_ti.kind == TypeKind.INT:
+                    dest = self._make_value(ty=mir_int())
+                else:
+                    dest = self._make_value(ty=mir_float())
+            else:
+                dest = self._make_value(ty=mir_int())
+            self._emit(Call(dest=dest, fn_name=fn_name, args=[obj]))
+            return dest
+
         # List .push() — emit ListPush instruction and update the variable binding
         if expr.method == "push" and args and obj.ty.kind in (TypeKind.LIST, TypeKind.UNKNOWN):
             # Use the same value as the source list for in-place mutation
@@ -2391,11 +2410,28 @@ class MIRLowerer:
         return dest
 
     def _lower_index(self, expr: IndexExpr) -> Value:
-        """Lower index access: `arr[i]` or `tensor[i, j]` (v4.43.0)."""
-        obj = self._lower_expr(expr.object)
-        indices = [self._lower_expr(idx) for idx in expr.indices]
+        """Lower index access: `arr[i]`, `tensor[i, j]`, or `tensor[0..2, :]` (v4.43–v4.45)."""
+        from mapanare.ast_nodes import IndexItem
 
+        obj = self._lower_expr(expr.object)
         obj_kind = obj.ty.kind
+
+        # Check for slicing (v4.45.0) — any range or wildcard item
+        has_slice = any(
+            isinstance(it, IndexItem) and it.kind in ("range", "wildcard")
+            for it in expr.indices
+        )
+        if obj_kind == TypeKind.TENSOR and has_slice:
+            return self._lower_tensor_slice(obj, expr.indices)
+
+        # Scalar indices — extract Expr from IndexItem
+        scalar_exprs: list[Value] = []
+        for it in expr.indices:
+            if isinstance(it, IndexItem) and it.kind == "scalar" and it.expr:
+                scalar_exprs.append(self._lower_expr(it.expr))
+            elif isinstance(it, Expr):
+                scalar_exprs.append(self._lower_expr(it))
+        indices = scalar_exprs
 
         # Tensor: emit Call to __mn_tensor_get_*_nd (v4.43.0)
         if obj_kind == TypeKind.TENSOR:
@@ -2451,6 +2487,51 @@ class MIRLowerer:
         self._emit(
             Call(dest=void_dest, fn_name=fn_name, args=[obj, rank_val] + indices + [val])
         )
+
+    def _lower_tensor_slice(self, obj: Value, items: list) -> Value:
+        """Lower tensor[0..2, :] to __mn_tensor_slice call (v4.45.0)."""
+        from mapanare.ast_nodes import IndexItem, IntLiteral
+
+        rank = len(items)
+        # Build starts and ends arrays
+        start_vals: list[Value] = []
+        end_vals: list[Value] = []
+
+        for d, it in enumerate(items):
+            if isinstance(it, IndexItem):
+                if it.kind == "range":
+                    start_vals.append(self._lower_expr(it.start) if it.start else self._const_int(0))
+                    end_vals.append(self._lower_expr(it.end) if it.end else self._const_int(0))
+                elif it.kind == "wildcard":
+                    start_vals.append(self._const_int(0))
+                    # End = shape[d] — use tensor_shape_dim runtime call
+                    dim_val = self._const_int(d)
+                    shape_dest = self._make_value(ty=mir_int(), prefix="sdim")
+                    self._emit(Call(dest=shape_dest, fn_name="tensor_shape_dim", args=[obj, dim_val]))
+                    end_vals.append(shape_dest)
+                else:  # scalar in slice context — treat as start..start+1
+                    sv = self._lower_expr(it.expr) if it.expr else self._const_int(0)
+                    start_vals.append(sv)
+                    one = self._const_int(1)
+                    end_dest = self._make_value(ty=mir_int(), prefix="send")
+                    self._emit(BinOp(dest=end_dest, op=BinOpKind.ADD, lhs=sv, rhs=one))
+                    end_vals.append(end_dest)
+
+        # Build result tensor type
+        elem_ti = obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        result_ty = MIRType(TypeInfo(kind=TypeKind.TENSOR, args=[elem_ti]))
+        dest = self._make_value(ty=result_ty, prefix="tslice")
+        rank_val = self._const_int(rank)
+        self._emit(
+            Call(dest=dest, fn_name="__mn_tensor_slice", args=[obj] + start_vals + end_vals + [rank_val])
+        )
+        return dest
+
+    def _const_int(self, val: int) -> Value:
+        """Emit a constant integer value."""
+        dest = self._make_value(ty=mir_int(), prefix="ci")
+        self._emit(Const(dest=dest, ty=mir_int(), value=str(val)))
+        return dest
 
     def _lower_tensor_binop(self, op: str, lhs: Value, rhs: Value) -> Value:
         """Lower tensor binary op to broadcast runtime call (v4.44.0)."""
@@ -2874,8 +2955,14 @@ class MIRLowerer:
             return val
 
         if isinstance(expr.target, IndexExpr):
+            from mapanare.ast_nodes import IndexItem as _II
             obj = self._lower_expr(expr.target.object)
-            indices = [self._lower_expr(idx) for idx in expr.target.indices]
+            indices = []
+            for it in expr.target.indices:
+                if isinstance(it, _II) and it.kind == "scalar" and it.expr:
+                    indices.append(self._lower_expr(it.expr))
+                elif isinstance(it, Expr):
+                    indices.append(self._lower_expr(it))
             # Tensor assignment: emit Call to __mn_tensor_set_*_nd (v4.43.0)
             if obj.ty.kind == TypeKind.TENSOR:
                 self._lower_tensor_set(obj, indices, val)

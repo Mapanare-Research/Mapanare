@@ -32,7 +32,10 @@ class TestMultiIndexParsing:
         idx = ast.definitions[0].body.stmts[3].value
         assert isinstance(idx, IndexExpr)
         assert len(idx.indices) == 2
-        assert isinstance(idx.indices[0], Identifier)
+        from mapanare.ast_nodes import IndexItem
+        assert isinstance(idx.indices[0], IndexItem)
+        assert idx.indices[0].kind == "scalar"
+        assert isinstance(idx.indices[0].expr, Identifier)
 
     def test_list_single_index_preserved(self):
         e = _idx("let a = [1, 2, 3]; let x = a[1]")

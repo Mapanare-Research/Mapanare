@@ -623,7 +623,10 @@ class TestCalls:
         e = parse_expr("arr[0]")
         assert isinstance(e, IndexExpr)
         assert len(e.indices) == 1
-        assert isinstance(e.indices[0], IntLiteral)
+        # v4.45.0: IndexItem wraps scalar expressions
+        from mapanare.ast_nodes import IndexItem
+        assert isinstance(e.indices[0], IndexItem)
+        assert e.indices[0].kind == "scalar"
 
     def test_chained_calls(self) -> None:
         e = parse_expr("a.b().c()")

@@ -380,7 +380,15 @@ class ConstantFolder:
 
         if isinstance(expr, IndexExpr):
             expr.object = self._fold_expr(expr.object)
-            expr.indices = [self._fold_expr(idx) for idx in expr.indices]
+            from mapanare.ast_nodes import IndexItem
+            for it in expr.indices:
+                if isinstance(it, IndexItem):
+                    if it.expr:
+                        it.expr = self._fold_expr(it.expr)
+                    if it.start:
+                        it.start = self._fold_expr(it.start)
+                    if it.end:
+                        it.end = self._fold_expr(it.end)
             return expr
 
         if isinstance(expr, MethodCallExpr):
@@ -619,8 +627,15 @@ class DeadCodeEliminator:
             self._collect_used_names_expr(expr.value, names)
         elif isinstance(expr, IndexExpr):
             self._collect_used_names_expr(expr.object, names)
-            for idx in expr.indices:
-                self._collect_used_names_expr(idx, names)
+            from mapanare.ast_nodes import IndexItem
+            for it in expr.indices:
+                if isinstance(it, IndexItem):
+                    if it.expr:
+                        self._collect_used_names_expr(it.expr, names)
+                    if it.start:
+                        self._collect_used_names_expr(it.start, names)
+                    if it.end:
+                        self._collect_used_names_expr(it.end, names)
         elif isinstance(expr, MethodCallExpr):
             self._collect_used_names_expr(expr.object, names)
             for a in expr.args:

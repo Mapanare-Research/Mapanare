@@ -603,3 +603,172 @@ MN_EXPORT mapanare_tensor_t *__mn_tensor_div_scalar_i64(
     const mapanare_tensor_t *a, int64_t s) {
     return tensor_scalar_op_i64(a, s, i64_div);
 }
+
+/* -----------------------------------------------------------------------
+ * Tensor Reductions (v4.45.0)
+ *
+ * Global reductions return scalars. Axis reductions return new tensors
+ * with the reduced dimension removed.
+ * ----------------------------------------------------------------------- */
+
+/* ---- Global reductions (f64) ---- */
+MN_EXPORT double __mn_tensor_sum_f64(const mapanare_tensor_t *t) {
+    if (!t || !t->data || t->size <= 0) return 0.0;
+    double s = 0.0;
+    const double *d = (const double *)t->data;
+    for (int64_t i = 0; i < t->size; i++) s += d[i];
+    return s;
+}
+
+MN_EXPORT double __mn_tensor_mean_f64(const mapanare_tensor_t *t) {
+    if (!t || !t->data || t->size <= 0) {
+        fprintf(stderr, "mapanare: mean of empty tensor\n"); abort();
+    }
+    return __mn_tensor_sum_f64(t) / (double)t->size;
+}
+
+MN_EXPORT double __mn_tensor_max_f64(const mapanare_tensor_t *t) {
+    if (!t || !t->data || t->size <= 0) {
+        fprintf(stderr, "mapanare: max of empty tensor\n"); abort();
+    }
+    const double *d = (const double *)t->data;
+    double m = d[0];
+    for (int64_t i = 1; i < t->size; i++) if (d[i] > m) m = d[i];
+    return m;
+}
+
+MN_EXPORT double __mn_tensor_min_f64(const mapanare_tensor_t *t) {
+    if (!t || !t->data || t->size <= 0) {
+        fprintf(stderr, "mapanare: min of empty tensor\n"); abort();
+    }
+    const double *d = (const double *)t->data;
+    double m = d[0];
+    for (int64_t i = 1; i < t->size; i++) if (d[i] < m) m = d[i];
+    return m;
+}
+
+MN_EXPORT int64_t __mn_tensor_argmax_f64(const mapanare_tensor_t *t) {
+    if (!t || !t->data || t->size <= 0) {
+        fprintf(stderr, "mapanare: argmax of empty tensor\n"); abort();
+    }
+    const double *d = (const double *)t->data;
+    int64_t idx = 0;
+    for (int64_t i = 1; i < t->size; i++) if (d[i] > d[idx]) idx = i;
+    return idx;
+}
+
+MN_EXPORT int64_t __mn_tensor_argmin_f64(const mapanare_tensor_t *t) {
+    if (!t || !t->data || t->size <= 0) {
+        fprintf(stderr, "mapanare: argmin of empty tensor\n"); abort();
+    }
+    const double *d = (const double *)t->data;
+    int64_t idx = 0;
+    for (int64_t i = 1; i < t->size; i++) if (d[i] < d[idx]) idx = i;
+    return idx;
+}
+
+/* ---- Global reductions (i64) ---- */
+MN_EXPORT int64_t __mn_tensor_sum_i64(const mapanare_tensor_t *t) {
+    if (!t || !t->data || t->size <= 0) return 0;
+    int64_t s = 0;
+    const int64_t *d = (const int64_t *)t->data;
+    for (int64_t i = 0; i < t->size; i++) s += d[i];
+    return s;
+}
+
+MN_EXPORT int64_t __mn_tensor_max_i64(const mapanare_tensor_t *t) {
+    if (!t || !t->data || t->size <= 0) {
+        fprintf(stderr, "mapanare: max of empty tensor\n"); abort();
+    }
+    const int64_t *d = (const int64_t *)t->data;
+    int64_t m = d[0];
+    for (int64_t i = 1; i < t->size; i++) if (d[i] > m) m = d[i];
+    return m;
+}
+
+MN_EXPORT int64_t __mn_tensor_min_i64(const mapanare_tensor_t *t) {
+    if (!t || !t->data || t->size <= 0) {
+        fprintf(stderr, "mapanare: min of empty tensor\n"); abort();
+    }
+    const int64_t *d = (const int64_t *)t->data;
+    int64_t m = d[0];
+    for (int64_t i = 1; i < t->size; i++) if (d[i] < m) m = d[i];
+    return m;
+}
+
+MN_EXPORT int64_t __mn_tensor_argmax_i64(const mapanare_tensor_t *t) {
+    if (!t || !t->data || t->size <= 0) {
+        fprintf(stderr, "mapanare: argmax of empty tensor\n"); abort();
+    }
+    const int64_t *d = (const int64_t *)t->data;
+    int64_t idx = 0;
+    for (int64_t i = 1; i < t->size; i++) if (d[i] > d[idx]) idx = i;
+    return idx;
+}
+
+MN_EXPORT int64_t __mn_tensor_argmin_i64(const mapanare_tensor_t *t) {
+    if (!t || !t->data || t->size <= 0) {
+        fprintf(stderr, "mapanare: argmin of empty tensor\n"); abort();
+    }
+    const int64_t *d = (const int64_t *)t->data;
+    int64_t idx = 0;
+    for (int64_t i = 1; i < t->size; i++) if (d[i] < d[idx]) idx = i;
+    return idx;
+}
+
+/* ---- Tensor slicing (v4.45.0) ---- */
+
+MN_EXPORT mapanare_tensor_t *__mn_tensor_slice(
+    const mapanare_tensor_t *t, const int64_t *starts,
+    const int64_t *ends, int64_t rank) {
+    if (!t || !t->data || rank != t->ndim) {
+        fprintf(stderr, "mapanare: invalid tensor slice\n"); abort();
+    }
+    /* Compute result shape and validate bounds */
+    int64_t out_shape[MN_TENSOR_MAX_RANK];
+    int64_t out_rank = 0;
+    for (int64_t d = 0; d < rank; d++) {
+        int64_t s = starts[d], e = ends[d];
+        if (s < 0) s = 0;
+        if (e > t->shape[d]) e = t->shape[d];
+        if (e <= s) { e = s; }
+        out_shape[out_rank++] = e - s;
+    }
+    mapanare_tensor_t *result = mapanare_tensor_alloc(out_rank, out_shape,
+                                                      t->elem_size);
+    if (!result) abort();
+
+    /* Copy elements using coordinate mapping */
+    int64_t total = result->size;
+    for (int64_t i = 0; i < total; i++) {
+        /* Decompose flat index into output coords */
+        int64_t rem = i;
+        int64_t src_flat = 0;
+        int64_t src_stride = 1;
+        /* Compute src strides */
+        int64_t strides[MN_TENSOR_MAX_RANK];
+        strides[rank - 1] = 1;
+        for (int64_t d = rank - 2; d >= 0; d--)
+            strides[d] = strides[d + 1] * t->shape[d + 1];
+
+        /* Map output coords to source coords */
+        int64_t out_strides[MN_TENSOR_MAX_RANK];
+        out_strides[out_rank - 1] = 1;
+        for (int64_t d = out_rank - 2; d >= 0; d--)
+            out_strides[d] = out_strides[d + 1] * out_shape[d + 1];
+
+        src_flat = 0;
+        rem = i;
+        for (int64_t d = 0; d < out_rank; d++) {
+            int64_t coord = rem / out_strides[d];
+            rem %= out_strides[d];
+            src_flat += (coord + starts[d]) * strides[d];
+        }
+
+        /* Copy element */
+        const char *src = (const char *)t->data + src_flat * t->elem_size;
+        char *dst = (char *)result->data + i * t->elem_size;
+        for (int64_t b = 0; b < t->elem_size; b++) dst[b] = src[b];
+    }
+    return result;
+}

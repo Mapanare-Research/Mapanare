@@ -366,6 +366,21 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_tensor_sub_scalar_i64": {"nounwind", "noalias"},
     "__mn_tensor_mul_scalar_i64": {"nounwind", "noalias"},
     "__mn_tensor_div_scalar_i64": {"nounwind", "noalias"},
+    # Tensor reductions (v4.45.0). Global reductions return scalars (no noalias).
+    # mean/max/min/argmax/argmin abort on empty tensor (not willreturn).
+    "__mn_tensor_sum_f64": {"nounwind"},
+    "__mn_tensor_mean_f64": {"nounwind"},
+    "__mn_tensor_max_f64": {"nounwind"},
+    "__mn_tensor_min_f64": {"nounwind"},
+    "__mn_tensor_argmax_f64": {"nounwind"},
+    "__mn_tensor_argmin_f64": {"nounwind"},
+    "__mn_tensor_sum_i64": {"nounwind"},
+    "__mn_tensor_max_i64": {"nounwind"},
+    "__mn_tensor_min_i64": {"nounwind"},
+    "__mn_tensor_argmax_i64": {"nounwind"},
+    "__mn_tensor_argmin_i64": {"nounwind"},
+    # Tensor slicing (v4.45.0). Returns fresh tensor (noalias).
+    "__mn_tensor_slice": {"nounwind", "noalias"},
     # Agent runtime (v3.43.0). v4.30.0: ``agent_new`` returns a fresh
     # heap agent handle (noalias); dispatch/send/recv do not.
     "mapanare_agent_new": {"nounwind", "noalias", "willreturn"},
@@ -2706,6 +2721,40 @@ class LLVMTextEmitter:
             self._ensure(fn, VOID, [PTR, I64], va=True)
             idx_str = (", " + ", ".join(idx_parts)) if idx_parts else ""
             self._L(f"call void (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str}, {val_ty} {val_v})")
+            return
+
+        # Tensor reduction methods (v4.45.0)
+        _TENSOR_REDUCE_F64 = {
+            "__mn_tensor_sum_f64": DBL, "__mn_tensor_mean_f64": DBL,
+            "__mn_tensor_max_f64": DBL, "__mn_tensor_min_f64": DBL,
+            "__mn_tensor_argmax_f64": I64, "__mn_tensor_argmin_f64": I64,
+        }
+        _TENSOR_REDUCE_I64 = {
+            "__mn_tensor_sum_i64": I64, "__mn_tensor_max_i64": I64,
+            "__mn_tensor_min_i64": I64, "__mn_tensor_argmax_i64": I64,
+            "__mn_tensor_argmin_i64": I64,
+        }
+        _ALL_TENSOR_REDUCE = {**_TENSOR_REDUCE_F64, **_TENSOR_REDUCE_I64}
+        if fn in _ALL_TENSOR_REDUCE and len(args) >= 1:
+            ret = _ALL_TENSOR_REDUCE[fn]
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            self._ensure(fn, ret, [PTR])
+            r = self._f("tred")
+            self._L(f"{r} = call {ret} @{fn}(ptr {a0})")
+            self._put(i.dest, r, ret)
+            return
+
+        # Tensor slice (v4.45.0)
+        if fn == "__mn_tensor_slice" and len(args) >= 3:
+            t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            starts = self._coerce(args[1][0], args[1][1], PTR) if args[1][1] != PTR else args[1][0]
+            ends = self._coerce(args[2][0], args[2][1], PTR) if args[2][1] != PTR else args[2][0]
+            rank_v = self._coerce(args[3][0], args[3][1], I64) if len(args) > 3 and args[3][1] != I64 else (args[3][0] if len(args) > 3 else "0")
+            self._ensure("__mn_tensor_slice", PTR, [PTR, PTR, PTR, I64])
+            r = self._f("tslice")
+            self._L(f"{r} = call noalias ptr @__mn_tensor_slice(ptr {t_ptr}, ptr {starts}, ptr {ends}, i64 {rank_v})")
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
             return
 
         # Tensor broadcast ops (v4.44.0) — tensor+tensor and tensor+scalar

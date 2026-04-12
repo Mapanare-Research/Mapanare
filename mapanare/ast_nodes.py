@@ -202,11 +202,29 @@ class NamespaceAccessExpr(Expr):
 
 
 @dataclass
+class IndexItem(ASTNode):
+    """An item in a multi-index: scalar, range (N..M), or wildcard (:).
+
+    v4.45.0: Added for tensor slicing.
+    kind: "scalar" | "range" | "wildcard"
+    """
+
+    kind: str = "scalar"
+    expr: Expr | None = None  # scalar value
+    start: Expr | None = None  # range start
+    end: Expr | None = None  # range end
+
+
+@dataclass
 class IndexExpr(Expr):
-    """Index expression: `arr[i]` or `tensor[i, j, k]` (v4.43.0 multi-index)."""
+    """Index expression: `arr[i]`, `tensor[i, j]`, or `tensor[0..2, :]`.
+
+    v4.43.0: multi-index. v4.45.0: range and wildcard items.
+    indices: list of IndexItem (scalar wraps an Expr).
+    """
 
     object: Expr = field(default_factory=Expr)
-    indices: list[Expr] = field(default_factory=list)
+    indices: list[IndexItem] = field(default_factory=list)
 
 
 @dataclass

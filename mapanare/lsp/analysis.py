@@ -678,8 +678,15 @@ class DocumentAnalysis:
             self._visit_expr(expr.object)
         elif isinstance(expr, IndexExpr):
             self._visit_expr(expr.object)
-            for idx in expr.indices:
-                self._visit_expr(idx)
+            from mapanare.ast_nodes import IndexItem
+            for it in expr.indices:
+                if isinstance(it, IndexItem):
+                    if it.expr:
+                        self._visit_expr(it.expr)
+                    if it.start:
+                        self._visit_expr(it.start)
+                    if it.end:
+                        self._visit_expr(it.end)
         elif isinstance(expr, PipeExpr):
             self._visit_expr(expr.left)
             self._visit_expr(expr.right)
