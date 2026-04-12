@@ -1,0 +1,1 @@
+Signals in Mapanare provide reactive state management. A signal holds a value and automatically notifies subscribers when it changes. Computed signals derive their value from other signals and update lazily. Signal updates are batched to avoid redundant recomputation. The runtime uses a lock-free protocol for thread-safe signal mutation.

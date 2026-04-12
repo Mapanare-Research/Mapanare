@@ -1,0 +1,1 @@
+Mapanare uses pattern matching with the `match` keyword. You can match on enum variants, struct fields, literals, and wildcards. Guard clauses add conditions to patterns. Or-patterns allow matching multiple variants in one arm. The compiler checks for exhaustiveness and warns on unreachable arms.

@@ -1,0 +1,1 @@
+Mapanare compiles to native binaries via LLVM IR. The compiler pipeline is: source -> Lark LALR parser -> AST -> semantic checker -> MIR lowering -> MIR optimizer -> LLVM IR text emitter. A C backend exists as a fallback via gcc. A WebAssembly backend targets browsers and WASI runtimes. The self-hosted compiler is 15,000+ lines of Mapanare that compiles itself to a fixed point.
