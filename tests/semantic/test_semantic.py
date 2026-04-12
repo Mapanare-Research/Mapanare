@@ -886,14 +886,14 @@ class TestCompileTimeShapeValidation:
         """)
 
     def test_elementwise_invalid_shapes(self) -> None:
-        """Element-wise ops with different shapes produce error."""
+        """Element-wise ops with different shapes produce error (v4.44.0: broadcast check)."""
         _check_err(
             """
             fn add(a: Tensor<Float>[2, 3], b: Tensor<Float>[3, 2]) -> Tensor<Float>[2, 3] {
                 return a + b
             }
         """,
-            "Shape mismatch",
+            "not broadcast-compatible",
         )
 
     def test_matmul_dot_product_shapes(self) -> None:
