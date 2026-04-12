@@ -190,7 +190,23 @@ def on_hover(params: lsp.HoverParams) -> Optional[lsp.Hover]:
 
     line = params.position.line
     col = params.position.character
+
+    # Try within-file hover first
     content = analysis.hover_at(line, col)
+
+    # v4.37.0: fall back to workspace index for cross-module symbols
+    if not content and _workspace._by_name:
+        symbol_name = analysis.symbol_name_at(line, col)
+        if symbol_name:
+            matches = _workspace.lookup_by_name(symbol_name)
+            if matches:
+                sym = matches[0]
+                parts = [f"```mn\n{sym.detail or f'{sym.kind} {sym.name}'}\n```"]
+                if sym.doc_comment:
+                    parts.append(sym.doc_comment)
+                parts.append(f"*Defined in `{sym.module}`*")
+                content = "\n\n".join(parts)
+
     if content:
         return lsp.Hover(
             contents=lsp.MarkupContent(

@@ -5,7 +5,7 @@
 > existing parser + semantic checker. v4.37.0 builds the workspace-
 > wide symbol index that the rest of the arc depends on.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No (LSP is a supplementary protocol; existing CLI unchanged)
 **Prerequisite:** v4.36.0 (arc 1 panel PASS)
 **Delta review:** No (no grammar / MIR / emitter changes)

@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.36.0** (shipped) — Arc 1 panel release. Zero new features. Full 7-reviewer panel. cuda_matmul rc check closed (L7). Pre-panel audit: 18/18 claims verified. Ledger audit: 55/67 items closed.
-- **v4.37.0** (next) — Arc 2 opener (LSP maturity). Workspace index + go-to-definition + hover types.
+- **v4.37.0** (shipped) — Arc 2 opener (LSP maturity). WorkspaceIndex for cross-module symbol lookup. Cross-module go-to-definition + hover. 13 new LSP tests.
+- **v4.38.0** (next) — Find-references + rename refactoring on top of the workspace index.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

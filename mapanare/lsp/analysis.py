@@ -753,6 +753,10 @@ class DocumentAnalysis:
                 return f"```mapanare\ntype {word}<T>\n```"
         return None
 
+    def symbol_name_at(self, line: int, col: int) -> Optional[str]:
+        """Public accessor for the symbol name at cursor (v4.37.0 cross-module)."""
+        return self._symbol_name_at(line, col)
+
     # -- Go to definition ----------------------------------------------------
 
     def definition_at(self, line: int, col: int) -> Optional[SymbolLocation]:

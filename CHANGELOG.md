@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.37.0] - 2026-04-12
+
+**LSP Foundation — first release of Arc 2 (Editor Tooling).**
+Cross-module go-to-definition now works. Workspace-wide symbol index.
+
+### Added
+
+- `mapanare/lsp/workspace.py` — new module: `WorkspaceIndex` class with
+  `scan_root()`, `rebuild_file()`, `lookup()`, `lookup_by_name()`.
+  O(1) symbol lookup by (module, name). Incremental update on save.
+- Cross-module `textDocument/definition` — clicking a function call
+  now jumps to its definition even when it's in another file. The
+  v4.37.0 headline improvement.
+- Workspace-aware `textDocument/hover` — hover on cross-module symbols
+  shows the function signature, type, and source module.
+- `tests/lsp/test_workspace_index.py` — 13 unit tests covering scan,
+  rebuild, lookup, symbol extraction, error handling.
+
+### Changed
+
+- `mapanare/lsp/server.py` — workspace scan on initialize, incremental
+  rebuild on save, cross-module fallback in definition and hover handlers.
+- `mapanare/lsp/analysis.py` — public `symbol_name_at()` accessor for
+  cross-module resolution.
+
 ## [4.36.0] - 2026-04-12
 
 **Arc 1 Panel Release — zero new features.**
