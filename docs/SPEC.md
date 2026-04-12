@@ -903,7 +903,7 @@ match token {
 }
 ```
 
-All alternatives in an or-pattern must bind the same set of variable names with compatible types. An or-pattern expands coverage: `A | B` covers both `A` and `B`.
+All alternatives in an or-pattern must bind the same set of variable names. (The current implementation checks name-set equality only; type compatibility across alternatives is not yet enforced.) An or-pattern expands coverage: `A | B` covers both `A` and `B`.
 
 Or-patterns can be combined with guards: `A | B if cond => body`. The guard applies to the whole arm (all alternatives), not to individual alternatives.
 

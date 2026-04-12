@@ -250,7 +250,9 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_str_cmp": {"nounwind", "readonly", "willreturn"},
     "__mn_str_hash": {"nounwind", "readonly", "willreturn"},
     "__mn_list_len": {"nounwind", "readonly", "willreturn"},
-    "__mn_list_get": {"nounwind", "readonly", "willreturn"},
+    # v4.42.0: removed readonly+willreturn — __mn_list_get calls abort on
+    # OOB, so it is NOT pure and NOT guaranteed to return. Closes P1.
+    "__mn_list_get": {"nounwind"},
     "__mn_map_len": {"nounwind", "readonly", "willreturn"},
     "__mn_map_contains": {"nounwind", "readonly", "willreturn"},
     # Allocators. v4.30.0: ``noalias`` on return + ``willreturn``.
