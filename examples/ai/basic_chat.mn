@@ -1,0 +1,31 @@
+// basic_chat.mn — Simple LLM chat using Ollama (no API key needed)
+//
+// Prerequisites: Ollama running at http://localhost:11434
+//   ollama serve
+//   ollama pull llama3.2
+//
+// Run:
+//   mapanare run examples/ai/basic_chat.mn
+
+import ai::llm
+
+fn main() {
+    // Default: Ollama at localhost:11434
+    let config = llm.ollama("llama3.2")
+
+    let response = llm.chat(config, [
+        llm.system_msg("You are a helpful assistant. Be concise."),
+        llm.user_msg("What is 2 + 2?")
+    ])
+
+    match response {
+        Ok(r) => {
+            print("Model: " + r.model)
+            print("Response: " + r.content)
+            print(llm.usage_summary(r.usage))
+        },
+        Err(e) => {
+            print("Error: " + llm.error_message(e))
+        }
+    }
+}
