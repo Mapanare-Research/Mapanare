@@ -1538,6 +1538,10 @@ class MIRLowerer:
             self._emit(Call(dest=dest, fn_name=method, args=[lhs, rhs]))
             return dest
 
+        # Tensor broadcast dispatch (v4.44.0)
+        if lhs.ty.kind == TypeKind.TENSOR or rhs.ty.kind == TypeKind.TENSOR:
+            return self._lower_tensor_binop(expr.op, lhs, rhs)
+
         op = _BINOP_MAP.get(expr.op)
         if op is None:
             # Unknown operator — emit as call
@@ -2447,6 +2451,36 @@ class MIRLowerer:
         self._emit(
             Call(dest=void_dest, fn_name=fn_name, args=[obj, rank_val] + indices + [val])
         )
+
+    def _lower_tensor_binop(self, op: str, lhs: Value, rhs: Value) -> Value:
+        """Lower tensor binary op to broadcast runtime call (v4.44.0)."""
+        _OP_SUFFIX = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
+        op_suffix = _OP_SUFFIX.get(op, "add")
+
+        # Determine element type suffix
+        tensor_val = lhs if lhs.ty.kind == TypeKind.TENSOR else rhs
+        elem_ti = tensor_val.ty.type_info.args[0] if tensor_val.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        ty_suffix = "i64" if elem_ti.kind == TypeKind.INT else "f64"
+
+        # Determine if tensor+tensor or tensor+scalar
+        both_tensor = lhs.ty.kind == TypeKind.TENSOR and rhs.ty.kind == TypeKind.TENSOR
+        if both_tensor:
+            fn_name = f"__mn_tensor_{op_suffix}_broadcast_{ty_suffix}"
+            dest = self._make_value(ty=tensor_val.ty, prefix="tbop")
+            self._emit(Call(dest=dest, fn_name=fn_name, args=[lhs, rhs]))
+        else:
+            # tensor + scalar or scalar + tensor
+            fn_name = f"__mn_tensor_{op_suffix}_scalar_{ty_suffix}"
+            if lhs.ty.kind == TypeKind.TENSOR:
+                dest = self._make_value(ty=lhs.ty, prefix="tsop")
+                self._emit(Call(dest=dest, fn_name=fn_name, args=[lhs, rhs]))
+            else:
+                # scalar + tensor → rewrite as tensor + scalar (commutative for +/*)
+                # For -/÷, this is wrong conceptually but matches NumPy's broadcasting
+                # (scalar is promoted to a tensor). We swap and negate if needed.
+                dest = self._make_value(ty=rhs.ty, prefix="tsop")
+                self._emit(Call(dest=dest, fn_name=fn_name, args=[rhs, lhs]))
+        return dest
 
     def _lower_pipe(self, expr: PipeExpr) -> Value:
         """Lower pipe expression: `a |> f`."""

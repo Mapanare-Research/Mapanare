@@ -427,3 +427,179 @@ MN_EXPORT void __mn_tensor_set_i64_nd(mapanare_tensor_t *t, int64_t rank, ...) {
     int64_t flat = tensor_flat_offset(t, idx, rank);
     ((int64_t *)t->data)[flat] = val;
 }
+
+/* -----------------------------------------------------------------------
+ * Tensor Broadcasting (v4.44.0)
+ *
+ * NumPy-style element-wise ops with shape broadcasting. Aligns from
+ * trailing dimensions; each pair must be equal or one must be 1.
+ * ----------------------------------------------------------------------- */
+
+#define MN_TENSOR_MAX_RANK 16
+
+/** Compute broadcast result shape. Returns result rank, or -1 if incompatible. */
+static int64_t compute_broadcast_shape(
+    const mapanare_tensor_t *a, const mapanare_tensor_t *b,
+    int64_t *out_shape) {
+    int64_t ar = a->ndim, br = b->ndim;
+    int64_t rr = ar > br ? ar : br;
+    if (rr > MN_TENSOR_MAX_RANK) return -1;
+    for (int64_t d = 0; d < rr; d++) {
+        int64_t ai = (d < rr - ar) ? 1 : a->shape[d - (rr - ar)];
+        int64_t bi = (d < rr - br) ? 1 : b->shape[d - (rr - br)];
+        if (ai == bi) out_shape[d] = ai;
+        else if (ai == 1) out_shape[d] = bi;
+        else if (bi == 1) out_shape[d] = ai;
+        else return -1;
+    }
+    return rr;
+}
+
+/** Map an output flat index to a source flat index accounting for broadcast.
+ *  For each dimension where source has size 1, that index is clamped to 0. */
+static int64_t broadcast_src_index(int64_t flat_out, const int64_t *out_shape,
+                                   int64_t out_rank,
+                                   const mapanare_tensor_t *src) {
+    int64_t coords[MN_TENSOR_MAX_RANK];
+    /* Decompose flat_out into per-dimension coordinates (row-major) */
+    int64_t rem = flat_out;
+    for (int64_t d = out_rank - 1; d >= 0; d--) {
+        coords[d] = rem % out_shape[d];
+        rem /= out_shape[d];
+    }
+    /* Map to source coordinates (broadcast: clamp to 0 if src dim is 1) */
+    int64_t offset_in_src = out_rank - src->ndim;
+    int64_t src_flat = 0;
+    int64_t stride = 1;
+    for (int64_t d = src->ndim - 1; d >= 0; d--) {
+        int64_t c = coords[d + offset_in_src];
+        if (src->shape[d] == 1) c = 0;
+        src_flat += c * stride;
+        stride *= src->shape[d];
+    }
+    return src_flat;
+}
+
+/* Macro for broadcast binary ops — generates all 4 operators for a type */
+#define DEFINE_TENSOR_BROADCAST_OPS(SUFFIX, CTYPE, PROMOTE)                    \
+                                                                               \
+static mapanare_tensor_t *tensor_broadcast_op_##SUFFIX(                        \
+    const mapanare_tensor_t *a, const mapanare_tensor_t *b,                    \
+    CTYPE (*op)(CTYPE, CTYPE)) {                                               \
+    int64_t out_shape[MN_TENSOR_MAX_RANK];                                     \
+    int64_t rr = compute_broadcast_shape(a, b, out_shape);                     \
+    if (rr < 0) {                                                              \
+        fprintf(stderr, "mapanare: tensor shapes not broadcast-compatible\n"); \
+        abort();                                                               \
+    }                                                                          \
+    mapanare_tensor_t *result = mapanare_tensor_alloc(rr, out_shape,           \
+                                                      sizeof(CTYPE));          \
+    if (!result) abort();                                                      \
+    int64_t total = result->size;                                              \
+    const CTYPE *ad = (const CTYPE *)a->data;                                  \
+    const CTYPE *bd = (const CTYPE *)b->data;                                  \
+    CTYPE *rd = (CTYPE *)result->data;                                         \
+    for (int64_t i = 0; i < total; i++) {                                      \
+        int64_t ai = broadcast_src_index(i, out_shape, rr, a);                 \
+        int64_t bi = broadcast_src_index(i, out_shape, rr, b);                 \
+        rd[i] = op(ad[ai], bd[bi]);                                            \
+    }                                                                          \
+    return result;                                                             \
+}                                                                              \
+                                                                               \
+static mapanare_tensor_t *tensor_scalar_op_##SUFFIX(                           \
+    const mapanare_tensor_t *a, CTYPE s,                                       \
+    CTYPE (*op)(CTYPE, CTYPE)) {                                               \
+    mapanare_tensor_t *result = mapanare_tensor_alloc(                         \
+        a->ndim, a->shape, sizeof(CTYPE));                                     \
+    if (!result) abort();                                                      \
+    const CTYPE *ad = (const CTYPE *)a->data;                                  \
+    CTYPE *rd = (CTYPE *)result->data;                                         \
+    for (int64_t i = 0; i < a->size; i++) rd[i] = op(ad[i], s);               \
+    return result;                                                             \
+}
+
+/* Scalar op helpers */
+static double  f64_add(double  a, double  b) { return a + b; }
+static double  f64_sub(double  a, double  b) { return a - b; }
+static double  f64_mul(double  a, double  b) { return a * b; }
+static double  f64_div(double  a, double  b) { return a / b; }
+static int64_t i64_add(int64_t a, int64_t b) { return a + b; }
+static int64_t i64_sub(int64_t a, int64_t b) { return a - b; }
+static int64_t i64_mul(int64_t a, int64_t b) { return a * b; }
+static int64_t i64_div(int64_t a, int64_t b) { return b ? a / b : 0; }
+
+DEFINE_TENSOR_BROADCAST_OPS(f64, double, )
+DEFINE_TENSOR_BROADCAST_OPS(i64, int64_t, )
+
+/* ---- Public API: tensor + tensor broadcast (f64) ---- */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_add_broadcast_f64(
+    const mapanare_tensor_t *a, const mapanare_tensor_t *b) {
+    return tensor_broadcast_op_f64(a, b, f64_add);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_sub_broadcast_f64(
+    const mapanare_tensor_t *a, const mapanare_tensor_t *b) {
+    return tensor_broadcast_op_f64(a, b, f64_sub);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_mul_broadcast_f64(
+    const mapanare_tensor_t *a, const mapanare_tensor_t *b) {
+    return tensor_broadcast_op_f64(a, b, f64_mul);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_div_broadcast_f64(
+    const mapanare_tensor_t *a, const mapanare_tensor_t *b) {
+    return tensor_broadcast_op_f64(a, b, f64_div);
+}
+
+/* ---- Public API: tensor + tensor broadcast (i64) ---- */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_add_broadcast_i64(
+    const mapanare_tensor_t *a, const mapanare_tensor_t *b) {
+    return tensor_broadcast_op_i64(a, b, i64_add);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_sub_broadcast_i64(
+    const mapanare_tensor_t *a, const mapanare_tensor_t *b) {
+    return tensor_broadcast_op_i64(a, b, i64_sub);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_mul_broadcast_i64(
+    const mapanare_tensor_t *a, const mapanare_tensor_t *b) {
+    return tensor_broadcast_op_i64(a, b, i64_mul);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_div_broadcast_i64(
+    const mapanare_tensor_t *a, const mapanare_tensor_t *b) {
+    return tensor_broadcast_op_i64(a, b, i64_div);
+}
+
+/* ---- Public API: tensor + scalar (f64) ---- */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_add_scalar_f64(
+    const mapanare_tensor_t *a, double s) {
+    return tensor_scalar_op_f64(a, s, f64_add);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_sub_scalar_f64(
+    const mapanare_tensor_t *a, double s) {
+    return tensor_scalar_op_f64(a, s, f64_sub);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_mul_scalar_f64(
+    const mapanare_tensor_t *a, double s) {
+    return tensor_scalar_op_f64(a, s, f64_mul);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_div_scalar_f64(
+    const mapanare_tensor_t *a, double s) {
+    return tensor_scalar_op_f64(a, s, f64_div);
+}
+
+/* ---- Public API: tensor + scalar (i64) ---- */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_add_scalar_i64(
+    const mapanare_tensor_t *a, int64_t s) {
+    return tensor_scalar_op_i64(a, s, i64_add);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_sub_scalar_i64(
+    const mapanare_tensor_t *a, int64_t s) {
+    return tensor_scalar_op_i64(a, s, i64_sub);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_mul_scalar_i64(
+    const mapanare_tensor_t *a, int64_t s) {
+    return tensor_scalar_op_i64(a, s, i64_mul);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_div_scalar_i64(
+    const mapanare_tensor_t *a, int64_t s) {
+    return tensor_scalar_op_i64(a, s, i64_div);
+}

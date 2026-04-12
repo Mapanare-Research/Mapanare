@@ -348,6 +348,24 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_tensor_get_i64_nd": {"nounwind"},
     "__mn_tensor_set_f64_nd": {"nounwind"},
     "__mn_tensor_set_i64_nd": {"nounwind"},
+    # Tensor broadcast ops (v4.44.0). Return fresh tensors (noalias).
+    # Not willreturn — abort on incompatible shapes or alloc failure.
+    "__mn_tensor_add_broadcast_f64": {"nounwind", "noalias"},
+    "__mn_tensor_sub_broadcast_f64": {"nounwind", "noalias"},
+    "__mn_tensor_mul_broadcast_f64": {"nounwind", "noalias"},
+    "__mn_tensor_div_broadcast_f64": {"nounwind", "noalias"},
+    "__mn_tensor_add_broadcast_i64": {"nounwind", "noalias"},
+    "__mn_tensor_sub_broadcast_i64": {"nounwind", "noalias"},
+    "__mn_tensor_mul_broadcast_i64": {"nounwind", "noalias"},
+    "__mn_tensor_div_broadcast_i64": {"nounwind", "noalias"},
+    "__mn_tensor_add_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_sub_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_mul_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_div_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_add_scalar_i64": {"nounwind", "noalias"},
+    "__mn_tensor_sub_scalar_i64": {"nounwind", "noalias"},
+    "__mn_tensor_mul_scalar_i64": {"nounwind", "noalias"},
+    "__mn_tensor_div_scalar_i64": {"nounwind", "noalias"},
     # Agent runtime (v3.43.0). v4.30.0: ``agent_new`` returns a fresh
     # heap agent handle (noalias); dispatch/send/recv do not.
     "mapanare_agent_new": {"nounwind", "noalias", "willreturn"},
@@ -2688,6 +2706,39 @@ class LLVMTextEmitter:
             self._ensure(fn, VOID, [PTR, I64], va=True)
             idx_str = (", " + ", ".join(idx_parts)) if idx_parts else ""
             self._L(f"call void (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str}, {val_ty} {val_v})")
+            return
+
+        # Tensor broadcast ops (v4.44.0) — tensor+tensor and tensor+scalar
+        _TENSOR_BROADCAST_FNS = {
+            "__mn_tensor_add_broadcast_f64", "__mn_tensor_sub_broadcast_f64",
+            "__mn_tensor_mul_broadcast_f64", "__mn_tensor_div_broadcast_f64",
+            "__mn_tensor_add_broadcast_i64", "__mn_tensor_sub_broadcast_i64",
+            "__mn_tensor_mul_broadcast_i64", "__mn_tensor_div_broadcast_i64",
+        }
+        _TENSOR_SCALAR_FNS = {
+            "__mn_tensor_add_scalar_f64", "__mn_tensor_sub_scalar_f64",
+            "__mn_tensor_mul_scalar_f64", "__mn_tensor_div_scalar_f64",
+            "__mn_tensor_add_scalar_i64", "__mn_tensor_sub_scalar_i64",
+            "__mn_tensor_mul_scalar_i64", "__mn_tensor_div_scalar_i64",
+        }
+        if fn in _TENSOR_BROADCAST_FNS and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], PTR) if args[1][1] != PTR else args[1][0]
+            self._ensure(fn, PTR, [PTR, PTR])
+            r = self._f("tbcast")
+            self._L(f"{r} = call noalias ptr @{fn}(ptr {a0}, ptr {a1})")
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
+            return
+        if fn in _TENSOR_SCALAR_FNS and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            scalar_ty = DBL if "f64" in fn else I64
+            a1 = self._coerce(args[1][0], args[1][1], scalar_ty) if args[1][1] != scalar_ty else args[1][0]
+            self._ensure(fn, PTR, [PTR, scalar_ty])
+            r = self._f("tscal")
+            self._L(f"{r} = call noalias ptr @{fn}(ptr {a0}, {scalar_ty} {a1})")
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
             return
 
         # join

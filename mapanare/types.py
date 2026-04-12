@@ -440,6 +440,49 @@ def validate_matmul_shapes(
     return None
 
 
+def broadcast_shape(
+    a: tuple[int, ...], b: tuple[int, ...]
+) -> tuple[int, ...] | None:
+    """Compute the broadcast result shape using NumPy rules (v4.44.0).
+
+    Aligns from trailing dimensions. Each dimension pair must be equal or
+    one of them must be 1. The shorter shape is left-padded with 1s.
+    Returns None if shapes are not broadcast-compatible.
+    """
+    max_rank = max(len(a), len(b))
+    a_padded = (1,) * (max_rank - len(a)) + a
+    b_padded = (1,) * (max_rank - len(b)) + b
+
+    result: list[int] = []
+    for ai, bi in zip(a_padded, b_padded):
+        if ai == bi:
+            result.append(ai)
+        elif ai == 1:
+            result.append(bi)
+        elif bi == 1:
+            result.append(ai)
+        else:
+            return None  # incompatible
+    return tuple(result)
+
+
+def broadcast_incompatible_dim(
+    a: tuple[int, ...], b: tuple[int, ...]
+) -> int | None:
+    """Return the 0-based dimension index (from trailing) where broadcasting fails.
+
+    Used for rustc-quality diagnostics. Returns None if shapes are compatible.
+    """
+    max_rank = max(len(a), len(b))
+    a_padded = (1,) * (max_rank - len(a)) + a
+    b_padded = (1,) * (max_rank - len(b)) + b
+
+    for i, (ai, bi) in enumerate(zip(a_padded, b_padded)):
+        if ai != bi and ai != 1 and bi != 1:
+            return i
+    return None
+
+
 def make_type(name: str, **kwargs: object) -> TypeInfo:
     """Create a TypeInfo from a type name string. Convenience factory."""
     k = _NAME_TO_KIND.get(name, TypeKind.UNKNOWN)

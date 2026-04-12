@@ -668,20 +668,42 @@ class SemanticChecker:
                         f"types {_type_display(left)} and {_type_display(right)}",
                         expr,
                     )
-                # Compile-time shape validation for element-wise ops
+                # Compile-time shape validation with broadcasting (v4.44.0)
+                from mapanare.types import broadcast_incompatible_dim, broadcast_shape
+
                 result_shape: tuple[int, ...] | None = None
                 if left.kind == TypeKind.TENSOR and right.kind == TypeKind.TENSOR:
                     if left.tensor_shape is not None and right.tensor_shape is not None:
-                        if left.tensor_shape != right.tensor_shape:
+                        bcast = broadcast_shape(left.tensor_shape, right.tensor_shape)
+                        if bcast is None:
+                            bad_dim = broadcast_incompatible_dim(
+                                left.tensor_shape, right.tensor_shape
+                            )
+                            dim_note = ""
+                            if bad_dim is not None:
+                                a_pad = (1,) * (
+                                    max(len(left.tensor_shape), len(right.tensor_shape))
+                                    - len(left.tensor_shape)
+                                ) + left.tensor_shape
+                                b_pad = (1,) * (
+                                    max(len(left.tensor_shape), len(right.tensor_shape))
+                                    - len(right.tensor_shape)
+                                ) + right.tensor_shape
+                                dim_note = (
+                                    f"; dimension {bad_dim} differs: "
+                                    f"{a_pad[bad_dim]} vs {b_pad[bad_dim]}"
+                                )
                             self._error(
-                                f"Shape mismatch for element-wise '{expr.op}': "
-                                f"{_type_display(left)} vs {_type_display(right)}",
+                                f"shapes {list(left.tensor_shape)} and "
+                                f"{list(right.tensor_shape)} are not "
+                                f"broadcast-compatible for '{expr.op}'"
+                                f"{dim_note}",
                                 expr,
                             )
                         else:
-                            result_shape = left.tensor_shape
+                            result_shape = bcast
                 elif left.kind == TypeKind.TENSOR:
-                    result_shape = left.tensor_shape
+                    result_shape = left.tensor_shape  # scalar broadcasts to tensor shape
                 else:
                     result_shape = right.tensor_shape
                 elem_type = (
