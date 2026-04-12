@@ -366,6 +366,11 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_tensor_sub_scalar_i64": {"nounwind", "noalias"},
     "__mn_tensor_mul_scalar_i64": {"nounwind", "noalias"},
     "__mn_tensor_div_scalar_i64": {"nounwind", "noalias"},
+    # Reverse scalar ops (v4.47.0): scalar op tensor[i] for non-commutative ops
+    "__mn_tensor_rsub_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_rdiv_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_rsub_scalar_i64": {"nounwind", "noalias"},
+    "__mn_tensor_rdiv_scalar_i64": {"nounwind", "noalias"},
     # Tensor reductions (v4.45.0). Global reductions return scalars (no noalias).
     # mean/max/min/argmax/argmin abort on empty tensor (not willreturn).
     "__mn_tensor_sum_f64": {"nounwind"},
@@ -2745,14 +2750,33 @@ class LLVMTextEmitter:
             return
 
         # Tensor slice (v4.45.0)
+        # Lowerer passes flat args: [tensor, s0, s1, ..., e0, e1, ..., rank]
+        # C runtime expects: (ptr tensor, ptr starts_array, ptr ends_array, i64 rank)
+        # We pack the individual i64 values into stack-allocated arrays.
         if fn == "__mn_tensor_slice" and len(args) >= 3:
             t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
-            starts = self._coerce(args[1][0], args[1][1], PTR) if args[1][1] != PTR else args[1][0]
-            ends = self._coerce(args[2][0], args[2][1], PTR) if args[2][1] != PTR else args[2][0]
-            rank_v = self._coerce(args[3][0], args[3][1], I64) if len(args) > 3 and args[3][1] != I64 else (args[3][0] if len(args) > 3 else "0")
+            # Last arg is rank
+            rank_idx = len(args) - 1
+            rank_v = self._coerce(args[rank_idx][0], args[rank_idx][1], I64) if args[rank_idx][1] != I64 else args[rank_idx][0]
+            ndim = (len(args) - 2) // 2  # (total - tensor - rank) / 2
+            # Allocate stack arrays for starts and ends
+            starts_arr = self._f("starts_arr")
+            ends_arr = self._f("ends_arr")
+            self._L(f"{starts_arr} = alloca [{ndim} x i64]")
+            self._L(f"{ends_arr} = alloca [{ndim} x i64]")
+            # Store individual start/end values into the arrays
+            for d in range(ndim):
+                s_val = self._coerce(args[1 + d][0], args[1 + d][1], I64) if args[1 + d][1] != I64 else args[1 + d][0]
+                e_val = self._coerce(args[1 + ndim + d][0], args[1 + ndim + d][1], I64) if args[1 + ndim + d][1] != I64 else args[1 + ndim + d][0]
+                s_gep = self._f("sgep")
+                e_gep = self._f("egep")
+                self._L(f"{s_gep} = getelementptr inbounds [{ndim} x i64], ptr {starts_arr}, i64 0, i64 {d}")
+                self._L(f"{e_gep} = getelementptr inbounds [{ndim} x i64], ptr {ends_arr}, i64 0, i64 {d}")
+                self._L(f"store i64 {s_val}, ptr {s_gep}")
+                self._L(f"store i64 {e_val}, ptr {e_gep}")
             self._ensure("__mn_tensor_slice", PTR, [PTR, PTR, PTR, I64])
             r = self._f("tslice")
-            self._L(f"{r} = call noalias ptr @__mn_tensor_slice(ptr {t_ptr}, ptr {starts}, ptr {ends}, i64 {rank_v})")
+            self._L(f"{r} = call noalias ptr @__mn_tensor_slice(ptr {t_ptr}, ptr {starts_arr}, ptr {ends_arr}, i64 {rank_v})")
             self._tensor_vars.append(i.dest.name)
             self._put(i.dest, r, PTR)
             return
@@ -2770,6 +2794,11 @@ class LLVMTextEmitter:
             "__mn_tensor_add_scalar_i64", "__mn_tensor_sub_scalar_i64",
             "__mn_tensor_mul_scalar_i64", "__mn_tensor_div_scalar_i64",
         }
+        # Reverse scalar: scalar op tensor[i] (v4.47.0)
+        _TENSOR_RSCALAR_FNS = {
+            "__mn_tensor_rsub_scalar_f64", "__mn_tensor_rdiv_scalar_f64",
+            "__mn_tensor_rsub_scalar_i64", "__mn_tensor_rdiv_scalar_i64",
+        }
         if fn in _TENSOR_BROADCAST_FNS and len(args) >= 2:
             a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
             a1 = self._coerce(args[1][0], args[1][1], PTR) if args[1][1] != PTR else args[1][0]
@@ -2786,6 +2815,17 @@ class LLVMTextEmitter:
             self._ensure(fn, PTR, [PTR, scalar_ty])
             r = self._f("tscal")
             self._L(f"{r} = call noalias ptr @{fn}(ptr {a0}, {scalar_ty} {a1})")
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
+            return
+        # Reverse scalar: scalar op tensor (v4.47.0)
+        if fn in _TENSOR_RSCALAR_FNS and len(args) >= 2:
+            scalar_ty = DBL if "f64" in fn else I64
+            a0 = self._coerce(args[0][0], args[0][1], scalar_ty) if args[0][1] != scalar_ty else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], PTR) if args[1][1] != PTR else args[1][0]
+            self._ensure(fn, PTR, [scalar_ty, PTR])
+            r = self._f("trscal")
+            self._L(f"{r} = call noalias ptr @{fn}({scalar_ty} {a0}, ptr {a1})")
             self._tensor_vars.append(i.dest.name)
             self._put(i.dest, r, PTR)
             return

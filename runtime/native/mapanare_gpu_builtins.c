@@ -517,6 +517,19 @@ static mapanare_tensor_t *tensor_scalar_op_##SUFFIX(                           \
     CTYPE *rd = (CTYPE *)result->data;                                         \
     for (int64_t i = 0; i < a->size; i++) rd[i] = op(ad[i], s);               \
     return result;                                                             \
+}                                                                              \
+                                                                               \
+/* Reverse scalar: scalar op tensor[i] (v4.47.0 — fix scalar-tensor sub/div) */ \
+static mapanare_tensor_t *tensor_rscalar_op_##SUFFIX(                          \
+    CTYPE s, const mapanare_tensor_t *a,                                       \
+    CTYPE (*op)(CTYPE, CTYPE)) {                                               \
+    mapanare_tensor_t *result = mapanare_tensor_alloc(                         \
+        a->ndim, a->shape, sizeof(CTYPE));                                     \
+    if (!result) abort();                                                      \
+    const CTYPE *ad = (const CTYPE *)a->data;                                  \
+    CTYPE *rd = (CTYPE *)result->data;                                         \
+    for (int64_t i = 0; i < a->size; i++) rd[i] = op(s, ad[i]);               \
+    return result;                                                             \
 }
 
 /* Scalar op helpers */
@@ -602,6 +615,25 @@ MN_EXPORT mapanare_tensor_t *__mn_tensor_mul_scalar_i64(
 MN_EXPORT mapanare_tensor_t *__mn_tensor_div_scalar_i64(
     const mapanare_tensor_t *a, int64_t s) {
     return tensor_scalar_op_i64(a, s, i64_div);
+}
+
+/* ---- Public API: scalar op tensor (reverse, v4.47.0) ---- */
+/* These compute scalar - tensor[i] and scalar / tensor[i] correctly. */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_rsub_scalar_f64(
+    double s, const mapanare_tensor_t *a) {
+    return tensor_rscalar_op_f64(s, a, f64_sub);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_rdiv_scalar_f64(
+    double s, const mapanare_tensor_t *a) {
+    return tensor_rscalar_op_f64(s, a, f64_div);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_rsub_scalar_i64(
+    int64_t s, const mapanare_tensor_t *a) {
+    return tensor_rscalar_op_i64(s, a, i64_sub);
+}
+MN_EXPORT mapanare_tensor_t *__mn_tensor_rdiv_scalar_i64(
+    int64_t s, const mapanare_tensor_t *a) {
+    return tensor_rscalar_op_i64(s, a, i64_div);
 }
 
 /* -----------------------------------------------------------------------

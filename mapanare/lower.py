@@ -2551,16 +2551,23 @@ class MIRLowerer:
             self._emit(Call(dest=dest, fn_name=fn_name, args=[lhs, rhs]))
         else:
             # tensor + scalar or scalar + tensor
-            fn_name = f"__mn_tensor_{op_suffix}_scalar_{ty_suffix}"
             if lhs.ty.kind == TypeKind.TENSOR:
+                # tensor op scalar — straightforward
+                fn_name = f"__mn_tensor_{op_suffix}_scalar_{ty_suffix}"
                 dest = self._make_value(ty=lhs.ty, prefix="tsop")
                 self._emit(Call(dest=dest, fn_name=fn_name, args=[lhs, rhs]))
             else:
-                # scalar + tensor → rewrite as tensor + scalar (commutative for +/*)
-                # For -/÷, this is wrong conceptually but matches NumPy's broadcasting
-                # (scalar is promoted to a tensor). We swap and negate if needed.
-                dest = self._make_value(ty=rhs.ty, prefix="tsop")
-                self._emit(Call(dest=dest, fn_name=fn_name, args=[rhs, lhs]))
+                # scalar op tensor
+                if op in ("+", "*"):
+                    # Commutative — swap safely: tensor op scalar
+                    fn_name = f"__mn_tensor_{op_suffix}_scalar_{ty_suffix}"
+                    dest = self._make_value(ty=rhs.ty, prefix="tsop")
+                    self._emit(Call(dest=dest, fn_name=fn_name, args=[rhs, lhs]))
+                else:
+                    # Non-commutative (- /) — use reverse scalar fn (v4.47.0 fix)
+                    fn_name = f"__mn_tensor_r{op_suffix}_scalar_{ty_suffix}"
+                    dest = self._make_value(ty=rhs.ty, prefix="tsop")
+                    self._emit(Call(dest=dest, fn_name=fn_name, args=[lhs, rhs]))
         return dest
 
     def _lower_pipe(self, expr: PipeExpr) -> Value:
