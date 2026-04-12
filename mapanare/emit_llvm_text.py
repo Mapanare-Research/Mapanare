@@ -1072,10 +1072,12 @@ class LLVMTextEmitter:
                 self._stream_vars.append(dest_name)
 
     def _emit_drop_glue(self, ret_val: str | None, ret_ty: str) -> None:
-        """Emit cleanup code before a return instruction.
+        """Dispatch per-resource cleanup before a return instruction.
 
-        For each tracked string, loads the {ptr, i64} value, extracts the data
-        pointer, and frees it unless it's the same pointer being returned.
+        v4.32.0 Phase 2.2 (Cobra Issue #12, 10th cycle): extracted from
+        ~300 lines of inline loops into per-kind helpers. Byte-identity
+        preserving for main.ll — the order of ``self._ensure`` and
+        ``self._L`` calls is unchanged.
         """
         has_any = (
             (self._local_strings)
@@ -1088,20 +1090,46 @@ class LLVMTextEmitter:
         )
         if not has_any:
             return
-
-        # Skip drop glue for compound return types that contain pointer
-        # fields.  The escape analysis can't follow heap pointers, so any
-        # tracked allocation could be reachable through a returned ptr.
-        # Pure-data structs (e.g. {i64, i64} for ranges) get full drop
-        # glue — an improvement over the original blanket skip.
-        if ret_ty.startswith("{") and ret_ty not in (VOID, I1, I64, DBL):
-            if "ptr" in ret_ty:
-                return
+        # Skip compound returns that contain ptr fields — escape analysis
+        # cannot follow them. v4.32.0 Viper V1 (8th cycle) asked for
+        # this early return to be retired because per-kind helpers now
+        # consult ret_ptr_fields directly, but Phase 2.2 is a pure
+        # refactor — tracked to v4.33.0 as CARRY_FORWARD.md row #49.
+        if ret_ty.startswith("{") and ret_ty not in (VOID, I1, I64, DBL) and "ptr" in ret_ty:
+            return
 
         self._ensure("__mn_str_free", VOID, [STR])
+        ret_str_ptrs, ret_list_ptrs, ret_env, ret_ptr_fields = (
+            self._emit_drop_glue_collect_ret_ptrs(ret_val, ret_ty)
+        )
 
+        self._emit_drop_glue_strings(ret_str_ptrs, ret_ptr_fields)
+        self._ensure("free", VOID, [PTR])
+        self._emit_drop_glue_closures(ret_env, ret_ptr_fields)
+        self._emit_drop_glue_boxed(ret_ptr_fields)
+        if self._list_vars:
+            self._ensure("__mn_list_free", VOID, ["ptr"])
+        self._emit_drop_glue_lists(ret_list_ptrs, ret_ptr_fields)
+        if self._map_vars:
+            self._ensure("__mn_map_free_deep", VOID, [PTR])
+        self._emit_drop_glue_maps()
+        if self._signal_vars:
+            self._ensure("__mn_signal_free", VOID, [PTR])
+        self._emit_drop_glue_signals()
+        if self._stream_vars:
+            self._ensure("__mn_stream_free_chain", VOID, [PTR])
+        self._emit_drop_glue_streams()
+
+    def _emit_drop_glue_collect_ret_ptrs(
+        self, ret_val: str | None, ret_ty: str
+    ) -> tuple[list[str], list[str], str | None, list[str]]:
+        """Extract every pointer that will escape via the return value.
+
+        Returns ``(ret_str_ptrs, ret_list_ptrs, ret_env, ret_ptr_fields)``.
+        The per-resource drop helpers use these lists to skip freeing
+        pointers the function is about to return.
+        """
         # Extract returned string's data pointer (to avoid freeing it)
-        ret_ptr: str | None = None
         ret_str_ptrs: list[str] = []
         if ret_val and ret_ty == STR:
             ret_ptr = self._f("ret.ptr")
@@ -1121,7 +1149,6 @@ class LLVMTextEmitter:
                         ret_str_ptrs.append(sp_ret)
 
         # Extract returned list's data pointer (to avoid freeing it)
-        ret_list_ptr: str | None = None
         ret_list_ptrs: list[str] = []
         if ret_val and ret_ty == LIST:
             ret_list_ptr = self._f("ret.lp")
@@ -1157,6 +1184,25 @@ class LLVMTextEmitter:
         if ret_val and ret_ty.startswith("{") and need_ret_ptrs:
             self._extract_ret_ptrs(ret_val, ret_ty, ret_ptr_fields)
 
+        return ret_str_ptrs, ret_list_ptrs, ret_env, ret_ptr_fields
+
+    # ------------------------------------------------------------------
+    # v4.32.0 Phase 2.2 — per-resource drop-glue helpers
+    # ------------------------------------------------------------------
+    # Each helper is the verbatim body of the inline for-loop it
+    # replaces. Extracted from _emit_drop_glue (formerly ~300 lines) per
+    # Cobra Issue #12 (10th cycle). Keeping them as methods on the
+    # emitter class preserves access to self._f, self._L, self._blk,
+    # self._cb, self._c, and self._local_* / self._*_vars.
+
+    def _emit_drop_glue_strings(self, ret_str_ptrs: list[str], ret_ptr_fields: list[str]) -> None:
+        """Drop-loop for tracked local strings.
+
+        For each slot in self._local_strings, loads the {ptr, i64}
+        value, checks the data pointer against any string pointers the
+        function is returning (ret_str_ptrs + ret_ptr_fields), and
+        calls __mn_str_free unless the pointer would alias.
+        """
         for slot in self._local_strings:
             sv = self._f("drop.s")
             self._L(f"{sv} = load {{ptr, i64}}, ptr {slot}")
@@ -1190,7 +1236,14 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-        self._ensure("free", VOID, [PTR])
+    def _emit_drop_glue_closures(self, ret_env: str | None, ret_ptr_fields: list[str]) -> None:
+        """Drop-loop for tracked local closure environments.
+
+        For each closure slot, loads the {fn_ptr, env_ptr} pair and
+        free's the env pointer unless it aliases a returned pointer
+        (ret_env for direct closure returns, ret_ptr_fields for
+        closures embedded in struct returns).
+        """
         for slot in self._local_closures:
             cv = self._f("drop.c")
             self._L(f"{cv} = load {{ptr, ptr}}, ptr {slot}")
@@ -1224,6 +1277,12 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
+    def _emit_drop_glue_boxed(self, ret_ptr_fields: list[str]) -> None:
+        """Drop-loop for tracked local boxed enum payloads.
+
+        For each boxed slot, loads the raw ptr and frees it unless it
+        aliases any returned pointer (ret_ptr_fields).
+        """
         for slot in self._local_boxed:
             bp = self._f("drop.bp")
             self._L(f"{bp} = load ptr, ptr {slot}")
@@ -1251,9 +1310,16 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-        # List cleanup — load from the variable's alloca (gets final post-push value)
-        if self._list_vars:
-            self._ensure("__mn_list_free", VOID, ["ptr"])
+    def _emit_drop_glue_lists(self, ret_list_ptrs: list[str], ret_ptr_fields: list[str]) -> None:
+        """Drop-loop for tracked list variables.
+
+        For each list_var, resolves the alloca, loads the list struct,
+        extracts the data pointer, and calls __mn_list_free unless the
+        pointer aliases a returned list pointer (ret_list_ptrs +
+        ret_ptr_fields). Variables that cannot be resolved via
+        self._alloc are silently skipped (matches pre-extraction
+        behavior).
+        """
         for var_name in self._list_vars:
             alloc_info = None
             for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
@@ -1294,14 +1360,14 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-        # NOTE: struct parameter list field cleanup removed.  Without list
-        # cloning on struct copy, shared buffers are safe (mn_list_grow
-        # allocates new instead of realloc).  The old buffers leak on grow
-        # but that's bounded to O(log n) per list (geometric doubling).
+    def _emit_drop_glue_maps(self) -> None:
+        """Drop-loop for tracked map variables.
 
-        # Map cleanup
-        if self._map_vars:
-            self._ensure("__mn_map_free_deep", VOID, [PTR])
+        For each map_var, resolves the alloca, loads the ptr, and
+        calls __mn_map_free_deep unconditionally (no aliasing check —
+        maps do not participate in the return-pointer escape analysis
+        today).
+        """
         for var_name in self._map_vars:
             alloc_info = None
             for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
@@ -1328,9 +1394,12 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-        # Signal cleanup
-        if self._signal_vars:
-            self._ensure("__mn_signal_free", VOID, [PTR])
+    def _emit_drop_glue_signals(self) -> None:
+        """Drop-loop for tracked signal variables.
+
+        For each signal_var, resolves the alloca, loads the ptr, and
+        calls __mn_signal_free.
+        """
         for var_name in self._signal_vars:
             alloc_info = None
             for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
@@ -1357,9 +1426,13 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-        # Stream cleanup
-        if self._stream_vars:
-            self._ensure("__mn_stream_free_chain", VOID, [PTR])
+    def _emit_drop_glue_streams(self) -> None:
+        """Drop-loop for tracked stream variables.
+
+        For each stream_var, resolves the alloca, loads the ptr, and
+        calls __mn_stream_free_chain (which walks the fusion chain and
+        frees every link).
+        """
         for var_name in self._stream_vars:
             alloc_info = None
             for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
