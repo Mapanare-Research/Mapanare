@@ -309,6 +309,7 @@ typedef struct MnArenaBlock {
 typedef struct {
     MnArenaBlock *head;
     int64_t default_block_size;
+    volatile int lock;  /* v4.34.0: spinlock for thread safety */
 } MnArena;
 
 /** Create a new arena with the given default block size. */

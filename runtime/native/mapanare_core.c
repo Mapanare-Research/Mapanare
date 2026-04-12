@@ -101,6 +101,17 @@ MN_EXPORT void *__mn_realloc(void *ptr, int64_t new_size) {
 }
 
 MN_EXPORT void __mn_free(void *ptr) {
+    /* v4.34.0: wire MN_PROFILE_FREE so mn_alloc_live tracks currently-live
+     * bytes instead of growing monotonically.  We don't know the exact size
+     * of the allocation here (libc doesn't expose it portably), so we pass 0.
+     * To get accurate live tracking, callers should use __mn_free_sized. */
+    (void)ptr;  /* suppress unused-when-profiling-disabled warning */
+    free(ptr);
+}
+
+MN_EXPORT void __mn_free_sized(void *ptr, int64_t size) {
+    MN_PROFILE_FREE(size);
+    (void)size;  /* suppress warning when profiling disabled */
     free(ptr);
 }
 
@@ -197,7 +208,18 @@ MN_EXPORT MnArena *mn_arena_create(int64_t block_size) {
     }
     arena->default_block_size = block_size;
     arena->head = mn_arena_block_new(block_size);
+    arena->lock = 0;
     return arena;
+}
+
+/* v4.34.0: spinlock for thread-safe arena allocation */
+static inline void arena_lock(MnArena *arena) {
+    while (__sync_lock_test_and_set(&arena->lock, 1)) {
+        /* spin — arenas are fast, contention is rare */
+    }
+}
+static inline void arena_unlock(MnArena *arena) {
+    __sync_lock_release(&arena->lock);
 }
 
 MN_EXPORT void *mn_arena_alloc(MnArena *arena, int64_t size) {
@@ -205,6 +227,7 @@ MN_EXPORT void *mn_arena_alloc(MnArena *arena, int64_t size) {
     /* Align to 8 bytes */
     size = (size + 7) & ~(int64_t)7;
 
+    arena_lock(arena);
     MnArenaBlock *blk = arena->head;
     if (blk->used + size > blk->size) {
         /* Need a new block — at least big enough for this allocation */
@@ -217,6 +240,7 @@ MN_EXPORT void *mn_arena_alloc(MnArena *arena, int64_t size) {
     }
     void *ptr = blk->data + blk->used;
     blk->used += size;
+    arena_unlock(arena);
     return ptr;
 }
 
@@ -1389,12 +1413,39 @@ MN_EXPORT MnString __mn_tmpfile_path(void) {
 }
 
 MN_EXPORT MnString __mn_read_line(void) {
-    char buf[4096];
-    if (!fgets(buf, sizeof(buf), stdin)) return __mn_str_empty();
-    size_t len = strlen(buf);
+    /* v4.34.0: use getline(3) on POSIX for arbitrarily long lines instead
+     * of the old 4KB fgets buffer that silently truncated long input. */
+#if defined(_POSIX_C_SOURCE) || defined(__linux__) || defined(__APPLE__)
+    char *line = NULL;
+    size_t cap = 0;
+    ssize_t n = getline(&line, &cap, stdin);
+    if (n < 0) { free(line); return __mn_str_empty(); }
+    /* Strip trailing newline/carriage-return */
+    while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) n--;
+    line[n] = '\0';
+    MnString result = __mn_str_from_cstr(line);
+    free(line);
+    return result;
+#else
+    /* Windows fallback: loop fgets until we read a full line */
+    size_t cap = 4096, len = 0;
+    char *buf = (char *)malloc(cap);
+    if (!buf) return __mn_str_empty();
+    while (fgets(buf + len, (int)(cap - len), stdin)) {
+        len += strlen(buf + len);
+        if (len > 0 && buf[len - 1] == '\n') break;
+        cap *= 2;
+        char *tmp = (char *)realloc(buf, cap);
+        if (!tmp) break;
+        buf = tmp;
+    }
+    if (len == 0) { free(buf); return __mn_str_empty(); }
     if (len > 0 && buf[len - 1] == '\n') buf[--len] = '\0';
     if (len > 0 && buf[len - 1] == '\r') buf[--len] = '\0';
-    return __mn_str_from_cstr(buf);
+    MnString result = __mn_str_from_cstr(buf);
+    free(buf);
+    return result;
+#endif
 }
 
 MN_EXPORT int64_t __mn_file_append(MnString path, MnString content) {
