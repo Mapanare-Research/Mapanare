@@ -82,3 +82,4 @@ docs/roadmap/MASTER_PROMPT.md.mnc_cache/
 *.o.tmp
 docs/roadmap/*/*/culebra-*.json
 docs/roadmap/*/*/culebra-*.jsonl
+/.culebra
