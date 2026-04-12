@@ -332,6 +332,13 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "gpu_tensor_mul": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
     "gpu_tensor_div": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
     "gpu_tensor_matmul": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
+    # Tensor builtins (v4.42.0)
+    "tensor_rank": INT_TYPE,
+    "tensor_size": INT_TYPE,
+    "tensor_get_f64": TypeInfo(kind=TypeKind.FLOAT),
+    "tensor_get_i64": INT_TYPE,
+    "tensor_shape_dim": INT_TYPE,
+    "tensor_print": VOID_TYPE,
 }
 
 # Builtin call name mapping (Mapanare name -> Python name) for emit_python.py

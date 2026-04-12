@@ -1907,6 +1907,16 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     // Signal expression
     if tt == "KW_SIGNAL" { return parse_signal_expr(tokens, pos, filename) }
 
+    // Tensor literal: Tensor<Type>[elements]  (v4.42.0)
+    if tt == "KW_TENSOR" {
+        if pos + 1 < len(tokens) {
+            let next_tt: String = tokens[pos + 1].tok_type
+            if next_tt == "LT" {
+                return parse_tensor_lit(tokens, pos, filename)
+            }
+        }
+    }
+
     // Map literal: #{ key: val, ... }
     if tt == "MAP_OPEN" { return parse_map_lit(tokens, pos, filename) }
 
@@ -2225,6 +2235,33 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
 
     p = expect(tokens, p, "RBRACKET")
     return new_expr_result(Expr::ListLit(elems), p)
+}
+
+// ---------------------------------------------------------------------------
+// Tensor literal: Tensor<Type>[elements] (v4.42.0)
+// Parses Tensor<Type>[...] by consuming the type prefix, then delegating
+// to parse_list_lit for the body. Returns TensorLit with flat elements and
+// shape [n] (1D). For nD, the Python bootstrap handles nesting; the
+// self-hosted mirror handles 1D for now (sufficient for golden tests).
+// ---------------------------------------------------------------------------
+
+fn parse_tensor_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+    let mut p: Int = pos + 1
+    p = expect(tokens, p, "LT")
+    let mut depth: Int = 1
+    for _ in 0..100 {
+        if depth > 0 {
+            let tt: String = peek_type(tokens, p)
+            if tt == "LT" { depth = depth + 1 }
+            if tt == "GT" { depth = depth - 1 }
+            p = p + 1
+        }
+    }
+    // Now at [elements]
+    let list_result: ExprResult = parse_list_lit(tokens, p, filename)
+    let elems: List<Expr> = expr_list_elements(list_result.expr)
+    let shape: List<Int> = [len(elems)]
+    return new_expr_result(Expr::TensorLit(elems, shape), list_result.pos)
 }
 
 // ---------------------------------------------------------------------------

@@ -52,6 +52,7 @@ from mapanare.ast_nodes import (
     ListLiteral,
     MapLiteral,
     MatchExpr,
+    TensorLiteral,
     MethodCallExpr,
     ModuleLetDef,
     NamedType,
@@ -124,6 +125,7 @@ from mapanare.mir import (
     StreamOp,
     StreamOpKind,
     StructInit,
+    TensorInit,
     Switch,
     UnaryOp,
     UnaryOpKind,
@@ -1405,6 +1407,9 @@ class MIRLowerer:
         if isinstance(expr, ListLiteral):
             return self._lower_list(expr)
 
+        if isinstance(expr, TensorLiteral):
+            return self._lower_tensor_literal(expr)
+
         if isinstance(expr, MapLiteral):
             return self._lower_map(expr)
 
@@ -2585,6 +2590,35 @@ class MIRLowerer:
         list_ty = MIRType(TypeInfo(kind=TypeKind.LIST, args=[elem_type.type_info]))
         dest = self._make_value(ty=list_ty)
         self._emit(ListInit(dest=dest, elem_type=elem_type, elements=elements))
+        return dest
+
+    def _lower_tensor_literal(self, expr: TensorLiteral) -> Value:
+        """Lower a tensor literal (v4.42.0).
+
+        Emits a TensorInit instruction that the LLVM emitter translates to:
+          1. Stack-allocate shape array
+          2. Call __mn_tensor_alloc(rank, shape_ptr, elem_size)
+          3. Call __mn_tensor_store_f64/i64 for each element
+        """
+        elements = [self._lower_expr(e) for e in expr.elements]
+
+        # Determine element MIR type
+        elem_name = getattr(expr.element_type, "name", "")
+        if elem_name in ("Float", "float"):
+            elem_type = mir_float()
+        elif elem_name in ("Int", "int"):
+            elem_type = mir_int()
+        elif elem_name in ("Bool", "bool"):
+            elem_type = mir_bool()
+        else:
+            elem_type = mir_float()  # default
+
+        shape_tuple = tuple(expr.shape) if expr.shape else None
+        tensor_ty = MIRType(
+            TypeInfo(kind=TypeKind.TENSOR, args=[elem_type.type_info], tensor_shape=shape_tuple)
+        )
+        dest = self._make_value(ty=tensor_ty)
+        self._emit(TensorInit(dest=dest, elem_type=elem_type, shape=list(expr.shape), elements=elements))
         return dest
 
     def _patch_list_elem_types_for_struct(

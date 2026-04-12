@@ -654,6 +654,25 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
         return new_infer_result(make_generic_type("List", empty_args), st)
     }
 
+    // Tensor literal (v4.42.0)
+    if ek == "tensor_lit" {
+        let elements: List<Expr> = expr_tensor_elements(expr)
+        let mut st_tens: SemState = st
+        let mut i_tens: Int = 0
+        for _ in 0..2000 {
+            if i_tens >= len(elements) {
+                let args_tens: List<TypeInfo> = []
+                return new_infer_result(make_generic_type("Tensor", args_tens), st_tens)
+            }
+            let elem_t: Expr = elements[i_tens]
+            let er_tens: InferResult = infer_expr(st_tens, elem_t)
+            st_tens = er_tens.st
+            i_tens = i_tens + 1
+        }
+        let args2_t: List<TypeInfo> = []
+        return new_infer_result(make_generic_type("Tensor", args2_t), st_tens)
+    }
+
     if ek == "construct" {
         let name: String = expr_construct_name(expr)
         let fields: List<FieldInit> = expr_construct_fields(expr)

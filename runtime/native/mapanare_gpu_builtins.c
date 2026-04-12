@@ -11,6 +11,7 @@
 
 #include "mapanare_gpu.h"
 #include "mapanare_core.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -261,4 +262,82 @@ MN_EXPORT MnList __mn_gpu_tensor_matmul(const MnList *a, const MnList *b,
     free(ta->shape); free(ta);
     free(tb->shape); free(tb);
     return out;
+}
+
+/* -----------------------------------------------------------------------
+ * Tensor Literal Runtime (v4.42.0)
+ *
+ * Language-level wrappers for tensor construction. Called by the LLVM
+ * emitter when lowering TensorLiteral AST nodes. CPU-only — no GPU
+ * dependency. Falls through to mapanare_tensor_alloc() in
+ * mapanare_runtime.c which allocates a plain heap buffer.
+ * ----------------------------------------------------------------------- */
+
+/** Allocate a tensor: __mn_tensor_alloc(rank, shape_ptr, elem_size) -> ptr */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_alloc(
+    int64_t rank, const int64_t *shape, int64_t elem_size) {
+    return mapanare_tensor_alloc(rank, shape, elem_size);
+}
+
+/** Free a tensor: __mn_tensor_free(tensor_ptr) */
+MN_EXPORT void __mn_tensor_free(mapanare_tensor_t *t) {
+    mapanare_tensor_free(t);
+}
+
+/** Store a float64 element: __mn_tensor_store_f64(tensor, index, value) */
+MN_EXPORT void __mn_tensor_store_f64(mapanare_tensor_t *t, int64_t idx, double val) {
+    if (!t || !t->data || idx < 0 || idx >= t->size) return;
+    ((double *)t->data)[idx] = val;
+}
+
+/** Store an int64 element: __mn_tensor_store_i64(tensor, index, value) */
+MN_EXPORT void __mn_tensor_store_i64(mapanare_tensor_t *t, int64_t idx, int64_t val) {
+    if (!t || !t->data || idx < 0 || idx >= t->size) return;
+    ((int64_t *)t->data)[idx] = val;
+}
+
+/** Get a float64 element: __mn_tensor_get_f64(tensor, index) -> double */
+MN_EXPORT double __mn_tensor_get_f64(const mapanare_tensor_t *t, int64_t idx) {
+    if (!t || !t->data || idx < 0 || idx >= t->size) return 0.0;
+    return ((const double *)t->data)[idx];
+}
+
+/** Get an int64 element: __mn_tensor_get_i64(tensor, index) -> int64_t */
+MN_EXPORT int64_t __mn_tensor_get_i64(const mapanare_tensor_t *t, int64_t idx) {
+    if (!t || !t->data || idx < 0 || idx >= t->size) return 0;
+    return ((const int64_t *)t->data)[idx];
+}
+
+/** Get the number of dimensions: __mn_tensor_rank(tensor) -> int64_t */
+MN_EXPORT int64_t __mn_tensor_rank(const mapanare_tensor_t *t) {
+    return t ? t->ndim : 0;
+}
+
+/** Get the total element count: __mn_tensor_size(tensor) -> int64_t */
+MN_EXPORT int64_t __mn_tensor_size(const mapanare_tensor_t *t) {
+    return t ? t->size : 0;
+}
+
+/** Get one dimension of the shape: __mn_tensor_shape_dim(tensor, dim) -> int64_t */
+MN_EXPORT int64_t __mn_tensor_shape_dim(const mapanare_tensor_t *t, int64_t dim) {
+    if (!t || !t->shape || dim < 0 || dim >= t->ndim) return 0;
+    return t->shape[dim];
+}
+
+/** Debug print a tensor to stdout. */
+MN_EXPORT void __mn_tensor_print_f64(const mapanare_tensor_t *t) {
+    if (!t) { printf("Tensor(null)\n"); return; }
+    printf("Tensor<Float>[");
+    for (int64_t i = 0; i < t->ndim; i++) {
+        if (i > 0) printf(", ");
+        printf("%lld", (long long)t->shape[i]);
+    }
+    printf("](");
+    int64_t limit = t->size < 20 ? t->size : 20;
+    for (int64_t i = 0; i < limit; i++) {
+        if (i > 0) printf(", ");
+        printf("%.6g", ((const double *)t->data)[i]);
+    }
+    if (t->size > 20) printf(", ...");
+    printf(")\n");
 }

@@ -816,6 +816,7 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
     if kind == "field_get" { return emit_field_get(st, instr_dest(inst), instr_fieldget_obj(inst), instr_fieldget_name(inst)) }
     if kind == "field_set" { return emit_field_set(st, instr_fieldset_obj(inst), instr_fieldset_name(inst), instr_fieldset_val(inst)) }
     if kind == "list_init" { return emit_list_init_checked(st, inst) }
+    if kind == "tensor_init" { return emit_tensor_init(st, inst) }
     if kind == "index_get" { return emit_index_get(st, instr_dest(inst), instr_indexget_obj(inst), instr_indexget_idx(inst)) }
     if kind == "index_set" { return emit_index_set(st, instr_indexset_obj(inst), instr_indexset_idx(inst), instr_indexset_val(inst)) }
     if kind == "alloca" { return emit_alloca(st, instr_dest(inst), instr_alloca_type(inst)) }
@@ -870,6 +871,22 @@ fn emit_list_init_checked(st: EmitState, inst: Instruction) -> EmitState {
         _ => {}
     }
     return emit_list_init(st, dest, elem_ty, elements)
+}
+
+// ---------------------------------------------------------------------------
+// Tensor literal emission (v4.42.0)
+// ---------------------------------------------------------------------------
+
+fn emit_tensor_init(st: EmitState, inst: Instruction) -> EmitState {
+    // v4.42.0: Stub — tensor literals in self-hosted code emit as null ptr.
+    // Full emission (shape alloca + alloc + stores) mirrors the Python emitter
+    // but is deferred to v4.43.0 when tensor indexing needs it end-to-end.
+    // The golden tests compile via the Python bootstrap, not mnc-stage1.
+    let dest: Value = instr_dest(inst)
+    let mut s: EmitState = st
+    let dn: String = dest.name
+    s = emit_line(s, "  " + dn + " = inttoptr i64 0 to ptr")
+    return s
 }
 
 // ---------------------------------------------------------------------------

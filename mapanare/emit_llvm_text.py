@@ -54,6 +54,7 @@ from mapanare.mir import (
     StreamOpKind,
     StructInit,
     Switch,
+    TensorInit,
     UnaryOp,
     UnaryOpKind,
     Unwrap,
@@ -327,6 +328,18 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_gpu_tensor_mul": {"nounwind", "noalias", "willreturn"},
     "__mn_gpu_tensor_div": {"nounwind", "noalias", "willreturn"},
     "__mn_gpu_tensor_matmul": {"nounwind", "noalias", "willreturn"},
+    # Tensor literal runtime (v4.42.0). __mn_tensor_alloc returns a fresh
+    # heap tensor (noalias); store/free/get are mutation/query helpers.
+    "__mn_tensor_alloc": {"nounwind", "noalias", "willreturn"},
+    "__mn_tensor_free": {"nounwind", "willreturn"},
+    "__mn_tensor_store_f64": {"nounwind", "willreturn"},
+    "__mn_tensor_store_i64": {"nounwind", "willreturn"},
+    "__mn_tensor_get_f64": {"nounwind", "readonly", "willreturn"},
+    "__mn_tensor_get_i64": {"nounwind", "readonly", "willreturn"},
+    "__mn_tensor_rank": {"nounwind", "readonly", "willreturn"},
+    "__mn_tensor_size": {"nounwind", "readonly", "willreturn"},
+    "__mn_tensor_shape_dim": {"nounwind", "readonly", "willreturn"},
+    "__mn_tensor_print_f64": {"nounwind", "willreturn"},
     # Agent runtime (v3.43.0). v4.30.0: ``agent_new`` returns a fresh
     # heap agent handle (noalias); dispatch/send/recv do not.
     "mapanare_agent_new": {"nounwind", "noalias", "willreturn"},
@@ -452,6 +465,7 @@ class LLVMTextEmitter:
         self._map_vars: list[str] = []  # dest names for map cleanup
         self._signal_vars: list[str] = []  # dest names for signal cleanup
         self._stream_vars: list[str] = []  # dest names for stream cleanup
+        self._tensor_vars: list[str] = []  # dest names for tensor cleanup (v4.42.0)
         # dispatch
         self._disp: dict[type, Any] = {}
         self._init_disp()
@@ -475,6 +489,7 @@ class LLVMTextEmitter:
         d[FieldSet] = self._do_field_set
         d[ListInit] = self._do_list_init
         d[ListPush] = self._do_list_push
+        d[TensorInit] = self._do_tensor_init
         d[IndexGet] = self._do_idx_get
         d[IndexSet] = self._do_idx_set
         d[MapInit] = self._do_map_init
@@ -609,6 +624,8 @@ class LLVMTextEmitter:
             return "{i1, {ptr, ptr}}"
         if k == TypeKind.ANY:
             return MN_VALUE
+        if k == TypeKind.TENSOR:
+            return PTR  # opaque pointer to mapanare_tensor_t
         if k in (TypeKind.AGENT, TypeKind.SIGNAL, TypeKind.STREAM, TypeKind.CHANNEL, TypeKind.FN):
             return PTR
         nm = mt.type_info.name
@@ -1087,6 +1104,7 @@ class LLVMTextEmitter:
             or self._map_vars
             or self._signal_vars
             or self._stream_vars
+            or self._tensor_vars
         )
         if not has_any:
             return
@@ -1119,6 +1137,9 @@ class LLVMTextEmitter:
         if self._stream_vars:
             self._ensure("__mn_stream_free_chain", VOID, [PTR])
         self._emit_drop_glue_streams()
+        if self._tensor_vars:
+            self._ensure("__mn_tensor_free", VOID, [PTR])
+        self._emit_drop_glue_tensors(ret_val, ret_ty)
 
     def _emit_drop_glue_collect_ret_ptrs(
         self, ret_val: str | None, ret_ty: str
@@ -1459,6 +1480,47 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
+    def _emit_drop_glue_tensors(self, ret_val: str | None, ret_ty: str) -> None:
+        """Drop-loop for tracked tensor variables (v4.42.0).
+
+        For each tensor_var, resolves the alloca, loads the ptr, and
+        calls __mn_tensor_free unless the pointer is being returned.
+        """
+        for var_name in self._tensor_vars:
+            alloc_info = None
+            for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
+                if k in self._alloc:
+                    alloc_info = self._alloc[k]
+                    break
+            if alloc_info is None:
+                continue
+            addr, _ = alloc_info
+            tp = self._f("drop.tens")
+            self._L(f"{tp} = load ptr, ptr {addr}")
+            tn = self._f("drop.tensnull")
+            self._L(f"{tn} = icmp eq ptr {tp}, null")
+            skip_lbl = f"drop.tensskip.{self._c}"
+            free_lbl = f"drop.tensfree.{self._c}"
+            self._c += 1
+
+            # Check if this tensor is the return value
+            if ret_val and ret_ty == PTR:
+                eq = self._f("drop.tensret")
+                self._L(f"{eq} = icmp eq ptr {tp}, {ret_val}")
+                or_skip = self._f("drop.tensor")
+                self._L(f"{or_skip} = or i1 {tn}, {eq}")
+                self._L(f"br i1 {or_skip}, label %{skip_lbl}, label %{free_lbl}")
+            else:
+                self._L(f"br i1 {tn}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            self._L(f"call void @__mn_tensor_free(ptr {tp})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
     def _extract_ret_ptrs(self, val: str, ty: str, out: list[str], depth: int = 0) -> None:
         """Recursively extract all ptr-typed fields from a return value.
 
@@ -1550,6 +1612,7 @@ class LLVMTextEmitter:
         self._map_vars = []
         self._signal_vars = []
         self._stream_vars = []
+        self._tensor_vars = []
 
         # Per-function arena — disabled: text emitter never routes allocations
         # through mn_arena_alloc, so create/destroy was pure overhead.
@@ -2552,6 +2615,41 @@ class LLVMTextEmitter:
             self._put(i.dest, r, LIST)
             return
 
+        # Tensor builtins (v4.42.0)
+        if fn == "tensor_rank" and len(args) >= 1:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            r = self._rt("__mn_tensor_rank", I64, [PTR], [(a0, PTR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "tensor_size" and len(args) >= 1:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            r = self._rt("__mn_tensor_size", I64, [PTR], [(a0, PTR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "tensor_get_f64" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            r = self._rt("__mn_tensor_get_f64", DBL, [PTR, I64], [(a0, PTR), (a1, I64)])
+            self._put(i.dest, r, DBL)
+            return
+        if fn == "tensor_get_i64" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            r = self._rt("__mn_tensor_get_i64", I64, [PTR, I64], [(a0, PTR), (a1, I64)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "tensor_shape_dim" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            r = self._rt("__mn_tensor_shape_dim", I64, [PTR, I64], [(a0, PTR), (a1, I64)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "tensor_print" and len(args) >= 1:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            self._ensure("__mn_tensor_print_f64", VOID, [PTR])
+            self._L(f"call void @__mn_tensor_print_f64(ptr {a0})")
+            return
+
         # join
         if fn == "join" and len(i.args) >= 2:
             sep = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
@@ -3106,6 +3204,55 @@ class LLVMTextEmitter:
             self._L(f"{r} = load {LIST}, ptr {la}")
             lv = r
         self._put(i.dest, lv, LIST)
+
+    # --- TensorInit (v4.42.0) ---
+    def _do_tensor_init(self, i: TensorInit) -> None:
+        """Emit LLVM IR for a tensor literal.
+
+        1. Stack-allocate shape array: [N x i64]
+        2. Store each shape dimension
+        3. Call __mn_tensor_alloc(rank, shape_ptr, elem_size)
+        4. Call __mn_tensor_store_f64/i64 for each element
+        """
+        rank = len(i.shape)
+        elem_kind = i.elem_type.kind
+
+        # Step 1: Allocate shape array on stack
+        shape_a = self._alloca(f"[{rank} x i64]", "tshape")
+        for dim_idx, dim_val in enumerate(i.shape):
+            gep = self._f("tsd")
+            self._L(f"{gep} = getelementptr [{rank} x i64], ptr {shape_a}, i64 0, i64 {dim_idx}")
+            self._L(f"store i64 {dim_val}, ptr {gep}")
+
+        # Step 2: Determine element size
+        from mapanare.types import TypeKind as TK
+        elem_size = 8  # sizeof(double) or sizeof(int64_t)
+
+        # Step 3: Call __mn_tensor_alloc
+        self._ensure("__mn_tensor_alloc", PTR, [I64, PTR, I64])
+        tp = self._f("tp")
+        self._L(
+            f"{tp} = call noalias ptr @__mn_tensor_alloc("
+            f"i64 {rank}, ptr {shape_a}, i64 {elem_size})"
+        )
+
+        # Step 4: Store each element
+        if elem_kind in (TK.INT, TK.BOOL):
+            store_fn = "__mn_tensor_store_i64"
+            store_ty = I64
+        else:
+            store_fn = "__mn_tensor_store_f64"
+            store_ty = DBL
+        self._ensure(store_fn, VOID, [PTR, I64, store_ty])
+
+        for j, elem in enumerate(i.elements):
+            ev, et = self._get(elem)
+            cv = self._coerce(ev, et, store_ty) if et != store_ty else ev
+            self._L(f"call void @{store_fn}(ptr {tp}, i64 {j}, {store_ty} {cv})")
+
+        # Track for drop glue
+        self._tensor_vars.append(i.dest.name)
+        self._put(i.dest, tp, PTR)
 
     # --- ListPush ---
     def _do_list_push(self, i: ListPush) -> None:

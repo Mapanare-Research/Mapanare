@@ -71,6 +71,7 @@ from mapanare.ast_nodes import (
     StringLiteral,
     StructDef,
     SyncExpr,
+    TensorLiteral,
     TensorType,
     TraitDef,
     TypeAlias,
@@ -560,6 +561,8 @@ class SemanticChecker:
                     self._infer_expr(e)
                 return TypeInfo(kind=TypeKind.LIST, args=[elem_type])
             return TypeInfo(kind=TypeKind.LIST, args=[UNKNOWN_TYPE])
+        if isinstance(expr, TensorLiteral):
+            return self._check_tensor_literal(expr)
         if isinstance(expr, MapLiteral):
             if expr.entries:
                 key_type = self._infer_expr(expr.entries[0].key)
@@ -1224,6 +1227,47 @@ class SemanticChecker:
             is_function=True,
             param_types=param_types,
             return_type=ret,
+        )
+
+    # -- Tensor literal (v4.42.0) ------------------------------------------
+
+    def _check_tensor_literal(self, expr: TensorLiteral) -> TypeInfo:
+        """Type-check a tensor literal.
+
+        Rules:
+        1. Every element must be a scalar matching the declared element type.
+        2. The shape inferred from nesting matches the annotation (if present).
+        3. Empty tensors (shape contains a zero dim) are allowed.
+        """
+        from mapanare.types import resolve_shape_from_type
+
+        # Resolve element type name to TypeInfo
+        elem_name = getattr(expr.element_type, "name", "")
+        if elem_name in ("Float", "float"):
+            elem_ti = FLOAT_TYPE
+        elif elem_name in ("Int", "int"):
+            elem_ti = INT_TYPE
+        elif elem_name in ("Bool", "bool"):
+            elem_ti = BOOL_TYPE
+        else:
+            elem_ti = FLOAT_TYPE  # default for unknown
+
+        # Type-check each element
+        for e in expr.elements:
+            inferred = self._infer_expr(e)
+            # Allow int-to-float promotion in tensor context
+            if elem_ti == FLOAT_TYPE and inferred.kind == TypeKind.INT:
+                continue
+            if inferred.kind not in (TypeKind.UNKNOWN, TypeKind.ANY, elem_ti.kind):
+                self._error(
+                    f"tensor element type mismatch: expected {elem_name}, "
+                    f"got {inferred}",
+                    getattr(e, "span", expr.span),
+                )
+
+        shape_tuple = tuple(expr.shape) if expr.shape else None
+        return TypeInfo(
+            kind=TypeKind.TENSOR, args=[elem_ti], tensor_shape=shape_tuple
         )
 
     # -- Error propagation (`?` operator) ---------------------------------

@@ -86,6 +86,7 @@ enum Expr {
     Send(Expr, Expr),
     ErrorProp(Expr),
     ListLit(List<Expr>),
+    TensorLit(List<Expr>, List<Int>),
     MapLit(List<MapEntry>),
     Construct(String, List<FieldInit>),
     SomeWrap(Expr),
@@ -330,6 +331,7 @@ pub fn expr_kind(e: Expr) -> String {
         Send(_, _) => { return "send" },
         ErrorProp(_) => { return "error_prop" },
         ListLit(_) => { return "list_lit" },
+        TensorLit(_, _) => { return "tensor_lit" },
         MapLit(_) => { return "map_lit" },
         Construct(_, _) => { return "construct" },
         SomeWrap(_) => { return "some_wrap" },
@@ -488,6 +490,13 @@ pub fn expr_errorprop_inner(e: Expr) -> Expr {
 // ListLit
 pub fn expr_list_elements(e: Expr) -> List<Expr> {
     match e { ListLit(l) => { return l }, _ => { let empty: List<Expr> = []; return empty } }
+}
+// TensorLit (v4.42.0)
+pub fn expr_tensor_elements(e: Expr) -> List<Expr> {
+    match e { TensorLit(l, _) => { return l }, _ => { let empty: List<Expr> = []; return empty } }
+}
+pub fn expr_tensor_shape(e: Expr) -> List<Int> {
+    match e { TensorLit(_, s) => { return s }, _ => { let empty: List<Int> = []; return empty } }
 }
 pub fn expr_map_entries(e: Expr) -> List<MapEntry> {
     match e { MapLit(m) => { return m }, _ => { let empty: List<MapEntry> = []; return empty } }

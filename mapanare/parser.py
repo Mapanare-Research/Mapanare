@@ -79,6 +79,7 @@ from mapanare.ast_nodes import (
     StructDef,
     StructField,
     SyncExpr,
+    TensorLiteral,
     TensorType,
     TraitDef,
     TraitMethod,
@@ -834,6 +835,66 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             elements=[c for c in children if isinstance(c, Expr)],
             span=_span_from_children(children),
         )
+
+    # ------------------------------------------------------------------
+    # Tensor literal (v4.42.0)
+    # ------------------------------------------------------------------
+
+    def tensor_literal(self, children: list[Any]) -> TensorLiteral:
+        """Transform a tensor literal: Tensor<Type>[body].
+
+        Walks the nested body tree, flattens elements to row-major order,
+        infers shape from nesting depth + per-level counts, and detects
+        jagged arrays (sibling sub-arrays with different lengths).
+        """
+        items = _filter(children)
+        elem_type = items[0]  # TypeExpr from the <Type> part
+        # items[1] is the tensor_body result — a list of Expr (1D) or list-of-lists (nD)
+        body = items[1] if len(items) > 1 and isinstance(items[1], list) else []
+
+        shape: list[int] = []
+        flat: list[Expr] = []
+        span = _span_from_children(children)
+
+        def _walk(nodes: list[Any], depth: int) -> None:
+            """Recursively walk tensor body, flattening and tracking shape."""
+            if depth >= len(shape):
+                shape.append(len(nodes))
+            elif shape[depth] != len(nodes):
+                raise ParseError(
+                    f"tensor literal shape mismatch at depth {depth}: "
+                    f"expected {shape[depth]} elements, got {len(nodes)}",
+                    line=span.line,
+                    column=span.column,
+                )
+            for node in nodes:
+                if isinstance(node, list):
+                    _walk(node, depth + 1)
+                elif isinstance(node, Expr):
+                    flat.append(node)
+                # Skip Token/non-Expr items (commas, brackets)
+
+        _walk(body, 0)
+        return TensorLiteral(
+            element_type=elem_type, shape=shape, elements=flat, span=span
+        )
+
+    def tensor_body(self, children: list[Any]) -> list[Any]:
+        """Collect tensor body elements (mix of Expr and nested lists)."""
+        return [c for c in children if isinstance(c, (Expr, list))]
+
+    def tensor_nested(self, children: list[Any]) -> list[Any]:
+        """A nested [tensor_body] returns the body's list."""
+        for c in children:
+            if isinstance(c, list):
+                return c
+        return []
+
+    def tensor_neg(self, children: list[Any]) -> UnaryExpr:
+        """Negated tensor element: -expr."""
+        items = _filter(children)
+        operand = items[0] if items else Expr()
+        return UnaryExpr(op="-", operand=operand, span=_span_from_children(children))
 
     def map_lit(self, children: list[Any]) -> MapLiteral:
         return MapLiteral(

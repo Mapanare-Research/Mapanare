@@ -280,6 +280,19 @@ class ListLiteral(Expr):
 
 
 @dataclass
+class TensorLiteral(Expr):
+    """Tensor literal: `Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]`.
+
+    v4.42.0: elements is flattened to row-major order by the parser.
+    shape is inferred from nesting depth + per-level element counts.
+    """
+
+    element_type: TypeExpr = field(default_factory=lambda: NamedType())
+    shape: list[int] = field(default_factory=list)
+    elements: list[Expr] = field(default_factory=list)
+
+
+@dataclass
 class MapEntry(ASTNode):
     """A single key-value pair in a map literal."""
 

@@ -290,6 +290,7 @@ arg_list: expr (COMMA expr)* COMMA?
           | namespace_access
           | self_expr
           | ident
+          | tensor_literal
           | list_lit
           | map_lit
           | paren_expr
@@ -347,6 +348,17 @@ literal_pattern: DEC_INT | FLOAT_LIT | STRING_LIT | KW_TRUE | KW_FALSE
 ident_pattern: NAME
 
 list_lit: LBRACKET (expr (COMMA expr)* COMMA?)? RBRACKET
+
+// Tensor literal: Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]
+// v4.42.0: tensor_atom excludes list_lit to avoid LALR ambiguity
+// with nested bracket syntax. Use parens for compound expressions:
+// Tensor<Float>[(1 + 2), 4, 5].
+tensor_literal: KW_TENSOR LT type_expr GT LBRACKET tensor_body RBRACKET
+tensor_body: tensor_elem (COMMA tensor_elem)* COMMA?
+?tensor_elem: LBRACKET tensor_body RBRACKET -> tensor_nested
+            | tensor_atom
+?tensor_atom: int_lit | float_lit | ident | paren_expr
+            | MINUS tensor_atom -> tensor_neg
 
 // Map literal: #{ key: value, ... }
 map_lit: MAP_OPEN (map_entry (COMMA map_entry)* COMMA?)? RBRACE

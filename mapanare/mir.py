@@ -293,6 +293,20 @@ class ListInit(Instruction):
 
 
 @dataclass(slots=True)
+class TensorInit(Instruction):
+    """Construct a tensor literal (v4.42.0).
+
+    Allocates a tensor with the given shape and stores elements row-major.
+    The emitter translates this to __mn_tensor_alloc + __mn_tensor_store_* calls.
+    """
+
+    dest: Value = field(default_factory=Value)
+    elem_type: MIRType = field(default_factory=mir_unknown)
+    shape: list[int] = field(default_factory=list)
+    elements: list[Value] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class IndexGet(Instruction):
     """Read list[i]."""
 

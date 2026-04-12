@@ -186,6 +186,7 @@ enum Instruction {
     FieldGet(Value, Value, String),
     FieldSet(Value, String, Value),
     ListInit(Value, MIRType, List<Value>),
+    TensorInit(Value, MIRType, List<Int>, List<Value>),
     IndexGet(Value, Value, Value),
     IndexSet(Value, Value, Value),
     Alloca(Value, MIRType),
@@ -510,6 +511,7 @@ pub fn instr_kind(i: Instruction) -> String {
         FieldGet(_, _, _) => { return "field_get" },
         FieldSet(_, _, _) => { return "field_set" },
         ListInit(_, _, _) => { return "list_init" },
+        TensorInit(_, _, _, _) => { return "tensor_init" },
         IndexGet(_, _, _) => { return "index_get" },
         IndexSet(_, _, _) => { return "index_set" },
         Alloca(_, _) => { return "alloca" },
@@ -556,6 +558,7 @@ pub fn instr_dest(i: Instruction) -> Value {
         StructInit(d, _, _) => { return d },
         FieldGet(d, _, _) => { return d },
         ListInit(d, _, _) => { return d },
+        TensorInit(d, _, _, _) => { return d },
         IndexGet(d, _, _) => { return d },
         Alloca(d, _) => { return d },
         Load(d, _) => { return d },
@@ -653,6 +656,17 @@ pub fn instr_list_type(i: Instruction) -> MIRType {
 }
 pub fn instr_list_elements(i: Instruction) -> List<Value> {
     match i { ListInit(_, _, e) => { return e }, _ => { let empty: List<Value> = []; return empty } }
+}
+
+// TensorInit (v4.42.0)
+pub fn instr_tensor_type(i: Instruction) -> MIRType {
+    match i { TensorInit(_, t, _, _) => { return t }, _ => { return mir_void() } }
+}
+pub fn instr_tensor_shape(i: Instruction) -> List<Int> {
+    match i { TensorInit(_, _, s, _) => { return s }, _ => { let empty: List<Int> = []; return empty } }
+}
+pub fn instr_tensor_elements(i: Instruction) -> List<Value> {
+    match i { TensorInit(_, _, _, e) => { return e }, _ => { let empty: List<Value> = []; return empty } }
 }
 
 // IndexGet

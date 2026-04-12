@@ -1,0 +1,58 @@
+// Golden test: tensor literal construction (v4.42.0)
+//
+// Tests 1-D, 2-D, and 3-D tensor literals with element access via builtins.
+
+fn main() {
+    // 1-D tensor
+    let a = Tensor<Float>[1.0, 2.0, 3.0]
+    print(str(tensor_rank(a)))
+    print(str(tensor_size(a)))
+    print(str(tensor_get_f64(a, 0)))
+    print(str(tensor_get_f64(a, 2)))
+
+    // 2-D tensor (2x3)
+    let b = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    print(str(tensor_rank(b)))
+    print(str(tensor_size(b)))
+    print(str(tensor_get_f64(b, 0)))
+    print(str(tensor_get_f64(b, 5)))
+    print(str(tensor_shape_dim(b, 0)))
+    print(str(tensor_shape_dim(b, 1)))
+
+    // 3-D tensor (2x2x2)
+    let c = Tensor<Float>[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]
+    print(str(tensor_rank(c)))
+    print(str(tensor_size(c)))
+    print(str(tensor_get_f64(c, 0)))
+    print(str(tensor_get_f64(c, 7)))
+
+    // Integer tensor
+    let d = Tensor<Int>[10, 20, 30]
+    print(str(tensor_size(d)))
+    print(str(tensor_get_i64(d, 1)))
+
+    // Negated elements
+    let e = Tensor<Float>[-1.0, -2.5, 3.0]
+    print(str(tensor_get_f64(e, 0)))
+    print(str(tensor_get_f64(e, 1)))
+}
+
+// Expected output:
+// 1
+// 3
+// 1
+// 3
+// 2
+// 6
+// 1
+// 6
+// 2
+// 3
+// 3
+// 8
+// 1
+// 8
+// 3
+// 20
+// -1
+// -2.5
