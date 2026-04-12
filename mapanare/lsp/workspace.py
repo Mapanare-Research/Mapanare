@@ -15,14 +15,30 @@ from typing import Literal, Optional
 
 from mapanare.ast_nodes import (
     AgentDef,
+    Block,
+    CallExpr,
+    ConstructExpr,
     EnumDef,
+    Expr,
+    ExprStmt,
     ExternFnDef,
+    FieldAccessExpr,
     FnDef,
+    ForLoop,
+    Identifier,
+    IfExpr,
     ImportDef,
+    LetBinding,
+    MatchArm,
+    MatchExpr,
+    MethodCallExpr,
     ModuleLetDef,
+    NamedType,
     PipeDef,
     Program,
+    ReturnStmt,
     Span,
+    Stmt,
     StructDef,
     TraitDef,
     TypeAlias,
@@ -46,6 +62,15 @@ class SymbolDef:
 
 
 @dataclass
+class ReferenceSite:
+    """A location where a symbol is referenced (v4.38.0)."""
+
+    path: Path
+    span: Span
+    kind: Literal["call", "read", "type_use", "import", "pattern"] = "read"
+
+
+@dataclass
 class FileEntry:
     """Cached state for a single .mn file in the workspace."""
 
@@ -63,6 +88,7 @@ class WorkspaceIndex:
         self.files: dict[Path, FileEntry] = {}
         self._by_name: dict[tuple[str, str], SymbolDef] = {}  # (module, name) -> SymbolDef
         self._by_unqualified: dict[str, list[SymbolDef]] = {}  # name -> [SymbolDef, ...]
+        self.refs_by_symbol: dict[tuple[str, str], list[ReferenceSite]] = {}  # v4.38.0
         self.root: Optional[Path] = None
 
     def scan_root(self, root_path: Path) -> None:
@@ -71,6 +97,7 @@ class WorkspaceIndex:
         self.files.clear()
         self._by_name.clear()
         self._by_unqualified.clear()
+        self.refs_by_symbol.clear()
 
         for dirpath, _dirnames, filenames in os.walk(root_path):
             for fname in filenames:
@@ -78,15 +105,27 @@ class WorkspaceIndex:
                     fpath = Path(dirpath) / fname
                     self.rebuild_file(fpath)
 
+        # v4.38.0: second pass to collect cross-module references
+        # (first pass misses refs to symbols not yet indexed)
+        self.refs_by_symbol.clear()
+        for entry in self.files.values():
+            if entry.ast:
+                refs = _collect_references(entry.ast, entry.path, self)
+                for key, site in refs:
+                    self.refs_by_symbol.setdefault(key, []).append(site)
+
     def rebuild_file(self, path: Path, source: str | None = None) -> None:
         """Parse a file and update its symbols in the index."""
-        # Remove old symbols for this file
+        # Remove old symbols and references for this file
         old_entry = self.files.get(path)
         if old_entry:
             for sym in old_entry.symbols:
                 self._by_name.pop((sym.module, sym.name), None)
                 unq = self._by_unqualified.get(sym.name, [])
                 self._by_unqualified[sym.name] = [s for s in unq if s.path != path]
+            # v4.38.0: remove old reference sites from this file
+            for key, sites in list(self.refs_by_symbol.items()):
+                self.refs_by_symbol[key] = [s for s in sites if s.path != path]
 
         # Parse and extract symbols
         try:
@@ -112,6 +151,11 @@ class WorkspaceIndex:
                 self._by_name[(sym.module, sym.name)] = sym
                 self._by_unqualified.setdefault(sym.name, []).append(sym)
 
+            # v4.38.0: collect references from this file
+            refs = _collect_references(ast, path, self)
+            for key, site in refs:
+                self.refs_by_symbol.setdefault(key, []).append(site)
+
         except Exception as e:
             logger.warning("Failed to index %s: %s", path, e)
             # Keep a stub entry so we don't re-try on every query
@@ -130,9 +174,104 @@ class WorkspaceIndex:
         entry = self.files.get(path)
         return entry.symbols if entry else []
 
+    def find_references(
+        self, module: str, name: str, include_declaration: bool = False
+    ) -> list[ReferenceSite]:
+        """Return all reference sites for a symbol (v4.38.0)."""
+        sites = list(self.refs_by_symbol.get((module, name), []))
+        if include_declaration:
+            sym = self._by_name.get((module, name))
+            if sym:
+                sites.insert(0, ReferenceSite(path=sym.path, span=sym.span, kind="read"))
+        return sites
+
     def all_symbols(self) -> list[SymbolDef]:
         """Return all symbols in the workspace."""
         return list(self._by_name.values())
+
+
+def _collect_references(
+    program: Program, path: Path, index: WorkspaceIndex
+) -> list[tuple[tuple[str, str], ReferenceSite]]:
+    """Walk an AST and collect references to known symbols (v4.38.0)."""
+    refs: list[tuple[tuple[str, str], ReferenceSite]] = []
+    known_names = set(index._by_unqualified.keys())
+
+    def _walk_expr(expr: object) -> None:
+        if expr is None:
+            return
+        if isinstance(expr, Identifier):
+            if expr.name in known_names:
+                for sym in index.lookup_by_name(expr.name):
+                    if sym.path != path or sym.span != expr.span:
+                        refs.append(((sym.module, sym.name), ReferenceSite(path=path, span=expr.span, kind="read")))
+                        break
+        elif isinstance(expr, CallExpr):
+            if isinstance(expr.callee, Identifier) and expr.callee.name in known_names:
+                for sym in index.lookup_by_name(expr.callee.name):
+                    refs.append(((sym.module, sym.name), ReferenceSite(path=path, span=expr.callee.span, kind="call")))
+                    break
+            for arg in expr.args:
+                _walk_expr(arg)
+        elif isinstance(expr, MethodCallExpr):
+            _walk_expr(expr.receiver)
+            for arg in expr.args:
+                _walk_expr(arg)
+        elif isinstance(expr, FieldAccessExpr):
+            _walk_expr(expr.receiver)
+        elif isinstance(expr, IfExpr):
+            _walk_expr(expr.condition)
+            _walk_block(expr.then_block)
+            if isinstance(expr.else_block, Block):
+                _walk_block(expr.else_block)
+            elif isinstance(expr.else_block, IfExpr):
+                _walk_expr(expr.else_block)
+        elif isinstance(expr, MatchExpr):
+            _walk_expr(expr.subject)
+            for arm in expr.arms:
+                if isinstance(arm.body, Block):
+                    _walk_block(arm.body)
+                elif isinstance(arm.body, Expr):
+                    _walk_expr(arm.body)
+        elif isinstance(expr, ConstructExpr):
+            if expr.name in known_names:
+                for sym in index.lookup_by_name(expr.name):
+                    refs.append(((sym.module, sym.name), ReferenceSite(path=path, span=expr.span, kind="type_use")))
+                    break
+            for fi in expr.fields:
+                _walk_expr(fi.value)
+        elif isinstance(expr, NamedType):
+            if expr.name in known_names:
+                for sym in index.lookup_by_name(expr.name):
+                    refs.append(((sym.module, sym.name), ReferenceSite(path=path, span=expr.span, kind="type_use")))
+                    break
+
+    def _walk_block(block: Block) -> None:
+        if block is None:
+            return
+        for stmt in block.stmts:
+            _walk_stmt(stmt)
+
+    def _walk_stmt(stmt: object) -> None:
+        if isinstance(stmt, ExprStmt):
+            _walk_expr(stmt.expr)
+        elif isinstance(stmt, LetBinding):
+            _walk_expr(stmt.value)
+        elif isinstance(stmt, ReturnStmt):
+            if stmt.value:
+                _walk_expr(stmt.value)
+        elif isinstance(stmt, ForLoop):
+            _walk_expr(stmt.iterable)
+            _walk_block(stmt.body)
+
+    for defn in program.definitions:
+        if isinstance(defn, FnDef):
+            _walk_block(defn.body)
+        elif isinstance(defn, AgentDef):
+            for method in defn.methods:
+                _walk_block(method.body)
+
+    return refs
 
 
 def _extract_top_level_symbols(

@@ -130,6 +130,7 @@ def on_initialize(params: lsp.InitializeParams) -> lsp.InitializeResult:
                 trigger_characters=[".", ":", "<"],
                 resolve_provider=False,
             ),
+            rename_provider=lsp.RenameOptions(prepare_provider=True),
             code_action_provider=lsp.CodeActionOptions(
                 code_action_kinds=[
                     lsp.CodeActionKind.QuickFix,
@@ -278,11 +279,10 @@ def on_references(
 
     line = params.position.line
     col = params.position.character
-    refs = analysis.references_at(line, col)
-    if not refs:
-        return None
 
-    return [
+    # Within-file references (existing v0.5.0)
+    refs = analysis.references_at(line, col)
+    locations = [
         lsp.Location(
             uri=r.uri,
             range=lsp.Range(
@@ -291,7 +291,109 @@ def on_references(
             ),
         )
         for r in refs
-    ]
+    ] if refs else []
+
+    # v4.38.0: cross-module references via workspace index
+    symbol_name = analysis.symbol_name_at(line, col)
+    if symbol_name and _workspace.refs_by_symbol:
+        for sym in _workspace.lookup_by_name(symbol_name):
+            include_decl = params.context.include_declaration if params.context else False
+            sites = _workspace.find_references(sym.module, sym.name, include_decl)
+            for site in sites:
+                sym_uri = f"file://{site.path}"
+                span = site.span
+                loc = lsp.Location(
+                    uri=sym_uri,
+                    range=lsp.Range(
+                        start=lsp.Position(line=max(0, span.line - 1), character=max(0, span.column - 1)),
+                        end=lsp.Position(
+                            line=max(0, (span.end_line or span.line) - 1),
+                            character=max(0, (span.end_column or span.column) - 1),
+                        ),
+                    ),
+                )
+                locations.append(loc)
+            break  # Use first matching symbol
+
+    return locations if locations else None
+
+
+# -- Completion --------------------------------------------------------------
+
+
+# -- Rename (v4.38.0) --------------------------------------------------------
+
+
+@server.feature(lsp.TEXT_DOCUMENT_RENAME)
+def on_rename(params: lsp.RenameParams) -> Optional[lsp.WorkspaceEdit]:
+    from mapanare.lsp.rename import apply_rename, validate_rename
+
+    uri = params.text_document.uri
+    analysis = _documents.get(uri)
+    if not analysis:
+        return None
+
+    symbol_name = analysis.symbol_name_at(params.position.line, params.position.character)
+    if not symbol_name:
+        return None
+
+    # Find the symbol in the workspace index
+    matches = _workspace.lookup_by_name(symbol_name) if _workspace._by_name else []
+    if not matches:
+        return None
+
+    sym = matches[0]
+    error = validate_rename(sym, params.new_name, _workspace)
+    if error:
+        logger.warning("Rename rejected: %s", error)
+        return None
+
+    changes_raw = apply_rename(sym, params.new_name, _workspace)
+    # Convert to LSP WorkspaceEdit
+    changes: dict[str, list[lsp.TextEdit]] = {}
+    for file_uri, edits in changes_raw.items():
+        changes[file_uri] = [
+            lsp.TextEdit(
+                range=lsp.Range(
+                    start=lsp.Position(line=e["range"]["start"]["line"], character=e["range"]["start"]["character"]),
+                    end=lsp.Position(line=e["range"]["end"]["line"], character=e["range"]["end"]["character"]),
+                ),
+                new_text=e["newText"],
+            )
+            for e in edits
+        ]
+    return lsp.WorkspaceEdit(changes=changes)
+
+
+@server.feature(lsp.TEXT_DOCUMENT_PREPARE_RENAME)
+def on_prepare_rename(
+    params: lsp.PrepareRenameParams,
+) -> Optional[lsp.PrepareRenameResult_Type1]:
+    uri = params.text_document.uri
+    analysis = _documents.get(uri)
+    if not analysis:
+        return None
+
+    symbol_name = analysis.symbol_name_at(params.position.line, params.position.character)
+    if not symbol_name:
+        return None
+
+    # Verify the symbol exists in the workspace index
+    matches = _workspace.lookup_by_name(symbol_name) if _workspace._by_name else []
+    if not matches:
+        return None
+
+    # Return the range of the symbol under cursor
+    return lsp.PrepareRenameResult_Type1(
+        range=lsp.Range(
+            start=lsp.Position(line=params.position.line, character=params.position.character),
+            end=lsp.Position(
+                line=params.position.line,
+                character=params.position.character + len(symbol_name),
+            ),
+        ),
+        placeholder=symbol_name,
+    )
 
 
 # -- Completion --------------------------------------------------------------

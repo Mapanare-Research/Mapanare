@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.38.0] - 2026-04-12
+
+**LSP Navigation — find-references + rename refactoring.**
+Arc 2 release 2. Extends v4.37.0's workspace index with reverse queries.
+
+### Added
+
+- `mapanare/lsp/rename.py` — new module: `validate_rename()` rejects
+  keywords, invalid identifiers, and name conflicts. `apply_rename()`
+  builds multi-file `WorkspaceEdit`.
+- `textDocument/rename` handler — atomic multi-file rename via workspace index.
+- `textDocument/prepareRename` handler — check feasibility before rename UI.
+- Reverse reference index: `WorkspaceIndex.refs_by_symbol` tracks every
+  call, read, type-use, and import site for each top-level symbol.
+- Cross-module `textDocument/references` — finds references across all files.
+- `tests/lsp/test_find_references.py` — 5 tests
+- `tests/lsp/test_rename.py` — 8 tests (validation + execution)
+
+### Changed
+
+- `mapanare/lsp/workspace.py` — `ReferenceSite` dataclass, `_collect_references`
+  AST walker, second-pass reference collection in `scan_root`, `find_references` method.
+- `mapanare/lsp/server.py` — rename capability registered, cross-module references fallback.
+
 ## [4.37.0] - 2026-04-12
 
 **LSP Foundation — first release of Arc 2 (Editor Tooling).**

@@ -4,7 +4,7 @@
 > reverse references (every call + read site of a symbol) and
 > text-based rename refactoring with semantic validation.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No
 **Prerequisite:** v4.37.0 (workspace index must exist and be correct)
 **Delta review:** No
