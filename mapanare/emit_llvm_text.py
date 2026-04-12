@@ -342,6 +342,12 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_tensor_size": {"nounwind", "readonly", "willreturn"},
     "__mn_tensor_shape_dim": {"nounwind", "readonly", "willreturn"},
     "__mn_tensor_print_f64": {"nounwind", "willreturn"},
+    # Tensor multi-dim indexing (v4.43.0). Bounds-check aborts on OOB,
+    # so NOT willreturn. The get variants are variadic (rank + indices).
+    "__mn_tensor_get_f64_nd": {"nounwind"},
+    "__mn_tensor_get_i64_nd": {"nounwind"},
+    "__mn_tensor_set_f64_nd": {"nounwind"},
+    "__mn_tensor_set_i64_nd": {"nounwind"},
     # Agent runtime (v3.43.0). v4.30.0: ``agent_new`` returns a fresh
     # heap agent handle (noalias); dispatch/send/recv do not.
     "mapanare_agent_new": {"nounwind", "noalias", "willreturn"},
@@ -2650,6 +2656,38 @@ class LLVMTextEmitter:
             a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
             self._ensure("__mn_tensor_print_f64", VOID, [PTR])
             self._L(f"call void @__mn_tensor_print_f64(ptr {a0})")
+            return
+
+        # Tensor multi-dim get/set (v4.43.0) — variadic runtime calls
+        if fn in ("__mn_tensor_get_f64_nd", "__mn_tensor_get_i64_nd") and len(args) >= 2:
+            # args = [(tensor_ptr, ty), (rank, ty), (idx0, ty), (idx1, ty), ...]
+            t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            rank_v = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            idx_parts = []
+            for j in range(2, len(args)):
+                iv = self._coerce(args[j][0], args[j][1], I64) if args[j][1] != I64 else args[j][0]
+                idx_parts.append(f"i64 {iv}")
+            ret_ty = DBL if "f64" in fn else I64
+            self._ensure(fn, ret_ty, [PTR, I64], va=True)
+            idx_str = (", " + ", ".join(idx_parts)) if idx_parts else ""
+            r = self._f("tget")
+            self._L(f"{r} = call {ret_ty} (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str})")
+            self._put(i.dest, r, ret_ty)
+            return
+        if fn in ("__mn_tensor_set_f64_nd", "__mn_tensor_set_i64_nd") and len(args) >= 3:
+            # args = [(tensor_ptr, ty), (rank, ty), (idx0, ty), ..., (val, ty)]
+            t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            rank_v = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            val_ty = DBL if "f64" in fn else I64
+            # Last arg is the value; middle args are indices
+            val_v = self._coerce(args[-1][0], args[-1][1], val_ty) if args[-1][1] != val_ty else args[-1][0]
+            idx_parts = []
+            for j in range(2, len(args) - 1):
+                iv = self._coerce(args[j][0], args[j][1], I64) if args[j][1] != I64 else args[j][0]
+                idx_parts.append(f"i64 {iv}")
+            self._ensure(fn, VOID, [PTR, I64], va=True)
+            idx_str = (", " + ", ".join(idx_parts)) if idx_parts else ""
+            self._L(f"call void (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str}, {val_ty} {val_v})")
             return
 
         # join

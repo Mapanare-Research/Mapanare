@@ -540,7 +540,7 @@ class SemanticChecker:
                     self._error(
                         f"tensor index rank mismatch: got {n_idx} indices "
                         f"for rank-{rank} tensor",
-                        expr.span,
+                        expr,
                     )
                 elem = obj_type.args[0] if obj_type.args else FLOAT_TYPE
                 return elem
@@ -549,7 +549,7 @@ class SemanticChecker:
                 self._error(
                     f"multi-index not supported for {obj_type.kind.name}; "
                     f"use single index",
-                    expr.span,
+                    expr,
                 )
             if obj_type.kind == TypeKind.LIST and obj_type.args:
                 return obj_type.args[0]

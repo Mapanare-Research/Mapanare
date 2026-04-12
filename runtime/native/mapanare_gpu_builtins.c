@@ -11,6 +11,7 @@
 
 #include "mapanare_gpu.h"
 #include "mapanare_core.h"
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -340,4 +341,85 @@ MN_EXPORT void __mn_tensor_print_f64(const mapanare_tensor_t *t) {
     }
     if (t->size > 20) printf(", ...");
     printf(")\n");
+}
+
+/* -----------------------------------------------------------------------
+ * Tensor Multi-Dimensional Indexing (v4.43.0)
+ *
+ * Variadic-via-pointer: pass index array + rank. Computes flat row-major
+ * offset with per-dimension bounds checking. Aborts on OOB.
+ * ----------------------------------------------------------------------- */
+
+/** Compute row-major flat offset from multi-dim indices. Returns -1 on OOB. */
+static int64_t tensor_flat_offset(const mapanare_tensor_t *t,
+                                  const int64_t *idx, int64_t rank) {
+    if (rank != t->ndim) {
+        fprintf(stderr, "mapanare: tensor index rank %lld doesn't match "
+                "tensor rank %lld\n", (long long)rank, (long long)t->ndim);
+        abort();
+    }
+    int64_t flat = 0;
+    int64_t stride = 1;
+    for (int64_t d = rank - 1; d >= 0; d--) {
+        int64_t i = idx[d];
+        if (i < 0 || i >= t->shape[d]) {
+            fprintf(stderr, "mapanare: tensor index out of bounds: "
+                    "dimension %lld index %lld not in [0, %lld)\n",
+                    (long long)d, (long long)i, (long long)t->shape[d]);
+            abort();
+        }
+        flat += i * stride;
+        stride *= t->shape[d];
+    }
+    return flat;
+}
+
+/** Read float64 element: __mn_tensor_get_f64_nd(tensor, rank, i0, i1, ...) */
+MN_EXPORT double __mn_tensor_get_f64_nd(mapanare_tensor_t *t, int64_t rank, ...) {
+    if (!t || !t->data) { fprintf(stderr, "mapanare: tensor get on null\n"); abort(); }
+    int64_t idx[16];
+    va_list ap;
+    va_start(ap, rank);
+    for (int64_t d = 0; d < rank && d < 16; d++) idx[d] = va_arg(ap, int64_t);
+    va_end(ap);
+    int64_t flat = tensor_flat_offset(t, idx, rank);
+    return ((const double *)t->data)[flat];
+}
+
+/** Read int64 element: __mn_tensor_get_i64_nd(tensor, rank, i0, i1, ...) */
+MN_EXPORT int64_t __mn_tensor_get_i64_nd(mapanare_tensor_t *t, int64_t rank, ...) {
+    if (!t || !t->data) { fprintf(stderr, "mapanare: tensor get on null\n"); abort(); }
+    int64_t idx[16];
+    va_list ap;
+    va_start(ap, rank);
+    for (int64_t d = 0; d < rank && d < 16; d++) idx[d] = va_arg(ap, int64_t);
+    va_end(ap);
+    int64_t flat = tensor_flat_offset(t, idx, rank);
+    return ((const int64_t *)t->data)[flat];
+}
+
+/** Write float64 element: __mn_tensor_set_f64_nd(tensor, rank, i0, i1, ..., val) */
+MN_EXPORT void __mn_tensor_set_f64_nd(mapanare_tensor_t *t, int64_t rank, ...) {
+    if (!t || !t->data) { fprintf(stderr, "mapanare: tensor set on null\n"); abort(); }
+    int64_t idx[16];
+    va_list ap;
+    va_start(ap, rank);
+    for (int64_t d = 0; d < rank && d < 16; d++) idx[d] = va_arg(ap, int64_t);
+    double val = va_arg(ap, double);
+    va_end(ap);
+    int64_t flat = tensor_flat_offset(t, idx, rank);
+    ((double *)t->data)[flat] = val;
+}
+
+/** Write int64 element: __mn_tensor_set_i64_nd(tensor, rank, i0, i1, ..., val) */
+MN_EXPORT void __mn_tensor_set_i64_nd(mapanare_tensor_t *t, int64_t rank, ...) {
+    if (!t || !t->data) { fprintf(stderr, "mapanare: tensor set on null\n"); abort(); }
+    int64_t idx[16];
+    va_list ap;
+    va_start(ap, rank);
+    for (int64_t d = 0; d < rank && d < 16; d++) idx[d] = va_arg(ap, int64_t);
+    int64_t val = va_arg(ap, int64_t);
+    va_end(ap);
+    int64_t flat = tensor_flat_offset(t, idx, rank);
+    ((int64_t *)t->data)[flat] = val;
 }
