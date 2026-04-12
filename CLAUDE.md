@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.45.0** (shipped) — Arc 3 release 4. Tensor reductions (sum/mean/max/min/argmax/argmin), slicing (`t[0..2, _]`), linear regression demo.
-- **v4.46.0** (next) — Arc 3 panel release. Zero new features.
+- **v4.46.0** (shipped) — Arc 3 panel release. 7-reviewer panel grades v4.42.0-v4.45.0 tensor arc. Conditional PASS (8.99/10). SPEC §3.10 closed.
+- **v4.47.0** (next) — Arc 3 bug-fix closure (slicing inttoptr, scalar-tensor sub/div). Then Arc 4 opens.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

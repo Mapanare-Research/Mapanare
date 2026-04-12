@@ -3,7 +3,7 @@
 > **Third 5-minor cadence panel.** Arc 3 closes. Panel grades the
 > tensor work from v4.42.0–v4.45.0.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No
 **Prerequisite:** v4.45.0
 **Delta review:** No
