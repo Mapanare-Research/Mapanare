@@ -4,7 +4,9 @@
 > range/wildcard in index position. Slicing is new syntax — delta
 > review mandatory.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Single session. Reductions + slicing + IndexItem migration + tests.
+**Decisions taken:** Decision 1 (atomic refcount — deferred to v5.x; copy-based slicing for v4.45.0), Decision 2 (read-only views — copies, not views), Decision 3 (no negative indices), Decision 4 (no stepped slices).
 **Breaking:** No
 **Prerequisite:** v4.44.0
 **Delta review:** **YES** — slicing adds range and `:` wildcard to the grammar

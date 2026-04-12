@@ -744,7 +744,6 @@ MN_EXPORT mapanare_tensor_t *__mn_tensor_slice(
         /* Decompose flat index into output coords */
         int64_t rem = i;
         int64_t src_flat = 0;
-        int64_t src_stride = 1;
         /* Compute src strides */
         int64_t strides[MN_TENSOR_MAX_RANK];
         strides[rank - 1] = 1;

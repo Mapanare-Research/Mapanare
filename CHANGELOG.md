@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.45.0] - 2026-04-12
+
+**Arc 3 Release 4 — Tensor Reductions + Slicing.**
+Completes the tensor language surface. Reductions via method syntax,
+slicing via range/wildcard in index positions. Linear regression demo.
+
+### Added
+
+- 6 reduction methods on tensors: `sum`, `mean`, `max`, `min`, `argmax`, `argmin`
+  for f64 and i64 (`runtime/native/mapanare_gpu_builtins.c`)
+- Tensor slicing: `t[0..2, _]` with range (`N..M`) and wildcard (`_`) in index
+  positions (`mapanare/mapanare.lark:269`, `mapanare/parser.py`)
+- `IndexItem` AST node with scalar/range/wildcard kinds
+  (`mapanare/ast_nodes.py:205–218`)
+- `__mn_tensor_slice` runtime with coordinate mapping
+  (`runtime/native/mapanare_gpu_builtins.c`)
+- Semantic shape inference for sliced views
+  (`mapanare/semantic.py:531–590`)
+- Golden tests: `52_tensor_slicing.mn`, `53_linear_regression.mn`
+- `tests/semantic/test_tensor_slicing.py`, `tests/llvm/test_tensor_reductions.py`
+
+### Changed
+
+- `IndexExpr.indices` migrated from `list[Expr]` to `list[IndexItem]`
+  (14 call sites updated across semantic, lower, optimizer, linter, LSP)
+
+### Tests
+
+- 21 new tests (7 semantic + 10 LLVM + 4 golden), 809 total, 0 regressions
+- Delta review: Rattler + Coral (in progress)
+
 ## [4.44.0] - 2026-04-12
 
 **Arc 3 Release 3 — Tensor Broadcasting.**
