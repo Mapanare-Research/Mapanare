@@ -1892,8 +1892,31 @@ static inline void mn_signal_lock(void)   { mn_signal_ensure_mutex(); EnterCriti
 static inline void mn_signal_unlock(void) { LeaveCriticalSection(&mn_signal_mutex); }
 #else
 #include <pthread.h>
-static pthread_mutex_t mn_signal_mutex = PTHREAD_MUTEX_INITIALIZER;
-static inline void mn_signal_lock(void)   { pthread_mutex_lock(&mn_signal_mutex); }
+/* v4.32.0 Phase 2.5 (Viper M2): the signal mutex must be RECURSIVE because
+ * mn_signal_recompute now acquires the lock, and compute_fn may call
+ * __mn_signal_get → __mn_signal_subscribe → mn_signal_lock again (a
+ * standard reactive-graph pattern: reading a dependency while evaluating
+ * a computed signal). Windows CRITICAL_SECTION is always recursive; on
+ * POSIX we must explicitly set PTHREAD_MUTEX_RECURSIVE.
+ *
+ * Lock ordering: topological / depth-first. mn_signal_propagate holds
+ * the lock for a snapshot, releases it, then recomputes each subscriber
+ * (which re-acquires). Because recompute may call __mn_signal_get on
+ * dependency signals that are already evaluated (not dirty), the
+ * recursive mutex handles the nesting without deadlock. */
+static pthread_mutex_t mn_signal_mutex;
+static pthread_once_t mn_signal_mutex_once_flag = PTHREAD_ONCE_INIT;
+static void mn_signal_mutex_init(void) {
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&mn_signal_mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+}
+static inline void mn_signal_lock(void)   {
+    pthread_once(&mn_signal_mutex_once_flag, mn_signal_mutex_init);
+    pthread_mutex_lock(&mn_signal_mutex);
+}
 static inline void mn_signal_unlock(void) { pthread_mutex_unlock(&mn_signal_mutex); }
 #endif
 
@@ -2043,8 +2066,16 @@ MN_EXPORT MnSignal *__mn_signal_computed(
     return sig;
 }
 
+/* v4.32.0 Phase 2.5 (Viper M2): mn_signal_recompute now runs under
+ * the signal mutex. This closes the race where a reader on another
+ * thread sees a half-written ``signal->value`` during a concurrent
+ * propagation-triggered recompute. The lock is recursive so
+ * compute_fn can safely call __mn_signal_get (which acquires the
+ * same mutex via mn_signal_lock). */
 static void mn_signal_recompute(MnSignal *signal) {
     if (signal->compute_fn == NULL) return;
+
+    mn_signal_lock();
 
     /* Push tracking context */
     MnSignal *prev_context = mn_signal_tracking_context;
@@ -2055,6 +2086,8 @@ static void mn_signal_recompute(MnSignal *signal) {
 
     /* Pop tracking context */
     mn_signal_tracking_context = prev_context;
+
+    mn_signal_unlock();
 }
 
 /* --- Subscribe / Unsubscribe --- */
