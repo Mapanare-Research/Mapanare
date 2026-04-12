@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.43.0] - 2026-04-12
+
+**Arc 3 Release 2 — Tensor Indexing + Bounds Checking.**
+Read and write tensor elements with `t[i, j]` syntax. Bounds-checked
+at runtime with abort on OOB.
+
+### Added
+
+- Multi-dimensional tensor indexing: `t[i, j]` for 2-D, `t[i, j, k]` for 3-D
+  (`mapanare/mapanare.lark:269`, `tests/parser/test_tensor_indexing.py`)
+- `IndexExpr.indices` replaces `IndexExpr.index` — supports multi-index
+  (`mapanare/ast_nodes.py:205`, all 14 visitor call sites migrated)
+- Semantic rank-match enforcement: under-rank and over-rank → error
+  (`mapanare/semantic.py:531–553`, `tests/semantic/test_tensor_indexing.py`)
+- Tensor get/set lowering via `__mn_tensor_get_*_nd` variadic calls
+  (`mapanare/lower.py:2413–2449`)
+- 4 runtime functions: `__mn_tensor_{get,set}_{f64,i64}_nd` with per-dimension
+  bounds checking + abort on OOB (`runtime/native/mapanare_gpu_builtins.c`)
+- Golden test: `tests/golden/50_tensor_indexing.mn`
+- Example: `examples/tensor/matrix_ops.mn`
+
+### Tests
+
+- 22 new tests (5 parser + 8 semantic + 7 LLVM + 2 golden)
+- 0 regressions across 760 existing tests
+- Delta review: Rattler PASS WITH NOTES (rank>16 guard added per review)
+
 ## [4.42.0] - 2026-04-12
 
 **Arc 3 Release 1 — Tensor Literals + Runtime Wiring.**

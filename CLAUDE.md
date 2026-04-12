@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.42.0** (shipped) — Arc 3 release 1. Tensor literal syntax (`Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]`), runtime wiring, drop glue, 32 new tests.
-- **v4.43.0** (next) — Arc 3 release 2. Multi-dimensional tensor indexing (`t[i, j]`).
+- **v4.43.0** (shipped) — Arc 3 release 2. Multi-dimensional tensor indexing (`t[i, j, k]`), bounds-checked at runtime, variadic get/set.
+- **v4.44.0** (next) — Arc 3 release 3. Tensor broadcasting for binary ops.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

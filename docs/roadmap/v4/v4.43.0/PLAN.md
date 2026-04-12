@@ -4,7 +4,9 @@
 > `t[i, j, k]` for 3-D, comma-separated for general n-D. Bounds
 > checked at runtime with the abort-on-OOB discipline from v4.32.0.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Single session. Grammar migration + semantic + lowering + runtime + tests.
+**Decisions taken:** Decision 1 (variadic), Decision 2 (no coercion), Decision 3 (under-rank = error).
 **Breaking:** No (grammar extension only; existing single-index still works for lists)
 **Prerequisite:** v4.42.0 (tensor literals)
 **Delta review:** **YES** — new index syntax, Rattler lens (bounds-check ABI)

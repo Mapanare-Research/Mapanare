@@ -659,7 +659,20 @@ let t: Tensor<Int>[2, 2, 2] = Tensor<Int>[[[1, 2], [3, 4]],      // 3D tensor
                                            [[5, 6], [7, 8]]]
 ```
 
-The parser infers the shape from nesting depth and per-level element counts. Jagged arrays (sibling sub-arrays with different lengths) are rejected at parse time with a diagnostic message. Elements must be scalars — nested tensor composition is not supported in v4.42.0.
+The parser infers the shape from nesting depth and per-level element counts. Jagged arrays (sibling sub-arrays with different lengths) are rejected at parse time with a diagnostic message. Elements must be scalars — nested tensor composition is not supported.
+
+Tensor elements are accessed via multi-dimensional indexing (v4.43.0):
+
+```mn
+let m = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+let x: Float = m[1, 2]    // 6.0 — row 1, column 2
+m[0, 0] = 99.0            // write element
+
+let v = Tensor<Int>[10, 20, 30]
+let y: Int = v[1]          // 20 — single index for 1-D
+```
+
+The number of indices must equal the tensor's rank; under-rank and over-rank indexing are compile errors. Bounds are checked at runtime — out-of-bounds access aborts with a diagnostic message showing the offending index and tensor shape.
 
 Shape mismatches are compile-time errors:
 

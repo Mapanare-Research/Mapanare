@@ -1,0 +1,35 @@
+// Tensor example: matrix creation and element access (v4.42.0 + v4.43.0)
+//
+// Demonstrates:
+// - 1-D tensor literal construction
+// - 2-D tensor literal (matrix)
+// - Multi-dimensional indexing t[i, j]
+// - Element assignment t[i, j] = value
+// - Tensor builtins: tensor_rank, tensor_size, tensor_get_f64
+
+fn main() {
+    // Create a 3x3 identity-like matrix
+    let mut m = Tensor<Float>[
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ]
+
+    // Read elements
+    print("m[0, 0] = " + str(m[0, 0]))
+    print("m[1, 1] = " + str(m[1, 1]))
+    print("m[2, 2] = " + str(m[2, 2]))
+
+    // Modify off-diagonal
+    m[0, 1] = 0.5
+    m[1, 0] = 0.5
+    print("After modification:")
+    print("m[0, 1] = " + str(m[0, 1]))
+    print("m[1, 0] = " + str(m[1, 0]))
+
+    // Tensor metadata
+    print("rank = " + str(tensor_rank(m)))
+    print("size = " + str(tensor_size(m)))
+    print("shape[0] = " + str(tensor_shape_dim(m, 0)))
+    print("shape[1] = " + str(tensor_shape_dim(m, 1)))
+}

@@ -377,10 +377,11 @@ static int64_t tensor_flat_offset(const mapanare_tensor_t *t,
 /** Read float64 element: __mn_tensor_get_f64_nd(tensor, rank, i0, i1, ...) */
 MN_EXPORT double __mn_tensor_get_f64_nd(mapanare_tensor_t *t, int64_t rank, ...) {
     if (!t || !t->data) { fprintf(stderr, "mapanare: tensor get on null\n"); abort(); }
+    if (rank > 16) { fprintf(stderr, "mapanare: tensor rank %lld exceeds max 16\n", (long long)rank); abort(); }
     int64_t idx[16];
     va_list ap;
     va_start(ap, rank);
-    for (int64_t d = 0; d < rank && d < 16; d++) idx[d] = va_arg(ap, int64_t);
+    for (int64_t d = 0; d < rank; d++) idx[d] = va_arg(ap, int64_t);
     va_end(ap);
     int64_t flat = tensor_flat_offset(t, idx, rank);
     return ((const double *)t->data)[flat];
@@ -389,10 +390,11 @@ MN_EXPORT double __mn_tensor_get_f64_nd(mapanare_tensor_t *t, int64_t rank, ...)
 /** Read int64 element: __mn_tensor_get_i64_nd(tensor, rank, i0, i1, ...) */
 MN_EXPORT int64_t __mn_tensor_get_i64_nd(mapanare_tensor_t *t, int64_t rank, ...) {
     if (!t || !t->data) { fprintf(stderr, "mapanare: tensor get on null\n"); abort(); }
+    if (rank > 16) { fprintf(stderr, "mapanare: tensor rank %lld exceeds max 16\n", (long long)rank); abort(); }
     int64_t idx[16];
     va_list ap;
     va_start(ap, rank);
-    for (int64_t d = 0; d < rank && d < 16; d++) idx[d] = va_arg(ap, int64_t);
+    for (int64_t d = 0; d < rank; d++) idx[d] = va_arg(ap, int64_t);
     va_end(ap);
     int64_t flat = tensor_flat_offset(t, idx, rank);
     return ((const int64_t *)t->data)[flat];
@@ -401,10 +403,11 @@ MN_EXPORT int64_t __mn_tensor_get_i64_nd(mapanare_tensor_t *t, int64_t rank, ...
 /** Write float64 element: __mn_tensor_set_f64_nd(tensor, rank, i0, i1, ..., val) */
 MN_EXPORT void __mn_tensor_set_f64_nd(mapanare_tensor_t *t, int64_t rank, ...) {
     if (!t || !t->data) { fprintf(stderr, "mapanare: tensor set on null\n"); abort(); }
+    if (rank > 16) { fprintf(stderr, "mapanare: tensor rank %lld exceeds max 16\n", (long long)rank); abort(); }
     int64_t idx[16];
     va_list ap;
     va_start(ap, rank);
-    for (int64_t d = 0; d < rank && d < 16; d++) idx[d] = va_arg(ap, int64_t);
+    for (int64_t d = 0; d < rank; d++) idx[d] = va_arg(ap, int64_t);
     double val = va_arg(ap, double);
     va_end(ap);
     int64_t flat = tensor_flat_offset(t, idx, rank);
@@ -414,10 +417,11 @@ MN_EXPORT void __mn_tensor_set_f64_nd(mapanare_tensor_t *t, int64_t rank, ...) {
 /** Write int64 element: __mn_tensor_set_i64_nd(tensor, rank, i0, i1, ..., val) */
 MN_EXPORT void __mn_tensor_set_i64_nd(mapanare_tensor_t *t, int64_t rank, ...) {
     if (!t || !t->data) { fprintf(stderr, "mapanare: tensor set on null\n"); abort(); }
+    if (rank > 16) { fprintf(stderr, "mapanare: tensor rank %lld exceeds max 16\n", (long long)rank); abort(); }
     int64_t idx[16];
     va_list ap;
     va_start(ap, rank);
-    for (int64_t d = 0; d < rank && d < 16; d++) idx[d] = va_arg(ap, int64_t);
+    for (int64_t d = 0; d < rank; d++) idx[d] = va_arg(ap, int64_t);
     int64_t val = va_arg(ap, int64_t);
     va_end(ap);
     int64_t flat = tensor_flat_offset(t, idx, rank);
