@@ -2894,7 +2894,10 @@ class MIRLowerer:
         elif isinstance(tree, DTSwitch):
             self._emit_nested_switch(tree, [subject], action_blocks, merge_bb)
 
-        # Lower each arm body
+        # Lower each arm body.
+        # Mirror the self-hosted convention: void/unknown arm values are replaced
+        # with zeroinitializer sentinels. If ALL entries are zeroinitializer,
+        # skip the PHI and emit the unreachable merge pattern.
         arm_results: list[tuple[str, Value]] = []
         for i, arm in enumerate(expr.arms):
             self._set_block(action_blocks[i])
@@ -2907,13 +2910,25 @@ class MIRLowerer:
             exit_bb = self._block
             if not self._block_terminated():
                 self._emit(Jump(target=merge_bb.label))
+                # Mirror self-hosted: void/unknown → zeroinitializer (Rule 4)
+                if arm_val is None or arm_val.ty.kind in (
+                    TypeKind.VOID, TypeKind.UNKNOWN
+                ) or arm_val.name == "%void":
+                    zty = arm_val.ty if arm_val is not None else mir_void()
+                    arm_results.append(
+                        (exit_bb.label, Value(name="zeroinitializer", ty=zty))
+                    )
+                elif exit_bb is not None:
+                    arm_results.append((exit_bb.label, arm_val))
             self._pop_scope()
-            if arm_val is not None and exit_bb is not None:
-                arm_results.append((exit_bb.label, arm_val))
 
         # Merge block
         self._set_block(merge_bb)
-        if arm_results:
+
+        # Check if any arm result is non-zeroinitializer (self-hosted: has_non_zero_phi)
+        has_real_value = any(val.name != "zeroinitializer" for _, val in arm_results)
+
+        if arm_results and has_real_value:
             phi_ty = arm_results[0][1].ty
             if self._fn and self._fn.return_type.kind != TypeKind.VOID:
                 phi_ty = self._fn.return_type
@@ -2921,7 +2936,7 @@ class MIRLowerer:
             self._emit(Phi(dest=result, incoming=arm_results))
             return result
 
-        # All arms terminated — unreachable merge
+        # All arms terminated or all void — unreachable merge
         ret_ty = self._fn.return_type if self._fn else mir_void()
         result = self._make_value(ty=ret_ty, prefix="match_result")
         self._emit(Const(dest=result, ty=ret_ty, value=None))

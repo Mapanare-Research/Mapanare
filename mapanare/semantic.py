@@ -992,12 +992,33 @@ class SemanticChecker:
         for arm_idx in sorted(unreachable):
             self._warning(f"unreachable match arm (arm {arm_idx + 1})", expr.arms[arm_idx])
 
+    _semantic_ctx_stack: set[str] | None = None
+
     def _semantic_type_context(self, ty: TypeInfo) -> object:
         """Build a TypeContext from a semantic TypeInfo for exhaustiveness checking."""
+        from mapanare.pattern_matching import TypeContext
+
+        # Cycle guard for recursive enum types (e.g., Expr containing Expr)
+        if self._semantic_ctx_stack is None:
+            self._semantic_ctx_stack = set()
+        type_key = ty.name or ""
+        if type_key and type_key in self._semantic_ctx_stack:
+            return TypeContext(is_closed=False)
+        if type_key:
+            self._semantic_ctx_stack.add(type_key)
+        try:
+            return self._semantic_type_context_inner(ty)
+        finally:
+            if type_key:
+                self._semantic_ctx_stack.discard(type_key)
+
+    def _semantic_type_context_inner(self, ty: TypeInfo) -> object:
         from mapanare.pattern_matching import ConstructorInfo, TypeContext
 
+        ctx = self._semantic_type_context
+
         if ty.kind == TypeKind.OPTION:
-            some_sub = [self._semantic_type_context(ty.args[0])] if ty.args else []
+            some_sub = [ctx(ty.args[0])] if ty.args else []
             return TypeContext(
                 is_closed=True,
                 all_constructors=[ConstructorInfo("Some", 1), ConstructorInfo("None", 0)],
@@ -1005,8 +1026,8 @@ class SemanticChecker:
             )
 
         if ty.kind == TypeKind.RESULT:
-            ok_sub = [self._semantic_type_context(ty.args[0])] if ty.args else []
-            err_sub = [self._semantic_type_context(ty.args[1])] if len(ty.args) >= 2 else []
+            ok_sub = [ctx(ty.args[0])] if ty.args else []
+            err_sub = [ctx(ty.args[1])] if len(ty.args) >= 2 else []
             return TypeContext(
                 is_closed=True,
                 all_constructors=[ConstructorInfo("Ok", 1), ConstructorInfo("Err", 1)],
@@ -1025,9 +1046,7 @@ class SemanticChecker:
                     ctors.append(ConstructorInfo(variant.name, arity))
                     if arity > 0:
                         field_types = [self._resolve_type_expr(f) for f in variant.fields]
-                        sub_ctxs[variant.name] = [
-                            self._semantic_type_context(ft) for ft in field_types
-                        ]
+                        sub_ctxs[variant.name] = [ctx(ft) for ft in field_types]
                 return TypeContext(is_closed=True, all_constructors=ctors, sub_contexts=sub_ctxs)
 
         if ty.kind == TypeKind.BOOL:

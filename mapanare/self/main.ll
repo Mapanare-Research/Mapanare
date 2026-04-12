@@ -3,7 +3,7 @@ source_filename = "main"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-@.str.0 = private constant [15 x i8] c"mapanare 4.32.0", align 8
+@.str.0 = private constant [15 x i8] c"mapanare 4.34.0", align 8
 @.str.1 = private constant [0 x i8] c"", align 8
 @.str.2 = private constant [0 x i8] c"", align 8
 @.str.3 = private constant [0 x i8] c"", align 8
@@ -18602,10 +18602,10 @@ entry:
   store i64 %et.1, ptr %tag0.a.2
   %l.3 = load i64, ptr %tag0.a.2
   switch i64 %l.3, label %match_arm5 [
+    i64 24, label %match_arm4
     i64 25, label %match_arm1
     i64 26, label %match_arm2
     i64 27, label %match_arm3
-    i64 24, label %match_arm4
   ]
 match_arm1:
   store i1 1, ptr %t1.a.4
@@ -186642,4 +186642,4 @@ if_merge74:
 
 
 !mapanare.version = !{!0}
-!0 = !{!"4.32.0"}
+!0 = !{!"4.34.0"}
