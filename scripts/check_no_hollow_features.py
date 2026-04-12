@@ -214,12 +214,27 @@ def _check_device_decorators_in_goldens() -> list[str]:
 
 
 def _check_no_notimplementederror() -> list[str]:
-    """v4.29.0 gate: ``raise NotImplementedError`` forbidden in source."""
-    result = subprocess.run(
-        ["git", "grep", "-l", "raise NotImplementedError", "mapanare/", "runtime/"],
-        capture_output=True,
-        text=True,
-    )
+    """v4.29.0 gate: ``raise NotImplementedError`` forbidden in source.
+
+    v4.32.0 Phase 2.6 (Anaconda): falls back to ``grep -rl`` when
+    ``.git`` is absent (e.g. Debian ``dpkg-buildpackage`` environments).
+    """
+    from pathlib import Path
+
+    pattern = "raise NotImplementedError"
+    roots = ["mapanare/", "runtime/"]
+    if Path(".git").is_dir():
+        result = subprocess.run(
+            ["git", "grep", "-l", pattern] + roots,
+            capture_output=True,
+            text=True,
+        )
+    else:
+        result = subprocess.run(
+            ["grep", "-rl", pattern] + roots,
+            capture_output=True,
+            text=True,
+        )
     if result.returncode != 0:
         return []
     hits = [h for h in result.stdout.splitlines() if h and not h.startswith("tests/")]

@@ -47,7 +47,10 @@ jobs:
       # The rule is: if you need to write ``raise NotImplementedError``,
       # the feature is not ready to merge. Use ``abc.abstractmethod``
       # for intended-to-be-overridden stubs.
+      # v4.32.0 Phase 2.6 (Anaconda): `if: always()` on every gate step
+      # so a failure in gate 1 doesn't mask gates 2-5.
       - name: Hollow-feature gate (no raise NotImplementedError)
+        if: always()
         shell: bash
         run: |
           set -e
@@ -71,6 +74,7 @@ jobs:
       # happened because 79 ``extern "Python" fn`` tests had been
       # silently xfailed since v4.2.0.
       - name: Silent-skip gate (every pytest skip has a tracking version)
+        if: always()
         shell: bash
         run: |
           set -e
@@ -82,6 +86,7 @@ jobs:
       # The v4.26.0 panel flagged v4.18.0/v4.24.0/v4.25.0 CHANGELOG
       # entries that referenced tests + symbols that did not exist.
       - name: CHANGELOG honesty gate
+        if: always()
         shell: bash
         run: |
           set -e
@@ -94,6 +99,7 @@ jobs:
       # out with ``<!-- pseudo -->``; negative examples use
       # ``<!-- expect-error -->``.
       - name: Docs drift gate
+        if: always()
         shell: bash
         run: |
           set -e
@@ -107,6 +113,7 @@ jobs:
       # script (but the standalone gate above is kept for defence in
       # depth).
       - name: Hollow-feature structural gate
+        if: always()
         shell: bash
         run: |
           set -e

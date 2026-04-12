@@ -195,14 +195,26 @@ def _path_exists(raw_path: str) -> bool:
 
 
 def _grep_symbol(name: str) -> bool:
+    # v4.32.0 Phase 2.6 (Anaconda): fall back to ``grep -rl`` when ``.git``
+    # is not present (e.g. Debian ``dpkg-buildpackage`` scrubs ``.git``
+    # before running the test suite). ``git grep`` is still preferred
+    # because it respects .gitignore and is faster on large trees.
+    has_git = Path(".git").is_dir()
     for root in _GREP_ROOTS:
         if not Path(root).exists():
             continue
-        result = subprocess.run(
-            ["git", "grep", "-l", name, root],
-            capture_output=True,
-            text=True,
-        )
+        if has_git:
+            result = subprocess.run(
+                ["git", "grep", "-l", name, root],
+                capture_output=True,
+                text=True,
+            )
+        else:
+            result = subprocess.run(
+                ["grep", "-rl", name, root],
+                capture_output=True,
+                text=True,
+            )
         if result.returncode == 0 and result.stdout.strip():
             return True
     return False
