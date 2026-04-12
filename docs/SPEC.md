@@ -651,6 +651,7 @@ When you `spawn` an agent, the returned handle exposes the input and output chan
 
 Tensors have their element type and shape verified at compile time. Tensor literals use the `Tensor<Type>[elements]` syntax with nested brackets for multi-dimensional data:
 
+<!-- pseudo -->
 ```mn
 let v: Tensor<Float>[3] = Tensor<Float>[1.0, 2.0, 3.0]           // 1D vector
 let m: Tensor<Float>[2, 3] = Tensor<Float>[[1.0, 2.0, 3.0],      // 2D matrix
@@ -682,6 +683,25 @@ let b: Tensor<Float>[4] = [1.0, 2.0, 3.0, 4.0]
 let c = a + b   // COMPILE ERROR: shape mismatch [3] vs [4]
 ```
 
+Binary operations follow NumPy-style broadcasting rules (v4.44.0). Dimensions are compared right-to-left; a dimension pair is compatible if both are equal or one is 1. Shorter shapes are left-padded with 1s:
+
+```mn
+let a = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]   // [2, 3]
+let b = Tensor<Float>[10.0, 20.0, 30.0]                      // [3]
+let c = a + b       // Broadcast: [2, 3] + [3] -> [2, 3]
+
+let d = a * 2.0     // Scalar broadcast: [2, 3] * scalar -> [2, 3]
+```
+
+Incompatible shapes produce a compile-time error with the offending dimension:
+
+```mn
+let x = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]   // [2, 3]
+let y = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]                // [2, 2]
+let z = x + y   // COMPILE ERROR: shapes [2, 3] and [2, 2] are not
+                 //   broadcast-compatible; dimension 1 differs: 3 vs 2
+```
+
 Matrix multiplication verifies dimensional compatibility:
 
 <!-- pseudo -->
@@ -689,6 +709,28 @@ Matrix multiplication verifies dimensional compatibility:
 let a: Tensor<Float>[2, 3] = ...
 let b: Tensor<Float>[3, 4] = ...
 let c = a @ b   // Result: Tensor<Float>[2, 4] -- inner dimensions must match
+```
+
+Tensors support global reduction methods (v4.45.0):
+
+```mn
+let t = Tensor<Float>[1.0, 4.0, 2.0, 5.0, 3.0]
+let s = t.sum()      // 15.0
+let m = t.mean()     // 3.0
+let hi = t.max()     // 5.0
+let lo = t.min()     // 1.0
+let imax = t.argmax()  // 3 (index of max element)
+let imin = t.argmin()  // 0 (index of min element)
+```
+
+Tensor slicing extracts sub-tensors using range (`N..M`) and wildcard (`_`) syntax (v4.45.0). Slicing returns a copy:
+
+```mn
+let v = Tensor<Float>[10.0, 20.0, 30.0, 40.0, 50.0]
+let s = v[1..3]   // Tensor<Float>[20.0, 30.0]
+
+let m = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]
+let rows = m[0..2, _]   // First two rows, all columns -> [2, 3]
 ```
 
 ### 3.11 Type Aliases

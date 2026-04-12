@@ -784,10 +784,11 @@ let z = x + y    // COMPILE ERROR: shape mismatch [3] vs [4]
 
 ### Tensor Creation
 
+<!-- pseudo -->
 ```mn
-let z = Tensor.zeros<Float>(3, 3)      // 3x3 zero tensor
-let o = Tensor.ones<Float>(4)          // length-4 ones vector
-let t = Tensor.from_list([1.0, 2.0])   // from list literal
+let z = Tensor.zeros<Float>(3, 3)      // 3x3 zero tensor (planned)
+let o = Tensor.ones<Float>(4)          // length-4 ones vector (planned)
+let t = Tensor.from_list([1.0, 2.0])   // from list literal (planned)
 ```
 
 ### Tensor Operations
@@ -795,8 +796,12 @@ let t = Tensor.from_list([1.0, 2.0])   // from list literal
 | Category | Operations | Syntax |
 |----------|-----------|--------|
 | Arithmetic | add, sub, mul, div | `a + b`, `a - b`, `a * b`, `a / b` |
-| Matrix | matmul, dot, transpose | `a @ b`, `a.dot(b)`, `a.transpose()` |
+| Scalar broadcast | scalar + tensor | `a * 2.0`, `a + 1.0` |
+| Matrix | matmul | `a @ b` |
 | Reductions | sum, mean, max, min | `t.sum()`, `t.mean()`, `t.max()`, `t.min()` |
+| Arg reductions | argmax, argmin | `t.argmax()`, `t.argmin()` |
+| Slicing | range, wildcard | `t[1..3]`, `t[0..2, _]` |
+| Indexing | multi-dim get/set | `t[i, j]`, `t[i, j] = val` |
 
 ### Tensor Metadata
 
@@ -809,6 +814,7 @@ let t = Tensor.from_list([1.0, 2.0])   // from list literal
 
 ### GPU Device Transfer
 
+<!-- pseudo -->
 ```mn
 let cpu_tensor: Tensor<Float>[1024] = Tensor.ones<Float>(1024)
 let gpu_tensor = cpu_tensor.to_device("cuda")   // CPU -> GPU

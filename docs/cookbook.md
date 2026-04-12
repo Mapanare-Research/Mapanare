@@ -20,6 +20,7 @@ Real-world examples and patterns for common tasks. Each recipe is a complete, ru
 12. [Calling Python Libraries](#12-calling-python-libraries)
 13. [Trait Polymorphism](#13-trait-polymorphism)
 14. [Command-Line Calculator](#14-command-line-calculator)
+15. [Tensor Operations: Linear Regression](#15-tensor-operations-linear-regression)
 
 ---
 
@@ -636,6 +637,65 @@ Output:
 10 + 5 = 15.0
 error: division by zero
 ```
+
+---
+
+## 15. Tensor Operations: Linear Regression
+
+Tensor creation, broadcasting, reductions, and slicing in a practical ML context.
+
+```mn
+fn main() {
+    // Training data: y = 2x + 1
+    let X = Tensor<Float>[1.0, 2.0, 3.0, 4.0, 5.0]
+    let y = Tensor<Float>[3.0, 5.0, 7.0, 9.0, 11.0]
+
+    // Initialize weights
+    let mut w = 0.0
+    let mut b = 0.0
+    let lr = 0.01
+    let n = 5.0
+
+    // Gradient descent
+    for epoch in 0..10 {
+        // Forward: pred = w * X + b (scalar broadcast)
+        let pred = X * w + b
+
+        // Error vector (element-wise subtraction)
+        let error = pred - y
+
+        // Gradients via reductions
+        let grad_w = (error * X).sum() * 2.0 / n
+        let grad_b = error.sum() * 2.0 / n
+
+        // Update
+        w = w - lr * grad_w
+        b = b - lr * grad_b
+    }
+
+    print("w = " + str(w))   // approaching 2.0
+    print("b = " + str(b))   // approaching 1.0
+    print("converging")
+
+    // Reductions
+    let t = Tensor<Float>[1.0, 4.0, 2.0, 5.0, 3.0]
+    print(str(t.sum()))       // 15.0
+    print(str(t.max()))       // 5.0
+    print(str(t.argmax()))    // 3
+
+    // Slicing (2D)
+    let m = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]
+    let top = m[0..2, _]
+    print(str(tensor_size(top)))
+}
+```
+
+This recipe demonstrates:
+- **Tensor literals** with `Tensor<Type>[...]` syntax
+- **Scalar broadcasting** (`X * w + b` broadcasts scalar across tensor)
+- **Element-wise operations** (`pred - y`, `error * X`)
+- **Reductions** (`.sum()`, `.max()`, `.argmax()`)
+- **2D slicing** with range and wildcard (`m[0..2, _]`)
 
 ---
 
