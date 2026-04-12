@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.44.0] - 2026-04-12
+
+**Arc 3 Release 3 — Tensor Broadcasting.**
+NumPy-style broadcasting for `+`, `-`, `*`, `/` on tensors. No new syntax.
+SPEC §3.10 status → Stable.
+
+### Added
+
+- `broadcast_shape()` helper with NumPy rules — left-pad, match-or-1
+  (`mapanare/types.py:443–478`, `tests/semantic/test_tensor_broadcast.py`)
+- Semantic compile-time shape checking with broadcast compatibility
+  (`mapanare/semantic.py:673–707`)
+- Rustc-quality error: names both shapes + incompatible dimension
+- 16 runtime broadcast functions: `__mn_tensor_{add,sub,mul,div}_{broadcast,scalar}_{f64,i64}`
+  (`runtime/native/mapanare_gpu_builtins.c`)
+- Tensor binary op lowering dispatches to broadcast/scalar runtime calls
+  (`mapanare/lower.py:1543–1573`)
+- Golden test: `tests/golden/51_tensor_broadcast.mn`
+
+### Changed
+
+- SPEC §3.10 Status → "Stable on LLVM backend" (closes Coral LOW #19)
+
+### Tests
+
+- 26 new tests (17 semantic + 9 LLVM), 788 total, 0 regressions
+
 ## [4.43.0] - 2026-04-12
 
 **Arc 3 Release 2 — Tensor Indexing + Bounds Checking.**

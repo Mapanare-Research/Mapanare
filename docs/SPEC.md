@@ -647,7 +647,7 @@ When you `spawn` an agent, the returned handle exposes the input and output chan
 
 ### 3.10 Tensor Types
 
-> **Status:** Tensor literal construction landed in v4.42.0 (LLVM backend). Indexing, broadcasting, reductions, and slicing are planned for v4.43.0–v4.45.0.
+> **Status:** Stable on LLVM backend. Tensor literals (v4.42.0), multi-dimensional indexing with bounds checking (v4.43.0), and NumPy-style broadcasting for arithmetic ops (v4.44.0). GPU-accelerated when CUDA/Vulkan available; CPU fallback otherwise. Reductions and slicing planned for v4.45.0.
 
 Tensors have their element type and shape verified at compile time. Tensor literals use the `Tensor<Type>[elements]` syntax with nested brackets for multi-dimensional data:
 

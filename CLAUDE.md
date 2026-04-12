@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.43.0** (shipped) — Arc 3 release 2. Multi-dimensional tensor indexing (`t[i, j, k]`), bounds-checked at runtime, variadic get/set.
-- **v4.44.0** (next) — Arc 3 release 3. Tensor broadcasting for binary ops.
+- **v4.44.0** (shipped) — Arc 3 release 3. NumPy-style tensor broadcasting for `+`, `-`, `*`, `/`. SPEC §3.10 status → Stable.
+- **v4.45.0** (next) — Arc 3 release 4. Tensor reductions + slicing.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 
@@ -337,7 +337,7 @@ Key modules in `mapanare/`:
 
 **Working:** Functions, structs, enums, pattern matching, control flow, type inference, generics, Result/Option, print (println deprecated), builtins, lists, maps/dicts (Robin Hood hash table), agents (full lifecycle), signals (full reactivity: computed, subscribers, batched updates), streams (map/filter/take/skip/collect/fold, backpressure), closures (free variable capture via environment structs), traits, module imports, pipes (`|>` for function application), pipe definitions (multi-agent composition), all string methods, GPU kernel dispatch (`@gpu`/`@cuda`/`@vulkan` via MIR GpuKernel metadata → PTX/SPIR-V LLVM codegen).
 
-**Not yet on LLVM:** Tensor indexing, broadcasting, reductions, slicing (v4.43.0–v4.45.0). Tensor literals landed in v4.42.0.
+**Not yet on LLVM:** Tensor reductions and slicing (v4.45.0). Tensor literals (v4.42.0), indexing (v4.43.0), and broadcasting (v4.44.0) are stable.
 
 New LLVM features should target `emit_llvm_text.py` (the sole LLVM emitter).
 

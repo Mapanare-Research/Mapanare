@@ -4,7 +4,9 @@
 > tensor operands with NumPy broadcasting rules. No new syntax:
 > pure semantic + runtime work.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Single session. broadcast_shape + semantic + runtime + lowering + tests.
+**Decisions taken:** Decision 1 (NumPy exactly), Decision 2 (no mixed types), Decision 3 (rustc-quality with dimension detail).
 **Breaking:** No
 **Prerequisite:** v4.43.0
 **Delta review:** No (no new syntax — semantic tightening only)
