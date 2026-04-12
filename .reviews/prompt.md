@@ -8,17 +8,18 @@
 
 ## Version Configuration
 
-**TARGET VERSION:** `v4.46.0`
+**TARGET VERSION:** `v4.51.0`
 
-> **This is the Arc 3 cadence panel.** Mapanare v4.42.0–v4.45.0 is
-> Arc 3 (Tensor completeness). v4.42.0 added tensor literals + runtime
-> wiring, v4.43.0 added multi-dimensional indexing + bounds checking,
-> v4.44.0 added NumPy-style broadcasting + SPEC §3.10 closure, v4.45.0
-> added reductions + slicing + linear regression demo. v4.46.0 is the
-> 5-minor cadence panel: zero new features, full 7-reviewer audit.
-> If this panel returns aggregate ≥9.0 with zero NEEDS WORK verdicts,
-> Arc 3 closes and v4.47.0 opens Arc 4 (stdlib AI/LLM). If not,
-> v4.47.0 becomes a recovery release.
+> **This is the Arc 4 cadence panel.** Mapanare v4.47.0–v4.50.0 is
+> Arc 4 (Stdlib AI/LLM). v4.47.0 added ChatChunk streaming + env config
+> + fixed Arc 3 panel bugs, v4.48.0 added `__struct_meta::<T>()` compile-time
+> builtin + structured extraction with retry, v4.49.0 validated embeddings
+> + RAG modules (vector store, chunking, similarity), v4.50.0 shipped
+> end-to-end demos (chat_agent, rag_agent) + cookbook AI chapter + README
+> Hello AI snippet. v4.51.0 is the 5-minor cadence panel: zero new features,
+> full 7-reviewer audit. If this panel returns aggregate >=9.0 with zero
+> NEEDS WORK verdicts, Arc 4 closes and v4.52.0 opens Arc 5 (compiler
+> debt drain). If not, v4.52.0 becomes a recovery release.
 
 Set the review output directory based on this version:
 
