@@ -3,7 +3,7 @@
 > **Fourth 5-minor cadence panel.** Arc 4 closes. Panel grades the
 > stdlib AI/LLM work from v4.47.0-v4.50.0.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No
 **Prerequisite:** v4.50.0
 **Delta review:** No
