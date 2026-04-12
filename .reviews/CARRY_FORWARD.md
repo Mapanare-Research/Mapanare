@@ -112,10 +112,10 @@ items that were explicitly deferred out of the recovery arc.
 | 50 | Agent `mapanare_agent_destroy` drops in-flight messages without freeing them (`runtime/native/mapanare_runtime.c:686-691`, 2nd cycle, Viper M5 at v4.26.0, not previously in ledger) | v4.26.0 | LOW | **2** | OPEN | v4.33.0+. The destroy path walks the inbox ring to count pending messages but does not free their payloads. 20-line runtime change: iterate the ring, call `__mn_free` on each payload before releasing the agent handle. Viper M5. |
 | A10 | Self-hosted bounded-for sentinels (`for _ in 0..N` as pseudo-while) | v4.26.0 (Cobra #15) | LOW | **10** | OPEN | v4.37.0+ if grammar adds `loop { }`. Not a bug — grammar gap. 442 sites across 8 self-hosted modules. Accepted with comments in v4.36.0 Phase 1.2. |
 | L7 | `cuda_matmul` upload/download rc check | v3.47.0 #3 | LOW | **3** | **CLOSED** | v4.36.0 Phase 1.1 — `mapanare_gpu_buffer_upload` / `_download` return values checked at `runtime/native/mapanare_gpu.c:1756` |
-| P1 | `__mn_list_get` readonly+willreturn but calls abort — miscompilation at -O2 | v4.36.0 (Viper V1) | MEDIUM | 1 | OPEN | v4.37.0 — one-line fix: remove `readonly` or `willreturn` from attrs |
+| P1 | `__mn_list_get` readonly+willreturn but calls abort — miscompilation at -O2 | v4.36.0 (Viper V1) | MEDIUM | 1 | **CLOSED** | v4.42.0 — removed readonly+willreturn from `_RUNTIME_FN_ATTRS` at `emit_llvm_text.py:253` |
 | P2 | `pattern_matching.py` zero dedicated unit tests | v4.36.0 (Boa M1, Anaconda) | MEDIUM | 1 | OPEN | v4.37.0 — add unit tests for specialize, default_matrix, expand_or_patterns |
 | P3 | Self-hosted guard fall-through divergence (jump-to-next vs decision-tree rebuild) | v4.36.0 (Cobra, Rattler) | MEDIUM | 1 | OPEN | v4.37.0 — latent for current test corpus but wrong for overlapping variant guards |
-| P4 | SPEC §5.6 "compatible types" wording vs name-set-only implementation | v4.36.0 (Coral) | MEDIUM | 1 | OPEN | v4.37.0 — SPEC text correction |
+| P4 | SPEC §5.6 "compatible types" wording vs name-set-only implementation | v4.36.0 (Coral) | MEDIUM | 1 | **CLOSED** | v4.42.0 — SPEC §5.6 corrected at `docs/SPEC.md:906` |
 | P5 | `examples/` showcase gap (3rd cycle) | v4.31.0 (Coral) | MEDIUM | **3** | OPEN | v4.37.0+ — needs agent/signal/stream/guard/or-pattern demos |
 | P6 | Unreachable-arm warning path zero test coverage | v4.36.0 (Boa M2) | MEDIUM | 1 | OPEN | v4.37.0 — add test_unreachable_arm_warning |
 

@@ -6,7 +6,9 @@
 > where `Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]` becomes a real source
 > form, not documentation aspiration.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Single session. Phases 1–11 completed sequentially.
+**Decisions taken:** Decision 1 (shape mismatch → parse error), Decision 2 (empty `[]` → parse error, `[0]` allowed), Decision 3 (no 0-D tensors).
 **Breaking:** No (additive syntax)
 **Prerequisite:** v4.41.0 (arc 2 panel PASS)
 **Delta review:** **YES** — new syntactic form, Rattler + Coral lenses

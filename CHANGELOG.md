@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.42.0] - 2026-04-12
+
+**Arc 3 Release 1 — Tensor Literals + Runtime Wiring.**
+First release of the tensor completeness arc. Users can write
+`Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]` and get a real tensor value.
+
+### Added
+
+- Tensor literal syntax: `Tensor<Type>[elements]` with nested brackets for nD
+  (`mapanare/mapanare.lark:293–362`, `tests/parser/test_tensor_literal.py`)
+- `TensorLiteral` AST node with parse-time shape inference + jagged detection
+  (`mapanare/ast_nodes.py:283`, `mapanare/parser.py:838–895`)
+- Semantic checking: element type validation, int-to-float promotion
+  (`mapanare/semantic.py:1233–1270`, `tests/semantic/test_tensor_literal.py`)
+- `TensorInit` MIR instruction (`mapanare/mir.py:287–300`)
+- LLVM emission: shape alloca + `__mn_tensor_alloc` + store loop + drop glue
+  (`mapanare/emit_llvm_text.py:3136–3175`, `tests/llvm/test_tensor_literal.py`)
+- 10 runtime functions: `__mn_tensor_{alloc,free,store_f64,store_i64,get_f64,
+  get_i64,rank,size,shape_dim,print_f64}` (`runtime/native/mapanare_gpu_builtins.c`)
+- 6 builtins: `tensor_rank`, `tensor_size`, `tensor_get_f64`, `tensor_get_i64`,
+  `tensor_shape_dim`, `tensor_print` (`mapanare/types.py`)
+- Golden test: `tests/golden/49_tensor_literal.mn`
+- Self-hosted mirror: TensorLit + TensorInit variants in ast.mn, mir.mn,
+  parser.mn, semantic.mn, lower.mn, emit_llvm.mn
+
+### Fixed
+
+- `__mn_list_get` had `readonly` + `willreturn` but calls abort on OOB —
+  removed both attrs to prevent miscompilation at `-O2` (closes P1)
+- SPEC §5.6 "compatible types" wording corrected to match name-set-only
+  implementation for or-pattern alternatives (closes P4)
+
+### Tests
+
+- 32 new tests (13 parser + 7 semantic + 12 LLVM)
+- 0 regressions across 738 existing tests
+- Delta review: Coral PASS, Rattler PASS WITH NOTES
+
 ## [4.41.0] - 2026-04-12
 
 **Arc 2 Panel Release — zero new features.**

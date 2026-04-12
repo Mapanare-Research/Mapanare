@@ -647,16 +647,19 @@ When you `spawn` an agent, the returned handle exposes the input and output chan
 
 ### 3.10 Tensor Types
 
-> **Status:** Tensor types are specified but not yet implemented in any backend. The syntax, type checking, and shape verification described below represent the target design. See the roadmap for implementation status.
+> **Status:** Tensor literal construction landed in v4.42.0 (LLVM backend). Indexing, broadcasting, reductions, and slicing are planned for v4.43.0–v4.45.0.
 
-Tensors have their element type and shape verified at compile time.
+Tensors have their element type and shape verified at compile time. Tensor literals use the `Tensor<Type>[elements]` syntax with nested brackets for multi-dimensional data:
 
-<!-- pseudo -->
 ```mn
-let v: Tensor<Float>[3] = [1.0, 2.0, 3.0]         // 1D vector, 3 elements
-let m: Tensor<Float>[2, 3] = [[1.0, 2.0, 3.0],     // 2D matrix, 2x3
-                               [4.0, 5.0, 6.0]]
+let v: Tensor<Float>[3] = Tensor<Float>[1.0, 2.0, 3.0]           // 1D vector
+let m: Tensor<Float>[2, 3] = Tensor<Float>[[1.0, 2.0, 3.0],      // 2D matrix
+                                            [4.0, 5.0, 6.0]]
+let t: Tensor<Int>[2, 2, 2] = Tensor<Int>[[[1, 2], [3, 4]],      // 3D tensor
+                                           [[5, 6], [7, 8]]]
 ```
+
+The parser infers the shape from nesting depth and per-level element counts. Jagged arrays (sibling sub-arrays with different lengths) are rejected at parse time with a diagnostic message. Elements must be scalars — nested tensor composition is not supported in v4.42.0.
 
 Shape mismatches are compile-time errors:
 
