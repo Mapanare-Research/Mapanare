@@ -4,7 +4,7 @@
 > extract a value of that type from an LLM response via JSON schema
 > validation.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No
 **Prerequisite:** v4.47.0
 **Delta review:** No (library-only)
